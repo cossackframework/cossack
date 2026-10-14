@@ -1,6 +1,6 @@
 import { S3Client, CreateMultipartUploadCommand, UploadPartCommand, CompleteMultipartUploadCommand, AbortMultipartUploadCommand, PutObjectCommand, GetObjectCommand, HeadObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { StorageError, type StorageMetadata, type StorageProvider } from '@cossackframework/core/storage';
-import { storageParts, storageReadBody, checkStorageSignal, storageProviderFailure, storageCleanup } from './r2.js';
+import { storageParts, storageReadBody, checkStorageSignal, storageProviderFailure, storageCleanup, storageSinglePut, storageSingleBody } from './r2.js';
 
 export interface S3StorageProviderOptions { client: S3Client; bucket: string; }
 /** Isolated SDK entry. Credentials and endpoint remain in the server-owned client. */
@@ -13,9 +13,10 @@ export function createS3StorageProvider({ client, bucket }: S3StorageProviderOpt
             try {
                 checkStorageSignal(options.signal);
                 let etag: string | undefined;
-                if (options.size === 0) {
-                    for await (const _ of storageParts(body, 0, options.signal)) { /* validates an empty source */ }
-                    const result = await client.send(new PutObjectCommand({ Bucket: bucket, Key: key, Body: new Uint8Array(), ContentLength: 0, ContentType: options.contentType, Metadata: options.customMetadata }), { abortSignal: options.signal }); etag = result.ETag;
+                if (storageSinglePut(options.size)) {
+                    const value = await storageSingleBody(body, options.size, options.signal);
+                    checkStorageSignal(options.signal);
+                    const result = await client.send(new PutObjectCommand({ Bucket: bucket, Key: key, Body: value, ContentLength: value.byteLength, ContentType: options.contentType, Metadata: options.customMetadata }), { abortSignal: options.signal }); etag = result.ETag;
                 } else {
                     const created = await client.send(new CreateMultipartUploadCommand({ Bucket: bucket, Key: key, ContentType: options.contentType, Metadata: options.customMetadata }), { abortSignal: options.signal });
                     uploadId = created.UploadId; if (!uploadId) throw storageProviderFailure();

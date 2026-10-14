@@ -105,14 +105,28 @@ Derive the object key and authorization context on the server. Avoid buffering t
 
 ## Provider transfer limits
 
-R2 and S3 uploads use multipart parts of 5 MiB, with at most 10,000 parts
-(52,428,800,000 bytes, about 48.83 GiB). The facade defaults to a lower 64 MiB
-limit. Set `maxBytes` deliberately for larger transfers. Provider or service
-limits can be lower. Uploads and downloads retain backpressure. They do not
-buffer the whole object. Progress counts bytes, not provider acceptance or durable delivery.
+R2 and S3 providers choose the upload request from the declared `size`:
+
+- Up to 5 MiB (5,242,880 bytes), including empty objects, the provider reads the
+  body into one buffer and sends a single request (R2 `put`, S3 `PutObject`).
+  It sends the request only after the body ends with exactly the declared bytes.
+- Above 5 MiB, the provider uses a multipart upload with 5 MiB parts and at
+  most 10,000 parts (52,428,800,000 bytes, about 48.83 GiB).
+- A missing or invalid `size` fails with `COSSACK_STORAGE_SIZE_MISMATCH` before
+  the provider sends any request.
+
+Both strategies send the same content type and custom metadata. The S3 SDK adds
+its default request checksum to the single request and to each part.
+
+The facade defaults to a lower 64 MiB limit. Set `maxBytes` deliberately for
+larger transfers. Provider or service limits can be lower. Uploads and downloads
+retain backpressure. A provider buffers at most one 5 MiB part, never the whole
+object. Progress counts bytes, not provider acceptance or durable delivery.
 
 Cancellation before publication aborts the pending upload and preserves an older
-object. Cleanup is bounded and best effort when the provider is unavailable.
+object. If a single-request upload is cancelled while it reads the body, the
+provider receives no request. Cleanup is bounded and best effort when the
+provider is unavailable.
 Configure provider lifecycle rules for abandoned multipart uploads. A completion
 race or lost completion response can leave a fully committed object. Cancellation
 never promises rollback, and the framework does not delete a newly committed

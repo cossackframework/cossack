@@ -18,6 +18,11 @@ export interface R2StorageBucket {
     delete(key: string): Promise<void>;
 }
 const PART_SIZE = 5 * 1024 * 1024;
+/**
+ * Bodies up to one part use a single put: they are buffered exactly as one
+ * multipart part would be, so peak memory is unchanged and 2 requests are saved.
+ */
+export const STORAGE_SINGLE_PUT_MAX_BYTES = PART_SIZE;
 export function storageProviderFailure(code = 'COSSACK_STORAGE_PROVIDER_FAILED'): StorageError {
     return new StorageError(code, code === 'COSSACK_STORAGE_ABORTED' ? 'Storage operation cancelled.' : 'Storage provider operation failed.');
 }
@@ -33,9 +38,26 @@ export async function storageCleanup(operation: (signal: AbortSignal) => Promise
         ]);
     } finally { if (timer !== undefined) clearTimeout(timer); }
 }
+/**
+ * Chooses the upload strategy before any provider request. A declared size is
+ * required: an invalid or missing size is rejected instead of opening an upload.
+ */
+export function storageSinglePut(size: number): boolean {
+    checkStorageSize(size);
+    return size <= STORAGE_SINGLE_PUT_MAX_BYTES;
+}
+function checkStorageSize(size: number): void {
+    if (!Number.isSafeInteger(size) || size < 0 || size > PART_SIZE * 10000) throw storageProviderFailure('COSSACK_STORAGE_SIZE_MISMATCH');
+}
+/** Reads a single-put body into one exact-length buffer and confirms the source ended. */
+export async function storageSingleBody(body: ReadableStream<Uint8Array>, size: number, signal?: AbortSignal): Promise<Uint8Array> {
+    let value: Uint8Array = new Uint8Array();
+    for await (const part of storageParts(body, size, signal)) value = part;
+    return value;
+}
 /** Bounded buffering, exact byte-count validation, and cancellation of a blocked source. */
 export async function* storageParts(body: ReadableStream<Uint8Array>, size: number, signal?: AbortSignal): AsyncGenerator<Uint8Array> {
-    if (!Number.isSafeInteger(size) || size < 0 || size > PART_SIZE * 10000) throw storageProviderFailure('COSSACK_STORAGE_SIZE_MISMATCH');
+    checkStorageSize(size);
     checkStorageSignal(signal);
     const reader = body.getReader();
     const abort = () => { void reader.cancel().catch(() => {}); };
@@ -87,9 +109,9 @@ export function createR2StorageProvider(bucket: R2StorageBucket): StorageProvide
             const attributes = { httpMetadata: { contentType: options.contentType }, customMetadata: options.customMetadata };
             try {
                 checkStorageSignal(options.signal);
-                if (options.size === 0) {
-                    for await (const _ of storageParts(body, 0, options.signal)) { /* validates an empty source */ }
-                    checkStorageSignal(options.signal); const result = await bucket.put(key, new Uint8Array(), attributes);
+                if (storageSinglePut(options.size)) {
+                    const value = await storageSingleBody(body, options.size, options.signal);
+                    checkStorageSignal(options.signal); const result = await bucket.put(key, value, attributes);
                     if (!result) throw storageProviderFailure(); return metadata(result);
                 }
                 upload = await bucket.createMultipartUpload(key, attributes);
