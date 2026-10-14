@@ -5,6 +5,7 @@ import ts from 'typescript-api';
 import { z } from 'zod/v4';
 import { inspectDeployment } from './deployment.js';
 import { createWranglerResourceProvider } from './cloudflare-resource-provider.js';
+import { createJsoncEditor, jsoncProperty, parseJsoncObject } from './jsonc-edit.js';
 
 const fields = {
   d1: ['d1_databases', 'database_id', 'database_name'],
@@ -26,13 +27,11 @@ const hash = text => createHash('sha256').update(text).digest('hex');
 function freeze(value) { if (value && typeof value === 'object') { for (const item of Object.values(value)) freeze(item); Object.freeze(value); } return value; }
 function fail(code, message) { throw Object.assign(new Error(message), { code }); }
 function parseConfig(text, file) {
-  const source = ts.parseJsonText(file, text);
-  const errors = [...source.parseDiagnostics];
-  const value = ts.convertToObject(source, (_node, message) => errors.push(message));
-  if (errors.length || !value || typeof value !== 'object' || Array.isArray(value)) fail('COSSACK_RESOURCE_CONFIG_INVALID', 'Resource application requires a valid JSON or JSONC object.');
-  return { source, value };
+  const parsed = parseJsoncObject(text, file);
+  if (!parsed) fail('COSSACK_RESOURCE_CONFIG_INVALID', 'Resource application requires a valid JSON or JSONC object.');
+  return parsed;
 }
-function property(node, key) { return node?.properties?.find(item => item.name?.text === key)?.initializer; }
+const property = jsoncProperty;
 function selectedNode(source, environment) {
   let node = source.statements[0]?.expression;
   if (environment) node = property(property(node, 'env'), environment);
@@ -107,21 +106,8 @@ export async function applyResourcePlan(plan) {
   const { source } = parseConfig(current, state.file);
   const target = selectedNode(source, plan.environment);
   if (!target || !ts.isObjectLiteralExpression(target)) fail('COSSACK_RESOURCE_CONFIG_INVALID', 'The selected environment must be an authored JSON object.');
-  const edits = [];
-  const set = (node, key, value) => {
-    const existing = property(node, key);
-    if (existing) {
-      if (current.slice(existing.getStart(source), existing.end) !== JSON.stringify(value)) edits.push({ start: existing.getStart(source), end: existing.end, text: JSON.stringify(value) });
-    } else {
-      const last = node.properties.at(-1);
-      const comma = last && !node.properties.hasTrailingComma ? ',' : '';
-      // Insert next to the last authored property rather than replacing its comments.
-      const position = last ? last.end + (node.properties.hasTrailingComma ? 1 : 0) : node.getStart(source) + 1;
-      const prior = edits.find(edit => edit.start === position && edit.end === position);
-      if (prior) prior.text += `\n${JSON.stringify(key)}: ${JSON.stringify(value)},`;
-      else edits.push({ start: position, end: position, text: `${comma}\n${JSON.stringify(key)}: ${JSON.stringify(value)},` });
-    }
-  };
+  const editor = createJsoncEditor(current, source);
+  const set = editor.set;
   for (const choice of state.choices) {
     const [group, idField, namedField] = fields[choice.kind];
     let array = property(target, group);
@@ -134,10 +120,11 @@ export async function applyResourcePlan(plan) {
   // Pin only the selected environment; changing root account_id for a named
   // environment would redirect other environments that inherit the root.
   set(target, 'account_id', plan.account.accountId);
-  const positions = new Set();
-  for (const edit of edits) if (positions.has(edit.start)) fail('COSSACK_RESOURCE_CONFIG_INVALID', 'Ambiguous resource edits require manual configuration.'); else positions.add(edit.start);
-  let next = current;
-  for (const edit of edits.sort((a, b) => b.start - a.start)) next = next.slice(0, edit.start) + edit.text + next.slice(edit.end);
+  let next;
+  try { next = editor.apply(); } catch (error) {
+    if (error.code === 'COSSACK_JSONC_EDIT_AMBIGUOUS') fail('COSSACK_RESOURCE_CONFIG_INVALID', 'Ambiguous resource edits require manual configuration.');
+    throw error;
+  }
   parseConfig(next, state.file);
   if (next === current) return { ...plan, effects: { cloudWrites: 0, localWrites: 0 }, applied: 'unchanged' };
   const temporary = state.file + '.cossack-' + randomUUID();

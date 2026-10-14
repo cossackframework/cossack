@@ -17,6 +17,8 @@ import { writeFile, exists, findProjectRoot } from '../fs-utils.js';
 import { flagString } from '../flags.js';
 import { defaultLangCatalog, langJsonTemplate } from '../templates.js';
 import { createCommandOutput, runWithSpec } from '../command-spec.js';
+import { createJsoncEditor, jsoncProperty, parseJsoncObject } from '../jsonc-edit.js';
+import ts from 'typescript-api';
 
 const spec = commandSpecs.lang;
 
@@ -213,25 +215,23 @@ async function wireAppLocaleEnv(root, locale, ctx) {
   } catch {
     return;
   }
-  if (/\bAPP_LOCALE\b/.test(content)) {
-    return; // already present
+  // Edit through the JSONC parser so comments, nested objects and unrelated
+  // formatting survive; a regex cannot tell a "vars" key from a comment.
+  const parsed = parseJsoncObject(content, target);
+  if (!parsed || !parsed.root || !ts.isObjectLiteralExpression(parsed.root)) {
+    ctx.out?.line('  skipped  wrangler.jsonc is not a valid JSONC object; add APP_LOCALE to "vars" manually.');
+    return;
   }
-  // Inject APP_LOCALE into the vars block. JSONC allows trailing commas,
-  // so we append after the last entry in the vars object.
-  const varsMatch = content.match(/"vars"\s*:\s*\{([\s\S]*?)\}/);
-  let updated;
-  if (varsMatch) {
-    const varsBody = varsMatch[1].trimEnd();
-    const separator = varsBody.endsWith(',') ? '' : ',';
-    const replacement = `"vars": {${varsBody}${separator}\n    // Default locale for __(). Override per-request via cookie or Accept-Language.\n    "APP_LOCALE": "${locale}"\n  }`;
-    updated = content.replace(/"vars"\s*:\s*\{[\s\S]*?\}/, replacement);
-  } else {
-    // No vars block — add one before the closing brace.
-    updated = content.replace(
-      /\n(\s*)\}\s*$/,
-      `\n  "vars": {\n    "APP_LOCALE": "${locale}"\n  }\n$1}`,
-    );
+  const vars = jsoncProperty(parsed.root, 'vars');
+  if (vars && !ts.isObjectLiteralExpression(vars)) {
+    ctx.out?.line('  skipped  wrangler.jsonc "vars" is not an object; add APP_LOCALE manually.');
+    return;
   }
+  if (parsed.value.vars && Object.hasOwn(parsed.value.vars, 'APP_LOCALE')) return; // already present
+  const editor = createJsoncEditor(content, parsed.source);
+  if (vars) editor.set(vars, 'APP_LOCALE', locale);
+  else editor.set(parsed.root, 'vars', { APP_LOCALE: locale });
+  const updated = editor.apply();
   if (ctx.dryRun) {
     ctx.out?.file('planned', target);
     return;

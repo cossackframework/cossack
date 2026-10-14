@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { langCommand } from '../src/commands/lang.js';
+import { parseJsoncObject } from '../src/jsonc-edit.js';
 
 let tmp;
 let ctx;
@@ -260,7 +261,43 @@ describe('lang publish auto-wires wrangler.jsonc', () => {
     );
     ctx.flags.locale = 'es';
     await langCommand(['publish'], ctx);
-    expect(readFile('wrangler.jsonc')).toContain('"APP_LOCALE": "es"');
+    expect(parseJsoncObject(readFile('wrangler.jsonc')).value.vars.APP_LOCALE).toBe('es');
+  });
+
+  it('keeps nested vars objects and comments intact', async () => {
+    const original = [
+      '{',
+      '  // "vars": { "fake": true } lives only in this comment',
+      '  "name": "test",',
+      '  "vars": {',
+      '    "FEATURES": { "beta": { "enabled": true } },',
+      '    "BASE_URL": "https://example.com" // trailing comment',
+      '  },',
+      '  "env": { "staging": { "vars": { "BASE_URL": "https://staging.example.com" } } }',
+      '}',
+      '',
+    ].join('\n');
+    writeFile('wrangler.jsonc', original);
+    expect(await langCommand(['publish'], ctx)).toBe(0);
+    const text = readFile('wrangler.jsonc');
+    const parsed = parseJsoncObject(text);
+    expect(parsed).not.toBeNull();
+    expect(parsed.value.vars).toEqual({
+      FEATURES: { beta: { enabled: true } },
+      BASE_URL: 'https://example.com',
+      APP_LOCALE: 'en',
+    });
+    expect(parsed.value.env.staging.vars).toEqual({ BASE_URL: 'https://staging.example.com' });
+    expect(text).toContain('// "vars": { "fake": true } lives only in this comment');
+    expect(text).toContain('// trailing comment');
+  });
+
+  it('adds APP_LOCALE when it is only mentioned in a comment', async () => {
+    writeFile('wrangler.jsonc', '{\n  // TODO: set APP_LOCALE\n  "name": "test"\n}\n');
+    expect(await langCommand(['publish'], ctx)).toBe(0);
+    const text = readFile('wrangler.jsonc');
+    expect(parseJsoncObject(text).value.vars).toEqual({ APP_LOCALE: 'en' });
+    expect(text).toContain('// TODO: set APP_LOCALE');
   });
 });
 
