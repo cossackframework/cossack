@@ -32,6 +32,20 @@ real path. Tool arguments cannot select another project or request arbitrary fil
 Package metadata and imported declarations use the project's dependency resolution.
 The project binding is not a filesystem sandbox against a malicious local project.
 
+## Tools
+
+| Tool | Input fields | Reads |
+| --- | --- | --- |
+| `inspect_project` | `scope` (required), `environment`, `route`, `locale`, `check` | Static route, Cloudflare, provider, localization, schedule and workflow facts. |
+| `read_documentation` | `package`, `symbols`, `symbol` | Installed package exports, declarations, CLI command schemas and package guides. |
+| `read_test_results` | `run` | Recorded Vitest runs. |
+| `read_development_traces` | `session` | Recorded browser development traces. |
+
+Every input object is strict: an unknown field is rejected. Every tool returns
+the same structured result, `{ schemaVersion: 1, versions, ok, data, diagnostics }`,
+and also sends it as JSON text. Each diagnostic has `code`, `severity` and
+`message`. When `ok` is `false`, the MCP result sets `isError: true`.
+
 ## Inspection
 
 `inspect_project` accepts the following input:
@@ -39,10 +53,10 @@ The project binding is not a filesystem sandbox against a malicious local projec
 | Field | Values |
 | --- | --- |
 | `scope` | Required: `routes`, `cloudflare`, `providers`, `localization`, `schedules`, or `workflows`. |
-| `environment` | Optional environment name. Defaults to `CLOUDFLARE_ENV` when set. |
-| `route` | Optional exact public route or source identity from route inspection. Only valid for `scope: "routes"` with `check: false`. |
-| `locale` | Optional locale code. Only valid for `scope: "localization"`; defaults to `en`. |
-| `check` | Optional boolean, default `false`. Report validation errors through `ok: false`. |
+| `environment` | Optional environment name, 1 to 128 characters. Defaults to `CLOUDFLARE_ENV` when set. `localization` ignores it. |
+| `route` | Optional exact public route or source identity from route inspection, 1 to 2048 characters. Only valid for `scope: "routes"` with `check: false`. |
+| `locale` | Optional language code such as `en` or `pt-BR`, 1 to 64 characters. Only valid for `scope: "localization"`; defaults to `en`. |
+| `check` | Optional boolean, default `false`. With `true`, `routes`, `cloudflare`, `providers` and `localization` report validation errors through `ok: false`. `schedules` and `workflows` always return `ok: false` when they have a diagnostic, so `check` does not change them. |
 
 The scopes report:
 
@@ -66,13 +80,36 @@ Results contain `schemaVersion: 1`, `versions`, `ok`, `data` and `diagnostics`.
 framework installed for the project, or is `null` when unavailable. The server
 does not execute application modules to detect versions.
 
-Application modules are never executed. But the `cloudflare`, `routes`,
-`providers`, `schedules` and `workflows` scopes import the project's installed
-Wrangler package when they read a Wrangler configuration, so they use
-Wrangler's own configuration parser and environment rules. Wrangler code runs
-inside the inspection worker with the project's dependency resolution. Only
-`localization` reads files without importing project dependencies. When
-Wrangler is not installed, these scopes report a diagnostic instead of data.
+### What runs during inspection
+
+The server never imports or executes application modules. Pages, layouts,
+`src/config/` factories, `vite.config.ts`, `orm.config.ts` and other project
+sources are read as text and parsed. This code runs inside the inspection worker:
+
+- The CLI and the Cossack packages it depends on, such as the framework
+  inspection helpers and the scaffold recipe registry.
+- Two parsers from the CLI's dependencies: Vite's `parseSync` for page options,
+  inheritance and configuration factory metadata, and the pinned TypeScript
+  6.0.3 compiler API for service ownership, translation calls and declaration
+  indexes.
+- The project's installed Wrangler package, when a scope reads a Wrangler
+  configuration. The worker resolves `wrangler` from the project root, imports
+  it, and calls `experimental_readRawConfig` and `unstable_readConfig`. Wrangler
+  then applies its own configuration parser, normalization and environment
+  rules. This happens:
+  - always for `cloudflare`;
+  - for `routes` and `providers` only when the project runtime is Cloudflare;
+  - for `schedules` and `workflows` only when the project declares schedules or
+    workflows and its runtime is Cloudflare.
+
+Importing Wrangler runs Wrangler's module code, and the code it loads, with the
+server's environment variables. Cossack only asks it to parse configuration: it
+does not build, start a Worker, authenticate or contact Cloudflare. If Wrangler
+is missing or lacks those functions, `cloudflare` fails with a diagnostic and no
+data. The other scopes still return their static facts and record a diagnostic
+for the configuration that they could not read. `localization`,
+`read_documentation`, `read_test_results` and `read_development_traces` import
+no project dependency.
 
 The tool uses the CLI's static inspection models, route explanations and checks.
 Cloudflare inspection reports binding and secret names, not configured secret
@@ -93,6 +130,7 @@ SIGTERM close the server and its active workers.
 ## Stored test results
 
 `read_test_results` accepts `{}` for the newest started run or `{ "run": "<run-uuid>" }`.
+The run ID must be a lowercase version 4 UUID.
 It shares the reader behind `pnpm exec cossack test-results --json`. Configure the
 opt-in `cossack/vitest-reporter` in Vitest 4 to produce records first. A successful
 read can contain failed or unfinished tests. Inspect the recorded state, selected
@@ -101,9 +139,16 @@ See [setup, interpretation and limits](./test-results.md).
 
 ## Offline documentation
 
-Use `read_documentation` with an optional `package` name from the Cossack package
-allowlist. The same service backs `pnpm exec cossack docs --json`. To inspect one
-package through the CLI:
+Use `read_documentation` with an optional `package` name. The allowed names are
+`cossack`, `@cossackframework/core`, `@cossackframework/renderer`,
+`@cossackframework/framework`, `@cossackframework/node-adapter`,
+`@cossackframework/desktop`, `@cossackframework/solar-icons`,
+`@cossackframework/database`, `@cossackframework/auth`,
+`@cossackframework/scaffold`, `@cossackframework/ui` and
+`@cossackframework/studio`. Without `package`, the catalog covers all of them.
+`symbols` (default `false`) requires `package`. `symbol` (1 to 256 characters,
+not blank) requires `symbols: true`. The same service backs
+`pnpm exec cossack docs --json`. To inspect one package through the CLI:
 
 ```sh
 pnpm exec cossack docs --package @cossackframework/core --json
@@ -279,9 +324,9 @@ Standalone examples prove Node execution. The application checks cover local
 Cloudflare and Node development and production client stripping. They do not
 prove live deployment or every transport and runtime combination. Other APIs,
 components, recipes and runtime targets still need their own coverage.
-The tarball gate typechecks and executes all 67 standalone examples from
-published package exports plus four separately bundled auth examples, for 71
-examples across 65 package guides. Database guidance exercises the installed
+The tarball gate typechecks and executes every standalone example in the
+installed packages' guides through their published exports. It bundles and
+executes the auth examples separately. Database guidance exercises the installed
 Node SQLite migration apply/status/rollback and repeatable seeder lifecycle as
 well as bound Node SQLite and Cloudflare D1 queries. Core guidance includes locale
 negotiation, `q=0` exclusions and CLDR plural formatting.
@@ -350,7 +395,8 @@ Declaration signatures still do not prove runtime availability.
 
 `cossack traces --json` and MCP `read_development_traces` read the same bounded
 project-local browser records. Supply `--session <uuid>` or `{ "session": "<uuid>" }`
-for one capture. The Vite bridge and browser recording must be enabled explicitly.
+for one capture; the session ID must be a lowercase version 4 UUID. The Vite
+bridge and browser recording must be enabled explicitly.
 Inspect `freshness.ageMs` and `live: false`. A record is not proof of current state
 or server execution by itself. Joined `server-native` events report native-body
 outcome and cleanup over the separate development channel. They do not prove
