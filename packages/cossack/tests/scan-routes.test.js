@@ -269,6 +269,17 @@ describe('AST-backed option extraction (CLI-04/RT-07/RT-12)', () => {
     expect(model.pages.every(page => page.inheritance.status === 'unresolved')).toBe(true);
   });
 
+  it('reports why imported inheritance stayed unresolved', async () => {
+    mk('src/shared/a.ts', "export { Base } from './b.js';");
+    mk('src/shared/b.ts', "export { Base } from './a.js';");
+    mk('src/pages/cycle/index.ts', "import { Base } from '../../shared/a.js'; @Page() export default class P extends Base {}");
+    mk('src/pages/package/index.ts', "import Base from 'not-installed'; @Page() export default class P extends Base {}");
+    const model = await buildEffectiveRouteModel(tmp);
+    const reasons = Object.fromEntries(model.pages.map(page => [page.filePath, page.inheritance.reason]));
+    expect(reasons['/src/pages/cycle/index.ts']).toBe('Cyclic inheritance or exports');
+    expect(reasons['/src/pages/package/index.ts']).toBe('Non-relative base');
+  });
+
   it('includes local base declarations with their declaring class and source', async () => {
     mk('src/pages/inherited/index.ts', `
       class Parent extends Cossack { @Server() load() { return 1; } }

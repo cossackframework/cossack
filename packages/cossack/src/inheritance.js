@@ -81,7 +81,8 @@ export async function resolveImportedInheritance(code, compilerId, displayFile, 
   try {
     await imported(code, compilerId, facts.inheritance.bases.at(-1));
     return { ...facts, inheritance: { status: 'resolved', bases: names }, inheritedDeclarations: declarations };
-  } catch {
-    return { ...facts, inheritedDeclarations: declarations };
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    return { ...facts, inheritance: { ...facts.inheritance, reason }, inheritedDeclarations: declarations };
   }
 }
