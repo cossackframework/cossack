@@ -1,5 +1,8 @@
 // @vitest-environment node
+import { readdirSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { filePathToHttpRoute } from '../src/route-ids';
 import {
   DEMO_CATEGORIES,
   demoCatalog,
@@ -36,6 +39,19 @@ describe('demo catalog', () => {
       label: entry.label,
       group: entry.category,
     })));
+  });
+
+  it('links only to pages the demo application ships', () => {
+    const pagesDirectory = fileURLToPath(new URL('../src/pages', import.meta.url));
+    const routes = (readdirSync(pagesDirectory, { recursive: true }) as string[])
+      .filter(file => /\.(?:ts|md|mdx)$/.test(file) && !/(?:^|\/)layout\.ts$/.test(file))
+      .map(file => filePathToHttpRoute(`/src/pages/${file.replace(/\\/g, '/')}`))
+      .map(route => new RegExp(`^${route.replace(/:[^/{]+\{\.\+\}/g, '.+').replace(/:[^/]+/g, '[^/]+')}$`));
+    for (const entry of demoEntries) {
+      expect(routes.some(route => route.test(entry.url)), entry.url).toBe(true);
+    }
+    // Removed with its R2 binding; Storage examples live in docs/storage.md.
+    expect(demoEntries.map(entry => entry.url)).not.toContain('/r2-upload');
   });
 
   it('excludes API endpoints, error boundaries, and implementation routes', () => {

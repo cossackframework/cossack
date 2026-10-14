@@ -100,7 +100,6 @@ const entries: readonly DemoCatalogEntry[] = [
   { label: 'Server functions', url: '/examples/server-functions', category: 'Platform & Server' },
   { label: 'Client-only modules', url: '/examples/client-only-modules', category: 'Platform & Server' },
   { label: 'Security and code stripping', url: '/security-demo', category: 'Platform & Server' },
-  { label: 'R2 uploads', url: '/r2-upload', category: 'Platform & Server' },
   { label: 'Static site generation', url: '/ssg-demo', category: 'Platform & Server' },
   { label: 'Generated user page', url: '/ssg-demo/users/demo', category: 'Platform & Server' },
 
