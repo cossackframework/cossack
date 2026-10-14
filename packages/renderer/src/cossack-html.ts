@@ -1,4 +1,5 @@
 import { serializeFormValues } from './ssr-form-values';
+import { analyzeTemplate, RAW_TEXT_TAGS, type TemplateAnalysis } from './template-analysis';
 import { ComponentResult, isComponentResult } from './component';
 import { CossackElement, pushCurrentInstance, popCurrentInstance } from './cossack-element';
 import { LiveResult, RepeatResult, KeyResult, BindResult, PreventDefaultResult, IfDefinedResult, GuardResult, CacheResult, resolveField, setField } from './directives';
@@ -383,226 +384,82 @@ const mergeClassIntoResult = (result: string, extraClass: string): string | null
   return result.slice(0, tagStart) + rewrittenTag;
 };
 
-/**
- * Classify each value position (gap between `strings[i]` and `strings[i+1]`)
- * as a node position (`true`, child content) or an attribute position
- * (`false`, inside an element's opening tag).
- *
- * This mirrors the char-by-char tracking in `compileTemplate` and MUST stay
- * in sync with it: the SSR scanner uses this array to decide where to emit
- * hydratable node markers, and the client uses the same classification to
- * decide where to insert `<!--CRP_i-->` markers. Any divergence breaks the
- * lockstep hydration walk.
- */
-const classifyPositions = (strings: readonly string[]): boolean[] => {
-  const isNode: boolean[] = [];
-  let isInsideTag = false;
-  let insideAttrQuote: string | null = null;
-  const attrMatch = /(\.\.\.|[.@?]?[a-zA-Z0-9_:-]+)=["']?$/;
-  for (let i = 0; i < strings.length - 1; i++) {
-    const str = strings[i];
-    for (let j = 0; j < str.length; j++) {
-      if (insideAttrQuote) {
-        if (str[j] === insideAttrQuote) insideAttrQuote = null;
-      } else if (isInsideTag && (str[j] === '"' || str[j] === "'")) {
-        if (j > 0 && str[j - 1] === '=') {
-          insideAttrQuote = str[j];
-        }
-      } else if (str[j] === '<' && str[j + 1] !== '!' && str[j + 1] !== '/') {
-        isInsideTag = true;
-      } else if (str[j] === '>') {
-        isInsideTag = false;
-      }
-    }
-    const match = str.match(attrMatch);
-    isNode[i] = !(isInsideTag && (match || insideAttrQuote));
-  }
-  return isNode;
+const getTemplateAnalysis = (result: TemplateResult): TemplateAnalysis =>
+  analyzeTemplate(result.strings, result.__cossackScope);
+
+const rawTextString = (value: unknown): string => {
+  value = unwrapNodeValue(value);
+  if (value === nothing || value === null || value === undefined || value === false) return '';
+  if (Array.isArray(value)) return value.map(rawTextString).join('');
+  if (isUnsafeHTML(value)) return value.value;
+  return nodeValueText(value);
 };
 
 /**
- * Build markers that cannot collide with authored static template text.
- *
- * The markers exist only while template strings are joined for scanning and
- * are removed before parsing/serialization. Choosing a prefix absent from all
- * input strings preserves literal private-use characters (including strings
- * that resemble an older marker format) without requiring randomness.
+ * Text a raw-text binding contributes, identical on SSR and the client.
+ * `</script`, `<!--` (which switches script parsing into its escaped state)
+ * and `</style` would end or corrupt the element when SSR output is parsed.
+ * They are rewritten into forms that mean the same inside JS/JSON strings
+ * and CSS (`<\/`, `<`).
  */
-const createTemplateMarkers = (strings: readonly string[]) => {
-  let sequence = 0;
-  let prefix: string;
-  do {
-    prefix = `\uE000cossack:${sequence++}:`;
-  } while (strings.some((value) => value.includes(prefix)));
-  const suffix = ':\uE001';
-  return {
-    marker: (index: number): string => `${prefix}${index}${suffix}`,
-    pattern: new RegExp(`${prefix}(\\d+)${suffix}`, 'g'),
-  };
+const rawTextContent = (tag: string, value: unknown): string => {
+  const text = rawTextString(value);
+  if (tag === 'script') return text.replace(/<\/(script)/gi, '<\\/$1').replace(/<!--/g, '\\u003c!--');
+  if (tag === 'style') return text.replace(/<\/(style)/gi, '<\\/$1');
+  return text;
 };
 
-/** Add a scope attribute to static opening tags without touching nested values. */
-const scopeTemplateStrings = (strings: TemplateStringsArray, scopeId?: string): readonly string[] => {
-  if (!scopeId) return strings;
-  const markers = createTemplateMarkers(strings);
-  let source = '';
-  for (let i = 0; i < strings.length; i++) {
-    source += strings[i];
-    if (i < strings.length - 1) source += markers.marker(i);
-  }
-
-  let output = '';
-  let insideTag = false;
-  let quote: string | null = null;
-  let openingTag = '';
-  let rawTextTag = '';
-  for (let i = 0; i < source.length;) {
-    if (rawTextTag) {
-      const closing = `</${rawTextTag}`;
-      if (source.slice(i, i + closing.length).toLowerCase() === closing) {
-        rawTextTag = '';
-      } else {
-        output += source[i++];
-        continue;
-      }
-    }
-    if (!insideTag && source.startsWith('<!--', i)) {
-      const end = source.indexOf('-->', i + 4);
-      const next = end < 0 ? source.length : end + 3;
-      output += source.slice(i, next);
-      i = next;
-      continue;
-    }
-    if (!insideTag && source[i] === '<' && /[A-Za-z]/.test(source[i + 1] ?? '')) {
-      let end = i + 2;
-      while (end < source.length && !/[\s/>]/.test(source[end])) end++;
-      openingTag = source.slice(i + 1, end).toLowerCase();
-      output += source.slice(i, end);
-      output += ` data-cossack-scope="${scopeId}"`;
-      i = end;
-      insideTag = true;
-      continue;
-    }
-    const char = source[i++];
-    output += char;
-    if (insideTag) {
-      if (quote) {
-        if (char === quote) quote = null;
-      } else if (char === '"' || char === "'") {
-        quote = char;
-      } else if (char === '>') {
-        insideTag = false;
-        if (/^(script|style|textarea|title)$/.test(openingTag)) rawTextTag = openingTag;
-        openingTag = '';
-      }
-    }
-  }
-
-  const scoped: string[] = [];
-  let last = 0;
-  let marker: RegExpExecArray | null;
-  while ((marker = markers.pattern.exec(output))) {
-    scoped.push(output.slice(last, marker.index));
-    last = marker.index + marker[0].length;
-  }
-  scoped.push(output.slice(last));
-  return scoped;
-};
-
-interface NothingAttributeGroup {
-  first: number;
-  last: number;
-  prefix: string;
-  suffix: string;
-}
-
-/**
- * Find attributes containing one or more expressions. This lets SSR remove a
- * whole multi-expression attribute when any slot is `nothing`, even though
- * rendering otherwise streams through template strings from left to right.
- */
-const findNothingAttributeGroups = (
-  strings: readonly string[],
-  values: readonly unknown[],
-): Map<number, NothingAttributeGroup> => {
-  const templateMarkers = createTemplateMarkers(strings);
-  let source = '';
-  for (let i = 0; i < strings.length; i++) {
-    source += strings[i];
-    if (i < strings.length - 1) source += templateMarkers.marker(i);
-  }
-  const groups = new Map<number, NothingAttributeGroup>();
-  const tagPattern = /<(?![!/])(?:[^>"']|"[^"]*"|'[^']*')*>/g;
-  let tag: RegExpExecArray | null;
-  while ((tag = tagPattern.exec(source))) {
-    const attributePattern = /\s+([^\s=/>]+)\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]*)/g;
-    let attribute: RegExpExecArray | null;
-    while ((attribute = attributePattern.exec(tag[0]))) {
-      const raw = attribute[0];
-      const markers = [...raw.matchAll(templateMarkers.pattern)];
-      if (markers.length === 0) continue;
-      const indices = markers.map((match) => Number(match[1]));
-      if (!indices.some((index) => values[index] === nothing)) continue;
-      const firstMarker = markers[0];
-      const lastMarker = markers[markers.length - 1];
-      groups.set(indices[0], {
-        first: indices[0],
-        last: indices[indices.length - 1],
-        prefix: raw.slice(0, firstMarker.index),
-        suffix: raw.slice(lastMarker.index! + lastMarker[0].length),
-      });
-    }
-  }
-  return groups;
+const rawTextSSR = (tag: string, value: unknown, first: boolean): string => {
+  const text = rawTextContent(tag, value);
+  // <script>/<style> content is not entity-decoded, so it is not escaped.
+  if (tag === 'script' || tag === 'style') return text;
+  const escaped = escapeHtml(text);
+  // The parser drops one leading newline in <textarea>; keep the author's.
+  return tag === 'textarea' && first && escaped.startsWith('\n') ? `\n${escaped}` : escaped;
 };
 
 class SSRScanner {
   private result: string = '';
   private stringIdx = 0;
   private charIdxForNext = 0;
-  private isNodePositions: boolean[];
-  private strings: readonly string[];
-  private nothingAttributeGroups: Map<number, NothingAttributeGroup>;
+  private analysis: TemplateAnalysis;
 
   constructor(private resultObj: TemplateResult, private opts: { hydrate?: boolean } = {}) {
-    this.strings = scopeTemplateStrings(resultObj.strings, resultObj.__cossackScope);
-    this.isNodePositions = classifyPositions(this.strings);
-    this.nothingAttributeGroups = findNothingAttributeGroups(this.strings, resultObj.values);
+    this.analysis = getTemplateAnalysis(resultObj);
   }
 
   scan(): string {
     const { values } = this.resultObj;
-    const strings = this.strings;
+    const { strings, bindings, attributeGroups } = this.analysis;
 
     while (this.stringIdx < strings.length) {
       const str = strings[this.stringIdx];
       const remaining = str.substring(this.charIdxForNext || 0);
-
-      const attrMatch = remaining.match(/(\.\.\.|[.@?]?[a-zA-Z0-9_:-]+)=["']?$/);
 
       this.result += remaining;
       this.charIdxForNext = 0;
 
       if (this.stringIdx < strings.length - 1) {
         const val = values[this.stringIdx];
-        const nothingGroup = this.nothingAttributeGroups.get(this.stringIdx);
-        if (nothingGroup) {
-          if (this.result.endsWith(nothingGroup.prefix)) {
-            this.result = this.result.slice(0, -nothingGroup.prefix.length);
+        const binding = bindings[this.stringIdx];
+        // `nothing` in any slot of an attribute removes the whole attribute.
+        const group = attributeGroups.get(this.stringIdx);
+        if (group && group.indices.some((index) => values[index] === nothing)) {
+          if (this.result.endsWith(group.prefix)) {
+            this.result = this.result.slice(0, -group.prefix.length);
           }
-          this.stringIdx = nothingGroup.last;
-          this.charIdxForNext = nothingGroup.suffix.length;
+          this.stringIdx = group.indices[group.indices.length - 1];
+          this.charIdxForNext = group.suffixLength;
           this.stringIdx++;
           continue;
         }
-        if (attrMatch && !this.isNodePositions[this.stringIdx]) {
-          const fullMatch = attrMatch[0];
-          const name = attrMatch[1];
+        if (binding.kind === 'attribute' && binding.start) {
+          const fullMatch = str.slice(binding.prefixStart);
+          const name = binding.name;
 
           this.result = this.result.substring(0, this.result.length - fullMatch.length);
 
-          // Check if we opened a quote
-          const quote = fullMatch.endsWith('"') ? '"' : fullMatch.endsWith("'") ? "'" : '';
+          const quote = binding.quote;
 
           let replaced = true;
 
@@ -705,14 +562,20 @@ class SSRScanner {
               this.charIdxForNext = 1;
             }
           }
-        } else if (this.opts.hydrate && this.isNodePositions[this.stringIdx]) {
+        } else if (binding.kind === 'raw-text') {
+          // Text inside <textarea>/<title>/<script>/<style>: the parser reads
+          // it as text, so hydration markers would show up verbatim. Emit the
+          // text only; the client binds it as a RawTextPart.
+          this.result += rawTextSSR(binding.tag, val, binding.first);
+        } else if (binding.kind === 'comment' || binding.kind === 'element') {
+          // Bindings inside comments, or in a tag outside any attribute value,
+          // have nowhere to render. The client drops them too.
+        } else if (binding.kind === 'node' && this.opts.hydrate) {
           // True node (child) position: wrap the rendered value in the SAME
           // marker comments the client renderer uses (`<!--CRP_i-->` start,
           // `<!--/CRP-->` end) so the client can bind NodeParts directly to
-          // the existing DOM instead of wiping it. Attribute-interior
-          // positions (open quote, no `name=` suffix) are NOT marked — they
-          // stay clean, matching the client's classification. Comments are
-          // invisible to users and ignored by search engines.
+          // the existing DOM instead of wiping it. Comments are invisible to
+          // users and ignored by search engines.
           this.result += `<!--CRP_${this.stringIdx}-->`;
           this.result += valueToString(val, this.opts);
           this.result += `<!--/CRP-->`;
@@ -2364,6 +2227,32 @@ class AttributePart implements Part {
   }
 }
 
+interface RawTextState {
+  tag: string;
+  /** N+1 static text segments around N bindings. */
+  segments: string[];
+  /** Latest value per binding, shared by every part of the element. */
+  values: unknown[];
+}
+
+/**
+ * A binding inside `<textarea>`, `<title>`, `<script>` or `<style>`. The
+ * parser reads that content as text, so there are no comment anchors: the
+ * part owns the element's whole `textContent`.
+ */
+class RawTextPart implements Part {
+  constructor(public element: Element, private state: RawTextState, private position: number) {}
+
+  update(value: unknown) {
+    const { tag, segments, values } = this.state;
+    values[this.position] = value;
+    let text = segments[0];
+    for (let i = 0; i < values.length; i++) text += rawTextContent(tag, values[i]) + segments[i + 1];
+    // Hydration leaves matching SSR text alone.
+    if (this.element.textContent !== text) this.element.textContent = text;
+  }
+}
+
 /** Owns a pending plain/live select write across synchronous template updates. */
 class SelectValueCommit {
   private pending: object | null = null;
@@ -2438,58 +2327,19 @@ const containerCache = new WeakMap<Node, { identity: object; parts: Part[] }>();
  */
 const compileTemplate = (result: TemplateResult): { fragment: Node; parts: Part[] } => {
   const parts: Part[] = [];
-  const strings = scopeTemplateStrings(result.strings, result.__cossackScope);
+  const { strings, bindings } = getTemplateAnalysis(result);
 
+  // Same classification as SSR: node bindings get comment anchors, attribute
+  // and raw-text bindings get inline placeholders, comment/element bindings
+  // are dropped.
   let htmlString = '';
-  let isInsideTag = false;
-  let insideAttrQuote: string | null = null; // tracks open quote char ('"' or "'")
-
-  const attrMatch = /(\.\.\.|[.@?]?[a-zA-Z0-9_:-]+)=["']?$/;
-
   for (let i = 0; i < strings.length - 1; i++) {
-    const str = strings[i];
-
-    // Track whether we're inside a tag and inside an attribute quote
-    for (let j = 0; j < str.length; j++) {
-      if (insideAttrQuote) {
-        if (str[j] === insideAttrQuote) insideAttrQuote = null;
-      } else if (isInsideTag && (str[j] === '"' || str[j] === "'")) {
-        if (j > 0 && str[j - 1] === '=') {
-          insideAttrQuote = str[j];
-        }
-      } else if (str[j] === '<' && str[j + 1] !== '!' && str[j + 1] !== '/') {
-        isInsideTag = true;
-      } else if (str[j] === '>') {
-        isInsideTag = false;
-      }
-    }
-
-    htmlString += str;
-
-    const match = str.match(attrMatch);
-    if (isInsideTag && (match || insideAttrQuote)) {
-      htmlString += `__CRP_${i}__`;
-      // Track quote state from the regex match
-      if (match && !insideAttrQuote) {
-        const quote = match[0].endsWith('"') ? '"' : match[0].endsWith("'") ? "'" : null;
-        if (quote) insideAttrQuote = quote;
-      }
-    } else {
-      htmlString += `<!--CRP_${i}-->`;
-    }
+    htmlString += strings[i];
+    const kind = bindings[i].kind;
+    if (kind === 'node') htmlString += `<!--CRP_${i}-->`;
+    else if (kind === 'attribute' || kind === 'raw-text') htmlString += `__CRP_${i}__`;
   }
-
-  const lastStr = strings[strings.length - 1];
-  for (let j = 0; j < lastStr.length; j++) {
-    if (insideAttrQuote) {
-      if (lastStr[j] === insideAttrQuote) insideAttrQuote = null;
-    } else if (lastStr[j] === '<' && lastStr[j + 1] !== '!' && lastStr[j + 1] !== '/') {
-      isInsideTag = true;
-    } else if (lastStr[j] === '>') {
-      isInsideTag = false;
-    }
-  }
-  htmlString += lastStr;
+  htmlString += strings[strings.length - 1];
 
   const template = document.createElement('template');
   if (result['_$litType$'] === 2) {
@@ -2518,7 +2368,7 @@ const compileTemplate = (result: TemplateResult): { fragment: Node; parts: Part[
 
   nodes.forEach((node) => {
     if (node.nodeType === Node.COMMENT_NODE) {
-      const match = node.nodeValue?.match(/CRP_(\d+)/);
+      const match = node.nodeValue?.match(/^CRP_(\d+)$/);
       if (match) {
         const index = parseInt(match[1]);
         const endNode = document.createComment('/CRP');
@@ -2528,6 +2378,27 @@ const compileTemplate = (result: TemplateResult): { fragment: Node; parts: Part[
       }
     } else if (node.nodeType === Node.ELEMENT_NODE) {
       const el = node as Element;
+
+      if (RAW_TEXT_TAGS.has(el.localName)) {
+        // Raw-text bindings: one RawTextPart per binding, all sharing the
+        // element's text segments so the whole text is re-joined per update.
+        const text = el.textContent ?? '';
+        const matches = [...text.matchAll(/__CRP_(\d+)__/g)].filter((m) => bindings[Number(m[1])]?.kind === 'raw-text');
+        if (matches.length > 0) {
+          const segments: string[] = [];
+          let lastEnd = 0;
+          for (const m of matches) {
+            segments.push(text.slice(lastEnd, m.index));
+            lastEnd = m.index! + m[0].length;
+          }
+          segments.push(text.slice(lastEnd));
+          const shared = { tag: el.localName, segments, values: new Array<unknown>(matches.length).fill(undefined) };
+          matches.forEach((m, position) => {
+            parts[Number(m[1])] = new RawTextPart(el, shared, position);
+          });
+          el.textContent = segments.join('');
+        }
+      }
 
       Array.from(el.attributes).forEach((attr) => {
         const allMatches = [...attr.value.matchAll(/__CRP_(\d+)__/g)];
@@ -2773,9 +2644,11 @@ const reconcileNodeLists = (
         throw new HydrateMismatch('element-namespace', nodePath, describeNode(bpNode), describeNode(exNode));
       }
       map.set(bpNode, exNode);
-      if (bpNode.nodeName === 'TEXTAREA') {
-        // Native textarea values are text in SSR and properties on the client.
-        // There are no child comment anchors inside this raw-text element.
+      if (RAW_TEXT_TAGS.has((bpNode as Element).localName)) {
+        // Raw-text content has no child nodes or comment anchors to adopt.
+        // Bindings there are RawTextParts that reconcile the text themselves,
+        // and native textarea values are text in SSR but properties on the
+        // client.
         ei++;
         continue;
       }
@@ -2843,7 +2716,7 @@ const rebindParts = (parts: Part[], map: Map<Node, Node>) => {
       part.startNode = start as Comment;
       part.endNode = end as Comment;
       part._beginHydration();
-    } else if (part instanceof AttributePart || part instanceof SpreadPart) {
+    } else if (part instanceof AttributePart || part instanceof SpreadPart || part instanceof RawTextPart) {
       const el = map.get((part as any).element);
       if (!el) throw new HydrateMismatch('missing-part-element', 'part', 'attribute element', 'missing element');
       (part as any).element = el;
