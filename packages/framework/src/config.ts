@@ -1,4 +1,4 @@
-import { checkConfigRequirements, ConfigRequirementError, type ConfigRequirementCollection, type ConfigRequirementContext, type VariableType, type VariableValue } from './config-requirements.js';
+import { checkConfigRequirements, planConfigRequirements, ConfigRequirementError, type ConfigRequirementCollection, type ConfigRequirementContext, type ConfigRequirementPlan, type ConfigRuntime, type VariableType, type VariableValue } from './config-requirements.js';
 export { ConfigRequirementError } from './config-requirements.js';
 export type { ConfigRequirements, VariableRequirement, BindingRequirement } from './config-requirements.js';
 // src/config.ts
@@ -176,6 +176,40 @@ export function runWithConfig<T>(
     return configAls.run(store, fn as () => T);
 }
 
+const NO_REQUIREMENTS: ConfigRequirementCollection = Object.freeze({});
+
+/**
+ * Normalized requirement plans, keyed by the requirements collection object
+ * (the static `virtual:cossack-config` export) and runtime. A plan is frozen
+ * plain data derived from that metadata alone: never env values, bindings or
+ * factory results, which are read again for every request. Replacing a config
+ * file's metadata object in the collection invalidates the plans; mutating a
+ * metadata object in place is not supported.
+ */
+const requirementPlans = new WeakMap<object, { files: unknown[]; plans: Map<ConfigRuntime, ConfigRequirementPlan> }>();
+
+/** Config file names and metadata objects, read without running accessors (undefined when any exists). */
+function requirementFiles(requirements: object): unknown[] | undefined {
+    const files: unknown[] = [];
+    for (const [name, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(requirements))) {
+        if (!('value' in descriptor)) return undefined;
+        if (descriptor.enumerable) files.push(name, descriptor.value);
+    }
+    return files;
+}
+
+function requirementPlan(requirements: ConfigRequirementCollection, runtime: ConfigRuntime): ConfigRequirementPlan {
+    const files = typeof requirements === 'object' && requirements !== null ? requirementFiles(requirements) : undefined;
+    if (!files) return planConfigRequirements(requirements, runtime);
+    let entry = requirementPlans.get(requirements);
+    if (!entry || entry.files.length !== files.length || entry.files.some((value, index) => value !== files[index])) {
+        requirementPlans.set(requirements, entry = { files, plans: new Map() });
+    }
+    let plan = entry.plans.get(runtime);
+    if (!plan) entry.plans.set(runtime, plan = planConfigRequirements(requirements, runtime));
+    return plan;
+}
+
 /**
  * Prepare one environment's configuration in a fresh scope before application
  * middleware runs. Factory accessors see only these bindings, never an outer
@@ -187,7 +221,8 @@ export function prepareConfigStore(
     options: { requirements?: ConfigRequirementCollection; context?: Pick<ConfigRequirementContext, 'runtime' | 'environment'> } = {},
 ): ConfigStore {
     const context = { runtime: 'cloudflare' as const, ...options.context, mode: 'runtime' as const };
-    const checked = checkConfigRequirements(options.requirements ?? {}, envBindings, context);
+    const requirements = options.requirements ?? NO_REQUIREMENTS;
+    const checked = checkConfigRequirements(requirements, envBindings, context, requirementPlan(requirements, context.runtime));
     if (checked.diagnostics.length) throw new ConfigRequirementError(checked.diagnostics[0]);
     const store: ConfigStore = { env: envBindings, config: {}, variables: checked.variables,
         variableTypes: checked.variableTypes, requirementContext: context };
