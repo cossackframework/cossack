@@ -1419,7 +1419,8 @@ function frameworkClassSelection(program: any, imported: ImportedBases = NO_IMPO
     if (declaration?.type !== 'VariableDeclaration') continue;
     for (const declarator of declaration.declarations) {
       const init = unwrapExpression(declarator.init);
-      if (declarator.id?.type === 'Identifier' && init && !isClassNode(init)) computedBindings.add(declarator.id.name);
+      // Destructured bindings (`const { Base } = makeBases()`) are computed too.
+      if (init && !isClassNode(init)) addBindingName(declarator.id, computedBindings);
     }
   }
   const unknown = new Map<any, string>();

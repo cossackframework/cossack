@@ -142,6 +142,8 @@ describe('bases discovery cannot classify', () => {
       export class Page1 extends Base { load() { return 'SECRET'; } }`, '/src/pages/x.ts')).toThrow(/Base is a value computed at runtime/);
     expect(() => client(`export class Page2 extends withTracking(EventTarget) { load() { return 'SECRET'; } }`, '/src/pages/x.ts'))
       .toThrow(/computed by an expression/);
+    expect(() => client(`const { Base } = makeBases();
+      export class Page4 extends Base { load() { return 'SECRET'; } }`, '/src/pages/x.ts')).toThrow(/Base is a value computed at runtime/);
     expect(() => client(`const Base = makeBase(); class Middle extends Base {}
       export class Page3 extends Middle { load() { return 'SECRET'; } }`, '/src/pages/x.ts')).toThrow(/Middle extends a base/);
   });
