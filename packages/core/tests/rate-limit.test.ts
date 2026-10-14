@@ -87,17 +87,37 @@ describe('InMemoryRateLimitStore', () => {
         expect((s as any).entries.size).toBe(5);
     });
 
-    it('does not scan every bucket on each new-key insert at capacity', () => {
+    it('admits new keys at capacity without scanning the bucket map', () => {
         const s = new InMemoryRateLimitStore(50);
         for (let i = 0; i < 50; i++) s.hit(`live${i}`, 60_000);
+        const entries: Map<string, unknown> = (s as any).entries;
+        const scans = ([Symbol.iterator, 'entries', 'keys', 'values', 'forEach'] as const)
+            .map(method => vi.spyOn(entries, method as 'keys'));
         const prune = vi.spyOn(s, 'prune');
         for (let i = 0; i < 1000; i++) expect(s.hit(`flood${i}`, 60_000).count).toBe(1);
-        // Full prunes are rate-limited; head eviction is O(1) per insert.
-        expect(prune.mock.calls.length).toBeLessThanOrEqual(1);
-        expect((s as any).entries.size).toBe(50);
-        // The newest callers survive; the oldest windows were evicted first.
-        expect((s as any).entries.has('flood999')).toBe(true);
-        expect((s as any).entries.has('live0')).toBe(false);
+        // Head eviction and the bounded sweep walk the bucket list, never the map.
+        for (const scan of scans) expect(scan).not.toHaveBeenCalled();
+        expect(prune).not.toHaveBeenCalled();
+        expect(entries.size).toBe(50);
+        // The newest callers survive with their quota; the oldest windows went first.
+        expect(entries.has('flood949')).toBe(false);
+        expect(entries.has('live0')).toBe(false);
+        expect(s.hit('flood950', 60_000).count).toBe(2);
+        expect(s.hit('flood999', 60_000).count).toBe(2);
+        expect(s.hit('flood999', 60_000).count).toBe(3);
+    });
+
+    it('reclaims expired buckets behind a longer window before evicting live ones', async () => {
+        const s = new InMemoryRateLimitStore(3);
+        s.hit('warm', 60_000); s.hit('a', 60_000); s.hit('b', 60_000);
+        s.hit('c', 60_000); // evicts warm: nothing has expired yet
+        s.hit('short', 10); // evicts a: list is now b, c, short
+        await new Promise((r) => setTimeout(r, 20));
+        // The oldest bucket (b) is live; the expired one hides behind it.
+        expect(s.hit('d', 60_000).count).toBe(1);
+        expect((s as any).entries.has('short')).toBe(false);
+        expect(s.hit('b', 60_000).count).toBe(2);
+        expect(s.hit('c', 60_000).count).toBe(2);
     });
 
     it('drops expired head buckets before evicting live ones', async () => {
