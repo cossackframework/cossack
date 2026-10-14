@@ -1444,6 +1444,11 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
   }
 
   app.notFound(async (c) => {
+    // API clients and non-navigation methods get a machine-readable 404; only
+    // GET/HEAD page requests render the nearest HTML 404 boundary.
+    if ((c.req.method !== 'GET' && c.req.method !== 'HEAD') || classifyRoute(c.req.path) === 'api') {
+      return c.json({ error: 'Not Found', code: 'COSSACK_NOT_FOUND' }, 404);
+    }
     const selected = resolveNotFound(c.req.path);
     if (selected) {
       const component = getModuleDefault(pages[selected.path] as object) as new () => Cossack;
