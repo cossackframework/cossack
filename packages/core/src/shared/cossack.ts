@@ -2462,29 +2462,55 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         this.dirtyProperties.add(changedKey);
         if (!this.broadcastScheduled) {
             this.broadcastScheduled = true;
-            queueMicrotask(async () => {
-                // Snapshot so async tasks don't observe paths added during the
-                // run, and clear so the next cycle starts fresh. If runTasks
-                // early-returns (isRunningTasks), the snapshot is unused but
-                // _dirtyPaths was already cleared — so re-add the paths to keep
-                // them visible to the in-progress run.
-                const paths = new Set(this._dirtyPaths);
-                this._dirtyPaths.clear();
-                const ran = await this.runTasks(paths);
-                if (!ran) {
-                    // Another run was in progress; preserve these paths for it.
-                    for (const p of paths) this._dirtyPaths.add(p);
-                }
-                const partialState: Record<string, any> = {};
-                for (const key of this.dirtyProperties) {
-                    partialState[key] = this._stateContainer.getPublic(key);
-                }
+            queueMicrotask(() => { void this._flushStateBroadcast(); });
+        }
+    }
 
-                this._runtime?.broadcastState(partialState);
-                this._runtime?.persistState();
-                this.dirtyProperties.clear();
-                this.broadcastScheduled = false;
-            });
+    /**
+     * Deliver the batched state change. Any failure (a throwing task, a socket
+     * `send` throwing inside `broadcastState`, a rejected storage put) is
+     * logged as a delivery failure and never wedges the component: the batch
+     * flag is always released so the next state change broadcasts again.
+     */
+    private async _flushStateBroadcast(): Promise<void> {
+        let snapshotTaken = false;
+        let persisted: Promise<void> | undefined;
+        try {
+            // Snapshot so async tasks don't observe paths added during the
+            // run, and clear so the next cycle starts fresh. If runTasks
+            // early-returns (isRunningTasks), the snapshot is unused but
+            // _dirtyPaths was already cleared — so re-add the paths to keep
+            // them visible to the in-progress run.
+            const paths = new Set(this._dirtyPaths);
+            this._dirtyPaths.clear();
+            const ran = await this.runTasks(paths);
+            if (!ran) {
+                // Another run was in progress; preserve these paths for it.
+                for (const p of paths) this._dirtyPaths.add(p);
+            }
+            const partialState: Record<string, any> = {};
+            for (const key of this.dirtyProperties) {
+                partialState[key] = this._stateContainer.getPublic(key);
+            }
+            // Release the batch before delivery: writes made by delivery or
+            // while persistence is pending schedule their own broadcast.
+            this.dirtyProperties.clear();
+            this.broadcastScheduled = false;
+            snapshotTaken = true;
+
+            this._runtime?.broadcastState(partialState);
+            persisted = this._runtime?.persistState();
+        } catch {
+            logRuntimeFailure(this._failureContext(), 'delivery');
+        } finally {
+            // Keep undelivered keys dirty so the next change re-sends them.
+            if (!snapshotTaken) this.broadcastScheduled = false;
+        }
+        if (!persisted) return;
+        try {
+            await persisted;
+        } catch {
+            logRuntimeFailure(this._failureContext(), 'delivery');
         }
     }
 
