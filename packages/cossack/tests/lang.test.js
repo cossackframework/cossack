@@ -9,7 +9,8 @@ let ctx;
 
 beforeEach(() => {
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cossack-lang-'));
-  ctx = { projectRoot: tmp, cwd: tmp, flags: {}, force: false, dryRun: false };
+  fs.writeFileSync(path.join(tmp, 'package.json'), '{"name":"app"}');
+  ctx = { cwd: tmp, flags: {}, force: false, dryRun: false };
 });
 afterEach(() => {
   fs.rmSync(tmp, { recursive: true, force: true });
@@ -157,23 +158,15 @@ describe('lang dispatch', () => {
     expect(fs.existsSync(path.join(tmp, 'src/lang/en.json'))).toBe(true);
   });
 
-  it('prefers an explicit project root over an ancestor package', async () => {
-    const projectRoot = path.join(tmp, 'requested-project');
-    const ancestor = path.join(tmp, 'other-project');
-    const cwd = path.join(ancestor, 'nested');
+  it('resolves the nearest project root from a nested working directory', async () => {
+    const project = path.join(tmp, 'project');
+    const cwd = path.join(project, 'src', 'pages');
     fs.mkdirSync(cwd, { recursive: true });
-    fs.writeFileSync(
-      path.join(ancestor, 'package.json'),
-      JSON.stringify({ name: 'other-project' }),
-    );
+    fs.writeFileSync(path.join(project, 'package.json'), JSON.stringify({ name: 'project' }));
 
-    expect(await langCommand(['publish'], {
-      ...ctx,
-      projectRoot,
-      cwd,
-    })).toBe(0);
-    expect(fs.existsSync(path.join(projectRoot, 'src/lang/en.json'))).toBe(true);
-    expect(fs.existsSync(path.join(ancestor, 'src/lang/en.json'))).toBe(false);
+    expect(await langCommand(['publish'], { ...ctx, cwd })).toBe(0);
+    expect(fs.existsSync(path.join(project, 'src/lang/en.json'))).toBe(true);
+    expect(fs.existsSync(path.join(cwd, 'src/lang/en.json'))).toBe(false);
   });
 });
 

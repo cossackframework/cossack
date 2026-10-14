@@ -44,7 +44,7 @@ export async function langCommand(args, ctx) {
 async function publish(args, ctx) {
   const flags = ctx.flags;
   const locale = validateLocalizationLocale(flagString(flags.locale) || DEFAULT_LOCALE);
-  const root = ctx.projectRoot || await findProjectRoot(ctx.cwd);
+  const root = await findProjectRoot(ctx.cwd);
   const target = path.resolve(root, 'src', 'lang', `${locale}.json`);
 
   // When publishing a non-default locale, seed it with empty values against
@@ -56,7 +56,7 @@ async function publish(args, ctx) {
       langJsonTemplate(defaultLangCatalog()),
       ctx,
     );
-    reportFile(`src/lang/${locale}.json`, result, ctx);
+    reportFile(root, `src/lang/${locale}.json`, result, ctx);
     if (result !== 'skipped') {
       // Wire {{ cossackLang }} and APP_LOCALE so the feature is fully
       // active immediately — no manual edits needed.
@@ -74,7 +74,7 @@ async function publish(args, ctx) {
 
   const entries = await seedEntries(root, locale);
   const result = await writeFile(target, langJsonTemplate(entries), ctx);
-  reportFile(`src/lang/${locale}.json`, result, ctx);
+  reportFile(root, `src/lang/${locale}.json`, result, ctx);
   if (result !== 'skipped') {
     await wireRootTemplate(root, ctx);
     await wireAppLocaleEnv(root, locale, ctx);
@@ -104,7 +104,7 @@ async function addLocale(args, ctx) {
       { code: 'COSSACK_LOCALE_DEFAULT' });
   }
 
-  const root = ctx.projectRoot || await findProjectRoot(ctx.cwd);
+  const root = await findProjectRoot(ctx.cwd);
   const target = path.resolve(root, 'src', 'lang', `${locale}.json`);
   if ((await exists(target)) && !ctx.force && !ctx.dryRun) {
     ctx.out?.line(`  exists   src/lang/${locale}.json (use --force to overwrite)`);
@@ -113,7 +113,7 @@ async function addLocale(args, ctx) {
 
   const entries = await seedEntries(root, locale);
   const result = await writeFile(target, langJsonTemplate(entries), ctx);
-  reportFile(`src/lang/${locale}.json`, result, ctx);
+  reportFile(root, `src/lang/${locale}.json`, result, ctx);
   return 0;
 }
 
@@ -240,7 +240,7 @@ async function wireAppLocaleEnv(root, locale, ctx) {
   ctx.out?.file('created', target);
 }
 
-function reportFile(rel, result, ctx) {
+function reportFile(root, rel, result, ctx) {
   const out = ctx.out;
   const action = { wrote: 'created', overwrote: 'overwritten', 'dry-run': 'planned', skipped: 'skipped' }[result];
   if (!out) {
@@ -249,7 +249,7 @@ function reportFile(rel, result, ctx) {
     else if (ctx.flags.json !== true) console.log(`  ${action}  ${rel}`);
     return;
   }
-  out.file(action, path.resolve(process.cwd(), rel));
+  out.file(action, path.resolve(root, rel));
 }
 
 export function langHelp() {
@@ -268,7 +268,7 @@ Subcommands:
 
 /** Analysis is shared with local agent tools; only types performs an explicit write. */
 async function analyze(sub, ctx) {
-  const root = ctx.projectRoot || await findProjectRoot(ctx.cwd);
+  const root = await findProjectRoot(ctx.cwd);
   const report = await inspectLocalization(root, { locale: flagString(ctx.flags.locale) || DEFAULT_LOCALE });
   let generated = false;
   if (sub === 'types' && report.valid) {

@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { exists, listFiles } from '../fs-utils.js';
+import { exists, findProjectRoot, listFiles } from '../fs-utils.js';
 import { flagString } from '../flags.js';
 import { extractImageCalls, isLocalSource, resolveOutputPath } from '../image-scan.js';
 
@@ -28,7 +28,7 @@ async function imageCommandInner(args, ctx) {
 }
 
 async function optimize(_rest, ctx) {
-  const root = ctx.projectRoot || ctx.cwd || process.cwd();
+  const root = await findProjectRoot(ctx.cwd);
   const format = flagString(ctx.flags.format) || 'webp';
   const quality = Number(flagString(ctx.flags.quality) || 80);
 

@@ -10,7 +10,30 @@ let ctx;
 
 beforeEach(() => {
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cossack-gen-'));
-  ctx = { projectRoot: tmp, cwd: tmp, flags: {}, force: false, dryRun: false };
+  fs.writeFileSync(path.join(tmp, 'package.json'), '{"name":"app"}');
+  ctx = { cwd: tmp, flags: {}, force: false, dryRun: false };
+});
+
+describe('project root resolution', () => {
+  it('generates relative to the project root when run from a nested directory', async () => {
+    const nested = path.join(tmp, 'src', 'pages');
+    fs.mkdirSync(nested, { recursive: true });
+    ctx.cwd = nested;
+    expect(await generateCommand(['p', 'nested-page'], ctx)).toBe(0);
+    expect(fs.existsSync(path.join(tmp, 'src/pages/nested-page/index.ts'))).toBe(true);
+    expect(fs.existsSync(path.join(nested, 'src'))).toBe(false);
+  });
+
+  it('deletes relative to the project root when run from a nested directory', async () => {
+    expect(await generateCommand(['c', 'card'], ctx)).toBe(0);
+    const generated = fs.readdirSync(path.join(tmp, 'src/components'));
+    expect(generated.length).toBeGreaterThan(0);
+    const nested = path.join(tmp, 'src', 'components');
+    ctx.cwd = nested;
+    ctx.force = true;
+    expect(await deleteCommand(['c', 'card'], ctx)).toBe(0);
+    expect(fs.readdirSync(path.join(tmp, 'src/components'))).toEqual([]);
+  });
 });
 afterEach(() => {
   fs.rmSync(tmp, { recursive: true, force: true });
