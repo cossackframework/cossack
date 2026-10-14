@@ -589,8 +589,8 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             ' was called during a synchronous render phase (render/head/loadingTemplate). Server methods return Promises that ' +
             'render as "[object Promise]". Move the call into an event handler, ' +
             'or load data in get()/init() before render.';
-        const env = (globalThis as any).process?.env?.NODE_ENV;
-        if (env === 'production') {
+        // The app's Vite build flag, not NODE_ENV (absent in browsers).
+        if (!import.meta.env?.DEV) {
             // eslint-disable-next-line no-console
             console.warn(msg);
             return;

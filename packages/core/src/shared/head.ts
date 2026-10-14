@@ -144,13 +144,9 @@ export function mergeHead(context: HeadContext, value: HeadValue): HeadTag[] {
   return result;
 }
 
+/** Development diagnostics follow the app's Vite build flag (NODE_ENV is absent in browsers). */
 function isDevMode(): boolean {
-  try {
-    const env = (globalThis as any).process?.env?.NODE_ENV;
-    return typeof env === 'string' && env !== 'production';
-  } catch {
-    return false;
-  }
+  return !!import.meta.env?.DEV;
 }
 
 /**

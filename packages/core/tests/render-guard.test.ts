@@ -1,12 +1,12 @@
 import 'reflect-metadata';
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import {
   enterRender,
   exitRender,
   isRendering,
   assertNotRendering,
 } from '../src/shared/server-fn';
-import { composeHead } from '../src/shared/head';
+import { composeHead, mergeHead } from '../src/shared/head';
 import type { HeadContext, HeadValue } from '../src/shared/head';
 import { Cossack } from '../src/shared/cossack';
 import { Page } from '../src/shared/decorators';
@@ -22,9 +22,7 @@ describe('render-phase guard', () => {
   afterEach(() => {
     // Never let the render-depth flag leak between tests.
     while (isRendering()) exitRender();
-    (globalThis as any).process = (globalThis as any).process || {};
-    (globalThis as any).process.env = (globalThis as any).process.env || {};
-    (globalThis as any).process.env.NODE_ENV = 'test';
+    vi.unstubAllEnvs();
   });
 
   it('enterRender/exitRender nest and report isRendering correctly', () => {
@@ -46,14 +44,14 @@ describe('render-phase guard', () => {
   });
 
   it('assertNotRendering throws in development when rendering', () => {
-    (globalThis as any).process.env.NODE_ENV = 'development';
+    vi.stubEnv('DEV', true);
     enterRender();
     expect(() => assertNotRendering()).toThrowError(/render phase/);
     exitRender();
   });
 
   it('assertNotRendering warns (not throws) in production when rendering', () => {
-    (globalThis as any).process.env.NODE_ENV = 'production';
+    vi.stubEnv('DEV', false);
     const original = console.warn;
     const warnings: string[] = [];
     console.warn = (msg: string) => warnings.push(String(msg));
@@ -67,8 +65,33 @@ describe('render-phase guard', () => {
     }
   });
 
+  it('warns instead of throwing in a production browser bundle (no NODE_ENV)', () => {
+    // Browsers have no process.env; the Vite build flag decides the mode.
+    vi.stubEnv('DEV', false);
+    vi.stubEnv('NODE_ENV', undefined);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      enterRender();
+      expect(() => assertNotRendering()).not.toThrow();
+      expect(() => new (class extends Cossack<{}> {})().__cossackAssertNotRendering('load')).not.toThrow();
+      expect(warn).toHaveBeenCalledTimes(2);
+      exitRender();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('throws in development even when NODE_ENV is production', () => {
+    vi.stubEnv('DEV', true);
+    vi.stubEnv('NODE_ENV', 'production');
+    enterRender();
+    expect(() => assertNotRendering()).toThrowError(/render phase/);
+    expect(() => new (class extends Cossack<{}> {})().__cossackAssertNotRendering('load')).toThrowError(/render phase/);
+    exitRender();
+  });
+
   it('assertNotRendering is a no-op when not rendering', () => {
-    (globalThis as any).process.env.NODE_ENV = 'development';
+    vi.stubEnv('DEV', true);
     expect(() => assertNotRendering()).not.toThrow();
   });
 });
@@ -82,9 +105,7 @@ describe('render-phase guard', () => {
 describe('render-phase guard — head()', () => {
   afterEach(() => {
     while (isRendering()) exitRender();
-    (globalThis as any).process = (globalThis as any).process || {};
-    (globalThis as any).process.env = (globalThis as any).process.env || {};
-    (globalThis as any).process.env.NODE_ENV = 'test';
+    vi.unstubAllEnvs();
   });
 
   it('isRendering is true while composeHead runs head() on the server', () => {
@@ -110,7 +131,7 @@ describe('render-phase guard — head()', () => {
     // The security plugin's client stubs call `this.__cossackAssertNotRendering`;
     // here we simulate that by calling assertNotRendering() directly from head().
     // In dev it throws, which is the loud-failure behaviour we want.
-    (globalThis as any).process.env.NODE_ENV = 'development';
+    vi.stubEnv('DEV', true);
     const page = {
       head(_ctx: HeadContext): HeadValue {
         assertNotRendering();
@@ -128,7 +149,7 @@ describe('render-phase guard — head()', () => {
     // `_render`/`performUpdate` internal calls. This test exercises the real
     // chokepoint by calling `_getWrappedTemplate` on a Cossack instance and
     // observing the render flag from inside `render()`.
-    (globalThis as any).process.env.NODE_ENV = 'development';
+    vi.stubEnv('DEV', true);
 
     let observedDuringRender: boolean | null = null;
     @Page({})
@@ -150,5 +171,27 @@ describe('render-phase guard — head()', () => {
     expect(observedDuringRender).toBe(true);
     // After: balanced back to false (the try/finally exited the window).
     expect(isRendering()).toBe(false);
+  });
+});
+
+describe('head development diagnostics', () => {
+  afterEach(() => { vi.unstubAllEnvs(); vi.restoreAllMocks(); });
+
+  const emptyContext = () => ({ title: '', description: '', image: '', meta: [], links: [], scripts: [], tags: [] });
+
+  it('warns about misplaced tags in a development browser bundle (no NODE_ENV)', () => {
+    vi.stubEnv('DEV', true);
+    vi.stubEnv('NODE_ENV', undefined);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    mergeHead(emptyContext(), { meta: [{ tag: 'link', attributes: { rel: 'canonical', href: '/' } }] });
+    expect(warn).toHaveBeenCalledOnce();
+  });
+
+  it('stays silent in production', () => {
+    vi.stubEnv('DEV', false);
+    vi.stubEnv('NODE_ENV', 'development');
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    mergeHead(emptyContext(), { meta: [{ tag: 'link', attributes: { rel: 'canonical', href: '/' } }] });
+    expect(warn).not.toHaveBeenCalled();
   });
 });
