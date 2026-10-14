@@ -134,11 +134,19 @@ interface ServerResourceEntry {
  * Shared by `@OnWindow({ debounce })`, `@OnDocument({ debounce })`, and the
  * `@Debounce(ms)` method decorator.
  */
-function createDebounce(fn: Function, ms: number) {
+function createDebounce(fn: Function, ms: number): { fn: (...args: any[]) => void; cancel: () => void } {
     let timer: ReturnType<typeof setTimeout> | null = null;
-    return (...args: any[]) => {
-        if (timer) clearTimeout(timer);
-        timer = setTimeout(() => fn(...args), ms);
+    return {
+        fn: (...args: any[]) => {
+            if (timer) clearTimeout(timer);
+            timer = setTimeout(() => { timer = null; fn(...args); }, ms);
+        },
+        // Registered in the component's cleanup list so a pending trailing
+        // call never runs against a destroyed component.
+        cancel: () => {
+            if (timer) clearTimeout(timer);
+            timer = null;
+        },
     };
 }
 
@@ -1983,7 +1991,9 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             if (options?.throttle) {
                 handler = createThrottle(handler, options.throttle);
             } else if (options?.debounce) {
-                handler = createDebounce(handler, options.debounce);
+                const debounced = createDebounce(handler, options.debounce);
+                handler = debounced.fn;
+                this.eventCleanupFns.push(debounced.cancel);
             }
             target.addEventListener(eventName, handler as EventListener);
             this.eventCleanupFns.push(() => target.removeEventListener(eventName, handler as EventListener));
@@ -2073,7 +2083,11 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             }
         };
 
-        apply('cossack:debounce', createDebounce, 'Debounce');
+        apply('cossack:debounce', (fn, ms) => {
+            const debounced = createDebounce(fn, ms);
+            this.eventCleanupFns.push(debounced.cancel);
+            return debounced.fn;
+        }, 'Debounce');
         apply('cossack:throttle', createThrottle, 'Throttle');
     }
 
