@@ -323,10 +323,17 @@ describe('Electron Desktop runtime', () => {
     }
   });
 
-  it('removes private proof from requests leaving the Desktop origin', () => {
+  it('removes only private proof from requests leaving the Desktop origin', () => {
     expect(electron.intercept({url:'https://example.com/redirect',requestHeaders:{
       'X-Cossack-Desktop-Owner':'42','X-Cossack-Desktop-Token':'secret',Accept:'text/plain',
-    }})).toEqual({requestHeaders:{accept:'text/plain'}});
+      'X-Custom-Case':'a, b','Cookie':'one=1; two=2',
+    }})).toEqual({requestHeaders:{Accept:'text/plain','X-Custom-Case':'a, b','Cookie':'one=1; two=2'}});
+  });
+
+  it('leaves external request headers untouched when no private proof is present', () => {
+    expect(electron.intercept({url:'https://example.com/api',requestHeaders:{
+      Accept:'text/plain','X-Custom-Case':'value','User-Agent':'Electron',
+    }})).toEqual({});
   });
 
   it.each(['42.9.0', '43.6.9', '44.3.9'])('rejects Electron %s without native initiator evidence', version => {

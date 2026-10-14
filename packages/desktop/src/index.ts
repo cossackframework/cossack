@@ -375,6 +375,19 @@ function toFrameworkRequest(request: Request): Request {
   return mapped;
 }
 
+const desktopProofHeaders = new Set([desktopOwnerHeader, desktopTokenHeader]);
+
+/**
+ * Strip private Desktop proof from an outbound request. Return an empty
+ * response, which leaves the request unchanged, when no proof is present.
+ * Other header names and values are preserved exactly as given.
+ */
+function withoutDesktopProof(requestHeaders: Record<string, string>): { requestHeaders?: Record<string, string> } {
+  const entries = Object.entries(requestHeaders);
+  const kept = entries.filter(([name]) => !desktopProofHeaders.has(name.toLowerCase()));
+  return kept.length === entries.length ? {} : { requestHeaders: Object.fromEntries(kept) };
+}
+
 function secureWindowOptions(options: SafeBrowserWindowOptions = {}): BrowserWindowConstructorOptions {
   const { webPreferences, ...windowOptions } = options;
   return {
@@ -482,10 +495,8 @@ async function initializeDesktopApp(options: CreateDesktopAppOptions): Promise<D
   desktopSession.webRequest.onBeforeSendHeaders((details, callback) => {
     if (!details.url.startsWith(`${protocolScheme}:`)) {
       // A redirect must not forward private proof to an external server.
-      const headers = new Headers(details.requestHeaders);
-      headers.delete(desktopOwnerHeader);
-      headers.delete(desktopTokenHeader);
-      callback({ requestHeaders: Object.fromEntries(headers) });
+      // Other requests keep Chromium's headers exactly as sent.
+      callback(withoutDesktopProof(details.requestHeaders));
       return;
     }
     const headers = authorizeDesktopRequest(details, windows.has(details.webContentsId ?? -1), requestToken);
