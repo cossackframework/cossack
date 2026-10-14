@@ -31,7 +31,7 @@ vi.mock('node:fs', async (importOriginal) => {
   return { ...actual, readFileSync, default: { ...actual, readFileSync } };
 });
 
-const { cossackSecurityPlugin } = await import('../src/vite-security-plugin');
+const { cossackSecurityPlugin, inspectCompilerMethods } = await import('../src/vite-security-plugin');
 
 /** Valid TypeScript that load() would treat as server-only if it parsed it. */
 const SERVER_ONLY_TEXT = `import { readFileSync } from 'node:fs';\nexport const leaked = readFileSync;\n`;
@@ -152,5 +152,102 @@ describe('security plugin load() parses each module once', () => {
     expect(result).toBe('export default {};\n');
     expect(reads).toBe(0);
     expect(parses).toBe(0);
+  });
+});
+
+/** A page without server-only members: the client transform leaves it as is. */
+const CLIENT_ONLY_PAGE = `
+  import { Cossack, Page, Client, html } from '@cossackframework/core';
+  @Page()
+  export default class Counter extends Cossack {
+    count = 0;
+    @Client() increment() { this.count++; }
+    render() { return html\`<button @click=\${this.increment}>\${this.count}</button>\`; }
+  }
+`;
+
+/** A page whose @Server bodies are stubbed and whose helper import is then unused. */
+const SERVER_PAGE = `
+  import { Cossack, Page, Server, html } from '@cossackframework/core';
+  import { listUsers } from '../../services/users';
+  @Page()
+  export default class Users extends Cossack {
+    users: string[] = [];
+    @Server() async load(): Promise<string[]> { return listUsers(); }
+    @Server() async remove(id: string): Promise<void> { await listUsers(id); }
+    render() { return html\`<p>\${this.users.length}</p>\`; }
+  }
+`;
+
+function transform(code: string, id: string, environment = 'client', plugin = cossackSecurityPlugin()) {
+  calls.parses = 0;
+  const result = (plugin.transform as Function).call({ environment: { name: environment }, warn: () => {} }, code, id);
+  return { code: result.code as string, parses: calls.parses };
+}
+
+describe('security plugin transform() parses each module once', () => {
+  const id = '/app/src/pages/users/index.ts';
+
+  it('parses a module the client transform leaves unchanged once', () => {
+    const result = transform(CLIENT_ONLY_PAGE, id);
+    expect(result.code).toBe(CLIENT_ONLY_PAGE);
+    expect(result.parses).toBe(1);
+  });
+
+  it('parses a stripped module once, plus once for its stubbed source', () => {
+    // Stubs move every later offset, and the unused-dependency pass must see
+    // the stubbed bodies' references, so it parses the stubbed source. Typed
+    // @Server return types are classified from the module AST, not re-parsed.
+    const result = transform(SERVER_PAGE, id);
+    expect(result.code).not.toContain('listUsers');
+    expect(result.code).toContain('RpcCall');
+    expect(result.parses).toBe(2);
+  });
+
+  it('re-parses for the server-only import pass only when the module has a server-only import', () => {
+    const page = SERVER_PAGE.replace(`import { listUsers } from '../../services/users';`,
+      `import { listUsers } from '../../services/users';\n  import { sql } from '@cossackframework/database';`)
+      .replace('return listUsers();', 'return sql`select name from users`;');
+    const result = transform(page, id);
+    expect(result.code).not.toContain('@cossackframework/database');
+    // Original, stubbed source, and the source after unused imports were removed.
+    expect(result.parses).toBe(3);
+  });
+
+  it('parses once in the server environment', () => {
+    expect(transform(SERVER_PAGE, id, 'ssr').parses).toBe(1);
+  });
+
+  it('reuses the load() parse, so load and transform together parse an unchanged module once', async () => {
+    const path = file('src/pages/counter/index.ts', CLIENT_ONLY_PAGE);
+    const plugin = cossackSecurityPlugin();
+    calls.parses = 0;
+    expect(await (plugin.load as Function).call({ environment: { name: 'client' } }, path)).toBeUndefined();
+    const loadParses = calls.parses;
+    const result = transform(CLIENT_ONLY_PAGE, path, 'client', plugin);
+    expect(loadParses).toBe(1);
+    expect(result.parses).toBe(0);
+    expect(result.code).toBe(CLIENT_ONLY_PAGE);
+
+    const serverPath = file('src/pages/users/index.ts', SERVER_PAGE);
+    await (plugin.load as Function).call({ environment: { name: 'client' } }, serverPath);
+    expect(transform(SERVER_PAGE, serverPath, 'client', plugin).parses).toBe(1);
+  });
+
+  it('parses the source transform() receives when it differs from what load() read', async () => {
+    const path = file('src/pages/users/index.ts', CLIENT_ONLY_PAGE);
+    const plugin = cossackSecurityPlugin();
+    await (plugin.load as Function).call({ environment: { name: 'client' } }, path);
+    const result = transform(SERVER_PAGE, path, 'client', plugin);
+    expect(result.code).toBe(transform(SERVER_PAGE, path).code);
+    expect(result.code).not.toContain('listUsers');
+    expect(result.parses).toBe(2);
+  });
+
+  it('parses a module without server$ once for compiler inspection', () => {
+    calls.parses = 0;
+    const facts = inspectCompilerMethods(SERVER_PAGE, id);
+    expect(facts.classes[0].methods.map(method => method.name)).toEqual(['load', 'remove', 'render']);
+    expect(calls.parses).toBe(1);
   });
 });
