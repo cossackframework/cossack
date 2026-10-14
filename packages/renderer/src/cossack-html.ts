@@ -111,6 +111,32 @@ export const escapeHtml = (unsafe: unknown): string => {
     .replace(/'/g, '&#039;');
 };
 
+/**
+ * Text for a node-position value that is not a template, list, directive or
+ * DOM node. Shared by SSR and the client so both render the same thing:
+ * functions render nothing (their source must never leak into the page) and
+ * any other object renders as `String(value)`, e.g. `[object Promise]` for a
+ * forgotten `await`.
+ */
+const nodeValueText = (value: unknown): string => typeof value === 'function' ? '' : String(value);
+
+/**
+ * Unwrap value directives that only make sense as their inner value when they
+ * land in a node position (`live`, `ifDefined`, `bind`).
+ */
+const unwrapNodeValue = (value: unknown): unknown => {
+  for (;;) {
+    if (value instanceof LiveResult || value instanceof IfDefinedResult) value = value.value;
+    else if (value instanceof BindResult) value = resolveField(value.component, value.fieldName);
+    else return value;
+  }
+};
+
+/** Values a client NodePart's `update()` dispatches to a dedicated handler. */
+const isPartDirective = (value: unknown): boolean =>
+  isComponentResult(value) || Array.isArray(value) || value instanceof RepeatResult ||
+  value instanceof KeyResult || value instanceof GuardResult || value instanceof CacheResult;
+
 const valueToString = (value: unknown, opts: { hydrate?: boolean } = {}): string => {
   if (value === nothing || value === '' || value === null || value === undefined || value === false) {
     return '';
@@ -127,7 +153,9 @@ const valueToString = (value: unknown, opts: { hydrate?: boolean } = {}): string
   if (isTemplateResult(value)) {
     return renderToString(value, opts);
   }
-  if (value instanceof LiveResult) {
+  if (value instanceof LiveResult || value instanceof IfDefinedResult) {
+    // Node position has no attribute to omit: `ifDefined(undefined)` renders
+    // empty, every other wrapped value renders as itself (same as the client).
     return valueToString(value.value, opts);
   }
   if (value instanceof RepeatResult) {
@@ -198,14 +226,7 @@ const valueToString = (value: unknown, opts: { hydrate?: boolean } = {}): string
   if (isUnsafeHTML(value)) {
     return value.value;
   }
-  if (typeof value === 'function') {
-    return '';
-  }
-  // Handle RefObject (object with .value property used for refs)
-  if (typeof value === 'object' && value !== null && 'value' in value) {
-    return '';
-  }
-  return escapeHtml(value);
+  return escapeHtml(nodeValueText(value));
 };
 
 // HTML attributes that serialize as presence attributes (emit the bare name
@@ -916,6 +937,7 @@ class NodePart implements Part {
   }
 
   update(value: unknown) {
+    value = unwrapNodeValue(value);
     try {
       if (!(value instanceof CacheResult) && !(value instanceof GuardResult)) this._cacheDrafts.clear();
       if (this._hydrating) {
@@ -1036,6 +1058,7 @@ class NodePart implements Part {
    * falls back to a full render).
    */
   private _hydrateValue(value: unknown) {
+    value = unwrapNodeValue(value);
     if (isComponentResult(value)) {
       this._adoptComponent(value);
       return;
@@ -1114,24 +1137,23 @@ class NodePart implements Part {
       this.updateNode(value);
       return;
     }
-    if (typeof value !== 'object') {
-      const text = String(value);
-      const node = this.startNode.nextSibling;
-      if (node && node.nodeType === Node.TEXT_NODE && node.nextSibling === this.endNode) {
-        if (node.nodeValue !== text) {
-          if (HYDRATION_DEV) reportHydrationMismatch(new HydrateMismatch('text-content', domHydrationPath(node), 'text', 'text'), hydrationMetadata!.get(this)?.boundary ?? 'root', undefined, hydrationMetadata!.get(this), 'text-reconcile');
-          node.nodeValue = text;
-        }
-      } else {
-        this.clear();
-        this.startNode.parentNode!.insertBefore(document.createTextNode(text), this.endNode);
-      }
+    // Primitives, functions and plain objects (incl. Promises) render as text,
+    // the same as SSR's `escapeHtml(nodeValueText(value))`.
+    const text = nodeValueText(value);
+    if (text === '') {
+      this.clear();
       return;
     }
-    // Plain object (spread result, etc.): safe rebuild fallback.
-    this.clear();
-    this._clearTemplateCache();
-    this.updateNode(value);
+    const node = this.startNode.nextSibling;
+    if (node && node.nodeType === Node.TEXT_NODE && node.nextSibling === this.endNode) {
+      if (node.nodeValue !== text) {
+        if (HYDRATION_DEV) reportHydrationMismatch(new HydrateMismatch('text-content', domHydrationPath(node), 'text', 'text'), hydrationMetadata!.get(this)?.boundary ?? 'root', undefined, hydrationMetadata!.get(this), 'text-reconcile');
+        node.nodeValue = text;
+      }
+    } else {
+      this.clear();
+      this.startNode.parentNode!.insertBefore(document.createTextNode(text), this.endNode);
+    }
   }
 
   /**
@@ -1613,6 +1635,7 @@ class NodePart implements Part {
       ? (this._draft?.snapshot.template ? { tree: this._draft.snapshot.template, context: this._draft.context } : undefined)
       : recovery ?? undefined;
     if (!this.startNode.parentNode) return;
+    value = unwrapNodeValue(value);
     if (isTemplateResult(value)) {
       // Check if we have a cached template with the same strings
       if (this._cachedTemplateIdentity === templateIdentity(value) && this._cachedParts) {
@@ -1655,11 +1678,12 @@ class NodePart implements Part {
         temp.innerHTML = value.value;
         parent.insertBefore(temp.content, this.endNode);
       }
-    } else if (
-      isComponentResult(value) ||
-      (typeof value === 'object' && value !== null && !(value instanceof Node) && !Array.isArray(value))
-    ) {
-      // Handle ComponentResult or other objects by wrapping in template
+    } else if (isPartDirective(value)) {
+      // Values that `update()` dispatches itself (components, lists, key,
+      // guard, cache) can reach here through key()/component render output.
+      // Wrapping them in a template routes them back through a child part's
+      // `update()`. Anything else must NOT be wrapped: `update()` would send it
+      // straight back here and recurse until the stack overflows.
       this._clearTemplateCache();
       this.clear();
       const container = document.createDocumentFragment();
@@ -1669,16 +1693,20 @@ class NodePart implements Part {
       this._clearTemplateCache();
       this.clear();
       this.startNode.parentNode!.insertBefore(value, this.endNode);
-    } else if (value === nothing || value === '' || value === null || value === undefined || value === false) {
+    } else if (value === nothing || value === '' || value === null || value === undefined || value === false || typeof value === 'function') {
       this._clearTemplateCache();
       this.clear();
     } else {
-      const text = String(value);
+      // Primitives and other objects (incl. Promises) render as text, matching SSR.
+      const text = nodeValueText(value);
       const node = this.startNode.nextSibling;
       if (node && node.nodeType === Node.TEXT_NODE && node.nextSibling === this.endNode) {
         if (node.nodeValue !== text) {
           node.nodeValue = text;
         }
+        // A cached template is never followed by a lone text node, but keep
+        // the bookkeeping honest if one was left behind.
+        this._clearTemplateCache();
       } else {
         this._clearTemplateCache();
         this.clear();
