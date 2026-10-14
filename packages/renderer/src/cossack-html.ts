@@ -1,5 +1,5 @@
 import { serializeFormValues } from './ssr-form-values';
-import { getTemplateAnalysis, RAW_TEXT_TAGS, type TemplateAnalysis } from './template-analysis';
+import { getTemplateAnalysis, RAW_TEXT_TAGS, tokenizeHtml, type TemplateAnalysis } from './template-analysis';
 import { recordStyleScope, stylesForScope, type FinalizedStyles } from './style-runtime';
 import { acquireStyle, flushStyleAcquisitions, isManagedStyle, releaseStyle, updateStyleRoot, type StyleUse } from './style-registry';
 import { ComponentResult, isComponentResult } from './component';
@@ -298,13 +298,15 @@ const serializeBooleanAttribute = (name: string, value: boolean): string | null 
 /**
  * Mutable accumulator that `renderSpread` writes into. Normal spread
  * attributes are appended to `result`; a caller-supplied `class`/`className`
- * is merged into an existing `class="..."` on the current open tag by
- * rewriting `result` in place. Passing a holder (rather than returning a
- * string) lets the class-merge coexist with other keys in the same spread
- * object regardless of key order.
+ * is merged into an existing `class` attribute of the element that starts at
+ * `tagStart` by rewriting `result` in place. Passing a holder (rather than
+ * returning a string) lets the class-merge coexist with other keys in the
+ * same spread object regardless of key order.
  */
 interface SpreadRenderContext {
   result: string;
+  /** Offset in `result` of the spread element's `<`. */
+  tagStart: number;
 }
 
 /**
@@ -352,26 +354,19 @@ const renderSpread = (obj: unknown, ctx: SpreadRenderContext, directValue = fals
       val = String(val.value);
     }
 
-    // `class` / `className` merging: when a component template already has a
-    // literal `class="..."` AND the spread also carries a `class` prop (e.g.
+    // `class` / `className` merging: when the element already has a `class`
+    // attribute AND the spread also carries a `class` prop (e.g.
     // component(Card, { class: 'w-full' })), merge the caller's classes into
     // the existing attribute instead of emitting a second `class` (browsers
     // keep only the first, dropping one set). The merge rewrites `ctx.result`
     // in place, so it composes correctly even when `class` is not the first
     // key in the spread (earlier keys have already been appended to result).
     if ((name === 'class' || name === 'className') && typeof val === 'string') {
-      const merged = mergeClassIntoResult(ctx.result, val);
+      name = 'class';
+      const merged = mergeClassIntoResult(ctx.result, ctx.tagStart, val);
       if (merged !== null) {
         ctx.result = merged;
         continue;
-      }
-      // Merge failed (no double-quoted class attr found on the current tag).
-      // This can happen if the template uses single-quoted `class='...'` or the
-      // tag has no class attribute at all. The fallback below emits a fresh
-      // `class="..."`, which may duplicate if a single-quoted class exists.
-      // Warn in dev so this doesn't degrade silently.
-      if (typeof import.meta !== 'undefined' && (import.meta as any).env?.DEV) {
-        console.warn('[cossack/renderer] spread class merge failed — falling back to a separate class attribute. If the tag already has a class attribute, check that it uses double quotes.');
       }
     }
 
@@ -398,42 +393,35 @@ const renderSpread = (obj: unknown, ctx: SpreadRenderContext, directValue = fals
 };
 
 /**
- * Merge caller-supplied `extraClass` into an existing `class="..."` attribute
- * on the *current* (last) open tag in `result`. Returns the rewritten full
- * `result` string if an existing class attribute was found and merged, or
- * `null` if the current open tag has no class attribute to merge into (in
- * which case the caller emits a fresh attribute).
+ * Merge caller-supplied `extraClass` into the `class` attribute of the open
+ * tag that starts at `tagStart` in `result` (the spread's own element, as the
+ * template analysis located it). Returns the rewritten `result`, or `null`
+ * when that tag has no class attribute (the caller emits a fresh one).
  *
- * The search is restricted to the substring after the final `<` so it only
- * ever touches the current open tag — never a class attribute belonging to a
- * previously-closed element or an ancestor (which would diverge from the
- * client, where `SpreadPart` only ever touches its own element).
+ * The tag is read with the shared tokenizer, so quoting style and `<`, `>`
+ * or `class="..."` text inside other attribute values cannot mislead it.
+ * Browsers keep the first of duplicate attributes, so that one is merged.
  */
-const mergeClassIntoResult = (result: string, extraClass: string): string | null => {
-  const tagStart = result.lastIndexOf('<');
-  const tagSlice = tagStart >= 0 ? result.slice(tagStart) : result;
-  // Anchor on start-of-slice or whitespace (NOT \b: a word boundary would also
-  // match `data-class="..."` / `:class="..."` since the hyphen is a boundary).
-  // Allow `>`/`/>` as the suffix so `<div class="x">` merges correctly (the
-  // class attribute is the last attribute before the tag close). Capture the
-  // prefix whitespace and suffix so the replacement preserves surrounding chars
-  // and doesn't concatenate adjacent attributes (id="x"class="...").
-  // NOTE: only matches double-quoted `class="..."`. Single-quoted `class='...'`
-  // is valid HTML but vanishingly rare in template literals (the SSR emitter
-  // always uses double quotes), so it's not handled here.
-  const match = tagSlice.match(/(^|\s)class="([^"]*)"(\s|\/?>|$)/);
-  if (!match) return null;
-  const prefix = match[1];
-  const existing = match[2];
-  const suffix = match[3];
-  const extra = escapeHtml(extraClass.trim());
-  if (!extra) return result;
-  const merged = existing ? `${existing} ${extra}` : extra;
+const mergeClassIntoResult = (result: string, tagStart: number, extraClass: string): string | null => {
+  const tag = tokenizeHtml(result.slice(tagStart))[0];
+  if (tag?.type !== 'start-tag') return null;
+  const attr = tag.attributes.find((a) => a.name.toLowerCase() === 'class');
+  if (!attr) return null;
   // Existing markup is already serialized. Escape only the incoming value;
   // HTML parsing restores literal quotes/entities in the resulting class text.
-  // A replacement callback also preserves literal $& and other dollar patterns.
-  const rewrittenTag = tagSlice.replace(match[0], () => `${prefix}class="${merged}"${suffix}`);
-  return result.slice(0, tagStart) + rewrittenTag;
+  const extra = escapeHtml(extraClass.trim());
+  if (!extra) return result;
+  if (attr.valueStart < 0) {
+    // A bare `class` attribute.
+    return `${result.slice(0, tagStart + attr.nameStart)}class="${extra}"${result.slice(tagStart + attr.nameEnd)}`;
+  }
+  const valueStart = tagStart + attr.valueStart;
+  const valueEnd = tagStart + attr.valueEnd;
+  const existing = result.slice(valueStart, valueEnd);
+  const merged = /[^ \t\n\f\r]/.test(existing) ? `${existing} ${extra}` : extra;
+  // An unquoted value gains quotes so the added space stays inside it.
+  const value = attr.quote ? merged : `"${merged.replace(/"/g, '&quot;')}"`;
+  return result.slice(0, valueStart) + value + result.slice(valueEnd);
 };
 
 // Template analysis depends only on the static strings and the style scope,
@@ -484,6 +472,13 @@ class SSRScanner {
   private stringIdx = 0;
   private charIdxForNext = 0;
   private analysis: TemplateAnalysis;
+  /**
+   * Offset in `result` that corresponds to offset 0 of each emitted string.
+   * Attribute bindings only trim or rewrite `result` after their element's
+   * `<`, so `stringStarts[tagString] + tagOffset` finds that `<` while the
+   * element's start tag is being rendered.
+   */
+  private stringStarts: number[] = [];
 
   constructor(private resultObj: TemplateResult, private opts: { hydrate?: boolean } = {}) {
     this.analysis = analysisFor(resultObj);
@@ -499,6 +494,7 @@ class SSRScanner {
       const str = strings[this.stringIdx];
       const remaining = str.substring(this.charIdxForNext || 0);
 
+      this.stringStarts[this.stringIdx] = this.result.length - this.charIdxForNext;
       this.result += remaining;
       this.charIdxForNext = 0;
 
@@ -533,8 +529,8 @@ class SSRScanner {
             this.result = this.result.trimEnd();
             // renderSpread mutates the context's `result` in place: normal
             // spread attributes are appended, while a caller-supplied `class`
-            // is merged into an existing `class="..."` on the current open tag.
-            const ctx: SpreadRenderContext = { result: this.result };
+            // is merged into the element's existing class attribute.
+            const ctx: SpreadRenderContext = { result: this.result, tagStart: this.stringStarts[binding.tagString] + binding.tagOffset };
             renderSpread(val, ctx, binding.directValue);
             this.result = ctx.result;
           } else if (name === 'ref') {

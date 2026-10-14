@@ -1,95 +1,124 @@
-// Regex to match content inside <script>, <style>, <pre>, and <textarea> tags
-// so we can preserve their content as-is during minification.
-const PRESERVE_TAGS = /<(script|style|pre|textarea)\b[^>]*>[\s\S]*?<\/\1>/gi;
+import { forEachHtmlToken, type HtmlAttribute, type HtmlToken } from './template-analysis';
 
-// Void elements in HTML5 that don't need a closing slash
+// Void elements in HTML5 that don't need a closing slash.
 const VOID_ELEMENTS = new Set([
     'area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input',
     'link', 'meta', 'param', 'source', 'track', 'wbr',
 ]);
 
-// Regex to match void element self-closing tags: <img ... />
-const VOID_SELF_CLOSE = new RegExp(
-    `<(${[...VOID_ELEMENTS].join('|')})(\\s[^>]*)?\\/\\s*>`,
-    'gi'
-);
+// Attribute values that are safe without quotes.
+const UNQUOTED_VALUE = /^[a-zA-Z0-9_.-]+$/;
 
-// Regex to match type="text/javascript" or type="text/css" attributes
-const TYPE_JS_CSS = /\s+type\s*=\s*["']text\/(javascript|css)["']/gi;
+// Comments that must survive: IE conditional comments, Cossack hydration
+// markers (<!--CRP_i-->, <!--/CRP-->) and list sequence markers
+// (<!--CSA-S-->, <!--CSA-E-->). The client skips every other comment.
+const KEPT_COMMENT = /^<!--(?:\[if\s|\/?CRP|CSA-[SE])/;
 
-// Regex to match attribute values that are safe to unquote
-// (alphanumeric, dash, underscore, dot)
-// Only unquote when the closing quote is followed by a valid attribute/tag
-// separator. Besides matching the HTML grammar, this prevents malformed
-// third-party markup such as `r="6"stroke="currentColor"` from becoming the
-// substantially worse `r=6stroke=currentColor` during minification.
-const QUOTED_ATTR = /(\w[\w-]*)\s*=\s*["']([a-zA-Z0-9_.-]+)["'](?=(\s|\/?>))/g;
+// Removing a comment joins the text around it. That must not turn a `<` into
+// a tag or complete a character reference such as `&am` + `p;`.
+const joinIsUnsafe = (textBefore: string): boolean => /(?:<|&[a-zA-Z0-9#]*)$/.test(textBefore);
 
-function preserveBlocks(html: string): { html: string; blocks: string[] } {
-    const blocks: string[] = [];
-    const htmlWithPlaceholders = html.replace(PRESERVE_TAGS, (match) => {
-        // Strip type="text/javascript" and type="text/css" from the opening tag
-        // before preserving, so these unnecessary attributes get removed.
-        const cleaned = match.replace(/^<(?:[^>"']|"[^"]*"|'[^']*')*>/, opening => opening.replace(TYPE_JS_CSS, ''));
-        blocks.push(cleaned);
-        return `\x00PRESERVE_${blocks.length - 1}\x00`;
-    });
-    return { html: htmlWithPlaceholders, blocks };
-}
+// `type` values that are the default for their element.
+const isDefaultType = (tag: string, value: string): boolean => {
+    const type = value.toLowerCase();
+    return tag === 'script' ? type === 'text/javascript' : (tag === 'style' || tag === 'link') && type === 'text/css';
+};
 
-function restoreBlocks(html: string, blocks: string[]): string {
-    return html.replace(/\x00PRESERVE_(\d+)\x00/g, (_, index) => {
-        return blocks[parseInt(index, 10)];
-    });
-}
+// HTML whitespace only: a no-break space (U+00A0) is content.
+const collapseWhitespace = (text: string): string => text.replace(/[ \t\n\f\r]+/g, ' ');
+const isWhitespace = (text: string): boolean => /^[ \t\n\f\r]*$/.test(text);
+const trimWhitespace = (text: string): string => text.replace(/^[ \t\n\f\r]+|[ \t\n\f\r]+$/g, '');
 
+/**
+ * Minify rendered HTML for production responses.
+ *
+ * The markup is read with the renderer's shared tokenizer, so text, attribute
+ * values, comments and raw-text elements are told apart exactly as the
+ * browser parses them:
+ *  - text: whitespace runs collapse to one space; whitespace-only text
+ *    between tags is removed (the client treats it as filler). <pre> text is
+ *    kept as is.
+ *  - <script>, <style>, <textarea> and <title> text is kept as is.
+ *  - comments are removed, except conditional comments and hydration markers.
+ *  - tags: simple attribute values lose their quotes, `class` whitespace
+ *    collapses, default `type` attributes and void-element slashes go away.
+ *    Other attribute values are kept byte for byte.
+ */
 export function minifyHtml(html: string): string {
-    // Step 1: Preserve blocks that should not be minified
-    // (also strips type=text/javascript and type=text/css from their opening tags)
-    const { html: preserved, blocks } = preserveBlocks(html);
+    let out = '';
+    // Text is gathered across removed comments, then written once.
+    let text = '';
+    let preDepth = 0;
 
-    // Step 2: Remove HTML comments — but preserve conditional IE comments
-    // (<!--[if ...]>), Cossack hydration markers (<!--CRP_i-->, <!--/CRP-->),
-    // and sequence markers (<!--CSA-S-->, <!--CSA-E-->) used to adopt lists.
-    let result = preserved.replace(/<!--(?!\[if\s|\/?CRP|CSA-[SE])[\s\S]*?-->/g, '');
+    const flushText = (last = false) => {
+        if (!text) return;
+        if (preDepth > 0) {
+            out += text;
+        } else if (!isWhitespace(text)) {
+            let collapsed = collapseWhitespace(text);
+            // The document itself starts and ends without whitespace.
+            if (!out) collapsed = collapsed.replace(/^ /, '');
+            if (last) collapsed = collapsed.replace(/ $/, '');
+            out += collapsed;
+        }
+        text = '';
+    };
 
-    // Step 3: Remove type="text/javascript" and type="text/css" attributes
-    // (for any remaining tags not inside preserved blocks)
-    result = result.replace(TYPE_JS_CSS, '');
+    const attribute = (tag: string, attr: HtmlAttribute, beforeSlash: boolean): string => {
+        if (attr.valueStart < 0) return ` ${attr.name}`;
+        let value = html.slice(attr.valueStart, attr.valueEnd);
+        const name = attr.name.toLowerCase();
+        if (name === 'type' && isDefaultType(tag, value)) return '';
+        if (name === 'class') value = trimWhitespace(collapseWhitespace(value));
+        // An unquoted value would swallow the `/` of a following `/>`.
+        if (!beforeSlash && (!attr.quote || UNQUOTED_VALUE.test(value))) return ` ${attr.name}=${value}`;
+        if (attr.quote) return ` ${attr.name}=${attr.quote}${value}${attr.quote}`;
+        return ` ${attr.name}="${value.replace(/"/g, '&quot;')}"`;
+    };
 
-    // Step 4: Collapse runs of whitespace (spaces, tabs, newlines) to a single space
-    result = result.replace(/\s+/g, ' ');
-
-    // Step 5: Remove whitespace between tags where there's no text content
-    result = result.replace(/>\s+</g, '><');
-
-    // Step 6: Remove optional quotes around simple attribute values
-    result = result.replace(QUOTED_ATTR, (match, name, value, separator) => {
-        // In a self-closing tag, `/` is not a delimiter for an unquoted HTML
-        // attribute value. Unquoting the final SVG attribute would turn e.g.
-        // `stroke-width="1.5"/>` into `stroke-width=1.5/>`; the tokenizer then
-        // reads the slash as part of the value and fails to self-close the SVG
-        // element. Keep that final value quoted so sibling SVG nodes retain
-        // their intended structure during the initial server render.
-        if (separator === '/>') return match;
-        return `${name}=${value}`;
+    forEachHtmlToken(html, (token: HtmlToken) => {
+        switch (token.type) {
+            case 'text':
+                text += html.slice(token.start, token.end);
+                break;
+            case 'comment':
+                if (KEPT_COMMENT.test(html.slice(token.start, token.end)) || joinIsUnsafe(text)) {
+                    flushText();
+                    out += html.slice(token.start, token.end);
+                }
+                break;
+            case 'start-tag': {
+                flushText();
+                // An attribute named `=...` exists only after a `/` or another
+                // attribute's value; rewriting the separator could change its
+                // meaning, so such malformed tags are copied as written.
+                if (!token.closed || token.attributes.some((attr) => attr.name.startsWith('='))) {
+                    out += html.slice(token.start, token.end);
+                    break;
+                }
+                const { name, attributes } = token;
+                // `/>` matters only on foreign (SVG/MathML) elements.
+                const slash = token.selfClosing && !VOID_ELEMENTS.has(name);
+                out += html.slice(token.start, token.nameEnd);
+                attributes.forEach((attr, index) => {
+                    out += attribute(name, attr, slash && index === attributes.length - 1);
+                });
+                out += slash ? '/>' : '>';
+                if (name === 'pre') preDepth++;
+                break;
+            }
+            case 'end-tag':
+                flushText();
+                out += `${html.slice(token.start, token.nameEnd)}>`;
+                if (token.name === 'pre' && preDepth > 0) preDepth--;
+                break;
+            case 'raw-text':
+            case 'other':
+                flushText();
+                out += html.slice(token.start, token.end);
+                break;
+        }
     });
-
-    // Step 7: Collapse /> to > on void elements, trimming trailing space from attrs
-    result = result.replace(VOID_SELF_CLOSE, (_, tag, attrs) => {
-        const trimmedAttrs = attrs ? attrs.trimEnd() : '';
-        return `<${tag}${trimmedAttrs}>`;
-    });
-
-    // Remove inter-tag whitespace while raw-text blocks are still protected.
-    // Doing this after restoration would erase whitespace-only textarea values.
-    result = result.replace(/(>|\x00PRESERVE_\d+\x00)\s+(?=<|\x00PRESERVE_\d+\x00)/g, '$1');
-
-    // Step 8: Restore preserved blocks without modifying their contents.
-    result = restoreBlocks(result, blocks);
-
-    // Step 10: Trim leading/trailing whitespace
-    result = result.trim();
-
-    return result;
+    flushText(true);
+    return out;
 }

@@ -138,7 +138,7 @@ Line 1
         const input = '<circle cx="12" cy="12" r="6"stroke="currentColor" stroke-width="1.5"/>';
         const result = minifyHtml(input);
 
-        expect(result).toContain('r="6"stroke=currentColor');
+        expect(result).toBe('<circle cx=12 cy=12 r=6 stroke=currentColor stroke-width="1.5"/>');
         expect(result).not.toContain('r=6stroke');
     });
 
@@ -163,8 +163,8 @@ Line 1
     it('does not collapse self-closing on non-void elements', () => {
         const input = '<div />';
         const result = minifyHtml(input);
-        // div is not a void element, so it should remain unchanged (besides whitespace)
-        expect(result).toContain('<div />');
+        // div is not a void element, so the slash stays (it matters in SVG)
+        expect(result).toBe('<div/>');
     });
 
     it('preserves sibling SVG elements whose final attribute precedes a self-closing slash', () => {
@@ -245,4 +245,68 @@ it('preserves whitespace-only textarea values and text that resembles attributes
         .toBe('<div></div><textarea> \n\t </textarea><p>After</p>');
     expect(minifyHtml('<textarea>Keep type="text/javascript" as text</textarea>'))
         .toBe('<textarea>Keep type="text/javascript" as text</textarea>');
+});
+
+// minifyHtml reads markup with the renderer's shared tokenizer, so it agrees
+// with the browser on text, attribute values, comments and raw-text elements.
+describe('minifyHtml tokenization', () => {
+    it('never rewrites text that resembles attributes', () => {
+        expect(minifyHtml('<p>Set debug="true" and  type="text/css" here</p>'))
+            .toBe('<p>Set debug="true" and type="text/css" here</p>');
+    });
+
+    it('keeps `<` in text as text', () => {
+        expect(minifyHtml('<p>if a < b then c="d" </p>')).toBe('<p>if a < b then c="d" </p>');
+        expect(minifyHtml('<p>1 <2</p><a href="/x">x</a>')).toBe('<p>1 <2</p><a href="/x">x</a>');
+    });
+
+    it('keeps comment-like text inside raw-text elements and attribute values', () => {
+        expect(minifyHtml('<title>a <!-- b --> c</title>')).toBe('<title>a <!-- b --> c</title>');
+        expect(minifyHtml('<div title="<!-- x -->">y</div>')).toBe('<div title="<!-- x -->">y</div>');
+        expect(minifyHtml('<script>if (a <!--b) x("-->")</script>')).toBe('<script>if (a <!--b) x("-->")</script>');
+    });
+
+    it('keeps raw-text content whose opening tag has `>` in an attribute value', () => {
+        expect(minifyHtml('<script data-x="a>b">x  =  1</script>')).toBe('<script data-x="a>b">x  =  1</script>');
+    });
+
+    it('keeps attribute values byte for byte, except class whitespace', () => {
+        expect(minifyHtml('<input value="a  b" title="line\n  two" class="  a\n   b ">'))
+            .toBe('<input value="a  b" title="line\n  two" class="a b">');
+    });
+
+    it('treats a no-break space as content', () => {
+        expect(minifyHtml('<p>a\u00a0\u00a0b</p> <p>\u00a0</p>')).toBe('<p>a\u00a0\u00a0b</p><p>\u00a0</p>');
+    });
+
+    it('keeps whitespace inside <pre>, including around nested elements', () => {
+        expect(minifyHtml('<pre>  <b>x</b>   y\n  z</pre>  <p>q</p>')).toBe('<pre>  <b>x</b>   y\n  z</pre><p>q</p>');
+    });
+
+    it('quotes an unquoted value that a self-closing slash follows', () => {
+        expect(minifyHtml('<path d=M0 />')).toBe('<path d="M0"/>');
+        expect(minifyHtml(`<path d=a"b' />`)).toBe(`<path d="a&quot;b'"/>`);
+        expect(minifyHtml('<a href=/x/ id=a>')).toBe('<a href=/x/ id=a>');
+    });
+
+    it('keeps a comment whose removal would create markup or complete an entity', () => {
+        expect(minifyHtml('<p>a <<!-- c -->b</p>')).toBe('<p>a <<!-- c -->b</p>');
+        expect(minifyHtml('<p>&am<!-- c -->p;</p>')).toBe('<p>&am<!-- c -->p;</p>');
+        expect(minifyHtml('<p>a <!-- c --> b</p>')).toBe('<p>a b</p>');
+    });
+
+    it('produces markup that parses to the same elements', () => {
+        const input = `<!DOCTYPE html><html><head><title>A &amp; B <!-- x --></title></head>
+            <body><p title='1 < 2' class="a
+                b">x = "y" <b>z</b></p><svg><path d="M0 0"/><circle r="6"stroke="red"/></svg></body></html>`;
+        const parse = (html: string) => new DOMParser().parseFromString(html, 'text/html');
+        const original = parse(input);
+        const minified = parse(minifyHtml(input));
+        expect(minified.title).toBe(original.title);
+        expect(minified.querySelector('p')!.getAttribute('title')).toBe('1 < 2');
+        expect(minified.querySelector('p')!.className).toBe('a b');
+        expect(minified.querySelector('p')!.textContent).toBe('x = "y" z');
+        expect(minified.querySelector('svg')!.children.length).toBe(2);
+        expect(minified.querySelector('circle')!.getAttribute('stroke')).toBe('red');
+    });
 });
