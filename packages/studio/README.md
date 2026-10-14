@@ -46,8 +46,16 @@ before `orm.config.ts` is imported. Existing shell variables keep precedence.
 
 Studio merges physical introspection with `orm.schema()`, displays logical
 types and relation provenance, surfaces drift, and hides migration bookkeeping.
-Its schema response also includes `inspection`: the shared read-only database
-facts used by `cossack orm schema inspect --json`. These facts include the
+The introspected schema is cached. Studio invalidates it after SQL console
+statements that may change the schema (DDL, writes, `SELECT … INTO`, PRAGMA
+writes) and after pragma edits. The Browse tab's refresh button re-introspects
+to pick up changes made outside Studio.
+
+The "Database capabilities and migrations" panel loads `inspection` on demand
+when it is opened: the shared read-only database facts used by
+`cossack orm schema inspect --json`. Programmatic callers use
+`StudioDatabase.getInspection()`; `getSchema()` includes `inspection` only
+after it has been loaded. These facts include the
 selected target and environment, driver/dialect capabilities, physical and
 model schema, known relationships, and applied, pending or changed migrations.
 Inspection does not create migration bookkeeping tables or apply migrations.

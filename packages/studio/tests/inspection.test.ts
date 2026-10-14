@@ -57,7 +57,10 @@ it('returns equivalent actual CLI, shared and Studio browser-schema facts withou
   const adapter=await (config.adapter as (context:ORMToolingContext)=>ReturnType<typeof nodeSQLite>)(context);
   const connection=createLocalConnection({orm:createORM({adapter,entities:config.entities}),migrations:config.migrations,info:{provider:'sqlite',environment:'staging',binding:'STAGING_DB'}});
   try {
-    const browserSchema=await new StudioDatabase(connection).getSchema(true);
+    const studio=new StudioDatabase(connection);
+    expect((await studio.getSchema(true)).inspection).toBeUndefined();
+    expect(await studio.getInspection()).toEqual(shared);
+    const browserSchema=await studio.getSchema();
     expect(browserSchema.inspection).toEqual(shared);
     expect(browserSchema.objects.some(object=>object.name==='_cossack_migrations')).toBe(false);
     expect(browserSchema.objects.find(object=>object.name==='inspection_people')?.relations).toEqual([expect.objectContaining({propertyName:'department',kind:'many-to-one',targetTableName:'inspection_departments'})]);
@@ -76,7 +79,7 @@ it('inspects an empty migration history without creating bookkeeping or changing
   const orm=createORM({adapter:await nodeSQLite({filename}),entities:[]});
   await orm.executeFragment(orm.sql.unsafe('CREATE TABLE public_rows (id INTEGER PRIMARY KEY)'), 'ddl');const before=await readFile(filename);
   const connection=createLocalConnection({orm,migrations:[{name:'001_pending',operations:{up:[],down:[]}}],info:{provider:'sqlite'}});
-  try{const schema=await new StudioDatabase(connection).getSchema(true);expect(schema.inspection?.history).toEqual([]);expect(schema.inspection?.migrations).toMatchObject([{state:'pending'}]);expect(schema.inspection?.schema.entities.map(entity=>entity.tableName)).toEqual(['public_rows']);expect(await readFile(filename)).toEqual(before);}
+  try{const studio=new StudioDatabase(connection);await studio.getInspection();const schema=await studio.getSchema(true);expect(schema.inspection).toBeUndefined();const inspected=await studio.getInspection();expect(inspected?.history).toEqual([]);expect((await studio.getSchema()).inspection?.migrations).toMatchObject([{state:'pending'}]);expect(inspected?.schema.entities.map(entity=>entity.tableName)).toEqual(['public_rows']);expect(await readFile(filename)).toEqual(before);}
   finally{await connection.close();}
 });
 

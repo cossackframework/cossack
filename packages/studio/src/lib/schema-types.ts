@@ -124,7 +124,10 @@ export interface StudioObject {
 }
 
 export interface StudioSchema {
+  /** Loaded lazily through `StudioDatabase.getInspection()`. */
   inspection?: DatabaseInspection;
+  /** Whether the connection can provide `inspection` on demand. */
+  inspectionAvailable?: boolean;
   connection: StudioConnectionInfo;
   applicationName: string;
   objects: StudioObject[];

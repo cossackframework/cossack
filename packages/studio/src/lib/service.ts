@@ -4,9 +4,11 @@ import {
   limitStatementRows,
   parseSingleStatement,
   quoteIdentifier,
+  statementMayChangeSchema,
 } from './sql.js';
 import { findObject, introspectSchema } from './schema.js';
 import { normalizeQueryResult } from './transport.js';
+import type { DatabaseInspection } from '@cossackframework/database/tooling';
 import type {
   StudioColumn,
   StudioConnection,
@@ -187,23 +189,96 @@ function isSqliteProvider(provider: StudioConnection['info']['provider']): boole
 
 export class StudioDatabase {
   private schema?: StudioSchema;
+  private schemaLoad?: Promise<StudioSchema>;
+  private inspection?: DatabaseInspection;
+  private inspectionLoad?: Promise<DatabaseInspection | undefined>;
+  private databaseVersion?: string;
+  private generation = 0;
 
   constructor(
     readonly connection: StudioConnection,
     private readonly options: { applicationName?: string } = {},
   ) {}
 
+  /**
+   * Return the introspected schema. The result is cached: Studio invalidates
+   * it after statements that may change the schema (console DDL/writes and
+   * PRAGMA writes). `refresh` forces a fresh introspection, e.g. to pick up
+   * changes made outside Studio. Migration inspection is not part of this
+   * call; it is attached only once loaded through `getInspection()`.
+   */
   async getSchema(refresh = false): Promise<StudioSchema> {
-    if (!this.schema || refresh) {
-      const inspection = await this.connection.inspect?.();
-      this.schema = await introspectSchema(
+    if (refresh) this.invalidateSchema();
+    if (this.schema) return this.withInspection(this.schema);
+    if (!this.schemaLoad) {
+      const generation = this.generation;
+      const load = introspectSchema(
         this.connection,
         this.options.applicationName ?? 'Cossack application',
-        this.schema?.connection.databaseVersion,
-      );
-      if (inspection) this.schema.inspection = inspection;
+        this.databaseVersion,
+      ).then((schema) => {
+        if (generation === this.generation) {
+          this.schema = schema;
+          this.databaseVersion = schema.connection.databaseVersion;
+        }
+        return schema;
+      }).finally(() => {
+        if (this.schemaLoad === load) this.schemaLoad = undefined;
+      });
+      this.schemaLoad = load;
     }
-    return this.schema;
+    return this.withInspection(await this.schemaLoad);
+  }
+
+  /**
+   * Lazily load shared migration/capability inspection. It can be expensive
+   * (remote D1 runs several Wrangler commands), so only views that display
+   * it request it. The result is cached until the schema is invalidated.
+   */
+  async getInspection(refresh = false): Promise<DatabaseInspection | undefined> {
+    if (!this.connection.inspect) return undefined;
+    if (refresh) {
+      this.inspection = undefined;
+      this.inspectionLoad = undefined;
+    }
+    if (this.inspection) return this.inspection;
+    if (!this.inspectionLoad) {
+      const generation = this.generation;
+      const load = this.connection.inspect().then((inspection) => {
+        if (generation === this.generation) this.inspection = inspection;
+        return inspection;
+      }).finally(() => {
+        if (this.inspectionLoad === load) this.inspectionLoad = undefined;
+      });
+      this.inspectionLoad = load;
+    }
+    return this.inspectionLoad;
+  }
+
+  /** Drop cached schema and inspection so the next read introspects again. */
+  invalidateSchema(): void {
+    this.generation++;
+    this.schema = undefined;
+    this.schemaLoad = undefined;
+    this.inspection = undefined;
+    this.inspectionLoad = undefined;
+  }
+
+  private withInspection(schema: StudioSchema): StudioSchema {
+    const inspectionAvailable = typeof this.connection.inspect === 'function';
+    const { inspection: _previous, ...rest } = schema;
+    return {
+      ...rest,
+      ...(inspectionAvailable ? { inspectionAvailable } : {}),
+      ...(this.inspection ? { inspection: this.inspection } : {}),
+    };
+  }
+
+  /** Find an object, re-introspecting once if the cached schema lacks it. */
+  private async findSchemaObject(name: string): Promise<StudioObject> {
+    const cached = await this.getSchema();
+    if (cached.objects.some((object) => object.name === name)) return findObject(cached, name);
+    return findObject(await this.getSchema(true), name);
   }
 
   async browse(
@@ -211,7 +286,7 @@ export class StudioDatabase {
     optionsOrPage: BrowseOptions | number = {},
     legacyPageSize = 100,
   ): Promise<TransportQueryResult> {
-    const object = findObject(await this.getSchema(true), name);
+    const object = await this.findSchemaObject(name);
     const options = typeof optionsOrPage === 'number'
       ? { page: optionsOrPage, pageSize: legacyPageSize }
       : optionsOrPage;
@@ -273,12 +348,14 @@ export class StudioDatabase {
     const provider = this.connection.info.provider;
     const statement = parseSingleStatement(input, provider);
     try {
-      const result = normalizeQueryResult(
-        await this.executeBounded(statement),
-        CONSOLE_ROW_LIMIT,
-      );
-      await this.getSchema(true);
-      return result;
+      let raw;
+      try {
+        raw = await this.executeBounded(statement);
+      } finally {
+        // A failed statement may still have partially applied (e.g. MySQL DDL).
+        if (statementMayChangeSchema(statement, provider)) this.invalidateSchema();
+      }
+      return normalizeQueryResult(raw, CONSOLE_ROW_LIMIT);
     } catch (error: any) {
       return {
         columns: [],
@@ -398,7 +475,11 @@ export class StudioDatabase {
       sqlValue = option.sql;
     }
 
-    await this.connection.execute(`PRAGMA ${definition.name} = ${sqlValue}`);
+    try {
+      await this.connection.execute(`PRAGMA ${definition.name} = ${sqlValue}`);
+    } finally {
+      this.invalidateSchema();
+    }
     return this.getPragmas();
   }
 
@@ -432,7 +513,7 @@ export class StudioDatabase {
       ({ sql, parameters } = this.bind(sql, values));
     }
     const result = await this.connection.execute(sql, parameters);
-    return { affectedRows: result.affectedRows, schema: await this.getSchema(true) };
+    return { affectedRows: result.affectedRows, schema: await this.getSchema() };
   }
 
   async update(
@@ -463,7 +544,7 @@ export class StudioDatabase {
     if (result.affectedRows !== 1) {
       throw new Error(`Stale update: expected one affected row, received ${result.affectedRows}.`);
     }
-    return { affectedRows: result.affectedRows, schema: await this.getSchema(true) };
+    return { affectedRows: result.affectedRows, schema: await this.getSchema() };
   }
 
   async updateRow(
@@ -499,7 +580,7 @@ export class StudioDatabase {
     if (result.affectedRows !== 1) {
       throw new Error(`Stale update: expected one affected row, received ${result.affectedRows}.`);
     }
-    return { affectedRows: result.affectedRows, schema: await this.getSchema(true) };
+    return { affectedRows: result.affectedRows, schema: await this.getSchema() };
   }
 
   async delete(tableName: string, key: Record<string, unknown>): Promise<MutationResult> {
@@ -512,7 +593,7 @@ export class StudioDatabase {
     if (result.affectedRows !== 1) {
       throw new Error(`Stale delete: expected one affected row, received ${result.affectedRows}.`);
     }
-    return { affectedRows: result.affectedRows, schema: await this.getSchema(true) };
+    return { affectedRows: result.affectedRows, schema: await this.getSchema() };
   }
 
   async deleteMany(
@@ -535,7 +616,7 @@ export class StudioDatabase {
       }
       affectedRows += result.affectedRows;
     }
-    return { affectedRows, schema: await this.getSchema(true) };
+    return { affectedRows, schema: await this.getSchema() };
   }
 
   async updateMany(
@@ -565,7 +646,7 @@ export class StudioDatabase {
       }
       affectedRows += result.affectedRows;
     }
-    return { affectedRows, schema: await this.getSchema(true) };
+    return { affectedRows, schema: await this.getSchema() };
   }
 
   close(): Promise<void> {
@@ -783,7 +864,7 @@ export class StudioDatabase {
   }
 
   private async mutableTable(name: string): Promise<StudioObject> {
-    const object = findObject(await this.getSchema(true), name);
+    const object = await this.findSchemaObject(name);
     if (!object.editable) throw new Error(object.readOnlyReason ?? 'This database object is read-only.');
     return object;
   }
