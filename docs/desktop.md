@@ -26,6 +26,9 @@ bindings from those variables, export
 `createEnv(variables)` from the bootstrap, as the Node entry does. Development
 calls it with the `.env*` values for the `desktop` mode and the process
 variables, and uses its result in place of the `env` export.
+Generated projects export a `createEnv` that passes every variable through,
+and build `env` from it only in production. Narrow it to the variables the
+application needs.
 Enable `developmentTraces: true` in `cossackPages()` for the shared
 [inspector and CLI/MCP trace readers](./development-traces.md).
 Electron Forge creates the host installer only: DEB on Linux, MSI on Windows,

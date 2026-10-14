@@ -47,6 +47,15 @@ describe('template drift', () => {
     expect(postgres.get('src/index.ts').content.toString()).not.toContain('DB_PATH');
   });
 
+  it('lets the Desktop entry choose its bindings through createEnv, like the Node entry', async () => {
+    const files = await renderRecipe(resolveRecipe({ adapter: 'node', preset: 'minimal', features: 'desktop' }));
+    const entry = files.get('src/desktop/index.ts').content.toString();
+    expect(entry).toContain('export function createEnv(variables: Record<string, string | undefined> = process.env)');
+    // desktop:dev calls createEnv with .env values; only production builds env eagerly.
+    expect(entry).toContain('export const env: Record<string, unknown> = import.meta.env.DEV ? {} : createEnv();');
+    expect(entry).not.toContain('export const env: Record<string, unknown> = { ...process.env };');
+  });
+
   it('createApp reports a clear error when the target path is a file', async () => {
     const root = await temporaryDirectory();
     await fs.writeFile(path.join(root, 'app'), 'not a directory');

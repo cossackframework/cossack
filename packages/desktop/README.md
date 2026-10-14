@@ -15,7 +15,10 @@ import { fileURLToPath } from 'node:url';
 import { App } from '../App';
 import { template } from '../root';
 
-export const env = { ...process.env };
+export function createEnv(variables: Record<string, string | undefined> = process.env) {
+  return { ...variables };
+}
+export const env = import.meta.env.DEV ? {} : createEnv();
 export const frameworkApp = createApp({
   AppComponent: App,
   htmlTemplate: template,

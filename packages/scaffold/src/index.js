@@ -951,7 +951,12 @@ import { fileURLToPath } from 'node:url';
 import { App } from '../App';
 import { template } from '../root';
 
-export const env: Record<string, unknown> = { ...process.env };
+// Decide here which variables become application bindings. desktop:dev calls
+// createEnv with the .env files and process variables; production uses env.
+export function createEnv(variables: Record<string, string | undefined> = process.env): Record<string, unknown> {
+  return { ...variables };
+}
+export const env: Record<string, unknown> = import.meta.env.DEV ? {} : createEnv();
 export const frameworkApp = createApp({
   AppComponent: App,
   htmlTemplate: template,
