@@ -51,7 +51,7 @@ describe('published package contract', () => {
     expect(ui).not.toHaveProperty('AccordionItem');
     expect((ui.NativeSelect as { name: string }).name).toBe('NativeSelect');
     expect((ui.Accordion as { name: string }).name).toBe('Accordion');
-  });
+  }, 30000); // Imports every component source.
 
   it('builds before publishing', () => {
     expect(packageJson.scripts.prepublishOnly).toBe('pnpm run build');
