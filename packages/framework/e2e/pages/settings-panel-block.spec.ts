@@ -9,7 +9,8 @@ test('edits controlled settings through labeled native controls and explicit act
     await expect(name).toHaveValue('Jane Doe');
     await name.fill('Updated profile'); await expect(name).toHaveValue('Updated profile');
     await email.focus(); await page.keyboard.press('Space'); await expect(email).not.toBeChecked();
-    await expect(email).toHaveAttribute('aria-checked', 'false');
+    // The native checked state carries the switch state; aria-checked is not rendered.
+    await expect(email).not.toHaveAttribute('aria-checked');
     await page.getByRole('button', { name: 'Delete', exact: true }).click();
     await expect(page.getByRole('status').filter({ hasText: 'Requested action' })).toContainText('delete');
     await expect(name).toHaveValue('Updated profile');

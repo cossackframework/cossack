@@ -38,7 +38,9 @@ test.describe('Optimistic Counter Page', () => {
     await expect.poll(() => actions().length).toBe(1);
     const action = actions()[0];
     expect(action.requestId).toEqual(expect.any(String));
-    expect(action.payload).toEqual([]);
+    // The click event is the handler's first argument; non-transportable
+    // arguments keep their position as null, as over HTTP.
+    expect(action.payload).toEqual([null]);
     await expect.poll(() => done(action), { timeout: 10_000 }).toBe(true);
     expect(received.filter(frame => frame.requestId === action.requestId && frame.type === 'error')).toEqual([]);
   });
