@@ -152,6 +152,11 @@ request runs once, including when a page fails and selects an error boundary.
 Global bootstrap middleware remains part of the same request. Error boundaries
 use the failing page's source ancestry and preserve status 500.
 
+An authorization denial (401 or 403) on a browser navigation to a page, that
+is a GET with `Accept: text/html`, renders the nearest error boundary with the
+denial status. API routes, `/crpc`, transports and clients that do not ask for
+HTML receive the JSON `{ error, code, requestId }` body instead.
+
 Every 404 and error component has its own source ID. Boundaries have no public
 route alias. Inspect a specific boundary with its source path:
 

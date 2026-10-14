@@ -316,6 +316,20 @@ function findNearestSpecialPage(pagePath: string, type: '404' | 'error') {
   return path ? { path, component: getModuleDefault(pages[path] as object) as new () => Cossack } : null;
 }
 
+const TRANSPORT_PATH = /^\/(?:crpc|upload)$|^\/(?:sse|ws)\//;
+
+/**
+ * A browser navigation to a page route: GET/HEAD, not a transport or API path,
+ * and an Accept header that asks for HTML. Such requests receive an HTML error
+ * document; API routes, transports and other clients keep JSON errors.
+ */
+function wantsHtmlDocument(c: Context): boolean {
+  if (c.req.method !== 'GET' && c.req.method !== 'HEAD') return false;
+  const path = c.req.path;
+  if (TRANSPORT_PATH.test(path) || classifyRoute(path) === 'api') return false;
+  return (c.req.header('accept') ?? '').toLowerCase().includes('text/html');
+}
+
 export interface CreateAppOptions {
   AppComponent?: new (...args: any[]) => any;
   htmlTemplate?: string | ((helpers: TemplateHelpers) => string);
@@ -371,11 +385,20 @@ export function createApp(options: CreateAppOptions = {}) {
     });
     logConfigRequirementFailure(error);
     const denial = getAuthorizationFailure(error);
-    if (denial) return c.json({ error: denial.message, code: denial.code, requestId: context.requestId }, denial.status);
+    if (denial) {
+      if (wantsHtmlDocument(c)) {
+        const route = c.req.matchedRoutes.findLast(route => route.path !== '*')?.path;
+        const anchor = (route ? pagePathByRoute.get(route) : undefined) ?? resolveNotFound(c.req.path)?.path;
+        return renderDenialDocument(c, denial, anchor, context.requestId);
+      }
+      return c.json({ error: denial.message, code: denial.code, requestId: context.requestId }, denial.status);
+    }
     logServerFailure(context, 'request', 'middleware', 'COSSACK_REQUEST_INTERNAL');
     return c.json({ error: 'Internal Server Error', code: 'COSSACK_REQUEST_INTERNAL', requestId: context.requestId }, 500);
   });
   const resolveNotFound = createNotFoundResolver(Object.keys(pages));
+  /** Hono route pattern -> page file path, filled while page routes register. */
+  const pagePathByRoute = new Map<string, string>();
   const executedPolicies = Symbol('cossack:executed-route-policies');
   const policy = (source: string, index: number, middleware: Middleware): Middleware => async (c, next) => {
     const context = c as Context & { [executedPolicies]?: Set<string> };
@@ -710,6 +733,7 @@ export function createApp(options: CreateAppOptions = {}) {
         if (denial) {
           const requestId = c.res.headers.get('X-Cossack-Request-Id') ?? crypto.randomUUID();
           c.header('X-Cossack-Request-Id', requestId);
+          if (wantsHtmlDocument(c)) return renderDenialDocument(c, denial, path, requestId);
           return c.json({ error: denial.message, code: denial.code, requestId }, denial.status);
         }
         c.header('X-Cossack-Request-Id', failureContext.requestId);
@@ -752,6 +776,30 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
     };
     await dispatch(0);
     return c.res;
+  };
+
+  /**
+   * Browser navigations that are denied (401/403) render the nearest error
+   * boundary with the denial status, like SSR failures render it with 500.
+   * Without a usable boundary (or when the boundary itself is denied) a
+   * minimal HTML document carries the status instead.
+   */
+  const renderDenialDocument = async (
+    c: Context, denial: { status: 401 | 403; message: string }, anchorPath: string | undefined, requestId: string,
+  ): Promise<Response> => {
+    c.header('X-Cossack-Request-Id', requestId);
+    if (!c.res.headers.has('Cache-Control')) c.header('Cache-Control', 'private, no-store');
+    const errorPage = anchorPath ? findNearestSpecialPage(anchorPath, 'error') : null;
+    if (errorPage && anchorPath !== errorPage.path) {
+      try {
+        c.status(denial.status);
+        return await renderBoundary(errorPage.component, errorPage.path, c);
+      } catch {
+        logServerFailure(createServerFailureContext(c, { route: filePathToHttpRoute(errorPage.path), action: 'render',
+          runtime: options.runtimeAdapter?.name ?? 'cloudflare' }), 'ssr', 'render', 'COSSACK_SSR_INTERNAL');
+      }
+    }
+    return c.html(`<h1>${escapeHtml(denial.message)}</h1>`, denial.status);
   };
 
   // Transport routes
@@ -1330,6 +1378,7 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
     let httpRoute = filePathToHttpRoute(path);
 
     if (httpRoute.endsWith('/404') || httpRoute.endsWith('/error')) continue;
+    pagePathByRoute.set(httpRoute, path);
 
     const module = pages[path] as any;
     const mainExport = getModuleDefault(module);
