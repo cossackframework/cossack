@@ -5,7 +5,7 @@ import './config-globals.js';
 import { getModuleDefault } from './module-default.js';
 import * as fs from 'fs';
 import * as path from 'path';
-import { Cossack, Page, PageOptions, createInstance, createRootServiceScope, createLayoutServiceScope } from '@cossackframework/core';
+import { Cossack, Page, PageOptions, createInstance, createRootServiceScope } from '@cossackframework/core';
 import { html } from '@cossackframework/renderer';
 import { collectComponentStyles, type ComponentStyle } from '@cossackframework/renderer/server';
 import {
@@ -21,6 +21,7 @@ import { ensureLocaleAlsWired, runWithLocale } from './i18n-context.js';
 import type { MiddlewareHandler } from 'hono';
 import { runPublicSsgRequest } from './ssg-request.js';
 import { resolveSseScopeKey } from './transports/sse.js';
+import { createServiceScopeChain } from './service-scope-chain.js';
 
 /**
  * Locale catalogs and the build-time default, resolved by the caller from the
@@ -203,23 +204,20 @@ export async function renderSsgPage(
       renderInstances.push(appInstance);
       await appInstance.bootstrap({ context, env: envBindings, page: context.req.path });
 
-      // Bootstrap Layouts
+      // Bootstrap Layouts through the same scope chain as SSR and RPC.
       const layoutInstances: Cossack[] = [];
       const layoutStates: Record<string, any> = {};
-      let activeServiceScope = requestServiceScope;
-      for (const layoutPath of layoutPaths) {
-        const LComp = layouts[layoutPath].default;
-        const layoutServiceScope = createLayoutServiceScope(activeServiceScope, LComp, {
-          ownerRouteId: filePathToId[layoutPath], ownerRoutePath: layoutPath, scopeKey,
-        });
-        layoutServiceScope.bindRequest({ context, env: envBindings });
-        const lInst = createInstance(LComp, { serviceScope: layoutServiceScope, ownsServiceScope: true });
-        renderInstances.push(lInst);
-        await lInst.bootstrap({ context, env: envBindings, page: context.req.path });
-        layoutInstances.push(lInst);
-        layoutStates[layoutPath] = lInst.getInitialState();
-        activeServiceScope = layoutServiceScope;
-      }
+      const { scope: activeServiceScope } = await createServiceScopeChain({
+        componentPath: sourcePath, layouts, routePathToIdMap: new Map(Object.entries(filePathToId)), scopeKey,
+        facilities: { context, env: envBindings }, root: requestServiceScope,
+        onLayout: async ({ path: layoutPath, component: LComp, scope: layoutServiceScope }) => {
+          const lInst = createInstance(LComp, { serviceScope: layoutServiceScope, ownsServiceScope: true });
+          renderInstances.push(lInst);
+          await lInst.bootstrap({ context, env: envBindings, page: context.req.path });
+          layoutInstances.push(lInst);
+          layoutStates[layoutPath] = lInst.getInitialState();
+        },
+      });
 
       // Bootstrap Page
       const pageInstance = createInstance(PageComponent, { serviceScope: activeServiceScope });
