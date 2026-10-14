@@ -69,8 +69,15 @@ describe('packageManagerInvocation', () => {
   });
 
   it('ignores an entry that belongs to another package manager', () => {
-    const env = { npm_execpath: '/usr/lib/node_modules/npm/bin/npm-cli.js' };
-    expect(packageManagerInvocation('pnpm', ['install'], { platform: 'linux', env }))
+    const env = { npm_execpath: 'C:\\npm\\bin\\npm-cli.js' };
+    expect(packageManagerInvocation('pnpm', ['install'], { platform: 'win32', env }))
+      .toEqual({ command: 'pnpm.cmd', args: ['install'], shell: true });
+  });
+
+  it('runs the PATH command outside Windows even when npm_execpath names the manager', () => {
+    // PATH wrappers (version managers, test stubs) must keep working on POSIX.
+    const env = { npm_execpath: '/home/me/.local/share/pnpm/pnpm.cjs' };
+    expect(packageManagerInvocation('pnpm', ['install'], { platform: 'linux', env, execPath: '/usr/bin/node' }))
       .toEqual({ command: 'pnpm', args: ['install'], shell: false });
   });
 
