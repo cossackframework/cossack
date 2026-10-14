@@ -118,8 +118,10 @@ try {
   await reopened.delete('acceptance.txt'); assert.equal(await reopened.get('acceptance.txt'), null);
 } finally {await rm(root,{recursive:true,force:true});}
 let bytes; const metadata = {key:'acceptance',size:7,etag:'fixed',uploaded:new Date(0)};
+// Bodies up to one multipart part go up in a single put; multipart would be a regression here.
 const r2 = createR2StorageProvider({
-  async createMultipartUpload() {return {async uploadPart(_n,value){bytes=value;return {partNumber:1,etag:'fixed'};}, async complete(){return metadata;},async abort(){throw new Error('unexpected abort');}};},
+  async put(_key,value){bytes=value;return metadata;},
+  async createMultipartUpload() {throw new Error('unexpected multipart upload for a 7-byte body');},
   async head(){return metadata;},async get(){return {...metadata,body:new ReadableStream({start(c){c.enqueue(bytes);c.close();}})};},async delete(){bytes=undefined;},
 });
 await r2.put('acceptance',body(),{size:7});
