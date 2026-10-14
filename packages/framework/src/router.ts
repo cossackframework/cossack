@@ -1371,6 +1371,9 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
   // path position — and `import.meta.glob` yields keys in lexicographic order,
   // where `[id]` sorts before `new`, which broke `/dashboard/users/new`
   // (matched `:id = 'new'`). See `compareHttpRoutes` for the comparator.
+  const apiHandlerOptions = (componentPath: string) => ({
+    componentPath, layouts, routePathToIdMap, runtimeInfo: resolveRuntimeInfo,
+  });
   const pagePaths = resolvePageRouteFiles(Object.keys(pages)).sort((a, b) =>
     compareHttpRoutes(filePathToHttpRoute(a), filePathToHttpRoute(b)),
   );
@@ -1410,7 +1413,7 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
       if (isApiRoute) {
         // GET -> JSON. `get()` is the canonical HTTP-GET handler; `init()` is
         // kept as a server-side alias for backward compatibility.
-        app.get(httpRoute, createApiHandler(PageComponent, ['get', 'init']));
+        app.get(httpRoute, createApiHandler(PageComponent, ['get', 'init'], apiHandlerOptions(path)));
       } else {
         const ssrHandler = createSsrHandler(PageComponent, path, pageOptions);
         app.get(httpRoute, ssrHandler);
@@ -1421,8 +1424,10 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
       if (pageOptions?.transport === 'http') {
         const httpMethods = ['post', 'put', 'patch', 'delete'];
         for (const method of httpMethods) {
-          if (method in PageComponent.prototype) {
-            (app as any)[method](httpRoute, createApiHandler(PageComponent, method));
+          // Only authored methods (stopping before Cossack.prototype) become
+          // routes; a framework default can never expose a public verb.
+          if (typeof getAuthoredRouteMember(PageComponent, method)?.value === 'function') {
+            (app as any)[method](httpRoute, createApiHandler(PageComponent, method, apiHandlerOptions(path)));
           }
         }
       }

@@ -247,6 +247,13 @@ SSR, while `post()` / `put()` / `patch()` / `delete()` are still exposed as JSON
 endpoints on the same route. This keeps a form view and its submit handler
 together.
 
+Only methods authored on your class or your own base classes become routes.
+Each request constructs the class through dependency injection, with the same
+layout service scopes as SSR, so constructor `@Service` parameters and
+`@Inject` fields resolve and `this.user` / `this.env` are set. An
+`@Server({ authorize })` declaration on a verb handler runs before the class
+is constructed and denies the request with 401 or 403.
+
 ### Server-only lifecycle methods
 
 `get()` and `init()` are server-only. Their bodies are stripped from client

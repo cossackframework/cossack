@@ -2,7 +2,17 @@
 import type { Context } from 'hono';
 import { createServerFailureContext, logServerFailure, type ServerFailureStage } from './server-logging.js';
 import { HTTPException } from 'hono/http-exception';
-import { Cossack, enforceMethodRateLimit, createCossackContext, getAuthorizationFailure } from '@cossackframework/core';
+import { Cossack, createInstance, enforceActionAuthorization, enforceMethodRateLimit, getAuthorizationFailure, type CossackRuntimeInfo } from '@cossackframework/core';
+import { createServiceScopeChain } from './service-scope-chain.js';
+import { resolveRealtimeScopeKey } from './realtime-scope.js';
+
+/** Where the handler class lives, so it is built with its layout service scopes. */
+export interface ApiHandlerOptions {
+    componentPath?: string;
+    layouts?: Record<string, unknown>;
+    routePathToIdMap?: Map<string, string>;
+    runtimeInfo?: () => Promise<CossackRuntimeInfo>;
+}
 
 /** @internal Find an authored member without treating framework defaults as handlers. */
 export function getAuthoredRouteMember(ComponentClass: new () => Cossack, name: string): PropertyDescriptor | undefined {
@@ -24,7 +34,7 @@ export function getAuthoredRouteMember(ComponentClass: new () => Cossack, name: 
  *   defined on the class or an authored ancestor is invoked. This lets a single route
  *   support a canonical name with a fallback (e.g. `get` with `init` as an alias).
  */
-export function createApiHandler(ComponentClass: new () => Cossack, methodNames: string | string[]) {
+export function createApiHandler(ComponentClass: new () => Cossack, methodNames: string | string[], options: ApiHandlerOptions = {}) {
     const names = Array.isArray(methodNames) ? methodNames : [methodNames];
     return async (c: Context) => {
         // The candidate method actually invoked on this request (first defined
@@ -56,26 +66,44 @@ export function createApiHandler(ComponentClass: new () => Cossack, methodNames:
                 `api:${c.req.method}:${(c.req as { routePath?: string }).routePath || c.req.path}`,
             );
             if (rateLimited) return rateLimited;
+            // Honour @Server({ authorize }) on the handler before constructing it.
+            await enforceActionAuthorization(ComponentClass, methodName, [], c, c.req.raw.signal);
 
             stage = 'handler';
-            const instance = new ComponentClass();
-            // Wrap the raw Hono context with the Cossack proxy so API handlers
-            // get the same augmented context as pages (e.g. `getFormData<T>()`).
-            (instance as any).c = createCossackContext(c, true);
+            // Construct through DI with the same root + layout service scopes as
+            // SSR and /crpc, so @Service/@Inject dependencies resolve.
+            const user = c.get('user');
+            const facilities = { context: c, user, env: c.env };
+            const chain = await createServiceScopeChain({
+                componentPath: options.componentPath ?? '',
+                layouts: options.layouts ?? {},
+                routePathToIdMap: options.routePathToIdMap ?? new Map(),
+                scopeKey: await resolveRealtimeScopeKey(c, undefined),
+                facilities,
+            });
+            let instance: Cossack | undefined;
+            try {
+                instance = createInstance(ComponentClass, { serviceScope: chain.scope });
+                // Bootstrap provides `this.c` (the augmented Cossack context,
+                // e.g. `getFormData<T>()`), `this.user` and `this.env`.
+                await instance.bootstrap({ ...facilities, runtime: await options.runtimeInfo?.(), skipInit: true });
 
-            // Call the designated API method (get, post, etc.)
-            const result = await (instance as any)[methodName]();
+                // Call the designated API method (get, post, etc.)
+                const result = await (instance as any)[methodName]();
 
-            // If the method returns a Response object, return it directly
-            if (result instanceof Response) {
-                return result;
+                // If the method returns a Response object, return it directly
+                if (result instanceof Response) {
+                    return result;
+                }
+
+                stage = 'output';
+                // Otherwise, automatically serialize the public state and return as JSON
+                const state = instance.getPublicState();
+                return c.json(state);
+            } finally {
+                try { await instance?.destroyAsync(); }
+                finally { await chain.root.disposeAsync(); }
             }
-
-            stage = 'output';
-            // Otherwise, automatically serialize the public state and return as JSON
-            const state = instance.getPublicState();
-            return c.json(state);
-
         } catch (error) {
             const denial = getAuthorizationFailure(error);
             if (denial) {
