@@ -22,28 +22,37 @@ export type CalendarProps = Omit<GlobalAttributes<HTMLDivElement>, 'id' | 'role'
     locale?: string;
     /** Sunday=0 through Saturday=6. Default Sunday. */
     weekStartsOn?: number;
-    /** Reference day for initial focus/today marker. Default current UTC day; provide for deterministic SSR. */
+    /**
+     * Reference day for initial focus and the today marker. When omitted, the
+     * viewer's current UTC day is resolved once after mount, so server and
+     * hydration renders agree; until then the current month is shown unmarked.
+     */
     today?: string;
     previousLabel?: string;
     nextLabel?: string;
 };
 
 /** A Gregorian date grid with one day in the tab order and bounded keyboard navigation. */
+const utcToday = () => new Date().toISOString().slice(0, 10);
+
 @Component()
 export class Calendar extends Cossack {
     declare props: CalendarProps;
     @ClientState() private draft: string | undefined;
     @ClientState() private cursor: string | undefined;
+    @ClientState() private clientToday: string | undefined;
     private initialValue: string | undefined;
     private cursorOwner: string | undefined;
     private root?: HTMLDivElement;
     private controlled = new ControlledValue<string>();
     private get selected() { this.initialValue ??= this.props.defaultValue ?? ''; return this.props.value ?? this.draft ?? this.initialValue; }
-    private get referenceDay() { return this.props.today || new Date().toISOString().slice(0, 10); }
+    private get referenceDay(): string | undefined { return this.props.today || this.clientToday; }
+    /** Day that anchors the shown month: the reference day, or the first of the current UTC month before mount. */
+    private get anchorDay() { return this.referenceDay ?? `${utcToday().slice(0, 7)}-01`; }
     private get contextKey() { return JSON.stringify([this.selected, this.props.min, this.props.max, this.referenceDay]); }
     private get focusedDate() {
         const range = dateRange(this.props.min, this.props.max);
-        return clampDate(this.cursorOwner === this.contextKey && this.cursor ? this.cursor : this.selected || this.referenceDay, range.first, range.last);
+        return clampDate(this.cursorOwner === this.contextKey && this.cursor ? this.cursor : this.selected || this.anchorDay, range.first, range.last);
     }
 
     render() {
@@ -51,7 +60,7 @@ export class Calendar extends Cossack {
             locale = 'en-US', weekStartsOn = 0, today: _today, previousLabel = 'Previous month', nextLabel = 'Next month', ...rest } = this.props;
         if (typeof id !== 'string' || !id || /\s/.test(id)) throw new Error('Calendar requires a nonempty, whitespace-free id.');
         if (!Number.isInteger(weekStartsOn) || weekStartsOn < 0 || weekStartsOn > 6) throw new RangeError('Calendar weekStartsOn must be an integer from 0 to 6.');
-        parseDate(this.selected, 'value'); parseDate(this.referenceDay, 'today');
+        parseDate(this.selected, 'value'); parseDate(this.props.today, 'today');
         const range = dateRange(min, max), focus = this.focusedDate, date = parseDate(focus)!;
         const year = date.getUTCFullYear(), month = date.getUTCMonth() + 1, first = dateFromParts(year, month, 1);
         const padding = (first.getUTCDay() - weekStartsOn + 7) % 7, count = monthDays(year, month);
@@ -96,6 +105,10 @@ export class Calendar extends Cossack {
     @Client()
     private connect(root: HTMLDivElement) {
         this.root = root;
+        // Resolve "today" on the client only, after the hydrating render matched the server.
+        if (!this.props.today && this.clientToday === undefined) queueMicrotask(() => {
+            if (this.root === root && this.clientToday === undefined) this.clientToday = utcToday();
+        });
         const previous = root.ownerDocument.activeElement;
         const ownedFocus = previous instanceof HTMLButtonElement && root.contains(previous) && !!previous.dataset.date;
         queueMicrotask(() => {
