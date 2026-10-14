@@ -36,7 +36,7 @@ import {html,hydrate,render,component} from '@cossackframework/renderer';
 import {Modal,Sheet,Drawer} from '@cossackframework/ui';
 const template=${templateSource},container=document.querySelector('#app'),initial=container.querySelector('#dialog');
 let Control=Modal,props={defaultOpen:true};window.events=[];window.accept=false;window.veto=false;
-const callbacks={onClose:event=>{window.events.push(['close',event.currentTarget.id,event.currentTarget.returnValue]);if(window.accept){props.open=false;draw();}},'@close':event=>window.events.push(['native',event.currentTarget.id]),'@cancel':event=>{window.events.push(['cancel',event.currentTarget.id]);if(window.veto)event.preventDefault();}};
+const callbacks={onOpenChange:(open,event)=>{window.events.push(['close',event.currentTarget.id,event.currentTarget.returnValue]);if(window.accept){props.open=false;draw();}},'@close':event=>window.events.push(['native',event.currentTarget.id]),'@cancel':event=>{window.events.push(['cancel',event.currentTarget.id]);if(window.veto)event.preventDefault();}};
 function draw(){render(template(Control,{...props,...callbacks}),container);}
 window.update=next=>{props={...props,...next};draw();};
 hydrate(template(Control,{...props,...callbacks}),container);window.retained=initial===container.querySelector('#dialog');

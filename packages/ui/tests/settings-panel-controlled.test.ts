@@ -10,10 +10,10 @@ const sections = [{ id: 'account', title: 'Account', rows: [
 
 afterEach(() => { document.body.replaceChildren(); });
 
-async function mountControlled(values: SettingsValues, onChange: (values: SettingsValues) => unknown) {
+async function mountControlled(values: SettingsValues, onValuesChange: (values: SettingsValues) => unknown) {
     const container = document.createElement('div');
     document.body.append(container);
-    render(component(SettingsPanel, { id: 'settings', sections, values, onChange }), container);
+    render(component(SettingsPanel, { id: 'settings', sections, values, onValuesChange }), container);
     await new Promise(resolve => setTimeout(resolve, 0));
     return {
         name: container.querySelector<HTMLInputElement>('#settings-field-name')!,
@@ -27,29 +27,29 @@ function type(input: HTMLInputElement, value: string) {
 }
 
 it('keeps a typed character while an async parent has not re-rendered', async () => {
-    const onChange = vi.fn();
-    const { name } = await mountControlled({ email: false, name: 'Ja' }, onChange);
+    const onValuesChange = vi.fn();
+    const { name } = await mountControlled({ email: false, name: 'Ja' }, onValuesChange);
     type(name, 'Jan');
     expect(name.value).toBe('Jan');
     await Promise.resolve();
     expect(name.value).toBe('Jan');
-    expect(onChange.mock.lastCall).toEqual([{ email: false, name: 'Jan' }]);
+    expect(onValuesChange.mock.lastCall).toEqual([{ email: false, name: 'Jan' }]);
 });
 
 it('builds each controlled edit on the pending values', async () => {
-    const onChange = vi.fn();
-    const { name, email } = await mountControlled({ email: false, name: 'Ja' }, onChange);
+    const onValuesChange = vi.fn();
+    const { name, email } = await mountControlled({ email: false, name: 'Ja' }, onValuesChange);
     type(name, 'Jan');
     type(name, 'Jane');
     email.click();
-    expect(onChange.mock.calls).toEqual([
+    expect(onValuesChange.mock.calls).toEqual([
         [{ email: false, name: 'Jan' }],
         [{ email: false, name: 'Jane' }],
         [{ email: true, name: 'Jane' }],
     ]);
 });
 
-it('restores the parent values when onChange throws', async () => {
+it('restores the parent values when onValuesChange throws', async () => {
     const { name } = await mountControlled({ email: false, name: 'Ja' }, () => { throw new Error('rejected'); });
     const errors: unknown[] = [];
     const report = (event: ErrorEvent) => { errors.push(event.error); event.preventDefault(); };

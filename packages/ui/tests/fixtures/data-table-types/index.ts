@@ -112,7 +112,7 @@ component(InputGroup, {prefix:'$',type:'number',min:0,'.value':12,required:true,
     '@input':event=>{const input:HTMLInputElement=event.currentTarget;void input;}});
 component(PasswordInput, {value:'secret',disabled:false,autocomplete:'new-password',placeholder:'',required:true,
     showLabel:'Reveal password',hideLabel:'Conceal password',
-    onChange:(value,event)=>{const input:HTMLInputElement=event.currentTarget;void [value,input];},
+    onValueChange:(value,event)=>{const input:HTMLInputElement=event.currentTarget;void [value,input];},
     '@input':event=>{const input:HTMLInputElement=event.currentTarget;void input;}});
 component(PasswordInput, {'@input':preventDefault(()=>{}, {novalidate:false})});
 // @ts-expect-error InputGroup closes arbitrary native attributes.
@@ -126,7 +126,7 @@ component(PasswordInput, {'?disabled':true});
 // @ts-expect-error Password fields do not support file inputs.
 component(PasswordInput, {accept:'image/*'});
 // @ts-expect-error Password callbacks do not target a textarea.
-component(PasswordInput, {onChange:(_value,event)=>{const textarea:HTMLTextAreaElement=event.currentTarget;void textarea;}});
+component(PasswordInput, {onValueChange:(_value,event)=>{const textarea:HTMLTextAreaElement=event.currentTarget;void textarea;}});
 
 
 component(InputGroup, {'aria-controls':'results','aria-activedescendant':'result-1','aria-describedby':'help error','aria-labelledby':'label'});
@@ -138,7 +138,7 @@ component(Input, {'aria-describedby':false});
 
 import { InputOTP } from '@cossackframework/ui';
 component(InputOTP,{length:6,defaultValue:'012345',name:'code',required:true,'aria-label':'Code',
-    onChange:(value,event)=>{const input:HTMLInputElement=event.currentTarget;void [value,input];},
+    onValueChange:(value,event)=>{const input:HTMLInputElement=event.currentTarget;void [value,input];},
     onComplete:code=>{const text:string=code;void text;},
     '@paste':event=>event.clipboardData?.getData('text'),'?disabled':false});
 // @ts-expect-error OTP owns its native input type.
@@ -154,7 +154,7 @@ component(InputOTP,{placehoder:'Code'});
 
 import { Combobox, type ComboboxOption } from '@cossackframework/ui';
 const countries: readonly ComboboxOption[] = [{value:'us',label:'United States',disabled:false}];
-component(Combobox,{id:'country',options:countries,name:'country',required:true,'aria-label':'Country',onChange:value=>value.toUpperCase(),'@keydown':event=>event.currentTarget.select()});
+component(Combobox,{id:'country',options:countries,name:'country',required:true,'aria-label':'Country',onValueChange:value=>value.toUpperCase(),'@keydown':event=>event.currentTarget.select()});
 // @ts-expect-error Stable SSR/hydration ID is required.
 component(Combobox,{options:countries});
 // @ts-expect-error The component owns the input role.
@@ -167,7 +167,7 @@ component(Combobox,{id:'country',options:[{value:1,label:'One'}]});
 component(Combobox,{id:'country',placehoder:'Search'});
 
 import { MultiSelect } from '@cossackframework/ui';
-component(MultiSelect,{id:'skills',name:'skills',value:['TypeScript'] as const,options:['TypeScript','Rust'] as const,required:true,'aria-label':'Skills',onChange:values=>values.map(value=>value.toUpperCase()),validate:value=>value.length>20?'Too long':null,'@input':event=>event.currentTarget.select(),removeLabel:value=>`Delete ${value}`});
+component(MultiSelect,{id:'skills',name:'skills',value:['TypeScript'] as const,options:['TypeScript','Rust'] as const,required:true,'aria-label':'Skills',onValueChange:values=>values.map(value=>value.toUpperCase()),validate:value=>value.length>20?'Too long':null,'@input':event=>event.currentTarget.select(),removeLabel:value=>`Delete ${value}`});
 // @ts-expect-error Stable ID is required.
 component(MultiSelect,{value:[]});
 // @ts-expect-error Selection uses string arrays.
@@ -182,8 +182,8 @@ component(MultiSelect,{id:'skills','aria-activedescendant':'other'});
 component(MultiSelect,{id:'skills',placehoder:'Pick'});
 
 import { Calendar, DatePicker } from '@cossackframework/ui';
-component(Calendar,{id:'calendar',value:'2024-02-29',locale:'de-DE',weekStartsOn:1,onChange:iso=>iso.toUpperCase(),'@keydown':event=>event.currentTarget.classList.add('used')});
-component(DatePicker,{id:'due',name:'due',required:true,min:'2024-01-01',value:'2024-02-29',onChange:iso=>iso.toUpperCase(),'@input':event=>event.currentTarget.checkValidity()});
+component(Calendar,{id:'calendar',value:'2024-02-29',locale:'de-DE',weekStartsOn:1,onValueChange:iso=>iso.toUpperCase(),'@keydown':event=>event.currentTarget.classList.add('used')});
+component(DatePicker,{id:'due',name:'due',required:true,min:'2024-01-01',value:'2024-02-29',onValueChange:iso=>iso.toUpperCase(),'@input':event=>event.currentTarget.checkValidity()});
 // @ts-expect-error Calendar needs a stable ID.
 component(Calendar,{value:'2024-02-29'});
 // @ts-expect-error DatePicker owns its native input type.
@@ -196,7 +196,7 @@ component(DatePicker,{id:'due',placeholder:'Pick'});
 component(DatePicker,{id:'due','@input':(event: Event & {currentTarget: HTMLTextAreaElement})=>event.currentTarget.rows});
 
 import { Modal, Sheet, Drawer, type DialogControlProps } from '@cossackframework/ui';
-const dialogProps: DialogControlProps = { open: true, onClose: event => { const dialog: HTMLDialogElement = event.currentTarget; void dialog.returnValue; }, '@cancel': event => event.preventDefault(), 'aria-label': 'Details' };
+const dialogProps: DialogControlProps = { open: true, onOpenChange: (open, event) => { const dialog: HTMLDialogElement = event.currentTarget; void [open, dialog.returnValue]; }, '@cancel': event => event.preventDefault(), 'aria-label': 'Details' };
 component(Modal, dialogProps);
 component(Sheet, { ...dialogProps, side: 'left', fullScreen: true });
 component(Drawer, { ...dialogProps, title: 'Details', closeLabel: 'Dismiss' });
@@ -245,7 +245,7 @@ component(ContextMenu, { id: 'document', menuLabel: 'Actions', open: true });
 void invalidSeparator;
 
 import { Tooltip, HoverCard } from '@cossackframework/ui';
-component(Tooltip, { id: 'help', label: 'Help', delay: 150, '@pointerenter': event => { const span: HTMLSpanElement = event.currentTarget; void span; } });
+component(Tooltip, { id: 'help', label: 'Help', openDelay: 150, '@pointerenter': event => { const span: HTMLSpanElement = event.currentTarget; void span; } });
 component(HoverCard, { id: 'details', label: 'Details', content: 'Details', contentProps: { '@click': event => { const div: HTMLDivElement = event.currentTarget; void div; } } });
 // @ts-expect-error Stable tooltip IDs are required.
 component(Tooltip, { label: 'Help' });
@@ -285,7 +285,7 @@ component(Command, { id: 'commands', label: 'Navigate', fuzzy: true });
 
 import { Accordion, Collapsible } from '@cossackframework/ui';
 component(Accordion, { id: 'section', summary: 'Details', headingLevel: 2, '@click': event => { const div: HTMLDivElement = event.currentTarget; void div; }, triggerProps: { '@click': event => { const button: HTMLButtonElement = event.currentTarget; void button; } }, panelProps: { '@keydown': event => { const div: HTMLDivElement = event.currentTarget; void div; } } });
-component(Collapsible, { id: 'more', trigger: 'More', open: true, onToggle: open => { const value: boolean = open; void value; } });
+component(Collapsible, { id: 'more', trigger: 'More', open: true, onOpenChange: open => { const value: boolean = open; void value; } });
 // @ts-expect-error Stable IDs are required.
 component(Accordion, { summary: 'Details' });
 // @ts-expect-error Trigger content is now text in the owned native button.
@@ -297,7 +297,7 @@ component(Accordion, { id: 'section', summary: 'Details', panelProps: { style: '
 
 import { Tabs, type TabsItem } from '@cossackframework/ui';
 const tabItems: readonly TabsItem[] = [{ value: 'a', label: 'A' }, { value: 'b', label: { text: 'B' }, ariaLabel: 'B' }];
-component(Tabs, { id: 'tabs', label: 'Sections', items: tabItems, activation: 'manual', onChange: value => { const selected: string = value; void selected; }, listProps: { '@keydown': event => { const div: HTMLDivElement = event.currentTarget; void div; } } });
+component(Tabs, { id: 'tabs', label: 'Sections', items: tabItems, activation: 'manual', onValueChange: value => { const selected: string = value; void selected; }, listProps: { '@keydown': event => { const div: HTMLDivElement = event.currentTarget; void div; } } });
 // @ts-expect-error Stable IDs are required.
 component(Tabs, { label: 'Sections' });
 // @ts-expect-error Named tab lists are required.
@@ -310,8 +310,8 @@ component(Tabs, { id: 'tabs', label: 'Sections', listProps: { role: 'listbox' } 
 import { Toggle, ToggleGroup, type ToggleGroupItem } from '@cossackframework/ui';
 component(Toggle, { defaultPressed: true, 'aria-label': 'Bold', onPressedChange: value => { const pressed: boolean = value; void pressed; }, '@click': event => { const button: HTMLButtonElement = event.currentTarget; void button; } });
 const toggleItems: readonly ToggleGroupItem[] = [{ value: 'bold', label: 'Bold' }];
-component(ToggleGroup, { label: 'Format', items: toggleItems, value: 'bold', onChange: value => { const selected: string = value; void selected; } });
-component(ToggleGroup, { label: 'Format', type: 'multiple', value: ['bold'] as const, onChange: values => {
+component(ToggleGroup, { label: 'Format', items: toggleItems, value: 'bold', onValueChange: value => { const selected: string = value; void selected; } });
+component(ToggleGroup, { label: 'Format', type: 'multiple', value: ['bold'] as const, onValueChange: values => {
     const selected: string[] = values;
     // @ts-expect-error Multiple mode never emits a scalar string.
     const single: string = values;
@@ -331,13 +331,13 @@ component(ToggleGroup, { label: 'Format', type: 'multiple', value: 'bold' });
 component(ToggleGroup, { label: 'Format', items: [{ value: 'bold', label: {} }] });
 
 // The object overload retains default-mode contextual typing without losing optional props.
-component(ToggleGroup, { label: 'Format', onChange: value => {
+component(ToggleGroup, { label: 'Format', onValueChange: value => {
     const selected: string = value;
     // @ts-expect-error Default single mode never emits an array.
     const multiple: string[] = value;
     void selected; void multiple;
 } });
-component(ToggleGroup, { label: 'Format', type: 'single', onChange: value => { const selected: string = value; void selected; } });
+component(ToggleGroup, { label: 'Format', type: 'single', onValueChange: value => { const selected: string = value; void selected; } });
 component(ToggleGroup);
 component(ToggleGroup, undefined, 'Children');
 declare const optionalToggleProps: import('@cossackframework/ui').ToggleGroupProps | undefined;
@@ -577,7 +577,7 @@ import { Sidebar, type SidebarItem, type SidebarLinkProps, type SidebarNavProps 
 const sidebarItems:readonly SidebarItem[]=[{value:'home',label:'Home',href:'/'},{value:'group',label:'Group',children:[{value:'child',label:'Child',href:'/child'}]}];
 const sidebarLinkProps:SidebarLinkProps={target:'_blank','@click':event=>{const anchor:HTMLAnchorElement=event.currentTarget;void anchor;}};
 const sidebarNavProps:SidebarNavProps={'@focus':event=>{const nav:HTMLElement=event.currentTarget;void nav;}};
-component(Sidebar,{id:'nav',label:'Pages',items:sidebarItems,navProps:sidebarNavProps,onToggle:collapsed=>{const value:boolean=collapsed;void value;},onNavigate:(item,event)=>{const href:string|undefined=item.href;const anchor:HTMLAnchorElement=event.currentTarget;void href;void anchor;},'@click':event=>{const aside:HTMLElement=event.currentTarget;void aside;}});
+component(Sidebar,{id:'nav',label:'Pages',items:sidebarItems,navProps:sidebarNavProps,onCollapsedChange:collapsed=>{const value:boolean=collapsed;void value;},onNavigate:(item,event)=>{const href:string|undefined=item.href;const anchor:HTMLAnchorElement=event.currentTarget;void href;void anchor;},'@click':event=>{const aside:HTMLElement=event.currentTarget;void aside;}});
 component(Sidebar,{id:'mobile-nav',label:'Pages',collapsible:'offcanvas',restoreFocusTo:'opener'});
 // @ts-expect-error Names are required.
 component(Sidebar,{id:'nav'});
@@ -767,12 +767,12 @@ void incompleteStat;
 import { SettingsPanel, type SettingsPanelProps, type SettingsRow, type SettingsSection, type SettingsValues } from '@cossackframework/ui/blocks';
 const settingSections: readonly SettingsSection[] = [{id:'account',title:'Account',rows:[{key:'email',label:'Email',type:'switch'}]}];
 const settingValues:SettingsValues={email:true};
-const settingsProps:SettingsPanelProps={id:'settings',sections:settingSections,values:settingValues,onChange:values=>{void values;},'@click':event=>{const div:HTMLDivElement=event.currentTarget;void div;}};
+const settingsProps:SettingsPanelProps={id:'settings',sections:settingSections,values:settingValues,onValuesChange:values=>{void values;},'@click':event=>{const div:HTMLDivElement=event.currentTarget;void div;}};
 component(SettingsPanel,settingsProps);
-// @ts-expect-error controlled values require onChange
+// @ts-expect-error controlled values require onValuesChange
 component(SettingsPanel,{id:'settings',sections:settingSections,values:settingValues});
 // @ts-expect-error controlled and default values cannot be combined
-component(SettingsPanel,{id:'settings',sections:settingSections,values:settingValues,defaultValues:{},onChange:()=>{}});
+component(SettingsPanel,{id:'settings',sections:settingSections,values:settingValues,defaultValues:{},onValuesChange:()=>{}});
 // @ts-expect-error action text is required
 const missingAction:SettingsRow={type:'button',key:'run',label:'Run'};
 // @ts-expect-error no arbitrary props
@@ -782,3 +782,23 @@ settingValues.email=false;
 // @ts-expect-error sections are readonly
 settingSections.push({id:'x',title:'X',rows:[]});
 void missingAction;
+
+// The README naming rule: state x pairs with onXChange, hover timing is openDelay.
+// @ts-expect-error value proposals use onValueChange, never onChange
+component(Tabs, { id: 'renamed-tabs', label: 'Sections', onChange: (value: string) => value });
+// @ts-expect-error value proposals use onValueChange, never onChange
+component(PasswordInput, { onChange: (value: string) => value });
+// @ts-expect-error open proposals use onOpenChange, not onToggle
+component(Collapsible, { id: 'renamed-more', trigger: 'More', onToggle: (open: boolean) => open });
+// @ts-expect-error collapsed proposals use onCollapsedChange, not onToggle
+component(Sidebar, { id: 'renamed-nav', label: 'Pages', onToggle: (collapsed: boolean) => collapsed });
+// @ts-expect-error dialog dismissal proposes onOpenChange(false), not onClose
+component(Modal, { 'aria-label': 'Details', onClose: () => {} });
+// @ts-expect-error settings snapshots use onValuesChange
+component(SettingsPanel, { id: 'renamed-settings', sections: settingSections, values: settingValues, onChange: () => {} });
+// @ts-expect-error hover timing uses openDelay
+component(Tooltip, { id: 'renamed-tip', label: 'Help', delay: 100 });
+// @ts-expect-error hover timing uses openDelay
+component(NavigationMenu, { id: 'renamed-primary', label: 'Primary navigation', hoverDelay: 100 });
+component(NavigationMenu, { id: 'renamed-primary', label: 'Primary navigation', openDelay: 100, closeDelay: 100 });
+component(Modal, { 'aria-label': 'Details', open: true, onOpenChange: (open, event) => { const dialog: HTMLDialogElement = event.currentTarget; void [open, dialog]; } });

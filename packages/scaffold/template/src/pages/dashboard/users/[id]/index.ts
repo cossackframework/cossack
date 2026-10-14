@@ -151,7 +151,7 @@ export default class EditUserPage extends Cossack {
                                     control: attributes => component(PasswordInput, {
                                         ...attributes,
                                         value: this.newPassword,
-                                        onChange: (v: string) => this.newPassword = v,
+                                        onValueChange: (v: string) => this.newPassword = v,
                                     }) })}
                                 <div>
                                     ${component(Button, { type: 'submit', variant: 'outline' }, __('Update password'))}

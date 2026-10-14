@@ -6,7 +6,7 @@ import { ControlledValue } from '../native-attributes';
 const shortcutOwners = new WeakMap<Document, Map<HTMLDialogElement, Command>>();
 
 export type CommandItem = { readonly id: string; readonly label: string; readonly group?: string; readonly disabled?: boolean; readonly description?: string };
-export type CommandProps = Omit<DialogControlProps, 'id' | 'aria-label' | 'aria-labelledby' | 'onClose'> & {
+export type CommandProps = Omit<DialogControlProps, 'id' | 'aria-label' | 'aria-labelledby' | 'onOpenChange'> & {
     id: string;
     /** Accessible name of the modal palette. */
     label: string;
@@ -40,7 +40,7 @@ export class Command extends Cossack {
     private removeShortcut?: () => void;
     private generation = 0;
     private controlled = new ControlledValue<boolean>();
-    private dialog = new DialogController(() => ({ ...this.props, open: this.isOpen, onClose: () => this.setOpen(false) }), () => this.requestUpdate());
+    private dialog = new DialogController(() => ({ ...this.props, open: this.isOpen, onOpenChange: () => this.setOpen(false) }), () => this.requestUpdate());
 
     get isOpen() { return this.props.open ?? this.localOpened ?? this.initialOpened ?? !!this.props.defaultOpen; }
     getFiltered() {

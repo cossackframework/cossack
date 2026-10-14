@@ -30,7 +30,7 @@ export class QueryHistorySheet extends Cossack {
       open: this.props.open,
       side: 'right',
       size: 'min(36rem, 94vw)',
-      onClose: this.props.onClose,
+      onOpenChange: this.props.onClose,
       'data-testid': 'query-history',
       'aria-label': 'Query history',
     }, html`

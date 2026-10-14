@@ -9,37 +9,37 @@ const { renderToString } = await import('@cossackframework/renderer');
 describe.each([Accordion, Collapsible])('%s state ownership', (Component) => {
     it('toggles default-open content before the first render', () => {
         const instance = new Component();
-        const onToggle = vi.fn();
-        instance.props = { id: 'test', summary: 'Section', trigger: 'Section', defaultOpen: true, onToggle };
+        const onOpenChange = vi.fn();
+        instance.props = { id: 'test', summary: 'Section', trigger: 'Section', defaultOpen: true, onOpenChange };
         instance.toggle();
-        expect(onToggle).toHaveBeenCalledWith(false);
+        expect(onOpenChange).toHaveBeenCalledWith(false);
         expect(renderToString(instance.render())).toContain('height: 0; overflow: hidden');
         instance.toggle();
-        expect(onToggle).toHaveBeenLastCalledWith(true);
+        expect(onOpenChange).toHaveBeenLastCalledWith(true);
         expect(renderToString(instance.render())).toContain('height: auto; overflow: visible');
     });
 
     it('captures defaultOpen only once and blocks disabled toggles', () => {
         const instance = new Component();
-        const onToggle = vi.fn();
-        instance.props = { id: 'test', summary: 'Section', trigger: 'Section', defaultOpen: true, onToggle };
+        const onOpenChange = vi.fn();
+        instance.props = { id: 'test', summary: 'Section', trigger: 'Section', defaultOpen: true, onOpenChange };
         expect(renderToString(instance.render())).toContain('height: auto; overflow: visible');
         instance.props = { ...instance.props, defaultOpen: false, disabled: true };
         instance.toggle();
-        expect(onToggle).not.toHaveBeenCalled();
+        expect(onOpenChange).not.toHaveBeenCalled();
         expect(renderToString(instance.render())).toContain('height: auto; overflow: visible');
     });
 
     it('leaves controlled state with the parent until props change', () => {
         const instance = new Component();
-        const onToggle = vi.fn();
-        instance.props = { id: 'test', summary: 'Section', trigger: 'Section', open: false, defaultOpen: true, onToggle };
+        const onOpenChange = vi.fn();
+        instance.props = { id: 'test', summary: 'Section', trigger: 'Section', open: false, defaultOpen: true, onOpenChange };
         instance.toggle();
-        expect(onToggle).toHaveBeenCalledWith(true);
+        expect(onOpenChange).toHaveBeenCalledWith(true);
         expect(renderToString(instance.render())).toContain('height: 0; overflow: hidden');
         instance.props = { ...instance.props, open: true };
         expect(renderToString(instance.render())).toContain('height: auto; overflow: visible');
         instance.toggle();
-        expect(onToggle).toHaveBeenLastCalledWith(false);
+        expect(onOpenChange).toHaveBeenLastCalledWith(false);
     });
 });

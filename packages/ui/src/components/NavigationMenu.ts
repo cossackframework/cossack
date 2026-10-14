@@ -28,7 +28,9 @@ export type NavigationMenuProps = Omit<GlobalAttributes<HTMLElement>, 'id' | 'ro
     sections?: readonly NavigationMenuSection[];
     disabled?: boolean;
     trigger?: 'hover' | 'click';
-    hoverDelay?: number;
+    /** Milliseconds from pointer hover to opening a section. Default 100. */
+    openDelay?: number;
+    /** Milliseconds from pointer leave to closing a section. Default 150. */
     closeDelay?: number;
 };
 type NavigationEntry = {
@@ -122,7 +124,7 @@ export class NavigationMenu extends Cossack {
         this.cancelClosing(value);
         if (panel || this.props.trigger === 'click' || entry.dismissed || this.unavailable(value) || this.pointerBlocked(entry)) return;
         this.cancelOpening();
-        this.opening = { value, timer: setTimeout(() => { this.opening = undefined; if (entry.overButton && this.props.trigger !== 'click') this.show(value, true); }, this.props.hoverDelay ?? 100) };
+        this.opening = { value, timer: setTimeout(() => { this.opening = undefined; if (entry.overButton && this.props.trigger !== 'click') this.show(value, true); }, this.props.openDelay ?? 100) };
     }
     private leave(value: string, panel: boolean) {
         const entry = this.entries.get(value); if (!entry) return;
@@ -213,9 +215,9 @@ export class NavigationMenu extends Cossack {
         }
     }
     render() {
-        const { id, label, sections = [], disabled: _disabled, trigger = 'hover', hoverDelay = 100, closeDelay = 150, '@keydown': suppliedKey, '@focusin': suppliedFocus, '@focusout': suppliedBlur, ...rest } = this.props;
+        const { id, label, sections = [], disabled: _disabled, trigger = 'hover', openDelay = 100, closeDelay = 150, '@keydown': suppliedKey, '@focusin': suppliedFocus, '@focusout': suppliedBlur, ...rest } = this.props;
         if (typeof id !== 'string' || !id || /\s/.test(id) || typeof label !== 'string' || !label.trim()) throw new Error('NavigationMenu requires a stable id and nonempty label.');
-        if (!['hover','click'].includes(trigger) || [hoverDelay,closeDelay].some(value => !Number.isInteger(value) || value < 0 || value > 60000)) throw new Error('NavigationMenu requires hover/click mode and integer delays from 0 to 60000.');
+        if (!['hover','click'].includes(trigger) || [openDelay,closeDelay].some(value => !Number.isInteger(value) || value < 0 || value > 60000)) throw new Error('NavigationMenu requires hover/click mode and integer delays from 0 to 60000.');
         const values = new Set<string>();
         for (const section of sections) {
             if (typeof section.value !== 'string' || !section.value || values.has(section.value) || typeof section.label !== 'string' || !section.label.trim()) throw new Error('NavigationMenu sections require unique values and nonempty text labels.');

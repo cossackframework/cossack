@@ -25,7 +25,7 @@ import {html,render,component} from '@cossackframework/renderer';
 import {Toaster,Modal,toast} from '@cossackframework/ui';
 const container=document.querySelector('#app');let open=false;
 function draw(){render(html\`\${component(Toaster,{position:'top-right'})}
-  \${component(Modal,{open,'aria-label':'Settings',onClose:()=>{open=false;draw();}},html\`<p>Modal body</p><button type="button" id="inside">Inside</button>\`)}\`,container);}
+  \${component(Modal,{open,'aria-label':'Settings',onOpenChange:value=>{open=value;draw();}},html\`<p>Modal body</p><button type="button" id="inside">Inside</button>\`)}\`,container);}
 window.toast=toast;window.setOpen=value=>{open=value;draw();};draw();window.ready=true;
 `);
     await build({ root, configFile: false, logLevel: 'silent', plugins: [await tailwind()], build: { outDir: 'dist', emptyOutDir: true } });

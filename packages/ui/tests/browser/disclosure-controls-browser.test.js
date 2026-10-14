@@ -36,7 +36,7 @@ import {html,hydrate,render,component} from '@cossackframework/renderer';
 import {Accordion,Collapsible} from '@cossackframework/ui';
 const template=${templateSource},container=document.querySelector('#app'),initial=container.querySelector('#section-trigger');
 let a={},c={},disabled=false;window.events=[];window.accept=false;window.veto=false;window.submits=0;
-function props(name,value){return {...value,onToggle:open=>{window.events.push([name,open]);if(window.accept){if(name==='a')a={...a,open};else c={...c,open};draw();}},'@click':event=>window.events.push(['root',event.currentTarget.id]),triggerProps:{'@click':event=>{window.events.push(['trigger',event.currentTarget.id]);if(window.veto)event.preventDefault();}},panelProps:{'data-panel':name}};}
+function props(name,value){return {...value,onOpenChange:open=>{window.events.push([name,open]);if(window.accept){if(name==='a')a={...a,open};else c={...c,open};draw();}},'@click':event=>window.events.push(['root',event.currentTarget.id]),triggerProps:{'@click':event=>{window.events.push(['trigger',event.currentTarget.id]);if(window.veto)event.preventDefault();}},panelProps:{'data-panel':name}};}
 function draw(){render(template(props('a',a),props('c',c),disabled),container);}
 window.update=(name,next)=>{if(name==='a')a={...a,...next};else c={...c,...next};draw();};window.disable=value=>{disabled=value;draw();};
 hydrate(template(props('a',a),props('c',c),disabled),container);window.retained=initial===container.querySelector('#section-trigger');

@@ -169,7 +169,7 @@ export default class PublicLayout extends Cossack {
                 ${component(Sheet, {
                     open: this.mobileNavOpen,
                     side: 'right',
-                    onClose: () => this.closeMobileNav(),
+                    onOpenChange: () => this.closeMobileNav(),
                     'aria-label': 'Navigation',
                 }, html`
                     <nav class="flex flex-col gap-1 pt-4">

@@ -31,7 +31,7 @@ export class Sheet extends Cossack {
     private dialog = new DialogController(() => this.props, () => this.requestUpdate());
 
     render() {
-        const { open: _open, defaultOpen: _default, closeOnBackdrop: _backdrop, closeOnEscape: _escape, onClose: _close,
+        const { open: _open, defaultOpen: _default, closeOnBackdrop: _backdrop, closeOnEscape: _escape, onOpenChange: _change,
             side = 'right', size, fullScreen = false, ...rest } = this.props;
         const dims = SIDE_DIMENSIONS[side];
         if (!dims) throw new Error('Sheet side must be left, right, top or bottom.');

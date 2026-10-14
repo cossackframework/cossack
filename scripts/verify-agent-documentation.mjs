@@ -525,7 +525,7 @@ it('installed reporter records the actual outcome', () => expect(2 + 2).toBe(4))
     }
     const password = uiSymbols.find(symbol => symbol.name === 'PasswordInput');
     assert.ok(!password.propsContract.indexSignatures.some(index => index.keyType === 'string' && index.valueType === 'any'));
-    assert.ok(password.propsContract.members.some(member => member.name === 'onChange' && member.callSignatures.some(signature => signature.includes('HTMLInputElement'))));
+    assert.ok(password.propsContract.members.some(member => member.name === 'onValueChange' && member.callSignatures.some(signature => signature.includes('HTMLInputElement'))));
     assert.ok(!password.propsContract.members.some(member => ['type','.value','?disabled'].includes(member.name)));
     const otp = uiSymbols.find(symbol => symbol.name === 'InputOTP');
     assert.equal(otp.propsContract.status, 'declared');
@@ -617,7 +617,7 @@ it('installed reporter records the actual outcome', () => expect(2 + 2).toBe(4))
     assert.ok(!tabs.propsContract.indexSignatures.some(index => index.keyType === 'string' && index.valueType === 'any'));
     assert.ok(tabs.propsContract.members.some(member => member.name === '@click' && member.type.includes('HTMLDivElement')));
     assert.ok(tabs.propsContract.members.some(member => member.name === 'listProps' && member.type.includes('TabsListProps')));
-    assert.ok(tabs.propsContract.members.some(member => member.name === 'onChange' && member.type.includes('string')));
+    assert.ok(tabs.propsContract.members.some(member => member.name === 'onValueChange' && member.type.includes('string')));
     assert.ok(uiSymbols.some(symbol => symbol.name === 'TabsItem'));
     assert.ok(uiPackage.guidance.guides.some(guide => guide.id === 'typed-tabs'));
     for (const [name, event, target] of [['Toggle', '@click', 'HTMLButtonElement'], ['ToggleGroup', '@keydown', 'HTMLDivElement']]) {

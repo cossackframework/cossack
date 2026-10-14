@@ -26,7 +26,7 @@ export class AlertDialog extends Cossack {
 
     render() {
         const { id, title, description, cancelLabel = 'Cancel', actionLabel = 'Confirm', actionVariant = 'destructive',
-            actionDisabled = false, onAction, open: _open, defaultOpen: _default, closeOnEscape: _escape, onClose: _close, ...rest } = this.props;
+            actionDisabled = false, onAction, open: _open, defaultOpen: _default, closeOnEscape: _escape, onOpenChange: _change, ...rest } = this.props;
         if (typeof id !== 'string' || !id || /\s/.test(id)) throw new Error('AlertDialog requires a nonempty, whitespace-free id.');
         for (const [name, value] of [['title', title], ['cancelLabel', cancelLabel], ['actionLabel', actionLabel]]) {
             if (typeof value !== 'string' || !value.trim()) throw new Error(`AlertDialog requires a nonempty ${name}.`);
@@ -59,7 +59,7 @@ export class AlertDialog extends Cossack {
             </div>
         </dialog>`;
     }
-    /** Explicit dismissal for uncontrolled consumers. Controlled consumers must accept onClose. */
+    /** Explicit dismissal for uncontrolled consumers. Controlled consumers must accept onOpenChange(false). */
     @Client() close() { this.dialog.close(); }
     onCleanup() { this.dialog.disconnect(); this.dialogRef.value = undefined; }
 }

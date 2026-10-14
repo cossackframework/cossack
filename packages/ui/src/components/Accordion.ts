@@ -46,7 +46,7 @@ export class Accordion extends Cossack {
 
     render() {
         const { id, summary, headingLevel = 3, triggerProps = {}, panelProps = {}, disabled,
-            open: _open, defaultOpen: _default, onToggle: _toggle, ...rest } = this.props;
+            open: _open, defaultOpen: _default, onOpenChange: _change, ...rest } = this.props;
         validateDisclosure(id, summary);
         if (![2,3,4,5,6].includes(headingLevel)) throw new Error('headingLevel must be from 2 through 6.');
         const open = this.isOpen;
@@ -106,12 +106,12 @@ export class Accordion extends Cossack {
         const currentOpen = this.controlled.base(this.props, this.isOpen);
 
         if (this.props.open !== undefined) {
-            this.props.onToggle?.(this.controlled.emit(this.props, !currentOpen));
+            this.props.onOpenChange?.(this.controlled.emit(this.props, !currentOpen));
             return;
         }
         this.userInteracted = true;
         this.internalOpen = !currentOpen;
-        this.props.onToggle?.(this.controlled.emit(this.props, this.internalOpen));
+        this.props.onOpenChange?.(this.controlled.emit(this.props, this.internalOpen));
     }
 
     onMount() {

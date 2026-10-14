@@ -14,10 +14,10 @@ it('renders native navigation, scoped disclosure relationships and readonly link
     expect(output).toContain('target="_blank"');
     expect(output).toContain('aria-current="page"');
     expect(output).not.toContain('role="menu');
-    expect(output).not.toMatch(/\s(?:sections|hoverDelay|closeDelay|trigger)=/);
+    expect(output).not.toMatch(/\s(?:sections|openDelay|closeDelay|trigger)=/);
     const other = renderToString(component(NavigationMenu,{id:'other',label:'Other',sections}));
     expect(other).not.toContain('main-panel-');
 });
-it.each([{id:''},{label:''},{trigger:'unknown'},{hoverDelay:-1},{closeDelay:Infinity},{sections:[{value:'same',label:'One'},{value:'same',label:'Two'}]},{sections:[{value:'docs',label:'Docs',items:[{value:'guide',label:'',href:'/'}]}]},{sections:[{value:'docs',label:'Docs',items:[{value:'guide',label:'Guide',href:''}]}]},{sections:[{value:'docs',label:'Docs',items:[{value:'guide',label:'Guide',href:'/'},{value:'guide',label:'Other',href:'/other'}]}]}])('rejects invalid navigation contracts: %j', patch => {
+it.each([{id:''},{label:''},{trigger:'unknown'},{openDelay:-1},{closeDelay:Infinity},{sections:[{value:'same',label:'One'},{value:'same',label:'Two'}]},{sections:[{value:'docs',label:'Docs',items:[{value:'guide',label:'',href:'/'}]}]},{sections:[{value:'docs',label:'Docs',items:[{value:'guide',label:'Guide',href:''}]}]},{sections:[{value:'docs',label:'Docs',items:[{value:'guide',label:'Guide',href:'/'},{value:'guide',label:'Other',href:'/other'}]}]}])('rejects invalid navigation contracts: %j', patch => {
     expect(()=>renderToString(component(NavigationMenu,{id:'main',label:'Primary',...patch} as any))).toThrow('NavigationMenu');
 });

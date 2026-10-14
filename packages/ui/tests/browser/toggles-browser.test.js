@@ -40,8 +40,8 @@ window.parentList=Object.freeze(['left','locked','unknown']);let p={},g={value:'
 window.toggles=[];window.singles=[];window.multiples=[];window.veto=false;window.acceptP=false;window.acceptG=false;window.submits=0;
 function draw(){render(template(pp(),gg(),mm(),disabled),container);}
 function pp(){return {...p,onPressedChange:value=>{window.toggles.push(value);if(window.acceptP){p={...p,pressed:value};draw();}},'@click':event=>{window.nativeTarget=event.currentTarget.id;if(window.veto)event.preventDefault();}};}
-function gg(){return {...g,onChange:value=>{window.singles.push(value);if(window.acceptG){g={...g,value};draw();}},'@keydown':event=>{window.groupTarget=event.currentTarget.id;if(window.veto)event.preventDefault();}};}
-function mm(){return {...m,onChange:values=>{window.multiples.push([...values]);values.push('callback-only');}};}
+function gg(){return {...g,onValueChange:value=>{window.singles.push(value);if(window.acceptG){g={...g,value};draw();}},'@keydown':event=>{window.groupTarget=event.currentTarget.id;if(window.veto)event.preventDefault();}};}
+function mm(){return {...m,onValueChange:values=>{window.multiples.push([...values]);values.push('callback-only');}};}
 window.update=(name,next)=>{if(name==='p')p={...p,...next};else if(name==='g')g={...g,...next};else m={...m,...next};draw();};window.disable=value=>{disabled=value;draw();};
 hydrate(template(pp(),gg(),mm(),disabled),container);window.retained=initial===container.querySelector('#toggle')&&initialGroup===container.querySelector('#single');
 container.addEventListener('submit',event=>{event.preventDefault();window.submits++;});

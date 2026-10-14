@@ -52,7 +52,7 @@ export default class ResetPasswordPage extends Cossack {
             <h3 class="mb-6 text-xl font-semibold text-foreground">${__('Reset Password')}</h3>
             <form @submit="${(e: Event) => this.handleSubmit(e)}" class="space-y-4">
                 ${component(Field, { label: __('New Password'), for: 'password', error: this.getError('form.password'),
-                    control: attributes => component(PasswordInput, { ...attributes, value: this.form.password, placeholder: '••••••••', onChange: (v: string) => this.form.password = v }) })}
+                    control: attributes => component(PasswordInput, { ...attributes, value: this.form.password, placeholder: '••••••••', onValueChange: (v: string) => this.form.password = v }) })}
                 ${this.error ? component(Alert, { variant: 'destructive' }, this.error) : null}
                 ${component(Button, { type: 'submit', block: true }, __('Reset Password'))}
             </form>

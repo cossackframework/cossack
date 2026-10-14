@@ -118,7 +118,7 @@ export default class RootLayout extends Cossack {
       items: this.sidebarItems,
       collapsed: collapsible === 'icon' ? this.sidebarCollapsed : false,
       ...(collapsible === 'offcanvas' ? { collapsible: 'offcanvas' as const, restoreFocusTo: 'mobile-navigation-trigger' } : { collapsible: 'icon' as const }),
-      onToggle: collapsible === 'icon' ? this.toggleSidebar : this.closeMobileNavigation,
+      onCollapsedChange: collapsible === 'icon' ? this.toggleSidebar : this.closeMobileNavigation,
       onNavigate: this.navigateSidebar,
       footer: html`<p class="px-2 text-xs text-muted-foreground group-[.is-collapsed]:hidden">Built with Cossack</p>`,
       'data-testid': collapsible === 'icon' ? 'desktop-sidebar' : 'mobile-sidebar',
@@ -138,7 +138,7 @@ export default class RootLayout extends Cossack {
           open: this.mobileNavigationOpen,
           side: 'left',
           size: 'min(88vw, 320px)',
-          onClose: this.closeMobileNavigation,
+          onOpenChange: this.closeMobileNavigation,
           'aria-label': 'Demo navigation',
         }, this.renderSidebar('offcanvas'))}
 

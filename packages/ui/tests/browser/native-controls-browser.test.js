@@ -72,7 +72,7 @@ function drawAddons(){
       \${component(Label,{for:'account-password'},'Account password')}
       \${component(PasswordInput,{id:'account-password',name:'password',value:password,required:true,disabled:addonDisabled,
         autocomplete:'new-password',placeholder:'',showLabel:'Reveal secret',hideLabel:'Conceal secret',
-        onChange:(value,event)=>{password=value;window.passwordEvents.push(['change',event.currentTarget.tagName,value,event.defaultPrevented]);drawAddons();},
+        onValueChange:(value,event)=>{password=value;window.passwordEvents.push(['change',event.currentTarget.tagName,value,event.defaultPrevented]);drawAddons();},
         '@input':inputDirective?preventDefault(nativeInput,{novalidate:false}):nativeInput})}
     </fieldset>
   </form>\`,addons);

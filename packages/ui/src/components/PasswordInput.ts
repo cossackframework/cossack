@@ -20,7 +20,7 @@ export type PasswordInputProps = PasswordAttributes & {
     /** Control size. Defaults to "default". */
     size?: "default" | "sm" | "lg";
     /** Called before the native @input listener with the value and native event. */
-    onChange?: (value: string, event: ControlEvent<HTMLInputElement, InputEvent>) => unknown;
+    onValueChange?: (value: string, event: ControlEvent<HTMLInputElement, InputEvent>) => unknown;
     /** Accessible names for the reveal button. Localize these with the field label. */
     showLabel?: string;
     hideLabel?: string;
@@ -41,7 +41,7 @@ const SIZES: Record<NonNullable<PasswordInputProps["size"]>, string> = {
  *
  *   ${component(PasswordInput, {
  *       value: this.password,
- *       onChange: (v) => { this.password = v; },
+ *       onValueChange: (v) => { this.password = v; },
  *   })}
  */
 @Component()
@@ -53,11 +53,11 @@ export class PasswordInput extends Cossack {
 
     render() {
         const { value, placeholder = "••••••••", autocomplete = "current-password",
-            size = "default", disabled = false, onChange, showLabel = "Show password",
+            size = "default", disabled = false, onValueChange, showLabel = "Show password",
             hideLabel = "Hide password", '@input': nativeInput, ...rest } = this.props;
         const onInput: EventListener = event => {
             const inputEvent = event as ControlEvent<HTMLInputElement, InputEvent>;
-            onChange?.(inputEvent.currentTarget.value, inputEvent);
+            onValueChange?.(inputEvent.currentTarget.value, inputEvent);
             if (typeof nativeInput === 'function') nativeInput(inputEvent);
             else if (nativeInput instanceof PreventDefaultResult) nativeInput.handler.call(inputEvent.currentTarget, inputEvent);
         };

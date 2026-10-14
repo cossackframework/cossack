@@ -8,13 +8,13 @@ type OTPAttributes = Pick<InputAttributes, keyof GlobalAttributes<HTMLInputEleme
 export type InputOTPProps = OTPAttributes & {
     /** Number of digit slots, from 1 to 32. Default 6. */
     length?: number;
-    /** Controlled code. Update this in onChange to accept edits. */
+    /** Controlled code. Update this in onValueChange to accept edits. */
     value?: string;
     /** Initial code when value is omitted. */
     defaultValue?: string;
     /** Called for a changed code with the native input event. */
-    onChange?: (value: string, event: ControlEvent<HTMLInputElement>) => unknown;
-    /** Called for a changed, complete code after onChange. Not called for initial/parent values. */
+    onValueChange?: (value: string, event: ControlEvent<HTMLInputElement>) => unknown;
+    /** Called for a changed, complete code after onValueChange. Not called for initial/parent values. */
     onComplete?: (value: string, event: ControlEvent<HTMLInputElement>) => unknown;
     size?: "sm" | "default" | "lg";
     autocomplete?: 'one-time-code' | 'off';
@@ -62,7 +62,7 @@ export class InputOTP extends Cossack {
     }
 
     render() {
-        const { length: _length, value: _value, defaultValue: _default, onChange: _change, onComplete: _complete,
+        const { length: _length, value: _value, defaultValue: _default, onValueChange: _change, onComplete: _complete,
             size = 'default', autocomplete = 'one-time-code', ...rest } = this.props;
         const length = this.digitCount, nativeValue = this.composingInput?.value ?? this.code;
         const code = digits(nativeValue, length);
@@ -149,7 +149,7 @@ export class InputOTP extends Cossack {
         this.draft = next;
         if (changed) {
             this.controlled.emit(this.props, next);
-            this.props.onChange?.(next, event);
+            this.props.onValueChange?.(next, event);
             if (next.length === length) this.props.onComplete?.(next, event);
         }
         // Controlled parents can reject an edit; restore their value after callbacks.

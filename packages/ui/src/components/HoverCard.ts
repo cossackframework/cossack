@@ -19,7 +19,7 @@ export class HoverCard extends Cossack {
     private wrapper?: HTMLDivElement;
     private hover = new HoverController(() => ({ ...this.props, side: this.props.side ?? 'bottom' }));
     render() {
-        const { id, label, content, contentProps = {}, delay: _delay, closeDelay: _close, disabled: _disabled, side: _side, ...rest } = this.props;
+        const { id, label, content, contentProps = {}, openDelay: _openDelay, closeDelay: _closeDelay, disabled: _disabled, side: _side, ...rest } = this.props;
         validateHover(id, this.props);
         if (typeof label !== 'string' || !label.trim()) throw new Error('HoverCard requires a nonempty label.');
         return html`<div ref=${(element: Element) => { this.wrapper = element as HTMLDivElement; }} class="cs-hover-card__wrapper relative inline-flex" ...=${rest}>

@@ -19,9 +19,9 @@ it('renders a named nonmodal card with no additional wrapper tab stop', () => {
     expect(output).not.toContain('popovertarget=');
     expect(output).toContain('data-panel="yes"');
 });
-it.each([-1, NaN, Infinity, 0.5, 60001])('rejects invalid delay %s', delay => {
-    const tooltip = new Tooltip();tooltip.props = { id: 'tip', label: 'Help', delay };
-    expect(() => tooltip.render()).toThrow('delay');
+it.each([-1, NaN, Infinity, 0.5, 60001])('rejects invalid openDelay %s', openDelay => {
+    const tooltip = new Tooltip();tooltip.props = { id: 'tip', label: 'Help', openDelay };
+    expect(() => tooltip.render()).toThrow('openDelay must be');
 });
 it('validates IDs, plain descriptions and sides', () => {
     expect(() => renderToString(component(Tooltip, { id: 'two words', label: 'Help' }))).toThrow('id');

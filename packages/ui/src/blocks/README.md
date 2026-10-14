@@ -67,7 +67,7 @@ AuthForm requires an instance `id` and an application-owned `onSubmit` callback.
 See its installed guide for credential handling, safe errors and provider actions.
 
 SettingsPanel requires a stable `id` and readonly sections with unique section IDs
-and row keys. Use `values` plus `onChange` for controlled settings, or `defaultValues`
+and row keys. Use `values` plus `onValuesChange` for controlled settings, or `defaultValues`
 for local state. Buttons require `action` text and `onAction`. Destructive styling
 requires `variant: 'destructive'`. They are non-submit buttons. Wrap the block in
 an application form for native submission/reset. A reset proposes the initial

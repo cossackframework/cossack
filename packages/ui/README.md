@@ -64,7 +64,7 @@ Then add to `src/style.css` (after `@import "tailwindcss";`):
 | RadioGroup | `<input type="radio">` | Radio button group |
 | Slider | `<input type="range">` | Range slider with token accent-color |
 | InputOTP | `<input>` ×N | Segmented one-time-password input (paste, auto-advance, arrows) |
-| Calendar | `<div>` grid | Month-grid date picker with min/max bounds and ISO onChange |
+| Calendar | `<div>` grid | Month-grid date picker with min/max bounds and ISO `onValueChange` |
 | DatePicker | `popover` + calendar | Calendar in a native popover. It emits an ISO date on pick |
 | Label | `<label>` | Accessible form label |
 
@@ -133,6 +133,48 @@ html`
   ${component(Icon, { entry: ArrowRightIcon, variant: "duotone", size: 20 })}
 `;
 ```
+
+## State props and callback names
+
+All components use one naming rule, taken from shadcn/ui and Radix:
+
+- State that the user can change, called `x` here, has up to three props:
+  `x` for parent-controlled state, `defaultX` for an uncontrolled initial
+  value, and `onXChange(next, ...)` to propose the next value. For example:
+  `value`, `defaultValue` and `onValueChange`.
+- The callback name repeats the state name. A component that only reports its
+  state, such as Carousel, uses the same form.
+- Callbacks for events that are not state use `on` and a verb: `onSelect`,
+  `onAction`, `onSubmit`, `onComplete`, `onNavigate` and `onRetry`.
+- No component prop is named `onChange`. Native controls (Input, Textarea,
+  NativeSelect, Checkbox, Switch and Slider) report edits through native
+  `@input` and `@change` listeners.
+- Hover timing uses `openDelay` and `closeDelay`, in milliseconds.
+
+| State | Callback | Components |
+|---|---|---|
+| `value` | `onValueChange` | Tabs, ToggleGroup, RadioGroup, Combobox, MultiSelect, Calendar, DatePicker, InputOTP, PasswordInput, Carousel |
+| `open` | `onOpenChange` | Accordion, Collapsible, Modal, Sheet, Drawer, AlertDialog, Command, CommandPalette |
+| `pressed` | `onPressedChange` | Toggle |
+| `collapsed` | `onCollapsedChange` | Sidebar |
+| `size` | `onSizeChange` | Resizable |
+| `page` | `onPageChange` | Pagination |
+| `state`, `selection` | `onStateChange`, `onSelectionChange` | DataTable |
+| `mode` | `onModeChange` | AuthForm |
+| `values` | `onValuesChange` | SettingsPanel |
+| `token` (reported only) | `onTokenChange` | Turnstile |
+| hover timing | `openDelay`, `closeDelay` | Tooltip, HoverCard, NavigationMenu |
+
+A controlled component calls `onXChange` and keeps showing `x` until the
+parent renders a new value. To accept the change, set `x` to the proposed
+value. To reject it, render the old value again. The component then shows the
+old value, and the same edit proposes the change again later. An edit made
+before the parent renders builds on the last proposal, so a quick double click
+on a Toggle proposes `true` and then `false`.
+
+Modal, Sheet, Drawer and AlertDialog call `onOpenChange(false, event)` after a
+user or browser dismissal. The `event` is the native `close` event. If `open`
+stays `true`, the dialog opens again.
 
 ## Theming
 
@@ -269,7 +311,7 @@ back to `line`:
 ## Accordion and Collapsible
 
 Both components accept `open` for parent-controlled state, or `defaultOpen`
-for local state, and call `onToggle(open)` when the trigger is used.
+for local state, and call `onOpenChange(open)` when the trigger is used.
 `Accordion` uses a button summary. `Collapsible` accepts custom trigger content.
 
 Open content has automatic height and visible overflow, including during SSR.

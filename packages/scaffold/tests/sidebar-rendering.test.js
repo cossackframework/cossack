@@ -19,6 +19,8 @@ it('renders the generated dashboard with named, stable sidebar items and group d
  Object.assign(page,{appName:'Example',isAdmin:false,sidebarCollapsed:false,theme:'light',account:{name:'Alice',email:'alice@example.test',avatar:null},children:'Content',isActive:href=>href==='/dashboard/projects/one',onToggleSidebar:()=>{},toggleTheme:()=>{},doLogout:()=>{}});
  const output=renderToString(page.render());
  for(const part of ['id="dashboard-navigation"','aria-label="Dashboard navigation"','data-sidebar-value="dashboard"','data-sidebar-value="module:projects"','data-sidebar-value="module:projects:/dashboard/projects/one"','href="/dashboard/projects"','href="/dashboard/projects/one"'])expect(output).toContain(part);
+ // The generated layout wires the built-in collapse toggle through onCollapsedChange.
+ expect(output).toContain('cs-sidebar__toggle');
  expect(output).toMatch(/<details[^>]*\sopen/);
  expect(output.match(/aria-current="page"/g)).toHaveLength(1);
  page.sidebarCollapsed=true;const rail=renderToString(page.render());expect(rail).toContain('is-collapsed');expect(rail).toContain('href="/dashboard/projects/one"');

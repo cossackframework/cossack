@@ -15,7 +15,7 @@ export type CalendarProps = Omit<GlobalAttributes<HTMLDivElement>, 'id' | 'role'
     disabled?: boolean;
     /** Allow navigation but prevent selection. */
     readonly?: boolean;
-    onChange?: (iso: string) => unknown;
+    onValueChange?: (iso: string) => unknown;
     /** Every accepted user pick, including the already selected date. */
     onSelect?: (iso: string) => unknown;
     /** Explicit Gregorian locale. Default en-US. */
@@ -71,7 +71,7 @@ export class Calendar extends Cossack {
     }
 
     render() {
-        const { id, value: _value, defaultValue: _default, min, max, disabled = false, readonly = false, onChange: _change, onSelect: _select,
+        const { id, value: _value, defaultValue: _default, min, max, disabled = false, readonly = false, onValueChange: _change, onSelect: _select,
             locale = 'en-US', weekStartsOn = 0, today: _today, previousLabel = 'Previous month', nextLabel = 'Next month', ...rest } = this.props;
         if (typeof id !== 'string' || !id || /\s/.test(id)) throw new Error('Calendar requires a nonempty, whitespace-free id.');
         if (!Number.isInteger(weekStartsOn) || weekStartsOn < 0 || weekStartsOn > 6) throw new RangeError('Calendar weekStartsOn must be an integer from 0 to 6.');
@@ -179,7 +179,7 @@ export class Calendar extends Cossack {
         if (this.props.disabled || this.props.readonly || source.matches(':disabled') || iso < range.first || iso > range.last) return;
         const changed = this.controlled.changed(this.props, this.selected, iso);
         this.draft = iso;
-        if (changed) this.props.onChange?.(this.controlled.emit(this.props, iso));
+        if (changed) this.props.onValueChange?.(this.controlled.emit(this.props, iso));
         this.props.onSelect?.(iso);
         this.cursorOwner = this.contextKey;
         this.cursor = iso;

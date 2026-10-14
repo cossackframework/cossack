@@ -37,8 +37,8 @@ type SharedProps = Omit<GlobalAttributes<HTMLDivElement>, 'id' | 'tabindex'> & {
     onAction?: (key: string) => unknown;
 };
 export type SettingsPanelProps = SharedProps & (
-    { values: SettingsValues; defaultValues?: never; onChange: (values: SettingsValues) => unknown }
-    | { values?: never; defaultValues?: SettingsValues; onChange?: (values: SettingsValues) => unknown }
+    { values: SettingsValues; defaultValues?: never; onValuesChange: (values: SettingsValues) => unknown }
+    | { values?: never; defaultValues?: SettingsValues; onValuesChange?: (values: SettingsValues) => unknown }
 );
 
 /** Native settings controls. Applications own persistence, authorization and action errors. */
@@ -48,7 +48,7 @@ export class SettingsPanel extends Cossack {
     @ClientState() private localValues: SettingsValues | undefined;
     private initialValues?: SettingsValues;
     private controlled?: boolean;
-    // A controlled parent applies onChange in a later render. Until it replaces
+    // A controlled parent applies onValuesChange in a later render. Until it replaces
     // props, edits build on, and controls show, the last emitted values.
     private pending = new ControlledValue<Record<string, boolean | string>>();
     private root = createRef<HTMLDivElement>();
@@ -126,10 +126,10 @@ export class SettingsPanel extends Cossack {
         this.document = undefined; this.root.value = undefined;
     }
     render() {
-        const { id, sections, values, defaultValues, onChange, onAction, disabled = false, ...root } = this.props;
+        const { id, sections, values, defaultValues, onValuesChange, onAction, disabled = false, ...root } = this.props;
         if (typeof id !== 'string' || !id.trim() || /\s/.test(id)) throw new Error('SettingsPanel requires a stable id without whitespace.');
         if (!Array.isArray(sections)) throw new Error('SettingsPanel requires sections.');
-        if (values !== undefined && (defaultValues !== undefined || typeof onChange !== 'function')) throw new Error('Controlled SettingsPanel requires onChange and no defaultValues.');
+        if (values !== undefined && (defaultValues !== undefined || typeof onValuesChange !== 'function')) throw new Error('Controlled SettingsPanel requires onValuesChange and no defaultValues.');
         for (const source of [values, defaultValues]) if (source !== undefined && (source === null || typeof source !== 'object' || Array.isArray(source))) throw new Error('SettingsPanel values must be records.');
         this.controlled ??= values !== undefined;
         if (this.controlled !== (values !== undefined)) throw new Error('SettingsPanel cannot change value ownership after first render.');
@@ -219,7 +219,7 @@ export class SettingsPanel extends Cossack {
         // Controls show the emitted values until the parent re-renders. Writing
         // stale props back here would revert the keystroke and move the caret.
         this.pending.emit(this.props, next);
-        try { this.props.onChange?.({ ...next }); }
+        try { this.props.onValuesChange?.({ ...next }); }
         catch (error) { this.pending.reset(); throw error; }
         finally { this.syncControls(); }
     }

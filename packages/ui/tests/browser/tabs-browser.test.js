@@ -36,7 +36,7 @@ import {html,hydrate,render,component} from '@cossackframework/renderer';
 import {Tabs} from '@cossackframework/ui';
 const template=${templateSource},container=document.querySelector('#app'),initial=container.querySelector('#one [role=tab]'),initialPanel=container.querySelector('#one [role=tabpanel]');
 let props={value:'first weird/#'},other={};window.events=[];window.accept=false;window.veto=false;
-const callbacks={onChange:value=>{window.events.push(value);if(window.accept){props={...props,value};draw();}},listProps:{'@keydown':event=>{window.listTarget=event.currentTarget.id;if(window.veto)event.preventDefault();}}};
+const callbacks={onValueChange:value=>{window.events.push(value);if(window.accept){props={...props,value};draw();}},listProps:{'@keydown':event=>{window.listTarget=event.currentTarget.id;if(window.veto)event.preventDefault();}}};
 function draw(){render(template({...props,...callbacks},other),container);}
 window.update=next=>{props={...props,...next};draw();};window.updateOther=next=>{other={...other,...next};draw();};
 hydrate(template({...props,...callbacks},other),container);window.retained=initial===container.querySelector('#one [role=tab]')&&initialPanel===container.querySelector('#one [role=tabpanel]');

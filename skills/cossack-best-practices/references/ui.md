@@ -76,6 +76,14 @@ html`
 See `packages/ui/README.md` in the monorepo for the full table with native
 elements.
 
+## State props and callback names
+
+State `x` uses `x` (controlled), `defaultX` (uncontrolled) and `onXChange(next)`:
+`value`/`onValueChange`, `open`/`onOpenChange`, `pressed`/`onPressedChange`,
+`collapsed`/`onCollapsedChange`, `size`/`onSizeChange`. No component prop is
+named `onChange`; native controls use `@input` and `@change`. Hover timing uses
+`openDelay` and `closeDelay`. To reject a proposal, render the old value again.
+
 ## Theming — two-layer shadcn-style system
 
 The theme lives in `src/theme/theme.css`:

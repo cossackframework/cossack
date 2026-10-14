@@ -40,7 +40,7 @@ export class RowEditorSheet extends Cossack {
       open: Boolean(editor && object),
       side: 'right',
       size: 'min(48rem, 94vw)',
-      onClose: this.props.onClose,
+      onOpenChange: this.props.onClose,
       'data-testid': 'row-editor-sheet',
       'aria-label': 'Edit row',
     }, html`
@@ -117,7 +117,7 @@ export class ExportSheet extends Cossack {
       open: Boolean(state && object),
       side: 'right',
       size: 'min(32rem, 92vw)',
-      onClose: this.props.onClose,
+      onOpenChange: this.props.onClose,
       'data-testid': 'export-sheet',
       'aria-label': 'Export rows',
     }, html`
@@ -194,7 +194,7 @@ export class BatchUpdateSheet extends Cossack {
       open: Boolean(state && object),
       side: 'right',
       size: 'min(32rem, 92vw)',
-      onClose: this.props.onClose,
+      onOpenChange: this.props.onClose,
       'data-testid': 'batch-update-sheet',
       'aria-label': 'Update rows',
     }, html`
