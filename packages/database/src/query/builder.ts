@@ -208,7 +208,7 @@ export class SelectQueryBuilder<T extends BaseEntity, Row = T> {
       nodes.push({ kind: "text", value: " ORDER BY " }, { kind: "fragment", value: new SQLFragment(orderNodes) });
     }
     // LIMIT and OFFSET are inlined: limit() and offset() only accept safe
-    // non-negative integers. mysql2 binds JavaScript numbers as DOUBLE, and
+    // non-negative integers. The Node MySQL driver binds JavaScript numbers as DOUBLE, and
     // MySQL 8.0.22+ rejects a DOUBLE LIMIT in a prepared statement.
     if (this.limitValue !== undefined) nodes.push({ kind: "text", value: ` LIMIT ${integerLiteral(this.limitValue)}` });
     if (this.offsetValue !== undefined && this.limitValue === undefined) {
