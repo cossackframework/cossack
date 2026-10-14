@@ -187,7 +187,8 @@ it('bounds concurrent worker calls and large results', async () => {
   await expect(runner.run({})).rejects.toMatchObject({ code: 'COSSACK_MCP_BUSY' });
   await runner.close(); await Promise.all(calls);
   expect(runner.activeCount).toBe(0);
-  await fs.writeFile(worker, `import {parentPort} from 'node:worker_threads'; parentPort.postMessage('x'.repeat(4*1024*1024));`);
+  const encoder = new URL('../src/mcp/inspection-result.js', import.meta.url).href;
+  await fs.writeFile(worker, `import {parentPort} from 'node:worker_threads'; import {encodeInspectionResult} from ${JSON.stringify(encoder)}; parentPort.postMessage(encodeInspectionResult('x'.repeat(4*1024*1024)));`);
   const large = new InspectionRunner(root, { workerUrl: pathToFileURL(worker) }); runners.push(large);
   await expect(large.run({})).rejects.toMatchObject({ code: 'COSSACK_MCP_RESULT_TOO_LARGE' });
   expect(large.activeCount).toBe(0);
