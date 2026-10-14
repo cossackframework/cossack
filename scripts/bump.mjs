@@ -13,6 +13,9 @@
  *   2. Rewrites any `^<oldVersion>` range whose key is an in-monorepo package
  *      name to `^<newVersion>`. This covers standard dependency sections and
  *      the nested `scaffold.dependencyVersions` map uniformly.
+ *   3. Sets `version` in every examples/* package.json to the target and
+ *      rewrites their in-monorepo ranges the same way, so examples never drift
+ *      behind the packages they demonstrate.
  *
  * What it deliberately does NOT do:
  *   - Touch `workspace:*` specifiers. pnpm rewrites those to real ranges at
@@ -23,9 +26,12 @@
  */
 import { readFile, writeFile, readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const PACKAGES_DIR = new URL('../packages/', import.meta.url).pathname;
-const ROOT_PACKAGE = new URL('../package.json', import.meta.url).pathname;
+// fileURLToPath, not URL#pathname: pathname is `/C:/...` and percent-encoded on Windows.
+const PACKAGES_DIR = fileURLToPath(new URL('../packages/', import.meta.url));
+const EXAMPLES_DIR = fileURLToPath(new URL('../examples/', import.meta.url));
+const ROOT_PACKAGE = fileURLToPath(new URL('../package.json', import.meta.url));
 const KEYWORDS = new Set(['patch', 'minor', 'major']);
 
 function log(...args) {
@@ -41,12 +47,18 @@ function stringify(json) {
   return JSON.stringify(json, null, 2) + '\n';
 }
 
-async function collectPackages() {
-  const entries = await readdir(PACKAGES_DIR);
+async function collectPackages(directory = PACKAGES_DIR) {
+  let entries;
+  try {
+    entries = await readdir(directory);
+  } catch (error) {
+    if (error.code === 'ENOENT') return [];
+    throw error;
+  }
   const out = [];
   for (const name of entries) {
-    const pkgPath = join(PACKAGES_DIR, name, 'package.json');
-    if (!(await stat(join(PACKAGES_DIR, name))).isDirectory()) continue;
+    const pkgPath = join(directory, name, 'package.json');
+    if (!(await stat(join(directory, name))).isDirectory()) continue;
     try {
       const pkg = await readJson(pkgPath);
       out.push({ dir: name, path: pkgPath, json: pkg });
@@ -185,6 +197,18 @@ async function main() {
     if (dryRun) continue;
 
     await writeFile(path, stringify(next), 'utf8');
+  }
+
+  // Examples are private and not part of the lockstep check, so they are
+  // bumped to the target regardless of their current version.
+  for (const { json, path } of await collectPackages(EXAMPLES_DIR)) {
+    const next = structuredClone(json);
+    const ranges = countScopedRanges(json, oldVersion, inRepo);
+    next.version = newVersion;
+    rewriteRanges(next, oldVersion, newVersion, inRepo, null);
+    totalRangeBumps += ranges;
+    log(`  ${('(example) ' + json.name).padEnd(32)} ${json.version ?? '(none)'} -> ${newVersion}${ranges ? ` +${ranges} range(s)` : ''}`);
+    if (!dryRun) await writeFile(path, stringify(next), 'utf8');
   }
 
   const workspace = await readJson(ROOT_PACKAGE);
