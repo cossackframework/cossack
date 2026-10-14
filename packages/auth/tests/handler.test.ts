@@ -504,3 +504,72 @@ describe('createOAuth — custom providers', () => {
         ).toThrow(/OAuth configuration is invalid/);
     });
 });
+
+// docs/oauth.md: `providers.google.provider.hostedDomain` is enforced on the
+// callback, not only sent as the `hd` picker hint.
+describe('createOAuth — Google hostedDomain and verified email through the callback', () => {
+    afterEach(restoreFetch);
+
+    const idToken = (claims: Record<string, unknown>) => `hdr.${btoa(JSON.stringify(claims))}.sig`;
+
+    function googleApp(provider?: { hostedDomain?: string }) {
+        const oauth = createOAuth({
+            stateStore: memoryOAuthStates().store,
+            secret: SECRET,
+            providers: {
+                google: { clientId: 'g-id', clientSecret: 'g-secret', redirectUrl: '/auth/google/callback', ...(provider ? { provider } : {}) },
+            },
+        });
+        const onUser = vi.fn(async () => {});
+        const onError = vi.fn(async (error: { toJSON(): unknown }, c: { json(body: unknown, status: number): Response }) =>
+            c.json(error.toJSON(), 499));
+        const app = new Hono();
+        app.get('/auth/google/redirect', oauth.redirect('google'));
+        app.get('/auth/google/callback', oauth.callback('google', { onUser, onError: onError as never, successRedirect: '/home' }));
+        const signIn = async (claims: Record<string, unknown>) => {
+            const redirect = await app.request('/auth/google/redirect');
+            const location = new URL(redirect.headers.get('location') ?? '');
+            const cookie = /cossack_oauth_state=([^;]+)/.exec(getSetCookieHeader(redirect))![1];
+            mockFetch([
+                { body: { access_token: 'at', id_token: idToken(claims), token_type: 'Bearer' } },
+                { body: { sub: claims.sub } },
+            ]);
+            const response = await app.request(`/auth/google/callback?code=c&state=${location.searchParams.get('state')}`, {
+                headers: { cookie: `cossack_oauth_state=${cookie}` },
+            });
+            restoreFetch();
+            return { location, response };
+        };
+        return { onUser, onError, signIn };
+    }
+
+    it('sends hd and admits a verified account from the configured domain', async () => {
+        const { onUser, signIn } = googleApp({ hostedDomain: 'acme.com' });
+        const { location, response } = await signIn({ sub: 's1', email: 'ada@acme.com', email_verified: true, hd: 'acme.com' });
+        expect(location.searchParams.get('hd')).toBe('acme.com');
+        expect(response.status).toBe(302);
+        expect(response.headers.get('location')).toBe('/home');
+        expect(onUser).toHaveBeenCalledOnce();
+        expect((onUser.mock.calls[0] as unknown[])[0]).toMatchObject({ id: 's1', email: 'ada@acme.com', emailVerified: true });
+    });
+
+    it.each([
+        ['a personal account after the user removed hd', { sub: 's1', email: 'ada@gmail.com', email_verified: true }],
+        ['another Workspace domain', { sub: 's1', email: 'ada@evil.com', email_verified: true, hd: 'evil.com' }],
+        ['an unverified address in the domain', { sub: 's1', email: 'ada@acme.com', email_verified: false, hd: 'acme.com' }],
+    ])('rejects %s before onUser runs', async (_label, claims) => {
+        const { onUser, onError, signIn } = googleApp({ hostedDomain: 'acme.com' });
+        const { response } = await signIn(claims);
+        expect(onUser).not.toHaveBeenCalled();
+        expect(onError).toHaveBeenCalledOnce();
+        expect(response.status).toBe(499);
+        expect(await response.json()).toMatchObject({ code: 'COSSACK_OAUTH_USER_INFO_FAILED', stage: 'user-info', status: 502 });
+    });
+
+    it('passes an unverified Google email to onUser as null without hostedDomain', async () => {
+        const { onUser, signIn } = googleApp();
+        const { response } = await signIn({ sub: 's2', email: 'victim@example.com', email_verified: false });
+        expect(response.status).toBe(302);
+        expect((onUser.mock.calls[0] as unknown[])[0]).toMatchObject({ id: 's2', email: null, emailVerified: false });
+    });
+});
