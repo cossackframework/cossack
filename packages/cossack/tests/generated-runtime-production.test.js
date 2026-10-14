@@ -770,6 +770,116 @@ it.each(['node', 'cloudflare'])('selects and hydrates source boundaries in a gen
     } finally { await browser.close(); await harness.close(); }
   }
 }, 120000);
+// Node parity with Cloudflare's `["/*", "!/assets/*"]` routing: only hashed
+// build output skips the framework; public/ files pass global and page policies.
+it('serves hashed build output before the framework and public files behind policies in a generated production node app', async () => {
+  const root = await project('node');
+  await fs.writeFile(path.join(root, 'src/bootstrap/middlewares.ts'), `
+    import type { MiddlewareHandler } from 'hono';
+    const middlewares: MiddlewareHandler[] = [async (c, next) => {
+      if (c.req.path.startsWith('/guarded') && c.req.header('x-role') !== 'admin') return c.text('global denied', 401);
+      await next();
+      c.header('x-node-pipeline', 'ran');
+    }];
+    export default middlewares;
+  `);
+  await fs.mkdir(path.join(root, 'src/pages/vault'), { recursive: true });
+  await fs.writeFile(path.join(root, 'src/pages/vault/index.ts'), `
+    import { Cossack, Page } from '@cossackframework/core';
+    import { html } from '@cossackframework/renderer';
+    @Page({ middlewares: [async (c, next) => {
+      if (c.req.header('x-vault') !== 'open') return c.text('vault denied', 403);
+      await next(); c.header('x-vault-policy', 'ran');
+    }] })
+    export default class Vault extends Cossack { render() { return html\`<main>vault SSR</main>\`; } }
+  `);
+  for (const [directory, body] of [['vault', 'vault static body'], ['guarded', 'guarded static body']]) {
+    await fs.mkdir(path.join(root, 'public', directory), { recursive: true });
+    await fs.writeFile(path.join(root, 'public', directory, 'record.txt'), `${body} file`);
+  }
+  await vite(root, []);
+  await vite(root, ['--ssr', 'src/index.ts', '--outDir', 'dist/server']);
+  const manifest = JSON.parse(await fs.readFile(path.join(root, 'dist/client/cossack-manifest.json'), 'utf8'));
+  const clientFile = manifest['src/client/entry-client.ts'].file;
+  expect(clientFile).toMatch(/^assets\/entry-client\.[\w-]{8,}\.js$/);
+  const runtime = await productionServer(root);
+  const request = (url, init = {}) => fetch(runtime.origin + url, { redirect: 'manual', ...init });
+  const open = { 'x-vault': 'open' };
+  try {
+    // Hashed output: served before the framework, so global middleware never runs.
+    const client = await request(`/${clientFile}`);
+    expect(client.status).toBe(200);
+    expect(client.headers.get('content-type')).toBe('application/javascript');
+    expect(client.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
+    expect(client.headers.get('x-node-pipeline')).toBeNull();
+    const clientBody = await client.text();
+    expect(clientBody.length).toBeGreaterThan(0);
+    const head = await request(`/${clientFile}`, { method: 'HEAD' });
+    expect(head.status).toBe(200);
+    expect(head.headers.get('content-length')).toBe(String(Buffer.byteLength(clientBody)));
+    expect(head.headers.get('x-node-pipeline')).toBeNull();
+    const cached = await request(`/${clientFile}`, { headers: { 'if-none-match': client.headers.get('etag') } });
+    expect(cached.status).toBe(304);
+    expect(cached.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
+    const partial = await request(`/${clientFile}`, { headers: { range: 'bytes=0-9' } });
+    expect(partial.status).toBe(206);
+    expect(await partial.text()).toBe(clientBody.slice(0, 10));
+    // A missing hashed file continues to the framework's 404 pipeline.
+    const missing = await request('/assets/missing.00000000.js');
+    expect(missing.status).toBe(404);
+    expect(missing.headers.get('x-node-pipeline')).toBe('ran');
+    await missing.body?.cancel();
+
+    // A public file inside a page namespace passes that page's policy first.
+    const denied = await request('/vault/record.txt');
+    expect(denied.status).toBe(403);
+    expect(await denied.text()).toBe('vault denied');
+    const deniedConditional = await request('/vault/record.txt', { headers: { 'if-none-match': '*' } });
+    expect(deniedConditional.status).toBe(403);
+    await deniedConditional.body?.cancel();
+    const record = await request('/vault/record.txt', { headers: open });
+    expect(record.status).toBe(200);
+    expect(await record.text()).toBe('vault static body file');
+    expect(record.headers.get('content-type')).toBe('text/plain');
+    expect(record.headers.get('cache-control')).toBe('public, max-age=0, must-revalidate');
+    expect(record.headers.get('x-vault-policy')).toBe('ran');
+    expect(record.headers.get('x-node-pipeline')).toBe('ran');
+    const recordHead = await request('/vault/record.txt', { method: 'HEAD', headers: open });
+    expect(recordHead.status).toBe(200);
+    expect(recordHead.headers.get('content-length')).toBe(String('vault static body file'.length));
+    expect(await recordHead.text()).toBe('');
+    const recordCached = await request('/vault/record.txt', { headers: { ...open, 'if-none-match': record.headers.get('etag') } });
+    expect(recordCached.status).toBe(304);
+    expect(recordCached.headers.get('x-vault-policy')).toBe('ran');
+    const recordRange = await request('/vault/record.txt', { headers: { ...open, range: 'bytes=0-4' } });
+    expect(recordRange.status).toBe(206);
+    expect(await recordRange.text()).toBe('vault');
+    // Known HTML aliases pass the page policy, then redirect to the canonical route.
+    const alias = await request('/vault/index.html');
+    expect(alias.status).toBe(403);
+    await alias.body?.cancel();
+    const allowedAlias = await request('/vault/index.html', { headers: open });
+    expect(allowedAlias.status).toBe(308);
+    expect(allowedAlias.headers.get('location')).toBe('/vault');
+    // Missing public files continue to SSR and its 404 handling.
+    const missingRecord = await request('/vault/missing.txt', { headers: open });
+    expect(missingRecord.status).toBe(404);
+    await missingRecord.body?.cancel();
+    // Global middleware protects public files that have no page.
+    const guarded = await request('/guarded/record.txt');
+    expect(guarded.status).toBe(401);
+    expect(await guarded.text()).toBe('global denied');
+    const admitted = await request('/guarded/record.txt', { headers: { 'x-role': 'admin' } });
+    expect(admitted.status).toBe(200);
+    expect(await admitted.text()).toBe('guarded static body file');
+    const logo = await request('/logo.svg');
+    expect(logo.status).toBe(200);
+    expect(logo.headers.get('content-type')).toBe('image/svg+xml');
+    expect(logo.headers.get('x-node-pipeline')).toBe('ran');
+    await logo.body?.cancel();
+  } catch (error) { throw new Error(`${error.stack ?? error}\n${runtime.diagnostics()}`); }
+  finally { await runtime.close(); }
+}, 180000);
 it('generates typed URLs that execute real grouped, dynamic, catch-all and API handlers in production', async () => {
   const root = await project('node');
   const write = async (file, source) => {
