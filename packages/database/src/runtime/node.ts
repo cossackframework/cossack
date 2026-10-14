@@ -10,6 +10,7 @@ import type {
 import type { CompiledQuery } from "../sql/fragment.js";
 import { createAsyncLocalScope } from "../adapter/scope.js";
 import { capabilities, meta } from "./helpers.js";
+import { UnsupportedCapabilityError } from "../errors.js";
 import {
   introspectMySQL,
   introspectPostgres,
@@ -30,12 +31,22 @@ interface SQLiteDatabase {
   close(): void;
 }
 
+/**
+ * One synchronous SQLite connection shared by the whole process. Transactions on
+ * it are exclusive: overlapping `transaction()` calls queue, and statements from
+ * other async contexts wait until the open transaction commits or rolls back, so
+ * they never run inside (or get rolled back with) someone else's transaction.
+ */
 class SQLiteDriver implements Driver {
   readonly dialect = "sqlite" as const;
   readonly capabilities: DriverCapabilities = capabilities({
     parameterLimit: 999,
     cancellation: false,
   });
+  private readonly owner = new AsyncLocalStorage<symbol>();
+  private activeTransaction: symbol | undefined;
+  private queued = 0;
+  private tail: Promise<void> = Promise.resolve();
 
   constructor(private readonly database: SQLiteDatabase) {}
 
@@ -43,15 +54,66 @@ class SQLiteDriver implements Driver {
     query: CompiledQuery,
     operation: QueryOperation = "raw",
   ): Promise<QueryResult<Row>> {
+    // Statements are synchronous, so with no transaction open or queued nothing can interleave.
+    if (this.queued === 0 || this.ownsTransaction()) return this.run<Row>(query, operation);
+    return this.exclusive(async () => this.run<Row>(query, operation));
+  }
+
+  async transaction<T>(callback: (driver: Driver) => Promise<T>): Promise<T> {
+    if (this.ownsTransaction()) {
+      throw new UnsupportedCapabilityError("nested SQLite driver transactions (use savepoints)", "sqlite");
+    }
+    return this.exclusive(() => {
+      const token = Symbol("sqlite-transaction");
+      this.activeTransaction = token;
+      return this.owner.run(token, async () => {
+        try {
+          this.database.exec("BEGIN");
+          try {
+            const result = await callback(this);
+            this.database.exec("COMMIT");
+            return result;
+          } catch (cause) {
+            this.database.exec("ROLLBACK");
+            throw cause;
+          }
+        } finally {
+          this.activeTransaction = undefined;
+        }
+      });
+    });
+  }
+
+  reserve<T>(callback: (driver: Driver) => Promise<T>): Promise<T> {
+    return callback(this);
+  }
+
+  private ownsTransaction(): boolean {
+    return this.activeTransaction !== undefined && this.owner.getStore() === this.activeTransaction;
+  }
+
+  private async exclusive<T>(callback: () => Promise<T>): Promise<T> {
+    this.queued++;
+    const previous = this.tail;
+    let release!: () => void;
+    this.tail = new Promise<void>((resolve) => { release = resolve; });
+    try {
+      await previous;
+      return await callback();
+    } finally {
+      this.queued--;
+      release();
+    }
+  }
+
+  private run<Row>(query: CompiledQuery, operation: QueryOperation): QueryResult<Row> {
     const start = performance.now();
     const statement = this.database.prepare(query.text);
-    if (
-      operation === "select" ||
-      /^\s*(SELECT|WITH|PRAGMA|EXPLAIN)/i.test(query.text) ||
-      /\bRETURNING\b/i.test(query.text)
-    ) {
+    const reads = operation === "select" || /^\s*(SELECT|WITH|PRAGMA|EXPLAIN)/i.test(query.text);
+    if (reads || /\bRETURNING\b/i.test(query.text)) {
       const rows = statement.all(...query.parameters) as Row[];
-      return { rows, meta: meta("sqlite", operation, start, { rowsAffected: 0 }) };
+      // DML with RETURNING yields one row per affected row.
+      return { rows, meta: meta("sqlite", operation, start, { rowsAffected: reads ? 0 : rows.length }) };
     }
     const result = statement.run(...query.parameters);
     return {
@@ -61,22 +123,6 @@ class SQLiteDriver implements Driver {
         lastInsertId: result.lastInsertRowid,
       }),
     };
-  }
-
-  async transaction<T>(callback: (driver: Driver) => Promise<T>): Promise<T> {
-    this.database.exec("BEGIN");
-    try {
-      const result = await callback(this);
-      this.database.exec("COMMIT");
-      return result;
-    } catch (cause) {
-      this.database.exec("ROLLBACK");
-      throw cause;
-    }
-  }
-
-  reserve<T>(callback: (driver: Driver) => Promise<T>): Promise<T> {
-    return callback(this);
   }
 
   introspect() {
