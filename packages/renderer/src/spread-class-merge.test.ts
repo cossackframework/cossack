@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { html, hydrate, nothing, render, renderToString, type TemplateResult } from './cossack-html';
 
 // SSR merges a spread `class` into the element's own class attribute. The tag
@@ -74,4 +74,65 @@ describe('SSR spread class merge', () => {
     render(template('two'), container);
     expect(element.getAttribute('class')).toBe('base two');
   });
+});
+
+// The client adds spread classes to the element's own class list, whichever
+// side of the spread the class attribute is on. SSR must render the same
+// class attribute in every order, and hydration must keep it.
+describe('spread class order: SSR matches the client', () => {
+  type Spread = Record<string, unknown>;
+  const cases: [string, (spread: Spread) => TemplateResult, Spread, string][] = [
+    ['spread after a static class', (s) => html`<div class="y" ...=${s}></div>`, { class: 'x' }, 'y x'],
+    ['spread before a static class', (s) => html`<div ...=${s} class="y"></div>`, { class: 'x' }, 'y x'],
+    ['className before a static class', (s) => html`<div ...=${s} class="y"></div>`, { className: 'x' }, 'y x'],
+    ['className after a static class', (s) => html`<div class="y" ...=${s}></div>`, { className: 'x' }, 'y x'],
+    ['spread before an empty static class', (s) => html`<div ...=${s} class=""></div>`, { class: 'x' }, 'x'],
+    ['spread after an empty static class', (s) => html`<div class="" ...=${s}></div>`, { class: 'x' }, 'x'],
+    ['spread with other keys before a class', (s) => html`<a ...=${s} class="y" href="/">a</a>`, { id: 'i', class: 'x z', title: 't' }, 'y x z'],
+    ['no class attribute', (s) => html`<div ...=${s}></div>`, { class: 'x' }, 'x'],
+    ['spread before a bound class', (s) => html`<div ...=${s} class=${'y'}></div>`, { class: 'x' }, 'y x'],
+    ['spread after a bound class', (s) => html`<div class=${'y'} ...=${s}></div>`, { class: 'x' }, 'y x'],
+    ['spread before a multi-part class', (s) => html`<div ...=${s} class="a ${'b'}"></div>`, { class: 'x' }, 'a b x'],
+    ['tokens the class already has', (s) => html`<div ...=${s} class="a  b"></div>`, { class: ' b  c ' }, 'a b c'],
+    ['both class and className', (s) => html`<div ...=${s} class="y"></div>`, { className: 'x', class: 'w' }, 'y x w'],
+    ['a void element closed with />', (s) => html`<input ...=${s} class="y"/>`, { class: 'x' }, 'y x'],
+    ['a void element without a class', (s) => html`<input ...=${s}/>`, { class: 'x' }, 'x'],
+    ['an empty spread class', (s) => html`<div ...=${s} class="y"></div>`, { class: '' }, 'y'],
+  ];
+  for (const empty of [null, undefined, false, nothing]) {
+    cases.push([`a ${String(empty)} spread class`, (s) => html`<div ...=${s} class="y"></div>`, { class: empty }, 'y']);
+  }
+
+  for (const [name, template, spread, expected] of cases) {
+    it(`renders ${name} the same way`, () => {
+      const ssr = ssrElement(template(spread));
+      const client = clientElement(template(spread));
+      expect(ssr.getAttribute('class')).toBe(expected);
+      expect(client.getAttribute('class')).toBe(expected);
+      expect([...ssr.classList]).toEqual([...client.classList]);
+      expect(ssr.outerHTML.match(/ class=/g)?.length ?? 0).toBe(expected ? 1 : 0);
+    });
+
+    it(`hydrates ${name} without warnings and keeps updating`, () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        const container = document.createElement('div');
+        container.innerHTML = renderToString(template(spread), { hydrate: true });
+        const element = container.firstElementChild!;
+        hydrate(template(spread), container);
+        expect(container.firstElementChild).toBe(element);
+        expect(element.getAttribute('class')).toBe(expected);
+        expect(warn).not.toHaveBeenCalled();
+        // A later render behaves exactly like the same update on the client.
+        const next = { ...spread, class: 'n' };
+        render(template(next), container);
+        const client = document.createElement('div');
+        render(template(spread), client);
+        render(template(next), client);
+        expect(element.getAttribute('class')).toBe(client.firstElementChild!.getAttribute('class'));
+      } finally {
+        warn.mockRestore();
+      }
+    });
+  }
 });

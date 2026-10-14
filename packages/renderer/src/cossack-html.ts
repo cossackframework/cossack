@@ -296,18 +296,30 @@ const serializeBooleanAttribute = (name: string, value: boolean): string | null 
 };
 
 /**
- * Mutable accumulator that `renderSpread` writes into. Normal spread
- * attributes are appended to `result`; a caller-supplied `class`/`className`
- * is merged into an existing `class` attribute of the element that starts at
- * `tagStart` by rewriting `result` in place. Passing a holder (rather than
- * returning a string) lets the class-merge coexist with other keys in the
- * same spread object regardless of key order.
+ * Mutable accumulator that `renderSpread` writes into. Spread attributes are
+ * appended to `result`. Class tokens from a `class`/`className` key are
+ * collected in `classes`: the client adds them to the element's class list,
+ * so SSR merges them into the element's class attribute once the start tag
+ * is complete, whichever side of the spread that attribute is on.
  */
 interface SpreadRenderContext {
   result: string;
-  /** Offset in `result` of the spread element's `<`. */
-  tagStart: number;
+  classes: string[];
 }
+
+/**
+ * Class text a spread `class`/`className` key contributes, identical on SSR
+ * and the client: `ifDefined` is unwrapped (only `undefined` drops), and
+ * `nothing`, null, undefined, false and functions contribute nothing.
+ */
+const spreadClassText = (value: unknown): string => {
+  if (value instanceof IfDefinedResult) value = value.value === undefined ? undefined : String(value.value);
+  if (value === nothing || value === null || value === undefined || value === false || typeof value === 'function') return '';
+  return String(value);
+};
+
+/** Class tokens, split the way `DOMTokenList` splits them. */
+const classTokens = (text: string): string[] => text.split(/[ \t\n\f\r]+/).filter(Boolean);
 
 /**
  * SSR output for a `.prop` binding. Properties exist only on the live DOM, so
@@ -349,25 +361,12 @@ const renderSpread = (obj: unknown, ctx: SpreadRenderContext, directValue = fals
       continue;
     }
 
-    if ((name === 'class' || name === 'className') && val instanceof IfDefinedResult) {
-      if (val.value === undefined) continue;
-      val = String(val.value);
-    }
-
-    // `class` / `className` merging: when the element already has a `class`
-    // attribute AND the spread also carries a `class` prop (e.g.
-    // component(Card, { class: 'w-full' })), merge the caller's classes into
-    // the existing attribute instead of emitting a second `class` (browsers
-    // keep only the first, dropping one set). The merge rewrites `ctx.result`
-    // in place, so it composes correctly even when `class` is not the first
-    // key in the spread (earlier keys have already been appended to result).
-    if ((name === 'class' || name === 'className') && typeof val === 'string') {
-      name = 'class';
-      const merged = mergeClassIntoResult(ctx.result, ctx.tagStart, val);
-      if (merged !== null) {
-        ctx.result = merged;
-        continue;
-      }
+    // `class` / `className` never become a second class attribute (browsers
+    // keep only the first). The scanner merges the tokens into the element's
+    // own class once the start tag is complete (see mergeSpreadClasses).
+    if (name === 'class' || name === 'className') {
+      ctx.classes.push(...classTokens(spreadClassText(val)));
+      continue;
     }
 
     if (val === nothing) {
@@ -393,35 +392,32 @@ const renderSpread = (obj: unknown, ctx: SpreadRenderContext, directValue = fals
 };
 
 /**
- * Merge caller-supplied `extraClass` into the `class` attribute of the open
- * tag that starts at `tagStart` in `result` (the spread's own element, as the
- * template analysis located it). Returns the rewritten `result`, or `null`
- * when that tag has no class attribute (the caller emits a fresh one).
- *
- * The tag is read with the shared tokenizer, so quoting style and `<`, `>`
- * or `class="..."` text inside other attribute values cannot mislead it.
- * Browsers keep the first of duplicate attributes, so that one is merged.
+ * Merge spread class tokens into the start tag that begins at `tagStart` in
+ * `result`, the way the client's `classList.add` does: the element's first
+ * class attribute (the one browsers keep) becomes the ordered token set of
+ * its value followed by the new tokens. Without a class attribute, one is
+ * added. The tag is read with the shared tokenizer, so quoting style and
+ * `<`, `>` or `class="..."` text inside other attribute values cannot
+ * mislead it.
  */
-const mergeClassIntoResult = (result: string, tagStart: number, extraClass: string): string | null => {
+const mergeSpreadClasses = (result: string, tagStart: number, tokens: readonly string[]): string => {
   const tag = tokenizeHtml(result.slice(tagStart))[0];
-  if (tag?.type !== 'start-tag') return null;
+  if (tag?.type !== 'start-tag') return result;
   const attr = tag.attributes.find((a) => a.name.toLowerCase() === 'class');
-  if (!attr) return null;
-  // Existing markup is already serialized. Escape only the incoming value;
-  // HTML parsing restores literal quotes/entities in the resulting class text.
-  const extra = escapeHtml(extraClass.trim());
-  if (!extra) return result;
-  if (attr.valueStart < 0) {
-    // A bare `class` attribute.
-    return `${result.slice(0, tagStart + attr.nameStart)}class="${extra}"${result.slice(tagStart + attr.nameEnd)}`;
+  // Existing markup is already serialized; only the new tokens are escaped.
+  const existing = attr && attr.valueStart >= 0 ? classTokens(result.slice(tagStart + attr.valueStart, tagStart + attr.valueEnd)) : [];
+  const merged = [...new Set([...existing, ...tokens.map((token) => escapeHtml(token))])].join(' ');
+  if (!attr) {
+    // Before `>`, or before the `/` of `/>`.
+    const at = tagStart + (tag.closed ? tag.end - (tag.selfClosing ? 2 : 1) : tag.end);
+    return `${result.slice(0, at)} class="${merged}"${result.slice(at)}`;
   }
-  const valueStart = tagStart + attr.valueStart;
-  const valueEnd = tagStart + attr.valueEnd;
-  const existing = result.slice(valueStart, valueEnd);
-  const merged = /[^ \t\n\f\r]/.test(existing) ? `${existing} ${extra}` : extra;
-  // An unquoted value gains quotes so the added space stays inside it.
-  const value = attr.quote ? merged : `"${merged.replace(/"/g, '&quot;')}"`;
-  return result.slice(0, valueStart) + value + result.slice(valueEnd);
+  const start = tagStart + (attr.valueStart >= 0 ? attr.valueStart : attr.nameStart);
+  const end = tagStart + (attr.valueStart >= 0 ? attr.valueEnd : attr.nameEnd);
+  if (attr.valueStart >= 0 && attr.quote) return result.slice(0, start) + merged + result.slice(end);
+  // A bare or unquoted class gains quotes so the spaces stay inside it.
+  const value = `"${merged.replace(/"/g, '&quot;')}"`;
+  return result.slice(0, start) + (attr.valueStart >= 0 ? value : `class=${value}`) + result.slice(end);
 };
 
 // Template analysis depends only on the static strings and the style scope,
@@ -479,6 +475,8 @@ class SSRScanner {
    * element's start tag is being rendered.
    */
   private stringStarts: number[] = [];
+  /** Spread class tokens waiting for their start tag's `>`. */
+  private pendingClasses: { tagStart: number; tokens: string[]; endString: number; endOffset: number } | null = null;
 
   constructor(private resultObj: TemplateResult, private opts: { hydrate?: boolean } = {}) {
     this.analysis = analysisFor(resultObj);
@@ -492,10 +490,20 @@ class SSRScanner {
 
     while (this.stringIdx < strings.length) {
       const str = strings[this.stringIdx];
-      const remaining = str.substring(this.charIdxForNext || 0);
-
-      this.stringStarts[this.stringIdx] = this.result.length - this.charIdxForNext;
-      this.result += remaining;
+      const pending = this.pendingClasses;
+      if (pending && pending.endString === this.stringIdx) {
+        // The start tag ends in this string: merge the spread classes as soon
+        // as its `>` is out, then map the rest of the string past the edit.
+        const tagEnd = pending.endOffset + 1;
+        this.result += str.substring(this.charIdxForNext, tagEnd);
+        this.result = mergeSpreadClasses(this.result, pending.tagStart, pending.tokens);
+        this.pendingClasses = null;
+        this.stringStarts[this.stringIdx] = this.result.length - tagEnd;
+        this.result += str.substring(tagEnd);
+      } else {
+        this.stringStarts[this.stringIdx] = this.result.length - this.charIdxForNext;
+        this.result += str.substring(this.charIdxForNext);
+      }
       this.charIdxForNext = 0;
 
       if (this.stringIdx < strings.length - 1) {
@@ -527,12 +535,16 @@ class SSRScanner {
 
           if (name === '...') {
             this.result = this.result.trimEnd();
-            // renderSpread mutates the context's `result` in place: normal
-            // spread attributes are appended, while a caller-supplied `class`
-            // is merged into the element's existing class attribute.
-            const ctx: SpreadRenderContext = { result: this.result, tagStart: this.stringStarts[binding.tagString] + binding.tagOffset };
+            // renderSpread appends attributes to the context's `result` and
+            // collects class tokens, merged when the start tag is complete.
+            const ctx: SpreadRenderContext = { result: this.result, classes: [] };
             renderSpread(val, ctx, binding.directValue);
             this.result = ctx.result;
+            if (ctx.classes.length > 0) {
+              const tagStart = this.stringStarts[binding.tagString] + binding.tagOffset;
+              if (this.pendingClasses?.tagStart === tagStart) this.pendingClasses.tokens.push(...ctx.classes);
+              else this.pendingClasses = { tagStart, tokens: ctx.classes, endString: binding.tagEndString, endOffset: binding.tagEndOffset };
+            }
           } else if (name === 'ref') {
             // `ref` is a Cossack directive (value is a RefObject); it has no
             // meaningful HTML representation, so emit nothing. Leaving a bare
@@ -627,6 +639,8 @@ class SSRScanner {
       }
       this.stringIdx++;
     }
+    // A template that ends inside the start tag: merge into what is there.
+    if (this.pendingClasses) this.result = mergeSpreadClasses(this.result, this.pendingClasses.tagStart, this.pendingClasses.tokens);
     return this.result;
   }
 }
@@ -1725,6 +1739,19 @@ class StylePart implements Part {
   }
 }
 
+/**
+ * The spread parts of each element. A `class` attribute binding on the same
+ * element rewrites the whole attribute, so it re-adds the spreads' class
+ * tokens afterwards: the element always shows its own class plus the
+ * spread's, whichever part updates first, which is what SSR renders.
+ */
+const elementSpreads = new WeakMap<Element, Set<SpreadPart>>();
+
+const reapplySpreadClasses = (element: Element): void => {
+  const spreads = elementSpreads.get(element);
+  if (spreads) for (const spread of spreads) spread.reapplyClasses();
+};
+
 class SpreadPart implements Part {
   private selectCommit = new SelectValueCommit();
   private previousValues: Record<string, unknown> = {};
@@ -1748,6 +1775,11 @@ class SpreadPart implements Part {
   // independent of it.
   private eventHandlers = new Map<string, { listener: EventListener; handler: EventListener | undefined }>();
   constructor(public element: Element) {}
+
+  /** Add this spread's class tokens again after the class attribute was rewritten. */
+  reapplyClasses() {
+    for (const cls of this.spreadClasses) this.element.classList.add(cls);
+  }
   update(value: unknown) {
     // `nothing`, null, undefined and non-objects all spread nothing, which
     // clears whatever a previous render applied (SSR renders them as empty).
@@ -1772,21 +1804,19 @@ class SpreadPart implements Part {
           (this.element as any)[key.slice(1)] = undefined;
         } else if (key.startsWith('?')) {
           this.element.removeAttribute(key.slice(1));
-        } else if (key === 'class' || key === 'className') {
-          // Remove only the class tokens this spread previously added, leaving
-          // the component's own classes intact.
-          for (const cls of this.spreadClasses) {
-            this.element.classList.remove(cls);
-          }
-          this.spreadClasses = [];
-        } else {
+        } else if (key !== 'class' && key !== 'className') {
+          // A dropped class key is handled by applySpreadClass below.
           this.element.removeAttribute(key);
         }
       }
     }
 
+    // `class` and `className` both add tokens, in key order, like SSR.
+    const classes: string[] = [];
     for (const [key, val] of Object.entries(props)) {
-      if (key.startsWith('@')) {
+      if (key === 'class' || key === 'className') {
+        classes.push(spreadClassText(val));
+      } else if (key.startsWith('@')) {
         const eventName = key.slice(1);
         let entry = this.eventHandlers.get(key);
         if (val === nothing || (typeof val !== 'function' && !(val instanceof PreventDefaultResult))) {
@@ -1879,17 +1909,14 @@ class SpreadPart implements Part {
         if (val !== nothing && val) this.element.setAttribute(key.slice(1), '');
         else this.element.removeAttribute(key.slice(1));
       } else if (val === nothing) {
-        if (key === 'class' || key === 'className') this.applySpreadClass('');
-        else this.element.removeAttribute(key);
+        this.element.removeAttribute(key);
       } else if (val instanceof IfDefinedResult) {
         // `ifDefined` via the spread (e.g. component(El, { href: ifDefined(url) })):
         // drop only on undefined; render every other value (incl. false/null) as a
         // literal attribute string, mirroring the AttributePart path. Checked
         // before the `typeof val === 'boolean'` branch so `false` renders as
         // "false".
-        if (key === 'class' || key === 'className') {
-          this.applySpreadClass(val.value === undefined ? '' : String(val.value));
-        } else if (val.value === undefined) {
+        if (val.value === undefined) {
           this.element.removeAttribute(key);
         } else {
           this.element.setAttribute(key, String(val.value));
@@ -1900,15 +1927,12 @@ class SpreadPart implements Part {
         const serialized = serializeBooleanAttribute(key, val);
         if (serialized === null) this.element.removeAttribute(key);
         else this.element.setAttribute(key, serialized);
-      } else if ((key === 'class' || key === 'className') && typeof val === 'string') {
-        // Merge caller-supplied classes with the element's existing classes
-        // (including the component's own) instead of overwriting. Track which
-        // tokens we added so a later update removes only those.
-        this.applySpreadClass(val);
       } else {
         this.element.setAttribute(key, String(val));
       }
     }
+    // Merge with the element's own classes instead of overwriting them.
+    this.applySpreadClass(classes.join(' '));
     this.previousValues = { ...props };
   }
 
@@ -1922,11 +1946,18 @@ class SpreadPart implements Part {
     for (const cls of this.spreadClasses) {
       this.element.classList.remove(cls);
     }
-    const tokens = val.split(/\s+/).filter(Boolean);
+    const tokens = classTokens(val);
     for (const cls of tokens) {
       this.element.classList.add(cls);
     }
     this.spreadClasses = tokens;
+    // Registered on use, not construction: hydration rebinds the part to the
+    // SSR element first.
+    if (tokens.length > 0) {
+      let spreads = elementSpreads.get(this.element);
+      if (!spreads) elementSpreads.set(this.element, spreads = new Set());
+      spreads.add(this);
+    }
   }
 
   /**
@@ -2075,6 +2106,11 @@ class AttributePart implements Part {
     this.multiState = multiState ?? null;
   }
   update(value: unknown) {
+    this.commit(value);
+    // Rewriting `class` drops the tokens a spread on this element added.
+    if (this.name === 'class') reapplySpreadClasses(this.element);
+  }
+  private commit(value: unknown) {
     const selectPending = this.selectCommit.cancel();
     if (value === nothing) {
       if (this.bindListener) this._detachBindListener();

@@ -53,6 +53,12 @@ export interface AttributeBinding {
    */
   tagString: number;
   tagOffset: number;
+  /**
+   * Where the start tag ends: its `>` is at `tagEndOffset` in the (scoped)
+   * string `tagEndString`. Both are -1 when the template ends inside the tag.
+   */
+  tagEndString: number;
+  tagEndOffset: number;
 }
 
 /** An attribute that contains bindings, used to drop it whole for `nothing`. */
@@ -330,11 +336,15 @@ export const analyzeTemplate = (input: readonly string[], scopeId?: string): Tem
       }
       attr = null;
     };
-    // An opening tag's `>` was read.
+    // An opening tag's `>` was read; it is at `out.length`.
     const tagEnded = () => {
       closeAttribute(0);
       const directValue = t.tagName !== 'textarea' && t.tagName !== 'select' && !tagHasStaticValue;
-      for (const binding of tagBindings) binding.directValue = directValue;
+      for (const binding of tagBindings) {
+        binding.directValue = directValue;
+        binding.tagEndString = i;
+        binding.tagEndOffset = out.length;
+      }
       tagBindings = [];
       if (t.state === State.RawText) rawTextEmpty = true;
     };
@@ -455,6 +465,8 @@ export const analyzeTemplate = (input: readonly string[], scopeId?: string): Tem
             directValue: false,
             tagString,
             tagOffset,
+            tagEndString: -1,
+            tagEndOffset: -1,
           };
           bindings.push(binding);
           tagBindings.push(binding);
@@ -475,7 +487,8 @@ export const analyzeTemplate = (input: readonly string[], scopeId?: string): Tem
     strings.push(out);
   }
 
-  // `directValue` is resolved when each tag closes, so freeze only now.
+  // `directValue` and the tag end are resolved when each tag closes, so
+  // freeze only now.
   for (const binding of bindings) Object.freeze(binding);
   return Object.freeze({
     strings: Object.freeze(strings),
