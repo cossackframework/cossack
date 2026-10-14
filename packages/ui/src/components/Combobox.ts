@@ -210,9 +210,13 @@ export class Combobox extends Cossack {
                 if (!this.editable() && (this.open || this.query !== undefined)) this.close();
             });
             disabledObserver.observe(input, { attributes: true, attributeFilter: ['disabled', 'readonly'] });
-            for (let ancestor = input.parentElement; ancestor; ancestor = ancestor.parentElement) {
-                if (ancestor.tagName === 'FIELDSET') disabledObserver.observe(ancestor, { attributes: true, attributeFilter: ['disabled'] });
-            }
+            // Refs run before a client render adopts its nodes; walk ancestors once connected.
+            queueMicrotask(() => {
+                if (!active) return;
+                for (let ancestor = input.parentElement; ancestor; ancestor = ancestor.parentElement) {
+                    if (ancestor.tagName === 'FIELDSET') disabledObserver.observe(ancestor, { attributes: true, attributeFilter: ['disabled'] });
+                }
+            });
             const resizeObserver = new ResizeObserver(position);
             resizeObserver.observe(input);
             this.cleanup = () => {
