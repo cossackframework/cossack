@@ -24,14 +24,23 @@ export function cacheExpiry(ttlMs?: number): number | undefined {
     return expiresAt;
 }
 
-export function cacheJson(value: unknown): string | undefined {
+/** A value serialized once: the JSON text and its UTF-8 byte length. */
+export type CacheJson = { readonly raw: string; readonly bytes: number };
+
+/** Serialize and size-check a value once; `undefined` means absent. */
+export function cacheJsonValue(value: unknown): CacheJson | undefined {
     if (value === undefined) return undefined;
     let raw: string | undefined;
     try { raw = JSON.stringify(value); } catch { /* Report no payload or secret values. */ }
-    if (raw === undefined || encoder.encode(raw).length > CACHE_MAX_VALUE_BYTES) {
+    const bytes = raw === undefined ? Infinity : encoder.encode(raw).length;
+    if (raw === undefined || bytes > CACHE_MAX_VALUE_BYTES) {
         throw new Error('[Cossack] Cache values must serialize to JSON of at most 1 MiB.');
     }
-    return raw;
+    return { raw, bytes };
+}
+
+export function cacheJson(value: unknown): string | undefined {
+    return cacheJsonValue(value)?.raw;
 }
 
 export function cacheKeys(keys: unknown): asserts keys is string[] {
@@ -41,7 +50,7 @@ export function cacheKeys(keys: unknown): asserts keys is string[] {
     for (const key of keys) cacheKey(key);
 }
 
-export type PreparedCacheEntry = { key: string; raw?: string | undefined; expiresAt?: number | undefined; ttlMs?: number | undefined };
+export type PreparedCacheEntry = { key: string; raw?: string | undefined; bytes?: number | undefined; expiresAt?: number | undefined; ttlMs?: number | undefined };
 
 /** Snapshot values and validate the entire batch before performing any writes. */
 export function prepareCacheEntries(entries: unknown): PreparedCacheEntry[] {
@@ -55,10 +64,10 @@ export function prepareCacheEntries(entries: unknown): PreparedCacheEntry[] {
         }
         cacheKey(entry.key);
         const expiresAt = cacheExpiry(entry.ttlMs);
-        const raw = cacheJson(entry.value);
-        bytes += encoder.encode(entry.key).length + (raw === undefined ? 0 : encoder.encode(raw).length) + 128;
+        const json = cacheJsonValue(entry.value);
+        bytes += encoder.encode(entry.key).length + (json?.bytes ?? 0) + 128;
         if (bytes > CACHE_MAX_BATCH_BYTES) throw new Error('[Cossack] Cache batch JSON exceeds 2 MiB.');
-        return { key: entry.key, raw, expiresAt, ttlMs: entry.ttlMs };
+        return { key: entry.key, raw: json?.raw, bytes: json?.bytes, expiresAt, ttlMs: entry.ttlMs };
     });
 }
 

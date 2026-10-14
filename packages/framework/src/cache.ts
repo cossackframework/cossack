@@ -17,7 +17,8 @@
 import { storageCapabilities, readStorageCapabilities, assertStorageRequirements, storageRequirements, type StorageCapabilities, type StorageRequirements } from '@cossackframework/core/storage-capabilities';
 import { getRequestContext } from '@cossackframework/core';
 import { config } from './config.js';
-import { cacheKey, cacheKeys, cacheExpiry, cacheJson, cacheNamespace, cacheKvKey, prepareCacheEntries, CACHE_MAX_BATCH_BYTES } from './cache-policy.js';
+import { cacheKey, cacheKeys, cacheExpiry, cacheJson, cacheJsonValue, cacheNamespace, cacheKvKey, prepareCacheEntries, CACHE_MAX_BATCH_BYTES,
+    type CacheJson, type PreparedCacheEntry } from './cache-policy.js';
 
 /** Default maximum live entries in an in-memory store. */
 const DEFAULT_MAX_ENTRIES = 10_000;
@@ -56,6 +57,22 @@ export interface CacheEntry<T = unknown> {
     value: T;
     ttlMs?: number;
 }
+
+/**
+ * Built-in stores accept a value the facade already serialized and size-checked,
+ * so one write serializes the value once. Module-private: custom stores keep the
+ * public `CacheStore` contract and receive a JSON snapshot instead.
+ */
+const writeJson = Symbol('cossack.cache.writeJson');
+const writeManyJson = Symbol('cossack.cache.writeManyJson');
+interface JsonCacheWriter {
+    /** Inputs are validated by the caller: key, ttlMs and the serialized value. */
+    [writeJson](key: string, json: CacheJson | undefined, ttlMs: number | undefined): Promise<void>;
+    /** Entries come from `prepareCacheEntries`. */
+    [writeManyJson](entries: PreparedCacheEntry[]): Promise<void>;
+}
+
+const encoder = new TextEncoder();
 
 // ---------------------------------------------------------------------------
 // In-memory store (default)
@@ -107,8 +124,12 @@ export class InMemoryCacheStore implements CacheStore {
     async set<T = unknown>(key: string, value: T, ttlMs?: number): Promise<void> {
         cacheKey(key);
         const expiresAt = cacheExpiry(ttlMs);
-        const raw = cacheJson(value);
-        this.write({ key, raw, expiresAt });
+        const json = cacheJsonValue(value);
+        this.write({ key, raw: json?.raw, bytes: json?.bytes, expiresAt });
+    }
+
+    async [writeJson](key: string, json: CacheJson | undefined, ttlMs: number | undefined): Promise<void> {
+        this.write({ key, raw: json?.raw, bytes: json?.bytes, expiresAt: cacheExpiry(ttlMs) });
     }
 
     async has(key: string): Promise<boolean> { return (await this.get(key)) !== undefined; }
@@ -118,9 +139,12 @@ export class InMemoryCacheStore implements CacheStore {
         cacheKeys(keys); return Promise.all(keys.map(key => this.get<T>(key)));
     }
     async setMany<T = unknown>(entries: CacheEntry<T>[]): Promise<void> {
-        const prepared = prepareCacheEntries(entries);
-        for (const entry of prepared) this.entryBytes(entry);
-        for (const entry of prepared) this.write(entry);
+        await this[writeManyJson](prepareCacheEntries(entries));
+    }
+    async [writeManyJson](prepared: PreparedCacheEntry[]): Promise<void> {
+        // Check every entry against maxBytes before the first write.
+        const sizes = prepared.map(entry => this.entryBytes(entry));
+        prepared.forEach((entry, index) => this.write(entry, sizes[index]));
     }
     async deleteMany(keys: string[]): Promise<void> {
         cacheKeys(keys); for (const key of keys) this.remove(key);
@@ -132,15 +156,15 @@ export class InMemoryCacheStore implements CacheStore {
         this.entries.delete(key);
     }
 
-    private entryBytes(entry: { key: string; raw?: string }): number {
+    /** Key plus value UTF-8 bytes, reusing the length measured at serialization. */
+    private entryBytes(entry: { key: string; raw?: string; bytes?: number }): number {
         if (entry.raw === undefined) return 0;
-        const bytes = new TextEncoder().encode(entry.key).length + new TextEncoder().encode(entry.raw).length;
+        const bytes = encoder.encode(entry.key).length + (entry.bytes ?? encoder.encode(entry.raw).length);
         if (bytes > this.maxBytes) throw new Error('[Cossack] Cache value exceeds this store maxBytes budget.');
         return bytes;
     }
 
-    private write(entry: { key: string; raw?: string; expiresAt?: number }): void {
-        const bytes = this.entryBytes(entry);
+    private write(entry: { key: string; raw?: string; bytes?: number; expiresAt?: number }, bytes = this.entryBytes(entry)): void {
         this.remove(entry.key);
         if (entry.raw === undefined || isExpired(entry.expiresAt)) return;
         if (this.entries.size >= this.maxEntries || this.bytes + bytes > this.maxBytes) {
@@ -154,6 +178,11 @@ export class InMemoryCacheStore implements CacheStore {
 
 function isExpired(expiresAt?: number): boolean {
     return expiresAt !== undefined && Date.now() >= expiresAt;
+}
+
+/** The text JSON.stringify({ version: 1, value, expiresAt }) produces, for serialized `value`. */
+function kvEnvelope(raw: string, expiresAt?: number): string {
+    return `{"version":1,"value":${raw}${expiresAt === undefined ? '' : `,"expiresAt":${expiresAt}`}}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -222,10 +251,14 @@ export class KvCacheStore implements CacheStore {
         await this.write(kvKey, raw, expiresAt, ttlMs);
     }
 
+    async [writeJson](key: string, json: CacheJson | undefined, ttlMs: number | undefined): Promise<void> {
+        await this.write(this.k(key), json?.raw, cacheExpiry(ttlMs), ttlMs);
+    }
+
     private async write(key: string, raw?: string, expiresAt?: number, ttlMs?: number): Promise<void> {
         if (raw === undefined || isExpired(expiresAt)) { await this.kv.delete(key); return; }
         const options = ttlMs === undefined ? {} : { expirationTtl: Math.max(60, Math.ceil(ttlMs / 1000)) };
-        await this.kv.put(key, JSON.stringify({ version: 1, value: JSON.parse(raw), expiresAt }), options);
+        await this.kv.put(key, kvEnvelope(raw, expiresAt), options);
     }
 
     async has(key: string): Promise<boolean> { return (await this.get(key)) !== undefined; }
@@ -241,7 +274,10 @@ export class KvCacheStore implements CacheStore {
         return Promise.all(keys.map(key => this.get<T>(key)));
     }
     async setMany<T = unknown>(entries: CacheEntry<T>[]): Promise<void> {
-        const prepared = prepareCacheEntries(entries).map(entry => ({ ...entry, key: this.k(entry.key) }));
+        await this[writeManyJson](prepareCacheEntries(entries));
+    }
+    async [writeManyJson](entries: PreparedCacheEntry[]): Promise<void> {
+        const prepared = entries.map(entry => ({ ...entry, key: this.k(entry.key) }));
         await Promise.all(prepared.map(entry => this.write(entry.key, entry.raw, entry.expiresAt, entry.ttlMs)));
     }
     async deleteMany(keys: string[]): Promise<void> {
@@ -408,12 +444,15 @@ export class DurableObjectCacheStore implements CacheStore {
         return await this.request(this.url(key), {}, 'GET', true, true) as T | undefined;
     }
     async set<T = unknown>(key: string, value: T, ttlMs?: number): Promise<void> {
-        let url = this.url(key);
+        cacheKey(key);
         cacheExpiry(ttlMs);
-        const raw = cacheJson(value);
-        if (raw === undefined || ttlMs === 0) { await this.delete(key); return; }
+        await this[writeJson](key, cacheJsonValue(value), ttlMs);
+    }
+    async [writeJson](key: string, json: CacheJson | undefined, ttlMs: number | undefined): Promise<void> {
+        if (json === undefined || ttlMs === 0) { await this.delete(key); return; }
+        let url = this.url(key);
         if (ttlMs !== undefined) url += `&ttlMs=${ttlMs}`;
-        await this.request(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: raw }, 'PUT', false);
+        await this.request(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: json.raw }, 'PUT', false);
     }
     async has(key: string): Promise<boolean> {
         cacheKey(key);
@@ -431,11 +470,22 @@ export class DurableObjectCacheStore implements CacheStore {
         return values.map(value => value.found ? value.value as T : undefined);
     }
     async setMany<T = unknown>(entries: CacheEntry<T>[]): Promise<void> {
-        const prepared = prepareCacheEntries(entries).map(entry => ({ key: entry.key,
-            value: entry.raw === undefined ? undefined : JSON.parse(entry.raw), ttlMs: entry.ttlMs }));
-        const body = JSON.stringify(prepared);
-        if (new TextEncoder().encode(body).length > CACHE_MAX_BATCH_BYTES) throw new Error('[Cossack] Cache batch JSON exceeds 2 MiB.');
-        await this.request('https://cache/set-many', { method: 'POST', body }, 'set-many', false);
+        await this[writeManyJson](prepareCacheEntries(entries));
+    }
+    async [writeManyJson](entries: PreparedCacheEntry[]): Promise<void> {
+        // Splice the serialized values into the batch: the same text that
+        // JSON.stringify([{ key, value, ttlMs }]) produces, sized without re-encoding them.
+        let bytes = 2 + Math.max(0, entries.length - 1);
+        const parts = entries.map(entry => {
+            const key = JSON.stringify(entry.key);
+            const ttl = entry.ttlMs === undefined ? '' : `,"ttlMs":${entry.ttlMs}`;
+            const value = entry.raw === undefined ? '' : `,"value":${entry.raw}`;
+            bytes += 8 + encoder.encode(key).length + ttl.length +
+                (entry.raw === undefined ? 0 : 9 + (entry.bytes ?? encoder.encode(entry.raw).length));
+            return `{"key":${key}${value}${ttl}}`;
+        });
+        if (bytes > CACHE_MAX_BATCH_BYTES) throw new Error('[Cossack] Cache batch JSON exceeds 2 MiB.');
+        await this.request('https://cache/set-many', { method: 'POST', body: `[${parts.join(',')}]` }, 'set-many', false);
     }
     async deleteMany(keys: string[]): Promise<void> {
         cacheKeys(keys);
@@ -704,6 +754,22 @@ export interface StoreBoundCache {
     remember<T>(key: string, ttlMs: number, fn: () => T | Promise<T>): Promise<T>;
 }
 
+/** Built-in write methods; a subclass that overrides one keeps its override. */
+const builtinWrites = new Set<unknown>([InMemoryCacheStore, KvCacheStore, DurableObjectCacheStore]
+    .flatMap(store => [store.prototype.set, store.prototype.setMany]));
+
+function jsonWriter(store: CacheStore, method: 'set' | 'setMany'): JsonCacheWriter | undefined {
+    const writer = store as CacheStore & Partial<JsonCacheWriter>;
+    return typeof writer[writeJson] === 'function' && builtinWrites.has(store[method]) ? writer as JsonCacheWriter : undefined;
+}
+
+/** Write a value serialized once. Custom stores receive a JSON snapshot. */
+async function writeValue(store: CacheStore, key: string, json: CacheJson | undefined, ttlMs: number): Promise<void> {
+    const writer = jsonWriter(store, 'set');
+    if (writer) await writer[writeJson](key, json, ttlMs);
+    else await store.set(key, json === undefined ? undefined : JSON.parse(json.raw), ttlMs);
+}
+
 function bindToStore(getStore: () => CacheStore): StoreBoundCache {
     return {
         inspect() { return readStorageCapabilities(getStore().capabilities, 'cache'); },
@@ -721,8 +787,8 @@ function bindToStore(getStore: () => CacheStore): StoreBoundCache {
         },
         async set<T = unknown>(key: string, value: T, ttlMs: number = DEFAULT_TTL_MS): Promise<void> {
             cacheKey(key); cacheExpiry(ttlMs);
-            const raw = cacheJson(value);
-            await getStore().set(key, raw === undefined ? undefined : JSON.parse(raw), ttlMs);
+            const json = cacheJsonValue(value);
+            await writeValue(getStore(), key, json, ttlMs);
         },
         async has(key: string): Promise<boolean> {
             cacheKey(key);
@@ -751,7 +817,10 @@ function bindToStore(getStore: () => CacheStore): StoreBoundCache {
                     ? entries
                     : entries.map((e) => ({ ...e, ttlMs: e.ttlMs === undefined ? defaultTtlMs : e.ttlMs }));
             const prepared = prepareCacheEntries(withTtl);
-            await getStore().setMany(prepared.map(entry => ({ key: entry.key, value: entry.raw === undefined ? undefined : JSON.parse(entry.raw), ttlMs: entry.ttlMs })));
+            const store = getStore();
+            const writer = jsonWriter(store, 'setMany');
+            if (writer) await writer[writeManyJson](prepared);
+            else await store.setMany(prepared.map(entry => ({ key: entry.key, value: entry.raw === undefined ? undefined : JSON.parse(entry.raw), ttlMs: entry.ttlMs })));
         },
         async deleteMany(keys: string[]): Promise<void> {
             cacheKeys(keys);
@@ -763,8 +832,7 @@ function bindToStore(getStore: () => CacheStore): StoreBoundCache {
             const hit = await store.get<T>(key);
             if (hit !== undefined) return hit;
             const computed = await fn();
-            const raw = cacheJson(computed);
-            await store.set(key, raw === undefined ? undefined : JSON.parse(raw), ttlMs);
+            await writeValue(store, key, cacheJsonValue(computed), ttlMs);
             return computed;
         },
     };
