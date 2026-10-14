@@ -1,4 +1,6 @@
 import { spawn } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { readD1ToolingBindings } from '@cossackframework/database/tooling';
 import path from 'node:path';
 import prompts from 'prompts';
@@ -25,10 +27,57 @@ export type WranglerExecutor = (
 
 export type BindingPrompt = (bindings: readonly D1Binding[]) => Promise<string | undefined>;
 
+export interface WranglerInvocation {
+  command: string;
+  /** Arguments placed before the Wrangler subcommand (e.g. the CLI entry). */
+  args: string[];
+}
+
+/**
+ * Resolve how to run the project's Wrangler without a shell. Studio runs the
+ * package's JavaScript entry (`bin.wrangler` in wrangler/package.json) with
+ * the current Node executable on every platform. On Windows, spawning the
+ * `node_modules/.bin/wrangler.cmd` shim with `shell: false` is refused by
+ * Node (CVE-2024-27980), and enabling a shell would expose SQL arguments to
+ * cmd.exe parsing.
+ */
+export function resolveWranglerInvocation(
+  projectRoot: string,
+  options: { platform?: NodeJS.Platform; execPath?: string } = {},
+): WranglerInvocation {
+  const requireFromProject = createRequire(path.join(projectRoot, 'package.json'));
+  let entry: string | undefined;
+  try {
+    // wrangler's "exports" map hides bin/wrangler.js; package.json is exported.
+    const packageJsonPath = requireFromProject.resolve('wrangler/package.json');
+    const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8')) as {
+      bin?: string | Record<string, string>;
+    };
+    const bin = typeof packageJson.bin === 'string'
+      ? packageJson.bin
+      : packageJson.bin?.wrangler;
+    if (bin) entry = path.resolve(path.dirname(packageJsonPath), bin);
+  } catch {
+    entry = undefined;
+  }
+  if (!entry) {
+    const platform = options.platform ?? process.platform;
+    throw new Error(
+      'Wrangler is not installed in this project. Install it with `pnpm add -D wrangler` ' +
+      '(or your package manager) before using `cossack studio --remote`.' +
+      (platform === 'win32'
+        ? ' Studio runs Wrangler through Node and does not use the wrangler.cmd shim.'
+        : ''),
+    );
+  }
+  return { command: options.execPath ?? process.execPath, args: [entry] };
+}
+
 export interface RemoteD1Options {
   projectRoot: string;
   binding?: string;
   environment?: string;
+  /** Override the Wrangler executable (no extra leading arguments). */
   wranglerCommand?: string;
   execute?: WranglerExecutor;
   prompt?: BindingPrompt;
@@ -135,8 +184,8 @@ export class RemoteD1Connection implements StudioConnection {
   private readonly queue = new OperationQueue();
 
   constructor(
-    private readonly options: Required<Pick<RemoteD1Options, 'projectRoot' | 'wranglerCommand' | 'execute'>> &
-      Pick<RemoteD1Options, 'environment'>,
+    private readonly options: Required<Pick<RemoteD1Options, 'projectRoot' | 'execute'>> &
+      Pick<RemoteD1Options, 'environment'> & { wrangler: WranglerInvocation },
     readonly binding: D1Binding,
   ) {
     this.info = {
@@ -157,8 +206,8 @@ export class RemoteD1Connection implements StudioConnection {
       if (this.options.environment) args.push('--env', this.options.environment);
       const started = performance.now();
       const result = await this.options.execute(
-        this.options.wranglerCommand,
-        args,
+        this.options.wrangler.command,
+        [...this.options.wrangler.args, ...args],
         this.options.projectRoot,
       );
       if (result.exitCode !== 0) {
@@ -182,12 +231,9 @@ export async function createRemoteD1Connection(options: RemoteD1Options): Promis
   return new RemoteD1Connection({
     projectRoot: options.projectRoot,
     environment: options.environment,
-    wranglerCommand: options.wranglerCommand ?? path.join(
-      options.projectRoot,
-      'node_modules',
-      '.bin',
-      process.platform === 'win32' ? 'wrangler.cmd' : 'wrangler',
-    ),
+    wrangler: options.wranglerCommand
+      ? { command: options.wranglerCommand, args: [] }
+      : resolveWranglerInvocation(options.projectRoot),
     execute: options.execute ?? executeWrangler,
   }, binding);
 }

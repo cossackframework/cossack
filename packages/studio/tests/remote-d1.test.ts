@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   createRemoteD1Connection,
   readD1Bindings,
+  resolveWranglerInvocation,
   selectD1Binding,
 } from '../src/testing';
 
@@ -103,6 +104,41 @@ database_name = "preview-db"
     ], root);
     expect(result.rows).toEqual([{ id: 1 }]);
     expect(result.affectedRows).toBe(2);
+  });
+
+  it('runs the project Wrangler entry with Node instead of a shell shim', async () => {
+    const root = await fixture('{"d1_databases":[{"binding":"DB"}]}');
+    const entry = await fs.realpath(path.join(root, 'node_modules/wrangler/bin/wrangler.js'));
+    for (const platform of ['win32', 'linux', 'darwin'] as const) {
+      const invocation = resolveWranglerInvocation(root, {
+        platform,
+        execPath: platform === 'win32' ? 'C:\\node\\node.exe' : '/usr/bin/node',
+      });
+      expect(invocation.command).toBe(platform === 'win32' ? 'C:\\node\\node.exe' : '/usr/bin/node');
+      expect(invocation.args).toHaveLength(1);
+      expect(await fs.realpath(invocation.args[0]!)).toBe(entry);
+      expect(invocation.args[0]).not.toMatch(/\.cmd$/);
+    }
+
+    const execute = vi.fn().mockResolvedValue({
+      stdout: JSON.stringify([{ success: true, results: [], meta: { changes: 0 } }]),
+      stderr: '',
+      exitCode: 0,
+    });
+    const connection = await createRemoteD1Connection({ projectRoot: root, execute });
+    await connection.execute('SELECT 1');
+    const [command, args] = execute.mock.calls[0]!;
+    expect(command).toBe(process.execPath);
+    expect(await fs.realpath(args[0])).toBe(entry);
+    expect(args.slice(1)).toEqual(['d1', 'execute', 'DB', '--remote', '--json', '--command', 'SELECT 1']);
+  });
+
+  it('explains how to fix a project without Wrangler', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-studio-no-wrangler-'));
+    directories.push(root);
+    await fs.writeFile(path.join(root, 'package.json'), '{}');
+    expect(() => resolveWranglerInvocation(root, { platform: 'win32' }))
+      .toThrow(/Wrangler is not installed/);
   });
 
   it('surfaces authentication exits and malformed output', async () => {
