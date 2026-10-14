@@ -3,6 +3,7 @@ import { EventEmitter } from 'node:events';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { parse as parseYaml } from 'yaml';
 import {
   _setPromptTestOverrides,
   DASHBOARD_MODULES,
@@ -814,7 +815,9 @@ describe('composition', () => {
       expect(pnpmWorkspace).toContain('fs-xattr: true');
       expect(pnpmWorkspace).toContain('macos-alias: true');
       expect(pnpmWorkspace).toContain("'image-size@<2.0.3': 2.0.4");
-      expect(pnpmWorkspace).toContain('appdmg@0.6.6: patches/appdmg@0.6.6.patch');
+      // A range key: generated apps have no lockfile, and an exact key fails
+      // with ERR_PNPM_UNUSED_PATCH as soon as maker-dmg resolves appdmg 0.6.7.
+      expect(parseYaml(pnpmWorkspace).patchedDependencies).toEqual({ 'appdmg@^0.6.6': 'patches/appdmg@0.6.6.patch' });
       expect(targetFiles.get('patches/appdmg@0.6.6.patch').capability).toBe('desktop');
       expect(targetFiles.get('vite.config.ts').content.toString())
         .toContain("external: ['electron']");
@@ -1070,7 +1073,7 @@ describe('composition', () => {
     expect(workspace).toContain('nodeLinker: hoisted');
     expect(workspace).toContain('lodash: 4.18.1');
     expect(workspace).toContain('image-size@<2.0.3');
-    expect(workspace).toContain('appdmg@0.6.6: patches/appdmg@0.6.6.patch');
+    expect(parseYaml(workspace).patchedDependencies).toEqual({ 'appdmg@^0.6.6': 'patches/appdmg@0.6.6.patch' });
     const patchPath = path.join(project.projectDir, 'patches/appdmg@0.6.6.patch');
     expect(await fs.readFile(patchPath, 'utf8')).toContain('imageSizeFromFile');
 

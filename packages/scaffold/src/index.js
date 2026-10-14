@@ -633,7 +633,9 @@ function pnpmWorkspace(recipe) {
   ];
   const overrides = recipe.resolvedFeatures.includes('desktop')
     // appdmg's callback API needs a compatibility patch for image-size 2.
-    ? `\n\noverrides:\n  '@electron/rebuild': ${dependencyVersion('@electron/rebuild')}\n  'image-size@<2.0.3': 2.0.4\n\npatchedDependencies:\n  appdmg@0.6.6: patches/appdmg@0.6.6.patch\n`
+    // Key the patch by range: generated apps have no lockfile, and an exact
+    // key fails with ERR_PNPM_UNUSED_PATCH once maker-dmg resolves 0.6.7.
+    ? `\n\noverrides:\n  '@electron/rebuild': ${dependencyVersion('@electron/rebuild')}\n  'image-size@<2.0.3': 2.0.4\n\npatchedDependencies:\n  appdmg@^0.6.6: patches/appdmg@0.6.6.patch\n`
     : '\n';
   return `${recipe.resolvedFeatures.includes('desktop') ? 'nodeLinker: hoisted\n\n' : ''}allowBuilds:\n${builds.map((name) => `  ${name.startsWith('@') ? `'${name}'` : name}: true`).join('\n')}${overrides}`;
 }
