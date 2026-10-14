@@ -33,7 +33,7 @@ export class LocalStudioConnection implements StudioConnection {
     return this.queue.run(() => this.orm.run(async () => {
       const started = performance.now();
       const nativeText = this.orm.driver.dialect === 'postgres' && parameters.length > 0
-        ? splitSqlParameters(text, parameters.length)
+        ? splitSqlParameters(text, parameters.length, 'postgres')
           .map((fragment, index) => index === 0 ? fragment : `$${index}${fragment}`)
           .join('')
         : text;

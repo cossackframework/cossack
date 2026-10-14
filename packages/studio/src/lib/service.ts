@@ -1,6 +1,7 @@
 import {
   coerceCellValue,
   interpolateSqlParameters,
+  limitStatementRows,
   parseSingleStatement,
   quoteIdentifier,
 } from './sql.js';
@@ -23,6 +24,8 @@ import type {
   MutationResult,
   TransportQueryResult,
 } from './query-types.js';
+
+const CONSOLE_ROW_LIMIT = 1_000;
 
 interface PragmaOption extends StudioPragmaOption {
   sql: string;
@@ -267,9 +270,13 @@ export class StudioDatabase {
   }
 
   async executeSql(input: string): Promise<TransportQueryResult> {
-    const statement = parseSingleStatement(input);
+    const provider = this.connection.info.provider;
+    const statement = parseSingleStatement(input, provider);
     try {
-      const result = normalizeQueryResult(await this.connection.execute(statement));
+      const result = normalizeQueryResult(
+        await this.executeBounded(statement),
+        CONSOLE_ROW_LIMIT,
+      );
       await this.getSchema(true);
       return result;
     } catch (error: any) {
@@ -285,7 +292,7 @@ export class StudioDatabase {
   }
 
   async explainSql(input: string): Promise<TransportQueryResult> {
-    const statement = parseSingleStatement(input);
+    const statement = parseSingleStatement(input, this.connection.info.provider);
     const prefix = this.connection.info.provider === 'postgres'
       ? 'EXPLAIN (FORMAT JSON) '
       : this.connection.info.provider === 'mysql'
@@ -305,6 +312,28 @@ export class StudioDatabase {
         error: error?.message ?? String(error),
       };
     }
+  }
+
+  /**
+   * Run a console statement, asking the database for at most one row more
+   * than the console displays so large SELECTs are not fully materialised.
+   * The bounded form is a derived table; when a database rejects it (for
+   * example MySQL with duplicate column names) the original query runs.
+   */
+  private async executeBounded(statement: string) {
+    const bounded = limitStatementRows(
+      statement,
+      this.connection.info.provider,
+      CONSOLE_ROW_LIMIT + 1,
+    );
+    if (bounded) {
+      try {
+        return await this.connection.execute(bounded);
+      } catch {
+        // Fall through: report errors from the statement the user wrote.
+      }
+    }
+    return this.connection.execute(statement);
   }
 
   async getPragmas(): Promise<StudioPragma[]> {

@@ -5,6 +5,8 @@ import {
   parseSingleStatement,
   quoteIdentifier,
   interpolateSqlParameters,
+  limitStatementRows,
+  splitSqlParameters,
   sqliteAffinity,
   sqliteDeclaredKind,
   sqliteLiteral,
@@ -21,6 +23,68 @@ describe('single-statement SQL parsing', () => {
     expect(() => parseSingleStatement(' -- comment only')).toThrow('non-empty');
     expect(() => parseSingleStatement('SELECT 1; SELECT 2')).toThrow('exactly one');
     expect(() => parseSingleStatement("SELECT 'oops")).toThrow('unterminated');
+  });
+
+  it('accepts PostgreSQL dollar-quoted bodies containing semicolons', () => {
+    const fn = `CREATE FUNCTION f() RETURNS int AS $$ BEGIN RETURN 1; END; $$ LANGUAGE plpgsql;`;
+    expect(parseSingleStatement(fn, 'postgres')).toBe(fn.slice(0, -1));
+    const tagged = `DO $body$ BEGIN PERFORM 1; RAISE NOTICE '$$'; END $body$`;
+    expect(parseSingleStatement(tagged, 'postgres')).toBe(tagged);
+    expect(parseSingleStatement('SELECT $1, a$b$ FROM t', 'postgres')).toBe('SELECT $1, a$b$ FROM t');
+    expect(() => parseSingleStatement('SELECT $x$ unterminated;', 'postgres'))
+      .toThrow('unterminated');
+    expect(() => parseSingleStatement('SELECT 1; SELECT $$;$$', 'postgres')).toThrow('exactly one');
+    // Dollar quotes are PostgreSQL-only; elsewhere the scanner stays conservative.
+    expect(() => parseSingleStatement('SELECT $$ a; b $$', 'sqlite')).toThrow('exactly one');
+    expect(() => parseSingleStatement('SELECT $$ a; b $$')).toThrow('exactly one');
+  });
+
+  it('treats # as a line comment only for MySQL', () => {
+    expect(parseSingleStatement('SELECT 1; # trailing ; comment\n', 'mysql')).toBe('SELECT 1');
+    expect(parseSingleStatement('# leading; comment\nSELECT 1', 'mysql'))
+      .toBe('# leading; comment\nSELECT 1');
+    expect(() => parseSingleStatement('# only a comment', 'mysql')).toThrow('non-empty');
+    expect(() => parseSingleStatement('SELECT 1; # x', 'sqlite')).toThrow('exactly one');
+  });
+
+  it('honours MySQL backslash escapes and PostgreSQL E-strings', () => {
+    expect(parseSingleStatement("SELECT 'it\\'s; fine'", 'mysql')).toBe("SELECT 'it\\'s; fine'");
+    expect(parseSingleStatement("SELECT E'it\\'s; fine'", 'postgres'))
+      .toBe("SELECT E'it\\'s; fine'");
+  });
+});
+
+describe('dialect-aware placeholder scanning', () => {
+  it('ignores placeholders inside PostgreSQL dollar quotes', () => {
+    expect(splitSqlParameters('SELECT $$?$$, $tag$ ? $tag$, ?', 1, 'postgres'))
+      .toEqual(['SELECT $$?$$, $tag$ ? $tag$, ', '']);
+  });
+
+  it('ignores placeholders inside MySQL # comments', () => {
+    expect(interpolateSqlParameters('SELECT ? # what?\n', [1], 'mysql'))
+      .toBe('SELECT 1 # what?\n');
+  });
+});
+
+describe('console row limiting', () => {
+  it('wraps SELECT and WITH statements in a bounded outer query', () => {
+    expect(limitStatementRows('SELECT * FROM t', 'sqlite', 1001))
+      .toBe('SELECT * FROM (\nSELECT * FROM t\n) AS __q LIMIT 1001');
+    expect(limitStatementRows('/* c */ with x as (select 1) select * from x -- tail', 'postgres', 5))
+      .toBe('SELECT * FROM (\n/* c */ with x as (select 1) select * from x -- tail\n) AS __q LIMIT 5');
+  });
+
+  it('leaves non-query and table-creating statements untouched', () => {
+    for (const statement of [
+      'INSERT INTO t VALUES (1)',
+      'PRAGMA table_info(t)',
+      'SELECT * INTO copy FROM t',
+      'WITH gone AS (DELETE FROM t RETURNING *) SELECT * FROM gone',
+      'SELECT * FROM t FOR UPDATE',
+      'EXPLAIN SELECT 1',
+    ]) {
+      expect(limitStatementRows(statement, 'postgres', 10)).toBeUndefined();
+    }
   });
 });
 
