@@ -15,6 +15,7 @@ import type {
   StudioObject,
   StudioPragma,
   StudioPragmaOption,
+  StudioExecutor,
   StudioSchema,
 } from './schema-types.js';
 import type {
@@ -602,20 +603,11 @@ export class StudioDatabase {
   ): Promise<MutationResult> {
     const object = await this.mutableTable(tableName);
     if (!keys.length) throw new Error('Select at least one row.');
-    let affectedRows = 0;
-    for (const key of keys.slice(0, 1_000)) {
+    const statements = keys.slice(0, 1_000).map((key) => {
       const where = this.keyPredicate(object, key);
-      let sql = `DELETE FROM ${this.quote(object.name)} WHERE ${where.sql}`;
-      let parameters = where.parameters;
-      ({ sql, parameters } = this.bind(sql, parameters));
-      const result = await this.connection.execute(sql, parameters);
-      if (result.affectedRows !== 1) {
-        throw new Error(
-          `Batch delete stopped after ${affectedRows} row(s): a selected row was stale.`,
-        );
-      }
-      affectedRows += result.affectedRows;
-    }
+      return this.bind(`DELETE FROM ${this.quote(object.name)} WHERE ${where.sql}`, where.parameters);
+    });
+    const affectedRows = await this.runBatch('delete', statements);
     return { affectedRows, schema: await this.getSchema() };
   }
 
@@ -631,22 +623,53 @@ export class StudioDatabase {
     if (!keys.length) throw new Error('Select at least one row.');
     const nextValue = value.mode === 'null' ? null : this.coerceValue(value.value, column);
     if (nextValue === null && !column.nullable) throw new Error(`${column.name} does not allow NULL.`);
-    let affectedRows = 0;
-    for (const key of keys.slice(0, 1_000)) {
+    const statements = keys.slice(0, 1_000).map((key) => {
       const where = this.keyPredicate(object, key);
-      let sql = `UPDATE ${this.quote(object.name)} SET ${this.quote(column.name)} = ? ` +
-        `WHERE ${where.sql}`;
-      let parameters: unknown[] = [nextValue, ...where.parameters];
-      ({ sql, parameters } = this.bind(sql, parameters));
-      const result = await this.connection.execute(sql, parameters);
-      if (result.affectedRows !== 1) {
-        throw new Error(
-          `Batch update stopped after ${affectedRows} row(s): a selected row was stale.`,
-        );
-      }
-      affectedRows += result.affectedRows;
-    }
+      return this.bind(
+        `UPDATE ${this.quote(object.name)} SET ${this.quote(column.name)} = ? WHERE ${where.sql}`,
+        [nextValue, ...where.parameters],
+      );
+    });
+    const affectedRows = await this.runBatch('update', statements);
     return { affectedRows, schema: await this.getSchema() };
+  }
+
+  /**
+   * Run single-row batch statements, each of which must affect exactly one
+   * row. Local connections with transaction support apply all or nothing.
+   * Connections without transactions (remote and local D1) are best-effort:
+   * rows changed before a failure stay changed, and the error says how many.
+   */
+  private async runBatch(
+    kind: 'delete' | 'update',
+    statements: Array<{ sql: string; parameters: unknown[] }>,
+  ): Promise<number> {
+    const run = async (execute: StudioExecutor, atomic: boolean) => {
+      let affectedRows = 0;
+      for (const statement of statements) {
+        let result;
+        try {
+          result = await execute(statement.sql, statement.parameters);
+        } catch (error: any) {
+          if (!atomic) {
+            throw new Error(
+              `Batch ${kind} stopped after ${affectedRows} row(s): ${error?.message ?? String(error)}`,
+              { cause: error },
+            );
+          }
+          throw error;
+        }
+        if (result.affectedRows !== 1) {
+          throw new Error(atomic
+            ? `Batch ${kind} rolled back: a selected row was stale. No rows were changed.`
+            : `Batch ${kind} stopped after ${affectedRows} row(s): a selected row was stale.`);
+        }
+        affectedRows += result.affectedRows;
+      }
+      return affectedRows;
+    };
+    if (this.connection.transaction) return this.connection.transaction(run);
+    return run((sql, parameters) => this.connection.execute(sql, parameters), false);
   }
 
   close(): Promise<void> {

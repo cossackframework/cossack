@@ -37,6 +37,12 @@ schema inspection. It shows exact row counts and adjustable pagination, with
 statement per execution. Its SQL editor includes syntax highlighting plus table
 and column completion. Remote D1 changes affect deployed data immediately.
 
+Batch delete and batch update apply all or nothing on SQLite, Turso,
+PostgreSQL and MySQL: Studio runs them in one transaction and rolls back if a
+selected row is stale or a statement fails. D1 (local and remote) has no
+interactive transactions, so batches there are best-effort. Rows changed
+before the failure stay changed, and the error reports how many.
+
 For local connections, Studio detects the ORM driver's dialect.
 `DB_CONNECTION` or `COSSACK_STUDIO_DRIVER` can distinguish SQLite-family
 adapters. PostgreSQL and MySQL drivers remain project dependencies. Studio

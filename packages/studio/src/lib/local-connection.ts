@@ -5,8 +5,11 @@ import { splitSqlParameters } from './sql.js';
 import type {
   StudioConnection,
   StudioConnectionInfo,
+  StudioExecutor,
   StudioQueryResult,
 } from './schema-types.js';
+
+type Driver = ORM['driver'];
 
 export interface LocalConnectionOptions {
   orm: ORM;
@@ -30,26 +33,53 @@ export class LocalStudioConnection implements StudioConnection {
   }
 
   execute(text: string, parameters: readonly unknown[] = []): Promise<StudioQueryResult> {
+    return this.queue.run(() => this.orm.run(() =>
+      this.executeOn(this.orm.driver, text, parameters)));
+  }
+
+  /**
+   * Hold the connection for several statements. Drivers with interactive
+   * transactions (SQLite, Turso, PostgreSQL, MySQL) run them atomically;
+   * others, such as D1, run them in order without rollback.
+   */
+  transaction<T>(
+    callback: (execute: StudioExecutor, atomic: boolean) => Promise<T>,
+  ): Promise<T> {
     return this.queue.run(() => this.orm.run(async () => {
-      const started = performance.now();
-      const nativeText = this.orm.driver.dialect === 'postgres' && parameters.length > 0
-        ? splitSqlParameters(text, parameters.length, 'postgres')
-          .map((fragment, index) => index === 0 ? fragment : `$${index}${fragment}`)
-          .join('')
-        : text;
-      const result = await this.orm.driver.execute(
-        { text: nativeText, parameters: parameters as import('@cossackframework/database').CompiledQuery['parameters'] },
-        'raw',
-      );
-      return {
-        rows: [...result.rows] as Record<string, unknown>[],
-        affectedRows: Number(result.meta.rowsAffected ?? 0),
-        ...(result.meta.lastInsertId === undefined
-          ? {}
-          : { insertId: String(result.meta.lastInsertId) }),
-        durationMs: performance.now() - started,
-      };
+      const driver = this.orm.driver;
+      if (driver.capabilities.transactions && driver.transaction) {
+        return driver.transaction((transactionDriver) => callback(
+          (text, parameters = []) => this.executeOn(transactionDriver, text, parameters),
+          true,
+        ));
+      }
+      return callback((text, parameters = []) => this.executeOn(driver, text, parameters), false);
     }));
+  }
+
+  private async executeOn(
+    driver: Driver,
+    text: string,
+    parameters: readonly unknown[],
+  ): Promise<StudioQueryResult> {
+    const started = performance.now();
+    const nativeText = driver.dialect === 'postgres' && parameters.length > 0
+      ? splitSqlParameters(text, parameters.length, 'postgres')
+        .map((fragment, index) => index === 0 ? fragment : `$${index}${fragment}`)
+        .join('')
+      : text;
+    const result = await driver.execute(
+      { text: nativeText, parameters: parameters as import('@cossackframework/database').CompiledQuery['parameters'] },
+      'raw',
+    );
+    return {
+      rows: [...result.rows] as Record<string, unknown>[],
+      affectedRows: Number(result.meta.rowsAffected ?? 0),
+      ...(result.meta.lastInsertId === undefined
+        ? {}
+        : { insertId: String(result.meta.lastInsertId) }),
+      durationMs: performance.now() - started,
+    };
   }
 
   inspect(): Promise<DatabaseInspection> {
