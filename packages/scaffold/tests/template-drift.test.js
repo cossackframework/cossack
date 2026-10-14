@@ -23,6 +23,16 @@ describe('template drift', () => {
     expect(node.has('wrangler.jsonc')).toBe(false);
   });
 
+  it('gives Node apps the CORS variables their starter config reads', async () => {
+    // Cloudflare apps rely on the starter config's defaults (CORS on, no extra origins).
+    const rendered = await renderRecipe(resolveRecipe({ adapter: 'node', preset: 'minimal' }));
+    for (const file of ['.env', '.env.example']) {
+      const content = rendered.get(file).content.toString();
+      expect(content, file).toMatch(/^CORS_ENABLED=true$/m);
+      expect(content, file).toMatch(/^CORS_ORIGINS=http:\/\/localhost:\d+$/m);
+    }
+  });
+
   it('owns .dev.vars.example as a base file because every Cloudflare recipe needs APP_SECRET', async () => {
     const files = await renderRecipe(resolveRecipe({ adapter: 'cloudflare', preset: 'minimal' }));
     const example = files.get('.dev.vars.example');

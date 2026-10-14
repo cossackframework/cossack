@@ -14,9 +14,6 @@ describe('starter CORS configuration', () => {
     expect(source).toContain("origins(env('CORS_ORIGINS'))");
   });
 
-  it('includes Wrangler CORS variables', () => {
-    const source = readFileSync(resolve(templateRoot, 'wrangler.jsonc'), 'utf8');
-    expect(source).toContain('"CORS_ORIGINS": ""');
-    expect(source).toContain('"CORS_MAX_AGE": "86400"');
-  });
+  // Generated apps receive CORS_ENABLED / CORS_ORIGINS through .dev.vars or
+  // .env; the scaffold's template-drift test covers that output.
 });
