@@ -6,11 +6,19 @@ import { resetSseSnapshotCursor } from './rpc-state';
 import { isSharedMethod } from './shared-method';
 import { rpcCancellations, validateRpcFrame, RPC_STREAM_MAX_FRAME_BYTES, RpcError, type RpcStreamFrame, type RpcSocket } from './rpc-stream';
 
+/**
+ * Receives one correlated frame. `bytes` is the frame's UTF-8 size, measured
+ * once when it was routed; local failures pass `interrupted` instead.
+ */
+export type SocketFrameSink = (frame: RpcStreamFrame, interrupted?: boolean, bytes?: number) => void;
+
 /** Per-socket sinks for correlated request-scoped RPC frames. */
-export function wsPendingCalls(ws: RpcSocket): Map<string, (frame: RpcStreamFrame, interrupted?: boolean) => void> {
-    const socket = ws as { __cossack_rpc_pending?: Map<string, (frame: RpcStreamFrame, interrupted?: boolean) => void> };
+export function wsPendingCalls(ws: RpcSocket): Map<string, SocketFrameSink> {
+    const socket = ws as { __cossack_rpc_pending?: Map<string, SocketFrameSink> };
     return socket.__cossack_rpc_pending ??= new Map();
 }
+
+const encoder = new TextEncoder();
 
 /** Reject every request-scoped call on a socket that is no longer usable. */
 export function failPendingSocketCalls(ws: RpcSocket): void {
@@ -26,19 +34,22 @@ export function failPendingSocketCalls(ws: RpcSocket): void {
 
 /**
  * Route one parsed socket message to its request-scoped call. Returns true
- * when the message was consumed as a correlated RPC frame.
+ * when the message was consumed as a correlated RPC frame. `raw` is the
+ * received text the message was parsed from; its size is the frame's wire
+ * size. Without it the frame is serialized once to measure it.
  */
-export function routeSocketFrame(ws: RpcSocket, data: unknown): boolean {
+export function routeSocketFrame(ws: RpcSocket, data: unknown, raw?: string): boolean {
     if (!data || typeof data !== 'object' || typeof (data as any).requestId !== 'string') return false;
     const frame = data as unknown as RpcStreamFrame;
     const sink = wsPendingCalls(ws).get(frame.requestId);
     if (sink) {
         try {
             validateRpcFrame(frame);
-            if (new TextEncoder().encode(JSON.stringify(frame)).length > RPC_STREAM_MAX_FRAME_BYTES) {
+            const bytes = encoder.encode(raw ?? JSON.stringify(frame)).length;
+            if (bytes > RPC_STREAM_MAX_FRAME_BYTES) {
                 throw new RpcError('COSSACK_RPC_STREAM_TOO_LARGE', 'RPC frame exceeds the byte limit.');
             }
-            sink(frame);
+            sink(frame, undefined, bytes);
             if (frame.type !== 'yield') wsPendingCalls(ws).delete(frame.requestId);
         } catch (error) {
             sink({ v: 1, type: 'error', requestId: frame.requestId,
@@ -227,7 +238,7 @@ export function connectWebSocket(component: any): void {
             }
             // Request-scoped frames route to their waiting call; broadcasts
             // continue through the handlers below.
-            if (routeSocketFrame(ws, data)) return;
+            if (routeSocketFrame(ws, data, typeof event.data === 'string' ? event.data : undefined)) return;
             if (typeof data.type !== 'string') return;
             if (data.type === 'state-update') {
                 // Update public state from the new structure
@@ -403,7 +414,7 @@ export function connectSSE(component: any): void {
             }
             const cursor = id !== undefined && id !== '' && /^\d+$/.test(id) ? Number(id) : undefined;
             applyStateToComponent(component, cursor === undefined ? stateUpdate : { ...stateUpdate, _cossack_sse_cursor: cursor },
-                undefined, optimisticCallForRequest(component, stateUpdate._cossack_request_id));
+                optimisticCallForRequest(component, stateUpdate._cossack_request_id));
             component.requestUpdate();
         } catch (e) {
             console.error('[Cossack] Error parsing SSE state-update:', e);

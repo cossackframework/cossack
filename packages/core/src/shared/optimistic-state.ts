@@ -307,6 +307,12 @@ export function optimisticRequestState(target: any, state: Record<string, unknow
     return result;
 }
 
+/** True when {@link applyOptimisticState} would own this field (and read its `echo` flag). */
+export function ownsOptimisticField(target: object, key: string, call?: OptimisticCall): boolean {
+    const ledger = ledgers.get(target);
+    return !!ledger && (!call || ledger.calls.has(call)) && ledger.fields.has(key);
+}
+
 /** Returns true for an owned field, including responses superseded by newer work. */
 export function applyOptimisticState(target: any, key: string, value: unknown, call?: OptimisticCall, echo = false): boolean {
     const ledger = ledgers.get(target);
