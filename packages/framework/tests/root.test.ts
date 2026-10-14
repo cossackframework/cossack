@@ -40,6 +40,20 @@ describe('renderRoot', () => {
         expect(out).toContain('<link rel="modulepreload" href="/chunk.js">');
     });
 
+    it('emits one component style per scope after the application CSS, in first-use order', () => {
+        const out = renderRoot({ ...props, componentStyles: [
+            { scopeId: 'cfirst', cssText: '.a[data-cossack-scope="cfirst"]{color:red}' },
+            { scopeId: 'csecond', cssText: '.b::after{content:"</style>"}' },
+        ] });
+        const head = out.slice(0, out.indexOf('</head>'));
+        const first = head.indexOf('<style data-cossack-style="cfirst">.a[data-cossack-scope="cfirst"]{color:red}</style>');
+        const second = head.indexOf(String.raw`<style data-cossack-style="csecond">.b::after{content:"<\/style>"}</style>`);
+        expect(head.indexOf('<link rel="stylesheet" href="/src/style.css">')).toBeLessThan(first);
+        expect(first).toBeGreaterThan(-1);
+        expect(second).toBeGreaterThan(first);
+        expect(out.slice(out.indexOf('<body'))).not.toContain('data-cossack-style');
+    });
+
     it('passes real helpers to a function template', () => {
         const out = renderRoot({
             ...props,

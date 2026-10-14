@@ -1,6 +1,6 @@
-import { TemplateResult, render, hydrate, html, isTemplateResult, type HydrationDiagnosticMetadata } from './cossack-html';
+import { TemplateResult, render, hydrate, html, isTemplateResult, nothing, type HydrationDiagnosticMetadata } from './cossack-html';
 import { Context } from './context';
-import { getFinalizedStyles, type FinalizedStyles } from './style-runtime';
+import { getFinalizedStyles } from './style-runtime';
 import type { CSSResultGroup } from './css-result';
 
 export type PropertyDeclaration = {
@@ -68,31 +68,12 @@ export const instanceStack: CossackElement[] = [];
 export const pushCurrentInstance = (instance: CossackElement) => instanceStack.push(instance);
 export const popCurrentInstance = () => instanceStack.pop();
 
-const styleTemplates = new WeakMap<Function, TemplateResult>();
+// Stable strings for wrapping output a styled component does not own, so the
+// template analysis is cached like any tagged template.
+const OUTPUT_STRINGS = Object.assign(['', ''], { raw: ['', ''] }) as unknown as TemplateStringsArray;
 
-const createStaticTemplate = (text: string): TemplateResult => {
-  const strings = [text] as unknown as TemplateStringsArray;
-  (strings as unknown as { raw: readonly string[] }).raw = strings;
-  return new TemplateResult(strings, []);
-};
-
-const styleTemplateFor = (componentClass: Function, styles: FinalizedStyles): TemplateResult => {
-  let template = styleTemplates.get(componentClass);
-  if (!template) {
-    // getFinalizedStyles() is intentionally idempotent per component class;
-    // this cache relies on that invariant so a class always reuses the same
-    // scope ID and managed style template across renders and instances.
-    // A literal </style sequence would terminate the HTML element even when it
-    // appears in CSS text. Escaping the slash is CSS-equivalent and keeps the
-    // managed style node structurally stable for SSR/hydration.
-    const safeCss = styles.cssText.replace(/<\/style/gi, '<\\/style');
-    template = createStaticTemplate(`<style data-cossack-style="${styles.scopeId}">${safeCss}</style>`);
-    styleTemplates.set(componentClass, template);
-  }
-  return template;
-};
-
-const wrapStyledOutput = (styles: TemplateResult, output: unknown): TemplateResult => html`${styles}${output}`;
+const isEmptyOutput = (value: unknown): boolean =>
+  value === null || value === undefined || value === false || value === '' || value === nothing;
 
 export class CossackElement implements ReactiveControllerHost {
   /** Development-only boundary hints; override to mark intentional client differences. */
@@ -278,8 +259,17 @@ export class CossackElement implements ReactiveControllerHost {
   public _finalizeRenderOutput(value: TemplateResult | unknown | null): TemplateResult | unknown | null {
       const styles = getFinalizedStyles(this.constructor as typeof CossackElement);
       this._claimTemplateOwnership(value, styles?.scopeId);
-      if (!styles) return value;
-      return wrapStyledOutput(styleTemplateFor(this.constructor, styles), value);
+      // Styles are not inlined: every template rendered in a style scope
+      // claims that scope's single stylesheet (in <head> on SSR, through the
+      // client style registry after). Output the component does not own
+      // (text, lists, child components, projected templates) is wrapped in
+      // an owned template so the claim still exists while it is rendered.
+      if (!styles || styles.cssText === '' || isEmptyOutput(value)) return value;
+      if (isTemplateResult(value) && value.__cossackOwner === this) return value;
+      const wrapped = new TemplateResult(OUTPUT_STRINGS, [value]);
+      wrapped.__cossackOwner = this;
+      wrapped.__cossackScope = styles.scopeId;
+      return wrapped;
   }
 
   private _claimTemplateOwnership(value: unknown, scopeId?: string): void {

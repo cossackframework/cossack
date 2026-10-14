@@ -1,5 +1,7 @@
 import { serializeFormValues } from './ssr-form-values';
 import { getTemplateAnalysis, RAW_TEXT_TAGS, type TemplateAnalysis } from './template-analysis';
+import { recordStyleScope, stylesForScope, type FinalizedStyles } from './style-runtime';
+import { acquireStyle, flushStyleAcquisitions, isManagedStyle, releaseStyle, updateStyleRoot, type StyleUse } from './style-registry';
 import { ComponentResult, isComponentResult } from './component';
 import { CossackElement, pushCurrentInstance, popCurrentInstance, getComponentRange, setComponentRange, type ComponentRange } from './cossack-element';
 import { LiveResult, RepeatResult, KeyResult, BindResult, PreventDefaultResult, IfDefinedResult, GuardResult, CacheResult, resolveField, setField } from './directives';
@@ -492,6 +494,8 @@ class SSRScanner {
 
   constructor(private resultObj: TemplateResult, private opts: { hydrate?: boolean } = {}) {
     this.analysis = analysisFor(resultObj);
+    // The page emits each scope's stylesheet once, in <head>.
+    if (resultObj.__cossackScope !== undefined) recordStyleScope(resultObj.__cossackScope);
   }
 
   scan(): string {
@@ -1229,6 +1233,7 @@ class NodePart implements Part {
       }
       this._cachedTemplateIdentity = templateIdentity(value);
       this._cachedParts = parts;
+      if (this.startNode.isConnected) flushStyleAcquisitions();
     } catch (error) {
       disposeFailedParts(parts);
       throw error;
@@ -1616,6 +1621,7 @@ class NodePart implements Part {
         if (branch) pendingDrafts.set(container, branch);
         render(value, container);
         this.startNode.parentNode!.insertBefore(container, this.endNode);
+        if (this.startNode.isConnected) flushStyleAcquisitions();
         // Cache the template strings and parts for future updates
         const cached = containerCache.get(container.firstChild?.childNodes[0] || container);
         if (cached) {
@@ -1653,6 +1659,7 @@ class NodePart implements Part {
       const container = document.createDocumentFragment();
       render(html`${value}`, container);
       this.startNode.parentNode!.insertBefore(container, this.endNode);
+      if (this.startNode.isConnected) flushStyleAcquisitions();
     } else if (value instanceof Node) {
       this._clearTemplateCache();
       this.clear();
@@ -1707,6 +1714,25 @@ class NodePart implements Part {
       node.parentNode!.removeChild(node);
       node = next;
     }
+  }
+}
+
+/**
+ * Claims the stylesheet of the style scope a template instance was rendered
+ * in, for as long as the instance exists. It lives in the instance's parts
+ * array after the binding parts, so every path that disposes an instance
+ * releases it.
+ */
+class StylePart implements Part {
+  readonly use: StyleUse;
+  constructor(anchor: Node, styles: FinalizedStyles) {
+    this.use = acquireStyle(styles, anchor);
+  }
+  update(): void {
+    updateStyleRoot(this.use);
+  }
+  dispose(): void {
+    releaseStyle(this.use);
   }
 }
 
@@ -2589,6 +2615,15 @@ const compileTemplate = (result: TemplateResult): { fragment: Node; parts: Part[
     }
   });
 
+  // Index `strings.length - 1` is past every binding: loops over values never
+  // reach it, while disposal (which walks the whole array) releases it.
+  const styles = result.__cossackScope === undefined ? undefined : stylesForScope(result.__cossackScope);
+  if (styles) {
+    let anchor = instance.firstChild;
+    while (anchor && isFiller(anchor)) anchor = anchor.nextSibling;
+    if (anchor) parts[result.strings.length - 1] = new StylePart(anchor, styles);
+  }
+
   return { fragment: instance, parts };
 };
 
@@ -2626,10 +2661,14 @@ export const render = (result: TemplateResult, container: Node) => {
       }
     }
 
-    if (
-      (typeof HTMLElement !== 'undefined' && container instanceof HTMLElement) ||
-      (typeof ShadowRoot !== 'undefined' && container instanceof ShadowRoot)
-    ) {
+    if (typeof ShadowRoot !== 'undefined' && container instanceof ShadowRoot) {
+      // Component styles of this shadow root sit at its start; keep them.
+      for (let child = container.firstChild; child;) {
+        const next = child.nextSibling;
+        if (!isManagedStyle(child)) container.removeChild(child);
+        child = next;
+      }
+    } else if (typeof HTMLElement !== 'undefined' && container instanceof HTMLElement) {
       container.innerHTML = '';
     } else {
       while (container.firstChild) {
@@ -2643,6 +2682,7 @@ export const render = (result: TemplateResult, container: Node) => {
     disposeFailedParts(parts);
     throw error;
   }
+  if (container.isConnected) flushStyleAcquisitions();
 };
 
 /**
@@ -2869,9 +2909,17 @@ const rebindParts = (parts: Part[], map: Map<Node, Node>) => {
       const el = map.get((part as any).element);
       if (!el) throw new HydrateMismatch('missing-part-element', 'part', 'attribute element', 'missing element');
       (part as any).element = el;
+    } else if (part instanceof StylePart) {
+      const anchor = map.get(part.use.anchor);
+      if (anchor) part.use.anchor = anchor;
     }
   }
 };
+
+// A shadow root container keeps its component styles at its start; they are
+// not rendered output.
+const renderedChildren = (container: Node): Node[] =>
+  Array.from(container.childNodes).filter((node) => !isManagedStyle(node));
 
 /**
  * Hydrate an existing container whose children were produced by SSR
@@ -2885,7 +2933,7 @@ const rebindParts = (parts: Part[], map: Map<Node, Node>) => {
  */
 export const hydrate = (result: TemplateResult, container: Node, metadata?: HydrationDiagnosticMetadata) => {
   // Nothing to hydrate (e.g. client-only render) — fall back to render.
-  if (!container.hasChildNodes()) {
+  if (renderedChildren(container).length === 0) {
     return render(result, container);
   }
   // Already hydrated/managed by this template — use the fast update path.
@@ -2907,7 +2955,7 @@ export const hydrate = (result: TemplateResult, container: Node, metadata?: Hydr
     const { fragment: blueprint, parts: compiled } = compileTemplate(result);
     parts = compiled;
     const map = new Map<Node, Node>();
-    reconcileNodeLists(blueprint.childNodes, Array.from(container.childNodes), map, 'root', HYDRATION_DEV ? metadata : undefined);
+    reconcileNodeLists(blueprint.childNodes, renderedChildren(container), map, 'root', HYDRATION_DEV ? metadata : undefined);
     rebindParts(parts, map);
     bindHydrationMetadata(parts, metadata);
     for (let i = 0; i < result.values.length; i++) {
@@ -2927,4 +2975,5 @@ export const hydrate = (result: TemplateResult, container: Node, metadata?: Hydr
   }
 
   containerCache.set(container, { identity, parts });
+  if (container.isConnected) flushStyleAcquisitions();
 };

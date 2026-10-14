@@ -61,7 +61,7 @@ Both approaches provide the same two helpers:
 
 | Helper | Description |
 | --- | --- |
-| `cossackScripts()` | Returns all `<head>` content: head tags from `head()`, CSS links/styles, initial state script, module preload links, and the client entry script tag. |
+| `cossackScripts()` | Returns all `<head>` content: head tags from `head()`, CSS links/styles, component styles, initial state script, module preload links, and the client entry script tag. |
 | `cossackBody()` | Returns `<div id="root">${body}</div>`. The page content is wrapped in the `#root` container required for hydration. |
 
 ### What `cossackScripts()` includes
@@ -71,6 +71,9 @@ Both approaches provide the same two helpers:
   Pass ordinary strings without pre-escaping them.
 - CSS stylesheet link (or inline CSS with deferred load in production). A
   production entry without a CSS asset emits no stylesheet link.
+- One `<style data-cossack-style="…">` element for each component style scope
+  (`static styles`) the page rendered, after the application CSS. Component
+  output carries no style elements, so keep `cossackScripts()` in `<head>`.
 - `window.__INITIAL_STATE__` script for client-side hydration
 - Module preload links for route-specific chunks
 - The client entry `<script type="module">` tag
