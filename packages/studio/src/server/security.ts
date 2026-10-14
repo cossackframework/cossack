@@ -28,6 +28,10 @@ export function createStudioSecurity(port: number): StudioSecurity {
   const launchToken = randomBytes(32).toString('base64url');
   const sessionToken = randomBytes(32).toString('base64url');
   const origin = `http://127.0.0.1:${port}`;
+  // The launch token travels in a URL (terminal scrollback, browser history,
+  // process listings of `open`/`xdg-open`). It is exchanged exactly once for
+  // the HttpOnly session cookie, which is the only long-lived credential.
+  let launchTokenConsumed = false;
   return {
     launchToken,
     sessionToken,
@@ -53,7 +57,8 @@ export function createStudioSecurity(port: number): StudioSecurity {
         return true;
       }
       const launch = url.searchParams.get('token') ?? undefined;
-      if (safeEqual(launch, launchToken)) {
+      if (!launchTokenConsumed && safeEqual(launch, launchToken)) {
+        launchTokenConsumed = true;
         response.statusCode = 302;
         response.setHeader(
           'Set-Cookie',
@@ -65,7 +70,11 @@ export function createStudioSecurity(port: number): StudioSecurity {
       }
       if (!safeEqual(cookieValue(request.headers.cookie, 'cossack_studio_session'), sessionToken)) {
         response.statusCode = 401;
-        response.end('Open Studio using the private launch URL printed by the CLI.');
+        response.end(
+          launchTokenConsumed && launch
+            ? 'This Studio launch URL has already been used. Restart Studio to get a new one.'
+            : 'Open Studio using the private launch URL printed by the CLI.',
+        );
         return false;
       }
       return true;

@@ -19,6 +19,11 @@ cossack studio --no-open --port 4983
 cossack studio --driver postgres
 ```
 
+The printed launch URL contains a one-time token. The first visit exchanges it
+for an HttpOnly, `SameSite=Strict` session cookie and the token stops working;
+later visits from the same browser use the cookie. To open Studio in another
+browser or profile, restart it to get a new launch URL.
+
 Remote D1 uses the project's authenticated Wrangler installation:
 
 ```sh
