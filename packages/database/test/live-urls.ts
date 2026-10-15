@@ -1,8 +1,9 @@
 // Connection URLs for the live PostgreSQL and MySQL runs.
 //
 // Each URL is undefined when its variable is unset, and the tests that need it
-// skip. CI sets COSSACK_TEST_REQUIRE_LIVE=1 next to the URLs: a missing URL then
-// fails the test file at import time instead of silently skipping both engines.
+// skip. `pnpm test:databases` sets COSSACK_TEST_REQUIRE_LIVE=1 next to the URLs:
+// a missing URL then fails the test file at import time instead of silently
+// skipping both engines.
 export interface LiveDatabaseUrls {
   readonly postgres: string | undefined;
   readonly mysql: string | undefined;

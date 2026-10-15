@@ -2,16 +2,17 @@
 //
 // Runs only when COSSACK_TEST_POSTGRES_URL and/or COSSACK_TEST_MYSQL_URL are
 // set (docs/testing.md), and skips otherwise. With COSSACK_TEST_REQUIRE_LIVE=1
-// (CI) a missing URL fails instead. The tests create and drop their own `sl_*`
-// objects (live-schema-fixture.ts) in the database the URL names.
+// (`pnpm test:databases`) a missing URL fails instead. The tests create and
+// drop their own `sl_*` objects (live-schema-fixture.ts) in the database the
+// URL names.
 //
 // The pinned results in __snapshots__/live-introspection.*.json were recorded
 // with the earlier per-table introspection (three or four queries per table)
 // and must not change. The PostgreSQL file was re-recorded once on purpose,
 // when keys and foreign keys moved to pg_catalog, to add the fixture objects
 // that the information_schema queries read wrongly. Re-record them only for
-// an intended change, against the server versions CI uses
-// (.github/workflows/integration-tests.yml).
+// an intended change, against the pinned server images in
+// scripts/test-live-databases.mjs.
 import { createORM } from '@cossackframework/database';
 import { mysql, postgres } from '@cossackframework/database/node';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';

@@ -8,8 +8,9 @@
 //   COSSACK_TEST_MYSQL_URL=mysql://user:pass@127.0.0.1:3306/cossack_test
 //
 // Point them at a dedicated, disposable database: the suite drops and creates
-// its own `live_*` tables. Set COSSACK_TEST_REQUIRE_LIVE=1 as well (CI does) to
-// fail instead of skipping when either URL is missing.
+// its own `live_*` tables. Set COSSACK_TEST_REQUIRE_LIVE=1 as well to fail
+// instead of skipping when either URL is missing. `pnpm test:databases` starts
+// both servers and sets all three variables (docs/testing.md).
 //
 // Offset-less timestamps must decode as UTC whatever the process time zone is,
 // so the suite runs in UTC+7. A local-time parse anywhere in a driver or codec

@@ -1,6 +1,6 @@
 // Studio on a real MySQL server. Runs only when COSSACK_TEST_MYSQL_URL is set
-// (docs/testing.md), and skips otherwise; with COSSACK_TEST_REQUIRE_LIVE=1 (CI)
-// a missing URL fails instead.
+// (docs/testing.md), and skips otherwise; with COSSACK_TEST_REQUIRE_LIVE=1
+// (`pnpm test:databases`) a missing URL fails instead.
 //
 // MySQL schema loads defer each object's SHOW CREATE statement, so the
 // Structure tab loads the definition of the object it shows.
