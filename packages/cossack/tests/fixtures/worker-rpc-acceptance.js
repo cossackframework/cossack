@@ -217,7 +217,10 @@ export async function checkWorkerRpcAcceptance(server, serverUrl, sessionCookie,
     const invoke = (action, input, service = false, requestHeaders = headers) => {
       const form = new FormData();
       form.set('componentRouteId', state.componentRouteId); form.set('scopeKey', state.scopeKey);
-      if (service) form.set('service', JSON.stringify({ ownerRouteId: owner, slot: '0' }));
+      if (service) {
+        form.set('service', JSON.stringify({ ownerRouteId: owner, slot: '0' }));
+        form.set('pageParams', JSON.stringify(state.metadata.params));
+      }
       form.set('action', action); form.set('state', JSON.stringify({ count: 0 }));
       form.set('payload', JSON.stringify(input)); form.set('file_0', new File(['привет🙂'], 'unicode.txt'));
       return fetch(new URL('/upload', serverUrl), { method: 'POST', headers: requestHeaders, body: form });
@@ -231,7 +234,7 @@ export async function checkWorkerRpcAcceptance(server, serverUrl, sessionCookie,
         requestId: deniedGuarantee.headers.get('X-Cossack-Request-Id') });
       expect(await audit(guaranteeKey)).toEqual([]);
       const envelope = { componentRouteId: state.componentRouteId, scopeKey: state.scopeKey,
-        ...(service ? { service: { ownerRouteId: owner, slot: '0' } } : {}), action: 'limited', payload: [limitedKey] };
+        ...(service ? { service: { ownerRouteId: owner, slot: '0' }, pageParams: state.metadata.params } : {}), action: 'limited', payload: [limitedKey] };
       const limited = await server.fetch('/crpc', { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(envelope) });
       // The same layout service owns one budget across both page routes.
       if (service && transport === 'sse') {

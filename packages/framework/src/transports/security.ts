@@ -1,13 +1,16 @@
 import { isOriginAllowed, RpcError } from '@cossackframework/core';
-import type { MiddlewareHandler } from 'hono';
+import type { Context, MiddlewareHandler } from 'hono';
 import type { RouterContext } from '../route-ids.js';
 import { readRpcRequest, RPC_JSON_REQUEST_MAX_BYTES } from './http.js';
 import { discardRequestBody } from '../request-body.js';
+import { withRuntimeRouteParams } from '../runtime-websocket.js';
+import { resolveServiceRpcTarget } from './service-target.js';
 
 /** Apply the addressed page/layout guards before any transport can bootstrap it. */
 export function protectTransport(ctx: RouterContext): MiddlewareHandler {
     return async (c, next) => {
         let componentPath: string | undefined;
+        let guarded: Context = c;
         if (c.req.method === 'POST') {
             // Multipart and text/plain requests can be sent without a CORS preflight.
             // CORS response headers alone cannot prevent their side effects.
@@ -27,8 +30,17 @@ export function protectTransport(ctx: RouterContext): MiddlewareHandler {
                 if (!body || typeof body !== 'object' || Array.isArray(body)) {
                     return c.json({ error: 'Invalid transport body' }, 400);
                 }
-                const routeId = body.service?.ownerRouteId ?? body.componentRouteId;
-                componentPath = typeof routeId === 'string' ? ctx.routeIdMap.get(routeId) : undefined;
+                if (body.service !== undefined) {
+                    // A layout service runs under the page the browser is on.
+                    // Guard it like SSR of that page: every layout and page
+                    // guard, with the page's checked route params.
+                    const target = resolveServiceRpcTarget(ctx, body);
+                    if (!target) return c.json({ error: 'Invalid service target', code: 'COSSACK_RPC_REQUEST_INVALID', requestId }, 400);
+                    componentPath = target.pagePath;
+                    guarded = withRuntimeRouteParams(c, target.params);
+                } else if (typeof body.componentRouteId === 'string') {
+                    componentPath = ctx.routeIdMap.get(body.componentRouteId);
+                }
             } catch (error) {
                 if (error instanceof RpcError && error.code === 'COSSACK_RPC_REQUEST_TOO_LARGE') {
                     return c.json({ error: error.message, code: error.code, requestId }, 413);
@@ -52,7 +64,7 @@ export function protectTransport(ctx: RouterContext): MiddlewareHandler {
             index = position;
             const middleware = middlewares[position];
             if (!middleware) return next();
-            const response = await middleware(c, () => dispatch(position + 1));
+            const response = await middleware(guarded, () => dispatch(position + 1));
             if (response) c.res = response;
         };
         await dispatch(0);

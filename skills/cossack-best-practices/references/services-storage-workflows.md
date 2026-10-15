@@ -22,7 +22,9 @@ carry credentials or establish permissions.
 
 Declare services on the owning layout's `@Page({ services: [...] })`.
 `ServiceScope` inherits and shadows declarations; `CossackService` gets active
-SSR/RPC request context. Await disposal. Global DI and module-level createStore
+SSR/RPC request context. A browser service call runs under the current page:
+the server checks the page's route params, runs that page's layout and page
+guards with them as SSR does, and computes the scope key itself. Await disposal. Global DI and module-level createStore
 instances are process-local and shared across server requests: reserve those for
 stateless services or browser-only theme/toast data, never user/session state.
 Read `reactive-state-and-stores` and `scoped-services-and-injection`.

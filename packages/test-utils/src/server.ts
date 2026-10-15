@@ -151,10 +151,13 @@ export interface ComponentRpcRequest {
 export interface ServiceRpcRequest {
     ownerRouteId: string;
     slot: string;
+    /** Route id of the page the call runs under. The owning layout must enclose it. */
+    componentRouteId: string;
+    /** Route params of that page. Defaults to none. */
+    pageParams?: Record<string, string>;
     action: string;
     payload?: unknown[];
     state?: Record<string, unknown>;
-    scopeKey?: string;
 }
 
 /** Real request dispatch: no alternate router, policy, DI, or cleanup implementation. */
@@ -175,7 +178,7 @@ export function createServerApp<Env>(options: ServerAppOptions<Env>) {
         request,
         componentRpc: (body: ComponentRpcRequest, init?: RequestInit) => rpc({ payload: [], state: {}, ...body }, init),
         serviceRpc: ({ ownerRouteId, slot, ...body }: ServiceRpcRequest, init?: RequestInit) =>
-            rpc({ payload: [], state: {}, ...body, service: { ownerRouteId, slot } }, init),
+            rpc({ payload: [], state: {}, pageParams: {}, ...body, service: { ownerRouteId, slot } }, init),
     };
 }
 

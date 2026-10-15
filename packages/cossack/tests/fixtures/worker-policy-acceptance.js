@@ -125,7 +125,7 @@ export async function checkWorkerPolicyAcceptance(server, serverUrl, cookie, rea
         const initial=authenticated?state:anonymous;
         const payload={id,key,...extra};
         const envelope={componentRouteId:initial.componentRouteId,scopeKey:initial.scopeKey,
-          ...(service?{service:{ownerRouteId:owner,slot:'0'}}:{}),action:upload?'upload':'edit',
+          ...(service?{service:{ownerRouteId:owner,slot:'0'},pageParams:initial.metadata.params}:{}),action:upload?'upload':'edit',
           state:{permissions:{edit:true},owner:'u1',user:{id:'u1',tenant:'t1'}},payload:[payload]};
         if(upload){
           payload.file={_cossack_file_id:'file_0'};const form=new FormData();

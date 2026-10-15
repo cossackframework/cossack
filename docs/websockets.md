@@ -67,6 +67,15 @@ groups and dynamic segments. Modules need a default Cossack component export.
 Named helpers and native HTTP handler modules do not become socket targets.
 The framework does not scan its bundled example pages for application targets.
 
+The first connection to an instance creates the page the way SSR does. The
+Durable Object, or the Node runtime, builds the page inside the service scopes
+of its layouts, including route groups. The page and its layout services get
+the route params of the page URL, the connecting user and the scope key that
+the server computed. On Cloudflare, the page's guards run for that connection
+first, and `init()` runs inside the same request. A stateful instance that
+restores from storage has no request: it gets the stored route params and no
+user.
+
 A socket can close after the server commits a write but before its reply arrives.
 The client removes that call's preview and releases its loading count once.
 The error remains `COSSACK_RPC_TRANSPORT_CLOSED`, and reconnect does not retry the mutation.

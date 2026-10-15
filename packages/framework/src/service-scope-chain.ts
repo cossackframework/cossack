@@ -1,6 +1,8 @@
 import {
+    createInstance,
     createLayoutServiceScope,
     createRootServiceScope,
+    type BootstrapOptions,
     type Cossack,
     type ServiceScope,
     type ServiceScopeRequestContext,
@@ -44,9 +46,10 @@ export interface ServiceScopeChain {
 
 /**
  * Build the root + enclosing-layout service scope chain for one component path.
- * SSR, `/crpc`, `/ws` and the SSE endpoint all construct components through
- * this chain, so a page that injects a layout-declared service resolves it the
- * same way on every transport.
+ * SSR, SSG, `/crpc`, the SSE endpoint, the runtime `/ws` upgrade and the
+ * Cloudflare Durable Object all construct components through this chain, so a
+ * page that injects a layout-declared service resolves it the same way on
+ * every transport.
  */
 export async function createServiceScopeChain(options: ServiceScopeChainOptions): Promise<ServiceScopeChain> {
     const ownsRoot = options.root === undefined;
@@ -70,6 +73,31 @@ export async function createServiceScopeChain(options: ServiceScopeChainOptions)
         return { root, scope, layouts };
     } catch (error) {
         if (ownsRoot) await root.disposeAsync().catch(() => {});
+        throw error;
+    }
+}
+
+export interface ChainedComponentOptions extends Omit<ServiceScopeChainOptions, 'root' | 'onLayout'> {
+    component: new () => Cossack;
+    bootstrap: BootstrapOptions;
+}
+
+/**
+ * Construct and bootstrap a long-lived page or layout inside a fresh root +
+ * layout chain. The instance owns the chain: destroying it disposes the scopes.
+ */
+export async function createChainedComponent(options: ChainedComponentOptions): Promise<Cossack> {
+    const { root, scope } = await createServiceScopeChain(options);
+    let instance: Cossack | undefined;
+    try {
+        instance = createInstance(options.component, { serviceScope: scope }) as Cossack;
+        instance.__cossack_rpcOwner = options.componentPath;
+        instance._ownServiceScopeLifetime(root);
+        await instance.bootstrap(options.bootstrap);
+        return instance;
+    } catch (error) {
+        try { await instance?.destroyAsync(); }
+        finally { await root.disposeAsync(); }
         throw error;
     }
 }

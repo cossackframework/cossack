@@ -73,7 +73,9 @@ it('runs the scoped-service recipe across sibling navigation, nested injection, 
   }
   const manifest = JSON.parse(await fs.readFile(path.join(root, 'dist/client/cossack-routes.json'), 'utf8'));
   const ownerRouteId = manifest.filePathToId['/src/pages/scoped-service/layout.ts'];
+  const pageRouteId = manifest.filePathToId['/src/pages/scoped-service/other/index.ts'];
   expect(ownerRouteId).toBeTruthy();
+  expect(pageRouteId).toBeTruthy();
   const server = await productionServer(root);
   let browser;
   try {
@@ -83,7 +85,7 @@ it('runs the scoped-service recipe across sibling navigation, nested injection, 
     expect(rendered).toContain('Count: 0');
     const rpc = async (action, service = { ownerRouteId, slot: '0' }) => {
       const response = await fetch(origin + '/crpc', { method: 'POST', headers: { origin, 'content-type': 'application/json' },
-        body: JSON.stringify({ service, action, payload: [], state: { count: 4 } }) });
+        body: JSON.stringify({ service, componentRouteId: pageRouteId, pageParams: {}, action, payload: [], state: { count: 4 } }) });
       return { status: response.status, body: await response.json() };
     };
     expect(await rpc('increment')).toMatchObject({ status: 200, body: {
@@ -109,7 +111,8 @@ it('runs the scoped-service recipe across sibling navigation, nested injection, 
     await page.getByRole('button', { name: 'Increment', exact: true }).click();
     await browserExpect(page.getByRole('button', { name: 'Updating…' })).toBeDisabled();
     expect(sent).toHaveLength(1);
-    expect(sent[0]).toMatchObject({ service: { ownerRouteId, slot: '0' }, action: 'increment', state: { count: 0 } });
+    expect(sent[0]).toMatchObject({ service: { ownerRouteId, slot: '0' }, componentRouteId: manifest.filePathToId['/src/pages/scoped-service/index.ts'],
+      pageParams: {}, action: 'increment', state: { count: 0 } });
     release();
     await browserExpect(count).toHaveText('Count: 1');
     await browserExpect(layoutCount).toHaveText('Count: 1');

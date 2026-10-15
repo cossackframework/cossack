@@ -88,7 +88,7 @@ async function rpcRedirectResponse(c: Context, result: unknown): Promise<Respons
   return c.json({ _cossack_redirect: location });
 }
 import { createApiHandler, getAuthoredRouteMember } from './api-handler.js';
-import { createServiceScopeChain } from './service-scope-chain.js';
+import { createChainedComponent, createServiceScopeChain } from './service-scope-chain.js';
 import registry from 'virtual:cossack-pages';
 import configuredMiddlewares from 'virtual:cossack-middlewares';
 import configFactories, { requirements as configRequirements, environment as configEnvironment } from 'virtual:cossack-config';
@@ -113,6 +113,7 @@ import { readRpcRequest, RPC_UPLOAD_REQUEST_MAX_BYTES } from './transports/http.
 import { discardRequestBody } from './request-body.js';
 import { protectTransport } from './transports/security.js';
 import { TRANSPORT_ROUTES } from './transport-routes.js';
+import { resolveServiceRpcTarget } from './transports/service-target.js';
 import { createLocaleMiddleware } from './middlewares/locale.js';
 import { createFlashMiddleware } from './middlewares/flash.js';
 import { createRequestContextMiddleware } from './middlewares/request-context.js';
@@ -883,23 +884,14 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
         rejectAuthorization,
         env: c.env as unknown as Record<string, unknown>,
         createComponent: async () => {
-          const { root: rootScope, scope: activeScope } = await createServiceScopeChain({
-            componentPath, layouts, routePathToIdMap, scopeKey,
+          const instance = await createChainedComponent({
+            component: ComponentClass, componentPath, layouts, routePathToIdMap, scopeKey,
             facilities: { context: componentContext, user, env: c.env },
+            bootstrap: { context: componentContext, user, env: c.env, runtime: runtimeInfo, page: pathname },
           });
-          let instance: Cossack | undefined;
-          try {
-            instance = createInstance(ComponentClass, { serviceScope: activeScope }) as Cossack;
-            instance.__cossack_rpcOwner = componentPath;
-            instance._ownServiceScopeLifetime(rootScope);
-            await instance.bootstrap({ context: componentContext, user, env: c.env, runtime: runtimeInfo, page: pathname });
-            instance._render();
-            return instance;
-          } catch (error) {
-            try { await instance?.destroyAsync(); }
-            finally { await rootScope.disposeAsync(); }
-            throw error;
-          }
+          try { instance._render(); }
+          catch (error) { await instance.destroyAsync(); throw error; }
+          return instance;
         },
       });
     });
@@ -927,23 +919,25 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
     // Explicit layout-service RPC. The client addresses the owning layout and
     // stable service slot; no service fields or methods are projected onto a
     // component instance, so component names cannot collide with service names.
-    if (body.service) {
-      const ownerRouteId = body.service.ownerRouteId;
-      const slot = body.service.slot;
-      if (typeof ownerRouteId !== 'string' || typeof slot !== 'string') {
-        return c.json({ error: 'Invalid service target' }, 400);
-      }
-      const ownerPath = routeIdMap.get(ownerRouteId);
-      if (!ownerPath || !layouts[ownerPath]) return c.json({ error: 'Invalid service owner' }, 400);
+    // The service is built under the page the browser is on, with that page's
+    // checked route params and server-computed scope key, as during SSR.
+    // protectTransport already ran the page's layout and page guards.
+    if (body.service !== undefined) {
+      const target = resolveServiceRpcTarget(routerContext, body);
+      if (!target) return c.json({ error: 'Invalid service target', code: 'COSSACK_RPC_REQUEST_INVALID', requestId }, 400);
+      const { ownerPath, slot, pagePath } = target;
+      const ownerRouteId = body.service.ownerRouteId as string;
       const logContext = logContextFor(ownerPath);
+      const pageContext = withRuntimeRouteParams(c, target.params);
 
       const requestScope = createRootServiceScope();
-      requestScope.bindRequest({ context: c, user, env: c.env });
+      requestScope.bindRequest({ context: pageContext, user, env: c.env });
       let responseOwnsCleanup = false;
       try {
+        const pageOptions = Reflect.getMetadata('page:options', getModuleDefault(pages[pagePath]) as object) as PageOptions | undefined;
         const chain = await createServiceScopeChain({
-          componentPath: ownerPath, layouts, routePathToIdMap, scopeKey: clientScopeKey,
-          facilities: { context: c, user, env: c.env }, root: requestScope,
+          componentPath: pagePath, layouts, routePathToIdMap, scopeKey: await resolveSseScopeKey(pageContext, pageOptions),
+          facilities: { context: pageContext, user, env: c.env }, root: requestScope,
         });
         const ownerScope = chain.layouts.find(layout => layout.path === ownerPath)?.scope;
         if (!ownerScope) return c.json({ error: 'Service owner is not active' }, 400);
@@ -955,13 +949,13 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
         if (!isRpcCallableAction(owned.serviceClass, action)) {
           return c.json({ error: `Action '${String(action)}' is not a callable service method`, code: 'COSSACK_RPC_FORBIDDEN', requestId }, 403);
         }
-        const rateLimited = await enforceMethodRateLimit(c, owned.serviceClass, action, `crpc-service:${ownerRouteId}:${slot}`);
+        const rateLimited = await enforceMethodRateLimit(pageContext, owned.serviceClass, action, `crpc-service:${ownerRouteId}:${slot}`);
         if (rateLimited) return rateLimited;
 
         let actionResult: unknown;
         try {
           const validatedServicePayload = await enforceActionInput(owned.serviceClass, action, Array.isArray(payload) ? payload : [], { signal: c.req.raw.signal });
-          await enforceActionAuthorization(owned.serviceClass, action, validatedServicePayload, c, c.req.raw.signal);
+          await enforceActionAuthorization(owned.serviceClass, action, validatedServicePayload, pageContext, c.req.raw.signal);
           if (c.req.raw.signal.aborted) throw new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.');
           if (import.meta.env.DEV) developmentRpcInvoked(c);
           actionResult = await owned.instance[action](...(validatedServicePayload as any[]));
