@@ -14,6 +14,7 @@ import { readRpcJsonResponse, readRpcHttpError } from './rpc-json';
 import { awaitRpcResponse } from './rpc-response';
 import { sendRpcUpload } from './rpc-upload';
 import { rpcFormData } from './rpc-files';
+import { TRANSPORT_ROUTES } from './transport-routes';
 import { wsPendingCalls } from './transport-connections';
 
 interface ServerMethodBase {
@@ -275,18 +276,18 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                     // Fetch keeps native response streaming/backpressure. XHR
                     // is required only when the author requests upload progress.
                     request = typeof component.getProperty?.(property) === 'number'
-                        ? sendRpcUpload(`/upload${window.location.search}`, formData, controller.signal, event => {
+                        ? sendRpcUpload(`${TRANSPORT_ROUTES.upload}${window.location.search}`, formData, controller.signal, event => {
                             if (event.lengthComputable) {
                                 component.setProperty(property, event.loaded / event.total * 100);
                                 component.requestUpdate();
                             }
                         }, requestId, trace?.requestHeaders)
-                        : fetch(`/upload${window.location.search}`, {
+                        : fetch(`${TRANSPORT_ROUTES.upload}${window.location.search}`, {
                             method: 'POST', body: formData, signal: controller.signal,
                             headers: { ...trace?.requestHeaders, 'X-Cossack-Request-Id': requestId, Accept: `${RPC_STREAM_CONTENT_TYPE}, application/json` },
                         });
                 } else {
-                    request = fetch(`/crpc${window.location.search}`, {
+                    request = fetch(`${TRANSPORT_ROUTES.rpc}${window.location.search}`, {
                         method: 'POST',
                         headers: { ...trace?.requestHeaders, 'X-Cossack-Request-Id': requestId, 'Content-Type': 'application/json', Accept: `${RPC_STREAM_CONTENT_TYPE}, application/json` },
                         signal: controller.signal,

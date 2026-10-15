@@ -1,4 +1,5 @@
 import { RpcError } from '@cossackframework/core';
+import { TRANSPORT_ROUTES } from '../transport-routes.js';
 import type { Context } from 'hono';
 import { parseBody } from 'hono/utils/body';
 import { declaredLengthExceeds, readBoundedBody } from '../request-body.js';
@@ -34,7 +35,7 @@ export async function readRpcRequest(c: Context, limits: RpcBodyLimits = {}): Pr
     const cached = c.get(BODY_KEY);
     if (cached) return cached;
     let body: any;
-    if (c.req.path === '/upload' || c.req.header('Content-Type')?.startsWith('multipart/form-data')) {
+    if (c.req.path === TRANSPORT_ROUTES.upload || c.req.header('Content-Type')?.startsWith('multipart/form-data')) {
         // Buffer at most the limit, then parse the bounded copy (never the raw stream).
         const bytes = await readBody(c, limits.uploadBytes ?? RPC_UPLOAD_REQUEST_MAX_BYTES);
         const headers = new Headers(c.req.raw.headers);

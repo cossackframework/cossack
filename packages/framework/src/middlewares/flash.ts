@@ -21,6 +21,7 @@
 // need no secret.
 
 import type { MiddlewareHandler } from 'hono';
+import { isTransportPath } from '../transport-routes.js';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import { assertResponseHeadersMutable, signValue, verifyValue } from '@cossackframework/core';
 import { ensureFlashAlsWired, runWithFlash } from '../flash-context.js';
@@ -145,8 +146,7 @@ export function createFlashMiddleware(
 
     return async (c, next) => {
         ensureFlashAlsWired();
-        const transport = c.req.path === '/crpc' || c.req.path === '/upload' ||
-            c.req.path.startsWith('/sse/') || c.req.path.startsWith('/ws/');
+        const transport = isTransportPath(c.req.path);
 
         // 1. INCOMING: verify; consume only outside background transports.
         let incoming: Record<string, unknown> = {};

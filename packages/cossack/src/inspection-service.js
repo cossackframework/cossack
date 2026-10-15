@@ -82,8 +82,20 @@ export function explainRoute(effective, route) {
   return { route: page.route, routeId: page.routeId, kind: page.kind, source: page.source, reasons };
 }
 
-export function checkRouteModel(effective) {
-  const diagnostics = [...effective.scaffold.diagnostics, ...effective.runtime.diagnostics];
+/**
+ * Routes at reserved paths (`/assets/`, framework transports) and a reserved
+ * `public/assets/` directory, from the same check builds and deploy preflight
+ * run. Sources are project-relative.
+ */
+export async function reservedPathDiagnostics(root) {
+  const { checkReservedPaths } = await import('@cossackframework/framework/deployment-artifact');
+  const { relative, sep } = await import('node:path');
+  return checkReservedPaths(root).map(diagnostic => ({ code: diagnostic.code, severity: 'error', message: diagnostic.message,
+    source: relative(root, diagnostic.file).split(sep).join('/') }));
+}
+
+export function checkRouteModel(effective, reserved = []) {
+  const diagnostics = [...effective.scaffold.diagnostics, ...effective.runtime.diagnostics, ...reserved];
   const add = (code, message, source) => diagnostics.push({ code, severity: 'error', message, source });
   for (const item of [...effective.pages, ...effective.layouts]) {
     if (item.routeStyle === 'http-handlers') continue;
@@ -125,7 +137,7 @@ export function checkRouteModel(effective) {
 export async function inspectProject(root, { scope, environment = process.env.CLOUDFLARE_ENV, route, locale, check = false }) {
   if (scope === 'routes') {
     const effective = await (await import('./scan-routes.js')).buildEffectiveRouteModel(root, { environment });
-    if (check) return checkRouteModel(effective);
+    if (check) return checkRouteModel(effective, await reservedPathDiagnostics(root));
     if (route !== undefined) {
       const explanation = explainRoute(effective, route);
       if (!explanation) throw Object.assign(new Error('No matching route. Inspect routes to list valid identities.'), { code: 'COSSACK_ROUTE_UNKNOWN' });

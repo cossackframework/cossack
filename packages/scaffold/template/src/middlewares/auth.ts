@@ -1,10 +1,11 @@
 import { defineServerMiddleware } from '@cossackframework/core';
+import { isTransportPath } from '@cossackframework/core/transport-routes';
 import { createAuthorizer } from '@cossackframework/auth';
 import { auth } from '../auth';
 
 const dashboardAuthorizer = createAuthorizer({
     onUnauthorized: (c, reason) => {
-        if (c.req.path === '/crpc' || c.req.path === '/upload' || c.req.path.startsWith('/ws/')) {
+        if (isTransportPath(c.req.path, 'rpc', 'upload', 'websocket')) {
             return c.json({ error: reason === 'unauthenticated' ? 'Authentication required' : 'Forbidden',
                 code: reason === 'unauthenticated' ? 'COSSACK_RPC_UNAUTHENTICATED' : 'COSSACK_RPC_FORBIDDEN' },
                 reason === 'unauthenticated' ? 401 : 403);

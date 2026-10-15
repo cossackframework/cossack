@@ -4,6 +4,7 @@ import type { RouterContext } from '../route-ids.js';
 import { readRpcRequest, RPC_JSON_REQUEST_MAX_BYTES } from './http.js';
 import { discardRequestBody } from '../request-body.js';
 import { withRuntimeRouteParams } from '../runtime-websocket.js';
+import { isTransportPath } from '../transport-routes.js';
 import { checkSocketRouteParams, resolveComponentRpcTarget, resolveServiceRpcTarget } from './rpc-target.js';
 
 /**
@@ -60,7 +61,7 @@ export function protectTransport(ctx: RouterContext): MiddlewareHandler {
                 return c.json({ error: error instanceof RpcError ? error.message : 'Invalid transport body',
                     code: 'COSSACK_RPC_REQUEST_INVALID', requestId }, 400);
             }
-        } else if (c.req.path.startsWith('/sse/')) {
+        } else if (isTransportPath(c.req.path, 'sse')) {
             componentPath = ctx.routeIdMap.get(c.req.param('componentRouteId') ?? '');
         } else {
             const route = c.req.query('routePath') || c.req.query('componentPath');

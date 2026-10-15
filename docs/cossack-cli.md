@@ -173,6 +173,13 @@ declarations produce `COSSACK_ROUTE_INHERITANCE_UNKNOWN`. Unknown declared membe
 precedence produces `COSSACK_ROUTE_DISPATCH_UNKNOWN`. Inspection can
 still succeed for those files and report the available facts.
 
+Checks also fail for routes that can never run, with the same diagnostics as
+`vite build` and deploy preflight. `COSSACK_TRANSPORT_ROUTE_RESERVED` marks a
+page or API route at a framework transport path (`/crpc`, `/upload`, or below
+`/sse/` or `/ws/`). `COSSACK_ASSETS_NAMESPACE_RESERVED` marks a route below
+`/assets/` or a `public/assets/` directory. A Node project sees them before it
+builds.
+
 Functional API modules under `src/pages/api/` are marked
 `routeStyle: "http-handlers"`. Recognized named method exports and local default
 functions use HTTP without requiring component decorators or a default component

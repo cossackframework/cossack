@@ -20,6 +20,7 @@ import { isSharedMethod } from './shared-method';
 import { rpcFormData, snapshotRpcPayload } from './rpc-files';
 import { readRpcJsonResponse, readRpcHttpError } from './rpc-json';
 import { awaitRpcResponse } from './rpc-response';
+import { TRANSPORT_ROUTES } from './transport-routes';
 import { createRpcCall, snapshotRpcValue, readRpcNativeResponse, RPC_NATIVE_RESPONSE_HEADER, readRpcStream, RPC_STREAM_CONTENT_TYPE, RpcError } from './rpc-stream';
 
 export interface ServiceScopeRequestContext {
@@ -431,7 +432,7 @@ export class ServiceScope {
                     const body = { service: { ownerRouteId: this.ownerRouteId, slot: entry.slot },
                         componentRouteId: page?.componentRouteId, pageParams: page?.metadata?.params ?? {},
                         action, payload: normalized.payload, state: requestState };
-                    request = fetch(normalized.files.size ? '/upload' : '/crpc', {
+                    request = fetch(normalized.files.size ? TRANSPORT_ROUTES.upload : TRANSPORT_ROUTES.rpc, {
                         method: 'POST',
                         headers: { ...trace?.requestHeaders, 'X-Cossack-Request-Id': requestId, ...(normalized.files.size ? {} : { 'Content-Type': 'application/json' }), Accept: `${RPC_STREAM_CONTENT_TYPE}, application/json` },
                         signal: controller.signal,

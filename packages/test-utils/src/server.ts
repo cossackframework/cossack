@@ -11,6 +11,7 @@
 
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { Context } from 'hono';
+import { TRANSPORT_ROUTES } from '@cossackframework/core/transport-routes';
 import {
     createRootServiceScope,
     setRequestContextGetter,
@@ -175,7 +176,7 @@ export function createServerApp<Env>(options: ServerAppOptions<Env>) {
         const headers = new Headers(init?.headers);
         if (!headers.has('Origin')) headers.set('Origin', base.origin);
         headers.set('Content-Type', 'application/json');
-        return request('/crpc', { ...init, method: 'POST', headers, body: JSON.stringify(body) });
+        return request(TRANSPORT_ROUTES.rpc, { ...init, method: 'POST', headers, body: JSON.stringify(body) });
     };
     return {
         request,

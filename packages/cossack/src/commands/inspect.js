@@ -1,4 +1,4 @@
-import { explainRoute, checkRouteModel, inspectProject } from '../inspection-service.js';
+import { explainRoute, checkRouteModel, inspectProject, reservedPathDiagnostics } from '../inspection-service.js';
 import { commandSpecs, inspectRoutesSpec } from '../command-specs.js';
 import { findProjectRoot } from '../fs-utils.js';
 import { inspectProviders } from '../providers-inspection.js';
@@ -47,7 +47,7 @@ async function checkRoutes(ctx) {
   try {
     const root = await findProjectRoot(ctx.cwd);
     const effective = await buildEffectiveRouteModel(root, { environment: ctx.flags.env ?? process.env.CLOUDFLARE_ENV });
-    const { ok, data, diagnostics } = checkRouteModel(effective);
+    const { ok, data, diagnostics } = checkRouteModel(effective, await reservedPathDiagnostics(root));
     if (ctx.flags.json === true) writeResult('check', { ok, data, diagnostics });
     else {
       for (const diagnostic of diagnostics) console.error(`${diagnostic.code}: ${diagnostic.message} (${diagnostic.source})`);
@@ -157,7 +157,10 @@ export function checkHelp() {
 Validate local Cloudflare deployment configuration (--env <name>) or static
 route metadata without writing files. --env selects Cloudflare configuration
 for either scope. Route checks fail on missing/unresolved default class exports,
-unknown options, ignored page service declarations,
+unknown options, ignored page service declarations, routes at reserved paths
+(COSSACK_TRANSPORT_ROUTE_RESERVED for /crpc, /upload, /sse/ and /ws/;
+COSSACK_ASSETS_NAMESPACE_RESERVED for /assets/ and public/assets/, as the
+build and deploy preflight report them),
 unavailable compiler method facts, invalid/unsupported transports, or missing
 required transport bindings. Inherited behavior
 and runtime execution are not yet checked.

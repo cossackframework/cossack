@@ -6,6 +6,7 @@ import './metadata';
 import { getServiceMetadata, isService } from './container';
 import { RESERVED_STATE_KEYS } from './component-types';
 import { isSharedMethod } from './shared-method';
+import { TRANSPORT_ROUTES } from './transport-routes';
 import { createStoreProxy, isPlainObjectOrArray } from './store';
 
 type ServiceRuntime = {
@@ -296,7 +297,7 @@ export function proxyServiceMethods(component: any, serviceInstance: any): void 
             component.requestUpdate();
 
             try {
-                const response = await fetch('/crpc', {
+                const response = await fetch(TRANSPORT_ROUTES.rpc, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({

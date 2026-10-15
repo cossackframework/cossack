@@ -3,6 +3,7 @@ import { applyStateToComponent } from './method-proxy';
 import { hasOptimisticCalls, resetOptimisticSnapshotHistory, optimisticCallForRequest } from './optimistic-state';
 import { resetSseSnapshotCursor } from './rpc-state';
 import { isSharedMethod } from './shared-method';
+import { transportPath } from './transport-routes';
 import { rpcCancellations, validateRpcFrame, RPC_STREAM_MAX_FRAME_BYTES, RpcError, type RpcStreamFrame, type RpcSocket } from './rpc-stream';
 
 /**
@@ -147,7 +148,7 @@ export function connectWebSocket(component: any): void {
     // Targets can be scope keys or object names (`team:a`, `page:[...]`), so
     // encode them as one path segment. The server decodes route params and
     // recomputes the target; it rejects a different value.
-    const wsUrl = `/ws/${encodeURIComponent(target)}?${params}`;
+    const wsUrl = `${transportPath('websocket', target)}?${params}`;
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const fullWsUrl = `${protocol}//${window.location.host}${wsUrl}`;
 
@@ -326,7 +327,7 @@ export function connectSSE(component: any): void {
     const params = new URLSearchParams(window.location.search);
     params.set('scopeKey', scopeKey);
     params.set('params', JSON.stringify(initialState?.metadata?.params || {}));
-    const es = new EventSource(`/sse/${componentRouteId}?${params.toString()}`);
+    const es = new EventSource(`${transportPath('sse', componentRouteId)}?${params.toString()}`);
     component._sseConnection = es;
     const isCurrent = () => component._sseConnection === es && component._phase !== 'Destroyed';
     updateStatus(component, 'sse', { state: 'connecting', attempts: 0 });
