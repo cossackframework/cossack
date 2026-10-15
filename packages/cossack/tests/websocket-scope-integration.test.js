@@ -18,7 +18,7 @@ afterEach(async ({ task }) => {
   vi.unstubAllEnvs();
 });
 
-it('shares one Durable Object per user across the URLs of a user-scoped page and rejects other targets', async () => {
+it('shares one Durable Object per user across the URLs of a user-scoped page, keeps other pages apart and rejects other targets', async () => {
   vi.stubEnv('WRANGLER_SEND_METRICS', 'false');
   directory = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-ws-scope-'));
   const core = fileURLToPath(new URL('../../core/dist/index.js', import.meta.url));
@@ -109,8 +109,12 @@ it('shares one Durable Object per user across the URLs of a user-scoped page and
       } };
   };
 
-  const alice = await idFor('user:alice');
-  const bob = await idFor('user:bob');
+  // A scoped page's object is named by the page plus its scope key.
+  const inboxPath = '/src/pages/inbox/[folder]/index.ts';
+  const notesPath = '/src/pages/notes/index.ts';
+  const scoped = (page, key) => idFor('page:' + JSON.stringify([page, { scope: key }]));
+  const alice = await scoped(inboxPath, 'user:alice');
+  const bob = await scoped(inboxPath, 'user:bob');
   expect(alice).not.toBe(bob);
 
   // Two URLs of the page, one user: one Durable Object and one state.
@@ -126,7 +130,8 @@ it('shares one Durable Object per user across the URLs of a user-scoped page and
   expect((await work.call('whoami')).value.count).toBe(1);
 
   // A target that differs from the server-computed scope key is rejected.
-  for (const [target, user] of [[alice, 'bob'], [await idFor('user:mallory'), 'alice'], [await idFor('page:inbox'), 'alice']]) {
+  for (const [target, user] of [[alice, 'bob'], [await scoped(inboxPath, 'user:mallory'), 'alice'], [await idFor('user:alice'), 'alice'],
+    [await idFor('page:inbox'), 'alice']]) {
     const intruder = await connect({ target, user });
     expect(intruder.status).toBe(101);
     // The object accepts only to send the terminal frame, then closes with 1008.
@@ -134,10 +139,13 @@ it('shares one Durable Object per user across the URLs of a user-scoped page and
   }
   expect((await work.call('whoami')).value.count).toBe(1);
 
-  // Another page with the same key cannot join the object that hosts the inbox.
-  expect(await connect({ target: alice, user: 'alice', routePath: '/notes' }))
-    .toEqual({ status: 403, body: expect.objectContaining({ code: 'COSSACK_WS_SCOPE_MISMATCH' }) });
+  // Another page with the same key gets its own object and cannot name the inbox's.
+  const notes = await connect({ target: await scoped(notesPath, 'user:alice'), user: 'alice', routePath: '/notes' });
+  expect(await notes.call('increment')).toMatchObject({ type: 'done', value: 1 });
+  expect((await work.call('whoami')).value.count).toBe(1);
+  const crossed = await connect({ target: alice, user: 'alice', routePath: '/notes' });
+  expect(await crossed.next(() => true)).toMatchObject({ type: 'authorization-error', code: 'COSSACK_REALTIME_AUTH_CHANGED' });
 
   // The scope fails closed for anonymous users before reaching an object.
-  expect(await connect({ target: await idFor('user:anonymous') })).toEqual({ status: 401, body: { code: 'COSSACK_AUTH_UNAUTHENTICATED' } });
+  expect(await connect({ target: await scoped(inboxPath, 'user:anonymous') })).toEqual({ status: 401, body: { code: 'COSSACK_AUTH_UNAUTHENTICATED' } });
 }, 60_000);
