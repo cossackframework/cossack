@@ -34,6 +34,45 @@ See [Test utilities](./test-utils.md) for internal browser hydration and awaitab
 cleanup helpers, production fetch/RPC dispatch, credential fixtures, and
 controlled asynchronous work.
 
+### Database Live Tests
+
+The database package runs its ORM tests against real engines in
+`packages/database/test/live-dialects.test.ts`. SQLite, embedded Turso and
+local D1 (Miniflare) always run. PostgreSQL and MySQL run only when a
+connection URL is set, and skip otherwise:
+
+```bash
+COSSACK_TEST_POSTGRES_URL=postgres://cossack:cossack@127.0.0.1:5432/cossack_test \
+COSSACK_TEST_MYSQL_URL=mysql://root:cossack@127.0.0.1:3306/cossack_test \
+pnpm --filter @cossackframework/database run test --watch=false
+```
+
+Point both URLs at disposable databases: the tests drop and create their own
+`live_*` and `rt15_*` tables. Set `COSSACK_TEST_REQUIRE_LIVE=1` as well to make
+a missing URL fail the run instead of skipping both engines.
+
+To start the same servers that CI uses with Docker:
+
+```bash
+docker run -d --name cossack-postgres -p 127.0.0.1:5432:5432 \
+  -e POSTGRES_USER=cossack -e POSTGRES_PASSWORD=cossack -e POSTGRES_DB=cossack_test \
+  postgres:18.6
+docker run -d --name cossack-mysql -p 127.0.0.1:3306:3306 \
+  -e MYSQL_ROOT_PASSWORD=cossack -e MYSQL_DATABASE=cossack_test -e TZ=Asia/Bangkok \
+  mysql:8.0.46
+```
+
+The MySQL server runs in UTC+7 on purpose. The MySQL adapter must still store
+and read UTC values. The Hyperdrive MySQL target cannot set the session time
+zone, so it skips its `DEFAULT CURRENT_TIMESTAMP` test on that server
+(see `packages/database/docs/models.md`).
+
+The `database-live` job in `.github/workflows/integration-tests.yml` runs these
+tests with PostgreSQL and MySQL service containers and
+`COSSACK_TEST_REQUIRE_LIVE=1`. Like the other integration jobs, it runs on pull
+requests that change packages, on pushes to master, nightly and before every
+release.
+
 The framework's SSG output checks require `pnpm --filter
 @cossackframework/framework build:ssg` first. Without those artifacts, the six
 output checks are skipped. CI runs the SSG browser and artifact checks in a

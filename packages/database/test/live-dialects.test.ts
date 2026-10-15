@@ -8,7 +8,8 @@
 //   COSSACK_TEST_MYSQL_URL=mysql://user:pass@127.0.0.1:3306/cossack_test
 //
 // Point them at a dedicated, disposable database: the suite drops and creates
-// its own `live_*` tables.
+// its own `live_*` tables. Set COSSACK_TEST_REQUIRE_LIVE=1 as well (CI does) to
+// fail instead of skipping when either URL is missing.
 //
 // Offset-less timestamps must decode as UTC whatever the process time zone is,
 // so the suite runs in UTC+7. A local-time parse anywhere in a driver or codec
@@ -50,6 +51,7 @@ import { turso } from "../src/runtime/turso.js";
 import { d1, hyperdriveMySQL, hyperdrivePostgres, type HyperdriveBinding } from "../src/runtime/cloudflare.js";
 import { createAsyncLocalScope } from "../src/adapter/scope.js";
 import { AsyncLocalStorage } from "node:async_hooks";
+import { liveDatabaseUrls } from "./live-urls.js";
 
 afterAll(() => {
   if (previousTimeZone === undefined) delete process.env.TZ;
@@ -160,8 +162,7 @@ async function importMiniflare(): Promise<typeof import("miniflare") | undefined
 }
 
 const miniflare = await importMiniflare();
-const postgresUrl = process.env.COSSACK_TEST_POSTGRES_URL;
-const mysqlUrl = process.env.COSSACK_TEST_MYSQL_URL;
+const { postgres: postgresUrl, mysql: mysqlUrl } = liveDatabaseUrls();
 
 /** The Hyperdrive binding shape, pointed straight at a database server. */
 function hyperdriveBinding(url: string): HyperdriveBinding {
