@@ -705,8 +705,8 @@ pnpm test:unit
 ```
 
 The root command runs Vitest once (no watch mode), including UI, auth, Node
-adapter, framework, and test-utils tests. The root command runs package suites
-serially because framework pretest recreates library exports used by CLI tests.
+adapter, framework, and test-utils tests. It runs three package suites at a
+time; framework pretest no longer deletes library output during a run.
 Use `pnpm --filter <package-name> exec vitest run <test-file>` for a
 focused run. Similar direct-binding and spread-binding renderer tests cover
 different execution paths. Keep both.
