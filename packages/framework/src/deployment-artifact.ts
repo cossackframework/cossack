@@ -8,6 +8,10 @@ import { describeUncoveredClientOutput, uncoveredClientOutput } from './static-a
 export { ASSETS_RUN_WORKER_FIRST, STATIC_ASSET_DIRECTORY, isFrameworkAssetPattern, isPolicyPreservingRunWorkerFirst, isStaticAssetFile } from '@cossackframework/core/static-assets';
 export { checkStaticAssetNamespace, describeUncoveredClientOutput, uncoveredClientOutput } from './static-asset-routing.js';
 export type { StaticAssetNamespaceDiagnostic, StaticAssetNamespaceOptions, StaticAssetRouteFact } from './static-asset-routing.js';
+export { checkReservedPaths, checkTransportRouteNamespace } from './reserved-paths.js';
+export type { ReservedPathDiagnostic, TransportRouteDiagnostic, TransportRouteNamespaceOptions } from './reserved-paths.js';
+export { RESERVED_TRANSPORT_PATHS, TRANSPORT_ROUTES, findReservedTransportPath } from './transport-routes.js';
+export type { ReservedTransportPath } from './transport-routes.js';
 const TARGET_FIELDS = ['name', 'compatibility_date', 'compatibility_flags', 'vars', 'secrets', 'd1_databases', 'kv_namespaces', 'r2_buckets', 'hyperdrive', 'services', 'workflows',
   'durable_objects', 'queues', 'vectorize', 'analytics_engine_datasets', 'send_email', 'ai', 'browser', 'images', 'version_metadata',
   'mtls_certificates', 'dispatch_namespaces', 'pipelines', 'secrets_store_secrets', 'ratelimits', 'worker_loaders', 'vpc_services', 'vpc_networks',

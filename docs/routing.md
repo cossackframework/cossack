@@ -42,6 +42,42 @@ To create a dynamic route, put a URL segment in square brackets `[]` in a direct
 
 For example, a page at `src/pages/users/[id]/index.ts` will match URLs like `/users/123` or `/users/alice`.
 
+### Reserved paths
+
+The framework answers some paths itself, before it checks your routes. A page
+or API route at one of these paths never runs. For this reason, the build fails
+for every runtime. `cossack check cloudflare` and the preflight of
+`cossack deploy` report the same error.
+
+| Path | Used by the framework for | Reserved | Still free for routes |
+| --- | --- | --- | --- |
+| `/crpc` | RPC calls | Only `/crpc` | `/crpc/reports`, `/crpcx` |
+| `/upload` | RPC calls with file uploads | Only `/upload` | `/upload/files`, `/uploads` |
+| `/sse/` | Server-sent event streams | Every path below `/sse/`, at any depth | `/sse`, `/sse-info` |
+| `/ws/` | Component WebSocket connections | Every path below `/ws/`, at any depth | `/ws`, `/websocket` |
+| `/assets/` | Hashed build output | `/assets` and every path below it | `/assetsx` |
+
+A route conflicts when its file resolves to a reserved path. Route groups do
+not change this: `src/pages/(chat)/ws/[room].ts` resolves to `/ws/:room`. The
+error code for the transport paths is `COSSACK_TRANSPORT_ROUTE_RESERVED`. The
+message names the route file and the reserved path. Rename the route to fix it.
+For `/assets`, read
+[Static assets and authentication](./deployment.md#static-assets-and-authentication).
+
+The router matches `/crpc` and `/upload` exactly, so their subpaths stay free.
+The SSE and WebSocket endpoints take one path segment after `/sse/` or `/ws/`.
+The framework treats deeper paths in these namespaces as transport traffic
+too: for example, deeper `/ws/` paths return 404. For this reason, every depth
+is reserved.
+
+Only literal segments conflict. A parameter in the reserved position, as in
+`src/pages/[slug].ts`, does not conflict. The framework still answers `/crpc`
+before that route.
+
+In development, the server does not stop. It prints a warning at startup, and
+again when you add a route file that conflicts. This is the same behavior as
+for `/assets`.
+
 ### Typed URLs
 
 Import `routes` from `virtual:cossack-routes` to construct URLs from discovered

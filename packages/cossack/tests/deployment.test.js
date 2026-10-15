@@ -52,6 +52,24 @@ describe('deployment inspection with project Wrangler', () => {
     ]);
   });
 
+  it('rejects routes that framework transport endpoints shadow and allows near misses', async () => {
+    const root = await project({ assets: { binding: 'ASSETS', run_worker_first: ['/*', '!/assets/*'] } });
+    const routes = ['crpc/index.ts', 'upload.ts', '(live)/sse/[id]/index.ts', 'ws/rooms/[room].ts',
+      'crpcx/index.ts', 'websocket.ts', 'sse-info/index.ts', 'ws/index.ts', 'crpc/x/index.ts', 'upload/files.ts'];
+    for (const route of routes) {
+      await fs.mkdir(path.dirname(path.join(root, 'src/pages', route)), { recursive: true });
+      await fs.writeFile(path.join(root, 'src/pages', route), 'export default class Route {}');
+    }
+    const { diagnostics } = await inspectDeployment(root);
+    expect(diagnostics.map(diagnostic => diagnostic.message.split(' resolves to ')[0])).toEqual([
+      'src/pages/(live)/sse/[id]/index.ts', 'src/pages/crpc/index.ts', 'src/pages/upload.ts', 'src/pages/ws/rooms/[room].ts']);
+    for (const diagnostic of diagnostics) expect(diagnostic).toMatchObject({ code: 'COSSACK_TRANSPORT_ROUTE_RESERVED', severity: 'error' });
+    expect(diagnostics[0].message).toContain('resolves to /sse/:id, inside the /sse/ namespace reserved for framework server-sent event streams');
+    expect(diagnostics[1].message).toContain('resolves to /crpc, which is reserved for framework RPC calls');
+    expect(diagnostics[2].message).toContain('resolves to /upload, which is reserved for framework RPC calls with file uploads');
+    expect(diagnostics[3].message).toContain('resolves to /ws/rooms/:room, inside the /ws/ namespace reserved for framework component WebSocket connections');
+  });
+
   it('uses Wrangler environment inheritance and exposes names, not values', async () => {
     const root = await project({ vars: { APP_URL: 'https://production.test' },
       env: { staging: { vars: { APP_URL: 'https://staging.test' },

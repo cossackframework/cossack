@@ -112,6 +112,7 @@ import { handleWebSocketProxy } from './transports/websocket.js';
 import { readRpcRequest, RPC_UPLOAD_REQUEST_MAX_BYTES } from './transports/http.js';
 import { discardRequestBody } from './request-body.js';
 import { protectTransport } from './transports/security.js';
+import { TRANSPORT_ROUTES } from './transport-routes.js';
 import { createLocaleMiddleware } from './middlewares/locale.js';
 import { createFlashMiddleware } from './middlewares/flash.js';
 import { createRequestContextMiddleware } from './middlewares/request-context.js';
@@ -812,19 +813,20 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
     return c.html(`<h1>${escapeHtml(denial.message)}</h1>`, denial.status);
   };
 
-  // Transport routes
+  // Transport routes, registered before application routes. The build rejects
+  // routes at these paths using the same TRANSPORT_ROUTES.
   if (import.meta.env.DEV) {
-    app.use('/crpc', developmentRpcEvidence());
-    app.use('/upload', developmentRpcEvidence());
+    app.use(TRANSPORT_ROUTES.rpc, developmentRpcEvidence());
+    app.use(TRANSPORT_ROUTES.upload, developmentRpcEvidence());
   }
-  app.use('/crpc', protectTransport(routerContext));
-  app.use('/upload', protectTransport(routerContext));
-  app.use('/sse/:componentRouteId', protectTransport(routerContext));
+  app.use(TRANSPORT_ROUTES.rpc, protectTransport(routerContext));
+  app.use(TRANSPORT_ROUTES.upload, protectTransport(routerContext));
+  app.use(TRANSPORT_ROUTES.sse, protectTransport(routerContext));
   // Each component has one realtime connection: `/ws/:id`, where `id` is the
   // server-computed target emitted during SSR. The server recomputes it below.
-  app.use('/ws/:id', protectTransport(routerContext));
+  app.use(TRANSPORT_ROUTES.websocket, protectTransport(routerContext));
   if (options.runtimeAdapter?.handleWebSocketUpgrade) {
-    app.get('/ws/:id', async (c) => {
+    app.get(TRANSPORT_ROUTES.websocket, async (c) => {
       if (!isOriginAllowed(c.req.header('origin'), c.req.url, options.allowedOrigins)) {
         return c.text('Origin not allowed', 403);
       }
@@ -902,12 +904,12 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
       });
     });
   } else {
-    app.get('/ws/:id', handleWebSocketProxy(routerContext));
+    app.get(TRANSPORT_ROUTES.websocket, handleWebSocketProxy(routerContext));
   }
   // The realtime connection has one segment. A longer path (such as the
   // removed `/ws/:provider/:id`) never reaches a page or an upgrade.
-  app.all('/ws/:id/*', c => c.json({ error: 'Not Found', code: 'COSSACK_WS_ROUTE_NOT_FOUND' }, 404));
-  app.get('/sse/:componentRouteId', handleSseEndpoint(routerContext));
+  app.all(`${TRANSPORT_ROUTES.websocket}/*`, c => c.json({ error: 'Not Found', code: 'COSSACK_WS_ROUTE_NOT_FOUND' }, 404));
+  app.get(TRANSPORT_ROUTES.sse, handleSseEndpoint(routerContext));
   // JSON and multipart differ only at decoding. Ownership, validation,
   // streaming, cookies and cleanup use the same action pipeline.
   const handleRpc: Handler = async (c) => {
@@ -1373,8 +1375,8 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
     }
     return runComponentAction(undefined);
   };
-  app.post('/crpc', handleRpc);
-  app.post('/upload', handleRpc);
+  app.post(TRANSPORT_ROUTES.rpc, handleRpc);
+  app.post(TRANSPORT_ROUTES.upload, handleRpc);
 
   // Register all routes.
   //

@@ -22,7 +22,8 @@ import { extractPageOptionsFromAst, isHttpHandlerModule } from './page-inspectio
 import { readBuildBindingNames } from './build-bindings.js';
 import { classifyRoute, filePathToHttpRoute, filePathToRoutePath } from './route-ids.js';
 import { validateMarkdownFrontmatter, isValidatedMarkdownFrontmatter } from './markdown-frontmatter.js';
-import { checkStaticAssetNamespace, describeUncoveredClientOutput, uncoveredClientOutput } from './static-asset-routing.js';
+import { describeUncoveredClientOutput, uncoveredClientOutput, type StaticAssetRouteFact } from './static-asset-routing.js';
+import { checkReservedPaths, type ReservedPathDiagnostic } from './reserved-paths.js';
 
 export { SSR_MANIFEST_ASSET_PATH } from './runtime-constants.js';
 
@@ -126,6 +127,18 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
     );
   };
 
+  // Development warns about each reserved-path conflict once: at startup and
+  // again only after a route change introduces it. Builds fail instead.
+  let reportedReservedPaths = new Set<string>();
+  const unreportedReservedPaths = (diagnostics: readonly ReservedPathDiagnostic[]) => {
+    const messages = diagnostics.map(diagnostic => diagnostic.message);
+    const fresh = messages.filter(message => !reportedReservedPaths.has(message));
+    reportedReservedPaths = new Set(messages);
+    return fresh.length ? `[cossack] ${fresh.join('\n')}` : undefined;
+  };
+  const reservedPaths = (routes: readonly StaticAssetRouteFact[]) =>
+    checkReservedPaths(projectRoot, { publicDir: publicDirectory, routes });
+
   let capabilityPages = new Set<string>();
   let capabilityBindings: readonly string[] = [];
   const refreshCapabilityPages = () => {
@@ -209,12 +222,15 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
     async buildStart() {
       const { manifest } = generateRoutes(projectRoot, { includeMarkdown: markdownEnabled });
       // `/assets/*` skips the request pipeline (Cloudflare static routing and
-      // the generated Node server), so nothing else may live there.
-      const reserved = checkStaticAssetNamespace(projectRoot, { publicDir: publicDirectory, routes: manifest.routes });
-      if (reserved.length) {
+      // the generated Node server), and the router answers transport paths
+      // before application routes, so no route may live there.
+      const reserved = reservedPaths(manifest.routes);
+      if (this.environment?.mode === 'dev') {
+        const message = unreportedReservedPaths(reserved);
+        if (message) this.warn(message);
+      } else if (reserved.length) {
         const message = `[cossack] ${reserved.map(diagnostic => diagnostic.message).join('\n')}`;
-        if (this.environment?.mode === 'dev') this.warn(message);
-        else this.error({ code: reserved[0]!.code, message, id: reserved[0]!.file });
+        this.error({ code: reserved[0]!.code, message, id: reserved[0]!.file });
       }
       if (options.capabilities) {
         const { runtime } = options.capabilities;
@@ -326,6 +342,8 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
             if (options.capabilities) refreshCapabilityPages();
             const generated = generateRoutes(projectRoot, { includeMarkdown: markdownEnabled });
             if (!generated.changed) return;
+            const reserved = unreportedReservedPaths(reservedPaths(generated.manifest.routes));
+            if (reserved) server.config.logger.warn(reserved, { timestamp: true });
             const module = server.moduleGraph.getModuleById(generated.file);
             if (module) server.moduleGraph.invalidateModule(module);
           } catch (error) { server.config.logger.error(String(error)); }

@@ -148,6 +148,8 @@ Cloudflare configuration:
 The `/assets/` namespace is reserved for build output. The build fails if
 `public/assets/` exists or a route resolves under `/assets`. See
 [Static assets and authentication](./deployment.md#static-assets-and-authentication).
+The build also fails for a route at a framework transport path, on every
+runtime. See [Reserved paths](./routing.md#reserved-paths).
 Projects generated before this layout mount `serveStatic` for every path, so
 page and global policies do not protect their `public/` files. Change that
 mount to `app.use('/assets/*', ...)` as in a newly generated `src/index.ts`.
