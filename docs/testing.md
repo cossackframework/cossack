@@ -70,7 +70,10 @@ zone, so it skips its `DEFAULT CURRENT_TIMESTAMP` test on that server
 Studio reads the same variables. `packages/studio/tests/live-introspection.test.ts`
 creates its own `sl_*` tables and views, checks that a schema load runs a fixed
 number of queries, and compares the result with the pinned JSON files in
-`packages/studio/tests/__snapshots__/`. The Playwright spec
+`packages/studio/tests/__snapshots__/`. On PostgreSQL it also creates a
+temporary login role with only `SELECT` rights and checks that this role sees
+the same keys and foreign keys as the owner. That test skips when the test user
+cannot create roles. The Playwright spec
 `packages/studio/e2e/mysql-definition.spec.ts` needs `COSSACK_TEST_MYSQL_URL`
 and a Studio build:
 

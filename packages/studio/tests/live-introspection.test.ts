@@ -7,8 +7,11 @@
 //
 // The pinned results in __snapshots__/live-introspection.*.json were recorded
 // with the earlier per-table introspection (three or four queries per table)
-// and must not change. Re-record them only for an intended change, against
-// the server versions CI uses (.github/workflows/integration-tests.yml).
+// and must not change. The PostgreSQL file was re-recorded once on purpose,
+// when keys and foreign keys moved to pg_catalog, to add the fixture objects
+// that the information_schema queries read wrongly. Re-record them only for
+// an intended change, against the server versions CI uses
+// (.github/workflows/integration-tests.yml).
 import { createORM } from '@cossackframework/database';
 import { mysql, postgres } from '@cossackframework/database/node';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -21,6 +24,7 @@ import {
 import {
   dropFixtureSchema,
   extraTables,
+  fixtureCounts,
   fixtureSchema,
   fixtureSnapshot,
   FIXTURE_PREFIX,
@@ -90,8 +94,8 @@ for (const dialect of ['postgres', 'mysql'] as const) {
       // Version, object list, then columns, indexes and foreign keys of every table.
       expect(queries).toHaveLength(5);
       const objects = fixtureObjects(schema.objects);
-      expect(objects.filter((object) => object.kind === 'table')).toHaveLength(15);
-      expect(objects.filter((object) => object.kind === 'view')).toHaveLength(2);
+      expect(objects.filter((object) => object.kind === 'table')).toHaveLength(fixtureCounts(dialect).tables);
+      expect(objects.filter((object) => object.kind === 'view')).toHaveLength(fixtureCounts(dialect).views);
 
       await run(extraTables(dialect));
       queries.length = 0;
@@ -127,6 +131,91 @@ for (const dialect of ['postgres', 'mysql'] as const) {
         .toEqual({ kind: 'unique-index', columns: ['token'], name: 'sl_sessions_token_key' });
       expect(object('sl_open_orders')).toMatchObject({ kind: 'view', editable: false, indexes: [], foreignKeys: [] });
       expect(object('sl_audit_log').editable).toBe(dialect === 'postgres');
+    }, 60_000);
+
+    it.skipIf(dialect !== 'postgres')('keeps each table\'s own columns for foreign keys that share a name', async () => {
+      const schema = await new StudioDatabase(connection).getSchema();
+      const foreignKeys = (name: string) =>
+        schema.objects.find((object) => object.name === name)?.foreignKeys;
+
+      expect(foreignKeys('sl_dup_left')).toEqual([{
+        name: 'sl_dup_fk',
+        referencedTable: 'sl_warehouses',
+        columns: [
+          { column: 'region', referencedColumn: 'region', position: 0 },
+          { column: 'code', referencedColumn: 'code', position: 1 },
+        ],
+        onUpdate: 'NO ACTION',
+        onDelete: 'CASCADE',
+      }]);
+      // Foreign key order, not table column order.
+      expect(foreignKeys('sl_dup_right')).toEqual([{
+        name: 'sl_dup_fk',
+        referencedTable: 'sl_warehouses',
+        columns: [
+          { column: 'warehouse_region', referencedColumn: 'region', position: 0 },
+          { column: 'warehouse_code', referencedColumn: 'code', position: 1 },
+        ],
+        onUpdate: 'CASCADE',
+        onDelete: 'NO ACTION',
+      }]);
+      expect(foreignKeys('sl_dup_single')).toEqual([{
+        name: 'sl_dup_fk',
+        referencedTable: 'sl_accounts',
+        columns: [{ column: 'account_id', referencedColumn: 'id', position: 0 }],
+        onUpdate: 'NO ACTION',
+        onDelete: 'NO ACTION',
+      }]);
+      // One foreign key, not one more per partition of sl_part.
+      expect(foreignKeys('sl_part_refs')?.map((foreignKey) => [foreignKey.name, foreignKey.referencedTable]))
+        .toEqual([['sl_part_refs_part_fk', 'sl_part']]);
+      // The referenced column has a unique index but no unique constraint.
+      expect(foreignKeys('sl_badges')?.map((foreignKey) => [foreignKey.name, foreignKey.referencedTable]))
+        .toEqual([['sl_badges_employee_fk', 'sl_employees']]);
+    }, 60_000);
+
+    it.skipIf(dialect !== 'postgres')('shows a SELECT-only role the same keys and foreign keys as the owner', async (context) => {
+      const owner = await new StudioDatabase(connection).getSchema();
+      const objects = fixtureObjects(owner.objects);
+      const role = `sl_reader_${Math.random().toString(36).slice(2, 10)}`;
+      const password = 'sl_reader_password';
+      try {
+        await connection.execute(`CREATE ROLE ${role} LOGIN PASSWORD '${password}'`);
+      } catch (error) {
+        context.skip(`the test user cannot create roles: ${(error as Error).message}`);
+      }
+      let reader: LocalStudioConnection | undefined;
+      try {
+        const schemaName = String((await connection.execute('SELECT current_schema() AS name')).rows[0]?.name);
+        await connection.execute(`ALTER ROLE ${role} SET search_path = "${schemaName}"`);
+        await connection.execute(`GRANT USAGE ON SCHEMA "${schemaName}" TO ${role}`);
+        await connection.execute(
+          `GRANT SELECT ON ${objects.map((object) => `"${object.name}"`).join(', ')} TO ${role}`,
+        );
+        const readerUrl = new URL(url!);
+        readerUrl.username = role;
+        readerUrl.password = password;
+        reader = createLocalConnection({
+          orm: createORM({ adapter: await postgres(readerUrl.href), entities: [] }),
+          info: { provider: 'postgres', label: 'live postgres reader' },
+        });
+        // information_schema hides every constraint from this role.
+        const visible = await reader.execute(
+          `SELECT COUNT(*) AS count FROM information_schema.table_constraints WHERE table_name LIKE 'sl\\_%'`,
+        );
+        expect(Number(visible.rows[0]?.count)).toBe(0);
+
+        const read = await new StudioDatabase(reader).getSchema();
+        const stock = read.objects.find((object) => object.name === 'sl_stock')!;
+        expect(stock.rowLocators[0]).toEqual({ kind: 'primary-key', columns: ['product_id', 'region', 'code'] });
+        expect(stock.foreignKeys.map((foreignKey) => foreignKey.name))
+          .toEqual(['sl_stock_product_id_fkey', 'sl_stock_warehouse_fk']);
+        expect(fixtureSnapshot(read.objects, 'unused')).toBe(fixtureSnapshot(owner.objects, 'unused'));
+      } finally {
+        await reader?.close();
+        await connection.execute(`DROP OWNED BY ${role}`);
+        await connection.execute(`DROP ROLE ${role}`);
+      }
     }, 60_000);
 
     it('matches the pinned introspection result, with definitions loaded on demand', async () => {

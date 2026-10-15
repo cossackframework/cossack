@@ -102,6 +102,11 @@ function postgresConnection() {
   return new FakeConnection(
     { provider: 'postgres', label: 'app', remote: false },
     (sql, parameters) => {
+      // These views hide constraints and view definitions from roles that can
+      // only SELECT, so keys, foreign keys and views come from pg_catalog.
+      if (/information_schema\.(table_constraints|key_column_usage|referential_constraints|views)\b/.test(sql)) {
+        throw new Error(`PostgreSQL introspection read a privilege-filtered view: ${sql}`);
+      }
       if (sql === 'SELECT version() AS version') {
         return { rows: [{ version: 'PostgreSQL 17.2 on x86_64-pc-linux-gnu' }] };
       }
@@ -141,7 +146,8 @@ function postgresConnection() {
         expect(parameters).toEqual([]);
         return { rows: schemaWide(POSTGRES_INDEXES) };
       }
-      if (sql.includes("constraints.constraint_type = 'FOREIGN KEY'")) {
+      if (sql.includes("constraint_info.contype = 'f'")) {
+        expect(sql).toContain('unnest(constraint_info.conkey, constraint_info.confkey)');
         expect(parameters).toEqual([]);
         return { rows: schemaWide(POSTGRES_FOREIGN_KEYS) };
       }
@@ -319,15 +325,7 @@ function largeCatalogConnection(provider: 'postgres' | 'mysql', tables: number) 
           ]),
         };
       }
-      if (sql.includes('pg_catalog.pg_class AS table_class') || sql.includes('FROM information_schema.statistics')) {
-        return {
-          rows: names.flatMap((table) => [
-            { table_name: table, ...mysqlIndex(`${table}_pkey`, 'id', 'pk') },
-            { table_name: table, ...mysqlIndex(`${table}_parent_key`, 'parent_id', 'u') },
-          ]),
-        };
-      }
-      if (sql.includes("constraint_type = 'FOREIGN KEY'") || sql.includes('key_column_usage AS key_usage')) {
+      if (sql.includes("contype = 'f'") || sql.includes('key_column_usage AS key_usage')) {
         return {
           rows: names.map((table) => ({
             table_name: table,
@@ -339,6 +337,14 @@ function largeCatalogConnection(provider: 'postgres' | 'mysql', tables: number) 
             on_update: 'NO ACTION',
             on_delete: 'CASCADE',
           })),
+        };
+      }
+      if (sql.includes('pg_catalog.pg_class AS table_class') || sql.includes('FROM information_schema.statistics')) {
+        return {
+          rows: names.flatMap((table) => [
+            { table_name: table, ...mysqlIndex(`${table}_pkey`, 'id', 'pk') },
+            { table_name: table, ...mysqlIndex(`${table}_parent_key`, 'parent_id', 'u') },
+          ]),
         };
       }
       throw new Error(`Unexpected ${provider} query: ${sql}`);

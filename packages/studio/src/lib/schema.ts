@@ -667,16 +667,34 @@ async function catalogRows(
   };
 }
 
+/** The information_schema rule name for a pg_constraint action code. */
+function postgresReferentialAction(column: 'confupdtype' | 'confdeltype'): string {
+  return `CASE constraint_info.${column}
+        WHEN 'a' THEN 'NO ACTION'
+        WHEN 'r' THEN 'RESTRICT'
+        WHEN 'c' THEN 'CASCADE'
+        WHEN 'n' THEN 'SET NULL'
+        WHEN 'd' THEN 'SET DEFAULT'
+      END`;
+}
+
+// PostgreSQL's information_schema hides constraints from roles that can only
+// SELECT a table, and view definitions from roles that do not own the view.
+// Keys, foreign keys and view definitions therefore come from pg_catalog, which
+// every role that can see a table can read.
 const POSTGRES_OBJECTS = `
     SELECT
       tables.table_name AS name,
       CASE WHEN tables.table_type = 'VIEW' THEN 'view' ELSE 'table' END AS kind,
       tables.table_type AS table_type,
-      views.view_definition AS definition
+      pg_catalog.pg_get_viewdef(view_class.oid) AS definition
     FROM information_schema.tables AS tables
-    LEFT JOIN information_schema.views AS views
-      ON views.table_schema = tables.table_schema
-      AND views.table_name = tables.table_name
+    LEFT JOIN pg_catalog.pg_namespace AS namespace
+      ON namespace.nspname = tables.table_schema
+    LEFT JOIN pg_catalog.pg_class AS view_class
+      ON view_class.relnamespace = namespace.oid
+      AND view_class.relname = tables.table_name
+      AND view_class.relkind = 'v'
     WHERE tables.table_schema = current_schema()
       AND tables.table_type IN ('BASE TABLE', 'FOREIGN', 'FOREIGN TABLE', 'VIEW')
     ORDER BY kind, name
@@ -701,13 +719,23 @@ const POSTGRES_COLUMNS = `
       ) AS auto_increment
     FROM information_schema.columns AS columns
     LEFT JOIN (
-      SELECT usage.table_schema, usage.table_name, usage.column_name, usage.ordinal_position
-      FROM information_schema.table_constraints AS constraints
-      JOIN information_schema.key_column_usage AS usage
-        ON usage.constraint_catalog = constraints.constraint_catalog
-        AND usage.constraint_schema = constraints.constraint_schema
-        AND usage.constraint_name = constraints.constraint_name
-      WHERE constraints.constraint_type = 'PRIMARY KEY'
+      SELECT
+        namespace.nspname AS table_schema,
+        table_class.relname AS table_name,
+        attribute.attname AS column_name,
+        primary_key.ordinality AS ordinal_position
+      FROM pg_catalog.pg_constraint AS constraint_info
+      JOIN pg_catalog.pg_class AS table_class
+        ON table_class.oid = constraint_info.conrelid
+      JOIN pg_catalog.pg_namespace AS namespace
+        ON namespace.oid = table_class.relnamespace
+      CROSS JOIN LATERAL unnest(constraint_info.conkey)
+        WITH ORDINALITY AS primary_key(attribute_number, ordinality)
+      JOIN pg_catalog.pg_attribute AS attribute
+        ON attribute.attrelid = constraint_info.conrelid
+        AND attribute.attnum = primary_key.attribute_number
+      WHERE constraint_info.contype = 'p'
+        AND namespace.nspname = current_schema()
     ) AS keys
       ON keys.table_schema = columns.table_schema
       AND keys.table_name = columns.table_name
@@ -750,39 +778,50 @@ const POSTGRES_INDEXES = `
     ORDER BY table_class.relname, index_class.relname, index_key.ordinality
   `;
 
+// Foreign keys pair conkey[i] with confkey[i]. A foreign key that references a
+// partitioned table also has one derived constraint per partition on the same
+// table (conparentid points at the parent constraint); those are skipped.
 const POSTGRES_FOREIGN_KEYS = `
     SELECT
-      constraints.table_name AS table_name,
-      constraints.constraint_name AS name,
-      foreign_usage.table_name AS referenced_table,
-      usage.column_name AS column_name,
-      foreign_usage.column_name AS referenced_column,
-      usage.ordinal_position - 1 AS position,
-      referential.update_rule AS on_update,
-      referential.delete_rule AS on_delete
-    FROM information_schema.table_constraints AS constraints
-    JOIN information_schema.key_column_usage AS usage
-      ON usage.constraint_catalog = constraints.constraint_catalog
-      AND usage.constraint_schema = constraints.constraint_schema
-      AND usage.constraint_name = constraints.constraint_name
-    JOIN information_schema.referential_constraints AS referential
-      ON referential.constraint_catalog = constraints.constraint_catalog
-      AND referential.constraint_schema = constraints.constraint_schema
-      AND referential.constraint_name = constraints.constraint_name
-    JOIN information_schema.key_column_usage AS foreign_usage
-      ON foreign_usage.constraint_catalog = referential.unique_constraint_catalog
-      AND foreign_usage.constraint_schema = referential.unique_constraint_schema
-      AND foreign_usage.constraint_name = referential.unique_constraint_name
-      AND foreign_usage.ordinal_position = usage.position_in_unique_constraint
-    WHERE constraints.constraint_type = 'FOREIGN KEY'
-      AND constraints.table_schema = current_schema()
-    ORDER BY constraints.table_name, constraints.constraint_name, usage.ordinal_position
+      table_class.relname AS table_name,
+      constraint_info.conname AS name,
+      referenced_class.relname AS referenced_table,
+      attribute.attname AS column_name,
+      referenced_attribute.attname AS referenced_column,
+      foreign_key.ordinality - 1 AS position,
+      ${postgresReferentialAction('confupdtype')} AS on_update,
+      ${postgresReferentialAction('confdeltype')} AS on_delete
+    FROM pg_catalog.pg_constraint AS constraint_info
+    JOIN pg_catalog.pg_class AS table_class
+      ON table_class.oid = constraint_info.conrelid
+    JOIN pg_catalog.pg_namespace AS namespace
+      ON namespace.oid = table_class.relnamespace
+    JOIN pg_catalog.pg_class AS referenced_class
+      ON referenced_class.oid = constraint_info.confrelid
+    CROSS JOIN LATERAL unnest(constraint_info.conkey, constraint_info.confkey)
+      WITH ORDINALITY AS foreign_key(attribute_number, referenced_attribute_number, ordinality)
+    JOIN pg_catalog.pg_attribute AS attribute
+      ON attribute.attrelid = constraint_info.conrelid
+      AND attribute.attnum = foreign_key.attribute_number
+    JOIN pg_catalog.pg_attribute AS referenced_attribute
+      ON referenced_attribute.attrelid = constraint_info.confrelid
+      AND referenced_attribute.attnum = foreign_key.referenced_attribute_number
+    WHERE constraint_info.contype = 'f'
+      AND namespace.nspname = current_schema()
+      AND NOT EXISTS (
+        SELECT 1
+        FROM pg_catalog.pg_constraint AS parent_constraint
+        WHERE parent_constraint.oid = constraint_info.conparentid
+          AND parent_constraint.conrelid = constraint_info.conrelid
+      )
+    ORDER BY table_class.relname, constraint_info.conname, foreign_key.ordinality
   `;
 
 /**
  * Introspect the current PostgreSQL schema in four queries: the object list,
  * then columns (with primary key positions), indexes and foreign keys for
- * every table at once.
+ * every table at once. A role that can only SELECT the tables sees the same
+ * result as their owner.
  */
 async function introspectPostgres(connection: StudioConnection): Promise<StudioObject[]> {
   const rows = schemaRows((await connection.execute(POSTGRES_OBJECTS)).rows);

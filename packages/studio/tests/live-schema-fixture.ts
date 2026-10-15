@@ -5,7 +5,9 @@
 // The schema covers composite primary keys, unique constraints and unique
 // indexes, multi-column, descending, expression and partial indexes,
 // self-referencing and composite foreign keys with referential actions,
-// tables without a primary key, enum columns and views.
+// tables without a primary key, enum columns and views. PostgreSQL also gets
+// foreign keys that share one name across tables, a foreign key to a
+// partitioned table and one to a unique index that is not a constraint.
 import type { StudioObject } from '../src/testing';
 
 export type LiveDialect = 'postgres' | 'mysql';
@@ -113,6 +115,34 @@ const POSTGRES_SCHEMA = [
   `CREATE TABLE sl_audit_log (
     message text,
     created_at timestamp
+  )`,
+  // Constraint names are unique per table in PostgreSQL, not per schema.
+  `CREATE TABLE sl_dup_left (
+    region char(2) NOT NULL,
+    code varchar(10) NOT NULL,
+    CONSTRAINT sl_dup_fk FOREIGN KEY (region, code)
+      REFERENCES sl_warehouses (region, code) ON DELETE CASCADE
+  )`,
+  `CREATE TABLE sl_dup_right (
+    warehouse_code varchar(10) NOT NULL,
+    warehouse_region char(2) NOT NULL,
+    CONSTRAINT sl_dup_fk FOREIGN KEY (warehouse_region, warehouse_code)
+      REFERENCES sl_warehouses (region, code) ON UPDATE CASCADE
+  )`,
+  `CREATE TABLE sl_dup_single (
+    account_id integer NOT NULL,
+    CONSTRAINT sl_dup_fk FOREIGN KEY (account_id) REFERENCES sl_accounts (id)
+  )`,
+  // PostgreSQL adds one derived constraint per partition to sl_part_refs.
+  `CREATE TABLE sl_part (id integer PRIMARY KEY) PARTITION BY RANGE (id)`,
+  `CREATE TABLE sl_part_low PARTITION OF sl_part FOR VALUES FROM (MINVALUE) TO (100)`,
+  `CREATE TABLE sl_part_high PARTITION OF sl_part FOR VALUES FROM (100) TO (MAXVALUE)`,
+  `CREATE TABLE sl_part_refs (
+    part_id integer CONSTRAINT sl_part_refs_part_fk REFERENCES sl_part (id)
+  )`,
+  // sl_employees_name_idx is a unique index, not a unique constraint.
+  `CREATE TABLE sl_badges (
+    employee_name varchar(80) CONSTRAINT sl_badges_employee_fk REFERENCES sl_employees (name)
   )`,
   `CREATE VIEW sl_open_orders AS
     SELECT id, account_id, placed_at FROM sl_orders WHERE status <> 'closed'`,
@@ -248,6 +278,12 @@ const MYSQL_SCHEMA = [
 /** Referencing objects first. */
 const VIEWS = ['sl_product_tag_names', 'sl_open_orders'];
 const TABLES = [
+  'sl_badges',
+  'sl_part_refs',
+  'sl_part',
+  'sl_dup_single',
+  'sl_dup_right',
+  'sl_dup_left',
   'sl_extra_3',
   'sl_extra_2',
   'sl_extra_1',
@@ -270,6 +306,11 @@ const TABLES = [
 
 export function fixtureSchema(dialect: LiveDialect): string[] {
   return dialect === 'postgres' ? POSTGRES_SCHEMA : MYSQL_SCHEMA;
+}
+
+/** Tables and views the fixture creates; partitions count as tables. */
+export function fixtureCounts(dialect: LiveDialect): { tables: number; views: number } {
+  return { tables: dialect === 'postgres' ? 23 : 15, views: 2 };
 }
 
 export function dropFixtureSchema(dialect: LiveDialect): string[] {

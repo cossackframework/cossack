@@ -65,11 +65,13 @@ before `orm.config.ts` is imported. Existing shell variables keep precedence.
 
 On PostgreSQL and MySQL, a schema load runs four queries whatever the number
 of tables: the table and view list, then the columns, indexes and foreign keys
-of the whole schema. The first load also reads the server version. MySQL keeps each
-object's `CREATE` statement in `SHOW CREATE`, one query per object, so the
-Structure tab loads it when it shows that object. Programmatic callers use
-`StudioDatabase.getDefinition(name)`; objects whose definition is not loaded
-yet have `sqlDeferred: true`.
+of the whole schema. The first load also reads the server version. On
+PostgreSQL, keys, foreign keys and view definitions come from `pg_catalog`, so a
+role that can only `SELECT` the tables sees the same schema as their owner.
+MySQL keeps each object's `CREATE` statement in `SHOW CREATE`, one query per
+object, so the Structure tab loads it when it shows that object. Programmatic
+callers use `StudioDatabase.getDefinition(name)`; objects whose definition is
+not loaded yet have `sqlDeferred: true`.
 
 Studio merges physical introspection with `orm.schema()`, displays logical
 types and relation provenance, surfaces drift, and hides migration bookkeeping.
