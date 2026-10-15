@@ -1,6 +1,24 @@
 import { test, expect, type Page } from '@playwright/test';
 import { waitForHydration } from '../fixtures/helpers';
 
+test('Components demo loads and hydrates without browser errors', async ({ page }) => {
+  // The Spinner renders viewBox="0 0 ${size} ${size}". The client used to
+  // write that attribute once per binding, and Chromium logged an error for
+  // each incomplete value ("0 0 16 ") while the page hydrated.
+  const errors: string[] = [];
+  page.on('console', (message) => {
+    if (message.type() === 'error') errors.push(message.text());
+  });
+  page.on('pageerror', (error) => errors.push(String(error)));
+  await page.goto('/components-demo');
+  await waitForHydration(page);
+  await page.evaluate(() => new Promise<void>((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  }));
+  expect(errors).toEqual([]);
+  await expect(page.locator('svg[viewBox="0 0 16 16"]').first()).toBeAttached();
+});
+
 // Render-only assertions share one page load; they never mutate the page.
 test.describe('Components demo: static rendering', () => {
   test.describe.configure({ mode: 'serial' });

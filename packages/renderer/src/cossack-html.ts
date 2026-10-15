@@ -1,5 +1,5 @@
 import { serializeFormValues } from './ssr-form-values';
-import { getTemplateAnalysis, RAW_TEXT_TAGS, tokenizeHtml, type TemplateAnalysis } from './template-analysis';
+import { getTemplateAnalysis, RAW_TEXT_TAGS, tokenizeHtml, type AttributeBinding, type TemplateAnalysis } from './template-analysis';
 import { recordStyleScope, stylesForScope, type FinalizedStyles } from './style-runtime';
 import { acquireStyle, flushStyleAcquisitions, isManagedStyle, releaseStyle, updateStyleRoot, type StyleUse } from './style-registry';
 import { ComponentResult, isComponentResult } from './component';
@@ -141,6 +141,16 @@ const attributeValueText = (value: unknown): string => {
   if (value === nothing || value === null || value === undefined || typeof value === 'function') return '';
   return String(value);
 };
+
+/**
+ * True when a binding adds text to an attribute value with static text or
+ * other bindings (`class="btn ${kind}"`), so attributeValueText applies and
+ * `nothing` removes the attribute. False when the binding is the whole value
+ * (`title=${x}`) or has a `.`, `?` or `@` prefix, is `ref` or a spread: those
+ * always take the attribute's whole value.
+ */
+const interpolatesText = (binding: AttributeBinding): boolean =>
+  !binding.whole && !/^[.?@]/.test(binding.name) && binding.name !== 'ref' && binding.name !== '...';
 
 /** Values a client NodePart's `update()` dispatches to a dedicated handler. */
 const isPartDirective = (value: unknown): boolean =>
@@ -612,7 +622,7 @@ class SSRScanner {
           this.stringIdx++;
           continue;
         }
-        if (binding.kind === 'attribute' && binding.start) {
+        if (binding.kind === 'attribute' && binding.start && !interpolatesText(binding)) {
           const fullMatch = str.slice(binding.prefixStart);
           const name = binding.name;
 
@@ -713,8 +723,9 @@ class SSRScanner {
           // text only; the client binds it as a RawTextPart.
           this.result += rawTextSSR(binding.tag, val, binding.first);
         } else if (binding.kind === 'attribute') {
-          // A value inside an attribute that already started
-          // (`class="a ${x} b"`): interpolate text, never markup or markers.
+          // A value in an attribute with static text or other bindings
+          // (`class="a ${x} b"`, `title="${x} b"`): interpolate text, never
+          // markup or markers.
           this.result += escapeHtml(attributeValueText(val));
         } else if (binding.kind === 'comment' || binding.kind === 'element') {
           // Bindings inside comments, or in a tag outside any attribute value,
@@ -2174,21 +2185,67 @@ class SpreadGroup {
   }
 }
 
-interface MultiMarkerState {
-  // Shared between all AttributeParts of the same attribute.
-  // One slot per marker, holding the latest value passed to each part.
-  currentValues: unknown[];
-  // Which slot this part owns.
-  position: number;
+/**
+ * An attribute whose value is text with bindings in it: several bindings, or
+ * one binding next to static text (`viewBox="0 0 ${w} ${h}"`,
+ * `class="btn ${kind}"`). Each binding adds `attributeValueText(value)`, the
+ * same text SSR renders, and `nothing` in any binding removes the attribute.
+ * Template parts update together in index order, so the attribute is written
+ * once per render, when its last binding updates, and only when the assembled
+ * value differs from the one on the element. The browser never sees a value
+ * with only some bindings filled in.
+ */
+class AttributeInterpolation {
+  private values: unknown[];
+  // What the last commit left on the element: the value, or null when the
+  // attribute is absent. Undefined until the first commit, which compares
+  // against the element instead (the SSR value after hydration).
+  private written: string | null | undefined = undefined;
+
+  /**
+   * @param name     Name to write, as compileTemplate resolves it.
+   * @param domName  The attribute the parser created, removed for `nothing`.
+   * @param segments N+1 static text segments around N bindings.
+   */
+  constructor(public element: Element, private name: string, private domName: string, private segments: string[]) {
+    this.values = Array.from({ length: segments.length - 1 });
+  }
+
+  update(position: number, value: unknown) {
+    this.values[position] = value;
+    if (position === this.values.length - 1) this.commit();
+  }
+
+  private commit() {
+    let next: string | null = null;
+    if (!this.values.includes(nothing)) {
+      next = this.segments[0];
+      for (let i = 0; i < this.values.length; i++) next += attributeValueText(this.values[i]) + this.segments[i + 1];
+    }
+    const current = this.written === undefined ? this.element.getAttribute(this.domName) : this.written;
+    this.written = next;
+    if (next === current) return;
+    if (next === null) this.element.removeAttribute(this.domName);
+    else this.element.setAttribute(this.name, next);
+    // Rewriting `class` drops the tokens a spread on this element added.
+    if (this.name === 'class') reapplySpreadClasses(this.element);
+  }
 }
 
+/** One binding of an AttributeInterpolation. */
+class InterpolatedAttributePart implements Part {
+  constructor(readonly attribute: AttributeInterpolation, readonly position: number) {}
+  update(value: unknown) {
+    this.attribute.update(this.position, value);
+  }
+}
+
+/**
+ * A binding that is an attribute's whole value (`title=${x}`), or a binding
+ * with a `.`, `?` or `@` prefix, or `ref`.
+ */
 class AttributePart implements Part {
   private selectCommit = new SelectValueCommit();
-  // N+1 static segments for N markers. For single-marker (N=1),
-  // segments is [prefix, suffix].
-  private segments: string[];
-  private isMulti: boolean;
-  private multiState: MultiMarkerState | null;
   // Tracks the last value this part committed (for the `.value`/`.checked`
   // dirty check). Plain bindings skip the write when the new value equals
   // this; `live()` instead compares against the live DOM. Matches Lit's
@@ -2229,23 +2286,8 @@ class AttributePart implements Part {
   constructor(
     public element: Element,
     public name: string,
-    originalValue: string,
-    multiState?: MultiMarkerState,
     private domName: string = name,
-  ) {
-    // Parse all markers into segments (works for N=1 and N>1).
-    const matches = [...originalValue.matchAll(/__CRP_(\d+)__/g)];
-    this.segments = [];
-    let lastEnd = 0;
-    for (const m of matches) {
-      const start = m.index!;
-      this.segments.push(originalValue.substring(lastEnd, start));
-      lastEnd = start + m[0].length;
-    }
-    this.segments.push(originalValue.substring(lastEnd));
-    this.isMulti = matches.length > 1;
-    this.multiState = multiState ?? null;
-  }
+  ) {}
   update(value: unknown) {
     this.commit(value);
     // Rewriting `class` drops the tokens a spread on this element added.
@@ -2255,11 +2297,6 @@ class AttributePart implements Part {
     const selectPending = this.selectCommit.cancel();
     if (value === nothing) {
       if (this.bindListener) this._detachBindListener();
-      if (this.isMulti && this.multiState) {
-        this.multiState.currentValues[this.multiState.position] = nothing;
-        this.element.removeAttribute(this.domName);
-        return;
-      }
       if (this.name.startsWith('@')) {
         this.eventHandler = undefined;
         this.element.removeAttribute(this.domName);
@@ -2310,23 +2347,6 @@ class AttributePart implements Part {
         (value as { value: unknown }).value = this.element;
       }
       if (this.element.hasAttribute(this.domName)) this.element.removeAttribute(this.domName);
-      return;
-    }
-
-    if (this.isMulti && this.multiState) {
-      // Multi-marker attribute: store our slot, then re-interpolate the
-      // full string using every part's latest value and set once.
-      const { currentValues, position } = this.multiState;
-      currentValues[position] = value;
-      if (currentValues.includes(nothing)) {
-        this.element.removeAttribute(this.domName);
-        return;
-      }
-      let result = this.segments[0];
-      for (let i = 0; i < currentValues.length; i++) {
-        result += attributeValueText(currentValues[i]) + this.segments[i + 1];
-      }
-      this.element.setAttribute(this.name, result);
       return;
     }
 
@@ -2425,7 +2445,7 @@ class AttributePart implements Part {
       if (value === undefined) {
         this.element.removeAttribute(this.domName);
       } else {
-        this.element.setAttribute(this.name, this.segments[0] + String(value) + this.segments[1]);
+        this.element.setAttribute(this.name, String(value));
       }
     } else if (value === null || value === undefined) {
       this.element.removeAttribute(this.domName);
@@ -2434,7 +2454,7 @@ class AttributePart implements Part {
       if (serialized === null) this.element.removeAttribute(this.domName);
       else this.element.setAttribute(this.name, serialized);
     } else {
-      this.element.setAttribute(this.name, this.segments[0] + attributeValueText(value) + this.segments[1]);
+      this.element.setAttribute(this.name, attributeValueText(value));
     }
   }
 
@@ -2759,41 +2779,39 @@ const compileTemplate = (result: TemplateResult): { fragment: Node; parts: Part[
       Array.from(el.attributes).forEach((attr) => {
         const allMatches = [...attr.value.matchAll(/__CRP_(\d+)__/g)];
         if (allMatches.length === 0) return;
-
-        if (allMatches.length === 1) {
-          // Single-marker attribute: existing behavior preserved.
-          const index = parseInt(allMatches[0][1]);
-          if (!parts[index]) {
-            if (isSpread(index)) {
-              let group = spreadGroups.get(el);
-              if (!group) spreadGroups.set(el, group = new SpreadGroup(el));
-              parts[index] = new SpreadPart(group, group.add());
-              el.removeAttribute(attr.name);
-            } else {
-              const part = new AttributePart(el, authoredName(index, attr.name), attr.value, undefined, attr.name);
-              parts[index] = part;
-            }
-          }
-          return;
-        }
-
-        // Multi-marker attribute: create one AttributePart per marker,
-        // all sharing the same currentValues array so the final
-        // interpolation is correct once every part has been updated.
         const indices = allMatches.map((m) => parseInt(m[1]));
+        if (indices.some((index) => parts[index])) return;
+        const first = bindings[indices[0]];
+
         if (isSpread(indices[0])) {
-          // Spread with multiple markers in one attribute is not supported.
+          // A spread with several markers in one attribute is not supported.
+          if (indices.length === 1) {
+            let group = spreadGroups.get(el);
+            if (!group) spreadGroups.set(el, group = new SpreadGroup(el));
+            parts[indices[0]] = new SpreadPart(group, group.add());
+          }
           el.removeAttribute(attr.name);
           return;
         }
-        const currentValues = new Array(allMatches.length).fill(undefined);
-        for (let pos = 0; pos < indices.length; pos++) {
-          const index = indices[pos];
-          if (!parts[index]) {
-            const part = new AttributePart(el, authoredName(index, attr.name), attr.value, { currentValues, position: pos }, attr.name);
-            parts[index] = part;
-          }
+
+        if (indices.length === 1 && !(first?.kind === 'attribute' && interpolatesText(first))) {
+          parts[indices[0]] = new AttributePart(el, authoredName(indices[0], attr.name), attr.name);
+          return;
         }
+
+        // Text with bindings in it: one part per binding, all feeding one
+        // AttributeInterpolation that writes the assembled value once.
+        const segments: string[] = [];
+        let lastEnd = 0;
+        for (const m of allMatches) {
+          segments.push(attr.value.slice(lastEnd, m.index));
+          lastEnd = m.index! + m[0].length;
+        }
+        segments.push(attr.value.slice(lastEnd));
+        const attribute = new AttributeInterpolation(el, authoredName(indices[0], attr.name), attr.name, segments);
+        indices.forEach((index, position) => {
+          parts[index] = new InterpolatedAttributePart(attribute, position);
+        });
       });
     }
   });
@@ -3098,6 +3116,12 @@ const rebindParts = (parts: Part[], map: Map<Node, Node>) => {
       const el = map.get(part.group.element);
       if (!el) throw new HydrateMismatch('missing-part-element', 'part', 'attribute element', 'missing element');
       part.group.element = el as Element;
+    } else if (part instanceof InterpolatedAttributePart) {
+      // The bindings of one attribute share its interpolation: rebind it once.
+      if (part.position !== 0) continue;
+      const el = map.get(part.attribute.element);
+      if (!el) throw new HydrateMismatch('missing-part-element', 'part', 'attribute element', 'missing element');
+      part.attribute.element = el as Element;
     } else if (part instanceof StylePart) {
       const anchor = map.get(part.use.anchor);
       if (anchor) part.use.anchor = anchor;

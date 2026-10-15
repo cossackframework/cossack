@@ -103,7 +103,30 @@ html`<h1>Hello ${name}</h1>`
 
 ### Attributes
 
-Boolean attributes are removed if `false/null/undefined`.
+A binding that is an attribute's whole value (`title=${x}` or
+`title="${x}"`) removes the attribute when the value is `null`, `undefined`
+or `nothing`. HTML boolean attributes such as `hidden` are present for `true`
+and removed for `false`; other attributes get the text `"true"` or `"false"`.
+
+An attribute value that mixes bindings with static text, or has several
+bindings, is text:
+
+```typescript
+html`<svg viewBox="0 0 ${size} ${size}"></svg>`
+html`<button class="btn btn-${variant}">Save</button>`
+```
+
+- Each binding adds its value as text. `null`, `undefined`, functions and
+  `ifDefined(undefined)` add nothing. Booleans and numbers add `String(value)`.
+- `nothing` in any of the bindings removes the whole attribute.
+- The client writes the attribute once per render, after all of its bindings
+  have their new values, and only when the assembled text changed. The
+  browser never sees a value with only some bindings filled in.
+
+SSR, hydration and client updates follow the same rules.
+
+A `?name` binding sets a boolean attribute: present when the value is
+truthy, removed otherwise.
 
 ```typescript
 html`<button ?disabled="${isDisabled}">Click</button>`
