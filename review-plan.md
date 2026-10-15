@@ -291,8 +291,7 @@ Every Phase 1 and Phase 2 row lacks a test today. Highest value:
   - Studio loads PostgreSQL and MySQL schemas in a constant number of queries, reads PostgreSQL keys from `pg_catalog`, and no longer fails on MySQL foreign keys.
   - The renderer applies every spread on an element and writes multi-value attributes once per render; the demo's dev hydration warnings came from its layout and are fixed.
   - `runTasks()` and `InMemoryCacheStore` writes no longer do per-task or per-entry work when nothing restarts or the cache is full.
-- Remaining after PR #103:
-  - A route param that a more specific sibling route would match (`team: 'new'` next to `/teams/new`) is accepted; only that page's own guards run.
+- The sibling route param case is fixed: transport params must produce a URL the router dispatches to the claimed page.
 
 ### Realtime sharing outcome (2026-10-15)
 
