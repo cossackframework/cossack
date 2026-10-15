@@ -266,6 +266,19 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
           }
           if (result.requirement) requirements.push(result.requirement);
         }
+        // Realtime layouts and realtime components need the same runtime
+        // support as a realtime page.
+        for (const key of scanPagesDir(resolve(projectRoot, 'src/pages'), false).layoutKeys) {
+          const file = resolve(projectRoot, key.slice(1));
+          const facts = await extractPageOptionsFromAst(readFileSync(file, 'utf8'));
+          if (facts?.method !== 'ast' || facts.options?.transport !== 'durable-object') continue;
+          requirements.push({ feature: 'realtime layout', source: { file, line: facts.decoratorLine ?? undefined },
+            requires: { transports: ['durable-object'], ...(facts.options.stateful === true ? { durableState: true } : {}) } });
+        }
+        for (const component of scanRealtimeComponents(projectRoot).components) {
+          requirements.push({ feature: 'realtime component', source: { file: resolve(projectRoot, component.file.slice(1)), line: component.line },
+            requires: { transports: ['durable-object'] } });
+        }
         const diagnostics = checkCapabilityRequirements(runtime, requirements, bindings);
         const first = diagnostics[0];
         if (first) this.error({
