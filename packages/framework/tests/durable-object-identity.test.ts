@@ -152,7 +152,7 @@ describe('WebSocket route shape', () => {
     const target = await ssrTarget('http://localhost/room/1');
     const { env, forward, addressed } = environment();
     const query = new URLSearchParams({ routePath: '/room/[id]', pathname: '/room/1', params: JSON.stringify({ id: '1' }) });
-    for (const path of [`/ws/page/${encodeURIComponent(target)}`, `/ws/session/${encodeURIComponent(target)}`, '/ws/']) {
+    for (const path of [`/ws/page/${encodeURIComponent(target)}`, `/ws/session/${encodeURIComponent(target)}`, `/ws/${encodeURIComponent(target)}/global`]) {
       const response = await createApp().request(`${path}?${query}`, { headers: { origin: 'http://localhost', upgrade: 'websocket' } }, env);
       expect(response.status).toBe(404);
       expect(await response.json()).toMatchObject({ code: 'COSSACK_WS_ROUTE_NOT_FOUND' });
