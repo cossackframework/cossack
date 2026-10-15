@@ -306,6 +306,9 @@ export function proxyServiceMethods(component: any, serviceInstance: any): void 
                         state,
                         payload: args,
                         scopeKey,
+                        // Read at call time: a persistent layout outlives the page.
+                        pageRouteId: component.getInitialStateFromWindow()?.componentRouteId,
+                        pageParams: component.getInitialStateFromWindow()?.metadata?.params || {},
                     }),
                 });
 

@@ -113,7 +113,7 @@ import { readRpcRequest, RPC_UPLOAD_REQUEST_MAX_BYTES } from './transports/http.
 import { discardRequestBody } from './request-body.js';
 import { protectTransport } from './transports/security.js';
 import { TRANSPORT_ROUTES } from './transport-routes.js';
-import { resolveServiceRpcTarget } from './transports/service-target.js';
+import { resolveComponentRpcTarget, resolveServiceRpcTarget } from './transports/rpc-target.js';
 import { createLocaleMiddleware } from './middlewares/locale.js';
 import { createFlashMiddleware } from './middlewares/flash.js';
 import { createRequestContextMiddleware } from './middlewares/request-context.js';
@@ -1025,8 +1025,14 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
       }
     }
 
-    const componentPath = routeIdMap.get(componentRouteId);
-    if (!componentPath) return c.json({ error: 'Invalid component ID' }, 400);
+    // The page's route params, checked as protectTransport checked them before
+    // running the guards. The component, its scope key and its actions see them.
+    const resolved = resolveComponentRpcTarget(routerContext, body);
+    if ('error' in resolved) {
+      return resolved.error === 'component' ? c.json({ error: 'Invalid component ID' }, 400)
+        : c.json({ error: 'Invalid route params', code: 'COSSACK_RPC_REQUEST_INVALID', requestId }, 400);
+    }
+    const { componentPath } = resolved.target;
     const logContext = logContextFor(componentPath);
 
     let ComponentClass: new (...args: any[]) => Cossack;
@@ -1041,15 +1047,8 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
     // Resolve and authorize scope before constructors, rendering, or user actions.
     const targetPageOptions = Reflect.getMetadata('page:options', ComponentClass) as PageOptions | undefined;
     let effectiveScopeKey = await resolveSseScopeKey(c, undefined);
-    let componentContext: Context = c;
+    let componentContext: Context = withRuntimeRouteParams(c, resolved.target.params);
     if (targetPageOptions?.transport === 'sse') {
-      let params: Record<string, string>;
-      try {
-        params = decodeRuntimeRouteParams(body.pageParams === undefined ? undefined : JSON.stringify(body.pageParams));
-      } catch {
-        return c.json({ error: 'Invalid route params' }, 400);
-      }
-      componentContext = withRuntimeRouteParams(c, params);
       effectiveScopeKey = await resolveSseScopeKey(componentContext, targetPageOptions);
       if (clientScopeKey !== effectiveScopeKey) return c.json({ error: 'Invalid SSE scope' }, 403);
     }

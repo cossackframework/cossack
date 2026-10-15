@@ -269,6 +269,7 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                 if (files.size) {
                     const formData = rpcFormData({ componentRouteId, target: component._id, action: name,
                         state: requestState, payload, scopeKey: initialState?.scopeKey,
+                        pageRouteId: initialState?.componentRouteId,
                         pageParams: initialState?.metadata?.params || {} }, files);
                     const property = `${name}Progress`;
                     // Fetch keeps native response streaming/backpressure. XHR
@@ -292,6 +293,9 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                         body: JSON.stringify({
                             componentRouteId, target: component._id, action: name,
                             state: requestState, payload, scopeKey: initialState?.scopeKey,
+                            // The page the browser is on. A persistent layout's
+                            // action runs under that page's guards and params.
+                            pageRouteId: initialState?.componentRouteId,
                             pageParams: initialState?.metadata?.params || {},
                         }),
                     });

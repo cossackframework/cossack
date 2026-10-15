@@ -54,8 +54,18 @@ middleware works.
 ## Protecting pages
 
 Page and enclosing layout guards run for page requests, HTTP RPC, file uploads,
-SSE subscriptions, and WebSocket upgrades. Service RPC runs the owning layout's
-guards. Global authentication middleware runs first.
+SSE subscriptions, and WebSocket upgrades. Global authentication middleware runs
+first.
+
+RPC calls, uploads and WebSocket upgrades run the guards once, with the route
+params of the page that the browser is on (`c.req.param()`), as a request for
+that URL does. An action of a layout component or of a layout service runs
+under that page: every layout guard and the page's own guards run. The params
+are client input. The server checks them against the page's route (the same
+param names and non-empty values) and answers 400 for other params before any
+guard runs. A guard that decides on a param then decides as it does for a
+request to that URL. SSE subscriptions run the guards again, with the params,
+each time they revalidate the connection.
 
 Transport guards receive the transport request (`/crpc`, `/upload`, `/sse`, or
 `/ws`). Check resource access through `@Server({ authorize })` or an explicit

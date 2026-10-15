@@ -41,7 +41,7 @@ export async function readRpcRequest(c: Context, limits: RpcBodyLimits = {}): Pr
         headers.delete('Content-Length');
         const fields = await parseBody(new Request(c.req.url, { method: 'POST', headers, body: bytes }), { all: true });
         body = Object.create(null);
-        for (const key of ['componentRouteId', 'action', 'target', 'scopeKey']) {
+        for (const key of ['componentRouteId', 'pageRouteId', 'action', 'target', 'scopeKey']) {
             if (fields[key] !== undefined) {
                 if (typeof fields[key] !== 'string') invalid(key);
                 body[key] = fields[key];
@@ -75,7 +75,7 @@ export async function readRpcRequest(c: Context, limits: RpcBodyLimits = {}): Pr
         body = JSON.parse(new TextDecoder().decode(bytes));
     }
     if (!body || typeof body !== 'object' || Array.isArray(body)) invalid('(root)');
-    for (const key of ['componentRouteId', 'action', 'target', 'scopeKey']) {
+    for (const key of ['componentRouteId', 'pageRouteId', 'action', 'target', 'scopeKey']) {
         if (body[key] !== undefined && (typeof body[key] !== 'string' || !body[key].trim())) invalid(key);
     }
     if (body.payload !== undefined && !Array.isArray(body.payload)) invalid('payload');

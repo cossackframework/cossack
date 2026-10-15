@@ -145,7 +145,10 @@ export interface ComponentRpcRequest {
     state?: Record<string, unknown>;
     scopeKey?: string;
     target?: string;
+    /** Route params of the page the call runs under. Defaults to none. */
     pageParams?: Record<string, string>;
+    /** For a layout component: route id of the page the call runs under. */
+    pageRouteId?: string;
 }
 
 export interface ServiceRpcRequest {

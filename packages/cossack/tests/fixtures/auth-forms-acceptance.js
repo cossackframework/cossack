@@ -84,7 +84,8 @@ export async function checkAuthFormsAcceptance(request, manifest, browser, brows
   const rpc = async (page, action, payload = [], cookie = '', status = 200) => {
     const response = await request('/crpc', { method: 'POST', headers: {
       origin, 'content-type': 'application/json', ...(cookie ? { cookie } : {}) },
-      body: JSON.stringify({ componentRouteId: ids[page], action, payload,
+      // A layout action runs under the page the browser is on.
+      body: JSON.stringify({ componentRouteId: ids[page], ...(page === 'layout' ? { pageRouteId: ids.sessions } : {}), action, payload,
         state: { public: { form: { email: 'forged@example.invalid', password }, error: 'forged' }, user: { id: 'forged' } } }) });
     expect(response.status, await response.clone().text()).toBe(status);
     const body = JSON.parse(await safeText(response));
