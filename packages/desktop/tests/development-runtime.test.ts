@@ -1,3 +1,6 @@
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => {
@@ -14,6 +17,7 @@ const mocks = vi.hoisted(() => {
       envDir: '/project',
       root: '/project',
       configFile: '/project/vite.config.ts',
+      publicDir: '',
       logger: { error: vi.fn() },
     },
     environments: {
@@ -30,6 +34,7 @@ const mocks = vi.hoisted(() => {
   };
   return {
     state,
+    server,
     vite: {
       createServer: vi.fn(async () => server),
       isRunnableDevEnvironment: vi.fn(() => true),
@@ -61,9 +66,15 @@ vi.mock('node:http', () => mocks.http);
 
 const reserved = { ASSETS: { fetch: () => new Response() }, COSSACK_DESKTOP: { shell: true } };
 
+// The loopback Vite asset server. By default it has no file for a request.
+const viteServer = vi.fn(async (_url: string, _init?: RequestInit) => new Response('Not found', { status: 404 }));
+
 beforeEach(() => {
   vi.resetModules();
   mocks.state.desktopOptions = undefined;
+  mocks.server.config.publicDir = '';
+  viteServer.mockClear();
+  vi.stubGlobal('fetch', viteServer);
   process.env.SOME_HOST_SECRET = 'host-secret';
   const once = process.once.bind(process);
   // The runtime installs signal supervisors; keep them off the test worker.
@@ -75,6 +86,7 @@ beforeEach(() => {
 afterEach(() => {
   delete process.env.SOME_HOST_SECRET;
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 async function startWith(entry: Record<string, unknown>) {
@@ -114,4 +126,48 @@ it('lets createEnv(variables) choose bindings from host and dotenv variables, li
     SOME_HOST_SECRET: 'host-secret',
   }));
   expect(env).toEqual({ FROM_OPTIONS: 'options', API_KEY: 'from-dotenv', ...reserved });
+});
+
+it('sends public files through the application and answers other requests from Vite first', async () => {
+  const publicDir = await mkdtemp(path.join(tmpdir(), 'cossack-desktop-public-'));
+  try {
+    await mkdir(path.join(publicDir, 'vault'));
+    await writeFile(path.join(publicDir, 'vault/record.txt'), 'vault record');
+    mocks.server.config.publicDir = publicDir;
+    viteServer.mockImplementation(async (url: string) => new URL(url).pathname === '/@vite/client'
+      ? new Response('vite client', { headers: { 'content-type': 'text/javascript' } })
+      : new Response('Not found', { status: 404 }));
+    await startWith({});
+    const options = mocks.state.desktopOptions!;
+    const application = mocks.state.entry as { frameworkApp: { fetch: ReturnType<typeof vi.fn> } };
+    const dispatch = (url: string) => options.fetch(new Request(url, { headers: { accept: 'text/html' } }), { ...reserved });
+    application.frameworkApp.fetch.mockClear();
+    mocks.server.transformIndexHtml.mockClear();
+    viteServer.mockClear();
+
+    // A public file reaches the application and its policies without Vite answering first.
+    application.frameworkApp.fetch.mockResolvedValueOnce(new Response('<p>public</p>', { headers: { 'content-type': 'text/html' } }));
+    expect(await (await dispatch('https://app/vault/record.txt')).text()).toBe('<p>public</p>');
+    expect(viteServer).not.toHaveBeenCalled();
+    expect(application.frameworkApp.fetch).toHaveBeenCalledOnce();
+    // Its bytes are not rewritten as an SSR document.
+    expect(mocks.server.transformIndexHtml).not.toHaveBeenCalled();
+
+    // Vite answers its client and modules before the application.
+    expect(await (await dispatch('https://app/@vite/client')).text()).toBe('vite client');
+    expect(viteServer).toHaveBeenLastCalledWith('http://127.0.0.1:4567/@vite/client', expect.anything());
+    expect(application.frameworkApp.fetch).toHaveBeenCalledOnce();
+
+    // Module imports of public files, and anything Vite does not have, reach Vite first.
+    await dispatch('https://app/vault/record.txt?import');
+    expect(viteServer).toHaveBeenLastCalledWith('http://127.0.0.1:4567/vault/record.txt?import', expect.anything());
+    application.frameworkApp.fetch.mockResolvedValueOnce(new Response('<p>missing</p>', { headers: { 'content-type': 'text/html' } }));
+    await dispatch('https://app/vault/missing.txt');
+    expect(viteServer).toHaveBeenLastCalledWith('http://127.0.0.1:4567/vault/missing.txt', expect.anything());
+    expect(application.frameworkApp.fetch).toHaveBeenCalledTimes(3);
+    // Application documents still receive the Vite client.
+    expect(mocks.server.transformIndexHtml).toHaveBeenCalledOnce();
+  } finally {
+    await rm(publicDir, { recursive: true, force: true });
+  }
 });

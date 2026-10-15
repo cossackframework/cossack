@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -161,7 +161,10 @@ let assetsRoot: string;
 beforeAll(async () => {
   Object.defineProperty(process.versions, 'electron', { value: '43.7.6', configurable: true });
   assetsRoot = await mkdtemp(path.join(tmpdir(), 'cossack-desktop-'));
-  await writeFile(path.join(assetsRoot, 'app.js'), 'console.log("desktop")');
+  await mkdir(path.join(assetsRoot, 'assets'));
+  await mkdir(path.join(assetsRoot, 'vault'));
+  await writeFile(path.join(assetsRoot, 'assets/app.0123abcd.js'), 'console.log("desktop")');
+  await writeFile(path.join(assetsRoot, 'vault/record.txt'), 'vault record');
   desktop = await import('../src/index');
 });
 
@@ -280,7 +283,7 @@ describe('Electron Desktop runtime', () => {
     expect(electron.events[0]).toBe('register');
   });
 
-  it('serves assets and routes SSR/RPC with reserved Desktop bindings', async () => {
+  it('serves hashed build output first and every other file through the application', async () => {
     let provider: { fetch(request: Request): Response | Promise<Response> } | undefined;
     const fetch = vi.fn(async (_request: Request, env?: Record<string, unknown>) =>
       Response.json({ desktop: Boolean(env?.COSSACK_DESKTOP), assets: Boolean(env?.ASSETS) }));
@@ -293,9 +296,34 @@ describe('Electron Desktop runtime', () => {
       env: { TEST: true, COSSACK_DESKTOP: 'cannot override' },
     });
 
-    const asset = await electron.protocol.invoke(new Request('cossack://app/app.js'));
+    // Hashed build output skips the application, as on Cloudflare and Node.
+    const asset = await electron.protocol.invoke(new Request('cossack://app/assets/app.0123abcd.js'));
+    expect(asset.status).toBe(200);
     expect(asset.headers.get('content-type')).toBe('text/javascript; charset=utf-8');
+    expect(asset.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
     expect(await asset.text()).toContain('desktop');
+    const head = await electron.protocol.invoke(new Request('cossack://app/assets/app.0123abcd.js', { method: 'HEAD' }));
+    expect(head.headers.get('content-length')).toBe(String('console.log("desktop")'.length));
+    expect(await head.text()).toBe('');
+    expect(fetch).not.toHaveBeenCalled();
+
+    // Every other file, including public/, reaches the application, which
+    // serves it from ASSETS after its policies.
+    const record = await electron.protocol.invoke(new Request('cossack://app/vault/record.txt'));
+    expect(await record.json()).toEqual({ desktop: true, assets: true });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(fetch.mock.calls[0]?.[0].url).toBe('https://app/vault/record.txt');
+    const bindings = fetch.mock.calls[0]?.[1] as { ASSETS: { fetch(request: Request): Promise<Response> } };
+    const served = await bindings.ASSETS.fetch(new Request('https://app/vault/record.txt'));
+    expect(served.headers.get('cache-control')).toBe('public, max-age=0, must-revalidate');
+    expect(served.headers.get('content-type')).toBe('text/plain; charset=utf-8');
+    expect(await served.text()).toBe('vault record');
+    expect((await bindings.ASSETS.fetch(new Request('https://app/vault/missing.txt'))).status).toBe(404);
+
+    // A missing build file continues to the application's 404 handling.
+    await electron.protocol.invoke(new Request('cossack://app/assets/missing.0123abcd.js'));
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(fetch.mock.calls[1]?.[0].url).toBe('https://app/assets/missing.0123abcd.js');
 
     const response = await electron.protocol.invoke(new Request('cossack://app/counter', {
       method: 'POST',
@@ -303,28 +331,35 @@ describe('Electron Desktop runtime', () => {
       headers: { 'content-type': 'application/json', origin: 'cossack://app' },
     }));
     expect(await response.json()).toEqual({ desktop: true, assets: true });
-    expect(fetch.mock.calls[0]?.[0].url).toBe('https://app/counter');
-    expect(fetch.mock.calls[0]?.[0].headers.get('origin')).toBe('https://app');
-    expect(fetch.mock.calls[0]?.[0].headers.has('x-cossack-desktop-owner')).toBe(false);
-    expect(fetch.mock.calls[0]?.[0].headers.has('x-cossack-desktop-token')).toBe(false);
+    expect(fetch.mock.calls[2]?.[0].url).toBe('https://app/counter');
+    expect(fetch.mock.calls[2]?.[0].headers.get('origin')).toBe('https://app');
+    expect(fetch.mock.calls[2]?.[0].headers.has('x-cossack-desktop-owner')).toBe(false);
+    expect(fetch.mock.calls[2]?.[0].headers.has('x-cossack-desktop-token')).toBe(false);
     expect(electron.session.fromPartition).toHaveBeenCalledWith('persist:cossack.dev.cossack.test');
+
+    // A custom provider answers /assets/* first and is the ASSETS binding.
     const cancelled = vi.fn();
     const requests: Request[] = [];
     provider = { fetch(request) {
       requests.push(request);
-      return new URL(request.url).pathname === '/virtual.css'
+      return new URL(request.url).pathname === '/assets/virtual.css'
         ? new Response('body { color: red; }', {headers:{'content-type':'text/css'}})
         : new Response(new ReadableStream({cancel:cancelled}), {status:404});
     } };
     try {
-      expect(await (await electron.protocol.invoke(new Request('cossack://app/virtual.css'))).text()).toContain('color: red');
-      expect(fetch).toHaveBeenCalledTimes(1);
-      expect(requests[0].url).toBe('https://app/virtual.css');
+      expect(await (await electron.protocol.invoke(new Request('cossack://app/assets/virtual.css'))).text()).toContain('color: red');
+      expect(fetch).toHaveBeenCalledTimes(3);
+      expect(requests[0].url).toBe('https://app/assets/virtual.css');
       expect(requests[0].headers.has('x-cossack-desktop-token')).toBe(false);
       expect(requests[0].headers.has('x-cossack-desktop-owner')).toBe(false);
-      await electron.protocol.invoke(new Request('cossack://app/missing'));
+      await electron.protocol.invoke(new Request('cossack://app/assets/missing.css'));
       expect(cancelled).toHaveBeenCalledOnce();
-      expect(fetch).toHaveBeenCalledTimes(2);
+      expect(fetch).toHaveBeenCalledTimes(4);
+      // Outside /assets/ the provider is not consulted before the application.
+      await electron.protocol.invoke(new Request('cossack://app/virtual.css'));
+      expect(requests).toHaveLength(2);
+      expect(fetch).toHaveBeenCalledTimes(5);
+      expect(fetch.mock.calls[4]?.[1]?.ASSETS).toBe(provider);
     } finally {provider=undefined;}
   });
 

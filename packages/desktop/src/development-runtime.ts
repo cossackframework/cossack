@@ -3,6 +3,7 @@ import { app, BrowserWindow, createDesktopApp, type DesktopApplication, type Des
 import { relative } from 'node:path';
 import { createServer as createHttpServer } from 'node:http';
 import { desktopDevelopmentError } from './development-error.js';
+import { isPublicFileRequest } from './development-assets.js';
 import { transformDesktopDocument } from './development-response.js';
 
 type DevelopmentVariables = Record<string, string | undefined>;
@@ -161,8 +162,20 @@ async function main() {
   const factory: typeof createDesktopApp = (options) =>
     createDesktopApp({
       ...options,
+      // The runtime answers /assets/* from Vite and gives the application
+      // Vite as its ASSETS binding.
       assets,
       fetch: async (request, requestEnv) => {
+        // As in production, public/ files go through the application, which
+        // reads them from ASSETS after global and page policies. Vite answers
+        // its client, modules and transformed source first, as production
+        // serves hashed /assets/* first. A Vite 404 reaches the application.
+        const publicFile = await isPublicFileRequest(request, server.config.publicDir);
+        if (!publicFile) {
+          const served = await assets.fetch(request);
+          if (served.status !== 404) return served;
+          await served.body?.cancel();
+        }
         try {
           const { entry, env } = await load();
           const response = await entry.frameworkApp.fetch(request, {
@@ -171,6 +184,8 @@ async function main() {
             ASSETS: requestEnv?.ASSETS,
             COSSACK_DESKTOP: requestEnv?.COSSACK_DESKTOP,
           });
+          // Public files keep their bytes, as Vite and production serve them.
+          if (publicFile) return response;
           return await transformDesktopDocument(request, response, (pathname, html) =>
             server.transformIndexHtml(pathname, html),
           );

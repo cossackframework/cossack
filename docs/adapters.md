@@ -175,17 +175,44 @@ response has `Content-Length`, a weak `ETag`, `Last-Modified`, and
 The `cacheControl` option sets `Cache-Control` on `200`, `206`, and `304`
 responses. It does not set it on `416` responses.
 
+## Desktop static files
+
+`createDesktopApp()` routes built files the same way as the generated Node
+entry:
+
+- It serves `/assets/*` from `assetsRoot` before the application. Vite's
+  hashed build output there skips global and page middleware. Hashed names get
+  `Cache-Control: public, max-age=31536000, immutable`. A missing file under
+  `/assets/` continues to the framework and its 404 handling.
+- Every other request goes to the framework, including files from `public/`.
+  The framework's assets middleware serves them from the `ASSETS` binding after
+  global and owning page/layout policies run. These responses get
+  `Cache-Control: public, max-age=0, must-revalidate`. A directory URL
+  continues to SSR instead of serving its `index.html`. Missing files continue
+  to SSR or API handlers.
+
+`pnpm desktop:dev` uses Vite in place of `assetsRoot`. A request for a file in
+Vite's `publicDir` goes to the framework, which reads the file from Vite after
+the policies run, as in production. Vite answers every other request before
+the framework when it has a response for it. This includes its client
+(`/@vite/client`), source modules, pre-bundled dependencies, `?import` and
+`?url` requests, and other project files that Vite serves within its
+`server.fs` limits. Requests that Vite cannot answer continue to the
+framework. Development responses use Vite's cache headers.
+
+Desktop does not read `public/_headers`. Set headers for `public/` files in
+middleware.
+
+A packaged Desktop application contains its `public/` files. Policies control
+requests to the application, not the files on the user's disk. Do not ship
+private data in `public/`.
+
 ## Static asset boundaries
 
 The Node and Desktop asset servers resolve symlinks before reading a file.
 They reject files outside the configured asset directory, including symlinked
 directory indexes. Keep the asset directory writable only by trusted build and
 deployment processes.
-
-The Desktop asset server answers every existing file in its asset directory
-before the framework runs, so page and global policies do not apply to those
-files. A packaged Desktop application contains these files, so policies could
-not keep them from its user anyway. Do not ship private data in `public/`.
 
 If a trusted reverse proxy terminates HTTPS before a Node server, configure
 `createApp({ allowedOrigins: ['https://your-public-host'] })` for transport

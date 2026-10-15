@@ -15,8 +15,11 @@ Electron unless the application supplies an Electron-compatible equivalent.
 
 `createDesktopApp()` registers and serves `cossack://app`, injects `ASSETS` and
 a window-scoped `COSSACK_DESKTOP`, and starts a sandboxed, context-isolated
-`BrowserWindow`. Use only HTTP-transport pages. Native work belongs in the
-bootstrap or ordinary `@Server()` methods:
+`BrowserWindow`. It serves hashed `/assets/*` build output directly. Every
+other file, including `public/`, reaches the application, so global and page
+policies run first. `desktop:dev` applies those policies to `public/` files too,
+while Vite answers its client and modules first. Use only HTTP-transport pages.
+Native work belongs in the bootstrap or ordinary `@Server()` methods:
 
 Keep the generated `frameworkApp`, `env` and `startDesktop(factory)` exports.
 Use the supplied factory to create the application and return its Desktop result.

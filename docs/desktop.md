@@ -14,6 +14,13 @@ RPC. `@Page({ transport: 'http' })` is required. Native APIs stay in
 the main process and are available to server methods through
 `this.env.COSSACK_DESKTOP`. The framework does not create a preload or a generic renderer IPC API.
 
+Desktop serves only Vite's hashed build output under `/assets/` before the
+application. Every other file, including files from `public/`, passes global
+and page policies first. A missing file reaches the framework's 404 handling.
+`pnpm desktop:dev` applies the same policies to `public/` files, but Vite
+answers its client and source modules first. See
+[Desktop static files](./adapters.md#desktop-static-files).
+
 Use `pnpm desktop:dev`, `pnpm desktop:package`, and `pnpm desktop:make`.
 Development runs Vite inside Electron and retains the private origin. Source
 edits reload managed windows. Changes to the native bootstrap, the Vite
