@@ -29,4 +29,6 @@ it('decodes percent-encoded user id and scope headers without trusting user data
     const peer = servers[0]!.serializeAttachment.mock.calls[0]![0];
     expect(peer.user).toEqual({ id: 'taras-Тарас' });
     expect(peer.scopeKey).toBe('user:taras-Тарас');
+    // The attachment holds only what later actions and deliveries read.
+    expect(Object.keys(peer).sort()).toEqual(['componentPath', 'identity', 'request', 'scopeKey', 'user']);
 });

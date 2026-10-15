@@ -10,7 +10,6 @@ export interface SocketRequestSnapshot {
 
 /** Authenticated metadata held in a Durable Object WebSocket attachment. */
 export interface SocketPeerAttachment {
-    channel?: string;
     user?: unknown;
     request?: SocketRequestSnapshot;
     identity?: unknown;

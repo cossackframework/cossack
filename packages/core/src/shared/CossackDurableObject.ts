@@ -192,9 +192,8 @@ export abstract class CossackDurableObject {
             return Response.json({ code: 'COSSACK_WS_CONTEXT_INVALID', error: 'Invalid WebSocket identity context.' }, { status: 400 });
         }
         const { 0: client, 1: server } = new WebSocketPair();
-        const channel = url.pathname.split('/').pop() || 'global';
         const peer: SocketPeerAttachment = {
-            channel, user, request: snapshotSocketRequest(request, params), identity, componentPath, scopeKey,
+            user, request: snapshotSocketRequest(request, params), identity, componentPath, scopeKey,
         };
         try {
             // Attachment limits depend on the Workers runtime version. Refuse
