@@ -48,7 +48,8 @@ export * from './client/navigation';
 export * from './shared/url-state';
 
 export { CossackDurableObject, type DurableObjectComponentRequest } from './shared/CossackDurableObject';
-export type { SocketPeerAttachment, SocketRequestSnapshot } from './shared/socket-context';
+export type { RealtimeOwnerKind, SocketPeerAttachment, SocketRequestSnapshot } from './shared/socket-context';
+export { isRealtimeComponent, realtimeComponentId, REALTIME_COMPONENT_ID_PROPERTY } from './shared/realtime-owner';
 export {
     focusTrap,
     focusFirst,

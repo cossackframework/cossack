@@ -5,7 +5,7 @@ import type { SerializedComponentState } from './component-types';
 import type { PageOptions } from './decorators';
 import { DurableObjectRuntime } from './runtimes/durable-object';
 import './metadata';
-import { snapshotSocketRequest, socketRequestContext, type SocketPeerAttachment } from './socket-context';
+import { snapshotSocketRequest, socketRequestContext, type RealtimeOwnerKind, type SocketPeerAttachment } from './socket-context';
 import type { Context } from 'hono';
 import { rpcCancellations } from './rpc-stream';
 import { closeUnauthorizedSocket } from './socket-delivery';
@@ -21,6 +21,8 @@ export interface DurableObjectComponentRequest {
     params: Record<string, string>;
     /** Realtime scope key computed by the Worker proxy. */
     scopeKey?: string;
+    /** Kind of the owner this object hosts. Absent means a page. */
+    owner?: RealtimeOwnerKind;
     /**
      * Request context whose `req.param()` returns `params`: the joining peer's
      * authorized context, or a request-free context when stored state restores.
@@ -159,6 +161,9 @@ export abstract class CossackDurableObject {
         // Identity assertions are supplied by the Worker proxy, never message
         // payloads. Anonymous peers have no user, so the default key uses IP.
         const encodedUserId = request.headers.get('X-User-ID');
+        const ownerHeader = request.headers.get('X-Cossack-Realtime-Owner');
+        const guardPath = request.headers.get('X-Cossack-Realtime-Guard') ?? undefined;
+        let owner: RealtimeOwnerKind | undefined;
         const identityHeader = request.headers.get('X-Cossack-Realtime-Identity');
         const encodedScopeKey = request.headers.get('X-Cossack-Realtime-Scope');
         let scopeKey: string | undefined;
@@ -188,12 +193,18 @@ export abstract class CossackDurableObject {
                 if (targetValidity !== 'true' && targetValidity !== 'false') throw new TypeError('Invalid realtime target status');
                 targetValid = targetValidity === 'true';
             }
+            if (ownerHeader !== null) {
+                if (ownerHeader !== 'page' && ownerHeader !== 'layout' && ownerHeader !== 'component') throw new TypeError('Invalid realtime owner');
+                owner = ownerHeader;
+            }
+            if (guardPath !== undefined && (!guardPath || guardPath.length > 1024)) throw new TypeError('Invalid realtime guard path');
         } catch {
             return Response.json({ code: 'COSSACK_WS_CONTEXT_INVALID', error: 'Invalid WebSocket identity context.' }, { status: 400 });
         }
         const { 0: client, 1: server } = new WebSocketPair();
         const peer: SocketPeerAttachment = {
             user, request: snapshotSocketRequest(request, params), identity, componentPath, scopeKey,
+            ...(owner ? { owner } : {}), ...(guardPath ? { guardPath } : {}),
         };
         try {
             // Attachment limits depend on the Workers runtime version. Refuse
@@ -212,7 +223,7 @@ export abstract class CossackDurableObject {
         // context, as SSR does. Outbound frames and later actions repeat the check.
         let joined: Response | undefined;
         const authorized = targetValid && await this.authorizeWebSocketPeer(server, peer, async context => {
-            joined = await this.join(server, client, url, { componentPath, page, params, scopeKey, context, user: context.get('user') });
+            joined = await this.join(server, client, url, { componentPath, page, params, scopeKey, owner, context, user: context.get('user') });
         });
         if (!authorized) {
             // Once upgraded, the browser can distinguish a terminal auth change
@@ -247,6 +258,9 @@ export abstract class CossackDurableObject {
                 if (!component) return;
                 try {
                     await component.init();
+                    // Render once, as the Node runtime and restoration do, so
+                    // child components exist to receive their socket actions.
+                    component._render();
                     const options: PageOptions | undefined = Reflect.getMetadata('page:options', component.constructor);
                     if (options?.stateful === true) {
                         await this.state.storage.put({ componentPath, url: `${page}${url.search}`, params,
@@ -268,11 +282,14 @@ export abstract class CossackDurableObject {
         if (!accepted) this.state.acceptWebSocket(server);
 
         // For stateful DOs, send the current in-memory state so the client syncs immediately.
-        // For stateless DOs, skip this — the client uses SSR-provided defaults and only
-        // receives state updates from real-time broadcasts.
-        if (this.runtime?.stateful) {
+        // For stateless page DOs, skip this — the client uses SSR-provided defaults and only
+        // receives state updates from real-time broadcasts. A layout or a realtime
+        // component is shared by many pages: its live state is the truth, so every
+        // joining peer receives it.
+        const runtime = this.runtime;
+        if (runtime && (runtime.stateful || (request.owner !== undefined && request.owner !== 'page'))) {
             const currentState = this.componentInstance.getInitialState();
-            await this.runtime.sendToClient(server, { type: 'state-update', state: currentState.public });
+            await runtime.sendToClient(server, { type: 'state-update', state: currentState.public });
         }
 
         return new Response(null, { status: 101, webSocket: client });
