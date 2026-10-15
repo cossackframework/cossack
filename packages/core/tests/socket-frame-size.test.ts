@@ -2,7 +2,7 @@
 import 'reflect-metadata';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { proxyHttpMethods, proxyServerMethods } from '../src/shared/method-proxy';
-import { connectWebSocket, disconnectWebSockets, routeSocketFrame } from '../src/shared/transport-connections';
+import { connectWebSocket, disconnectWebSocket, routeSocketFrame } from '../src/shared/transport-connections';
 
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
@@ -14,8 +14,8 @@ function realtimeHost(socket: { readyState: number; send: (data: string) => void
         setProperty(key: string, value: unknown) { this[key] = value; } };
     Reflect.defineMetadata('cossack:server-methods', { run: {} }, host.constructor);
     proxyHttpMethods(host, [{ name: 'run' }]);
-    host.websockets = new Map([['socket', socket]]); host.consume = () => undefined;
-    proxyServerMethods(host, [{ name: 'run', channel: 'channel', provider: 'socket' }]);
+    host.websocket = socket; host.consume = () => undefined;
+    proxyServerMethods(host, [{ name: 'run', channel: 'channel' }]);
     return host;
 }
 
@@ -33,10 +33,10 @@ describe('incoming WebSocket frame size', () => {
         class FakeWebSocket { static OPEN = 1; readyState = 1; sent: string[] = []; send(data: string) { this.sent.push(data); } close() {} }
         vi.stubGlobal('WebSocket', FakeWebSocket);
         const component: any = realtimeHost({ readyState: 1, send: () => {} });
-        Object.assign(component, { _phase: 'Mounted', websockets: new Map(),
-            getInitialStateFromWindow: () => ({ providerTargets: { socket: 'scope' }, routePath: '/', componentRouteId: 'page', transport: 'http' }) });
+        Object.assign(component, { _phase: 'Mounted', websocket: undefined,
+            getInitialStateFromWindow: () => ({ realtimeTarget: 'scope', routePath: '/', componentRouteId: 'page', transport: 'http' }) });
         connectWebSocket(component);
-        const socket = component.websockets.get('socket') as FakeWebSocket & { onmessage: (event: { data: string }) => void };
+        const socket = component.websocket as FakeWebSocket & { onmessage: (event: { data: string }) => void };
         try {
             const call = component.run();
             const iterator = call[Symbol.asyncIterator]();
@@ -55,7 +55,7 @@ describe('incoming WebSocket frame size', () => {
             expect(await iterator.next()).toEqual({ done: false, value: 1 });
             expect(await iterator.next()).toEqual({ done: true, value: 2 });
             expect(component.count).toBe(2);
-        } finally { disconnectWebSockets(component); }
+        } finally { disconnectWebSocket(component); }
     });
 
     it('serializes a parsed-only frame once to route and queue it', async () => {

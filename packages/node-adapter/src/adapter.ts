@@ -8,7 +8,6 @@ import { closeUnauthorizedSocket, InMemoryWebSocketRuntime, setClientAddress, ty
 /** Structural router contract: the Node library does not import the framework. */
 export interface NodeWebSocketUpgrade {
   target: string;
-  provider: string;
   componentId: string;
   user?: unknown;
   context?: Context;
@@ -108,7 +107,7 @@ export function createNodeAdapter(options: NodeAdapterOptions = {}) {
   };
   const acquire = (upgrade: NodeWebSocketUpgrade): Promise<Entry> => {
     if (stopped) return Promise.reject(new Error('Node runtime is disposed'));
-    const key = JSON.stringify([upgrade.componentId, upgrade.provider, upgrade.target]);
+    const key = JSON.stringify([upgrade.componentId, upgrade.target]);
     const creating = pending.get(key);
     if (creating) return creating;
     const cached = entries.get(key);

@@ -456,10 +456,10 @@ describe('shared generated production Node app', () => {
       const initial = html.match(/window\\.__INITIAL_STATE__ = (.*?)<\\/script>/s);
       if (!initial) throw new Error('WebSocket page SSR failed');
       // Connect to the target SSR emitted, encoded as one path segment, as the browser does.
-      const target = JSON.parse(initial[1]).providerTargets.page;
+      const target = JSON.parse(initial[1]).realtimeTarget;
       if (typeof target !== 'string' || !target.startsWith('page:')) throw new Error('Unexpected WebSocket target ' + target);
       const query = new URLSearchParams({ routePath: '/live', pathname: '/live', params: '{}' });
-      const url = origin.replace('http:', 'ws:') + '/ws/page/' + encodeURIComponent(target) + '?' + query;
+      const url = origin.replace('http:', 'ws:') + '/ws/' + encodeURIComponent(target) + '?' + query;
       const rejectUpgrade = (target, requestOrigin) => new Promise((resolve, reject) => {
         const socket = new WebSocket(target, { headers: { origin: requestOrigin } });
         socket.on('error', () => {});

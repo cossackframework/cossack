@@ -118,7 +118,7 @@ async function viaWebSocket(): Promise<ScopeLink[]> {
     return new Response('ok');
   } } });
   const query = new URLSearchParams({ routePath: '/teams/[team]', pathname: '/teams/alpha', params });
-  const response = await app.request(`/ws/page/${encodeURIComponent(scopeKey)}?${query}`, { headers: { origin: 'http://localhost' } }, env());
+  const response = await app.request(`/ws/${encodeURIComponent(scopeKey)}?${query}`, { headers: { origin: 'http://localhost' } }, env());
   expect(response.status, await response.clone().text()).toBe(200);
   return chain;
 }

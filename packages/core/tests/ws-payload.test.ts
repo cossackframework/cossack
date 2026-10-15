@@ -19,7 +19,7 @@ class MockWS {
 function makeComponent() {
     const c: any = {
         constructor: class {},
-        websockets: new Map(),
+        websocket: undefined,
         __cossack_proxies: new Map(),
         loading: {},
         consume: () => undefined,
@@ -36,10 +36,10 @@ describe('WS payload keeps serializable objects', () => {
     it('sends plain-object arguments over WebSocket', () => {
         const component = makeComponent();
         const ws = new MockWS();
-        component.websockets.set('page', ws as any);
+        component.websocket = ws as any;
         (globalThis as any).WebSocket = { OPEN: 1 };
 
-        proxyServerMethods(component, [{ name: 'updateItem', channel: 'global', provider: 'page' }]);
+        proxyServerMethods(component, [{ name: 'updateItem', channel: 'global' }]);
 
         // Call the proxied server method with an object argument.
         void component.updateItem({ id: 5, name: 'task' });
@@ -55,10 +55,10 @@ describe('WS payload keeps serializable objects', () => {
     it('keeps arrays and primitives and replaces DOM nodes / Events with null', () => {
         const component = makeComponent();
         const ws = new MockWS();
-        component.websockets.set('page', ws as any);
+        component.websocket = ws as any;
         (globalThis as any).WebSocket = { OPEN: 1 };
 
-        proxyServerMethods(component, [{ name: 'mix', channel: 'global', provider: 'page' }]);
+        proxyServerMethods(component, [{ name: 'mix', channel: 'global' }]);
 
         const node = { nodeType: 1 } as any;
         void component.mix('keep', [1, 2, { a: 3 }], 42, node);
@@ -71,10 +71,10 @@ describe('WS payload keeps serializable objects', () => {
     it('keeps positional parameters when an Event precedes other arguments', () => {
         const component = makeComponent();
         const ws = new MockWS();
-        component.websockets.set('page', ws as any);
+        component.websocket = ws as any;
         (globalThis as any).WebSocket = { OPEN: 1 };
 
-        proxyServerMethods(component, [{ name: 'save', channel: 'global', provider: 'page' }]);
+        proxyServerMethods(component, [{ name: 'save', channel: 'global' }]);
 
         void component.save(new Event('click'), 7);
 
@@ -85,11 +85,11 @@ describe('WS payload keeps serializable objects', () => {
     it('rejects instead of crashing on circular references', async () => {
         const component = makeComponent();
         const ws = new MockWS();
-        component.websockets.set('page', ws as any);
+        component.websocket = ws as any;
         (globalThis as any).WebSocket = { OPEN: 1 };
         const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-        proxyServerMethods(component, [{ name: 'circ', channel: 'global', provider: 'page' }]);
+        proxyServerMethods(component, [{ name: 'circ', channel: 'global' }]);
 
         const circular: any = { a: 1 };
         circular.self = circular;
@@ -102,13 +102,13 @@ describe('WS payload keeps serializable objects', () => {
     it('invalidates the client page cache only after a successful send', () => {
         const component = makeComponent();
         const ws = new MockWS();
-        component.websockets.set('page', ws as any);
+        component.websocket = ws as any;
         (globalThis as any).WebSocket = { OPEN: 1 };
 
         let invalidated = 0;
         (globalThis as any).__cossack_invalidatePageCache = () => { invalidated++; };
         try {
-            proxyServerMethods(component, [{ name: 'doThing', channel: 'global', provider: 'page' }]);
+            proxyServerMethods(component, [{ name: 'doThing', channel: 'global' }]);
             void component.doThing();
             expect(invalidated).toBe(1);
         } finally {
@@ -119,14 +119,14 @@ describe('WS payload keeps serializable objects', () => {
     it('retains the client page cache when serialization or send fails', async () => {
         const component = makeComponent();
         const ws = new MockWS();
-        component.websockets.set('page', ws as any);
+        component.websocket = ws as any;
         (globalThis as any).WebSocket = { OPEN: 1 };
         const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
         const invalidate = vi.fn();
         (globalThis as any).__cossack_invalidatePageCache = invalidate;
 
         try {
-            proxyServerMethods(component, [{ name: 'doThing', channel: 'global', provider: 'page' }]);
+            proxyServerMethods(component, [{ name: 'doThing', channel: 'global' }]);
             const circular: any = {};
             circular.self = circular;
             await expect(Promise.resolve(component.doThing(circular)))

@@ -23,7 +23,7 @@ function fixture(transport: 'http' | 'sse' | 'ws', timeout?: number) {
     const target: any = {
         constructor: class Counter {}, count: 0, title: 'original', cart: { rows: [1] }, local: 'original', items: ['base'],
         loading: {}, __cossack_proxies: new Map(),
-        websockets: new Map([['page', ws]]), consume: () => undefined,
+        websocket: ws, consume: () => undefined,
         getInitialStateFromWindow: () => ({ componentRouteId: 'counter', scopeKey: 'one', transport }),
         getPublicState() { return { count: this.count, title: this.title, cart: this.cart }; },
         hasMethod: (name: string) => name === 'optimisticEdit',
@@ -39,7 +39,7 @@ function fixture(transport: 'http' | 'sse' | 'ws', timeout?: number) {
     Reflect.defineMetadata('cossack:client-store', new Set(['items']), target.constructor);
     Reflect.defineMetadata('cossack:optimistic-handlers', { edit: 'optimisticEdit', other: 'optimisticEdit' }, target.constructor);
     if (timeout) Reflect.defineMetadata('cossack:server-methods', { edit: { timeout } }, target.constructor);
-    if (transport === 'ws') proxyServerMethods(target, ['edit', 'other'].map(name => ({ name, channel: 'global', provider: 'page' })));
+    if (transport === 'ws') proxyServerMethods(target, ['edit', 'other'].map(name => ({ name, channel: 'global' })));
     else proxyHttpMethods(target, [{ name: 'edit' }, { name: 'other' }]);
     return {
         target, pending, sent, ws,

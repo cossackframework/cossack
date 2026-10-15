@@ -2411,7 +2411,7 @@ function createMetadataInjection(
             }
             parent = Object.getPrototypeOf(parent);
           }
-          serverMethods[name] = inherited ? { ...inherited } : { channel: 'global', provider: 'page', __serverOnly: true };
+          serverMethods[name] = inherited ? { ...inherited } : { channel: 'global', __serverOnly: true };
         }
       }
       Reflect.defineMetadata('cossack:server-methods', serverMethods, this);

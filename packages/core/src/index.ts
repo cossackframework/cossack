@@ -3,7 +3,6 @@ export { RPC_JSON_RESPONSE_MAX_BYTES } from './shared/rpc-json';
 export * from './shared/cossack';
 export * from './shared/decorators';
 export * from './shared/environment';
-export * from './shared/StateProvider';
 export type { User, PublicUserProjection } from './shared/user';
 export { setPublicUserProjection, toPublicUser } from './shared/user';
 export * from './shared/head';

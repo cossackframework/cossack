@@ -309,23 +309,23 @@ describe('resolveStatePath', () => {
 });
 
 describe('@Store / @ClientStore decorator metadata', () => {
-    it('@Store records metadata under cossack:store with channel/provider', () => {
+    it('@Store records metadata under cossack:store with its channel', () => {
         class Comp {
-            @Store({ channel: 'users', provider: 'session' })
+            @Store({ channel: 'users' })
             form = { email: '' };
         }
         const meta = Reflect.getOwnMetadata('cossack:store', Comp);
         expect(meta).toBeDefined();
-        expect(meta.form).toEqual({ channel: 'users', provider: 'session' });
+        expect(meta.form).toEqual({ channel: 'users' });
     });
 
-    it('@Store applies default channel/provider', () => {
+    it('@Store applies the default channel', () => {
         class Comp {
             @Store()
             form = { email: '' };
         }
         const meta = Reflect.getOwnMetadata('cossack:store', Comp);
-        expect(meta.form).toEqual({ channel: 'global', provider: 'page' });
+        expect(meta.form).toEqual({ channel: 'global' });
     });
 
     it('@ClientStore records membership in cossack:client-store', () => {

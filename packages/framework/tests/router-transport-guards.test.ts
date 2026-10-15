@@ -33,7 +33,7 @@ describe('router transport guard wiring', () => {
     const id = ids.get(pagePath)!;
     const url = transport === 'rpc' || transport === 'service' ? '/crpc'
       : transport === 'upload' ? '/upload' : transport === 'sse' ? `/sse/${id}?scopeKey=user:anonymous`
-      : '/ws/page/target?routePath=/private';
+      : '/ws/target?routePath=/private';
     const post = ['rpc', 'upload', 'service'].includes(transport);
     const body = transport === 'upload' ? new URLSearchParams({ componentRouteId: id, action: 'secret' })
       : JSON.stringify(transport === 'service' ? { service: { ownerRouteId: ids.get(layoutPath), slot: 'secret' } }

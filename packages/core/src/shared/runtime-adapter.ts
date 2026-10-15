@@ -3,9 +3,8 @@ import type { Cossack } from './cossack';
 import type { PageOptions } from './decorators';
 
 export interface RuntimeWebSocketUpgrade {
-  /** Process-local instance key computed by the framework during SSR. */
+  /** Process-local instance key, recomputed by the framework from the page identity or scope key. */
   target: string;
-  provider: string;
   componentId: string;
   pathname: string;
   user?: unknown;

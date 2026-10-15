@@ -15,17 +15,16 @@ import {
 } from '../src/shared/service-scope';
 
 describe('layout-scoped services', () => {
-  it('records services separately from transport providers', () => {
+  it('records services in the page options', () => {
     @Service()
     class DashboardService {}
-    const provider = {} as any;
 
-    @Page({ services: [DashboardService], providers: { page: provider } })
+    @Page({ services: [DashboardService] })
     class Layout extends Cossack {}
 
     const options = Reflect.getMetadata('page:options', Layout);
     expect(options.services).toEqual([DashboardService]);
-    expect(options.providers).toEqual({ page: provider });
+    expect(options).not.toHaveProperty('providers');
   });
 
   it('rejects duplicate and undecorated declarations descriptively', () => {

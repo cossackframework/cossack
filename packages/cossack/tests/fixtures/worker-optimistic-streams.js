@@ -166,7 +166,7 @@ export async function checkWorkerOptimisticStreams(server,serverUrl,cookie) {
       await page.goto(origin+'/resource-check/optimistic-streams/'+transport);
       await page.waitForFunction(()=>!!window.__optimisticStreams);
       if(transport==='sse')await page.waitForFunction(()=>window.__optimisticStreams.realtime.sse.state==='open');
-      if(transport==='durable-object')await page.waitForFunction(()=>window.__optimisticStreams.realtime.websockets.page?.state==='open');
+      if(transport==='durable-object')await page.waitForFunction(()=>window.__optimisticStreams.realtime.websocket?.state==='open');
       for(const useService of transport==='durable-object'?[true]:[false,true]) for(const failure of ['error','cancel','malformed','truncated','after-terminal']) {
         const scope=transport+':'+(useService?'service':'component')+':'+failure;
         const before=requests.length;let requestId;

@@ -1,5 +1,4 @@
 // src/shared/transport-connections.ts
-import { PageStateProvider, StateProvider } from './StateProvider';
 import { applyStateToComponent } from './method-proxy';
 import { hasOptimisticCalls, resetOptimisticSnapshotHistory, optimisticCallForRequest } from './optimistic-state';
 import { resetSseSnapshotCursor } from './rpc-state';
@@ -77,25 +76,23 @@ export interface RealtimeConnectionStatus {
 
 export interface RealtimeStatusRecord {
     sse: RealtimeConnectionStatus;
-    websockets: Record<string, RealtimeConnectionStatus>;
+    /** The component's one WebSocket connection (`durable-object`/`websocket` transports). */
+    websocket: RealtimeConnectionStatus;
 }
 
 export function realtimeStatus(component: any): RealtimeStatusRecord {
     return component.__realtimeStatus ??= {
         sse: { state: 'connecting', attempts: 0, updatedAt: Date.now() },
-        websockets: {},
+        websocket: { state: 'connecting', attempts: 0, updatedAt: Date.now() },
     };
 }
 
 function updateStatus(
     component: any,
-    scope: 'sse' | { provider: string },
+    transport: 'sse' | 'websocket',
     patch: Partial<RealtimeConnectionStatus>,
 ): void {
-    const record = realtimeStatus(component);
-    const status = scope === 'sse' ? record.sse : (record.websockets[scope.provider] ??= {
-        state: 'connecting', attempts: 0, updatedAt: Date.now() });
-    Object.assign(status, patch, { updatedAt: Date.now() });
+    Object.assign(realtimeStatus(component)[transport], patch, { updatedAt: Date.now() });
     component.requestUpdate?.();
 }
 
@@ -104,108 +101,76 @@ export function realtimeReconnectDelay(attempts: number): number {
     return Math.min(30_000, 500 * 2 ** Math.min(Math.max(attempts - 1, 0), 6));
 }
 
-/**
- * Initialize provider map for the component (server-side only).
- * Sets up StateProvider instances based on @Page decorator options.
- */
-export function initializeProviders(component: any): void {
-    if (!component.isServer) return;
-
-    component.providers = new Map<string, StateProvider>();
-    const pageOptions = Reflect.getMetadata('page:options', component.constructor) || {};
-    let componentProviders = pageOptions.providers || {};
-
-    if (Object.keys(componentProviders).length === 0) {
-        componentProviders = { page: new PageStateProvider() };
-    } else if (!componentProviders.page) {
-        componentProviders.page = new PageStateProvider();
-    }
-
-    for (const [name, provider] of Object.entries(componentProviders)) {
-        (provider as StateProvider).setContext(component, component.env);
-        component.providers.set(name, provider as StateProvider);
-    }
-}
-
 const socketDisposers = new WeakMap<object, () => void>();
 
-/** Clear provider ownership and pending work before initiating network closure. */
-export function disconnectWebSockets(component: any): void {
-    const sockets = [...component.websockets.entries()] as [string, WebSocket][];
-    component.websockets.clear();
-    const errors: unknown[] = [];
-    for (const [provider, socket] of sockets) {
-        Object.assign(realtimeStatus(component).websockets[provider] ??= {
-            state: 'closed', attempts: 0, updatedAt: Date.now(),
-        }, { state: 'closed', updatedAt: Date.now() });
-        try {
-            const dispose = socketDisposers.get(socket);
-            if (dispose) dispose();
-            else {
-                (socket as any).__cossack_intentional_close = true;
-                failPendingSocketCalls(socket);
-                socket.close();
-            }
-        } catch (error) { errors.push(error); }
+/** Clear socket ownership and pending work before initiating network closure. */
+export function disconnectWebSocket(component: any): void {
+    const socket: WebSocket | undefined = component.websocket;
+    if (!socket) return;
+    component.websocket = undefined;
+    Object.assign(realtimeStatus(component).websocket, { state: 'closed', updatedAt: Date.now() });
+    const dispose = socketDisposers.get(socket);
+    if (dispose) dispose();
+    else {
+        (socket as any).__cossack_intentional_close = true;
+        failPendingSocketCalls(socket);
+        socket.close();
     }
-    if (errors.length) throw new AggregateError(errors, '[Cossack] WebSocket cleanup failed.');
 }
 
 /**
- * Connect to WebSocket providers (client-side only).
- * Reads provider targets from initial state and sets up message handlers
- * for state updates, action completions, and events.
+ * Open the component's realtime WebSocket (client-side only).
+ * Reads the server-computed target from initial state and sets up message
+ * handlers for state updates, action completions, and events.
  */
 export function connectWebSocket(component: any): void {
     if (component._phase === 'Destroyed') return;
-    disconnectWebSockets(component);
+    disconnectWebSocket(component);
     const initialState = component.getInitialStateFromWindow();
-    const providerTargets = initialState?.providerTargets || {};
+    const target = initialState?.realtimeTarget;
+    if (!target) return;
 
-    for (const providerName in providerTargets) {
-        const target = providerTargets[providerName];
+    // Access metadata - support both routePath (new) and componentPath (legacy)
+    const routePath = initialState?.routePath || initialState?.metadata?.routePath || initialState?.metadata?.componentPath;
+    if (!routePath) {
+        console.error('[Cossack] Cannot connect WebSocket: routePath not found in initial state.');
+        return;
+    }
 
-        // Access metadata - support both routePath (new) and componentPath (legacy)
-        const routePath = initialState?.routePath || initialState?.metadata?.routePath || initialState?.metadata?.componentPath;
-        if (!routePath) {
-            console.error('[Cossack] Cannot connect WebSocket: routePath not found in initial state.');
-            continue;
-        }
+    const pathname = initialState?.metadata?.pathname;
+    const params = new URLSearchParams({
+        routePath,
+        pathname: pathname || '',
+        params: JSON.stringify(initialState?.metadata?.params || {}),
+    }).toString();
 
-        const pathname = initialState?.metadata?.pathname;
-        const params = new URLSearchParams({
-            routePath,
-            pathname: pathname || '',
-            params: JSON.stringify(initialState?.metadata?.params || {}),
-        }).toString();
+    // Targets can be scope keys or object names (`team:a`, `page:[...]`), so
+    // encode them as one path segment. The server decodes route params and
+    // recomputes the target; it rejects a different value.
+    const wsUrl = `/ws/${encodeURIComponent(target)}?${params}`;
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const fullWsUrl = `${protocol}//${window.location.host}${wsUrl}`;
 
-        // Targets can be scope keys or object names (`team:a`, `page:[...]`), so
-        // encode them as single path segments. The server decodes route params.
-        const wsUrl = `/ws/${encodeURIComponent(providerName)}/${encodeURIComponent(target)}?${params}`;
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const fullWsUrl = `${protocol}//${window.location.host}${wsUrl}`;
+    // Connect with bounded exponential reconnect. A socket closed by the
+    // application (component destruction) never reconnects.
+    const connect = (attempt: number) => {
+        const ws = new WebSocket(fullWsUrl);
+        component.websocket = ws;
+        let closed = false;
+        let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+        let stopPing = () => {};
+        const ownsSocket = () => component.websocket === ws &&
+            !(ws as any).__cossack_intentional_close && component._phase !== 'Destroyed';
+        const isCurrent = () => !closed && ownsSocket();
+        updateStatus(component, 'websocket',
+            attempt === 0 ? { state: 'connecting', attempts: 0 } : { state: 'reconnecting', attempts: attempt });
 
-        // Connect with bounded exponential reconnect. A socket closed by the
-        // application (component destruction) never reconnects.
-        const connect = (attempt: number) => {
-            const ws = new WebSocket(fullWsUrl);
-            component.websockets.set(providerName, ws);
-            let closed = false;
-            let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
-            let stopPing = () => {};
-            const ownsSocket = () => component.websockets.get(providerName) === ws &&
-                !(ws as any).__cossack_intentional_close && component._phase !== 'Destroyed';
-            const isCurrent = () => !closed && ownsSocket();
-            updateStatus(component, { provider: providerName },
-                attempt === 0 ? { state: 'connecting', attempts: 0 } : { state: 'reconnecting', attempts: attempt });
-
-            ws.onopen = () => {
-                if (!isCurrent()) return;
-                attempt = 0;
-                resetOptimisticSnapshotHistory(component);
-                updateStatus(component, { provider: providerName },
-                    { state: 'open', attempts: 0, lastError: undefined });
-            };
+        ws.onopen = () => {
+            if (!isCurrent()) return;
+            attempt = 0;
+            resetOptimisticSnapshotHistory(component);
+            updateStatus(component, 'websocket', { state: 'open', attempts: 0, lastError: undefined });
+        };
         ws.onmessage = (event: MessageEvent) => {
             if (!isCurrent()) return;
             if (event.data === 'pong') {
@@ -225,12 +190,12 @@ export function connectWebSocket(component: any): void {
                 stopPing();
                 clearTimeout(reconnectTimer);
                 (ws as any).__cossack_intentional_close = true;
-                if (component.websockets.get(providerName) === ws) component.websockets.delete(providerName);
+                if (component.websocket === ws) component.websocket = undefined;
                 socketDisposers.delete(ws);
                 ws.onopen = ws.onclose = ws.onerror = ws.onmessage = null;
                 failPendingSocketCalls(ws);
                 try { ws.close(1008, 'Realtime authorization changed'); } catch { /* already closed */ }
-                updateStatus(component, { provider: providerName }, {
+                updateStatus(component, 'websocket', {
                     state: 'closed', attempts: 0,
                     lastError: 'Realtime authorization changed. Reload the page to reconnect.',
                 });
@@ -275,7 +240,7 @@ export function connectWebSocket(component: any): void {
 
         // Keep-alive ping. The handle is cleared when the socket closes
         // (including when Cossack.destroy() closes it) so it doesn't leak a
-        // timer — and a closure over the WS — for every provider per page.
+        // timer — and a closure over the WS — for every page.
         const pingInterval = setInterval(() => {
             if (isCurrent() && ws.readyState === WebSocket.OPEN) {
                 ws.send('ping');
@@ -287,14 +252,14 @@ export function connectWebSocket(component: any): void {
             closed = true;
             stopPing();
             failPendingSocketCalls(ws);
-            if (component.websockets.get(providerName) !== ws) return;
+            if (component.websocket !== ws) return;
             if ((ws as any).__cossack_intentional_close || component._phase === 'Destroyed') {
-                Object.assign(realtimeStatus(component).websockets[providerName], { state: 'closed', updatedAt: Date.now() });
+                Object.assign(realtimeStatus(component).websocket, { state: 'closed', updatedAt: Date.now() });
                 if (component._phase !== 'Destroyed') component.requestUpdate?.();
                 return;
             }
             const nextAttempt = attempt + 1;
-            updateStatus(component, { provider: providerName }, {
+            updateStatus(component, 'websocket', {
                 state: 'reconnecting',
                 attempts: nextAttempt,
                 lastError: 'WebSocket closed before the component was destroyed.',
@@ -308,7 +273,7 @@ export function connectWebSocket(component: any): void {
         ws.onerror = () => {
             if (!isCurrent()) return;
             stopPing();
-            updateStatus(component, { provider: providerName }, {
+            updateStatus(component, 'websocket', {
                 lastError: 'WebSocket error; the connection is closed or reconnecting.',
             });
         };
@@ -322,9 +287,8 @@ export function connectWebSocket(component: any): void {
             failPendingSocketCalls(ws);
             ws.close();
         });
-        };
-        connect(0);
-    }
+    };
+    connect(0);
 }
 
 /** Retire SSE ownership before closing: EventSource.close() emits no close event. */

@@ -66,8 +66,12 @@ export interface SerializedComponentState {
      * never repeat it.
      */
     user?: User;
-    /** Provider targets for WebSocket connections */
-    providerTargets?: Record<string, string>;
+    /**
+     * Server-computed realtime instance for the page's WebSocket connection
+     * (`durable-object`/`websocket` transports). The server recomputes it from
+     * the page identity or scope key for every upgrade; it never authorizes.
+     */
+    realtimeTarget?: string;
     /** Nested children states */
     children?: Record<string, SerializedComponentState>;
     /** Component route ID for HTTP transport */
@@ -119,10 +123,6 @@ export interface BootstrapOptions {
   runtime?: CossackRuntimeInfo;
   /** Current page route identifier. */
   page?: string;
-  /** WebSocket provider name (server only). */
-  providerName?: string;
-  /** Server-resolved transport targets, supplied by the runtime router. */
-  providerTargets?: Record<string, string>;
   /** Skip calling `init()` after bootstrap. */
   skipInit?: boolean;
   /**

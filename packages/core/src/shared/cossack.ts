@@ -27,13 +27,11 @@ import { evaluateRateLimit, getRateLimitForAction } from './rate-limit';
 import { enterRender, exitRender, isRendering as isRenderingFn } from './server-fn';
 import type { Context } from 'hono';
 import type { CossackServerRuntime } from './runtime';
-import { StateProvider } from './StateProvider';
 import {
-    initializeProviders as initializeProvidersFn,
     connectWebSocket as connectWebSocketFn,
     connectSSE as connectSSEFn,
     disconnectSSE,
-    disconnectWebSockets,
+    disconnectWebSocket,
     realtimeStatus,
     type RealtimeStatusRecord,
 } from './transport-connections';
@@ -548,8 +546,6 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     /** True when this component is executing in a local Cossack Desktop target. */
     protected get isDesktop(): boolean { return this.runtime.platform === 'desktop'; }
 
-    protected providers!: Map<string, StateProvider>;
-    private _providerTargets?: Record<string, string>;
     public props: Record<string, any> = {};
 
     // Component Registry (Server-Side mostly)
@@ -612,13 +608,11 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     private _cossack_path: string = '';
 
     @Server({ rpc: false })
-    private _cossack_provider_name?: string;
-
-    @Server({ rpc: false })
     private _cossack_ws_context?: unknown;
 
+    /** The component's one realtime connection (client side). */
     @Client()
-    private websockets: Map<string, WebSocket> = new Map();
+    private websocket?: WebSocket;
     private _sseConnection?: EventSource;
 
     public loading: Record<string, number> = {};
@@ -700,8 +694,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             if (constructor) resources.truncated = true;
             const transports: DevelopmentComponentDetails['transports'] = { entries: [], truncated: false };
             const record = developmentData(this, '__realtimeStatus');
-            const sockets = developmentData(record, 'websockets');
-            const statuses = record ? [developmentData(record, 'sse'), ...Object.keys(sockets ?? {}).slice(0, 64).map(key => developmentData(sockets, key))] : [];
+            const statuses = record ? [developmentData(record, 'sse'), developmentData(record, 'websocket')] : [];
             for (const [index, status] of statuses.entries()) {
                 if (transports.entries.length >= 64) { transports.truncated = true; break; }
                 const state = developmentData(status, 'state'), attempts = developmentData(status, 'attempts');
@@ -1105,9 +1098,8 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         return this as unknown as CossackElementInternal;
     }
 
-    public async bootstrap({ container, initialState, context, user, env, runtime, page, providerName, providerTargets, skipInit, skipGet, deferMount, stageNavigation }: BootstrapOptions = {}) {
+    public async bootstrap({ container, initialState, context, user, env, runtime, page, skipInit, skipGet, deferMount, stageNavigation }: BootstrapOptions = {}) {
         if (this.isInPhase(LifecyclePhase.Destroyed)) return;
-        this._providerTargets = providerTargets ? { ...providerTargets } : undefined;
         this._transitionToPhase(LifecyclePhase.Bootstrapping, [LifecyclePhase.Creating]);
         let bootstrapped = false;
 
@@ -1136,8 +1128,6 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             this.c = createCossackContext(context, true);
             this.env = env;
             this.runtime = runtime ?? { platform: 'web' };
-            this._cossack_provider_name = providerName;
-            this.initializeProviders();
         } else {
             const clientInitialState = initialState || this.getInitialStateFromWindow();
             this.runtime = (clientInitialState?.runtime as CossackRuntimeInfo | undefined) ?? { platform: 'web' };
@@ -1264,7 +1254,6 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             .map(([name, options]: [string, any]) => ({
                 name,
                 channel: options.channel || 'global',
-                provider: options.provider || 'page',
             }));
 
         if (pageOptions?.transport === 'http') {
@@ -1790,11 +1779,6 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         }
     }
 
-    @Server()
-    private initializeProviders() {
-        initializeProvidersFn(this);
-    }
-
     @Client()
     private connectWebSocket() {
         connectWebSocketFn(this);
@@ -1811,7 +1795,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     }
 
     @Client()
-    private proxyServerMethods(serverMethods: { name: string, channel: string, provider: string }[]) {
+    private proxyServerMethods(serverMethods: { name: string, channel: string }[]) {
         proxyServerMethodsFn(this, serverMethods);
     }
 
@@ -3257,18 +3241,6 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             return serializedState;
         }
 
-        // Add provider targets for WebSocket connections
-        const providerTargets: Record<string, string> = { ...this._providerTargets };
-        if (this.providers) {
-            for (const [name, provider] of this.providers.entries()) {
-                const target = this._providerTargets?.[name] ?? provider.getConnectionTarget();
-                if (target) {
-                    providerTargets[name] = (target as any).toString();
-                }
-            }
-        }
-        serializedState.providerTargets = providerTargets;
-
         // Add nested children states
         const childrenState: Record<string, SerializedComponentState> = {};
         for (const [id, comp] of this.activeComponents) {
@@ -3306,9 +3278,10 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
     /**
      * Realtime connection status for this component (client side): the SSE
-     * subscription state plus one entry per WebSocket provider. Values update
-     * on connect, failure, reconnect, delivery, and snapshot resynchronization;
-     * renders can read `this.realtime.sse.state` directly.
+     * subscription state and the component's one WebSocket connection. Values
+     * update on connect, failure, reconnect, delivery, and snapshot
+     * resynchronization; renders can read `this.realtime.sse.state` or
+     * `this.realtime.websocket.state` directly.
      */
     public get realtime(): RealtimeStatusRecord {
         return realtimeStatus(this);
@@ -3358,7 +3331,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         this._taskCleanups.clear();
         for (const cleanup of this._taskCleanupPending.values()) release(() => cleanup);
         if (!this.isServer) {
-            release(() => disconnectWebSockets(this));
+            release(() => disconnectWebSocket(this));
 
             release(() => disconnectSSE(this));
 

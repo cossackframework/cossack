@@ -72,7 +72,7 @@ it('reports real scope ownership and transport status without service values, ow
     class Host extends Cossack {}
     const host = createInstance(Host, { serviceScope: scope }); hosts.push(host);
     host.realtime.sse.state = 'reconnecting'; host.realtime.sse.lastError = 'private error';
-    host.realtime.websockets['private-provider'] = { state: 'open', attempts: 2, updatedAt: Date.now(), lastEventId: 'secret-cursor', resynced: true };
+    host.realtime.websocket = { state: 'open', attempts: 2, updatedAt: Date.now(), lastEventId: 'secret-cursor', resynced: true };
     session = startDevelopmentTrace();
     const snapshot = details(host);
     expect(snapshot.scopes.entries).toHaveLength(2);
@@ -82,7 +82,7 @@ it('reports real scope ownership and transport status without service values, ow
         { transport: 'sse', slot: 0, state: 'reconnecting', attempts: 0, resynced: false },
         { transport: 'websocket', slot: 1, state: 'open', attempts: 2, resynced: true },
     ]);
-    expect(JSON.stringify(snapshot)).not.toMatch(/service-private|private-route|private-scope|private error|private-provider|secret-cursor/);
+    expect(JSON.stringify(snapshot)).not.toMatch(/service-private|private-route|private-scope|private error|secret-cursor/);
     expect(created).toBe(1); await scope.disposeAsync(); expect(details(host).scopes.entries[0].disposed).toBe(true); await root.disposeAsync();
 });
 

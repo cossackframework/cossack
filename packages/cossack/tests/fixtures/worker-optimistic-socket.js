@@ -135,7 +135,7 @@ export async function checkWorkerOptimisticSocket(server, serverUrl, sessionCook
       });
     });
     await page.goto(new URL('/resource-check/socket',serverUrl).href);
-    await page.waitForFunction(()=>window.__socketRecovery?.realtime.websockets.page?.state==='open');
+    await page.waitForFunction(()=>window.__socketRecovery?.realtime.websocket?.state==='open');
     await browserExpect(page.locator('#socket-count')).toHaveText('0');
     for(const ids of [['one'],['two','three']]) {
       const before=await audit(), callsBefore=frames.filter(frame=>frame.type==='action').length;
@@ -153,10 +153,10 @@ export async function checkWorkerOptimisticSocket(server, serverUrl, sessionCook
       const requestIds=frames.filter(frame=>frame.type==='action').slice(-ids.length).map(frame=>frame.requestId);
       expect(received.filter(frame=>requestIds.includes(frame.requestId)&&['done','error'].includes(frame.type))).toHaveLength(0);
       const old=await page.evaluate(()=>{
-        const host=window.__socketRecovery; host.oldSocket=host.websockets.get('page');
+        const host=window.__socketRecovery; host.oldSocket=host.websocket;
         return host.failures.length;
       });
-      const objectId=await page.evaluate(()=>window.__socketRecovery.getInitialStateFromWindow().providerTargets.page);
+      const objectId=await page.evaluate(()=>window.__socketRecovery.getInitialStateFromWindow().realtimeTarget);
       const dropped=await server.fetch('/api/rpc-check/socket?disconnect='+encodeURIComponent(objectId),{method:'POST',headers:{cookie:sessionCookie}});
       expect(await dropped.json()).toEqual({closed:1});
       // Release held I/O after the server starts the real close handshake.
@@ -166,11 +166,11 @@ export async function checkWorkerOptimisticSocket(server, serverUrl, sessionCook
       expect(await page.evaluate(()=>window.__socketRecovery.failures.slice(-2))).toEqual(
         Array(Math.min(old+ids.length,2)).fill('COSSACK_RPC_TRANSPORT_CLOSED'));
       await expect.poll(async()=> (await audit()).operations.filter(row=>ids.includes(row.id)&&row.settled===1).length).toBe(1);
-      await page.evaluate(()=>{const host=window.__socketRecovery;host.beforeEvictionSocket=host.websockets.get('page');});
+      await page.evaluate(()=>{const host=window.__socketRecovery;host.beforeEvictionSocket=host.websocket;});
       await server.getWorker().evictDurableObject('COSSACK_OBJECT',{id:objectId,webSockets:'close'});
       await page.waitForFunction(()=>{
         const host=window.__socketRecovery;
-        return host.websockets.get('page')!==host.beforeEvictionSocket&&host.realtime.websockets.page.state==='open';
+        return host.websocket!==host.beforeEvictionSocket&&host.realtime.websocket.state==='open';
       });
       await browserExpect(page.locator('#socket-count')).toHaveText(String(before.count+1));
       await browserExpect(page.locator('#socket-draft')).toHaveText('keep this draft');

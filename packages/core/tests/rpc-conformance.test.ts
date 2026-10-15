@@ -90,7 +90,7 @@ class ServerComponent extends Cossack {
 function makeClientComponent() {
     const component: any = {
         constructor: class Client {},
-        websockets: new Map(),
+        websocket: undefined,
         __cossack_proxies: new Map(),
         loading: {},
         count: 0,
@@ -145,13 +145,13 @@ describe('realtime (WebSocket) RPC conformance', () => {
         runtime = new InMemoryWebSocketRuntime(server);
         client = makeClientComponent();
         sockets = makeLoopback(runtime);
-        client.websockets.set('page', sockets.clientSocket);
+        client.websocket = sockets.clientSocket;
         Reflect.defineMetadata('cossack:server-methods', {
             neverResponds: { timeout: 30 },
             slowStream: { timeout: 20 },
         }, client.constructor);
         proxyServerMethods(client, ['ordinary', 'stream', 'failVisible', 'failInternal', 'neverResponds', 'slowStream', 'guarded']
-            .map(name => ({ name, channel: 'global', provider: 'page' })));
+            .map(name => ({ name, channel: 'global' })));
     });
     afterEach(() => {
         delete (globalThis as any).WebSocket;
@@ -166,7 +166,7 @@ describe('realtime (WebSocket) RPC conformance', () => {
             if (kind === 'failure') await expect(client.failInternal()).rejects.toMatchObject({ code: 'COSSACK_RPC_INTERNAL_ERROR' });
             if (kind === 'invalid-input') await expect(client.guarded({ title: 'x' })).rejects.toMatchObject({ code: 'COSSACK_VALIDATION_FAILED' });
             if (kind === 'denied') {
-                proxyServerMethods(client, [{ name: 'destroy', channel: 'global', provider: 'page' }]);
+                proxyServerMethods(client, [{ name: 'destroy', channel: 'global' }]);
                 await expect(client.destroy()).rejects.toMatchObject({ code: 'COSSACK_RPC_FORBIDDEN' });
             }
             const request = JSON.parse(sockets.clientSocket.sent[0]);
@@ -233,8 +233,8 @@ describe('realtime (WebSocket) RPC conformance', () => {
         const engine = new InMemoryWebSocketRuntime(limited);
         const invoke = async (id: string, succeed: boolean) => {
             const pair = makeLoopback(engine); engine.addClient(pair.serverSocket, { id });
-            client.websockets.set('page', pair.clientSocket);
-            proxyServerMethods(client, [{ name: 'limited', channel: 'global', provider: 'page' }]);
+            client.websocket = pair.clientSocket;
+            proxyServerMethods(client, [{ name: 'limited', channel: 'global' }]);
             if (succeed) await expect(client.limited()).resolves.toBe(limited.count + 1);
             else await expect(client.limited()).rejects.toMatchObject({ code: 'COSSACK_RPC_RATE_LIMITED', requestId: expect.any(String) });
             expect(client.loading).toEqual({});
@@ -249,7 +249,7 @@ describe('realtime (WebSocket) RPC conformance', () => {
             limitedService() { return ++this.calls; }
         }
         const service = new LimitedService(); forwardServiceMethods(server, service);
-        proxyServerMethods(client, [{ name: 'limitedService', channel: 'global', provider: 'page' }]);
+        proxyServerMethods(client, [{ name: 'limitedService', channel: 'global' }]);
         expect(await client.limitedService()).toBe(1);
         await expect(client.limitedService()).rejects.toMatchObject({ code: 'COSSACK_RPC_RATE_LIMITED', requestId: expect.any(String) });
         expect(service.calls).toBe(1); expect(client.loading).toEqual({});
@@ -266,7 +266,7 @@ describe('realtime (WebSocket) RPC conformance', () => {
         server.activeComponents.set(child._id, child);
         const counter = new InMemoryRateLimitStore(); const keys: string[] = [];
         setRateLimitStore({ hit(key, window) { keys.push(key); return counter.hit(key, window); } });
-        client._id = 'child'; proxyServerMethods(client, [{ name: 'limitedChild', channel: 'global', provider: 'page' }]);
+        client._id = 'child'; proxyServerMethods(client, [{ name: 'limitedChild', channel: 'global' }]);
         expect(await client.limitedChild()).toBe(1);
         await expect(client.limitedChild()).rejects.toMatchObject({ code: 'COSSACK_RPC_RATE_LIMITED' });
         expect(keys).toHaveLength(2); expect(keys[0]).toBe(keys[1]);
@@ -284,7 +284,7 @@ describe('realtime (WebSocket) RPC conformance', () => {
                 code: target === 'missing' ? 'COSSACK_RPC_NOT_FOUND' : 'COSSACK_RPC_REQUEST_INVALID', requestId: expect.any(String),
             });
         }
-        client._id = 'child'; proxyServerMethods(client, [{ name: 'destroy', channel: 'global', provider: 'page' }]);
+        client._id = 'child'; proxyServerMethods(client, [{ name: 'destroy', channel: 'global' }]);
         await expect(client.destroy()).rejects.toMatchObject({ code: 'COSSACK_RPC_FORBIDDEN', requestId: expect.any(String) });
         expect(child.count).toBe(3); expect(server.count).toBe(0); expect(client.loading).toEqual({});
         await server.destroyAsync();
@@ -321,7 +321,7 @@ describe('realtime (WebSocket) RPC conformance', () => {
         derived.connectedCallback();
         const derivedRuntime = new InMemoryWebSocketRuntime(derived);
         const derivedSockets = makeLoopback(derivedRuntime);
-        client.websockets.set('page', derivedSockets.clientSocket);
+        client.websocket = derivedSockets.clientSocket;
         await expect(Promise.resolve(client.guarded({ title: 'x' }))).rejects.toMatchObject({
             code: 'COSSACK_VALIDATION_FAILED', fieldErrors: { title: expect.any(String) },
         });
@@ -341,8 +341,8 @@ describe('realtime (WebSocket) RPC conformance', () => {
         }
         const service=new ProtectedService();forwardServiceMethods(server,service);
         runtime=new InMemoryWebSocketRuntime(server,{getUser:()=>actor,getContext:()=>context});
-        sockets=makeLoopback(runtime);client.websockets.set('page',sockets.clientSocket);
-        proxyServerMethods(client,[{name:'forwarded',provider:'page',channel:'global'}]);
+        sockets=makeLoopback(runtime);client.websocket = sockets.clientSocket;
+        proxyServerMethods(client,[{name:'forwarded',channel:'global'}]);
         await expect(client.forwarded({id:'1'})).resolves.toBe(1);expect(service.calls).toBe(1);
         actor={id:'other'};
         await expect(client.forwarded({id:1})).rejects.toMatchObject({code:'COSSACK_AUTH_FORBIDDEN',requestId:expect.any(String)});
@@ -357,7 +357,7 @@ describe('realtime (WebSocket) RPC conformance', () => {
             async forwarded(input: { title: string }) { return input.title; }
         }
         forwardServiceMethods(server, new ValidatedService());
-        proxyServerMethods(client, [{ name: 'forwarded', provider: 'page', channel: 'global' }]);
+        proxyServerMethods(client, [{ name: 'forwarded', channel: 'global' }]);
         await expect(Promise.resolve(client.forwarded({ title: '' }))).rejects.toMatchObject({
             code: 'COSSACK_VALIDATION_FAILED', fieldErrors: { title: expect.any(String) },
         });
@@ -428,7 +428,7 @@ describe('realtime (WebSocket) RPC conformance', () => {
         vi.useFakeTimers();
         try {
             Reflect.defineMetadata('cossack:server-methods', { neverResponds: { timeout: 1 } }, client.constructor);
-            proxyServerMethods(client, [{ name: 'neverResponds', channel: 'global', provider: 'page' }]);
+            proxyServerMethods(client, [{ name: 'neverResponds', channel: 'global' }]);
             const call = rpc$(() => client.neverResponds(), { timeout: 50 });
             const observed = Promise.resolve(call).catch(error => error);
             await vi.advanceTimersByTimeAsync(2);

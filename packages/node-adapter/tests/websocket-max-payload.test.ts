@@ -27,14 +27,14 @@ async function guardedAdapter(maxPayload?: number) {
   const runtime = createNodeAdapter({ idleTimeoutMs: 0, ...(maxPayload ? { maxPayload } : {}) });
   const component = { _id: 'page', activeComponents: new Map(), getInitialState: () => ({ public: { count: 1 } }), destroyAsync: vi.fn(async () => {}), executeAction: vi.fn(async () => {}) };
   const app = new Hono();
-  app.get('/ws/:provider/:target', c => runtime.handleWebSocketUpgrade(c, {
-    target: 'user:one', provider: 'page', componentId: 'page', createComponent: async () => component as any,
+  app.get('/ws/:target', c => runtime.handleWebSocketUpgrade(c, {
+    target: 'user:one', componentId: 'page', createComponent: async () => component as any,
   }));
   const server = createServer();
   runtime.attach(server, request => app.fetch(request));
   const port = await listen(server);
   cleanups.push(async () => { await runtime.dispose(); await new Promise<void>(resolve => server.close(() => resolve())); });
-  return { url: `ws://127.0.0.1:${port}/ws/page/user:one`, origin: `http://127.0.0.1:${port}` };
+  return { url: `ws://127.0.0.1:${port}/ws/user:one`, origin: `http://127.0.0.1:${port}` };
 }
 
 it('defaults the WebSocket frame limit to 1 MiB', () => {

@@ -21,7 +21,6 @@ interface ServerMethodBase {
 }
 interface ServerMethodWs extends ServerMethodBase {
     channel: string;
-    provider: string;
 }
 
 /**
@@ -399,23 +398,18 @@ export function proxyServerMethods(component: any, serverMethods: ServerMethodWs
     const stateKeys = getAllReactiveStateKeys(component.constructor);
 
     for (const method of serverMethods) {
-        const { name, channel, provider } = method;
+        const { name, channel } = method;
         if (isSharedMethod(component.constructor, name)) continue;
         const defaultTimeoutMs = serverMethodTimeout(component.constructor, name);
         const proxy = (...args: any[]) => {
             const requestId = crypto.randomUUID();
             const trace = import.meta.env?.DEV ? beginDevelopmentRpcTrace(component, 'websocket', requestId) : undefined;
-            let ws = component.websockets.get(provider);
-            if (!ws) {
-                const root = component.consume(RootContext);
-                if (root) {
-                    ws = (root as any).websockets.get(provider);
-                }
-            }
+            // Child components use their root page's connection.
+            const ws: WebSocket | undefined = component.websocket ?? (component.consume(RootContext) as any)?.websocket;
             if (!ws || ws.readyState !== WebSocket.OPEN) {
                 trace?.finish('failed');
                 return rejectedRpcCall('COSSACK_RPC_TRANSPORT_UNAVAILABLE',
-                    `Realtime connection for provider '${provider}' is not open, so '${name}' was not dispatched.`, name);
+                    `The realtime connection is not open, so '${name}' was not dispatched.`, name);
             }
 
             const optimisticCall = runOptimisticHandler(component, name, args, optimisticHandlers[name], stateKeys);
@@ -557,7 +551,6 @@ export function setupServerMethodProxies(component: any): void {
         .map(([name, options]: [string, any]) => ({
             name,
             channel: options.channel || 'global',
-            provider: options.provider || 'page',
         }));
 
     // Also detect methods without decorators (server-only by default)
@@ -617,12 +610,10 @@ export function setupServerMethodProxies(component: any): void {
  * by a remote client.
  */
 const RPC_BLOCKED_INTERNAL_METHODS: ReadonlySet<string> = new Set([
-    'initializeProviders',
     'proxyClientMethods',
     'validateChannels',
     '_runtime',
     '_cossack_ws_context',
-    '_cossack_provider_name',
 ]);
 
 /**

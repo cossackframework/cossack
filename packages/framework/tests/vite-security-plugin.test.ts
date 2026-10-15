@@ -1978,7 +1978,7 @@ export class Page extends Cossack {
     const code = `
 @Page()
 export class Page extends Cossack {
-  @Server({ channel: 'admin', provider: 'session' })
+  @Server({ channel: 'admin' })
   doAdmin() { const key = 'ADMIN_KEY'; return key; }
   render() { return html\`<p>x</p>\`; }
 }`;
@@ -2344,7 +2344,7 @@ describe('compiler inspection facts', () => {
       }
     }
     const classes = new Function('Cossack', `${js.code}; return { Parent, Child };`)(Root);
-    Reflect.defineMetadata('cossack:server-methods', { parentAction: { timeout: 42, channel: 'private', provider: 'page' } }, classes.Parent);
+    Reflect.defineMetadata('cossack:server-methods', { parentAction: { timeout: 42, channel: 'private' } }, classes.Parent);
     const child = new classes.Child('dependency');
     expect(child.args).toEqual(['dependency']);
     expect(Object.keys(child.metadata).sort()).toEqual(['childAction', 'parentAction']);

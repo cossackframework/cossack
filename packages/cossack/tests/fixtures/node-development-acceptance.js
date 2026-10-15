@@ -54,9 +54,9 @@ export async function verifyNodeDevelopmentApplication(root, mode = 'vite') {
     const connect = async () => {
       // Connect to the target SSR emitted, encoded as one path segment, as the browser does.
       const html = await (await fetch(origin + '/live')).text();
-      const target = JSON.parse(/window\.__INITIAL_STATE__ = (.*?)<\/script>/s.exec(html)[1]).providerTargets.page;
+      const target = JSON.parse(/window\.__INITIAL_STATE__ = (.*?)<\/script>/s.exec(html)[1]).realtimeTarget;
       const query = new URLSearchParams({ routePath: '/live', pathname: '/live', params: '{}' });
-      const socket = new WebSocket(origin.replace('http:', 'ws:') + '/ws/page/' + encodeURIComponent(target) + '?' + query, { headers: { origin } });
+      const socket = new WebSocket(origin.replace('http:', 'ws:') + '/ws/' + encodeURIComponent(target) + '?' + query, { headers: { origin } });
       sockets.push(socket);
       const state = await Promise.race([
         once(socket, 'message').then(([data]) => JSON.parse(String(data))),

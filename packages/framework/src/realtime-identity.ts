@@ -65,7 +65,7 @@ export async function captureRealtimeIdentity(c: Context): Promise<RealtimeIdent
 export function snapshotRealtimeRequest(c: Context, params: Record<string, string>, locale = getLocale()): RealtimeRequestSnapshot {
     const headers = new Headers(c.req.raw.headers);
     for (const name of ['cookie', 'authorization', 'proxy-authorization', 'set-cookie', 'x-user-id', 'x-user-data',
-        'x-api-key', 'x-auth-token', 'x-component-path', 'x-provider-name', 'connection', 'upgrade']) headers.delete(name);
+        'x-api-key', 'x-auth-token', 'x-component-path', 'connection', 'upgrade']) headers.delete(name);
     const configContext = c.get('cossack.configContext') as RealtimeRequestSnapshot['configContext'];
     return { url: c.req.url, path: c.req.path, headers: [...headers], env: c.env, params: { ...params }, locale,
         ...(configContext ? { configContext: { runtime: configContext.runtime, ...(configContext.environment !== undefined ? { environment: configContext.environment } : {}) } } : {}) };

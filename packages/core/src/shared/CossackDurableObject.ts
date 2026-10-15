@@ -52,7 +52,7 @@ export abstract class CossackDurableObject {
         this.componentInstance = component;
     }
 
-    private async createAndBootstrapComponent(componentName: string, params: Record<string, string>, page: string, providerName: string,
+    private async createAndBootstrapComponent(componentName: string, params: Record<string, string>, page: string,
         initialState?: SerializedComponentState): Promise<Cossack | undefined> {
         const PageComponent = (await this.getComponentRegistry()).get(componentName);
         if (!PageComponent) {
@@ -63,7 +63,7 @@ export abstract class CossackDurableObject {
         const component = new PageComponent();
         component.__cossack_rpcOwner = componentName;
         const context = { req: { param: (key?: string) => key ? params[key] : params } } as any;
-        try { await component.bootstrap({ context, env: this.env, page, providerName, skipInit: true, initialState }); }
+        try { await component.bootstrap({ context, env: this.env, page, skipInit: true, initialState }); }
         catch (error) { await this.disposeComponent(component); throw error; }
         return component;
     }
@@ -72,19 +72,18 @@ export abstract class CossackDurableObject {
         if (this.componentInstance) return;
         await this.initializeComponent(async () => {
             if (this.componentInstance) return;
-            const stored = await this.state.storage.get(['stateful', 'componentPath', 'url', 'params', 'componentState', 'providerName']);
+            const stored = await this.state.storage.get(['stateful', 'componentPath', 'url', 'params', 'componentState']);
             if (stored.get('stateful') !== true) return;
             const componentPath = stored.get('componentPath') as string | undefined;
             const url = stored.get('url') as string | undefined;
-            const providerName = stored.get('providerName') as string | undefined;
-            if (!componentPath || !url || !providerName) return;
+            if (!componentPath || !url) return;
             // Restore through bootstrap's state initialization (the same path
             // as bootstrap({ initialState }) elsewhere): assigning persisted
             // keys through reactive setters would broadcast and re-persist
             // the state that was just read.
             const snapshot = stored.get('componentState') as SerializedComponentState | undefined;
             const component = await this.createAndBootstrapComponent(componentPath,
-                stored.get('params') as Record<string, string> || {}, url, providerName, snapshot);
+                stored.get('params') as Record<string, string> || {}, url, snapshot);
             if (!component) return;
             try {
                 component._render();
@@ -102,10 +101,9 @@ export abstract class CossackDurableObject {
         }
 
         const componentPath = request.headers.get('X-Component-Path');
-        const providerName = request.headers.get('X-Provider-Name');
 
-        if (!componentPath || !providerName) {
-            return new Response('Headers X-Component-Path and X-Provider-Name are required', { status: 400 });
+        if (!componentPath) {
+            return new Response('Header X-Component-Path is required', { status: 400 });
         }
 
         let params: Record<string, string>;
@@ -204,14 +202,14 @@ export abstract class CossackDurableObject {
                 await this.disposeComponent(previous);
             }
             if (!this.componentInstance) {
-                const component = await this.createAndBootstrapComponent(componentPath, params, page, providerName);
+                const component = await this.createAndBootstrapComponent(componentPath, params, page);
                 if (!component) return;
                 try {
                     await component.init();
                     const options: PageOptions | undefined = Reflect.getMetadata('page:options', component.constructor);
                     if (options?.stateful === true) {
                         await this.state.storage.put({ componentPath, url: `${page}${url.search}`, params,
-                            componentState: component.getInitialState(), providerName, stateful: true });
+                            componentState: component.getInitialState(), stateful: true });
                     }
                     this.publishComponent(component);
                 } catch (error) { await this.disposeComponent(component); throw error; }

@@ -16,10 +16,10 @@ function component(transport: 'http' | 'sse' | 'websocket' = 'http', socket?: an
         loading: {},
         hasMethod: () => false,
         requestUpdate: vi.fn(), setProperty(key: string, value: unknown) { this[key] = value; },
-        websockets: new Map(socket ? [['private-provider', socket]] : []), consume: () => undefined,
+        websocket: socket, consume: () => undefined,
     };
     if (timeout !== undefined) Reflect.defineMetadata('cossack:server-methods', { run: { timeout } }, target.constructor);
-    if (transport === 'websocket') proxyServerMethods(target, [{ name: 'run', channel: 'private-channel', provider: 'private-provider' }]);
+    if (transport === 'websocket') proxyServerMethods(target, [{ name: 'run', channel: 'private-channel' }]);
     else proxyHttpMethods(target, [{ name: 'run' }]);
     return target;
 }

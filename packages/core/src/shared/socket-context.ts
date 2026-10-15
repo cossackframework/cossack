@@ -24,7 +24,7 @@ export function snapshotSocketRequest(request: Request, params: Record<string, s
     const locale = request.headers.get('x-cossack-realtime-locale') ?? request.headers.get('accept-language') ?? 'en';
     for (const [name, value] of request.headers) {
         if (['cookie', 'authorization', 'proxy-authorization', 'set-cookie', 'x-api-key', 'x-auth-token',
-            'x-user-id', 'x-user-data', 'x-component-path', 'x-provider-name',
+            'x-user-id', 'x-user-data', 'x-component-path',
             'x-cossack-realtime-identity', 'x-cossack-realtime-scope', 'x-cossack-realtime-locale', 'x-cossack-realtime-target-valid',
             'connection', 'upgrade'].includes(name) || name.startsWith('sec-websocket-')) continue;
         headers.push([name, value]);

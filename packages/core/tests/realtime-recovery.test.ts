@@ -2,7 +2,7 @@
 import 'reflect-metadata';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { beginOptimisticCall, applyOptimisticState, finishOptimisticCall } from '../src/shared/optimistic-state';
-import { connectSSE, disconnectSSE, disconnectWebSockets, wsPendingCalls, connectWebSocket, realtimeReconnectDelay, realtimeStatus } from '../src/shared/transport-connections';
+import { connectSSE, disconnectSSE, disconnectWebSocket, wsPendingCalls, connectWebSocket, realtimeReconnectDelay, realtimeStatus } from '../src/shared/transport-connections';
 
 /**
  * RT-19: realtime lifecycle and recovery. Connection status, bounded
@@ -52,14 +52,14 @@ function makeComponent() {
     return {
         constructor: class {},
         _phase: 'Mounted',
-        websockets: new Map(),
+        websocket: undefined,
         _sseConnection: undefined,
         requestUpdate: vi.fn(),
         setProperty(key: string, value: unknown) { (this as any)[key] = value; },
         getInitialStateFromWindow: () => ({
             componentRouteId: 'cmp_sse',
             scopeKey: 'user:anonymous',
-            providerTargets: { page: 'target-1' },
+            realtimeTarget: 'target-1',
             routePath: '/page',
             metadata: { params: {}, pathname: '/page' },
         }),
@@ -202,21 +202,21 @@ describe('realtime recovery: WebSocket reconnect', () => {
             const component: any = makeComponent();
             connectWebSocket(component);
             const first = MockWebSocket.instances[0];
-            expect(realtimeStatus(component).websockets.page).toMatchObject({ state: 'connecting', attempts: 0 });
+            expect(realtimeStatus(component).websocket).toMatchObject({ state: 'connecting', attempts: 0 });
 
             first.onopen?.();
-            expect(realtimeStatus(component).websockets.page.state).toBe('open');
+            expect(realtimeStatus(component).websocket.state).toBe('open');
 
             first.readyState = 3;
             first.onclose?.();
-            expect(realtimeStatus(component).websockets.page).toMatchObject({ state: 'reconnecting', attempts: 1 });
+            expect(realtimeStatus(component).websocket).toMatchObject({ state: 'reconnecting', attempts: 1 });
 
             vi.advanceTimersByTime(realtimeReconnectDelay(1) - 1);
             expect(MockWebSocket.instances).toHaveLength(1);
             vi.advanceTimersByTime(1);
             expect(MockWebSocket.instances).toHaveLength(2);
             const second = MockWebSocket.instances[1];
-            expect(component.websockets.get('page')).toBe(second);
+            expect(component.websocket).toBe(second);
 
             // The delay doubles per attempt and is bounded.
             expect(realtimeReconnectDelay(1)).toBe(500);
@@ -226,10 +226,10 @@ describe('realtime recovery: WebSocket reconnect', () => {
 
             // A successful open resets the attempt counter and clears errors.
             second.onopen?.();
-            expect(realtimeStatus(component).websockets.page).toMatchObject({ state: 'open', attempts: 0 });
+            expect(realtimeStatus(component).websocket).toMatchObject({ state: 'open', attempts: 0 });
             second.readyState = 3;
             second.onclose?.();
-            expect(realtimeStatus(component).websockets.page.attempts).toBe(1);
+            expect(realtimeStatus(component).websocket.attempts).toBe(1);
             vi.advanceTimersByTime(500);
             expect(MockWebSocket.instances).toHaveLength(3);
         } finally {
@@ -247,7 +247,7 @@ describe('realtime recovery: WebSocket reconnect', () => {
             connectWebSocket(component); const first=MockWebSocket.instances[0]; first.onopen?.();
             const callbacks={open:first.onopen!,message:first.onmessage!,close:first.onclose!,error:first.onerror!};
             const sink=vi.fn(); wsPendingCalls(first as any).set('pending',sink);
-            if(reason==='destroyed') { component._phase='Destroyed'; disconnectWebSockets(component); }
+            if(reason==='destroyed') { component._phase='Destroyed'; disconnectWebSocket(component); }
             else connectWebSocket(component);
             expect(sink).toHaveBeenCalledOnce();
             expect(sink.mock.calls[0][0]).toMatchObject({type:'error',code:'COSSACK_RPC_TRANSPORT_CLOSED'});
@@ -262,20 +262,20 @@ describe('realtime recovery: WebSocket reconnect', () => {
             expect(action).not.toHaveBeenCalled(); expect(component.requestUpdate).not.toHaveBeenCalled();
             vi.advanceTimersByTime(60_000);
             expect(MockWebSocket.instances).toHaveLength(reason==='destroyed'?1:2);
-            expect(realtimeStatus(component).websockets.page.state).toBe(reason==='destroyed'?'closed':'connecting');
+            expect(realtimeStatus(component).websocket.state).toBe(reason==='destroyed'?'closed':'connecting');
             if(reason==='destroyed') {connectWebSocket(component);expect(MockWebSocket.instances).toHaveLength(1);}
-            else {MockWebSocket.instances[1].onopen?.();expect(realtimeStatus(component).websockets.page.state).toBe('open');}
-            disconnectWebSockets(component); expect(vi.getTimerCount()).toBe(0);
+            else {MockWebSocket.instances[1].onopen?.();expect(realtimeStatus(component).websocket.state).toBe('open');}
+            disconnectWebSocket(component); expect(vi.getTimerCount()).toBe(0);
         } finally {vi.useRealTimers();}
     });
 
-    it('cancels a pending reconnect immediately when its provider is retired', () => {
+    it('cancels a pending reconnect immediately when its socket is retired', () => {
         vi.useFakeTimers();
         try {
             const component:any=makeComponent(); connectWebSocket(component);
             const socket=MockWebSocket.instances[0]; socket.onclose?.(); socket.onclose?.();
             expect(vi.getTimerCount()).toBe(1);
-            disconnectWebSockets(component); expect(vi.getTimerCount()).toBe(0);
+            disconnectWebSocket(component); expect(vi.getTimerCount()).toBe(0);
             vi.advanceTimersByTime(60_000); expect(MockWebSocket.instances).toHaveLength(1);
         } finally {vi.useRealTimers();}
     });
@@ -290,7 +290,7 @@ describe('realtime recovery: WebSocket reconnect', () => {
             (first as any).__cossack_intentional_close = true;
             first.readyState = 3;
             first.onclose?.();
-            expect(realtimeStatus(component).websockets.page.state).toBe('closed');
+            expect(realtimeStatus(component).websocket.state).toBe('closed');
             vi.advanceTimersByTime(60_000);
             expect(MockWebSocket.instances).toHaveLength(1);
         } finally {
@@ -307,8 +307,8 @@ describe('realtime recovery: WebSocket reconnect', () => {
             const pending = vi.fn();
             wsPendingCalls(socket as any).set('waiting', pending);
             socket.onmessage?.({ data: JSON.stringify({ type: 'authorization-error', code: 'COSSACK_REALTIME_AUTH_CHANGED' }) });
-            expect(component.websockets.has('page')).toBe(false);
-            expect(realtimeStatus(component).websockets.page).toMatchObject({
+            expect(component.websocket).toBeUndefined();
+            expect(realtimeStatus(component).websocket).toMatchObject({
                 state: 'closed', attempts: 0,
                 lastError: 'Realtime authorization changed. Reload the page to reconnect.',
             });
