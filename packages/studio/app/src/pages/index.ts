@@ -147,6 +147,7 @@ export default class StudioPage extends Cossack {
   @ClientState() sqlOutput: 'results' | 'explain' = 'results';
   @ClientState() relationExpansions: Record<string, RelationExpansion> = {};
   @ClientState() inspectionLoading = false;
+  @ClientState() definitionLoading = '';
 
   private disconnectTheme?: () => void;
   private insertTemporalDefaults = { date: '', datetime: '', timestamp: '' };
@@ -290,6 +291,7 @@ export default class StudioPage extends Cossack {
       const requestedPage = Math.max(1, Number(params.get('page') ?? 1) || 1);
       await this.reloadRows(object.name, requestedPage, this.pageSize, false);
       if (this.tab === 'pragmas') await this.refreshPragmas();
+      await this.ensureDefinition();
     } finally {
       this.restoringUrl = false;
     }
@@ -329,6 +331,27 @@ export default class StudioPage extends Cossack {
       this.syncUrl(true);
     }, ['studio-tab']);
     if (tab === 'pragmas') await this.refreshPragmas();
+    // The view transition may switch `this.tab` after this point.
+    if (tab === 'structure') await this.ensureDefinition(tab);
+  }
+
+  /**
+   * Load the selected object's definition when the Structure tab shows it and
+   * introspection deferred it (MySQL reads SHOW CREATE per object).
+   */
+  @Client()
+  async ensureDefinition(tab: StudioTab = this.tab) {
+    const object = this.activeObject;
+    if (tab !== 'structure' || !object?.sqlDeferred || this.definitionLoading === object.name) return;
+    this.definitionLoading = object.name;
+    try {
+      await this.loadDefinition(object.name);
+    } catch (error: any) {
+      this.message = error?.message ?? String(error);
+      this.messageError = true;
+    } finally {
+      this.definitionLoading = '';
+    }
   }
 
   @Client()
@@ -1318,6 +1341,13 @@ export default class StudioPage extends Cossack {
   @Server()
   async refreshSchema(): Promise<void> {
     this.schema = await getStudioDatabase().getSchema(true);
+  }
+
+  @Server()
+  async loadDefinition(name: string): Promise<void> {
+    const database = getStudioDatabase();
+    await database.getDefinition(name);
+    this.schema = await database.getSchema();
   }
 
   @Server()

@@ -67,11 +67,23 @@ and read UTC values. The Hyperdrive MySQL target cannot set the session time
 zone, so it skips its `DEFAULT CURRENT_TIMESTAMP` test on that server
 (see `packages/database/docs/models.md`).
 
-The `database-live` job in `.github/workflows/integration-tests.yml` runs these
-tests with PostgreSQL and MySQL service containers and
-`COSSACK_TEST_REQUIRE_LIVE=1`. Like the other integration jobs, it runs on pull
-requests that change packages, on pushes to master, nightly and before every
-release.
+Studio reads the same variables. `packages/studio/tests/live-introspection.test.ts`
+creates its own `sl_*` tables and views, checks that a schema load runs a fixed
+number of queries, and compares the result with the pinned JSON files in
+`packages/studio/tests/__snapshots__/`. The Playwright spec
+`packages/studio/e2e/mysql-definition.spec.ts` needs `COSSACK_TEST_MYSQL_URL`
+and a Studio build:
+
+```bash
+pnpm --filter @cossackframework/studio run test --watch=false tests/live-introspection.test.ts
+pnpm --filter @cossackframework/studio exec playwright test e2e/mysql-definition.spec.ts
+```
+
+The `database-live` job in `.github/workflows/integration-tests.yml` runs the
+database tests and these Studio tests with PostgreSQL and MySQL service
+containers and `COSSACK_TEST_REQUIRE_LIVE=1`. Like the other integration jobs,
+it runs on pull requests that change packages, on pushes to master, nightly and
+before every release.
 
 The framework's SSG output checks require `pnpm --filter
 @cossackframework/framework build:ssg` first. Without those artifacts, the six

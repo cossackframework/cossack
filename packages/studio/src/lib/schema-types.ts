@@ -139,6 +139,11 @@ export interface StudioObject {
   name: string;
   kind: 'table' | 'view';
   sql: string | null;
+  /**
+   * True when introspection did not load `sql` because it costs one query per
+   * object (MySQL SHOW CREATE). `StudioDatabase.getDefinition()` loads it.
+   */
+  sqlDeferred?: boolean;
   columns: StudioColumn[];
   indexes: StudioIndex[];
   foreignKeys: StudioForeignKey[];

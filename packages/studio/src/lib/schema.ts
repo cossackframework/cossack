@@ -606,8 +606,68 @@ async function introspectSqlite(connection: StudioConnection): Promise<StudioObj
   return objects;
 }
 
-async function introspectPostgres(connection: StudioConnection): Promise<StudioObject[]> {
-  const result = await connection.execute(`
+/**
+ * Group catalog rows by their `table_name` column. Rows keep their query
+ * order, so each table's rows stay sorted by the query's remaining keys.
+ */
+function rowsByTable(rows: RawRow[]): Map<string, RawRow[]> {
+  const grouped = new Map<string, RawRow[]>();
+  for (const row of rows) {
+    const table = stringField(row, 'table_name');
+    if (table === undefined) continue;
+    const tableRows = grouped.get(table);
+    if (tableRows) tableRows.push(row);
+    else grouped.set(table, [row]);
+  }
+  return grouped;
+}
+
+interface CatalogRows {
+  columns: Map<string, RawRow[]>;
+  indexes: Map<string, RawRow[]>;
+  foreignKeys: Map<string, RawRow[]>;
+}
+
+/**
+ * Build objects from schema-wide catalog rows. Every catalog query covers the
+ * whole schema, so a schema load runs the same number of queries whatever the
+ * number of tables. Views get columns only, as they have no indexes or keys.
+ */
+function catalogObjects(
+  provider: 'postgres' | 'mysql',
+  rows: SchemaRow[],
+  catalog: CatalogRows,
+  definition: (row: SchemaRow, columns: StudioColumn[]) => string | null,
+): StudioObject[] {
+  return rows.map((row) => {
+    const columns = catalogColumns(catalogColumnRows(catalog.columns.get(row.name) ?? []));
+    const table = row.kind === 'table';
+    return buildObject(
+      provider,
+      row,
+      columns,
+      table ? catalogIndexes(catalogIndexRows(catalog.indexes.get(row.name) ?? [])) : [],
+      table ? catalogForeignKeys(catalogForeignKeyRows(catalog.foreignKeys.get(row.name) ?? [])) : [],
+      definition(row, columns),
+    );
+  });
+}
+
+async function catalogRows(
+  connection: StudioConnection,
+  queries: { columns: string; indexes: string; foreignKeys: string },
+): Promise<CatalogRows> {
+  const columns = await connection.execute(queries.columns);
+  const indexes = await connection.execute(queries.indexes);
+  const foreignKeys = await connection.execute(queries.foreignKeys);
+  return {
+    columns: rowsByTable(columns.rows),
+    indexes: rowsByTable(indexes.rows),
+    foreignKeys: rowsByTable(foreignKeys.rows),
+  };
+}
+
+const POSTGRES_OBJECTS = `
     SELECT
       tables.table_name AS name,
       CASE WHEN tables.table_type = 'VIEW' THEN 'view' ELSE 'table' END AS kind,
@@ -620,227 +680,258 @@ async function introspectPostgres(connection: StudioConnection): Promise<StudioO
     WHERE tables.table_schema = current_schema()
       AND tables.table_type IN ('BASE TABLE', 'FOREIGN', 'FOREIGN TABLE', 'VIEW')
     ORDER BY kind, name
-  `);
-  const objects: StudioObject[] = [];
-  for (const row of schemaRows(result.rows)) {
-    const columnResult = await connection.execute(`
-      SELECT
-        columns.column_name AS name,
-        CASE
-          WHEN columns.data_type = 'USER-DEFINED' THEN columns.udt_name
-          WHEN columns.character_maximum_length IS NOT NULL
-            THEN columns.data_type || '(' || columns.character_maximum_length || ')'
-          ELSE columns.data_type
-        END AS data_type,
-        columns.is_nullable = 'YES' AS nullable,
-        columns.column_default AS default_value,
-        COALESCE(keys.ordinal_position, 0) AS primary_key_position,
-        (
-          columns.is_identity = 'YES'
-          OR columns.column_default LIKE 'nextval(%'
-        ) AS auto_increment
-      FROM information_schema.columns AS columns
-      LEFT JOIN (
-        SELECT usage.table_schema, usage.table_name, usage.column_name, usage.ordinal_position
-        FROM information_schema.table_constraints AS constraints
-        JOIN information_schema.key_column_usage AS usage
-          ON usage.constraint_catalog = constraints.constraint_catalog
-          AND usage.constraint_schema = constraints.constraint_schema
-          AND usage.constraint_name = constraints.constraint_name
-        WHERE constraints.constraint_type = 'PRIMARY KEY'
-      ) AS keys
-        ON keys.table_schema = columns.table_schema
-        AND keys.table_name = columns.table_name
-        AND keys.column_name = columns.column_name
-      WHERE columns.table_schema = current_schema()
-        AND columns.table_name = ?
-      ORDER BY columns.ordinal_position
-    `, [row.name]);
-    const columns = catalogColumns(catalogColumnRows(columnResult.rows));
-    let indexes: StudioIndex[] = [];
-    let foreignKeys: StudioForeignKey[] = [];
-    if (row.kind === 'table') {
-      const indexResult = await connection.execute(`
-        SELECT
-          index_class.relname AS name,
-          index_info.indisunique AS unique,
-          CASE
-            WHEN index_info.indisprimary THEN 'pk'
-            WHEN index_info.indisunique THEN 'u'
-            ELSE 'c'
-          END AS origin,
-          index_info.indpred IS NOT NULL AS partial,
-          attribute.attname AS column_name,
-          index_key.ordinality - 1 AS position,
-          (index_info.indoption[index_key.ordinality - 1] & 1) = 1 AS descending,
-          index_collation.collname AS collation
-        FROM pg_catalog.pg_class AS table_class
-        JOIN pg_catalog.pg_namespace AS namespace
-          ON namespace.oid = table_class.relnamespace
-        JOIN pg_catalog.pg_index AS index_info
-          ON index_info.indrelid = table_class.oid
-        JOIN pg_catalog.pg_class AS index_class
-          ON index_class.oid = index_info.indexrelid
-        CROSS JOIN LATERAL unnest(index_info.indkey)
-          WITH ORDINALITY AS index_key(attribute_number, ordinality)
-        LEFT JOIN pg_catalog.pg_attribute AS attribute
-          ON attribute.attrelid = table_class.oid
-          AND attribute.attnum = index_key.attribute_number
-        LEFT JOIN pg_catalog.pg_collation AS index_collation
-          ON index_collation.oid = index_info.indcollation[index_key.ordinality - 1]
-          AND index_info.indcollation[index_key.ordinality - 1] <> 0
-        WHERE namespace.nspname = current_schema()
-          AND table_class.relname = ?
-        ORDER BY index_class.relname, index_key.ordinality
-      `, [row.name]);
-      indexes = catalogIndexes(catalogIndexRows(indexResult.rows));
-      const foreignKeyResult = await connection.execute(`
-        SELECT
-          constraints.constraint_name AS name,
-          foreign_usage.table_name AS referenced_table,
-          usage.column_name AS column_name,
-          foreign_usage.column_name AS referenced_column,
-          usage.ordinal_position - 1 AS position,
-          referential.update_rule AS on_update,
-          referential.delete_rule AS on_delete
-        FROM information_schema.table_constraints AS constraints
-        JOIN information_schema.key_column_usage AS usage
-          ON usage.constraint_catalog = constraints.constraint_catalog
-          AND usage.constraint_schema = constraints.constraint_schema
-          AND usage.constraint_name = constraints.constraint_name
-        JOIN information_schema.referential_constraints AS referential
-          ON referential.constraint_catalog = constraints.constraint_catalog
-          AND referential.constraint_schema = constraints.constraint_schema
-          AND referential.constraint_name = constraints.constraint_name
-        JOIN information_schema.key_column_usage AS foreign_usage
-          ON foreign_usage.constraint_catalog = referential.unique_constraint_catalog
-          AND foreign_usage.constraint_schema = referential.unique_constraint_schema
-          AND foreign_usage.constraint_name = referential.unique_constraint_name
-          AND foreign_usage.ordinal_position = usage.position_in_unique_constraint
-        WHERE constraints.constraint_type = 'FOREIGN KEY'
-          AND constraints.table_schema = current_schema()
-          AND constraints.table_name = ?
-        ORDER BY constraints.constraint_name, usage.ordinal_position
-      `, [row.name]);
-      foreignKeys = catalogForeignKeys(catalogForeignKeyRows(foreignKeyResult.rows));
-    }
-    objects.push(buildObject(
-      'postgres',
-      row,
-      columns,
-      indexes,
-      foreignKeys,
-      generatedDefinition('postgres', row, columns),
-    ));
+  `;
+
+const POSTGRES_COLUMNS = `
+    SELECT
+      columns.table_name AS table_name,
+      columns.column_name AS name,
+      CASE
+        WHEN columns.data_type = 'USER-DEFINED' THEN columns.udt_name
+        WHEN columns.character_maximum_length IS NOT NULL
+          THEN columns.data_type || '(' || columns.character_maximum_length || ')'
+        ELSE columns.data_type
+      END AS data_type,
+      columns.is_nullable = 'YES' AS nullable,
+      columns.column_default AS default_value,
+      COALESCE(keys.ordinal_position, 0) AS primary_key_position,
+      (
+        columns.is_identity = 'YES'
+        OR columns.column_default LIKE 'nextval(%'
+      ) AS auto_increment
+    FROM information_schema.columns AS columns
+    LEFT JOIN (
+      SELECT usage.table_schema, usage.table_name, usage.column_name, usage.ordinal_position
+      FROM information_schema.table_constraints AS constraints
+      JOIN information_schema.key_column_usage AS usage
+        ON usage.constraint_catalog = constraints.constraint_catalog
+        AND usage.constraint_schema = constraints.constraint_schema
+        AND usage.constraint_name = constraints.constraint_name
+      WHERE constraints.constraint_type = 'PRIMARY KEY'
+    ) AS keys
+      ON keys.table_schema = columns.table_schema
+      AND keys.table_name = columns.table_name
+      AND keys.column_name = columns.column_name
+    WHERE columns.table_schema = current_schema()
+    ORDER BY columns.table_name, columns.ordinal_position
+  `;
+
+const POSTGRES_INDEXES = `
+    SELECT
+      table_class.relname AS table_name,
+      index_class.relname AS name,
+      index_info.indisunique AS unique,
+      CASE
+        WHEN index_info.indisprimary THEN 'pk'
+        WHEN index_info.indisunique THEN 'u'
+        ELSE 'c'
+      END AS origin,
+      index_info.indpred IS NOT NULL AS partial,
+      attribute.attname AS column_name,
+      index_key.ordinality - 1 AS position,
+      (index_info.indoption[index_key.ordinality - 1] & 1) = 1 AS descending,
+      index_collation.collname AS collation
+    FROM pg_catalog.pg_class AS table_class
+    JOIN pg_catalog.pg_namespace AS namespace
+      ON namespace.oid = table_class.relnamespace
+    JOIN pg_catalog.pg_index AS index_info
+      ON index_info.indrelid = table_class.oid
+    JOIN pg_catalog.pg_class AS index_class
+      ON index_class.oid = index_info.indexrelid
+    CROSS JOIN LATERAL unnest(index_info.indkey)
+      WITH ORDINALITY AS index_key(attribute_number, ordinality)
+    LEFT JOIN pg_catalog.pg_attribute AS attribute
+      ON attribute.attrelid = table_class.oid
+      AND attribute.attnum = index_key.attribute_number
+    LEFT JOIN pg_catalog.pg_collation AS index_collation
+      ON index_collation.oid = index_info.indcollation[index_key.ordinality - 1]
+      AND index_info.indcollation[index_key.ordinality - 1] <> 0
+    WHERE namespace.nspname = current_schema()
+    ORDER BY table_class.relname, index_class.relname, index_key.ordinality
+  `;
+
+const POSTGRES_FOREIGN_KEYS = `
+    SELECT
+      constraints.table_name AS table_name,
+      constraints.constraint_name AS name,
+      foreign_usage.table_name AS referenced_table,
+      usage.column_name AS column_name,
+      foreign_usage.column_name AS referenced_column,
+      usage.ordinal_position - 1 AS position,
+      referential.update_rule AS on_update,
+      referential.delete_rule AS on_delete
+    FROM information_schema.table_constraints AS constraints
+    JOIN information_schema.key_column_usage AS usage
+      ON usage.constraint_catalog = constraints.constraint_catalog
+      AND usage.constraint_schema = constraints.constraint_schema
+      AND usage.constraint_name = constraints.constraint_name
+    JOIN information_schema.referential_constraints AS referential
+      ON referential.constraint_catalog = constraints.constraint_catalog
+      AND referential.constraint_schema = constraints.constraint_schema
+      AND referential.constraint_name = constraints.constraint_name
+    JOIN information_schema.key_column_usage AS foreign_usage
+      ON foreign_usage.constraint_catalog = referential.unique_constraint_catalog
+      AND foreign_usage.constraint_schema = referential.unique_constraint_schema
+      AND foreign_usage.constraint_name = referential.unique_constraint_name
+      AND foreign_usage.ordinal_position = usage.position_in_unique_constraint
+    WHERE constraints.constraint_type = 'FOREIGN KEY'
+      AND constraints.table_schema = current_schema()
+    ORDER BY constraints.table_name, constraints.constraint_name, usage.ordinal_position
+  `;
+
+/**
+ * Introspect the current PostgreSQL schema in four queries: the object list,
+ * then columns (with primary key positions), indexes and foreign keys for
+ * every table at once.
+ */
+async function introspectPostgres(connection: StudioConnection): Promise<StudioObject[]> {
+  const rows = schemaRows((await connection.execute(POSTGRES_OBJECTS)).rows);
+  if (!rows.length) return [];
+  const catalog = await catalogRows(connection, {
+    columns: POSTGRES_COLUMNS,
+    indexes: POSTGRES_INDEXES,
+    foreignKeys: POSTGRES_FOREIGN_KEYS,
+  });
+  return catalogObjects('postgres', rows, catalog, (row, columns) =>
+    generatedDefinition('postgres', row, columns));
+}
+
+const MYSQL_OBJECTS = `
+    SELECT
+      TABLE_NAME AS name,
+      CASE WHEN TABLE_TYPE = 'VIEW' THEN 'view' ELSE 'table' END AS kind
+    FROM information_schema.tables
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_TYPE IN ('BASE TABLE', 'VIEW')
+    ORDER BY kind, name
+  `;
+
+const MYSQL_COLUMNS = `
+    SELECT
+      columns.TABLE_NAME AS table_name,
+      columns.COLUMN_NAME AS name,
+      columns.COLUMN_TYPE AS data_type,
+      columns.IS_NULLABLE = 'YES' AS nullable,
+      columns.COLUMN_DEFAULT AS default_value,
+      COALESCE(primary_key.SEQ_IN_INDEX, 0) AS primary_key_position,
+      LOCATE('auto_increment', LOWER(columns.EXTRA)) > 0 AS auto_increment
+    FROM information_schema.columns AS columns
+    LEFT JOIN information_schema.statistics AS primary_key
+      ON primary_key.TABLE_SCHEMA = columns.TABLE_SCHEMA
+      AND primary_key.TABLE_NAME = columns.TABLE_NAME
+      AND primary_key.COLUMN_NAME = columns.COLUMN_NAME
+      AND primary_key.INDEX_NAME = 'PRIMARY'
+    WHERE columns.TABLE_SCHEMA = DATABASE()
+    ORDER BY columns.TABLE_NAME, columns.ORDINAL_POSITION
+  `;
+
+const MYSQL_INDEXES = `
+    SELECT
+      TABLE_NAME AS table_name,
+      INDEX_NAME AS name,
+      NON_UNIQUE = 0 AS \`unique\`,
+      CASE
+        WHEN INDEX_NAME = 'PRIMARY' THEN 'pk'
+        WHEN NON_UNIQUE = 0 THEN 'u'
+        ELSE 'c'
+      END AS origin,
+      0 AS partial,
+      COLUMN_NAME AS column_name,
+      SEQ_IN_INDEX - 1 AS position,
+      COLLATION = 'D' AS descending,
+      NULL AS collation
+    FROM information_schema.statistics
+    WHERE TABLE_SCHEMA = DATABASE()
+    ORDER BY TABLE_NAME, INDEX_NAME, SEQ_IN_INDEX
+  `;
+
+// `usage` is a reserved word in MySQL, so the alias is `key_usage`.
+const MYSQL_FOREIGN_KEYS = `
+    SELECT
+      key_usage.TABLE_NAME AS table_name,
+      key_usage.CONSTRAINT_NAME AS name,
+      key_usage.REFERENCED_TABLE_NAME AS referenced_table,
+      key_usage.COLUMN_NAME AS column_name,
+      key_usage.REFERENCED_COLUMN_NAME AS referenced_column,
+      key_usage.ORDINAL_POSITION - 1 AS position,
+      referential.UPDATE_RULE AS on_update,
+      referential.DELETE_RULE AS on_delete
+    FROM information_schema.key_column_usage AS key_usage
+    JOIN information_schema.referential_constraints AS referential
+      ON referential.CONSTRAINT_SCHEMA = key_usage.CONSTRAINT_SCHEMA
+      AND referential.CONSTRAINT_NAME = key_usage.CONSTRAINT_NAME
+      AND referential.TABLE_NAME = key_usage.TABLE_NAME
+    WHERE key_usage.TABLE_SCHEMA = DATABASE()
+      AND key_usage.REFERENCED_TABLE_NAME IS NOT NULL
+    ORDER BY key_usage.TABLE_NAME, key_usage.CONSTRAINT_NAME, key_usage.ORDINAL_POSITION
+  `;
+
+/**
+ * Introspect the current MySQL database in four queries, like PostgreSQL.
+ * MySQL has no catalog column with an object's CREATE statement, only one
+ * SHOW CREATE statement per object, so definitions are deferred:
+ * `loadDeferredDefinition()` reads one when Studio displays it.
+ */
+async function introspectMysql(connection: StudioConnection): Promise<StudioObject[]> {
+  const rows = schemaRows((await connection.execute(MYSQL_OBJECTS)).rows);
+  if (!rows.length) return [];
+  const catalog = await catalogRows(connection, {
+    columns: MYSQL_COLUMNS,
+    indexes: MYSQL_INDEXES,
+    foreignKeys: MYSQL_FOREIGN_KEYS,
+  });
+  return catalogObjects('mysql', rows, catalog, () => null)
+    .map((object) => ({ ...object, sqlDeferred: true }));
+}
+
+async function mysqlViewDefinition(
+  connection: StudioConnection,
+  name: string,
+): Promise<string | null> {
+  try {
+    const result = await connection.execute(`
+      SELECT VIEW_DEFINITION AS definition
+      FROM information_schema.views
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = ?
+    `, [name]);
+    return nullableStringField(result.rows[0] ?? {}, 'definition') ?? null;
+  } catch {
+    return null;
   }
-  return objects;
 }
 
 async function mysqlDefinition(
   connection: StudioConnection,
-  row: SchemaRow,
-  columns: StudioColumn[],
+  object: StudioObject,
 ): Promise<string | null> {
   try {
     const result = await connection.execute(
-      `SHOW CREATE ${row.kind === 'view' ? 'VIEW' : 'TABLE'} ${quoteIdentifier(row.name, 'mysql')}`,
+      `SHOW CREATE ${object.kind === 'view' ? 'VIEW' : 'TABLE'} ${quoteIdentifier(object.name, 'mysql')}`,
     );
     const value = Object.entries(result.rows[0] ?? {})
       .find(([key]) => /^Create (?:Table|View)$/i.test(key))?.[1];
     if (value != null) return String(value);
   } catch {}
-  return generatedDefinition('mysql', row, columns);
+  // Without SHOW CREATE access, describe the object from the catalog instead.
+  const row: SchemaRow = {
+    name: object.name,
+    kind: object.kind,
+    definition: object.kind === 'view' ? await mysqlViewDefinition(connection, object.name) : null,
+  };
+  return generatedDefinition('mysql', row, object.columns);
 }
 
-async function introspectMysql(connection: StudioConnection): Promise<StudioObject[]> {
-  const result = await connection.execute(`
-    SELECT
-      tables.TABLE_NAME AS name,
-      CASE WHEN tables.TABLE_TYPE = 'VIEW' THEN 'view' ELSE 'table' END AS kind,
-      views.VIEW_DEFINITION AS definition
-    FROM information_schema.tables AS tables
-    LEFT JOIN information_schema.views AS views
-      ON views.TABLE_SCHEMA = tables.TABLE_SCHEMA
-      AND views.TABLE_NAME = tables.TABLE_NAME
-    WHERE tables.TABLE_SCHEMA = DATABASE()
-      AND tables.TABLE_TYPE IN ('BASE TABLE', 'VIEW')
-    ORDER BY kind, name
-  `);
-  const objects: StudioObject[] = [];
-  for (const row of schemaRows(result.rows)) {
-    const columnResult = await connection.execute(`
-      SELECT
-        columns.COLUMN_NAME AS name,
-        columns.COLUMN_TYPE AS data_type,
-        columns.IS_NULLABLE = 'YES' AS nullable,
-        columns.COLUMN_DEFAULT AS default_value,
-        COALESCE(primary_key.SEQ_IN_INDEX, 0) AS primary_key_position,
-        LOCATE('auto_increment', LOWER(columns.EXTRA)) > 0 AS auto_increment
-      FROM information_schema.columns AS columns
-      LEFT JOIN information_schema.statistics AS primary_key
-        ON primary_key.TABLE_SCHEMA = columns.TABLE_SCHEMA
-        AND primary_key.TABLE_NAME = columns.TABLE_NAME
-        AND primary_key.COLUMN_NAME = columns.COLUMN_NAME
-        AND primary_key.INDEX_NAME = 'PRIMARY'
-      WHERE columns.TABLE_SCHEMA = DATABASE()
-        AND columns.TABLE_NAME = ?
-      ORDER BY columns.ORDINAL_POSITION
-    `, [row.name]);
-    const columns = catalogColumns(catalogColumnRows(columnResult.rows));
-    let indexes: StudioIndex[] = [];
-    let foreignKeys: StudioForeignKey[] = [];
-    if (row.kind === 'table') {
-      const indexResult = await connection.execute(`
-        SELECT
-          INDEX_NAME AS name,
-          NON_UNIQUE = 0 AS \`unique\`,
-          CASE
-            WHEN INDEX_NAME = 'PRIMARY' THEN 'pk'
-            WHEN NON_UNIQUE = 0 THEN 'u'
-            ELSE 'c'
-          END AS origin,
-          0 AS partial,
-          COLUMN_NAME AS column_name,
-          SEQ_IN_INDEX - 1 AS position,
-          COLLATION = 'D' AS descending,
-          NULL AS collation
-        FROM information_schema.statistics
-        WHERE TABLE_SCHEMA = DATABASE()
-          AND TABLE_NAME = ?
-        ORDER BY INDEX_NAME, SEQ_IN_INDEX
-      `, [row.name]);
-      indexes = catalogIndexes(catalogIndexRows(indexResult.rows));
-      const foreignKeyResult = await connection.execute(`
-        SELECT
-          usage.CONSTRAINT_NAME AS name,
-          usage.REFERENCED_TABLE_NAME AS referenced_table,
-          usage.COLUMN_NAME AS column_name,
-          usage.REFERENCED_COLUMN_NAME AS referenced_column,
-          usage.ORDINAL_POSITION - 1 AS position,
-          referential.UPDATE_RULE AS on_update,
-          referential.DELETE_RULE AS on_delete
-        FROM information_schema.key_column_usage AS usage
-        JOIN information_schema.referential_constraints AS referential
-          ON referential.CONSTRAINT_SCHEMA = usage.CONSTRAINT_SCHEMA
-          AND referential.CONSTRAINT_NAME = usage.CONSTRAINT_NAME
-          AND referential.TABLE_NAME = usage.TABLE_NAME
-        WHERE usage.TABLE_SCHEMA = DATABASE()
-          AND usage.TABLE_NAME = ?
-          AND usage.REFERENCED_TABLE_NAME IS NOT NULL
-        ORDER BY usage.CONSTRAINT_NAME, usage.ORDINAL_POSITION
-      `, [row.name]);
-      foreignKeys = catalogForeignKeys(catalogForeignKeyRows(foreignKeyResult.rows));
-    }
-    objects.push(buildObject(
-      'mysql',
-      row,
-      columns,
-      indexes,
-      foreignKeys,
-      await mysqlDefinition(connection, row, columns),
-    ));
-  }
-  return objects;
+/**
+ * Load the definition of an object whose `sqlDeferred` flag is set. Returns
+ * `object.sql` unchanged for every other object.
+ */
+export async function loadDeferredDefinition(
+  connection: StudioConnection,
+  object: StudioObject,
+): Promise<string | null> {
+  if (!object.sqlDeferred) return object.sql;
+  return mysqlDefinition(connection, object);
 }
 
 export async function introspectSchema(

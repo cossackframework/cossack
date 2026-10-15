@@ -1,0 +1,1605 @@
+[
+  {
+    "name": "sl_accounts",
+    "kind": "table",
+    "sql": "CREATE TABLE \"sl_accounts\" (\n  \"id\" integer NOT NULL DEFAULT nextval('sl_accounts_id_seq'::regclass),\n  \"email\" character varying(120) NOT NULL,\n  \"name\" text,\n  \"created_at\" timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,\n  PRIMARY KEY (\"id\")\n)",
+    "columns": [
+      {
+        "name": "id",
+        "dataType": "integer",
+        "affinity": "integer",
+        "declaredKind": "number",
+        "nullable": false,
+        "defaultValue": "nextval('sl_accounts_id_seq'::regclass)",
+        "primaryKeyPosition": 1,
+        "autoIncrement": true,
+        "hidden": false
+      },
+      {
+        "name": "email",
+        "dataType": "character varying(120)",
+        "affinity": "text",
+        "declaredKind": "varchar",
+        "nullable": false,
+        "defaultValue": null,
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      },
+      {
+        "name": "name",
+        "dataType": "text",
+        "affinity": "text",
+        "declaredKind": "text",
+        "nullable": true,
+        "defaultValue": null,
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      },
+      {
+        "name": "created_at",
+        "dataType": "timestamp without time zone",
+        "affinity": "text",
+        "declaredKind": "datetime",
+        "nullable": false,
+        "defaultValue": "CURRENT_TIMESTAMP",
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      }
+    ],
+    "indexes": [
+      {
+        "name": "sl_accounts_email_key",
+        "unique": true,
+        "origin": "u",
+        "partial": false,
+        "columns": [
+          {
+            "name": "email",
+            "position": 0,
+            "descending": false,
+            "collation": "default"
+          }
+        ]
+      },
+      {
+        "name": "sl_accounts_lower_email_idx",
+        "unique": false,
+        "origin": "c",
+        "partial": false,
+        "columns": [
+          {
+            "name": null,
+            "position": 0,
+            "descending": false,
+            "collation": "default"
+          }
+        ]
+      },
+      {
+        "name": "sl_accounts_pkey",
+        "unique": true,
+        "origin": "pk",
+        "partial": false,
+        "columns": [
+          {
+            "name": "id",
+            "position": 0,
+            "descending": false,
+            "collation": null
+          }
+        ]
+      }
+    ],
+    "foreignKeys": [],
+    "rowLocators": [
+      {
+        "kind": "primary-key",
+        "columns": [
+          "id"
+        ]
+      },
+      {
+        "kind": "unique-index",
+        "columns": [
+          "email"
+        ],
+        "name": "sl_accounts_email_key"
+      },
+      {
+        "kind": "postgres-ctid",
+        "columns": [
+          "__cossack_tableoid__",
+          "__cossack_ctid__"
+        ]
+      }
+    ],
+    "editable": true
+  },
+  {
+    "name": "sl_audit_log",
+    "kind": "table",
+    "sql": "CREATE TABLE \"sl_audit_log\" (\n  \"message\" text,\n  \"created_at\" timestamp without time zone\n)",
+    "columns": [
+      {
+        "name": "message",
+        "dataType": "text",
+        "affinity": "text",
+        "declaredKind": "text",
+        "nullable": true,
+        "defaultValue": null,
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      },
+      {
+        "name": "created_at",
+        "dataType": "timestamp without time zone",
+        "affinity": "text",
+        "declaredKind": "datetime",
+        "nullable": true,
+        "defaultValue": null,
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      }
+    ],
+    "indexes": [],
+    "foreignKeys": [],
+    "rowLocators": [
+      {
+        "kind": "postgres-ctid",
+        "columns": [
+          "__cossack_tableoid__",
+          "__cossack_ctid__"
+        ]
+      }
+    ],
+    "editable": true
+  },
+  {
+    "name": "sl_categories",
+    "kind": "table",
+    "sql": "CREATE TABLE \"sl_categories\" (\n  \"id\" integer NOT NULL,\n  \"parent_id\" integer,\n  \"name\" character varying(80) NOT NULL,\n  PRIMARY KEY (\"id\")\n)",
+    "columns": [
+      {
+        "name": "id",
+        "dataType": "integer",
+        "affinity": "integer",
+        "declaredKind": "number",
+        "nullable": false,
+        "defaultValue": null,
+        "primaryKeyPosition": 1,
+        "autoIncrement": false,
+        "hidden": false
+      },
+      {
+        "name": "parent_id",
+        "dataType": "integer",
+        "affinity": "integer",
+        "declaredKind": "number",
+        "nullable": true,
+        "defaultValue": null,
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      },
+      {
+        "name": "name",
+        "dataType": "character varying(80)",
+        "affinity": "text",
+        "declaredKind": "varchar",
+        "nullable": false,
+        "defaultValue": null,
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      }
+    ],
+    "indexes": [
+      {
+        "name": "sl_categories_parent_name_idx",
+        "unique": false,
+        "origin": "c",
+        "partial": false,
+        "columns": [
+          {
+            "name": "parent_id",
+            "position": 0,
+            "descending": false,
+            "collation": null
+          },
+          {
+            "name": "name",
+            "position": 1,
+            "descending": false,
+            "collation": "C"
+          }
+        ]
+      },
+      {
+        "name": "sl_categories_pkey",
+        "unique": true,
+        "origin": "pk",
+        "partial": false,
+        "columns": [
+          {
+            "name": "id",
+            "position": 0,
+            "descending": false,
+            "collation": null
+          }
+        ]
+      }
+    ],
+    "foreignKeys": [
+      {
+        "name": "sl_categories_parent_fk",
+        "referencedTable": "sl_categories",
+        "columns": [
+          {
+            "column": "parent_id",
+            "referencedColumn": "id",
+            "position": 0
+          }
+        ],
+        "onUpdate": "NO ACTION",
+        "onDelete": "SET NULL"
+      }
+    ],
+    "rowLocators": [
+      {
+        "kind": "primary-key",
+        "columns": [
+          "id"
+        ]
+      },
+      {
+        "kind": "postgres-ctid",
+        "columns": [
+          "__cossack_tableoid__",
+          "__cossack_ctid__"
+        ]
+      }
+    ],
+    "editable": true
+  },
+  {
+    "name": "sl_employees",
+    "kind": "table",
+    "sql": "CREATE TABLE \"sl_employees\" (\n  \"id\" integer NOT NULL,\n  \"manager_id\" integer,\n  \"name\" character varying(80) NOT NULL,\n  PRIMARY KEY (\"id\")\n)",
+    "columns": [
+      {
+        "name": "id",
+        "dataType": "integer",
+        "affinity": "integer",
+        "declaredKind": "number",
+        "nullable": false,
+        "defaultValue": null,
+        "primaryKeyPosition": 1,
+        "autoIncrement": false,
+        "hidden": false
+      },
+      {
+        "name": "manager_id",
+        "dataType": "integer",
+        "affinity": "integer",
+        "declaredKind": "number",
+        "nullable": true,
+        "defaultValue": null,
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      },
+      {
+        "name": "name",
+        "dataType": "character varying(80)",
+        "affinity": "text",
+        "declaredKind": "varchar",
+        "nullable": false,
+        "defaultValue": null,
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      }
+    ],
+    "indexes": [
+      {
+        "name": "sl_employees_name_idx",
+        "unique": true,
+        "origin": "u",
+        "partial": false,
+        "columns": [
+          {
+            "name": "name",
+            "position": 0,
+            "descending": false,
+            "collation": "default"
+          }
+        ]
+      },
+      {
+        "name": "sl_employees_pkey",
+        "unique": true,
+        "origin": "pk",
+        "partial": false,
+        "columns": [
+          {
+            "name": "id",
+            "position": 0,
+            "descending": false,
+            "collation": null
+          }
+        ]
+      }
+    ],
+    "foreignKeys": [
+      {
+        "name": "sl_employees_manager_id_fkey",
+        "referencedTable": "sl_employees",
+        "columns": [
+          {
+            "column": "manager_id",
+            "referencedColumn": "id",
+            "position": 0
+          }
+        ],
+        "onUpdate": "NO ACTION",
+        "onDelete": "NO ACTION"
+      }
+    ],
+    "rowLocators": [
+      {
+        "kind": "primary-key",
+        "columns": [
+          "id"
+        ]
+      },
+      {
+        "kind": "unique-index",
+        "columns": [
+          "name"
+        ],
+        "name": "sl_employees_name_idx"
+      },
+      {
+        "kind": "postgres-ctid",
+        "columns": [
+          "__cossack_tableoid__",
+          "__cossack_ctid__"
+        ]
+      }
+    ],
+    "editable": true
+  },
+  {
+    "name": "sl_members",
+    "kind": "table",
+    "sql": "CREATE TABLE \"sl_members\" (\n  \"team_id\" integer NOT NULL,\n  \"account_id\" integer NOT NULL,\n  \"role\" character varying(20) NOT NULL DEFAULT 'member'::character varying,\n  PRIMARY KEY (\"team_id\", \"account_id\")\n)",
+    "columns": [
+      {
+        "name": "team_id",
+        "dataType": "integer",
+        "affinity": "integer",
+        "declaredKind": "number",
+        "nullable": false,
+        "defaultValue": null,
+        "primaryKeyPosition": 1,
+        "autoIncrement": false,
+        "hidden": false
+      },
+      {
+        "name": "account_id",
+        "dataType": "integer",
+        "affinity": "integer",
+        "declaredKind": "number",
+        "nullable": false,
+        "defaultValue": null,
+        "primaryKeyPosition": 2,
+        "autoIncrement": false,
+        "hidden": false
+      },
+      {
+        "name": "role",
+        "dataType": "character varying(20)",
+        "affinity": "text",
+        "declaredKind": "varchar",
+        "nullable": false,
+        "defaultValue": "'member'::character varying",
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      }
+    ],
+    "indexes": [
+      {
+        "name": "sl_members_pkey",
+        "unique": true,
+        "origin": "pk",
+        "partial": false,
+        "columns": [
+          {
+            "name": "team_id",
+            "position": 0,
+            "descending": false,
+            "collation": null
+          },
+          {
+            "name": "account_id",
+            "position": 1,
+            "descending": false,
+            "collation": null
+          }
+        ]
+      }
+    ],
+    "foreignKeys": [
+      {
+        "name": "sl_members_account_fk",
+        "referencedTable": "sl_accounts",
+        "columns": [
+          {
+            "column": "account_id",
+            "referencedColumn": "id",
+            "position": 0
+          }
+        ],
+        "onUpdate": "CASCADE",
+        "onDelete": "NO ACTION"
+      },
+      {
+        "name": "sl_members_team_fk",
+        "referencedTable": "sl_teams",
+        "columns": [
+          {
+            "column": "team_id",
+            "referencedColumn": "id",
+            "position": 0
+          }
+        ],
+        "onUpdate": "NO ACTION",
+        "onDelete": "NO ACTION"
+      }
+    ],
+    "rowLocators": [
+      {
+        "kind": "primary-key",
+        "columns": [
+          "team_id",
+          "account_id"
+        ]
+      },
+      {
+        "kind": "postgres-ctid",
+        "columns": [
+          "__cossack_tableoid__",
+          "__cossack_ctid__"
+        ]
+      }
+    ],
+    "editable": true
+  },
+  {
+    "name": "sl_nullable_unique",
+    "kind": "table",
+    "sql": "CREATE TABLE \"sl_nullable_unique\" (\n  \"code\" character varying(20),\n  \"note\" text\n)",
+    "columns": [
+      {
+        "name": "code",
+        "dataType": "character varying(20)",
+        "affinity": "text",
+        "declaredKind": "varchar",
+        "nullable": true,
+        "defaultValue": null,
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      },
+      {
+        "name": "note",
+        "dataType": "text",
+        "affinity": "text",
+        "declaredKind": "text",
+        "nullable": true,
+        "defaultValue": null,
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      }
+    ],
+    "indexes": [
+      {
+        "name": "sl_nullable_unique_code_key",
+        "unique": true,
+        "origin": "u",
+        "partial": false,
+        "columns": [
+          {
+            "name": "code",
+            "position": 0,
+            "descending": false,
+            "collation": "default"
+          }
+        ]
+      }
+    ],
+    "foreignKeys": [],
+    "rowLocators": [
+      {
+        "kind": "postgres-ctid",
+        "columns": [
+          "__cossack_tableoid__",
+          "__cossack_ctid__"
+        ]
+      }
+    ],
+    "editable": true
+  },
+  {
+    "name": "sl_order_lines",
+    "kind": "table",
+    "sql": "CREATE TABLE \"sl_order_lines\" (\n  \"order_id\" integer NOT NULL,\n  \"line_no\" integer NOT NULL,\n  \"product_id\" bigint NOT NULL,\n  \"quantity\" integer NOT NULL,\n  PRIMARY KEY (\"order_id\", \"line_no\")\n)",
+    "columns": [
+      {
+        "name": "order_id",
+        "dataType": "integer",
+        "affinity": "integer",
+        "declaredKind": "number",
+        "nullable": false,
+        "defaultValue": null,
+        "primaryKeyPosition": 1,
+        "autoIncrement": false,
+        "hidden": false
+      },
+      {
+        "name": "line_no",
+        "dataType": "integer",
+        "affinity": "integer",
+        "declaredKind": "number",
+        "nullable": false,
+        "defaultValue": null,
+        "primaryKeyPosition": 2,
+        "autoIncrement": false,
+        "hidden": false
+      },
+      {
+        "name": "product_id",
+        "dataType": "bigint",
+        "affinity": "integer",
+        "declaredKind": "number",
+        "nullable": false,
+        "defaultValue": null,
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      },
+      {
+        "name": "quantity",
+        "dataType": "integer",
+        "affinity": "integer",
+        "declaredKind": "number",
+        "nullable": false,
+        "defaultValue": null,
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      }
+    ],
+    "indexes": [
+      {
+        "name": "sl_order_lines_pkey",
+        "unique": true,
+        "origin": "pk",
+        "partial": false,
+        "columns": [
+          {
+            "name": "order_id",
+            "position": 0,
+            "descending": false,
+            "collation": null
+          },
+          {
+            "name": "line_no",
+            "position": 1,
+            "descending": false,
+            "collation": null
+          }
+        ]
+      }
+    ],
+    "foreignKeys": [
+      {
+        "name": "sl_order_lines_order_id_fkey",
+        "referencedTable": "sl_orders",
+        "columns": [
+          {
+            "column": "order_id",
+            "referencedColumn": "id",
+            "position": 0
+          }
+        ],
+        "onUpdate": "NO ACTION",
+        "onDelete": "CASCADE"
+      },
+      {
+        "name": "sl_order_lines_product_id_fkey",
+        "referencedTable": "sl_products",
+        "columns": [
+          {
+            "column": "product_id",
+            "referencedColumn": "id",
+            "position": 0
+          }
+        ],
+        "onUpdate": "NO ACTION",
+        "onDelete": "NO ACTION"
+      }
+    ],
+    "rowLocators": [
+      {
+        "kind": "primary-key",
+        "columns": [
+          "order_id",
+          "line_no"
+        ]
+      },
+      {
+        "kind": "postgres-ctid",
+        "columns": [
+          "__cossack_tableoid__",
+          "__cossack_ctid__"
+        ]
+      }
+    ],
+    "editable": true
+  },
+  {
+    "name": "sl_orders",
+    "kind": "table",
+    "sql": "CREATE TABLE \"sl_orders\" (\n  \"id\" integer NOT NULL DEFAULT nextval('sl_orders_id_seq'::regclass),\n  \"account_id\" integer NOT NULL,\n  \"status\" sl_order_status NOT NULL DEFAULT 'new'::sl_order_status,\n  \"placed_at\" timestamp with time zone,\n  PRIMARY KEY (\"id\")\n)",
+    "columns": [
+      {
+        "name": "id",
+        "dataType": "integer",
+        "affinity": "integer",
+        "declaredKind": "number",
+        "nullable": false,
+        "defaultValue": "nextval('sl_orders_id_seq'::regclass)",
+        "primaryKeyPosition": 1,
+        "autoIncrement": true,
+        "hidden": false
+      },
+      {
+        "name": "account_id",
+        "dataType": "integer",
+        "affinity": "integer",
+        "declaredKind": "number",
+        "nullable": false,
+        "defaultValue": null,
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      },
+      {
+        "name": "status",
+        "dataType": "sl_order_status",
+        "affinity": "text",
+        "declaredKind": "other",
+        "nullable": false,
+        "defaultValue": "'new'::sl_order_status",
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      },
+      {
+        "name": "placed_at",
+        "dataType": "timestamp with time zone",
+        "affinity": "text",
+        "declaredKind": "datetime",
+        "nullable": true,
+        "defaultValue": null,
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      }
+    ],
+    "indexes": [
+      {
+        "name": "sl_orders_account_placed_idx",
+        "unique": false,
+        "origin": "c",
+        "partial": false,
+        "columns": [
+          {
+            "name": "account_id",
+            "position": 0,
+            "descending": false,
+            "collation": null
+          },
+          {
+            "name": "placed_at",
+            "position": 1,
+            "descending": true,
+            "collation": null
+          }
+        ]
+      },
+      {
+        "name": "sl_orders_new_idx",
+        "unique": false,
+        "origin": "c",
+        "partial": true,
+        "columns": [
+          {
+            "name": "placed_at",
+            "position": 0,
+            "descending": false,
+            "collation": null
+          }
+        ]
+      },
+      {
+        "name": "sl_orders_pkey",
+        "unique": true,
+        "origin": "pk",
+        "partial": false,
+        "columns": [
+          {
+            "name": "id",
+            "position": 0,
+            "descending": false,
+            "collation": null
+          }
+        ]
+      }
+    ],
+    "foreignKeys": [
+      {
+        "name": "sl_orders_account_id_fkey",
+        "referencedTable": "sl_accounts",
+        "columns": [
+          {
+            "column": "account_id",
+            "referencedColumn": "id",
+            "position": 0
+          }
+        ],
+        "onUpdate": "NO ACTION",
+        "onDelete": "NO ACTION"
+      }
+    ],
+    "rowLocators": [
+      {
+        "kind": "primary-key",
+        "columns": [
+          "id"
+        ]
+      },
+      {
+        "kind": "postgres-ctid",
+        "columns": [
+          "__cossack_tableoid__",
+          "__cossack_ctid__"
+        ]
+      }
+    ],
+    "editable": true
+  },
+  {
+    "name": "sl_product_tags",
+    "kind": "table",
+    "sql": "CREATE TABLE \"sl_product_tags\" (\n  \"product_id\" bigint NOT NULL,\n  \"tag_id\" integer NOT NULL,\n  PRIMARY KEY (\"product_id\", \"tag_id\")\n)",
+    "columns": [
+      {
+        "name": "product_id",
+        "dataType": "bigint",
+        "affinity": "integer",
+        "declaredKind": "number",
+        "nullable": false,
+        "defaultValue": null,
+        "primaryKeyPosition": 1,
+        "autoIncrement": false,
+        "hidden": false
+      },
+      {
+        "name": "tag_id",
+        "dataType": "integer",
+        "affinity": "integer",
+        "declaredKind": "number",
+        "nullable": false,
+        "defaultValue": null,
+        "primaryKeyPosition": 2,
+        "autoIncrement": false,
+        "hidden": false
+      }
+    ],
+    "indexes": [
+      {
+        "name": "sl_product_tags_pkey",
+        "unique": true,
+        "origin": "pk",
+        "partial": false,
+        "columns": [
+          {
+            "name": "product_id",
+            "position": 0,
+            "descending": false,
+            "collation": null
+          },
+          {
+            "name": "tag_id",
+            "position": 1,
+            "descending": false,
+            "collation": null
+          }
+        ]
+      }
+    ],
+    "foreignKeys": [
+      {
+        "name": "sl_product_tags_product_id_fkey",
+        "referencedTable": "sl_products",
+        "columns": [
+          {
+            "column": "product_id",
+            "referencedColumn": "id",
+            "position": 0
+          }
+        ],
+        "onUpdate": "NO ACTION",
+        "onDelete": "CASCADE"
+      },
+      {
+        "name": "sl_product_tags_tag_id_fkey",
+        "referencedTable": "sl_tags",
+        "columns": [
+          {
+            "column": "tag_id",
+            "referencedColumn": "id",
+            "position": 0
+          }
+        ],
+        "onUpdate": "NO ACTION",
+        "onDelete": "CASCADE"
+      }
+    ],
+    "rowLocators": [
+      {
+        "kind": "primary-key",
+        "columns": [
+          "product_id",
+          "tag_id"
+        ]
+      },
+      {
+        "kind": "postgres-ctid",
+        "columns": [
+          "__cossack_tableoid__",
+          "__cossack_ctid__"
+        ]
+      }
+    ],
+    "editable": true
+  },
+  {
+    "name": "sl_products",
+    "kind": "table",
+    "sql": "CREATE TABLE \"sl_products\" (\n  \"id\" bigint NOT NULL,\n  \"sku\" character(12) NOT NULL,\n  \"category_id\" integer,\n  \"price\" numeric NOT NULL DEFAULT 0,\n  \"data\" jsonb,\n  PRIMARY KEY (\"id\")\n)",
+    "columns": [
+      {
+        "name": "id",
+        "dataType": "bigint",
+        "affinity": "integer",
+        "declaredKind": "number",
+        "nullable": false,
+        "defaultValue": null,
+        "primaryKeyPosition": 1,
+        "autoIncrement": true,
+        "hidden": false
+      },
+      {
+        "name": "sku",
+        "dataType": "character(12)",
+        "affinity": "text",
+        "declaredKind": "varchar",
+        "nullable": false,
+        "defaultValue": null,
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      },
+      {
+        "name": "category_id",
+        "dataType": "integer",
+        "affinity": "integer",
+        "declaredKind": "number",
+        "nullable": true,
+        "defaultValue": null,
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      },
+      {
+        "name": "price",
+        "dataType": "numeric",
+        "affinity": "numeric",
+        "declaredKind": "number",
+        "nullable": false,
+        "defaultValue": "0",
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      },
+      {
+        "name": "data",
+        "dataType": "jsonb",
+        "affinity": "text",
+        "declaredKind": "json",
+        "nullable": true,
+        "defaultValue": null,
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      }
+    ],
+    "indexes": [
+      {
+        "name": "sl_products_pkey",
+        "unique": true,
+        "origin": "pk",
+        "partial": false,
+        "columns": [
+          {
+            "name": "id",
+            "position": 0,
+            "descending": false,
+            "collation": null
+          }
+        ]
+      },
+      {
+        "name": "sl_products_price_idx",
+        "unique": false,
+        "origin": "c",
+        "partial": false,
+        "columns": [
+          {
+            "name": "price",
+            "position": 0,
+            "descending": true,
+            "collation": null
+          }
+        ]
+      },
+      {
+        "name": "sl_products_sku_key",
+        "unique": true,
+        "origin": "u",
+        "partial": false,
+        "columns": [
+          {
+            "name": "sku",
+            "position": 0,
+            "descending": false,
+            "collation": "default"
+          }
+        ]
+      }
+    ],
+    "foreignKeys": [
+      {
+        "name": "sl_products_category_id_fkey",
+        "referencedTable": "sl_categories",
+        "columns": [
+          {
+            "column": "category_id",
+            "referencedColumn": "id",
+            "position": 0
+          }
+        ],
+        "onUpdate": "NO ACTION",
+        "onDelete": "NO ACTION"
+      }
+    ],
+    "rowLocators": [
+      {
+        "kind": "primary-key",
+        "columns": [
+          "id"
+        ]
+      },
+      {
+        "kind": "unique-index",
+        "columns": [
+          "sku"
+        ],
+        "name": "sl_products_sku_key"
+      },
+      {
+        "kind": "postgres-ctid",
+        "columns": [
+          "__cossack_tableoid__",
+          "__cossack_ctid__"
+        ]
+      }
+    ],
+    "editable": true
+  },
+  {
+    "name": "sl_sessions",
+    "kind": "table",
+    "sql": "CREATE TABLE \"sl_sessions\" (\n  \"token\" character varying(64) NOT NULL,\n  \"account_id\" integer,\n  \"payload\" text\n)",
+    "columns": [
+      {
+        "name": "token",
+        "dataType": "character varying(64)",
+        "affinity": "text",
+        "declaredKind": "varchar",
+        "nullable": false,
+        "defaultValue": null,
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      },
+      {
+        "name": "account_id",
+        "dataType": "integer",
+        "affinity": "integer",
+        "declaredKind": "number",
+        "nullable": true,
+        "defaultValue": null,
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      },
+      {
+        "name": "payload",
+        "dataType": "text",
+        "affinity": "text",
+        "declaredKind": "text",
+        "nullable": true,
+        "defaultValue": null,
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      }
+    ],
+    "indexes": [
+      {
+        "name": "sl_sessions_token_key",
+        "unique": true,
+        "origin": "u",
+        "partial": false,
+        "columns": [
+          {
+            "name": "token",
+            "position": 0,
+            "descending": false,
+            "collation": "default"
+          }
+        ]
+      }
+    ],
+    "foreignKeys": [
+      {
+        "name": "sl_sessions_account_id_fkey",
+        "referencedTable": "sl_accounts",
+        "columns": [
+          {
+            "column": "account_id",
+            "referencedColumn": "id",
+            "position": 0
+          }
+        ],
+        "onUpdate": "NO ACTION",
+        "onDelete": "NO ACTION"
+      }
+    ],
+    "rowLocators": [
+      {
+        "kind": "unique-index",
+        "columns": [
+          "token"
+        ],
+        "name": "sl_sessions_token_key"
+      },
+      {
+        "kind": "postgres-ctid",
+        "columns": [
+          "__cossack_tableoid__",
+          "__cossack_ctid__"
+        ]
+      }
+    ],
+    "editable": true
+  },
+  {
+    "name": "sl_stock",
+    "kind": "table",
+    "sql": "CREATE TABLE \"sl_stock\" (\n  \"product_id\" bigint NOT NULL,\n  \"region\" character(2) NOT NULL,\n  \"code\" character varying(10) NOT NULL,\n  \"quantity\" integer NOT NULL DEFAULT 0,\n  PRIMARY KEY (\"product_id\", \"region\", \"code\")\n)",
+    "columns": [
+      {
+        "name": "product_id",
+        "dataType": "bigint",
+        "affinity": "integer",
+        "declaredKind": "number",
+        "nullable": false,
+        "defaultValue": null,
+        "primaryKeyPosition": 1,
+        "autoIncrement": false,
+        "hidden": false
+      },
+      {
+        "name": "region",
+        "dataType": "character(2)",
+        "affinity": "text",
+        "declaredKind": "varchar",
+        "nullable": false,
+        "defaultValue": null,
+        "primaryKeyPosition": 2,
+        "autoIncrement": false,
+        "hidden": false
+      },
+      {
+        "name": "code",
+        "dataType": "character varying(10)",
+        "affinity": "text",
+        "declaredKind": "varchar",
+        "nullable": false,
+        "defaultValue": null,
+        "primaryKeyPosition": 3,
+        "autoIncrement": false,
+        "hidden": false
+      },
+      {
+        "name": "quantity",
+        "dataType": "integer",
+        "affinity": "integer",
+        "declaredKind": "number",
+        "nullable": false,
+        "defaultValue": "0",
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      }
+    ],
+    "indexes": [
+      {
+        "name": "sl_stock_pkey",
+        "unique": true,
+        "origin": "pk",
+        "partial": false,
+        "columns": [
+          {
+            "name": "product_id",
+            "position": 0,
+            "descending": false,
+            "collation": null
+          },
+          {
+            "name": "region",
+            "position": 1,
+            "descending": false,
+            "collation": "default"
+          },
+          {
+            "name": "code",
+            "position": 2,
+            "descending": false,
+            "collation": "default"
+          }
+        ]
+      }
+    ],
+    "foreignKeys": [
+      {
+        "name": "sl_stock_product_id_fkey",
+        "referencedTable": "sl_products",
+        "columns": [
+          {
+            "column": "product_id",
+            "referencedColumn": "id",
+            "position": 0
+          }
+        ],
+        "onUpdate": "NO ACTION",
+        "onDelete": "CASCADE"
+      },
+      {
+        "name": "sl_stock_warehouse_fk",
+        "referencedTable": "sl_warehouses",
+        "columns": [
+          {
+            "column": "region",
+            "referencedColumn": "region",
+            "position": 0
+          },
+          {
+            "column": "code",
+            "referencedColumn": "code",
+            "position": 1
+          }
+        ],
+        "onUpdate": "CASCADE",
+        "onDelete": "RESTRICT"
+      }
+    ],
+    "rowLocators": [
+      {
+        "kind": "primary-key",
+        "columns": [
+          "product_id",
+          "region",
+          "code"
+        ]
+      },
+      {
+        "kind": "postgres-ctid",
+        "columns": [
+          "__cossack_tableoid__",
+          "__cossack_ctid__"
+        ]
+      }
+    ],
+    "editable": true
+  },
+  {
+    "name": "sl_tags",
+    "kind": "table",
+    "sql": "CREATE TABLE \"sl_tags\" (\n  \"id\" integer NOT NULL DEFAULT nextval('sl_tags_id_seq'::regclass),\n  \"name\" character varying(40) NOT NULL,\n  PRIMARY KEY (\"id\")\n)",
+    "columns": [
+      {
+        "name": "id",
+        "dataType": "integer",
+        "affinity": "integer",
+        "declaredKind": "number",
+        "nullable": false,
+        "defaultValue": "nextval('sl_tags_id_seq'::regclass)",
+        "primaryKeyPosition": 1,
+        "autoIncrement": true,
+        "hidden": false
+      },
+      {
+        "name": "name",
+        "dataType": "character varying(40)",
+        "affinity": "text",
+        "declaredKind": "varchar",
+        "nullable": false,
+        "defaultValue": null,
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      }
+    ],
+    "indexes": [
+      {
+        "name": "sl_tags_name_key",
+        "unique": true,
+        "origin": "u",
+        "partial": false,
+        "columns": [
+          {
+            "name": "name",
+            "position": 0,
+            "descending": false,
+            "collation": "default"
+          }
+        ]
+      },
+      {
+        "name": "sl_tags_pkey",
+        "unique": true,
+        "origin": "pk",
+        "partial": false,
+        "columns": [
+          {
+            "name": "id",
+            "position": 0,
+            "descending": false,
+            "collation": null
+          }
+        ]
+      }
+    ],
+    "foreignKeys": [],
+    "rowLocators": [
+      {
+        "kind": "primary-key",
+        "columns": [
+          "id"
+        ]
+      },
+      {
+        "kind": "unique-index",
+        "columns": [
+          "name"
+        ],
+        "name": "sl_tags_name_key"
+      },
+      {
+        "kind": "postgres-ctid",
+        "columns": [
+          "__cossack_tableoid__",
+          "__cossack_ctid__"
+        ]
+      }
+    ],
+    "editable": true
+  },
+  {
+    "name": "sl_teams",
+    "kind": "table",
+    "sql": "CREATE TABLE \"sl_teams\" (\n  \"id\" integer NOT NULL,\n  \"account_id\" integer NOT NULL,\n  \"slug\" character varying(40) NOT NULL,\n  PRIMARY KEY (\"id\")\n)",
+    "columns": [
+      {
+        "name": "id",
+        "dataType": "integer",
+        "affinity": "integer",
+        "declaredKind": "number",
+        "nullable": false,
+        "defaultValue": null,
+        "primaryKeyPosition": 1,
+        "autoIncrement": false,
+        "hidden": false
+      },
+      {
+        "name": "account_id",
+        "dataType": "integer",
+        "affinity": "integer",
+        "declaredKind": "number",
+        "nullable": false,
+        "defaultValue": null,
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      },
+      {
+        "name": "slug",
+        "dataType": "character varying(40)",
+        "affinity": "text",
+        "declaredKind": "varchar",
+        "nullable": false,
+        "defaultValue": null,
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      }
+    ],
+    "indexes": [
+      {
+        "name": "sl_teams_account_slug_key",
+        "unique": true,
+        "origin": "u",
+        "partial": false,
+        "columns": [
+          {
+            "name": "account_id",
+            "position": 0,
+            "descending": false,
+            "collation": null
+          },
+          {
+            "name": "slug",
+            "position": 1,
+            "descending": false,
+            "collation": "default"
+          }
+        ]
+      },
+      {
+        "name": "sl_teams_pkey",
+        "unique": true,
+        "origin": "pk",
+        "partial": false,
+        "columns": [
+          {
+            "name": "id",
+            "position": 0,
+            "descending": false,
+            "collation": null
+          }
+        ]
+      }
+    ],
+    "foreignKeys": [
+      {
+        "name": "sl_teams_account_fk",
+        "referencedTable": "sl_accounts",
+        "columns": [
+          {
+            "column": "account_id",
+            "referencedColumn": "id",
+            "position": 0
+          }
+        ],
+        "onUpdate": "NO ACTION",
+        "onDelete": "CASCADE"
+      }
+    ],
+    "rowLocators": [
+      {
+        "kind": "primary-key",
+        "columns": [
+          "id"
+        ]
+      },
+      {
+        "kind": "unique-index",
+        "columns": [
+          "account_id",
+          "slug"
+        ],
+        "name": "sl_teams_account_slug_key"
+      },
+      {
+        "kind": "postgres-ctid",
+        "columns": [
+          "__cossack_tableoid__",
+          "__cossack_ctid__"
+        ]
+      }
+    ],
+    "editable": true
+  },
+  {
+    "name": "sl_warehouses",
+    "kind": "table",
+    "sql": "CREATE TABLE \"sl_warehouses\" (\n  \"region\" character(2) NOT NULL,\n  \"code\" character varying(10) NOT NULL,\n  \"name\" text NOT NULL,\n  PRIMARY KEY (\"region\", \"code\")\n)",
+    "columns": [
+      {
+        "name": "region",
+        "dataType": "character(2)",
+        "affinity": "text",
+        "declaredKind": "varchar",
+        "nullable": false,
+        "defaultValue": null,
+        "primaryKeyPosition": 1,
+        "autoIncrement": false,
+        "hidden": false
+      },
+      {
+        "name": "code",
+        "dataType": "character varying(10)",
+        "affinity": "text",
+        "declaredKind": "varchar",
+        "nullable": false,
+        "defaultValue": null,
+        "primaryKeyPosition": 2,
+        "autoIncrement": false,
+        "hidden": false
+      },
+      {
+        "name": "name",
+        "dataType": "text",
+        "affinity": "text",
+        "declaredKind": "text",
+        "nullable": false,
+        "defaultValue": null,
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      }
+    ],
+    "indexes": [
+      {
+        "name": "sl_warehouses_pkey",
+        "unique": true,
+        "origin": "pk",
+        "partial": false,
+        "columns": [
+          {
+            "name": "region",
+            "position": 0,
+            "descending": false,
+            "collation": "default"
+          },
+          {
+            "name": "code",
+            "position": 1,
+            "descending": false,
+            "collation": "default"
+          }
+        ]
+      }
+    ],
+    "foreignKeys": [],
+    "rowLocators": [
+      {
+        "kind": "primary-key",
+        "columns": [
+          "region",
+          "code"
+        ]
+      },
+      {
+        "kind": "postgres-ctid",
+        "columns": [
+          "__cossack_tableoid__",
+          "__cossack_ctid__"
+        ]
+      }
+    ],
+    "editable": true
+  },
+  {
+    "name": "sl_open_orders",
+    "kind": "view",
+    "sql": "CREATE VIEW \"sl_open_orders\" AS\n SELECT id,\n    account_id,\n    placed_at\n   FROM sl_orders\n  WHERE (status <> 'closed'::sl_order_status);",
+    "columns": [
+      {
+        "name": "id",
+        "dataType": "integer",
+        "affinity": "integer",
+        "declaredKind": "number",
+        "nullable": true,
+        "defaultValue": null,
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      },
+      {
+        "name": "account_id",
+        "dataType": "integer",
+        "affinity": "integer",
+        "declaredKind": "number",
+        "nullable": true,
+        "defaultValue": null,
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      },
+      {
+        "name": "placed_at",
+        "dataType": "timestamp with time zone",
+        "affinity": "text",
+        "declaredKind": "datetime",
+        "nullable": true,
+        "defaultValue": null,
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      }
+    ],
+    "indexes": [],
+    "foreignKeys": [],
+    "rowLocators": [],
+    "editable": false,
+    "readOnlyReason": "Views are read-only."
+  },
+  {
+    "name": "sl_product_tag_names",
+    "kind": "view",
+    "sql": "CREATE VIEW \"sl_product_tag_names\" AS\n SELECT products.sku,\n    tags.name\n   FROM ((sl_product_tags product_tags\n     JOIN sl_products products ON ((products.id = product_tags.product_id)))\n     JOIN sl_tags tags ON ((tags.id = product_tags.tag_id)));",
+    "columns": [
+      {
+        "name": "sku",
+        "dataType": "character(12)",
+        "affinity": "text",
+        "declaredKind": "varchar",
+        "nullable": true,
+        "defaultValue": null,
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      },
+      {
+        "name": "name",
+        "dataType": "character varying(40)",
+        "affinity": "text",
+        "declaredKind": "varchar",
+        "nullable": true,
+        "defaultValue": null,
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      }
+    ],
+    "indexes": [],
+    "foreignKeys": [],
+    "rowLocators": [],
+    "editable": false,
+    "readOnlyReason": "Views are read-only."
+  }
+]

@@ -132,7 +132,7 @@ jobs:
   database-live:
     name: Database live suites (PostgreSQL, MySQL)
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 30
     # Images are pinned by tag and multi-arch index digest. Update both
     # together: docker buildx imagetools inspect postgres:18.x / mysql:8.0.x.
     services:
@@ -192,3 +192,24 @@ jobs:
 
       - name: Run database tests against PostgreSQL and MySQL
         run: pnpm --filter @cossackframework/database run test --watch=false
+
+      # Studio introspection pinned against both servers (query count and result).
+      - name: Run Studio live introspection tests
+        run: pnpm --filter @cossackframework/studio run test --watch=false tests/live-introspection.test.ts
+
+      - name: Read Playwright version
+        id: playwright
+        run: echo "version=$(node -p "require('playwright-core/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-chromium
+
+      - name: Install Chromium
+        run: pnpm --filter @cossackframework/studio exec playwright install chromium --with-deps
+
+      # The Structure tab loads MySQL definitions on demand.
+      - name: Run Studio MySQL browser test
+        run: pnpm --filter @cossackframework/studio exec playwright test e2e/mysql-definition.spec.ts
