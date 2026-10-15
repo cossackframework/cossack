@@ -24,11 +24,16 @@ import { classifyRoute, filePathToHttpRoute, filePathToRoutePath } from './route
 import { validateMarkdownFrontmatter, isValidatedMarkdownFrontmatter } from './markdown-frontmatter.js';
 import { describeUncoveredClientOutput, uncoveredClientOutput, type StaticAssetRouteFact } from './static-asset-routing.js';
 import { checkReservedPaths, type ReservedPathDiagnostic } from './reserved-paths.js';
+import { findRealtimeComponents, realtimeIdAssignments, realtimeRegistryModule, scanRealtimeComponents,
+  REALTIME_COMPONENTS_MODULE_ID, type RealtimeRegistryDiagnostic } from './realtime-registry.js';
+export { findRealtimeComponents, scanRealtimeComponents, realtimeRegistryModule, REALTIME_COMPONENTS_MODULE_ID } from './realtime-registry.js';
 
 export { SSR_MANIFEST_ASSET_PATH } from './runtime-constants.js';
 
 const virtualModuleId = 'virtual:cossack-pages';
 const resolvedVirtualModuleId = '\0' + virtualModuleId;
+
+const resolvedRealtimeComponentsModuleId = '\0' + REALTIME_COMPONENTS_MODULE_ID;
 
 const langVirtualModuleId = 'virtual:cossack-lang';
 const resolvedLangVirtualModuleId = '\0' + langVirtualModuleId;
@@ -138,6 +143,14 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
   };
   const reservedPaths = (routes: readonly StaticAssetRouteFact[]) =>
     checkReservedPaths(projectRoot, { publicDir: publicDirectory, routes });
+
+  let reportedRealtime = new Set<string>();
+  const unreportedRealtime = (diagnostics: readonly RealtimeRegistryDiagnostic[]) => {
+    const messages = diagnostics.map(diagnostic => diagnostic.message);
+    const fresh = messages.filter(message => !reportedRealtime.has(message));
+    reportedRealtime = new Set(messages);
+    return fresh.length ? `[cossack] ${fresh.join('\n')}` : undefined;
+  };
 
   let capabilityPages = new Set<string>();
   let capabilityBindings: readonly string[] = [];
@@ -262,6 +275,16 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
           ...(first.source.line ? { loc: { file: first.source.file, line: first.source.line, column: first.source.column ?? 0 } } : {}),
         });
       }
+      // Realtime components: builds fail on a component the server could not
+      // build from the registry; development warns and keeps serving.
+      const realtime = scanRealtimeComponents(projectRoot);
+      if (realtime.diagnostics.length) {
+        const message = `[cossack] ${realtime.diagnostics.map(diagnostic => diagnostic.message).join('\n')}`;
+        if (this.environment?.mode === 'dev') {
+          const fresh = unreportedRealtime(realtime.diagnostics);
+          if (fresh) this.warn(fresh);
+        } else this.error({ code: realtime.diagnostics[0]!.code, message, id: resolve(projectRoot, realtime.diagnostics[0]!.file.slice(1)) });
+      }
       warnIfMarkdownIsUnconfigured((message) => this.warn(message));
     },
     resolveId(id) {
@@ -270,6 +293,7 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
       if (id === virtualModuleId) {
         return resolvedVirtualModuleId;
       }
+      if (id === REALTIME_COMPONENTS_MODULE_ID) return resolvedRealtimeComponentsModuleId;
     },
     load(id) {
       if (id === '\0' + TRACE_BRIDGE_MODULE) {
@@ -281,6 +305,11 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
         return `import { enableDevTools } from '@cossackframework/framework/client/devtools';
           import { connectDevelopmentTraceBridge } from ${JSON.stringify(entry)};
           connectDevelopmentTraceBridge(${JSON.stringify(traceBridge.token)}, import.meta.hot, enableDevTools());`;
+      }
+      if (id === resolvedRealtimeComponentsModuleId) {
+        // Server environments import exactly the realtime components; the
+        // browser gets an empty registry (classes carry their own ids).
+        return realtimeRegistryModule(scanRealtimeComponents(projectRoot).components, this.environment?.name !== 'client');
       }
       if (id === resolvedVirtualModuleId) {
         // Detect environment via the Vite 6 Environment API
@@ -334,6 +363,21 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
         const restoreReloadPrivacy = installPublicReloadPrivacy(server);
         server.httpServer?.once('close', restoreReloadPrivacy);
         if (options.developmentTraces) traceBridge = installDevelopmentTraceBridge(server, projectRoot);
+        const sourceDirectory = resolve(projectRoot, 'src');
+        const updateRealtime = (file: string) => {
+          const path = relative(sourceDirectory, file);
+          if (path.startsWith('..') || path.startsWith('/') || !path.endsWith('.ts')) return;
+          for (const environment of Object.values(server.environments ?? {})) {
+            const module = environment.moduleGraph.getModuleById(resolvedRealtimeComponentsModuleId);
+            if (module) environment.moduleGraph.invalidateModule(module);
+          }
+          const diagnostics = unreportedRealtime(scanRealtimeComponents(projectRoot).diagnostics);
+          if (diagnostics) server.config.logger.warn(diagnostics, { timestamp: true });
+        };
+        server.watcher.on('add', updateRealtime).on('unlink', updateRealtime).on('change', updateRealtime);
+        server.httpServer?.once('close', () => {
+          server.watcher.off('add', updateRealtime).off('unlink', updateRealtime).off('change', updateRealtime);
+        });
         const pagesDirectory = resolve(projectRoot, 'src/pages');
         const update = (file: string) => {
           const path = relative(pagesDirectory, file);
@@ -473,6 +517,18 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
           `,
           map: null,
         };
+      }
+
+      // Attach each realtime component's registry id to its class in every
+      // environment, from the original source (another pre plugin may have
+      // rewritten `code` for the browser).
+      if (file.endsWith('.ts') && !file.endsWith('.d.ts') && file.startsWith(resolve(projectRoot, 'src').replaceAll('\\', '/') + '/')) {
+        let original: string | undefined;
+        try { original = readFileSync(file, 'utf8'); } catch { original = undefined; }
+        if (original?.includes('durable-object')) {
+          const { components } = findRealtimeComponents(original, '/' + relative(projectRoot, file).replaceAll('\\', '/'));
+          if (components.length) code += realtimeIdAssignments(components);
+        }
       }
 
       return { code, map: null };
