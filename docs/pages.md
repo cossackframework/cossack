@@ -30,7 +30,7 @@ The `@Page` decorator accepts an optional object with these properties:
 | `middlewares` | `MiddlewareHandler[]` | An array of Hono middleware handlers to apply to this page's route. |
 | `channels` | `string[]` | A list of state synchronization channels this page belongs to. Default is `['global']`. |
 | `stateful` | `boolean` | When using `transport: 'durable-object'`, set to `true` to persist state in DO storage. Default is `false` (stateless). |
-| `scope` | `(c: Context) => string \| Promise<string>` | Determines which state backend (SSE store entry, or Durable Object or Node instance) a request connects to. Default is per-user for SSE, per page instance (component + route params) for `durable-object`. |
+| `scope` | `(c: Context) => string \| Promise<string>` | Determines which state backend (SSE store entry, or Durable Object or Node instance) a request connects to. Default is per-user for SSE, per page instance (component + route params) for `durable-object`. A `durable-object` instance is always named by its page (or layout) plus the key, and the key must be a non-empty string. |
 
 ## Scope
 
@@ -44,6 +44,9 @@ The `scope` option selects the state backend that handles a request. It receives
 To share one real-time instance per user, team or room with the
 `durable-object` transport, see
 [Share real-time state across pages with scope](./websockets.md#share-real-time-state-across-pages-with-scope).
+A page's instance belongs to that page file. To share live state across
+different page files, use a realtime layout or a realtime component: see
+[Share live state across page files](./websockets.md#share-live-state-across-page-files).
 
 ### Per-Team
 

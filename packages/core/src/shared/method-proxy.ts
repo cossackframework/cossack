@@ -16,6 +16,39 @@ import { sendRpcUpload } from './rpc-upload';
 import { rpcFormData } from './rpc-files';
 import { TRANSPORT_ROUTES } from './transport-routes';
 import { wsPendingCalls } from './transport-connections';
+import { isRealtimeComponent, isRealtimeHost, RealtimeHostContext } from './realtime-owner';
+
+/** Install one transport proxy as the component's method. */
+type ProxyInstaller = (name: string, proxy: (...args: any[]) => any) => void;
+
+const installProxy = (component: any): ProxyInstaller => (name, proxy) => {
+    component.__cossack_proxies.set(name, proxy);
+    component.setProperty(name, proxy);
+};
+
+/**
+ * The component whose transport a component without one uses: the nearest
+ * realtime component above it, else its bootstrapped page or layout.
+ */
+function transportHost(component: any): any {
+    return component.consume?.(RealtimeHostContext) ?? component.consume?.(RootContext) ?? undefined;
+}
+
+/**
+ * The socket a call travels on and the target id the server dispatches it
+ * to. A page, a layout or a realtime component sends its own calls on its own
+ * connection (its server instance is the root). A child uses its host's
+ * connection with its id relative to the host, because the host's server
+ * instance numbers its children from `root`.
+ */
+function socketRoute(component: any): { ws: WebSocket | undefined; target: string } {
+    if (component._frameworkBootstrapped || isRealtimeComponent(component)) return { ws: component.websocket, target: 'root' };
+    const host = transportHost(component);
+    const id: string = component._id;
+    const hostId: string | undefined = host?._id;
+    const target = hostId && hostId !== 'root' && id.startsWith(`${hostId}:`) ? `root${id.slice(hostId.length)}` : id;
+    return { ws: component.websocket ?? host?.websocket, target };
+}
 
 interface ServerMethodBase {
     name: string;
@@ -202,7 +235,7 @@ function serverMethodTimeout(constructor: any, name: string): number | undefined
 }
 
 /** HTTP and SSE actions share a single response-local promise/iterator call. */
-export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase[]): void {
+export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase[], install: ProxyInstaller = installProxy(component)): void {
     // Persistent App/layout instances outlive SPA navigations, which replace
     // the window state. Resolve scopeKey/pageParams (and a fallback route id)
     // on every call instead of freezing the first page's values.
@@ -387,8 +420,7 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                 setTimeout: setDeadline,
             });
         };
-        component.__cossack_proxies.set(name, proxy);
-        component.setProperty(name, proxy);
+        install(name, proxy);
     }
 }
 
@@ -398,7 +430,7 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
  * frames by request id, promise-or-iterator consumption, cancellation, and
  * the same optimistic and loading lifecycle as HTTP/SSE calls.
  */
-export function proxyServerMethods(component: any, serverMethods: ServerMethodWs[]): void {
+export function proxyServerMethods(component: any, serverMethods: ServerMethodWs[], install: ProxyInstaller = installProxy(component)): void {
     const optimisticHandlers = collectOptimisticHandlers(component.constructor);
     const stateKeys = getAllReactiveStateKeys(component.constructor);
 
@@ -409,8 +441,9 @@ export function proxyServerMethods(component: any, serverMethods: ServerMethodWs
         const proxy = (...args: any[]) => {
             const requestId = crypto.randomUUID();
             const trace = import.meta.env?.DEV ? beginDevelopmentRpcTrace(component, 'websocket', requestId) : undefined;
-            // Child components use their root page's connection.
-            const ws: WebSocket | undefined = component.websocket ?? (component.consume(RootContext) as any)?.websocket;
+            // A child uses its host's connection (a realtime component, or its
+            // page or layout); an owner uses its own.
+            const { ws, target } = socketRoute(component);
             if (!ws || ws.readyState !== WebSocket.OPEN) {
                 trace?.finish('failed');
                 return rejectedRpcCall('COSSACK_RPC_TRANSPORT_UNAVAILABLE',
@@ -461,7 +494,7 @@ export function proxyServerMethods(component: any, serverMethods: ServerMethodWs
                     action: name,
                     payload: payload,
                     channel: channel,
-                    target: component._id,
+                    target,
                 });
             } catch (cause) {
                 cleanup();
@@ -529,11 +562,9 @@ export function proxyServerMethods(component: any, serverMethods: ServerMethodWs
             });
         };
 
-        // Store proxy in the map so stubbed methods can find it
-        component.__cossack_proxies.set(name, proxy);
-
-        // Set the method on the instance
-        component.setProperty(name, proxy);
+        // Store proxy in the map so stubbed methods can find it, and set it
+        // as the method on the instance.
+        install(name, proxy);
     }
 }
 
@@ -600,9 +631,30 @@ export function setupServerMethodProxies(component: any): void {
     // Undecorated helpers are NOT auto-registered — they fail loudly if called
     // from the client, matching the compile-time security plugin behavior.
     const pageOptions: PageOptions | undefined = Reflect.getMetadata('page:options', component.constructor);
+    const transport = pageOptions?.transport;
 
-    if (pageOptions?.transport === 'http' || pageOptions?.transport === 'sse') {
+    if (isRealtimeComponent(component)) {
+        // Its own connection and live instance.
+        component.proxyServerMethods(serverMethods);
+    } else if (transport === 'http' || transport === 'sse') {
         component.proxyHttpMethods(serverMethods);
+    } else if (transport === undefined && !component._frameworkBootstrapped) {
+        // A child without a transport runs where its host runs: over the
+        // host's realtime connection when the host is realtime, else HTTP.
+        // The host is resolved per call: the tree can change after setup.
+        const http = new Map<string, (...args: any[]) => any>();
+        const socket = new Map<string, (...args: any[]) => any>();
+        proxyHttpMethods(component, serverMethods, (name, proxy) => http.set(name, proxy));
+        proxyServerMethods(component, serverMethods, (name, proxy) => socket.set(name, proxy));
+        const install = installProxy(component);
+        for (const { name } of serverMethods) {
+            if (!http.has(name) && !socket.has(name)) continue;
+            install(name, (...args: any[]) => {
+                const proxy = isRealtimeHost(transportHost(component)) ? socket.get(name) : http.get(name);
+                if (!proxy) return rejectedRpcCall('COSSACK_RPC_TRANSPORT_UNAVAILABLE', `No transport is available for '${name}'.`, name);
+                return proxy(...args);
+            });
+        }
     } else {
         component.proxyServerMethods(serverMethods);
     }

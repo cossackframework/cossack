@@ -31,7 +31,7 @@ it('keeps Cloudflare socket peer context and shared limits across reconnects and
     import { createResourcePolicy } from ${JSON.stringify(auth)};
     import { handleWebSocketProxy } from ${JSON.stringify(proxy)};
     export { RateLimitDurableObject };
-    const componentPath = '/src/pages/live/index.ts';
+    const componentPath = '/src/pages/live/[tenant]/index.ts';
     const records = [{id:1,owner:'member',tenant:'t1'},{id:2,owner:'second',tenant:'t1'},{id:3,owner:'member',tenant:'t2'}];
     const policy = createResourcePolicy<{id:number;owner:string;tenant:string},{id:string;tenant:string}>()({
       edit:({user,resource})=>user.id===resource.owner && user.tenant===resource.tenant,
@@ -119,12 +119,14 @@ it('keeps Cloudflare socket peer context and shared limits across reconnects and
       }
       await next();
     });
-    app.get('/id', c => c.json({ id: c.env.COSSACK_OBJECT.idFromName('object:' + (c.req.query('name') || 'shared')).toString() }));
-    app.post('/restore', c => c.env.COSSACK_OBJECT.getByName('object:shared').fetch('https://object/__test_restore'));
-    app.get('/schema-status',c=>c.env.COSSACK_OBJECT.getByName('object:shared').fetch('https://object/__test_schema-status'));
+    // A scoped page's object is named by the page plus its scope key.
+    const objectName = name => 'page:' + JSON.stringify([componentPath, { scope: 'object:' + name }]);
+    app.get('/id', c => c.json({ id: c.env.COSSACK_OBJECT.idFromName(objectName(c.req.query('name') || 'shared')).toString() }));
+    app.post('/restore', c => c.env.COSSACK_OBJECT.getByName(objectName('shared')).fetch('https://object/__test_restore'));
+    app.get('/schema-status',c=>c.env.COSSACK_OBJECT.getByName(objectName('shared')).fetch('https://object/__test_schema-status'));
     app.get('/ws/:id', handleWebSocketProxy({
       pages: { [componentPath]: { default: Live } }, layouts: {}, allowedOrigins: ['http://localhost'],
-      routePathToFilePathMap: new Map([['/live', componentPath]]),
+      routePathToFilePathMap: new Map([['/live/[tenant]', componentPath]]),
     }));
     app.post('/http-limit', async c => {
       c.header('X-Cossack-Request-Id', crypto.randomUUID());
@@ -155,7 +157,7 @@ it('keeps Cloudflare socket peer context and shared limits across reconnects and
     const entry = server.getWorker(worker);
     const { id } = await (await entry.fetch(new URL('/id?name=' + name, url))).json();
     const route = new URL('/ws/' + id, url);
-    route.searchParams.set('routePath', '/live'); route.searchParams.set('pathname', '/live');
+    route.searchParams.set('routePath', '/live/[tenant]'); route.searchParams.set('pathname', '/live/example');
     route.searchParams.set('params', JSON.stringify({ tenant: 'example' })); route.searchParams.set('filter', 'active');
     route.searchParams.set('object', name);
     const response = await entry.fetch(route, { headers: { Upgrade: 'websocket', Origin: 'http://localhost',
@@ -190,7 +192,7 @@ it('keeps Cloudflare socket peer context and shared limits across reconnects and
     tenant: 'example', filter: 'active', marker: 'peer-worker', cookie: null, authorization: null });
   expect((await a.call('limited')).type).toBe('done');
   await server.getWorker('first').evictDurableObject('RATE_LIMIT_DO', {
-    name: JSON.stringify([JSON.stringify(['crpc', '/src/pages/live/index.ts', 'Live']) + ':limited', 'ip:192.0.2.1']),
+    name: JSON.stringify([JSON.stringify(['crpc', '/src/pages/live/[tenant]/index.ts', 'Live']) + ':limited', 'ip:192.0.2.1']),
   });
   const again = await connect({ worker: 'second', name: 'new-object' });
   expect(await again.call('limited')).toMatchObject({ type: 'error', code: 'COSSACK_RPC_RATE_LIMITED', requestId: expect.any(String) });
@@ -272,7 +274,7 @@ it('keeps Cloudflare socket peer context and shared limits across reconnects and
   expect((await member.call('inspect')).value.count).toBe(beforeSchema+1);
   expect(member.inbox.filter(frame=>frame.requestId===waiting.requestId&&['done','error'].includes(frame.type))).toEqual([]);
   await server.getWorker('first').evictDurableObject('RateLimitDurableObject', {
-    name: JSON.stringify([JSON.stringify(['crpc', '/src/pages/live/index.ts', 'Live']) + ':limited', 'user:member']),
+    name: JSON.stringify([JSON.stringify(['crpc', '/src/pages/live/[tenant]/index.ts', 'Live']) + ':limited', 'user:member']),
   });
   expect(await member.call('limited')).toMatchObject({ type: 'error', code: 'COSSACK_RPC_RATE_LIMITED' });
   await server.update({ ...options, workers: options.workers.map(worker => ({ config: { ...worker.config,

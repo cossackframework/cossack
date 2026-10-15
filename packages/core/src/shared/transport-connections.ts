@@ -5,6 +5,7 @@ import { resetSseSnapshotCursor } from './rpc-state';
 import { isSharedMethod } from './shared-method';
 import { transportPath } from './transport-routes';
 import { rpcCancellations, validateRpcFrame, RPC_STREAM_MAX_FRAME_BYTES, RpcError, type RpcStreamFrame, type RpcSocket } from './rpc-stream';
+import { isRealtimeComponent, realtimeComponentId, type RealtimeDescriptor } from './realtime-owner';
 
 /**
  * Receives one correlated frame. `bytes` is the frame's UTF-8 size, measured
@@ -119,43 +120,103 @@ export function disconnectWebSocket(component: any): void {
     }
 }
 
-/**
- * Open the component's realtime WebSocket (client-side only).
- * Reads the server-computed target from initial state and sets up message
- * handlers for state updates, action completions, and events.
- */
-export function connectWebSocket(component: any): void {
-    if (component._phase === 'Destroyed') return;
-    disconnectWebSocket(component);
-    const initialState = component.getInitialStateFromWindow();
-    const target = initialState?.realtimeTarget;
-    if (!target) return;
+/** Where one connection attempt goes: the server-computed target and the upgrade query. */
+interface RealtimeConnectionPlan {
+    target: string;
+    query: Record<string, string>;
+}
 
+/** The page the browser is on, which every layout and component connection carries. */
+function currentPage(component: any): Record<string, string> | undefined {
+    const page = component.getInitialStateFromWindow();
+    if (typeof page?.componentRouteId !== 'string') return undefined;
+    return {
+        page: page.componentRouteId,
+        pathname: page.metadata?.pathname || page.pathname || '',
+        params: JSON.stringify(page.metadata?.params || {}),
+    };
+}
+
+/**
+ * Plan one connection attempt from current state, so a reconnect after client
+ * navigation carries the page the browser is on now:
+ *
+ * - a realtime child component connects to its registry id's target, which
+ *   SSR of the current page computed;
+ * - a layout connects to the target in its own SSR state;
+ * - a page connects to the target in the page payload.
+ *
+ * The server recomputes the target from the owner and its scope, checks the
+ * page and its params, and rejects a mismatch.
+ */
+function planRealtimeConnection(component: any): RealtimeConnectionPlan | { error: string } | undefined {
+    if (isRealtimeComponent(component)) {
+        const id = realtimeComponentId(component.constructor)!;
+        const targets = component.getInitialStateFromWindow()?.realtimeComponents;
+        const target = targets && Object.hasOwn(targets, id) ? targets[id] : undefined;
+        const page = currentPage(component);
+        if (typeof target !== 'string' || !target || !page) {
+            return { error: 'The server did not authorize a realtime connection for this component.' };
+        }
+        return { target, query: { component: id, ...page } };
+    }
+    // Bootstrapped owners record their SSR descriptor; `null` means the server
+    // emitted no target for them (for example, their scope failed).
+    const descriptor: RealtimeDescriptor | null | undefined = component.__cossack_realtime;
+    if (descriptor === null) return { error: 'The server did not authorize a realtime connection for this component.' };
+    if (descriptor?.owner === 'layout') {
+        const page = currentPage(component);
+        const layout = component.__cossack_componentRouteId;
+        if (!page || typeof layout !== 'string') return { error: 'The layout has no realtime route identity.' };
+        return { target: descriptor.target, query: { layout, ...page } };
+    }
+    const initialState = component.getInitialStateFromWindow();
+    const target = descriptor?.target ?? initialState?.realtimeTarget;
+    if (!target) return undefined;
     // Access metadata - support both routePath (new) and componentPath (legacy)
     const routePath = initialState?.routePath || initialState?.metadata?.routePath || initialState?.metadata?.componentPath;
     if (!routePath) {
         console.error('[Cossack] Cannot connect WebSocket: routePath not found in initial state.');
+        return undefined;
+    }
+    return { target, query: {
+        routePath,
+        pathname: initialState?.metadata?.pathname || '',
+        params: JSON.stringify(initialState?.metadata?.params || {}),
+    } };
+}
+
+/**
+ * Open the component's realtime WebSocket (client-side only): a page's, a
+ * realtime layout's, or a realtime child component's own connection. Reads the
+ * server-computed target and sets up message handlers for state updates,
+ * action completions, and events.
+ */
+export function connectWebSocket(component: any): void {
+    if (component._phase === 'Destroyed') return;
+    disconnectWebSocket(component);
+    const first = planRealtimeConnection(component);
+    if (!first) return;
+    if ('error' in first) {
+        // Fail closed: without a server-computed target there is nothing to join.
+        updateStatus(component, 'websocket', { state: 'closed', attempts: 0, lastError: first.error });
         return;
     }
-
-    const pathname = initialState?.metadata?.pathname;
-    const params = new URLSearchParams({
-        routePath,
-        pathname: pathname || '',
-        params: JSON.stringify(initialState?.metadata?.params || {}),
-    }).toString();
 
     // Targets can be scope keys or object names (`team:a`, `page:[...]`), so
     // encode them as one path segment. The server decodes route params and
     // recomputes the target; it rejects a different value.
-    const wsUrl = `${transportPath('websocket', target)}?${params}`;
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const fullWsUrl = `${protocol}//${window.location.host}${wsUrl}`;
+    const socketUrl = (plan: RealtimeConnectionPlan) => {
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        return `${protocol}//${window.location.host}${transportPath('websocket', plan.target)}?${new URLSearchParams(plan.query)}`;
+    };
 
     // Connect with bounded exponential reconnect. A socket closed by the
     // application (component destruction) never reconnects.
     const connect = (attempt: number) => {
-        const ws = new WebSocket(fullWsUrl);
+        const next = attempt === 0 ? first : planRealtimeConnection(component);
+        const plan = next && !('error' in next) ? next : first;
+        const ws = new WebSocket(socketUrl(plan));
         component.websocket = ws;
         let closed = false;
         let reconnectTimer: ReturnType<typeof setTimeout> | undefined;

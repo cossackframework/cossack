@@ -19,7 +19,7 @@ The `scope` option on `@Page` determines **which state backend** a request conne
 | Transport | Default scope | What `scope` overrides |
 |---|---|---|
 | `sse` | per-user (`user:${user?.id \|\| 'anonymous'}`) | Which SSE store entry is used |
-| `durable-object` | per-user (`user:${user?.id \|\| 'anonymous'}`), combined with canonical component identity | Which Durable Object **instance** the page routes to |
+| `durable-object` | one instance per page (or layout) plus its route params | Which Durable Object **instance** the owner routes to: the owner plus the scope key |
 
 ```typescript
 // SSE — per-team
@@ -40,7 +40,7 @@ The `scope` option on `@Page` determines **which state backend** a request conne
 
 Scope is resolved from current authenticated server context for authorized SSR/transport operations. Serialized scope information lets the browser identify a destination; it is not permission to join it. Scope callbacks must be deterministic for the same trusted ownership context. Explicit room/team scope callbacks must verify membership server-side, including revoked access.
 
-Users or tabs resolving to the same component and scope share its backend. The current default is per-user, not the literal URL. Declare an explicit authorized shared scope for multiplayer rooms; client-provided query/route keys alone are not proof of membership.
+Users or tabs resolving to the same component and scope share its backend. A Durable Object instance is always named by its owner (the page file, the layout file or the realtime component's registry id) plus the scope key, so two owners never share an instance and no key names another owner's. A durable-object scope must return a non-empty string. Declare an explicit authorized shared scope for multiplayer rooms; client-provided query/route keys alone are not proof of membership.
 
 ---
 
@@ -112,9 +112,50 @@ By default, each URL gets its own DO instance (per-URL scope). Use the `scope` o
 
 ### Three pillars: Instance, Channels, Events
 
-- **Instance** (the *where*): the one real-time instance a page connects to over one WebSocket (`/ws/:id`): the page plus its route params, or its `scope` key. Child components share the page's connection and cannot set their own scope. Use `scope` (for example `scope: c => 'user:' + c.get('user').id`, throwing for anonymous users) for per-user, per-team or per-room state.
-- **Channel** (the *what*): a logical partition within the page's connection for efficient **partial** state updates. Default is `global`.
+- **Instance** (the *where*): the one real-time instance an owner connects to over its own WebSocket (`/ws/:id`): a page or layout plus its route params or `scope` key, or a realtime component plus its `scope` key. A child component without a transport uses its host's connection. Use `scope` (for example `scope: c => 'user:' + c.get('user').id`, throwing for anonymous users) for per-user, per-team or per-room state.
+- **Channel** (the *what*): a logical partition within an owner's connection for efficient **partial** state updates. Default is `global`.
 - **Event** (the *when*): a stateless broadcast message used by the Event-Driven Re-fetch pattern.
+
+### Live state across page files: realtime layouts and components
+
+A page's `scope` shares state among the URLs and tabs of **one page file**. For state that several page files share:
+
+- **Realtime layout**: `@Page({ transport: 'durable-object', scope })` on a `layout.ts`. One instance per layout and scope key, shared by every page below it. Client navigation between those pages keeps the layout and its one connection. A root layout with a per-user scope gives app-wide per-user state.
+- **Realtime component**: `@Component({ transport: 'durable-object', scope })`. One instance per component and scope key, shared by every page that embeds it (a cart badge, a notification feed). It has its own connection, separate from the page's.
+
+```typescript
+// One instance per signed-in user; never fall back to a shared key.
+const perUser = (c: Context) => {
+    const user = c.get('user');
+    if (!user) throw new ResourceAuthorizationError('COSSACK_AUTH_UNAUTHENTICATED');
+    return `user:${user.id}`;
+};
+
+// src/pages/layout.ts: app-wide per-user live state
+@Page({ transport: 'durable-object', scope: perUser })
+export default class RootLayout extends Cossack {
+    @State() unread = 0;
+    @Server() markAllRead() { this.unread = 0; }
+    render() { return html`<button @click=${this.markAllRead}>${this.unread}</button>${this.children}`; }
+}
+
+// src/components/CartBadge.ts: a reusable live widget for any page
+@Component({ transport: 'durable-object', scope: perUser })
+export class CartBadge extends Cossack {
+    @State() count = 0;
+    @Server() add() { this.count++; }
+    render() { return html`<button @click=${this.add}>Cart (${this.count})</button>`; }
+}
+```
+
+Rules:
+
+- Never use `c.get('user')?.id` in a scope: every anonymous visitor would share `user:undefined`. Throw instead; SSR then renders the layout or component offline (`realtime.websocket.state === 'closed'`).
+- A realtime component must be exported from a file under `src/`, with a literal options object that sets `transport: 'durable-object'` and `scope`. The build registers it (`<file>#<export>`) and fails without `scope` or an export. The server builds only registered components, in a service scope of their own (no layout services). Props stay in the browser. Render it during SSR, which computes its target.
+- A **layout** connection runs the layout's own guard stack (enclosing layouts plus the layout) with the checked route params of the page the browser is on; the page's own guards do not run.
+- A **component** connection runs the hosting page's layout and page guards with the page's checked params, then the component's own `middlewares`, then its `scope` (a throw or an empty key rejects).
+- Every action and delivered frame repeats those checks. A client can name any page it may open, so keep a component's access rule in its `scope`, its `middlewares` and each `@Server` method.
+- A child component without `transport` runs in its host's instance: over the host's connection in a realtime page, layout or component, over HTTP elsewhere.
 
 ### Pattern 1 — Automatic State Synchronization
 

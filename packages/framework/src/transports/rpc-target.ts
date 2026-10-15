@@ -39,7 +39,8 @@ export interface ComponentRpcTarget {
 const PARAMETER_NAME = /^[A-Za-z_][A-Za-z0-9_-]*$/;
 const isDotSegment = (segment: string) => segment === '.' || segment === '..';
 
-const isPage = (ctx: TargetContext, path: string) => {
+/** A page file whose default export is a Cossack component. */
+export const isPage = (ctx: TargetContext, path: string) => {
     if (!Object.hasOwn(ctx.pages, path)) return false;
     const Page = getModuleDefault(ctx.pages[path]);
     return typeof Page === 'function' && Page.prototype instanceof Cossack;
@@ -92,17 +93,6 @@ export function resolveComponentRpcTarget(ctx: TargetContext, body: Record<strin
     }
     const params = checkRouteParams(pagePath, body.pageParams ?? {});
     return params ? { target: { componentPath, guardPath: pagePath, params } } : { error: 'params' };
-}
-
-/**
- * The params of a WebSocket upgrade for a page (exact route params) or a
- * layout (its own params, plus any of the page below it).
- */
-export function checkSocketRouteParams(ctx: TargetContext, componentPath: string, value: unknown): Record<string, string> | undefined {
-    if (Object.hasOwn(ctx.layouts, componentPath) && !Object.hasOwn(ctx.pages, componentPath)) {
-        return checkRouteParams(componentPath, value, true);
-    }
-    return checkRouteParams(componentPath, value);
 }
 
 /**

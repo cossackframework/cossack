@@ -168,3 +168,21 @@ it('still rejects dynamic transport options when starting development', async ()
     ]})).rejects.toThrow('requirements are unknown');
   } finally {await started?.close();}
 });
+it('requires the Durable Object binding for realtime layouts and realtime components', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-capability-realtime-'));
+  roots.push(root);
+  const files: Record<string, string> = {
+    'entry.js': 'export const portable = true;',
+    'src/pages/layout.ts': "import { Page, Cossack } from '@cossackframework/core';\n@Page({ transport: 'durable-object', scope: () => 'user:a' }) export default class Root extends Cossack {}",
+    'src/components/Cart.ts': "import { Component, Cossack } from '@cossackframework/core';\n@Component({ transport: 'durable-object', scope: () => 'user:a' }) export class Cart extends Cossack {}",
+  };
+  for (const [file, source] of Object.entries(files)) {
+    await fs.mkdir(path.dirname(path.join(root, file)), { recursive: true });
+    await fs.writeFile(path.join(root, file), source);
+  }
+  const run = (bindings: string[]) => build({ root, configFile: false, logLevel: 'silent',
+    plugins: [cossackPages({ capabilities: { runtime: 'cloudflare', bindings } })],
+    build: { write: false, minify: false, lib: { entry: path.join(root, 'entry.js'), formats: ['es'] } } });
+  await expect(run([])).rejects.toMatchObject({ message: expect.stringMatching(/layout\.ts:2: realtime layout[\s\S]*COSSACK_OBJECT[\s\S]*Cart\.ts:2: realtime component/) });
+  await expect(run(['COSSACK_OBJECT'])).resolves.toBeDefined();
+});

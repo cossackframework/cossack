@@ -8,13 +8,24 @@ export interface SocketRequestSnapshot {
     locale?: string;
 }
 
+/** What owns a realtime instance: a page, a layout or a realtime child component. */
+export type RealtimeOwnerKind = 'page' | 'layout' | 'component';
+
 /** Authenticated metadata held in a Durable Object WebSocket attachment. */
 export interface SocketPeerAttachment {
     user?: unknown;
     request?: SocketRequestSnapshot;
     identity?: unknown;
+    /** Registry key of the hosted owner: a page or layout path, or a realtime component id. */
     componentPath?: string;
     scopeKey?: string;
+    /** Kind of the hosted owner. Absent means a page. */
+    owner?: RealtimeOwnerKind;
+    /**
+     * Page or layout whose guard stack runs again for each operation: the
+     * page the connection opened on (pages and components) or the layout.
+     */
+    guardPath?: string;
 }
 
 /** Do not retain HTTP credentials, handshake noise, or internal auth assertions. */
@@ -25,6 +36,7 @@ export function snapshotSocketRequest(request: Request, params: Record<string, s
         if (['cookie', 'authorization', 'proxy-authorization', 'set-cookie', 'x-api-key', 'x-auth-token',
             'x-user-id', 'x-user-data', 'x-component-path',
             'x-cossack-realtime-identity', 'x-cossack-realtime-scope', 'x-cossack-realtime-locale', 'x-cossack-realtime-target-valid',
+            'x-cossack-realtime-owner', 'x-cossack-realtime-guard',
             'connection', 'upgrade'].includes(name) || name.startsWith('sec-websocket-')) continue;
         headers.push([name, value]);
     }

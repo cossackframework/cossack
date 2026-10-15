@@ -72,6 +72,18 @@ declare module 'virtual:cossack-config' {
   export default configs;
 }
 
+declare module 'virtual:cossack-realtime-components' {
+  interface CossackRealtimeComponentRegistry {
+    /**
+     * Realtime child components (`@Component({ transport: 'durable-object', scope })`)
+     * by stable registry id (`<file>#<export>`). Empty in the client environment.
+     */
+    components: Record<string, new () => import('@cossackframework/core').Cossack>;
+  }
+  const registry: CossackRealtimeComponentRegistry;
+  export default registry;
+}
+
 // Programmatic TS loader used by the `cossack ssg` CLI to import user `.ts`
 // pages/App outside of Vite. Typed loosely to avoid coupling to tsx internals.
 declare module 'tsx/esm/api' {

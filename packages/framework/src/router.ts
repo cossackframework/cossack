@@ -90,6 +90,7 @@ async function rpcRedirectResponse(c: Context, result: unknown): Promise<Respons
 import { createApiHandler, getAuthoredRouteMember } from './api-handler.js';
 import { createChainedComponent, createServiceScopeChain } from './service-scope-chain.js';
 import registry from 'virtual:cossack-pages';
+import realtimeRegistry from 'virtual:cossack-realtime-components';
 import configuredMiddlewares from 'virtual:cossack-middlewares';
 import configFactories, { requirements as configRequirements, environment as configEnvironment } from 'virtual:cossack-config';
 import { SSR_MANIFEST_ASSET_PATH } from './runtime-constants.js';
@@ -123,9 +124,10 @@ import { getLocale, getLocaleCatalog, getDefaultLocale } from '@cossackframework
 import { runWithConfig, prepareConfigStore } from './config.js';
 import type { ConfigRuntime, ConfigRequirementContext } from './config-requirements.js';
 import { assertRuntimeTransportSupport, type CossackRuntimeAdapter } from './runtime-adapter.js';
-import { decodeRuntimeRouteParams, withRuntimeRouteParams } from './runtime-websocket.js';
+import { withRuntimeRouteParams } from './runtime-websocket.js';
 import { createAssetsMiddleware } from './assets.js';
-import { realtimeObjectName } from './realtime-scope.js';
+import { isRealtimeOwner, realtimeConnectionScopeKey, realtimeInstanceName, resolveRealtimeOwnerScope, type RealtimeOwner } from './realtime-scope.js';
+import { realtimeOwnerMiddlewares, resolveRealtimeConnection } from './transports/realtime-target.js';
 import { createRpcStreamResponse, isRpcStream, retainRpcResponseBody } from './transports/rpc-stream.js';
 import { logRpcFailure, type RpcFailureContext } from './transports/rpc-logging.js';
 import { retainResponseLifetime } from './response-lifetime.js';
@@ -232,6 +234,9 @@ function getLocalePreloadHref(manifest: Record<string, any>): string | undefined
 }
 
 const { pages, layouts, loadings } = registry;
+// Realtime child components, by build-time registry id.
+const realtimeComponents: Record<string, new () => Cossack> = realtimeRegistry?.components ?? {};
+const realtimeComponentIds = new Map<Function, string>(Object.entries(realtimeComponents).map(([id, Component]) => [Component, id]));
 
 /** Maximum byte size for inlining CSS (25 KiB). */
 const CSS_INLINE_THRESHOLD = 25600;
@@ -448,6 +453,7 @@ export function createApp(options: CreateAppOptions = {}) {
     rpcBodyLimits: { jsonBytes: options.rpc?.maxJsonBytes, uploadBytes: options.rpc?.maxUploadBytes },
     runtimeInfo: resolveRuntimeInfo,
     getMiddlewares,
+    realtimeComponents,
   };
 
   // Unread request bodies — on Workers, sending a response while the request
@@ -521,6 +527,53 @@ export function createApp(options: CreateAppOptions = {}) {
   // front of static HTML and files. Missing assets continue to SSR/API routes.
   app.use('*', createAssetsMiddleware(routerContext));
 
+  /**
+   * The browser-facing target of a realtime layout or component for this
+   * request, or `undefined` when its scope fails (throws or returns no key):
+   * the owner then renders without a connection. The upgrade recomputes it.
+   */
+  const realtimeTargetFor = async (c: Context, owner: RealtimeOwner, params: Record<string, string>): Promise<string | undefined> => {
+    let name: string;
+    try { name = realtimeInstanceName(owner, await resolveRealtimeOwnerScope(c, owner), params); }
+    catch (error) {
+      if (import.meta.env.DEV && !getAuthorizationFailure(error)) {
+        console.warn(`[Cossack] The realtime scope of ${owner.id} failed for this request; it renders without a connection.`);
+      }
+      return undefined;
+    }
+    return options.runtimeAdapter ? name : c.env.COSSACK_OBJECT.idFromName(name).toString();
+  };
+
+  /** Targets of the realtime components rendered below `roots`, by registry id. */
+  const collectRealtimeComponentTargets = async (c: Context, roots: readonly Cossack[]): Promise<Record<string, string>> => {
+    const owners = new Map<string, RealtimeOwner>();
+    const visit = (component: Cossack, depth: number) => {
+      if (depth > 64) return;
+      for (const child of component.activeComponents.values()) {
+        const childOptions = Reflect.getMetadata('page:options', child.constructor) as PageOptions | undefined;
+        if (isRealtimeOwner('component', childOptions)) {
+          const id = realtimeComponentIds.get(child.constructor);
+          if (!id) {
+            throw Object.assign(new Error(`[Cossack] COSSACK_REALTIME_COMPONENT_UNREGISTERED: ${child.constructor.name} uses ` +
+              "transport: 'durable-object' but is not in the realtime component registry. Export it from a file under src/ " +
+              "and pass @Component() a literal options object with transport: 'durable-object' and scope."),
+            { code: 'COSSACK_REALTIME_COMPONENT_UNREGISTERED' });
+          }
+          owners.set(id, { kind: 'component', id, options: childOptions });
+        }
+        visit(child, depth + 1);
+      }
+    };
+    for (const root of roots) visit(root, 0);
+    const targets: Record<string, string> = {};
+    for (const [id, owner] of owners) {
+      assertRuntimeTransportSupport(options.runtimeAdapter, owner.options);
+      const target = await realtimeTargetFor(c, owner, {});
+      if (target) targets[id] = target;
+    }
+    return targets;
+  };
+
   const createSsrHandler = (PageComponent: new () => Cossack, path: string, pageOptions?: PageOptions) => {
     return async (c: Context) => {
       const failureContext = createServerFailureContext(c, { route: filePathToHttpRoute(path),
@@ -544,7 +597,11 @@ export function createApp(options: CreateAppOptions = {}) {
         // For durable-object transport, query the DO for existing state before SSR
         // Only for stateful pages — stateless DOs don't persist state
         let doInitialState: any = undefined;
-        const doIdName = realtimeObjectName(pageOptions, scopeKey, path, c.req.param() || {});
+        // A realtime page's instance: the page plus its route params, or the
+        // page plus its checked scope key.
+        const doIdName = pageOptions?.transport === 'durable-object'
+          ? realtimeInstanceName({ kind: 'page', id: path, options: pageOptions }, pageOptions.scope ? scopeKey : undefined, c.req.param() || {})
+          : '';
         assertRuntimeTransportSupport(options.runtimeAdapter, pageOptions);
         if (!options.runtimeAdapter && pageOptions?.transport === 'durable-object' && pageOptions?.stateful === true) {
           try {
@@ -586,10 +643,20 @@ export function createApp(options: CreateAppOptions = {}) {
 
         // Bootstrap Layouts
         const layoutStates: Record<string, any> = {};
+        // Realtime layouts: the instance each one connects to. A layout whose
+        // scope fails for this request (an anonymous visitor of a per-user
+        // layout) renders without one and stays offline.
+        const layoutRealtime: Record<string, string> = {};
         const { scope: activeServiceScope } = await createServiceScopeChain({
           componentPath: path, layouts, routePathToIdMap, scopeKey,
           facilities: { context: c, user, env: c.env }, root: requestServiceScope,
           onLayout: async ({ path: lPath, component: LComp, scope: layoutServiceScope }) => {
+            const layoutOptions = Reflect.getMetadata('page:options', LComp) as PageOptions | undefined;
+            if (isRealtimeOwner('layout', layoutOptions)) {
+              assertRuntimeTransportSupport(options.runtimeAdapter, layoutOptions);
+              const target = await realtimeTargetFor(c, { kind: 'layout', id: lPath, options: layoutOptions }, c.req.param() || {});
+              if (target) layoutRealtime[lPath] = target;
+            }
             const lInst = createInstance(LComp, { serviceScope: layoutServiceScope, ownsServiceScope: true });
             requestComponents.push(lInst);
             await lInst.bootstrap({ context: c, user, env: c.env, runtime: runtimeInfo, page: c.req.path });
@@ -668,7 +735,12 @@ export function createApp(options: CreateAppOptions = {}) {
         }
         layoutPaths.forEach((layoutPath, index) => {
           layoutStates[layoutPath] = layoutInstances[index].getInitialState();
+          const target = layoutRealtime[layoutPath];
+          if (target) layoutStates[layoutPath].realtime = { owner: 'layout', target };
         });
+        // Realtime child components rendered by the App, the layouts or the
+        // page: one server-computed instance per registry id.
+        const realtimeComponentTargets = await collectRealtimeComponentTargets(c, [appInstance, ...layoutInstances, pageInstance]);
         // The process-local store keeps a detached snapshot of the rendered
         // state, never this instance: the request destroys it in `finally`.
         if (registerLocalSseState) registerSseStoreEntry(routerContext, path, scopeKey, pageInstance.getPublicState());
@@ -685,9 +757,11 @@ export function createApp(options: CreateAppOptions = {}) {
           // Process-local runtimes name the shared instance exactly as Cloudflare
           // names its Durable Object, so a page behaves the same on both.
           // Cloudflare addresses the object by the string form of its id.
-          pageInitialState.realtimeTarget = options.runtimeAdapter
+          const target: string = options.runtimeAdapter
             ? doIdName
             : c.env.COSSACK_OBJECT.idFromName(doIdName).toString();
+          pageInitialState.realtimeTarget = target;
+          pageInitialState.realtime = { owner: 'page', target };
           if (pageInitialState.metadata) pageInitialState.metadata.routePath = filePathToRoutePath(path);
         }
 
@@ -718,6 +792,7 @@ export function createApp(options: CreateAppOptions = {}) {
           // Other locales are dynamic-imported on demand by `setLocale()`.
           __cossackLang: buildLocaleHydrationData(),
           runtime: runtimeInfo,
+          ...(Object.keys(realtimeComponentTargets).length ? { realtimeComponents: realtimeComponentTargets } : {}),
         };
 
         c.header('X-Cossack-Request-Id', failureContext.requestId);
@@ -832,33 +907,26 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
         return c.text('Origin not allowed', 403);
       }
       const target = c.req.param('id');
-      const routePath = c.req.query('routePath') || c.req.query('componentPath');
-      if (!routePath) return c.text('routePath or componentPath query parameter is required', 400);
-      const componentPath = routePathToFilePathMap.get(routePath) || routePath;
-      const componentModule = pages[componentPath] || layouts[componentPath];
-      if (!componentModule) return c.text('Component not found', 404);
-      const ComponentClass = getModuleDefault(componentModule as object) as new () => Cossack;
-      const pageOptions = Reflect.getMetadata('page:options', ComponentClass) as PageOptions | undefined;
+      // The owner, page and params are client input; protectTransport already
+      // ran the guards for the same resolution.
+      const resolved = resolveRealtimeConnection(routerContext, name => c.req.query(name));
+      if ('error' in resolved) return c.text(resolved.message, resolved.status);
+      const { owner, Component: ComponentClass, guardPath, params: routeParams } = resolved.target;
       try {
-        assertRuntimeTransportSupport(options.runtimeAdapter, pageOptions);
+        assertRuntimeTransportSupport(options.runtimeAdapter, owner.options);
       } catch (error) {
         return c.text(error instanceof Error ? error.message : String(error), 400);
       }
-      // The target is recomputed from the route, never trusted from the client:
-      // without `scope`, one shared instance per page plus route params (as on
-      // Cloudflare); with `scope`, the scope key. Custom scope functions receive
-      // the same query values emitted during SSR.
-      let routeParams: Record<string, string>;
-      try {
-        routeParams = decodeRuntimeRouteParams(c.req.query('params'));
-      } catch {
-        return c.text('Invalid WebSocket route params', 400);
-      }
+      // The target is recomputed from the owner, never trusted from the
+      // client: without `scope`, one shared instance per page plus route
+      // params (or per layout plus its own params), as on Cloudflare; with
+      // `scope`, the owner plus its scope key. A scope function that throws or
+      // returns no key rejects the upgrade (fail closed).
       const componentContext = withRuntimeRouteParams(c, routeParams);
-      const scopeKey = await resolveSseScopeKey(componentContext, pageOptions);
+      const scopeKey = await realtimeConnectionScopeKey(componentContext, owner);
       const objectName = async (context: Context) =>
-        realtimeObjectName(pageOptions, await resolveSseScopeKey(context, pageOptions), componentPath, routeParams);
-      const expectedTarget = await objectName(componentContext);
+        realtimeInstanceName(owner, await resolveRealtimeOwnerScope(context, owner), routeParams);
+      const expectedTarget = realtimeInstanceName(owner, owner.options?.scope ? scopeKey : undefined, routeParams);
       let rejectAuthorization = target !== expectedTarget;
 
       const pathname = c.req.query('pathname') || '/';
@@ -868,15 +936,18 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
       catch { identity = null; rejectAuthorization = true; }
       const originalUserId = (user as { id?: unknown } | undefined)?.id;
       const authSnapshot = snapshotRealtimeRequest(c, routeParams, getLocale());
+      // Every action repeats the upgrade's checks: the same guard stack, the
+      // same user, and a scope that still names this instance.
+      const guards = [...getMiddlewares(guardPath), ...realtimeOwnerMiddlewares(owner)];
       const authorize = async (operation: (fresh: Context) => Promise<void>) => !rejectAuthorization && (await withRealtimeAuthorization(
-        authSnapshot, identity, getMiddlewares(componentPath), async fresh =>
+        authSnapshot, identity, guards, async fresh =>
           fresh.get('user')?.id === originalUserId && await objectName(fresh) === expectedTarget,
         operation,
       )) !== null;
       const runtimeInfo = await resolveRuntimeInfo();
       return options.runtimeAdapter!.handleWebSocketUpgrade!(c, {
         target: expectedTarget,
-        componentId: componentPath,
+        componentId: owner.id,
         pathname,
         user,
         context: componentContext,
@@ -884,8 +955,12 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
         rejectAuthorization,
         env: c.env as unknown as Record<string, unknown>,
         createComponent: async () => {
+          // A page or layout is built inside its layouts' service scopes, as
+          // SSR builds it. A realtime component is shared by every page that
+          // embeds it, so it gets a root scope of its own.
           const instance = await createChainedComponent({
-            component: ComponentClass, componentPath, layouts, routePathToIdMap, scopeKey,
+            component: ComponentClass, componentPath: owner.id,
+            layouts: owner.kind === 'component' ? {} : layouts, routePathToIdMap, scopeKey,
             facilities: { context: componentContext, user, env: c.env },
             bootstrap: { context: componentContext, user, env: c.env, runtime: runtimeInfo, page: pathname },
           });

@@ -59,7 +59,7 @@ registry.pages[aboutPath] = { default: AboutPage };
 registry.pages[roomPath] = { default: RoomPage };
 
 const { createApp } = await import('../src/router');
-const { realtimeObjectName } = await import('../src/realtime-scope');
+const { realtimeInstanceName } = await import('../src/realtime-scope');
 const ids = computeRouteIds(Object.keys(registry.pages), Object.keys(registry.layouts)).routePathToIdMap;
 const env = () => ({ APP_URL: 'http://localhost' }) as any;
 
@@ -129,7 +129,7 @@ describe('WebSocket upgrade route params', () => {
       get: () => ({ fetch: forward }),
     } };
     const upgrade = (room: string, params?: unknown) => createApp().request(
-      `/ws/${encodeURIComponent(`id:${realtimeObjectName(undefined, '', roomPath, { room })}`)}?${query(room, params)}`, { headers }, bindings);
+      `/ws/${encodeURIComponent(`id:${realtimeInstanceName({ kind: 'page', id: roomPath, options: undefined }, undefined, { room })}`)}?${query(room, params)}`, { headers }, bindings);
     const allowed = await upgrade('alpha');
     expect(allowed.status).toBe(200);
     expect(guardLog.splice(0)).toEqual(['room:alpha']);
@@ -152,7 +152,7 @@ describe('WebSocket upgrade route params', () => {
       return new Response('upgraded');
     } } });
     const upgrade = (room: string, params?: unknown) => app.request(
-      `/ws/${encodeURIComponent(realtimeObjectName(undefined, '', roomPath, { room }))}?${query(room, params)}`, { headers }, env());
+      `/ws/${encodeURIComponent(realtimeInstanceName({ kind: 'page', id: roomPath, options: undefined }, undefined, { room }))}?${query(room, params)}`, { headers }, env());
     expect((await upgrade('alpha')).status).toBe(200);
     expect(guardLog.splice(0)).toEqual(['room:alpha']);
     expect(upgrades).toHaveLength(1);

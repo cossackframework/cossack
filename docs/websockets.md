@@ -9,7 +9,7 @@ Cossack syncs state over transports other than HTTP. With the WebSocket transpor
 
 Cossack unifies client and server state management. For real-time applications it supports two patterns: automatic state synchronization and event-driven re-fetch.
 
-Both patterns belong to the real-time transport. They require a component decorated with `@Page({ transport: 'durable-object' })`.
+Both patterns belong to the real-time transport. They require a realtime owner: a page or a layout decorated with `@Page({ transport: 'durable-object' })`, or a child component decorated with `@Component({ transport: 'durable-object', scope })`.
 
 ## Calling actions over WebSockets
 
@@ -36,9 +36,11 @@ with a unique request id and follows the same contract as HTTP/SSE:
 
 ### Connection status
 
-Each page has one WebSocket connection, to its real-time instance. Child
-components use the page's connection. Connection health is exposed on every
-component as `this.realtime`:
+Each realtime owner has one WebSocket connection, to its own real-time
+instance: a realtime page, a realtime layout, or a realtime component (see
+[Share live state across page files](#share-live-state-across-page-files)).
+A child component without a transport uses its host's connection. Connection
+health is exposed on every component as `this.realtime`:
 
 ```typescript
 render() {
@@ -66,6 +68,14 @@ application registry. Its keys match the router's source paths, including route
 groups and dynamic segments. Modules need a default Cossack component export.
 Named helpers and native HTTP handler modules do not become socket targets.
 The framework does not scan its bundled example pages for application targets.
+
+Realtime components come from a second build-time registry,
+`virtual:cossack-realtime-components`. The Vite plugin scans the application's
+sources for classes decorated with `@Component` from `@cossackframework/core`
+whose literal options set `transport: 'durable-object'`. Each one gets a stable
+id, `<file>#<export>`. Only the server environments import the registry; the
+browser receives the id alone. An upgrade names an id. The server builds only a
+registered class and rejects every other id.
 
 The first connection to an instance creates the page the way SSR does. The
 Durable Object, or the Node runtime, builds the page inside the service scopes
@@ -116,11 +126,12 @@ The Node adapter passes each connection's upgrade context into its shared
 runtime. The framework includes decoded page route params. See
 [rate limiting](./rate-limiting.md) for counter-store guarantees.
 
-On Node, a `durable-object` page uses the same instance identity as on
-Cloudflare: one in-memory instance per page plus route params, or one per scope
-key when the page sets `scope`. Users who open `/room/1` share one instance on
-both runtimes. Node instances live in one process, so they are not shared across
-machines and do not survive a restart.
+On Node, a realtime owner uses the same instance identity as on Cloudflare:
+one in-memory instance per page plus route params, or per page plus scope key
+when the page sets `scope` (layouts and realtime components follow the same
+rules). Users who open `/room/1` share one instance on both runtimes. Node
+instances live in one process, so they are not shared across machines and do
+not survive a restart.
 
 ## Stateless vs Stateful Durable Objects
 
@@ -143,7 +154,7 @@ To persist state in DO storage (survives reconnections and DO eviction), add `st
 
 ## Scope : controlling which Durable Object instance a page connects to
 
-By default, each page instance gets its own Durable Object instance: the page component plus its route params. The host and query string are not part of the identity, so `/room/1?utm=x` and `/room/1` share one instance, and `/room/2` gets another. The WebSocket proxy recomputes this id from the route and params it receives and rejects a connection that names a different Durable Object. The `scope` option on `@Page` overrides this. It receives the Hono `Context` and returns a scope-key string, which becomes the Durable Object ID name. Users (and tabs) that resolve to the same scope key land on the same DO instance and share state. This is the mechanism behind multiplayer features (shared whiteboards, chat rooms, collaborative docs).
+By default, each page instance gets its own Durable Object instance: the page component plus its route params. The host and query string are not part of the identity, so `/room/1?utm=x` and `/room/1` share one instance, and `/room/2` gets another. The WebSocket proxy recomputes this id from the route and params it receives and rejects a connection that names a different Durable Object. The `scope` option on `@Page` overrides this. It receives the Hono `Context` and returns a scope-key string. The page plus that key names the Durable Object. Users (and tabs) that resolve to the same scope key land on the same DO instance and share state. A scope function must return a non-empty string; anything else rejects the connection. This is the mechanism behind multiplayer features (shared whiteboards, chat rooms, collaborative docs).
 
 ```typescript
 // All members of a team share one DO instance for this page
@@ -175,10 +186,13 @@ is one scope per user instead of one per page instance. Each SSE subscription
 and each SSE `/crpc` action evaluates the scope again in the same way. Without
 `scope`, the default per-page-instance behavior is unchanged.
 
-A Durable Object or Node instance hosts one page. Two different pages cannot
-share an instance, even when their scope functions return the same key: on
-Cloudflare the second page's connection is rejected with
-`COSSACK_WS_SCOPE_MISMATCH`, and on Node each page gets its own instance.
+An instance belongs to one owner. Its name always contains the owner's kind
+and identity (the page file, the layout file or the component's registry id)
+next to the scope key or route params. Two different pages therefore get two
+instances, even when their scope functions return the same key, on Cloudflare
+and on Node. A scope key cannot name another owner's instance. To share live
+state across page files, use a realtime layout or a realtime component: see
+[Share live state across page files](#share-live-state-across-page-files).
 
 ## Share real-time state across pages with scope
 
@@ -190,8 +204,11 @@ instance. The server computes the key again for the upgrade and checks it again
 before each action. It rejects a connection whose target differs from the key.
 
 Every URL of a page, and every tab or device, that computes the same key shares
-one instance. An instance hosts one page file. Two different page files never
-share an instance, even when their keys are equal (see [scope](#scope--controlling-which-durable-object-instance-a-page-connects-to)).
+one instance. A page's instance belongs to one page file. Two different page
+files never share a page instance, even when their keys are equal (see
+[scope](#scope--controlling-which-durable-object-instance-a-page-connects-to)).
+For live state that several page files share, use a realtime layout or a
+realtime component (see [Share live state across page files](#share-live-state-across-page-files)).
 
 ### Per-user state across pages
 
@@ -286,47 +303,221 @@ in each `@Server` method too.
   not read `c.req.query()` in a scope function. If the keys differ, the server
   rejects the connection.
 
-### Page-scoped and user-scoped state on one screen
+## Share live state across page files
 
-A page has one real-time connection to one instance. Child components that you
-render with `component()` run in the page's instance and use the page's
-connection. A child component has no connection of its own, so it cannot have
-its own scope: `scope` on a child component has no effect.
+A page's `scope` shares one instance among the URLs, tabs and devices of one
+page file. For live state that several page files share, such as a cart count
+or a notification feed, use a realtime layout or a realtime component. Each one
+is a live instance of its own, with a connection of its own, separate from the
+page's.
 
-To combine page-scoped and user-scoped state on one screen:
+| You need live state for | Use |
+| :--- | :--- |
+| Every page in the app, or in one section of it, per user, team or tenant | A realtime layout |
+| A widget that you place on any page: a cart badge, presence, a notification feed | A realtime component |
+| One page file and its URLs: a room, a document | A realtime page with `scope` |
 
-- Put the state that everyone on the page shares in the page's `@State`. The
-  page's scope selects who shares it.
-- Keep one user's data out of `@State` in a shared instance, because every
-  connected user receives `@State`. Return the data from a `@Server` method
-  instead. The method runs with the identity of its caller. Keep the result in
-  `@ClientState`.
-- For per-user state that must stay live in all of the user's tabs, use a page
-  with `scope: perUser`, like `Inbox` above. One screen cannot connect to a
-  room's instance and to a user's instance at the same time.
+Choose a layout when the state belongs to a part of the app and its pages
+already share that layout. Choose a component when the state belongs to a
+widget that different parts of the app embed, including pages under different
+layouts. A layout runs its own guards; a component runs the guards of the page
+it is on (see [Authorization](#authorization-of-realtime-layouts-and-components)).
+
+All examples use one scope function that fails closed:
 
 ```typescript
-// src/components/MyDrafts.ts: a child of the room page.
-@Component({ transport: 'durable-object' })
-export class MyDrafts extends Cossack {
-    @ClientState() drafts: Draft[] = [];
+// src/realtime.ts
+import type { Context } from 'hono';
+import { ResourceAuthorizationError } from '@cossackframework/auth';
+
+// One instance per signed-in user. Never fall back to a shared key.
+export const perUser = (c: Context) => {
+    const user = c.get('user');
+    if (!user) throw new ResourceAuthorizationError('COSSACK_AUTH_UNAUTHENTICATED');
+    return `user:${user.id}`;
+};
+```
+
+Do not write `scope: (c) => 'user:' + c.get('user')?.id`. For every anonymous
+visitor it returns the same key, `user:undefined`, so all of them would share
+one instance.
+
+### App-wide per-user state in a root layout
+
+```typescript
+// src/pages/layout.ts
+import { Cossack, Page, Server, State } from '@cossackframework/core';
+import { html } from '@cossackframework/renderer';
+import { perUser } from '../realtime';
+
+@Page({ transport: 'durable-object', scope: perUser })
+export default class RootLayout extends Cossack {
+    @State() unread = 0;
 
     @Server()
-    async load() {
-        // Runs in the room's instance, with the caller's identity.
-        return listDrafts(this.user!.id);
-    }
-
-    @Client()
-    async open() {
-        this.drafts = await this.load();
+    markAllRead() {
+        this.unread = 0;
     }
 
     render() {
         return html`
-            <button @click=${this.open}>My drafts</button>
-            ${this.drafts.map(draft => html`<p>${draft.title}</p>`)}
+            <header>
+                <button @click=${this.markAllRead}>${this.unread} unread</button>
+            </header>
+            ${this.children}
         `;
+    }
+}
+```
+
+Every page below the layout shares one instance per user, in every tab and
+device. `markAllRead()` runs in that instance, and every page of that user
+receives the new `unread` value. Client navigation between those pages keeps
+the layout, so its connection stays open.
+
+- The instance is the layout file plus the scope key. Without `scope`, it is
+  the layout file plus the route params that the layout's own directory
+  declares: `src/pages/teams/[team]/layout.ts` gets one instance per team,
+  shared by every page under it. A root layout without `scope` is one instance
+  for every visitor, signed in or not.
+- For an anonymous visitor, `perUser` throws. The page still renders, and the
+  layout renders without a connection (`this.realtime.websocket.state` is
+  `closed`). If anonymous visitors must not see the pages at all, add a layout
+  guard such as `guard.requireUser`.
+- Server methods of the layout run with the identity and the route params of
+  the connection that calls them.
+
+### A reusable realtime component
+
+```typescript
+// src/components/CartBadge.ts
+import { Component, Cossack, Server, State } from '@cossackframework/core';
+import { html } from '@cossackframework/renderer';
+import { perUser } from '../realtime';
+
+@Component({ transport: 'durable-object', scope: perUser })
+export class CartBadge extends Cossack {
+    @State() count = 0;
+
+    @Server()
+    add() {
+        this.count++;
+    }
+
+    render() {
+        return html`<button @click=${this.add}>Cart (${this.count})</button>`;
+    }
+}
+```
+
+```typescript
+// src/pages/products/[id]/index.ts, src/pages/checkout/index.ts, ...
+render() {
+    return html`${component(CartBadge)} <h1>Checkout</h1>`;
+}
+```
+
+Every page that renders `CartBadge` shares one instance per user. A click on a
+product page updates the badge on the checkout page in another tab.
+
+- Export the class from a file under `src/`, and pass `@Component()` a literal
+  options object with `transport: 'durable-object'` and `scope`. The build
+  registers the class with a stable id, its file and export name
+  (`/src/components/CartBadge.ts#CartBadge`). The build fails for a realtime
+  component that has no `scope` or no export.
+- `scope` is required and fails closed. A scope that throws, or returns an
+  empty string, rejects the connection.
+- The server builds the component only from the build-time registry, in a
+  service scope of its own. The instance serves many pages, so it is not inside
+  one page's layouts: it cannot inject services that a layout declares.
+- `props` exist only in the browser. The shared server instance never sees one
+  page's props. Derive server state from the scope and the user.
+- Render the component during SSR. SSR computes its target. A realtime
+  component that renders for the first time in the browser, for example after a
+  click, has no target and stays offline.
+- A child that the realtime component renders, without a transport of its own,
+  runs in the component's instance and uses its connection.
+
+### Authorization of realtime layouts and components
+
+The browser never chooses an instance. SSR computes the target. The server
+computes it again for the upgrade, rejects a different target, and checks
+again before each action and each delivered frame.
+
+A realtime layout:
+
+1. The upgrade names the layout and the page that the browser is on, with that
+   page's route params.
+2. The server checks that the page is below the layout and that the params fit
+   that page's route. Any other value answers 400.
+3. It runs the layout's guard stack with those params: global middleware, the
+   guards of every enclosing layout and the layout's own guards. The page's own
+   guards do not run, because the layout's state does not belong to one page.
+4. It evaluates the layout's `scope`. A failure rejects the upgrade.
+
+A realtime component:
+
+1. The upgrade names the component's registry id and the page that the browser
+   is on, with that page's route params. An unknown id answers 400. The server
+   never loads a module that the client names.
+2. The server checks the params against the page's route. Other values answer
+   400.
+3. It runs the page's guards with the checked params: global middleware, the
+   guards of the page's layouts and the page's own guards. A page policy that
+   denies a param value denies the component's connection.
+4. It runs the component's own `middlewares`.
+5. It evaluates the component's `scope`. A throw or an empty key rejects the
+   upgrade.
+
+Each action and each delivered frame runs the same guards and the scope
+again, and checks that the user did not change. The connection keeps the
+route params of the page it opened on.
+
+A client can name any page that it is allowed to open, so it can choose the
+page with the fewest guards. Keep the component's access rule where a client
+cannot skip it: in its `scope` function, in its own `middlewares`, and in each
+`@Server` method.
+
+### Connections, navigation and state
+
+- A realtime page, a realtime layout and each realtime component have one
+  connection each.
+- A realtime layout stays connected during client navigation between the pages
+  below it, while its target stays the same. A different user or a different
+  target creates a new layout with a new connection.
+- A realtime component lives as long as its host. In a layout, it stays
+  connected during navigation. On a page, the next page gets its own component
+  and connection, to the same instance.
+- A reconnect carries the page that the browser is on at that time.
+- When a layout or component connection opens, the server sends the instance's
+  current public state. SSR renders the initial state; the live state replaces
+  it when the socket opens.
+- Static (SSG) pages carry no targets. Their realtime layouts and components
+  stay offline.
+
+### Page-scoped and user-scoped state on one screen
+
+A room page can show live room state and live per-user state together. The
+page's scope selects who shares the room. A realtime component with a per-user
+scope keeps the user's own data live in all of that user's tabs.
+
+```typescript
+// src/components/MyDrafts.ts: one live instance per user, on every page.
+@Component({ transport: 'durable-object', scope: perUser })
+export class MyDrafts extends Cossack {
+    @State() drafts: Draft[] = [];
+
+    async init() {
+        this.drafts = await listDrafts(this.user!.id);
+    }
+
+    @Server()
+    async save(text: string) {
+        this.drafts = [...this.drafts, await saveDraft(this.user!.id, text)];
+    }
+
+    render() {
+        return html`${this.drafts.map(draft => html`<p>${draft.title}</p>`)}`;
     }
 }
 
@@ -353,19 +544,26 @@ export default class Room extends Cossack {
 }
 ```
 
-`messages` is live for everyone in the room. Each user sees only their own
-drafts, but the list does not update live when the user edits a draft on
-another page. Call `load()` again, or use the
-[event-driven re-fetch](#2-event-driven-re-fetch-the-liveview-way) pattern,
-to refresh it.
+`messages` is live for everyone in the room. `drafts` is live for one user,
+in every tab and on every page that renders `MyDrafts`.
+
+Keep one user's data out of `@State` in an instance that other users share:
+every connected peer receives that state.
+
+### Child components without a transport
+
+A child component without `transport` runs where its host runs. In a realtime
+page or layout, or inside a realtime component, its server methods run in the
+host's instance and use the host's connection. In an HTTP or SSE host, they use
+HTTP. Set `transport: 'http'` to always use HTTP.
 
 ## Instances, channels, and events
 
 This architecture has three parts: the instance, `Channel`, and `Event`.
 
-- Instance (the where): the real-time instance that a page connects to: the page plus its route params, or its scope key. See [scope](#scope--controlling-which-durable-object-instance-a-page-connects-to).
+- Instance (the where): the real-time instance that a realtime owner connects to: the page (or layout) plus its route params or scope key, or a realtime component plus its scope key. See [scope](#scope--controlling-which-durable-object-instance-a-page-connects-to) and [Share live state across page files](#share-live-state-across-page-files).
 
-- `Channel` (the what): A Channel is a logical partition within the page's connection. It groups related pieces of state. When an automatic update occurs, the framework sends a partial state object containing only the properties for the affected channel.
+- `Channel` (the what): A Channel is a logical partition within an owner's connection. It groups related pieces of state. When an automatic update occurs, the framework sends a partial state object containing only the properties for the affected channel.
 
 - `Event` (the when and how): An Event is a stateless message broadcast by the server. Components listen for these events to trigger actions, most notably the "Event-Driven Re-fetch" pattern.
 
@@ -473,7 +671,7 @@ export class Tasks extends Cossack {
 
 Real-time communication in Cossack has two levels:
 
-1. Connection: The framework opens one physical WebSocket connection for each page, to the page's instance. Child components use the page's connection.
+1. Connection: The framework opens one physical WebSocket connection for each realtime owner (page, layout or realtime component), to its instance. Child components without a transport use their host's connection.
 2. Channel: A channel is a logical grouping of state within that connection. It lets the framework send partial state updates.
 
 By default, all state and actions use the `global` channel.
@@ -520,7 +718,7 @@ export class Dashboard extends Cossack {
 
 #### 2. Channel-Specific Actions with `@Server`
 
-Similarly, use the `channel` property on the `@Server` decorator. This is primarily used for logical grouping. It has no effect on the connection: a page has one.
+Similarly, use the `channel` property on the `@Server` decorator. This is primarily used for logical grouping. It has no effect on the connection: an owner has one.
 
 ```typescript
 @Server({ channel: 'feeds' })
@@ -598,8 +796,9 @@ Behavior:
 
 ## Authentication on shared connections
 
-The upgrade request runs the page and layout guards and requires an allowed
-Origin. The Durable Object proxy discards client-supplied identity headers.
+The upgrade request runs the guards of its owner (see
+[Authorization of realtime layouts and components](#authorization-of-realtime-layouts-and-components))
+and requires an allowed Origin. The Durable Object proxy discards client-supplied identity headers.
 It forwards only the user from the authentication middleware.
 
 Each serialized action exposes its caller through `this.user` and

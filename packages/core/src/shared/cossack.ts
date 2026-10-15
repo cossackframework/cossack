@@ -42,6 +42,7 @@ import {
     isRpcCallableAction,
 } from './method-proxy';
 import { isSharedMethod } from './shared-method';
+import { isRealtimeComponent, readRealtimeDescriptor, RealtimeHostContext, type RealtimeDescriptor } from './realtime-owner';
 import { HeadTag, HeadContext, HeadValue, composeHead as composeHeadFn, type Headed } from './head';
 import {
     buildHeadContext as buildHeadContextFn,
@@ -585,6 +586,11 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
     /** HTTP RPC route ID for this exact hydrated component (page or layout). */
     public __cossack_componentRouteId?: string;
+    /**
+     * @internal Server-computed realtime connection of a bootstrapped page or
+     * layout, from its SSR state. `null`: the server emitted no target.
+     */
+    public __cossack_realtime?: RealtimeDescriptor | null;
     /** @internal Canonical server route owner, assigned by the runtime. */
     public __cossack_rpcOwner?: string;
 
@@ -728,6 +734,10 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             if (parent?._getServiceScope) this._serviceScope = parent._getServiceScope();
         }
         this._prepareInjectedServices();
+        // A realtime component hosts its subtree: descendants without a
+        // transport of their own use its connection and live instance.
+        const realtime = !this._frameworkBootstrapped && isRealtimeComponent(this);
+        if (realtime) this.provide(RealtimeHostContext, this);
         // Register first so parent can provide restored child state
         this.registerSelf();
         this.initializeState();
@@ -744,6 +754,9 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             this.isMounted = true;
             this._frameworkMount();
         }
+        // A realtime component has exactly one connection of its own,
+        // separate from its page's, opened once it is mounted.
+        if (realtime && !this.isServer && !this.websocket && !this.isInPhase(LifecyclePhase.Destroyed)) this.connectWebSocket();
     }
 
     willUpdate(changedProperties: Map<string | number | symbol, unknown>) {
@@ -1141,6 +1154,8 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         } else {
             const clientInitialState = initialState || this.getInitialStateFromWindow();
             this.runtime = (clientInitialState?.runtime as CossackRuntimeInfo | undefined) ?? { platform: 'web' };
+            // A page or layout connects to the realtime target in its own state.
+            this.__cossack_realtime = readRealtimeDescriptor(clientInitialState);
             // The page payload carries the user once, at its root. The framework
             // passes it to layouts and the App, whose own states omit it.
             this.user = user ?? clientInitialState?.user;

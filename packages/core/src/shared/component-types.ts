@@ -72,6 +72,18 @@ export interface SerializedComponentState {
      * the page identity or scope key for every upgrade; it never authorizes.
      */
     realtimeTarget?: string;
+    /**
+     * Server-computed realtime connection of this page or layout. A layout's
+     * state carries its own; `null` means the owner has none for this request
+     * (for example, its scope failed) and stays offline.
+     */
+    realtime?: { owner: 'page' | 'layout'; target: string } | null;
+    /**
+     * Server-computed targets of the realtime child components rendered by
+     * this page, its layouts and the App, by registry id. The page payload
+     * carries it once, at its root.
+     */
+    realtimeComponents?: Record<string, string>;
     /** Nested children states */
     children?: Record<string, SerializedComponentState>;
     /** Component route ID for HTTP transport */

@@ -14,7 +14,8 @@ const pagePath = '/src/pages/private/index.ts';
 const layoutPath = '/src/pages/layout.ts';
 class PrivatePage extends Cossack { constructor() { super(); constructed(); } }
 class RootLayout {}
-Reflect.defineMetadata('page:options', { middlewares: [async (c: any, next: any) => {
+// A realtime page, so WebSocket upgrades can address it.
+Reflect.defineMetadata('page:options', { transport: 'durable-object', middlewares: [async (c: any, next: any) => {
   if (c.req.header('x-test-role') !== 'admin') return c.text('page guard', 403);
   await next();
 }] }, PrivatePage);

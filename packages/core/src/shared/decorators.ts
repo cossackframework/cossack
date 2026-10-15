@@ -74,11 +74,34 @@ export function Page(options: PageOptions = {}): ClassDecorator {
 }
 
 /**
- * Decorator for reusable components. 
- * Currently behaves like @Page but semantic distinction is important for future tooling.
+ * Decorator for reusable child components. Accepts the same options as
+ * `@Page`, except that `transport` has no default:
+ *
+ * - Without `transport`, a child runs where its host runs: in a realtime page
+ *   or layout (or inside a realtime component) it uses that host's connection
+ *   and live instance; elsewhere its server methods use HTTP.
+ * - `transport: 'durable-object'` with `scope` gives the component its own
+ *   connection and live instance, shared per scope key by every page that
+ *   embeds it. The build registers it; `scope` is required and fails closed.
+ * - `transport: 'http'` or `'sse'` always uses HTTP for its server methods.
  */
 export function Component(options: PageOptions = {}): ClassDecorator {
-    return Page(options);
+  if (Object.prototype.hasOwnProperty.call(options, 'route')) {
+    throw Object.assign(new Error('[Cossack] PageOptions.route is not supported. Define the URL through the component file path under src/pages.'),
+      { code: 'COSSACK_ROUTE_ALIAS_UNSUPPORTED' });
+  }
+  return (target: object) => {
+    const existingOptions = Reflect.hasOwnMetadata('page:options', target)
+      ? Reflect.getOwnMetadata('page:options', target)
+      : {};
+    const mergedOptions: PageOptions = { ...existingOptions, ...options };
+    if (mergedOptions.channels && !mergedOptions.channels.includes('global')) {
+      mergedOptions.channels.unshift('global');
+    } else if (!mergedOptions.channels) {
+      mergedOptions.channels = ['global'];
+    }
+    Reflect.defineMetadata('page:options', mergedOptions, target);
+  };
 }
 
 const noop = () => {};

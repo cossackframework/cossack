@@ -403,11 +403,14 @@ export async function createClientApp({
   ]);
   const layoutOwnership = new WeakMap<Cossack, string>();
   const layoutOwnershipKey = (state: any, pageState: any, Component: Function) => ownershipKey({
-    user: pageState?.user, runtime: pageState?.runtime, scopeKey: pageState?.scopeKey,
+    user: pageState?.user, runtime: pageState?.runtime,
+    // A realtime layout is owned by its own live instance, not by the page:
+    // it stays (and stays connected) across pages while its target holds.
+    scopeKey: state?.realtime ? null : pageState?.scopeKey,
     // The layout owns its transport. Changing a child page from SSE to HTTP
     // does not revoke a retained layout's services or their in-flight calls.
     transport: state?.transport ?? Reflect.getMetadata('page:options', Component)?.transport ?? 'http',
-    realtimeTarget: state?.realtimeTarget,
+    realtimeTarget: state?.realtime?.target ?? state?.realtimeTarget,
   });
   const rootOwnershipKey = (state: any) => layoutOwnershipKey(state?._app_state ?? {}, state, AppComponent);
   let rootOwnership = rootOwnershipKey(window.__INITIAL_STATE__);
@@ -583,7 +586,9 @@ export async function createClientApp({
           staged.add(instance);
           hookUpdates(instance);
           await instance.bootstrap({ initialState: { ...state,
-            metadata: { ...state?.metadata, url: destinationUrl }, componentRouteId },
+            metadata: { ...state?.metadata, url: destinationUrl }, componentRouteId,
+            // Its own realtime target, never the page's.
+            realtime: state?.realtime ?? null },
             user: initialState.user, skipInit: true, stageNavigation: true });
           assertCurrent();
           layoutOwnership.set(instance, layoutOwnershipKey(state, initialState, Layout));

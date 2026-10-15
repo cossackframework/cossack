@@ -25,7 +25,7 @@ class Scoped extends CossackService {
 }
 @Page({ services: [Scoped], middlewares: [async (c, next) => { c.set('inheritedGuard', true); await next(); }] }) class Root extends Cossack {}
 @Page({ services: [Scoped] }) class Inner extends Cossack {}
-@Page({ transport: 'http', scope: c => `team:${c.req.param('team')}` })
+@Page({ transport: 'durable-object', scope: c => `team:${c.req.param('team')}` })
 class Team extends Cossack {
   @Inject(Scoped) service!: Scoped;
   render() { return html`<main>${this.service.id}</main>`; }
@@ -37,7 +37,8 @@ const { createApp } = await import('../src/router');
 afterEach(async () => { await Promise.all(instances.splice(0).map(instance => instance.destroyAsync())); disposed.length = 0; sequence = 0; session.userId = 'owner'; });
 async function upgrade(consume: (upgrade: RuntimeWebSocketUpgrade) => Promise<Response>) {
   return createApp({ runtimeAdapter: { name: 'test', handleWebSocketUpgrade: (_context, request) => consume(request) } }).request(
-    '/ws/team:alpha?' + new URLSearchParams({ routePath: '/team/[team]', pathname: '/team/alpha', params: JSON.stringify({ team: 'alpha' }) }),
+    `/ws/${encodeURIComponent(`page:${JSON.stringify(['/src/pages/team/[team]/index.ts', { scope: 'team:alpha' }])}`)}?` +
+      new URLSearchParams({ routePath: '/team/[team]', pathname: '/team/alpha', params: JSON.stringify({ team: 'alpha' }) }),
     { headers: { origin: 'http://localhost' } }, { APP_URL: 'http://localhost', MARKER: 'request-env' } as any);
 }
 it('constructs nested scopes and preserves page params, auth, and bindings through runtime bootstrap', async () => {
