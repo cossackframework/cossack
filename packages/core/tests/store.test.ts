@@ -653,5 +653,16 @@ describe('matchesTrackedPath', () => {
         // 'store.user' vs 'storeX.user' — different root
         expect(matchesTrackedPath('store.user', new Set(['storeX.user']))).toBe(false);
     });
+
+    it('compares whole segments in either direction, never a string prefix', () => {
+        expect(matchesTrackedPath('form', new Set(['formX']))).toBe(false);
+        expect(matchesTrackedPath('formX', new Set(['form']))).toBe(false);
+        expect(matchesTrackedPath('a.bc', new Set(['a.b']))).toBe(false);
+        expect(matchesTrackedPath('a.b', new Set(['a.bc.d']))).toBe(false);
+        expect(matchesTrackedPath('rows.10', new Set(['rows.1']))).toBe(false);
+        expect(matchesTrackedPath('rows.1', new Set(['rows.1.id']))).toBe(true);
+        expect(matchesTrackedPath('', new Set(['']))).toBe(true);
+        expect(matchesTrackedPath('', new Set(['a']))).toBe(false);
+    });
 });
 

@@ -100,6 +100,14 @@ const MAX_UPDATE_RERUNS = 25;
 import { TaskCommitError, type TaskContext } from './task';
 import { getActionIdentityScope, type ActionIdentity } from './action-identity-scope';
 
+/** Segment-wise prefix match in either direction, without splitting paths. */
+function tracksChangedPath(track: readonly (string | symbol)[], changedPaths: Set<string>): boolean {
+    for (const dep of track) if (matchesTrackedPath(dep, changedPaths)) return true;
+    return false;
+}
+/** Task settlement is reported inside `_startTask`; never surface it twice. */
+const ignoreTaskSettlement = () => {};
+
 // Re-export public types so `export * from './shared/cossack'` in index.ts
 // continues to surface them to consumers. Split runtime vs type-only so
 // bundlers with isolatedModules don't try to resolve types as values.
@@ -629,8 +637,10 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     private isMounted: boolean = false;
     private skipRenderTasks: boolean = false;
     private isRunningTasks: boolean = false;
-    /** Cancellation controllers for in-flight task executions (RT-05). */
+    /** Cancellation controllers for started task executions (RT-05). */
     private _taskExecutions = new Map<string | symbol, AbortController>();
+    /** Latest requested execution per task; a request waiting for cleanup starts only if it is still the latest. */
+    private _taskGenerations = new Map<string | symbol, number>();
     private _taskCleanupPending = new Map<string | symbol, Promise<void>>();
     private isBootstrapping: boolean = false;
     /** Set once bootstrap() ran (App, layouts, pages); component() children are never bootstrapped. */
@@ -1820,74 +1830,81 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
      *           preserve accumulated paths for the in-progress run.
      */
     private async runTasks(changedPaths?: Set<string>, initialTrigger = 'bootstrap'): Promise<boolean> {
-        if ([LifecyclePhase.Destroyed].includes(this._phase)) return true;
+        if (this._phase === LifecyclePhase.Destroyed) return true;
         if (this.isRunningTasks) return false;
         this.isRunningTasks = true;
         try {
             // Merged across inheritance once per class, not on every run.
             const allTasks = collectTaskRegistrations(this.constructor, this.isServer);
-            const isFilteredRun = changedPaths !== undefined;
             // Each task runs under its own cancellation identity. Dependency
             // changes abort the previous signal; owned commits gate reactive
             // writes even when an external operation ignores cancellation. Slow tasks
             // do not block siblings, and cleanup stays ordered per task.
-            const inFlight: Promise<void>[] = [];
+            // A task that does not run allocates nothing. One that does gets
+            // its controller and context only when it actually starts.
+            let trigger: string | undefined;
             for (const { propertyKey: task, track } of allTasks) {
-                if (isFilteredRun && track && track.length > 0) {
-                    if (!track.some(dep => matchesTrackedPath(dep, changedPaths!))) {
-                        continue;
-                    }
-                }
-                if (this.hasMethod(task)) {
-                    // Cancel the previous execution before re-invoking, then
-                    // run its cleanup (React style, still ordered per task).
-                    const trigger = isFilteredRun
-                        ? `dependency change (${[...changedPaths!].map(String).join(', ')})`
-                        : initialTrigger;
-                    this._taskExecutions.get(task)?.abort();
-                    const previousCleanup = this._runTaskCleanup(task, undefined, trigger);
-                    const previousCleanupPromise = previousCleanup ?? undefined;
-                    const controller = new AbortController();
-                    this._taskExecutions.set(task, controller);
-                    const context = this._createTaskContext(task, controller, trigger);
-                    const start = async () => {
-                        try {
-                            if (previousCleanupPromise) await previousCleanupPromise;
-                            if (!context.isCurrent) return;
-                            const taskMethod = this.getMethod(task);
-                            const result = (taskMethod as any)(controller.signal, context);
-                            const resolved = result && typeof result.then === 'function' ? await result : result;
-                            if (controller.signal.aborted) {
-                                // An async setup can acquire resources before noticing cancellation.
-                                if (typeof resolved === 'function') await this._runTaskCleanup(task, resolved,
-                                    this._phase === LifecyclePhase.Destroyed ? 'disposal after cancelled setup' : `${trigger} (cancelled setup)`);
-                                return;
-                            }
-                            if (typeof resolved === 'function') {
-                                this._taskCleanups.set(task, resolved as () => unknown);
-                            }
-                        } catch (e: any) {
-                            if (controller.signal.aborted) return; // cancelled work stops quietly
-                            if (this.isServer) logRuntimeFailure(this._failureContext(String(task)), 'task-setup', 'COSSACK_TASK_FAILED');
-                            else console.error(
-                                `[Cossack] Task '${String(task)}' on ${this.constructor.name} failed during ${trigger} (${e instanceof TaskCommitError ? 'commit' : 'setup'}):`, e);
-                        }
-                        // Keep this identity until rerun/disposal: completed setup
-                        // can leave subscriptions that still use its signal.
-                    };
-                    const started = start();
-                    if (started instanceof Promise && typeof (started as any).then === 'function') {
-                        inFlight.push(started as Promise<void>);
-                    }
-                }
+                if (changedPaths !== undefined && track && track.length > 0 && !tracksChangedPath(track, changedPaths)) continue;
+                if (!this.hasMethod(task)) continue;
+                trigger ??= changedPaths !== undefined
+                    ? `dependency change (${[...changedPaths].map(String).join(', ')})`
+                    : initialTrigger;
+                // Cancel the previous execution before re-invoking, then run
+                // its cleanup (React style, still ordered per task).
+                this._taskExecutions.get(task)?.abort();
+                this._taskExecutions.delete(task);
+                const generation = (this._taskGenerations.get(task) ?? 0) + 1;
+                this._taskGenerations.set(task, generation);
+                const previousCleanup = this._runTaskCleanup(task, undefined, trigger);
+                // Async tasks settle in the background; a rejected task already
+                // logged its own diagnostic (never unhandled).
+                this._startTask(task, generation, trigger, previousCleanup).catch(ignoreTaskSettlement);
             }
-            // Async tasks settle in the background; a rejected task already
-            // logged its own diagnostic above (never unhandled).
-            for (const flight of inFlight) void flight.catch(() => {});
         } finally {
             this.isRunningTasks = false;
         }
         return true;
+    }
+
+    /**
+     * Start one requested task execution. While the previous cleanup is
+     * pending, a newer request or disposal can supersede this one; it then
+     * never gets a controller or context, because nothing could observe them.
+     */
+    private async _startTask(task: string | symbol, generation: number, trigger: string,
+        previousCleanup: Promise<void> | undefined): Promise<void> {
+        let controller: AbortController | undefined;
+        try {
+            if (previousCleanup) await previousCleanup;
+            // An earlier task in the same run can destroy the component.
+            if (this._taskSuperseded(task, generation)) return;
+            controller = new AbortController();
+            this._taskExecutions.set(task, controller);
+            const context = this._createTaskContext(task, controller, trigger);
+            const taskMethod = this.getMethod(task);
+            const result = (taskMethod as any)(controller.signal, context);
+            const resolved = result && typeof result.then === 'function' ? await result : result;
+            if (controller.signal.aborted) {
+                // An async setup can acquire resources before noticing cancellation.
+                if (typeof resolved === 'function') await this._runTaskCleanup(task, resolved,
+                    this._phase === LifecyclePhase.Destroyed ? 'disposal after cancelled setup' : `${trigger} (cancelled setup)`);
+                return;
+            }
+            if (typeof resolved === 'function') {
+                this._taskCleanups.set(task, resolved as () => unknown);
+            }
+        } catch (e: any) {
+            if (controller ? controller.signal.aborted : this._taskSuperseded(task, generation)) return; // cancelled work stops quietly
+            if (this.isServer) logRuntimeFailure(this._failureContext(String(task)), 'task-setup', 'COSSACK_TASK_FAILED');
+            else console.error(
+                `[Cossack] Task '${String(task)}' on ${this.constructor.name} failed during ${trigger} (${e instanceof TaskCommitError ? 'commit' : 'setup'}):`, e);
+        }
+        // Keep this identity until rerun/disposal: completed setup
+        // can leave subscriptions that still use its signal.
+    }
+
+    private _taskSuperseded(task: string | symbol, generation: number): boolean {
+        return this._phase === LifecyclePhase.Destroyed || this._taskGenerations.get(task) !== generation;
     }
 
     private _createTaskContext(task: string | symbol, controller: AbortController, trigger: string): TaskContext {
