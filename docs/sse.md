@@ -95,7 +95,10 @@ export class LiveCounter extends Cossack {
    state. If the scope already exists, SSR hydrates the authoritative snapshot
    so the HTML shows the shared state.
 2. When the page loads, the client opens an SSE connection to
-   `/sse/:componentRouteId`. The endpoint re-evaluates the scope with the live
+   `/sse/:componentRouteId` with the page's route params. The server checks the
+   params against the page's route (400 `COSSACK_RPC_REQUEST_INVALID` if they
+   do not fit) and runs the layout and page guards once with them, as SSR of
+   that URL does. The endpoint re-evaluates the scope with the live
    authenticated request, then streams the authoritative snapshot followed by
    incremental events. Each event carries its cursor as the SSE `id`, so the
    browser's automatic `EventSource` reconnect sends `Last-Event-ID` and
@@ -139,13 +142,19 @@ Keep even the fingerprint server-only. Descriptors must be plain JSON, at most
 1024 encoded bytes, with at most 128 visited values and 16 nesting levels.
 Accessors, reserved prototype keys, sparse arrays and unsupported values reject.
 
+The subscription request runs the inherited page/layout guards once, with the
+checked route params it carries, before the stream opens. A guard that denies
+it returns its own response (for example 403) and no stream opens. See
+[Authorization](./authorization.md#protecting-pages).
+
 Before each snapshot, replay frame, event or heartbeat, the framework runs a
 fresh request, configuration and ORM scope. It also runs global middleware and
 inherited page/layout
 guards. It resolves fresh user data and requires the same owner and computed
-scope as at subscription time. The original page params and resolved locale
-remain available. Cookie, Authorization and common credential/assertion headers
-are removed from the validation request. Middleware must use its revalidation
+scope as at subscription time. The guards see the same page params as at
+subscription time, and the resolved locale remains available. Cookie,
+Authorization and common credential/assertion headers are removed from the
+validation request. Middleware must use its revalidation
 provider rather than reread a login cookie. It cannot renew a cookie or change
 response headers after the stream starts. Middleware denial, provider
 failure, missing user, revoked/expired/rotated session or changed scope ends delivery.

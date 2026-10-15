@@ -8,11 +8,27 @@ import { isTransportPath } from '../transport-routes.js';
 import { checkSocketRouteParams, resolveComponentRpcTarget, resolveServiceRpcTarget } from './rpc-target.js';
 
 /**
+ * The route params of an SSE subscription (its `params` query: the page's
+ * params as SSR saw them), checked as client input with the rule of a
+ * WebSocket upgrade. Undefined when they are not JSON or do not fit the route.
+ * The guards, the scope key, the cold start and every revalidation of the
+ * subscription use these params.
+ */
+export function checkSseRouteParams(
+    ctx: Pick<RouterContext, 'routeIdMap' | 'pages' | 'layouts'>,
+    componentPath: string,
+    encoded: string | undefined,
+): Record<string, string> | undefined {
+    try { return checkSocketRouteParams(ctx, componentPath, JSON.parse(encoded ?? '{}')); }
+    catch { return undefined; }
+}
+
+/**
  * Apply the addressed page/layout guards before any transport can bootstrap it.
- * RPC calls and WebSocket upgrades run the guards once, with the page's route
- * params checked as client input, exactly as SSR of that URL runs them. The SSE
- * endpoint keeps running them here without params and again, with params, for
- * each realtime revalidation.
+ * RPC calls, SSE subscriptions and WebSocket upgrades run the guards once, with
+ * the page's route params checked as client input, exactly as SSR of that URL
+ * runs them. Invalid params answer 400 before any guard runs. An open SSE
+ * stream runs the guards again, with the same params, each time it revalidates.
  */
 export function protectTransport(ctx: RouterContext): MiddlewareHandler {
     return async (c, next) => {
@@ -62,7 +78,16 @@ export function protectTransport(ctx: RouterContext): MiddlewareHandler {
                     code: 'COSSACK_RPC_REQUEST_INVALID', requestId }, 400);
             }
         } else if (isTransportPath(c.req.path, 'sse')) {
-            componentPath = ctx.routeIdMap.get(c.req.param('componentRouteId') ?? '');
+            // A subscription names a page (or layout) and carries its route
+            // params. The guards run once, here, before the stream opens, with
+            // the params that the scope key and revalidations use.
+            const path = ctx.routeIdMap.get(c.req.param('componentRouteId') ?? '');
+            if (path && (Object.hasOwn(ctx.pages, path) || Object.hasOwn(ctx.layouts, path))) {
+                const params = checkSseRouteParams(ctx, path, c.req.query('params'));
+                if (!params) return c.json({ error: 'Invalid route params', code: 'COSSACK_RPC_REQUEST_INVALID' }, 400);
+                componentPath = path;
+                guarded = withRuntimeRouteParams(c, params);
+            }
         } else {
             const route = c.req.query('routePath') || c.req.query('componentPath');
             componentPath = route ? ctx.routePathToFilePathMap.get(route) || route : undefined;

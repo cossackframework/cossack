@@ -4,7 +4,8 @@ import { Cossack, createInstance, getLocale, isOriginAllowed, sanitizeClientStat
 import type { Context } from 'hono';
 import type { RouterContext } from '../route-ids.js';
 import { createServiceScopeChain } from '../service-scope-chain.js';
-import { decodeRuntimeRouteParams, withRuntimeRouteParams } from '../runtime-websocket.js';
+import { withRuntimeRouteParams } from '../runtime-websocket.js';
+import { checkSseRouteParams } from './security.js';
 import { captureRealtimeIdentity, revalidateRealtimeIdentity, RealtimeIdentityConfigurationError, snapshotRealtimeRequest } from '../realtime-context.js';
 import { resolveRealtimeScopeKey } from '../realtime-scope.js';
 export { resolveRealtimeScopeKey as resolveSseScopeKey } from '../realtime-scope.js';
@@ -348,14 +349,12 @@ export function handleSseEndpoint(ctx: RouterContext) {
         // Scope keys are identifiers, not credentials. Re-evaluate custom scopes
         // with the live authenticated user too; never trust an echoed SSR key.
         const pageOptions = Reflect.getMetadata('page:options', PageComponent) as PageOptions | undefined;
-        let params: Record<string, string>;
-        try {
-            params = decodeRuntimeRouteParams(c.req.query('params'));
-        } catch {
-            return new Response('Invalid route params', { status: 400 });
-        }
-        // The page's route params, as SSR and /crpc see them. The scope key and
-        // the cold-start page (with its layout service scopes) use this context.
+        // The page's route params, checked as protectTransport checked them
+        // before it ran the guards. Both backends (the Node store and the
+        // Cloudflare coordinator) build the scope key, the cold-start page with
+        // its layout service scopes, and every revalidation from these params.
+        const params = checkSseRouteParams(ctx, componentPath, c.req.query('params'));
+        if (!params) return c.json({ error: 'Invalid route params', code: 'COSSACK_RPC_REQUEST_INVALID' }, 400);
         const componentContext = withRuntimeRouteParams(c, params);
         const effectiveScopeKey = await resolveRealtimeScopeKey(componentContext, pageOptions);
         if (!requestedScopeKey || requestedScopeKey !== effectiveScopeKey) {
