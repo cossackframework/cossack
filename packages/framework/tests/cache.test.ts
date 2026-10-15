@@ -106,7 +106,8 @@ describe('InMemoryCacheStore', () => {
     });
 
     it('survives corrupt stored JSON', async () => {
-        (store as any).entries.set('bad', { raw: '{not json' });
+        await store.set('bad', 1);
+        (store as any).entries.get('bad').raw = '{not json';
         expect(await store.get('bad')).toBeUndefined();
         expect((store as any).entries.has('bad')).toBe(false);
     });

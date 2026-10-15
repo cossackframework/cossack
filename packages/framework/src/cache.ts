@@ -79,14 +79,118 @@ const encoder = new TextEncoder();
 // ---------------------------------------------------------------------------
 
 interface MemoryEntry {
-    raw: string;
-    expiresAt?: number;
-    bytes: number;
+    readonly key: string;
+    readonly raw: string;
+    readonly expiresAt?: number;
+    readonly bytes: number;
+    /** Neighbours in recency order, least recently used first. */
+    older?: MemoryEntry;
+    newer?: MemoryEntry;
+    /** Neighbours in the entry's {@link ExpiryIndex} bucket. */
+    expiryBucket: number;
+    expiryPrevious?: MemoryEntry;
+    expiryNext?: MemoryEntry;
+}
+
+/** Deadlines are integers below 2^53, so a deadline and the floor differ in at most 53 bits. */
+const EXPIRY_BUCKETS = 54;
+
+/** One more than the highest bit in which `deadline` and `floor` differ; 0 when equal. */
+function expiryBucket(deadline: number, floor: number): number {
+    if (deadline === floor) return 0;
+    const high = Math.floor(deadline / 2 ** 32) ^ Math.floor(floor / 2 ** 32);
+    return high ? 64 - Math.clz32(high) : 32 - Math.clz32((deadline ^ floor) >>> 0);
 }
 
 /**
- * Simple in-process cache backed by a `Map`. Expired entries are pruned before
- * evicting the least recently used entry at `maxEntries` (default 10 000).
+ * Entries that have a deadline, kept in a radix heap. An entry sits in the bucket
+ * named by the highest bit in which its deadline differs from `floor`. Every
+ * deadline is at least `floor`, so a lower bucket holds earlier deadlines and
+ * bucket 0 holds deadlines equal to `floor`. `floor` never passes the clock, so a
+ * new deadline is never below it. Looking for expired entries only moves entries
+ * into strictly lower buckets, at most 53 times in an entry's life. Writes at
+ * capacity therefore cost amortised O(1) instead of a scan of every entry.
+ */
+class ExpiryIndex {
+    private buckets: (MemoryEntry | undefined)[] = new Array(EXPIRY_BUCKETS);
+    private floor = 0;
+    private size = 0;
+
+    /** Index an entry whose deadline is after `now`. */
+    add(entry: MemoryEntry, now: number): void {
+        // An empty index follows the clock, so deadlines share their high bits
+        // with the floor. Otherwise only a clock that moved backwards produces a
+        // deadline below the floor.
+        if (!this.size) this.floor = now;
+        else if (entry.expiresAt! < this.floor) this.rebase(now);
+        this.size++;
+        this.link(entry);
+    }
+
+    remove(entry: MemoryEntry): void {
+        if (entry.expiryPrevious) entry.expiryPrevious.expiryNext = entry.expiryNext;
+        else this.buckets[entry.expiryBucket] = entry.expiryNext;
+        if (entry.expiryNext) entry.expiryNext.expiryPrevious = entry.expiryPrevious;
+        entry.expiryPrevious = entry.expiryNext = undefined;
+        this.size--;
+    }
+
+    /** An entry whose deadline is at or before `now`, or `undefined` when none is. */
+    expired(now: number): MemoryEntry | undefined {
+        for (;;) {
+            let index = 0;
+            while (index < EXPIRY_BUCKETS && !this.buckets[index]) index++;
+            if (index === EXPIRY_BUCKETS || now < this.floor) return undefined;
+            if (index === 0) return this.buckets[0];
+            // Deadlines in this bucket keep the floor's bits above `index - 1` and set
+            // that bit, so they lie in [low, low + 2^(index - 1)).
+            const span = 2 ** (index - 1);
+            const low = this.floor - this.floor % (2 * span) + span;
+            if (now < low) return undefined;
+            if (now >= low + span - 1) return this.buckets[index];
+            // Part of the bucket has expired. Raise the floor to `low`, which has
+            // passed and is at most every deadline, and split the bucket.
+            this.floor = low;
+            let entry = this.buckets[index];
+            this.buckets[index] = undefined;
+            while (entry) {
+                const next = entry.expiryNext;
+                this.link(entry);
+                entry = next;
+            }
+        }
+    }
+
+    clear(): void { this.buckets = new Array(EXPIRY_BUCKETS); this.size = 0; }
+
+    private link(entry: MemoryEntry): void {
+        const bucket = expiryBucket(entry.expiresAt!, this.floor);
+        const head = this.buckets[bucket];
+        entry.expiryBucket = bucket;
+        entry.expiryPrevious = undefined;
+        entry.expiryNext = head;
+        if (head) head.expiryPrevious = entry;
+        this.buckets[bucket] = entry;
+    }
+
+    /** Lower the floor to `now`, or to an earlier deadline still indexed. O(n), after a clock change only. */
+    private rebase(now: number): void {
+        const entries: MemoryEntry[] = [];
+        let floor = now;
+        for (let entry of this.buckets) {
+            for (; entry; entry = entry.expiryNext) { entries.push(entry); floor = Math.min(floor, entry.expiresAt!); }
+        }
+        this.buckets = new Array(EXPIRY_BUCKETS);
+        this.floor = floor;
+        for (const entry of entries) this.link(entry);
+    }
+}
+
+/**
+ * Simple in-process cache. At `maxEntries` (default 10 000) or `maxBytes`, every
+ * expired entry is removed before the least recently used live entry is evicted.
+ * Both steps use linked indexes rather than a scan, so a write costs amortised
+ * O(1) at any capacity.
  *
  * Per-process — a single Node.js instance or one Workers isolate. Not shared
  * across instances or regions. For shared/global cache data, use a KV, Durable
@@ -95,7 +199,11 @@ interface MemoryEntry {
 export class InMemoryCacheStore implements CacheStore {
     readonly capabilities = storageCapabilities('cache', 'memory');
     private readonly entries = new Map<string, MemoryEntry>();
+    private readonly expiry = new ExpiryIndex();
     private readonly maxEntries: number;
+    /** Least and most recently used entries. */
+    private oldest: MemoryEntry | undefined;
+    private newest: MemoryEntry | undefined;
     private bytes = 0;
 
     constructor(maxEntries: number = DEFAULT_MAX_ENTRIES, private readonly maxBytes = 8 * 1024 * 1024) {
@@ -112,13 +220,12 @@ export class InMemoryCacheStore implements CacheStore {
         cacheKey(key);
         const entry = this.entries.get(key);
         if (!entry) return undefined;
-        if (isExpired(entry.expiresAt)) { this.remove(key); return undefined; }
+        if (isExpired(entry.expiresAt)) { this.remove(entry); return undefined; }
         try {
             const value = JSON.parse(entry.raw) as T;
-            // Refresh insertion order for least-recently-used eviction.
-            this.entries.delete(key); this.entries.set(key, entry);
+            this.touch(entry);
             return value;
-        } catch { this.remove(key); return undefined; }
+        } catch { this.remove(entry); return undefined; }
     }
 
     async set<T = unknown>(key: string, value: T, ttlMs?: number): Promise<void> {
@@ -133,8 +240,11 @@ export class InMemoryCacheStore implements CacheStore {
     }
 
     async has(key: string): Promise<boolean> { return (await this.get(key)) !== undefined; }
-    async delete(key: string): Promise<void> { cacheKey(key); this.remove(key); }
-    async flush(): Promise<void> { this.entries.clear(); this.bytes = 0; }
+    async delete(key: string): Promise<void> { cacheKey(key); this.removeKey(key); }
+    async flush(): Promise<void> {
+        this.entries.clear(); this.expiry.clear();
+        this.oldest = this.newest = undefined; this.bytes = 0;
+    }
     async getMany<T = unknown>(keys: string[]): Promise<(T | undefined)[]> {
         cacheKeys(keys); return Promise.all(keys.map(key => this.get<T>(key)));
     }
@@ -147,13 +257,32 @@ export class InMemoryCacheStore implements CacheStore {
         prepared.forEach((entry, index) => this.write(entry, sizes[index]));
     }
     async deleteMany(keys: string[]): Promise<void> {
-        cacheKeys(keys); for (const key of keys) this.remove(key);
+        cacheKeys(keys); for (const key of keys) this.removeKey(key);
     }
 
-    private remove(key: string): void {
-        const previous = this.entries.get(key);
-        if (previous) this.bytes -= previous.bytes ?? 0;
-        this.entries.delete(key);
+    private removeKey(key: string): void {
+        const entry = this.entries.get(key);
+        if (entry) this.remove(entry);
+    }
+
+    private remove(entry: MemoryEntry): void {
+        if (entry.older) entry.older.newer = entry.newer; else this.oldest = entry.newer;
+        if (entry.newer) entry.newer.older = entry.older; else this.newest = entry.older;
+        entry.older = entry.newer = undefined;
+        if (entry.expiresAt !== undefined) this.expiry.remove(entry);
+        this.entries.delete(entry.key);
+        this.bytes -= entry.bytes;
+    }
+
+    /** Mark an entry as the most recently used. */
+    private touch(entry: MemoryEntry): void {
+        if (entry === this.newest) return;
+        if (entry.older) entry.older.newer = entry.newer; else this.oldest = entry.newer;
+        entry.newer!.older = entry.older;
+        entry.older = this.newest;
+        entry.newer = undefined;
+        this.newest!.newer = entry;
+        this.newest = entry;
     }
 
     /** Key plus value UTF-8 bytes, reusing the length measured at serialization. */
@@ -164,14 +293,22 @@ export class InMemoryCacheStore implements CacheStore {
         return bytes;
     }
 
-    private write(entry: { key: string; raw?: string; bytes?: number; expiresAt?: number }, bytes = this.entryBytes(entry)): void {
-        this.remove(entry.key);
-        if (entry.raw === undefined || isExpired(entry.expiresAt)) return;
-        if (this.entries.size >= this.maxEntries || this.bytes + bytes > this.maxBytes) {
-            for (const [key, value] of this.entries) if (isExpired(value.expiresAt)) this.remove(key);
-            while (this.entries.size >= this.maxEntries || this.bytes + bytes > this.maxBytes) this.remove(this.entries.keys().next().value!);
+    private write(input: { key: string; raw?: string; bytes?: number; expiresAt?: number }, bytes = this.entryBytes(input)): void {
+        this.removeKey(input.key);
+        const now = Date.now();
+        if (input.raw === undefined || (input.expiresAt !== undefined && now >= input.expiresAt)) return;
+        const full = () => this.entries.size >= this.maxEntries || this.bytes + bytes > this.maxBytes;
+        if (full()) {
+            // Expired entries go first, then the least recently used. Each entry
+            // leaves once, so the work is paid for by the write that added it.
+            for (let expired = this.expiry.expired(now); expired; expired = this.expiry.expired(now)) this.remove(expired);
+            while (this.oldest && full()) this.remove(this.oldest);
         }
-        this.entries.set(entry.key, { raw: entry.raw, expiresAt: entry.expiresAt, bytes });
+        const entry: MemoryEntry = { key: input.key, raw: input.raw, expiresAt: input.expiresAt, bytes, expiryBucket: 0, older: this.newest };
+        if (this.newest) this.newest.newer = entry; else this.oldest = entry;
+        this.newest = entry;
+        this.entries.set(entry.key, entry);
+        if (entry.expiresAt !== undefined) this.expiry.add(entry, now);
         this.bytes += bytes;
     }
 }
