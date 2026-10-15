@@ -67,6 +67,16 @@ By default each URL gets its own DO instance. To make multiple users (or rooms) 
 @Page({ transport: 'durable-object', stateful: true, scope: (c) => `team:${c.get('user').teamId}` })
 ```
 
+A page's instance belongs to that page file. For live state that several page
+files share (a per-user cart count, a notification feed), put
+`transport: 'durable-object'` and a `scope` on a **layout** (every page below it
+shares one instance and the layout stays connected across navigation) or on a
+**component** with `@Component({ transport: 'durable-object', scope })` (every
+page that embeds it shares one instance, over its own connection). A realtime
+component must be exported with a literal options object and a `scope` that
+throws for anonymous users. See the `realtime.md` reference of
+`cossack-best-practices` and `docs/websockets.md#share-live-state-across-page-files`.
+
 Cossack supports two patterns for real-time state. Choose based on the use case:
 
 ### Pattern 1: Automatic State Synchronization
@@ -296,12 +306,13 @@ export default { fetch: app.fetch };
 1. Page uses `@Page({ transport: 'durable-object' })`
 2. Add `stateful: true` if state must persist in DO storage
 3. Add `scope: (c) => '...'` if multiple users/rooms should share one DO instance
-4. `COSSACK_OBJECT` binding exists in `wrangler.jsonc`
-5. `AppDurableObject` is exported from `src/index.ts`
-6. For multi-channel: channels are declared in `@Page({ channels: [...] })`
-7. For events: `@OnEvent('event-name')` handler calls `this.init()` or equivalent
-8. `@Client()` methods are used for client-side-only logic
-9. Run type checks: `pnpm tsc --noEmit`
+4. For state shared across page files, use a realtime layout or an exported `@Component({ transport: 'durable-object', scope })`, rendered during SSR
+5. `COSSACK_OBJECT` binding exists in `wrangler.jsonc`
+6. `AppDurableObject` is exported from `src/index.ts`
+7. For multi-channel: channels are declared in `@Page({ channels: [...] })`
+8. For events: `@OnEvent('event-name')` handler calls `this.init()` or equivalent
+9. `@Client()` methods are used for client-side-only logic
+10. Run type checks: `pnpm tsc --noEmit`
 
 ## Ownership and authorization limits
 

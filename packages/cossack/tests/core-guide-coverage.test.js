@@ -17,6 +17,7 @@ const coverage={
  'scoped-services-and-injection':['Service','ServiceScope','DIContainer'],
  'optimistic-edits-and-uncertain-rpc':['Optimistic','optimistic','isUncertainRpcError'],
  'rpc-streams-and-transport-policy':['rpc$','evaluateTransportCapability'],
+ 'realtime-layouts-and-components':['Component','isRealtimeComponent','realtimeComponentId','scope: perUser'],
  'accessible-form-controller':['createFormController','createFormBindings'],
  'authorized-object-storage':['Storage','StorageProvider','validateStorageKey'],
  'image-rendering-diagnostics':['Image','imageDiagnostics'],

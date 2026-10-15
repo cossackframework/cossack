@@ -6,7 +6,7 @@ export const GUIDANCE_FAMILIES = Object.freeze({
     'forms and resources': ['nested-form-input', 'safe-old-input', 'accessible-form-controller', 'server-resources'],
     'lifecycle and browser ownership': ['lifecycle-tasks', 'template-head-and-browser-ownership', 'navigation-result-ownership'],
     'services and optimism': ['scoped-services-and-injection', 'optimistic-edits-and-uncertain-rpc'],
-    'transport and diagnostics': ['rpc-streams-and-transport-policy', 'development-rpc-traces', 'fixed-server-failure-diagnostics'],
+    'transport and diagnostics': ['rpc-streams-and-transport-policy', 'realtime-layouts-and-components', 'development-rpc-traces', 'fixed-server-failure-diagnostics'],
     'request and localization': ['request-context-and-signed-values', 'localization-and-worker-isolation', 'route-urls'],
     'storage and provider guarantees': ['authorized-object-storage', 'image-rendering-diagnostics', 'runtime-and-counter-guarantees'],
     'jobs, schedules, notifications and workflows': ['background-jobs-runtime', 'schedule-occurrence-jobs', 'notification-templates-preferences', 'local-workflow-lifecycle'],

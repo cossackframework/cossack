@@ -56,7 +56,7 @@ export class Button extends Cossack {
 
 ### Components with Internal State: FileUploader
 
-Components can have their own internal state using `@ClientState` (for UI state) or `@State` (synced with the server, and with the page's real-time instance when the page uses one). Inputs from a parent arrive via `this.props`.
+Components can have their own internal state using `@ClientState` (for UI state) or `@State` (synced with the server, and with its host's real-time instance when the host uses one). Inputs from a parent arrive via `this.props`.
 
 ```typescript
 import { html } from "@cossackframework/renderer";
@@ -204,6 +204,60 @@ export class Dashboard extends Cossack {
 ```
 
 Each `Counter` instance maintains its own independent state, managed through unique component IDs (`root:0`, `root:1`, etc.).
+
+### Where a component's server actions run
+
+`@Component()` accepts the same options as `@Page`, but `transport` has no
+default. It decides where the component's `@Server` methods run:
+
+| `transport` | Server methods run |
+| :--- | :--- |
+| Not set | Where the host runs. In a realtime page or layout, or inside a realtime component, they run in the host's live instance over the host's connection. Elsewhere they use HTTP. |
+| `'http'` or `'sse'` | Over HTTP, against a fresh copy of the page. |
+| `'durable-object'` (with `scope`) | In the component's own live instance, over its own connection. |
+
+### Realtime components
+
+A component with `@Component({ transport: 'durable-object', scope })` has its
+own connection and live instance. Every page that embeds it shares one instance
+per scope key, so a per-user scope keeps a cart badge or a notification feed
+live on every page of that user, in every tab.
+
+```typescript
+// src/components/CartBadge.ts
+import { Component, Cossack, Server, State } from '@cossackframework/core';
+import { html } from '@cossackframework/renderer';
+import { perUser } from '../realtime'; // throws for anonymous users
+
+@Component({ transport: 'durable-object', scope: perUser })
+export class CartBadge extends Cossack {
+    @State() count = 0;
+
+    @Server()
+    add() {
+        this.count++;
+    }
+
+    render() {
+        return html`<button @click=${this.add}>Cart (${this.count})</button>`;
+    }
+}
+```
+
+- Export the class from a file under `src/` and use a literal options object.
+  The build registers it with a stable id; the server builds only registered
+  components.
+- `scope` is required and fails closed: a scope that throws or returns an
+  empty string rejects the connection.
+- The connection runs the guards of the page the component is on, with that
+  page's checked route params, then the component's own `middlewares`, then
+  its `scope`. Each action repeats these checks.
+- `props` exist only in the browser. The shared server instance does not see
+  them.
+- Render the component during SSR, which computes its connection target.
+
+See [Share live state across page files](./websockets.md#share-live-state-across-page-files)
+for the authorization rules and for when to choose a realtime layout instead.
 
 ### Accessing Framework Context
 
