@@ -350,25 +350,6 @@ another page. Call `load()` again, or use the
 [event-driven re-fetch](#2-event-driven-re-fetch-the-liveview-way) pattern,
 to refresh it.
 
-### Migrate from custom providers
-
-Custom state providers were removed: `StateProvider`, `PageStateProvider`,
-`@Page({ providers })`, and the `provider` option of `@State`, `@Store` and
-`@Server`. Move each provider to a component with a `scope` function. For
-example, a `UserSessionProvider` becomes a page with `scope: perUser`.
-
-Since the WebSocket proxy started to recompute every target on the server, it
-rejected every custom provider target. Providers also returned Cloudflare-only
-Durable Object ids, so they never worked on Node. Other changes:
-
-- `@Page({ providers })` throws `COSSACK_PROVIDERS_REMOVED`.
-- A component has one connection. `this.realtime.websocket` replaces
-  `this.realtime.websockets[name]`.
-- The WebSocket URL is `/ws/:id`. The server rejects `/ws/:provider/:id` with
-  404 (`COSSACK_WS_ROUTE_NOT_FOUND`).
-- The page's initial state carries `realtimeTarget` instead of
-  `providerTargets`.
-
 ## Instances, channels, and events
 
 This architecture has three parts: the instance, `Channel`, and `Event`.

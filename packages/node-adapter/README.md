@@ -91,7 +91,8 @@ listener on the server; when another listener is attached they remain with the
 host. Set `destroyUnmatchedUpgrades: true` or `false` to always or never reject them. Authentication, origin checks, route lookup,
 and scope authorization run through the framework before the handshake. Response
 cookies and application headers reach the handshake. Components for the same
-route/provider/scope share one initialization and process-local state.
+page target (the page plus its route params, or its scope key) share one
+initialization and process-local state.
 
 `maxInstances` defaults to 512 and includes pending initialization.
 `idleTimeoutMs` defaults to 15 minutes. Pruning runs on socket activity.

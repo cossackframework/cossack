@@ -47,7 +47,6 @@ describe('reserved transport paths', () => {
     const framework = new Set(createApp().routes.map(route => route.path).filter(path => path !== '/*' && !allowed.includes(path)));
     for (const path of framework) expect(findReservedTransportPath(path), path).toBeDefined();
     for (const route of Object.values(TRANSPORT_ROUTES)) expect(framework).toContain(route);
-    expect(framework).toContain(`${TRANSPORT_ROUTES.websocket}/*`);
   });
 
   it.each(allowed)('lets the page at %s render', async path => {

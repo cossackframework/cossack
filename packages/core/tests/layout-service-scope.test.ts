@@ -24,7 +24,6 @@ describe('layout-scoped services', () => {
 
     const options = Reflect.getMetadata('page:options', Layout);
     expect(options.services).toEqual([DashboardService]);
-    expect(options).not.toHaveProperty('providers');
   });
 
   it('rejects duplicate and undecorated declarations descriptively', () => {

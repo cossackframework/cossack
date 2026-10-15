@@ -77,24 +77,12 @@ it('bootstraps the shared instance for the recomputed page target', async () => 
   const shared = await ssrTarget('/room/1', 'alice');
   const upgrade = await connect('/room/[id]', '1', shared, 'alice');
   expect(upgrade.target).toBe(shared);
-  expect(upgrade).not.toHaveProperty('provider');
   const instance = await upgrade.createComponent();
   try {
     expect(instance.__cossack_rpcOwner).toBe(roomPath);
-    expect(instance.getInitialState()).not.toHaveProperty('providerTargets');
   } finally {
     await instance.destroyAsync();
   }
-});
-
-it('rejects the removed /ws/:provider/:id shape before the runtime sees it', async () => {
-  const shared = await ssrTarget('/room/1', 'alice');
-  const before = upgrades.length;
-  const query = new URLSearchParams({ routePath: '/room/[id]', pathname: '/room/1', params: JSON.stringify({ id: '1' }) });
-  const response = await app.request(`/ws/page/${encodeURIComponent(shared)}?${query}`, { headers: { origin: 'http://localhost' } });
-  expect(response.status).toBe(404);
-  expect(await response.json()).toMatchObject({ code: 'COSSACK_WS_ROUTE_NOT_FOUND' });
-  expect(upgrades.length).toBe(before);
 });
 
 it('keeps custom scope keys as the target', async () => {

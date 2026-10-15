@@ -906,9 +906,6 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
   } else {
     app.get(TRANSPORT_ROUTES.websocket, handleWebSocketProxy(routerContext));
   }
-  // The realtime connection has one segment. A longer path (such as the
-  // removed `/ws/:provider/:id`) never reaches a page or an upgrade.
-  app.all(`${TRANSPORT_ROUTES.websocket}/*`, c => c.json({ error: 'Not Found', code: 'COSSACK_WS_ROUTE_NOT_FOUND' }, 404));
   app.get(TRANSPORT_ROUTES.sse, handleSseEndpoint(routerContext));
   // JSON and multipart differ only at decoding. Ownership, validation,
   // streaming, cookies and cleanup use the same action pipeline.
