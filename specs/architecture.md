@@ -535,7 +535,7 @@ The lifecycle of a user interaction is split into two main phases: the initial s
 4. It reads `window.__INITIAL_STATE__` to instantly populate its `@State` properties.
 5. Client-only state: It also initializes any properties decorated with `@ClientState`. The framework does not synchronize these properties with the server, and it excludes them from the initial state script.
 6. It also reads the list of server method names and replaces them with proxy functions.
-7. It sets up the configured transport. Pages default to HTTP RPC. SSE pages subscribe to their event stream, while WebSocket/Durable Object pages connect to their state provider runtime.
+7. It sets up the configured transport. Pages default to HTTP RPC. SSE pages subscribe to their event stream, while WebSocket/Durable Object pages connect to their real-time runtime.
 8. Instant navigation (soft navigation): When a user clicks a link (for example, `<a href="/about">`), the framework intercepts the click. Instead of a full reload, it:
     * Pre-fetching: The framework starts to fetch the next page data when the user hovers over a link. This hides network latency.
     * Caching: All visited and pre-fetched pages are stored in a memory cache. If a URL is in the cache, the transition happens instantaneously without a network request.
