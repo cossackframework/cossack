@@ -8,6 +8,9 @@ import { transformDesktopDocument } from './development-response.js';
 
 type DevelopmentVariables = Record<string, string | undefined>;
 
+/** An HTML path that no Desktop page uses. See the startup recovery in boot(). */
+const startupRecoveryPath = '/@cossack-desktop/startup-recovered.html';
+
 interface DesktopDevelopmentEntry {
   frameworkApp: { fetch: DesktopFetch };
   /** App-declared bindings. Used when the entry does not export `createEnv`. */
@@ -199,10 +202,14 @@ async function main() {
     return (booting ??= load()
       .then(async ({ entry }) => {
         if (!stopped && !application) {
-          // Vite buffers errors until a browser connects. Replace the startup
-          // error before opening the first window, so repaired source does not
-          // receive a stale overlay. The first connection consumes this reload.
-          if (startupFailed) server.ws.send({ type: 'full-reload' });
+          // Vite keeps the last error or reload for the first browser that
+          // connects. Replace the startup error before opening the first
+          // window, so repaired source does not receive a stale overlay. A
+          // client reloads for an HTML path only when it shows that page, and
+          // no page uses this path. The first window therefore keeps its
+          // document when it connects, however late its socket opens, instead
+          // of reloading while it is already in use.
+          if (startupFailed) server.ws.send({ type: 'full-reload', path: startupRecoveryPath });
           startupFailed = false;
           application = await entry.startDesktop(factory);
           console.log(`[desktop] Development ready at cossack://app (assets ${origin})`);

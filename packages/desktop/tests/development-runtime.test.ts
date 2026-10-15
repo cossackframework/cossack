@@ -171,3 +171,39 @@ it('sends public files through the application and answers other requests from V
     await rm(publicDir, { recursive: true, force: true });
   }
 });
+
+it('discards a stale startup error without reloading the first window', async () => {
+  mocks.server.config.logger.error.mockClear();
+  mocks.server.ws.send.mockClear();
+  mocks.state.entry = {
+    frameworkApp: { fetch: vi.fn(async () => new Response('ok')) },
+    startDesktop: async (factory: (options: Record<string, unknown>) => Promise<unknown>) => factory({
+      identifier: 'dev.cossack.recovery',
+      productName: 'Recovery',
+      assetsRoot: '/project/dist/client',
+      fetch: () => new Response('unused'),
+    }),
+  };
+  mocks.server.environments.ssr.runner.import.mockRejectedValueOnce(new Error('[PARSE_ERROR] broken page'));
+  await import('../src/development-runtime');
+  await vi.waitFor(() => expect(mocks.server.config.logger.error).toHaveBeenCalledWith(expect.stringContaining('broken page')));
+  expect(mocks.state.desktopOptions).toBeUndefined();
+
+  // Repaired source boots the application.
+  const { plugins } = mocks.vite.createServer.mock.calls.at(-1)![0] as unknown as {
+    plugins: Array<{ hotUpdate(this: unknown, update: { file: string }): unknown }>;
+  };
+  plugins[0].hotUpdate.call({ environment: { name: 'ssr' } }, { file: '/project/src/pages/index.ts' });
+  await vi.waitFor(() => expect(mocks.state.desktopOptions).toBeDefined());
+
+  // The startup error that Vite keeps for the first browser is replaced before
+  // the first window opens. Vite clients reload for an HTML path only when they
+  // show that page, and no Desktop page is served under /@cossack-desktop/.
+  expect(mocks.server.ws.send).toHaveBeenCalledOnce();
+  expect(mocks.server.ws.send).toHaveBeenCalledWith({
+    type: 'full-reload',
+    path: expect.stringMatching(/^\/@cossack-desktop\/[^/]+\.html$/),
+  });
+  expect(mocks.server.ws.send.mock.invocationCallOrder[0])
+    .toBeLessThan(mocks.desktop.createDesktopApp.mock.invocationCallOrder.at(-1)!);
+});

@@ -5,13 +5,25 @@ import { createRequire } from 'node:module';
 import { createServer } from 'node:http';
 import { _electron, expect } from '@playwright/test';
 
+/**
+ * Replace the one occurrence of `search`. A missing anchor means the generated
+ * source changed; fail instead of writing the source back unchanged.
+ */
+function replaceOnce(source, search, replacement) {
+  const index = source.indexOf(search);
+  if (index === -1 || source.includes(search, index + search.length))
+    throw new Error(`Desktop acceptance expects exactly one ${JSON.stringify(search)} in the generated source:\n${source}`);
+  return source.slice(0, index) + replacement + source.slice(index + search.length);
+}
+
 export async function writeDesktopRuntimeAcceptance(root) {
   const entryFile = path.join(root, 'src/desktop/index.ts');
   const entry = await fs.readFile(entryFile, 'utf8');
   // Test-only main-process reference to the public result; never exposed to renderers.
   await fs.writeFile(
     entryFile,
-    entry.replace(
+    replaceOnce(
+      entry,
       '  configureDesktopClose({',
       '  (globalThis as any).__desktopAcceptanceApplication = desktop;\n  configureDesktopClose({',
     ),
@@ -381,6 +393,25 @@ export async function verifyDesktopDevelopmentApplication(
     });
     await page.waitForFunction(() => window.__desktopDevelopmentTools, {}, { timeout: 30000 });
     await page.getByRole('button', { name: 'Record trace', exact: true }).click();
+    // Vite sends native terminal evidence only to a connected page and never
+    // replays it. The page can become interactive before its Vite socket
+    // opens, so wait for the bridge's first live record, which it sends over
+    // that socket, before any native call.
+    const recordFile = path.join(
+      root,
+      '.cossack/development-traces',
+      (await page.evaluate(() => window.__desktopDevelopmentTools.snapshot().sessionId)) + '.json',
+    );
+    await expect
+      .poll(
+        () =>
+          fs.access(recordFile).then(
+            () => true,
+            () => false,
+          ),
+        { timeout: 15000 },
+      )
+      .toBe(true);
     await page.getByRole('button', { name: 'Increment', exact: true }).click();
     await expect(page.locator('#count')).toHaveText('1');
     await page.getByRole('button', { name: 'Stream', exact: true }).click();
@@ -437,7 +468,7 @@ export async function verifyDesktopDevelopmentApplication(
           cleanup: 'completed',
         });
     }
-    const recordFile = path.join(root, '.cossack/development-traces', snapshot.sessionId + '.json');
+    expect(recordFile).toBe(path.join(root, '.cossack/development-traces', snapshot.sessionId + '.json'));
     let record;
     await expect
       .poll(
@@ -459,9 +490,11 @@ export async function verifyDesktopDevelopmentApplication(
     await onRecorded({ snapshot, recorded: record });
     await verifyDesktopStaticFiles(page, root, { development: true });
 
-    const updated = source
-      .replace('this.count++;this.owner', 'this.count+=2;this.owner')
-      .replace('<main>', '<main><p id="development-reload">Source reloaded</p>');
+    const updated = replaceOnce(
+      replaceOnce(source, 'this.count++;this.owner', 'this.count+=2;this.owner'),
+      '<main>',
+      '<main><p id="development-reload">Source reloaded</p>',
+    );
     await fs.writeFile(sourceFile, updated);
     await expect(page.locator('#development-reload')).toHaveText('Source reloaded', { timeout: 15000 });
     await page.waitForFunction(() => window.__desktopDevelopmentTools, {}, { timeout: 15000 });
@@ -486,12 +519,16 @@ export async function verifyDesktopDevelopmentApplication(
         await expect(window.locator('#configuration')).toHaveText(expected);
         await window.waitForFunction(() => window.__desktopDevelopmentTools);
       };
+      // Each change must restart Electron and apply its own value: the root
+      // .env file, then the Vite configuration (process variables override
+      // .env values), then the bootstrap's createEnv, which runs last.
       await assertRestart(() => fs.writeFile(envFile, 'DESKTOP_RELOAD_ACCEPTANCE=environment\n'), 'environment');
       await assertRestart(
         () =>
           fs.writeFile(
             configFile,
-            configSource.replace(
+            replaceOnce(
+              configSource,
               'plugins: [',
               "plugins: [{name:'restart-acceptance',config:()=>{process.env.DESKTOP_RELOAD_ACCEPTANCE='configuration';}},",
             ),
@@ -502,7 +539,11 @@ export async function verifyDesktopDevelopmentApplication(
         () =>
           fs.writeFile(
             entryFile,
-            entrySource.replace('{ ...process.env }', "{ ...process.env, DESKTOP_RELOAD_ACCEPTANCE:'bootstrap' }"),
+            replaceOnce(
+              entrySource,
+              'return { ...variables };',
+              "return { ...variables, DESKTOP_RELOAD_ACCEPTANCE: 'bootstrap' };",
+            ),
           ),
         'bootstrap',
       );
