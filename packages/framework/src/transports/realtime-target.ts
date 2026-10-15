@@ -3,7 +3,7 @@ import type { MiddlewareHandler } from 'hono';
 import { resolveLayoutPaths, type RouterContext } from '../route-ids.js';
 import { getModuleDefault } from '../module-default.js';
 import { isRealtimeOwner, type RealtimeOwner } from '../realtime-scope.js';
-import { checkRouteParams, isPage } from './rpc-target.js';
+import { checkPageRouteParams, isPage } from './rpc-target.js';
 
 /*
  * A WebSocket upgrade names the realtime owner it connects to and the page the
@@ -84,7 +84,7 @@ export function resolveRealtimeConnection(ctx: RealtimeTargetContext, query: (na
         const Component = componentClass(ctx.pages[pagePath])!;
         const options = optionsOf(Component);
         if (!isRealtimeOwner('page', options)) return transportError;
-        const params = checkRouteParams(pagePath, parseParams(query('params')));
+        const params = checkPageRouteParams(ctx, pagePath, parseParams(query('params')));
         if (!params) return paramsError;
         return { target: { owner: { kind: 'page', id: pagePath, options }, Component, guardPath: pagePath, pagePath, params } };
     }
@@ -92,7 +92,7 @@ export function resolveRealtimeConnection(ctx: RealtimeTargetContext, query: (na
     const pageRouteId = query('page');
     const pagePath = pageRouteId === undefined ? undefined : ctx.routeIdMap.get(pageRouteId);
     if (!pagePath || !isPage(ctx, pagePath)) return paramsError;
-    const params = checkRouteParams(pagePath, parseParams(query('params')));
+    const params = checkPageRouteParams(ctx, pagePath, parseParams(query('params')));
     if (!params) return paramsError;
 
     if (layoutRouteId !== undefined) {

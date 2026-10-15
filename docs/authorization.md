@@ -63,7 +63,9 @@ once, with the route params of the page that the browser is on
 component or of a layout service runs under that page: every layout guard and
 the page's own guards run. The params are client input. The server checks them
 against the page's route (the same param names, non-empty values, and no `.` or
-`..` segments) and answers 400 for other params before any guard runs. RPC calls
+`..` segments). It also checks that the router sends the URL those params
+produce to that page: `team: 'new'` is rejected for `/teams/[team]` when a
+literal `/teams/new` page exists. Other params get 400 before any guard runs. RPC calls
 and SSE subscriptions return the code `COSSACK_RPC_REQUEST_INVALID`. A guard
 that decides on a param then decides as it does for a request to that URL.
 

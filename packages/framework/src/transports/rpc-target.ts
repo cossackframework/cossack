@@ -1,5 +1,6 @@
 import { Cossack } from '@cossackframework/core';
-import { APP_FILE_PATH, classifyRoute, filePathToHttpRoute, resolveLayoutPaths, routeParameters, type RouterContext } from '../route-ids.js';
+import { TrieRouter } from 'hono/router/trie-router';
+import { APP_FILE_PATH, classifyRoute, compareHttpRoutes, filePathToHttpRoute, resolveLayoutPaths, resolvePageRouteFiles, routeParameters, type RouterContext } from '../route-ids.js';
 import { getModuleDefault } from '../module-default.js';
 
 /*
@@ -62,7 +63,7 @@ export function resolveServiceRpcTarget(ctx: TargetContext, body: Record<string,
     const pagePath = ctx.routeIdMap.get(body.componentRouteId);
     if (!pagePath || !isPage(ctx, pagePath)) return undefined;
     if (!resolveLayoutPaths(pagePath, Object.keys(ctx.layouts)).includes(ownerPath)) return undefined;
-    const params = checkRouteParams(pagePath, body.pageParams);
+    const params = checkPageRouteParams(ctx, pagePath, body.pageParams);
     return params && { ownerPath, slot: service.slot, pagePath, params };
 }
 
@@ -91,7 +92,7 @@ export function resolveComponentRpcTarget(ctx: TargetContext, body: Record<strin
     } else if (!Object.hasOwn(ctx.pages, componentPath)) {
         return { error: 'component' };
     }
-    const params = checkRouteParams(pagePath, body.pageParams ?? {});
+    const params = checkPageRouteParams(ctx, pagePath, body.pageParams ?? {});
     return params ? { target: { componentPath, guardPath: pagePath, params } } : { error: 'params' };
 }
 
@@ -130,4 +131,63 @@ export function checkRouteParams(componentPath: string, value: unknown, layout =
     if (kind === 'api') return undefined;
     if (kind === 'page' && !layout && supplied.length !== declared.length) return undefined;
     return { ...params };
+}
+
+const pageMatchers = new WeakMap<object, TrieRouter<string>>();
+
+/**
+ * The router's page table: every routable page, added in the order the router
+ * registers pages (most specific first), so the first match is the page the
+ * router dispatches a URL to. Built once per page registry; it holds only file
+ * paths and patterns.
+ */
+function pageMatcher(pages: Record<string, unknown>): TrieRouter<string> {
+    let matcher = pageMatchers.get(pages);
+    if (!matcher) {
+        matcher = new TrieRouter<string>();
+        const routes = resolvePageRouteFiles(Object.keys(pages))
+            .map(path => ({ path, pattern: filePathToHttpRoute(path) }))
+            .filter(({ pattern }) => classifyRoute(pattern) === 'page')
+            .sort((a, b) => compareHttpRoutes(a.pattern, b.pattern));
+        for (const { path, pattern } of routes) matcher.add('GET', pattern, path);
+        pageMatchers.set(pages, matcher);
+    }
+    return matcher;
+}
+
+/**
+ * The request path that produces `params` for `pattern`, normalized the way the
+ * router sees it: each value is percent-encoded, then decoded with `decodeURI`,
+ * which keeps reserved characters such as `/` encoded. A catch-all keeps its
+ * slashes as segment separators. Undefined when a value cannot be encoded.
+ */
+function routePathFor(pattern: string, params: Record<string, string>): string | undefined {
+    const encode = (value: string) => decodeURI(encodeURIComponent(value));
+    try {
+        return pattern.split('/').map(segment => {
+            const match = /^:([^{}]+)(\{\.\+\})?$/.exec(segment);
+            if (!match) return segment;
+            const value = params[match[1]];
+            return match[2] ? value.split('/').map(encode).join('/') : encode(value);
+        }).join('/');
+    } catch { return undefined; }
+}
+
+/**
+ * Route params of a page, checked as client input: they must fit the page's
+ * route (see `checkRouteParams`), and the URL they produce must be one the
+ * router dispatches to that page. Params that a more specific sibling route
+ * would match (`team: 'new'` next to a literal `/teams/new` page) are rejected,
+ * so a request never runs one page's guards for another page's URL. 404 and
+ * error pages render under other routes, so they skip the dispatch check.
+ */
+export function checkPageRouteParams(ctx: Pick<TargetContext, 'pages'>, pagePath: string, value: unknown): Record<string, string> | undefined {
+    const params = checkRouteParams(pagePath, value);
+    if (!params) return undefined;
+    const pattern = filePathToHttpRoute(pagePath);
+    if (classifyRoute(pattern) !== 'page') return params;
+    const path = routePathFor(pattern, params);
+    if (path === undefined) return undefined;
+    const winner = pageMatcher(ctx.pages).match('GET', path)[0][0]?.[0];
+    return winner === pagePath ? params : undefined;
 }
