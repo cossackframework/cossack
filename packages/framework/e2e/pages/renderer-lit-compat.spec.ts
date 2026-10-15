@@ -140,3 +140,50 @@ test.describe('Renderer Lit compatibility demos', () => {
     expect(documents).toHaveLength(0);
   });
 });
+
+test.describe('Renderer Lit compatibility hydration', () => {
+  test('hydrates the demo navigation without rewriting the server-rendered active page', async ({ page }) => {
+    // Hydration adopts server output that matches the first client render, so
+    // the navigation must not change at all. The layout used to start its
+    // client path at "/", so hydration marked Home active, rewrote the
+    // disclosure indicators of two groups in both sidebars and, in dev,
+    // logged one cossack.hydration.mismatch per indicator.
+    const mismatches: string[] = [];
+    page.on('console', (message) => {
+      if (message.text().includes('cossack.hydration.mismatch')) mismatches.push(message.text());
+    });
+    await page.addInitScript(() => {
+      const changes: string[] = [];
+      (window as unknown as { __navigationChanges: string[] }).__navigationChanges = changes;
+      new MutationObserver((records) => {
+        for (const record of records) {
+          const element = record.target instanceof Element ? record.target : record.target.parentElement;
+          if (!element?.closest('.cs-sidebar')) continue;
+          if (record.type === 'characterData') {
+            changes.push(`text ${JSON.stringify(record.oldValue)} -> ${JSON.stringify(record.target.nodeValue)}`);
+          } else if (record.oldValue !== element.getAttribute(record.attributeName!)) {
+            changes.push(`${record.attributeName} on ${element.closest('[data-sidebar-value]')?.getAttribute('data-sidebar-value')}`);
+          }
+        }
+      }).observe(document, {
+        subtree: true,
+        characterData: true,
+        characterDataOldValue: true,
+        attributes: true,
+        attributeOldValue: true,
+        attributeFilter: ['open', 'aria-current'],
+      });
+    });
+
+    await page.goto('/renderer/lit-compat');
+    await waitForHydration(page);
+    await page.evaluate(() => new Promise<void>((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+    }));
+
+    expect(await page.evaluate(() => (window as unknown as { __navigationChanges: string[] }).__navigationChanges)).toEqual([]);
+    expect(mismatches).toEqual([]);
+    await expect(page.getByTestId('desktop-sidebar').locator('a[aria-current="page"]'))
+      .toHaveAttribute('href', '/renderer/lit-compat');
+  });
+});
