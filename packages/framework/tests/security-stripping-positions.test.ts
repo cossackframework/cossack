@@ -119,6 +119,46 @@ describe('event handler closures are RPC boundaries', () => {
   });
 });
 
+describe('aliased page decorators', () => {
+  it('strips a class marked only by an aliased @Page', () => {
+    const out = client(`import { Page as Route } from '@cossackframework/core';
+      class Base {}
+      @Route() export default class Report extends Base {
+        async loadSecrets() { return 'SECRET_ALIASED_PAGE'; }
+        render() { return ''; }
+      }`);
+    expect(out).not.toContain('SECRET_ALIASED_PAGE');
+  });
+
+  it('strips a class marked by a namespaced @Component', () => {
+    const out = client(`import * as core from '@cossackframework/core';
+      @core.Component() export class Card { async loadSecrets() { return 'SECRET_NAMESPACED_COMPONENT'; } }`);
+    expect(out).not.toContain('SECRET_NAMESPACED_COMPONENT');
+  });
+});
+
+describe('import type', () => {
+  it('erases nothing the client needs and keeps no server-only runtime import', () => {
+    const out = client(`import type { Generated } from '@cossackframework/database';
+      import { type User, Cossack, Page, Server } from '@cossackframework/core';
+      @Page() export class Rows extends Cossack {
+        owner?: User;
+        rows: Generated<number>[] = [];
+        @Server() async load(): Promise<Generated<number>[]> { return query('SECRET_TYPED_SQL'); }
+        render() { return ''; }
+      }`);
+    expect(out).not.toContain('SECRET_TYPED_SQL');
+    expect(out).not.toMatch(/^import \{[^}]*\} from '@cossackframework\/database'/m);
+    expect(out).toContain("import type { Generated } from '@cossackframework/database'");
+  });
+
+  it('does not treat type-only Server or Page names as decorators', () => {
+    const out = client(`import type { Page, Server } from './types';
+      export class Plain { helper() { return 'CLIENT_HELPER'; } }`);
+    expect(out).toContain('CLIENT_HELPER');
+  });
+});
+
 describe('private members', () => {
   it('does not keep a private server method because a public method shares its name', () => {
     const out = client(`${imports}@Page() export class Loader extends Cossack {
@@ -178,6 +218,49 @@ describe('generateStaticParams stripping', () => {
         render() { return ''; }
       }`);
     expect(out).not.toContain('SECRET_O');
+  });
+
+  it.each([
+    ['a method', `generateStaticParams() { return fetch('https://cms', { headers: { Authorization: 'SECRET_SSG' } }); }`],
+    ['an async method', `async generateStaticParams() { return [{ id: 'SECRET_SSG' }]; }`],
+    ['a quoted key', `'generateStaticParams': ${loader}`],
+  ])('strips it when written as %s', (_label, property) => {
+    const out = client(`${imports}@Page({ ssg: { ${property} } }) export default class A extends Cossack { render() { return ''; } }`);
+    expect(out).not.toContain('SECRET_SSG');
+    expect(out).toMatch(/generateStaticParams'?: async \(\) => \[\]/);
+  });
+
+  it('strips a shorthand property and removes its loader', () => {
+    const out = client(`${imports}const generateStaticParams = ${loader};
+      @Page({ ssg: { generateStaticParams } }) export default class A extends Cossack { render() { return ''; } }`);
+    expect(out).not.toContain('SECRET_SSG');
+  });
+
+  it('follows ssg options stored in, or spread from, module constants', () => {
+    const named = client(`${imports}const ssg = { enabled: true, generateStaticParams: ${loader} };
+      @Page({ transport: 'http', ssg }) export default class A extends Cossack { render() { return ''; } }`);
+    expect(named).not.toContain('SECRET_SSG');
+    const spread = client(`${imports}const shared = { ssg: { generateStaticParams: ${loader} } };
+      @Page({ ...shared, transport: 'http' }) export default class A extends Cossack { render() { return ''; } }`);
+    expect(spread).not.toContain('SECRET_SSG');
+  });
+
+  it.each([
+    ['options built by a function', `const options = () => ({ ssg: { generateStaticParams: ${loader} } });
+      @Page(options()) export default class A extends Cossack { render() { return ''; } }`],
+    ['options exported for another module', `export const pageOptions = { ssg: { generateStaticParams: ${loader} } };`],
+    ['a later assignment', `const options: any = { ssg: {} };
+      options.ssg.generateStaticParams = ${loader};
+      @Page(options) export default class A extends Cossack { render() { return ''; } }`],
+  ])('fails the client build for %s instead of shipping the loader', (_label, source) => {
+    expect(() => client(`${imports}${source}`)).toThrow(/generateStaticParams is not inside the ssg options/);
+  });
+
+  it('ignores type declarations and destructuring', () => {
+    expect(() => client(`${imports}interface Ssg { generateStaticParams?: () => Promise<unknown[]> }
+      declare const external: Ssg;
+      const { generateStaticParams } = external;
+      @Page() export default class A extends Cossack { render() { return ''; } }`)).not.toThrow();
   });
 
   it('keeps a loader that client code still uses', () => {

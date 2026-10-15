@@ -31,7 +31,7 @@ describe('runtime WebSocket route params', () => {
     const query = vi.fn((key?: string) => key === 'filter' ? 'active' : {});
     const context = {
       get,
-      req: { param: () => ({ provider: 'page', id: 'forged' }), query },
+      req: { param: () => ({ id: 'forged' }), query },
     } as any;
     const scoped = withRuntimeRouteParams(context, { team: 'cossack' });
 

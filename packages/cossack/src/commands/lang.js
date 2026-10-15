@@ -258,7 +258,7 @@ export function langHelp() {
 Manage localization catalogs under src/lang/.
 
 Subcommands:
-  publish                Create src/lang/<locale>.json (default en) with a
+  publish (init)         Create src/lang/<locale>.json (default en) with a
                          starter catalog, and wire root.ts and APP_LOCALE.
                          It does not scan your sources; use extract.
   add <locale>           Create src/lang/<locale>.json with empty values,

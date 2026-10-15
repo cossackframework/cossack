@@ -17,7 +17,7 @@ const ctx: RouterContext = {
 function appFor(context: RouterContext = ctx) {
     const app = new Hono();
     const action = vi.fn((c: any) => c.text('executed'));
-    for (const route of ['/crpc', '/upload', '/sse/:componentRouteId', '/ws/:provider/:id']) {
+    for (const route of ['/crpc', '/upload', '/sse/:componentRouteId', '/ws/:id']) {
         app.use(route, protectTransport(context));
         app.all(route, action);
     }
@@ -69,7 +69,7 @@ describe('transport security boundary', () => {
         }
     });
 
-    it.each(['/crpc', '/upload', '/sse/private', '/ws/page/target?routePath=/private'])('enforces page guards for %s', async (route) => {
+    it.each(['/crpc', '/upload', '/sse/private', '/ws/target?routePath=/private'])('enforces page guards for %s', async (route) => {
         const guard = vi.fn((c: any) => c.json({ error: 'Forbidden' }, 403));
         const getMiddlewares = vi.fn(() => [guard]);
         const { app, action } = appFor({ ...ctx, getMiddlewares });
@@ -162,8 +162,8 @@ describe('transport security boundary', () => {
             })) as never);
             await next();
         });
-        app.get('/ws/:provider/:id', handleWebSocketProxy(ctx));
-        const response = await app.request('/ws/page/target?routePath=/private', { headers: {
+        app.get('/ws/:id', handleWebSocketProxy(ctx));
+        const response = await app.request('/ws/target?routePath=/private', { headers: {
             origin: 'http://localhost', 'X-User-ID': 'admin', 'X-User-Data': '{"id":"admin","role":"admin"}',
         } }, { COSSACK_OBJECT: { idFromName: () => ({ toString: () => 'target' }), idFromString: () => 'target', get: () => ({ fetch: forward }) } });
         expect(response.status).toBe(200);
@@ -181,8 +181,8 @@ describe('transport security boundary', () => {
         const forward = vi.fn(async () => new Response('forwarded'));
         const app = new Hono();
         app.use('*', async (c, next) => { c.set('user' as never, { id: 'taras-Тарас', name: 'Тарас 🎉' } as never); await next(); });
-        app.get('/ws/:provider/:id', handleWebSocketProxy(ctx));
-        const response = await app.request('/ws/page/target?routePath=/private', { headers: { origin: 'http://localhost' } },
+        app.get('/ws/:id', handleWebSocketProxy(ctx));
+        const response = await app.request('/ws/target?routePath=/private', { headers: { origin: 'http://localhost' } },
             { COSSACK_OBJECT: { idFromName: () => ({ toString: () => 'target' }), idFromString: () => 'target', get: () => ({ fetch: forward }) } });
         expect(response.status).toBe(200);
         const headers = (forward.mock.calls[0] as unknown as [Request])[0].headers;
@@ -206,9 +206,9 @@ describe('transport security boundary', () => {
             c.set('cossack.captureRealtimeIdentity' as never, (async () => ({ version: 1, provider: 'fixture.session', data: {} })) as never);
             await next();
         });
-        app.get('/ws/:provider/:id', handleWebSocketProxy(teamContext));
+        app.get('/ws/:id', handleWebSocketProxy(teamContext));
         const params = JSON.stringify({ team: 'alpha' });
-        const response = await app.request(`/ws/page/stale?${new URLSearchParams({ routePath: '/private', params })}`, {
+        const response = await app.request(`/ws/stale?${new URLSearchParams({ routePath: '/private', params })}`, {
             headers: { origin: 'http://localhost' },
         }, { COSSACK_OBJECT: {
             idFromString: () => 'stale', idFromName: () => ({ toString: () => 'current' }), get: () => ({ fetch: forward }),

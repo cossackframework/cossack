@@ -2,7 +2,8 @@ import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import { FEATURE_REGISTRY, FEATURES } from '@cossackframework/scaffold/registry';
-import { printHelp } from '../src/dispatch.js';
+import { COMMANDS, printHelp } from '../src/dispatch.js';
+import { COSSACK_PACKAGES } from '../src/installed-packages.js';
 import { addHelp } from '../src/commands/add.js';
 import { removeHelp } from '../src/commands/remove.js';
 import { langHelp } from '../src/commands/lang.js';
@@ -30,6 +31,18 @@ describe('help lists features from the scaffold registry', () => {
     const rows = Object.fromEntries([...docs.matchAll(/^\| `([a-z-]+)` \| ((?:`[a-z-]+`(?:, )?)*) ?\|$/gm)]
       .map(([, feature, requires]) => [feature, [...requires.matchAll(/`([a-z-]+)`/g)].map(match => match[1])]));
     expect(rows).toEqual(Object.fromEntries(FEATURES.map(feature => [feature, FEATURE_REGISTRY[feature].requires])));
+  });
+
+  it('names every feature and command in the CLI package README', () => {
+    const readme = fs.readFileSync(fileURLToPath(new URL('../README.md', import.meta.url)), 'utf8');
+    for (const feature of FEATURES) expect(readme, feature).toContain(`\`${feature}\``);
+    for (const command of Object.keys(COMMANDS)) expect(readme, command).toMatch(new RegExp(`^\\| \`${command}[ \`]`, 'm'));
+  });
+
+  it('lists every documentation package in docs/local-agent-tools.md', () => {
+    const docs = fs.readFileSync(fileURLToPath(new URL('../../../docs/local-agent-tools.md', import.meta.url)), 'utf8');
+    const section = docs.slice(docs.indexOf('The allowed names are'), docs.indexOf('Without `package`'));
+    expect([...section.matchAll(/`([^`]+)`/g)].map(match => match[1])).toEqual([...COSSACK_PACKAGES]);
   });
 
   it('lists every lang subcommand in the top-level help', () => {

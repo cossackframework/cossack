@@ -37,7 +37,7 @@ import {html,hydrate,render,component} from '@cossackframework/renderer';
 import {MultiSelect} from '@cossackframework/ui';
 const template=${templateSource},container=document.querySelector('#app'),initial=container.querySelector('#skills');
 let props={};window.changes=[];window.native=[];
-const callbacks={onChange:values=>{window.changes.push([...values]);if(window.defer){window.pending=values;return;}if(window.accept){props.value=values;draw();}},validate:value=>value===window.reject?'Not allowed':null,'@input':event=>window.native.push(event.currentTarget.id),'@keydown':event=>{if(window.veto)event.preventDefault();}};
+const callbacks={onValueChange:values=>{window.changes.push([...values]);if(window.defer){window.pending=values;return;}if(window.accept){props.value=values;draw();}},validate:value=>value===window.reject?'Not allowed':null,'@input':event=>window.native.push(event.currentTarget.id),'@keydown':event=>{if(window.veto)event.preventDefault();}};
 function draw(){render(template({...props,...callbacks}),container);}
 window.update=next=>{props={...props,...next};draw();};
 window.flush=()=>{props.value=window.pending;window.pending=undefined;draw();};

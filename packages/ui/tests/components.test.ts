@@ -8,11 +8,10 @@ import {
     Label,
     Alert,
     Modal,
-    AccordionItem,
+    Accordion,
     Textarea,
     Checkbox,
     Switch,
-    Select,
     Spinner,
     Avatar,
     Separator,
@@ -122,6 +121,25 @@ describe("Input", () => {
 });
 
 describe("NativeSelect", () => {
+    it("renders a native <select> with passed-through <option> children", () => {
+        // Pass options as a template result so they aren't HTML-escaped.
+        const out = renderComp(
+            NativeSelect,
+            {},
+            html`<option value="a">A</option><option value="b">B</option>`,
+        );
+        expect(out).toContain("<select");
+        expect(out).toContain("cs-native-select");
+        expect(out).toContain(">A</option>");
+        expect(out).toContain("appearance-none");
+    });
+
+    it("renders a chevron svg overlay", () => {
+        const out = renderComp(NativeSelect, {});
+        expect(out).toContain("cs-native-select__icon");
+        expect(out).toContain("<svg");
+    });
+
     it("uses a transparent closed surface while preserving native color-scheme", () => {
         const out = renderComp(
             NativeSelect,
@@ -211,10 +229,10 @@ describe("Modal", () => {
     });
 });
 
-describe("AccordionItem", () => {
+describe("Accordion", () => {
     it("renders a button + content div (not <details>/<summary>)", () => {
         const out = renderComp(
-            AccordionItem,
+            Accordion,
             { id: "section", summary: "Section A" },
             "Panel body",
         );
@@ -226,8 +244,8 @@ describe("AccordionItem", () => {
     });
 
     it("renders unclamped open content and inert closed content", () => {
-        const open = renderComp(AccordionItem, { id: "section", open: true, summary: "X" });
-        const closed = renderComp(AccordionItem, { id: "section", open: false, summary: "X" });
+        const open = renderComp(Accordion, { id: "section", open: true, summary: "X" });
+        const closed = renderComp(Accordion, { id: "section", open: false, summary: "X" });
         expect(open).toContain("height: auto; overflow: visible");
         expect(open).toContain('aria-expanded="true"');
         expect(open).not.toContain("inert");
@@ -238,7 +256,7 @@ describe("AccordionItem", () => {
     });
 
     it("renders a chevron svg that rotates when open", () => {
-        const open = renderComp(AccordionItem, { id: "section", open: true, summary: "X" });
+        const open = renderComp(Accordion, { id: "section", open: true, summary: "X" });
         expect(open).toContain("cs-accordion__chevron");
         expect(open).toContain("rotate(180deg)");
     });
@@ -286,28 +304,6 @@ describe("Switch", () => {
         expect(on).toMatch(/\bchecked(?:=|\s|>)/);
         expect(off).not.toMatch(/\bchecked(?:=|\s|>)/);
         expect(on + off).not.toContain('aria-checked');
-    });
-});
-
-describe("Select", () => {
-    it("renders a native <select> with passed-through <option> children", () => {
-        // Pass options as a template result so they aren't HTML-escaped.
-        const out = renderComp(
-            Select,
-            {},
-            html`<option value="a">A</option><option value="b">B</option>`,
-        );
-        expect(out).toContain("<select");
-        expect(out).toContain("cs-select");
-        expect(out).toContain("<option");
-        expect(out).toContain(">A</option>");
-        expect(out).toContain("appearance-none");
-    });
-
-    it("renders a chevron svg overlay", () => {
-        const out = renderComp(Select, {});
-        expect(out).toContain("cs-select__icon");
-        expect(out).toContain("<svg");
     });
 });
 

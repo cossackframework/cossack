@@ -253,6 +253,8 @@ it('runs the protected-route recipe with real sessions, nested guards, forged st
     page.on('pageerror', error => errors.push(error.message));
     await page.goto(origin + '/protected-route');
     await browserExpect(page).toHaveURL(origin + '/auth/login');
+    // A click before hydration submits the form natively and stays on the login page.
+    await page.waitForFunction(() => window.__cossackReady === true);
     await page.getByPlaceholder('user@example.com').fill('agent@example.test');
     await page.locator('input[type="password"]').fill('test-password-123');
     await page.getByRole('button', { name: 'Sign In', exact: true }).click();

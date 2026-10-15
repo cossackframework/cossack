@@ -37,7 +37,7 @@ import {html,hydrate,render,component} from '@cossackframework/renderer';
 import {InputOTP} from '@cossackframework/ui';
 const template=${templateSource},container=document.querySelector('#app'),initial=container.querySelector('input');
 window.events=[];let props={};
-const callbacks={onChange:(code,event)=>{window.events.push(['change',code,event.currentTarget.id]);if(window.accept){props.value=code;update();}},onComplete:(code,event)=>window.events.push(['complete',code,event.currentTarget.id]),'@input':event=>window.events.push(['input',event.currentTarget.value,event.currentTarget.id]),'@paste':event=>{if(window.veto)event.preventDefault();}};
+const callbacks={onValueChange:(code,event)=>{window.events.push(['change',code,event.currentTarget.id]);if(window.accept){props.value=code;update();}},onComplete:(code,event)=>window.events.push(['complete',code,event.currentTarget.id]),'@input':event=>window.events.push(['input',event.currentTarget.value,event.currentTarget.id]),'@paste':event=>{if(window.veto)event.preventDefault();}};
 function update(){render(template({...props,...callbacks}),container);}
 window.update=next=>{props={...props,...next};update();};
 hydrate(template(callbacks),container);window.retained=initial===container.querySelector('input');

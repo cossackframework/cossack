@@ -28,8 +28,6 @@
     "binding": "ASSETS",
     "run_worker_first": true
   },
-  // The /r2-upload demo writes through the Storage facade to this binding.
-  "r2_buckets": [{ "binding": "FILES", "bucket_name": "serverdash" }],
   "secrets": { "required": ["APP_SECRET"] },
   "vars": {
     "APP_URL": "https://cossack.dev",

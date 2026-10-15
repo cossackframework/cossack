@@ -38,7 +38,7 @@ import {html,hydrate,render,component} from '@cossackframework/renderer';
 import {Combobox} from '@cossackframework/ui';
 const template=${templateSource},container=document.querySelector('#app'),initial=container.querySelector('#country');
 let props={};window.changes=[];window.native=[];
-const callbacks={onChange:value=>{window.changes.push(value);if(window.accept){props.value=value;draw();}},'@input':event=>window.native.push(event.currentTarget.id),'@keydown':event=>{if(window.veto)event.preventDefault();}};
+const callbacks={onValueChange:value=>{window.changes.push(value);if(window.accept){props.value=value;draw();}},'@input':event=>window.native.push(event.currentTarget.id),'@keydown':event=>{if(window.veto)event.preventDefault();}};
 function draw(){render(template({...props,...callbacks}),container);}
 window.update=next=>{props={...props,...next};draw();};
 hydrate(template(callbacks),container);window.retained=initial===container.querySelector('#country');

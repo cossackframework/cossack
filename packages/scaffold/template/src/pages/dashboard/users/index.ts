@@ -278,7 +278,7 @@ export default class UsersPage extends Cossack {
                     actionLabel: __('Delete'),
                     actionVariant: 'destructive',
                     onAction: () => this.confirmDelete(),
-                    onClose: () => { this.pendingDelete = null; },
+                    onOpenChange: () => { this.pendingDelete = null; },
                 })}
             </div>
         `;

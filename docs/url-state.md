@@ -84,7 +84,7 @@ For repeated relative increments, compute the intended number explicitly:
 two calls that both read `this.filters.page + 1` request the same number.
 
 Same-path navigation to the same page class preserves declared `ClientState`
-and `ClientStore` drafts when user, transport, provider and service ownership
+and `ClientStore` drafts when user, transport, real-time target and service ownership
 match. The framework adopts the latest local values when publishing the prepared page. SSR JSON and copied URLs
 cannot restore them. Stores get proxies owned by the new page. Declared File
 values retain their identity. Browser file-input DOM values are not restored.

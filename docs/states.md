@@ -184,7 +184,7 @@ Missing values retain the initializer.
 | `flash: 'message'` | Read the flashed value under that key |
 | `old: true` | Read old form input under the field name |
 | `old: 'address.street'` | Read old form input using that path |
-| `channel`, `provider` | Select the logical grouping and provider for realtime dispatch |
+| `channel` | Select the logical grouping for realtime dispatch |
 
 If both `flash` and `old` are present, `flash` takes precedence.
 A client-only decorator does not accept these public binding options.

@@ -148,7 +148,7 @@ export async function verifyDevelopmentTraceApplication(root,{onRecorded,additio
     });
     expect(await (await page.request.get(origin+'/api/trace-context?check=public')).json()).toEqual({url:origin+'/api/trace-context?check=public'});
     await page.goto(origin);await page.waitForFunction(()=>!!window.__traceFixture,{},{timeout:30000});
-    if(transport==='durable-object')await page.waitForFunction(()=>Object.values(window.__traceFixture.component.realtime.websockets).some(connection=>connection.state==='open'),{},{timeout:30000});
+    if(transport==='durable-object')await page.waitForFunction(()=>window.__traceFixture.component.realtime.websocket.state==='open',{},{timeout:30000});
     expect(await page.content()).toContain('cossack-start:');
     expect(await page.evaluate(()=>window.__traceFixture.tools.snapshot())).toBeNull();
     await page.getByRole('button',{name:'Record trace',exact:true}).click();

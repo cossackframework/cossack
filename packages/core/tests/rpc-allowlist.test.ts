@@ -19,7 +19,7 @@ describe('isRpcCallableAction (RPC allowlist gate)', () => {
             @Server()
             save() {}
         }
-        for (const field of ['_runtime', '_cossack_ws_context', '_cossack_provider_name']) {
+        for (const field of ['_runtime', '_cossack_ws_context']) {
             expect(isRpcCallableAction(Cossack, field)).toBe(false);
             expect(isRpcCallableAction(Page, field)).toBe(false);
             expect(collectServerMethodMetadata(Page)).not.toHaveProperty(field);
@@ -57,7 +57,7 @@ describe('isRpcCallableAction (RPC allowlist gate)', () => {
             format() { return 'local'; }
         }
         Reflect.defineMetadata('cossack:server-methods', {
-            format: { channel: 'global', provider: 'page' },
+            format: { channel: 'global' },
         }, Page);
         expect(isRpcCallableAction(Page, 'format')).toBe(false);
     });
@@ -83,13 +83,10 @@ describe('isRpcCallableAction (RPC allowlist gate)', () => {
         // client-side stripping; they are not RPC endpoints.
         class Page {
             @Server()
-            initializeProviders() {}
-            @Server()
             proxyClientMethods() {}
             @Server()
             validateChannels() {}
         }
-        expect(isRpcCallableAction(Page, 'initializeProviders')).toBe(false);
         expect(isRpcCallableAction(Page, 'proxyClientMethods')).toBe(false);
         expect(isRpcCallableAction(Page, 'validateChannels')).toBe(false);
     });

@@ -22,7 +22,7 @@ it('decodes percent-encoded user id and scope headers without trusting user data
     const state = { storage: { get: vi.fn(), put: vi.fn() }, setWebSocketAutoResponse: vi.fn(), getWebSockets: () => [], acceptWebSocket: vi.fn(), waitUntil: vi.fn() };
     const object = new FixtureObject(state as unknown as DurableObjectState, {});
     await object.fetch(new Request('https://fixture.test/global?pathname=/live&params={}', { headers: {
-        'X-Component-Path': '/src/pages/live/index.ts', 'X-Provider-Name': 'page',
+        'X-Component-Path': '/src/pages/live/index.ts',
         'X-User-ID': encodeURIComponent('taras-Тарас'), 'X-User-Data': '{"id":"admin","role":"admin"}',
         'X-Cossack-Realtime-Scope': encodeURIComponent('user:taras-Тарас'),
     } })).catch(() => undefined);

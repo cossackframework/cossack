@@ -13,14 +13,16 @@ vi.mock('@cossackframework/scaffold', () => ({
   parseList: (value) => String(value).split(','),
 }));
 
-vi.mock('../src/templates.js', () => ({
-  UI_COMPONENTS: {
-    button: {
-      className: 'Button',
-      template: () => 'export class Button {}\n',
+vi.mock('../src/templates.js', () => {
+  const dialog = { path: 'internal/dialog.ts', content: 'export class DialogController {}\n' };
+  return {
+    UI_COMPONENTS: {
+      button: { className: 'Button', template: () => 'export class Button {}\n', helpers: () => [] },
+      modal: { className: 'Modal', template: () => "import './internal/dialog';\n", helpers: () => [dialog] },
+      sheet: { className: 'Sheet', template: () => "import './internal/dialog';\n", helpers: () => [dialog] },
     },
-  },
-}));
+  };
+});
 
 import { addCommand } from '../src/commands/add.js';
 
@@ -101,7 +103,7 @@ describe('add command UI component ejection', () => {
     expect(await addCommand(['ui', 'missing'], context())).toBe(1);
     expect(addFeatureMock).not.toHaveBeenCalled();
     expect(console.error).toHaveBeenCalledWith(
-      expect.stringContaining('Available components: button'),
+      expect.stringContaining('Available components: button, modal, sheet'),
     );
   });
 
@@ -119,5 +121,34 @@ describe('add command UI component ejection', () => {
     await expect(fs.access(
       path.join(root, 'src/components/ui/Button.ts'),
     )).rejects.toThrow();
+  });
+
+  it('copies a private helper once and shares it with later ejections', async () => {
+    const helper = path.join(root, 'src/components/ui/internal/dialog.ts');
+    expect(await addCommand(['ui', 'modal'], context())).toBe(0);
+    expect(await fs.readFile(helper, 'utf8')).toBe('export class DialogController {}\n');
+    await fs.writeFile(helper, '// customized\n');
+
+    expect(await addCommand(['ui', 'sheet'], context())).toBe(0);
+    expect(await fs.readFile(path.join(root, 'src/components/ui/Sheet.ts'), 'utf8')).toBe("import './internal/dialog';\n");
+    expect(await fs.readFile(helper, 'utf8')).toBe('// customized\n');
+    expect(console.error).not.toHaveBeenCalled();
+
+    expect(await addCommand(['ui', 'sheet'], context({ force: true }))).toBe(0);
+    expect(await fs.readFile(helper, 'utf8')).toBe('export class DialogController {}\n');
+  });
+
+  it('reports helper effects in JSON output and writes nothing during dry runs', async () => {
+    const json = context({ flags: { yes: true, json: true } });
+    expect(await addCommand(['ui', 'modal'], context({ dryRun: true }))).toBe(0);
+    await expect(fs.access(path.join(root, 'src/components/ui/internal/dialog.ts'))).rejects.toThrow();
+    vi.mocked(console.log).mockClear();
+    expect(await addCommand(['ui', 'modal'], json)).toBe(0);
+    expect(await addCommand(['ui', 'sheet'], json)).toBe(0);
+    const reports = vi.mocked(console.log).mock.calls.map(([line]) => JSON.parse(line));
+    expect(reports.map(report => report.data.effects.map(effect => effect.action))).toEqual([
+      ['created', 'created'],
+      ['created', 'preserved'],
+    ]);
   });
 });

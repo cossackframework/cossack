@@ -14,7 +14,7 @@ Marks a class as a page component. Applied to route pages and layouts.
     stateful: false,            // boolean — persist state in DO storage (only with 'durable-object')
     middlewares: [],            // MiddlewareHandler[] — server middleware
     channels: ['global'],       // string[] — state channels for real-time
-    providers: {},              // { [key: string]: StateProvider }
+    scope?: (c) => '',          // (c: Context) => string — SSE scope / real-time instance key
     route?: '',                 // Override the file-based route
     ssg?: false,                // boolean | SsgOptions — static generation
 })
@@ -51,14 +51,12 @@ count: number = 0;
 
 @State({ channel: 'feeds' })
 feedCount: number = 0;
-
-@State({ provider: 'user-session' })
-userPrefs: Record<string, string> = {};
 ```
 
 Options:
 - `channel?: string` — Channel for partial updates (default: `'global'`)
-- `provider?: string` — State provider name (default: `'page'`)
+
+To share state per user, team or room, set `scope` on the page (see `realtime.md`).
 
 ### `@ClientState()`
 
@@ -91,7 +89,6 @@ this.form.tags.splice(0, 1);
 Use `@Store` when you mutate nested fields in place. For a single scalar value, `@State` is the right choice. Options are identical to `@State`:
 
 - `channel?: string` — Channel for partial updates (default: `'global'`)
-- `provider?: string` — State provider name (default: `'page'`)
 
 `@Validate` can be stacked on a `@Store` with a **rule map** (keys are paths relative to the store). See `validation.md`.
 
@@ -185,7 +182,6 @@ async updateFeeds() {
 
 Options:
 - `channel?: string` — Channel for the action (default: `'global'`)
-- `provider?: string` — State provider (default: `'page'`)
 
 ### `@Client(options?)`
 

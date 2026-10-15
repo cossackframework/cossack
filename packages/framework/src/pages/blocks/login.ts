@@ -121,7 +121,7 @@ export default class LoginBlocks extends Cossack {
                 ${component(PasswordInput, {
                     id: 'password', placeholder: '••••••••',
                     value: this.password,
-                    onChange: (value: string) => { this.password = value; },
+                    onValueChange: (value: string) => { this.password = value; },
                     'aria-invalid': this.hasError('password'),
                     '@blur': () => this.validateProperty('password', 'blur'),
                 })}

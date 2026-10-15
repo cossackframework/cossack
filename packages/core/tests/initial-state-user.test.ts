@@ -13,7 +13,7 @@ class Live extends Cossack { @State() count = 3; }
 
 async function live() {
   const component = new Live();
-  await component.bootstrap({ context: new Context(new Request('http://localhost/live')) as any, user, page: '/live', providerTargets: { page: 'target' }, skipInit: true } as any);
+  await component.bootstrap({ context: new Context(new Request('http://localhost/live')) as any, user, page: '/live', skipInit: true } as any);
   return component;
 }
 afterEach(() => setPublicUserProjection(undefined));

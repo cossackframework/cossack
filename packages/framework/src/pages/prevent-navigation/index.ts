@@ -48,7 +48,7 @@ export default class PreventNavigationDemo extends Cossack {
                 description: 'You have unsaved text in the input field. Are you sure you want to leave?',
                 cancelLabel: 'Stay',
                 actionLabel: 'Leave without saving',
-                onClose: () => this.confirmNavigation(false),
+                onOpenChange: () => this.confirmNavigation(false),
                 onAction: () => this.confirmNavigation(true),
             })}
         `;

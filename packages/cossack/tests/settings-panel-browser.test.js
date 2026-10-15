@@ -43,8 +43,8 @@ for(const section of sections){section.rows.forEach(Object.freeze);Object.freeze
 const template=${source},container=document.querySelector('#app'),original=container.querySelector('#settings');
 window.changes=[];window.actions=[];window.targets=[];window.accept=false;window.mutate=false;window.throwChange=false;
 let props={};
-const onChange=values=>{window.changes.push({...values});if(window.accept)window.update({values});if(window.mutate)values.name='MUTATED';if(window.throwChange)throw new Error('callback failure');};
-const current=()=>({...props,onChange,onAction:key=>window.actions.push(key),'@click':event=>window.targets.push(event.currentTarget.tagName)});
+const onValuesChange=values=>{window.changes.push({...values});if(window.accept)window.update({values});if(window.mutate)values.name='MUTATED';if(window.throwChange)throw new Error('callback failure');};
+const current=()=>({...props,onValuesChange,onAction:key=>window.actions.push(key),'@click':event=>window.targets.push(event.currentTarget.tagName)});
 window.update=patch=>{props={...props,...patch};render(template(current()),container);};
 window.remount=(controlled=false)=>{render(html\`<p>Between</p>\`,container);props=controlled?{defaultValues:undefined,values:{email:true,name:'Jane',locked:'Fixed'}}:{};render(template(current()),container);};
 window.unmount=()=>render(html\`<p>Removed</p>\`,container);

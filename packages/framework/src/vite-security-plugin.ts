@@ -1,11 +1,19 @@
 import type { Plugin } from 'vite';
 import { parseSync } from 'vite';
-import { readFileSync } from 'node:fs';
-import { posix } from 'node:path';
+import { readFileSync, statSync } from 'node:fs';
+import { isBuiltin } from 'node:module';
+import { dirname, isAbsolute, join, posix, resolve as resolvePath } from 'node:path';
 import { isHttpHandlerProgram } from './page-inspection.js';
 
 export interface CossackSecurityPluginOptions {
   devWarning?: boolean;
+  /**
+   * During `vite dev`, log the automatic RPC endpoints found in each module:
+   * undecorated methods that templates use as event handlers, which therefore
+   * run on the server. Logged again when a module's endpoints change.
+   * Defaults to `devWarning`, except under Vitest.
+   */
+  logRpcEndpoints?: boolean;
 }
 
 /**
@@ -57,15 +65,42 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
   const {
     devWarning = true,
   } = options;
+  const logRpcEndpoints = options.logRpcEndpoints ?? (devWarning && !process.env.VITEST);
   // Vite's resolved root, shared by the client and server environments, so
   // generated server$ method names agree between both bundles.
   let projectRoot: string | undefined;
+  let aliases: readonly SecurityResolveAlias[] = [];
+  let serving = false;
+  let logInfo: ((message: string) => void) | undefined;
+  // Last logged endpoint list per module, so a dev session logs changes only.
+  const loggedEndpoints = new Map<string, string>();
+  /** Class discovery follows imported base classes the way Vite resolves them. */
+  const discoveryOptions = (id: string): ClassDiscoveryOptions => ({
+    file: id.split(/[?#]/)[0], root: projectRoot, aliases,
+  });
+  const reportEndpoints = (id: string, endpoints: AutomaticRpcEndpoints[]) => {
+    if (!serving || !logRpcEndpoints || !logInfo) return;
+    const list = endpoints.flatMap(({ className, methods }) => methods.map(method => `${className}.${method}`)).join(', ');
+    const label = resourceModuleKey(id, projectRoot);
+    if ((loggedEndpoints.get(label) ?? '') === list) return;
+    loggedEndpoints.set(label, list);
+    logInfo(list
+      ? `[cossack-security] ${label}: automatic RPC endpoints ${list} (undecorated methods used as event handlers run on the server).`
+      : `[cossack-security] ${label}: no automatic RPC endpoints.`);
+  };
   // load() parses every client script module it inspects. When it leaves the
   // module to Vite, the client transform() of the same id normally receives
   // exactly that source next, so it takes over the program instead of
   // parsing again. A program is reused only for an identical source string,
   // and each entry is taken (removed) by the first transform of its id.
   const loadedPrograms = new Map<string, { source: string; program: any }>();
+
+  /** An application source file: inside the Vite root, outside dependencies. */
+  function isProjectModule(cleanId: string): boolean {
+    if (!projectRoot || cleanId.includes('/node_modules/')) return false;
+    const root = projectRoot.replace(/\\/g, '/').replace(/\/+$/, '');
+    return cleanId.replace(/\\/g, '/').startsWith(`${root}/`);
+  }
 
   /**
    * Check if the file should be processed.
@@ -100,6 +135,11 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
 
     configResolved(config) {
       projectRoot = config.root;
+      serving = config.command === 'serve';
+      logInfo = message => config.logger.info(message, { timestamp: true });
+      aliases = (config.resolve?.alias ?? [])
+        .filter((alias: any) => typeof alias?.replacement === 'string' && (typeof alias.find === 'string' || alias.find instanceof RegExp))
+        .map((alias: any) => ({ find: alias.find, replacement: alias.replacement }));
     },
 
     /**
@@ -219,9 +259,21 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
         // load() would erase the component before the AST security pass.
         let component = false;
         try {
-          component = frameworkClasses(moduleProgram).size > 0;
+          component = frameworkClasses(moduleProgram, importedBasesOf(moduleProgram, discoveryOptions(cleanId))).size > 0;
         } catch { /* generate the conservative stub below */ }
         if (!component) return serverOnlyStub(namedExportsOf(moduleProgram), moduleLabelFromId(cleanId));
+      }
+      // transform() strips `.ts` and `.mts` application modules only. A
+      // framework class in another script module of the project (`.js`,
+      // `.tsx`, ...) would reach the browser unstripped: fail the build.
+      if (moduleProgram && !shouldProcessFile(id) && isProjectModule(cleanId)) {
+        let classes: Set<any> | undefined;
+        try { classes = frameworkClasses(moduleProgram, importedBasesOf(moduleProgram, discoveryOptions(cleanId))); }
+        catch { /* not a component the transform could have handled either */ }
+        if (classes?.size) {
+          throw new Error(`[Cossack Security] ${cleanId}: framework classes must be written in .ts or .mts modules. ` +
+            'The client build strips server code from those files only. Rename the module.');
+        }
       }
       if (moduleProgram && source && shouldProcessFile(id)) loadedPrograms.set(id, { source, program: moduleProgram });
     },
@@ -237,13 +289,15 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
       // One parse serves every step below while the source is unchanged. A
       // step that rewrites the source invalidates AST positions, so the next
       // step that needs a program parses the rewritten source once.
-      let module = new ParsedModule(code, loaded?.source === code ? loaded.program : undefined);
+      // Imported base classes are classified once, from the authored imports.
+      let module = new ParsedModule(code, loaded?.source === code ? loaded.program : undefined)
+        .discover(discoveryOptions(id));
 
       // server$ is a compiler macro in both environments. On the server its
       // generated method retains the loader; the normal client pass below
       // replaces that method with the existing RPC proxy stub.
       if (code.includes('server$')) {
-        module = module.with(expandServerResources(module.code, module.program, id, undefined, projectRoot));
+        module = module.with(expandServerResources(module.code, module.program, id, undefined, projectRoot, module.imported));
       }
 
       // Check if this file contains a Cossack class or a @Service decorated class
@@ -256,22 +310,9 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
       // makes the RPC allowlist accept it; the client registration lets
       // bootstrap replace its stripped stub with the normal transport proxy.
       if (!isClientEnvironment) {
-        return {
-          code: injectServerMethodMetadata(module, isClientSafeMethod, BUILTIN_METHODS),
-          map: null,
-        };
-      }
-
-      // Discovery cannot see through a base class imported from another file.
-      // Warn (without changing stripping) when such a subclass in pages or
-      // components has methods that would otherwise be stripped.
-      for (const finding of unstrippedImportedSubclasses(module, id)) {
-        this.warn?.(
-          `[Cossack Security] ${id}: class ${finding.className} extends imported ${finding.baseName}, which the client ` +
-          `bundle transform cannot follow across files, so its undecorated methods (${finding.methods.join(', ')}) ` +
-          'ship to the browser unchanged. Decorate the class with @Page() or @Component(), or mark server methods ' +
-          'with @Server(). See docs/client-bundle.md#build-failures-and-class-discovery.',
-        );
+        const injected = injectServerMethodMetadata(module, isClientSafeMethod, BUILTIN_METHODS);
+        reportEndpoints(id, injected.endpoints);
+        return { code: injected.code, map: null };
       }
 
       const stripped = stripClientClasses(module, id, isClientSafeMethod, BUILTIN_METHODS, devWarning);
@@ -461,7 +502,14 @@ export function transformServerResources(code: string, id: string, sources?: Res
 }
 
 /** {@link transformServerResources} given `program`, the parse of `code` (or null). */
-function expandServerResources(code: string, program: any | null, id: string, sources?: ResourceSource[], root?: string): string {
+function expandServerResources(
+  code: string,
+  program: any | null,
+  id: string,
+  sources?: ResourceSource[],
+  root?: string,
+  imported: ImportedBases = NO_IMPORTED_BASES,
+): string {
   if (!program) throw new Error(`[Cossack server$] Could not parse ${id}.`);
   const bindings = new Set<string>();
   for (const statement of program.body ?? []) {
@@ -477,8 +525,9 @@ function expandServerResources(code: string, program: any | null, id: string, so
   const replacements: MacroReplacement[] = [];
   let hasGeneratedResources = false;
   const allowedCalls = new Set<number>();
+  const selected = frameworkClasses(program, imported);
   for (const cls of findClasses(program)) {
-    if (!frameworkClasses(program).has(cls)) continue;
+    if (!selected.has(cls)) continue;
     const className = classNameOf(program, cls) ?? 'Anonymous';
     let inlineOrdinal = 0;
     const generated: string[] = [];
@@ -606,8 +655,12 @@ function parseProgram(code: string): any | null {
 class ParsedModule {
   #program: any | null | undefined;
 
-  /** `program` (when known) must be the parse of exactly `code`. */
-  constructor(readonly code: string, program?: any | null) {
+  /**
+   * `program` (when known) must be the parse of exactly `code`. `imported`
+   * classifies the module's imported base classes; rewrites keep imports, so
+   * it carries over to every later step.
+   */
+  constructor(readonly code: string, program?: any | null, readonly imported: ImportedBases = NO_IMPORTED_BASES) {
     this.#program = program;
   }
 
@@ -619,7 +672,13 @@ class ParsedModule {
 
   /** The module after a step that produced `code`. */
   with(code: string): ParsedModule {
-    return code === this.code ? this : new ParsedModule(code);
+    return code === this.code ? this : new ParsedModule(code, undefined, this.imported);
+  }
+
+  /** The same source with its imported base classes classified for `options`. */
+  discover(options: ClassDiscoveryOptions): ParsedModule {
+    const program = this.program;
+    return program ? new ParsedModule(this.code, program, importedBasesOf(program, options)) : this;
   }
 }
 
@@ -1182,11 +1241,64 @@ function typedDecoratorBindings(program: any): { aliases: ReadonlyMap<string, st
 
 const typedDecoratorBindingSets = new WeakMap<any, { aliases: ReadonlyMap<string, string>; namespaces: ReadonlySet<string> }>();
 
-const frameworkClassSets = new WeakMap<any, { selected: Set<any>; hidden?: any }>();
+/**
+ * Base classes that make a subclass a framework class when imported from a
+ * `@cossackframework/*` package (directly, aliased, or through a namespace).
+ */
+const FRAMEWORK_BASE_NAMES: ReadonlySet<string> = new Set(['Cossack', 'CossackElement', 'CossackService']);
+/** Class decorators that mark a framework class, whatever module provides them. */
+const FRAMEWORK_CLASS_DECORATOR_NAMES: ReadonlySet<string> = new Set(['Page', 'Component', 'Service']);
+
+/** Vite `resolve.alias` entry, as normalized in Vite's resolved config. */
+export interface SecurityResolveAlias {
+  find: string | RegExp;
+  replacement: string;
+}
+
+/**
+ * Where class discovery may look for a base class imported from another
+ * module. The client and server transforms pass the same options, so both
+ * builds classify every class the same way.
+ */
+export interface ClassDiscoveryOptions {
+  /** Absolute, query-free path of the module. Relative imports resolve from it. */
+  file?: string;
+  /** Vite project root. Root-relative imports (`/src/...`) resolve against it. */
+  root?: string;
+  /** Vite `resolve.alias` entries, applied before relative resolution. */
+  aliases?: readonly SecurityResolveAlias[];
+}
+
+/**
+ * Imported bindings used as base classes, classified by reading the module
+ * they come from. Keys are local names (`Base`) or namespace members (`lib.Base`).
+ */
+interface ImportedBases {
+  framework: ReadonlySet<string>;
+  /** Bases discovery cannot classify, with the reason. */
+  unknown: ReadonlyMap<string, string>;
+}
+
+const NO_IMPORTED_BASES: ImportedBases = Object.freeze({ framework: new Set<string>(), unknown: new Map<string, string>() });
+
+interface FrameworkClassSelection {
+  selected: Set<any>;
+  /** A framework class nested in another class body (rejected by the client build). */
+  hidden?: any;
+  /**
+   * Classes that are not framework classes as far as discovery can tell, but
+   * extend a base it cannot classify: an unreadable import, a value computed
+   * at runtime, or an expression such as a mixin call. Maps each class to
+   * the reason.
+   */
+  unknown: Map<any, string>;
+}
+
+const frameworkClassSets = new WeakMap<any, { imported: ImportedBases; selection: FrameworkClassSelection }>();
 
 /** Resolve component aliases and local inheritance before selecting classes. */
-function frameworkClasses(program: any): Set<any> {
-  return frameworkClassSelection(program).selected;
+function frameworkClasses(program: any, imported: ImportedBases = NO_IMPORTED_BASES): Set<any> {
+  return frameworkClassSelection(program, imported).selected;
 }
 
 /**
@@ -1195,33 +1307,63 @@ function frameworkClasses(program: any): Set<any> {
  * stub edits. Server builds keep every body, so they allow the pattern (for
  * example a Durable Object subclassing a component inside a method).
  */
-function assertNoHiddenFrameworkClass(program: any): void {
-  const { hidden } = frameworkClassSelection(program);
+function assertNoHiddenFrameworkClass(program: any, imported: ImportedBases): void {
+  const { hidden } = frameworkClassSelection(program, imported);
   if (hidden) {
     throw new Error(`[Cossack Security] Framework class ${classNameOf(program, hidden) ?? '(anonymous)'} is declared inside another class. Move it to module scope so its server-only members can be stripped.`);
   }
 }
 
-function frameworkClassSelection(program: any): { selected: Set<any>; hidden?: any } {
+/** Identifiers and `namespace.member` paths an expression reads. Static property names are not references. */
+function expressionReferences(node: any, names = new Set<string>()): Set<string> {
+  node = unwrapExpression(node);
+  if (!node || typeof node.type !== 'string' || node.type.startsWith('TS')) return names;
+  if (node.type === 'Identifier') {
+    names.add(node.name);
+    return names;
+  }
+  if (node.type === 'MemberExpression') {
+    const object = unwrapExpression(node.object);
+    const property = memberPropertyName(node);
+    if (object?.type === 'Identifier' && property) names.add(`${object.name}.${property}`);
+    expressionReferences(node.object, names);
+    if (node.computed) expressionReferences(node.property, names);
+    return names;
+  }
+  for (const [key, value] of Object.entries(node)) {
+    if (key === 'parent' || key === 'typeAnnotation' || key === 'typeArguments' || key === 'typeParameters') continue;
+    if (Array.isArray(value)) value.forEach(child => expressionReferences(child, names));
+    else if (value && typeof (value as any).type === 'string') expressionReferences(value, names);
+  }
+  return names;
+}
+
+function frameworkClassSelection(program: any, imported: ImportedBases = NO_IMPORTED_BASES): FrameworkClassSelection {
   const cached = frameworkClassSets.get(program);
-  if (cached) return cached;
-  const bases = new Set(['Cossack', 'CossackElement']);
-  const decorators = new Set(['Page', 'Component', 'Service']);
+  if (cached?.imported === imported) return cached.selection;
+  const bases = new Set(FRAMEWORK_BASE_NAMES);
+  const decorators = new Set(FRAMEWORK_CLASS_DECORATOR_NAMES);
   const serverDecorators = new Set(['Server']);
   const namespaces = new Set<string>();
   for (const node of program.body ?? []) {
-    if (node.type !== 'ImportDeclaration' || !String(node.source?.value).startsWith('@cossackframework/')) continue;
+    if (node.type !== 'ImportDeclaration' || node.importKind === 'type') continue;
+    const fromFramework = String(node.source?.value).startsWith('@cossackframework/');
     for (const specifier of node.specifiers ?? []) {
+      if (specifier.importKind === 'type') continue;
+      const importedName = specifier.imported?.name ?? specifier.imported?.value;
+      // Fail closed: a `Page`/`Component`/`Service` value import marks a
+      // framework class, whichever module re-exports it.
+      if (FRAMEWORK_CLASS_DECORATOR_NAMES.has(importedName)) decorators.add(specifier.local.name);
+      if (!fromFramework) continue;
       if (specifier.type === 'ImportNamespaceSpecifier') namespaces.add(specifier.local.name);
-      const imported = specifier.imported?.name;
-      if (bases.has(imported)) bases.add(specifier.local.name);
-      if (decorators.has(imported)) decorators.add(specifier.local.name);
-      if (serverDecorators.has(imported)) serverDecorators.add(specifier.local.name);
+      if (FRAMEWORK_BASE_NAMES.has(importedName)) bases.add(specifier.local.name);
+      if (serverDecorators.has(importedName)) serverDecorators.add(specifier.local.name);
     }
   }
   const typed = typedDecoratorBindings(program);
   for (const [alias, name] of typed.aliases) if (name === 'Server') serverDecorators.add(alias);
   typed.namespaces.forEach(name => namespaces.add(name));
+  imported.framework.forEach(name => bases.add(name));
   const matches = (node: any, names: Set<string>) =>
     node?.type === 'Identifier' ? names.has(node.name) :
     node?.type === 'MemberExpression' && !node.computed &&
@@ -1230,13 +1372,26 @@ function frameworkClassSelection(program: any): { selected: Set<any>; hidden?: a
     const callee = decoratorCallee(decorator);
     return matches(callee, serverDecorators) || typedMemberDecorator(callee) === 'Server';
   };
-  const isFramework = (cls: any) => {
-    const decorated = (cls.decorators ?? []).some((d: any) =>
-      matches(d.expression?.type === 'CallExpression' ? d.expression.callee : d.expression, decorators));
-    const serverMember = (cls.body?.body ?? []).some((member: any) =>
-      (member.decorators ?? []).some(isServerDecorator));
-    return matches(cls.superClass, bases) || decorated || serverMember;
+  const isFrameworkDecorator = (decorator: any) => {
+    const callee = decoratorCallee(decorator);
+    // Like typed member decorators: `@anything.Page()` counts, whatever the namespace.
+    const member = memberPropertyName(callee);
+    return matches(callee, decorators) || (member !== null && FRAMEWORK_CLASS_DECORATOR_NAMES.has(member));
   };
+  // The superclass expression names a framework base anywhere: `Cossack`,
+  // `core.Cossack`, `(Cossack as any)`, or a mixin call such as `Mixin(Cossack)`.
+  const extendsFramework = (cls: any) => {
+    for (const reference of expressionReferences(cls.superClass)) {
+      if (bases.has(reference)) return true;
+      const [namespace, member] = reference.split('.');
+      if (member && namespaces.has(namespace) && bases.has(member)) return true;
+    }
+    return false;
+  };
+  const isFramework = (cls: any) =>
+    extendsFramework(cls) ||
+    (cls.decorators ?? []).some(isFrameworkDecorator) ||
+    (cls.body?.body ?? []).some((member: any) => (member.decorators ?? []).some(isServerDecorator));
   const selected = new Set<any>();
   const { outer, nested } = classIndex(program);
   let changed = true;
@@ -1250,69 +1405,301 @@ function frameworkClassSelection(program: any): { selected: Set<any>; hidden?: a
       changed = true;
     }
   }
-  const result = { selected, hidden: nested.find(isFramework) };
-  frameworkClassSets.set(program, result);
-  return result;
+
+  // Fail closed for bases discovery cannot classify. A module-level binding
+  // holding a computed value (`const Base = makeBase()`) may be a component.
+  const outerByName = new Map<string, any>();
+  for (const cls of outer) {
+    const name = classNameOf(program, cls);
+    if (name) outerByName.set(name, cls);
+  }
+  const computedBindings = new Set<string>();
+  for (const statement of program.body ?? []) {
+    const declaration = statement.type === 'ExportNamedDeclaration' ? statement.declaration : statement;
+    if (declaration?.type !== 'VariableDeclaration') continue;
+    for (const declarator of declaration.declarations) {
+      const init = unwrapExpression(declarator.init);
+      // Destructured bindings (`const { Base } = makeBases()`) are computed too.
+      if (init && !isClassNode(init)) addBindingName(declarator.id, computedBindings);
+    }
+  }
+  const unknown = new Map<any, string>();
+  changed = true;
+  while (changed) {
+    changed = false;
+    for (const cls of outer) {
+      if (selected.has(cls) || unknown.has(cls) || !cls.superClass) continue;
+      const superClass = unwrapExpression(cls.superClass);
+      let reason: string | undefined;
+      for (const reference of expressionReferences(superClass)) {
+        reason = imported.unknown.get(reference);
+        if (!reason && unknown.has(outerByName.get(reference))) reason = `${reference} extends a base that cannot be classified`;
+        if (!reason && computedBindings.has(reference)) reason = `${reference} is a value computed at runtime`;
+        if (reason) break;
+      }
+      if (!reason && superClass.type !== 'Identifier' && superClass.type !== 'MemberExpression') {
+        reason = 'the base class is computed by an expression';
+      }
+      if (reason) {
+        unknown.set(cls, reason);
+        changed = true;
+      }
+    }
+  }
+  const selection = { selected, hidden: nested.find(isFramework), unknown };
+  frameworkClassSets.set(program, { imported, selection });
+  return selection;
+}
+
+/** Superclass references of every class in `program`, keyed as {@link expressionReferences} keys them. */
+function superclassReferences(program: any): Set<string> {
+  const references = new Set<string>();
+  const { outer, nested } = classIndex(program);
+  for (const cls of [...outer, ...nested]) expressionReferences(cls.superClass, references);
+  return references;
+}
+
+/** A module's runtime import bindings: local name → source and imported name (`*` for a namespace). */
+function runtimeImportBindings(program: any): Map<string, { source: string; imported: string }> {
+  const bindings = new Map<string, { source: string; imported: string }>();
+  for (const node of program.body ?? []) {
+    if (node.type !== 'ImportDeclaration' || node.importKind === 'type') continue;
+    const source = String(node.source?.value);
+    for (const specifier of node.specifiers ?? []) {
+      if (specifier.importKind === 'type' || !specifier.local?.name) continue;
+      const importedName = specifier.type === 'ImportNamespaceSpecifier' ? '*'
+        : specifier.type === 'ImportDefaultSpecifier' ? 'default'
+          : specifier.imported?.name ?? specifier.imported?.value;
+      if (importedName) bindings.set(specifier.local.name, { source, imported: importedName });
+    }
+  }
+  return bindings;
+}
+
+type BaseKind = 'framework' | 'plain' | 'unknown';
+/** Re-export and inheritance hops followed across modules before a base counts as unknown. */
+const IMPORTED_BASE_DEPTH = 8;
+const SCRIPT_EXTENSIONS = ['.ts', '.mts', '.tsx', '.js', '.mjs', '.jsx'];
+const parsedBaseModules = new Map<string, { source: string; program: any | null }>();
+
+/** Read and parse a base-class module, reusing the program while its source is unchanged. */
+function readBaseModule(file: string): any | null {
+  let source: string;
+  try { source = readFileSync(file, 'utf8'); } catch { return null; }
+  const cached = parsedBaseModules.get(file);
+  if (cached?.source === source) return cached.program;
+  const program = parseProgram(source);
+  parsedBaseModules.set(file, { source, program });
+  return program;
+}
+
+function isFile(path: string): boolean {
+  try { return statSync(path).isFile(); } catch { return false; }
 }
 
 /**
- * @internal Classes under src/pages or src/components that extend a base
- * imported from another (non-framework) module, are not otherwise recognised
- * as framework classes, and declare undecorated non-builtin methods. Those
- * methods are not stripped from the client bundle.
+ * Whether a bare specifier names an installed package (or a builtin) visible
+ * from the importing module. A bare specifier that names no installed package
+ * is an alias this pass cannot follow (for example TypeScript `paths`).
  */
-export function findUnstrippedImportedSubclasses(
-  code: string,
-  id: string,
-): Array<{ className: string; baseName: string; methods: string[] }> {
-  return unstrippedImportedSubclasses(new ParsedModule(code), id);
+function isInstalledPackage(specifier: string, options: ClassDiscoveryOptions): boolean {
+  if (/^[a-z][a-z0-9+.-]*:/i.test(specifier) || isBuiltin(specifier)) return true;
+  const name = specifier.startsWith('@') ? specifier.split('/').slice(0, 2).join('/') : specifier.split('/')[0];
+  let directory = options.file && isAbsolute(options.file) ? dirname(options.file) : options.root;
+  while (directory) {
+    if (isFile(join(directory, 'node_modules', name, 'package.json'))) return true;
+    const parent = dirname(directory);
+    if (parent === directory) break;
+    directory = parent;
+  }
+  return false;
 }
 
-function unstrippedImportedSubclasses(
-  module: ParsedModule,
-  id: string,
-): Array<{ className: string; baseName: string; methods: string[] }> {
-  const cleanId = id.split(/[?#]/)[0].replace(/\\/g, '/');
-  if (!/\/src\/(?:pages|components)\//.test(cleanId)) return [];
-  const { code, program } = module;
-  if (!program) return [];
-  const imported = new Set<string>();
-  for (const node of program.body ?? []) {
-    if (node.type !== 'ImportDeclaration' || node.importKind === 'type') continue;
-    if (String(node.source?.value).startsWith('@cossackframework/')) continue;
-    for (const specifier of node.specifiers ?? []) {
-      if (specifier.importKind !== 'type' && specifier.local?.name) imported.add(specifier.local.name);
+/**
+ * Resolve an import specifier to a module file without evaluating anything:
+ * Vite aliases first, then relative or root-relative paths with TypeScript
+ * extension probing. Returns `'package'` for an installed package and `null`
+ * when the specifier names no readable module.
+ */
+function resolveBaseModule(specifier: string, options: ClassDiscoveryOptions): string | 'package' | null {
+  let target = specifier;
+  for (const alias of options.aliases ?? []) {
+    if (typeof alias.find === 'string') {
+      if (target !== alias.find && !target.startsWith(`${alias.find}/`)) continue;
+      target = alias.replacement + target.slice(alias.find.length);
+    } else {
+      if (!alias.find.test(target)) continue;
+      target = target.replace(alias.find, alias.replacement);
+    }
+    break;
+  }
+  const relative = target.startsWith('./') || target.startsWith('../');
+  if (!relative && !isAbsolute(target)) return isInstalledPackage(target, options) ? 'package' : null;
+  if (relative && (!options.file || !isAbsolute(options.file))) return null;
+  const roots = relative ? [resolvePath(dirname(options.file!), target)]
+    : options.root && !target.startsWith(options.root) ? [target, join(options.root, target)] : [target];
+  for (const base of roots) {
+    const candidates = [base];
+    const extension = SCRIPT_EXTENSIONS.find(ext => base.endsWith(ext));
+    // TypeScript ESM imports name the emitted `.js` file.
+    if (extension === '.js') candidates.push(`${base.slice(0, -3)}.ts`);
+    if (extension === '.jsx') candidates.push(`${base.slice(0, -4)}.tsx`);
+    if (extension === '.mjs') candidates.push(`${base.slice(0, -4)}.mts`);
+    if (!extension) {
+      for (const ext of SCRIPT_EXTENSIONS) candidates.push(base + ext);
+      for (const ext of SCRIPT_EXTENSIONS) candidates.push(join(base, `index${ext}`));
+    }
+    const found = candidates.find(isFile);
+    if (found) return found;
+  }
+  return null;
+}
+
+/** Classify the class an import names, following re-exports and further imported bases. */
+function classifyImportedBase(
+  source: string,
+  importedName: string,
+  options: ClassDiscoveryOptions,
+  depth: number,
+  seen: Set<string>,
+): BaseKind {
+  // Every class the UI package exports is a component.
+  if (source === '@cossackframework/ui' || source.startsWith('@cossackframework/ui/')) return 'framework';
+  if (source.startsWith('@cossackframework/')) return FRAMEWORK_BASE_NAMES.has(importedName) ? 'framework' : 'plain';
+  const file = resolveBaseModule(source, options);
+  // Third-party packages do not export Cossack components.
+  if (file === 'package') return 'plain';
+  if (!file || importedName === '*') return 'unknown';
+  return classifyModuleExport(file, importedName, options, depth + 1, seen) ?? 'unknown';
+}
+
+/** Classify export `name` of `file`; `null` when the module has no such export. */
+function classifyModuleExport(
+  file: string,
+  name: string,
+  options: ClassDiscoveryOptions,
+  depth: number,
+  seen: Set<string>,
+): BaseKind | null {
+  const key = `${file}#${name}`;
+  if (depth > IMPORTED_BASE_DEPTH || seen.has(key)) return 'unknown';
+  seen.add(key);
+  const program = readBaseModule(file);
+  if (!program) return 'unknown';
+  const moduleOptions: ClassDiscoveryOptions = { ...options, file };
+  const classKind = (cls: any): BaseKind => {
+    const selection = frameworkClassSelection(program, importedBasesOf(program, moduleOptions, depth, seen));
+    return selection.selected.has(cls) ? 'framework' : selection.unknown.has(cls) ? 'unknown' : 'plain';
+  };
+  const localKind = (local: string): BaseKind => {
+    const cls = classIndex(program).outer.find((candidate: any) => classNameOf(program, candidate) === local);
+    if (cls) return classKind(cls);
+    const binding = runtimeImportBindings(program).get(local);
+    if (binding) return classifyImportedBase(binding.source, binding.imported, moduleOptions, depth, seen);
+    return 'unknown';
+  };
+  const stars: string[] = [];
+  for (const statement of program.body ?? []) {
+    if (statement.type === 'ExportDefaultDeclaration') {
+      if (name !== 'default') continue;
+      const declaration = unwrapExpression(statement.declaration);
+      if (isClassNode(declaration)) return classKind(declaration);
+      if (declaration?.type === 'Identifier') return localKind(declaration.name);
+      return 'unknown';
+    }
+    if (statement.type === 'ExportAllDeclaration') {
+      if (!statement.exported) stars.push(String(statement.source?.value));
+      else if ((statement.exported.name ?? statement.exported.value) === name) return 'unknown';
+      continue;
+    }
+    if (statement.type !== 'ExportNamedDeclaration' || statement.exportKind === 'type') continue;
+    const declaration = statement.declaration;
+    if (declaration?.type === 'ClassDeclaration' && declaration.id?.name === name) return classKind(declaration);
+    if (declaration?.type === 'VariableDeclaration') {
+      for (const declarator of declaration.declarations) {
+        if (declarator.id?.type !== 'Identifier' || declarator.id.name !== name) continue;
+        const init = unwrapExpression(declarator.init);
+        return isClassNode(init) ? classKind(init) : 'unknown';
+      }
+    }
+    if (declaration?.id?.name === name) return 'unknown';
+    for (const specifier of statement.specifiers ?? []) {
+      if (specifier.exportKind === 'type' || (specifier.exported?.name ?? specifier.exported?.value) !== name) continue;
+      const local = specifier.local?.name ?? specifier.local?.value;
+      return statement.source
+        ? classifyImportedBase(String(statement.source.value), local, moduleOptions, depth, seen)
+        : localKind(local);
     }
   }
-  if (!imported.size) return [];
-  const selected = frameworkClasses(program);
-  const findings: Array<{ className: string; baseName: string; methods: string[] }> = [];
-  for (const cls of findClasses(program)) {
-    if (selected.has(cls)) continue;
-    const superClass = unwrapExpression(cls.superClass);
-    const baseRoot = superClass?.type === 'Identifier' ? superClass.name
-      : superClass?.type === 'MemberExpression' && superClass.object?.type === 'Identifier' ? superClass.object.name : null;
-    if (!baseRoot || !imported.has(baseRoot)) continue;
-    const methods = (cls.body?.body ?? [])
-      .filter((member: any) => member.type === 'MethodDefinition' && member.kind === 'method' && !member.decorators?.length)
-      .map((member: any) => memberKeyName(member.key))
-      .filter((name: string | null): name is string => !!name && !BUILTIN_METHODS.has(name));
-    if (!methods.length) continue;
-    findings.push({
-      className: classNameOf(program, cls) ?? '(anonymous)',
-      baseName: code.slice(superClass.start, superClass.end),
-      methods,
-    });
+  for (const star of stars) {
+    const target = resolveBaseModule(star, moduleOptions);
+    if (target === 'package' || !target) continue;
+    const kind = classifyModuleExport(target, name, options, depth + 1, seen);
+    if (kind) return kind;
   }
-  return findings;
+  return null;
 }
 
-/** The static name of a class's `superClass` (e.g. `Cossack`), or null. */
-function superclassName(cls: any): string | null {
-  const sc = cls?.superClass;
-  if (!sc) return null;
-  if (sc.type === 'Identifier') return sc.name;
-  return null;
+/**
+ * Classify every imported binding that a class in `program` extends. Fail
+ * closed: a base whose module cannot be read, or whose export is not a class,
+ * is unknown. Packages other than `@cossackframework/*` are plain.
+ */
+function importedBasesOf(
+  program: any,
+  options: ClassDiscoveryOptions = {},
+  depth = 0,
+  seen = new Set<string>(),
+): ImportedBases {
+  const imports = runtimeImportBindings(program);
+  const framework = new Set<string>();
+  const unknown = new Map<string, string>();
+  for (const reference of superclassReferences(program)) {
+    const [local, member] = reference.split('.');
+    const binding = imports.get(local);
+    if (!binding) continue;
+    // The namespace object itself is not a base; `ns.Base` names one of its exports.
+    if (member === undefined && binding.imported === '*') continue;
+    if (member !== undefined && binding.imported !== '*') {
+      unknown.set(reference, `${reference} reads a property of a binding imported from '${binding.source}'`);
+      continue;
+    }
+    const kind = classifyImportedBase(binding.source, member ?? binding.imported, options, depth, new Set(seen));
+    if (kind === 'framework') framework.add(reference);
+    else if (kind === 'unknown') unknown.set(reference, `${reference} is imported from '${binding.source}', which the build cannot read as a module that exports a class`);
+  }
+  return framework.size || unknown.size ? { framework, unknown } : NO_IMPORTED_BASES;
+}
+
+/**
+ * The client build fails when a class extends a base that discovery cannot
+ * classify and treating the class as a component would strip some of its
+ * methods. Shipping them unchanged could leak server code; stubbing them
+ * could break a plain browser class.
+ */
+function assertClassifiableClasses(
+  module: ParsedModule,
+  id: string,
+  isClientSafeMethodFn: typeof isClientSafeMethod,
+  builtinMethods: ReadonlySet<string>,
+): void {
+  const { code, program } = module;
+  for (const [cls, reason] of frameworkClassSelection(program, module.imported).unknown) {
+    const { methods, preserved } = analyzeClassMethods(cls, code, program, isClientSafeMethodFn, builtinMethods);
+    const exposed = methods
+      .filter(method => !preserved.has(method.name) && !(method.fieldKind && !method.hasServerDecorator))
+      .map(method => method.name);
+    if (!exposed.length) continue;
+    const name = classNameOf(program, cls) ?? '(anonymous)';
+    let base = sourceSlice(code, unwrapExpression(cls.superClass)).replace(/\s+/g, ' ');
+    if (base.length > 60) base = `${base.slice(0, 57)}...`;
+    throw new Error(
+      `[Cossack Security] ${id}: cannot classify class ${name} (extends ${base}): ${reason}. The client build cannot ` +
+      `tell whether ${name} is a component, so its methods (${exposed.join(', ')}) would reach the browser unchanged. ` +
+      `Decorate ${name} with @Page() or @Component() if it is a component, or mark the methods that run in the ` +
+      'browser with @Client(). See docs/client-bundle.md#build-failures-and-class-discovery.',
+    );
+  }
 }
 
 /**
@@ -1769,17 +2156,17 @@ export function inspectCompilerMethods(code: string, id: string, root?: string):
     diagnostics: [{ code: 'COSSACK_COMPILER_INSPECTION_UNKNOWN', file: id, message }],
   });
   const authored = code;
-  const original = new ParsedModule(code);
+  const original = new ParsedModule(code).discover({ file: id, root });
   const originalProgram = original.program;
   if (!originalProgram) return unknown('Source could not be parsed.');
   const resources: ResourceSource[] = [];
   let expanded: ParsedModule;
-  try { expanded = original.with(expandServerResources(code, originalProgram, id, resources, root)); }
+  try { expanded = original.with(expandServerResources(code, originalProgram, id, resources, root, original.imported)); }
   catch { return unknown('Unsupported server resource declaration.'); }
   code = expanded.code;
   const program = expanded.program;
   if (!program) return unknown('Expanded source could not be parsed.');
-  const originalClasses = [...frameworkClasses(originalProgram)];
+  const originalClasses = [...frameworkClasses(originalProgram, original.imported)];
   const roots = new Set(['Cossack', 'CossackElement']);
   const namespaces = new Set<string>();
   for (const statement of originalProgram.body ?? []) {
@@ -1811,7 +2198,7 @@ export function inspectCompilerMethods(code: string, id: string, root?: string):
   };
   const classes: CompilerClassFacts[] = [];
   try {
-    for (const cls of frameworkClasses(program)) {
+    for (const cls of frameworkClasses(program, expanded.imported)) {
       const { methods, preserved, automaticRpc } = analyzeClassMethods(
         cls, code, program, isClientSafeMethod, BUILTIN_METHODS,
       );
@@ -2024,7 +2411,7 @@ function createMetadataInjection(
             }
             parent = Object.getPrototypeOf(parent);
           }
-          serverMethods[name] = inherited ? { ...inherited } : { channel: 'global', provider: 'page', __serverOnly: true };
+          serverMethods[name] = inherited ? { ...inherited } : { channel: 'global', __serverOnly: true };
         }
       }
       Reflect.defineMetadata('cossack:server-methods', serverMethods, this);
@@ -2068,23 +2455,39 @@ ${REGISTER_SERVER_METHODS_CALL}${superCall}    }
  */
 export function injectAutomaticServerMethodMetadata(
   code: string,
-  _id: string,
+  id: string,
   isClientSafeMethodFn: (decorators: string[], methodName: string, builtinMethods: ReadonlySet<string>) => boolean,
   builtinMethods: ReadonlySet<string>,
+  discovery: ClassDiscoveryOptions = { file: id },
 ): string {
-  return injectServerMethodMetadata(new ParsedModule(code), isClientSafeMethodFn, builtinMethods);
+  return injectServerMethodMetadata(new ParsedModule(code).discover(discovery), isClientSafeMethodFn, builtinMethods).code;
+}
+
+/** Undecorated methods of one class that its templates register as RPC endpoints. */
+export interface AutomaticRpcEndpoints {
+  className: string;
+  methods: string[];
+}
+
+/**
+ * @internal The automatic RPC endpoints of every framework class in a module,
+ * as the server build registers them. Explicit `@Server` methods are omitted.
+ */
+export function findAutomaticRpcEndpoints(code: string, id: string, discovery: ClassDiscoveryOptions = { file: id }): AutomaticRpcEndpoints[] {
+  return injectServerMethodMetadata(new ParsedModule(code).discover(discovery), isClientSafeMethod, BUILTIN_METHODS).endpoints;
 }
 
 function injectServerMethodMetadata(
   module: ParsedModule,
   isClientSafeMethodFn: (decorators: string[], methodName: string, builtinMethods: ReadonlySet<string>) => boolean,
   builtinMethods: ReadonlySet<string>,
-): string {
+): { code: string; endpoints: AutomaticRpcEndpoints[] } {
   const { code, program } = module;
-  if (!program) return code;
+  const endpoints: AutomaticRpcEndpoints[] = [];
+  if (!program) return { code, endpoints };
   const replacements: Array<{ start: number; end: number; replacement: string }> = [];
 
-  const selected = frameworkClasses(program);
+  const selected = frameworkClasses(program, module.imported);
   for (const cls of findClasses(program)) {
     if (!selected.has(cls)) continue;
 
@@ -2092,6 +2495,7 @@ function injectServerMethodMetadata(
       cls, code, program, isClientSafeMethodFn, builtinMethods,
     );
     if (automaticRpc.size === 0) continue;
+    endpoints.push({ className: classNameOf(program, cls) ?? 'Anonymous', methods: [...automaticRpc] });
     const registrations = [...automaticRpc].map((name) => ({ name, registerForRpc: true }));
     replacements.push(...appendMetadataRegistration(cls, createMetadataInjection(registrations)));
   }
@@ -2100,7 +2504,7 @@ function injectServerMethodMetadata(
   for (const replacement of [...replacements].sort((a, b) => b.start - a.start)) {
     result = result.slice(0, replacement.start) + replacement.replacement + result.slice(replacement.end);
   }
-  return result;
+  return { code: result, endpoints };
 }
 
 // ============================================================================
@@ -2336,7 +2740,7 @@ function stripServerActionInput(module: ParsedModule): {code:string;bindings:Set
   for (const [alias, name] of typed.aliases) if (name === 'Server') aliases.add(alias);
   typed.namespaces.forEach(name => namespaces.add(name));
   const replacements: Array<{ start: number; end: number; replacement: string }> = [];
-  for (const cls of frameworkClasses(program)) {
+  for (const cls of frameworkClasses(program, module.imported)) {
     for (const member of cls.body.body) {
       for (const decorator of member.decorators ?? []) {
         const call = unwrapExpression(decorator.expression);
@@ -2370,9 +2774,10 @@ export function transformCossackClass(
   id: string,
   isClientSafeMethodFn: (decorators: string[], methodName: string, builtinMethods: ReadonlySet<string>) => boolean,
   builtinMethods: ReadonlySet<string>,
-  devWarning: boolean
+  devWarning: boolean,
+  discovery: ClassDiscoveryOptions = { file: id },
 ): string {
-  return stripClientClasses(new ParsedModule(code), id, isClientSafeMethodFn, builtinMethods, devWarning).code;
+  return stripClientClasses(new ParsedModule(code).discover(discovery), id, isClientSafeMethodFn, builtinMethods, devWarning).code;
 }
 
 /**
@@ -2390,7 +2795,7 @@ function stripClientClasses(
 ): ParsedModule {
   // Strip SSG generateStaticParams bodies from @Page(...) / @Component(...)
   // decorator arguments first, so method-stripping operates on sanitized source.
-  const staticParams = stripSsgStaticParams(module);
+  const staticParams = stripSsgStaticParams(module, id);
   module = module.with(staticParams.code);
   const serverInput = stripServerActionInput(module);
   module = module.with(serverInput.code);
@@ -2402,7 +2807,8 @@ function stripClientClasses(
   if (!program) {
     throw new Error(`[Cossack Security] Could not parse ${id}; refusing to emit unstripped client code.`);
   }
-  assertNoHiddenFrameworkClass(program);
+  assertNoHiddenFrameworkClass(program, module.imported);
+  assertClassifiableClasses(module, id, isClientSafeMethodFn, builtinMethods);
 
   // Collect, per class, the splices to apply. We record replacements as
   // file-relative offsets and apply them in reverse order at the end.
@@ -2420,7 +2826,7 @@ function stripClientClasses(
   }
   let needsRpcType = false;
 
-  const selected = frameworkClasses(program);
+  const selected = frameworkClasses(program, module.imported);
   for (const cls of findClasses(program)) {
     if (!selected.has(cls)) continue;
 
@@ -2539,10 +2945,29 @@ function findConstructor(cls: any): any | null {
  * business logic). Each occurrence is replaced with `async () => []`, which
  * preserves the declared type and acts as a defensive no-op.
  *
+ * Fail closed: any other runtime `generateStaticParams` property left in the
+ * module (options built by a function, imported from another module, or
+ * assigned later) fails the client build instead of shipping its loader.
+ *
  * Exported for unit testing.
  */
-export function stripSsgGenerateStaticParams(code: string): string {
-  return stripSsgStaticParams(new ParsedModule(code)).code;
+export function stripSsgGenerateStaticParams(code: string, id = 'module'): string {
+  return stripSsgStaticParams(new ParsedModule(code), id).code;
+}
+
+const STATIC_PARAMS_KEY = 'generateStaticParams';
+const STRIPPED_STATIC_PARAMS = 'async () => []';
+
+/** Static name of an object property key (identifier, string, or a computed string literal). */
+function propertyKeyName(property: any): string | null {
+  if (property?.type !== 'Property') return null;
+  if (property.computed) {
+    const key = unwrapExpression(property.key);
+    if (key?.type === 'Literal' && typeof key.value === 'string') return key.value;
+    if (key?.type === 'TemplateLiteral' && !key.expressions?.length) return key.quasis?.[0]?.value?.cooked ?? null;
+    return null;
+  }
+  return memberKeyName(property.key);
 }
 
 /**
@@ -2550,12 +2975,13 @@ export function stripSsgGenerateStaticParams(code: string): string {
  * report the module bindings it referenced. Fail closed on the decorator name:
  * aliased (`import { Page as P }`), namespaced (`@core.Page`) and wrapped
  * decorators all receive the same treatment, because the option is SSG-only
- * whichever decorator carries it.
+ * whichever decorator carries it. The options object and its `ssg` value may
+ * be inline, a module-level `const` object, or spread from one.
  */
-function stripSsgStaticParams(module: ParsedModule): { code: string; bindings: Set<string> } {
+function stripSsgStaticParams(module: ParsedModule, id: string): { code: string; bindings: Set<string> } {
   const bindings = new Set<string>();
   const { code } = module;
-  if (!code.includes('generateStaticParams')) return { code, bindings };
+  if (!code.includes(STATIC_PARAMS_KEY)) return { code, bindings };
   const { program } = module;
   if (!program) return { code, bindings };
 
@@ -2563,21 +2989,95 @@ function stripSsgStaticParams(module: ParsedModule): { code: string; bindings: S
   const objectBindings = new Map<string, any>();
   for (const statement of program.body ?? []) {
     const declaration = statement.type === 'ExportNamedDeclaration' ? statement.declaration : statement;
-    if (declaration?.type !== 'VariableDeclaration') continue;
+    if (declaration?.type !== 'VariableDeclaration' || declaration.kind !== 'const') continue;
     for (const declarator of declaration.declarations) {
       const init = unwrapExpression(declarator.init);
       if (declarator.id?.type === 'Identifier' && init?.type === 'ObjectExpression') objectBindings.set(declarator.id.name, init);
     }
   }
+  const objectOf = (node: any, seen: Set<any>): any | null => {
+    node = unwrapExpression(node);
+    if (node?.type === 'Identifier') node = objectBindings.get(node.name);
+    return node?.type === 'ObjectExpression' && !seen.has(node) ? node : null;
+  };
 
   const replacements = new Map<number, { start: number; end: number; replacement: string }>();
-  for (const cls of [...classIndex(program).outer, ...classIndex(program).nested]) {
-    for (const deco of cls.decorators ?? []) {
-      const value = findGenerateStaticParamsValueNode(deco, objectBindings);
-      if (!value) continue;
-      inputRuntimeReferences(value).forEach(name => bindings.add(name));
-      replacements.set(value.start, { start: value.start, end: value.end, replacement: 'async () => []' });
+  const stripped = new Set<any>();
+  const stripProperty = (property: any) => {
+    if (stripped.has(property)) return;
+    stripped.add(property);
+    const value = property.value;
+    // Method, accessor and shorthand forms share the key's span with their
+    // value, so the whole property is rewritten.
+    const whole = property.method || property.shorthand || property.kind !== 'init';
+    inputRuntimeReferences(property.shorthand ? { type: 'ExpressionStatement', expression: value } : value)
+      .forEach(name => bindings.add(name));
+    replacements.set(whole ? property.start : value.start, whole
+      ? { start: property.start, end: property.end, replacement: `${STATIC_PARAMS_KEY}: ${STRIPPED_STATIC_PARAMS}` }
+      : { start: value.start, end: value.end, replacement: STRIPPED_STATIC_PARAMS });
+  };
+  // Walk an options object, and objects spread into it, for `ssg`.
+  const visitOptions = (object: any, seen: Set<any>) => {
+    seen.add(object);
+    for (const property of object.properties ?? []) {
+      if (property.type === 'SpreadElement') {
+        const spread = objectOf(property.argument, seen);
+        if (spread) visitOptions(spread, seen);
+        continue;
+      }
+      if (propertyKeyName(property) !== 'ssg') continue;
+      const ssg = objectOf(property.value, seen);
+      if (ssg) visitSsg(ssg, seen);
     }
+  };
+  const visitSsg = (object: any, seen: Set<any>) => {
+    seen.add(object);
+    for (const property of object.properties ?? []) {
+      if (property.type === 'SpreadElement') {
+        const spread = objectOf(property.argument, seen);
+        if (spread) visitSsg(spread, seen);
+      } else if (propertyKeyName(property) === STATIC_PARAMS_KEY) {
+        stripProperty(property);
+      }
+    }
+  };
+  for (const cls of [...classIndex(program).outer, ...classIndex(program).nested]) {
+    for (const decorator of cls.decorators ?? []) {
+      const call = unwrapExpression(decorator.expression);
+      if (call?.type !== 'CallExpression') continue;
+      const options = objectOf(call.arguments?.[0], new Set());
+      if (options) visitOptions(options, new Set());
+    }
+  }
+
+  // Any remaining runtime occurrence is a loader the client build cannot
+  // prove unused. Type positions and string contents are not occurrences.
+  const leftover = (node: any, parent?: any): any | null => {
+    if (!node || typeof node.type !== 'string' || node.type.startsWith('TS')) return null;
+    // Destructuring reads a loader defined elsewhere; that definition is checked where it is written.
+    if (node.type === 'Property' && parent?.type !== 'ObjectPattern' &&
+        propertyKeyName(node) === STATIC_PARAMS_KEY && !stripped.has(node)) return node;
+    if (node.type === 'MemberExpression' && memberPropertyName(node) === STATIC_PARAMS_KEY &&
+        parent?.type === 'AssignmentExpression' && parent.left === node) return node;
+    for (const [key, value] of Object.entries(node)) {
+      if (key === 'parent' || key === 'typeAnnotation' || key === 'typeParameters' || key === 'typeArguments' || key === 'returnType') continue;
+      for (const child of Array.isArray(value) ? value : [value]) {
+        const found = child && typeof (child as any).type === 'string' ? leftover(child, node) : null;
+        if (found) return found;
+      }
+    }
+    return null;
+  };
+  for (const statement of program.body ?? []) {
+    const found = leftover(statement);
+    if (!found) continue;
+    const line = code.slice(0, found.start).split('\n').length;
+    throw new Error(
+      `[Cossack Security] ${id}:${line}: generateStaticParams is not inside the ssg options of a @Page() or ` +
+      '@Component() decorator call, so the client build cannot strip it. Write the options inline in the ' +
+      'decorator call, or in a module-level const object that the decorator call names. ' +
+      'See docs/client-bundle.md#ssg-generatestaticparams.',
+    );
   }
 
   if (replacements.size === 0) return { code, bindings };
@@ -2587,34 +3087,6 @@ function stripSsgStaticParams(module: ParsedModule): { code: string; bindings: S
     result = result.slice(0, r.start) + r.replacement + result.slice(r.end);
   }
   return { code: result, bindings };
-}
-
-/**
- * Within a class decorator call's argument object, find the
- * `generateStaticParams` property's VALUE node, but only if it lives under an
- * `ssg: { ... }` object literal. The argument may be an inline object or a
- * module-level `const` object. Returns the value node or null.
- */
-function findGenerateStaticParamsValueNode(decoratorNode: any, objectBindings: Map<string, any>): any | null {
-  const expr = unwrapExpression(decoratorNode.expression);
-  if (!expr || expr.type !== 'CallExpression') return null;
-  let arg = unwrapExpression(expr.arguments?.[0]);
-  if (arg?.type === 'Identifier') arg = objectBindings.get(arg.name);
-  if (!arg || arg.type !== 'ObjectExpression') return null;
-
-  for (const prop of arg.properties) {
-    if (prop.type !== 'Property' || prop.computed) continue;
-    if (memberKeyName(prop.key) !== 'ssg') continue;
-    const ssgVal = unwrapExpression(prop.value);
-    if (!ssgVal || ssgVal.type !== 'ObjectExpression') return null; // boolean form
-    for (const ssgProp of ssgVal.properties) {
-      if (ssgProp.type !== 'Property' || ssgProp.computed) continue;
-      if (memberKeyName(ssgProp.key) === 'generateStaticParams') {
-        return ssgProp.value;
-      }
-    }
-  }
-  return null;
 }
 
 // ============================================================================

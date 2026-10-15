@@ -57,15 +57,14 @@ Then add to `src/style.css` (after `@import "tailwindcss";`):
 |---|---|---|
 | Input | `<input>` | Token-driven text input with variant/size |
 | Textarea | `<textarea>` | Multiline text input |
-| Select | `<select>` | Native select with chevron overlay |
-| NativeSelect | `<select>` | Styled native select (no JS, no popover, mobile-friendly) |
+| NativeSelect | `<select>` | Styled native select with chevron overlay (no JS, no popover, mobile-friendly) |
 | InputGroup | `<input>` + addons | Input with prefix/suffix adornments (@, $, icons) |
 | Checkbox | `<input type="checkbox">` | Checkbox with label wrapper |
 | Switch | `<input type="checkbox">` | Toggle switch (role="switch") |
 | RadioGroup | `<input type="radio">` | Radio button group |
 | Slider | `<input type="range">` | Range slider with token accent-color |
 | InputOTP | `<input>` ×N | Segmented one-time-password input (paste, auto-advance, arrows) |
-| Calendar | `<div>` grid | Month-grid date picker with min/max bounds and ISO onChange |
+| Calendar | `<div>` grid | Month-grid date picker with min/max bounds and ISO `onValueChange` |
 | DatePicker | `popover` + calendar | Calendar in a native popover. It emits an ISO date on pick |
 | Label | `<label>` | Accessible form label |
 
@@ -104,7 +103,7 @@ Then add to `src/style.css` (after `@import "tailwindcss";`):
 | Popover | `popover` attribute | Top-layer popover with JS positioning + light dismiss |
 | DropdownMenu | `popover` attribute | Menu with keyboard navigation (Arrow/Escape), collision-aware side/align flip, scroll/resize repositioning |
 | Sheet | `<dialog>` | Slide-in panel (drawer) from any edge |
-| Accordion | `<button>` + `<div>` | Animated collapsible sections |
+| Accordion | `<button>` + `<div>` | One animated collapsible section. Stack several for a group |
 | Tabs | conditional render | Accessible tabbed interface with ARIA tablist |
 | Toaster + `toast` | reactive store | Global toast notification system |
 
@@ -134,6 +133,48 @@ html`
   ${component(Icon, { entry: ArrowRightIcon, variant: "duotone", size: 20 })}
 `;
 ```
+
+## State props and callback names
+
+All components use one naming rule, taken from shadcn/ui and Radix:
+
+- State that the user can change, called `x` here, has up to three props:
+  `x` for parent-controlled state, `defaultX` for an uncontrolled initial
+  value, and `onXChange(next, ...)` to propose the next value. For example:
+  `value`, `defaultValue` and `onValueChange`.
+- The callback name repeats the state name. A component that only reports its
+  state, such as Carousel, uses the same form.
+- Callbacks for events that are not state use `on` and a verb: `onSelect`,
+  `onAction`, `onSubmit`, `onComplete`, `onNavigate` and `onRetry`.
+- No component prop is named `onChange`. Native controls (Input, Textarea,
+  NativeSelect, Checkbox, Switch and Slider) report edits through native
+  `@input` and `@change` listeners.
+- Hover timing uses `openDelay` and `closeDelay`, in milliseconds.
+
+| State | Callback | Components |
+|---|---|---|
+| `value` | `onValueChange` | Tabs, ToggleGroup, RadioGroup, Combobox, MultiSelect, Calendar, DatePicker, InputOTP, PasswordInput, Carousel |
+| `open` | `onOpenChange` | Accordion, Collapsible, Modal, Sheet, Drawer, AlertDialog, Command, CommandPalette |
+| `pressed` | `onPressedChange` | Toggle |
+| `collapsed` | `onCollapsedChange` | Sidebar |
+| `size` | `onSizeChange` | Resizable |
+| `page` | `onPageChange` | Pagination |
+| `state`, `selection` | `onStateChange`, `onSelectionChange` | DataTable |
+| `mode` | `onModeChange` | AuthForm |
+| `values` | `onValuesChange` | SettingsPanel |
+| `token` (reported only) | `onTokenChange` | Turnstile |
+| hover timing | `openDelay`, `closeDelay` | Tooltip, HoverCard, NavigationMenu |
+
+A controlled component calls `onXChange` and keeps showing `x` until the
+parent renders a new value. To accept the change, set `x` to the proposed
+value. To reject it, render the old value again. The component then shows the
+old value, and the same edit proposes the change again later. An edit made
+before the parent renders builds on the last proposal, so a quick double click
+on a Toggle proposes `true` and then `false`.
+
+Modal, Sheet, Drawer and AlertDialog call `onOpenChange(false, event)` after a
+user or browser dismissal. The `event` is the native `close` event. If `open`
+stays `true`, the dialog opens again.
 
 ## Theming
 
@@ -270,7 +311,7 @@ back to `line`:
 ## Accordion and Collapsible
 
 Both components accept `open` for parent-controlled state, or `defaultOpen`
-for local state, and call `onToggle(open)` when the trigger is used.
+for local state, and call `onOpenChange(open)` when the trigger is used.
 `Accordion` uses a button summary. `Collapsible` accepts custom trigger content.
 
 Open content has automatic height and visible overflow, including during SSR.
@@ -289,13 +330,20 @@ maximum falls back to `100`.
 
 `cossack add ui <component>` copies a single component into your project at
 `src/components/ui/<Component>.ts` so you can customize it. The ejected copy is
-yours. Run the command again with `--force` to overwrite it. Shared private animation helpers
-are included in ejected Accordion and Collapsible source. Toaster is ejected
+yours. Run the command again with `--force` to overwrite it. Toaster is ejected
 from the package's Toast module.
+
+Some components use private helpers: dialog (Modal, Sheet, Drawer, AlertDialog,
+Command), hover (Tooltip, HoverCard), disclosure (Accordion, Collapsible), menu
+(DropdownMenu, ContextMenu, Menubar) and date (Calendar, DatePicker). Ejection
+copies each helper the component needs to `src/components/ui/internal/`, and
+the ejected component imports it from there. Ejected components share one copy
+of each helper. A later ejection keeps an existing helper, including your
+edits. `--force` replaces it together with the component.
 
 Available component names (kebab-case, passed to `cossack add ui <name>`):
 
-`button`, `input`, `textarea`, `select`, `native-select`, `input-group`,
+`button`, `input`, `textarea`, `native-select`, `input-group`,
 `label`, `checkbox`, `switch`, `radio-group`, `slider`, `input-otp`,
 `password-input`, `field`, `toggle`, `toggle-group`, `badge`, `kbd`, `card`,
 `separator`, `table`, `avatar`, `avatar-group`, `skeleton`, `progress`,

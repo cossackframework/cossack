@@ -4,10 +4,10 @@ import { Sidebar, type SidebarProps, type SidebarItem } from '../src/components/
 const items: readonly SidebarItem[]=[{value:'home',label:'Home',href:'/',active:true},{value:'group',label:'Projects',href:'/projects',children:[{value:'project',label:'Current project',href:'/projects/one',active:true}]}];
 const props:SidebarProps={id:'nav',label:'Application',items};
 it('renders named navigation, stable groups, current links and independent native props',()=>{
- const out=renderToString(component(Sidebar,{...props,'data-root':'aside',navProps:{'data-nav':'links'},onToggle:()=>{},style:ifDefined('height:200px;')}));
+ const out=renderToString(component(Sidebar,{...props,'data-root':'aside',navProps:{'data-nav':'links'},onCollapsedChange:()=>{},style:ifDefined('height:200px;')}));
  for(const attr of ['<aside','<nav','aria-label="Application"','data-root="aside"','data-nav="links"','aria-current="page"','aria-controls="nav-group-group"','id="nav-group-group"','href="/projects"','href="/projects/one"','height:200px;'])expect(out).toContain(attr);
  expect(out).toMatch(/<details[^>]*\sopen/);expect(out).toContain('<summary');expect(out).not.toContain('role="menu"');
- expect(out).not.toMatch(/\s(?:items|collapsed|collapsible|navProps|onToggle)=/);
+ expect(out).not.toMatch(/\s(?:items|collapsed|collapsible|navProps|onCollapsedChange)=/);
 });
 it('keeps group destinations and child links in the icon rail with readable names',()=>{
  const out=renderToString(component(Sidebar,{...props,collapsed:true}));
@@ -27,7 +27,7 @@ it('keeps nested active ancestors open at their initial render',()=>{
  const tree:SidebarItem[]=[{value:'a',label:'A',children:[{value:'b',label:'B',children:[{value:'c',label:'C',href:'/c',active:true}]}]}];
  const out=renderToString(component(Sidebar,{...props,items:tree}));expect(out.match(/<details[^>]*\sopen/g)).toHaveLength(2);
 });
-it.each([{id:''},{label:' '},{collapsed:'false'},{collapsible:'invalid'},{collapsible:'offcanvas'},{collapsible:'offcanvas',restoreFocusTo:'nav'},{width:''},{expandLabel:''},{onToggle:4},{items:null},{items:[{value:'x',label:'X'}]},{items:[{value:'x',label:'',href:'/'}]},{items:[{value:'x',label:'X',href:''}]},{items:[{value:'x',label:'X',children:[]}]},{items:[{value:'x',label:'X',children:null}]}])('rejects invalid Sidebar contracts %j',patch=>{
+it.each([{id:''},{label:' '},{collapsed:'false'},{collapsible:'invalid'},{collapsible:'offcanvas'},{collapsible:'offcanvas',restoreFocusTo:'nav'},{width:''},{expandLabel:''},{onCollapsedChange:4},{items:null},{items:[{value:'x',label:'X'}]},{items:[{value:'x',label:'',href:'/'}]},{items:[{value:'x',label:'X',href:''}]},{items:[{value:'x',label:'X',children:[]}]},{items:[{value:'x',label:'X',children:null}]}])('rejects invalid Sidebar contracts %j',patch=>{
  expect(()=>renderToString(component(Sidebar,{...props,...patch} as any))).toThrow('Sidebar');
 });
 it('rejects duplicate identities and cycles before rendering',()=>{

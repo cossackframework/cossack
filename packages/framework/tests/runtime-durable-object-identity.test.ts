@@ -42,14 +42,14 @@ async function ssrTarget(path: string, userId: string): Promise<string> {
   const response = await app.request(path);
   expect(response.status).toBe(200);
   const json = (await response.text()).match(/window\.__INITIAL_STATE__ = (.*?)<\/script>/s)![1]!;
-  return JSON.parse(json).providerTargets.page;
+  return JSON.parse(json).realtimeTarget;
 }
 
 async function connect(routePath: string, id: string, target: string, userId: string): Promise<RuntimeWebSocketUpgrade> {
   session.userId = userId;
   const query = new URLSearchParams({ routePath, pathname: routePath.replace('[id]', id), params: JSON.stringify({ id }) });
   // Clients percent-encode the target as one path segment.
-  const response = await app.request(`/ws/page/${encodeURIComponent(target)}?${query}`, { headers: { origin: 'http://localhost' } });
+  const response = await app.request(`/ws/${encodeURIComponent(target)}?${query}`, { headers: { origin: 'http://localhost' } });
   expect(response.status).toBe(200);
   return upgrades.at(-1)!;
 }
@@ -73,15 +73,28 @@ it('lets a second user join the shared instance and rejects a target it does not
   expect((await connect('/room/[id]', '1', await ssrTarget('/room/2', 'bob'), 'bob')).rejectAuthorization).toBe(true);
 });
 
-it('bootstraps the shared instance with the page target', async () => {
+it('bootstraps the shared instance for the recomputed page target', async () => {
   const shared = await ssrTarget('/room/1', 'alice');
   const upgrade = await connect('/room/[id]', '1', shared, 'alice');
+  expect(upgrade.target).toBe(shared);
+  expect(upgrade).not.toHaveProperty('provider');
   const instance = await upgrade.createComponent();
   try {
-    expect(instance.getInitialState().providerTargets).toMatchObject({ page: shared });
+    expect(instance.__cossack_rpcOwner).toBe(roomPath);
+    expect(instance.getInitialState()).not.toHaveProperty('providerTargets');
   } finally {
     await instance.destroyAsync();
   }
+});
+
+it('rejects the removed /ws/:provider/:id shape before the runtime sees it', async () => {
+  const shared = await ssrTarget('/room/1', 'alice');
+  const before = upgrades.length;
+  const query = new URLSearchParams({ routePath: '/room/[id]', pathname: '/room/1', params: JSON.stringify({ id: '1' }) });
+  const response = await app.request(`/ws/page/${encodeURIComponent(shared)}?${query}`, { headers: { origin: 'http://localhost' } });
+  expect(response.status).toBe(404);
+  expect(await response.json()).toMatchObject({ code: 'COSSACK_WS_ROUTE_NOT_FOUND' });
+  expect(upgrades.length).toBe(before);
 });
 
 it('keeps custom scope keys as the target', async () => {

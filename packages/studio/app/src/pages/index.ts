@@ -1818,7 +1818,7 @@ export default class StudioPage extends Cossack {
           cancelLabel: 'Cancel',
           actionLabel: this.loading.deleteGridRows ? 'Deleting…' : 'Delete',
           actionDisabled: Boolean(this.loading.deleteGridRows),
-          onClose: () => { this.deleteTarget = null; },
+          onOpenChange: () => { this.deleteTarget = null; },
           onAction: this.confirmDelete,
           'data-testid': 'delete-dialog',
         })}

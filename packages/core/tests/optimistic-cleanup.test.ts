@@ -37,10 +37,10 @@ class MockWebSocket {
 function makeComponent() {
     return {
         constructor: class Fake {},
-        websockets: new Map(),
+        websocket: undefined,
         loading: {} as Record<string, number>,
         getInitialStateFromWindow: () => ({
-            providerTargets: { page: 'do-123' },
+            realtimeTarget: 'do-123',
             routePath: '/src/pages/test',
         }),
         setProperty: vi.fn(function (this: any, key: string, val: unknown) { (this as any)[key] = val; }),
@@ -101,7 +101,7 @@ describe('WebSocket transport cleanup', () => {
         Reflect.defineMetadata('cossack:optimistic-handlers', { increment: 'preview' }, component.constructor);
         connectWebSocket(component);
         const ws = MockWebSocket.instances[0];
-        proxyServerMethods(component, [{ name: 'increment', channel: 'global', provider: 'page' }]);
+        proxyServerMethods(component, [{ name: 'increment', channel: 'global' }]);
         const call = component.increment();
         const requestId = JSON.parse(ws.sent[0]).requestId;
         ws.receive({ type: 'state-update', state: { count: 5 } });

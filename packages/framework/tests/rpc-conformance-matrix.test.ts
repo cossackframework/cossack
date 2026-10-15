@@ -205,7 +205,7 @@ type Transport = 'http' | 'sse' | 'websocket' | 'service';
 
 function clientSurface(constructor: any, transport: Transport) {
     const client: any = {
-        constructor, count: 0, loading: {}, websockets: new Map(), __cossack_proxies: new Map(),
+        constructor, count: 0, loading: {}, websocket: undefined, __cossack_proxies: new Map(),
        
         getInitialStateFromWindow: () => ({ componentRouteId: ids.routePathToIdMap.get(transport === 'sse' ? ssePath : httpPath), transport, scopeKey: 'user:anonymous' }),
         getPublicState: () => ({ count: client.count }),
@@ -265,9 +265,9 @@ async function harness(transport: Transport, uploadMode = false) {
         } };
         runtime.addClient(peer);
         vi.stubGlobal('WebSocket', Object.assign(class {}, { OPEN: 1 }));
-        client.websockets.set('page', socket);
+        client.websocket = socket;
         proxyServerMethods(client, Object.keys(Reflect.getMetadata('cossack:server-methods', HttpPage))
-            .map(name => ({ name, channel: 'global', provider: 'page' })));
+            .map(name => ({ name, channel: 'global' })));
     } else {
         vi.stubGlobal('fetch', (_url: string, init: RequestInit) => {
             if (init.body instanceof FormData) {

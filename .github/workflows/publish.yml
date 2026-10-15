@@ -60,12 +60,24 @@ jobs:
           fi
           node scripts/verify-release-version.mjs "$tag"
 
+  # The automated test suites run before anything is published. The OIDC job
+  # below then only installs, builds, audits the database bundle and publishes.
+  #
+  # CLI integration shards and UI browser tests.
   integration:
     needs: verify-release
     uses: ./.github/workflows/integration-tests.yml
 
+  # Typecheck and unit tests of every package (Desktop included), the
+  # generated-app run against local tarballs, and the Framework (including
+  # SSG output) and Studio Playwright suites. The Linux Desktop runtime gate
+  # (pnpm test:desktop) and the platform installers (desktop.yml) stay manual.
+  e2e:
+    needs: verify-release
+    uses: ./.github/workflows/e2e-tests.yml
+
   publish:
-    needs: [verify-release, integration]
+    needs: [verify-release, integration, e2e]
     runs-on: ubuntu-24.04
     # Must exactly match the environment in each npm trusted publisher.
     environment: Publish to npm
@@ -93,22 +105,10 @@ jobs:
       - name: Build packages with dist output
         run: pnpm run build
 
-      - name: Install generated-app test browser
-        run: pnpm --filter cossack exec playwright install chromium --with-deps
-
-      # Every published package (including node-adapter, auth and desktop) is
-      # type checked and unit tested before publishing.
-      - name: Check package types
-        run: pnpm run typecheck
-
-      - name: Run all unit tests
-        run: pnpm run test:unit
-
+      # Tests ran in the integration and e2e jobs on this commit. The bundle
+      # audit checks the database build that this job publishes.
       - name: Audit database bundle
         run: pnpm --filter @cossackframework/database audit:bundle
-
-      - name: Test generated app with local package tarballs
-        run: pnpm run test:scaffold:local
 
       # pnpm 11 supports npm trusted publishing through GitHub OIDC.
       # Configure publish.yml as a trusted publisher for each package on npm.

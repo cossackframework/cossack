@@ -1,11 +1,12 @@
 import { html, classMap, live, repeat, ifDefined } from '@cossackframework/renderer';
 import { Cossack, Component, Client, ClientState } from '@cossackframework/core';
 import { DialogController, type DialogControlProps } from '../internal/dialog';
+import { ControlledValue } from '../native-attributes';
 
 const shortcutOwners = new WeakMap<Document, Map<HTMLDialogElement, Command>>();
 
 export type CommandItem = { readonly id: string; readonly label: string; readonly group?: string; readonly disabled?: boolean; readonly description?: string };
-export type CommandProps = Omit<DialogControlProps, 'id' | 'aria-label' | 'aria-labelledby' | 'onClose'> & {
+export type CommandProps = Omit<DialogControlProps, 'id' | 'aria-label' | 'aria-labelledby' | 'onOpenChange'> & {
     id: string;
     /** Accessible name of the modal palette. */
     label: string;
@@ -38,7 +39,8 @@ export class Command extends Cossack {
     private element?: HTMLDialogElement;
     private removeShortcut?: () => void;
     private generation = 0;
-    private dialog = new DialogController(() => ({ ...this.props, open: this.isOpen, onClose: () => this.setOpen(false) }), () => this.requestUpdate());
+    private controlled = new ControlledValue<boolean>();
+    private dialog = new DialogController(() => ({ ...this.props, open: this.isOpen, onOpenChange: () => this.setOpen(false) }), () => this.requestUpdate());
 
     get isOpen() { return this.props.open ?? this.localOpened ?? this.initialOpened ?? !!this.props.defaultOpen; }
     getFiltered() {
@@ -77,7 +79,7 @@ export class Command extends Cossack {
                         && (!modal || modal === dialog) && (!editable || owner.isOpen || owner.props.shortcutInEditable));
                     eligible.sort(([left], [right]) => left === right ? 0 : left.compareDocumentPosition(right) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1);
                     if (eligible[0]?.[0] !== element) return;
-                    event.preventDefault(); this.setOpen(!this.isOpen);
+                    event.preventDefault(); this.setOpen(!this.controlled.base(this.props, this.isOpen));
                 };
                 document.addEventListener('keydown', shortcut);
                 this.removeShortcut = () => { document.removeEventListener('keydown', shortcut); owners!.delete(element); };
@@ -86,10 +88,11 @@ export class Command extends Cossack {
             if (active && element.open) element.ownerDocument.getElementById(this.optionId(active.id))?.scrollIntoView({ block: 'nearest' });
         });
     }
+    /** Proposes a change. It builds on a proposal the parent has not rendered yet. */
     @Client() setOpen(open: boolean) {
-        if (this.isOpen === open) return;
+        if (!this.controlled.changed(this.props, this.isOpen, open)) return;
         if (this.props.open === undefined) this.localOpened = open;
-        this.props.onOpenChange?.(open);
+        this.props.onOpenChange?.(this.controlled.emit(this.props, open));
         void this.requestUpdate();
     }
     @Client() private selectItem(id: string) {

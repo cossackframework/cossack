@@ -45,21 +45,30 @@ Run `cossack --help` to list all commands, or `cossack <command> --help` for com
 | --- | --- |
 | `create <name>` | Scaffold a new Cossack project. |
 | `dev` | Start the Vite dev server. |
-| `build` | Production build (`vite build` + SSG pre-render). |
+| `build` | Production build (`vite build`; pages marked `ssg: true` are pre-rendered inside it). |
 | `start` | Start the production server. |
+| `deploy` | Build and deploy to Cloudflare (`--env`, `--dry-run`, `--json`). |
+| `preview <create\|inspect\|cleanup>` | Create, inspect and clean up isolated Cloudflare previews. |
+| `resources <plan\|apply>` | Select account-owned Cloudflare bindings. |
+| `inspect <scope>` | Show static facts: `routes`, `cloudflare`, `providers`, `workflows`, `schedules`. |
+| `check <scope>` | Validate the same scopes and exit nonzero on errors. |
 | `generate <type> <name>` (`g`) | Generate a page/component/layout/middleware/service/model/migration/seeder. |
 | `delete <type> <name>` (`d`) | Delete a generated file/folder. |
-| `add <feature>` | Add `ui`, `database`, `studio`, `auth`, `dashboard`, `markdown`, or `examples`. |
+| `add <feature>` | Add a feature and its prerequisites (see the feature list below). |
 | `remove <feature>` | Remove a feature and anything that depends on it. |
 | `adapter <node\|cloudflare>` | Switch the active runtime adapter. |
-| `lang <sub>` | Manage localization catalogs (`publish`, `add <locale>`). |
-| `migration <sub>` (`migrate`) | Manage model-first ORM migrations (`generate`, `snapshot`, `squash`, `up`, `down`, `status`, `check`, `baseline`). |
-| `seeder <sub>` (`seed`) | Run seeders (`run`). |
+| `lang <sub>` | Manage localization catalogs (`publish`, `add <locale>`, `extract`, `check`, `types`). |
+| `migration <sub>` (`migrate`) | Manage model-first ORM migrations (`generate`, `snapshot`, `squash`, `up`, `down`, `status`, `rehash`, `check`, `baseline`, `plan`). |
+| `schema <sub>` | ORM schema commands (`inspect`, `pull`, `diff`, `check`). |
+| `seeder <sub>` (`seed`) | Run registered seeders (`list`, `run`). |
 | `studio` | Inspect the configured database in a local browser. |
 | `routes` | List all routes in the project. |
 | `config` | List configuration factory type origins. Use `--generate` before standalone type checking. |
 | `ssg` | Pre-render pages marked `ssg:true` to static HTML. |
 | `image optimize` | Generate optimized image variants from `<Image>` usages (requires ImageMagick). |
+| `docs` | Read offline catalogs of installed package exports, declarations and guides. |
+| `traces` | Read recorded development snapshots and timelines. |
+| `test-results` | Read recorded test evidence and source freshness. |
 | `upgrade [dir]` | Upgrade Cossack deps and report template drift. |
 | `info` | Print system/environment info for bug reports. |
 | `version` (`v`) | Print the CLI version. |
@@ -126,8 +135,12 @@ re-renders only the installed capabilities.
 
 Available presets are `minimal`, `database`, `auth`, and `full-stack`.
 Composable features are `ui`, `database`, `studio`, `auth`, `dashboard`,
-`markdown`, and `examples`. The `studio` feature requires `database`, while
-`examples` requires both `ui` and `markdown`.
+`markdown`, `examples`, `desktop`, `resource`, `mutation`, `scoped-service`,
+`protected-route`, `jobs`, `turnstile`, `schedules`, `notifications`, and
+`workflows`. `cossack add` installs missing prerequisites first: for example,
+`studio` requires `database`, `auth` requires `ui` and `database`, and
+`examples` requires both `ui` and `markdown`. `cossack --help` and
+`cossack add --help` print the list from the scaffold registry.
 For example:
 
 ```sh

@@ -1,166 +1,164 @@
 // ---------------------------------------------------------------------------
-// `cossack add ui` — UI component catalog + barrel
+// `cossack add ui` — UI component catalog
 //
-// All entries use `fromPackage()`, which reads the component source directly
-// from the installed @cossackframework/ui package at eject time. This avoids
-// duplicating ~600 lines of template strings and eliminates drift between the
-// catalog and the package source.
+// Every entry reads its source from the installed @cossackframework/ui package
+// at eject time, so the catalog never drifts from the package. An ejected
+// component imports public package exports, plus the private helpers it needs
+// from `./internal/<helper>`. `cossack add ui` copies those helpers next to the
+// component once; every ejected component that uses a helper shares that copy.
 // ---------------------------------------------------------------------------
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
-import ts from 'typescript-api';
 
 const requireFromCli = createRequire(import.meta.url);
+const BLOCKS = new Set(['AuthForm', 'CommandPalette', 'DashboardStat', 'SettingsPanel']);
 
-/** Merge repeated named imports after private helpers are included in one source file. */
-function mergeNamedImports(source) {
-  const file = ts.createSourceFile('ejected.ts', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
-  const groups = new Map();
-  const edits = [];
-  for (const statement of file.statements) {
-    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) continue;
-    const clause = statement.importClause;
-    if (!clause || clause.name || !clause.namedBindings || !ts.isNamedImports(clause.namedBindings)) continue;
-    const module = statement.moduleSpecifier.text;
-    const bindings = groups.get(module) ?? new Map();
-    groups.set(module, bindings);
-    for (const item of clause.namedBindings.elements) {
-      const local = item.name.text, imported = item.propertyName?.text ?? local;
-      const typeOnly = clause.isTypeOnly || item.isTypeOnly;
-      const previous = bindings.get(local);
-      if (previous && previous.imported !== imported) throw new Error(`Conflicting ejected import: ${local}`);
-      bindings.set(local, { imported, typeOnly: previous ? previous.typeOnly && typeOnly : typeOnly });
-    }
-    edits.push([statement.getStart(file), statement.end]);
-  }
-  for (const [start, end] of edits.reverse()) source = source.slice(0,start) + source.slice(end);
-  const imports = [...groups].map(([module, bindings]) => `import { ${[...bindings].map(([local, item]) =>
-    `${item.typeOnly ? 'type ' : ''}${item.imported}${item.imported === local ? '' : ` as ${local}`}`).join(', ')} } from ${JSON.stringify(module)};`);
-  return imports.join('\n') + '\n' + source;
-}
-
-/**
- * Read a component's source directly from the installed
- * @cossackframework/ui package. Falls back to a stub if the file can't be
- * resolved (e.g. package not yet installed during `cossack add ui` before
- * `pnpm install`).
- */
-function ejectFromPackage(className) {
-  const resolvers = [
-    createRequire(path.join(process.cwd(), 'package.json')),
-    requireFromCli,
-  ];
-  for (const resolver of resolvers) {
+/** The installed UI package directory, preferring the consuming app's copy. */
+function uiPackageDirectory() {
+  for (const resolver of [createRequire(path.join(process.cwd(), 'package.json')), requireFromCli]) {
     try {
-      const themePath = resolver.resolve(
-        '@cossackframework/ui/theme/base.css',
-      );
-      const pkgDir = path.resolve(path.dirname(themePath), '../..');
-      const sourceName = className === 'Toaster' ? 'Toast' : className;
-      const srcPath = ['AuthForm', 'CommandPalette', 'DashboardStat', 'SettingsPanel'].includes(className)
-        ? path.join(pkgDir, 'src/blocks', className, 'index.ts')
-        : path.join(pkgDir, 'src', 'components', `${sourceName}.ts`);
-      return mergeNamedImports(fs.readFileSync(srcPath, 'utf8')
-        // Include shared private helpers without imports into the package source tree.
-        // Merge their named imports with the component imports afterward.
-        .replace(
-          /^import .* from ["']\.\.\/internal\/(disclosure|menu)["'];$/gm,
-          (_import, name) => fs.readFileSync(path.join(pkgDir, `src/internal/${name}.ts`), 'utf8'),
-        )
-        .replace(/from ["'](?:\.\.\/)+native-attributes(?:\.js)?["']/g, 'from "@cossackframework/ui"')
-        .replace(/from ["']\.\.\/\.\.\/components\/(?:Button|Input|PasswordInput|Label|Command|Kbd|Card|Switch|Badge)\.js["']/g, 'from "@cossackframework/ui"')
-        .replace(
-          /from ["'](?:\.\.\/)+icons\/Icon(?:\.js)?["']/g,
-          'from "@cossackframework/ui"',
-        )
-        .replace(
-          /from ["']\.\/Avatar["']/g,
-          'from "@cossackframework/ui"',
-        ));
+      return path.resolve(path.dirname(resolver.resolve('@cossackframework/ui/theme/base.css')), '../..');
     } catch {
       // Try the next resolution root.
     }
   }
-  return `// Run \`pnpm install\` then re-run \`cossack add ui ${className.toLowerCase()}\`
-// to eject the full source from @cossackframework/ui.
-export {};\n`;
+  return undefined;
 }
 
-/** Wrapper so the catalog entry shape stays consistent: { className, template }. */
-const fromPackage = (className) => () => ejectFromPackage(className);
+/**
+ * Points package-internal imports at public exports, and private helpers at
+ * `./internal/<helper>`. Adds each helper name to `helpers`.
+ */
+function rewriteImports(source, helpers) {
+  const helper = (_import, name) => { helpers.add(name); return `from "./internal/${name}"`; };
+  return source
+    .replace(/from ["'](?:\.\.\/)+native-attributes(?:\.js)?["']/g, 'from "@cossackframework/ui"')
+    .replace(/from ["'](?:\.\.\/)+icons\/Icon(?:\.js)?["']/g, 'from "@cossackframework/ui"')
+    // A component used by another component or block comes from the package.
+    .replace(/from ["'](?:\.\.\/\.\.\/components\/|\.\/)[A-Z]\w*(?:\.js)?["']/g, 'from "@cossackframework/ui"')
+    .replace(/from ["'](?:\.\.\/)+internal\/([\w-]+)(?:\.js)?["']/g, helper);
+}
+
+/** A helper lives in internal/ already, so a helper it imports keeps its `./<helper>` path. */
+function rewriteHelperImports(source, helpers) {
+  return rewriteImports(source, helpers)
+    .replace(/from ["']\.\/([a-z][\w-]*)(?:\.js)?["']/g, (_import, name) => { helpers.add(name); return `from "./${name}"`; });
+}
+
+/**
+ * Reads a component's ejected source and the private helpers it imports from
+ * the installed package. Before the package is installed (for example
+ * `cossack add ui` before `pnpm install`), the source is a stub that explains
+ * how to retry, with no helpers.
+ * @returns {{ source: string, helpers: { path: string, content: string }[] }}
+ */
+function ejectFromPackage(className) {
+  const directory = uiPackageDirectory();
+  if (!directory) {
+    return {
+      source: `// Run \`pnpm install\` then re-run \`cossack add ui ${className.toLowerCase()}\`
+// to eject the full source from @cossackframework/ui.
+export {};\n`,
+      helpers: [],
+    };
+  }
+  const file = BLOCKS.has(className)
+    ? path.join(directory, 'src/blocks', className, 'index.ts')
+    : path.join(directory, 'src/components', `${className === 'Toaster' ? 'Toast' : className}.ts`);
+  const needed = new Set();
+  const source = rewriteImports(fs.readFileSync(file, 'utf8'), needed);
+  const helpers = [];
+  // A Set iterator also visits names that helpers add while it runs.
+  for (const name of needed) {
+    const content = fs.readFileSync(path.join(directory, 'src/internal', `${name}.ts`), 'utf8');
+    helpers.push({ path: `internal/${name}.ts`, content: rewriteHelperImports(content, needed) });
+  }
+  return { source, helpers };
+}
+
+/**
+ * A catalog entry. `template()` returns the component source, written to
+ * `src/components/ui/<className>.ts`. `helpers()` returns the private helpers
+ * it imports, written to `src/components/ui/<path>` and shared between
+ * ejected components.
+ */
+const fromPackage = (className) => ({
+  className,
+  template: () => ejectFromPackage(className).source,
+  helpers: () => ejectFromPackage(className).helpers,
+});
 
 /**
  * Catalog of ejectable UI components. Keys are the names accepted by
  * `cossack add ui <name>`.
  */
 export const UI_COMPONENTS = {
-  'settings-panel': { className: 'SettingsPanel', template: fromPackage('SettingsPanel') },
-  'dashboard-stat': { className: 'DashboardStat', template: fromPackage('DashboardStat') },
-  'command-palette': { className: 'CommandPalette', template: fromPackage('CommandPalette') },
-  'auth-form': { className: 'AuthForm', template: fromPackage('AuthForm') },
-  button: { className: 'Button', template: fromPackage('Button') },
-  input: { className: 'Input', template: fromPackage('Input') },
-  card: { className: 'Card', template: fromPackage('Card') },
-  badge: { className: 'Badge', template: fromPackage('Badge') },
-  label: { className: 'Label', template: fromPackage('Label') },
-  alert: { className: 'Alert', template: fromPackage('Alert') },
-  modal: { className: 'Modal', template: fromPackage('Modal') },
-  accordion: { className: 'Accordion', template: fromPackage('Accordion') },
-  textarea: { className: 'Textarea', template: fromPackage('Textarea') },
-  checkbox: { className: 'Checkbox', template: fromPackage('Checkbox') },
-  switch: { className: 'Switch', template: fromPackage('Switch') },
-  select: { className: 'Select', template: fromPackage('Select') },
-  spinner: { className: 'Spinner', template: fromPackage('Spinner') },
-  avatar: { className: 'Avatar', template: fromPackage('Avatar') },
-  'avatar-group': { className: 'AvatarGroup', template: fromPackage('AvatarGroup') },
-  separator: { className: 'Separator', template: fromPackage('Separator') },
-  skeleton: { className: 'Skeleton', template: fromPackage('Skeleton') },
-  progress: { className: 'Progress', template: fromPackage('Progress') },
-  tabs: { className: 'Tabs', template: fromPackage('Tabs') },
-  tooltip: { className: 'Tooltip', template: fromPackage('Tooltip') },
-  popover: { className: 'Popover', template: fromPackage('Popover') },
-  'radio-group': { className: 'RadioGroup', template: fromPackage('RadioGroup') },
-  slider: { className: 'Slider', template: fromPackage('Slider') },
-  table: { className: 'Table', template: fromPackage('Table') },
-  toaster: { className: 'Toaster', template: fromPackage('Toaster') },
-  'dropdown-menu': { className: 'DropdownMenu', template: fromPackage('DropdownMenu') },
-  sheet: { className: 'Sheet', template: fromPackage('Sheet') },
-  collapsible: { className: 'Collapsible', template: fromPackage('Collapsible') },
-  toggle: { className: 'Toggle', template: fromPackage('Toggle') },
-  'toggle-group': { className: 'ToggleGroup', template: fromPackage('ToggleGroup') },
-  breadcrumb: { className: 'Breadcrumb', template: fromPackage('Breadcrumb') },
-  pagination: { className: 'Pagination', template: fromPackage('Pagination') },
-  'aspect-ratio': { className: 'AspectRatio', template: fromPackage('AspectRatio') },
-  field: { className: 'Field', template: fromPackage('Field') },
-  form: { className: 'Form', template: fromPackage('Form') },
-  empty: { className: 'Empty', template: fromPackage('Empty') },
-  kbd: { className: 'Kbd', template: fromPackage('Kbd') },
-  'button-group': { className: 'ButtonGroup', template: fromPackage('ButtonGroup') },
-  'alert-dialog': { className: 'AlertDialog', template: fromPackage('AlertDialog') },
-  'hover-card': { className: 'HoverCard', template: fromPackage('HoverCard') },
-  'scroll-area': { className: 'ScrollArea', template: fromPackage('ScrollArea') },
-  resizable: { className: 'Resizable', template: fromPackage('Resizable') },
-  carousel: { className: 'Carousel', template: fromPackage('Carousel') },
-  'navigation-menu': { className: 'NavigationMenu', template: fromPackage('NavigationMenu') },
-  menubar: { className: 'Menubar', template: fromPackage('Menubar') },
-  command: { className: 'Command', template: fromPackage('Command') },
-  combobox: { className: 'Combobox', template: fromPackage('Combobox') },
-  calendar: { className: 'Calendar', template: fromPackage('Calendar') },
-  'date-picker': { className: 'DatePicker', template: fromPackage('DatePicker') },
-  'context-menu': { className: 'ContextMenu', template: fromPackage('ContextMenu') },
-  'input-otp': { className: 'InputOTP', template: fromPackage('InputOTP') },
-  typography: { className: 'Typography', template: fromPackage('Typography') },
-  drawer: { className: 'Drawer', template: fromPackage('Drawer') },
-  sidebar: { className: 'Sidebar', template: fromPackage('Sidebar') },
-  'native-select': { className: 'NativeSelect', template: fromPackage('NativeSelect') },
-  'input-group': { className: 'InputGroup', template: fromPackage('InputGroup') },
-  item: { className: 'Item', template: fromPackage('Item') },
-  bubble: { className: 'Bubble', template: fromPackage('Bubble') },
-  message: { className: 'Message', template: fromPackage('Message') },
-  'message-scroller': { className: 'MessageScroller', template: fromPackage('MessageScroller') },
-  marker: { className: 'Marker', template: fromPackage('Marker') },
-  attachment: { className: 'Attachment', template: fromPackage('Attachment') },
-  'password-input': { className: 'PasswordInput', template: fromPackage('PasswordInput') },
-  'multi-select': { className: 'MultiSelect', template: fromPackage('MultiSelect') },
+  'settings-panel': fromPackage('SettingsPanel'),
+  'dashboard-stat': fromPackage('DashboardStat'),
+  'command-palette': fromPackage('CommandPalette'),
+  'auth-form': fromPackage('AuthForm'),
+  button: fromPackage('Button'),
+  input: fromPackage('Input'),
+  card: fromPackage('Card'),
+  badge: fromPackage('Badge'),
+  label: fromPackage('Label'),
+  alert: fromPackage('Alert'),
+  modal: fromPackage('Modal'),
+  accordion: fromPackage('Accordion'),
+  textarea: fromPackage('Textarea'),
+  checkbox: fromPackage('Checkbox'),
+  switch: fromPackage('Switch'),
+  spinner: fromPackage('Spinner'),
+  avatar: fromPackage('Avatar'),
+  'avatar-group': fromPackage('AvatarGroup'),
+  separator: fromPackage('Separator'),
+  skeleton: fromPackage('Skeleton'),
+  progress: fromPackage('Progress'),
+  tabs: fromPackage('Tabs'),
+  tooltip: fromPackage('Tooltip'),
+  popover: fromPackage('Popover'),
+  'radio-group': fromPackage('RadioGroup'),
+  slider: fromPackage('Slider'),
+  table: fromPackage('Table'),
+  toaster: fromPackage('Toaster'),
+  'dropdown-menu': fromPackage('DropdownMenu'),
+  sheet: fromPackage('Sheet'),
+  collapsible: fromPackage('Collapsible'),
+  toggle: fromPackage('Toggle'),
+  'toggle-group': fromPackage('ToggleGroup'),
+  breadcrumb: fromPackage('Breadcrumb'),
+  pagination: fromPackage('Pagination'),
+  'aspect-ratio': fromPackage('AspectRatio'),
+  field: fromPackage('Field'),
+  form: fromPackage('Form'),
+  empty: fromPackage('Empty'),
+  kbd: fromPackage('Kbd'),
+  'button-group': fromPackage('ButtonGroup'),
+  'alert-dialog': fromPackage('AlertDialog'),
+  'hover-card': fromPackage('HoverCard'),
+  'scroll-area': fromPackage('ScrollArea'),
+  resizable: fromPackage('Resizable'),
+  carousel: fromPackage('Carousel'),
+  'navigation-menu': fromPackage('NavigationMenu'),
+  menubar: fromPackage('Menubar'),
+  command: fromPackage('Command'),
+  combobox: fromPackage('Combobox'),
+  calendar: fromPackage('Calendar'),
+  'date-picker': fromPackage('DatePicker'),
+  'context-menu': fromPackage('ContextMenu'),
+  'input-otp': fromPackage('InputOTP'),
+  typography: fromPackage('Typography'),
+  drawer: fromPackage('Drawer'),
+  sidebar: fromPackage('Sidebar'),
+  'native-select': fromPackage('NativeSelect'),
+  'input-group': fromPackage('InputGroup'),
+  item: fromPackage('Item'),
+  bubble: fromPackage('Bubble'),
+  message: fromPackage('Message'),
+  'message-scroller': fromPackage('MessageScroller'),
+  marker: fromPackage('Marker'),
+  attachment: fromPackage('Attachment'),
+  'password-input': fromPackage('PasswordInput'),
+  'multi-select': fromPackage('MultiSelect'),
 };

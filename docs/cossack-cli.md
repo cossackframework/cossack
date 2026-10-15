@@ -309,6 +309,8 @@ Starts the Vite dev server with hot module replacement. This is the default comm
 
 Production build. Runs the project's `vite build`. Static site generation is not a separate step: the `cossackSsg()` Vite plugin pre-renders pages marked `ssg: true` (and Markdown pages) inside that build.
 
+`--env <name>` sets `CLOUDFLARE_ENV` before Vite loads the project configuration. Other arguments, such as `--mode`, are forwarded to `vite build` unchanged. When `package.json` declares `cossack.buildBudgets`, the command measures the built Worker against them and fails when a budget is exceeded (see [Build budgets](./build-budgets.md)). `--json` prints one result envelope with `exitCode` instead of Vite's output.
+
 ### `cossack start`
 
 Starts the production server from the built output (Cloudflare Workers via `wrangler`, or the Node.js adapter).
@@ -496,7 +498,7 @@ cossack lang check            # Validate catalogs, placeholders and source calls
 cossack lang types            # Generate .cossack/translations.d.ts
 ```
 
-`lang publish` does not scan your source files. It writes a starter catalog
+`lang init` is an alias of `lang publish`. `lang publish` does not scan your source files. It writes a starter catalog
 (`src/lang/en.json` by default, or `--locale <code>`), adds `{{ cossackLang }}`
 to `src/root.ts`, and adds `APP_LOCALE` to the `vars` of `wrangler.jsonc` when
 that file exists. The `wrangler.jsonc` edit keeps comments and other values.

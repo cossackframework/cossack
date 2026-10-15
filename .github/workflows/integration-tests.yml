@@ -2,8 +2,10 @@ name: Integration Tests
 
 # Heavy tests that scaffold, build and run generated applications on Node,
 # workerd and Chromium. They run:
-# - on PRs that touch the CLI, scaffold, adapters or UI components,
-# - on every push to master (covers core/framework changes after merge),
+# - on PRs that touch any workspace package, the repository scripts or the
+#   dependency manifests (generated apps link every library package, so a
+#   core/renderer/framework/database/auth change affects them too),
+# - on every push to master,
 # - nightly (catches drift in Wrangler, workerd and browsers),
 # - before every release (called from publish.yml).
 # Fast checks (typecheck, unit, e2e) run on every PR in e2e-tests.yml.
@@ -14,10 +16,11 @@ on:
   pull_request:
     branches: [master, main]
     paths:
-      - packages/cossack/**
-      - packages/scaffold/**
-      - packages/node-adapter/**
-      - packages/ui/**
+      - packages/**
+      - scripts/**
+      - package.json
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
       - .github/workflows/integration-tests.yml
   schedule:
     - cron: '0 18 * * *'
@@ -60,6 +63,19 @@ jobs:
       - name: Build workspace libraries
         run: pnpm run build
 
+      - name: Read Playwright version
+        id: playwright
+        run: echo "version=$(node -p "require('playwright-core/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      # Keyed on the Playwright version, which pins the browser builds. With a
+      # cache hit the install below skips the download and only adds system
+      # libraries (--with-deps), which the cache does not hold.
+      - name: Cache Playwright browsers
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-chromium
+
       - name: Install Chromium
         run: pnpm --filter cossack exec playwright install chromium --with-deps
 
@@ -90,6 +106,19 @@ jobs:
 
       - name: Build workspace libraries
         run: pnpm run build
+
+      - name: Read Playwright version
+        id: playwright
+        run: echo "version=$(node -p "require('playwright-core/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      # Keyed on the Playwright version, which pins the browser builds. With a
+      # cache hit the install below skips the download and only adds system
+      # libraries (--with-deps), which the cache does not hold.
+      - name: Cache Playwright browsers
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-chromium
 
       - name: Install Chromium
         run: pnpm --filter @cossackframework/ui exec playwright install chromium --with-deps

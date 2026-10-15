@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { createServer } from 'node:http';
 import { html, renderToString, minifyHtml } from '../../../renderer/dist/server.js';
 import { component } from '../../../renderer/dist/index.js';
-import { AccordionItem, Collapsible } from '../../dist/index.js';
+import { Accordion, Collapsible } from '../../dist/index.js';
 
 const repository = fileURLToPath(new URL('../../../../', import.meta.url));
 const require = createRequire(new URL('../../package.json', import.meta.url));
@@ -18,8 +18,8 @@ const { build } = await import(require.resolve('vite'));
 it('preserves disclosure identity, native activation, state and focus', async () => {
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'cossack-disclosures-'));
   let server,browser;
-  const templateSource=`(a={},c={},disabled=false)=>html\`<form id="form"><fieldset ?disabled=\${disabled}>\${component(AccordionItem,{id:'section',summary:'Details',...a},html\`<input aria-label="Accordion field"><button type="button">Content action</button>\`)}\${component(Collapsible,{id:'more',trigger:'More',defaultOpen:true,...c},html\`<input aria-label="More field"><div id="growing">Content</div>\`)}<button type="button" id="after">After</button></fieldset></form>\``;
-  const template=new Function('html','component','AccordionItem','Collapsible',`return (${templateSource})`)(html,component,AccordionItem,Collapsible);
+  const templateSource=`(a={},c={},disabled=false)=>html\`<form id="form"><fieldset ?disabled=\${disabled}>\${component(Accordion,{id:'section',summary:'Details',...a},html\`<input aria-label="Accordion field"><button type="button">Content action</button>\`)}\${component(Collapsible,{id:'more',trigger:'More',defaultOpen:true,...c},html\`<input aria-label="More field"><div id="growing">Content</div>\`)}<button type="button" id="after">After</button></fieldset></form>\``;
+  const template=new Function('html','component','Accordion','Collapsible',`return (${templateSource})`)(html,component,Accordion,Collapsible);
   try {
     const scope=path.join(root,'node_modules/@cossackframework');await fs.mkdir(scope,{recursive:true});
     for(const name of ['renderer','core','ui'])await fs.symlink(path.join(repository,'packages',name),path.join(scope,name),'dir');
@@ -33,10 +33,10 @@ it('preserves disclosure identity, native activation, state and focus', async ()
     await fs.writeFile(path.join(root,'main.js'),`
 import './style.css';
 import {html,hydrate,render,component} from '@cossackframework/renderer';
-import {AccordionItem,Collapsible} from '@cossackframework/ui';
+import {Accordion,Collapsible} from '@cossackframework/ui';
 const template=${templateSource},container=document.querySelector('#app'),initial=container.querySelector('#section-trigger');
 let a={},c={},disabled=false;window.events=[];window.accept=false;window.veto=false;window.submits=0;
-function props(name,value){return {...value,onToggle:open=>{window.events.push([name,open]);if(window.accept){if(name==='a')a={...a,open};else c={...c,open};draw();}},'@click':event=>window.events.push(['root',event.currentTarget.id]),triggerProps:{'@click':event=>{window.events.push(['trigger',event.currentTarget.id]);if(window.veto)event.preventDefault();}},panelProps:{'data-panel':name}};}
+function props(name,value){return {...value,onOpenChange:open=>{window.events.push([name,open]);if(window.accept){if(name==='a')a={...a,open};else c={...c,open};draw();}},'@click':event=>window.events.push(['root',event.currentTarget.id]),triggerProps:{'@click':event=>{window.events.push(['trigger',event.currentTarget.id]);if(window.veto)event.preventDefault();}},panelProps:{'data-panel':name}};}
 function draw(){render(template(props('a',a),props('c',c),disabled),container);}
 window.update=(name,next)=>{if(name==='a')a={...a,...next};else c={...c,...next};draw();};window.disable=value=>{disabled=value;draw();};
 hydrate(template(props('a',a),props('c',c),disabled),container);window.retained=initial===container.querySelector('#section-trigger');

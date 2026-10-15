@@ -8,7 +8,7 @@ import { ControlledValue } from "../native-attributes";
 export type DatePickerProps = Omit<GlobalAttributes<HTMLInputElement>, 'id' | 'role'> & {
     /** Stable page-unique input ID. Label with for=id or aria-label. */
     id: string;
-    /** Controlled Gregorian date, yyyy-mm-dd or empty. Accept onChange to retain edits. */
+    /** Controlled Gregorian date, yyyy-mm-dd or empty. Accept onValueChange to retain edits. */
     value?: string;
     defaultValue?: string;
     min?: string;
@@ -19,7 +19,7 @@ export type DatePickerProps = Omit<GlobalAttributes<HTMLInputElement>, 'id' | 'r
     disabled?: boolean;
     readonly?: boolean;
     /** Called for a changed native input or calendar selection, including empty after clearing. */
-    onChange?: (iso: string) => unknown;
+    onValueChange?: (iso: string) => unknown;
     /** Locale for the custom calendar; the native date field follows browser settings. */
     locale?: string;
     weekStartsOn?: number;
@@ -47,7 +47,7 @@ export class DatePicker extends Cossack {
 
     render() {
         const { id, value: _value, defaultValue: _default, min, max, name, form, required = false, disabled = false, readonly = false,
-            onChange: _change, locale = 'en-US', weekStartsOn, today, openLabel = 'Choose date', calendarLabel = 'Choose date',
+            onValueChange: _change, locale = 'en-US', weekStartsOn, today, openLabel = 'Choose date', calendarLabel = 'Choose date',
             previousLabel, nextLabel, ...rest } = this.props;
         if (typeof id !== 'string' || !id || /\s/.test(id)) throw new Error('DatePicker requires a nonempty, whitespace-free id.');
         parseDate(this.currentValue, 'value'); parseDate(today, 'today'); dateRange(min, max);
@@ -91,7 +91,7 @@ export class DatePicker extends Cossack {
         // Native date inputs provide either a real date or empty while incomplete.
         parseDate(value, 'value');
         this.draft = value;
-        if (changed) this.props.onChange?.(this.controlled.emit(this.props, value));
+        if (changed) this.props.onValueChange?.(this.controlled.emit(this.props, value));
         void this.requestUpdate();
     }
     @Client()

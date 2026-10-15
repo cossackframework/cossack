@@ -62,7 +62,7 @@ export default class RegisterPage extends Cossack {
                 ${component(Field, { label: __('Email'), for: 'email', error: this.getError('form.email'),
                     control: attributes => component(Input, { ...attributes, type: 'email', placeholder: 'user@example.com', variant: this.hasError('form.email') ? 'error' : 'default', '.value': bind(this.form, 'email') }) })}
                 ${component(Field, { label: __('Password'), for: 'password', error: this.getError('form.password'),
-                    control: attributes => component(PasswordInput, { ...attributes, value: this.form.password, onChange: (v: string) => this.form.password = v }) })}
+                    control: attributes => component(PasswordInput, { ...attributes, value: this.form.password, onValueChange: (v: string) => this.form.password = v }) })}
                 ${this.error ? component(Alert, { variant: 'destructive' }, this.error) : null}
                 ${component(Button, { type: 'submit', block: true }, __('Create Account'))}
             </form>

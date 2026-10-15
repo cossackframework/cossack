@@ -354,7 +354,10 @@ export function handleSseEndpoint(ctx: RouterContext) {
         } catch {
             return new Response('Invalid route params', { status: 400 });
         }
-        const effectiveScopeKey = await resolveRealtimeScopeKey(withRuntimeRouteParams(c, params), pageOptions);
+        // The page's route params, as SSR and /crpc see them. The scope key and
+        // the cold-start page (with its layout service scopes) use this context.
+        const componentContext = withRuntimeRouteParams(c, params);
+        const effectiveScopeKey = await resolveRealtimeScopeKey(componentContext, pageOptions);
         if (!requestedScopeKey || requestedScopeKey !== effectiveScopeKey) {
             return new Response('Forbidden: scopeKey does not match the authenticated scope', { status: 403 });
         }
@@ -374,7 +377,7 @@ export function handleSseEndpoint(ctx: RouterContext) {
 
         const coordinator = getSseCoordinator(c.env);
         if (coordinator) {
-            return handleCoordinatorSubscription(c, ctx, componentRouteId, effectiveScopeKey, PageComponent, authorize);
+            return handleCoordinatorSubscription(componentContext, ctx, componentRouteId, effectiveScopeKey, PageComponent, authorize);
         }
         // Cloudflare must not silently fall back to process-local state: the
         // store is not shared between isolates and resets on eviction.
@@ -387,7 +390,7 @@ export function handleSseEndpoint(ctx: RouterContext) {
         if (!entry) {
             // Cold start: build the page with the same layout service scopes
             // as SSR and RPC, read its state, and release it in this request.
-            const state = await buildColdStartState(c, ctx, componentPath, effectiveScopeKey, PageComponent);
+            const state = await buildColdStartState(componentContext, ctx, componentPath, effectiveScopeKey, PageComponent);
             // Another request may have registered the scope while this one awaited.
             entry = sseStateStore.get(storeKey);
             if (!entry) {
@@ -436,6 +439,8 @@ export function handleSseEndpoint(ctx: RouterContext) {
  * Subscription cold starts need the same layout declarations as SSR and RPC.
  * Construct the page through the shared scope chain, read a detached state
  * snapshot, and dispose the temporary instance and scopes in this request.
+ * `c` must carry the page's route params (see withRuntimeRouteParams), so
+ * services and the page read the same params as during SSR.
  */
 async function buildColdStartState(
     c: Context,

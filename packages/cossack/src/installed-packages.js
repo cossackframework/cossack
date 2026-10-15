@@ -2,8 +2,12 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 
+/**
+ * Packages a project can install from npm. Private workspace packages such as
+ * @cossackframework/test-utils are never published, so they are not listed.
+ */
 export const COSSACK_PACKAGES = Object.freeze(['cossack', ...[
-  'core', 'renderer', 'framework', 'node-adapter', 'desktop', 'solar-icons', 'database', 'auth', 'test-utils', 'scaffold', 'ui', 'studio',
+  'core', 'renderer', 'framework', 'node-adapter', 'desktop', 'solar-icons', 'database', 'auth', 'scaffold', 'ui', 'studio',
 ].map(name => '@cossackframework/' + name)]);
 
 /** Locate manifests without requiring import-only entries or executing modules. */

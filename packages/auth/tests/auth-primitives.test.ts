@@ -123,30 +123,31 @@ it('infers credential records and maps only verified accounts to a safe user', a
 it.each([
     ['an unknown identifier', async () => null],
     ['an account without a password hash', async () => ({ id: 'fixture-user', hash: null })],
-])('runs a dummy hash verification for %s so timing matches a wrong password', async (_label, find) => {
+])('creates, then verifies against, a dummy hash for %s so timing matches a wrong password', async (_label, find) => {
     const real = createPasswordHasher({ iterations: 1000 });
     const hasher = { hash: vi.fn(real.hash), verify: vi.fn(real.verify) };
     const account = { id: 'fixture-user', hash: await real.hash(password) as string | null };
+    hasher.hash.mockClear();
     const user = vi.fn((record: typeof account) => ({ id: record.id }));
     const verifier = createCredentialVerifier({ find: find as () => Promise<typeof account | null>,
         passwordHash: record => record.hash, user, hasher });
     const wrong = createCredentialVerifier({ find: async () => account, passwordHash: record => record.hash, user, hasher });
 
+    // The first miss pays for the dummy hash: one derivation, like a wrong password.
     const missResult = await verifier.verify('missing', password);
-    expect(hasher.verify).toHaveBeenCalledOnce();
-    // The dummy hash comes from the same hasher, so the work factor matches.
-    const dummy = hasher.verify.mock.calls[0]![1];
-    expect(dummy).toMatch(/^pbkdf2-sha256\$1000\$/);
     expect(hasher.hash).toHaveBeenCalledOnce();
+    expect(hasher.verify).not.toHaveBeenCalled();
+    // The dummy hash comes from the same hasher, so the work factor matches.
+    const dummy = await hasher.hash.mock.results[0]!.value;
+    expect(dummy).toMatch(/^pbkdf2-sha256\$1000\$/);
 
-    hasher.verify.mockClear();
     const wrongResult = await wrong.verify('fixture', 'wrong-password');
     expect(hasher.verify).toHaveBeenCalledOnce();
     expect(missResult).toBe(wrongResult);
     expect(missResult).toBeNull();
     expect(user).not.toHaveBeenCalled();
 
-    // The dummy hash is computed lazily once and reused.
+    // Later misses verify against the same dummy hash.
     hasher.verify.mockClear();
     expect(await verifier.verify('missing', password)).toBeNull();
     expect(hasher.verify).toHaveBeenCalledOnce();
@@ -158,6 +159,7 @@ it('never accepts a miss even when a custom hasher accepts the dummy hash', asyn
     const hasher = { hash: vi.fn(async () => 'dummy'), verify: vi.fn(async () => true) };
     const user = vi.fn(() => ({ id: 'fixture-user' }));
     const verifier = createCredentialVerifier({ find: async () => null, passwordHash: () => 'stored', user, hasher });
+    expect(await verifier.verify('missing', password)).toBeNull();
     expect(await verifier.verify('missing', password)).toBeNull();
     expect(hasher.verify).toHaveBeenCalledWith(password, 'dummy');
     expect(user).not.toHaveBeenCalled();

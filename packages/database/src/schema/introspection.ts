@@ -245,6 +245,8 @@ export async function introspectPostgres(execute: Execute): Promise<OrmSchema> {
       AND NOT attribute.attisdropped
     ORDER BY table_class.relname, attribute.attnum
   `);
+  // A foreign key also records the referenced unique index in conindid. Only the
+  // table's own primary, unique or exclusion constraint owns an index.
   const indexesResult = await execute<Record<string, unknown>>(`
     SELECT
       table_class.relname AS table_name,
@@ -267,6 +269,8 @@ export async function introspectPostgres(execute: Execute): Promise<OrmSchema> {
     JOIN pg_catalog.pg_namespace namespace ON namespace.oid = table_class.relnamespace
     JOIN pg_catalog.pg_am access_method ON access_method.oid = index_class.relam
     LEFT JOIN pg_catalog.pg_constraint constraint_record ON constraint_record.conindid = index_record.indexrelid
+      AND constraint_record.conrelid = index_record.indrelid
+      AND constraint_record.contype IN ('p', 'u', 'x')
     WHERE namespace.nspname = 'public'
       AND table_class.relname <> '_cossack_migrations'
     ORDER BY table_class.relname, index_class.relname

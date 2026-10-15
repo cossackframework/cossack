@@ -46,7 +46,7 @@ export class InsertRowSheet extends Cossack {
       open: Boolean(this.props.open && object?.editable),
       side: 'right',
       size: 'min(42rem, 94vw)',
-      onClose: this.props.onClose,
+      onOpenChange: this.props.onClose,
       'data-testid': 'insert-form',
       'aria-label': 'Insert row',
     }, html`
@@ -106,7 +106,7 @@ export class InsertRowSheet extends Cossack {
                           id: inputId,
                           disabled: mode !== 'value',
                           value,
-                          onChange: (nextValue: string) =>
+                          onValueChange: (nextValue: string) =>
                             this.props.onValueChange(column.name, nextValue),
                         })}
                       </div>

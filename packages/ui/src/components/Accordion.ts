@@ -12,15 +12,15 @@ import { DisclosureController, disclosureStyle, disclosureClick, validateDisclos
 import { Icon } from "../icons/Icon";
 import { AltArrowDownIcon as altArrowDownIcon } from "@cossackframework/solar-icons/alt-arrow-down";
 
-export type AccordionItemProps = DisclosureProps & {
+export type AccordionProps = DisclosureProps & {
     summary: string;
     headingLevel?: 2 | 3 | 4 | 5 | 6;
 };
 
-/** Independent accordion section with native button activation and a typed panel. */
+/** One independent accordion section with native button activation and a typed panel. Stack several for a group. */
 @Component()
-export class AccordionItem extends Cossack {
-    declare props: AccordionItemProps;
+export class Accordion extends Cossack {
+    declare props: AccordionProps;
 
     @ClientState() private internalOpen: boolean = false;
     @ClientState() private userInteracted: boolean = false;
@@ -46,7 +46,7 @@ export class AccordionItem extends Cossack {
 
     render() {
         const { id, summary, headingLevel = 3, triggerProps = {}, panelProps = {}, disabled,
-            open: _open, defaultOpen: _default, onToggle: _toggle, ...rest } = this.props;
+            open: _open, defaultOpen: _default, onOpenChange: _change, ...rest } = this.props;
         validateDisclosure(id, summary);
         if (![2,3,4,5,6].includes(headingLevel)) throw new Error('headingLevel must be from 2 through 6.');
         const open = this.isOpen;
@@ -106,12 +106,12 @@ export class AccordionItem extends Cossack {
         const currentOpen = this.controlled.base(this.props, this.isOpen);
 
         if (this.props.open !== undefined) {
-            this.props.onToggle?.(this.controlled.emit(this.props, !currentOpen));
+            this.props.onOpenChange?.(this.controlled.emit(this.props, !currentOpen));
             return;
         }
         this.userInteracted = true;
         this.internalOpen = !currentOpen;
-        this.props.onToggle?.(this.controlled.emit(this.props, this.internalOpen));
+        this.props.onOpenChange?.(this.controlled.emit(this.props, this.internalOpen));
     }
 
     onMount() {
@@ -123,5 +123,3 @@ export class AccordionItem extends Cossack {
         this.trigger = undefined; this.wrapperRef.value = undefined; this.contentRef.value = undefined;
     }
 }
-
-export { AccordionItem as Accordion };

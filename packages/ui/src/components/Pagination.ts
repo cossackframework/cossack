@@ -1,6 +1,7 @@
 import { html, component, repeat, PreventDefaultResult, preventDefault, type nothing } from '@cossackframework/renderer';
-import { Cossack, Component } from '@cossackframework/core';
+import { Cossack, Component, Client } from '@cossackframework/core';
 import type { GlobalAttributes, ButtonAttributes, AnchorAttributes, ControlEvent } from '../native-attributes';
+import { ControlledValue } from '../native-attributes';
 import { Icon } from '../icons/Icon';
 import { AltArrowLeftIcon as altArrowLeftIcon } from '@cossackframework/solar-icons/alt-arrow-left';
 import { AltArrowRightIcon as altArrowRightIcon } from '@cossackframework/solar-icons/alt-arrow-right';
@@ -43,6 +44,16 @@ export class Pagination extends Cossack {
     private root?: HTMLElement;
     private controls = new Map<string, HTMLElement>();
     private generation = 0;
+    private controlled = new ControlledValue<number>();
+
+    /** Previous and Next build on a page the parent has not rendered yet. */
+    @Client()
+    private choose(control: PageControl) {
+        const { page, totalPages, onPageChange } = this.props;
+        const current = Math.min(page, totalPages), base = this.controlled.base(this.props, current);
+        const target = control.edge === 'previous' ? Math.max(1, base - 1) : control.edge === 'next' ? Math.min(totalPages, base + 1) : control.page;
+        if (target >= 1 && this.controlled.changed(this.props, current, target)) onPageChange?.(this.controlled.emit(this.props, target));
+    }
 
     render() {
         const { page, totalPages, maxButtons = 5, label = 'Pagination', previousLabel = 'Previous page', nextLabel = 'Next page', pageLabel = (value: number) => `Page ${value}`, disabled = false, href, onPageChange, buttonProps, linkProps, ...rest } = this.props;
@@ -87,7 +98,7 @@ export class Pagination extends Cossack {
                 if (control.disabled || (event.currentTarget as HTMLElement).matches(':disabled')) { event.preventDefault(); return; }
                 if (typeof supplied === 'function') (supplied as (event: Event) => unknown)(event);
                 else if (supplied instanceof PreventDefaultResult) supplied.handler.call(event.currentTarget, event);
-                if (!href && !event.defaultPrevented && control.page !== current) onPageChange?.(control.page);
+                if (!href && !event.defaultPrevented) this.choose(control);
             };
             const attributes = { ...props, '@click': supplied instanceof PreventDefaultResult ? preventDefault(click, { novalidate: supplied.novalidate }) : click };
             const classes = `cs-pagination__button inline-flex items-center justify-center w-9 h-9 text-sm rounded-md cursor-pointer border-none transition-colors outline-none focus-visible:ring-ring/50 focus-visible:ring-[3px] disabled:opacity-50 disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:cursor-not-allowed ${control.current ? 'bg-primary text-primary-foreground' : 'hover:bg-accent hover:text-accent-foreground'}`;

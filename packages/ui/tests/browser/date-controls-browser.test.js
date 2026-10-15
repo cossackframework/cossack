@@ -36,8 +36,8 @@ import {html,hydrate,render,component} from '@cossackframework/renderer';
 import {Calendar,DatePicker} from '@cossackframework/ui';
 const template=${templateSource},container=document.querySelector('#app'),initial=container.querySelector('#due'),day=container.querySelector('[data-date="2024-02-29"]');
 let cal={},picker={};window.dates=[];window.picks=[];window.native=[];window.calAccept=true;
-const callbacks={onChange:iso=>{window.picks.push(iso);if(window.accept){picker.value=iso;draw();}},'@input':event=>window.native.push(event.currentTarget.id)};
-const calendarCallbacks={onChange:iso=>{window.dates.push(iso);if(window.calAccept){cal.value=iso;draw();}}};
+const callbacks={onValueChange:iso=>{window.picks.push(iso);if(window.accept){picker.value=iso;draw();}},'@input':event=>window.native.push(event.currentTarget.id)};
+const calendarCallbacks={onValueChange:iso=>{window.dates.push(iso);if(window.calAccept){cal.value=iso;draw();}}};
 function draw(){render(template({...cal,...calendarCallbacks},{...picker,...callbacks}),container);}
 window.update=(nextCal,nextPicker)=>{cal={...cal,...nextCal};picker={...picker,...nextPicker};draw();};
 hydrate(template(calendarCallbacks,callbacks),container);window.retained=initial===container.querySelector('#due')&&day===container.querySelector('[data-date="2024-02-29"]');

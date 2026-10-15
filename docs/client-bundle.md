@@ -37,9 +37,11 @@ client app features even when a page contains only static text.
 
 ## The Rule
 
-During the client build, the Cossack Vite security plugin walks every class that
-`extends Cossack`, `extends CossackElement`, or is decorated with `@Service`,
-and for each top-level method it asks:
+During the client build, the Cossack Vite security plugin walks every
+framework class: a class that extends `Cossack`, `CossackElement` or
+`CossackService`, is decorated with `@Page`, `@Component` or `@Service`, or
+has an `@Server` member. See [class discovery](#build-failures-and-class-discovery)
+for how the plugin recognizes these classes. For each top-level method it asks:
 
 The plugin finds these classes wherever they are written: class declarations,
 `export default`, class expressions such as `export const Page = class extends
@@ -146,6 +148,18 @@ to functions in template `@event` slots in any client method, and to `onX` /
 `@x` component props written in `render()`. To run the handler in the browser,
 mark the method `@Client()`.
 
+During `vite dev`, the plugin logs the automatic RPC endpoints of each module,
+and logs again when they change:
+
+```
+[cossack-security] src/pages/todos/index.ts: automatic RPC endpoints TodoPage.remove (undecorated methods used as event handlers run on the server).
+```
+
+Explicit `@Server` methods are not listed. The log follows the `devWarning`
+option. Set `cossackSecurityPlugin({ logRpcEndpoints: false })` to turn it off,
+or `true` to turn it on when `devWarning` is off. Production builds and Vitest
+runs do not log unless `logRpcEndpoints` is `true`.
+
 ## `@Client()` as the escape hatch
 
 When a helper is called from a client-safe hook but the call cannot be detected
@@ -211,9 +225,9 @@ The body then executes on the server instead of the client.
 
 The same secure-by-default treatment applies to the SSG helper
 `generateStaticParams` passed inside `@Page(...)` / `@Component(...)`. The
-plugin strips it from any class decorator call, including an aliased or
-namespaced decorator and an options object stored in a module constant. A
-module-level loader that only `generateStaticParams` uses is removed too:
+plugin strips it from the `ssg` options of any class decorator call, including
+an aliased or namespaced decorator. A module-level loader that only
+`generateStaticParams` uses is removed too:
 
 ```typescript
 @Page({
@@ -236,8 +250,25 @@ occurrence with `async () => []`, preserving the declared type and acting as
 a defensive no-op. The `enabled` flag and any other `@Page` options are
 preserved.
 
-Matches inside string literals, comments, and template literals (for example a
-`<pre>` code sample that quotes the function) are not touched.
+The plugin strips `generateStaticParams` when it is written in one of these
+places:
+
+- the options object of the decorator call, written inline;
+- a module-level `const` object that the decorator call names, such as
+  `@Page(options)`;
+- an `ssg` value that is inline or a module-level `const` object, such as
+  `@Page({ ssg })`;
+- an object spread into the options or the `ssg` value from a module-level
+  `const` object, such as `@Page({ ...shared })`.
+
+The property can be a function value, a method, a quoted key or a shorthand
+property. The client build fails for any other runtime `generateStaticParams`
+property in an application module, for example options that a function
+returns, options exported for another module to use, or a later assignment
+such as `options.ssg.generateStaticParams = load`. The build does not ship a
+loader that it cannot strip. Type declarations, destructuring, and matches
+inside string literals, comments and template literals (for example a `<pre>`
+code sample that quotes the function) are not affected.
 
 ## Build failures and class discovery
 
@@ -247,18 +278,59 @@ If client code still uses a server-only import, the build fails. The named
 decorators and conditional UI use its role and permission helpers in both
 environments. Keep authentication and session operations in server methods.
 
-Class discovery supports imported base-class aliases, namespace imports, local
-inheritance, and `@Page`, `@Component`, or `@Service` classes. Classes with explicit
-`@Server` members also receive the security transform. Formatting and Vite query
-suffixes do not disable the transform.
+Class discovery is fail closed. Every class in a client module is a framework
+class (stripped), a plain class (left unchanged), or a class the plugin cannot
+classify, which fails the build when stripping would change it.
+
+A class is a framework class when one of these is true:
+
+- Its superclass expression names `Cossack`, `CossackElement` or
+  `CossackService`, directly, through an alias of a `@cossackframework/*`
+  import, or through a namespace import (`core.Cossack`). The name can be
+  anywhere in the expression, for example in a mixin call such as
+  `extends WithTracking(Cossack)` or a cast such as `extends (Cossack as any)`.
+- Its superclass is another framework class in the same module.
+- Its superclass is imported from another application module and that class is
+  a framework class. The plugin reads the module without running it. It follows
+  relative imports, root-relative imports (`/src/...`), Vite `resolve.alias`
+  entries, re-exports, `export *`, default exports, namespace imports and
+  inheritance chains across modules, up to 8 modules deep. Every class that
+  `@cossackframework/ui` exports is a framework class.
+- It has a `@Page`, `@Component` or `@Service` decorator. The decorator can come
+  from any module, including your own re-export, and can be namespaced
+  (`@fw.Component()`).
+- It has an `@Server` member.
+
+A class is a plain class when it has no superclass, or extends a global such as
+`HTMLElement` or `Error`, a plain class in the same module, a plain class in
+another application module, or a class from an installed package other than
+the framework classes above.
+
+The plugin cannot classify a class whose superclass is one of these:
+
+- an import that names no readable module, for example a TypeScript `paths`
+  alias that is not a Vite alias;
+- an export that is not a class, such as `export const Base = makeBase()`;
+- a module-level value computed at runtime, such as `const Base = makeBase()`;
+- an expression such as a call, unless it names a framework base.
+
+The client build fails for such a class when treating it as a component would
+strip at least one of its methods. Decorate the class with `@Page()` or
+`@Component()` if it is a component. Otherwise mark the methods that run in the
+browser with `@Client()`. A class whose methods are all built-ins, helpers that
+`render()` calls, `@Client` methods, accessors or arrow function fields is left
+unchanged.
+
+The server build classifies classes in the same way, so automatic RPC endpoints
+match on both sides.
+
+The transform strips `.ts` and `.mts` application modules. A framework class in
+another script module inside the Vite root (for example `.js`) fails the client
+build. Formatting and Vite query suffixes do not disable the transform.
 
 If the parser cannot analyze a client module, the build fails. It does not emit
 the unchanged source. `@Server` accessors and dynamic computed names are rejected.
 Use a method or function field with a static name for server code.
 
 Keep secrets out of constructors, ordinary field initializers, accessors, and
-client-safe methods. Those parts still run in the browser. For a subclass of an
-imported custom base, use a component decorator or explicit `@Server` methods.
-The client build warns when a class in `src/pages/` or `src/components/`
-extends an imported, non-framework base without either, and has undecorated
-methods that would otherwise be stripped.
+client-safe methods. Those parts still run in the browser.

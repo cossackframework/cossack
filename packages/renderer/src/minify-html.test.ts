@@ -8,12 +8,12 @@ describe('minifyHtml', () => {
         expect(result).toBe('<div> hello </div>');
     });
 
-    it('collapses newlines and indentation', () => {
+    it('collapses newlines and indentation to one line break', () => {
         const input = `<div>
             <span>hello</span>
         </div>`;
         const result = minifyHtml(input);
-        expect(result).toBe('<div><span>hello</span></div>');
+        expect(result).toBe('<div>\n<span>hello</span>\n</div>');
     });
 
     it('removes HTML comments', () => {
@@ -29,7 +29,7 @@ describe('minifyHtml', () => {
             <span>hello</span>
         </div>`;
         const result = minifyHtml(input);
-        expect(result).toBe('<div><span>hello</span></div>');
+        expect(result).toBe('<div>\n<span>hello</span>\n</div>');
     });
 
     it('preserves Cossack hydration markers (CRP)', () => {
@@ -138,7 +138,7 @@ Line 1
         const input = '<circle cx="12" cy="12" r="6"stroke="currentColor" stroke-width="1.5"/>';
         const result = minifyHtml(input);
 
-        expect(result).toContain('r="6"stroke=currentColor');
+        expect(result).toBe('<circle cx=12 cy=12 r=6 stroke=currentColor stroke-width="1.5"/>');
         expect(result).not.toContain('r=6stroke');
     });
 
@@ -163,8 +163,8 @@ Line 1
     it('does not collapse self-closing on non-void elements', () => {
         const input = '<div />';
         const result = minifyHtml(input);
-        // div is not a void element, so it should remain unchanged (besides whitespace)
-        expect(result).toContain('<div />');
+        // div is not a void element, so the slash stays (it matters in SVG)
+        expect(result).toBe('<div/>');
     });
 
     it('preserves sibling SVG elements whose final attribute precedes a self-closing slash', () => {
@@ -189,10 +189,10 @@ Line 1
         expect(path.getAttribute('stroke-linecap')).toBe('round');
     });
 
-    it('trims leading and trailing whitespace', () => {
+    it('drops whitespace before the document and collapses it after', () => {
         const input = '   <div>hello</div>   ';
         const result = minifyHtml(input);
-        expect(result).toBe('<div>hello</div>');
+        expect(result).toBe('<div>hello</div> ');
     });
 
     it('returns input unchanged when already minified', () => {
@@ -219,13 +219,10 @@ Line 1
             </body>
         </html>`;
         const result = minifyHtml(input);
-        expect(result).not.toContain('<!--');
-        expect(result).not.toContain('type="text/javascript"');
-        expect(result).toContain('<img src=hero.png');
-        expect(result).toContain('<!DOCTYPE html>');
-        expect(result).toContain('<h1>Hello World</h1>');
-        // No extra whitespace between tags
-        expect(result).not.toMatch(/>\s+</);
+        // Whitespace in <head> and around it never renders; in <body> it collapses.
+        expect(result).toBe('<!DOCTYPE html><html lang=en><head><meta charset=utf-8><title>Test</title>'
+            + '<link rel=stylesheet href=style.css><script type="module" src="app.js"></script></head>'
+            + '<body>\n<div id=root>\n<h1>Hello World</h1>\n<img src=hero.png alt="Hero image">\n</div>\n</body>\n</html>');
     });
 
     it('preserves multiple preserve-tag blocks', () => {
@@ -241,8 +238,140 @@ Line 1
 });
 
 it('preserves whitespace-only textarea values and text that resembles attributes', () => {
-    expect(minifyHtml('<div> </div> <textarea> \n\t </textarea> <p>After</p>'))
-        .toBe('<div></div><textarea> \n\t </textarea><p>After</p>');
+    expect(minifyHtml('<div> </div>  <textarea> \n\t </textarea> \n <p>After</p>'))
+        .toBe('<div> </div> <textarea> \n\t </textarea>\n<p>After</p>');
     expect(minifyHtml('<textarea>Keep type="text/javascript" as text</textarea>'))
         .toBe('<textarea>Keep type="text/javascript" as text</textarea>');
+});
+
+// Minification must never change rendering: whitespace between tags is
+// collapsed, not removed, except where the parser never renders it.
+describe('minifyHtml whitespace', () => {
+    it('keeps the space between a dynamic value and an inline element', () => {
+        // `${count} <span>items</span>` rendered "5items" in production.
+        expect(minifyHtml('<p><!--CRP_0-->5<!--/CRP--> <span>items</span></p>'))
+            .toBe('<p><!--CRP_0-->5<!--/CRP--> <span>items</span></p>');
+    });
+
+    it('keeps inline elements separated by a space or a line break', () => {
+        expect(minifyHtml('<p><b>bold</b> <i>italic</i></p>')).toBe('<p><b>bold</b> <i>italic</i></p>');
+        expect(minifyHtml('<p><a href="/a">A</a>\n    <a href="/b">B</a></p>')).toBe('<p><a href="/a">A</a>\n<a href="/b">B</a></p>');
+        expect(minifyHtml('<span>a</span>\t<span>b</span>')).toBe('<span>a</span> <span>b</span>');
+    });
+
+    it('keeps text next to inline tags spaced', () => {
+        expect(minifyHtml('<p>\n  Hello\n  <b>world</b>  !\n</p>')).toBe('<p>\nHello\n<b>world</b> !\n</p>');
+        expect(minifyHtml('<label><input type="checkbox"> <span>Remember</span> me</label>'))
+            .toBe('<label><input type=checkbox> <span>Remember</span> me</label>');
+    });
+
+    it('collapses a run with a line break to a line break', () => {
+        // Between CJK characters a line break renders as nothing, a space as a space.
+        expect(minifyHtml('<p>日本 \n  語</p>')).toBe('<p>日本\n語</p>');
+        expect(minifyHtml('<p style="white-space: pre-line">a  \n  b</p>')).toBe('<p style="white-space: pre-line">a\nb</p>');
+    });
+
+    it('removes whitespace only before <html>, inside <head> and before <body>', () => {
+        const input = '\n<!DOCTYPE html>\n<html>\n<head>\n  <meta charset="utf-8">\n  <title> A  B </title>\n  <!-- c -->\n</head>\n<body>\n  <p>x</p>\n</body>\n</html>\n';
+        expect(minifyHtml(input)).toBe('<!DOCTYPE html><html><head><meta charset=utf-8><title> A  B </title></head><body>\n<p>x</p>\n</body>\n</html>\n');
+    });
+
+    it('treats text or a body element in <head> as the start of the body', () => {
+        expect(minifyHtml('<head> <meta charset=x>  hello <b>x</b> <i>y</i>')).toBe('<head><meta charset=x>hello <b>x</b> <i>y</i>');
+        expect(minifyHtml('<head><meta charset=x> <div>a</div> <span>b</span>')).toBe('<head><meta charset=x><div>a</div> <span>b</span>');
+        expect(minifyHtml('<head>\n<template><b>a</b> <i>b</i></template> <meta charset=x></head>'))
+            .toBe('<head><template><b>a</b> <i>b</i></template> <meta charset=x></head>');
+    });
+
+    it('copies elements that preserve whitespace as written, start tag included', () => {
+        const cases = [
+            '<span class="whitespace-pre-wrap">a\n\n   b  <!-- c --> <b  id="x">c</b></span>',
+            '<div class="md:whitespace-pre  !whitespace-break-spaces">  x  </div>',
+            '<div style="color: red; white-space : pre-wrap !important">  x  </div>',
+            '<div style="white-space-collapse: preserve">  x  </div>',
+            '<pre  class="code">  a\n  b</pre>',
+            '<listing>  a\n  b</listing>',
+            '<xmp> <!-- c --> <b  x="1"> </xmp>',
+        ];
+        for (const input of cases) expect(minifyHtml(`${input}  <p> a  b </p>`)).toBe(`${input} <p> a b </p>`);
+        // Everything after <plaintext> is text.
+        expect(minifyHtml('<plaintext>  a  </plaintext>  <p> b </p>')).toBe('<plaintext>  a  </plaintext>  <p> b </p>');
+    });
+
+    it('keeps raw-text start tags as written, apart from a default type', () => {
+        expect(minifyHtml('<script type="module" src="/a.js"></script>')).toBe('<script type="module" src="/a.js"></script>');
+        expect(minifyHtml('<script  src="/a.js"\n  type="text/javascript" defer></script>')).toBe('<script  src="/a.js" defer></script>');
+        expect(minifyHtml('<textarea  name="t" rows="2"> a </textarea>')).toBe('<textarea  name="t" rows="2"> a </textarea>');
+    });
+
+    it('ends a whitespace-preserving element at its matching end tag', () => {
+        expect(minifyHtml('<div class="whitespace-pre"><div> a  </div>  b </div>  c   d'))
+            .toBe('<div class="whitespace-pre"><div> a  </div>  b </div> c d');
+        expect(minifyHtml('<div style="white-space: normal">  a  </div>')).toBe('<div style="white-space: normal"> a </div>');
+    });
+});
+
+// minifyHtml reads markup with the renderer's shared tokenizer, so it agrees
+// with the browser on text, attribute values, comments and raw-text elements.
+describe('minifyHtml tokenization', () => {
+    it('never rewrites text that resembles attributes', () => {
+        expect(minifyHtml('<p>Set debug="true" and  type="text/css" here</p>'))
+            .toBe('<p>Set debug="true" and type="text/css" here</p>');
+    });
+
+    it('keeps `<` in text as text', () => {
+        expect(minifyHtml('<p>if a < b then c="d" </p>')).toBe('<p>if a < b then c="d" </p>');
+        expect(minifyHtml('<p>1 <2</p><a href="/x">x</a>')).toBe('<p>1 <2</p><a href="/x">x</a>');
+    });
+
+    it('keeps comment-like text inside raw-text elements and attribute values', () => {
+        expect(minifyHtml('<title>a <!-- b --> c</title>')).toBe('<title>a <!-- b --> c</title>');
+        expect(minifyHtml('<div title="<!-- x -->">y</div>')).toBe('<div title="<!-- x -->">y</div>');
+        expect(minifyHtml('<script>if (a <!--b) x("-->")</script>')).toBe('<script>if (a <!--b) x("-->")</script>');
+    });
+
+    it('keeps raw-text content whose opening tag has `>` in an attribute value', () => {
+        expect(minifyHtml('<script data-x="a>b">x  =  1</script>')).toBe('<script data-x="a>b">x  =  1</script>');
+    });
+
+    it('keeps attribute values byte for byte, except class whitespace', () => {
+        expect(minifyHtml('<input value="a  b" title="line\n  two" class="  a\n   b ">'))
+            .toBe('<input value="a  b" title="line\n  two" class="a b">');
+    });
+
+    it('treats a no-break space as content', () => {
+        expect(minifyHtml('<p>a\u00a0\u00a0b</p>  <p>\u00a0 \u00a0</p>')).toBe('<p>a\u00a0\u00a0b</p> <p>\u00a0 \u00a0</p>');
+    });
+
+    it('keeps whitespace inside <pre>, including around nested elements', () => {
+        expect(minifyHtml('<pre>  <b  class="a">x</b> <!-- c -->  y\n  z</pre>  <p>q</p>'))
+            .toBe('<pre>  <b  class="a">x</b> <!-- c -->  y\n  z</pre> <p>q</p>');
+    });
+
+    it('quotes an unquoted value that a self-closing slash follows', () => {
+        expect(minifyHtml('<path d=M0 />')).toBe('<path d="M0"/>');
+        expect(minifyHtml(`<path d=a"b' />`)).toBe(`<path d="a&quot;b'"/>`);
+        expect(minifyHtml('<a href=/x/ id=a>')).toBe('<a href=/x/ id=a>');
+    });
+
+    it('keeps a comment whose removal would create markup or complete an entity', () => {
+        expect(minifyHtml('<p>a <<!-- c -->b</p>')).toBe('<p>a <<!-- c -->b</p>');
+        expect(minifyHtml('<p>&am<!-- c -->p;</p>')).toBe('<p>&am<!-- c -->p;</p>');
+        expect(minifyHtml('<p>a <!-- c --> b</p>')).toBe('<p>a b</p>');
+    });
+
+    it('produces markup that parses to the same elements', () => {
+        const input = `<!DOCTYPE html><html><head><title>A &amp; B <!-- x --></title></head>
+            <body><p title='1 < 2' class="a
+                b">x = "y" <b>z</b></p><svg><path d="M0 0"/><circle r="6"stroke="red"/></svg></body></html>`;
+        const parse = (html: string) => new DOMParser().parseFromString(html, 'text/html');
+        const original = parse(input);
+        const minified = parse(minifyHtml(input));
+        expect(minified.title).toBe(original.title);
+        expect(minified.querySelector('p')!.getAttribute('title')).toBe('1 < 2');
+        expect(minified.querySelector('p')!.className).toBe('a b');
+        expect(minified.querySelector('p')!.textContent).toBe('x = "y" z');
+        expect(minified.querySelector('svg')!.children.length).toBe(2);
+        expect(minified.querySelector('circle')!.getAttribute('stroke')).toBe('red');
+    });
 });

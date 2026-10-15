@@ -5,7 +5,7 @@ import { defaultRateLimitKey } from '../src/shared/rate-limit';
 
 describe('socket upgrade context', () => {
     it('keeps headers, queries, route params and environment without retaining HTTP credentials', () => {
-        const snapshot = snapshotSocketRequest(new Request('https://example.test/ws/page/id/global?filter=active', { headers: {
+        const snapshot = snapshotSocketRequest(new Request('https://example.test/ws/id?filter=active', { headers: {
             'CF-Connecting-IP': '192.0.2.1', 'X-Bucket': 'public', Cookie: 'session=PRIVATE',
             Authorization: 'Bearer PRIVATE', 'X-User-Data': '{"id":"PRIVATE"}',
             'X-Component-Path': '/internal', 'Sec-WebSocket-Key': 'handshake',
@@ -21,7 +21,7 @@ describe('socket upgrade context', () => {
         expect(context.req.query('filter')).toBe('active');
         expect(context.req.param('tenant')).toBe('example');
         expect(context.req.param('constructor')).toBeUndefined();
-        expect(context.req.path).toBe('/ws/page/id/global');
+        expect(context.req.path).toBe('/ws/id');
         expect(context.req.url).toBe(snapshot.url);
         expect(context.env).toBe(env);
         expect(context.get('user')).toBeUndefined();

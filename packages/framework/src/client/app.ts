@@ -399,7 +399,7 @@ export async function createClientApp({
   // The payload carries the user once, at its root (`pageState.user`).
   const ownershipKey = (state: any) => JSON.stringify([
     state?.user ?? null, state?.runtime ?? null,
-    state?.transport ?? 'http', state?.scopeKey ?? null, state?.providerTargets ?? null,
+    state?.transport ?? 'http', state?.scopeKey ?? null, state?.realtimeTarget ?? null,
   ]);
   const layoutOwnership = new WeakMap<Cossack, string>();
   const layoutOwnershipKey = (state: any, pageState: any, Component: Function) => ownershipKey({
@@ -407,7 +407,7 @@ export async function createClientApp({
     // The layout owns its transport. Changing a child page from SSE to HTTP
     // does not revoke a retained layout's services or their in-flight calls.
     transport: state?.transport ?? Reflect.getMetadata('page:options', Component)?.transport ?? 'http',
-    providerTargets: state?.providerTargets,
+    realtimeTarget: state?.realtimeTarget,
   });
   const rootOwnershipKey = (state: any) => layoutOwnershipKey(state?._app_state ?? {}, state, AppComponent);
   let rootOwnership = rootOwnershipKey(window.__INITIAL_STATE__);

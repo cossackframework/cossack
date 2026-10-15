@@ -73,6 +73,8 @@ function typeMapper(types: Record<string, string>) {
       return precision === undefined ? base : `${base}(${String(precision)},${String(scale ?? 0)})`;
     }
     if (logicalType === "uuid" && types === mysqlTypes) return `${base}(36)`;
+    // A bare MySQL DATETIME rounds to whole seconds; keep the milliseconds the ORM writes.
+    if (logicalType === "datetime" && types === mysqlTypes) return `${base}(3)`;
     // MySQL VARCHAR requires a length; the enum CHECK constraint limits the values.
     if (logicalType === "enum" && types === mysqlTypes) return `${base}(255)`;
     return base;

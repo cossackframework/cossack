@@ -58,6 +58,8 @@ describe('recipe resolution', () => {
     expect(config.vars).not.toHaveProperty('APP_SECRET');
     expect(config.secrets.required).toEqual(expect.arrayContaining(['APP_SECRET', 'OAUTH_SECRET', 'GITHUB_CLIENT_ID', 'GITHUB_CLIENT_SECRET']));
     expect(config.d1_databases[0]).not.toHaveProperty('database_id');
+    // Hashed build output skips the Worker; everything else runs its policies.
+    expect(config.assets).toEqual({ binding: 'ASSETS', run_worker_first: ['/*', '!/assets/*'] });
     expect(ignored).toContain('.dev.vars*\n');
     expect(ignored).toContain('.env*\n');
     expect(ignored).toContain('!.dev.vars.example');
@@ -161,7 +163,7 @@ describe('recipe resolution', () => {
     if (adapter === 'node') {
       const entry = files.get('src/index.ts').content.toString();
       expect(entry).toContain('createStaticAssets');
-      expect(entry).toContain("ASSETS: createStaticAssets({ root: fileURLToPath(new URL('../client', import.meta.url)), index: false })");
+      expect(entry).toContain("ASSETS: createStaticAssets({ root: fileURLToPath(new URL('../client', import.meta.url)), index: false, cacheControl: 'public, max-age=0, must-revalidate' })");
     }
     expect(pkg.devDependencies.typescript).toBe(dependencyVersions.typescript);
     expect(JSON.parse(files.get('tsconfig.json').content.toString()).include).toContain('.cossack/config.d.ts');
@@ -635,10 +637,13 @@ describe('composition', () => {
     expect(productionEntry).toContain('bindings.EMAIL = createNodeEmailSender');
     expect(productionEntry).toContain("import { createNodeAdapter, createStaticAssets, serveStatic, installNodeShutdown } from '@cossackframework/node-adapter'");
     expect(productionEntry).toContain("new URL('../client', import.meta.url)");
-    expect(productionEntry).toContain("urlPath.startsWith('/assets/')");
+    // Only hashed build output is served before the framework, matching
+    // Cloudflare's `!/assets/*` rule; public/ files go through policies.
+    expect(productionEntry).toContain("app.use('/assets/*', serveStatic({\n  root: fileURLToPath(new URL('../client/assets', import.meta.url)),\n  prefix: '/assets',\n  index: false,");
+    expect(productionEntry).not.toContain("app.use('*', serveStatic");
     expect(productionEntry).toContain("/\\.[a-zA-Z0-9_-]{8,}\\.[^/]+$/");
     expect(productionEntry).toContain("'public, max-age=31536000, immutable'");
-    expect(productionEntry.indexOf("app.use('*', serveStatic"))
+    expect(productionEntry.indexOf("app.use('/assets/*', serveStatic"))
       .toBeLessThan(productionEntry.indexOf("app.all('*', c => frameworkApp.fetch(c.req.raw, c.env))"));
     expect(productionEntry.indexOf('...variables')).toBeLessThan(
       productionEntry.indexOf("DB_PATH: variables.DB_PATH ?? './database.sqlite'"),

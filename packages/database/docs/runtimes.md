@@ -81,7 +81,14 @@ const adapter = await mysql({
 The adapter sets the mysql2 `timezone` option to `"Z"` (UTC) unless you pass
 your own `timezone`, in the options object or as a `timezone` URL parameter.
 The ORM stores datetimes in UTC, so a different time zone shifts the values
-that you read.
+that you read. With UTC, the adapter also runs `SET time_zone = '+00:00'` on
+each new pool connection. MySQL fills `DEFAULT CURRENT_TIMESTAMP` and `NOW()`
+in the session time zone, which is otherwise the server's zone, so this keeps
+database-filled timestamps in UTC as well.
+
+The PostgreSQL adapter reads `date` and `timestamp` (without time zone) values
+as UTC. The `pg` driver otherwise reads them in the process time zone. Pass
+your own `types` option to keep different parsers.
 
 Turso (choose the client matching the connection):
 
@@ -269,6 +276,12 @@ request and close them at the end. The generated `createRequestORM()` and
 `ormMiddleware()` do this. Enable `nodejs_compat` for the official `pg` and
 `mysql2` drivers. See Cloudflare's
 [Hyperdrive driver guidance](https://developers.cloudflare.com/hyperdrive/).
+
+Hyperdrive shares server connections between clients, so the MySQL adapter
+does not change the session time zone. Set the MySQL server's `time_zone` to
+UTC (the default on most managed MySQL services). Otherwise `DEFAULT
+CURRENT_TIMESTAMP` values are in the server's zone and do not compare
+correctly with the UTC values that the ORM writes.
 
 ## Custom Runtime
 

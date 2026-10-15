@@ -273,6 +273,20 @@ Every Phase 1 and Phase 2 row lacks a test today. Highest value:
 - UI: controlled-parent timing for every controlled component; Toaster under modal.
 - CI: run desktop and all package tests before publish; add `packages/core|framework|database/**` to integration-test paths; cache Playwright; SHA-pin actions; try `--workspace-concurrency=3`.
 
+### Phase 4 outcome (2026-10-14)
+
+- Done in PR #102: the last two hand-written HTML scanners now use the shared tokenizer; live components rest in `Mounted`; `ValueSanitizer`/`SanitizerFactory`, `Select`, the `AccordionItem` alias and the r2-upload demo are gone; six UI components moved onto `ControlledValue`; UI callbacks follow one naming rule; SSE cold starts and SSG use the shared layout scope chain; the security plugin fails closed and logs automatic RPC endpoints; `generateStaticParams` removal holds; the listed docs match the code; `test-utils` stays private everywhere; releases wait for the e2e suites, and integration runs for every package change.
+- Also in PR #102: Phase 3 item 5 as option 3. Cloudflare serves hashed `/assets/*` without the Worker, and the Node entry runs policies before every other static file. Fixes found along the way: seven database bugs from the live suite (MySQL `findOne()`, UTC datetimes, one-to-one inverse loading, false drift), one auth timing bug, minification that dropped visible spaces, spread classes that differed between SSR and the client, and `cossack add ui` ejecting components that did not compile.
+- Already done before Phase 4: `_optimisticLockedKeys`, `invalidate$` binding, `storage/s3.ts`, the presigner, `CossackNodeAdapter`, the CLI dead code, several docs, and every listed renderer and core test.
+- Open:
+  - Custom `providers` were removed in favour of `scope`; each component has one realtime connection at `/ws/:id`. `scope` shares an instance across the URLs, tabs and devices of one page file only. State shared per user across different page files, or a child component with its own scope, would be a new feature.
+  - Transport routes shadow app pages silently: a page under `/sse/`, at `/crpc` or `/upload`, or now at a single segment under `/ws/` never renders. Reserve these paths in the route check the way `/assets` is reserved.
+  - The Desktop production asset server serves every file before policies, and `pnpm test:desktop` fails in its dev restart check, so it is not a release gate.
+  - The Cloudflare Durable Object `/ws` path in core creates pages without layout scopes, and layout-service RPC calls get no page route params.
+  - CI does not run the live PostgreSQL and MySQL suites yet; they need service containers and the `COSSACK_TEST_POSTGRES_URL`/`COSSACK_TEST_MYSQL_URL` variables.
+  - `specs/architecture.md` still says unit suites run serially.
+  - Two spreads on one element do not work on the client.
+
 ## Suggested order
 
 | Week | Scope |

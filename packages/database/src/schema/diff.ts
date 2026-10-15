@@ -73,6 +73,9 @@ function comparableColumn(column: ColumnSchema, dialect?: OrmSchema['dialect'], 
               : column.default
         )
       : normalizeDefault(column.default);
+  // MySQL DATETIME(3) columns get CURRENT_TIMESTAMP(3) for a CURRENT_TIMESTAMP default.
+  const comparableDefault = dialect === 'mysql' && logicalType === 'datetime' && normalizedDefault === 'CURRENT_TIMESTAMP(3)'
+    ? 'CURRENT_TIMESTAMP' : normalizedDefault;
   return JSON.stringify({
     logicalType,
     nullable: column.nullable,
@@ -82,7 +85,7 @@ function comparableColumn(column: ColumnSchema, dialect?: OrmSchema['dialect'], 
     length,
     precision,
     scale,
-    default: normalizedDefault,
+    default: comparableDefault,
     enumValues: column.enumValues,
     array: column.array,
   });

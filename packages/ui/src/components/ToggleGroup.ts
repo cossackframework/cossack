@@ -12,8 +12,8 @@ type ToggleGroupBase = Omit<GlobalAttributes<HTMLDivElement>, 'role' | 'aria-lab
     orientation?: 'horizontal' | 'vertical';
 };
 export type ToggleGroupProps = ToggleGroupBase & (
-    { type?: 'single'; value?: string; defaultValue?: string; onChange?: (value: string) => unknown } |
-    { type: 'multiple'; value?: readonly string[]; defaultValue?: readonly string[]; onChange?: (value: string[]) => unknown }
+    { type?: 'single'; value?: string; defaultValue?: string; onValueChange?: (value: string) => unknown } |
+    { type: 'multiple'; value?: readonly string[]; defaultValue?: readonly string[]; onValueChange?: (value: string[]) => unknown }
 );
 
 /** Named group of native toggle buttons; single selection can be cleared. */
@@ -45,8 +45,8 @@ export class ToggleGroup extends Cossack {
         const next = this.props.type === 'multiple' ? current.includes(value) ? current.filter(item => item !== value) : [...current, value] : current.includes(value) ? [] : [value];
         if (this.props.value === undefined) this.localSelected = next;
         this.controlled.emit(this.props, next);
-        if (this.props.type === 'multiple') this.props.onChange?.([...next]);
-        else this.props.onChange?.(next[0] ?? '');
+        if (this.props.type === 'multiple') this.props.onValueChange?.([...next]);
+        else this.props.onValueChange?.(next[0] ?? '');
     }
     @Client() private keydown(event: KeyboardEvent) {
         if (event.defaultPrevented || event.isComposing || event.altKey || event.ctrlKey || event.metaKey) return;
@@ -92,7 +92,7 @@ export class ToggleGroup extends Cossack {
             + 'background:var(--color-background, #fff);border-radius:0.25rem;box-shadow:0 1px 2px rgb(0 0 0 / 0.06);';
     }
     render() {
-        const { items = [], type = 'single', label, orientation = 'horizontal', disabled, value: _value, defaultValue: _default, onChange: _change, '@keydown': supplied, ...rest } = this.props;
+        const { items = [], type = 'single', label, orientation = 'horizontal', disabled, value: _value, defaultValue: _default, onValueChange: _change, '@keydown': supplied, ...rest } = this.props;
         if (typeof label !== 'string' || !label.trim()) throw new Error('ToggleGroup requires a nonempty label.');
         if (!['single','multiple'].includes(type) || !['horizontal','vertical'].includes(orientation)) throw new Error('Invalid ToggleGroup type or orientation.');
         for (const value of [this.props.value, this.props.defaultValue]) {

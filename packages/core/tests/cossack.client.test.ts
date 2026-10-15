@@ -92,7 +92,7 @@ describe('Cossack Core: Client-Side', () => {
       },
       routePath: '/test',
       channels: ['global', 'private'],
-      providerTargets: { page: 'durable-object-id-123' },
+      realtimeTarget: 'durable-object-id-123',
       runtime: { adapter: 'node', platform: 'desktop' },
   };
 
@@ -139,12 +139,12 @@ describe('Cossack Core: Client-Side', () => {
       expect((component as any).c.req.param()).toEqual({ name: 'cossack' });
   });
 
-  it('should connect to WebSocket for the provider', async () => {
+  it('opens one WebSocket to the server-computed target', async () => {
       await component.bootstrap();
       expect(global.WebSocket).toHaveBeenCalledTimes(1);
-      // Expected URL based on new logic: /ws/{provider}/{target}?routePath=...&pathname=...&params...
+      // /ws/{target}?routePath=...&pathname=...&params...
       // pathname and routePath come from mockInitialState
-      expect(global.WebSocket).toHaveBeenCalledWith('ws://localhost/ws/page/durable-object-id-123?routePath=%2Ftest&pathname=%2Ftest&params=%7B%22name%22%3A%22cossack%22%7D');
+      expect(global.WebSocket).toHaveBeenCalledWith('ws://localhost/ws/durable-object-id-123?routePath=%2Ftest&pathname=%2Ftest&params=%7B%22name%22%3A%22cossack%22%7D');
   });
 
   it('should proxy server methods as request-scoped realtime RPC calls', async () => {

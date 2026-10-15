@@ -249,7 +249,7 @@ The `scope` option controls which users share the same state. It receives the
 Hono `Context` (with access to the user, route params, query params, env
 bindings) and returns a scope key string.
 
-> `scope` is a shared `@Page` option. For the `durable-object` transport, it selects the Durable Object instance that handles a page. The default scope is per page instance (component plus route params, ignoring host and query string). See [WebSockets: Scope](./websockets.md#scope-controlling-which-durable-object-instance-a-page-connects-to).
+> `scope` is a shared `@Page` option. For the `durable-object` transport, it selects the Durable Object instance that handles a page. The default scope is per page instance (component plus route params, ignoring host and query string). See [WebSockets: Scope](./websockets.md#scope--controlling-which-durable-object-instance-a-page-connects-to).
 
 ### Default: Per-User
 
@@ -453,8 +453,8 @@ slot until completion, failure or cancellation.
 `lastEventId` (the last delivered cursor), `lastError`, and `resynced`. The
 `resynced` field is set when a reconnect had to replace expired history with an
 authoritative
-snapshot. WebSocket providers expose the same fields per provider under
-`this.realtime.websockets` with bounded reconnect backoff. See
+snapshot. The WebSocket connection exposes the same fields under
+`this.realtime.websocket` with bounded reconnect backoff. See
 [WebSockets](./websockets.md#connection-status). Pending calls that lose their
 transport reject with an explicit uncertain-outcome error and are never
 replayed.

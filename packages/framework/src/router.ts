@@ -555,7 +555,6 @@ export function createApp(options: CreateAppOptions = {}) {
             const queryParams = new URLSearchParams({
               componentPath: path,
               url: c.req.url,
-              providerName: 'page',
               params: JSON.stringify(c.req.param() || {}),
             });
 
@@ -615,7 +614,6 @@ export function createApp(options: CreateAppOptions = {}) {
           env: c.env,
           runtime: runtimeInfo,
           page: c.req.path,
-          providerTargets: options.runtimeAdapter && pageOptions?.transport === 'durable-object' ? { page: doIdName } : undefined,
           initialState: doInitialState,
           skipInit: shouldSkipInit,
         });
@@ -678,29 +676,17 @@ export function createApp(options: CreateAppOptions = {}) {
 
         const pageInitialState = pageInstance.getInitialState();
 
-        // For durable-object transport, add the DO ID to providerTargets
-        // Also add routePath to metadata for client WebSocket connections
-        if (pageOptions?.transport === 'durable-object' && options.runtimeAdapter) {
+        // For durable-object transport, emit the page's one realtime target
+        // (the WebSocket proxy recomputes and compares it) and the routePath
+        // the client WebSocket connection needs.
+        if (pageOptions?.transport === 'durable-object') {
           // Process-local runtimes name the shared instance exactly as Cloudflare
           // names its Durable Object, so a page behaves the same on both.
-          pageInitialState.providerTargets = {
-            ...(pageInitialState.providerTargets || {}),
-            page: doIdName,
-          };
+          // Cloudflare addresses the object by the string form of its id.
+          pageInitialState.realtimeTarget = options.runtimeAdapter
+            ? doIdName
+            : c.env.COSSACK_OBJECT.idFromName(doIdName).toString();
           if (pageInitialState.metadata) pageInitialState.metadata.routePath = filePathToRoutePath(path);
-        } else if (pageOptions?.transport === 'durable-object') {
-          const doBinding = c.env.COSSACK_OBJECT;
-          // Use scoped ID (from scope function) or page-instance ID (default)
-          const doId = doBinding.idFromName(doIdName);
-          // Convert DurableObjectId to string for client-side use
-          pageInitialState.providerTargets = {
-            ...(pageInitialState.providerTargets || {}),
-            page: doId.toString(),
-          };
-          // Add routePath to metadata for client WebSocket connections
-          if (pageInitialState.metadata) {
-            pageInitialState.metadata.routePath = filePathToRoutePath(path);
-          }
         }
 
         const kind = classifyRoute(filePathToHttpRoute(path));
@@ -834,13 +820,15 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
   app.use('/crpc', protectTransport(routerContext));
   app.use('/upload', protectTransport(routerContext));
   app.use('/sse/:componentRouteId', protectTransport(routerContext));
-  app.use('/ws/:provider/:id', protectTransport(routerContext));
+  // Each component has one realtime connection: `/ws/:id`, where `id` is the
+  // server-computed target emitted during SSR. The server recomputes it below.
+  app.use('/ws/:id', protectTransport(routerContext));
   if (options.runtimeAdapter?.handleWebSocketUpgrade) {
-    app.get('/ws/:provider/:id', async (c) => {
+    app.get('/ws/:id', async (c) => {
       if (!isOriginAllowed(c.req.header('origin'), c.req.url, options.allowedOrigins)) {
         return c.text('Origin not allowed', 403);
       }
-      const { provider, id: target } = c.req.param();
+      const target = c.req.param('id');
       const routePath = c.req.query('routePath') || c.req.query('componentPath');
       if (!routePath) return c.text('routePath or componentPath query parameter is required', 400);
       const componentPath = routePathToFilePathMap.get(routePath) || routePath;
@@ -884,8 +872,7 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
       )) !== null;
       const runtimeInfo = await resolveRuntimeInfo();
       return options.runtimeAdapter!.handleWebSocketUpgrade!(c, {
-        target,
-        provider,
+        target: expectedTarget,
         componentId: componentPath,
         pathname,
         user,
@@ -903,7 +890,7 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
             instance = createInstance(ComponentClass, { serviceScope: activeScope }) as Cossack;
             instance.__cossack_rpcOwner = componentPath;
             instance._ownServiceScopeLifetime(rootScope);
-            await instance.bootstrap({ context: componentContext, user, env: c.env, runtime: runtimeInfo, page: pathname, providerName: provider, providerTargets: { page: expectedTarget, [provider]: expectedTarget } });
+            await instance.bootstrap({ context: componentContext, user, env: c.env, runtime: runtimeInfo, page: pathname });
             instance._render();
             return instance;
           } catch (error) {
@@ -915,8 +902,11 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
       });
     });
   } else {
-    app.get('/ws/:provider/:id', handleWebSocketProxy(routerContext));
+    app.get('/ws/:id', handleWebSocketProxy(routerContext));
   }
+  // The realtime connection has one segment. A longer path (such as the
+  // removed `/ws/:provider/:id`) never reaches a page or an upgrade.
+  app.all('/ws/:id/*', c => c.json({ error: 'Not Found', code: 'COSSACK_WS_ROUTE_NOT_FOUND' }, 404));
   app.get('/sse/:componentRouteId', handleSseEndpoint(routerContext));
   // JSON and multipart differ only at decoding. Ownership, validation,
   // streaming, cookies and cleanup use the same action pipeline.
@@ -1416,9 +1406,6 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
       const pageOptions: PageOptions | undefined = Reflect.getMetadata('page:options', PageComponent);
       const combinedMiddlewares = getMiddlewares(path);
 
-      if (pageOptions?.transport !== 'http' && pageOptions?.transport !== 'sse') {
-        Reflect.defineMetadata('cossack:durable-object-name', 'COSSACK_OBJECT', PageComponent);
-      }
       // Register path-scoped middleware once so it runs ahead of every method handler
       // on this route. Hono types route handlers as a fixed-length tuple, so a
       // variable-length middleware spread can't be type-checked — `app.use` avoids that

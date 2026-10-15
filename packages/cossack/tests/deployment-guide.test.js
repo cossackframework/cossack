@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import os from 'node:os';
 import { createApp } from '@cossackframework/scaffold';
+import { ASSETS_RUN_WORKER_FIRST } from '@cossackframework/framework/deployment-artifact';
 const repository = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 
 describe('deployment guide wrangler excerpt', () => {
@@ -19,6 +20,11 @@ describe('deployment guide wrangler excerpt', () => {
       }
       const entry = await fs.readFile(path.join(projectDir, 'src/index.ts'), 'utf8');
       for (const binding of excerpt.durable_objects.bindings) expect(entry).toContain(binding.class_name);
+      // "Static assets and authentication" documents the generated asset routing.
+      const section = guide.slice(guide.indexOf('### Static assets and authentication'));
+      const assets = JSON.parse(`{${/```jsonc\n([\s\S]*?)```/.exec(section)[1]}}`).assets;
+      expect(assets, 'Documented assets routing must match the generated preset').toEqual(generated.assets);
+      expect(assets.run_worker_first).toEqual(ASSETS_RUN_WORKER_FIRST);
     } finally { await fs.rm(parent, { recursive: true, force: true }); }
   });
 });

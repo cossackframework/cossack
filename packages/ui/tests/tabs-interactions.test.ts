@@ -9,10 +9,10 @@ function selected(tabs: InstanceType<typeof Tabs>, value: string) {
     expect(renderToString(tabs.render())).toMatch(new RegExp(`id="tabs-tab-${value}"[^>]*aria-selected="true"`));
 }
 it('proposes controlled selection without overriding the parent', () => {
-    const tabs = new Tabs(), onChange = vi.fn();
-    tabs.props = { id: 'tabs', label: 'Sections', value: 'a', items, onChange };
+    const tabs = new Tabs(), onValueChange = vi.fn();
+    tabs.props = { id: 'tabs', label: 'Sections', value: 'a', items, onValueChange };
     (tabs as any).select('b');
-    expect(onChange).toHaveBeenCalledExactlyOnceWith('b');
+    expect(onValueChange).toHaveBeenCalledExactlyOnceWith('b');
     selected(tabs, 'a');
     tabs.props = { ...tabs.props, value: 'b' };
     selected(tabs, 'b');
@@ -20,12 +20,12 @@ it('proposes controlled selection without overriding the parent', () => {
     selected(tabs, 'a');
 });
 it('captures the uncontrolled default once and commits user selection', () => {
-    const tabs = new Tabs(), onChange = vi.fn();
-    tabs.props = { id: 'tabs', label: 'Sections', defaultValue: 'a', items, onChange };
+    const tabs = new Tabs(), onValueChange = vi.fn();
+    tabs.props = { id: 'tabs', label: 'Sections', defaultValue: 'a', items, onValueChange };
     selected(tabs, 'a');
     tabs.props = { ...tabs.props, defaultValue: 'b' };
     selected(tabs, 'a');
     (tabs as any).select('b');
     selected(tabs, 'b');
-    expect(onChange).toHaveBeenCalledExactlyOnceWith('b');
+    expect(onValueChange).toHaveBeenCalledExactlyOnceWith('b');
 });

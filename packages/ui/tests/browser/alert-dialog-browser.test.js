@@ -37,7 +37,7 @@ import {AlertDialog as BaseAlertDialog} from '@cossackframework/ui';
 class AlertDialog extends BaseAlertDialog {constructor(){super();window.alert=this;}}
 const template=${templateSource},container=document.querySelector('#app'),initial=container.querySelector('#dialog');
 let Control=AlertDialog,props={defaultOpen:true};window.actions=[];window.events=[];window.accept=false;window.veto=false;
-const callbacks={onAction:event=>window.actions.push(event.currentTarget.tagName),onClose:event=>{window.events.push(['close',event.currentTarget.id,event.currentTarget.returnValue]);if(window.accept){props.open=false;draw();}},'@close':event=>window.events.push(['native',event.currentTarget.id]),'@cancel':event=>{window.events.push(['cancel',event.currentTarget.id]);if(window.veto)event.preventDefault();}};
+const callbacks={onAction:event=>window.actions.push(event.currentTarget.tagName),onOpenChange:(open,event)=>{window.events.push(['close',event.currentTarget.id,event.currentTarget.returnValue]);if(window.accept){props.open=false;draw();}},'@close':event=>window.events.push(['native',event.currentTarget.id]),'@cancel':event=>{window.events.push(['cancel',event.currentTarget.id]);if(window.veto)event.preventDefault();}};
 function draw(){render(template(Control,{...props,...callbacks}),container);}
 window.update=next=>{props={...props,...next};draw();};
 hydrate(template(Control,{...props,...callbacks}),container);window.retained=initial===container.querySelector('#dialog');

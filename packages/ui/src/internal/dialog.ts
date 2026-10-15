@@ -3,14 +3,14 @@ import type { GlobalAttributes, ControlEvent } from '../native-attributes';
 
 /** Attributes and events belong to the native dialog. Modal state belongs to the controller. */
 export type DialogControlProps = Omit<GlobalAttributes<HTMLDialogElement>, 'role' | 'aria-modal' | 'tabindex'> & {
-    /** Controlled state. Accept onClose by setting this false, or the dialog reopens. */
+    /** Controlled state. Accept onOpenChange(false) by setting this false, or the dialog reopens. */
     open?: boolean;
     /** Initial uncontrolled state. SSR dialogs stay closed until client connection. */
     defaultOpen?: boolean;
     closeOnBackdrop?: boolean;
     closeOnEscape?: boolean;
-    /** User/native dismissal notification. Prop-driven closing and cleanup do not call this. */
-    onClose?: (event: ControlEvent<HTMLDialogElement>) => unknown;
+    /** Proposes closing after a user/native dismissal, with the native close event. Prop-driven closing and cleanup do not call this. */
+    onOpenChange?: (open: boolean, event: ControlEvent<HTMLDialogElement>) => unknown;
 };
 type Listener<E extends Event> = ((event: E) => unknown) | PreventDefaultResult | null | typeof nothing | undefined;
 function invoke<E extends Event>(listener: Listener<E>, event: E) {
@@ -72,7 +72,7 @@ export class DialogController {
             if (!stale) this.localOpen = false;
             const generation = this.generation;
             try {
-                if (!controlledClose && !stale) this.read().onClose?.(event as ControlEvent<HTMLDialogElement>);
+                if (!controlledClose && !stale) this.read().onOpenChange?.(false, event as ControlEvent<HTMLDialogElement>);
             } finally {
                 try { invoke(nativeClose, event as ControlEvent<HTMLDialogElement>); }
                 finally {

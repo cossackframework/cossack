@@ -327,7 +327,8 @@ it('builds a generated staging app and validates deployment without uploading', 
   expect(artifact.vars.APP_URL).toBe('https://staging.example.test');
   expect(artifact.vars).not.toHaveProperty('APP_SECRET');
   expect(await fs.readFile(path.join(projectDir, 'worker-configuration.d.ts'), 'utf8')).toContain('APP_SECRET');
-  expect(artifact.assets.run_worker_first).toBe(true);
+  // The generated pattern survives the Cloudflare Vite plugin's artifact copy.
+  expect(artifact.assets.run_worker_first).toEqual(['/*', '!/assets/*']);
   const staticHome = await fs.readFile(path.join(projectDir, 'dist/client/index.html'), 'utf8');
   const clientScripts=await fs.readdir(path.join(projectDir,'dist/client/assets'));
   for(const file of clientScripts.filter(file=>file.endsWith('.js'))){
@@ -555,11 +556,27 @@ it('builds a generated staging app and validates deployment without uploading', 
     expect(authorized.headers.get('x-worker-pipeline')).toBe('ran');
     expect(authorized.headers.get('x-page-policy')).toBe('ran');
     expect(authorized.headers.get('x-layout-policy')).toBe('ran');
+    // Hashed build output matches `!/assets/*`: Cloudflare serves it without
+    // invoking the Worker, so global middleware does not run, and applies the
+    // immutable caching rule from public/_headers.
     const clientManifest = JSON.parse(await fs.readFile(path.join(projectDir, 'dist/client/.vite/manifest.json'), 'utf8'));
-    const client = await server.fetch(`/${clientManifest['src/client/entry-client.ts'].file}`);
-    expect(client.status).toBe(200);
-    expect(client.headers.get('x-worker-pipeline')).toBe('ran');
-    expect((await client.text()).length).toBeGreaterThan(0);
+    const clientFile = clientManifest['src/client/entry-client.ts'].file;
+    expect(clientFile).toMatch(/^assets\/entry-client\.[\w-]{8,}\.js$/);
+    for (const method of ['GET', 'HEAD']) {
+      const client = await server.fetch(`/${clientFile}`, { method });
+      expect(client.status, method).toBe(200);
+      expect(client.headers.get('content-type')).toMatch(/^text\/javascript/);
+      expect(client.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
+      expect(client.headers.get('x-worker-pipeline')).toBeNull();
+      if (method === 'GET') expect((await client.text()).length).toBeGreaterThan(0);
+      else expect(await client.text()).toBe('');
+    }
+    // A missing file under the pattern stays with static assets: Cloudflare
+    // returns its plain 404 and does not fall back to the Worker.
+    const missingClient = await server.fetch('/assets/missing.00000000.js');
+    expect(missingClient.status).toBe(404);
+    expect(missingClient.headers.get('x-worker-pipeline')).toBeNull();
+    expect(await missingClient.text()).toBe('');
   } catch(error) { log.mockRestore(); server.debug(); throw error; }
   finally { await server.close(); }
 }, 180_000);

@@ -37,7 +37,7 @@ const { createApp } = await import('../src/router');
 afterEach(async () => { await Promise.all(instances.splice(0).map(instance => instance.destroyAsync())); disposed.length = 0; sequence = 0; session.userId = 'owner'; });
 async function upgrade(consume: (upgrade: RuntimeWebSocketUpgrade) => Promise<Response>) {
   return createApp({ runtimeAdapter: { name: 'test', handleWebSocketUpgrade: (_context, request) => consume(request) } }).request(
-    '/ws/page/team:alpha?' + new URLSearchParams({ routePath: '/team/[team]', pathname: '/team/alpha', params: JSON.stringify({ team: 'alpha' }) }),
+    '/ws/team:alpha?' + new URLSearchParams({ routePath: '/team/[team]', pathname: '/team/alpha', params: JSON.stringify({ team: 'alpha' }) }),
     { headers: { origin: 'http://localhost' } }, { APP_URL: 'http://localhost', MARKER: 'request-env' } as any);
 }
 it('constructs nested scopes and preserves page params, auth, and bindings through runtime bootstrap', async () => {

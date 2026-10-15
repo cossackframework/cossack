@@ -7,7 +7,7 @@ import type {
   QueryResult,
 } from "../adapter/types.js";
 import type { CompiledQuery } from "../sql/fragment.js";
-import { capabilities, meta } from "./helpers.js";
+import { capabilities, isMySQLSavepointControl, meta, postgresTypes, type PostgresTypes } from "./helpers.js";
 import {
   introspectMySQL,
   introspectPostgres,
@@ -212,6 +212,7 @@ class HyperdrivePostgresDriver implements Driver {
 
 interface MySQLConnection {
   execute(text: string, parameters?: readonly unknown[]): Promise<[unknown, unknown]>;
+  query(text: string): Promise<[unknown, unknown]>;
   beginTransaction(): Promise<void>;
   commit(): Promise<void>;
   rollback(): Promise<void>;
@@ -235,7 +236,8 @@ class HyperdriveMySQLDriver implements Driver {
   ): Promise<QueryResult<Row>> {
     const start = performance.now();
     const connection = this.reserved ?? await this.shared.get();
-    const [raw] = await connection.execute(query.text, query.parameters);
+    const [raw] = isMySQLSavepointControl(query) ? await connection.query(query.text)
+      : await connection.execute(query.text, query.parameters);
     const info = raw as { affectedRows?: number; insertId?: number };
     return {
       rows: Array.isArray(raw) ? raw as Row[] : [],
@@ -283,8 +285,9 @@ export async function hyperdrivePostgres(binding: HyperdriveBinding): Promise<Ad
   const moduleName = "pg";
   const imported = await import(moduleName);
   const Client = imported.Client as new (options: unknown) => PGClient;
+  const types = imported.types ? postgresTypes(imported.types as PostgresTypes) : undefined;
   return {
-    driver: new HyperdrivePostgresDriver(() => new Client({ connectionString: binding.connectionString })),
+    driver: new HyperdrivePostgresDriver(() => new Client({ connectionString: binding.connectionString, types })),
   };
 }
 

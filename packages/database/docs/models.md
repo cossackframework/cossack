@@ -113,7 +113,17 @@ that `DEFAULT CURRENT_TIMESTAMP` produces, so values that the application writes
 and values that the database fills in sort and compare correctly. On
 PostgreSQL, the ORM sends an ISO string with `Z` to a `timestamptz` column. When
 the ORM reads a timestamp that has no offset, it reads it as UTC, not as the
-time zone of the server. `date` values are written as `YYYY-MM-DD`.
+time zone of the server or of the process. `date` values are written as
+`YYYY-MM-DD` and read as midnight UTC.
+
+On MySQL, a `datetime` column is `DATETIME(3)`, so milliseconds survive a round
+trip, and a `CURRENT_TIMESTAMP` default is written as `CURRENT_TIMESTAMP(3)`.
+Tables created before this keep a `DATETIME` column, which rounds values to
+whole seconds. Change such a column with explicit SQL, for example
+`ALTER TABLE events MODIFY created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3)`.
+The Node MySQL adapter sets each session's time zone to UTC so that
+`CURRENT_TIMESTAMP` defaults are UTC. Through Hyperdrive, the MySQL server's
+time zone must be UTC (see [Runtimes](./runtimes.md#cloudflare-hyperdrive)).
 
 Common column options include:
 
@@ -134,10 +144,11 @@ declare externalId: string;
 `select: false` hides a column (for example a password hash) from every query
 that does not ask for it: `find()`, `findOne()`, `query().getMany()` and raw
 rows. The property stays `undefined`, and saving such an entity leaves the
-stored value alone. Load it explicitly with `find({ select: [...] })` or
-`query().addSelect("passwordHash")`, which keeps the default columns. Primary,
-version and relation join columns are always loaded. `reload()` refreshes a
-hidden column only when the instance already holds it.
+stored value alone. Load it explicitly with `query().addSelect("passwordHash")`,
+which keeps the default columns, or with `find({ select: [...] })`, which loads
+only the listed columns. The default columns always include primary, version
+and owned relation join columns, even when they are marked `select: false`.
+`reload()` refreshes a hidden column only when the instance already holds it.
 
 `insert: false` and `update: false` apply to entity saves and to the static
 `insert()`, `upsert()` and `update()` methods. Entity saves skip such columns.

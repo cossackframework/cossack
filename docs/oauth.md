@@ -417,7 +417,9 @@ createOAuth({ secret: env.OAUTH_STATE_SECRET, stateless: true, providers: { /* .
 
 The flow layer is unit-tested with mocked `fetch` (`vi.stubGlobal('fetch', ...)`).
 The full redirect→callback round-trip (state cookie, PKCE, token exchange,
-userinfo, `onUser`) is covered in `packages/auth/tests/handler.test.ts`.
+userinfo, `onUser`) is covered in `packages/auth/tests/handler.test.ts`. The
+same file drives Google's `hostedDomain` check through the callback: accounts
+outside the domain, and unverified addresses inside it, never reach `onUser`.
 Replay, storage failure and custom-response cookie checks are in
 `packages/auth/tests/oauth-replay.test.ts`. Generated Node SQLite and Cloudflare
 D1 tests run a loopback provider that accepts repeated codes, then verify that

@@ -6,6 +6,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import prompts from 'prompts';
 import { parseDocument } from 'yaml';
+import { ASSETS_RUN_WORKER_FIRST, STATIC_ASSET_DIRECTORY } from '@cossackframework/core/static-assets';
 import { dependencyBaseline, planDependencyChanges } from './dependencies.js';
 export { dependencyBaseline, planDependencyChanges } from './dependencies.js';
 import {
@@ -468,7 +469,7 @@ function wranglerConfig(recipe, projectName) {
   "compatibility_date": "2026-06-06",
   "main": "./src/index.ts",
   "upload_source_maps": true,
-  "assets": { "binding": "ASSETS", "run_worker_first": true },
+  "assets": { "binding": "ASSETS", "run_worker_first": [${ASSETS_RUN_WORKER_FIRST.map(rule => json(rule)).join(', ')}] },
   "secrets": { "required": ${JSON.stringify(cloudflareEnvironmentValues(recipe, true).map(([name]) => name))} },
   "vars": {
     "APP_URL": "https://example.com",
@@ -888,21 +889,26 @@ export const runtime = createNodeAdapter();
 const frameworkApp = createApp({ AppComponent: App, htmlTemplate: template, runtimeAdapter: runtime });
 ${routes}
 export const app = new Hono();
-app.use('*', serveStatic({
-  root: fileURLToPath(new URL('../client', import.meta.url)),
+// Hashed build output skips the request pipeline, as Cloudflare serves
+// /${STATIC_ASSET_DIRECTORY}/* without the Worker. Missing files continue to the framework.
+app.use('/${STATIC_ASSET_DIRECTORY}/*', serveStatic({
+  root: fileURLToPath(new URL('../client/${STATIC_ASSET_DIRECTORY}', import.meta.url)),
+  prefix: '/${STATIC_ASSET_DIRECTORY}',
   index: false,
-  cacheControl: (_filePath, urlPath) => urlPath.startsWith('/assets/') && /\\.[a-zA-Z0-9_-]{8,}\\.[^/]+$/.test(urlPath)
+  cacheControl: (_filePath, urlPath) => /\\.[a-zA-Z0-9_-]{8,}\\.[^/]+$/.test(urlPath)
     ? 'public, max-age=31536000, immutable'
     : 'public, max-age=0, must-revalidate',
 }));
-// Delegation preserves the framework's custom 404 handler and request scope.
+// Everything else, including public/ files, runs global and page policies
+// first; the framework serves those files from ASSETS. Delegation preserves
+// the framework's custom 404 handler and request scope.
 app.all('*', c => frameworkApp.fetch(c.req.raw, c.env));
 
 // The same binding factory is used by production and the Node Vite plugin.
 export async function createEnv(variables: Record<string, string | undefined> = process.env): Promise<Record<string, unknown>> {
   const bindings: Record<string, unknown> = {
     ...variables,${sqlite ? "\n    DB_PATH: variables.DB_PATH ?? './database.sqlite'," : ''}
-    ASSETS: createStaticAssets({ root: fileURLToPath(new URL('../client', import.meta.url)), index: false }),
+    ASSETS: createStaticAssets({ root: fileURLToPath(new URL('../client', import.meta.url)), index: false, cacheControl: 'public, max-age=0, must-revalidate' }),
   };
   if (variables.SMTP_HOST) {
     const { SMTP_USER: user, SMTP_PASS: pass } = variables;

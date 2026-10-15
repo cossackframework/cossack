@@ -17,7 +17,13 @@ class FakeMySQLConnection {
   readonly queries: string[] = [];
   ends = 0;
   constructor() { FakeMySQLConnection.created.push(this); }
-  async execute(text: string) { this.queries.push(text); return [[{ text }], []] as [unknown, unknown]; }
+  async execute(text: string) {
+    // MySQL does not prepare savepoint statements.
+    if (/SAVEPOINT/i.test(text)) throw new Error("This command is not supported in the prepared statement protocol yet");
+    this.queries.push(text);
+    return [[{ text }], []] as [unknown, unknown];
+  }
+  async query(text: string) { this.queries.push(`text:${text}`); return [{ affectedRows: 0 }, []] as [unknown, unknown]; }
   async beginTransaction() { this.queries.push("BEGIN"); }
   async commit() { this.queries.push("COMMIT"); }
   async rollback() { this.queries.push("ROLLBACK"); }
@@ -75,5 +81,21 @@ describe("Hyperdrive drivers", () => {
     expect(FakeMySQLConnection.created[1]?.ends).toBe(1);
     await driver.close();
     expect(FakeMySQLConnection.created[0]?.ends).toBe(1);
+  });
+
+  it("sends MySQL savepoint control over the text protocol", async () => {
+    FakeMySQLConnection.created = [];
+    const driver = new HyperdriveMySQLDriver(async () => new FakeMySQLConnection() as never);
+    await driver.transaction(async (transaction) => {
+      await transaction.execute(query("SAVEPOINT cossack_sp_2"));
+      await transaction.execute(query("ROLLBACK TO SAVEPOINT cossack_sp_2"));
+      await transaction.execute(query("RELEASE SAVEPOINT cossack_sp_2"));
+      await transaction.execute({ text: "UPDATE t SET a = ?", parameters: [1] });
+    });
+    expect(FakeMySQLConnection.created[0]?.queries).toEqual([
+      "BEGIN", "text:SAVEPOINT cossack_sp_2", "text:ROLLBACK TO SAVEPOINT cossack_sp_2",
+      "text:RELEASE SAVEPOINT cossack_sp_2", "UPDATE t SET a = ?", "COMMIT",
+    ]);
+    await driver.close();
   });
 });

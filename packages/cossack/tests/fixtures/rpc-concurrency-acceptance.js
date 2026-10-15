@@ -21,7 +21,7 @@ export async function writeRpcConcurrencyAcceptance(root,adapter) {
  `);
  await write('src/pages/api/concurrency.ts',`import {audit} from '../../private-rpc-audit';export const GET=(c:any)=>c.json(Object.fromEntries(audit));`);
  if(adapter==='cloudflare') {
- await write('src/pages/api/lifecycle.ts',`export const GET=(c:any)=>{const id=c.env.COSSACK_OBJECT.idFromName('lifecycle');const op=new URL(c.req.url).searchParams.get('op');if(op==='id')return c.json({id:id.toString()});const stub=c.env.COSSACK_OBJECT.get(id);if(op)return stub.fetch('https://fixture.test/'+op);return stub.fetch(new Request('https://fixture.test/global?pathname=/live&params={}',{headers:{Upgrade:'websocket','X-Component-Path':'/fixture/live.ts','X-Provider-Name':'page'}}));};`);
+ await write('src/pages/api/lifecycle.ts',`export const GET=(c:any)=>{const id=c.env.COSSACK_OBJECT.idFromName('lifecycle');const op=new URL(c.req.url).searchParams.get('op');if(op==='id')return c.json({id:id.toString()});const stub=c.env.COSSACK_OBJECT.get(id);if(op)return stub.fetch('https://fixture.test/'+op);return stub.fetch(new Request('https://fixture.test/global?pathname=/live&params={}',{headers:{Upgrade:'websocket','X-Component-Path':'/fixture/live.ts'}}));};`);
 
  const configFile=path.join(root,'wrangler.jsonc');const config=JSON.parse(await fs.readFile(configFile,'utf8'));config.durable_objects.bindings.push({name:'COSSACK_OBJECT',class_name:'AppDurableObject'});config.migrations[0].new_sqlite_classes.push('AppDurableObject');await fs.writeFile(configFile,JSON.stringify(config));
  await write('src/fixture-do.ts',`
@@ -33,7 +33,7 @@ export async function writeRpcConcurrencyAcceptance(root,adapter) {
  async init(){const n=await this.storage.get<number>('inits')??0;await this.storage.put('inits',n+1);while(!await this.storage.get('released'))await new Promise(r=>setTimeout(r,5));this.count=91;}
  @Server() increment(){return ++this.count;}
  }
- Reflect.defineMetadata('cossack:durable-object-name','COSSACK_OBJECT',Live);
+
  export class FixtureDO extends CossackDurableObject {
  async getComponentRegistry(){const storage=this.state.storage;class RegisteredLive extends Live {constructor(){super();this.storage=storage;}}return new Map([['/fixture/live.ts',RegisteredLive]]);}
  override async fetch(request:Request){const path=new URL(request.url).pathname;

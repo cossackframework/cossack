@@ -33,7 +33,7 @@ function objectUnderTest() {
 
 function peer() {
     const request = {
-        url: 'https://example.test/ws/page/id?routePath=/room', params: { team: 'alpha' },
+        url: 'https://example.test/ws/id?routePath=/room', params: { team: 'alpha' },
         headers: [['accept-language', 'fr']] as [string, string][], locale: 'fr',
     };
     return {

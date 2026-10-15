@@ -4,7 +4,6 @@ import type { MiddlewareHandler, Context } from 'hono';
 import { isServer } from './environment';
 import { validateServerMethodTimeout } from './server-method-metadata';
 import { CossackOptions } from './cossack';
-import { StateProvider } from './StateProvider';
 import { createRef } from './ref';
 import { ValidationRule, ValidationConfig, ValidationRulesStore, StoreRuleMap, setValidationRules, flattenRuleTree } from './validation';
 import type { ServiceClass } from './container';
@@ -17,26 +16,27 @@ export type CossackTransport = 'durable-object' | 'websocket' | 'http' | 'sse';
 export interface PageOptions {
   middlewares?: Middleware[];
   channels?: string[];
-  providers?: { [key: string]: StateProvider };
   /** Services owned by this layout and shared throughout its active subtree. */
   services?: ServiceClass[];
   transport?: CossackTransport;
   ssg?: boolean | SsgOptions;
   stateful?: boolean;
   /**
-   * Determines which state backend (SSE store entry or Durable Object instance)
-   * a request connects to. Receives the Hono Context and returns a scope key string.
+   * Determines which state backend (SSE store entry, Durable Object or Node
+   * instance) a request connects to. Receives the Hono Context and returns a
+   * scope key string. The server computes it and checks it again for every
+   * connection and action; the browser never chooses it.
    *
    * - SSE default: per-user (`user:${user?.id || 'anonymous'}`)
-   * - DO default: per-URL (current behavior, no change)
+   * - Durable Object default: one instance per page plus route params
    *
    * @example
    * ```typescript
    * // Per-team
    * @Page({ transport: 'sse', scope: (c) => `team:${c.get('user').teamId}` })
    *
-   * // Shared broadcast
-   * @Page({ transport: 'sse', scope: () => 'shared' })
+   * // One real-time instance per signed-in user, shared by every URL of this page
+   * @Page({ transport: 'durable-object', scope: (c) => `user:${c.get('user').id}` })
    * ```
    */
   scope?: (c: Context) => string | Promise<string>;
@@ -51,6 +51,10 @@ export function Page(options: PageOptions = {}): ClassDecorator {
   if (Object.prototype.hasOwnProperty.call(options, 'route')) {
     throw Object.assign(new Error('[Cossack] PageOptions.route is not supported. Define the URL through the component file path under src/pages.'),
       { code: 'COSSACK_ROUTE_ALIAS_UNSUPPORTED' });
+  }
+  if (Object.prototype.hasOwnProperty.call(options, 'providers')) {
+    throw Object.assign(new Error('[Cossack] PageOptions.providers was removed. Move each provider to a component with a `scope` function.'),
+      { code: 'COSSACK_PROVIDERS_REMOVED' });
   }
   return (target: object) => {
     const existingOptions = Reflect.hasOwnMetadata('page:options', target)
@@ -111,7 +115,6 @@ function isValidationRuleMap(rules: Record<string, unknown>): boolean {
 
 export interface ServerOptions {
   channel?: string;
-  provider?: string;
   /**
    * Parsed input contract for an inbound action. Typed schemas describe one
    * argument, clone/normalize input and reject unknown fields by default.
@@ -167,7 +170,6 @@ function registerServer(options: ServerOptions): any {
 
     serverMethods[propertyKey] = {
       channel: options.channel || 'global',
-      provider: options.provider || 'page',
       ...(Object.hasOwn(options, 'input') ? { input: options.input } : {}),
       ...(Object.hasOwn(options, 'authorize') ? { authorize: options.authorize } : {}),
       ...(timeout === undefined ? {} : { timeout }),
@@ -213,7 +215,6 @@ export function Client(options: ClientOptions = {}): any {
 
 export interface StateOptions {
   channel?: string;
-  provider?: string;
   /**
    * Auto-bind this property from a flashed value (`flashed()`) during bootstrap.
    * `true` uses the property name as the key; a string is an explicit key.
@@ -241,7 +242,6 @@ export function State(options: StateOptions = {}): PropertyDecorator {
 
     stateProperties[propertyKey] = {
       channel: options.channel || 'global',
-      provider: options.provider || 'page',
       flash: options.flash,
       old: options.old,
     };
@@ -267,12 +267,11 @@ export function ClientState(): PropertyDecorator {
 
 /**
  * Options for the @Store decorator. Mirrors @State so a store can target a
- * specific channel/provider exactly like an individual @State property, and
+ * specific channel exactly like an individual @State property, and
  * also supports the `flash` / `old` auto-bind options (see {@link StateOptions}).
  */
 export interface StoreOptions {
   channel?: string;
-  provider?: string;
   /** Auto-bind from a flashed value. `true` = property name; string = explicit key. */
   flash?: boolean | string;
   /** Auto-bind from old input. `true` = property name; string = explicit key (dot-paths ok). */
@@ -300,7 +299,6 @@ export function Store(options: StoreOptions = {}): PropertyDecorator {
 
     storeProperties[propertyKey] = {
       channel: options.channel || 'global',
-      provider: options.provider || 'page',
       flash: options.flash,
       old: options.old,
     };

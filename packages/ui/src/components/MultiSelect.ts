@@ -7,7 +7,7 @@ export type MultiSelectProps = Omit<GlobalAttributes<HTMLInputElement>, 'id' | '
     /** Stable page-unique input ID. Associate a label with for=id or aria-label. */
     id: string;
     options?: readonly string[];
-    /** Controlled selection. Accept the fresh array in onChange to retain an edit. */
+    /** Controlled selection. Accept the fresh array in onValueChange to retain an edit. */
     value?: readonly string[];
     /** Initial uncontrolled selection. */
     defaultValue?: readonly string[];
@@ -22,7 +22,7 @@ export type MultiSelectProps = Omit<GlobalAttributes<HTMLInputElement>, 'id' | '
     allowCreate?: boolean;
     /** Maximum number of selections. Integer >= 0; zero means unlimited. */
     max?: number;
-    onChange?: (value: string[]) => unknown;
+    onValueChange?: (value: string[]) => unknown;
     /** Validate every proposed addition, predefined or custom. Return a displayed error or null. */
     validate?: (value: string) => string | null;
     /** Parent-owned validation error. Blocks submission until the parent clears it. */
@@ -60,7 +60,7 @@ export class MultiSelect extends Cossack {
     private popup?: HTMLElement;
     private cleanup?: () => void;
     private searchOwner?: string;
-    // A parent applies onChange in a later render. Until it replaces props,
+    // A parent applies onValueChange in a later render. Until it replaces props,
     // the next edit builds on the last emitted list, not the stale value prop.
     private controlled = new ControlledValue<readonly string[]>();
 
@@ -90,7 +90,7 @@ export class MultiSelect extends Cossack {
 
     render() {
         const { id, options = [], value: _value, defaultValue: _default, name, form, disabled = false, readonly = false,
-            required = false, placeholder = 'Add tag...', allowCreate: _create, max = 0, onChange: _change, validate: _validate,
+            required = false, placeholder = 'Add tag...', allowCreate: _create, max = 0, onValueChange: _change, validate: _validate,
             error: _error, 'aria-describedby': description, emptyLabel = 'No options.', requiredMessage: _required,
             maxMessage: _max, createLabel = value => `Create "${value}"`, removeLabel = value => `Remove ${value}`, ...rest } = this.props;
         if (typeof id !== 'string' || !id || /\s/.test(id)) throw new Error('MultiSelect requires a nonempty, whitespace-free id.');
@@ -210,7 +210,7 @@ export class MultiSelect extends Cossack {
         this.draft = next;
         this.controlled.emit(this.props, next);
         this.close();
-        this.props.onChange?.([...next]);
+        this.props.onValueChange?.([...next]);
         this.syncValidity();
         void this.requestUpdate();
     }
@@ -222,7 +222,7 @@ export class MultiSelect extends Cossack {
         this.draft = next;
         this.controlled.emit(this.props, next);
         this.close();
-        this.props.onChange?.([...next]);
+        this.props.onValueChange?.([...next]);
         this.syncValidity();
         await this.requestUpdate();
         if (!input.isConnected || this.input !== input || !this.editable() || !button) return;

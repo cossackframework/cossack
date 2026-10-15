@@ -84,7 +84,7 @@ description: 'Documentation for getting started with Cossack and learning its fe
 ## Scaling
 
 - [Services](/docs/services.md)
-- [Providers](/docs/providers.md)
+- [Share Real-Time State with Scope](/docs/websockets.md#share-real-time-state-across-pages-with-scope)
 
 ## Optimizations
 

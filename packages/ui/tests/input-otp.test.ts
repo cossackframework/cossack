@@ -5,7 +5,7 @@ import { InputOTP } from '../src/components/InputOTP';
 it('renders one named native input and decorative slots without firing callbacks', () => {
     const change = vi.fn(), complete = vi.fn();
     const output = renderToString(component(InputOTP,{id:'code',name:'code',length:4,value:'0a1239',
-        required:true,disabled:true,'aria-label':'Verification code','aria-describedby':'help',onChange:change,onComplete:complete}));
+        required:true,disabled:true,'aria-label':'Verification code','aria-describedby':'help',onValueChange:change,onComplete:complete}));
     expect(output.match(/<input\b/g)).toHaveLength(1);
     expect(output.match(/class="cs-input-otp__box /g)).toHaveLength(4);
     expect(output).toContain('value="0123"');
@@ -16,7 +16,7 @@ it('renders one named native input and decorative slots without firing callbacks
     expect(output).toContain('aria-label="Verification code"');
     expect(output).toContain('aria-describedby="help"');
     expect(output).toContain(' disabled');
-    expect(output).not.toMatch(/onChange=|onComplete=|defaultValue=/i);
+    expect(output).not.toMatch(/onValueChange=|onComplete=|defaultValue=/i);
     expect(change).not.toHaveBeenCalled();expect(complete).not.toHaveBeenCalled();
 });
 

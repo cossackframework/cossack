@@ -26,7 +26,7 @@ it('captures local defaults once and uses controlled values directly', () => {
     expect(renderToString(local.render())).toContain('value="Initial"');
     local.props = { ...local.props, defaultValues: { name: 'Ignored' } } as SettingsPanelProps;
     expect(renderToString(local.render())).toContain('value="Initial"');
-    const controlled = instance({ values: { name: 'First' }, onChange() {} });
+    const controlled = instance({ values: { name: 'First' }, onValuesChange() {} });
     controlled.render(); controlled.props = { ...controlled.props, values: { name: 'Next' } } as SettingsPanelProps;
     expect(renderToString(controlled.render())).toContain('value="Next"');
 });
@@ -36,8 +36,8 @@ it('escapes labels and treats prototype-like keys as ordinary data', () => {
 });
 it.each([
     { id: '' }, { id: 'two words' }, { sections: undefined }, { values: {} },
-    { values: {}, defaultValues: {}, onChange() {} }, { defaultValues: [] },
-    { values: { email: 'yes' }, onChange() {} }, { defaultValues: { name: false } },
+    { values: {}, defaultValues: {}, onValuesChange() {} }, { defaultValues: [] },
+    { values: { email: 'yes' }, onValuesChange() {} }, { defaultValues: { name: false } },
     { onAction: undefined },
     { sections: [{ id: '', title: 'A', rows: [] }] },
     { sections: [{ id: 'x', title: 'A', rows: [] }, { id: 'x', title: 'B', rows: [] }] },

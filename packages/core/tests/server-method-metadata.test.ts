@@ -6,7 +6,7 @@ it('retains inherited options when a child owns unrelated server metadata', () =
     class Base {}
     class Child extends Base {}
     const input = { parse: (value: unknown) => value };
-    const base = { inherited: { timeout: 42, channel: 'private', provider: 'service', input } };
+    const base = { inherited: { timeout: 42, channel: 'private', input } };
     const child = { local: { timeout: 100 } };
     Reflect.defineMetadata('cossack:server-methods', base, Base);
     Reflect.defineMetadata('cossack:server-methods', child, Child);

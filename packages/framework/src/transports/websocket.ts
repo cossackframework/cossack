@@ -16,7 +16,7 @@ export function handleWebSocketProxy(ctx: RouterContext) {
             return new Response('Origin not allowed', { status: 403 });
         }
         const user = c.get('user');
-        const { provider, id: durableObjectId } = c.req.param();
+        const durableObjectId = c.req.param('id');
         const routePath = c.req.query('routePath');
         // Support both routePath (new) and componentPath (legacy) for backward compatibility
         const componentPathQuery = routePath || c.req.query('componentPath');
@@ -51,7 +51,6 @@ export function handleWebSocketProxy(ctx: RouterContext) {
         const request = new Request(c.req.raw);
 
         request.headers.set('X-Component-Path', componentPath);
-        request.headers.set('X-Provider-Name', provider);
         // These are internal authentication assertions, never client input.
         request.headers.delete('X-User-ID');
         request.headers.delete('X-User-Data');

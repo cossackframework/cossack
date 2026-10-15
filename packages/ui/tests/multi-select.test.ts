@@ -3,8 +3,8 @@ import { component, renderToString } from '@cossackframework/renderer';
 import { MultiSelect } from '../src/components/MultiSelect';
 
 it('renders labeled tag controls, stable ARIA relationships and repeated form values',()=>{
-    const onChange=vi.fn();
-    const output=renderToString(component(MultiSelect,{id:'skills',name:'skills',value:['TypeScript','Cossack'],options:['TypeScript','Cossack','Rust'],required:true,'aria-label':'Skills','aria-describedby':'help',onChange}));
+    const onValueChange=vi.fn();
+    const output=renderToString(component(MultiSelect,{id:'skills',name:'skills',value:['TypeScript','Cossack'],options:['TypeScript','Cossack','Rust'],required:true,'aria-label':'Skills','aria-describedby':'help',onValueChange}));
     expect(output).toContain('role="combobox"');
     expect(output).toContain('aria-controls="skills-listbox"');
     expect(output).toContain('aria-required="true"');
@@ -14,8 +14,8 @@ it('renders labeled tag controls, stable ARIA relationships and repeated form va
     expect(output.match(/type="hidden" name="skills"/g)).toHaveLength(2);
     expect(output).toContain('value="TypeScript"');
     expect(output).toContain('value="Cossack"');
-    expect(output).not.toMatch(/onChange=|validate=|defaultValue=/);
-    expect(onChange).not.toHaveBeenCalled();
+    expect(output).not.toMatch(/onValueChange=|validate=|defaultValue=/);
+    expect(onValueChange).not.toHaveBeenCalled();
 });
 it('keeps uncontrolled defaults separate from parent-owned arrays',()=>{
     const defaults=['TypeScript'];const control=new MultiSelect();

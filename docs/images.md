@@ -22,7 +22,7 @@ export class Hero extends Cossack {
         return html`
             <div class="hero">
                 ${Image({
-                    src: '/assets/banner.jpg',
+                    src: '/images/banner.jpg',
                     width: 800,
                     height: 400,
                     fit: 'cover',
@@ -68,8 +68,8 @@ VITE_COSSACK_IMAGE_PROVIDER=cloudflare
 ```
 
 When this is set, the helper transforms your URL:
-* Input: `/assets/banner.jpg` (with `width: 800`)
-* Output: `/cdn-cgi/image/width=800/assets/banner.jpg`
+* Input: `/images/banner.jpg` (with `width: 800`)
+* Output: `/cdn-cgi/image/width=800/images/banner.jpg`
 
 ### 3. Production (Node.js / Other)
 

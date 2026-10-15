@@ -9,12 +9,12 @@ export type ComboboxProps = Omit<GlobalAttributes<HTMLInputElement>, 'id' | 'rol
     id: string;
     /** Unique, nonempty values and labels. Disabled options cannot be selected. */
     options?: readonly ComboboxOption[];
-    /** Controlled selected value. Accept changes in onChange to retain a selection. */
+    /** Controlled selected value. Accept changes in onValueChange to retain a selection. */
     value?: string;
     /** Initial uncontrolled selection. */
     defaultValue?: string;
     /** Receives a changed option value. Typing only filters; it does not select. */
-    onChange?: (value: string) => unknown;
+    onValueChange?: (value: string) => unknown;
     /** Submitted option value, not its display label or search text. */
     name?: string;
     form?: string;
@@ -68,7 +68,7 @@ export class Combobox extends Cossack {
     }
 
     render() {
-        const { id, options = [], value: _value, defaultValue: _default, onChange: _change, name, form,
+        const { id, options = [], value: _value, defaultValue: _default, onValueChange: _change, name, form,
             disabled = false, readonly = false, required = false, placeholder = 'Search...',
             emptyLabel = 'No results.', requiredMessage: _message, ...rest } = this.props;
         if (typeof id !== 'string' || !id || /\s/.test(id)) throw new Error('Combobox requires a nonempty, whitespace-free id.');
@@ -176,7 +176,7 @@ export class Combobox extends Cossack {
         const changed = this.controlled.changed(this.props, this.selected?.value, value);
         this.draft = value;
         this.close();
-        if (changed) this.props.onChange?.(this.controlled.emit(this.props, value));
+        if (changed) this.props.onValueChange?.(this.controlled.emit(this.props, value));
         void this.requestUpdate();
     }
 

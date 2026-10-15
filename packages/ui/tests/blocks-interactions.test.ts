@@ -10,14 +10,14 @@ const { SettingsPanel } = await import('../src/blocks/index');
 
 describe('@cossackframework/ui/blocks interactions', () => {
   it('reports setting changes', async () => {
-    const onChange = vi.fn();
+    const onValuesChange = vi.fn();
     const settings = new SettingsPanel() as unknown as {
       props: Record<string, unknown>;
       updateValue(key: string, value: boolean | string, control: { matches: () => boolean; readOnly: boolean }): void;
     };
-    settings.props = { id: 'settings', sections: [{ id: 'account', title: 'Account', rows: [{ key: 'email', label: 'Email', type: 'switch' }] }], onChange };
+    settings.props = { id: 'settings', sections: [{ id: 'account', title: 'Account', rows: [{ key: 'email', label: 'Email', type: 'switch' }] }], onValuesChange };
     settings.updateValue('email', true, { matches: () => false, readOnly: false });
-    expect(onChange).toHaveBeenCalledWith({ email: true });
+    expect(onValuesChange).toHaveBeenCalledWith({ email: true });
   });
 
 });

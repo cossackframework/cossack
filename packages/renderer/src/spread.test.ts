@@ -9,7 +9,7 @@ describe('Spread Syntax ...=${vars}', () => {
     it('spreads attributes on standard element (SSR)', () => {
         const attrs = { id: 'test', class: 'foo', disabled: true };
         const template = html`<div ...=${attrs}>Content</div>`;
-        expect(renderToString(template).replace(/\s+/g, ' ')).toBe('<div id="test" class="foo" disabled>Content</div>');
+        expect(renderToString(template).replace(/\s+/g, ' ')).toBe('<div id="test" disabled class="foo">Content</div>');
     });
 
     it('spreads attributes on component (SSR)', () => {

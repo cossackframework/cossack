@@ -32,14 +32,14 @@ function closed(socket: WebSocket) {
 }
 async function guarded(component: any, options: { createFails?: boolean } = {}) {
   const adapter = createNodeAdapter({ idleTimeoutMs: 0 }); const app = new Hono();
-  app.get('/ws/:provider/:target', c => adapter.handleWebSocketUpgrade(c, {
-    target: 'PRIVATE_SCOPE_SENTINEL', provider: 'page', componentId: 'authored', user: { id: 'PRIVATE_USER_SENTINEL' },
+  app.get('/ws/:target', c => adapter.handleWebSocketUpgrade(c, {
+    target: 'PRIVATE_SCOPE_SENTINEL', componentId: 'authored', user: { id: 'PRIVATE_USER_SENTINEL' },
     createComponent: async () => { if (options.createFails) throw new Error(SENTINEL); return component; },
   }));
   const server = createServer(); adapter.attach(server, request => app.fetch(request));
   const origin = await listen(server);
   cleanups.unshift(() => adapter.dispose().catch(() => {}));
-  const socket = new WebSocket(origin.replace('http:', 'ws:') + '/ws/page/PRIVATE_SCOPE_SENTINEL?token=PRIVATE_QUERY_SENTINEL');
+  const socket = new WebSocket(origin.replace('http:', 'ws:') + '/ws/PRIVATE_SCOPE_SENTINEL?token=PRIVATE_QUERY_SENTINEL');
   return { adapter, socket };
 }
 function component() { return { _id: 'authored', activeComponents: new Map(), getInitialState: () => ({ public: {} }), executeAction: vi.fn(async () => {}), destroyAsync: vi.fn(async () => {}) }; }
@@ -74,7 +74,7 @@ it('redacts guarded HTTP upgrade failures instead of logging thrown request deta
   const spy = logs(); const adapter = createNodeAdapter(); const server = createServer();
   adapter.attach(server, () => { throw new Error(SENTINEL); });
   const origin = await listen(server); cleanups.unshift(() => adapter.dispose().catch(() => {}));
-  const socket = new WebSocket(origin.replace('http:', 'ws:') + '/ws/page/PRIVATE_SCOPE_SENTINEL?token=PRIVATE_QUERY_SENTINEL');
+  const socket = new WebSocket(origin.replace('http:', 'ws:') + '/ws/PRIVATE_SCOPE_SENTINEL?token=PRIVATE_QUERY_SENTINEL');
   await new Promise<void>(resolve => { socket.once('error', () => resolve()); });
   await vi.waitFor(() => assertSafe(spy, ['upgrade']));
 });

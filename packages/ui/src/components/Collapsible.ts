@@ -35,7 +35,7 @@ export class Collapsible extends Cossack {
 
     render() {
         const { id, trigger, triggerProps = {}, panelProps = {}, disabled,
-            open: _open, defaultOpen: _default, onToggle: _toggle, ...rest } = this.props;
+            open: _open, defaultOpen: _default, onOpenChange: _change, ...rest } = this.props;
         validateDisclosure(id, trigger);
 
         const open = this.isOpen;
@@ -63,12 +63,12 @@ export class Collapsible extends Cossack {
         const currentOpen = this.controlled.base(this.props, this.isOpen);
 
         if (this.props.open !== undefined) {
-            this.props.onToggle?.(this.controlled.emit(this.props, !currentOpen));
+            this.props.onOpenChange?.(this.controlled.emit(this.props, !currentOpen));
             return;
         }
         this.userInteracted = true;
         this.internalOpen = !currentOpen;
-        this.props.onToggle?.(this.controlled.emit(this.props, this.internalOpen));
+        this.props.onOpenChange?.(this.controlled.emit(this.props, this.internalOpen));
     }
 
     onMount() {

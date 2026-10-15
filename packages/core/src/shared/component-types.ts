@@ -6,15 +6,19 @@ import type { HydratedContext } from './context';
 
 /**
  * Lifecycle phases for explicit state management and preventing invalid transitions.
+ *
+ * A component moves `Creating` → `Mounted` → `Destroyed`. `Bootstrapping` and
+ * `Updating` are transient: they last while `bootstrap()` or `willUpdate()`
+ * runs. A live, idle component reports `Mounted`.
  */
 export enum LifecyclePhase {
-    /** Component is being constructed */
+    /** Constructed, but not yet bootstrapped or connected */
     Creating = 'Creating',
-    /** bootstrap() is being called (not yet connected to DOM) */
+    /** bootstrap() is running */
     Bootstrapping = 'Bootstrapping',
-    /** Component is connected to DOM and ready */
+    /** Bootstrapped or connected by the renderer, and not updating */
     Mounted = 'Mounted',
-    /** An update is in progress (willUpdate) */
+    /** willUpdate() is running */
     Updating = 'Updating',
     /** Component has been destroyed */
     Destroyed = 'Destroyed',
@@ -62,8 +66,12 @@ export interface SerializedComponentState {
      * never repeat it.
      */
     user?: User;
-    /** Provider targets for WebSocket connections */
-    providerTargets?: Record<string, string>;
+    /**
+     * Server-computed realtime instance for the page's WebSocket connection
+     * (`durable-object`/`websocket` transports). The server recomputes it from
+     * the page identity or scope key for every upgrade; it never authorizes.
+     */
+    realtimeTarget?: string;
     /** Nested children states */
     children?: Record<string, SerializedComponentState>;
     /** Component route ID for HTTP transport */
@@ -115,10 +123,6 @@ export interface BootstrapOptions {
   runtime?: CossackRuntimeInfo;
   /** Current page route identifier. */
   page?: string;
-  /** WebSocket provider name (server only). */
-  providerName?: string;
-  /** Server-resolved transport targets, supplied by the runtime router. */
-  providerTargets?: Record<string, string>;
   /** Skip calling `init()` after bootstrap. */
   skipInit?: boolean;
   /**

@@ -12,7 +12,7 @@ export type TabsProps = Omit<GlobalAttributes<HTMLDivElement>, 'id'> & {
     label: string;
     value?: string;
     defaultValue?: string;
-    onChange?: (value: string) => unknown;
+    onValueChange?: (value: string) => unknown;
     items?: readonly TabsItem[];
     orientation?: 'horizontal' | 'vertical';
     variant?: 'pill' | 'underline';
@@ -57,7 +57,7 @@ export class Tabs extends Cossack {
         if (!this.props.items?.some(item => item.value === value && !item.disabled) || this.buttons().find(button => button.dataset.value === value)?.matches(':disabled')) return;
         if (!this.controlled.changed(this.props, this.current(), value)) return;
         if (this.props.value === undefined) this.localValue = value;
-        this.props.onChange?.(this.controlled.emit(this.props, value));
+        this.props.onValueChange?.(this.controlled.emit(this.props, value));
     }
     @Client() private keydown(event: KeyboardEvent) {
         if (event.isComposing || event.altKey || event.ctrlKey || event.metaKey) return;
@@ -113,7 +113,7 @@ export class Tabs extends Cossack {
     }
     render() {
         const { id, label, items = [], orientation = 'horizontal', variant = 'pill', activation = 'automatic', listProps = {},
-            value: _value, defaultValue: _default, onChange: _change, ...rest } = this.props;
+            value: _value, defaultValue: _default, onValueChange: _change, ...rest } = this.props;
         if (typeof id !== 'string' || !id || /\s/.test(id)) throw new Error('Tabs requires a nonempty, whitespace-free id.');
         if (typeof label !== 'string' || !label.trim()) throw new Error('Tabs requires a nonempty label.');
         if (!['horizontal','vertical'].includes(orientation) || !['pill','underline'].includes(variant) || !['automatic','manual'].includes(activation)) throw new Error('Invalid Tabs orientation, variant or activation.');

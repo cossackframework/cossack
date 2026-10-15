@@ -4,6 +4,7 @@ import { Command, type CommandProps, type CommandItem as NativeCommandItem } fro
 import { Icon } from '../../icons/Icon.js';
 import { Kbd } from '../../components/Kbd.js';
 import type { IconEntry } from '@cossackframework/solar-icons/types';
+import { ControlledValue } from '../../native-attributes.js';
 
 export type CommandItem = NativeCommandItem & {
     /** Explicitly trusted SVG artwork. Import individual Solar entries. */
@@ -26,19 +27,20 @@ export class CommandPalette extends Cossack {
     declare props: CommandPaletteProps;
     @ClientState() private localOpened: boolean | undefined;
     private initialOpened?: boolean;
+    private controlled = new ControlledValue<boolean>();
 
     get isOpen() { return this.props.open ?? this.localOpened ?? this.initialOpened ?? !!this.props.defaultOpen; }
 
     /** Request a state change. Controlled callers must accept it through props. */
     @Client() setOpen(open: boolean) {
         if (typeof open !== 'boolean') throw new Error('CommandPalette setOpen requires a boolean.');
-        if (this.isOpen === open) return;
+        if (!this.controlled.changed(this.props, this.isOpen, open)) return;
         if (this.props.open === undefined) this.localOpened = open;
-        this.props.onOpenChange?.(open);
+        this.props.onOpenChange?.(this.controlled.emit(this.props, open));
         void this.requestUpdate();
     }
     /** Request the opposite open state, for application-owned buttons or menus. */
-    @Client() toggle() { this.setOpen(!this.isOpen); }
+    @Client() toggle() { this.setOpen(!this.controlled.base(this.props, this.isOpen)); }
 
     render() {
         const { commands, onSelect, open, defaultOpen, onOpenChange, ...dialog } = this.props;

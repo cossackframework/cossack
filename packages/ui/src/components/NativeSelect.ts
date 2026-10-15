@@ -26,8 +26,8 @@ const VARIANTS: Record<NonNullable<NativeSelectProps["variant"]>, string> = {
 /**
  * Cossack UI NativeSelect — styled native `<select>` (no popover, no JS).
  *
- * Both Select and NativeSelect use native browser controls. NativeSelect also
- * sets option-menu theme colors. Use .value to select an initial or reactive value.
+ * The browser owns the option menu; NativeSelect sets its theme colors.
+ * Use .value to select an initial or reactive value.
  * Pass `<option>` elements as children.
  *
  *   ${component(NativeSelect, { '@change': handler },

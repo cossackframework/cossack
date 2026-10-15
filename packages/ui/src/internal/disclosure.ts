@@ -8,7 +8,8 @@ export type DisclosureProps = Omit<GlobalAttributes<HTMLDivElement>, 'id'> & {
     open?: boolean;
     defaultOpen?: boolean;
     disabled?: boolean;
-    onToggle?: (open: boolean) => unknown;
+    /** Proposes the next open state. Controlled callers must update open. */
+    onOpenChange?: (open: boolean) => unknown;
     triggerProps?: DisclosureTriggerProps;
     panelProps?: DisclosurePanelProps;
 };

@@ -79,7 +79,6 @@ it('keeps Cloudflare socket peer context and shared limits across reconnects and
     // The proxy binds socket targets to the page identity. A custom scope lets
     // the test address several Durable Objects for the same page.
     Page({ transport: 'websocket', stateful: true, scope: c => 'object:' + (c.req.query('object') || 'shared') })(Live);
-    Reflect.defineMetadata('cossack:durable-object-name', 'COSSACK_OBJECT', Live);
     for (const name of ['limited', 'custom', 'inspect', 'observe'])
       Server()(Live.prototype, name, Object.getOwnPropertyDescriptor(Live.prototype, name));
     Server({input:input.object({id:input.number({coerce:true,integer:true,min:1})}),
@@ -123,7 +122,7 @@ it('keeps Cloudflare socket peer context and shared limits across reconnects and
     app.get('/id', c => c.json({ id: c.env.COSSACK_OBJECT.idFromName('object:' + (c.req.query('name') || 'shared')).toString() }));
     app.post('/restore', c => c.env.COSSACK_OBJECT.getByName('object:shared').fetch('https://object/__test_restore'));
     app.get('/schema-status',c=>c.env.COSSACK_OBJECT.getByName('object:shared').fetch('https://object/__test_schema-status'));
-    app.get('/ws/:provider/:id/:channel', handleWebSocketProxy({
+    app.get('/ws/:id', handleWebSocketProxy({
       pages: { [componentPath]: { default: Live } }, layouts: {}, allowedOrigins: ['http://localhost'],
       routePathToFilePathMap: new Map([['/live', componentPath]]),
     }));
@@ -155,7 +154,7 @@ it('keeps Cloudflare socket peer context and shared limits across reconnects and
   const connect = async ({ worker = 'first', name = 'shared', ip = '192.0.2.1', user, bucket = 'one', extra = {} } = {}) => {
     const entry = server.getWorker(worker);
     const { id } = await (await entry.fetch(new URL('/id?name=' + name, url))).json();
-    const route = new URL('/ws/page/' + id + '/global', url);
+    const route = new URL('/ws/' + id, url);
     route.searchParams.set('routePath', '/live'); route.searchParams.set('pathname', '/live');
     route.searchParams.set('params', JSON.stringify({ tenant: 'example' })); route.searchParams.set('filter', 'active');
     route.searchParams.set('object', name);

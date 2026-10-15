@@ -1,5 +1,6 @@
 import { html, live, repeat } from '@cossackframework/renderer';
 import { Cossack, Component } from '@cossackframework/core';
+import { ControlledValue } from '../native-attributes';
 
 export interface DataTableSort { columnId: string; direction: 'asc' | 'desc' }
 export interface DataTableState {
@@ -47,10 +48,18 @@ export type DataTableProps<Row> = {
     rowLabel?: (row: Row) => string;
 };
 
+const copyState = (state: DataTableState): DataTableState => ({ ...state, ...(state.sort && { sort: { ...state.sort } }) });
+
 /** Controlled server-data table. Data access and authorization belong to the parent. */
 @Component()
 export class DataTable<Row> extends Cossack {
     declare props: DataTableProps<Row>;
+    // Edits made before the parent re-renders build on the last emitted state and selection.
+    private query = new ControlledValue<DataTableState>();
+    private picked = new ControlledValue<ReadonlySet<string>>();
+
+    private baseState() { return this.query.base(this.props, this.props.state); }
+    private pageCount(state: DataTableState) { return Math.max(1, Math.ceil(this.props.rowCount / state.pageSize)); }
 
     private view() {
         const p = this.props;
@@ -80,33 +89,32 @@ export class DataTable<Row> extends Cossack {
     }
 
     private change(patch: Partial<DataTableState>) {
-        const state = { ...this.props.state, ...patch };
-        if (state.sort) state.sort = { ...state.sort };
-        this.props.onStateChange(state);
+        const state = this.query.emit(this.props, copyState({ ...this.baseState(), ...patch }));
+        this.props.onStateChange(copyState(state));
     }
 
     /** Selection changes only the current visible, selectable IDs. It never mutates the supplied set. */
     selectVisible(checked: boolean) {
         if (this.props.loading || this.props.error || !this.props.selection || !this.props.onSelectionChange) return;
-        const next = new Set(this.props.selection);
+        const next = new Set(this.picked.base(this.props, this.props.selection));
         for (const item of this.view().rows) if (item.selectable) {
             if (checked) next.add(item.id); else next.delete(item.id);
         }
-        this.props.onSelectionChange(next);
+        this.props.onSelectionChange(new Set(this.picked.emit(this.props, next)));
     }
 
     selectRow(id: string, checked: boolean) {
         if (this.props.loading || this.props.error || !this.props.selection || !this.props.onSelectionChange) return;
         const item = this.view().rows.find(row => row.id === id);
         if (!item?.selectable) return;
-        const next = new Set(this.props.selection);
+        const next = new Set(this.picked.base(this.props, this.props.selection));
         if (checked) next.add(id); else next.delete(id);
-        this.props.onSelectionChange(next);
+        this.props.onSelectionChange(new Set(this.picked.emit(this.props, next)));
     }
 
     sortColumn(id: string) {
         if (!this.props.columns.some(column => column.id === id && column.sortable)) return;
-        const old = this.props.state.sort;
+        const old = this.baseState().sort;
         const sort: DataTableSort | undefined = old?.columnId !== id ? { columnId: id, direction: 'asc' }
             : old.direction === 'asc' ? { columnId: id, direction: 'desc' } : undefined;
         this.change({ sort, page: 1 });
@@ -169,10 +177,10 @@ export class DataTable<Row> extends Cossack {
                 </div>
                 <nav aria-label=${`${p.caption} pages`} class="flex gap-3">
                     <button id=${p.id ? `${p.id}-previous` : undefined} type="button" class="rounded-md border border-input px-2 py-1 focus-visible:outline-2 aria-disabled:opacity-50" aria-disabled=${String(blocked || p.state.page <= 1)}
-                        @click=${() => { if (!this.props.loading && !this.props.error && this.props.state.page > 1) this.change({ page: Math.min(this.props.state.page - 1, this.view().pages) }); }}>Previous page</button>
+                        @click=${() => { const state = this.baseState(); if (!this.props.loading && !this.props.error && state.page > 1) this.change({ page: Math.min(state.page - 1, this.pageCount(state)) }); }}>Previous page</button>
                     <span>Page ${p.state.page} of ${pages}</span>
                     <button id=${p.id ? `${p.id}-next` : undefined} type="button" class="rounded-md border border-input px-2 py-1 focus-visible:outline-2 aria-disabled:opacity-50" aria-disabled=${String(blocked || p.state.page >= pages)}
-                        @click=${() => { if (!this.props.loading && !this.props.error && this.props.state.page < this.view().pages) this.change({ page: this.props.state.page + 1 }); }}>Next page</button>
+                        @click=${() => { const state = this.baseState(); if (!this.props.loading && !this.props.error && state.page < this.pageCount(state)) this.change({ page: state.page + 1 }); }}>Next page</button>
                 </nav>
             </section>
         `;

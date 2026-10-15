@@ -26,7 +26,7 @@ function harness() {
   app.use('*', async (c, next) => { await next(); c.header('x-global-policy', 'ran'); });
   app.use('*', createAssetsMiddleware(ctx));
   app.get('/missing', c => c.text('SSR fallback'));
-  app.get('/ws/page/connection', c => c.text('transport handler'));
+  app.get('/ws/connection', c => c.text('transport handler'));
   app.post('/users/alice', c => c.text('server action'));
   const env = { ASSETS: { fetch } };
   return { app, env, fetch, policies };
@@ -37,7 +37,7 @@ describe('Worker-first static assets', () => {
     ('leaves %s upgrade requests in the transport pipeline without probing ASSETS', async upgrade => {
       const { app, env, fetch, policies } = harness();
       fetch.mockImplementation(async () => { throw new Error('HTTP asset bridge received an upgrade'); });
-      const response = await app.request('/ws/page/connection', {
+      const response = await app.request('/ws/connection', {
         headers: { Upgrade: upgrade, Connection: 'Upgrade' },
       }, env);
       expect(response.status).toBe(200);

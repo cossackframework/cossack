@@ -1,6 +1,6 @@
 import { Component, Cossack, Shared } from '@cossackframework/core';
 import { component, html } from '@cossackframework/renderer';
-import { Button, Input, Select, Switch } from '@cossackframework/ui';
+import { Button, Input, NativeSelect, Switch } from '@cossackframework/ui';
 import type { StudioPragma, StudioSchema } from '../../../../src/lib/schema-types';
 
 interface PragmasTabProps {
@@ -118,7 +118,7 @@ export class PragmasTab extends Cossack {
                     (event.target as HTMLInputElement).value,
                   ),
                 })
-              : component(Select, {
+              : component(NativeSelect, {
                   size: 'sm',
                   '.value': value,
                   'aria-label': `${pragma.name} value`,

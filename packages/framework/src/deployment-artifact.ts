@@ -3,6 +3,11 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { readCloudflareDeclarationConfig } from './config-preflight.js';
+import { isFrameworkAssetPattern } from '@cossackframework/core/static-assets';
+import { describeUncoveredClientOutput, uncoveredClientOutput } from './static-asset-routing.js';
+export { ASSETS_RUN_WORKER_FIRST, STATIC_ASSET_DIRECTORY, isFrameworkAssetPattern, isPolicyPreservingRunWorkerFirst, isStaticAssetFile } from '@cossackframework/core/static-assets';
+export { checkStaticAssetNamespace, describeUncoveredClientOutput, uncoveredClientOutput } from './static-asset-routing.js';
+export type { StaticAssetNamespaceDiagnostic, StaticAssetNamespaceOptions, StaticAssetRouteFact } from './static-asset-routing.js';
 const TARGET_FIELDS = ['name', 'compatibility_date', 'compatibility_flags', 'vars', 'secrets', 'd1_databases', 'kv_namespaces', 'r2_buckets', 'hyperdrive', 'services', 'workflows',
   'durable_objects', 'queues', 'vectorize', 'analytics_engine_datasets', 'send_email', 'ai', 'browser', 'images', 'version_metadata',
   'mtls_certificates', 'dispatch_namespaces', 'pipelines', 'secrets_store_secrets', 'ratelimits', 'worker_loaders', 'vpc_services', 'vpc_networks',
@@ -57,6 +62,17 @@ export async function inspectDeploymentArtifact(root: string, artifact: string, 
       throw new DeploymentError('COSSACK_DEPLOY_TARGET_MISMATCH',
         `Built assets.${field} differs from the selected Cloudflare environment.`);
     }
+  }
+  // Cloudflare serves the pattern's `/assets/*` without the Worker. Hashed
+  // output written elsewhere still works but invokes the Worker per request.
+  if (includeAssets && isFrameworkAssetPattern(built.assets?.run_worker_first) && typeof built.assets?.directory === 'string') {
+    // Wrangler keeps assets.directory relative to the configuration file.
+    const directory = path.resolve(path.dirname(built.configPath ?? artifact), built.assets.directory);
+    let manifest: unknown;
+    try { manifest = JSON.parse(await fs.readFile(path.join(directory, '.vite/manifest.json'), 'utf8')); }
+    catch { manifest = undefined; }
+    const uncovered = uncoveredClientOutput(manifest);
+    if (uncovered.length) throw new DeploymentError('COSSACK_ASSETS_PATTERN_UNCOVERED', describeUncoveredClientOutput(uncovered));
   }
   return artifact;
 }

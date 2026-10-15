@@ -18,11 +18,11 @@ async function host(configure: (app: Hono, runtime: ReturnType<typeof createNode
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   const { port } = server.address() as { port: number };
   cleanups.push(async () => { await runtime.dispose(); await new Promise<void>(resolve => server.close(() => resolve())); });
-  return { runtime, url: `ws://127.0.0.1:${port}/ws/page/user:one` };
+  return { runtime, url: `ws://127.0.0.1:${port}/ws/user:one` };
 }
 function upgrade(runtime: ReturnType<typeof createNodeAdapter>, component: ReturnType<typeof page>) {
   return (c: any) => runtime.handleWebSocketUpgrade(c, {
-    target: 'user:one', provider: 'page', componentId: 'page', user: c.get('user'), createComponent: async () => component as any,
+    target: 'user:one', componentId: 'page', user: c.get('user'), createComponent: async () => component as any,
   });
 }
 function connected(url: string, headers: Record<string, string> = {}) {
@@ -45,11 +45,11 @@ it('keeps each peer context for real shared-component actions and custom rate ke
   const component = new Peer();
   const { url, runtime } = await host((app, runtime) => {
     app.use('*', async (c, next) => { c.set('user' as never, { id: c.req.header('x-member') } as never); await next(); });
-    app.get('/ws/:provider/:target', c => runtime.handleWebSocketUpgrade(c, {
-      target: 'shared', componentId: 'peer', provider: 'page', user: c.get('user'),
+    app.get('/ws/:target', c => runtime.handleWebSocketUpgrade(c, {
+      target: 'shared', componentId: 'peer', user: c.get('user'),
       createComponent: async () => {
-        await component.bootstrap({ context: c, env: {}, user: c.get('user'), page: '/peer', providerName: 'page',
-          runtime: { platform: 'web', adapter: 'node' }, providerTargets: { page: 'shared' } });
+        await component.bootstrap({ context: c, env: {}, user: c.get('user'), page: '/peer',
+          runtime: { platform: 'web', adapter: 'node' } });
         return component;
       },
     }));
@@ -84,7 +84,7 @@ it('runs middleware before and after routing, forwards handshake cookies, and di
       c.header('set-cookie', 'session=refreshed; HttpOnly', { append: true });
       c.header('set-cookie', 'flash=done', { append: true });
     });
-    app.get('/ws/:provider/:target', upgrade(runtime, component));
+    app.get('/ws/:target', upgrade(runtime, component));
   });
   const { socket, state } = connected(url);
   const headers = new Promise<any>(resolve => socket.once('upgrade', response => resolve(response.headers)));
@@ -101,7 +101,7 @@ it.each(['before', 'after'])('rejects middleware denial %s the guarded handler w
   const factory = vi.fn(async () => component as any);
   const { url } = await host((app, runtime) => {
     app.use('*', async (c, next) => { if (phase === 'after') await next(); c.res = c.text('Denied', 401); return c.res; });
-    app.get('/ws/:provider/:target', c => runtime.handleWebSocketUpgrade(c, { target: 'one', provider: 'page', componentId: 'page', createComponent: factory }));
+    app.get('/ws/:target', c => runtime.handleWebSocketUpgrade(c, { target: 'one', componentId: 'page', createComponent: factory }));
   });
   const socket = new WebSocket(url);
   const status = await new Promise<number | undefined>((resolve, reject) => {
@@ -118,7 +118,7 @@ it('shares one pending scope initialization across actual simultaneous connectio
   const gate = new Promise<void>(resolve => { release = resolve; });
   const factory = vi.fn(async () => { await gate; return component as any; });
   const { url, runtime } = await host((app, runtime) => {
-    app.get('/ws/:provider/:target', c => runtime.handleWebSocketUpgrade(c, { target: 'one', provider: 'page', componentId: 'page', createComponent: factory }));
+    app.get('/ws/:target', c => runtime.handleWebSocketUpgrade(c, { target: 'one', componentId: 'page', createComponent: factory }));
   });
   const a = connected(url); const b = connected(url);
   await Promise.all([new Promise(resolve => a.socket.once('open', resolve)), new Promise(resolve => b.socket.once('open', resolve))]);
@@ -136,7 +136,7 @@ it('waits for a running action during shutdown', async () => {
   const component = page();
   let release!: () => void;
   component.executeAction.mockImplementation(() => new Promise<void>(resolve => { release = resolve; }));
-  const { url, runtime } = await host((app, runtime) => app.get('/ws/:provider/:target', upgrade(runtime, component)));
+  const { url, runtime } = await host((app, runtime) => app.get('/ws/:target', upgrade(runtime, component)));
   const { socket, state } = connected(url);
   await state;
   socket.send(JSON.stringify({ type: 'action', action: 'save', payload: [] }));
@@ -154,7 +154,7 @@ it('reconstructs an https request URL for upgrades on an encrypted socket so sam
   const runtime = createNodeAdapter({ idleTimeoutMs: 0 });
   const app = new Hono();
   // Mirrors the framework's upgrade route: same-origin against the request URL.
-  app.get('/ws/:provider/:target', c => {
+  app.get('/ws/:target', c => {
     seen.push(c.req.url);
     if (!isOriginAllowed(c.req.header('origin'), c.req.url)) return c.text('Forbidden origin', 403);
     return upgrade(runtime, component)(c);
@@ -166,9 +166,9 @@ it('reconstructs an https request URL for upgrades on an encrypted socket so sam
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   const { port } = server.address() as { port: number };
   cleanups.push(async () => { await runtime.dispose(); await new Promise<void>(resolve => server.close(() => resolve())); });
-  const { socket, state } = connected(`ws://127.0.0.1:${port}/ws/page/user:one`, { origin: `https://127.0.0.1:${port}` });
+  const { socket, state } = connected(`ws://127.0.0.1:${port}/ws/user:one`, { origin: `https://127.0.0.1:${port}` });
   expect(await state).toEqual({ type: 'state-update', state: { count: 1 } });
-  expect(seen).toEqual([`https://127.0.0.1:${port}/ws/page/user:one`]);
+  expect(seen).toEqual([`https://127.0.0.1:${port}/ws/user:one`]);
   socket.close();
 });
 it('counts pending initializations against maxInstances and rejects the overflow scope', async () => {
@@ -179,18 +179,18 @@ it('counts pending initializations against maxInstances and rejects the overflow
   const factories = { first: vi.fn(async () => { await gate; return first as any; }), second: vi.fn(async () => page() as any) };
   const runtime = createNodeAdapter({ maxInstances: 1, idleTimeoutMs: 0 });
   const app = new Hono();
-  app.get('/ws/:provider/:target', c => {
+  app.get('/ws/:target', c => {
     const target = c.req.param('target') as 'first' | 'second';
-    return runtime.handleWebSocketUpgrade(c, { target, provider: 'page', componentId: target, createComponent: factories[target] });
+    return runtime.handleWebSocketUpgrade(c, { target, componentId: target, createComponent: factories[target] });
   });
   const server = createServer();
   runtime.attach(server, request => app.fetch(request));
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   const { port } = server.address() as { port: number };
   cleanups.push(async () => { release(); await runtime.dispose(); await new Promise<void>(resolve => server.close(() => resolve())); spy.mockRestore(); });
-  const a = connected(`ws://127.0.0.1:${port}/ws/page/first`);
+  const a = connected(`ws://127.0.0.1:${port}/ws/first`);
   await vi.waitFor(() => expect(factories.first).toHaveBeenCalledTimes(1));
-  const b = new WebSocket(`ws://127.0.0.1:${port}/ws/page/second`);
+  const b = new WebSocket(`ws://127.0.0.1:${port}/ws/second`);
   const closed = await new Promise<{ code: number; reason: string }>((resolve, reject) => {
     b.once('error', reject); b.once('close', (code, reason) => resolve({ code, reason: String(reason) }));
   });
@@ -200,4 +200,23 @@ it('counts pending initializations against maxInstances and rejects the overflow
   release();
   expect(await a.state).toEqual({ type: 'state-update', state: { count: 1 } });
   a.socket.close();
+});
+it('keys one in-process instance by component and server-computed target', async () => {
+  const created: string[] = [];
+  const { url, runtime } = await host((app, runtime) => app.get('/ws/:target', c => {
+    const target = c.req.param('target');
+    const componentId = c.req.query('component') ?? 'inbox';
+    return runtime.handleWebSocketUpgrade(c, { target, componentId,
+      createComponent: async () => { created.push(`${componentId}:${target}`); return page() as any; } });
+  }));
+  const base = url.replace(/\/ws\/.*$/, '/ws/');
+  const open = async (path: string) => { const peer = connected(base + path); await peer.state; return peer.socket; };
+  const sockets = [
+    await open('user:alice'), await open('user:alice'),
+    await open('user:bob'), await open('user:alice?component=notes'),
+  ];
+  // The same target shares one instance; another target or page gets its own.
+  expect(created).toEqual(['inbox:user:alice', 'inbox:user:bob', 'notes:user:alice']);
+  expect(runtime.instanceCount).toBe(3);
+  for (const socket of sockets) socket.close();
 });

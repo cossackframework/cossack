@@ -161,7 +161,7 @@ export default class DashboardLayout extends Cossack {
                     width: '248px',
                     collapsible: 'icon',
                     collapsed: this.sidebarCollapsed,
-                    onToggle: () => this.onToggleSidebar(),
+                    onCollapsedChange: () => this.onToggleSidebar(),
                     items: items,
                     footer: html`
                         <div class="flex items-center gap-1">

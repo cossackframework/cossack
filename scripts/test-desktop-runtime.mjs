@@ -35,6 +35,8 @@ run('xvfb-run', [
   'scripts/test-local-scaffold.mjs',
   '--desktop-runtime-only',
 ]);
+// Go through the integration project's script, never a bare vitest run, so the
+// linked generated apps get the integration timeouts and worker limits.
 run(
   'xvfb-run',
   [
@@ -42,9 +44,8 @@ run(
     'pnpm',
     '--filter',
     'cossack',
-    'exec',
-    'vitest',
     'run',
+    'test:integration',
     'tests/generated-runtime-recipes.test.js',
     '-t',
     'executes a generated Desktop application|executes Desktop development',

@@ -247,10 +247,15 @@ export function finalizeMetadata(
       }
       const propertyName = `${relation.propertyName}${(relation.referencedProperty ?? "id")
         .replace(/^./, (value) => value.toUpperCase())}`;
+      // The join column holds the referenced value, so it keeps that column's size.
+      const targetOptions = targetDraft?.options;
       const shadow: ColumnMetadata = Object.freeze({
         propertyName,
         columnName: relation.joinColumn,
         logicalType,
+        ...(targetOptions?.length === undefined && logicalType !== "varchar" ? {} : { length: targetOptions?.length ?? 255 }),
+        ...(targetOptions?.precision === undefined ? {} : { precision: targetOptions.precision }),
+        ...(targetOptions?.scale === undefined ? {} : { scale: targetOptions.scale }),
         nullable: relation.nullable,
         primary: false,
         generated: false,

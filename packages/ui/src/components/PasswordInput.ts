@@ -1,5 +1,5 @@
 import type { PasswordAttributes, ControlEvent } from "../native-attributes";
-import { html, classMap, component, PreventDefaultResult, preventDefault } from "@cossackframework/renderer";
+import { html, classMap, component, live, PreventDefaultResult, preventDefault } from "@cossackframework/renderer";
 import {
     Cossack,
     Component,
@@ -13,14 +13,18 @@ import { EyeIcon } from "@cossackframework/solar-icons/eye";
 import { EyeClosedIcon } from "@cossackframework/solar-icons/eye-closed";
 
 export type PasswordInputProps = PasswordAttributes & {
-    /** Optional parent value. Omit for native ownership, including pre-hydration edits and autofill. */
+    /**
+     * Optional parent value. Each parent render applies it, so a parent rejects an
+     * edit by rendering its old value. Omit for native ownership, including
+     * pre-hydration edits and autofill.
+     */
     value?: string;
     /** Disable the input and its reveal button. Fieldset disabling also applies. */
     disabled?: boolean;
     /** Control size. Defaults to "default". */
     size?: "default" | "sm" | "lg";
     /** Called before the native @input listener with the value and native event. */
-    onChange?: (value: string, event: ControlEvent<HTMLInputElement, InputEvent>) => unknown;
+    onValueChange?: (value: string, event: ControlEvent<HTMLInputElement, InputEvent>) => unknown;
     /** Accessible names for the reveal button. Localize these with the field label. */
     showLabel?: string;
     hideLabel?: string;
@@ -41,7 +45,7 @@ const SIZES: Record<NonNullable<PasswordInputProps["size"]>, string> = {
  *
  *   ${component(PasswordInput, {
  *       value: this.password,
- *       onChange: (v) => { this.password = v; },
+ *       onValueChange: (v) => { this.password = v; },
  *   })}
  */
 @Component()
@@ -50,19 +54,25 @@ export class PasswordInput extends Cossack {
 
     @ClientState() private revealed = false;
     inputRef: RefObject<HTMLInputElement> = createRef<HTMLInputElement>();
+    private renderedProps?: PasswordInputProps;
 
     render() {
         const { value, placeholder = "••••••••", autocomplete = "current-password",
-            size = "default", disabled = false, onChange, showLabel = "Show password",
+            size = "default", disabled = false, onValueChange, showLabel = "Show password",
             hideLabel = "Hide password", '@input': nativeInput, ...rest } = this.props;
         const onInput: EventListener = event => {
             const inputEvent = event as ControlEvent<HTMLInputElement, InputEvent>;
-            onChange?.(inputEvent.currentTarget.value, inputEvent);
+            onValueChange?.(inputEvent.currentTarget.value, inputEvent);
             if (typeof nativeInput === 'function') nativeInput(inputEvent);
             else if (nativeInput instanceof PreventDefaultResult) nativeInput.handler.call(inputEvent.currentTarget, inputEvent);
         };
         const inputHandler = nativeInput instanceof PreventDefaultResult
             ? preventDefault(onInput, { novalidate: nativeInput.novalidate }) : onInput;
+        // A parent render assigns new props and applies value, even when it equals
+        // the last rendered value. The reveal toggle's own renders keep native edits.
+        const parentRender = this.renderedProps !== this.props;
+        this.renderedProps = this.props;
+        const shown = parentRender ? value : this.inputRef.value?.value ?? value;
 
         return html`
             <div class="cs-password-input relative inline-block w-full">
@@ -85,7 +95,7 @@ export class PasswordInput extends Cossack {
                         [SIZES[size]]: true,
                     })}
                     @input=${inputHandler}
-                    ...=${value === undefined ? rest : { ...rest, '.value': value }}
+                    ...=${value === undefined ? rest : { ...rest, '.value': live(shown) }}
                 />
                 <button
                     type="button"

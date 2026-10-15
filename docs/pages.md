@@ -29,9 +29,8 @@ The `@Page` decorator accepts an optional object with these properties:
 | `transport` | `'durable-object' \| 'http' \| 'websocket' \| 'sse'` | The transport mechanism for server communication. Default is `'http'`. |
 | `middlewares` | `MiddlewareHandler[]` | An array of Hono middleware handlers to apply to this page's route. |
 | `channels` | `string[]` | A list of state synchronization channels this page belongs to. Default is `['global']`. |
-| `providers` | `{ [key: string]: StateProvider }` | Custom state providers for this component. |
 | `stateful` | `boolean` | When using `transport: 'durable-object'`, set to `true` to persist state in DO storage. Default is `false` (stateless). |
-| `scope` | `(c: Context) => string \| Promise<string>` | Determines which state backend (SSE store entry or DO instance) a request connects to. Default is per-user for SSE, per page instance (component + route params) for DO. |
+| `scope` | `(c: Context) => string \| Promise<string>` | Determines which state backend (SSE store entry, or Durable Object or Node instance) a request connects to. Default is per-user for SSE, per page instance (component + route params) for `durable-object`. |
 
 ## Scope
 
@@ -40,7 +39,11 @@ The `scope` option selects the state backend that handles a request. It receives
 ### Default Behavior
 
 - SSE: Per-user (`user:${user?.id || 'anonymous'}`). Each user gets isolated state.
-- Durable Object: Per-URL. Each URL gets its own DO instance.
+- Durable Object: one instance per page plus its route params. The query string is not part of it.
+
+To share one real-time instance per user, team or room with the
+`durable-object` transport, see
+[Share real-time state across pages with scope](./websockets.md#share-real-time-state-across-pages-with-scope).
 
 ### Per-Team
 

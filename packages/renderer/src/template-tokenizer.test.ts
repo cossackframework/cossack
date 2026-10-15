@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { parseFragment } from 'parse5';
 import { html, render, renderToString, hydrate, nothing } from './cossack-html';
-import { analyzeTemplate } from './template-analysis';
+import { analyzeTemplate, tokenizeHtml } from './template-analysis';
 
 const ssrContainer = (result: ReturnType<typeof html>) => {
   const container = document.createElement('div');
@@ -193,11 +193,81 @@ describe('analyzeTemplate', () => {
     expect(attributeGroups[2]).toEqual({ indices: [2], prefix: ' id=', suffixLength: 0 });
   });
 
+  it('drops a binding inside an attribute name on SSR and the client alike', () => {
+    // The binding contributes nothing, so both sides read `foobar`.
+    expect(kinds`<div foo${1}bar class=${2}></div>`).toEqual(['element', 'attr:class:start']);
+    expect(kinds`<div foo${1}=${2}></div>`).toEqual(['element', 'element']);
+    const tpl = (cls: string) => html`<div foo${'x'}bar class=${cls}></div>`;
+    const ssr = document.createElement('div');
+    ssr.innerHTML = renderToString(tpl('a'));
+    const client = document.createElement('div');
+    render(tpl('a'), client);
+    for (const container of [ssr, client]) {
+      const div = container.querySelector('div')!;
+      expect(div.getAttributeNames()).toEqual(['foobar', 'class']);
+      expect(div.getAttribute('class')).toBe('a');
+    }
+    render(tpl('b'), client);
+    expect(client.querySelector('div')!.getAttribute('class')).toBe('b');
+  });
+
   it('inserts the scope attribute only into static opening tags', () => {
     const { strings } = analyzeTemplate(['<div class="x"><!-- <b> --><style>p<b {}</style><br/>', '<i>'] as unknown as TemplateStringsArray, 's1');
     expect(strings).toEqual([
       '<div data-cossack-scope="s1" class="x"><!-- <b> --><style data-cossack-scope="s1">p<b {}</style><br data-cossack-scope="s1"/>',
       '<i data-cossack-scope="s1">',
     ]);
+  });
+});
+
+describe('tokenizeHtml', () => {
+  // Token type and source text, plus attributes for start tags.
+  const tokens = (source: string) => tokenizeHtml(source).map((token) => {
+    const text = `${token.type}:${source.slice(token.start, token.end)}`;
+    if (token.type !== 'start-tag') return text;
+    const attrs = token.attributes.map((a) => a.valueStart < 0 ? a.name : `${a.name}=${a.quote}${source.slice(a.valueStart, a.valueEnd)}`);
+    return [text, token.name, attrs, token.selfClosing];
+  });
+
+  it('reads `<` that does not open markup as text', () => {
+    expect(tokens('<p>a < b <3 c</p>')).toEqual([['start-tag:<p>', 'p', [], false], 'text:a < b <3 c', 'end-tag:</p>']);
+    expect(tokens('1 < 2<b>x</b>')).toEqual(['text:1 < 2', ['start-tag:<b>', 'b', [], false], 'text:x', 'end-tag:</b>']);
+  });
+
+  it('reads comments the way the HTML tokenizer does', () => {
+    expect(tokens('a<!-- <b> -->c')).toEqual(['text:a', 'comment:<!-- <b> -->', 'text:c']);
+    expect(tokens('<!--><p>')).toEqual(['comment:<!-->', ['start-tag:<p>', 'p', [], false]]);
+    expect(tokens('<!---->x<!-- a -- b -->')).toEqual(['comment:<!---->', 'text:x', 'comment:<!-- a -- b -->']);
+    expect(tokens('<!DOCTYPE html><?x?></ y>')).toEqual(['other:<!DOCTYPE html>', 'other:<?x?>', 'other:</ y>']);
+  });
+
+  it('keeps raw-text element content as text up to the matching end tag', () => {
+    expect(tokens('<script>if (a<b) x("</scrip"); <!--</script><p>')).toEqual([
+      ['start-tag:<script>', 'script', [], false], 'raw-text:if (a<b) x("</scrip"); <!--', 'end-tag:</script>', ['start-tag:<p>', 'p', [], false],
+    ]);
+    expect(tokens('<TITLE>a <b> &amp; <!-- c --></Title>')).toEqual([
+      ['start-tag:<TITLE>', 'title', [], false], 'raw-text:a <b> &amp; <!-- c -->', 'end-tag:</Title>',
+    ]);
+    expect(tokens('<textarea a=">"></b></textarea >')).toEqual([
+      ['start-tag:<textarea a=">">', 'textarea', ['a=">'], false], 'raw-text:</b>', 'end-tag:</textarea >',
+    ]);
+    expect(tokens('<style>p>a{}</style>')).toEqual([['start-tag:<style>', 'style', [], false], 'raw-text:p>a{}', 'end-tag:</style>']);
+  });
+
+  it('reads attributes with every quoting style and self-closing tags', () => {
+    expect(tokens(`<a href=/x/ title='1 > 2' data-x="a'b" hidden r="6"stroke=red/>`)).toEqual([
+      [`start-tag:<a href=/x/ title='1 > 2' data-x="a'b" hidden r="6"stroke=red/>`, 'a',
+        ['href=/x/', `title='1 > 2`, `data-x="a'b`, 'hidden', 'r="6', 'stroke=red/'], false],
+    ]);
+    expect(tokens('<path d="M0"/><br / >')).toEqual([
+      ['start-tag:<path d="M0"/>', 'path', ['d="M0'], true],
+      ['start-tag:<br / >', 'br', [], false],
+    ]);
+  });
+
+  it('reports a start tag the source ends inside', () => {
+    const [tag] = tokenizeHtml('<div class="a b" id');
+    expect(tag).toMatchObject({ type: 'start-tag', name: 'div', closed: false });
+    expect(tag.type === 'start-tag' && tag.attributes.map((a) => a.name)).toEqual(['class', 'id']);
   });
 });

@@ -4,7 +4,7 @@ import { PasswordInput, InputGroup } from '../src/index';
 
 it('serializes password defaults once without leaking callbacks or visual props', () => {
     const output = renderToString(component(PasswordInput, { id:'password',name:'password',value:'a<&"',placeholder:'',
-        autocomplete:'new-password',disabled:true,showLabel:'Reveal',hideLabel:'Conceal',onChange:()=>{},'@input':()=>{} }));
+        autocomplete:'new-password',disabled:true,showLabel:'Reveal',hideLabel:'Conceal',onValueChange:()=>{},'@input':()=>{} }));
     expect(output.match(/autocomplete=/g)).toHaveLength(1);
     expect(output).toContain('autocomplete="new-password"');
     expect(output).toContain('placeholder=""');
@@ -13,7 +13,7 @@ it('serializes password defaults once without leaking callbacks or visual props'
     expect(output).toContain('aria-label="Reveal"');
     expect(output).toContain('aria-controls="password"');
     expect(output.match(/ disabled(?:\s|>)/g)).toHaveLength(2);
-    expect(output).not.toMatch(/onChange=|showLabel=|hideLabel=|@input=/i);
+    expect(output).not.toMatch(/onValueChange=|showLabel=|hideLabel=|@input=/i);
 });
 
 it('forwards InputGroup native props to the input while consuming adornments', () => {

@@ -5,7 +5,7 @@ import { Combobox } from '../src/components/Combobox';
 const options = [{value:'us',label:'United States'},{value:'vn',label:'Vietnam'},{value:'de',label:'Germany',disabled:true}];
 it('renders selected labels separately from form values and owns popup semantics', () => {
     const change=vi.fn();
-    const output=renderToString(component(Combobox,{id:'country',name:'country',options,value:'vn',required:true,'aria-label':'Country','aria-describedby':'help',onChange:change}));
+    const output=renderToString(component(Combobox,{id:'country',name:'country',options,value:'vn',required:true,'aria-label':'Country','aria-describedby':'help',onValueChange:change}));
     expect(output).toContain('role="combobox"');
     expect(output).toContain('aria-expanded="false"');
     expect(output).toContain('aria-controls="country-listbox"');
@@ -15,7 +15,7 @@ it('renders selected labels separately from form values and owns popup semantics
     expect(output).toMatch(/type="hidden"[^>]*name="country"[^>]*value="vn"/);
     expect(output).toContain('aria-describedby="help"');
     expect(output).toContain('aria-disabled="true"');
-    expect(output).not.toContain('onChange=');
+    expect(output).not.toContain('onValueChange=');
     expect(change).not.toHaveBeenCalled();
 });
 it('uses current options and parent selection rather than retaining an old label', () => {

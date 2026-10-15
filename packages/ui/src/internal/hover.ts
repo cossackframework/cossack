@@ -1,12 +1,14 @@
 export type HoverSettings = {
-    delay?: number;
+    /** Milliseconds from pointer hover to opening. Focus opens immediately. Default 300. */
+    openDelay?: number;
+    /** Milliseconds from leaving the trigger and panel to closing. Default 150. */
     closeDelay?: number;
     disabled?: boolean;
     side?: 'top' | 'bottom' | 'left' | 'right';
 };
 export function validateHover(id: string, settings: HoverSettings) {
     if (typeof id !== 'string' || !id || /\s/.test(id)) throw new Error('Hover content requires a nonempty, whitespace-free id.');
-    for (const [name, value] of [['delay', settings.delay], ['closeDelay', settings.closeDelay]] as const) {
+    for (const [name, value] of [['openDelay', settings.openDelay], ['closeDelay', settings.closeDelay]] as const) {
         if (value !== undefined && (!Number.isInteger(value) || value < 0 || value > 60000)) throw new RangeError(`${name} must be an integer from 0 to 60000 milliseconds.`);
     }
     if (settings.side !== undefined && !['top','bottom','left','right'].includes(settings.side)) throw new Error('side must be top, bottom, left or right.');
@@ -35,7 +37,7 @@ export class HoverController {
             if (this.panel?.matches(':popover-open')) this.timer = setTimeout(() => { this.timer = undefined; if (!this.interested()) this.hide(false); }, this.read().closeDelay ?? 150);
         } else if (!this.dismissed) {
             if (immediate || this.focused()) this.show();
-            else { this.opening = true; this.timer = setTimeout(() => { this.timer = undefined; this.opening = false; if (this.interested() && !this.dismissed) this.show(); }, this.read().delay ?? 300); }
+            else { this.opening = true; this.timer = setTimeout(() => { this.timer = undefined; this.opening = false; if (this.interested() && !this.dismissed) this.show(); }, this.read().openDelay ?? 300); }
         }
     }
     attach(panel: HTMLElement, wrapper: HTMLElement) {

@@ -162,8 +162,8 @@ test.describe('Components demo: static rendering', () => {
       // Textarea
       await expect(page.locator('textarea.cs-textarea#bio')).toBeVisible();
 
-      // Select with options
-      const select = page.locator('select.cs-select__input#country');
+      // NativeSelect with options
+      const select = page.locator('select.cs-native-select__input#country');
       await expect(select).toBeVisible();
       expect(await select.locator('option').count()).toBeGreaterThanOrEqual(3);
 

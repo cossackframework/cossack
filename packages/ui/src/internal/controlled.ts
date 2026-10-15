@@ -1,12 +1,12 @@
 /**
  * Edit base for a controlled component.
  *
- * A controlled component renders from `props.value`, but a parent applies an
- * `onChange` value in a later, asynchronous render. Until then, `props.value`
- * is stale. If a second edit arrives in that window and builds on the stale
- * prop, it discards the first edit (two rapid toggles emit `['a']` then
- * `['b']`) or re-emits a value that is already pending (a double click emits
- * `true` twice).
+ * A controlled component renders from `props.value`, but a parent applies a
+ * proposed value (`onValueChange`, `onOpenChange`, ...) in a later render.
+ * Until then, `props.value` is stale. If a second edit arrives in that window
+ * and builds on the stale prop, it discards the first edit (two rapid toggles
+ * emit `['a']` then `['b']`) or re-emits a value that is already pending (a
+ * double click emits `true` twice).
  *
  * Protocol: remember the last emitted value together with the `props` object
  * it was emitted under. While `props` keeps that identity, the next edit

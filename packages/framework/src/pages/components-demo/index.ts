@@ -12,11 +12,10 @@ import {
     Label,
     Alert,
     Modal,
-    AccordionItem,
+    Accordion,
     Textarea,
     Checkbox,
     Switch,
-    Select,
     Spinner,
     Avatar,
     AvatarGroup,
@@ -251,7 +250,7 @@ export class ComponentsDemo extends Cossack {
                         Modal,
                         {
                             open: this.modalOpen,
-                            onClose: () => { this.modalOpen = false; },
+                            onOpenChange: (open: boolean) => { this.modalOpen = open; },
                         },
                         html`
                             <h3 class="text-lg font-semibold mb-2">Confirm action</h3>
@@ -268,9 +267,9 @@ export class ComponentsDemo extends Cossack {
                 <section class="space-y-3">
                     <h2 class="text-lg font-semibold">Accordion</h2>
                     <div class="space-y-2">
-                        ${component(AccordionItem, { id: 'demo-about', defaultOpen: true, summary: 'What is Cossack?' }, html`<p class="text-sm">A full-stack TypeScript framework for Cloudflare Workers and Node.js.</p>`)}
-                        ${component(AccordionItem, { id: 'demo-native', summary: 'Why native elements?' }, html`<p class="text-sm">They handle accessibility, keyboard, and form participation for free.</p>`)}
-                        ${component(AccordionItem, { id: 'demo-javascript', summary: 'Does this need JavaScript?' }, html`<p class="text-sm">The accordion uses a div+button+state pattern for smooth height animation.</p>`)}
+                        ${component(Accordion, { id: 'demo-about', defaultOpen: true, summary: 'What is Cossack?' }, html`<p class="text-sm">A full-stack TypeScript framework for Cloudflare Workers and Node.js.</p>`)}
+                        ${component(Accordion, { id: 'demo-native', summary: 'Why native elements?' }, html`<p class="text-sm">They handle accessibility, keyboard, and form participation for free.</p>`)}
+                        ${component(Accordion, { id: 'demo-javascript', summary: 'Does this need JavaScript?' }, html`<p class="text-sm">The accordion uses a div+button+state pattern for smooth height animation.</p>`)}
                     </div>
                 </section>
 
@@ -281,7 +280,7 @@ export class ComponentsDemo extends Cossack {
                         ${component(Label, { for: 'bio' }, 'Bio')}
                         ${component(Textarea, { id: 'bio', rows: 4, placeholder: 'Tell us about yourself' })}
                         ${component(Label, { for: 'country' }, 'Country')}
-                        ${component(Select, { id: 'country' }, html`<option>United States</option><option>Vietnam</option><option>Germany</option>`)}
+                        ${component(NativeSelect, { id: 'country' }, html`<option>United States</option><option>Vietnam</option><option>Germany</option>`)}
                         <div class="flex items-center gap-6 pt-2">
                             ${component(Checkbox, { checked: true }, 'Subscribe to newsletter')}
                             ${component(Switch, { checked: true })}
@@ -483,7 +482,7 @@ export class ComponentsDemo extends Cossack {
                         open: this.sheetOpen,
                         'aria-label': 'Sheet panel',
                         side: 'right',
-                        onClose: () => { this.sheetOpen = false; },
+                        onOpenChange: (open: boolean) => { this.sheetOpen = open; },
                     },
                     html`
                         <div class="p-6">
@@ -579,7 +578,7 @@ export class ComponentsDemo extends Cossack {
                         actionLabel: 'Delete',
                         actionVariant: 'destructive',
                         onAction: () => { toast.error('Account deleted.'); this.alertOpen = false; },
-                        onClose: () => { this.alertOpen = false; },
+                        onOpenChange: (open: boolean) => { this.alertOpen = open; },
                     })}
                 </section>
 
@@ -670,7 +669,7 @@ export class ComponentsDemo extends Cossack {
                                     { value: 'au', label: 'Australia' },
                                 ],
                                 placeholder: 'Select a country...',
-                                onChange: (v: string) => toast.show('Country: ' + v),
+                                onValueChange: (v: string) => toast.show('Country: ' + v),
                             })}
                         </div>
                     </div>
@@ -685,7 +684,7 @@ export class ComponentsDemo extends Cossack {
                             ${component(Calendar, {
                                 id: 'demo-calendar',
                                 value: this.calendarDate,
-                                onChange: (iso: string) => { this.calendarDate = iso; },
+                                onValueChange: (iso: string) => { this.calendarDate = iso; },
                             })}
                         </div>
                         <div class="w-56">
@@ -694,7 +693,7 @@ export class ComponentsDemo extends Cossack {
                                 id: 'demo-due-date',
                                 'aria-label': 'Due date',
                                 value: this.datePickerDate,
-                                onChange: (iso: string) => { this.datePickerDate = iso; },
+                                onValueChange: (iso: string) => { this.datePickerDate = iso; },
                             })}
                         </div>
                     </div>
@@ -723,7 +722,7 @@ export class ComponentsDemo extends Cossack {
                     <p class="text-sm text-muted-foreground">Type or paste a 6-digit code. Current: <code class="text-xs bg-muted px-1.5 py-0.5 rounded">${this.otpValue || '—'}</code></p>
                     ${component(InputOTP, {
                         length: 6,
-                        onChange: (v: string) => { this.otpValue = v; },
+                        onValueChange: (v: string) => { this.otpValue = v; },
                         onComplete: (v: string) => toast.success('Code entered: ' + v),
                     })}
                 </section>
@@ -753,7 +752,7 @@ export class ComponentsDemo extends Cossack {
                         open: this.drawerOpen,
                         side: 'right',
                         title: 'Settings',
-                        onClose: () => { this.drawerOpen = false; },
+                        onOpenChange: (open: boolean) => { this.drawerOpen = open; },
                     }, html`
                         <div class="space-y-4">
                             <p class="text-sm text-muted-foreground">Configure your preferences.</p>
@@ -793,7 +792,7 @@ export class ComponentsDemo extends Cossack {
                             ],
                             collapsible: 'icon',
                             collapsed: this.sidebarCollapsed,
-                            onToggle: () => { this.sidebarCollapsed = !this.sidebarCollapsed; },
+                            onCollapsedChange: (collapsed: boolean) => { this.sidebarCollapsed = collapsed; },
                             onNavigate: (item) => toast.show('Navigate: ' + item.label),
                             // Footer slot: arbitrary content. Here a user-menu trigger.
                             // side:'right' opens the menu beside the trigger (desktop);
@@ -979,7 +978,7 @@ export class ComponentsDemo extends Cossack {
                             ${component(PasswordInput, {
                                 value: this.password,
                                 placeholder: 'Enter password',
-                                onChange: (v: string) => { this.password = v; },
+                                onValueChange: (v: string) => { this.password = v; },
                             })}
                         </div>
                         <div class="w-72">
@@ -990,7 +989,7 @@ export class ComponentsDemo extends Cossack {
                                 options: ['TypeScript', 'JavaScript', 'React', 'Vue', 'Angular', 'Svelte', 'Node.js', 'Python', 'Go', 'Rust'],
                                 value: this.skills,
                                 placeholder: 'Add a skill...',
-                                onChange: (v: string[]) => { this.skills = v; },
+                                onValueChange: (v: string[]) => { this.skills = v; },
                             })}
                         </div>
                     </div>

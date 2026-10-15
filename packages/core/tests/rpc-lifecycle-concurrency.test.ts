@@ -13,13 +13,12 @@ class UpgradeResponse extends NativeResponse {
     constructor(body?: BodyInit | null, init: ResponseInit = {}) { super(body, { ...init, status: init.status === 101 ? 200 : init.status }); this.upgraded = init.status === 101; }
     override get status() { return this.upgraded ? 101 : super.status; }
 }
-function socket() { return { readyState: 1, send: vi.fn(), close: vi.fn(), serializeAttachment: vi.fn(), deserializeAttachment: () => ({ channel: 'global', request: { url: 'https://fixture.test/ws/page/owner', headers: [], params: {} } }) }; }
+function socket() { return { readyState: 1, send: vi.fn(), close: vi.fn(), serializeAttachment: vi.fn(), deserializeAttachment: () => ({ channel: 'global', request: { url: 'https://fixture.test/ws/owner', headers: [], params: {} } }) }; }
 function objectFixture(Component: new () => Cossack, restored = false) {
     vi.stubGlobal('WebSocketRequestResponsePair', class {});
     vi.stubGlobal('WebSocketPair', class { 0 = socket(); 1 = socket(); });
     vi.stubGlobal('Response', UpgradeResponse);
-    Reflect.defineMetadata('cossack:durable-object-name', 'COSSACK_OBJECT', Component);
-    const values = new Map<string, unknown>(restored ? Object.entries({ stateful: true, componentPath: '/src/pages/live/index.ts', url: '/live', params: {}, providerName: 'page', componentState: { public: { count: 37 } } }) : []);
+    const values = new Map<string, unknown>(restored ? Object.entries({ stateful: true, componentPath: '/src/pages/live/index.ts', url: '/live', params: {}, componentState: { public: { count: 37 } } }) : []);
     const peers: unknown[] = [];
     const state = { storage: { get: vi.fn(async (key: string | string[]) => Array.isArray(key) ? new Map(key.map(item => [item, values.get(item)])) : values.get(key)), put: vi.fn(async (key: string | Record<string, unknown>, value?: unknown) => { if (typeof key === 'string') values.set(key, value); else for (const [name, item] of Object.entries(key)) values.set(name, item); }) }, setWebSocketAutoResponse: vi.fn(), getWebSockets: () => peers, acceptWebSocket: (peer: unknown) => { peers.push(peer); }, waitUntil: vi.fn() };
     class FixtureObject extends CossackDurableObject { registryReads = 0; async getComponentRegistry() { this.registryReads++; return new Map([['/src/pages/live/index.ts', Component]]); } }
@@ -34,7 +33,7 @@ it('coalesces overlapping restored actions into one fully restored component own
     const a = f.object.webSocketMessage(first as unknown as WebSocket, JSON.stringify({ type: 'action', requestId: 'first', action: 'increment', payload: [] }));
     await vi.waitFor(() => expect(gets).toBe(1));
     const b = f.object.webSocketMessage(second as unknown as WebSocket, JSON.stringify({ type: 'action', requestId: 'second', action: 'increment', payload: [] }));
-    const state = f.object.fetch(new Request('https://fixture.test/state?componentPath=ignored&url=/forged&providerName=forged'));
+    const state = f.object.fetch(new Request('https://fixture.test/state?componentPath=ignored&url=/forged'));
     try { await Promise.resolve(); await Promise.resolve(); expect(f.object.registryReads).toBe(1); }
     finally { bootstrap.release(); await Promise.all([a, b]); }
     expect((await (await state).json() as { public: { count: number } }).public.count).toBeGreaterThanOrEqual(37);
@@ -47,7 +46,7 @@ it('waits for fresh initialization before accepting any concurrent peer or state
     @Page({ transport: 'durable-object', stateful: true })
     class Live extends Cossack { @State() count = 0; async init() { inits++; await initialization.wait; this.count = 91; } }
     const f = objectFixture(Live);
-    const request = () => new Request('https://fixture.test/global?pathname=/live&params={}', { headers: { 'X-Component-Path': '/src/pages/live/index.ts', 'X-Provider-Name': 'page' } });
+    const request = () => new Request('https://fixture.test/global?pathname=/live&params={}', { headers: { 'X-Component-Path': '/src/pages/live/index.ts' } });
     const a = f.object.fetch(request()); await vi.waitFor(() => expect(inits).toBe(1));
     const b = f.object.fetch(request());
     try { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); expect(f.peers).toHaveLength(0); }
@@ -96,7 +95,7 @@ it.each(['init', 'persistence'] as const)('keeps failed fresh %s unpublished, cl
         if (fail) { await blocked.wait; throw new Error('Private persistence failure'); }
         await originalPut(key, value);
     });
-    const request = () => new Request('https://fixture.test/global?pathname=/live&params={}', { headers: { 'X-Component-Path': '/src/pages/live/index.ts', 'X-Provider-Name': 'page' } });
+    const request = () => new Request('https://fixture.test/global?pathname=/live&params={}', { headers: { 'X-Component-Path': '/src/pages/live/index.ts' } });
     const first = f.object.fetch(request());
     await vi.waitFor(() => expect(inits).toBe(1));
     if (phase === 'persistence') await vi.waitFor(() => expect(f.state.storage.put).toHaveBeenCalled());
@@ -118,7 +117,7 @@ it('coalesces stateless first joins and disposes one idle owner before overlappi
         onCleanup() { cleanup++; }
     }
     const f = objectFixture(Live);
-    const request = () => new Request('https://fixture.test/global?pathname=/live&params={}', { headers: { 'X-Component-Path': '/src/pages/live/index.ts', 'X-Provider-Name': 'page' } });
+    const request = () => new Request('https://fixture.test/global?pathname=/live&params={}', { headers: { 'X-Component-Path': '/src/pages/live/index.ts' } });
     const first = f.object.fetch(request()); await vi.waitFor(() => expect(inits).toBe(1));
     const second = f.object.fetch(request()); firstInit.release(); await Promise.all([first, second]);
     expect(inits).toBe(1); expect(cleanup).toBe(0); expect(f.peers).toHaveLength(2);
@@ -155,7 +154,7 @@ it.each([
 ])('acknowledges close code $code with wire code $expected and retires RPC ownership', async ({ code, clean, expected, reason }) => {
     @Page({ transport: 'durable-object', stateful: true }) class Live extends Cossack {}
     const f = objectFixture(Live);
-    await f.object.fetch(new Request('https://fixture.test/global?pathname=/live&params={}', { headers: { 'X-Component-Path': '/src/pages/live/index.ts', 'X-Provider-Name': 'page' } }));
+    await f.object.fetch(new Request('https://fixture.test/global?pathname=/live&params={}', { headers: { 'X-Component-Path': '/src/pages/live/index.ts' } }));
     const peer = f.peers[0] as ReturnType<typeof socket>, ws = peer as unknown as WebSocket;
     const cancel = vi.fn(); rpcCancellations(ws).set('pending', cancel);
     const retire = vi.spyOn(f.object.runtime!, 'retireClient');
@@ -167,7 +166,7 @@ it.each([
 it('retires a terminal socket and cancels its owned RPC even when reciprocal close throws', async () => {
     @Page({ transport: 'durable-object', stateful: true }) class Live extends Cossack {}
     const f = objectFixture(Live);
-    await f.object.fetch(new Request('https://fixture.test/global?pathname=/live&params={}', { headers: { 'X-Component-Path': '/src/pages/live/index.ts', 'X-Provider-Name': 'page' } }));
+    await f.object.fetch(new Request('https://fixture.test/global?pathname=/live&params={}', { headers: { 'X-Component-Path': '/src/pages/live/index.ts' } }));
     const peer = f.peers[0] as ReturnType<typeof socket>, ws = peer as unknown as WebSocket;
     peer.close.mockImplementation(() => { throw new Error('Terminal private socket error'); });
     const cancel = vi.fn(); rpcCancellations(ws).set('pending', cancel);
@@ -193,7 +192,7 @@ it('runs a fresh create after a concurrent restore instead of adopting the resto
         await ensure();
         if (!other) { other = f.object.webSocketMessage(socket() as unknown as WebSocket, '{}'); await vi.waitFor(() => expect(gets).toBe(2)); parked = true; }
     };
-    const join = f.object.fetch(new Request('https://fixture.test/global?pathname=/live&params={}', { headers: { 'X-Component-Path': '/src/pages/live/index.ts', 'X-Provider-Name': 'page' } }));
+    const join = f.object.fetch(new Request('https://fixture.test/global?pathname=/live&params={}', { headers: { 'X-Component-Path': '/src/pages/live/index.ts' } }));
     await vi.waitFor(() => expect(parked).toBe(true));
     await new Promise(resolve => setTimeout(resolve, 0)); // the join now waits on the pending restore
     expect(inits).toBe(0);

@@ -16,7 +16,7 @@ export class Tooltip extends Cossack {
     private wrapper?: HTMLSpanElement;
     private hover = new HoverController(() => this.props);
     render() {
-        const { id, label, delay: _delay, closeDelay: _close, disabled: _disabled, side: _side, ...rest } = this.props;
+        const { id, label, openDelay: _openDelay, closeDelay: _closeDelay, disabled: _disabled, side: _side, ...rest } = this.props;
         validateHover(id, this.props);
         if (typeof label !== 'string' || !label.trim()) throw new Error('Tooltip requires a nonempty label.');
         return html`<span ref=${(element: Element) => { this.wrapper = element as HTMLSpanElement; }} class="cs-tooltip relative inline-flex" ...=${rest}>

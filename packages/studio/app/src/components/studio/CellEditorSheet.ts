@@ -79,7 +79,7 @@ export class CellEditorSheet extends Cossack {
       open: Boolean(editor && column),
       side: 'right',
       size: 'min(42rem, 92vw)',
-      onClose: this.props.onClose,
+      onOpenChange: this.props.onClose,
       'data-testid': 'cell-editor-sheet',
       'aria-label': 'Edit cell',
     }, html`
@@ -160,7 +160,7 @@ export class CellEditorSheet extends Cossack {
                   id: 'cell-editor-date',
                   value: activeEditor.kind === 'date' ? activeEditor.value : '',
                   disabled: activeEditor.mode === 'null',
-                  onChange: this.props.onValueChange,
+                  onValueChange: this.props.onValueChange,
                 }) : component(Input, {
                   id: 'cell-editor-date', type: 'text', '.value': activeEditor.value,
                   disabled: activeEditor.mode === 'null',

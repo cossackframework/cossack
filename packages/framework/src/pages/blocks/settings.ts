@@ -47,7 +47,7 @@ export default class SettingsBlocksPage extends Cossack {
                     ${component(SettingsPanel, {
                         id: 'account-settings', sections: SECTIONS,
                         values: this.settings,
-                        onChange: (v) => { this.settings = v; },
+                        onValuesChange: (v) => { this.settings = v; },
                         onAction: (key) => { this.lastAction = key; },
                     })}
                     <p role="status" class="text-sm text-muted-foreground mt-4">${this.lastAction ? `Requested action: ${this.lastAction}. This demo does not persist changes.` : ''}</p>

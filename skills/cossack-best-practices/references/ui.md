@@ -59,7 +59,7 @@ html`
 ## Components by category
 
 - **Buttons & Actions:** Button, Spinner.
-- **Forms & Inputs:** Input, Textarea, Select, NativeSelect, InputGroup,
+- **Forms & Inputs:** Input, Textarea, NativeSelect, InputGroup,
   Checkbox, Switch, RadioGroup, Slider, InputOTP, Calendar, DatePicker, Label,
   PasswordInput, Field, Toggle, ToggleGroup.
 - **Layout & Display:** Card, Separator, Table (+ sub-components), Avatar,
@@ -75,6 +75,14 @@ html`
 
 See `packages/ui/README.md` in the monorepo for the full table with native
 elements.
+
+## State props and callback names
+
+State `x` uses `x` (controlled), `defaultX` (uncontrolled) and `onXChange(next)`:
+`value`/`onValueChange`, `open`/`onOpenChange`, `pressed`/`onPressedChange`,
+`collapsed`/`onCollapsedChange`, `size`/`onSizeChange`. No component prop is
+named `onChange`; native controls use `@input` and `@change`. Hover timing uses
+`openDelay` and `closeDelay`. To reject a proposal, render the old value again.
 
 ## Theming — two-layer shadcn-style system
 
@@ -125,8 +133,10 @@ colors (used by Badge, Alert, Toast).
 
 `cossack add ui <component>` copies a single component into
 `src/components/ui/<Component>.ts` for customization. The ejected copy is yours
-— re-run with `--force` to overwrite. Full kebab-case names: `button`, `input`,
-`textarea`, `select`, `native-select`, `input-group`, `label`, `checkbox`,
+— re-run with `--force` to overwrite. Private helpers it needs (dialog, hover,
+disclosure, menu, date) are copied once to `src/components/ui/internal/` and
+shared by ejected components; later ejections keep them unless `--force`. Full kebab-case names: `button`, `input`,
+`textarea`, `native-select`, `input-group`, `label`, `checkbox`,
 `switch`, `radio-group`, `slider`, `input-otp`, `password-input`, `field`,
 `toggle`, `toggle-group`, `badge`, `kbd`, `card`, `separator`, `table`,
 `avatar`, `avatar-group`, `skeleton`, `progress`, `spinner`, `aspect-ratio`,

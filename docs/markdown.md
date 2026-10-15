@@ -15,7 +15,7 @@ Use frontmatter to set metadata for an MDX component. Cossack adds these values 
 ---
 title: "Documentation"
 description: "Learn how to use Cossack"
-image: "/assets/og-image.png"
+image: "/images/og-image.png"
 ---
 
 # Welcome

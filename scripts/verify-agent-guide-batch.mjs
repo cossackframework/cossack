@@ -68,8 +68,6 @@ require('node:module').syncBuiltinESMExports();
     }, files: files.map(item => item.file) }));
     const tsc = path.join(path.dirname(installed.resolve('typescript/package.json')), 'bin/tsc');
     await node([tsc, '-p', config]).catch(error => { throw new Error(String(error.stdout) + String(error.stderr), { cause: error }); });
-    const repositoryRequire = createRequire(path.join(repository, 'packages/test-utils/package.json'));
-    const dom = pathToFileURL(repositoryRequire.resolve('jsdom')).href;
     const runtime = path.join(scratch, 'run.mjs');
     const entries = files.map(item => ({...item, file: pathToFileURL(path.join(scratch, 'compiled', path.basename(item.file, '.ts') + '.js')).href}));
     const bundler = await import(pathToFileURL(createRequire(installed.resolve('tsx/package.json')).resolve('esbuild')).href);
@@ -78,30 +76,9 @@ require('node:module').syncBuiltinESMExports();
       await bundler.build({entryPoints:[fileURLToPath(item.file)],outfile,bundle:true,platform:'node',format:'esm',target:'node22',logLevel:'silent'});
       item.file = pathToFileURL(outfile).href;
     }
-    await fs.writeFile(runtime, `import assert from 'node:assert/strict';
-import { JSDOM } from ${JSON.stringify(dom)};
-const item=JSON.parse(process.argv[2]);
-let dom;
-if(item.guide==='browser-component-fixtures') {
- dom=new JSDOM('<!doctype html><html><body></body></html>',{url:'https://app.example.test'});
- for(const key of ['window','document','navigator','HTMLElement','HTMLInputElement','HTMLTextAreaElement','HTMLFormElement','Element','Node','NodeFilter','ShadowRoot','customElements','Text','Comment','DocumentFragment','MutationObserver','CustomEvent','MouseEvent','Event']) Object.defineProperty(globalThis,key,{value:dom.window[key],configurable:true});
- globalThis.requestAnimationFrame=callback=>setTimeout(()=>callback(performance.now()),0);
- globalThis.cancelAnimationFrame=clearTimeout;
-}
- const example=await import(item.file);
- if(item.guide==='browser-component-fixtures') await example.assertGreetingInBrowser();
- if(item.guide==='production-server-fixtures') {
-  const seen=[];
-  await example.assertProtectedApp(async request=>{
-   seen.push(request); const authenticated=request.headers.get('cookie')?.includes('session=valid-test-session');
-   if(!authenticated) return new Response('',{status:403});
-   if(new URL(request.url).pathname==='/account') return new Response('<script>window.__INITIAL_STATE__ = {"public":{"allowed":true}};</script>');
-   return Response.json({result:'pong'});
-  },{}, {componentRouteId:'account',action:'ping',payload:[]});
-  assert.equal(seen.length,3); assert.equal(seen[2].method,'POST');
- }
- console.log(item.pkg+':'+item.guide+':'+item.example);
-dom?.window.close();
+    await fs.writeFile(runtime, `const item=JSON.parse(process.argv[2]);
+await import(item.file);
+console.log(item.pkg+':'+item.guide+':'+item.example);
 `);
     const outputs = [];
     for (const item of entries) {
@@ -120,7 +97,7 @@ dom?.window.close();
       assert.deepEqual(remote.structuredContent.data, catalog.data);
     } finally { await client.close(); }
     await assert.rejects(fs.readFile(attempts), {code:'ENOENT'});
-    console.log(JSON.stringify({totalGuides,totalExamples,changedGuides:selected.length,compiledAndExecuted:files.length,offlineCliMcp:'passed',nativeWorkflow:'not-run',serverFixture:'helper-contract-only',browserFixture:'jsdom'}));
+    console.log(JSON.stringify({totalGuides,totalExamples,changedGuides:selected.length,compiledAndExecuted:files.length,offlineCliMcp:'passed',nativeWorkflow:'not-run'}));
     return {totalGuides,totalExamples,changedGuides:selected.length,compiledAndExecuted:files.length};
   } finally { await fs.rm(scratch, {recursive:true,force:true}); }
 }

@@ -59,7 +59,7 @@ export default class LoginPage extends Cossack {
                 ${component(Field, { label: __('Email'), for: 'email', error: this.getError('form.email'),
                     control: attributes => component(Input, { ...attributes, type: 'email', placeholder: 'user@example.com', variant: this.hasError('form.email') ? 'error' : 'default', '.value': bind(this.form, 'email') }) })}
                 ${component(Field, { label: __('Password'), for: 'password', error: this.getError('form.password'),
-                    control: attributes => component(PasswordInput, { ...attributes, value: this.form.password, onChange: (v: string) => this.form.password = v }) })}
+                    control: attributes => component(PasswordInput, { ...attributes, value: this.form.password, onValueChange: (v: string) => this.form.password = v }) })}
                 <div class="text-right">
                     <a href="/auth/forgot-password" class="text-sm text-primary hover:underline">${__('Forgot password?')}</a>
                 </div>
