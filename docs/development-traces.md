@@ -80,8 +80,8 @@ allowed primitive fields and ignores invalid navigation metadata. Events after a
 navigation's terminal event are excluded from the capture. The existing DOM
 navigation-diagnostic stream keeps its own behavior.
 
-Trace events omit arguments, return values, state values, method names, route paths,
-provider names and raw errors. Capture holds component identities weakly. Snapshots
+Trace events omit arguments, return values, state values, method names, route paths
+and raw errors. Capture holds component identities weakly. Snapshots
 can be edited without changing the internal buffer.
 
 A new capture stops the previous one. In-flight calls keep their original capture
@@ -235,8 +235,8 @@ They are not a reconstruction of state at an earlier event. They include:
   initialization, disposal, subscriber and pending-call counts. Reads do not resolve
   services or expose their state, request context, owner URLs or scope keys.
 - Recorded SSE/WebSocket states, reconnect counts and resynchronization flags.
-  Transport slots are positions within this snapshot, not durable provider IDs.
-  Provider names, event cursors and raw errors are omitted. An empty list means no
+  Transport slots are positions within this snapshot, not connection IDs.
+  Event cursors and raw errors are omitted. An empty list means no
   status was recorded, not proof that the component has no transport configuration.
 
 Given a component reference, select up to 32 state fields explicitly:

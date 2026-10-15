@@ -88,7 +88,7 @@ async function rpcRedirectResponse(c: Context, result: unknown): Promise<Respons
   return c.json({ _cossack_redirect: location });
 }
 import { createApiHandler, getAuthoredRouteMember } from './api-handler.js';
-import { createServiceScopeChain } from './service-scope-chain.js';
+import { createChainedComponent, createServiceScopeChain } from './service-scope-chain.js';
 import registry from 'virtual:cossack-pages';
 import configuredMiddlewares from 'virtual:cossack-middlewares';
 import configFactories, { requirements as configRequirements, environment as configEnvironment } from 'virtual:cossack-config';
@@ -112,6 +112,8 @@ import { handleWebSocketProxy } from './transports/websocket.js';
 import { readRpcRequest, RPC_UPLOAD_REQUEST_MAX_BYTES } from './transports/http.js';
 import { discardRequestBody } from './request-body.js';
 import { protectTransport } from './transports/security.js';
+import { TRANSPORT_ROUTES } from './transport-routes.js';
+import { resolveComponentRpcTarget, resolveServiceRpcTarget } from './transports/rpc-target.js';
 import { createLocaleMiddleware } from './middlewares/locale.js';
 import { createFlashMiddleware } from './middlewares/flash.js';
 import { createRequestContextMiddleware } from './middlewares/request-context.js';
@@ -812,19 +814,20 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
     return c.html(`<h1>${escapeHtml(denial.message)}</h1>`, denial.status);
   };
 
-  // Transport routes
+  // Transport routes, registered before application routes. The build rejects
+  // routes at these paths using the same TRANSPORT_ROUTES.
   if (import.meta.env.DEV) {
-    app.use('/crpc', developmentRpcEvidence());
-    app.use('/upload', developmentRpcEvidence());
+    app.use(TRANSPORT_ROUTES.rpc, developmentRpcEvidence());
+    app.use(TRANSPORT_ROUTES.upload, developmentRpcEvidence());
   }
-  app.use('/crpc', protectTransport(routerContext));
-  app.use('/upload', protectTransport(routerContext));
-  app.use('/sse/:componentRouteId', protectTransport(routerContext));
+  app.use(TRANSPORT_ROUTES.rpc, protectTransport(routerContext));
+  app.use(TRANSPORT_ROUTES.upload, protectTransport(routerContext));
+  app.use(TRANSPORT_ROUTES.sse, protectTransport(routerContext));
   // Each component has one realtime connection: `/ws/:id`, where `id` is the
   // server-computed target emitted during SSR. The server recomputes it below.
-  app.use('/ws/:id', protectTransport(routerContext));
+  app.use(TRANSPORT_ROUTES.websocket, protectTransport(routerContext));
   if (options.runtimeAdapter?.handleWebSocketUpgrade) {
-    app.get('/ws/:id', async (c) => {
+    app.get(TRANSPORT_ROUTES.websocket, async (c) => {
       if (!isOriginAllowed(c.req.header('origin'), c.req.url, options.allowedOrigins)) {
         return c.text('Origin not allowed', 403);
       }
@@ -881,33 +884,21 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
         rejectAuthorization,
         env: c.env as unknown as Record<string, unknown>,
         createComponent: async () => {
-          const { root: rootScope, scope: activeScope } = await createServiceScopeChain({
-            componentPath, layouts, routePathToIdMap, scopeKey,
+          const instance = await createChainedComponent({
+            component: ComponentClass, componentPath, layouts, routePathToIdMap, scopeKey,
             facilities: { context: componentContext, user, env: c.env },
+            bootstrap: { context: componentContext, user, env: c.env, runtime: runtimeInfo, page: pathname },
           });
-          let instance: Cossack | undefined;
-          try {
-            instance = createInstance(ComponentClass, { serviceScope: activeScope }) as Cossack;
-            instance.__cossack_rpcOwner = componentPath;
-            instance._ownServiceScopeLifetime(rootScope);
-            await instance.bootstrap({ context: componentContext, user, env: c.env, runtime: runtimeInfo, page: pathname });
-            instance._render();
-            return instance;
-          } catch (error) {
-            try { await instance?.destroyAsync(); }
-            finally { await rootScope.disposeAsync(); }
-            throw error;
-          }
+          try { instance._render(); }
+          catch (error) { await instance.destroyAsync(); throw error; }
+          return instance;
         },
       });
     });
   } else {
-    app.get('/ws/:id', handleWebSocketProxy(routerContext));
+    app.get(TRANSPORT_ROUTES.websocket, handleWebSocketProxy(routerContext));
   }
-  // The realtime connection has one segment. A longer path (such as the
-  // removed `/ws/:provider/:id`) never reaches a page or an upgrade.
-  app.all('/ws/:id/*', c => c.json({ error: 'Not Found', code: 'COSSACK_WS_ROUTE_NOT_FOUND' }, 404));
-  app.get('/sse/:componentRouteId', handleSseEndpoint(routerContext));
+  app.get(TRANSPORT_ROUTES.sse, handleSseEndpoint(routerContext));
   // JSON and multipart differ only at decoding. Ownership, validation,
   // streaming, cookies and cleanup use the same action pipeline.
   const handleRpc: Handler = async (c) => {
@@ -928,23 +919,25 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
     // Explicit layout-service RPC. The client addresses the owning layout and
     // stable service slot; no service fields or methods are projected onto a
     // component instance, so component names cannot collide with service names.
-    if (body.service) {
-      const ownerRouteId = body.service.ownerRouteId;
-      const slot = body.service.slot;
-      if (typeof ownerRouteId !== 'string' || typeof slot !== 'string') {
-        return c.json({ error: 'Invalid service target' }, 400);
-      }
-      const ownerPath = routeIdMap.get(ownerRouteId);
-      if (!ownerPath || !layouts[ownerPath]) return c.json({ error: 'Invalid service owner' }, 400);
+    // The service is built under the page the browser is on, with that page's
+    // checked route params and server-computed scope key, as during SSR.
+    // protectTransport already ran the page's layout and page guards.
+    if (body.service !== undefined) {
+      const target = resolveServiceRpcTarget(routerContext, body);
+      if (!target) return c.json({ error: 'Invalid service target', code: 'COSSACK_RPC_REQUEST_INVALID', requestId }, 400);
+      const { ownerPath, slot, pagePath } = target;
+      const ownerRouteId = body.service.ownerRouteId as string;
       const logContext = logContextFor(ownerPath);
+      const pageContext = withRuntimeRouteParams(c, target.params);
 
       const requestScope = createRootServiceScope();
-      requestScope.bindRequest({ context: c, user, env: c.env });
+      requestScope.bindRequest({ context: pageContext, user, env: c.env });
       let responseOwnsCleanup = false;
       try {
+        const pageOptions = Reflect.getMetadata('page:options', getModuleDefault(pages[pagePath]) as object) as PageOptions | undefined;
         const chain = await createServiceScopeChain({
-          componentPath: ownerPath, layouts, routePathToIdMap, scopeKey: clientScopeKey,
-          facilities: { context: c, user, env: c.env }, root: requestScope,
+          componentPath: pagePath, layouts, routePathToIdMap, scopeKey: await resolveSseScopeKey(pageContext, pageOptions),
+          facilities: { context: pageContext, user, env: c.env }, root: requestScope,
         });
         const ownerScope = chain.layouts.find(layout => layout.path === ownerPath)?.scope;
         if (!ownerScope) return c.json({ error: 'Service owner is not active' }, 400);
@@ -956,13 +949,13 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
         if (!isRpcCallableAction(owned.serviceClass, action)) {
           return c.json({ error: `Action '${String(action)}' is not a callable service method`, code: 'COSSACK_RPC_FORBIDDEN', requestId }, 403);
         }
-        const rateLimited = await enforceMethodRateLimit(c, owned.serviceClass, action, `crpc-service:${ownerRouteId}:${slot}`);
+        const rateLimited = await enforceMethodRateLimit(pageContext, owned.serviceClass, action, `crpc-service:${ownerRouteId}:${slot}`);
         if (rateLimited) return rateLimited;
 
         let actionResult: unknown;
         try {
           const validatedServicePayload = await enforceActionInput(owned.serviceClass, action, Array.isArray(payload) ? payload : [], { signal: c.req.raw.signal });
-          await enforceActionAuthorization(owned.serviceClass, action, validatedServicePayload, c, c.req.raw.signal);
+          await enforceActionAuthorization(owned.serviceClass, action, validatedServicePayload, pageContext, c.req.raw.signal);
           if (c.req.raw.signal.aborted) throw new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.');
           if (import.meta.env.DEV) developmentRpcInvoked(c);
           actionResult = await owned.instance[action](...(validatedServicePayload as any[]));
@@ -1032,8 +1025,14 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
       }
     }
 
-    const componentPath = routeIdMap.get(componentRouteId);
-    if (!componentPath) return c.json({ error: 'Invalid component ID' }, 400);
+    // The page's route params, checked as protectTransport checked them before
+    // running the guards. The component, its scope key and its actions see them.
+    const resolved = resolveComponentRpcTarget(routerContext, body);
+    if ('error' in resolved) {
+      return resolved.error === 'component' ? c.json({ error: 'Invalid component ID' }, 400)
+        : c.json({ error: 'Invalid route params', code: 'COSSACK_RPC_REQUEST_INVALID', requestId }, 400);
+    }
+    const { componentPath } = resolved.target;
     const logContext = logContextFor(componentPath);
 
     let ComponentClass: new (...args: any[]) => Cossack;
@@ -1048,15 +1047,8 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
     // Resolve and authorize scope before constructors, rendering, or user actions.
     const targetPageOptions = Reflect.getMetadata('page:options', ComponentClass) as PageOptions | undefined;
     let effectiveScopeKey = await resolveSseScopeKey(c, undefined);
-    let componentContext: Context = c;
+    let componentContext: Context = withRuntimeRouteParams(c, resolved.target.params);
     if (targetPageOptions?.transport === 'sse') {
-      let params: Record<string, string>;
-      try {
-        params = decodeRuntimeRouteParams(body.pageParams === undefined ? undefined : JSON.stringify(body.pageParams));
-      } catch {
-        return c.json({ error: 'Invalid route params' }, 400);
-      }
-      componentContext = withRuntimeRouteParams(c, params);
       effectiveScopeKey = await resolveSseScopeKey(componentContext, targetPageOptions);
       if (clientScopeKey !== effectiveScopeKey) return c.json({ error: 'Invalid SSE scope' }, 403);
     }
@@ -1373,8 +1365,8 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
     }
     return runComponentAction(undefined);
   };
-  app.post('/crpc', handleRpc);
-  app.post('/upload', handleRpc);
+  app.post(TRANSPORT_ROUTES.rpc, handleRpc);
+  app.post(TRANSPORT_ROUTES.upload, handleRpc);
 
   // Register all routes.
   //

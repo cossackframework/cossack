@@ -44,6 +44,13 @@ export interface AttributeBinding {
   kind: 'attribute';
   name: string;
   start: boolean;
+  /**
+   * True when the binding is the attribute's whole value (`name=${x}` or
+   * `name="${x}"`). False when the value also has static text or other
+   * bindings (`name="a ${x}"`, `name="${x}${y}"`): then the attribute is
+   * text, and every binding in it adds its value as text.
+   */
+  whole: boolean;
   quote: '"' | "'" | '';
   prefixStart: number;
   directValue: boolean;
@@ -328,11 +335,16 @@ export const analyzeTemplate = (input: readonly string[], scopeId?: string): Tem
       if (attr && attr.indices.length > 0 && attr.stringIndex === attr.indices[0]) {
         const last = attr.indices[attr.indices.length - 1];
         // The suffix lives at the start of the string after the last binding.
+        const suffixLength = i === last + 1 ? endInThisString : 0;
         attributeGroups[attr.indices[0]] = Object.freeze({
           indices: Object.freeze(attr.indices),
           prefix: attr.prefix,
-          suffixLength: i === last + 1 ? endInThisString : 0,
+          suffixLength,
         });
+        // A starting binding is the whole value unless more bindings or static
+        // text follow it: the suffix is then more than the closing quote.
+        const first = bindings[attr.indices[0]] as AttributeBinding;
+        if (attr.indices.length > 1 || suffixLength !== (first.quote ? 1 : 0)) first.whole = false;
       }
       attr = null;
     };
@@ -460,6 +472,8 @@ export const analyzeTemplate = (input: readonly string[], scopeId?: string): Tem
             kind: 'attribute',
             name: open.name,
             start,
+            // Resolved when the attribute closes (see closeAttribute).
+            whole: start,
             quote: quoted ? t.quote : '',
             prefixStart: start ? open.nameStart : -1,
             directValue: false,

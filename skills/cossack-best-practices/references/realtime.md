@@ -112,7 +112,7 @@ By default, each URL gets its own DO instance (per-URL scope). Use the `scope` o
 
 ### Three pillars: Instance, Channels, Events
 
-- **Instance** (the *where*): the one real-time instance a page connects to over one WebSocket (`/ws/:id`): the page plus its route params, or its `scope` key. Child components share the page's connection and cannot set their own scope. Custom state providers were removed; use `scope` (for example `scope: c => 'user:' + c.get('user').id`, throwing for anonymous users) for per-user, per-team or per-room state.
+- **Instance** (the *where*): the one real-time instance a page connects to over one WebSocket (`/ws/:id`): the page plus its route params, or its `scope` key. Child components share the page's connection and cannot set their own scope. Use `scope` (for example `scope: c => 'user:' + c.get('user').id`, throwing for anonymous users) for per-user, per-team or per-room state.
 - **Channel** (the *what*): a logical partition within the page's connection for efficient **partial** state updates. Default is `global`.
 - **Event** (the *when*): a stateless broadcast message used by the Event-Driven Re-fetch pattern.
 

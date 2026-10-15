@@ -144,20 +144,6 @@ it('keeps another page with the same scope key in its own instance', async () =>
   expect(runtime.instanceCount).toBe(before + 1);
 });
 
-it('rejects the removed /ws/:provider/:id shape at the handshake', async () => {
-  const before = runtime.instanceCount;
-  const query = new URLSearchParams({ routePath: '/inbox/[folder]', pathname: '/inbox/work', params: JSON.stringify({ folder: 'work' }) });
-  const socket = new WebSocket(`${origin.replace('http:', 'ws:')}/ws/page/user%3Aalice?${query}`, { headers: { origin, 'x-test-user': 'alice' } });
-  sockets.push(socket);
-  const status = await new Promise<number | undefined>(resolve => {
-    socket.once('unexpected-response', (_request, response) => resolve(response.statusCode));
-    socket.once('open', () => resolve(undefined));
-    socket.once('error', () => {});
-  });
-  expect(status).toBe(404);
-  expect(runtime.instanceCount).toBe(before);
-});
-
 it('fails closed for anonymous users', async () => {
   expect((await app.request('/inbox/work', { headers: { accept: 'application/json' } })).status).toBe(401);
   const query = new URLSearchParams({ routePath: '/inbox/[folder]', pathname: '/inbox/work', params: JSON.stringify({ folder: 'work' }) });

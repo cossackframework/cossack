@@ -15,7 +15,8 @@
     "test:integration": "pnpm --filter cossack run test:integration && pnpm --filter @cossackframework/ui run test:browser",
     "test:e2e": "pnpm --filter @cossackframework/framework run test:e2e",
     "bump": "node scripts/bump.mjs",
-    "test:desktop": "node scripts/test-desktop-runtime.mjs"
+    "test:desktop": "node scripts/test-desktop-runtime.mjs",
+    "test:databases": "node scripts/test-live-databases.mjs"
   },
   "devDependencies": {
     "typescript": "^7.0.2"

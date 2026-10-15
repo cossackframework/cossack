@@ -1,5 +1,6 @@
 import 'reflect-metadata';
 import { describe, expect, it, vi } from 'vitest';
+import { Cossack } from '@cossackframework/core';
 import { computeRouteIds } from '../src/route-ids';
 
 const { constructed, registry } = vi.hoisted(() => ({
@@ -11,7 +12,7 @@ vi.mock('virtual:cossack-config', () => ({ requirements: {}, environment: null, 
 
 const pagePath = '/src/pages/private/index.ts';
 const layoutPath = '/src/pages/layout.ts';
-class PrivatePage { constructor() { constructed(); } }
+class PrivatePage extends Cossack { constructor() { super(); constructed(); } }
 class RootLayout {}
 Reflect.defineMetadata('page:options', { middlewares: [async (c: any, next: any) => {
   if (c.req.header('x-test-role') !== 'admin') return c.text('page guard', 403);
@@ -36,7 +37,7 @@ describe('router transport guard wiring', () => {
       : '/ws/target?routePath=/private';
     const post = ['rpc', 'upload', 'service'].includes(transport);
     const body = transport === 'upload' ? new URLSearchParams({ componentRouteId: id, action: 'secret' })
-      : JSON.stringify(transport === 'service' ? { service: { ownerRouteId: ids.get(layoutPath), slot: 'secret' } }
+      : JSON.stringify(transport === 'service' ? { service: { ownerRouteId: ids.get(layoutPath), slot: 'secret' }, componentRouteId: id, pageParams: {} }
         : { componentRouteId: id, action: 'secret', payload: [] });
     const response = await app.request(url, {
       method: post ? 'POST' : 'GET', headers: { origin: 'http://localhost' }, ...(post ? { body } : {}),
@@ -44,14 +45,13 @@ describe('router transport guard wiring', () => {
     expect(response.status).toBe(401);
     expect(await response.text()).toBe('layout guard');
     expect(constructed).not.toHaveBeenCalled();
-    if (transport !== 'service') {
-      const member = await app.request(url, {
-        method: post ? 'POST' : 'GET', headers: { origin: 'http://localhost', 'x-test-role': 'member' }, ...(post ? { body } : {}),
-      });
-      expect(member.status).toBe(403);
-      expect(await member.text()).toBe('page guard');
-      expect(constructed).not.toHaveBeenCalled();
-    }
+    // A layout service runs under the page the browser is on, so that page's guard applies too.
+    const member = await app.request(url, {
+      method: post ? 'POST' : 'GET', headers: { origin: 'http://localhost', 'x-test-role': 'member' }, ...(post ? { body } : {}),
+    });
+    expect(member.status).toBe(403);
+    expect(await member.text()).toBe('page guard');
+    expect(constructed).not.toHaveBeenCalled();
   });
 });
 

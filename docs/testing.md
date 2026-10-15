@@ -40,6 +40,67 @@ output checks are skipped. CI runs the SSG browser and artifact checks in a
 separate step. SSG browser tests use the separate
 `pnpm --filter @cossackframework/framework test:e2e:ssg` command.
 
+### Live Database Tests (Before a Release)
+
+PostgreSQL and MySQL tests run only on your machine, not in CI. Run them
+before every release:
+
+```bash
+pnpm test:databases
+```
+
+Prerequisites:
+
+- Docker, or two disposable databases: set both `COSSACK_TEST_POSTGRES_URL`
+  and `COSSACK_TEST_MYSQL_URL`. The tests drop and create their own `live_*`,
+  `rt15_*`, `sl_*` and `se_*` objects, and create a temporary role on PostgreSQL.
+- Installed dependencies (`pnpm install`) and Playwright's Chromium
+  (`pnpm --filter @cossackframework/studio exec playwright install chromium`).
+
+The command does the following:
+
+1. If both URLs are set, it uses them. Otherwise it starts the pinned
+   `postgres:18.6` and `mysql:8.0.46` images with Docker on free loopback ports.
+   The MySQL server runs in UTC+7 (`TZ=Asia/Bangkok`). The command waits until
+   both servers accept connections, and it always removes the containers and
+   their volumes at the end, also after a failure or Ctrl+C.
+2. It builds the workspace (`pnpm build`). Pass `--no-build` to skip this when
+   the packages are already built: `pnpm test:databases --no-build`.
+3. It sets `COSSACK_TEST_REQUIRE_LIVE=1`, so a missing URL fails a test file
+   instead of skipping it. Then it runs:
+   - the database tests (`pnpm --filter @cossackframework/database run test`),
+     including `test/live-dialects.test.ts` on SQLite, Turso, D1, PostgreSQL,
+     MySQL and the Hyperdrive drivers;
+   - the Studio live introspection tests
+     (`packages/studio/tests/live-introspection.test.ts`);
+   - the Studio MySQL browser test (`packages/studio/e2e/mysql-definition.spec.ts`).
+
+It runs all three suites, prints a summary and exits non-zero if any suite
+fails. Without Docker and without both URLs, it stops with an error that says
+so.
+
+What the live tests check:
+
+- The MySQL adapter must store and read UTC values on a UTC+7 server. The
+  Hyperdrive MySQL target cannot set the session time zone, so it skips its
+  `DEFAULT CURRENT_TIMESTAMP` test on that server (see
+  `packages/database/docs/models.md`).
+- Studio loads a schema with a fixed number of queries, and its result must
+  match the pinned JSON files in `packages/studio/tests/__snapshots__/`. On
+  PostgreSQL, a temporary login role with only `SELECT` rights must see the same
+  keys and foreign keys as the owner. That test skips when the user cannot
+  create roles.
+- The Studio Structure tab loads MySQL definitions on demand.
+
+To run one suite against your own servers, set the URLs and run its command
+directly. Without the URLs, the PostgreSQL and MySQL tests skip:
+
+```bash
+COSSACK_TEST_POSTGRES_URL=postgres://cossack:cossack@127.0.0.1:5432/cossack_test \
+COSSACK_TEST_MYSQL_URL=mysql://root:cossack@127.0.0.1:3306/cossack_test \
+pnpm --filter @cossackframework/database run test --watch=false
+```
+
 ### E2E Tests
 
 The framework uses Playwright for end-to-end testing. Tests are located in `packages/framework/e2e/`.

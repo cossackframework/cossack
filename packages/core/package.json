@@ -62,6 +62,10 @@
       "types": "./dist/shared/static-assets.d.ts",
       "import": "./dist/shared/static-assets.js"
     },
+    "./transport-routes": {
+      "types": "./dist/shared/transport-routes.d.ts",
+      "import": "./dist/shared/transport-routes.js"
+    },
     "./jobs": {
       "types": "./dist/jobs/index.d.ts",
       "import": "./dist/jobs/index.js"

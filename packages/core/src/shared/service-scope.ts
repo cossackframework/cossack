@@ -8,6 +8,7 @@ import { collectServerMethodMetadata, validateServerMethodTimeout } from './serv
 import './metadata';
 import type { Context } from 'hono';
 import type { User } from './user';
+import type { CossackInternalState } from './component-types';
 import { getContainer, isService, type ServiceClass } from './container';
 import {
     bootstrapService,
@@ -19,6 +20,7 @@ import { isSharedMethod } from './shared-method';
 import { rpcFormData, snapshotRpcPayload } from './rpc-files';
 import { readRpcJsonResponse, readRpcHttpError } from './rpc-json';
 import { awaitRpcResponse } from './rpc-response';
+import { TRANSPORT_ROUTES } from './transport-routes';
 import { createRpcCall, snapshotRpcValue, readRpcNativeResponse, RPC_NATIVE_RESPONSE_HEADER, readRpcStream, RPC_STREAM_CONTENT_TYPE, RpcError } from './rpc-stream';
 
 export interface ServiceScopeRequestContext {
@@ -422,9 +424,15 @@ export class ServiceScope {
                 try {
                     requestState = snapshotRpcValue(optimisticRequestState(entry.instance, getServiceState(entry.instance)), 'state') as Record<string, unknown>;
                     const normalized = snapshotRpcPayload(payload);
-                    const body = { service: { ownerRouteId: this.ownerRouteId, slot: entry.slot }, action,
-                        payload: normalized.payload, state: requestState, scopeKey: this.scopeKey };
-                    request = fetch(normalized.files.size ? '/upload' : '/crpc', {
+                    // A layout scope outlives navigation between the pages of
+                    // its subtree, so name the page the browser is on now. The
+                    // server checks the page and its route params, runs that
+                    // page's guards, and computes the scope key itself.
+                    const page = (window as unknown as CossackInternalState).__INITIAL_STATE__;
+                    const body = { service: { ownerRouteId: this.ownerRouteId, slot: entry.slot },
+                        componentRouteId: page?.componentRouteId, pageParams: page?.metadata?.params ?? {},
+                        action, payload: normalized.payload, state: requestState };
+                    request = fetch(normalized.files.size ? TRANSPORT_ROUTES.upload : TRANSPORT_ROUTES.rpc, {
                         method: 'POST',
                         headers: { ...trace?.requestHeaders, 'X-Cossack-Request-Id': requestId, ...(normalized.files.size ? {} : { 'Content-Type': 'application/json' }), Accept: `${RPC_STREAM_CONTENT_TYPE}, application/json` },
                         signal: controller.signal,

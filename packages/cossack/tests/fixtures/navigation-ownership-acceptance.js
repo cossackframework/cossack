@@ -231,11 +231,12 @@ export async function checkNavigationOwnershipBrowser(browser, origin) {
     expect(manifestResponse.status()).toBe(200);
     const manifest=await manifestResponse.json();
     const ownerRouteId=manifest.filePathToId['/src/pages/probe/nested/layout.ts'];
-    expect(ownerRouteId).toBeTruthy();
+    const pageRouteId=manifest.filePathToId['/src/pages/probe/nested/index.ts'];
+    expect(ownerRouteId).toBeTruthy();expect(pageRouteId).toBeTruthy();
     const rpcTraces=traces.map(({viewer})=>({viewer,trace:crypto.randomUUID()}));
     const rpcSnapshots=await Promise.all(rpcTraces.map(async({viewer,trace})=>{
       const response=await page.request.post(origin+'/crpc?'+new URLSearchParams({viewer,trace}),{
-        headers:{origin},data:{service:{ownerRouteId,slot:'0'},action:'snapshot',payload:[],state:{}}});
+        headers:{origin},data:{service:{ownerRouteId,slot:'0'},componentRouteId:pageRouteId,pageParams:{},action:'snapshot',payload:[],state:{}}});
       expect(response.status()).toBe(200);
       return (await response.json())._cossack_return;
     }));

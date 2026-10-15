@@ -1,6 +1,7 @@
 import 'reflect-metadata';
 import { describe, expect, it, vi } from 'vitest';
 import { Hono } from 'hono';
+import { Cossack } from '@cossackframework/core';
 import { protectTransport } from '../src/transports/security';
 import { handleWebSocketProxy } from '../src/transports/websocket';
 import type { RouterContext } from '../src/route-ids';
@@ -82,14 +83,33 @@ describe('transport security boundary', () => {
         expect(action).not.toHaveBeenCalled();
     });
 
-    it('uses the service owner guard and preserves middleware response headers', async () => {
-        const { app, action } = appFor({ ...ctx, getMiddlewares: (owner) => {
-            expect(owner).toBe(path);
-            return [async (c, next) => { await next(); c.header('x-guard', 'ran'); }];
-        } });
-        const response = await app.request('/crpc', { method: 'POST', headers: { origin: 'http://localhost' }, body: JSON.stringify({ service: { ownerRouteId: 'private', slot: 'account' } }) });
+    it('guards a service call with the guards and route params of the page it names, keeping response headers', async () => {
+        const layout = '/src/pages/teams/[team]/layout.ts';
+        const page = '/src/pages/teams/[team]/index.ts';
+        class TeamPage extends Cossack {}
+        const seen: unknown[] = [];
+        const { app, action } = appFor({
+            routeIdMap: new Map([['team-layout', layout], ['team-page', page]]),
+            routePathToIdMap: new Map([[layout, 'team-layout'], [page, 'team-page']]),
+            routePathToFilePathMap: new Map(),
+            pages: { [page]: { default: TeamPage } },
+            layouts: { [layout]: { default: class TeamLayout {} } },
+            getMiddlewares: (owner) => {
+                expect(owner).toBe(page);
+                return [async (c, next) => { seen.push(c.req.param('team')); await next(); c.header('x-guard', 'ran'); }];
+            },
+        });
+        const call = (pageParams: unknown) => app.request('/crpc', { method: 'POST', headers: { origin: 'http://localhost' },
+            body: JSON.stringify({ service: { ownerRouteId: 'team-layout', slot: '0' }, componentRouteId: 'team-page', pageParams }) });
+        const response = await call({ team: 'alpha' });
         expect(response.status).toBe(200);
         expect(response.headers.get('x-guard')).toBe('ran');
+        expect(seen).toEqual(['alpha']);
+        expect(action).toHaveBeenCalledOnce();
+        // Params that the page route cannot produce never reach a guard or the service.
+        const forged = await call({ team: 'alpha', role: 'admin' });
+        expect(forged.status).toBe(400);
+        expect(seen).toEqual(['alpha']);
         expect(action).toHaveBeenCalledOnce();
     });
 

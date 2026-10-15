@@ -241,18 +241,15 @@ export function matchesTrackedPath(
         // Symbols only ever report at the top level (path === String(key)).
         return changedPaths.has(dep.toString());
     }
-    const depSegments = dep.split('.');
+    // Compare in place: tasks check this on every render, so it must not
+    // allocate segment arrays.
     for (const changed of changedPaths) {
-        const changedSegments = changed.split('.');
-        const min = Math.min(depSegments.length, changedSegments.length);
-        let match = true;
-        for (let i = 0; i < min; i++) {
-            if (depSegments[i] !== changedSegments[i]) {
-                match = false;
-                break;
-            }
-        }
-        if (match) return true;
+        if (changed === dep || isSegmentPrefix(dep, changed) || isSegmentPrefix(changed, dep)) return true;
     }
     return false;
+}
+
+/** Whether `path` continues `prefix` with further `.`-separated segments. */
+function isSegmentPrefix(prefix: string, path: string): boolean {
+    return path.length > prefix.length && path.charCodeAt(prefix.length) === 46 /* . */ && path.startsWith(prefix);
 }

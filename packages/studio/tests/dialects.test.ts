@@ -37,10 +37,76 @@ class FakeConnection implements StudioConnection {
   async close(): Promise<void> {}
 }
 
+type CatalogRow = Record<string, unknown>;
+
+/** Flatten per-table catalog rows into schema-wide rows with `table_name`. */
+function schemaWide(byTable: Record<string, CatalogRow[]>): CatalogRow[] {
+  return Object.entries(byTable)
+    .flatMap(([table, rows]) => rows.map((row) => ({ table_name: table, ...row })));
+}
+
+function catalogColumn(name: string, dataType: string, nullable: boolean | number, extra: CatalogRow = {}) {
+  return {
+    name,
+    data_type: dataType,
+    nullable,
+    default_value: null,
+    primary_key_position: 0,
+    auto_increment: typeof nullable === 'number' ? 0 : false,
+    ...extra,
+  };
+}
+
+const POSTGRES_COLUMNS: Record<string, CatalogRow[]> = {
+  adult_people: [catalogColumn('id', 'integer', true)],
+  events: [catalogColumn('message', 'text', false)],
+  external_events: [catalogColumn('message', 'text', true)],
+  people: [
+    catalogColumn('id', 'integer', false, {
+      default_value: "nextval('people_id_seq'::regclass)",
+      primary_key_position: 1,
+      auto_increment: true,
+    }),
+    catalogColumn('name', 'character varying(80)', false),
+    catalogColumn('enabled', 'boolean', false, { default_value: 'true' }),
+    catalogColumn('profile', 'jsonb', true),
+  ],
+};
+
+const POSTGRES_INDEXES: Record<string, CatalogRow[]> = {
+  people: [{
+    name: 'people_pkey',
+    unique: true,
+    origin: 'pk',
+    partial: false,
+    column_name: 'id',
+    position: 0,
+    descending: false,
+    collation: null,
+  }],
+};
+
+const POSTGRES_FOREIGN_KEYS: Record<string, CatalogRow[]> = {
+  people: [{
+    name: 'people_account_fk',
+    referenced_table: 'accounts',
+    column_name: 'id',
+    referenced_column: 'owner_id',
+    position: 0,
+    on_update: 'CASCADE',
+    on_delete: 'RESTRICT',
+  }],
+};
+
 function postgresConnection() {
   return new FakeConnection(
     { provider: 'postgres', label: 'app', remote: false },
     (sql, parameters) => {
+      // These views hide constraints and view definitions from roles that can
+      // only SELECT, so keys, foreign keys and views come from pg_catalog.
+      if (/information_schema\.(table_constraints|key_column_usage|referential_constraints|views)\b/.test(sql)) {
+        throw new Error(`PostgreSQL introspection read a privilege-filtered view: ${sql}`);
+      }
       if (sql === 'SELECT version() AS version') {
         return { rows: [{ version: 'PostgreSQL 17.2 on x86_64-pc-linux-gnu' }] };
       }
@@ -60,80 +126,8 @@ function postgresConnection() {
         };
       }
       if (sql.includes('FROM information_schema.columns AS columns')) {
-        if (parameters[0] === 'events') {
-          return {
-            rows: [{
-              name: 'message',
-              data_type: 'text',
-              nullable: false,
-              default_value: null,
-              primary_key_position: 0,
-              auto_increment: false,
-            }],
-          };
-        }
-        if (parameters[0] === 'external_events') {
-          return {
-            rows: [{
-              name: 'message',
-              data_type: 'text',
-              nullable: true,
-              default_value: null,
-              primary_key_position: 0,
-              auto_increment: false,
-            }],
-          };
-        }
-        if (parameters[0] === 'adult_people') {
-          return {
-            rows: [
-              {
-                name: 'id',
-                data_type: 'integer',
-                nullable: true,
-                default_value: null,
-                primary_key_position: 0,
-                auto_increment: false,
-              },
-            ],
-          };
-        }
-        return {
-          rows: [
-            {
-              name: 'id',
-              data_type: 'integer',
-              nullable: false,
-              default_value: "nextval('people_id_seq'::regclass)",
-              primary_key_position: 1,
-              auto_increment: true,
-            },
-            {
-              name: 'name',
-              data_type: 'character varying(80)',
-              nullable: false,
-              default_value: null,
-              primary_key_position: 0,
-              auto_increment: false,
-            },
-            {
-              name: 'enabled',
-              data_type: 'boolean',
-              nullable: false,
-              default_value: 'true',
-              primary_key_position: 0,
-              auto_increment: false,
-            },
-            {
-              name: 'profile',
-              data_type: 'jsonb',
-              nullable: true,
-              default_value: null,
-              primary_key_position: 0,
-              auto_increment: false,
-            },
-          ],
-        };
+        expect(parameters).toEqual([]);
+        return { rows: schemaWide(POSTGRES_COLUMNS) };
       }
       if (sql.includes('FROM pg_catalog.pg_class AS table_class')) {
         if (
@@ -149,36 +143,13 @@ function postgresConnection() {
         ) {
           throw new Error('PostgreSQL index introspection did not use deterministic aliases');
         }
-        if (parameters[0] === 'events' || parameters[0] === 'external_events') return { rows: [] };
-        return {
-          rows: [
-            {
-              name: 'people_pkey',
-              unique: true,
-              origin: 'pk',
-              partial: false,
-              column_name: 'id',
-              position: 0,
-              descending: false,
-              collation: null,
-            },
-          ],
-        };
+        expect(parameters).toEqual([]);
+        return { rows: schemaWide(POSTGRES_INDEXES) };
       }
-      if (sql.includes("constraints.constraint_type = 'FOREIGN KEY'")) {
-        return parameters[0] === 'people'
-          ? {
-              rows: [{
-                name: 'people_account_fk',
-                referenced_table: 'accounts',
-                column_name: 'id',
-                referenced_column: 'owner_id',
-                position: 0,
-                on_update: 'CASCADE',
-                on_delete: 'RESTRICT',
-              }],
-            }
-          : { rows: [] };
+      if (sql.includes("constraint_info.contype = 'f'")) {
+        expect(sql).toContain('unnest(constraint_info.conkey, constraint_info.confkey)');
+        expect(parameters).toEqual([]);
+        return { rows: schemaWide(POSTGRES_FOREIGN_KEYS) };
       }
       if (sql.startsWith('EXPLAIN (FORMAT JSON) ')) {
         return {
@@ -217,7 +188,56 @@ function postgresConnection() {
   );
 }
 
-function mysqlConnection() {
+const MYSQL_COLUMNS: Record<string, CatalogRow[]> = {
+  audit_log: [catalogColumn('message', 'text', 1)],
+  nullable_unique: [catalogColumn('token', 'varchar(255)', 1)],
+  sessions: [
+    catalogColumn('token', 'varchar(255)', 0),
+    catalogColumn('payload', 'text', 1),
+  ],
+  users: [
+    catalogColumn('id', 'bigint unsigned', 0, { primary_key_position: 1, auto_increment: 1 }),
+    catalogColumn('email', 'varchar(255)', 0),
+    catalogColumn('payload', 'json', 1),
+  ],
+  active_users: [catalogColumn('id', 'bigint unsigned', 0)],
+};
+
+function mysqlIndex(name: string, column: string, origin: 'pk' | 'u') {
+  return {
+    name,
+    unique: 1,
+    origin,
+    partial: 0,
+    column_name: column,
+    position: 0,
+    descending: 0,
+    collation: null,
+  };
+}
+
+const MYSQL_INDEXES: Record<string, CatalogRow[]> = {
+  nullable_unique: [mysqlIndex('nullable_token_unique', 'token', 'u')],
+  sessions: [mysqlIndex('sessions_token_unique', 'token', 'u')],
+  users: [
+    mysqlIndex('PRIMARY', 'id', 'pk'),
+    mysqlIndex('users_email_unique', 'email', 'u'),
+  ],
+};
+
+const MYSQL_FOREIGN_KEYS: Record<string, CatalogRow[]> = {
+  users: [{
+    name: 'users_account_fk',
+    referenced_table: 'accounts',
+    column_name: 'id',
+    referenced_column: 'owner_id',
+    position: 0,
+    on_update: 'CASCADE',
+    on_delete: 'RESTRICT',
+  }],
+};
+
+function mysqlConnection(options: { showCreate?: boolean } = {}) {
   return new FakeConnection(
     { provider: 'mysql', label: 'app', remote: false },
     (sql, parameters) => {
@@ -231,167 +251,37 @@ function mysqlConnection() {
             { name: 'sessions', kind: 'table' },
             { name: 'nullable_unique', kind: 'table' },
             { name: 'audit_log', kind: 'table' },
+            { name: 'active_users', kind: 'view' },
           ],
         };
       }
       if (sql.includes('FROM information_schema.columns AS columns')) {
-        if (parameters[0] === 'sessions') {
-          return {
-            rows: [
-              {
-                name: 'token',
-                data_type: 'varchar(255)',
-                nullable: 0,
-                default_value: null,
-                primary_key_position: 0,
-                auto_increment: 0,
-              },
-              {
-                name: 'payload',
-                data_type: 'text',
-                nullable: 1,
-                default_value: null,
-                primary_key_position: 0,
-                auto_increment: 0,
-              },
-            ],
-          };
-        }
-        if (parameters[0] === 'audit_log') {
-          return {
-            rows: [{
-              name: 'message',
-              data_type: 'text',
-              nullable: 1,
-              default_value: null,
-              primary_key_position: 0,
-              auto_increment: 0,
-            }],
-          };
-        }
-        if (parameters[0] === 'nullable_unique') {
-          return {
-            rows: [{
-              name: 'token',
-              data_type: 'varchar(255)',
-              nullable: 1,
-              default_value: null,
-              primary_key_position: 0,
-              auto_increment: 0,
-            }],
-          };
-        }
-        expect(parameters).toEqual(['users']);
-        return {
-          rows: [
-            {
-              name: 'id',
-              data_type: 'bigint unsigned',
-              nullable: 0,
-              default_value: null,
-              primary_key_position: 1,
-              auto_increment: 1,
-            },
-            {
-              name: 'email',
-              data_type: 'varchar(255)',
-              nullable: 0,
-              default_value: null,
-              primary_key_position: 0,
-              auto_increment: 0,
-            },
-            {
-              name: 'payload',
-              data_type: 'json',
-              nullable: 1,
-              default_value: null,
-              primary_key_position: 0,
-              auto_increment: 0,
-            },
-          ],
-        };
+        expect(parameters).toEqual([]);
+        return { rows: schemaWide(MYSQL_COLUMNS) };
       }
       if (sql.includes('FROM information_schema.statistics')) {
-        if (parameters[0] === 'sessions') {
-          return {
-            rows: [{
-              name: 'sessions_token_unique',
-              unique: 1,
-              origin: 'u',
-              partial: 0,
-              column_name: 'token',
-              position: 0,
-              descending: 0,
-              collation: null,
-            }],
-          };
-        }
-        if (parameters[0] === 'audit_log') return { rows: [] };
-        if (parameters[0] === 'nullable_unique') {
-          return {
-            rows: [{
-              name: 'nullable_token_unique',
-              unique: 1,
-              origin: 'u',
-              partial: 0,
-              column_name: 'token',
-              position: 0,
-              descending: 0,
-              collation: null,
-            }],
-          };
-        }
-        return {
-          rows: [
-            {
-              name: 'PRIMARY',
-              unique: 1,
-              origin: 'pk',
-              partial: 0,
-              column_name: 'id',
-              position: 0,
-              descending: 0,
-              collation: null,
-            },
-            {
-              name: 'users_email_unique',
-              unique: 1,
-              origin: 'u',
-              partial: 0,
-              column_name: 'email',
-              position: 0,
-              descending: 0,
-              collation: null,
-            },
-          ],
-        };
+        expect(parameters).toEqual([]);
+        return { rows: schemaWide(MYSQL_INDEXES) };
       }
-      if (sql.includes('FROM information_schema.key_column_usage AS usage')) {
-        return parameters[0] === 'users'
-          ? {
-              rows: [{
-                name: 'users_account_fk',
-                referenced_table: 'accounts',
-                column_name: 'id',
-                referenced_column: 'owner_id',
-                position: 0,
-                on_update: 'CASCADE',
-                on_delete: 'RESTRICT',
-              }],
-            }
-          : { rows: [] };
+      if (sql.includes('FROM information_schema.key_column_usage AS key_usage')) {
+        // `usage` is a reserved word in MySQL; it fails as an alias.
+        expect(sql).not.toMatch(/\busage\./);
+        expect(parameters).toEqual([]);
+        return { rows: schemaWide(MYSQL_FOREIGN_KEYS) };
       }
       if (sql.startsWith('EXPLAIN FORMAT=JSON ')) {
         return { rows: [{ EXPLAIN: '{"query_block":{"table":{"table_name":"users"}}}' }] };
       }
-      if (sql.startsWith('SHOW CREATE TABLE ')) {
-        const name = String(parameters[0] ?? sql.match(/`([^`]+)`/)?.[1] ?? 'users');
-        return {
-          rows: [{
-            Table: name,
-            'Create Table': `CREATE TABLE \`${name}\` (...)`,
-          }],
-        };
+      if (sql.startsWith('SHOW CREATE ')) {
+        if (options.showCreate === false) throw new Error('SHOW VIEW command denied');
+        const name = sql.match(/`([^`]+)`/)?.[1] ?? 'users';
+        return sql.startsWith('SHOW CREATE VIEW ')
+          ? { rows: [{ View: name, 'Create View': `CREATE VIEW \`${name}\` AS select 1` }] }
+          : { rows: [{ Table: name, 'Create Table': `CREATE TABLE \`${name}\` (...)` }] };
+      }
+      if (sql.includes('FROM information_schema.views')) {
+        expect(parameters).toEqual(['active_users']);
+        return { rows: [{ definition: 'select `users`.`id` AS `id` from `users`' }] };
       }
       if (sql.startsWith('SELECT COUNT(*)')) return { rows: [{ __cossack_total: 1 }] };
       if (sql.startsWith('SELECT * FROM `sessions`')) {
@@ -403,6 +293,61 @@ function mysqlConnection() {
       if (sql.startsWith('UPDATE ')) return { affectedRows: 1 };
       if (sql.startsWith('INSERT INTO')) return { affectedRows: 1 };
       throw new Error(`Unexpected MySQL query: ${sql}`);
+    },
+  );
+}
+
+/**
+ * A PostgreSQL or MySQL catalog with `tables` tables (each with a primary key,
+ * a unique index and a foreign key) and one view.
+ */
+function largeCatalogConnection(provider: 'postgres' | 'mysql', tables: number) {
+  const names = Array.from({ length: tables }, (_, index) => `table_${index}`);
+  return new FakeConnection(
+    { provider, label: 'large', remote: false },
+    (sql) => {
+      if (/^SELECT version\(\)|^SELECT VERSION\(\)/.test(sql)) {
+        return { rows: [{ version: provider === 'postgres' ? 'PostgreSQL 18.0' : '8.0.46' }] };
+      }
+      if (/FROM information_schema\.tables\b/.test(sql)) {
+        return {
+          rows: [
+            ...names.map((name) => ({ name, kind: 'table', definition: null })),
+            { name: 'summary', kind: 'view', definition: 'SELECT 1' },
+          ],
+        };
+      }
+      if (sql.includes('FROM information_schema.columns AS columns')) {
+        return {
+          rows: [...names, 'summary'].flatMap((table) => [
+            { table_name: table, ...catalogColumn('id', 'integer', false, { primary_key_position: table === 'summary' ? 0 : 1 }) },
+            { table_name: table, ...catalogColumn('parent_id', 'integer', true) },
+          ]),
+        };
+      }
+      if (sql.includes("contype = 'f'") || sql.includes('key_column_usage AS key_usage')) {
+        return {
+          rows: names.map((table) => ({
+            table_name: table,
+            name: `${table}_parent_fk`,
+            referenced_table: table,
+            column_name: 'parent_id',
+            referenced_column: 'id',
+            position: 0,
+            on_update: 'NO ACTION',
+            on_delete: 'CASCADE',
+          })),
+        };
+      }
+      if (sql.includes('pg_catalog.pg_class AS table_class') || sql.includes('FROM information_schema.statistics')) {
+        return {
+          rows: names.flatMap((table) => [
+            { table_name: table, ...mysqlIndex(`${table}_pkey`, 'id', 'pk') },
+            { table_name: table, ...mysqlIndex(`${table}_parent_key`, 'parent_id', 'u') },
+          ]),
+        };
+      }
+      throw new Error(`Unexpected ${provider} query: ${sql}`);
     },
   );
 }
@@ -507,6 +452,7 @@ describe('PostgreSQL Studio adapter', () => {
     const studio = new StudioDatabase(connection);
     const schema = await studio.getSchema();
     expect(schema.connection.databaseVersion).toBe('PostgreSQL 17.2');
+    expect(connection.queries).toHaveLength(5);
     const people = schema.objects.find((object) => object.name === 'people')!;
     expect(people.editable).toBe(true);
     expect(people.rowLocators.map((locator) => locator.kind)).toEqual([
@@ -601,8 +547,10 @@ describe('MySQL Studio adapter', () => {
     expect(users).toMatchObject({
       name: 'users',
       editable: true,
-      sql: 'CREATE TABLE `users` (...)',
+      sql: null,
+      sqlDeferred: true,
     });
+    expect(connection.queries.some(({ sql }) => sql.startsWith('SHOW CREATE'))).toBe(false);
     expect(users.columns.find((column) => column.name === 'email')?.declaredKind).toBe('varchar');
     expect(users.indexes.map((index) => index.name)).toEqual([
       'PRIMARY',
@@ -665,5 +613,91 @@ describe('MySQL Studio adapter', () => {
     });
     expect((await studio.explainSql('SELECT * FROM users')).rows)
       .toEqual([{ EXPLAIN: '{"query_block":{"table":{"table_name":"users"}}}' }]);
+  });
+
+  it('loads deferred definitions one object at a time and caches them', async () => {
+    const connection = mysqlConnection();
+    const studio = new StudioDatabase(connection);
+    await studio.getSchema();
+    const showCreate = () => connection.queries.filter(({ sql }) => sql.startsWith('SHOW CREATE'));
+
+    expect(await studio.getDefinition('users')).toBe('CREATE TABLE `users` (...)');
+    expect(await studio.getDefinition('active_users')).toBe('CREATE VIEW `active_users` AS select 1');
+    expect(await studio.getDefinition('users')).toBe('CREATE TABLE `users` (...)');
+    expect(showCreate().map(({ sql }) => sql)).toEqual([
+      'SHOW CREATE TABLE `users`',
+      'SHOW CREATE VIEW `active_users`',
+    ]);
+    const schema = await studio.getSchema();
+    const users = schema.objects.find((object) => object.name === 'users')!;
+    expect(users.sql).toBe('CREATE TABLE `users` (...)');
+    expect(users).not.toHaveProperty('sqlDeferred');
+    expect(schema.objects.find((object) => object.name === 'sessions')).toMatchObject({
+      sql: null,
+      sqlDeferred: true,
+    });
+
+    // A schema reload defers definitions again.
+    expect((await studio.getSchema(true)).objects.find((object) => object.name === 'users'))
+      .toMatchObject({ sql: null, sqlDeferred: true });
+  });
+
+  it('describes objects from the catalog when SHOW CREATE is denied', async () => {
+    const connection = mysqlConnection({ showCreate: false });
+    const studio = new StudioDatabase(connection);
+    expect(await studio.getDefinition('users')).toBe(
+      'CREATE TABLE `users` (\n' +
+      '  `id` bigint unsigned NOT NULL,\n' +
+      '  `email` varchar(255) NOT NULL,\n' +
+      '  `payload` json,\n' +
+      '  PRIMARY KEY (`id`)\n' +
+      ')',
+    );
+    expect(await studio.getDefinition('active_users')).toBe(
+      'CREATE VIEW `active_users` AS\nselect `users`.`id` AS `id` from `users`',
+    );
+  });
+});
+
+describe('PostgreSQL and MySQL schema loads', () => {
+  it.each(['postgres', 'mysql'] as const)(
+    'run a constant number of %s catalog queries whatever the number of tables',
+    async (provider) => {
+      const counts = [];
+      for (const tables of [1, 40]) {
+        const connection = largeCatalogConnection(provider, tables);
+        const studio = new StudioDatabase(connection);
+        const schema = await studio.getSchema();
+        expect(schema.objects).toHaveLength(tables + 1);
+        const last = schema.objects.find((object) => object.name === `table_${tables - 1}`)!;
+        expect(last.columns.map((column) => column.name)).toEqual(['id', 'parent_id']);
+        expect(last.indexes.map((index) => index.name))
+          .toEqual([`table_${tables - 1}_pkey`, `table_${tables - 1}_parent_key`]);
+        expect(last.foreignKeys.map((foreignKey) => foreignKey.name)).toEqual([`table_${tables - 1}_parent_fk`]);
+        expect(schema.objects.find((object) => object.name === 'summary')).toMatchObject({
+          kind: 'view',
+          indexes: [],
+          foreignKeys: [],
+        });
+        counts.push(connection.queries.length);
+        connection.queries.length = 0;
+        await studio.getSchema(true);
+        counts.push(connection.queries.length);
+      }
+      // Version, object list, columns, indexes, foreign keys; the version is
+      // read once per StudioDatabase.
+      expect(counts).toEqual([5, 4, 5, 4]);
+    },
+  );
+
+  it.each(['postgres', 'mysql'] as const)('skip the %s catalog queries for an empty schema', async (provider) => {
+    const connection = largeCatalogConnection(provider, 0);
+    const original = connection.execute.bind(connection);
+    connection.execute = async (sql, parameters) => {
+      const result = await original(sql, parameters);
+      return /FROM information_schema\.tables\b/.test(sql) ? { ...result, rows: [] } : result;
+    };
+    expect((await new StudioDatabase(connection).getSchema()).objects).toEqual([]);
+    expect(connection.queries).toHaveLength(2);
   });
 });

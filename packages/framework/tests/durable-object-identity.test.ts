@@ -84,10 +84,9 @@ describe('default Durable Object page identity', () => {
     expect(await ssrTarget('http://localhost/room/2')).not.toBe(plain);
   });
 
-  it('emits one realtime target and no provider map', async () => {
+  it('emits the page realtime target', async () => {
     const state = await ssrState('http://localhost/room/1');
     expect(state.realtimeTarget).toMatch(/^id:page:/);
-    expect(state).not.toHaveProperty('providerTargets');
   });
 
   it('accepts the SSR-emitted id and rejects a client-chosen mismatch on the WebSocket proxy', async () => {
@@ -144,20 +143,5 @@ describe('custom scope targets', () => {
     const result = await upgrade('id:user:anonymous', '/inbox/[folder]', '/inbox/work', { folder: 'work' });
     expect(result.response.status).toBe(401);
     expect(result.forwarded).toBeUndefined();
-  });
-});
-
-describe('WebSocket route shape', () => {
-  it('rejects the removed /ws/:provider/:id shape before reaching a Durable Object', async () => {
-    const target = await ssrTarget('http://localhost/room/1');
-    const { env, forward, addressed } = environment();
-    const query = new URLSearchParams({ routePath: '/room/[id]', pathname: '/room/1', params: JSON.stringify({ id: '1' }) });
-    for (const path of [`/ws/page/${encodeURIComponent(target)}`, `/ws/session/${encodeURIComponent(target)}`, `/ws/${encodeURIComponent(target)}/global`]) {
-      const response = await createApp().request(`${path}?${query}`, { headers: { origin: 'http://localhost', upgrade: 'websocket' } }, env);
-      expect(response.status).toBe(404);
-      expect(await response.json()).toMatchObject({ code: 'COSSACK_WS_ROUTE_NOT_FOUND' });
-    }
-    expect(forward).not.toHaveBeenCalled();
-    expect(addressed).toEqual([]);
   });
 });

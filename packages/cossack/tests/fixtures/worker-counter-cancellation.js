@@ -65,7 +65,7 @@ export async function checkCounterCancellation(server, serverUrl, cookie, readHy
     const invoke = (key, { signal, service = false, upload = false, deadline = false } = {}) => {
       const envelope = { componentRouteId: state.componentRouteId, scopeKey: state.scopeKey,
         state: { count: 0 }, action: deadline ? 'counterDeadline' : 'counterGuarded', payload: [key],
-        ...(service ? { service: { ownerRouteId: owner, slot: '0' } } : {}) };
+        ...(service ? { service: { ownerRouteId: owner, slot: '0' }, pageParams: state.metadata.params } : {}) };
       if (!upload) return fetch(new URL('/crpc', serverUrl), { method: 'POST', signal,
         headers: { ...headers, 'X-Counter-Case': key, ...(signal ? { 'X-Counter-Abort': 'explicit' } : {}) }, body: JSON.stringify(envelope) });
       const form = new FormData();

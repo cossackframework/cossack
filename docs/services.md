@@ -142,8 +142,10 @@ cleanup remains tracked by its parent scope.
  state or user data.
 - Each SSG render gets its own anonymous request scope. Layout services,
  constructor injection, and service hydration use the same hierarchy as SSR.
-- Each service RPC request reconstructs the applicable layout hierarchy in a
- fresh request scope.
+- Each service RPC request reconstructs the layout hierarchy of the page the
+ browser is on, in a fresh request scope.
+- A `durable-object` page builds its layout hierarchy once, when its Durable
+ Object or Node instance is created, with the route params that SSR used.
 - Component RPC also resolves services from a fresh layout hierarchy. A streamed
  action keeps its components and services alive until completion or cancellation.
 - In the browser, a reused layout keeps its scope across navigation between
@@ -268,13 +270,27 @@ its services before descendant components render.
 
 Calling an injected service's `@Server()` method in the browser uses Cossack's
 built-in RPC channel. The request identifies the owning layout, a stable service
-slot, the action, arguments, and current public service state. The server then:
+slot, the action, arguments, and current public service state. It also names
+the page that the browser is on and the route params of that page. A retained
+layout sends the current page after each client navigation. The server treats
+the page and its params as client input. The server then:
 
-1. Rebuilds the layout scope for the request.
-2. Restores only the declared service state fields.
-3. Validates that the target method has `@Server()` metadata.
-4. Invokes the method with request-local `c`, `user`, and `env` values.
-5. Returns the method result, redirect metadata, and updated service state.
+1. Checks that the owning layout encloses the page, and that the params match
+ the page's route: the same param names and non-empty values. Otherwise it
+ answers 400 `COSSACK_RPC_REQUEST_INVALID`.
+2. Runs the guards of the page's layouts and of the page itself with those
+ params, as SSR of that URL does. A guard that rejects the params stops the
+ call before the service is built.
+3. Rebuilds the layout scopes of the page, with the scope key that the page's
+ `scope` computes on the server.
+4. Restores only the declared service state fields.
+5. Validates that the target method has `@Server()` metadata.
+6. Invokes the method with request-local `c`, `user`, and `env` values.
+ `this.c.req.param()` returns the page's params.
+7. Returns the method result, redirect metadata, and updated service state.
+
+The params cannot give more access than a page request would. A client that
+sends other params gets the result that the page's guards give for that URL.
 
 Undecorated helpers, `@Shared()` methods, `@Client()` methods, internal members,
 and forged action names are not RPC-callable. The Vite security transform also

@@ -36,7 +36,8 @@ export interface StaticAssetNamespaceOptions {
 
 const namespace = `/${STATIC_ASSET_DIRECTORY}`;
 
-function discoverRoutes(root: string, includeMarkdown: boolean): StaticAssetRouteFact[] {
+/** Addressable facts for the routes under `src/pages`, for checks that run without a manifest. */
+export function discoverRouteFacts(root: string, includeMarkdown: boolean): StaticAssetRouteFact[] {
   return scanPagesDir(path.join(root, 'src/pages'), includeMarkdown).pageKeys.flatMap(filePath => {
     // Unsupported patterns fail route generation with their own diagnostic.
     try {
@@ -61,7 +62,7 @@ export function checkStaticAssetNamespace(root: string, options: StaticAssetName
           'so page and global policies cannot protect these files. Move them to another public directory.' });
     }
   }
-  for (const route of options.routes ?? discoverRoutes(root, options.includeMarkdown ?? true)) {
+  for (const route of options.routes ?? discoverRouteFacts(root, options.includeMarkdown ?? true)) {
     if (route.addressable === false) continue;
     if (route.pattern !== namespace && !route.pattern.startsWith(`${namespace}/`)) continue;
     diagnostics.push({ code: 'COSSACK_ASSETS_NAMESPACE_RESERVED', file: path.join(root, route.filePath.replace(/^\/+/, '')),

@@ -48,7 +48,7 @@ export async function checkTestUtilitiesAcceptance(browser,origin,root) {
   const manifest=await(await app.request('/cossack-routes.json')).json();
   const ownerRouteId=manifest.filePathToId['/src/pages/helper/layout.ts'];
   const snapshots=await Promise.all(['alice','bob'].map(async viewer=>{
-    const response=await app.serviceRpc({ownerRouteId,slot:'0',action:'snapshot'},credentials(viewer));
+    const response=await app.serviceRpc({ownerRouteId,slot:'0',componentRouteId:id,pageParams:hydration.metadata.params,action:'snapshot'},credentials(viewer));
     expect(response.status,await response.clone().text()).toBe(200);return (await response.json())._cossack_return;
   }));
   const audit=await(await app.request('/api/utility-audit')).json();

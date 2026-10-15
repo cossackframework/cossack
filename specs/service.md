@@ -141,7 +141,7 @@ State is serialized once on the owning layout:
 
 The stable slot is the declaration index, so independently minified server and
 client class names cannot diverge. Service state is separate from component `public` state
-and transport `providerTargets`, preventing key collisions. Only service
+and the transport `realtimeTarget`, preventing key collisions. Only service
 `@State`/`@Store` fields hydrate. Client-supplied unknown keys and prototype
 pollution keys are ignored.
 

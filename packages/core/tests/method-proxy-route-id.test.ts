@@ -47,7 +47,7 @@ describe('HTTP component RPC targeting', () => {
         });
     });
 
-    it('reads scopeKey and pageParams at call time, not at proxy creation', async () => {
+    it('reads scopeKey, the current page and its params at call time, not at proxy creation', async () => {
         const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(Response.json({})));
         vi.stubGlobal('fetch', fetchMock);
         let initial: any = { componentRouteId: 'leaf-a', scopeKey: 'scope-a', metadata: { params: { id: '1' } } };
@@ -61,8 +61,8 @@ describe('HTTP component RPC targeting', () => {
         await component.__cossack_proxies.get('save')?.();
 
         const bodies = fetchMock.mock.calls.map(([, init]) => JSON.parse((init as RequestInit).body as string));
-        expect(bodies[0]).toMatchObject({ componentRouteId: 'layout-route-id', scopeKey: 'scope-a', pageParams: { id: '1' } });
-        expect(bodies[1]).toMatchObject({ componentRouteId: 'layout-route-id', scopeKey: 'scope-b', pageParams: { id: '2' } });
+        expect(bodies[0]).toMatchObject({ componentRouteId: 'layout-route-id', scopeKey: 'scope-a', pageRouteId: 'leaf-a', pageParams: { id: '1' } });
+        expect(bodies[1]).toMatchObject({ componentRouteId: 'layout-route-id', scopeKey: 'scope-b', pageRouteId: 'leaf-b', pageParams: { id: '2' } });
     });
 
     it('invalidates only after a successful HTTP response has been decoded', async () => {

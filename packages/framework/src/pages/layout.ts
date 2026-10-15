@@ -28,7 +28,10 @@ export default class RootLayout extends Cossack {
   @ClientState() search = '';
   @ClientState() sidebarCollapsed = false;
   @ClientState() mobileNavigationOpen = false;
-  @ClientState() currentPath = '/';
+  // Client state never comes from the server. Empty until the first
+  // navigation, so hydration reads the address bar, the same path the server
+  // rendered, instead of a placeholder that marks Home as the active page.
+  @ClientState() currentPath = '';
 
   get filteredCatalog(): readonly DemoCatalogGroup[] {
     const query = this.search.trim().toLowerCase();

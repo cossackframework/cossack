@@ -535,7 +535,7 @@ The lifecycle of a user interaction is split into two main phases: the initial s
 4. It reads `window.__INITIAL_STATE__` to instantly populate its `@State` properties.
 5. Client-only state: It also initializes any properties decorated with `@ClientState`. The framework does not synchronize these properties with the server, and it excludes them from the initial state script.
 6. It also reads the list of server method names and replaces them with proxy functions.
-7. It sets up the configured transport. Pages default to HTTP RPC. SSE pages subscribe to their event stream, while WebSocket/Durable Object pages connect to their state provider runtime.
+7. It sets up the configured transport. Pages default to HTTP RPC. SSE pages subscribe to their event stream, while WebSocket/Durable Object pages connect to their real-time runtime.
 8. Instant navigation (soft navigation): When a user clicks a link (for example, `<a href="/about">`), the framework intercepts the click. Instead of a full reload, it:
     * Pre-fetching: The framework starts to fetch the next page data when the user hovers over a link. This hides network latency.
     * Caching: All visited and pre-fetched pages are stored in a memory cache. If a URL is in the cache, the transition happens instantaneously without a network request.
@@ -705,8 +705,8 @@ pnpm test:unit
 ```
 
 The root command runs Vitest once (no watch mode), including UI, auth, Node
-adapter, framework, and test-utils tests. The root command runs package suites
-serially because framework pretest recreates library exports used by CLI tests.
+adapter, framework, and test-utils tests. It runs three package suites at a
+time; framework pretest no longer deletes library output during a run.
 Use `pnpm --filter <package-name> exec vitest run <test-file>` for a
 focused run. Similar direct-binding and spread-binding renderer tests cover
 different execution paths. Keep both.

@@ -41,18 +41,18 @@ describe('local connection SQL parameters', () => {
     } finally { await connection.close(); }
   });
 
-  it('compiles PostgreSQL schema introspection before raw driver execution', async () => {
-    const driver = new MemoryDriver('postgres', ({ text, parameters }) => {
-      if (parameters.length) {
-        expect(text).not.toContain('?');
-        expect(text).toContain('$1');
-        expect(parameters).toEqual(['people']);
-      }
+  it('runs PostgreSQL schema introspection as unparameterized schema-wide catalog queries', async () => {
+    const driver = new MemoryDriver('postgres', ({ text }) => {
       if (text.includes('FROM information_schema.tables AS tables')) {
-        return { rows: [{ name: 'people', kind: 'table' }] };
+        return { rows: [{ name: 'people', kind: 'table' }, { name: 'teams', kind: 'table' }] };
       }
       if (text.includes('FROM information_schema.columns AS columns')) {
-        return { rows: [{ name: 'id', data_type: 'integer', nullable: false, primary_key_position: 1 }] };
+        return {
+          rows: [
+            { table_name: 'people', name: 'id', data_type: 'integer', nullable: false, primary_key_position: 1 },
+            { table_name: 'teams', name: 'slug', data_type: 'text', nullable: false, primary_key_position: 1 },
+          ],
+        };
       }
       return { rows: [] };
     });
@@ -62,8 +62,13 @@ describe('local connection SQL parameters', () => {
     });
     try {
       const schema = await introspectSchema(connection, 'test', 'PostgreSQL');
-      expect(schema.objects[0]?.columns[0]?.name).toBe('id');
-      expect(driver.statements.filter(({ query }) => query.parameters.length)).toHaveLength(3);
+      expect(schema.objects.map((object) => [object.name, object.columns.map((column) => column.name)]))
+        .toEqual([['people', ['id']], ['teams', ['slug']]]);
+      expect(driver.statements).toHaveLength(4);
+      for (const { query } of driver.statements) {
+        expect(query.parameters).toEqual([]);
+        expect(query.text).not.toMatch(/\?|\$1/);
+      }
     } finally { await connection.close(); }
   });
 });

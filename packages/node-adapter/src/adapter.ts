@@ -4,6 +4,7 @@ import type { IncomingMessage } from 'node:http';
 import type { Duplex } from 'node:stream';
 import type { Context } from 'hono';
 import { closeUnauthorizedSocket, InMemoryWebSocketRuntime, setClientAddress, type Cossack } from '@cossackframework/core';
+import { isTransportPath } from '@cossackframework/core/transport-routes';
 
 /** Structural router contract: the Node library does not import the framework. */
 export interface NodeWebSocketUpgrade {
@@ -209,7 +210,7 @@ export function createNodeAdapter(options: NodeAdapterOptions = {}) {
     attach(server: NodeUpgradeServer, fetch: (request: Request) => Response | Promise<Response>) {
       if (stopped) throw new Error('Node runtime is disposed');
       const onUpgrade = (request: IncomingMessage, socket: Duplex, head: Buffer) => {
-        if (!request.url?.startsWith('/ws/')) {
+        if (!isTransportPath(request.url?.split('?', 1)[0] ?? '', 'websocket')) {
           // Node only closes upgrades that have no listener; ours counts as one.
           const reject = options.destroyUnmatchedUpgrades
             ?? (typeof server.listenerCount === 'function' && server.listenerCount('upgrade') <= 1);

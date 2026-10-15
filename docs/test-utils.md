@@ -45,9 +45,13 @@ and cookies. It does not create a user or grant permission. Create test session
 tokens with your authentication provider, or configure explicit test middleware
 in the test application's source.
 
-`componentRpc` sends the production JSON envelope to `/crpc`. `serviceRpc`
-accepts `ownerRouteId`, `slot`, `action`, optional `payload`, `state` and
-`scopeKey`. It sends the same scoped-service envelope as the browser proxy.
+`componentRpc` sends the production JSON envelope to `/crpc`. Pass the page's
+route params as `pageParams`, and for a layout component the page's route id as
+`pageRouteId`; the server runs that page's guards with them. `serviceRpc`
+accepts `ownerRouteId`, `slot`, `componentRouteId` (the page the call runs
+under), `action`, and optional `pageParams`, `payload` and `state`. It sends
+the same scoped-service envelope as the browser proxy. The server runs the
+guards of that page with `pageParams`, as on SSR.
 The default Origin is the application's base origin. Supply a different Origin
 in the second argument to test rejection. Raw `request()` supports other
 methods, multipart uploads and abort signals. Read or cancel streaming response

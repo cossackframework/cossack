@@ -52,10 +52,6 @@ export function Page(options: PageOptions = {}): ClassDecorator {
     throw Object.assign(new Error('[Cossack] PageOptions.route is not supported. Define the URL through the component file path under src/pages.'),
       { code: 'COSSACK_ROUTE_ALIAS_UNSUPPORTED' });
   }
-  if (Object.prototype.hasOwnProperty.call(options, 'providers')) {
-    throw Object.assign(new Error('[Cossack] PageOptions.providers was removed. Move each provider to a component with a `scope` function.'),
-      { code: 'COSSACK_PROVIDERS_REMOVED' });
-  }
   return (target: object) => {
     const existingOptions = Reflect.hasOwnMetadata('page:options', target)
       ? Reflect.getOwnMetadata('page:options', target)

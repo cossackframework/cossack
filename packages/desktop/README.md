@@ -65,11 +65,21 @@ package resolution. Do not register another server that exposes native handlers
 on HTTP. Enable `developmentTraces: true` in `cossackPages()` to use the shared
 inspector and CLI/MCP capture readers.
 
+`createDesktopApp()` serves only hashed build output under `/assets/` before
+the application, with `Cache-Control: public, max-age=31536000, immutable` for
+hashed names. A missing `/assets/` file continues to the application. Every
+other request, including `public/` files, goes to the application. The
+framework serves those files from `ASSETS` after global and page policies, with
+`Cache-Control: public, max-age=0, must-revalidate`.
+
 The optional `assets.fetch(request)` provider on `createDesktopApp()` replaces
-filesystem asset lookup. A 404 falls through to application dispatch after its
-body is canceled. The development runner supplies this provider for Vite assets.
-Ordinary packaged apps use `assetsRoot`. Native proof headers are stripped
-before either provider or application code receives a request.
+filesystem lookup in `assetsRoot`. The runtime asks it for `/assets/*` before
+the application and cancels the body of a 404. It is also the application's
+`ASSETS` binding. The development runner supplies a Vite provider. It sends
+requests for `publicDir` files to the application, so their policies run, and
+lets Vite answer its client and modules first. Ordinary packaged apps use
+`assetsRoot`. Native proof headers are stripped before either provider or
+application code receives a request.
 
 `createDesktopApp()` forces context isolation and renderer sandboxing, with Node
 integration and preload bridges disabled. Only same-origin navigation is

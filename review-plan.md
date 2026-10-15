@@ -216,7 +216,7 @@ Ordered by measured or structural impact.
 - PR #100 shipped items 3, 4, 7, 8, 9, 10, 11, 12, 13, 15, 16, 17, 18 and 19, plus a single-pass `escapeHtml`. Items 1, 2 and 6 were already fixed on master; Phase 3 froze the shared template analysis and pinned every cached inline-CSS decision with tests.
 - Item 14 shipped separately as option B: one `<style data-cossack-style>` per component style scope in `<head>`, reference-counted per style root on the client.
 - Item 5 still needs a design decision.
-- Follow-ups found during Phase 3:
+- Follow-ups found during Phase 3 (fixed in PR #103 except where noted below):
   - `runTasks()` creates an AbortController and context per task on every client render, about 100 µs with six tasks.
   - `InMemoryCacheStore.write` scans every entry at capacity, the pattern item 8 fixed for rate limits.
   - In dev, the framework demo's `/renderer/lit-compat` page logs four `cossack.hydration.mismatch` text-content warnings. They predate Phase 3.
@@ -278,14 +278,23 @@ Every Phase 1 and Phase 2 row lacks a test today. Highest value:
 - Done in PR #102: the last two hand-written HTML scanners now use the shared tokenizer; live components rest in `Mounted`; `ValueSanitizer`/`SanitizerFactory`, `Select`, the `AccordionItem` alias and the r2-upload demo are gone; six UI components moved onto `ControlledValue`; UI callbacks follow one naming rule; SSE cold starts and SSG use the shared layout scope chain; the security plugin fails closed and logs automatic RPC endpoints; `generateStaticParams` removal holds; the listed docs match the code; `test-utils` stays private everywhere; releases wait for the e2e suites, and integration runs for every package change.
 - Also in PR #102: Phase 3 item 5 as option 3. Cloudflare serves hashed `/assets/*` without the Worker, and the Node entry runs policies before every other static file. Fixes found along the way: seven database bugs from the live suite (MySQL `findOne()`, UTC datetimes, one-to-one inverse loading, false drift), one auth timing bug, minification that dropped visible spaces, spread classes that differed between SSR and the client, and `cossack add ui` ejecting components that did not compile.
 - Already done before Phase 4: `_optimisticLockedKeys`, `invalidate$` binding, `storage/s3.ts`, the presigner, `CossackNodeAdapter`, the CLI dead code, several docs, and every listed renderer and core test.
-- Open:
-  - Custom `providers` were removed in favour of `scope`; each component has one realtime connection at `/ws/:id`. `scope` shares an instance across the URLs, tabs and devices of one page file only. State shared per user across different page files, or a child component with its own scope, would be a new feature.
-  - Transport routes shadow app pages silently: a page under `/sse/`, at `/crpc` or `/upload`, or now at a single segment under `/ws/` never renders. Reserve these paths in the route check the way `/assets` is reserved.
-  - The Desktop production asset server serves every file before policies, and `pnpm test:desktop` fails in its dev restart check, so it is not a release gate.
-  - The Cloudflare Durable Object `/ws` path in core creates pages without layout scopes, and layout-service RPC calls get no page route params.
-  - CI does not run the live PostgreSQL and MySQL suites yet; they need service containers and the `COSSACK_TEST_POSTGRES_URL`/`COSSACK_TEST_MYSQL_URL` variables.
-  - `specs/architecture.md` still says unit suites run serially.
-  - Two spreads on one element do not work on the client.
+- Open items from Phases 3 and 4 were fixed in PR #103; see below.
+
+### Open items outcome (2026-10-15)
+
+- Fixed in PR #103:
+  - Every trace of state providers is gone, including the removal error and the old WebSocket URL handling.
+  - Builds, `cossack check`, `cossack check routes` and deploy preflight reject pages at the transport paths (`/ws/`, `/sse/`, `/crpc`, `/upload`); every transport path comes from `@cossackframework/core/transport-routes`.
+  - Durable Object pages are built in their layout scopes. Component RPC, layout-service RPC and the WebSocket upgrade run every layout and page guard with checked route params, as SSR does.
+  - Desktop production serves only hashed `/assets/*` before policies; the dev restart check was a broken test and passes.
+  - `pnpm test:databases` and `pnpm test:desktop` are local pre-release suites, listed in `AGENTS.md`; CI does not run them.
+  - Studio loads PostgreSQL and MySQL schemas in a constant number of queries, reads PostgreSQL keys from `pg_catalog`, and no longer fails on MySQL foreign keys.
+  - The renderer applies every spread on an element and writes multi-value attributes once per render; the demo's dev hydration warnings came from its layout and are fixed.
+  - `runTasks()` and `InMemoryCacheStore` writes no longer do per-task or per-entry work when nothing restarts or the cache is full.
+- Remaining:
+  - State shared per user across different page files, or a child component with its own scope, would be a new realtime feature.
+  - The SSE endpoint's first guard pass runs without route params; every revalidation runs with them.
+  - A route param that a more specific sibling route would match (`team: 'new'` next to `/teams/new`) is accepted; only that page's own guards run.
 
 ## Suggested order
 

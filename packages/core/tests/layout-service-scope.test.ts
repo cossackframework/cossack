@@ -24,7 +24,6 @@ describe('layout-scoped services', () => {
 
     const options = Reflect.getMetadata('page:options', Layout);
     expect(options.services).toEqual([DashboardService]);
-    expect(options).not.toHaveProperty('providers');
   });
 
   it('rejects duplicate and undecorated declarations descriptively', () => {
@@ -238,6 +237,41 @@ describe('layout-scoped services', () => {
       expect(isRpcCallableAction(ActionService, 'helper')).toBe(false);
       expect(isRpcCallableAction(ActionService, '__proto__')).toBe(false);
     } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('names the page the browser is on at call time, with its route params', async () => {
+    @Service()
+    class TeamService {
+      @Server() load() { return -1; }
+    }
+    const bodies: Record<string, unknown>[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init: RequestInit) => {
+      bodies.push(JSON.parse(String(init.body)));
+      return new Response(JSON.stringify({ _cossack_service_state: {}, _cossack_return: null }),
+        { headers: { 'Content-Type': 'application/json' } });
+    }));
+    const win = window as unknown as { __INITIAL_STATE__?: unknown };
+    const previous = win.__INITIAL_STATE__;
+    try {
+      const scope = new ServiceScope(undefined, [TeamService], { ownerRouteId: 'team-layout', scopeKey: 'team:alpha' });
+      const service = scope.resolveDeclared(TeamService);
+      win.__INITIAL_STATE__ = { public: {}, componentRouteId: 'members-page', scopeKey: 'team:alpha',
+        metadata: { componentId: 'Members', params: { team: 'alpha' } } };
+      await service.load();
+      // Client navigation keeps the layout scope and replaces the page state.
+      win.__INITIAL_STATE__ = { public: {}, componentRouteId: 'project-page', scopeKey: 'team:alpha',
+        metadata: { componentId: 'Project', params: { team: 'alpha', project: 'p1' } } };
+      await service.load();
+      expect(bodies.map(({ componentRouteId, pageParams }) => ({ componentRouteId, pageParams }))).toEqual([
+        { componentRouteId: 'members-page', pageParams: { team: 'alpha' } },
+        { componentRouteId: 'project-page', pageParams: { team: 'alpha', project: 'p1' } },
+      ]);
+      // The server computes the scope key from the page; the browser does not choose it.
+      for (const body of bodies) expect(body).not.toHaveProperty('scopeKey');
+    } finally {
+      win.__INITIAL_STATE__ = previous;
       vi.unstubAllGlobals();
     }
   });

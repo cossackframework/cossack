@@ -6,7 +6,7 @@ import {
   quoteIdentifier,
   statementMayChangeSchema,
 } from './sql.js';
-import { findObject, introspectSchema } from './schema.js';
+import { findObject, introspectSchema, loadDeferredDefinition } from './schema.js';
 import { normalizeQueryResult } from './transport.js';
 import { chunkStatements, runStatements } from './batch.js';
 import type { DatabaseInspection } from '@cossackframework/database/tooling';
@@ -295,6 +295,20 @@ export class StudioDatabase {
       ...(inspectionAvailable ? { inspectionAvailable } : {}),
       ...(this.inspection ? { inspection: this.inspection } : {}),
     };
+  }
+
+  /**
+   * Return an object's CREATE statement. Introspection defers definitions that
+   * cost one query per object (MySQL SHOW CREATE, see `sqlDeferred`). This
+   * loads one and keeps it in the cached schema until the next invalidation.
+   */
+  async getDefinition(name: string): Promise<string | null> {
+    const object = await this.findSchemaObject(name);
+    if (!object.sqlDeferred) return object.sql;
+    const sql = await loadDeferredDefinition(this.connection, object);
+    object.sql = sql;
+    delete object.sqlDeferred;
+    return sql;
   }
 
   /** Find an object, re-introspecting once if the cached schema lacks it. */

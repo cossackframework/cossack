@@ -134,15 +134,18 @@ test.describe('DI Demo Page', () => {
   });
 
   test('supports service redirects and rejects forged service actions', async ({ page, request }) => {
-    const target = await page.evaluate(() => {
-      const layout = (window as any).__INITIAL_STATE__._layout_stack
-        .find((item: any) => item.path.endsWith('/di-demo/layout.ts'));
-      return { ownerRouteId: layout.componentRouteId, slot: '0' };
+    const { target, pageRouteId, pageParams } = await page.evaluate(() => {
+      const state = (window as any).__INITIAL_STATE__;
+      const layout = state._layout_stack.find((item: any) => item.path.endsWith('/di-demo/layout.ts'));
+      return { target: { ownerRouteId: layout.componentRouteId, slot: '0' },
+        pageRouteId: state.componentRouteId, pageParams: state.metadata.params };
     });
     const forged = await request.post('/crpc', {
       headers: { origin: new URL(page.url()).origin },
       data: {
         service: target,
+        componentRouteId: pageRouteId,
+        pageParams,
         action: 'formatCount',
         payload: [],
         state: { count: 0 },
@@ -150,6 +153,13 @@ test.describe('DI Demo Page', () => {
     });
     expect(forged.status()).toBe(403);
     expect((await forged.json()).error).toContain('not a callable service method');
+    // A service call runs under a named page; without one it never reaches a guard.
+    const pageless = await request.post('/crpc', {
+      headers: { origin: new URL(page.url()).origin },
+      data: { service: target, action: 'increment', payload: [], state: { count: 0 } },
+    });
+    expect(pageless.status()).toBe(400);
+    expect(await pageless.json()).toMatchObject({ code: 'COSSACK_RPC_REQUEST_INVALID' });
 
     await page.click('a:has-text("Open another page")');
     await page.click('button:has-text("Service redirect home")');

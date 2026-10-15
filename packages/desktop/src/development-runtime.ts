@@ -3,9 +3,13 @@ import { app, BrowserWindow, createDesktopApp, type DesktopApplication, type Des
 import { relative } from 'node:path';
 import { createServer as createHttpServer } from 'node:http';
 import { desktopDevelopmentError } from './development-error.js';
+import { isPublicFileRequest } from './development-assets.js';
 import { transformDesktopDocument } from './development-response.js';
 
 type DevelopmentVariables = Record<string, string | undefined>;
+
+/** An HTML path that no Desktop page uses. See the startup recovery in boot(). */
+const startupRecoveryPath = '/@cossack-desktop/startup-recovered.html';
 
 interface DesktopDevelopmentEntry {
   frameworkApp: { fetch: DesktopFetch };
@@ -161,8 +165,20 @@ async function main() {
   const factory: typeof createDesktopApp = (options) =>
     createDesktopApp({
       ...options,
+      // The runtime answers /assets/* from Vite and gives the application
+      // Vite as its ASSETS binding.
       assets,
       fetch: async (request, requestEnv) => {
+        // As in production, public/ files go through the application, which
+        // reads them from ASSETS after global and page policies. Vite answers
+        // its client, modules and transformed source first, as production
+        // serves hashed /assets/* first. A Vite 404 reaches the application.
+        const publicFile = await isPublicFileRequest(request, server.config.publicDir);
+        if (!publicFile) {
+          const served = await assets.fetch(request);
+          if (served.status !== 404) return served;
+          await served.body?.cancel();
+        }
         try {
           const { entry, env } = await load();
           const response = await entry.frameworkApp.fetch(request, {
@@ -171,6 +187,8 @@ async function main() {
             ASSETS: requestEnv?.ASSETS,
             COSSACK_DESKTOP: requestEnv?.COSSACK_DESKTOP,
           });
+          // Public files keep their bytes, as Vite and production serve them.
+          if (publicFile) return response;
           return await transformDesktopDocument(request, response, (pathname, html) =>
             server.transformIndexHtml(pathname, html),
           );
@@ -184,10 +202,14 @@ async function main() {
     return (booting ??= load()
       .then(async ({ entry }) => {
         if (!stopped && !application) {
-          // Vite buffers errors until a browser connects. Replace the startup
-          // error before opening the first window, so repaired source does not
-          // receive a stale overlay. The first connection consumes this reload.
-          if (startupFailed) server.ws.send({ type: 'full-reload' });
+          // Vite keeps the last error or reload for the first browser that
+          // connects. Replace the startup error before opening the first
+          // window, so repaired source does not receive a stale overlay. A
+          // client reloads for an HTML path only when it shows that page, and
+          // no page uses this path. The first window therefore keeps its
+          // document when it connects, however late its socket opens, instead
+          // of reloading while it is already in use.
+          if (startupFailed) server.ws.send({ type: 'full-reload', path: startupRecoveryPath });
           startupFailed = false;
           application = await entry.startDesktop(factory);
           console.log(`[desktop] Development ready at cossack://app (assets ${origin})`);

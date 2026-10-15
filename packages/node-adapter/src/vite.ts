@@ -5,6 +5,7 @@ import type { IncomingMessage } from 'node:http';
 import type { Duplex } from 'node:stream';
 import { relative } from 'node:path';
 import type { NodeUpgradeServer } from './adapter';
+import { isTransportPath } from '@cossackframework/core/transport-routes';
 
 /** Structural application entry; this tooling never imports the framework. */
 export interface NodeDevelopmentEntry {
@@ -127,7 +128,7 @@ export function cossackNode(options: NodeDevelopmentOptions = {}): Plugin {
                 return load();
             };
             const onUpgrade = (request: IncomingMessage, socket: Duplex, head: Buffer) => {
-                if (!request.url?.startsWith('/ws/')) return;
+                if (!isTransportPath(request.url?.split('?', 1)[0] ?? '', 'websocket')) return;
                 waitingSockets.add(socket);
                 const forget = () => waitingSockets.delete(socket);
                 socket.once('close', forget);

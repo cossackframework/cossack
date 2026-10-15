@@ -50,6 +50,18 @@ pnpm run test:unit
 ### E2E Tests
 pnpm run test:e2e
 
+### CLI Integration Tests
+Run them through pnpm, for example `pnpm --filter cossack run test:integration tests/deploy-integration.test.js`.
+Never run them with vitest directly: outside `pnpm run`, generated test apps can install packages through their linked folders and corrupt the repository's `node_modules`.
+
+### Slow Suites: Run Locally Before a Release
+CI skips these suites because they are slow or need Docker or a display. Run both locally before every release, and report the results in the release PR:
+
+- `pnpm test:databases`: live PostgreSQL and MySQL suites, plus Studio introspection against both. Needs Docker, or set `COSSACK_TEST_POSTGRES_URL` and `COSSACK_TEST_MYSQL_URL`.
+- `pnpm test:desktop`: packages and runs the Desktop app, including its dev restart check.
+
+Also run them after changing `packages/database`, `packages/studio` or `packages/desktop`.
+
 ## Docs References
 Use Cloudflare skills and MCP server, however, if you still need to find docs for solutions, you can use the following links:
 

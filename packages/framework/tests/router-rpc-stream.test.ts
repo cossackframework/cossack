@@ -114,7 +114,7 @@ const request = (action = 'stream', extra: Record<string, unknown> = {}, headers
 const serviceRequest = (action: string, extra: Record<string, unknown> = {}, headers: Record<string, string> = {}) =>
     createApp().request(endpoint(), {
         method: 'POST', headers: { origin: 'http://localhost', ...(requestTransport === 'json' ? { 'Content-Type': 'application/json' } : {}), ...headers },
-        body: requestBody({ service: { ownerRouteId: layoutId, slot: '0' }, action, payload: [], scopeKey: 'user:anonymous', ...extra }),
+        body: requestBody({ service: { ownerRouteId: layoutId, slot: '0' }, componentRouteId: id, pageParams: {}, action, payload: [], ...extra }),
     }, { APP_URL: 'https://configured.test', APP_SECRET: 'rpc-test-signing-secret-16-chars' } as any);
 async function collect(response: Response) {
     const frames = [];

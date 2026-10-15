@@ -72,7 +72,9 @@ that have no page component. Match the entire protected path namespace.
 The `/assets/` namespace is reserved for build output. The build,
 `cossack check cloudflare`, and deploy preflight fail with
 `COSSACK_ASSETS_NAMESPACE_RESERVED` if `public/assets/` exists or a page or API
-route resolves under `/assets`. Keep the client build's `entryFileNames`,
+route resolves under `/assets`. They fail with `COSSACK_TRANSPORT_ROUTE_RESERVED`
+for a route at a framework transport path, such as `/crpc` or `/ws/chat`. See
+[Reserved paths](./routing.md#reserved-paths). Keep the client build's `entryFileNames`,
 `chunkFileNames`, and `assetFileNames` under `assets/`. If the client manifest
 lists files outside `assets/`, the build warns. With the pattern above, the
 built-artifact check in `cossack deploy` (and in builds with budgets) then fails

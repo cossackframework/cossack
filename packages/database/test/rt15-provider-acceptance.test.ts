@@ -7,17 +7,19 @@ import { turso } from '../src/runtime/turso.js';
 import { D1Driver, type D1DatabaseBinding } from '../src/runtime/cloudflare.js';
 import { SchemaBuilder } from '../src/schema/builder.js';
 import type { Adapter } from '../src/adapter/types.js';
+import { liveDatabaseUrls } from './live-urls.js';
 
 @Entity({ tableName: 'rt15_generated_acceptance' })
 class ProviderGenerated extends BaseEntity {
   @PrimaryGeneratedColumn() declare id: number;
   @Column({ type: 'text' }) declare value: string;
 }
+const live = liveDatabaseUrls();
 const providers: [string, () => Promise<Adapter>, boolean][] = [
   ['sqlite', () => nodeSQLite(), true],
   ['turso', () => turso({ path: ':memory:' }), true],
-  ['postgres', () => postgres(process.env.COSSACK_TEST_POSTGRES_URL!), !!process.env.COSSACK_TEST_POSTGRES_URL],
-  ['mysql', () => mysql(process.env.COSSACK_TEST_MYSQL_URL!), !!process.env.COSSACK_TEST_MYSQL_URL],
+  ['postgres', () => postgres(live.postgres!), !!live.postgres],
+  ['mysql', () => mysql(live.mysql!), !!live.mysql],
 ];
 for (const [provider, factory, available] of providers) {
   it.skipIf(!available)(`proves generated values, commit, rollback and nested savepoints on actual ${provider}`, async () => {

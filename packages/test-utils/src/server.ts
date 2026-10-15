@@ -11,6 +11,7 @@
 
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { Context } from 'hono';
+import { TRANSPORT_ROUTES } from '@cossackframework/core/transport-routes';
 import {
     createRootServiceScope,
     setRequestContextGetter,
@@ -145,16 +146,22 @@ export interface ComponentRpcRequest {
     state?: Record<string, unknown>;
     scopeKey?: string;
     target?: string;
+    /** Route params of the page the call runs under. Defaults to none. */
     pageParams?: Record<string, string>;
+    /** For a layout component: route id of the page the call runs under. */
+    pageRouteId?: string;
 }
 
 export interface ServiceRpcRequest {
     ownerRouteId: string;
     slot: string;
+    /** Route id of the page the call runs under. The owning layout must enclose it. */
+    componentRouteId: string;
+    /** Route params of that page. Defaults to none. */
+    pageParams?: Record<string, string>;
     action: string;
     payload?: unknown[];
     state?: Record<string, unknown>;
-    scopeKey?: string;
 }
 
 /** Real request dispatch: no alternate router, policy, DI, or cleanup implementation. */
@@ -169,13 +176,13 @@ export function createServerApp<Env>(options: ServerAppOptions<Env>) {
         const headers = new Headers(init?.headers);
         if (!headers.has('Origin')) headers.set('Origin', base.origin);
         headers.set('Content-Type', 'application/json');
-        return request('/crpc', { ...init, method: 'POST', headers, body: JSON.stringify(body) });
+        return request(TRANSPORT_ROUTES.rpc, { ...init, method: 'POST', headers, body: JSON.stringify(body) });
     };
     return {
         request,
         componentRpc: (body: ComponentRpcRequest, init?: RequestInit) => rpc({ payload: [], state: {}, ...body }, init),
         serviceRpc: ({ ownerRouteId, slot, ...body }: ServiceRpcRequest, init?: RequestInit) =>
-            rpc({ payload: [], state: {}, ...body, service: { ownerRouteId, slot } }, init),
+            rpc({ payload: [], state: {}, pageParams: {}, ...body, service: { ownerRouteId, slot } }, init),
     };
 }
 

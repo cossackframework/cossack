@@ -1,13 +1,23 @@
 import { isOriginAllowed, RpcError } from '@cossackframework/core';
-import type { MiddlewareHandler } from 'hono';
+import type { Context, MiddlewareHandler } from 'hono';
 import type { RouterContext } from '../route-ids.js';
 import { readRpcRequest, RPC_JSON_REQUEST_MAX_BYTES } from './http.js';
 import { discardRequestBody } from '../request-body.js';
+import { withRuntimeRouteParams } from '../runtime-websocket.js';
+import { isTransportPath } from '../transport-routes.js';
+import { checkSocketRouteParams, resolveComponentRpcTarget, resolveServiceRpcTarget } from './rpc-target.js';
 
-/** Apply the addressed page/layout guards before any transport can bootstrap it. */
+/**
+ * Apply the addressed page/layout guards before any transport can bootstrap it.
+ * RPC calls and WebSocket upgrades run the guards once, with the page's route
+ * params checked as client input, exactly as SSR of that URL runs them. The SSE
+ * endpoint keeps running them here without params and again, with params, for
+ * each realtime revalidation.
+ */
 export function protectTransport(ctx: RouterContext): MiddlewareHandler {
     return async (c, next) => {
         let componentPath: string | undefined;
+        let guarded: Context = c;
         if (c.req.method === 'POST') {
             // Multipart and text/plain requests can be sent without a CORS preflight.
             // CORS response headers alone cannot prevent their side effects.
@@ -27,8 +37,23 @@ export function protectTransport(ctx: RouterContext): MiddlewareHandler {
                 if (!body || typeof body !== 'object' || Array.isArray(body)) {
                     return c.json({ error: 'Invalid transport body' }, 400);
                 }
-                const routeId = body.service?.ownerRouteId ?? body.componentRouteId;
-                componentPath = typeof routeId === 'string' ? ctx.routeIdMap.get(routeId) : undefined;
+                if (body.service !== undefined) {
+                    // A layout service runs under the page the browser is on.
+                    // Guard it like SSR of that page: every layout and page
+                    // guard, with the page's checked route params.
+                    const target = resolveServiceRpcTarget(ctx, body);
+                    if (!target) return c.json({ error: 'Invalid service target', code: 'COSSACK_RPC_REQUEST_INVALID', requestId }, 400);
+                    componentPath = target.pagePath;
+                    guarded = withRuntimeRouteParams(c, target.params);
+                } else {
+                    const resolved = resolveComponentRpcTarget(ctx, body);
+                    if ('error' in resolved) {
+                        if (resolved.error === 'params') return c.json({ error: 'Invalid route params', code: 'COSSACK_RPC_REQUEST_INVALID', requestId }, 400);
+                    } else {
+                        componentPath = resolved.target.guardPath;
+                        guarded = withRuntimeRouteParams(c, resolved.target.params);
+                    }
+                }
             } catch (error) {
                 if (error instanceof RpcError && error.code === 'COSSACK_RPC_REQUEST_TOO_LARGE') {
                     return c.json({ error: error.message, code: error.code, requestId }, 413);
@@ -36,11 +61,20 @@ export function protectTransport(ctx: RouterContext): MiddlewareHandler {
                 return c.json({ error: error instanceof RpcError ? error.message : 'Invalid transport body',
                     code: 'COSSACK_RPC_REQUEST_INVALID', requestId }, 400);
             }
-        } else if (c.req.path.startsWith('/sse/')) {
+        } else if (isTransportPath(c.req.path, 'sse')) {
             componentPath = ctx.routeIdMap.get(c.req.param('componentRouteId') ?? '');
         } else {
             const route = c.req.query('routePath') || c.req.query('componentPath');
             componentPath = route ? ctx.routePathToFilePathMap.get(route) || route : undefined;
+            if (componentPath && (Object.hasOwn(ctx.pages, componentPath) || Object.hasOwn(ctx.layouts, componentPath))) {
+                // The upgrade carries the page's route params. They name the
+                // realtime instance too, so the guards decide on the same values.
+                let params: Record<string, string> | undefined;
+                try { params = checkSocketRouteParams(ctx, componentPath, JSON.parse(c.req.query('params') ?? '{}')); }
+                catch { params = undefined; }
+                if (!params) return c.text('Invalid WebSocket route params', 400);
+                guarded = withRuntimeRouteParams(c, params);
+            }
         }
         if (!componentPath) return c.json({ error: 'Invalid component ID' }, 400);
         const middlewares = ctx.getMiddlewares?.(componentPath) ?? [];
@@ -52,7 +86,7 @@ export function protectTransport(ctx: RouterContext): MiddlewareHandler {
             index = position;
             const middleware = middlewares[position];
             if (!middleware) return next();
-            const response = await middleware(c, () => dispatch(position + 1));
+            const response = await middleware(guarded, () => dispatch(position + 1));
             if (response) c.res = response;
         };
         await dispatch(0);

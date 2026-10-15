@@ -176,7 +176,12 @@ export class StructureTab extends Cossack {
           ` : html`<p class="text-sm text-muted-foreground">No indexes declared.</p>`}
         </section>
 
-        ${object.sql ? html`
+        ${object.sqlDeferred ? html`
+          <section class="mt-6">
+            <h3 class="mb-2 font-semibold">Definition</h3>
+            <p class="text-sm text-muted-foreground" data-testid="structure-sql-loading">Loading definition…</p>
+          </section>
+        ` : object.sql ? html`
           <section class="mt-6">
             <h3 class="mb-2 font-semibold">Definition</h3>
             ${component(CodeEditor, {

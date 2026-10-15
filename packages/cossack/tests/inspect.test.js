@@ -85,6 +85,33 @@ describe('Cloudflare configuration inspection', () => {
     expect(JSON.parse(output.mock.calls[0][0]).ok).toBe(false);
   });
 
+  it('reports routes at reserved paths before a build, as build and deploy preflight do', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-reserved-routes-'));
+    roots.push(root);
+    await fs.writeFile(path.join(root, 'package.json'), JSON.stringify({ dependencies: { '@cossackframework/node-adapter': '*' } }));
+    const page = "@Page({ transport: 'http' }) export default class P { render() { return 1; } }";
+    for (const file of ['src/pages/index.ts', 'src/pages/crpc/index.ts', 'src/pages/ws/chat.ts', 'src/pages/assets/index.ts']) {
+      await fs.mkdir(path.dirname(path.join(root, file)), { recursive: true });
+      await fs.writeFile(path.join(root, file), page);
+    }
+    await fs.mkdir(path.join(root, 'public/assets'), { recursive: true });
+    const output = vi.spyOn(console, 'log').mockImplementation(() => {});
+    expect(await checkCommand(['routes'], { cwd: root, flags: { json: true } })).toBe(1);
+    const { diagnostics } = JSON.parse(output.mock.calls[0][0]);
+    const reserved = diagnostics.filter(d => d.code.endsWith('_RESERVED')).map(({ code, source }) => ({ code, source }));
+    expect(reserved).toEqual(expect.arrayContaining([
+      { code: 'COSSACK_TRANSPORT_ROUTE_RESERVED', source: 'src/pages/crpc/index.ts' },
+      { code: 'COSSACK_TRANSPORT_ROUTE_RESERVED', source: 'src/pages/ws/chat.ts' },
+      { code: 'COSSACK_ASSETS_NAMESPACE_RESERVED', source: 'src/pages/assets/index.ts' },
+      { code: 'COSSACK_ASSETS_NAMESPACE_RESERVED', source: 'public/assets' },
+    ]));
+    expect(reserved).toHaveLength(4);
+    // Local agent tools read the same check.
+    const { checkReservedPaths } = await import('@cossackframework/framework/deployment-artifact');
+    expect((await inspectProject(root, { scope: 'routes', check: true })).diagnostics.filter(d => d.code.endsWith('_RESERVED'))
+      .map(d => d.message)).toEqual(checkReservedPaths(root).map(d => d.message));
+  });
+
   it('checks route bindings against the selected Wrangler environment', async () => {
     const durable_objects = { bindings: [{ name: 'COSSACK_SSE', class_name: 'SseDurableObject' }] };
     const ctx = await fixture({ durable_objects, env: {

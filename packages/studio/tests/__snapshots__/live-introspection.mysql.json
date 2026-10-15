@@ -1,0 +1,1590 @@
+[
+  {
+    "name": "sl_accounts",
+    "kind": "table",
+    "sql": "CREATE TABLE `sl_accounts` (\n  `id` int NOT NULL AUTO_INCREMENT,\n  `email` varchar(120) NOT NULL,\n  `name` text,\n  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`),\n  UNIQUE KEY `sl_accounts_email_key` (`email`),\n  KEY `sl_accounts_lower_email_idx` ((lower(`email`)))\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci",
+    "columns": [
+      {
+        "name": "id",
+        "dataType": "int",
+        "affinity": "integer",
+        "declaredKind": "number",
+        "nullable": false,
+        "defaultValue": null,
+        "primaryKeyPosition": 1,
+        "autoIncrement": true,
+        "hidden": false
+      },
+      {
+        "name": "email",
+        "dataType": "varchar(120)",
+        "affinity": "text",
+        "declaredKind": "varchar",
+        "nullable": false,
+        "defaultValue": null,
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      },
+      {
+        "name": "name",
+        "dataType": "text",
+        "affinity": "text",
+        "declaredKind": "text",
+        "nullable": true,
+        "defaultValue": null,
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      },
+      {
+        "name": "created_at",
+        "dataType": "datetime",
+        "affinity": "text",
+        "declaredKind": "datetime",
+        "nullable": false,
+        "defaultValue": "CURRENT_TIMESTAMP",
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      }
+    ],
+    "indexes": [
+      {
+        "name": "PRIMARY",
+        "unique": true,
+        "origin": "pk",
+        "partial": false,
+        "columns": [
+          {
+            "name": "id",
+            "position": 0,
+            "descending": false,
+            "collation": null
+          }
+        ]
+      },
+      {
+        "name": "sl_accounts_email_key",
+        "unique": true,
+        "origin": "u",
+        "partial": false,
+        "columns": [
+          {
+            "name": "email",
+            "position": 0,
+            "descending": false,
+            "collation": null
+          }
+        ]
+      },
+      {
+        "name": "sl_accounts_lower_email_idx",
+        "unique": false,
+        "origin": "c",
+        "partial": false,
+        "columns": [
+          {
+            "name": null,
+            "position": 0,
+            "descending": false,
+            "collation": null
+          }
+        ]
+      }
+    ],
+    "foreignKeys": [],
+    "rowLocators": [
+      {
+        "kind": "primary-key",
+        "columns": [
+          "id"
+        ]
+      },
+      {
+        "kind": "unique-index",
+        "columns": [
+          "email"
+        ],
+        "name": "sl_accounts_email_key"
+      }
+    ],
+    "editable": true
+  },
+  {
+    "name": "sl_audit_log",
+    "kind": "table",
+    "sql": "CREATE TABLE `sl_audit_log` (\n  `message` text,\n  `created_at` datetime DEFAULT NULL\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci",
+    "columns": [
+      {
+        "name": "message",
+        "dataType": "text",
+        "affinity": "text",
+        "declaredKind": "text",
+        "nullable": true,
+        "defaultValue": null,
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      },
+      {
+        "name": "created_at",
+        "dataType": "datetime",
+        "affinity": "text",
+        "declaredKind": "datetime",
+        "nullable": true,
+        "defaultValue": null,
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      }
+    ],
+    "indexes": [],
+    "foreignKeys": [],
+    "rowLocators": [],
+    "editable": false,
+    "readOnlyReason": "This table has no primary key or non-null unique index."
+  },
+  {
+    "name": "sl_categories",
+    "kind": "table",
+    "sql": "CREATE TABLE `sl_categories` (\n  `id` int NOT NULL,\n  `parent_id` int DEFAULT NULL,\n  `name` varchar(80) NOT NULL,\n  PRIMARY KEY (`id`),\n  KEY `sl_categories_parent_name_idx` (`parent_id`,`name`),\n  CONSTRAINT `sl_categories_parent_fk` FOREIGN KEY (`parent_id`) REFERENCES `sl_categories` (`id`) ON DELETE SET NULL\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci",
+    "columns": [
+      {
+        "name": "id",
+        "dataType": "int",
+        "affinity": "integer",
+        "declaredKind": "number",
+        "nullable": false,
+        "defaultValue": null,
+        "primaryKeyPosition": 1,
+        "autoIncrement": false,
+        "hidden": false
+      },
+      {
+        "name": "parent_id",
+        "dataType": "int",
+        "affinity": "integer",
+        "declaredKind": "number",
+        "nullable": true,
+        "defaultValue": null,
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      },
+      {
+        "name": "name",
+        "dataType": "varchar(80)",
+        "affinity": "text",
+        "declaredKind": "varchar",
+        "nullable": false,
+        "defaultValue": null,
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      }
+    ],
+    "indexes": [
+      {
+        "name": "PRIMARY",
+        "unique": true,
+        "origin": "pk",
+        "partial": false,
+        "columns": [
+          {
+            "name": "id",
+            "position": 0,
+            "descending": false,
+            "collation": null
+          }
+        ]
+      },
+      {
+        "name": "sl_categories_parent_name_idx",
+        "unique": false,
+        "origin": "c",
+        "partial": false,
+        "columns": [
+          {
+            "name": "parent_id",
+            "position": 0,
+            "descending": false,
+            "collation": null
+          },
+          {
+            "name": "name",
+            "position": 1,
+            "descending": false,
+            "collation": null
+          }
+        ]
+      }
+    ],
+    "foreignKeys": [
+      {
+        "name": "sl_categories_parent_fk",
+        "referencedTable": "sl_categories",
+        "columns": [
+          {
+            "column": "parent_id",
+            "referencedColumn": "id",
+            "position": 0
+          }
+        ],
+        "onUpdate": "NO ACTION",
+        "onDelete": "SET NULL"
+      }
+    ],
+    "rowLocators": [
+      {
+        "kind": "primary-key",
+        "columns": [
+          "id"
+        ]
+      }
+    ],
+    "editable": true
+  },
+  {
+    "name": "sl_employees",
+    "kind": "table",
+    "sql": "CREATE TABLE `sl_employees` (\n  `id` int NOT NULL,\n  `manager_id` int DEFAULT NULL,\n  `name` varchar(80) NOT NULL,\n  PRIMARY KEY (`id`),\n  UNIQUE KEY `sl_employees_name_idx` (`name`),\n  KEY `sl_employees_manager_fk` (`manager_id`),\n  CONSTRAINT `sl_employees_manager_fk` FOREIGN KEY (`manager_id`) REFERENCES `sl_employees` (`id`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci",
+    "columns": [
+      {
+        "name": "id",
+        "dataType": "int",
+        "affinity": "integer",
+        "declaredKind": "number",
+        "nullable": false,
+        "defaultValue": null,
+        "primaryKeyPosition": 1,
+        "autoIncrement": false,
+        "hidden": false
+      },
+      {
+        "name": "manager_id",
+        "dataType": "int",
+        "affinity": "integer",
+        "declaredKind": "number",
+        "nullable": true,
+        "defaultValue": null,
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      },
+      {
+        "name": "name",
+        "dataType": "varchar(80)",
+        "affinity": "text",
+        "declaredKind": "varchar",
+        "nullable": false,
+        "defaultValue": null,
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      }
+    ],
+    "indexes": [
+      {
+        "name": "PRIMARY",
+        "unique": true,
+        "origin": "pk",
+        "partial": false,
+        "columns": [
+          {
+            "name": "id",
+            "position": 0,
+            "descending": false,
+            "collation": null
+          }
+        ]
+      },
+      {
+        "name": "sl_employees_manager_fk",
+        "unique": false,
+        "origin": "c",
+        "partial": false,
+        "columns": [
+          {
+            "name": "manager_id",
+            "position": 0,
+            "descending": false,
+            "collation": null
+          }
+        ]
+      },
+      {
+        "name": "sl_employees_name_idx",
+        "unique": true,
+        "origin": "u",
+        "partial": false,
+        "columns": [
+          {
+            "name": "name",
+            "position": 0,
+            "descending": false,
+            "collation": null
+          }
+        ]
+      }
+    ],
+    "foreignKeys": [
+      {
+        "name": "sl_employees_manager_fk",
+        "referencedTable": "sl_employees",
+        "columns": [
+          {
+            "column": "manager_id",
+            "referencedColumn": "id",
+            "position": 0
+          }
+        ],
+        "onUpdate": "NO ACTION",
+        "onDelete": "NO ACTION"
+      }
+    ],
+    "rowLocators": [
+      {
+        "kind": "primary-key",
+        "columns": [
+          "id"
+        ]
+      },
+      {
+        "kind": "unique-index",
+        "columns": [
+          "name"
+        ],
+        "name": "sl_employees_name_idx"
+      }
+    ],
+    "editable": true
+  },
+  {
+    "name": "sl_members",
+    "kind": "table",
+    "sql": "CREATE TABLE `sl_members` (\n  `team_id` int NOT NULL,\n  `account_id` int NOT NULL,\n  `role` varchar(20) NOT NULL DEFAULT 'member',\n  PRIMARY KEY (`team_id`,`account_id`),\n  KEY `sl_members_account_fk` (`account_id`),\n  CONSTRAINT `sl_members_account_fk` FOREIGN KEY (`account_id`) REFERENCES `sl_accounts` (`id`) ON UPDATE CASCADE,\n  CONSTRAINT `sl_members_team_fk` FOREIGN KEY (`team_id`) REFERENCES `sl_teams` (`id`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci",
+    "columns": [
+      {
+        "name": "team_id",
+        "dataType": "int",
+        "affinity": "integer",
+        "declaredKind": "number",
+        "nullable": false,
+        "defaultValue": null,
+        "primaryKeyPosition": 1,
+        "autoIncrement": false,
+        "hidden": false
+      },
+      {
+        "name": "account_id",
+        "dataType": "int",
+        "affinity": "integer",
+        "declaredKind": "number",
+        "nullable": false,
+        "defaultValue": null,
+        "primaryKeyPosition": 2,
+        "autoIncrement": false,
+        "hidden": false
+      },
+      {
+        "name": "role",
+        "dataType": "varchar(20)",
+        "affinity": "text",
+        "declaredKind": "varchar",
+        "nullable": false,
+        "defaultValue": "member",
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      }
+    ],
+    "indexes": [
+      {
+        "name": "PRIMARY",
+        "unique": true,
+        "origin": "pk",
+        "partial": false,
+        "columns": [
+          {
+            "name": "team_id",
+            "position": 0,
+            "descending": false,
+            "collation": null
+          },
+          {
+            "name": "account_id",
+            "position": 1,
+            "descending": false,
+            "collation": null
+          }
+        ]
+      },
+      {
+        "name": "sl_members_account_fk",
+        "unique": false,
+        "origin": "c",
+        "partial": false,
+        "columns": [
+          {
+            "name": "account_id",
+            "position": 0,
+            "descending": false,
+            "collation": null
+          }
+        ]
+      }
+    ],
+    "foreignKeys": [
+      {
+        "name": "sl_members_account_fk",
+        "referencedTable": "sl_accounts",
+        "columns": [
+          {
+            "column": "account_id",
+            "referencedColumn": "id",
+            "position": 0
+          }
+        ],
+        "onUpdate": "CASCADE",
+        "onDelete": "NO ACTION"
+      },
+      {
+        "name": "sl_members_team_fk",
+        "referencedTable": "sl_teams",
+        "columns": [
+          {
+            "column": "team_id",
+            "referencedColumn": "id",
+            "position": 0
+          }
+        ],
+        "onUpdate": "NO ACTION",
+        "onDelete": "NO ACTION"
+      }
+    ],
+    "rowLocators": [
+      {
+        "kind": "primary-key",
+        "columns": [
+          "team_id",
+          "account_id"
+        ]
+      }
+    ],
+    "editable": true
+  },
+  {
+    "name": "sl_nullable_unique",
+    "kind": "table",
+    "sql": "CREATE TABLE `sl_nullable_unique` (\n  `code` varchar(20) DEFAULT NULL,\n  `note` text,\n  UNIQUE KEY `code` (`code`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci",
+    "columns": [
+      {
+        "name": "code",
+        "dataType": "varchar(20)",
+        "affinity": "text",
+        "declaredKind": "varchar",
+        "nullable": true,
+        "defaultValue": null,
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      },
+      {
+        "name": "note",
+        "dataType": "text",
+        "affinity": "text",
+        "declaredKind": "text",
+        "nullable": true,
+        "defaultValue": null,
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      }
+    ],
+    "indexes": [
+      {
+        "name": "code",
+        "unique": true,
+        "origin": "u",
+        "partial": false,
+        "columns": [
+          {
+            "name": "code",
+            "position": 0,
+            "descending": false,
+            "collation": null
+          }
+        ]
+      }
+    ],
+    "foreignKeys": [],
+    "rowLocators": [],
+    "editable": false,
+    "readOnlyReason": "This table has no primary key or non-null unique index."
+  },
+  {
+    "name": "sl_order_lines",
+    "kind": "table",
+    "sql": "CREATE TABLE `sl_order_lines` (\n  `order_id` int NOT NULL,\n  `line_no` int NOT NULL,\n  `product_id` bigint NOT NULL,\n  `quantity` int NOT NULL,\n  PRIMARY KEY (`order_id`,`line_no`),\n  KEY `sl_order_lines_product_fk` (`product_id`),\n  CONSTRAINT `sl_order_lines_order_fk` FOREIGN KEY (`order_id`) REFERENCES `sl_orders` (`id`) ON DELETE CASCADE,\n  CONSTRAINT `sl_order_lines_product_fk` FOREIGN KEY (`product_id`) REFERENCES `sl_products` (`id`),\n  CONSTRAINT `sl_order_lines_chk_1` CHECK ((`quantity` > 0))\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci",
+    "columns": [
+      {
+        "name": "order_id",
+        "dataType": "int",
+        "affinity": "integer",
+        "declaredKind": "number",
+        "nullable": false,
+        "defaultValue": null,
+        "primaryKeyPosition": 1,
+        "autoIncrement": false,
+        "hidden": false
+      },
+      {
+        "name": "line_no",
+        "dataType": "int",
+        "affinity": "integer",
+        "declaredKind": "number",
+        "nullable": false,
+        "defaultValue": null,
+        "primaryKeyPosition": 2,
+        "autoIncrement": false,
+        "hidden": false
+      },
+      {
+        "name": "product_id",
+        "dataType": "bigint",
+        "affinity": "integer",
+        "declaredKind": "number",
+        "nullable": false,
+        "defaultValue": null,
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      },
+      {
+        "name": "quantity",
+        "dataType": "int",
+        "affinity": "integer",
+        "declaredKind": "number",
+        "nullable": false,
+        "defaultValue": null,
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      }
+    ],
+    "indexes": [
+      {
+        "name": "PRIMARY",
+        "unique": true,
+        "origin": "pk",
+        "partial": false,
+        "columns": [
+          {
+            "name": "order_id",
+            "position": 0,
+            "descending": false,
+            "collation": null
+          },
+          {
+            "name": "line_no",
+            "position": 1,
+            "descending": false,
+            "collation": null
+          }
+        ]
+      },
+      {
+        "name": "sl_order_lines_product_fk",
+        "unique": false,
+        "origin": "c",
+        "partial": false,
+        "columns": [
+          {
+            "name": "product_id",
+            "position": 0,
+            "descending": false,
+            "collation": null
+          }
+        ]
+      }
+    ],
+    "foreignKeys": [
+      {
+        "name": "sl_order_lines_order_fk",
+        "referencedTable": "sl_orders",
+        "columns": [
+          {
+            "column": "order_id",
+            "referencedColumn": "id",
+            "position": 0
+          }
+        ],
+        "onUpdate": "NO ACTION",
+        "onDelete": "CASCADE"
+      },
+      {
+        "name": "sl_order_lines_product_fk",
+        "referencedTable": "sl_products",
+        "columns": [
+          {
+            "column": "product_id",
+            "referencedColumn": "id",
+            "position": 0
+          }
+        ],
+        "onUpdate": "NO ACTION",
+        "onDelete": "NO ACTION"
+      }
+    ],
+    "rowLocators": [
+      {
+        "kind": "primary-key",
+        "columns": [
+          "order_id",
+          "line_no"
+        ]
+      }
+    ],
+    "editable": true
+  },
+  {
+    "name": "sl_orders",
+    "kind": "table",
+    "sql": "CREATE TABLE `sl_orders` (\n  `id` int NOT NULL AUTO_INCREMENT,\n  `account_id` int NOT NULL,\n  `status` enum('new','paid','closed') NOT NULL DEFAULT 'new',\n  `placed_at` datetime(3) DEFAULT NULL,\n  PRIMARY KEY (`id`),\n  KEY `sl_orders_account_placed_idx` (`account_id`,`placed_at` DESC),\n  CONSTRAINT `sl_orders_account_fk` FOREIGN KEY (`account_id`) REFERENCES `sl_accounts` (`id`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci",
+    "columns": [
+      {
+        "name": "id",
+        "dataType": "int",
+        "affinity": "integer",
+        "declaredKind": "number",
+        "nullable": false,
+        "defaultValue": null,
+        "primaryKeyPosition": 1,
+        "autoIncrement": true,
+        "hidden": false
+      },
+      {
+        "name": "account_id",
+        "dataType": "int",
+        "affinity": "integer",
+        "declaredKind": "number",
+        "nullable": false,
+        "defaultValue": null,
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      },
+      {
+        "name": "status",
+        "dataType": "enum('new','paid','closed')",
+        "affinity": "numeric",
+        "declaredKind": "text",
+        "nullable": false,
+        "defaultValue": "new",
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      },
+      {
+        "name": "placed_at",
+        "dataType": "datetime(3)",
+        "affinity": "text",
+        "declaredKind": "datetime",
+        "nullable": true,
+        "defaultValue": null,
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      }
+    ],
+    "indexes": [
+      {
+        "name": "PRIMARY",
+        "unique": true,
+        "origin": "pk",
+        "partial": false,
+        "columns": [
+          {
+            "name": "id",
+            "position": 0,
+            "descending": false,
+            "collation": null
+          }
+        ]
+      },
+      {
+        "name": "sl_orders_account_placed_idx",
+        "unique": false,
+        "origin": "c",
+        "partial": false,
+        "columns": [
+          {
+            "name": "account_id",
+            "position": 0,
+            "descending": false,
+            "collation": null
+          },
+          {
+            "name": "placed_at",
+            "position": 1,
+            "descending": true,
+            "collation": null
+          }
+        ]
+      }
+    ],
+    "foreignKeys": [
+      {
+        "name": "sl_orders_account_fk",
+        "referencedTable": "sl_accounts",
+        "columns": [
+          {
+            "column": "account_id",
+            "referencedColumn": "id",
+            "position": 0
+          }
+        ],
+        "onUpdate": "NO ACTION",
+        "onDelete": "NO ACTION"
+      }
+    ],
+    "rowLocators": [
+      {
+        "kind": "primary-key",
+        "columns": [
+          "id"
+        ]
+      }
+    ],
+    "editable": true
+  },
+  {
+    "name": "sl_product_tags",
+    "kind": "table",
+    "sql": "CREATE TABLE `sl_product_tags` (\n  `product_id` bigint NOT NULL,\n  `tag_id` int NOT NULL,\n  PRIMARY KEY (`product_id`,`tag_id`),\n  KEY `sl_product_tags_tag_fk` (`tag_id`),\n  CONSTRAINT `sl_product_tags_product_fk` FOREIGN KEY (`product_id`) REFERENCES `sl_products` (`id`) ON DELETE CASCADE,\n  CONSTRAINT `sl_product_tags_tag_fk` FOREIGN KEY (`tag_id`) REFERENCES `sl_tags` (`id`) ON DELETE CASCADE\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci",
+    "columns": [
+      {
+        "name": "product_id",
+        "dataType": "bigint",
+        "affinity": "integer",
+        "declaredKind": "number",
+        "nullable": false,
+        "defaultValue": null,
+        "primaryKeyPosition": 1,
+        "autoIncrement": false,
+        "hidden": false
+      },
+      {
+        "name": "tag_id",
+        "dataType": "int",
+        "affinity": "integer",
+        "declaredKind": "number",
+        "nullable": false,
+        "defaultValue": null,
+        "primaryKeyPosition": 2,
+        "autoIncrement": false,
+        "hidden": false
+      }
+    ],
+    "indexes": [
+      {
+        "name": "PRIMARY",
+        "unique": true,
+        "origin": "pk",
+        "partial": false,
+        "columns": [
+          {
+            "name": "product_id",
+            "position": 0,
+            "descending": false,
+            "collation": null
+          },
+          {
+            "name": "tag_id",
+            "position": 1,
+            "descending": false,
+            "collation": null
+          }
+        ]
+      },
+      {
+        "name": "sl_product_tags_tag_fk",
+        "unique": false,
+        "origin": "c",
+        "partial": false,
+        "columns": [
+          {
+            "name": "tag_id",
+            "position": 0,
+            "descending": false,
+            "collation": null
+          }
+        ]
+      }
+    ],
+    "foreignKeys": [
+      {
+        "name": "sl_product_tags_product_fk",
+        "referencedTable": "sl_products",
+        "columns": [
+          {
+            "column": "product_id",
+            "referencedColumn": "id",
+            "position": 0
+          }
+        ],
+        "onUpdate": "NO ACTION",
+        "onDelete": "CASCADE"
+      },
+      {
+        "name": "sl_product_tags_tag_fk",
+        "referencedTable": "sl_tags",
+        "columns": [
+          {
+            "column": "tag_id",
+            "referencedColumn": "id",
+            "position": 0
+          }
+        ],
+        "onUpdate": "NO ACTION",
+        "onDelete": "CASCADE"
+      }
+    ],
+    "rowLocators": [
+      {
+        "kind": "primary-key",
+        "columns": [
+          "product_id",
+          "tag_id"
+        ]
+      }
+    ],
+    "editable": true
+  },
+  {
+    "name": "sl_products",
+    "kind": "table",
+    "sql": "CREATE TABLE `sl_products` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `sku` char(12) NOT NULL,\n  `category_id` int DEFAULT NULL,\n  `price` decimal(10,2) NOT NULL DEFAULT '0.00',\n  `data` json DEFAULT NULL,\n  PRIMARY KEY (`id`),\n  UNIQUE KEY `sku` (`sku`),\n  KEY `sl_products_price_idx` (`price` DESC),\n  KEY `sl_products_category_fk` (`category_id`),\n  CONSTRAINT `sl_products_category_fk` FOREIGN KEY (`category_id`) REFERENCES `sl_categories` (`id`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci",
+    "columns": [
+      {
+        "name": "id",
+        "dataType": "bigint",
+        "affinity": "integer",
+        "declaredKind": "number",
+        "nullable": false,
+        "defaultValue": null,
+        "primaryKeyPosition": 1,
+        "autoIncrement": true,
+        "hidden": false
+      },
+      {
+        "name": "sku",
+        "dataType": "char(12)",
+        "affinity": "text",
+        "declaredKind": "varchar",
+        "nullable": false,
+        "defaultValue": null,
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      },
+      {
+        "name": "category_id",
+        "dataType": "int",
+        "affinity": "integer",
+        "declaredKind": "number",
+        "nullable": true,
+        "defaultValue": null,
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      },
+      {
+        "name": "price",
+        "dataType": "decimal(10,2)",
+        "affinity": "numeric",
+        "declaredKind": "number",
+        "nullable": false,
+        "defaultValue": "0.00",
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      },
+      {
+        "name": "data",
+        "dataType": "json",
+        "affinity": "text",
+        "declaredKind": "json",
+        "nullable": true,
+        "defaultValue": null,
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      }
+    ],
+    "indexes": [
+      {
+        "name": "PRIMARY",
+        "unique": true,
+        "origin": "pk",
+        "partial": false,
+        "columns": [
+          {
+            "name": "id",
+            "position": 0,
+            "descending": false,
+            "collation": null
+          }
+        ]
+      },
+      {
+        "name": "sku",
+        "unique": true,
+        "origin": "u",
+        "partial": false,
+        "columns": [
+          {
+            "name": "sku",
+            "position": 0,
+            "descending": false,
+            "collation": null
+          }
+        ]
+      },
+      {
+        "name": "sl_products_category_fk",
+        "unique": false,
+        "origin": "c",
+        "partial": false,
+        "columns": [
+          {
+            "name": "category_id",
+            "position": 0,
+            "descending": false,
+            "collation": null
+          }
+        ]
+      },
+      {
+        "name": "sl_products_price_idx",
+        "unique": false,
+        "origin": "c",
+        "partial": false,
+        "columns": [
+          {
+            "name": "price",
+            "position": 0,
+            "descending": true,
+            "collation": null
+          }
+        ]
+      }
+    ],
+    "foreignKeys": [
+      {
+        "name": "sl_products_category_fk",
+        "referencedTable": "sl_categories",
+        "columns": [
+          {
+            "column": "category_id",
+            "referencedColumn": "id",
+            "position": 0
+          }
+        ],
+        "onUpdate": "NO ACTION",
+        "onDelete": "NO ACTION"
+      }
+    ],
+    "rowLocators": [
+      {
+        "kind": "primary-key",
+        "columns": [
+          "id"
+        ]
+      },
+      {
+        "kind": "unique-index",
+        "columns": [
+          "sku"
+        ],
+        "name": "sku"
+      }
+    ],
+    "editable": true
+  },
+  {
+    "name": "sl_sessions",
+    "kind": "table",
+    "sql": "CREATE TABLE `sl_sessions` (\n  `token` varchar(64) NOT NULL,\n  `account_id` int DEFAULT NULL,\n  `payload` text,\n  UNIQUE KEY `sl_sessions_token_key` (`token`),\n  KEY `sl_sessions_account_fk` (`account_id`),\n  CONSTRAINT `sl_sessions_account_fk` FOREIGN KEY (`account_id`) REFERENCES `sl_accounts` (`id`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci",
+    "columns": [
+      {
+        "name": "token",
+        "dataType": "varchar(64)",
+        "affinity": "text",
+        "declaredKind": "varchar",
+        "nullable": false,
+        "defaultValue": null,
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      },
+      {
+        "name": "account_id",
+        "dataType": "int",
+        "affinity": "integer",
+        "declaredKind": "number",
+        "nullable": true,
+        "defaultValue": null,
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      },
+      {
+        "name": "payload",
+        "dataType": "text",
+        "affinity": "text",
+        "declaredKind": "text",
+        "nullable": true,
+        "defaultValue": null,
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      }
+    ],
+    "indexes": [
+      {
+        "name": "sl_sessions_account_fk",
+        "unique": false,
+        "origin": "c",
+        "partial": false,
+        "columns": [
+          {
+            "name": "account_id",
+            "position": 0,
+            "descending": false,
+            "collation": null
+          }
+        ]
+      },
+      {
+        "name": "sl_sessions_token_key",
+        "unique": true,
+        "origin": "u",
+        "partial": false,
+        "columns": [
+          {
+            "name": "token",
+            "position": 0,
+            "descending": false,
+            "collation": null
+          }
+        ]
+      }
+    ],
+    "foreignKeys": [
+      {
+        "name": "sl_sessions_account_fk",
+        "referencedTable": "sl_accounts",
+        "columns": [
+          {
+            "column": "account_id",
+            "referencedColumn": "id",
+            "position": 0
+          }
+        ],
+        "onUpdate": "NO ACTION",
+        "onDelete": "NO ACTION"
+      }
+    ],
+    "rowLocators": [
+      {
+        "kind": "unique-index",
+        "columns": [
+          "token"
+        ],
+        "name": "sl_sessions_token_key"
+      }
+    ],
+    "editable": true
+  },
+  {
+    "name": "sl_stock",
+    "kind": "table",
+    "sql": "CREATE TABLE `sl_stock` (\n  `product_id` bigint NOT NULL,\n  `region` char(2) NOT NULL,\n  `code` varchar(10) NOT NULL,\n  `quantity` int NOT NULL DEFAULT '0',\n  PRIMARY KEY (`product_id`,`region`,`code`),\n  KEY `sl_stock_warehouse_fk` (`region`,`code`),\n  CONSTRAINT `sl_stock_product_fk` FOREIGN KEY (`product_id`) REFERENCES `sl_products` (`id`) ON DELETE CASCADE,\n  CONSTRAINT `sl_stock_warehouse_fk` FOREIGN KEY (`region`, `code`) REFERENCES `sl_warehouses` (`region`, `code`) ON DELETE RESTRICT ON UPDATE CASCADE\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci",
+    "columns": [
+      {
+        "name": "product_id",
+        "dataType": "bigint",
+        "affinity": "integer",
+        "declaredKind": "number",
+        "nullable": false,
+        "defaultValue": null,
+        "primaryKeyPosition": 1,
+        "autoIncrement": false,
+        "hidden": false
+      },
+      {
+        "name": "region",
+        "dataType": "char(2)",
+        "affinity": "text",
+        "declaredKind": "varchar",
+        "nullable": false,
+        "defaultValue": null,
+        "primaryKeyPosition": 2,
+        "autoIncrement": false,
+        "hidden": false
+      },
+      {
+        "name": "code",
+        "dataType": "varchar(10)",
+        "affinity": "text",
+        "declaredKind": "varchar",
+        "nullable": false,
+        "defaultValue": null,
+        "primaryKeyPosition": 3,
+        "autoIncrement": false,
+        "hidden": false
+      },
+      {
+        "name": "quantity",
+        "dataType": "int",
+        "affinity": "integer",
+        "declaredKind": "number",
+        "nullable": false,
+        "defaultValue": "0",
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      }
+    ],
+    "indexes": [
+      {
+        "name": "PRIMARY",
+        "unique": true,
+        "origin": "pk",
+        "partial": false,
+        "columns": [
+          {
+            "name": "product_id",
+            "position": 0,
+            "descending": false,
+            "collation": null
+          },
+          {
+            "name": "region",
+            "position": 1,
+            "descending": false,
+            "collation": null
+          },
+          {
+            "name": "code",
+            "position": 2,
+            "descending": false,
+            "collation": null
+          }
+        ]
+      },
+      {
+        "name": "sl_stock_warehouse_fk",
+        "unique": false,
+        "origin": "c",
+        "partial": false,
+        "columns": [
+          {
+            "name": "region",
+            "position": 0,
+            "descending": false,
+            "collation": null
+          },
+          {
+            "name": "code",
+            "position": 1,
+            "descending": false,
+            "collation": null
+          }
+        ]
+      }
+    ],
+    "foreignKeys": [
+      {
+        "name": "sl_stock_product_fk",
+        "referencedTable": "sl_products",
+        "columns": [
+          {
+            "column": "product_id",
+            "referencedColumn": "id",
+            "position": 0
+          }
+        ],
+        "onUpdate": "NO ACTION",
+        "onDelete": "CASCADE"
+      },
+      {
+        "name": "sl_stock_warehouse_fk",
+        "referencedTable": "sl_warehouses",
+        "columns": [
+          {
+            "column": "region",
+            "referencedColumn": "region",
+            "position": 0
+          },
+          {
+            "column": "code",
+            "referencedColumn": "code",
+            "position": 1
+          }
+        ],
+        "onUpdate": "CASCADE",
+        "onDelete": "RESTRICT"
+      }
+    ],
+    "rowLocators": [
+      {
+        "kind": "primary-key",
+        "columns": [
+          "product_id",
+          "region",
+          "code"
+        ]
+      }
+    ],
+    "editable": true
+  },
+  {
+    "name": "sl_tags",
+    "kind": "table",
+    "sql": "CREATE TABLE `sl_tags` (\n  `id` int NOT NULL AUTO_INCREMENT,\n  `name` varchar(40) NOT NULL,\n  PRIMARY KEY (`id`),\n  UNIQUE KEY `name` (`name`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci",
+    "columns": [
+      {
+        "name": "id",
+        "dataType": "int",
+        "affinity": "integer",
+        "declaredKind": "number",
+        "nullable": false,
+        "defaultValue": null,
+        "primaryKeyPosition": 1,
+        "autoIncrement": true,
+        "hidden": false
+      },
+      {
+        "name": "name",
+        "dataType": "varchar(40)",
+        "affinity": "text",
+        "declaredKind": "varchar",
+        "nullable": false,
+        "defaultValue": null,
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      }
+    ],
+    "indexes": [
+      {
+        "name": "name",
+        "unique": true,
+        "origin": "u",
+        "partial": false,
+        "columns": [
+          {
+            "name": "name",
+            "position": 0,
+            "descending": false,
+            "collation": null
+          }
+        ]
+      },
+      {
+        "name": "PRIMARY",
+        "unique": true,
+        "origin": "pk",
+        "partial": false,
+        "columns": [
+          {
+            "name": "id",
+            "position": 0,
+            "descending": false,
+            "collation": null
+          }
+        ]
+      }
+    ],
+    "foreignKeys": [],
+    "rowLocators": [
+      {
+        "kind": "primary-key",
+        "columns": [
+          "id"
+        ]
+      },
+      {
+        "kind": "unique-index",
+        "columns": [
+          "name"
+        ],
+        "name": "name"
+      }
+    ],
+    "editable": true
+  },
+  {
+    "name": "sl_teams",
+    "kind": "table",
+    "sql": "CREATE TABLE `sl_teams` (\n  `id` int NOT NULL,\n  `account_id` int NOT NULL,\n  `slug` varchar(40) NOT NULL,\n  PRIMARY KEY (`id`),\n  UNIQUE KEY `sl_teams_account_slug_key` (`account_id`,`slug`),\n  CONSTRAINT `sl_teams_account_fk` FOREIGN KEY (`account_id`) REFERENCES `sl_accounts` (`id`) ON DELETE CASCADE\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci",
+    "columns": [
+      {
+        "name": "id",
+        "dataType": "int",
+        "affinity": "integer",
+        "declaredKind": "number",
+        "nullable": false,
+        "defaultValue": null,
+        "primaryKeyPosition": 1,
+        "autoIncrement": false,
+        "hidden": false
+      },
+      {
+        "name": "account_id",
+        "dataType": "int",
+        "affinity": "integer",
+        "declaredKind": "number",
+        "nullable": false,
+        "defaultValue": null,
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      },
+      {
+        "name": "slug",
+        "dataType": "varchar(40)",
+        "affinity": "text",
+        "declaredKind": "varchar",
+        "nullable": false,
+        "defaultValue": null,
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      }
+    ],
+    "indexes": [
+      {
+        "name": "PRIMARY",
+        "unique": true,
+        "origin": "pk",
+        "partial": false,
+        "columns": [
+          {
+            "name": "id",
+            "position": 0,
+            "descending": false,
+            "collation": null
+          }
+        ]
+      },
+      {
+        "name": "sl_teams_account_slug_key",
+        "unique": true,
+        "origin": "u",
+        "partial": false,
+        "columns": [
+          {
+            "name": "account_id",
+            "position": 0,
+            "descending": false,
+            "collation": null
+          },
+          {
+            "name": "slug",
+            "position": 1,
+            "descending": false,
+            "collation": null
+          }
+        ]
+      }
+    ],
+    "foreignKeys": [
+      {
+        "name": "sl_teams_account_fk",
+        "referencedTable": "sl_accounts",
+        "columns": [
+          {
+            "column": "account_id",
+            "referencedColumn": "id",
+            "position": 0
+          }
+        ],
+        "onUpdate": "NO ACTION",
+        "onDelete": "CASCADE"
+      }
+    ],
+    "rowLocators": [
+      {
+        "kind": "primary-key",
+        "columns": [
+          "id"
+        ]
+      },
+      {
+        "kind": "unique-index",
+        "columns": [
+          "account_id",
+          "slug"
+        ],
+        "name": "sl_teams_account_slug_key"
+      }
+    ],
+    "editable": true
+  },
+  {
+    "name": "sl_warehouses",
+    "kind": "table",
+    "sql": "CREATE TABLE `sl_warehouses` (\n  `region` char(2) NOT NULL,\n  `code` varchar(10) NOT NULL,\n  `name` text NOT NULL,\n  PRIMARY KEY (`region`,`code`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci",
+    "columns": [
+      {
+        "name": "region",
+        "dataType": "char(2)",
+        "affinity": "text",
+        "declaredKind": "varchar",
+        "nullable": false,
+        "defaultValue": null,
+        "primaryKeyPosition": 1,
+        "autoIncrement": false,
+        "hidden": false
+      },
+      {
+        "name": "code",
+        "dataType": "varchar(10)",
+        "affinity": "text",
+        "declaredKind": "varchar",
+        "nullable": false,
+        "defaultValue": null,
+        "primaryKeyPosition": 2,
+        "autoIncrement": false,
+        "hidden": false
+      },
+      {
+        "name": "name",
+        "dataType": "text",
+        "affinity": "text",
+        "declaredKind": "text",
+        "nullable": false,
+        "defaultValue": null,
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      }
+    ],
+    "indexes": [
+      {
+        "name": "PRIMARY",
+        "unique": true,
+        "origin": "pk",
+        "partial": false,
+        "columns": [
+          {
+            "name": "region",
+            "position": 0,
+            "descending": false,
+            "collation": null
+          },
+          {
+            "name": "code",
+            "position": 1,
+            "descending": false,
+            "collation": null
+          }
+        ]
+      }
+    ],
+    "foreignKeys": [],
+    "rowLocators": [
+      {
+        "kind": "primary-key",
+        "columns": [
+          "region",
+          "code"
+        ]
+      }
+    ],
+    "editable": true
+  },
+  {
+    "name": "sl_open_orders",
+    "kind": "view",
+    "sql": "CREATE ALGORITHM=UNDEFINED DEFINER=<definer> SQL SECURITY DEFINER VIEW `sl_open_orders` AS select `sl_orders`.`id` AS `id`,`sl_orders`.`account_id` AS `account_id`,`sl_orders`.`placed_at` AS `placed_at` from `sl_orders` where (`sl_orders`.`status` <> 'closed')",
+    "columns": [
+      {
+        "name": "id",
+        "dataType": "int",
+        "affinity": "integer",
+        "declaredKind": "number",
+        "nullable": false,
+        "defaultValue": "0",
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      },
+      {
+        "name": "account_id",
+        "dataType": "int",
+        "affinity": "integer",
+        "declaredKind": "number",
+        "nullable": false,
+        "defaultValue": null,
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      },
+      {
+        "name": "placed_at",
+        "dataType": "datetime(3)",
+        "affinity": "text",
+        "declaredKind": "datetime",
+        "nullable": true,
+        "defaultValue": null,
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      }
+    ],
+    "indexes": [],
+    "foreignKeys": [],
+    "rowLocators": [],
+    "editable": false,
+    "readOnlyReason": "Views are read-only."
+  },
+  {
+    "name": "sl_product_tag_names",
+    "kind": "view",
+    "sql": "CREATE ALGORITHM=UNDEFINED DEFINER=<definer> SQL SECURITY DEFINER VIEW `sl_product_tag_names` AS select `products`.`sku` AS `sku`,`tags`.`name` AS `name` from ((`sl_product_tags` `product_tags` join `sl_products` `products` on((`products`.`id` = `product_tags`.`product_id`))) join `sl_tags` `tags` on((`tags`.`id` = `product_tags`.`tag_id`)))",
+    "columns": [
+      {
+        "name": "sku",
+        "dataType": "char(12)",
+        "affinity": "text",
+        "declaredKind": "varchar",
+        "nullable": false,
+        "defaultValue": null,
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      },
+      {
+        "name": "name",
+        "dataType": "varchar(40)",
+        "affinity": "text",
+        "declaredKind": "varchar",
+        "nullable": false,
+        "defaultValue": null,
+        "primaryKeyPosition": 0,
+        "autoIncrement": false,
+        "hidden": false
+      }
+    ],
+    "indexes": [],
+    "foreignKeys": [],
+    "rowLocators": [],
+    "editable": false,
+    "readOnlyReason": "Views are read-only."
+  }
+]

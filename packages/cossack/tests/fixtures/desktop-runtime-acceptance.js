@@ -5,17 +5,60 @@ import { createRequire } from 'node:module';
 import { createServer } from 'node:http';
 import { _electron, expect } from '@playwright/test';
 
+/**
+ * Replace the one occurrence of `search`. A missing anchor means the generated
+ * source changed; fail instead of writing the source back unchanged.
+ */
+function replaceOnce(source, search, replacement) {
+  const index = source.indexOf(search);
+  if (index === -1 || source.includes(search, index + search.length))
+    throw new Error(`Desktop acceptance expects exactly one ${JSON.stringify(search)} in the generated source:\n${source}`);
+  return source.slice(0, index) + replacement + source.slice(index + search.length);
+}
+
 export async function writeDesktopRuntimeAcceptance(root) {
   const entryFile = path.join(root, 'src/desktop/index.ts');
   const entry = await fs.readFile(entryFile, 'utf8');
   // Test-only main-process reference to the public result; never exposed to renderers.
   await fs.writeFile(
     entryFile,
-    entry.replace(
+    replaceOnce(
+      entry,
       '  configureDesktopClose({',
       '  (globalThis as any).__desktopAcceptanceApplication = desktop;\n  configureDesktopClose({',
     ),
   );
+  // Static-file routing: hashed /assets/* skips the application; public/ files
+  // pass global and page policies first. The marker shows the pipeline ran.
+  await fs.writeFile(
+    path.join(root, 'src/bootstrap/middlewares.ts'),
+    `
+    import type { MiddlewareHandler } from 'hono';
+    const middlewares: MiddlewareHandler[] = [async (c, next) => {
+      if (c.req.path.startsWith('/guarded/') && c.req.header('x-role') !== 'admin') return c.text('global denied', 401);
+      await next();
+      if (c.req.method === 'GET' || c.req.method === 'HEAD') c.header('x-desktop-pipeline', 'ran');
+    }];
+    export default middlewares;
+  `,
+  );
+  await fs.mkdir(path.join(root, 'src/pages/vault'), { recursive: true });
+  await fs.writeFile(
+    path.join(root, 'src/pages/vault/index.ts'),
+    `
+    import {Cossack,Page} from '@cossackframework/core';
+    import {html} from '@cossackframework/renderer';
+    @Page({transport:'http',middlewares:[async (c,next)=>{
+      if(c.req.header('x-vault')!=='open')return c.text('vault denied',403);
+      await next();c.header('x-vault-policy','ran');
+    }]})
+    export default class Vault extends Cossack {render(){return html\`<main>vault SSR</main>\`;}}
+  `,
+  );
+  for (const [directory, body] of [['vault', 'vault static body'], ['guarded', 'guarded static body']]) {
+    await fs.mkdir(path.join(root, 'public', directory), { recursive: true });
+    await fs.writeFile(path.join(root, 'public', directory, 'record.txt'), body);
+  }
   await fs.mkdir(path.join(root, 'src/pages/api'), { recursive: true });
   await fs.writeFile(
     path.join(root, 'src/pages/api/desktop-write.ts'),
@@ -65,6 +108,53 @@ export async function writeDesktopRuntimeAcceptance(root) {
     }
   `,
   );
+}
+
+async function rendererFetch(page, url, init = {}) {
+  return page.evaluate(
+    async ({ url, init }) => {
+      const response = await fetch(url, { ...init, cache: 'no-store' });
+      return { status: response.status, body: await response.text(), headers: Object.fromEntries(response.headers) };
+    },
+    { url, init },
+  );
+}
+
+/**
+ * Like Cloudflare and Node, only hashed build output under /assets/ is served
+ * before the application. public/ files pass global and page policies first,
+ * and missing files reach the framework's 404 handling. In development, Vite
+ * answers its client and modules first instead of hashed build output.
+ */
+async function verifyDesktopStaticFiles(page, root, { development = false } = {}) {
+  const denied = await rendererFetch(page, '/vault/record.txt');
+  expect(denied).toMatchObject({ status: 403, body: 'vault denied' });
+  const record = await rendererFetch(page, '/vault/record.txt', { headers: { 'x-vault': 'open' } });
+  expect(record).toMatchObject({ status: 200, body: 'vault static body' });
+  expect(record.headers).toMatchObject({ 'x-vault-policy': 'ran', 'x-desktop-pipeline': 'ran' });
+  const missingRecord = await rendererFetch(page, '/vault/missing.txt', { headers: { 'x-vault': 'open' } });
+  expect(missingRecord.status).toBe(404);
+  expect(await rendererFetch(page, '/guarded/record.txt')).toMatchObject({ status: 401, body: 'global denied' });
+  expect(await rendererFetch(page, '/guarded/record.txt', { headers: { 'x-role': 'admin' } }))
+    .toMatchObject({ status: 200, body: 'guarded static body' });
+  const missingAsset = await rendererFetch(page, '/assets/missing.00000000.js');
+  expect(missingAsset.status).toBe(404);
+  expect(missingAsset.headers['x-desktop-pipeline']).toBe('ran');
+  if (development) {
+    const client = await rendererFetch(page, '/@vite/client');
+    expect(client.status).toBe(200);
+    expect(client.headers['x-desktop-pipeline']).toBeUndefined();
+    return;
+  }
+  expect(record.headers['cache-control']).toBe('public, max-age=0, must-revalidate');
+  const manifest = JSON.parse(await fs.readFile(path.join(root, 'dist/client/cossack-manifest.json'), 'utf8'));
+  const clientFile = manifest['src/client/entry-client.ts'].file;
+  expect(clientFile).toMatch(/^assets\/entry-client\.[\w-]{8,}\.js$/);
+  const asset = await rendererFetch(page, `/${clientFile}`);
+  expect(asset.status).toBe(200);
+  expect(asset.body.length).toBeGreaterThan(0);
+  expect(asset.headers['cache-control']).toBe('public, max-age=31536000, immutable');
+  expect(asset.headers['x-desktop-pipeline']).toBeUndefined();
 }
 
 export async function verifyDesktopRuntimeApplication(root, { executablePath, packaged = false } = {}) {
@@ -157,6 +247,7 @@ export async function verifyDesktopRuntimeApplication(root, { executablePath, pa
     await expect(page.locator('#native')).toHaveText('201,kept,0,255,128');
     expect(await fs.readFile(path.join(profile, 'acceptance-count.txt'), 'utf8')).toBe('3');
     expect(errors).toEqual([]);
+    await verifyDesktopStaticFiles(page, root);
     const [second, secondId] = await Promise.all([
       application.waitForEvent('window', { timeout: 15000 }),
       application.evaluate(
@@ -302,6 +393,25 @@ export async function verifyDesktopDevelopmentApplication(
     });
     await page.waitForFunction(() => window.__desktopDevelopmentTools, {}, { timeout: 30000 });
     await page.getByRole('button', { name: 'Record trace', exact: true }).click();
+    // Vite sends native terminal evidence only to a connected page and never
+    // replays it. The page can become interactive before its Vite socket
+    // opens, so wait for the bridge's first live record, which it sends over
+    // that socket, before any native call.
+    const recordFile = path.join(
+      root,
+      '.cossack/development-traces',
+      (await page.evaluate(() => window.__desktopDevelopmentTools.snapshot().sessionId)) + '.json',
+    );
+    await expect
+      .poll(
+        () =>
+          fs.access(recordFile).then(
+            () => true,
+            () => false,
+          ),
+        { timeout: 15000 },
+      )
+      .toBe(true);
     await page.getByRole('button', { name: 'Increment', exact: true }).click();
     await expect(page.locator('#count')).toHaveText('1');
     await page.getByRole('button', { name: 'Stream', exact: true }).click();
@@ -358,7 +468,7 @@ export async function verifyDesktopDevelopmentApplication(
           cleanup: 'completed',
         });
     }
-    const recordFile = path.join(root, '.cossack/development-traces', snapshot.sessionId + '.json');
+    expect(recordFile).toBe(path.join(root, '.cossack/development-traces', snapshot.sessionId + '.json'));
     let record;
     await expect
       .poll(
@@ -378,10 +488,13 @@ export async function verifyDesktopDevelopmentApplication(
     for (const value of ['acceptance-count.txt', 'increment', 'nativeResult'])
       expect(JSON.stringify(record)).not.toContain(value);
     await onRecorded({ snapshot, recorded: record });
+    await verifyDesktopStaticFiles(page, root, { development: true });
 
-    const updated = source
-      .replace('this.count++;this.owner', 'this.count+=2;this.owner')
-      .replace('<main>', '<main><p id="development-reload">Source reloaded</p>');
+    const updated = replaceOnce(
+      replaceOnce(source, 'this.count++;this.owner', 'this.count+=2;this.owner'),
+      '<main>',
+      '<main><p id="development-reload">Source reloaded</p>',
+    );
     await fs.writeFile(sourceFile, updated);
     await expect(page.locator('#development-reload')).toHaveText('Source reloaded', { timeout: 15000 });
     await page.waitForFunction(() => window.__desktopDevelopmentTools, {}, { timeout: 15000 });
@@ -406,12 +519,16 @@ export async function verifyDesktopDevelopmentApplication(
         await expect(window.locator('#configuration')).toHaveText(expected);
         await window.waitForFunction(() => window.__desktopDevelopmentTools);
       };
+      // Each change must restart Electron and apply its own value: the root
+      // .env file, then the Vite configuration (process variables override
+      // .env values), then the bootstrap's createEnv, which runs last.
       await assertRestart(() => fs.writeFile(envFile, 'DESKTOP_RELOAD_ACCEPTANCE=environment\n'), 'environment');
       await assertRestart(
         () =>
           fs.writeFile(
             configFile,
-            configSource.replace(
+            replaceOnce(
+              configSource,
               'plugins: [',
               "plugins: [{name:'restart-acceptance',config:()=>{process.env.DESKTOP_RELOAD_ACCEPTANCE='configuration';}},",
             ),
@@ -422,7 +539,11 @@ export async function verifyDesktopDevelopmentApplication(
         () =>
           fs.writeFile(
             entryFile,
-            entrySource.replace('{ ...process.env }', "{ ...process.env, DESKTOP_RELOAD_ACCEPTANCE:'bootstrap' }"),
+            replaceOnce(
+              entrySource,
+              'return { ...variables };',
+              "return { ...variables, DESKTOP_RELOAD_ACCEPTANCE: 'bootstrap' };",
+            ),
           ),
         'bootstrap',
       );

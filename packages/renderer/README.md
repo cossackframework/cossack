@@ -103,7 +103,30 @@ html`<h1>Hello ${name}</h1>`
 
 ### Attributes
 
-Boolean attributes are removed if `false/null/undefined`.
+A binding that is an attribute's whole value (`title=${x}` or
+`title="${x}"`) removes the attribute when the value is `null`, `undefined`
+or `nothing`. HTML boolean attributes such as `hidden` are present for `true`
+and removed for `false`; other attributes get the text `"true"` or `"false"`.
+
+An attribute value that mixes bindings with static text, or has several
+bindings, is text:
+
+```typescript
+html`<svg viewBox="0 0 ${size} ${size}"></svg>`
+html`<button class="btn btn-${variant}">Save</button>`
+```
+
+- Each binding adds its value as text. `null`, `undefined`, functions and
+  `ifDefined(undefined)` add nothing. Booleans and numbers add `String(value)`.
+- `nothing` in any of the bindings removes the whole attribute.
+- The client writes the attribute once per render, after all of its bindings
+  have their new values, and only when the assembled text changed. The
+  browser never sees a value with only some bindings filled in.
+
+SSR, hydration and client updates follow the same rules.
+
+A `?name` binding sets a boolean attribute: present when the value is
+truthy, removed otherwise.
 
 ```typescript
 html`<button ?disabled="${isDisabled}">Click</button>`
@@ -133,6 +156,31 @@ You can spread an object into attributes using the `...` syntax.
 const props = { id: 'btn', class: 'primary', 'data-type': 'action' };
 html`<button ...=${props}>Click</button>`
 ```
+
+Keys can be attributes (`id`), boolean attributes (`?disabled`), properties
+(`.value`) and events (`@click`). An element can have several spreads. SSR,
+hydration and client updates apply them with the same rules:
+
+- **A later spread wins.** When two spreads set the same attribute, boolean
+  attribute or property, the value of the later spread is used. If the later
+  spread drops the key, the earlier spread's value applies again.
+- **A spread overrides the template.** A spread key replaces an attribute
+  with the same name written in the template, whichever side of the spread it
+  is on. When the key is dropped, the template's value comes back. A value of
+  `null`, `undefined`, `nothing`, `false` (for a boolean attribute) or a
+  function removes the attribute.
+- **Classes merge.** `class` and `className` keys add their tokens to the
+  element's own class, in spread order. They do not replace it.
+- **Every event handler runs.** Each spread adds its own listener for its
+  event keys. If two spreads set `@click`, both handlers run.
+
+```typescript
+// Renders <button class="cs-button primary" id="save" type="button">.
+html`<button class="cs-button" ...=${{ id: 'save', type: 'submit', class: 'primary' }} ...=${{ type: 'button' }}>Save</button>`
+```
+
+Do not combine a spread key with a bound attribute of the same name, such as
+`id=${id}` next to a spread that sets `id`. That result is not defined.
 
 ### Unsafe HTML
 

@@ -1,4 +1,5 @@
 import { RpcError } from '@cossackframework/core';
+import { TRANSPORT_ROUTES } from '../transport-routes.js';
 import type { Context } from 'hono';
 import { parseBody } from 'hono/utils/body';
 import { declaredLengthExceeds, readBoundedBody } from '../request-body.js';
@@ -34,14 +35,14 @@ export async function readRpcRequest(c: Context, limits: RpcBodyLimits = {}): Pr
     const cached = c.get(BODY_KEY);
     if (cached) return cached;
     let body: any;
-    if (c.req.path === '/upload' || c.req.header('Content-Type')?.startsWith('multipart/form-data')) {
+    if (c.req.path === TRANSPORT_ROUTES.upload || c.req.header('Content-Type')?.startsWith('multipart/form-data')) {
         // Buffer at most the limit, then parse the bounded copy (never the raw stream).
         const bytes = await readBody(c, limits.uploadBytes ?? RPC_UPLOAD_REQUEST_MAX_BYTES);
         const headers = new Headers(c.req.raw.headers);
         headers.delete('Content-Length');
         const fields = await parseBody(new Request(c.req.url, { method: 'POST', headers, body: bytes }), { all: true });
         body = Object.create(null);
-        for (const key of ['componentRouteId', 'action', 'target', 'scopeKey']) {
+        for (const key of ['componentRouteId', 'pageRouteId', 'action', 'target', 'scopeKey']) {
             if (fields[key] !== undefined) {
                 if (typeof fields[key] !== 'string') invalid(key);
                 body[key] = fields[key];
@@ -75,7 +76,7 @@ export async function readRpcRequest(c: Context, limits: RpcBodyLimits = {}): Pr
         body = JSON.parse(new TextDecoder().decode(bytes));
     }
     if (!body || typeof body !== 'object' || Array.isArray(body)) invalid('(root)');
-    for (const key of ['componentRouteId', 'action', 'target', 'scopeKey']) {
+    for (const key of ['componentRouteId', 'pageRouteId', 'action', 'target', 'scopeKey']) {
         if (body[key] !== undefined && (typeof body[key] !== 'string' || !body[key].trim())) invalid(key);
     }
     if (body.payload !== undefined && !Array.isArray(body.payload)) invalid('payload');

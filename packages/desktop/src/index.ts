@@ -12,6 +12,7 @@ import type {
   WebPreferences,
 } from 'electron';
 import type { CossackRuntimeAdapter } from '@cossackframework/core';
+import { STATIC_ASSET_DIRECTORY } from '@cossackframework/core/static-assets';
 import { DesktopUnavailableError } from './error.js';
 
 const electronApi = (typeof electron === 'object' && electron !== null ? electron : {}) as typeof import('electron');
@@ -111,8 +112,14 @@ export type SafeBrowserWindowOptions = Omit<BrowserWindowConstructorOptions, 'we
 export interface CreateDesktopAppOptions {
   identifier: string;
   productName: string;
+  /** Client build output (`dist/client`), read when `assets` is not given. */
   assetsRoot: string;
-  /** Optional asset provider. Return 404 to continue to the application router. */
+  /**
+   * Optional asset provider that replaces filesystem lookup in `assetsRoot`.
+   * It answers hashed build output under `/assets/` before the application,
+   * and it is the application's `ASSETS` binding, which serves every other
+   * file after global and page policies. Return 404 for a missing file.
+   */
   assets?: { fetch(request: Request): Response | Promise<Response> };
   fetch: DesktopFetch;
   env?: Record<string, unknown>;
@@ -349,6 +356,27 @@ const mimeTypes: Record<string, string> = {
   '.woff2': 'font/woff2',
 };
 
+// Vite writes hashed client build output to `assets/`. Like Cloudflare's
+// `["/*", "!/assets/*"]` routing and the generated Node server, Desktop serves
+// only this namespace before the application. Every other file, including
+// `public/`, goes through the framework, which serves it from ASSETS after
+// global and page/layout policies.
+const buildAssetPrefix = `${STATIC_ASSET_DIRECTORY}/`;
+const hashedFileName = /\.[a-zA-Z0-9_-]{8,}\.[^/]+$/;
+
+/** True for a GET or HEAD request in the hashed build-output namespace. */
+function isBuildAssetRequest(request: Request): boolean {
+  if (request.method !== 'GET' && request.method !== 'HEAD') return false;
+  return normalizePathname(new URL(request.url).pathname).startsWith(buildAssetPrefix);
+}
+
+/** The generated Node server's cache headers: hashed build output never changes. */
+function assetCacheControl(pathname: string): string {
+  return pathname.startsWith(buildAssetPrefix) && hashedFileName.test(pathname)
+    ? 'public, max-age=31536000, immutable'
+    : 'public, max-age=0, must-revalidate';
+}
+
 async function assetResponse(assetsRoot: string, request: Request): Promise<Response | undefined> {
   if (request.method !== 'GET' && request.method !== 'HEAD') return undefined;
   const url = new URL(request.url);
@@ -364,6 +392,7 @@ async function assetResponse(assetsRoot: string, request: Request): Promise<Resp
     const headers = new Headers({
       'content-type': mimeTypes[path.extname(filePath).toLowerCase()] ?? 'application/octet-stream',
       'content-length': String(info.size),
+      'cache-control': assetCacheControl(pathname),
     });
     return new Response(request.method === 'HEAD' ? null : await readFile(realFile), { headers });
   } catch (error) {
@@ -540,6 +569,10 @@ async function initializeDesktopApp(options: CreateDesktopAppOptions): Promise<D
     return window;
   };
 
+  const fileAssets = {
+    fetch: async (assetRequest: Request) =>
+      await assetResponse(assetsRoot, assetRequest) ?? new Response('Not found', { status: 404 }),
+  };
   await desktopSession.protocol.handle(protocolScheme, async (request) => {
     debugDesktop(`handling ${request.method} ${request.url}`);
     let url: URL;
@@ -563,13 +596,13 @@ async function initializeDesktopApp(options: CreateDesktopAppOptions): Promise<D
       return new Response('Unverified Desktop request', { status: 403 });
     const scopedShell = createDesktopShell({ window: browserWindow });
     const frameworkRequest = toFrameworkRequest(request);
-    const assets = options.assets ?? {
-      fetch: async (assetRequest: Request) =>
-        await assetResponse(assetsRoot, assetRequest) ?? new Response('Not found', { status: 404 }),
-    };
-    const asset = await assets.fetch(frameworkRequest);
-    if (asset.status !== 404) return asset;
-    await asset.body?.cancel();
+    const assets = options.assets ?? fileAssets;
+    if (isBuildAssetRequest(frameworkRequest)) {
+      // A missing build file continues to the application and its 404 handling.
+      const asset = await assets.fetch(frameworkRequest);
+      if (asset.status !== 404) return asset;
+      await asset.body?.cancel();
+    }
     return options.fetch(frameworkRequest, {
       ...(options.env ?? {}),
       ASSETS: assets,

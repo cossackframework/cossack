@@ -1,13 +1,16 @@
 import { getModuleDefault } from './module-default.js';
 // src/DurableObject.ts
-import { CossackDurableObject, Cossack } from '@cossackframework/core';
+import { CossackDurableObject, Cossack, type DurableObjectComponentRequest } from '@cossackframework/core';
 import type { Context, MiddlewareHandler } from 'hono';
 import applicationRegistry from 'virtual:cossack-pages';
-import { resolveLayoutPaths } from './route-ids.js';
+import { computeRouteIds, resolveLayoutPaths, type RouteIdMaps } from './route-ids.js';
+import { createChainedComponent } from './service-scope-chain.js';
 import { resolveRealtimeScopeKey } from './realtime-scope.js';
 import { withRealtimeAuthorization, type RealtimeIdentity, type RealtimeRequestSnapshot } from './realtime-context.js';
 import { ensureRequestContextAlsWired } from './request-context-als.js';
 import type { SocketPeerAttachment } from '@cossackframework/core';
+
+let routeIds: RouteIdMaps | undefined;
 
 export class AppDurableObject extends CossackDurableObject {
     constructor(state: DurableObjectState, env: any) {
@@ -28,6 +31,20 @@ export class AppDurableObject extends CossackDurableObject {
             }
         }
         return registry;
+    }
+
+    /** Build the page inside its root and layout service scopes, with the route params SSR saw. */
+    protected override async createComponent(Component: new () => Cossack, request: DurableObjectComponentRequest): Promise<Cossack> {
+        // The router derives the same ids from the same registry, so service
+        // owners match the ids the browser received during SSR.
+        routeIds ??= computeRouteIds(Object.keys(applicationRegistry.pages), Object.keys(applicationRegistry.layouts));
+        const { context, user } = request;
+        return createChainedComponent({
+            component: Component, componentPath: request.componentPath, scopeKey: request.scopeKey,
+            layouts: applicationRegistry.layouts, routePathToIdMap: routeIds.routePathToIdMap,
+            facilities: { context, user, env: this.env },
+            bootstrap: { context, user, env: this.env, page: request.page, skipInit: true, initialState: request.initialState },
+        });
     }
 
     protected override async authorizeWebSocketPeer(

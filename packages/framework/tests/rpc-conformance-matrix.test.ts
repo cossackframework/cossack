@@ -238,7 +238,9 @@ async function harness(transport: Transport, uploadMode = false) {
         if (!damage || typeof frame.requestId !== 'string' || damageAt-- > 0) return frame;
         const change = damage; damage = undefined; return change(frame);
     };
-    const browserWindow = { location: { search: '', href: '' } };
+    // Layout-service calls name the page the browser is on.
+    const browserWindow = { location: { search: '', href: '' },
+        __INITIAL_STATE__: { componentRouteId: ids.routePathToIdMap.get(httpPath), metadata: { params: {} } } };
     const client = clientSurface(HttpPage, transport);
     let target = client;
     vi.stubGlobal('window', browserWindow);

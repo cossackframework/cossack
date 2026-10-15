@@ -120,7 +120,7 @@ export async function checkWorkerSchemaAcceptance(server,serverUrl,cookie,readHy
     for(const service of [false,true])for(const upload of [false,true]){
       const invoke=(value,{stream=false,cancel=false,policyException=false,extraArgs=[]}={})=>{
         const envelope={componentRouteId:state.componentRouteId,scopeKey:state.scopeKey,
-          ...(service?{service:{ownerRouteId:owner,slot:'0'}}:{}),action:policyException?'policyException':stream?'stream':'edit',
+          ...(service?{service:{ownerRouteId:owner,slot:'0'},pageParams:state.metadata.params}:{}),action:policyException?'policyException':stream?'stream':'edit',
           state:{canEdit:true,user:{id:'u1'}},payload:[value,...extraArgs]};
         const cancellation=cancel?{'X-Counter-Abort':'explicit'}:{};
         if(upload){

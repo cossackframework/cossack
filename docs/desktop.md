@@ -14,6 +14,13 @@ RPC. `@Page({ transport: 'http' })` is required. Native APIs stay in
 the main process and are available to server methods through
 `this.env.COSSACK_DESKTOP`. The framework does not create a preload or a generic renderer IPC API.
 
+Desktop serves only Vite's hashed build output under `/assets/` before the
+application. Every other file, including files from `public/`, passes global
+and page policies first. A missing file reaches the framework's 404 handling.
+`pnpm desktop:dev` applies the same policies to `public/` files, but Vite
+answers its client and source modules first. See
+[Desktop static files](./adapters.md#desktop-static-files).
+
 Use `pnpm desktop:dev`, `pnpm desktop:package`, and `pnpm desktop:make`.
 Development runs Vite inside Electron and retains the private origin. Source
 edits reload managed windows. Changes to the native bootstrap, the Vite
@@ -74,11 +81,16 @@ Forge packages include only `package.json`, `dist/client`, `dist/desktop` and
 web-server output and local environment files stay outside the package. If you
 customize Forge, preserve this boundary.
 
-Run `pnpm test:desktop` from this repository on Linux. The script builds and
-installs local package tarballs and launches Electron. It tests RPC, window
-ownership and persistence, inspects ASAR contents, runs a relocated package, and
-constructs a DEB. It
-requires Xvfb, `dpkg-deb` and `fakeroot`. This gate uses an uninstalled test
-executable and does not prove installed sandbox permissions, menu/tray behavior,
-notifications, Windows/macOS installers or signing. Those remain native-host
-release checks.
+Run `pnpm test:desktop` from the repository root on Linux, after
+`pnpm install`. The script builds the packages it needs, installs local package
+tarballs into a generated Desktop application and launches Electron under
+`xvfb-run`. It tests RPC, window ownership and persistence, and static-file
+policies. It inspects ASAR contents, runs a relocated package, constructs a DEB,
+and restarts `desktop:dev` after `.env`, Vite configuration and bootstrap
+changes. It requires `Xvfb` and `xvfb-run` (the `xvfb` package on Debian and
+Ubuntu), `dpkg-deb` and `fakeroot` on `PATH`. The generated application
+installs its dependencies and Electron, so the script needs registry access or
+warm pnpm and Electron caches. CI does not run it. This gate uses an
+uninstalled test executable and does not prove installed sandbox permissions,
+menu/tray behavior, notifications, Windows/macOS installers or signing. Those
+remain native-host release checks.
