@@ -337,6 +337,12 @@ export interface RouterContext {
   runtimeInfo?: () => Promise<import('@cossackframework/core').CossackRuntimeInfo>;
   /** Page and enclosing layout guards, also enforced on transport endpoints. */
   getMiddlewares?: (componentPath: string) => import('hono').MiddlewareHandler[];
+  /**
+   * Realtime child components by build-time registry id
+   * (`virtual:cossack-realtime-components`). The server builds them from this
+   * registry only; a client names an id, never a module.
+   */
+  realtimeComponents?: Record<string, new () => import('@cossackframework/core').Cossack>;
 }
 
 /**

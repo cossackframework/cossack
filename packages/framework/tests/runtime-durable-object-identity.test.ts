@@ -3,7 +3,7 @@ import { expect, it, vi } from 'vitest';
 import { Cossack, Page } from '@cossackframework/core';
 import { html } from '@cossackframework/renderer';
 import type { RuntimeWebSocketUpgrade } from '../src/runtime-adapter';
-import { realtimeObjectName } from '../src/realtime-scope';
+import { realtimeInstanceName } from '../src/realtime-scope';
 
 /**
  * Process-local runtimes (Node) must name a `durable-object` page's shared
@@ -27,8 +27,9 @@ class Room extends Cossack { render() { return html`<main>room</main>`; } }
 @Page({ transport: 'durable-object', scope: c => `team:${c.req.param('id')}` })
 class Team extends Cossack { render() { return html`<main>team</main>`; } }
 const roomPath = '/src/pages/room/[id]/index.ts';
+const teamPath = '/src/pages/team/[id]/index.ts';
 registry.pages[roomPath] = { default: Room };
-registry.pages['/src/pages/team/[id]/index.ts'] = { default: Team };
+registry.pages[teamPath] = { default: Team };
 const { createApp } = await import('../src/router');
 
 const upgrades: RuntimeWebSocketUpgrade[] = [];
@@ -55,7 +56,8 @@ async function connect(routePath: string, id: string, target: string, userId: st
 }
 
 it('emits one shared target per page plus route params, for every user', async () => {
-  const expected = realtimeObjectName(undefined, 'ignored', roomPath, { id: '1' });
+  const expected = realtimeInstanceName({ kind: 'page', id: roomPath, options: undefined }, undefined, { id: '1' });
+  expect(expected).toBe(`page:${JSON.stringify([roomPath, [['id', '1']]])}`);
   expect(await ssrTarget('/room/1', 'alice')).toBe(expected);
   expect(await ssrTarget('/room/1?utm=campaign', 'bob')).toBe(expected);
   expect(await ssrTarget('/room/2', 'alice')).not.toBe(expected);
@@ -85,8 +87,11 @@ it('bootstraps the shared instance for the recomputed page target', async () => 
   }
 });
 
-it('keeps custom scope keys as the target', async () => {
-  expect(await ssrTarget('/team/alpha', 'alice')).toBe('team:alpha');
-  expect((await connect('/team/[id]', 'alpha', 'team:alpha', 'bob')).rejectAuthorization).toBe(false);
-  expect((await connect('/team/[id]', 'alpha', 'team:beta', 'bob')).rejectAuthorization).toBe(true);
+it('names a custom scope by the page plus its scope key', async () => {
+  const alpha = `page:${JSON.stringify([teamPath, { scope: 'team:alpha' }])}`;
+  expect(await ssrTarget('/team/alpha', 'alice')).toBe(alpha);
+  expect((await connect('/team/[id]', 'alpha', alpha, 'bob')).rejectAuthorization).toBe(false);
+  // A bare scope key, or another key, never names the page's instance.
+  expect((await connect('/team/[id]', 'alpha', 'team:alpha', 'bob')).rejectAuthorization).toBe(true);
+  expect((await connect('/team/[id]', 'alpha', `page:${JSON.stringify([teamPath, { scope: 'team:beta' }])}`, 'bob')).rejectAuthorization).toBe(true);
 });

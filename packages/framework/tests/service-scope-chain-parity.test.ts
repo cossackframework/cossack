@@ -223,8 +223,10 @@ async function viaWebSocket(): Promise<ScopeLink[]> {
     try { chain = describeChain(instance); } finally { await instance.destroyAsync(); }
     return new Response('ok');
   } } });
-  const query = new URLSearchParams({ routePath: '/teams/[team]', pathname: '/teams/alpha', params });
-  const response = await app.request(`/ws/${encodeURIComponent(scopeKey)}?${query}`, { headers: { origin: 'http://localhost' } }, env());
+  // WebSocket upgrades address realtime owners: the Durable Object page under the same layouts.
+  const query = new URLSearchParams({ routePath: '/teams/[team]/live', pathname: '/teams/alpha/live', params });
+  const target = `page:${JSON.stringify([livePath, { scope: scopeKey }])}`;
+  const response = await app.request(`/ws/${encodeURIComponent(target)}?${query}`, { headers: { origin: 'http://localhost' } }, env());
   expect(response.status, await response.clone().text()).toBe(200);
   return chain;
 }

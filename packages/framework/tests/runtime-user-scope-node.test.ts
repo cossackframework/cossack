@@ -102,14 +102,16 @@ function open(path: string, target: string, routePath: string, params: Record<st
   };
 }
 const inbox = (target: string, folder: string, user: string) => open('/ws/', target, '/inbox/[folder]', { folder }, user);
+const inboxPath = '/src/pages/inbox/[folder]/index.ts';
+const scoped = (path: string, key: string) => `page:${JSON.stringify([path, { scope: key }])}`;
 const closed = (socket: WebSocket) => new Promise<number>(resolve => socket.once('close', code => resolve(code)));
 
 it('shares one Node instance per user across the URLs of a user-scoped page', async () => {
   const alice = await ssrTarget('/inbox/work', 'alice');
   expect(await ssrTarget('/inbox/home', 'alice')).toBe(alice);
-  expect(alice).toBe('user:alice');
+  expect(alice).toBe(scoped(inboxPath, 'user:alice'));
   const bob = await ssrTarget('/inbox/work', 'bob');
-  expect(bob).toBe('user:bob');
+  expect(bob).toBe(scoped(inboxPath, 'user:bob'));
 
   const work = inbox(alice, 'work', 'alice');
   const home = inbox(alice, 'home', 'alice');
@@ -128,7 +130,7 @@ it('shares one Node instance per user across the URLs of a user-scoped page', as
 
 it('rejects a client-supplied target that differs from the server-computed scope key', async () => {
   const before = runtime.instanceCount;
-  for (const forged of ['user:alice', 'user:mallory', 'page:["/src/pages/inbox/[folder]/index.ts",[]]']) {
+  for (const forged of [scoped(inboxPath, 'user:alice'), scoped(inboxPath, 'user:mallory'), 'user:bob', 'page:["/src/pages/inbox/[folder]/index.ts",[]]']) {
     const intruder = inbox(forged, 'work', 'bob');
     const code = closed(intruder.socket);
     expect(await intruder.first).toMatchObject({ type: 'authorization-error', code: 'COSSACK_REALTIME_AUTH_CHANGED' });
@@ -139,9 +141,14 @@ it('rejects a client-supplied target that differs from the server-computed scope
 
 it('keeps another page with the same scope key in its own instance', async () => {
   const before = runtime.instanceCount;
-  const notes = open('/ws/', 'user:alice', '/notes', {}, 'alice');
+  const target = await ssrTarget('/notes', 'alice');
+  expect(target).toBe(scoped('/src/pages/notes/index.ts', 'user:alice'));
+  const notes = open('/ws/', target, '/notes', {}, 'alice');
   expect(await notes.first).toEqual({ type: 'state-update', state: { count: 0 } });
   expect(runtime.instanceCount).toBe(before + 1);
+  // The inbox's target is not the notes page's.
+  const intruder = open('/ws/', scoped(inboxPath, 'user:alice'), '/notes', {}, 'alice');
+  expect(await intruder.first).toMatchObject({ type: 'authorization-error', code: 'COSSACK_REALTIME_AUTH_CHANGED' });
 });
 
 it('fails closed for anonymous users', async () => {

@@ -7,11 +7,14 @@ import { handleWebSocketProxy } from '../src/transports/websocket';
 import type { RouterContext } from '../src/route-ids';
 
 const path = '/src/pages/private/index.ts';
+// A realtime page: WebSocket upgrades address realtime owners only.
+class PrivatePage extends Cossack {}
+Reflect.defineMetadata('page:options', { transport: 'durable-object' }, PrivatePage);
 const ctx: RouterContext = {
     routeIdMap: new Map([['private', path]]),
     routePathToIdMap: new Map([[path, 'private']]),
     routePathToFilePathMap: new Map([['/private', path]]),
-    pages: { [path]: { default: class PrivatePage {} } },
+    pages: { [path]: { default: PrivatePage } },
     layouts: {},
 };
 
@@ -212,12 +215,13 @@ describe('transport security boundary', () => {
     });
 
     it('forwards a terminal rejection when a custom-scope socket targets another Durable Object', async () => {
-        class TeamPage {}
-        Reflect.defineMetadata('page:options', { scope: (c: any) => `team:${c.req.param('team')}` }, TeamPage);
+        class TeamPage extends Cossack {}
+        Reflect.defineMetadata('page:options', { transport: 'durable-object', scope: (c: any) => `team:${c.req.param('team')}` }, TeamPage);
+        const teamPath = '/src/pages/teams/[team]/index.ts';
         const teamContext: RouterContext = {
             ...ctx,
-            pages: { [path]: { default: TeamPage } },
-            routePathToFilePathMap: new Map([['/private', path]]),
+            pages: { [teamPath]: { default: TeamPage } },
+            routePathToFilePathMap: new Map([['/teams/[team]', teamPath]]),
         };
         const forward = vi.fn(async () => new Response('upgraded'));
         const app = new Hono();
@@ -228,7 +232,7 @@ describe('transport security boundary', () => {
         });
         app.get('/ws/:id', handleWebSocketProxy(teamContext));
         const params = JSON.stringify({ team: 'alpha' });
-        const response = await app.request(`/ws/stale?${new URLSearchParams({ routePath: '/private', params })}`, {
+        const response = await app.request(`/ws/stale?${new URLSearchParams({ routePath: '/teams/[team]', params })}`, {
             headers: { origin: 'http://localhost' },
         }, { COSSACK_OBJECT: {
             idFromString: () => 'stale', idFromName: () => ({ toString: () => 'current' }), get: () => ({ fetch: forward }),

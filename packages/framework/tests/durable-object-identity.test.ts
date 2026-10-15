@@ -39,6 +39,10 @@ const userScope = (c: any) => {
 class Inbox extends Cossack { render() { return html`<main>inbox</main>`; } }
 registry.pages['/src/pages/inbox/[folder]/index.ts'] = { default: Inbox };
 const { createApp } = await import('../src/router');
+/** The Durable Object name of a page with a custom scope: the page plus its scope key. */
+const scoped = (path: string, key: string) => `id:page:${JSON.stringify([path, { scope: key }])}`;
+const boardPath = '/src/pages/board/[id]/index.ts';
+const inboxPath = '/src/pages/inbox/[folder]/index.ts';
 
 function environment() {
   const forward = vi.fn(async () => new Response('upgraded'));
@@ -105,16 +109,16 @@ describe('custom scope targets', () => {
     expect(await board(await ssrTarget('http://localhost/board/7'))).toBe('true');
     // A scope that reads the page's query string does not.
     const withQuery = await ssrTarget('http://localhost/board/7?view=grid');
-    expect(withQuery).toBe('id:board:7:grid');
+    expect(withQuery).toBe(scoped(boardPath, 'board:7:grid'));
     expect(await board(withQuery)).toBe('false');
   });
 
   it('shares one object per user across the URLs of a user-scoped page and isolates other users', async () => {
     const work = await ssrTarget('http://localhost/inbox/work', 'alice');
     expect(await ssrTarget('http://localhost/inbox/home', 'alice')).toBe(work);
-    expect(work).toBe('id:user:alice');
+    expect(work).toBe(scoped(inboxPath, 'user:alice'));
     const bob = await ssrTarget('http://localhost/inbox/work', 'bob');
-    expect(bob).toBe('id:user:bob');
+    expect(bob).toBe(scoped(inboxPath, 'user:bob'));
 
     const inbox = (target: string, folder: string, user?: string) =>
       upgrade(target, '/inbox/[folder]', `/inbox/${folder}`, { folder }, user);
@@ -131,7 +135,8 @@ describe('custom scope targets', () => {
     const own = await ssrTarget('http://localhost/inbox/work', 'alice');
     const inbox = (target: string) => connect(target, '/inbox/[folder]', '/inbox/work', { folder: 'work' }, 'alice');
     expect(await inbox(own)).toBe('true');
-    for (const forged of ['id:user:bob', 'id:user:alice:extra', 'user:alice', 'id:page:inbox']) {
+    for (const forged of [scoped(inboxPath, 'user:bob'), scoped(inboxPath, 'user:alice:extra'), 'id:user:alice', 'user:alice', 'id:page:inbox',
+      scoped('/src/pages/board/[id]/index.ts', 'user:alice')]) {
       expect(await inbox(forged)).toBe('false');
     }
   });

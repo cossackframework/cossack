@@ -5,7 +5,8 @@ import { readRpcRequest, RPC_JSON_REQUEST_MAX_BYTES } from './http.js';
 import { discardRequestBody } from '../request-body.js';
 import { withRuntimeRouteParams } from '../runtime-websocket.js';
 import { isTransportPath } from '../transport-routes.js';
-import { checkSocketRouteParams, resolveComponentRpcTarget, resolveServiceRpcTarget } from './rpc-target.js';
+import { resolveComponentRpcTarget, resolveServiceRpcTarget } from './rpc-target.js';
+import { realtimeOwnerMiddlewares, resolveRealtimeConnection } from './realtime-target.js';
 
 /**
  * The route params of an SSE subscription (its `params` query: the page's
@@ -33,6 +34,7 @@ export function checkSseRouteParams(
 export function protectTransport(ctx: RouterContext): MiddlewareHandler {
     return async (c, next) => {
         let componentPath: string | undefined;
+        let ownerMiddlewares: MiddlewareHandler[] = [];
         let guarded: Context = c;
         if (c.req.method === 'POST') {
             // Multipart and text/plain requests can be sent without a CORS preflight.
@@ -89,20 +91,23 @@ export function protectTransport(ctx: RouterContext): MiddlewareHandler {
                 guarded = withRuntimeRouteParams(c, params);
             }
         } else {
-            const route = c.req.query('routePath') || c.req.query('componentPath');
-            componentPath = route ? ctx.routePathToFilePathMap.get(route) || route : undefined;
-            if (componentPath && (Object.hasOwn(ctx.pages, componentPath) || Object.hasOwn(ctx.layouts, componentPath))) {
-                // The upgrade carries the page's route params. They name the
-                // realtime instance too, so the guards decide on the same values.
-                let params: Record<string, string> | undefined;
-                try { params = checkSocketRouteParams(ctx, componentPath, JSON.parse(c.req.query('params') ?? '{}')); }
-                catch { params = undefined; }
-                if (!params) return c.text('Invalid WebSocket route params', 400);
-                guarded = withRuntimeRouteParams(c, params);
+            // A WebSocket upgrade names its realtime owner and the page the
+            // browser is on. A page or a component runs that page's layout
+            // and page guards; a layout runs its own guard stack. All of them
+            // see the page's checked route params, which also name the
+            // instance, so the guards decide on the same values.
+            const resolved = resolveRealtimeConnection(ctx, name => c.req.query(name));
+            if ('error' in resolved) {
+                if (resolved.error === 'owner' && resolved.status === 404) return c.json({ error: 'Invalid component ID' }, 400);
+                return c.text(resolved.message, 400);
             }
+            componentPath = resolved.target.guardPath;
+            ownerMiddlewares = realtimeOwnerMiddlewares(resolved.target.owner);
+            guarded = withRuntimeRouteParams(c, resolved.target.params);
         }
         if (!componentPath) return c.json({ error: 'Invalid component ID' }, 400);
-        const middlewares = ctx.getMiddlewares?.(componentPath) ?? [];
+        // A realtime component's own guards run after its page's guards.
+        const middlewares = [...ctx.getMiddlewares?.(componentPath) ?? [], ...ownerMiddlewares];
         // Preserve short-circuit responses and after-next headers without
         // replacing Hono's route index (which resolves transport params).
         let index = -1;
