@@ -134,6 +134,31 @@ const props = { id: 'btn', class: 'primary', 'data-type': 'action' };
 html`<button ...=${props}>Click</button>`
 ```
 
+Keys can be attributes (`id`), boolean attributes (`?disabled`), properties
+(`.value`) and events (`@click`). An element can have several spreads. SSR,
+hydration and client updates apply them with the same rules:
+
+- **A later spread wins.** When two spreads set the same attribute, boolean
+  attribute or property, the value of the later spread is used. If the later
+  spread drops the key, the earlier spread's value applies again.
+- **A spread overrides the template.** A spread key replaces an attribute
+  with the same name written in the template, whichever side of the spread it
+  is on. When the key is dropped, the template's value comes back. A value of
+  `null`, `undefined`, `nothing`, `false` (for a boolean attribute) or a
+  function removes the attribute.
+- **Classes merge.** `class` and `className` keys add their tokens to the
+  element's own class, in spread order. They do not replace it.
+- **Every event handler runs.** Each spread adds its own listener for its
+  event keys. If two spreads set `@click`, both handlers run.
+
+```typescript
+// Renders <button class="cs-button primary" id="save" type="button">.
+html`<button class="cs-button" ...=${{ id: 'save', type: 'submit', class: 'primary' }} ...=${{ type: 'button' }}>Save</button>`
+```
+
+Do not combine a spread key with a bound attribute of the same name, such as
+`id=${id}` next to a spread that sets `id`. That result is not defined.
+
 ### Unsafe HTML
 
 Render a raw HTML string with `unsafeHTML`. Do not pass untrusted input to it:
