@@ -378,7 +378,8 @@ the layout, so its connection stays open.
 - The instance is the layout file plus the scope key. Without `scope`, it is
   the layout file plus the route params that the layout's own directory
   declares: `src/pages/teams/[team]/layout.ts` gets one instance per team,
-  shared by every page under it.
+  shared by every page under it. A root layout without `scope` is one instance
+  for every visitor, signed in or not.
 - For an anonymous visitor, `perUser` throws. The page still renders, and the
   layout renders without a connection (`this.realtime.websocket.state` is
   `closed`). If anonymous visitors must not see the pages at all, add a layout
