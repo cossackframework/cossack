@@ -5,7 +5,7 @@ import { readRpcRequest, RPC_JSON_REQUEST_MAX_BYTES } from './http.js';
 import { discardRequestBody } from '../request-body.js';
 import { withRuntimeRouteParams } from '../runtime-websocket.js';
 import { isTransportPath } from '../transport-routes.js';
-import { resolveComponentRpcTarget, resolveServiceRpcTarget } from './rpc-target.js';
+import { checkRouteParams, resolveComponentRpcTarget, resolveServiceRpcTarget } from './rpc-target.js';
 import { realtimeOwnerMiddlewares, resolveRealtimeConnection } from './realtime-target.js';
 
 /**
@@ -20,7 +20,10 @@ export function checkSseRouteParams(
     componentPath: string,
     encoded: string | undefined,
 ): Record<string, string> | undefined {
-    try { return checkSocketRouteParams(ctx, componentPath, JSON.parse(encoded ?? '{}')); }
+    // A layout renders with the params of the page below it, so it may carry
+    // more params than its own route; a page must match its route exactly.
+    const layout = Object.hasOwn(ctx.layouts, componentPath) && !Object.hasOwn(ctx.pages, componentPath);
+    try { return checkRouteParams(componentPath, JSON.parse(encoded ?? '{}'), layout); }
     catch { return undefined; }
 }
 
