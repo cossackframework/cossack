@@ -135,7 +135,7 @@ Use `@Shared()` for pure logic that must run identically on both sides (e.g. a s
 
 ## Security
 
-- **Only explicit `@Server()` methods are inbound RPC-callable.** The framework checks `cossack:server-methods` metadata on the prototype chain; a method without that metadata is rejected. Internal framework hooks decorated with `@Server()` purely for stripping (e.g. `initializeProviders`) are on a blocklist and cannot be invoked via RPC.
+- **Only explicit `@Server()` methods are inbound RPC-callable.** The framework checks `cossack:server-methods` metadata on the prototype chain; a method without that metadata is rejected. Internal framework hooks decorated with `@Server()` purely for stripping (e.g. `proxyClientMethods`) are on a blocklist and cannot be invoked via RPC.
 - **Never put secrets in a `@Client()` or `@Shared()` method** — the body is shipped to the browser. Secrets, DB credentials, and API keys belong in `@Server()` methods or `this.env`.
 - **Read trusted user context on the server.** Ordinary action arguments remain caller input; naming a parameter `user` does not inject authentication. Use `this.user` or trusted context, parse `@Server({ input })`, and check ownership with its `authorize` hook. Client State and scope strings are not authority.
 

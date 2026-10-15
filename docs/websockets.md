@@ -34,22 +34,26 @@ with a unique request id and follows the same contract as HTTP/SSE:
   automatically with bounded exponential backoff (0.5 s doubling to 30 s) and
   resets after a successful open.
 
-Connection health is exposed on every component as `this.realtime`:
+### Connection status
+
+Each page has one WebSocket connection, to its real-time instance. Child
+components use the page's connection. Connection health is exposed on every
+component as `this.realtime`:
 
 ```typescript
 render() {
-    const status = this.realtime.websockets.page; // one entry per provider
+    const status = this.realtime.websocket;
     return html`<span class=${status.state}>${status.state}</span>`; // connecting | open | reconnecting | closed
 }
 ```
 
-Each status entry tracks `state`, `attempts` (reconnects since the last open),
+The status tracks `state`, `attempts` (reconnects since the last open),
 `lastEventId`, `lastError`, and `resynced`. SSE pages expose the same fields on
 `this.realtime.sse`. `resynced` becomes true when a reconnect had to replace
 expired history with an authoritative snapshot.
 
-Retiring a component or replacing its provider connections sets the old statuses
-to `closed`, clears heartbeat/reconnect timers and rejects pending socket calls
+Retiring a component or replacing its connection sets the old status to
+`closed`, clears heartbeat/reconnect timers and rejects pending socket calls
 with `COSSACK_RPC_TRANSPORT_CLOSED`. Queued callbacks from an old socket cannot
 publish state, invoke actions/events or change its replacement's status. Destroyed
 components cannot open new sockets. Closing an old socket never schedules a
@@ -167,11 +171,211 @@ share an instance, even when their scope functions return the same key: on
 Cloudflare the second page's connection is rejected with
 `COSSACK_WS_SCOPE_MISMATCH`, and on Node each page gets its own instance.
 
-This architecture has three parts: `StateProvider`, `Channel`, and `Event`.
+## Share real-time state across pages with scope
 
-- `StateProvider` (the where): A State Provider determines which stateful backend a component connects to. By default, components use the `page` provider, which connects to the page instance described above: the page plus its route params, or its scope key. See [providers](#providers) for the limits of custom providers.
+`scope` selects the real-time instance that a page connects to. The server
+computes the scope key from the request: the signed-in user and the page's
+route params. The browser receives the computed target in the page's initial
+state and opens one connection to `/ws/:id`. It cannot choose another
+instance. The server computes the key again for the upgrade and checks it again
+before each action. It rejects a connection whose target differs from the key.
 
-- `Channel` (the what): A Channel is a logical partition within a provider. It groups related pieces of state. When an automatic update occurs, the framework sends a partial state object containing only the properties for the affected channel.
+Every URL of a page, and every tab or device, that computes the same key shares
+one instance. An instance hosts one page file. Two different page files never
+share an instance, even when their keys are equal (see [scope](#scope--controlling-which-durable-object-instance-a-page-connects-to)).
+
+### Per-user state across pages
+
+```typescript
+// src/pages/inbox/[folder]/index.ts
+import { Cossack, Page, Server, State } from '@cossackframework/core';
+import { ResourceAuthorizationError } from '@cossackframework/auth';
+import { html } from '@cossackframework/renderer';
+import type { Context } from 'hono';
+import { guard } from '../../../authorization';
+
+// One instance per signed-in user. Never fall back to a shared key.
+const perUser = (c: Context) => {
+    const user = c.get('user');
+    if (!user) throw new ResourceAuthorizationError('COSSACK_AUTH_UNAUTHENTICATED');
+    return `user:${user.id}`;
+};
+
+@Page({
+    transport: 'durable-object',
+    middlewares: [guard.requireUser],
+    scope: perUser,
+})
+export default class Inbox extends Cossack {
+    @State() unread = 0;
+
+    @Server()
+    markAllRead() {
+        this.unread = 0;
+    }
+
+    render() {
+        return html`
+            <p>${this.unread} unread</p>
+            <button @click=${this.markAllRead}>Mark all read</button>
+        `;
+    }
+}
+```
+
+For Alice, `/inbox/work` and `/inbox/home` compute the key `user:alice`. Both
+URLs, in every tab, share one instance and one `unread` value. Bob computes
+`user:bob` and gets his own instance. A connection from Bob that names Alice's
+target is rejected.
+
+The scope fails closed for anonymous users in two places:
+
+- `guard.requireUser` (see [authorization](./authorization.md)) rejects the
+  page request, the WebSocket upgrade and each action without a user.
+- The scope function throws instead of returning a shared key such as
+  `user:undefined`. `ResourceAuthorizationError` answers 401. Any other error
+  answers 500. Neither error opens a connection.
+
+### Per-team or per-room state
+
+```typescript
+// Every member of a team shares one instance.
+@Page({
+    transport: 'durable-object',
+    stateful: true,
+    middlewares: [guard.requireUser],
+    scope: (c) => `team:${c.get('user').teamId}`,
+})
+
+// src/pages/rooms/[roomId]/index.ts: one instance per room.
+@Page({
+    transport: 'durable-object',
+    stateful: true,
+    middlewares: [requireRoomMember],
+    scope: (c) => `room:${c.req.param('roomId')}`,
+})
+```
+
+A scope key names an instance. It does not give access to it. A route param
+such as `roomId` is client input. Check membership in page middleware, such as
+`requireRoomMember` above. The server runs page middleware for the page
+request, for the upgrade and again before each action. Check access to records
+in each `@Server` method too.
+
+### Route params and scope
+
+- Without `scope`, the page's route params are part of the identity. `/room/1`
+  and `/room/2` get different instances. `/room/1?tab=chat` uses the instance
+  of `/room/1`.
+- With `scope`, only the values that the function reads count. `perUser` above
+  does not read `folder`, so all folders share one instance per user. To get
+  one instance per user and folder, put the param in the key:
+  `` (c) => `${perUser(c)}:folder:${c.req.param('folder')}` ``.
+- The function gets the route params and the user for the page request, for
+  the upgrade and for each action. It does not get the page's query string
+  after the page request, because the upgrade has its own URL (`/ws/...`). Do
+  not read `c.req.query()` in a scope function. If the keys differ, the server
+  rejects the connection.
+
+### Page-scoped and user-scoped state on one screen
+
+A page has one real-time connection to one instance. Child components that you
+render with `component()` run in the page's instance and use the page's
+connection. A child component has no connection of its own, so it cannot have
+its own scope: `scope` on a child component has no effect.
+
+To combine page-scoped and user-scoped state on one screen:
+
+- Put the state that everyone on the page shares in the page's `@State`. The
+  page's scope selects who shares it.
+- Keep one user's data out of `@State` in a shared instance, because every
+  connected user receives `@State`. Return the data from a `@Server` method
+  instead. The method runs with the identity of its caller. Keep the result in
+  `@ClientState`.
+- For per-user state that must stay live in all of the user's tabs, use a page
+  with `scope: perUser`, like `Inbox` above. One screen cannot connect to a
+  room's instance and to a user's instance at the same time.
+
+```typescript
+// src/components/MyDrafts.ts: a child of the room page.
+@Component({ transport: 'durable-object' })
+export class MyDrafts extends Cossack {
+    @ClientState() drafts: Draft[] = [];
+
+    @Server()
+    async load() {
+        // Runs in the room's instance, with the caller's identity.
+        return listDrafts(this.user!.id);
+    }
+
+    @Client()
+    async open() {
+        this.drafts = await this.load();
+    }
+
+    render() {
+        return html`
+            <button @click=${this.open}>My drafts</button>
+            ${this.drafts.map(draft => html`<p>${draft.title}</p>`)}
+        `;
+    }
+}
+
+// src/pages/rooms/[roomId]/index.ts: live messages for everyone in the room.
+@Page({
+    transport: 'durable-object',
+    middlewares: [requireRoomMember],
+    scope: (c) => `room:${c.req.param('roomId')}`,
+})
+export default class Room extends Cossack {
+    @State() messages: Message[] = [];
+
+    @Server()
+    async send(text: string) {
+        this.messages = [...this.messages, await saveMessage(this.user!.id, text)];
+    }
+
+    render() {
+        return html`
+            ${component(MyDrafts)}
+            ${this.messages.map(message => html`<p>${message.text}</p>`)}
+        `;
+    }
+}
+```
+
+`messages` is live for everyone in the room. Each user sees only their own
+drafts, but the list does not update live when the user edits a draft on
+another page. Call `load()` again, or use the
+[event-driven re-fetch](#2-event-driven-re-fetch-the-liveview-way) pattern,
+to refresh it.
+
+### Migrate from custom providers
+
+Custom state providers were removed: `StateProvider`, `PageStateProvider`,
+`@Page({ providers })`, and the `provider` option of `@State`, `@Store` and
+`@Server`. Move each provider to a component with a `scope` function. For
+example, a `UserSessionProvider` becomes a page with `scope: perUser`.
+
+Since the WebSocket proxy started to recompute every target on the server, it
+rejected every custom provider target. Providers also returned Cloudflare-only
+Durable Object ids, so they never worked on Node. Other changes:
+
+- `@Page({ providers })` throws `COSSACK_PROVIDERS_REMOVED`.
+- A component has one connection. `this.realtime.websocket` replaces
+  `this.realtime.websockets[name]`.
+- The WebSocket URL is `/ws/:id`. The server rejects `/ws/:provider/:id` with
+  404 (`COSSACK_WS_ROUTE_NOT_FOUND`).
+- The page's initial state carries `realtimeTarget` instead of
+  `providerTargets`.
+
+## Instances, channels, and events
+
+This architecture has three parts: the instance, `Channel`, and `Event`.
+
+- Instance (the where): the real-time instance that a page connects to: the page plus its route params, or its scope key. See [scope](#scope--controlling-which-durable-object-instance-a-page-connects-to).
+
+- `Channel` (the what): A Channel is a logical partition within the page's connection. It groups related pieces of state. When an automatic update occurs, the framework sends a partial state object containing only the properties for the affected channel.
 
 - `Event` (the when and how): An Event is a stateless message broadcast by the server. Components listen for these events to trigger actions, most notably the "Event-Driven Re-fetch" pattern.
 
@@ -275,14 +479,14 @@ export class Tasks extends Cossack {
 
 ---
 
-## Connections, Providers, and Channels
+## Connections and Channels
 
 Real-time communication in Cossack has two levels:
 
-1. Connection: The framework establishes a physical WebSocket connection for each State Provider a component uses. For most components, this is a single connection to the default `page` provider.
-2. Channel: A channel is a logical grouping of state within a single provider's connection. It lets the framework send partial state updates.
+1. Connection: The framework opens one physical WebSocket connection for each page, to the page's instance. Child components use the page's connection.
+2. Channel: A channel is a logical grouping of state within that connection. It lets the framework send partial state updates.
 
-By default, all state and actions use the `global` channel within the default `page` provider.
+By default, all state and actions use the `global` channel.
 
 ```typescript
 @Page({
@@ -290,7 +494,7 @@ By default, all state and actions use the `global` channel within the default `p
 })
 export class LiveCounter extends Cossack {
     
-    @State() // Uses the 'global' channel within the 'page' provider.
+    @State() // Uses the 'global' channel.
     private count: number = 0;
 
     private increment() {
@@ -326,7 +530,7 @@ export class Dashboard extends Cossack {
 
 #### 2. Channel-Specific Actions with `@Server`
 
-Similarly, use the `channel` property on the `@Server` decorator. This is primarily used for logical grouping and has no effect on which WebSocket connection is used (that is determined by the `provider` property).
+Similarly, use the `channel` property on the `@Server` decorator. This is primarily used for logical grouping. It has no effect on the connection: a page has one.
 
 ```typescript
 @Server({ channel: 'feeds' })
@@ -396,25 +600,11 @@ export class Greeting extends Cossack {
 ```
 
 Behavior:
-- The client establishes one WebSocket connection for the default `page` provider.
+- The client opens one WebSocket connection to the page's instance.
 - When "Increment Feeds" is clicked, `incrementFeed` is called on the server.
 - The server automatically broadcasts a partial state update containing only `feedCount` to all clients connected to this page.
 - The "Increment Notifications" button behaves identically but for the `notificationCount` state.
 - If `this.name` changes, the partial update contains only the `name` property.
-
-## Providers
-
-`@Page({ providers })` declares more named connections, and
-`@State({ provider })` and `@Server({ provider })` select one. A provider class
-extends `StateProvider` and returns its connection target from
-`getConnectionTarget()`. SSR serializes the target in the page's initial state.
-
-The WebSocket proxy, on Cloudflare and on Node, accepts a connection only when
-its target equals the page's own identity: the page plus its route params, or
-its scope key. It rejects every other target, so a provider cannot connect a
-page to another page's instance or to a per-user Durable Object. Keep state
-that several pages share in a database or another storage service, and use the
-event-driven re-fetch pattern to update open pages.
 
 ## Authentication on shared connections
 

@@ -56,7 +56,7 @@ export class Button extends Cossack {
 
 ### Components with Internal State: FileUploader
 
-Components can have their own internal state using `@ClientState` (for UI state) or `@State` (if connected to a provider). Inputs from a parent arrive via `this.props`.
+Components can have their own internal state using `@ClientState` (for UI state) or `@State` (synced with the server, and with the page's real-time instance when the page uses one). Inputs from a parent arrive via `this.props`.
 
 ```typescript
 import { html } from "@cossackframework/renderer";

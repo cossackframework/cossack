@@ -344,17 +344,17 @@ request in the isolate, so client-sent state would leak between users. Declare
 the service with `@Page({ services: [...] })` on the owning layout, or use
 `@Service({ scope: 'transient' })` for per-component state.
 
-## `services` Is Not `providers`
+## `services` Is Not `scope`
 
-These similarly named page options solve different problems:
+These page options solve different problems:
 
 | API | Use it for |
 | :--- | :--- |
 | `services: [DashboardService]` | DI ownership, subtree-shared logic, reactive state, and request-aware actions. |
-| `providers: { room: roomProvider }` | Selecting WebSocket, SSE, or Durable Object state transports. |
+| `scope: (c) => 'room:' + c.req.param('roomId')` | Selecting the SSE scope or the real-time instance that a page connects to. |
 
-Adding a service does not configure a transport provider, and adding a provider
-does not make a class injectable.
+Adding a service does not select a real-time instance, and `scope` does not
+make a class injectable.
 
 For browser-only application-global UI state shared across unrelated trees,
 such as theme, toast, or command-palette state, use

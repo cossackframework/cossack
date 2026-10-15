@@ -110,10 +110,10 @@ Use `stateful: true` when the DO is the source of truth (counters, whiteboards, 
 
 By default, each URL gets its own DO instance (per-URL scope). Use the `scope` option to route users to the **same** DO instance — this is how you build multiplayer (shared whiteboards, chat rooms, collaborative docs). See [Scope](#scope-sse--durable-object) above; the same `scope` option works for both SSE and DO.
 
-### Three pillars: Providers, Channels, Events
+### Three pillars: Instance, Channels, Events
 
-- **StateProvider** (the *where*): which backend the component connects to. Default is `PageStateProvider` (scoped to the current URL). Custom providers exist for user-session or global scopes.
-- **Channel** (the *what*): a logical partition within a provider for efficient **partial** state updates. Default is `global`.
+- **Instance** (the *where*): the one real-time instance a page connects to over one WebSocket (`/ws/:id`): the page plus its route params, or its `scope` key. Child components share the page's connection and cannot set their own scope. Custom state providers were removed; use `scope` (for example `scope: c => 'user:' + c.get('user').id`, throwing for anonymous users) for per-user, per-team or per-room state.
+- **Channel** (the *what*): a logical partition within the page's connection for efficient **partial** state updates. Default is `global`.
 - **Event** (the *when*): a stateless broadcast message used by the Event-Driven Re-fetch pattern.
 
 ### Pattern 1 — Automatic State Synchronization
