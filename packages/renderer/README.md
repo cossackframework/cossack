@@ -325,30 +325,75 @@ are explicit escape hatches and are not guaranteed to receive scope attributes.
 
 ## Using Components in Templates
 
-Use the `component` helper function to include child components in your templates.
+Write a child component as a component tag: bind the class in tag position.
 
 ```typescript
-import { component } from '@cossackframework/renderer';
+import { html } from '@cossackframework/renderer';
 import { ChildComponent } from './ChildComponent';
 
 html`
   <div class="parent">
-    ${component(ChildComponent, { someProp: 'value' })}
+    <${ChildComponent} someProp="value" count=${3} @select=${(event: Event) => console.log(event.type)} />
   </div>
 `
 ```
 
-You can also pass children to components:
+Put children between the opening and closing tags. The closing tag binds the
+same class:
 
 ```typescript
 html`
   <div class="parent">
-    ${component(ChildComponent, { someProp: 'value' }, html`
+    <${ChildComponent} someProp="value">
       <span>Child content</span>
-    `)}
+    </${ChildComponent}>
   </div>
 `
 ```
+
+Attributes become the component's `props` the way `component()` takes them:
+
+| Attribute | Prop |
+| --- | --- |
+| `name="text"` | `name: 'text'` (character references decoded) |
+| `name` (bare) | `name: true` |
+| `name=${value}` | `name: value`, any value |
+| `name="a ${b}"` | `name: 'a …'`, text; `nothing` in it removes the prop |
+| `.prop=${v}`, `?bool=${v}`, `@event=${f}` | the same key with its prefix |
+| `...=${props}` | every key of `props`; later attributes override earlier ones |
+
+Children become `children`: nothing for no content or whitespace, the text for
+plain text, the value itself for one binding, and a template otherwise. Named
+slots are props with template values: `footer=${html`<p>…</p>`}`. Prop names
+keep their case (`rowCount`, `getRowId`).
+
+`html` compiles each component tag into the same result `component()` returns,
+so rendering, SSR and hydration are identical. Keep `component(Class, props,
+children)` for classes chosen at runtime, such as a component picked from a map.
+Template holes are not contextually typed: annotate callback parameters, such as
+`(value: string) => ...`, and write object props with `satisfies`, such as
+`items=${[...] satisfies Item[]}`.
+
+## Template Checks
+
+`cossack check templates` and the Vite build check every `html` and `svg`
+template with the project's TypeScript program, and report each problem with
+its file, line and column. Errors fail the check and the build; the dev server
+reports them as files change.
+
+- Structure: unclosed or mismatched elements, `<div />` on HTML elements,
+  bindings that render nothing (in a comment, or `<div ${x}>`), and component
+  tags that do not close or close with another class.
+- Binding forms: `name=`, `.property=`, `?boolean=`, `@event=` and `...=` only;
+  a prefixed binding takes one whole value.
+- Markup in an untagged template literal, such as `` `<li>${x}</li>` `` in a
+  hole, which renders as text: tag it with `html`.
+- Types: attribute names and values against the native attribute map
+  (`@cossackframework/renderer/attributes`), `@event` handlers against the
+  element's events, `?attr` as boolean, `.prop` against the element's property
+  type, and component tag attributes against the component's `props`. Unknown
+  elements accept global attributes, with a warning for others.
+- Hints: `component()` with a literal class can be a component tag.
 
 ## Directives
 
@@ -560,7 +605,7 @@ export const ThemeContext = createContext('light'); // Default value
 class App extends CossackElement {
   render() {
     this.provide(ThemeContext, 'dark');
-    return html`${component(Child)}`;
+    return html`<${Child} />`;
   }
 }
 ```
@@ -621,10 +666,10 @@ Cossack supports passing children to components.
 Parent:
 ```typescript
 html`
-  ${component(Card, {}, html`
+  <${Card}>
     <h1>Title</h1>
     <p>Content</p>
-  `)}
+  </${Card}>
 `
 ```
 

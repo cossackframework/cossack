@@ -30,8 +30,9 @@ const VARIANTS: Record<NonNullable<NativeSelectProps["variant"]>, string> = {
  * Use .value to select an initial or reactive value.
  * Pass `<option>` elements as children.
  *
- *   ${component(NativeSelect, { '@change': handler },
- *       html\`<option value="a">A</option><option value="b">B</option>\`)}
+ *   <${NativeSelect} @change=${handler}>
+ *       <option value="a">A</option><option value="b">B</option>
+ *   </${NativeSelect}>
  */
 @Component()
 export class NativeSelect extends Cossack {

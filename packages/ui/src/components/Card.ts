@@ -20,7 +20,7 @@ const PADDINGS: Record<NonNullable<CardProps["padding"]>, string> = {
  * Cossack UI Card — surface container with optional header/footer slots.
  *
  * Compose with `CardHeader`, `CardBody`, `CardFooter`, or just pass content:
- *   `component(Card, { hoverable: true }, html\`<h3>Title</h3><p>Body</p>\`)`.
+ *   `<${Card} hoverable><h3>Title</h3><p>Body</p></${Card}>`.
  */
 @Component()
 export class Card extends Cossack {

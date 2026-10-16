@@ -84,3 +84,29 @@ export const view = () => html\`<div class="red"></div>\`;
     checks.close();
   }
 }, 120_000);
+
+it('fails the build on a wrong component prop and on a mismatched closing tag', async () => {
+  const component = `import { CossackElement, html } from '@cossackframework/renderer';
+export class Card extends CossackElement {
+  declare props: { padding?: 'sm' | 'lg' };
+  render() { return html\`<div>\${this.children}</div>\`; }
+}
+export class Note extends Card {}
+`;
+  const wrongProp = await project(`import { html } from '@cossackframework/renderer';
+import { Card } from './card';
+export const view = () => html\`<\${Card} padding="huge">Body</\${Card}>\`;
+`);
+  await fs.writeFile(path.join(wrongProp, 'src/pages/card.ts'), component);
+  await expect(buildProject(wrongProp)).rejects.toMatchObject({
+    message: expect.stringMatching(/src\/pages\/index\.ts:3:41 - error COSSACK_TEMPLATE_PROP_TYPE: The padding prop of Card takes "sm" \| "lg", not "huge"\./),
+  });
+  const mismatched = await project(`import { html } from '@cossackframework/renderer';
+import { Card, Note } from './card';
+export const view = () => html\`<\${Card}>Body</\${Note}>\`;
+`);
+  await fs.writeFile(path.join(mismatched, 'src/pages/card.ts'), component);
+  await expect(buildProject(mismatched)).rejects.toMatchObject({
+    message: expect.stringMatching(/src\/pages\/index\.ts:3:49 - error COSSACK_TEMPLATE_COMPONENT_CLOSE_MISMATCH/),
+  });
+}, 120_000);

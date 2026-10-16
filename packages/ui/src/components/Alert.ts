@@ -41,8 +41,9 @@ const ICONS: Record<string, IconEntry> = {
  * shadcn-style: a simple bordered grid with an optional icon, title, and
  * description (passed as children). Default variant uses the card surface.
  *
- *   component(Alert, { variant: 'success', title: 'Saved', announcement: 'polite' },
- *       html\`Your changes have been saved.\`)
+ *   <${Alert} variant="success" title="Saved" announcement="polite">
+ *       Your changes have been saved.
+ *   </${Alert}>
  */
 @Component()
 export class Alert extends Cossack {

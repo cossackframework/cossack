@@ -24,7 +24,7 @@ const SIZES: Record<NonNullable<InputProps["size"]>, string> = {
 /**
  * Cossack UI Input — token-driven text control.
  *
- * Use via `component(Input, { type: 'email', placeholder: 'you@ex.com', '.value': this.email, '@input': handler })`.
+ * Use as a component tag: `<${Input} type="email" placeholder="you@ex.com" .value=${this.email} @input=${handler} />`.
  */
 @Component()
 export class Input extends Cossack {

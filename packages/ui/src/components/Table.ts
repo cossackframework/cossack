@@ -18,12 +18,12 @@ export type TableProps = GlobalAttributes<HTMLTableElement> & {
  * for overflow styling and optional named keyboard access. Name the table with
  * a caption or aria-label. Rows retain native table semantics, not grid behavior.
  *
- *   ${component(Table, { striped: true }, html\`
+ *   <${Table} striped>
  *     <thead><tr><th>Name</th><th>Email</th></tr></thead>
  *     <tbody>
  *       <tr><td>Tan</td><td>tan@ex.com</td></tr>
  *     </tbody>
- *   \`)}
+ *   </${Table}>
  */
 @Component()
 export class Table extends Cossack {

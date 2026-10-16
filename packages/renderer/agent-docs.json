@@ -83,6 +83,39 @@
           "source": "import { css, unsafeCSS } from '@cossackframework/renderer';\n\nconst gap = 8;\nconst surface = css`background-color: #fff;`;\nconst card = css`article { padding: ${gap}px; ${surface} }`;\nif (!card.cssText.includes('padding: 8px')) throw new Error('Numeric CSS interpolation failed');\nif (!card.cssText.includes('background-color: #fff')) throw new Error('CSSResult composition failed');\nlet rejected = false;\ntry { css`color: ${'red'};`; } catch { rejected = true; }\nif (!rejected) throw new Error('A raw string was accepted by css');\nconst reviewedToken = unsafeCSS('var(--brand-color)');\nif (!css`color: ${reviewedToken};`.cssText.includes('var(--brand-color)')) throw new Error('Reviewed CSS token did not compose');\n"
         }
       ]
+    },
+    {
+      "id": "component-tags",
+      "title": "Compose components with component tags",
+      "summary": "Write child components as <${Class}> tags; attributes become props and content becomes children.",
+      "imports": [
+        "@cossackframework/renderer",
+        "@cossackframework/renderer/server"
+      ],
+      "markdown": "Write a child component as a component tag: bind its class in tag position, `<${Card} padding=\"sm\">children</${Card}>`, or self-close it, `<${Icon} entry=${ArrowIcon} />`. The closing tag binds the same class; another class is an error. Attributes become `props` the way `component()` takes them: `name=\"text\"` passes the string (character references decoded), a bare `name` passes `true`, `name=${value}` passes the value as is, `name=\"a ${b}\"` passes text, and `.prop=${v}`, `?bool=${v}` and `@event=${f}` keep their prefix in the prop key. `...=${props}` spreads an object; later attributes override earlier ones. Prop names keep their case, so `rowCount=${12}` sets `rowCount`.\n\nChildren become `children`: nothing for empty or whitespace content, the text for plain text, the value itself for one binding, and a template otherwise. Named slots are props with template values: `footer=${html`<p>Saved</p>`}`.\n\n`html` compiles each tag into the result `component()` returns, so SSR, hydration, drafts and service scopes behave the same. Use tags for markup. Keep `component(Class, props, children)` only where the class is chosen at runtime, such as from a registry; `cossack check templates --verbose` hints at `component()` calls with a literal class.\n\nTemplate holes are not contextually typed. Annotate callback parameters, such as `onValueChange=${(value: string) => ...}`, and write object and array literals with `satisfies`, such as `state=${{ page: 1 } satisfies TableState}`, so literal types are kept. The template check reports a prop the component does not declare, a value of the wrong type, a missing required prop, and a static text value for a non-string prop (`count=\"3\"`; write `count=${3}`).",
+      "examples": [
+        {
+          "id": "badge-tags",
+          "language": "typescript",
+          "source": "import { CossackElement, component } from '@cossackframework/renderer';\nimport { html, renderToString } from '@cossackframework/renderer/server';\n\nclass Badge extends CossackElement {\n  declare props: { tone?: 'info' | 'warning'; count?: number };\n  render() {\n    const { tone = 'info', count = 0 } = this.props;\n    return html`<span class=\"badge ${tone}\" data-count=${count}>${this.children}</span>`;\n  }\n}\n\nclass Alert extends Badge {}\n\nconst output = await renderToString(html`<p><${Badge} tone=\"warning\" count=${3}>Late <b>2</b></${Badge}></p>`);\nif (output !== '<p><span class=\"badge warning\" data-count=\"3\">Late <b>2</b></span></p>') throw new Error(`Unexpected tag output: ${output}`);\n\n// component() remains for a class chosen at runtime.\nconst registry: Record<string, typeof Badge> = { badge: Badge, alert: Alert };\nconst chosen = await renderToString(html`<p>${component(registry['alert'], { count: 1 }, 'New')}</p>`);\nif (chosen !== '<p><span class=\"badge info\" data-count=\"1\">New</span></p>') throw new Error(`Unexpected component() output: ${chosen}`);\n"
+        }
+      ]
+    },
+    {
+      "id": "binding-forms-and-template-checks",
+      "title": "Use the binding forms the template check accepts",
+      "summary": "Know what each binding form does and which template problems fail the check and the build.",
+      "imports": [
+        "@cossackframework/renderer/template"
+      ],
+      "markdown": "An `html` or `svg` template has five binding forms. In child content, `${value}` renders text, a template, a list or a component. In a tag, `name=${value}` sets an attribute (`null`, `undefined` or `nothing` removes it; `ifDefined()` removes it only for undefined), `name=\"a ${b}\"` interpolates text, `.prop=${value}` sets a DOM property, `?name=${boolean}` toggles a boolean attribute, `@event=${handler}` adds a listener, and `...=${object}` spreads attributes, properties and listeners. A `.`, `?` or `@` binding takes one whole value. A component tag binds a class in tag position.\n\nRun `cossack check templates` (or rely on the Vite build) after editing templates. It reads every template with the project's TypeScript program and reports each problem with file, line and column. Errors fail the check and the build; warnings do not. Structural errors: unclosed or mismatched elements, `<div />` on an HTML element (only void and SVG elements self-close), a binding that renders nothing (inside a comment, `<div ${x}>`, or interrupting an attribute name), an unknown binding prefix such as `:value=`, a prefixed attribute without a binding (`@click=\"save()\"`), a component tag that never closes or closes with another class, and a template literal with markup but no `html` tag in child content, which renders as escaped text. Type errors: an attribute the element does not have (custom elements accept global attributes, with a warning for others), an attribute value of the wrong type (static enumerated values are checked too), an inline `onclick` attribute, an `@event` handler that does not accept the element's event, a `?attr` value that is not boolean, an unknown or read-only `.prop`, and component tag props. Attribute types come from `@cossackframework/renderer/attributes`.\n\n`parseTemplate` from `@cossackframework/renderer/template` returns the same element tree and structural problems the check uses.",
+      "examples": [
+        {
+          "id": "structural-problems",
+          "language": "typescript",
+          "source": "import { parseTemplate } from '@cossackframework/renderer/template';\n\nconst strings = (template: TemplateStringsArray, ..._values: unknown[]) => [...template];\nconst parsed = parseTemplate(strings`<ul><li .title=${'x'}>${'Ada'}</li><div ${'dropped'}></div><input :value=${'v'}><div /></ul>`);\nconst codes: string[] = parsed.problems.map(problem => problem.code);\nfor (const code of ['COSSACK_TEMPLATE_DROPPED_BINDING', 'COSSACK_TEMPLATE_UNKNOWN_BINDING_PREFIX', 'COSSACK_TEMPLATE_SELF_CLOSING_ELEMENT']) {\n  if (!codes.includes(code)) throw new Error(`Missing structural problem ${code}: ${codes.join(', ')}`);\n}\nif (parsed.bindings[1].kind !== 'node' || parsed.bindings[0].kind !== 'attribute') throw new Error('Binding roles are wrong');\n"
+        }
+      ]
     }
   ]
 }

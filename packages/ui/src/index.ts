@@ -93,7 +93,7 @@ export { MultiSelect, type MultiSelectProps } from "./components/MultiSelect";
 // Use `Icon` with a direct `entry` import (tree-shakeable). There is no
 // name-based/icon-registry component: it pulled the full ~1,200-icon registry
 // (~9MB of SVG paths) into the client bundle. Import the icon you need by name
-// and pass it to <Icon>:  component(Icon, { entry: ArrowRightIcon })
+// and pass it to Icon:  <${Icon} entry=${ArrowRightIcon} />
 export { Icon, normalizeStyle, type IconProps } from "./icons/Icon";
 export type { IconStyle, IconEntry, IconRegistry } from "@cossackframework/solar-icons/types";
 

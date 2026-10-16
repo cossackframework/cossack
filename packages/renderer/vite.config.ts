@@ -14,6 +14,7 @@ export default defineConfig({
         browser: resolve(import.meta.dirname, 'src/browser.ts'),
         server: resolve(import.meta.dirname, 'src/server.ts'),
         attributes: resolve(import.meta.dirname, 'src/attributes.ts'),
+        template: resolve(import.meta.dirname, 'src/template.ts'),
         diagnostics: resolve(import.meta.dirname, 'src/diagnostics.ts'),
       },
       formats: ['es'],

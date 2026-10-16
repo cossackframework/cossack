@@ -16,7 +16,7 @@ export type CheckboxProps = CheckControlAttributes & {
  * label wrapper. The native control handles focus, form participation, and
  * keyboard; we only theme the surrounding affordance.
  *
- *   ${component(Checkbox, { checked: true, '@change': handler }, 'Accept terms')}
+ *   <${Checkbox} checked @change=${handler}>Accept terms</${Checkbox}>
  */
 @Component()
 export class Checkbox extends Cossack {

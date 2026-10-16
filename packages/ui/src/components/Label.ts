@@ -12,7 +12,7 @@ export type LabelProps = LabelAttributes & {
 /**
  * Cossack UI Label — accessible form label.
  *
- * Use via `component(Label, { for: 'email' }, 'Email address')`.
+ * Use as a component tag: `<${Label} for="email">Email address</${Label}>`.
  */
 @Component()
 export class Label extends Cossack {

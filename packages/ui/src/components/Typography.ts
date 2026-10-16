@@ -57,9 +57,9 @@ const TAGS: Record<NonNullable<TypographyProps["variant"]>, string> = {
  * Renders the appropriate semantic HTML element (h1…h4, p, blockquote, code,
  * ul, ol) with shadcn-inspired typographic defaults.
  *
- *   ${component(Typography, { variant: 'h1' }, 'Page title')}
- *   ${component(Typography, { variant: 'lead' }, 'A short, friendly intro.')}
- *   ${component(Typography, { variant: 'blockquote' }, 'A quote.')}
+ *   <${Typography} variant="h1">Page title</${Typography}>
+ *   <${Typography} variant="lead">A short, friendly intro.</${Typography}>
+ *   <${Typography} variant="blockquote">A quote.</${Typography}>
  */
 @Component()
 export class Typography extends Cossack {

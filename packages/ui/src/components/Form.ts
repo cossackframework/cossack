@@ -34,11 +34,12 @@ export type FormProps = Omit<FormAttributes, "novalidate" | "?novalidate"> & {
  * This component only wraps the `<form>` element itself.
  *
  *   // RPC (@Server) pattern — submit prevented, novalidate added:
- *   component(Form, { submit: this.handleSubmit },
- *       html`<input .value="${bind(this, 'email')}" /> ${component(Button, { type: 'submit' }, 'Save')}`)
+ *   <${Form} submit=${this.handleSubmit}>
+ *       <input .value=${bind(this, 'email')} /> <${Button} type="submit">Save</${Button}>
+ *   </${Form}>
  *
  *   // Native POST pattern — default submit proceeds, read via getFormData():
- *   component(Form, { method: 'post' }, html`<input name="email" /> ...`)
+ *   <${Form} method="post"><input name="email" /> ...</${Form}>
  */
 @Component()
 export class Form extends Cossack {
