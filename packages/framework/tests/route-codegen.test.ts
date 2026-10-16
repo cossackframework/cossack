@@ -116,7 +116,8 @@ describe('shared structural route model', () => {
 
   it('updates additions and deletions under the selected root and releases watcher listeners', () => {
     const root = project(); write(root, 'src/pages/home.ts');
-    const plugin = cossackPages(); (plugin.configResolved as Function)({ root });
+    // Template diagnostics add their own watcher listeners; they have their own test.
+    const plugin = cossackPages({ templateDiagnostics: false }); (plugin.configResolved as Function)({ root });
     const watcher = new EventEmitter(); const httpServer = new EventEmitter(); const module = {};
     const invalidateModule = vi.fn(); const error = vi.fn();
     (plugin.configureServer as { handler: Function }).handler({ watcher, httpServer, ws: { send: vi.fn() }, moduleGraph: { getModuleById: () => module, invalidateModule }, config: { logger: { error } } });
