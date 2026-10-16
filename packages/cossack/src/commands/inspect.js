@@ -145,8 +145,10 @@ async function checkTemplates(ctx) {
     const counts = { errors: count('error'), warnings: count('warning'), hints: count('hint') };
     const ok = counts.errors === 0;
     if (ctx.flags.json === true) {
-      writeResult('check', { ok, data: { scope: 'templates', files, ...counts }, diagnostics: diagnostics.map(({ code, severity, message, file, line, column, source }) =>
-        ({ code, severity, message, file, line, column, source })) });
+      // Result envelopes carry error, warning and info; hints are info, listed with --verbose.
+      const listed = diagnostics.filter(item => item.severity !== 'hint' || ctx.flags.verbose === true);
+      writeResult('check', { ok, data: { scope: 'templates', files, ...counts }, diagnostics: listed.map(({ code, severity, message, file, line, column, source }) =>
+        ({ code, severity: severity === 'hint' ? 'info' : severity, message, file, line, column, source })) });
     } else {
       for (const diagnostic of diagnostics) {
         if (diagnostic.severity !== 'hint' || ctx.flags.verbose === true) console.error(formatTemplateDiagnostic(diagnostic));
