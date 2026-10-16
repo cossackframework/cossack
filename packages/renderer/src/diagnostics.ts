@@ -692,7 +692,9 @@ export const completeTemplate = (ts: TypeScript, program: TS.Program, sourceFile
   if (!accepted) return undefined;
 
   if (context.kind === 'attribute-value') {
-    const target = typeOf(accepted, component || tag.component ? context.name : context.name.toLowerCase());
+    // HTML attribute names are case-insensitive; SVG names and props are not.
+    const html = !tag.component && tag.namespace === 'html';
+    const target = typeOf(accepted, html ? context.name.toLowerCase() : context.name);
     if (!target) return undefined;
     const values = (target.isUnion() ? target.types : [target]).filter((part) => part.isStringLiteral()).map((part) => (part as TS.StringLiteralType).value);
     return values.length ? { entries: sorted(values.map((name) => ({ name, kind: 'value' }))), replace: replace(context.prefix) } : undefined;
