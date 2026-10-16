@@ -56,7 +56,7 @@ These insert individual decorators or methods into an existing class.
 
 | Prefix | Description |
 |--------|-------------|
-| `ccompose` | `component()` call to embed a child component with props and slot content |
+| `ccompose` | Component tag to embed a child component with props and slot content |
 
 ## Usage
 

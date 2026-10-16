@@ -31,7 +31,7 @@ The optional Cossack UI `Form` component wraps an HTML `<form>`. It prevents the
 
 ```typescript
 import { Cossack, Page, Server, State, Store } from '@cossackframework/core';
-import { html, bind, component } from '@cossackframework/renderer';
+import { html, bind } from '@cossackframework/renderer';
 import { Button, Form, Input } from '@cossackframework/ui';
 
 interface Address { street: string; city: string }
@@ -48,20 +48,20 @@ export default class ContactForm extends Cossack {
 
   render() {
     // Passing `submit` makes Form prevent the native submit + add `novalidate`.
-    // bind() two-way binds an input to state — works inside component() props
+    // bind() two-way binds an input to state — works in component props
     // and supports nested dot-paths (e.g. 'address.street').
-    return component(Form, { submit: this.handleSubmit },
-      html`
-        ${component(Input, { name: 'name', '.value': bind(this, 'name') })}
-        ${component(Input, { name: 'street', '.value': bind(this, 'address.street') })}
-        ${component(Button, { type: 'submit' }, 'Submit')}
-      `,
-    );
+    return html`
+      <${Form} submit=${this.handleSubmit}>
+        <${Input} name="name" .value=${bind(this, 'name')} />
+        <${Input} name="street" .value=${bind(this, 'address.street')} />
+        <${Button} type="submit">Submit</${Button}>
+      </${Form}>
+    `;
   }
 }
 ```
 
-> `bind()` works with `component()` props. Pass the directive as a `.value` (or `.checked`) prop: `component(Input, { '.value': bind(this, 'name') })`. It also supports nested state through dot-paths. `bind(this, 'address.street')` reads and writes the nested field and triggers `@Store` reactivity. The equivalent direct form `<input .value="${bind(this, 'name')}" />` works too.
+> `bind()` works in component props. Pass the directive as a `.value` (or `.checked`) prop: `<${Input} .value=${bind(this, 'name')} />`. It also supports nested state through dot-paths. `bind(this, 'address.street')` reads and writes the nested field and triggers `@Store` reactivity. The equivalent direct form `<input .value="${bind(this, 'name')}" />` works too.
 
 | Prop | Description |
 |---|---|
@@ -81,7 +81,7 @@ This is shorthand for the equivalent bare form:
 For the native POST pattern with `getFormData()`, omit `submit`:
 
 ```typescript
-component(Form, { method: 'post' }, html`<input name="email" /> ...`)
+html`<${Form} method="post"><input name="email" /> ...</${Form}>`
 ```
 
 ## Handling Form Submission

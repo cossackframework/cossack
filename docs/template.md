@@ -73,22 +73,136 @@ html`<div>${unsafeHTML('<script>...</script>')}</div>`;
 
 ## Using Components in Templates
 
-Use the `component` helper function to include child components in your templates.
+Write a child component as a component tag: bind the class in tag position.
 
 ```typescript
-import { component } from '@cossackframework/renderer';
+import { html } from '@cossackframework/renderer';
 import { ChildComponent } from './ChildComponent';
 
-html` <div class="parent">${component(ChildComponent, { someProp: 'value' })}</div> `;
+html`
+  <div class="parent">
+    <${ChildComponent} someProp="value" count=${3} @select=${(event: Event) => console.log(event.type)} />
+  </div>
+`;
 ```
 
-You can also pass children to components:
+Put children between the opening and closing tags. The closing tag binds the
+same class:
 
 ```typescript
 html`
-  <div class="parent">${component(ChildComponent, { someProp: 'value' }, html` <span>Child content</span> `)}</div>
+  <div class="parent">
+    <${ChildComponent} someProp="value">
+      <span>Child content</span>
+    </${ChildComponent}>
+  </div>
 `;
 ```
+
+Attributes become the component's `props`:
+
+| Attribute | Prop |
+| --- | --- |
+| `name="text"` | `name: 'text'` (character references decoded) |
+| `name` (bare) | `name: true` |
+| `name=${value}` | `name: value`, any value |
+| `name="a ${b}"` | `name: 'a …'`, text; `nothing` in it removes the prop |
+| `.prop=${v}`, `?bool=${v}`, `@event=${f}` | the same key with its prefix |
+| `...=${props}` | every key of `props`; later attributes override earlier ones |
+
+Prop names keep their case (`rowCount`, `getRowId`). A UI component such as
+`Button` applies prefixed props to its native element, so
+`<${Button} @click=${this.save}>Save</${Button}>` listens on its `<button>`.
+
+Content becomes `children`:
+
+- nothing for no content or whitespace only;
+- the text for plain text;
+- the value itself for a single binding, such as `<${Badge}>${count}</${Badge}>`;
+- a template for anything else, including nested component tags.
+
+Named slots are props with template values: ``footer=${html`<p>Saved</p>`}``.
+
+`html` compiles each component tag into the same result `component()` returns,
+so rendering, SSR and hydration are identical. Keep
+`component(Class, props, children)` for classes chosen at runtime, such as a
+component picked from a map:
+
+```typescript
+import { component } from '@cossackframework/renderer';
+
+const notes = { info: InfoNote, warning: WarningNote };
+html`${component(notes[this.kind], { text: 'Saved' })}`;
+```
+
+Template holes are not contextually typed. Annotate callback parameters, such
+as `onValueChange=${(value: string) => ...}`, and write object or array props
+with `satisfies`, such as `items=${[...] satisfies Item[]}`, so literal types
+are kept.
+
+## Template Checks
+
+`cossack check templates` and the Vite build check every `html` and `svg`
+template with the project's TypeScript program. Each problem is reported with
+its file, line and column. Errors fail the check and the build; the dev server
+reports them as files change.
+
+```bash
+cossack check templates
+cossack check templates --json --verbose
+```
+
+- **Structure**: unclosed or mismatched elements, `<div />` on an HTML element
+  (only void and SVG elements self-close), bindings that render nothing (inside
+  a comment, or `<div ${x}>`), and component tags that do not close or close
+  with another class.
+- **Binding forms**: `name=`, `.property=`, `?boolean=`, `@event=` and `...=`
+  only. A `.`, `?` or `@` binding takes one whole value, and needs a binding:
+  `@click="save()"` is an error.
+- **Untagged markup**: a template literal with markup but no `html` tag in
+  child content, such as `` `<li>${x}</li>` ``, renders as escaped text. Tag it
+  with `html`.
+- **Types**: attribute names and values against the native attribute map
+  (`@cossackframework/renderer/attributes`), `@event` handlers against the
+  element's events, `?attr` values as boolean, `.prop` against the element's
+  property type, and component tag attributes against the component's
+  `props`, including missing required props. A static text value for a prop
+  that is not a string is an error: write `count=${3}`, not `count="3"`.
+  Unknown elements, such as custom elements, accept global attributes, with a
+  warning for others.
+- **Hints**: a `component()` call with a literal class can be a component tag.
+  Hints are listed with `--verbose`.
+
+Turn the build check off with `cossackPages({ templateDiagnostics: false })`.
+
+### Editor
+
+`@cossackframework/typescript-plugin` shows the same diagnostics in the editor
+and completes tag names, end tags, attributes, events, properties, component
+props and enumerated values inside templates. Generated applications enable it.
+To add it to an existing project:
+
+```bash
+pnpm add -D @cossackframework/typescript-plugin
+```
+
+```json
+{
+  "compilerOptions": {
+    "plugins": [{ "name": "@cossackframework/typescript-plugin" }]
+  }
+}
+```
+
+VS Code runs its own TypeScript server. Let it load the plugin from the
+project's `node_modules` in `.vscode/settings.json`:
+
+```json
+{ "typescript.tsserver.pluginPaths": ["."] }
+```
+
+The TypeScript 7 native compiler does not run language service plugins; the
+CLI check and the Vite build still check templates.
 
 ## Directives
 
@@ -162,7 +276,7 @@ import { live } from '@cossackframework/renderer';
 html`<input .value="${live(this.email)}" />`;
 ```
 
-`live()` also works when routed through `component()` props (for example `component(Input, { '.value': live(this.email) })`), so it can be combined with UI components the same way `bind()` can.
+`live()` also works in component props (for example `<${Input} .value=${live(this.email)} />`), so it can be combined with UI components the same way `bind()` can.
 
 ### `bind`
 
@@ -285,8 +399,8 @@ html`<a href="${ifDefined(url)}">link</a>`;
 ```
 
 When the value transitions from defined back to `undefined` on a re-render, the
-attribute is explicitly removed. `ifDefined` also works through `component()`
-props (for example `component(Link, { href: ifDefined(url) })`).
+attribute is explicitly removed. `ifDefined` also works in component props (for
+example `<${Link} href=${ifDefined(url)}>Docs</${Link}>`).
 
 ### `guard`
 
@@ -410,7 +524,7 @@ export const ThemeContext = createContext('light'); // Default value
 class App extends CossackElement {
   render() {
     this.provide(ThemeContext, 'dark');
-    return html`${component(Child)}`;
+    return html`<${Child} />`;
   }
 }
 ```
@@ -472,14 +586,10 @@ Parent:
 
 ```typescript
 html`
-  ${component(
-    Card,
-    {},
-    html`
-      <h1>Title</h1>
-      <p>Content</p>
-    `,
-  )}
+  <${Card} footer=${html`<small>Updated today</small>`}>
+    <h1>Title</h1>
+    <p>Content</p>
+  </${Card}>
 `;
 ```
 
@@ -487,11 +597,21 @@ Child (Card):
 
 ```typescript
 class Card extends CossackElement {
+  declare props: { footer?: TemplateResult };
+
   render() {
-    return html` <div class="card">${this.children}</div> `;
+    return html`
+      <div class="card">
+        ${this.children}
+        ${this.props.footer ? html`<footer>${this.props.footer}</footer>` : nothing}
+      </div>
+    `;
   }
 }
 ```
+
+`this.children` holds the content between the tags. A named slot such as
+`footer` is a prop with a template value.
 
 ## Using Cossack Renderer with Other Frameworks
 

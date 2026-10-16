@@ -288,30 +288,28 @@ on `@cossackframework/core`), but you can define one in your app:
 ```ts
 // src/components/Can.ts
 import { Cossack, Component } from '@cossackframework/core';
-import { html } from 'lit';
+import { html, nothing } from '@cossackframework/renderer';
 import { guard } from '../auth';
 
 @Component()
 export class Can extends Cossack {
-    declare permission!: string;
+    declare props: { permission: string };
 
     render() {
-        return guard.can(this.c, this.permission)
-            ? this.props.children
-            : '';
+        return html`${guard.can(this.c, this.props.permission) ? this.children : nothing}`;
     }
 }
 ```
 
 ```ts
 // Usage:
-import './components/Can';
+import { Can } from './components/Can';
 
 render() {
     return html`
-        ${component(Can, { permission: 'posts.create' }, html`
+        <${Can} permission="posts.create">
             <button @click=${this.createPost}>New Post</button>
-        `)}
+        </${Can}>
     `;
 }
 ```

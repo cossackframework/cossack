@@ -413,7 +413,7 @@ export class CartBadge extends Cossack {
 ```typescript
 // src/pages/products/[id]/index.ts, src/pages/checkout/index.ts, ...
 render() {
-    return html`${component(CartBadge)} <h1>Checkout</h1>`;
+    return html`<${CartBadge} /> <h1>Checkout</h1>`;
 }
 ```
 
@@ -537,7 +537,7 @@ export default class Room extends Cossack {
 
     render() {
         return html`
-            ${component(MyDrafts)}
+            <${MyDrafts} />
             ${this.messages.map(message => html`<p>${message.text}</p>`)}
         `;
     }

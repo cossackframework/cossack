@@ -364,7 +364,7 @@ Attributes become the component's `props` the way `component()` takes them:
 
 Children become `children`: nothing for no content or whitespace, the text for
 plain text, the value itself for one binding, and a template otherwise. Named
-slots are props with template values: `footer=${html`<p>…</p>`}`. Prop names
+slots are props with template values: ``footer=${html`<p>…</p>`}``. Prop names
 keep their case (`rowCount`, `getRowId`).
 
 `html` compiles each component tag into the same result `component()` returns,
