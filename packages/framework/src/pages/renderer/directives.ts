@@ -142,6 +142,7 @@ export default class DirectivesDemo extends Cossack {
                     <code>@cossackframework/renderer</code>. Each card is interactive.
                 </p>
                 <p><a href="/renderer/lit-compat">Open the SVG, nothing, and scoped styles demos →</a></p>
+                <p><a href="/renderer/component-tags">Open the component tags demo →</a></p>
 
                 <div class="grid grid-cols-[repeat(auto-fit,minmax(280px,1fr))] gap-5 mt-5">
                     <!-- when -->
