@@ -29,6 +29,14 @@
     "./server": {
       "types": "./dist/server.d.ts",
       "import": "./dist/server.js"
+    },
+    "./attributes": {
+      "types": "./dist/attributes.d.ts",
+      "import": "./dist/attributes.js"
+    },
+    "./diagnostics": {
+      "types": "./dist/diagnostics.d.ts",
+      "import": "./dist/diagnostics.js"
     }
   },
   "publishConfig": {
@@ -48,6 +56,7 @@
     "oxlint": "^1.41.0",
     "source-map-js": "^1.2.2",
     "typescript": "^7.0.2",
+    "typescript-api": "npm:typescript@6.0.3",
     "vite": "^8.1.4",
     "vitest": "^4.1.11"
   }

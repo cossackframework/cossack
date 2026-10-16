@@ -13,6 +13,8 @@ export default defineConfig({
         index: resolve(import.meta.dirname, 'src/index.ts'),
         browser: resolve(import.meta.dirname, 'src/browser.ts'),
         server: resolve(import.meta.dirname, 'src/server.ts'),
+        attributes: resolve(import.meta.dirname, 'src/attributes.ts'),
+        diagnostics: resolve(import.meta.dirname, 'src/diagnostics.ts'),
       },
       formats: ['es'],
     },
