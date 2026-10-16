@@ -3,8 +3,9 @@ import { processMarkdown } from '../src/markdown-processor';
 import { cossackPages } from '../src/vite-plugin';
 
 describe('Markdown processor', () => {
-  it('omits Markdown routes and warns once when no processor is configured', () => {
-    const plugin = cossackPages();
+  it('omits Markdown routes and warns once when no processor is configured', async () => {
+    // Template checks run in buildStart too; they would check this whole package.
+    const plugin = cossackPages({ templateDiagnostics: false });
     const load = plugin.load as Function;
     const virtual = load.call(
       { environment: { name: 'client' } },
@@ -16,8 +17,8 @@ describe('Markdown processor', () => {
 
     const warn = vi.fn();
     const buildStart = plugin.buildStart as Function;
-    buildStart.call({ warn });
-    buildStart.call({ warn });
+    await buildStart.call({ warn });
+    await buildStart.call({ warn });
     expect(warn).toHaveBeenCalledTimes(1);
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('cossack add markdown'));
   });
