@@ -1,12 +1,15 @@
 import { afterEach, expect, it, vi } from 'vitest';
+import { execFile } from 'node:child_process';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
 import { checkCommand } from '../src/commands/inspect.js';
 
 const fixtures = fileURLToPath(new URL('../../renderer/tests/fixtures/templates', import.meta.url));
 const rendererSource = fileURLToPath(new URL('../../renderer/src', import.meta.url));
+const cli = fileURLToPath(new URL('../bin/cossack.js', import.meta.url));
 const roots = [];
 
 afterEach(async () => {
@@ -61,3 +64,19 @@ it('passes clean templates', async () => {
   expect(await checkCommand(['templates'], { cwd, flags: {} })).toBe(0);
   expect(output.mock.calls.at(-1)[0]).toMatch(/0 error\(s\), 0 warning\(s\)\./);
 });
+
+it('lists hints as info in the JSON result of the CLI process with --verbose', async () => {
+  const cwd = await project({ defects: false });
+  await fs.writeFile(path.join(cwd, 'hint.ts'), `import { component, html } from '@cossackframework/renderer';
+import { Card } from './components';
+
+export const view = () => html\`<div>\${component(Card, { title: 'Card' })}</div>\`;
+`);
+  // The CLI runs --json commands in a child process and accepts only error, warning and info.
+  const run = async (...flags) => JSON.parse((await promisify(execFile)(process.execPath, [cli, 'check', 'templates', '--json', ...flags], { cwd, timeout: 120_000 })).stdout);
+  const quiet = await run();
+  expect(quiet).toMatchObject({ command: 'check', ok: true, data: { scope: 'templates', errors: 0, warnings: 0, hints: 1 }, diagnostics: [] });
+  const verbose = await run('--verbose');
+  expect(verbose).toMatchObject({ ok: true, data: { hints: 1 } });
+  expect(verbose.diagnostics).toEqual([expect.objectContaining({ code: 'COSSACK_TEMPLATE_COMPONENT_CALL', severity: 'info', file: 'hint.ts', line: 4 })]);
+}, 240_000);

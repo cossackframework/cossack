@@ -98,7 +98,7 @@ export class Button extends Cossack {
 }
 
 // Parent usage — override/add classes via class prop
-${component(Button, { class: 'w-full' }, 'Submit')}
+<${Button} class="w-full">Submit</${Button}>
 ```
 
 The spread (`...=${rest}`) passes through any extra attributes, including `class`, from the parent to the underlying element.

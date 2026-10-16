@@ -245,10 +245,10 @@ Never pass `env`, `user`, or `c` as props. They are available on the component:
 
 ```typescript
 // ❌ DON'T do this
-${component(Child, { env: this.env, user: this.user })}
+<${Child} env=${this.env} user=${this.user} />
 
 // ✅ DO this - child can access them directly
-${component(Child, {})}
+<${Child} />
 ```
 
 ---

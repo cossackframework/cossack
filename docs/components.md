@@ -98,25 +98,25 @@ export class FileUploader extends Cossack {
 
 ## Using Components
 
-To use a class-based component, use the `component()` helper function from `@cossackframework/renderer`.
+Write a class-based component as a component tag in an `html` template. Attributes become its props and the content between the tags becomes its children.
 
 ```typescript
-import { html, component } from "@cossackframework/renderer";
+import { html } from "@cossackframework/renderer";
 import { Button } from "./components/Button";
 
 // Inside your Page's render method:
 html`
     <div>
-        ${component(Button, { variant: 'secondary', '@click': () => this.handleClick() }, 'Click Me')}
+        <${Button} variant="secondary" @click=${() => this.handleClick()}>Click Me</${Button}>
     </div>
 `
 ```
 
-Props spread onto a native element use template syntax, so an event listener is an `@event` key such as `'@click'`. A plain `onClick` prop is not a listener and never calls your function. Wrap a method in an arrow function (or bind it) so `this` stays the component.
+Props spread onto a native element use template syntax, so an event listener is an `@event` attribute such as `@click`. A plain `onClick` prop is not a listener and never calls your function. Wrap a method in an arrow function (or bind it) so `this` stays the component. See [Template](/docs/template.md#using-components-in-templates) for how each attribute maps to a prop, and use `component(Class, props, children)` only when the class is chosen at runtime.
 
 ### Passing State (Parent to Child)
 
-Data flows down via properties. When the parent state changes, the `render` method re-runs, and `component()` is called with new values. The child component detects these changes and updates.
+Data flows down via properties. When the parent state changes, the `render` method re-runs and passes the new values to the child, which updates in place.
 
 ```typescript
 // Parent Page
@@ -124,7 +124,7 @@ Data flows down via properties. When the parent state changes, the `render` meth
 
 render() {
     return html`
-        ${component(CounterDisplay, { count: this.count })}
+        <${CounterDisplay} count=${this.count} />
     `;
 }
 ```
@@ -142,7 +142,7 @@ async saveData(data: any) {
 
 render() {
     return html`
-        ${component(MyForm, { '@save': this.saveData })}
+        <${MyForm} @save=${this.saveData} />
     `;
 }
 ```
@@ -195,8 +195,8 @@ export class Dashboard extends Cossack {
     render() {
         return html`
             <div>
-                ${component(Counter)}
-                ${component(Counter)}
+                <${Counter} />
+                <${Counter} />
             </div>
         `;
     }

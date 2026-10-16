@@ -195,6 +195,8 @@ export async function checkUrlStateBrowser(browser, origin, backend) {
     const initial = await page.goto(origin + '/list?search=old&utm=a%20b#rows');
     expect(initial.status()).toBe(200); expect(await initial.text()).toContain('old:1:name:');
     await browserExpect(page.locator('#query-items')).toHaveText('old:1:name:'); await settled(); expect(rpc).toHaveLength(0); expectReads(['old',1]);
+    // Drafts typed before hydration would be lost.
+    await browserExpect.poll(() => page.evaluate(() => window.__cossackReady)).toBe(true);
     await page.locator('#page-draft').fill('unsaved page'); await page.locator('#layout-draft').fill('unsaved layout'); await page.locator('#service-draft').fill('unsaved service');
     await page.locator('#draft-file').setInputFiles({name:'draft.txt',mimeType:'text/plain',buffer:Buffer.from('draft')});
     await browserExpect(page.locator('#file-name')).toHaveText('draft.txt');

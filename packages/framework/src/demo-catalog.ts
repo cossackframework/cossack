@@ -86,6 +86,7 @@ const entries: readonly DemoCatalogEntry[] = [
   { label: 'Dynamic hello route', url: '/hello/Cossack', category: 'Rendering & Navigation' },
   { label: 'Renderer directives', url: '/renderer/directives', category: 'Rendering & Navigation' },
   { label: 'Lit compatibility', url: '/renderer/lit-compat', category: 'Rendering & Navigation' },
+  { label: 'Component tags', url: '/renderer/component-tags', category: 'Rendering & Navigation' },
   { label: 'View transitions', url: '/view-transitions', category: 'Rendering & Navigation' },
   { label: 'View transition detail', url: '/view-transitions/1', category: 'Rendering & Navigation' },
   { label: 'Prevent navigation', url: '/prevent-navigation', category: 'Rendering & Navigation' },

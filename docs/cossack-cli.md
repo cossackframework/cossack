@@ -252,6 +252,22 @@ and local configuration diagnostics without building or deploying.
 nonzero exit code for deployment errors. JSON output marks build and remote
 readiness as `not-checked` and omits variable and secret values.
 
+### `cossack check templates`
+
+```bash
+cossack check templates
+cossack check templates --json --verbose
+```
+
+Check every `html` and `svg` template in the project's TypeScript program
+(tests and declaration files excluded) and report each problem with its file,
+line and column: malformed markup, bindings that render nothing, unknown
+attributes, wrong attribute, event and property values, and component tag
+props. Errors return a nonzero exit code; warnings do not. `--verbose` also
+lists hints, such as a `component()` call that can be a component tag; JSON
+reports hints with `info` severity. The Vite build runs the same check. See
+[Template checks](/docs/template.md#template-checks).
+
 ### `cossack deploy`
 
 Build and deploy a Cloudflare application with the project's installed tools:
@@ -630,6 +646,22 @@ structural manifest and the effective inspection facts.
 Markdown requires a recorded scaffold feature or explicit `--markdown` selection.
 For a custom processor, configure the same feature in Vite.
 See [typed URLs](./routing.md#typed-urls) for imports, parameters, and existing-project setup.
+
+### `cossack specs`
+
+```bash
+cossack specs --output app-model.json
+cossack specs --schema
+```
+
+Print the app model as one versioned JSON document: routes and layouts, every
+application class (decorators, props, state, server and client methods,
+`server$` resources, injected services and comments), and one UI tree per
+`render()` with element, component, control, text and expression nodes.
+Expressions carry their source text and TypeScript type. Project modules are
+never executed. `--schema` prints the document's JSON Schema;
+`@cossackframework/core/app-model` exports the schema, its types and
+`validateAppModel()`.
 
 ### `cossack info`
 
