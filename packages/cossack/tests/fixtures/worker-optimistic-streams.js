@@ -251,6 +251,8 @@ export async function checkWorkerOptimisticStreams(server,serverUrl,cookie) {
       }
       if(transport==='sse') {
         await page.goto(origin+'/resource-check/optimistic-streams/example');
+        // Input and clicks before hydration would be lost.
+        await browserExpect.poll(() => page.evaluate(() => window.__cossackReady)).toBe(true);
         await browserExpect(page.locator('#optimistic-example-read')).toHaveText('0');
         await page.locator('input[name="draft"]').fill('keep example draft');
         const before=requests.length;
