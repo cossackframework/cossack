@@ -137,6 +137,9 @@ importers:
 
   packages/cossack:
     dependencies:
+      '@cossackframework/core':
+        specifier: workspace:*
+        version: link:../core
       '@cossackframework/framework':
         specifier: workspace:*
         version: link:../framework

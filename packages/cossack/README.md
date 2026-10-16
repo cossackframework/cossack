@@ -51,7 +51,8 @@ Run `cossack --help` to list all commands, or `cossack <command> --help` for com
 | `preview <create\|inspect\|cleanup>` | Create, inspect and clean up isolated Cloudflare previews. |
 | `resources <plan\|apply>` | Select account-owned Cloudflare bindings. |
 | `inspect <scope>` | Show static facts: `routes`, `cloudflare`, `providers`, `workflows`, `schedules`. |
-| `check <scope>` | Validate the same scopes and exit nonzero on errors. |
+| `check <scope>` | Validate the same scopes, or `templates` (html template diagnostics with file, line and column), and exit nonzero on errors. |
+| `specs` | Print the app model JSON: routes, classes, methods, props, state, comments and render() UI trees (`--output`, `--schema`). |
 | `generate <type> <name>` (`g`) | Generate a page/component/layout/middleware/service/model/migration/seeder. |
 | `delete <type> <name>` (`d`) | Delete a generated file/folder. |
 | `add <feature>` | Add a feature and its prerequisites (see the feature list below). |

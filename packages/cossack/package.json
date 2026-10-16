@@ -26,6 +26,7 @@
     "test:integration": "vitest --run --project integration"
   },
   "dependencies": {
+    "@cossackframework/core": "workspace:*",
     "@cossackframework/framework": "workspace:*",
     "@cossackframework/renderer": "workspace:*",
     "@cossackframework/scaffold": "workspace:*",

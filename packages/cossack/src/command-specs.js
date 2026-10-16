@@ -187,6 +187,10 @@ export const commandSpecs = {
     run: str('Read one recorded run UUID; default is the most recently started run.'),
   }, check: (_args, flags) => flags.run !== undefined && !TEST_RUN_ID.test(flags.run)
     ? [{ code: 'COSSACK_TEST_RUN_INVALID', severity: 'error', message: 'Use a test run UUID, not a file path.' }] : [] }),
+  specs: new CommandSpec({ name: 'specs', globals: readonly, flags: {
+    env, output: str('Write the app model JSON to this file instead of stdout.'),
+    schema: bool('Print the JSON Schema of the app model.'),
+  } }),
   info: new CommandSpec({ name: 'info', globals: readonly }),
   version: new CommandSpec({ name: 'version', aliases: ['v'], globals: readonly }),
   upgrade: new CommandSpec({ name: 'upgrade', globals: mutations, positionals: ['dir'], flags: {
