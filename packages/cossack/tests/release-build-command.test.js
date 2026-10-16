@@ -5,13 +5,13 @@ import { fileURLToPath } from 'node:url';
 import { createReleaseBuildPlan, buildRelease } from '../../../scripts/build-release.mjs';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
-const folders = ['renderer', 'core', 'ui', 'database', 'auth', 'framework', 'node-adapter', 'test-utils', 'studio'];
+const folders = ['renderer', 'typescript-plugin', 'core', 'ui', 'database', 'auth', 'framework', 'node-adapter', 'test-utils', 'studio'];
 const manifests = Object.fromEntries(await Promise.all(folders.map(async name => [name, JSON.parse(await fs.readFile(path.join(root, 'packages', name, 'package.json'), 'utf8'))])));
 
 describe('non-Desktop release build command', () => {
   it('preserves native root stages in serial dependency order and builds test-utils', () => {
     const plan = createReleaseBuildPlan(manifests);
-    expect(plan.map(stage => stage.directory)).toEqual(['renderer', 'core', 'ui', 'database', 'framework', 'node-adapter', 'test-utils', 'studio']);
+    expect(plan.map(stage => stage.directory)).toEqual(['renderer', 'typescript-plugin', 'core', 'ui', 'database', 'framework', 'node-adapter', 'test-utils', 'studio']);
     const before = (dependency, consumer) => expect(plan.findIndex(stage => stage.directory === dependency)).toBeLessThan(plan.findIndex(stage => stage.directory === consumer));
     before('renderer', 'core'); before('core', 'ui'); before('ui', 'framework');
     before('framework', 'node-adapter');
@@ -42,6 +42,6 @@ describe('non-Desktop release build command', () => {
   it('propagates the first failed build exit code and never starts later builds', async () => {
     const calls = [];
     expect(await buildRelease({ root, manifests, log: () => {}, runner: async (_command, args) => { calls.push(args[1]); return calls.length === 3 ? 37 : 0; } })).toBe(37);
-    expect(calls).toEqual(['@cossackframework/renderer', '@cossackframework/core', '@cossackframework/ui']);
+    expect(calls).toEqual(['@cossackframework/renderer', '@cossackframework/typescript-plugin', '@cossackframework/core']);
   });
 });

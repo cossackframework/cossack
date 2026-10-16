@@ -17,13 +17,13 @@
 import type * as TS from 'typescript-api';
 import { decodeEntities } from './component-tags';
 import {
-  parseTemplate, type ParsedTemplate, type TemplateAttribute, type TemplateComponent, type TemplateElement,
+  parseTemplate, templateContextAt, type ParsedTemplate, type TemplateAttribute, type TemplateComponent, type TemplateElement,
   type TemplateLocation, type TemplateNode,
 } from './template-parse';
 
-export { parseTemplate } from './template-parse';
+export { parseTemplate, templateContextAt } from './template-parse';
 export type {
-  ParsedTemplate, TemplateAttribute, TemplateBindingNode, TemplateBindingRole, TemplateComment, TemplateComponent,
+  TemplateContext, TemplateContextTag, ParsedTemplate, TemplateAttribute, TemplateBindingNode, TemplateBindingRole, TemplateComment, TemplateComponent,
   TemplateElement, TemplateLocation, TemplateNamespace, TemplateNode, TemplateProblem, TemplateRange, TemplateText,
 } from './template-parse';
 
@@ -58,6 +58,8 @@ export interface TemplateSource {
   readonly declarationFile?: TS.SourceFile;
   /** The file offset of a location in the template's strings. */
   position(location: TemplateLocation): number;
+  /** The location of a file offset in the template's strings; undefined inside a binding or outside the template. */
+  locationAt(position: number): TemplateLocation | undefined;
 }
 
 export interface TemplateCheckOptions {
@@ -76,9 +78,9 @@ const MARKUP = /<[A-Za-z/!]/;
 
 // --- Finding templates ---
 
-/** Map offsets in a literal's cooked text to offsets in its source text. */
-const cookedOffsets = (source: string): ((offset: number) => number) => {
-  if (!source.includes('\\') && !source.includes('\r')) return (offset) => offset;
+/** Map offsets in a literal's cooked text to offsets in its source text, and back. */
+const cookedOffsets = (source: string): { toSource(offset: number): number; toCooked(offset: number): number } => {
+  if (!source.includes('\\') && !source.includes('\r')) return { toSource: (offset) => offset, toCooked: (offset) => offset };
   const map: number[] = [];
   for (let r = 0; r < source.length;) {
     const ch = source[r];
@@ -97,7 +99,7 @@ const cookedOffsets = (source: string): ((offset: number) => number) => {
     if (next === '\r') {
       r += source[r + 2] === '\n' ? 3 : 2;
       produced = 0;
-    } else if (next === '\n' || next === ' ' || next === ' ') {
+    } else if (next === '\n' || next === '\u2028' || next === '\u2029') {
       r += 2;
       produced = 0;
     } else if (next === 'x') {
@@ -114,7 +116,14 @@ const cookedOffsets = (source: string): ((offset: number) => number) => {
     for (let k = 0; k < produced; k++) map.push(start);
   }
   map.push(source.length);
-  return (offset) => map[Math.min(offset, map.length - 1)];
+  return {
+    toSource: (offset) => map[Math.min(offset, map.length - 1)],
+    toCooked: (offset) => {
+      let cooked = 0;
+      while (cooked + 1 < map.length && map[cooked + 1] <= offset) cooked++;
+      return cooked;
+    },
+  };
 };
 
 const symbolOf = (ts: TypeScript, checker: TS.TypeChecker, node: TS.Node): TS.Symbol | undefined => {
@@ -155,11 +164,13 @@ const templateSource = (ts: TypeScript, sourceFile: TS.SourceFile, node: TS.Tagg
   const parts = templateParts(ts, node.template);
   const text = sourceFile.text;
   const starts: number[] = [];
-  const maps: ((offset: number) => number)[] = [];
+  const ends: number[] = [];
+  const maps: ReturnType<typeof cookedOffsets>[] = [];
   for (const part of parts) {
     const start = part.getStart(sourceFile) + 1;
     const end = part.getEnd() - (part.kind === ts.SyntaxKind.TemplateHead || part.kind === ts.SyntaxKind.TemplateMiddle ? 2 : 1);
     starts.push(start);
+    ends.push(end);
     maps.push(cookedOffsets(text.slice(start, end)));
   }
   const strings = parts.map((part) => part.text);
@@ -167,7 +178,11 @@ const templateSource = (ts: TypeScript, sourceFile: TS.SourceFile, node: TS.Tagg
   return {
     node, kind, strings, expressions, declarationFile,
     parsed: parseTemplate(strings, { svg: kind === 'svg' }),
-    position: (location) => starts[location.string] + maps[location.string](location.offset),
+    position: (location) => starts[location.string] + maps[location.string].toSource(location.offset),
+    locationAt: (position) => {
+      const string = starts.findIndex((start, index) => position >= start && position <= ends[index]);
+      return string < 0 ? undefined : { string, offset: maps[string].toCooked(position - starts[string]) };
+    },
   };
 };
 
@@ -605,3 +620,109 @@ class TypeRules {
       ...this.range(attribute, 'all'));
   }
 }
+
+// --- Completions ---
+
+export type TemplateCompletionKind = 'element' | 'end-tag' | 'attribute' | 'event' | 'property' | 'boolean' | 'prop' | 'value';
+
+export interface TemplateCompletion {
+  readonly name: string;
+  readonly kind: TemplateCompletionKind;
+  /** The value type, for attributes, properties and props. */
+  readonly type?: string;
+}
+
+export interface TemplateCompletions {
+  readonly entries: readonly TemplateCompletion[];
+  /** The text the chosen entry replaces: what was typed of the name or value. */
+  readonly replace: { readonly start: number; readonly length: number };
+}
+
+/**
+ * Completions at a file position inside an `html` or `svg` template: tag
+ * names, end tags, attributes, `@events`, `.properties`, `?booleans`,
+ * component props and enumerated values. Undefined outside a template or
+ * inside a binding, where TypeScript's own completions apply.
+ */
+export const completeTemplate = (ts: TypeScript, program: TS.Program, sourceFile: TS.SourceFile, position: number,
+  options: TemplateCheckOptions = {}): TemplateCompletions | undefined => {
+  const checker = program.getTypeChecker();
+  const template = findTemplates(ts, sourceFile, checker, options)
+    .filter((candidate) => candidate.locationAt(position) !== undefined)
+    .sort((a, b) => (a.node.getEnd() - a.node.getStart()) - (b.node.getEnd() - b.node.getStart()))[0];
+  if (!template?.declarationFile) return undefined;
+  const types = templateTypes(ts, checker, template.declarationFile);
+  if (!types) return undefined;
+  const context = templateContextAt(template.strings, template.locationAt(position)!, { svg: template.kind === 'svg' });
+  const replace = (typed: string) => ({ start: position - typed.length, length: typed.length });
+  const show = (type: TS.Type) => checker.typeToString(type, undefined, ts.TypeFormatFlags.NoTruncation);
+  const names = (type: TS.Type) => checker.getPropertiesOfType(type).map((property) => property.name);
+  const typeOf = (type: TS.Type, name: string) => {
+    const property = checker.getPropertyOfType(type, name);
+    return property && checker.getTypeOfSymbol(property);
+  };
+  const sorted = (entries: TemplateCompletion[]) => entries.sort((a, b) => a.name.localeCompare(b.name));
+
+  if (context.kind === 'tag-name') {
+    const map = context.namespace === 'svg' ? types.svg : types.html;
+    return { entries: sorted(names(map).map((name) => ({ name, kind: 'element' }))), replace: replace(context.prefix) };
+  }
+  if (context.kind === 'end-tag') {
+    return context.open ? { entries: [{ name: context.open.tag, kind: 'end-tag' }], replace: replace(context.prefix) } : undefined;
+  }
+  if (context.kind !== 'attribute-name' && context.kind !== 'attribute-value') return undefined;
+
+  // The type that lists what this tag accepts: a component's props or an element's attributes.
+  let accepted: TS.Type | undefined;
+  let elementType: TS.Type | undefined;
+  let component = false;
+  const tag = context.tag;
+  if (tag.component) {
+    const expression = template.expressions[tag.binding];
+    const signature = expression && checker.getSignaturesOfType(checker.getTypeAtLocation(expression), ts.SignatureKind.Construct)[0];
+    const props = signature && typeOf(checker.getReturnTypeOfSignature(signature), 'props');
+    accepted = props && checker.getNonNullableType(props);
+    component = true;
+  } else if (tag.namespace !== 'mathml') {
+    const svg = tag.namespace === 'svg';
+    const key = svg ? names(types.svg).find((name) => name.toLowerCase() === tag.tag.toLowerCase()) : tag.name;
+    accepted = (key && typeOf(svg ? types.svg : types.html, key)) || (svg ? types.svgGlobal : types.global);
+    elementType = key ? typeOf(svg ? types.svgElements : types.htmlElements, key) : undefined;
+  }
+  if (!accepted) return undefined;
+
+  if (context.kind === 'attribute-value') {
+    const target = typeOf(accepted, component || tag.component ? context.name : context.name.toLowerCase());
+    if (!target) return undefined;
+    const values = (target.isUnion() ? target.types : [target]).filter((part) => part.isStringLiteral()).map((part) => (part as TS.StringLiteralType).value);
+    return values.length ? { entries: sorted(values.map((name) => ({ name, kind: 'value' }))), replace: replace(context.prefix) } : undefined;
+  }
+
+  const present = new Set(context.attributes.map((name) => component ? name : name.toLowerCase()));
+  const prefix = context.prefix[0];
+  const entries: TemplateCompletion[] = [];
+  const add = (name: string, kind: TemplateCompletionKind, type?: TS.Type) => {
+    if (!present.has(component ? name : name.toLowerCase())) entries.push({ name, kind, ...(type ? { type: show(type) } : {}) });
+  };
+  if (component) {
+    for (const property of checker.getPropertiesOfType(accepted)) add(property.name, 'prop', checker.getTypeOfSymbol(property));
+  } else if (prefix === '@') {
+    for (const name of names(accepted)) if (name.startsWith('@')) add(name, 'event');
+  } else if (prefix === '.') {
+    for (const property of elementType ? checker.getPropertiesOfType(elementType) : []) {
+      const declaration = property.valueDeclaration ?? property.declarations?.[0];
+      const readonly = declaration && (ts.getCombinedModifierFlags(declaration as TS.Declaration) & ts.ModifierFlags.Readonly) !== 0;
+      if (!readonly && property.flags & ts.SymbolFlags.Property) add(`.${property.name}`, 'property', checker.getTypeOfSymbol(property));
+    }
+  } else if (prefix === '?') {
+    for (const name of names(accepted)) {
+      const type = typeOf(accepted, name);
+      if (!/^[.?@]/.test(name) && type && checker.isTypeAssignableTo(checker.getTrueType(), type)) add(`?${name}`, 'boolean');
+    }
+  } else {
+    for (const name of names(accepted)) if (!/^[.?@]/.test(name)) add(name, 'attribute', typeOf(accepted, name));
+    add('ref', 'attribute');
+    add('...', 'attribute');
+  }
+  return { entries: sorted(entries), replace: replace(context.prefix) };
+};

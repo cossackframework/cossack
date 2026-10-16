@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 
 export const repository = fileURLToPath(new URL('../../../../', import.meta.url));
 export const workspacePackages = Object.freeze([
-  'framework', 'core', 'renderer', 'auth', 'database', 'ui', 'scaffold', 'test-utils', 'node-adapter', 'desktop',
+  'framework', 'core', 'renderer', 'auth', 'database', 'ui', 'scaffold', 'test-utils', 'node-adapter', 'desktop', 'typescript-plugin',
 ]);
 
 /**

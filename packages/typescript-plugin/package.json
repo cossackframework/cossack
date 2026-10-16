@@ -1,0 +1,34 @@
+{
+  "name": "@cossackframework/typescript-plugin",
+  "version": "0.9.0",
+  "description": "TypeScript language service plugin for Cossack html templates: template diagnostics and completions in the editor",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cossackframework/cossack",
+    "directory": "packages/typescript-plugin"
+  },
+  "main": "./dist/index.cjs",
+  "exports": {
+    ".": "./dist/index.cjs",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "vite build",
+    "pretest": "pnpm run build",
+    "test": "vitest"
+  },
+  "devDependencies": {
+    "@cossackframework/renderer": "workspace:*",
+    "typescript-api": "npm:typescript@6.0.3",
+    "vite": "^8.1.4",
+    "vitest": "^4.1.11"
+  }
+}

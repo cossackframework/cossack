@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import ts from 'typescript-api';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { checkTemplates, findTemplates, type TemplateDiagnostic } from '../src/diagnostics';
+import { checkTemplates, completeTemplate, findTemplates, type TemplateDiagnostic } from '../src/diagnostics';
 
 const root = path.join(import.meta.dirname, 'fixtures/templates');
 let program: ts.Program;
@@ -100,4 +100,46 @@ export const c = component(Button, {}, \`<b>Save</b>\`);
       { code: 'COSSACK_TEMPLATE_UNTAGGED_MARKUP', severity: 'error', line: 6 },
     ]);
   }, 60_000);
+});
+
+describe('template completions', () => {
+  /** Completion names where `|` is, in a virtual file of the fixture program. */
+  const complete = (body: string) => {
+    const text = `import { html, svg } from '@cossackframework/renderer';\nimport { Card } from './components';\nexport const v = ${body.replace('|', '')};\n`;
+    const position = text.indexOf(body.replace('|', '')) + body.indexOf('|');
+    const file = path.join(root, '__complete.ts');
+    const host = ts.createCompilerHost(program.getCompilerOptions());
+    const read = host.getSourceFile;
+    host.getSourceFile = (fileName, ...rest) => fileName === file ? ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true) : read.call(host, fileName, ...rest);
+    const virtual = ts.createProgram([file], program.getCompilerOptions(), host, program);
+    const result = completeTemplate(ts, virtual, virtual.getSourceFile(file)!, position);
+    return result && { names: result.entries.map((entry) => entry.name), entries: result.entries, typed: text.slice(result.replace.start, result.replace.start + result.replace.length) };
+  };
+
+  it('completes tag names, end tags and attributes', () => {
+    expect(complete('html`<div><but|`')).toMatchObject({ typed: 'but', names: expect.arrayContaining(['button', 'div', 'input']) });
+    expect(complete('svg`<pa|`')!.names).toEqual(expect.arrayContaining(['path', 'circle', 'linearGradient']));
+    expect(complete('html`<ul><li>x</|`')!.names).toEqual(['li']);
+    const attributes = complete('html`<button type="button" |`')!;
+    expect(attributes.names).toEqual(expect.arrayContaining(['disabled', 'name', 'aria-label', 'ref', '...']));
+    expect(attributes.names).not.toContain('type');
+    expect(attributes.entries.find((entry) => entry.name === 'disabled')).toMatchObject({ kind: 'attribute' });
+  });
+
+  it('completes events, properties, boolean attributes and values', () => {
+    expect(complete('html`<button @cl|`')).toMatchObject({ typed: '@cl', names: expect.arrayContaining(['@click', '@keydown']) });
+    expect(complete('html`<input .va|`')!.names).toEqual(expect.arrayContaining(['.value', '.checked']));
+    expect(complete('html`<input .va|`')!.names).not.toContain('.validity');
+    expect(complete('html`<input ?dis|`')!.names).toEqual(expect.arrayContaining(['?disabled', '?required']));
+    expect(complete('html`<button type="|"`')).toMatchObject({ typed: '', names: ['button', 'reset', 'submit'] });
+  });
+
+  it('completes component props, and leaves bindings to TypeScript', () => {
+    const props = complete('html`<${Card} hoverable pad|`')!;
+    expect(props.names).toEqual(expect.arrayContaining(['padding', 'id']));
+    expect(props.names).not.toContain('hoverable');
+    expect(props.entries.find((entry) => entry.name === 'padding')).toMatchObject({ kind: 'prop', type: expect.stringContaining('"sm"') });
+    expect(complete('html`<${Card} padding="|"`')!.names).toEqual(['default', 'lg', 'none', 'sm']);
+    expect(complete('html`<p>${Car|}</p>`')).toBeUndefined();
+  });
 });

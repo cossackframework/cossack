@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseTemplate, type TemplateNode } from './template-parse';
+import { parseTemplate, templateContextAt, type TemplateNode } from './template-parse';
 
 const strings = (template: TemplateStringsArray, ..._values: unknown[]) => [...template];
 const codes = (input: readonly string[], options?: { svg?: boolean }) => parseTemplate(input, options).problems.map((problem) => problem.code);
@@ -94,5 +94,39 @@ describe('parseTemplate', () => {
     expect(bold.startTag.start).toEqual({ string: 0, offset: 6 });
     expect(bold.attributes[0].nameRange).toEqual({ start: { string: 0, offset: 9 }, end: { string: 0, offset: 14 } });
     expect(bold.range.end).toEqual({ string: 1, offset: 6 });
+  });
+});
+
+describe('templateContextAt', () => {
+  /** The context where `|` is, in a template written as one string. */
+  const at = (text: string, options?: { svg?: boolean }) => {
+    const cursor = text.indexOf('|');
+    const strings = text.replace('|', '').split('$$');
+    let rest = cursor;
+    let string = 0;
+    while (rest > strings[string].length) {
+      rest -= strings[string].length + 2;
+      string++;
+    }
+    return templateContextAt(strings, { string, offset: rest }, options);
+  };
+
+  it('finds tag names, attribute names and values, end tags and text', () => {
+    expect(at('<div><bu|')).toEqual({ kind: 'tag-name', prefix: 'bu', namespace: 'html' });
+    expect(at('<svg><pa|')).toEqual({ kind: 'tag-name', prefix: 'pa', namespace: 'svg' });
+    expect(at('<button type="submit" @cl|')).toMatchObject({ kind: 'attribute-name', prefix: '@cl',
+      tag: { component: false, tag: 'button', name: 'button', namespace: 'html' }, attributes: ['type'] });
+    expect(at('<input |')).toMatchObject({ kind: 'attribute-name', prefix: '', tag: { name: 'input' } });
+    expect(at('<button type="su|')).toMatchObject({ kind: 'attribute-value', name: 'type', prefix: 'su', quote: '"' });
+    expect(at('<ul><li>a</|')).toMatchObject({ kind: 'end-tag', prefix: '', open: { tag: 'li' } });
+    expect(at('<p>hello |')).toEqual({ kind: 'text', namespace: 'html' });
+    expect(at('<p><|')).toEqual({ kind: 'tag-name', prefix: '', namespace: 'html' });
+    expect(at('<ul><li>a</l|')).toMatchObject({ kind: 'end-tag', prefix: 'l', open: { tag: 'li' } });
+    expect(at('<svg><circle r="1" |', {})).toMatchObject({ kind: 'attribute-name', tag: { name: 'circle', namespace: 'svg' } });
+  });
+
+  it('finds component tag attributes across bindings', () => {
+    expect(at('<main><$$ variant="ghost" si|')).toMatchObject({ kind: 'attribute-name', prefix: 'si',
+      tag: { component: true, binding: 0 }, attributes: ['variant'] });
   });
 });

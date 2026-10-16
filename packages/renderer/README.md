@@ -395,6 +395,10 @@ reports them as files change.
   elements accept global attributes, with a warning for others.
 - Hints: `component()` with a literal class can be a component tag.
 
+In the editor, `@cossackframework/typescript-plugin` shows the same diagnostics
+and completes tag names, attributes, events, properties, component props and
+enumerated values inside templates. Generated applications enable it.
+
 ## Directives
 
 Cossack includes standard Lit directives.

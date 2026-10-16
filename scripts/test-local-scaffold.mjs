@@ -24,6 +24,7 @@ const execFileAsync = promisify(execFile);
 const repositoryRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const packageDirectories = [
   'renderer',
+  'typescript-plugin',
   'core',
   'node-adapter',
   'desktop',

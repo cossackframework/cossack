@@ -214,7 +214,22 @@ const PLAIN_NAME = /^[A-Za-z_][^\s"'>/=]*$/;
  * Parse a template's static strings. `svg` selects the SVG namespace for the
  * template's top level, as for `svg` templates.
  */
-export const parseTemplate = (strings: readonly string[], options: { svg?: boolean } = {}): ParsedTemplate => {
+/** What the parser was reading when the strings ended. */
+interface ParseEnd {
+  state: State;
+  tag: MutableTag | null;
+  attr: MutableAttribute | null;
+  /** Open elements and components, outermost first. */
+  open: (TemplateElement | TemplateComponent)[];
+  /** The namespace of content at the end. */
+  namespace: TemplateNamespace;
+  endText: string;
+}
+
+export const parseTemplate = (strings: readonly string[], options: { svg?: boolean } = {}): ParsedTemplate =>
+  parse(strings, options);
+
+const parse = (strings: readonly string[], options: { svg?: boolean }, onEnd?: (end: ParseEnd) => void): ParsedTemplate => {
   const t = createTokenizer();
   const problems: TemplateProblem[] = [];
   const roles: TemplateBindingRole[] = [];
@@ -564,6 +579,7 @@ export const parseTemplate = (strings: readonly string[], options: { svg?: boole
     }
   }
 
+  onEnd?.({ state: t.state, tag, attr, open: stack.slice(1).map((frame) => frame.node!), namespace: top().namespace, endText });
   const last = strings.length - 1;
   const end = loc(last, strings[last]?.length ?? 0);
   switch (t.state) {
@@ -627,5 +643,71 @@ const checkAttributes = (nodes: readonly TemplateNode[], problems: TemplateProbl
       seen.add(key);
     }
     checkAttributes(node.children, problems);
+  }
+};
+
+/** The tag being written at a location: an element (with its namespace) or a component tag. */
+export type TemplateContextTag =
+  | { readonly component: false; readonly tag: string; readonly name: string; readonly namespace: TemplateNamespace }
+  | { readonly component: true; readonly binding: number };
+
+/** What an editor is writing at a location in a template. */
+export type TemplateContext =
+  | { readonly kind: 'text'; readonly namespace: TemplateNamespace }
+  | { readonly kind: 'tag-name'; readonly prefix: string; readonly namespace: TemplateNamespace }
+  | { readonly kind: 'attribute-name'; readonly prefix: string; readonly tag: TemplateContextTag; readonly attributes: readonly string[] }
+  | { readonly kind: 'attribute-value'; readonly name: string; readonly prefix: string; readonly quote: '"' | "'" | ''; readonly tag: TemplateContextTag }
+  | { readonly kind: 'end-tag'; readonly prefix: string; readonly open: TemplateElement | null }
+  | { readonly kind: 'other' };
+
+/**
+ * The context at `location` in a template's strings, for editor completions:
+ * text, a tag name, an attribute name or value, or an end tag.
+ */
+export const templateContextAt = (strings: readonly string[], location: TemplateLocation, options: { svg?: boolean } = {}): TemplateContext => {
+  const prefix = strings.slice(0, location.string + 1).map((text, index) => index === location.string ? text.slice(0, location.offset) : text);
+  let context: TemplateContext = { kind: 'other' };
+  // Read the parser state before parse() closes what the strings left open.
+  parse(prefix, options, (end) => { context = contextOf(end, prefix[prefix.length - 1]); });
+  return context;
+};
+
+const contextOf = (end: ParseEnd, tail: string): TemplateContext => {
+  const { state, tag, attr } = end;
+  const innermost = () => [...end.open].reverse().find((node): node is TemplateElement => node.type === 'element') ?? null;
+  // A `<` or `</` just typed has no name yet, so the tokenizer still reads text.
+  if (state === State.Data && tail.endsWith('</')) return { kind: 'end-tag', prefix: '', open: innermost() };
+  if (state === State.Data && tail.endsWith('<')) return { kind: 'tag-name', prefix: '', namespace: end.namespace };
+  const contextTag = (): TemplateContextTag | undefined => {
+    if (!tag) return undefined;
+    if (tag.component) return { component: true, binding: tag.binding };
+    const name = tag.tag.toLowerCase();
+    return { component: false, tag: tag.tag, name, namespace: elementNamespace(end.namespace, name) };
+  };
+  switch (state) {
+    case State.Data:
+    case State.RawText:
+      return { kind: 'text', namespace: end.namespace };
+    case State.TagName:
+      return tag && !tag.component ? { kind: 'tag-name', prefix: tag.tag, namespace: end.namespace } : { kind: 'other' };
+    case State.BeforeAttrName:
+    case State.AfterAttrName:
+    case State.AttrName: {
+      const owner = contextTag();
+      if (!owner) return { kind: 'other' };
+      const typing = state === State.AttrName && attr ? attr.name : '';
+      return { kind: 'attribute-name', prefix: typing, tag: owner, attributes: tag!.attributes.map((attribute) => attribute.name) };
+    }
+    case State.BeforeAttrValue:
+    case State.AttrValueQuoted:
+    case State.AttrValueUnquoted: {
+      const owner = contextTag();
+      if (!owner || !attr) return { kind: 'other' };
+      return { kind: 'attribute-value', name: attr.name, prefix: attr.segments[attr.segments.length - 1], quote: state === State.AttrValueQuoted ? attr.quote : '', tag: owner };
+    }
+    case State.EndTag:
+      return { kind: 'end-tag', prefix: end.endText.replace(/^\//, ''), open: innermost() };
+    default:
+      return { kind: 'other' };
   }
 };

@@ -1,0 +1,4 @@
+{
+  "// typescript.tsserver.pluginPaths": "Lets VS Code's TypeScript load @cossackframework/typescript-plugin from this project's node_modules for html template diagnostics and completions.",
+  "typescript.tsserver.pluginPaths": ["."]
+}

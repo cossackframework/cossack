@@ -210,6 +210,7 @@ async function promptWizard(questions, initialAnswers = {}, startAtLast = false)
 const BASE_PATHS = new Set([
   '.prettierrc.json',
   '.vscode/cossack.code-snippets',
+  '.vscode/settings.json',
   'AGENTS.md',
   'pnpm-workspace.yaml',
   'README.md',
@@ -519,6 +520,7 @@ function packageJson(recipe, projectName) {
     dependencies['@cossackframework/desktop'] = `^${templateVersion}`;
   }
   const devDependencies = {
+    '@cossackframework/typescript-plugin': `^${templateVersion}`,
     '@types/node': dependencyVersion('@types/node'),
     '@tailwindcss/vite': dependencyVersion('@tailwindcss/vite'),
     prettier: dependencyVersion('prettier'),
@@ -587,6 +589,8 @@ function packageJson(recipe, projectName) {
         deploy: 'cossack deploy',
       };
   scripts.typecheck = 'cossack routes --generate && tsc --noEmit';
+  scripts['check:templates'] = 'cossack check templates';
+  scripts.format = 'prettier --write "src/**/*.ts"';
   if (recipe.resolvedFeatures.includes('desktop')) {
     scripts['build:desktop'] = 'vite build && vite build --mode desktop --ssr src/desktop/index.ts --outDir dist/desktop --minify false';
     scripts['desktop:dev'] = 'cossack-desktop';

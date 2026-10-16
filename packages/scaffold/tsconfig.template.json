@@ -24,7 +24,12 @@
       "virtual:cossack-routes": [
         "./.cossack/routes.ts"
       ]
-    }
+    },
+    "plugins": [
+      {
+        "name": "@cossackframework/typescript-plugin"
+      }
+    ]
   },
   "include": [
     "src/**/*.ts"
