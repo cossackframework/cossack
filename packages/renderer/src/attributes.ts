@@ -212,8 +212,11 @@ export type TrackAttributes = GlobalAttributes<HTMLTrackElement> & Attributes<{
     default: boolean; kind: 'subtitles' | 'captions' | 'descriptions' | 'chapters' | 'metadata'; label: string; src: string; srclang: string;
 }>;
 
-/** The attributes each HTML element accepts, by lowercase tag name. */
-export interface HTMLElementAttributeMap {
+/**
+ * The attributes each HTML element accepts, by lowercase tag name. Reached
+ * through TemplateTypeMap; not exported, since its expanded form is large.
+ */
+interface HTMLElementAttributeMap {
     a: AnchorAttributes; abbr: GlobalAttributes; address: GlobalAttributes; area: AreaAttributes;
     article: GlobalAttributes; aside: GlobalAttributes; audio: AudioAttributes;
     b: GlobalAttributes; base: BaseAttributes; bdi: GlobalAttributes; bdo: GlobalAttributes;
@@ -308,8 +311,8 @@ export type SVGElementAttributes<Element extends SVGElement = SVGElement> = Nati
     crossorigin: CrossOrigin; decoding: 'sync' | 'async' | 'auto'; media: string;
 }> & { [Name: `data-${string}`]: Attribute<string | number | boolean> | undefined };
 
-/** The attributes each SVG element accepts, by tag name as written. */
-export type SVGElementAttributeMap = { [Tag in keyof SVGElementTagNameMap]: SVGElementAttributes<SVGElementTagNameMap[Tag]> };
+/** The attributes each SVG element accepts, by tag name as written. Reached through TemplateTypeMap. */
+type SVGElementAttributeMap = { [Tag in keyof SVGElementTagNameMap]: SVGElementAttributes<SVGElementTagNameMap[Tag]> };
 
 /** A `ref=${...}` value: a ref object or a callback that receives the element. */
 export type RefValue = { value?: unknown } | ((element: any) => unknown) | null | undefined | typeof nothing;
