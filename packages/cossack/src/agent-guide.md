@@ -9,6 +9,16 @@ Inspect the application with `pnpm exec cossack inspect routes --json`. Use
 not prove runtime correctness. Cloudflare and provider inspection have separate
 scopes: `inspect cloudflare` and `inspect providers`.
 
+After editing `html` or `svg` templates, run `pnpm exec cossack check templates --json`.
+It reports malformed markup, bindings that render nothing, unknown attributes,
+wrong attribute, event, `?boolean` and `.property` values, and component tag props,
+each with file, line and column. Errors fail the check and the Vite build.
+
+`pnpm exec cossack specs` prints the app model: routes, layouts, classes with
+decorators, props, state, methods, `server$` resources and comments, and the UI
+tree of each `render()`. `--schema` prints its JSON Schema; the schema, types and
+a validator are exported from `@cossackframework/core/app-model`.
+
 Use the catalog's exact public import paths. Do not import repository internals.
 A present export target only proves that a file exists. It does not prove that a
 named symbol exists, that runtime dependencies resolve or that an API works on

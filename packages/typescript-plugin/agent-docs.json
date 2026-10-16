@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "guides": [
+    {
+      "id": "editor-template-checks",
+      "title": "Show template diagnostics and completions in the editor",
+      "summary": "Enable the language service plugin so editors report template problems and complete markup inside html templates.",
+      "imports": [
+        "@cossackframework/typescript-plugin"
+      ],
+      "markdown": "Enable the plugin in tsconfig.json with `\"plugins\": [{ \"name\": \"@cossackframework/typescript-plugin\" }]`. TypeScript's JavaScript server (tsserver) loads it by that name with require() and passes its own compiler module, so the plugin uses the editor's TypeScript, not a copy of its own. In VS Code, set `\"typescript.tsserver.pluginPaths\": [\".\"]` so the bundled TypeScript finds the plugin in the project's node_modules; generated applications ship this setting. The TypeScript 7 native compiler does not run language service plugins, so builds rely on `cossack check templates` and the Vite plugin.\n\nThe plugin wraps the language service. Semantic diagnostics gain the template errors and warnings of `cossack check templates`, suggestion diagnostics gain its hints, and completions inside `html` and `svg` templates offer tag names, end tags, attributes, `@events`, `.properties`, `?booleans`, enumerated values and component tag props. Inside a `${...}` binding, TypeScript's own completions apply. Every other language service method is the original one. Without a program for a file the plugin adds nothing.",
+      "examples": [
+        {
+          "id": "wrapped-language-service",
+          "language": "typescript",
+          "source": "import { createRequire } from 'node:module';\nimport init from '@cossackframework/typescript-plugin';\n\n// tsserver loads the plugin named in compilerOptions.plugins with require().\nconst require = createRequire(import.meta.url);\nif (require('@cossackframework/typescript-plugin') !== init) throw new Error('tsserver must load the plugin factory itself');\n\n// tsserver passes its compiler module and the project's language service.\nconst typescript = { ScriptElementKind: {}, DiagnosticCategory: { Error: 1, Warning: 0, Suggestion: 2 } };\nconst calls: string[] = [];\nconst languageService = {\n  getProgram: () => undefined,\n  getSemanticDiagnostics: () => { calls.push('semantic'); return []; },\n  getSuggestionDiagnostics: () => { calls.push('suggestion'); return []; },\n  getCompletionsAtPosition: () => { calls.push('completions'); return undefined; },\n  getQuickInfoAtPosition: () => { calls.push('quick-info'); return undefined; },\n};\nconst logs: string[] = [];\nconst service = init({ typescript }).create({ languageService, project: { projectService: { logger: { info: (line: string) => logs.push(line) } } } });\n\nservice.getSemanticDiagnostics('src/view.ts');\nservice.getSuggestionDiagnostics('src/view.ts');\nservice.getCompletionsAtPosition('src/view.ts', 0, undefined, undefined);\nservice.getQuickInfoAtPosition('src/view.ts', 0);\nif (calls.join() !== 'semantic,suggestion,completions,quick-info') throw new Error(`Wrapped methods must call the original service: ${calls.join()}`);\nif (!logs.some(line => line.includes('template diagnostics and completions enabled'))) throw new Error('The plugin logs when it loads');\n"
+        }
+      ]
+    }
+  ]
+}

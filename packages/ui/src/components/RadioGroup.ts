@@ -29,14 +29,14 @@ export type RadioGroupProps = Omit<GlobalAttributes<HTMLDivElement>, 'role' | 'a
  * Native radios handle form participation, keyboard (Arrow Up/Down), and
  * accessibility. We theme the label/control wrapper with tokens.
  *
- *   ${component(RadioGroup, {
- *       name: 'plan',
- *       value: 'pro',
- *       items: [
+ *   <${RadioGroup}
+ *       name="plan"
+ *       value="pro"
+ *       items=${[
  *           { value: 'free', label: 'Free' },
  *           { value: 'pro', label: 'Pro' },
- *       ],
- *   })}
+ *       ]}
+ *   />
  */
 @Component()
 export class RadioGroup extends Cossack {

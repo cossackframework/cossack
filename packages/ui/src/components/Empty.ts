@@ -14,8 +14,9 @@ export type EmptyProps = Omit<GlobalAttributes<HTMLDivElement>, 'title'> & {
 /**
  * Cossack UI Empty — placeholder for empty states (no data, no results).
  *
- *   ${component(Empty, { title: 'No results', description: 'Try a different search.' },
- *       component(Button, {}, 'Clear filters'))}
+ *   <${Empty} title="No results" description="Try a different search.">
+ *       <${Button}>Clear filters</${Button}>
+ *   </${Empty}>
  */
 @Component()
 export class Empty extends Cossack {

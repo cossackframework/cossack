@@ -3,6 +3,7 @@ import { getTemplateAnalysis, RAW_TEXT_TAGS, tokenizeHtml, type AttributeBinding
 import { recordStyleScope, stylesForScope, type FinalizedStyles } from './style-runtime';
 import { acquireStyle, flushStyleAcquisitions, isManagedStyle, releaseStyle, updateStyleRoot, type StyleUse } from './style-registry';
 import { ComponentResult, isComponentResult } from './component';
+import { compileComponentTags, mayContainComponentTags, type ComponentPlan, type TemplatePlan, type TemplateSlot } from './component-tags';
 import { CossackElement, pushCurrentInstance, popCurrentInstance, getComponentRange, setComponentRange, type ComponentRange } from './cossack-element';
 import { LiveResult, RepeatResult, KeyResult, BindResult, PreventDefaultResult, IfDefinedResult, GuardResult, CacheResult, resolveField, setField } from './directives';
 
@@ -27,8 +28,12 @@ export class TemplateResult<T extends TemplateResultType = TemplateResultType> {
 
 export type SVGTemplateResult = TemplateResult<2>;
 
-export const html = (strings: TemplateStringsArray, ...values: unknown[]): TemplateResult<1> => {
-  const result = new TemplateResult(strings, values, 1);
+/** The types template diagnostics check bindings against; see attributes.ts. */
+export type { TemplateTypeMap } from './attributes';
+
+/** A template result owned by the component that is rendering, as `html` and `svg` create it. */
+const ownedTemplate = <T extends TemplateResultType>(strings: TemplateStringsArray, values: unknown[], type: T): TemplateResult<T> => {
+  const result = new TemplateResult(strings, values, type);
   const owner = CossackElement.currentRenderingInstance;
   if (owner) {
     result.__cossackOwner = owner;
@@ -37,14 +42,68 @@ export const html = (strings: TemplateStringsArray, ...values: unknown[]): Templ
   return result;
 };
 
-export const svg = (strings: TemplateStringsArray, ...values: unknown[]): SVGTemplateResult => {
-  const result = new TemplateResult(strings, values, 2);
-  const owner = CossackElement.currentRenderingInstance;
-  if (owner) {
-    result.__cossackOwner = owner;
-    result.__cossackScope = owner._getStyleScopeId();
+// The component-tag plan of each call site's strings, or null without tags.
+const componentTagPlans = new WeakMap<TemplateStringsArray, TemplatePlan | null>();
+
+const componentTagPlan = (strings: TemplateStringsArray, svg: boolean): TemplatePlan | null => {
+  let plan = componentTagPlans.get(strings);
+  if (plan === undefined) {
+    plan = mayContainComponentTags(strings) ? compileComponentTags(strings, { svg }) : null;
+    componentTagPlans.set(strings, plan);
   }
-  return result;
+  return plan;
+};
+
+const describeValue = (value: unknown): string =>
+  value === null ? 'null' : typeof value === 'function' ? `function ${value.name || '(anonymous)'}` : typeof value;
+
+/** The component() result of one component tag. */
+const componentFromTag = <T extends TemplateResultType>(plan: ComponentPlan, values: readonly unknown[], type: T): TemplateResult<1> => {
+  const clazz = values[plan.binding];
+  if (typeof clazz !== 'function') {
+    throw new TypeError(`[cossack/renderer] A component tag <\${...}> must bind a component class, not ${describeValue(clazz)}.`);
+  }
+  if (plan.closeBinding !== null && values[plan.closeBinding] !== clazz) {
+    throw new Error(`[cossack/renderer] The closing tag of <\${${clazz.name || 'Component'}}> binds ${describeValue(values[plan.closeBinding])}. Close a component tag with the same class.`);
+  }
+  const props: Record<string, unknown> = {};
+  for (const prop of plan.props) {
+    if (prop.kind === 'static') props[prop.name] = prop.value;
+    else if (prop.kind === 'value') props[prop.name] = values[prop.binding];
+    else if (prop.kind === 'spread') {
+      const spread = values[prop.binding];
+      if (typeof spread === 'object' && spread !== null) Object.assign(props, spread);
+    } else if (hasNothing(prop.bindings, values)) {
+      // `nothing` in an interpolated value removes it, as for an attribute.
+      delete props[prop.name];
+    } else {
+      let text = prop.segments[0];
+      for (let i = 0; i < prop.bindings.length; i++) text += attributeValueText(values[prop.bindings[i]]) + prop.segments[i + 1];
+      props[prop.name] = text;
+    }
+  }
+  const children = plan.children;
+  return component(clazz as new () => CossackElement, props,
+    children.kind === 'none' ? undefined
+      : children.kind === 'text' ? children.text
+        : children.kind === 'slot' ? slotValue(children.slot, values, type)
+          : templateFromPlan(children.plan, values, type));
+};
+
+const slotValue = <T extends TemplateResultType>(slot: TemplateSlot, values: readonly unknown[], type: T): unknown =>
+  typeof slot === 'number' ? values[slot] : componentFromTag(slot, values, type);
+
+const templateFromPlan = <T extends TemplateResultType>(plan: TemplatePlan, values: readonly unknown[], type: T): TemplateResult<T> =>
+  ownedTemplate(plan.strings, plan.slots.map((slot) => slotValue(slot, values, type)), type);
+
+export const html = (strings: TemplateStringsArray, ...values: unknown[]): TemplateResult<1> => {
+  const plan = componentTagPlan(strings, false);
+  return plan ? templateFromPlan(plan, values, 1) : ownedTemplate(strings, values, 1);
+};
+
+export const svg = (strings: TemplateStringsArray, ...values: unknown[]): SVGTemplateResult => {
+  const plan = componentTagPlan(strings, true);
+  return plan ? templateFromPlan(plan, values, 2) : ownedTemplate(strings, values, 2);
 };
 
 /** Lit-compatible sentinel that removes the value in its binding context. */

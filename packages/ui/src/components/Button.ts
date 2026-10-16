@@ -39,7 +39,7 @@ const SIZES: Record<NonNullable<ButtonProps["size"]>, string> = {
 /**
  * Cossack UI Button — token-driven, themeable.
  *
- * Use via `component(Button, { variant: 'default', '@click': handler }, 'Save')`.
+ * Use as a component tag: `<${Button} variant="default" @click=${handler}>Save</${Button}>`.
  */
 @Component()
 export class Button extends Cossack {

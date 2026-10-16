@@ -25,7 +25,7 @@ export type SliderProps = RangeAttributes & {
  * `accent-color` CSS property bound to the primary token (simplest cross-
  * browser approach).
  *
- *   ${component(Slider, { value: 40, min: 0, max: 100, label: 'Volume' })}
+ *   <${Slider} value=${40} min=${0} max=${100} label="Volume" />
  */
 @Component()
 export class Slider extends Cossack {

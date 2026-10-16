@@ -11,7 +11,10 @@ export const GUIDANCE_FAMILIES = Object.freeze({
     'storage and provider guarantees': ['authorized-object-storage', 'image-rendering-diagnostics', 'runtime-and-counter-guarantees'],
     'jobs, schedules, notifications and workflows': ['background-jobs-runtime', 'schedule-occurrence-jobs', 'notification-templates-preferences', 'local-workflow-lifecycle'],
   },
-  renderer: { 'templates, forms, lists and CSS': ['server-html', 'conditional-templates', 'keyed-lists', 'server-form-values', 'safe-component-css'] },
+  renderer: {
+    'templates, forms, lists and CSS': ['server-html', 'conditional-templates', 'keyed-lists', 'server-form-values', 'safe-component-css'],
+    'component tags and template checks': ['component-tags', 'binding-forms-and-template-checks'],
+  },
   framework: {
     'configuration, capabilities and cache': ['request-scoped-configuration', 'runtime-capability-planning', 'cache-storage-guarantees'],
     'HTTP, sessions and tooling': ['typed-http-boundaries', 'request-session-store', 'routing-api-render-tooling', 'read-only-project-inspection'],
@@ -24,6 +27,7 @@ export const GUIDANCE_FAMILIES = Object.freeze({
   database: { 'adapters, typed queries, migrations, seeders and transactions': ['parameterized-node-sqlite', 'cloudflare-d1-bound-query', 'typed-model-queries', 'node-sqlite-migrations-and-seeding', 'node-sqlite-transaction-rollback'] },
   scaffold: { 'all recipe registries and conflict-safe composition': ['recipe-registry-planning', 'conflict-safe-composition', 'resource-recipe', 'mutation-recipe', 'scoped-service-recipe', 'protected-route-recipe'] },
   studio: { 'provider selection and embedded lifecycle': ['safe-studio-workflows'] },
+  'typescript-plugin': { 'editor diagnostics and completions': ['editor-template-checks'] },
   ui: { 'typed native controls and all component families': ['native-controls', 'radio-and-range', 'one-time-code', 'searchable-combobox', 'tag-multi-select', 'gregorian-date-controls', 'native-modal-dialogs', 'native-popover', 'action-menus', 'hover-content', 'alert-confirmation', 'modal-command-search', 'native-disclosures', 'typed-tabs', 'native-toggles', 'native-menubar', 'native-navigation', 'native-pagination', 'native-breadcrumb', 'native-layout', 'native-display', 'native-status', 'native-field-empty', 'native-avatar', 'native-typography-item', 'native-table-scroll-area', 'native-resizable', 'native-sidebar', 'native-toast', 'native-carousel', 'native-attachment', 'native-chat-display', 'native-message-scroller', 'native-icon', 'native-auth-form', 'composed-command-palette', 'server-data-table', 'native-dashboard-stat', 'native-settings-panel', 'turnstile-widget-lifecycle'] },
 });
 

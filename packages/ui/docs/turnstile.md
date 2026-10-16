@@ -3,13 +3,13 @@
 Use `Turnstile` from `@cossackframework/ui` inside your form:
 
 ```ts
-component(Turnstile, {
-  id: 'contact-verification',
-  siteKey: '1x00000000000000000000AA',
-  action: 'contact',
-  resetKey: this.challengeVersion,
-  onTokenChange: token => this.form.setFieldValue('turnstileToken', token),
-})
+html`<${Turnstile}
+  id="contact-verification"
+  siteKey="1x00000000000000000000AA"
+  action="contact"
+  resetKey=${this.challengeVersion}
+  onTokenChange=${(token: string) => this.form.setFieldValue('turnstileToken', token)}
+/>`
 ```
 
 Only the site key is public. Never pass a secret key to a component. A client success event supplies a token, not authorization. Verify the token on the server. Make sure that the hostname and action match the expected values. Reject the request before changing data. A forged client callback must grant nothing.

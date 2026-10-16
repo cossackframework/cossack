@@ -82,7 +82,9 @@
     "yaml": "^2.9.0"
   },
   "devDependencies": {
+    "@cossackframework/renderer": "workspace:*",
     "esbuild": "^0.28.1",
+    "prettier": "^3.9.10",
     "vitest": "^4.1.11"
   },
   "publishConfig": {

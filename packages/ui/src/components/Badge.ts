@@ -25,7 +25,7 @@ const VARIANTS: Record<NonNullable<BadgeProps["variant"]>, string> = {
 /**
  * Cossack UI Badge — small status / label pill.
  *
- * Use via `component(Badge, { variant: 'success' }, 'Active')`.
+ * Use as a component tag: `<${Badge} variant="success">Active</${Badge}>`.
  */
 @Component()
 export class Badge extends Cossack {

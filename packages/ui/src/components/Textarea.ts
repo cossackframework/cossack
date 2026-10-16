@@ -26,7 +26,7 @@ const SIZES: Record<NonNullable<TextareaProps["size"]>, string> = {
 /**
  * Cossack UI Textarea — token-driven multiline text control.
  *
- *   ${component(Textarea, { rows: 4, placeholder: 'Write something…' })}
+ *   <${Textarea} rows=${4} placeholder="Write something…" />
  */
 @Component()
 export class Textarea extends Cossack {

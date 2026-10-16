@@ -21,10 +21,12 @@ export type ItemProps = GlobalAttributes<HTMLDivElement> & {
  * A flexible building block for lists, menus, and cards. Pass `media` (leading),
  * children (main content), and `trailing` (trailing) slots.
  *
- *   ${component(Item, {
- *       media: component(Avatar, { src: '/me.png', alt: '', size: 40 }),
- *       trailing: component(Badge, {}, 'New'),
- *   }, html\`<div><p class="font-medium">Tan Nguyen</p><p class="text-sm text-muted-foreground">Admin</p></div>\`)}
+ *   <${Item}
+ *       media=${html\`<${Avatar} src="/me.png" alt="" size=${40} />\`}
+ *       trailing=${html\`<${Badge}>New</${Badge}>\`}
+ *   >
+ *       <div><p class="font-medium">Tan Nguyen</p><p class="text-sm text-muted-foreground">Admin</p></div>
+ *   </${Item}>
  */
 @Component()
 export class Item extends Cossack {

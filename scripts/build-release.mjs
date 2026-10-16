@@ -6,6 +6,7 @@ import { spawn } from 'node:child_process';
 const repository = fileURLToPath(new URL('../', import.meta.url));
 const stages = [
   ['renderer', 'build'],
+  ['typescript-plugin', 'build'],
   ['core', 'build'],
   ['ui', 'build'],
   ['database', 'build'],

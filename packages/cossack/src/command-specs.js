@@ -160,7 +160,8 @@ export const commandSpecs = {
       routes: { positionals: ['route'], flags: { env, verbose: bool('Include route details.') } },
     } }),
   check: new CommandSpec({ name: 'check', globals: readonly, positionals: ['scope'],
-    minPositionals: 1, subcommands: { cloudflare: { flags: { env } }, routes: { flags: { env } }, providers: { flags: { env } }, workflows: { flags: { env } }, schedules: { flags: { env } } } }),
+    minPositionals: 1, subcommands: { cloudflare: { flags: { env } }, routes: { flags: { env } }, providers: { flags: { env } }, workflows: { flags: { env } }, schedules: { flags: { env } },
+      templates: { flags: { verbose: bool('Also list hints, such as component() calls that can be component tags.') } } } }),
   routes: new CommandSpec({ name: 'routes', globals: ['json', 'help', 'dry-run'], flags: {
     env, verbose: bool('Include route details.'), generate: bool('Generate .cossack/routes.ts for typed URL imports.'),
     markdown: bool('Include Markdown routes. The Vite plugin must configure markdownProcessor.'),
@@ -186,6 +187,10 @@ export const commandSpecs = {
     run: str('Read one recorded run UUID; default is the most recently started run.'),
   }, check: (_args, flags) => flags.run !== undefined && !TEST_RUN_ID.test(flags.run)
     ? [{ code: 'COSSACK_TEST_RUN_INVALID', severity: 'error', message: 'Use a test run UUID, not a file path.' }] : [] }),
+  specs: new CommandSpec({ name: 'specs', globals: readonly, flags: {
+    env, output: str('Write the app model JSON to this file instead of stdout.'),
+    schema: bool('Print the JSON Schema of the app model.'),
+  } }),
   info: new CommandSpec({ name: 'info', globals: readonly }),
   version: new CommandSpec({ name: 'version', aliases: ['v'], globals: readonly }),
   upgrade: new CommandSpec({ name: 'upgrade', globals: mutations, positionals: ['dir'], flags: {

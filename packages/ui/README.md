@@ -119,20 +119,28 @@ Then add to `src/style.css` (after `@import "tailwindcss";`):
 
 ## Usage
 
-Components are Cossack components. Consume them with the `component()` helper,
-not JSX:
+Components are Cossack components. Write them as component tags in `html`
+templates, not JSX:
 
 ```ts
-import { html, component } from "@cossackframework/renderer";
+import { html } from "@cossackframework/renderer";
 import { Button, Input, Icon, toast } from "@cossackframework/ui";
 import { ArrowRightIcon } from "@cossackframework/solar-icons/arrow-right";
 
 html`
-  ${component(Button, { variant: "default", "@click": this.save }, "Save")}
-  ${component(Input, { type: "email", placeholder: "you@ex.com" })}
-  ${component(Icon, { entry: ArrowRightIcon, variant: "duotone", size: 20 })}
+  <${Button} variant="default" @click=${this.save}>Save</${Button}>
+  <${Input} type="email" placeholder="you@ex.com" />
+  <${Icon} entry=${ArrowRightIcon} variant="duotone" size=${20} />
 `;
 ```
+
+Attributes become props as `component()` takes them: `name="text"` passes a
+string, a bare `name` passes `true`, `name=${value}` passes any value, and
+`.prop`, `?bool`, `@event` and `...=${spread}` keep their prefixes as prop keys.
+Children go between the tags. Template holes are not contextually typed, so
+annotate callback parameters and use `satisfies` for object literals.
+`cossack check templates` and the Vite build check every attribute against the
+component's props.
 
 ## State props and callback names
 
@@ -271,10 +279,10 @@ Import the icon entry directly from the data package and pass it to `Icon`:
 
 ```ts
 import { Icon } from "@cossackframework/ui";
-import { component } from "@cossackframework/renderer";
+import { html } from "@cossackframework/renderer";
 import { ArrowRightIcon } from "@cossackframework/solar-icons/arrow-right";
 
-html`${component(Icon, { entry: ArrowRightIcon, variant: "duotone", size: 20 })}`;
+html`<${Icon} entry=${ArrowRightIcon} variant="duotone" size=${20} />`;
 ```
 
 For maximum tree-shaking, import a single style instead of the full entry:
@@ -359,7 +367,7 @@ Available component names (kebab-case, passed to `cossack add ui <name>`):
 ## Controlled DataTable
 
 Import `DataTable`, `DataTableProps<Row>` and `DataTableColumn<Row>` from
-`@cossackframework/ui`. Compose with `component(DataTable<Row>, props)`.
+`@cossackframework/ui`. Compose with a tag: `<${DataTable<Row>} ... />`.
 Provide a unique `id` to preserve query-control focus across same-page URL navigation.
 Provide a caption, typed columns, a stable `getRowId`, current-page rows,
 `rowCount`, query `state` and `onStateChange`. Columns use either a row `key` or
@@ -385,7 +393,7 @@ explains selection policy, labels and status behavior.
 
 Button, Input, Label, Checkbox, Switch and Form use typed native attributes and
 `@event` listeners. Unknown props, string boolean values and React-style `onClick`
-are rejected. Pass children as the third argument to `component()`. Listener
+are rejected. Pass children between the component's tags. Listener
 `currentTarget` is typed as the native control. `target` can be a descendant.
 Capture the control before awaiting, because native events clear currentTarget after dispatch.
 Use `disabled: !!loading` for loading counts and an explicit Button `type` in forms.
@@ -425,17 +433,17 @@ The installed `radio-and-range` guide describes attributes, events and accessibi
 ### AuthForm block
 
 ```ts
-import { component } from '@cossackframework/renderer';
-import { AuthForm } from '@cossackframework/ui/blocks';
+import { html } from '@cossackframework/renderer';
+import { AuthForm, type AuthFormContext, type AuthFormData } from '@cossackframework/ui/blocks';
 
-component(AuthForm, {
-  id: 'account-login',
-  defaultMode: 'login',
-  onSubmit: async (data, { signal }) => {
+html`<${AuthForm}
+  id="account-login"
+  defaultMode="login"
+  onSubmit=${async (data: AuthFormData, { signal }: AuthFormContext) => {
     // Call your authentication service. Validate credentials on the server.
     // Return safe { error, fieldErrors } text when needed.
-  },
-});
+  }}
+/>`;
 ```
 
 Use `mode` with `onModeChange` for controlled state. Native credentials remain in
@@ -448,16 +456,16 @@ ejects the block using public UI imports.
 ### CommandPalette block
 
 ```ts
-import { component } from '@cossackframework/renderer';
+import { html } from '@cossackframework/renderer';
 import { CommandPalette } from '@cossackframework/ui/blocks';
 
-component(CommandPalette, {
-  id: 'app-commands',
-  label: 'Application commands',
-  shortcut: true,
-  commands: [{ id: 'home', label: 'Go home', group: 'Navigation' }],
-  onSelect: id => { /* Run the application action for this ID. */ },
-});
+html`<${CommandPalette}
+  id="app-commands"
+  label="Application commands"
+  shortcut
+  commands=${[{ id: 'home', label: 'Go home', group: 'Navigation' }]}
+  onSelect=${(id: string) => { /* Run the application action for this ID. */ }}
+/>`;
 ```
 
 Use `open` with `onOpenChange` for parent ownership, or `defaultOpen` for local

@@ -10,7 +10,7 @@ const execFileAsync = promisify(execFile);
 // is scripts/test-desktop-runtime.mjs. @cossackframework/test-utils is private.
 export const publishedPackageNames = [
   'renderer', 'core', 'node-adapter', 'auth', 'ui',
-  'framework', 'database', 'studio', 'scaffold',
+  'framework', 'database', 'studio', 'scaffold', 'typescript-plugin',
 ].map(name => `@cossackframework/${name}`).concat('cossack');
 
 /** Inspect the installed artifacts, never workspace package manifests or aliases. */

@@ -7,8 +7,8 @@ export type KbdProps = GlobalAttributes<HTMLElement>;
 /**
  * Cossack UI Kbd — keyboard key indicator (e.g. ⌘ + K).
  *
- *   ${component(Kbd, {}, '⌘')}
- *   ${component(Kbd, {}, 'K')}
+ *   <${Kbd}>⌘</${Kbd}>
+ *   <${Kbd}>K</${Kbd}>
  */
 @Component()
 export class Kbd extends Cossack {

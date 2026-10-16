@@ -38,7 +38,13 @@ export type BindingInfo =
   /** Inside a comment. The value is dropped by both renderers. */
   | { kind: 'comment' }
   /** In a tag but not in an attribute value (e.g. `<div ${x}>`). Dropped. */
-  | { kind: 'element' };
+  | { kind: 'element' }
+  /**
+   * A component tag: `<${Card}` opens one and `</${Card}` closes it. `html`
+   * compiles component tags into component() results before any renderer
+   * sees the template, so the renderers never receive this kind.
+   */
+  | { kind: 'tag'; closing: boolean };
 
 export interface AttributeBinding {
   kind: 'attribute';
@@ -119,7 +125,8 @@ export const getTemplateAnalysis = (input: TemplateStringsArray, scopeId?: strin
 
 // --- The tokenizer ---
 
-const enum State {
+/** @internal Tokenizer states, shared with the template parser. */
+export const enum State {
   Data,
   TagName,
   BeforeAttrName,
@@ -134,10 +141,12 @@ const enum State {
   RawText,
 }
 
-const isSpace = (ch: string | undefined) => ch === ' ' || ch === '\n' || ch === '\t' || ch === '\r' || ch === '\f';
+/** @internal */
+export const isSpace = (ch: string | undefined) => ch === ' ' || ch === '\n' || ch === '\t' || ch === '\r' || ch === '\f';
 const isAsciiAlpha = (ch: string | undefined) => !!ch && ((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z'));
 
-interface Tokenizer {
+/** @internal */
+export interface Tokenizer {
   state: State;
   /** Lowercase name of the most recent start tag. Kept after the tag ends. */
   tagName: string;
@@ -151,7 +160,8 @@ interface Tokenizer {
   commentTail: string;
 }
 
-const createTokenizer = (): Tokenizer => ({ state: State.Data, tagName: '', rawTextTag: '', quote: '"', commentTail: '' });
+/** @internal */
+export const createTokenizer = (): Tokenizer => ({ state: State.Data, tagName: '', rawTextTag: '', quote: '"', commentTail: '' });
 
 // A start tag ended: raw-text elements switch to raw text.
 const endStartTag = (t: Tokenizer): void => {
@@ -189,8 +199,9 @@ const nameEnd = (str: string, j: number, stopAtEquals: boolean): number => {
  * `j` when the character must be read again in the new state (it ended a tag
  * name, an attribute name or an unquoted value). Callers compare the state
  * before and after a step to see what the characters did.
+ * @internal
  */
-const step = (t: Tokenizer, str: string, j: number): number => {
+export const step = (t: Tokenizer, str: string, j: number): number => {
   const ch = str[j];
   switch (t.state) {
     case State.Data: {
@@ -443,7 +454,23 @@ export const analyzeTemplate = (input: readonly string[], scopeId?: string): Tem
       // Classify the binding that follows this string.
       switch (t.state) {
         case State.Data:
-          bindings.push({ kind: 'node' });
+          if (str.endsWith('</')) {
+            // `</${Card}>`: the rest of the end tag is read as one.
+            bindings.push({ kind: 'tag', closing: true });
+            t.state = State.EndTag;
+          } else if (str.endsWith('<')) {
+            // `<${Card} ...>`: its attributes follow, as in a start tag.
+            bindings.push({ kind: 'tag', closing: false });
+            t.state = State.BeforeAttrName;
+            t.tagName = '';
+            tagBindings = [];
+            tagHasStaticValue = false;
+            tagString = i;
+            tagOffset = out.length - 1;
+            spaceStart = -1;
+          } else {
+            bindings.push({ kind: 'node' });
+          }
           break;
         case State.Comment:
         case State.BogusComment:

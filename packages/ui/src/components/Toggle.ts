@@ -21,8 +21,9 @@ const SIZES: Record<string, string> = {
 /**
  * Cossack UI Toggle — a two-state button (pressed/unpressed).
  *
- *   ${component(Toggle, { pressed: this.bold, onPressedChange: (v) => this.bold = v },
- *       html\`<strong>B</strong>\`)}
+ *   <${Toggle} pressed=${this.bold} onPressedChange=${(pressed: boolean) => { this.bold = pressed; }}>
+ *       <strong>B</strong>
+ *   </${Toggle}>
  */
 @Component()
 export class Toggle extends Cossack {

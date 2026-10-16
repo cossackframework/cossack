@@ -44,6 +44,7 @@ const LOADERS = {
   check: [() => import('./commands/inspect.js'), 'checkCommand', 'checkHelp'],
   routes: [() => import('./commands/routes.js'), 'routesCommand', 'routesHelp'],
   config: [() => import('./commands/config.js'), 'configCommand', 'configHelp'],
+  specs: [() => import('./commands/specs.js'), 'specsCommand', 'specsHelp'],
   info: [() => import('./commands/info.js'), 'infoCommand', 'infoHelp'],
   version: [() => import('./commands/version.js'), 'versionCommand', 'versionHelp'],
   // engine / maintenance

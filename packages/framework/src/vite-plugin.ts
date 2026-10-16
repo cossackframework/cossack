@@ -11,6 +11,7 @@ import { logRuntimeFailure } from '@cossackframework/core/server-diagnostics';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { installDevelopmentTraceBridge, TRACE_BRIDGE_MODULE } from './vite-development-traces.js';
 import { installPublicReloadPrivacy } from './vite-public-diagnostics.js';
+import { checkTemplatesForBuild, formatTemplateDiagnostic, startDevelopmentTemplateChecks } from './vite-template-diagnostics.js';
 import { clientOptimizedDependencies } from './vite-dependency-optimization.js';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { resolve, dirname, relative } from 'path';
@@ -102,6 +103,12 @@ export interface CossackPagesOptions {
    * `cossack add markdown`.
    */
   markdownProcessor?: MarkdownProcessor;
+  /**
+   * Check html and svg templates (`cossack check templates`): builds fail on
+   * template errors, and the dev server reports diagnostics as files change.
+   * Default true.
+   */
+  templateDiagnostics?: boolean;
 }
 
 let configuredMarkdownProcessor: MarkdownProcessor | undefined;
@@ -113,6 +120,7 @@ export function getConfiguredMarkdownProcessor(): MarkdownProcessor | undefined 
 
 export function cossackPages(options: CossackPagesOptions = {}): Plugin {
   let projectRoot = process.cwd();
+  let templatesChecked = false;
   let publicDirectory: string | false = 'public';
   let developmentBase = '/';
   let traceBridge: ReturnType<typeof installDevelopmentTraceBridge> | undefined;
@@ -234,6 +242,22 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
     },
     async buildStart() {
       const { manifest } = generateRoutes(projectRoot, { includeMarkdown: markdownEnabled });
+      // Builds check every template once, before any module is transformed.
+      if (options.templateDiagnostics !== false && this.environment?.mode !== 'dev' && !templatesChecked) {
+        templatesChecked = true;
+        const result = await checkTemplatesForBuild(projectRoot);
+        if ('unavailable' in result) this.warn(result.unavailable);
+        else {
+          if (result.warnings.length) this.warn(`[cossack] Template warnings:\n${result.warnings.map(formatTemplateDiagnostic).join('\n')}`);
+          const first = result.errors[0];
+          if (first) this.error({
+            code: first.code,
+            message: `[cossack] Template errors:\n${result.errors.map(formatTemplateDiagnostic).join('\n')}`,
+            id: resolve(projectRoot, first.file),
+            loc: { file: resolve(projectRoot, first.file), line: first.line, column: first.column - 1 },
+          });
+        }
+      }
       // `/assets/*` skips the request pipeline (Cloudflare static routing and
       // the generated Node server), and the router answers transport paths
       // before application routes, so no route may live there.
@@ -375,6 +399,29 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
       handler(server) {
         const restoreReloadPrivacy = installPublicReloadPrivacy(server);
         server.httpServer?.once('close', restoreReloadPrivacy);
+        // Middleware-mode servers (SSG rendering, tests) serve no editing session.
+        if (options.templateDiagnostics !== false && server.httpServer && !server.config.server?.middlewareMode) {
+          const logger = server.config.logger;
+          const checks = startDevelopmentTemplateChecks(projectRoot, (file, diagnostics) => {
+            if (!diagnostics.length) logger.info(`[cossack] ${file}: templates are clean.`, { timestamp: true });
+            for (const diagnostic of diagnostics) {
+              const line = `[cossack] ${formatTemplateDiagnostic(diagnostic)}`;
+              if (diagnostic.severity === 'error') logger.error(line, { timestamp: true });
+              else logger.warn(line, { timestamp: true });
+            }
+          }, message => logger.warn(message, { timestamp: true }));
+          if (checks) {
+            const changed = (file: string) => {
+              const path = relative(projectRoot, file);
+              if (!path.startsWith('..') && !path.split(/[\\/]/).includes('node_modules') && /\.(?:[cm]?ts|tsx)$/.test(path)) checks.changed([file]);
+            };
+            server.watcher.on('add', changed).on('unlink', changed).on('change', changed);
+            server.httpServer?.once('close', () => {
+              server.watcher.off('add', changed).off('unlink', changed).off('change', changed);
+              checks.close();
+            });
+          }
+        }
         if (options.developmentTraces) traceBridge = installDevelopmentTraceBridge(server, projectRoot);
         const sourceDirectory = resolve(projectRoot, 'src');
         const updateRealtime = (file: string) => {

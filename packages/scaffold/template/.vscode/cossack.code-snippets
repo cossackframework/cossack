@@ -28,18 +28,20 @@
     "scope": "typescript",
     "body": [
       "import { Cossack, Page } from '@cossackframework/core';",
-      "import { html, component } from '@cossackframework/renderer';",
+      "import { html } from '@cossackframework/renderer';",
       "import { Layout } from '@/components/Layout';",
       "",
       "@Page({ transport: '${1|http,durable-object,websocket|}' })",
       "export default class ${2:PageName} extends Cossack {",
       "  render() {",
-      "    return component(Layout, { dir: 'ltr' }, html`",
-      "      <div>",
-      "        <h1>${3:Page Title}</h1>",
-      "        <p>${4:Page content}</p>",
-      "      </div>",
-      "    `);",
+      "    return html`",
+      "      <\\${Layout} dir=\"ltr\">",
+      "        <div>",
+      "          <h1>${3:Page Title}</h1>",
+      "          <p>${4:Page content}</p>",
+      "        </div>",
+      "      </\\${Layout}>",
+      "    `;",
       "  }",
       "}",
       ""
@@ -311,9 +313,9 @@
     "prefix": "ccompose",
     "scope": "typescript",
     "body": [
-      "\${component(${1:ComponentName}, { ${2:propName}: ${3:value}${4:, '@click': this.${5:handler}} }, \${6:html`<span>slot content</span>`\\})"
+      "<\\${${1:ComponentName}} ${2:propName}=\"${3:value}\"${4: @click=\\${this.${5:handler}\\}}>${6:<span>slot content</span>}</\\${$1}>"
     ],
-    "description": "Insert a component() call to compose a child component"
+    "description": "Insert a component tag to compose a child component"
   },
   "Cossack Auth Guard Middleware": {
     "prefix": "cauthguard",

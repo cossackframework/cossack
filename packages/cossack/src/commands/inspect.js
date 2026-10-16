@@ -131,7 +131,34 @@ export function checkCommand(args, ctx) {
   if (args[0] === 'schedules') return inspectScheduleDeclarations(ctx, 'check');
   if (args[0] === 'providers') return inspectProviderDeclarations(ctx, 'check');
   if (args[0] === 'routes') return checkRoutes(ctx);
+  if (args[0] === 'templates') return checkTemplates(ctx);
   return inspectCloudflare(args, ctx, 'check');
+}
+
+/** Template diagnostics over the project's TypeScript program; never executes project modules. */
+async function checkTemplates(ctx) {
+  try {
+    const root = await findProjectRoot(ctx.cwd);
+    const { checkProjectTemplates, formatTemplateDiagnostic } = await import('../template-check.js');
+    const { files, diagnostics } = checkProjectTemplates(root);
+    const count = (severity) => diagnostics.filter(item => item.severity === severity).length;
+    const counts = { errors: count('error'), warnings: count('warning'), hints: count('hint') };
+    const ok = counts.errors === 0;
+    if (ctx.flags.json === true) {
+      writeResult('check', { ok, data: { scope: 'templates', files, ...counts }, diagnostics: diagnostics.map(({ code, severity, message, file, line, column, source }) =>
+        ({ code, severity, message, file, line, column, source })) });
+    } else {
+      for (const diagnostic of diagnostics) {
+        if (diagnostic.severity !== 'hint' || ctx.flags.verbose === true) console.error(formatTemplateDiagnostic(diagnostic));
+      }
+      const hints = counts.hints && ctx.flags.verbose !== true ? ` ${counts.hints} hint(s); use --verbose to list them.` : '';
+      console.log(`Templates in ${files} file(s): ${counts.errors} error(s), ${counts.warnings} warning(s).${hints}`);
+    }
+    return ok ? 0 : 1;
+  } catch (error) {
+    const code = diagnosticCode(error, 'COSSACK_INSPECTION_FAILED');
+    return commandFailure(ctx, 'check', code, ctx.flags.json === true ? diagnosticMessage(error, code) : error.message);
+  }
 }
 
 export function inspectHelp() {
@@ -152,7 +179,7 @@ Dynamic configuration/overrides remain unknown; modules are never executed.`);
 }
 
 export function checkHelp() {
-  return commandSpecs.check.help(`cossack check <cloudflare|routes|providers|schedules|workflows> [--json]
+  return commandSpecs.check.help(`cossack check <cloudflare|routes|providers|schedules|workflows|templates> [--json]
 
 Validate local Cloudflare deployment configuration (--env <name>) or static
 route metadata without writing files. --env selects Cloudflare configuration
@@ -171,7 +198,12 @@ Binding entries distinguish configured references from unresolved setup and mark
 remote existence/access as not checked. A configured name or ID does not prove
 that the resource exists or is available in the selected account.
 Provider checks validate declared cache requirements, binding names and limiter
-selection. They do not verify process/secret overrides or remote readiness.`);
+selection. They do not verify process/secret overrides or remote readiness.
+Template checks read every html and svg template in the project's TypeScript
+program: markup structure, binding forms, attribute names and values against
+the native attribute map, event handlers, ?boolean and .property bindings, and
+component tag props. Each diagnostic names file:line:column. Errors fail the
+check; warnings and hints do not. --verbose also lists hints.`);
 }
 
 async function inspectScheduleDeclarations(ctx, command) {

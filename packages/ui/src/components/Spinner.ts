@@ -20,7 +20,7 @@ export type SpinnerProps = Omit<SvgAttributes, 'role' | 'aria-label' | 'aria-lab
  * `animate-spin`). The arc uses `currentColor` so it inherits text color
  * (set via the `color` prop token class).
  *
- *   ${component(Spinner, { size: 24, color: 'text-primary', label: 'Loading' })}
+ *   <${Spinner} size=${24} color="text-primary" label="Loading" />
  */
 @Component()
 export class Spinner extends Cossack {

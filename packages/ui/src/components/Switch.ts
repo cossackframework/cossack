@@ -13,7 +13,7 @@ export type SwitchProps = CheckControlAttributes & {
  * native checkbox, avoiding nested interactive semantics. Pure CSS; the native
  * checkbox is visually hidden and drives a styled track/thumb.
  *
- *   ${component(Switch, { checked: this.on, '@change': handler })}
+ *   <${Switch} checked=${this.on} @change=${handler} />
  */
 @Component()
 export class Switch extends Cossack {

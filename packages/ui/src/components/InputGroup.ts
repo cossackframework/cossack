@@ -16,15 +16,8 @@ export type InputGroupProps = InputAttributes & {
  * Useful for email fields (@), currency ($), URLs (https://), or trailing
  * buttons (copy, show/hide password).
  *
- *   ${component(InputGroup, {
- *       prefix: '@',
- *       placeholder: 'username',
- *   })}
- *   ${component(InputGroup, {
- *       prefix: html\`<svg .../>\`,
- *       suffix: 'kg',
- *       type: 'number',
- *   })}
+ *   <${InputGroup} prefix="@" placeholder="username" />
+ *   <${InputGroup} prefix=${html\`<svg .../>\`} suffix="kg" type="number" />
  */
 @Component()
 export class InputGroup extends Cossack {

@@ -43,10 +43,10 @@ const SIZES: Record<NonNullable<PasswordInputProps["size"]>, string> = {
  * is hidden, slashed eye when revealed. Clicking toggles between `password`
  * and `text` input types.
  *
- *   ${component(PasswordInput, {
- *       value: this.password,
- *       onValueChange: (v) => { this.password = v; },
- *   })}
+ *   <${PasswordInput}
+ *       value=${this.password}
+ *       onValueChange=${(value: string) => { this.password = value; }}
+ *   />
  */
 @Component()
 export class PasswordInput extends Cossack {
