@@ -135,7 +135,9 @@ export class Sidebar extends Cossack {
         </aside>`;
     }
     private icon(item: SidebarItem, rail: boolean) {
-        return html`<span aria-hidden="true" class="cs-sidebar__icon w-4 h-4 shrink-0 inline-flex items-center justify-center">${item.icon ? component(Icon,{entry:item.icon,size:16}) : rail ? Array.from(item.label.trim())[0] : null}</span>`;
+        // Items without an icon, such as submenu links, get no empty slot; the rail shows an initial.
+        if (!item.icon && !rail) return null;
+        return html`<span aria-hidden="true" class="cs-sidebar__icon w-4 h-4 shrink-0 inline-flex items-center justify-center">${item.icon ? component(Icon,{entry:item.icon,size:16}) : Array.from(item.label.trim())[0]}</span>`;
     }
     private link(item: SidebarItem, rail: boolean) {
         const { '@click': supplied, ...props } = item.linkProps ?? {};
