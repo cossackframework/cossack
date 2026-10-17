@@ -1,5 +1,8 @@
-// `pnpm test:databases`: the live PostgreSQL and MySQL suites, run locally
-// before a release (docs/testing.md).
+// `pnpm test:databases`: the live PostgreSQL, MySQL and FastDB suites, run
+// locally before a release (docs/testing.md).
+//
+// The FastDB client and CMS suites start `fastdb serve` themselves. They need a
+// FastDB 2.8.0+ executable: set COSSACK_TEST_FASTDB_BIN or put `fastdb` on PATH.
 //
 // With COSSACK_TEST_POSTGRES_URL and COSSACK_TEST_MYSQL_URL both set, the
 // suites use those databases. Otherwise this script starts the pinned
@@ -40,6 +43,14 @@ const SUITES = [
   {
     name: 'Studio live introspection tests',
     args: ['--filter', '@cossackframework/studio', 'run', 'test', '--watch=false', 'tests/live-introspection.test.ts'],
+  },
+  {
+    name: 'FastDB client tests',
+    args: ['--filter', '@cossackframework/fastdb', 'run', 'test', '--watch=false'],
+  },
+  {
+    name: 'CMS tests',
+    args: ['--filter', '@cossackframework/cms', 'run', 'test', '--watch=false'],
   },
   {
     name: 'Studio MySQL definition browser test',
