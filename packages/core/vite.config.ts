@@ -34,6 +34,7 @@ export default defineConfig({
         'jobs/index': path.resolve(__dirname, 'src/jobs/index.ts'),
         'schedules/index': path.resolve(__dirname, 'src/schedules/index.ts'),
         'notifications/index': path.resolve(__dirname, 'src/notifications/index.ts'),
+        'hooks/index': path.resolve(__dirname, 'src/hooks/index.ts'),
         input: path.resolve(__dirname, 'src/input.ts'),
         'app-model': path.resolve(__dirname, 'src/app-model.ts'),
         devtools: path.resolve(__dirname, 'src/devtools.ts'),

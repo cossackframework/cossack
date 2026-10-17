@@ -859,7 +859,7 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
       const middleware = middlewares[position];
       if (!middleware) { c.res = await handler(c); return; }
       const response = await middleware(c, () => dispatch(position + 1));
-      if (response) c.res = response;
+      if (response instanceof Response) c.res = response;
     };
     await dispatch(0);
     return c.res;

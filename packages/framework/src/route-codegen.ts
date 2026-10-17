@@ -2,6 +2,7 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { buildRoutesManifest, computeRouteIds, type RoutesManifest } from './route-ids.js';
+import { scanPageSources } from './plugin-sources.js';
 
 export const ROUTES_MODULE_ID = 'virtual:cossack-routes';
 export const ROUTES_SOURCE_PATH = '.cossack/routes.ts';
@@ -52,17 +53,22 @@ export function scanPagesDir(
   return { pageKeys: pageKeys.sort(), layoutKeys: layoutKeys.sort(), markdownKeys: markdownKeys.sort() };
 }
 
-/** Same discovered files and collision resolution as virtual:cossack-pages. */
+/**
+ * Same discovered files and collision resolution as virtual:cossack-pages,
+ * including plugin pages under `src/plugins/<name>/pages`.
+ */
 export function discoverRoutes(projectRoot: string, includeMarkdown = false): RoutesManifest {
-  const { pageKeys, layoutKeys } = scanPagesDir(resolve(projectRoot, 'src/pages'), includeMarkdown);
-  return buildRoutesManifest(pageKeys, layoutKeys, computeRouteIds(pageKeys, layoutKeys));
+  const { pageKeys, layoutKeys, sources } = scanPageSources(projectRoot, includeMarkdown);
+  const manifest = buildRoutesManifest(pageKeys, layoutKeys, computeRouteIds(pageKeys, layoutKeys));
+  const pluginSources = Object.fromEntries(Object.entries(sources).filter(([key, source]) => key !== source));
+  return Object.keys(pluginSources).length ? { ...manifest, sources: pluginSources } : manifest;
 }
 
 /** Runtime paths plus type-only native exports. No application runtime imports enter the client graph. */
 export function renderRouteSource(manifest: RoutesManifest): string {
   const patterns = Object.fromEntries(manifest.routes.filter(route => route.addressable).map(route => [route.name, route.pattern]));
   const apiModules = manifest.routes.filter(route => route.kind === 'api' && route.addressable)
-    .map(route => `  ${JSON.stringify(route.name)}: typeof import(${JSON.stringify('..' + route.filePath)});`).join('\n');
+    .map(route => `  ${JSON.stringify(route.name)}: typeof import(${JSON.stringify('..' + (manifest.sources?.[route.filePath] ?? route.filePath))});`).join('\n');
   return GENERATED_HEADER + "import { createRouteBuilder } from '@cossackframework/core/routes';\n" +
     `export const routePatterns = ${JSON.stringify(patterns, null, 2)} as const;\n` +
     'export const routes = createRouteBuilder(routePatterns);\n' +

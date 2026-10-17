@@ -204,7 +204,8 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
       // APIs or platform bindings, without a known server-library import.
       // Keep their export interface in the browser route catalog, but never
       // load their bodies or transitive database/credential dependencies.
-      if (/(?:^|[/\\])src[/\\]pages[/\\].+\.m?ts$/.test(cleanId)) {
+      // Plugin pages under `src/plugins/<name>/pages/` follow the same rule.
+      if (/(?:^|[/\\])src[/\\](?:plugins[/\\][^/\\]+[/\\])?pages[/\\].+\.m?ts$/.test(cleanId)) {
         // An unreadable page fails the build instead of being skipped.
         source = readFileSync(cleanId, 'utf8');
         const pageProgram = parsedModule();
@@ -223,7 +224,8 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
       // Match files in the project's `src/config/` directory. Anchored to
       // `/src/config/` so it doesn't catch unrelated `/config/` paths in
       // dependencies or other project subdirectories.
-      if (/(^|\/)src\/config\/[^/]+\.m?ts$/.test(cleanId)) {
+      // Plugin configuration (`src/plugins/<name>/config/`) is server-only too.
+      if (/(^|\/)src\/(?:plugins\/[^/]+\/)?config\/[^/]+\.m?ts$/.test(cleanId)) {
         return `export default {};\n`;
       }
 
@@ -366,6 +368,9 @@ function isServerOnlyImportSource(source: string): boolean {
     source === '@cossackframework/framework/session' ||
     source === '@cossackframework/auth' ||
     source.startsWith('@cossackframework/auth/') ||
+    // FastDB clients and the CMS host: pages use them only inside @Server methods.
+    ((source === '@cossackframework/fastdb' || source.startsWith('@cossackframework/fastdb/')) && !CLIENT_SAFE_IMPORT_SOURCES.has(source)) ||
+    source === '@cossackframework/cms/server' ||
     source.startsWith('node:');
 }
 
@@ -915,6 +920,14 @@ function authClientStub(namedExports: string[]): string {
 const SERVER_ONLY_IMPORT_SOURCES = new Set([
   '@cossackframework/database',
   '@cossackframework/framework/session',
+  // FastDB credentials, pending writes and CMS repositories never reach the client.
+  '@cossackframework/fastdb',
+  '@cossackframework/cms/server',
+]);
+
+/** Client-safe subpaths of otherwise server-only packages (typed values and transport codecs). */
+const CLIENT_SAFE_IMPORT_SOURCES = new Set([
+  '@cossackframework/fastdb/values',
 ]);
 
 /**
@@ -986,6 +999,7 @@ function isServerOnlyProgram(program: any): boolean {
 
 function isServerOnlyModuleSource(spec: string): boolean {
   if (spec.startsWith('node:')) return true;
+  if (CLIENT_SAFE_IMPORT_SOURCES.has(spec)) return false;
   return [...SERVER_ONLY_IMPORT_SOURCES].some((source) =>
     spec === source || spec.startsWith(`${source}/`),
   );
