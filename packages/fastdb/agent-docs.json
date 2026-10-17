@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "guides": [
+    {
+      "id": "fastdb-request-binding",
+      "title": "Bind FastDB into requests with exact write recovery",
+      "summary": "Create one FastDB binding per isolate or process with a durable pending-write store, explicit work limits and engine preflight; reads are fresh snapshots and each write is one atomic batch.",
+      "imports": [
+        "@cossackframework/fastdb",
+        "@cossackframework/fastdb/node",
+        "@cossackframework/fastdb/cloudflare"
+      ],
+      "markdown": "`createFastDB({ url, token, pending })` connects to a local `fastdb serve` URL (`http://127.0.0.1:4321`) or a FastDB Cloud database URL. The token is a server-only secret: a local service token or a Cloud database grant with `query` scope. The client uses Web APIs only (fetch, crypto, AbortSignal), so the same code runs on Cloudflare Workers without `nodejs_compat` and on Node.js.\n\nEvery write is saved in the pending store before dispatch. Use `FilePendingWriteStore` from `@cossackframework/fastdb/node` on Node and `DurableObjectPendingWriteStore` with the exported `FastDBPendingWrites` Durable Object on Workers; `MemoryPendingWriteStore` is for tests. When a response is lost after dispatch, `write()` throws `UncertainWriteError` and keeps the saved request. `recoverPending()` replays the exact request ID and body from a scheduled path; it never sends a replacement write. A write outside the 64-request receipt window needs a reconciler for its `kind`.\n\nReads use `/read` with `afterSequence` as a causal lower bound. Each call sends explicit `workLimits` (defaults from the binding). Responses with 503 or 429 and `retry-after` are retried a bounded number of times. `preflight()` reads the engine release and throws `EngineVersionError` for engines older than 2.8.0; local services are checked at connect. Request paths never warm a Cloud database: call `warm()` from a schedule. `retryConflicts` re-runs a batch the engine rolled back for a concurrent write to the same rows, only where re-evaluating the statements is correct.",
+      "examples": [
+        {
+          "id": "fastdb-request-binding",
+          "language": "typescript",
+          "source": "import { createFastDB, MemoryPendingWriteStore, objects, UncertainWriteError, RecordId } from '@cossackframework/fastdb';\n\nconst db = createFastDB({\n    url: 'http://127.0.0.1:4321',\n    token: 'local-service-token',\n    // Use FilePendingWriteStore (Node) or DurableObjectPendingWriteStore (Workers) in production.\n    pending: new MemoryPendingWriteStore(),\n    workLimits: { read: { rowsRead: 10_000 }, write: { rowMutations: 100 } },\n});\n\nexport async function rename(id: string, title: string, signal: AbortSignal): Promise<number> {\n    try {\n        const result = await db.write([\n            { sql: 'UPDATE posts SET title = $title WHERE id = $id', params: { $title: title, $id: new RecordId('posts', id) } },\n        ], { signal, kind: 'posts.rename' });\n        return Number(result.results[0]!.affected);\n    } catch (error) {\n        // The write is saved; recoverPending() replays the exact request later.\n        if (error instanceof UncertainWriteError) return -1;\n        throw error;\n    }\n}\n\nexport async function titles(): Promise<string[]> {\n    const result = await db.read([{ sql: 'SELECT title FROM posts ORDER BY title LIMIT 20' }]);\n    return objects<{ title: string }>(result.results[0]!).map(row => row.title);\n}\n"
+        }
+      ]
+    },
+    {
+      "id": "fastdb-typed-values",
+      "title": "Keep FastDB values typed across JSON boundaries",
+      "summary": "Integers are bigint, explicit floats are Float64, record IDs keep string or integer keys, and the transport codec carries them through SSR, RPC and plugin boundaries.",
+      "imports": [
+        "@cossackframework/fastdb/values",
+        "@cossackframework/fastdb"
+      ],
+      "markdown": "FastDB results are positional rows of typed values. Integer columns decode to `bigint`, numbers to `Float64` so an integral float stays a float, and record IDs to `RecordId`, where `posts:1` with a string key differs from `posts:1` with an integer key. `Vector` and `Uint8Array` carry vectors and bytes. Pass JavaScript numbers for integers within the safe range; use `bigint` or `Float64` otherwise. `undefined`, array holes, non-finite numbers and nesting deeper than 64 are rejected.\n\n`objects(result)` maps rows to objects by column name and throws `DuplicateColumnError` when a query repeats a column: alias duplicates instead of losing one. `one()` and `scalar()` assert cardinality.\n\nJSON drops these types. `toTransport(value)` returns a JSON-safe, versioned form (`{ $fdb: 1, t, v }` for bigint, Float64, records, bytes and vectors; plain objects that contain `$fdb` are wrapped), and `fromTransport()` validates and restores it. `@cossackframework/fastdb/values` is the client-safe entry: it has no client, credentials or Node APIs, so components can decode values the server sent.",
+      "examples": [
+        {
+          "id": "fastdb-typed-values",
+          "language": "typescript",
+          "source": "import { Float64, RecordId, Vector, fromTransport, toTransport, type Value } from '@cossackframework/fastdb/values';\n\nconst record: Value = {\n    id: new RecordId('tickets', 7n),\n    owner: new RecordId('users', 'ada'),\n    score: new Float64(1),\n    embedding: Vector.float32([0.25, 0.5]),\n};\n\n// JSON-safe for SSR state, RPC and plugin boundaries; decoding restores every type.\nconst wire = JSON.stringify(toTransport(record));\nconst decoded = fromTransport(JSON.parse(wire)) as { id: RecordId; score: Float64 };\nexport const sameKey: boolean = decoded.id.key === 7n && decoded.score.value === 1;\n"
+        }
+      ]
+    },
+    {
+      "id": "fastdb-sql-ledgers",
+      "title": "Run the portable SQL ledgers on FastDB",
+      "summary": "sqlDatabase() gives FastDB relational tables D1's prepare().bind() shape, so core's job and notification ledgers keep their lease and fencing semantics.",
+      "imports": [
+        "@cossackframework/fastdb"
+      ],
+      "markdown": "The job and notification ledgers in `@cossackframework/core` (`createSqlJobStore`, `createSqlNotificationStore`) take any database with D1's `prepare(sql).bind(...).first/all/run` shape; `createD1JobStore` is the same ledger on a D1 binding. `sqlDatabase(db)` provides that shape over FastDB: SELECT and WITH statements are fresh reads, other statements are one atomic write each, `run()` reports the affected count, and positional `?` placeholders become named parameters. Integer results within the safe range become numbers, as D1 returns them.\n\nCreate the tables first with the ledger's schema (`jobStateSchema`, `notificationStateSchema`). The CMS host creates them in its host migration. Rolled-back write conflicts are retried, which keeps conditional claims equivalent to serial execution.",
+      "examples": [
+        {
+          "id": "fastdb-sql-ledgers",
+          "language": "typescript",
+          "source": "import { createSqlJobStore, jobStateSchema } from '@cossackframework/core/jobs';\nimport { createFastDB, MemoryPendingWriteStore, sqlDatabase } from '@cossackframework/fastdb';\n\nconst db = createFastDB({ url: 'http://127.0.0.1:4321', token: 'local-service-token', pending: new MemoryPendingWriteStore() });\n\n// The same lease and fencing semantics as the D1 ledger, on a FastDB relational table.\nexport const jobs = createSqlJobStore(sqlDatabase(db, { kind: 'jobs' }));\nexport const schema: string = jobStateSchema;\n"
+        }
+      ]
+    }
+  ]
+}
