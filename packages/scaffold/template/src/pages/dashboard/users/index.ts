@@ -4,8 +4,10 @@ import { html, component } from '@cossackframework/renderer';
 import { PenNewRoundIcon as editIconSvg } from '@cossackframework/solar-icons/pen-new-round/line';
 import { TrashBinMinimalisticIcon as deleteIconSvg } from '@cossackframework/solar-icons/trash-bin-minimalistic/line';
 import { MagnifierIcon as searchIconSvg } from '@cossackframework/solar-icons/magnifier/line';
-import { guard } from '../../../services/rbac';
+import { canManageUser, guard } from '../../../services/rbac';
+import type { PublicUser } from '../../../auth';
 import {
+    getUser,
     listUsers,
     deleteUser,
     type UserSummary,
@@ -86,6 +88,11 @@ export default class UsersPage extends Cossack {
             return;
         }
         try {
+            const target = await getUser(id);
+            if (target && !canManageUser(this.user as PublicUser | undefined, target)) {
+                this.error = __('Only an administrator can delete this account.');
+                return;
+            }
             await deleteUser(id);
             const result = await this.query();
             const maxPage = Math.max(1, Math.ceil(result.total / PAGE_SIZE));

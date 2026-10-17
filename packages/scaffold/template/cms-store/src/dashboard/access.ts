@@ -1,0 +1,87 @@
+import type { Context } from 'hono';
+import { ANONYMOUS, evaluateRule, hasPermission, PERMISSIONS, type Principal } from '@cossackframework/cms';
+import type { CmsHost } from '@cossackframework/cms/server';
+import { icon } from '../cms/icons';
+import { currentCms } from '../cms/index';
+import { dashboardModules } from './registry';
+import type { DashboardModule, DashboardModuleLink } from './types';
+
+/**
+ * Navigation for the signed-in user, in WordPress order: content first (posts, media, pages,
+ * other collections, plugin resources and links), then administration. Each item shows only
+ * with the permission its screens require.
+ */
+export async function navigation(c: Context): Promise<DashboardModule[]> {
+    const cms = c.get('cms') as CmsHost;
+    const principal: Principal = c.get('principal') ?? ANONYMOUS;
+    const can = (permission: string) => hasPermission(principal, permission);
+    const content: DashboardModule[] = [];
+    const ordered = [...cms.collections()].sort((a, b) => (a.name === 'posts' ? -1 : b.name === 'posts' ? 1 : 0));
+    for (const collection of ordered) {
+        const resource = cms.resourceById(`cms/${collection.name}`);
+        const create = evaluateRule(resource.access.create, principal) !== 'deny';
+        if (!create && !can(`cms/${collection.name}:update`) && !can(`cms/${collection.name}:read`)) continue;
+        const base = `/dashboard/content/${collection.name}`;
+        const children: DashboardModuleLink[] = [{ label: `All ${collection.label.toLowerCase()}`, href: base }];
+        if (create) children.push({ label: 'Add new', href: `${base}/new` });
+        if (can(PERMISSIONS.manageTerms)) {
+            for (const name of collection.taxonomies ?? []) {
+                const taxonomy = cms.taxonomies.declarations.find(entry => entry.name === name);
+                if (taxonomy) children.push({ label: taxonomy.label, href: `/dashboard/terms/${name}` });
+            }
+        }
+        content.push({ id: `collection-${collection.name}`, label: collection.label, href: base, icon: icon(collection.icon), authorization: 'authenticated', children });
+    }
+    if (can(PERMISSIONS.upload) || can(PERMISSIONS.manageMedia)) {
+        // Media follows posts, as in WordPress.
+        content.splice(Math.min(1, content.length), 0, { id: 'media', label: 'Media', href: '/dashboard/media', icon: icon('gallery'), authorization: 'authenticated',
+            children: [{ label: 'Library', href: '/dashboard/media' }, { label: 'Add new', href: '/dashboard/media/new' }] });
+    }
+    for (const resource of cms.readable(principal)) {
+        if (resource.owner === 'cms') continue;
+        const create = evaluateRule(resource.access.create, principal) !== 'deny';
+        const base = `/dashboard/content/${resource.owner}.${resource.name}`;
+        content.push({ id: `resource-${resource.owner}-${resource.name}`, label: resource.label ?? resource.id, href: base, icon: icon('widget-4'), authorization: 'authenticated',
+            children: [{ label: 'All entries', href: base }, ...(create ? [{ label: 'Add new', href: `${base}/new` }] : [])] });
+    }
+    // Comments follow the content they belong to; the label shows how many wait for moderation.
+    if (can(PERMISSIONS.moderateComments) && cms.collections().some(collection => collection.comments)) {
+        const pending = await cms.comments.counts().then(counts => counts.pending).catch(() => 0);
+        content.push({ id: 'comments', label: pending ? `Comments (${pending})` : 'Comments', href: '/dashboard/comments', icon: icon('chat-round-dots'), authorization: { permission: PERMISSIONS.moderateComments } });
+    }
+    // Host slot: active plugins add navigation links.
+    for (const link of await cms.slotLinks('dashboard.nav', principal).catch(() => [])) {
+        content.push({ id: `plugin-${link.plugin}-${link.href}`, label: link.label, href: link.href, icon: icon('plug-circle'), authorization: 'authenticated' });
+    }
+
+    const admin: DashboardModule[] = [];
+    if (can(PERMISSIONS.manageAppearance)) {
+        admin.push({ id: 'appearance', label: 'Appearance', href: '/dashboard/appearance', icon: icon('palette-2'), authorization: { permission: PERMISSIONS.manageAppearance },
+            children: [{ label: 'Themes', href: '/dashboard/appearance' }, { label: 'Customize', href: '/dashboard/appearance/customize' }, { label: 'Menus', href: '/dashboard/appearance/menus' }] });
+    }
+    if (can(PERMISSIONS.manageCollections)) {
+        admin.push({ id: 'collections', label: 'Collections', href: '/dashboard/collections', icon: icon('structure'), authorization: { permission: PERMISSIONS.manageCollections },
+            children: [{ label: 'All collections', href: '/dashboard/collections' }, { label: 'Taxonomies', href: '/dashboard/taxonomies' }, { label: 'Blocks', href: '/dashboard/blocks' }] });
+    }
+    if (can(PERMISSIONS.managePlugins)) admin.push({ id: 'plugins', label: 'Plugins', href: '/dashboard/plugins', icon: icon('plug-circle'), authorization: { permission: PERMISSIONS.managePlugins } });
+    // Roles belong to role managers; the other administration modules to user managers.
+    const registry = dashboardModules.filter(module => module.authorization === 'authenticated'
+        || (module.authorization === 'admin' ? can(module.id === 'roles' ? PERMISSIONS.manageRoles : PERMISSIONS.manageUsers) : can(module.authorization.permission)));
+    admin.push(...registry.filter(module => module.placement !== 'account'));
+    const tools: DashboardModuleLink[] = [
+        ...(can(PERMISSIONS.manageRedirects) ? [{ label: 'Redirects', href: '/dashboard/tools/redirects' }] : []),
+        ...(can(PERMISSIONS.manageWebhooks) ? [{ label: 'Webhooks', href: '/dashboard/tools/webhooks' }] : []),
+        ...(can(PERMISSIONS.manageSchema) ? [{ label: 'Schema', href: '/dashboard/tools/schema' }] : []),
+    ];
+    if (tools.length) admin.push({ id: 'tools', label: 'Tools', href: tools[0]!.href, icon: icon('tuning-2'), authorization: 'authenticated', children: tools });
+    if (can(PERMISSIONS.manageSettings)) admin.push({ id: 'site-settings', label: 'Settings', href: '/dashboard/settings/general', icon: icon('settings'), authorization: { permission: PERMISSIONS.manageSettings },
+        children: [...cms.settings.groups.filter(group => (group.permission ?? PERMISSIONS.manageSettings) === PERMISSIONS.manageSettings).map(group => ({ label: group.label, href: `/dashboard/settings/${group.id}` })),
+            { label: 'Permalinks', href: '/dashboard/settings/permalinks' }] });
+    return [...content, ...admin, ...registry.filter(module => module.placement === 'account')];
+}
+
+/** The site title from General settings, shown in the dashboard's sidebar and footer. */
+export async function siteName(): Promise<string> {
+    try { return await currentCms().settings.get('general.siteTitle'); }
+    catch { return config('app.name'); }
+}

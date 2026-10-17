@@ -1,0 +1,210 @@
+/**
+ * The entry editor's model: plain, serializable views of a collection's fields, and the
+ * conversion from form values to typed record input. Client-safe; the server converts and
+ * validates again before writing.
+ */
+import { slugify, validateValue, type FieldDeclaration, type FieldKind } from '@cossackframework/cms';
+
+/** One field as the editor shows it. */
+export interface EditorField {
+    name: string;
+    label: string;
+    kind: FieldKind;
+    required: boolean;
+    nullable: boolean;
+    description: string;
+    placement: 'main' | 'sidebar';
+    format: 'plain' | 'markdown';
+    /** enum values, with labels. */
+    choices: { value: string; label: string }[];
+    /** list item kind. */
+    items: string;
+    media: boolean;
+    /** reference: the target resource, with selectable entries. */
+    target: string;
+    /** blocks: the block types allowed, or all. */
+    blocks: string[];
+    min: number | null;
+    max: number | null;
+    /** The declared default, if any. */
+    defaultValue: unknown;
+    /** A group's subfields, such as an entry's SEO settings; empty otherwise. */
+    fields: EditorField[];
+}
+
+export interface TermOption { id: string; name: string; depth: number }
+
+export interface EditorTaxonomy {
+    name: string;
+    label: string;
+    singular: string;
+    hierarchical: boolean;
+    terms: TermOption[];
+}
+
+export interface BlockOption {
+    name: string;
+    label: string;
+    description: string;
+    fields: EditorField[];
+}
+
+export interface EditorView {
+    /** Resource ID, such as `cms/posts`. */
+    resource: string;
+    /** The route segment: `posts`, or `<owner>.<name>` for plugin resources. */
+    route: string;
+    label: string;
+    singular: string;
+    titleField: string;
+    slug: boolean;
+    publishable: boolean;
+    hierarchical: boolean;
+    /** Public URL base, or null when entries are not on the site. */
+    path: string | null;
+    fields: EditorField[];
+    taxonomies: EditorTaxonomy[];
+    blocks: BlockOption[];
+}
+
+/** Values the form controls hold: strings, booleans and lists. */
+export type EditorValues = Record<string, unknown>;
+
+/** Editor fields of a declaration, leaving out the ones the editor lays out itself. */
+export function editorFields(fields: { readonly [name: string]: FieldDeclaration }, special: readonly string[]): EditorField[] {
+    return Object.entries(fields).filter(([name]) => !special.includes(name)).map(([name, declaration]) => editorField(name, declaration));
+}
+
+export function editorField(name: string, declaration: FieldDeclaration & { choices?: { readonly [value: string]: string } }): EditorField {
+    const sidebar = declaration.kind === 'boolean' || (declaration.media === true && declaration.kind === 'string') || declaration.kind === 'reference';
+    return {
+        name, label: declaration.label ?? name, kind: declaration.kind, required: declaration.required === true, nullable: declaration.nullable === true,
+        description: declaration.description ?? '', placement: declaration.placement ?? (sidebar ? 'sidebar' : 'main'),
+        format: declaration.format ?? 'plain',
+        choices: (declaration.values ?? []).map(value => ({ value, label: declaration.choices?.[value] ?? value })),
+        items: declaration.items ?? '', media: declaration.media === true, target: declaration.target ?? '', blocks: [...(declaration.blocks ?? [])],
+        min: declaration.min ?? null, max: declaration.max ?? null, defaultValue: declaration.default ?? null,
+        fields: Object.entries(declaration.fields ?? {}).map(([sub, nested]) => editorField(sub, nested)),
+    };
+}
+
+/** The value a control shows for a stored value. */
+export function controlValue(field: EditorField, value: unknown): unknown {
+    // A group edits as an object of its subfields' control values.
+    if (field.fields.length) {
+        const object = value && typeof value === 'object' ? value as Record<string, unknown> : {};
+        return Object.fromEntries(field.fields.map(sub => [sub.name, controlValue(sub, object[sub.name])]));
+    }
+    if (value === null || value === undefined) {
+        if (field.kind === 'boolean') return false;
+        if (field.kind === 'list' && field.media) return [];
+        if (field.kind === 'blocks') return [];
+        if (field.kind === 'richtext') return null;
+        return '';
+    }
+    switch (field.kind) {
+        case 'datetime': return new Date(value as number).toISOString().slice(0, 16);
+        case 'json': return JSON.stringify(value, null, 2);
+        case 'list': return field.media ? value : (value as unknown[]).join('\n');
+        case 'integer': case 'number': return String(value);
+        case 'blocks': case 'richtext': return value;
+        default: return value;
+    }
+}
+
+/** A declaration to validate a converted value against. */
+function declarationOf(field: EditorField): FieldDeclaration {
+    return {
+        kind: field.kind, required: field.required, nullable: field.nullable,
+        ...(field.min !== null ? { min: field.min } : {}), ...(field.max !== null ? { max: field.max } : {}),
+        ...(field.choices.length ? { values: field.choices.map(choice => choice.value) } : {}),
+        ...(field.items ? { items: field.items as FieldDeclaration['items'] } : {}),
+        ...(field.fields.length ? { fields: Object.fromEntries(field.fields.map(sub => [sub.name, declarationOf(sub)])) } : {}),
+    };
+}
+
+/**
+ * Typed input from control values. Empty optional controls clear nullable fields and keep the
+ * others unchanged; unreadable text is reported per field.
+ */
+export function editorInput(fields: readonly EditorField[], values: EditorValues, blocks: readonly BlockOption[] = []): { input: Record<string, unknown>; errors: Record<string, string> } {
+    const input: Record<string, unknown> = {};
+    const errors: Record<string, string> = {};
+    for (const field of fields) {
+        if (!(field.name in values)) continue;
+        const converted = convert(field, values[field.name], blocks);
+        if ('error' in converted) errors[field.name] = converted.error;
+        else if (converted.value !== undefined) input[field.name] = converted.value;
+    }
+    return { input, errors };
+}
+
+function convert(field: EditorField, raw: unknown, blocks: readonly BlockOption[]): { value: unknown } | { error: string } {
+    if (field.fields.length) {
+        // Empty subfields and unchecked boxes are left out, so the group holds only what was set.
+        const source = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
+        const group: Record<string, unknown> = {};
+        for (const sub of field.fields) {
+            const converted = convert(sub, source[sub.name], blocks);
+            if ('error' in converted) return { error: `${sub.label} ${converted.error}` };
+            if (converted.value !== undefined && converted.value !== null && converted.value !== '' && converted.value !== false) group[sub.name] = converted.value;
+        }
+        return { value: Object.keys(group).length ? group : field.nullable ? null : {} };
+    }
+    if (field.kind === 'boolean') return { value: raw === true || raw === 'true' || raw === 'on' };
+    // The editor's JSON document; the server validates it.
+    if (field.kind === 'richtext') return { value: raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : field.nullable ? null : undefined };
+    if (field.kind === 'blocks') {
+        if (!Array.isArray(raw)) return { value: [] };
+        const types = new Map(blocks.map(block => [block.name, block]));
+        const converted = [];
+        for (const block of raw as { id: string; type: string; data: Record<string, unknown> }[]) {
+            const data: Record<string, unknown> = {};
+            for (const entry of types.get(block.type)?.fields ?? []) {
+                const value = convert(entry, block.data?.[entry.name], []);
+                if ('error' in value) return { error: `${entry.label} ${value.error}` };
+                if (value.value !== undefined && value.value !== null && value.value !== '') data[entry.name] = value.value;
+            }
+            converted.push({ id: block.id, type: block.type, data });
+        }
+        return { value: converted };
+    }
+    if (field.kind === 'list' && field.media) return { value: Array.isArray(raw) ? raw.filter(item => typeof item === 'string') : [] };
+    const text = typeof raw === 'string' ? (field.kind === 'text' || field.kind === 'json' ? raw : raw.trim()) : raw === undefined || raw === null ? '' : String(raw);
+    if (text === '') {
+        if (field.nullable) return { value: null };
+        // An empty optional string is a value when the field accepts it; otherwise nothing changes.
+        if ((field.kind === 'string' || field.kind === 'text') && validateValue(field.name, declarationOf(field), '') === undefined) return { value: '' };
+        return { value: undefined };
+    }
+    switch (field.kind) {
+        case 'integer': { const value = Number(text); return Number.isSafeInteger(value) ? { value } : { error: 'must be a whole number.' }; }
+        case 'number': { const value = Number(text); return Number.isFinite(value) ? { value } : { error: 'must be a number.' }; }
+        case 'datetime': {
+            const value = Date.parse(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?$/.test(text) ? `${text}Z` : text);
+            return Number.isNaN(value) ? { error: 'must be a date and time.' } : { value };
+        }
+        case 'json': try { return { value: JSON.parse(text) }; } catch { return { error: 'must be valid JSON.' }; }
+        case 'list': {
+            const items = text.split(/\n|,/).map(item => item.trim()).filter(Boolean);
+            if (field.items === 'string') return { value: items };
+            if (field.items === 'boolean') return { value: items.map(item => item === 'true') };
+            const numbers = items.map(Number);
+            return numbers.some(value => !Number.isFinite(value)) ? { error: 'must list numbers.' } : { value: numbers };
+        }
+        default: return { value: text };
+    }
+}
+
+/** The slug an untouched slug field follows. */
+export function suggestedSlug(title: string): string {
+    return slugify(title) || '';
+}
+
+/** The public URL of an entry, from the collection path and the slugs of its ancestors. */
+export { entryUrl } from '@cossackframework/cms';
+
+/** A new block's data: each field's default, or empty. */
+export function blockDefaults(block: BlockOption): Record<string, unknown> {
+    return Object.fromEntries(block.fields.map(field => [field.name, controlValue(field, field.defaultValue)]));
+}

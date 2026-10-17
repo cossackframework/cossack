@@ -30,6 +30,7 @@ const LOADERS = {
   delete: [() => import('./commands/delete.js'), 'deleteCommand', 'deleteHelp'],
   add: [() => import('./commands/add.js'), 'addCommand', 'addHelp'],
   remove: [() => import('./commands/remove.js'), 'removeCommand', 'removeHelp'],
+  plugins: [() => import('./commands/plugins.js'), 'pluginsCommand', 'pluginsHelp'],
   adapter: [() => import('./commands/adapter.js'), 'adapterCommand', 'adapterHelp'],
   lang: [() => import('./commands/lang.js'), 'langCommand', 'langHelp'],
   migration: [() => import('./commands/migration.js'), 'migrationCommand', 'migrationHelp'],
@@ -103,6 +104,12 @@ export async function dispatch(argv) {
   }
 
   const command = resolveCommand(raw);
+  if (!command && raw?.includes(':')) {
+    // `cossack <plugin>:<command>`: declared by a rendered plugin manifest.
+    const { findPluginCommand, runPluginCommand } = await import('./plugin-commands.js');
+    const found = await findPluginCommand(raw);
+    if (found) return runPluginCommand(raw, rest, found);
+  }
   if (!command) {
     if (requestsJSON(rest)) {
       return commandFailure({ flags: { json: true } }, raw ?? 'cossack', 'COSSACK_COMMAND_UNKNOWN',

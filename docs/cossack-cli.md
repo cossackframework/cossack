@@ -447,10 +447,63 @@ cossack add <feature> [options]
 | `schedules` | `jobs` |
 | `notifications` | `jobs` |
 | `workflows` | |
+| `cms` | `ui`, `auth`, `dashboard` |
 
 Prerequisites are resolved transitively: `dashboard` also adds `ui` and
-`database` through `auth`. Files you changed are reported as conflicts and are
-not overwritten unless you pass `--force`. Run `pnpm install` afterwards.
+`database` through `auth`. With `cms`, `auth` keeps users in FastDB and does not
+add `database`. Files you changed are reported as conflicts and are not
+overwritten unless you pass `--force`. Run `pnpm install` afterwards.
+
+#### `cossack add cms`
+
+Adds the FastDB CMS to the `auth` and `dashboard` pages: users, roles and
+sessions stored in FastDB, posts and pages written in a rich text editor that
+saves JSON, collections you define in the dashboard (fields and blocks, each in
+its own document table), categories, tags and other taxonomies, a media library,
+site settings, themes, menus with drag and drop, plugins and the plugin policy
+lints. The public site is drawn by the active theme, a plugin; the default one is
+rendered into `src/plugins/default-theme/` for you to edit or copy. It serves
+collections, term archives, nested pages, `/search`, `/feed`, `/sitemap.xml`,
+`/robots.txt` and a content API (`/api/cms/content/<collection>`,
+`/api/cms/menus/<location>`, `/api/cms/comments`) that apps write to with
+application passwords. Editors schedule entries, share preview links, compare and
+restore revisions and recover autosaves; published URLs that change redirect
+automatically, and Tools manages redirects and signed webhooks. Comments are
+moderated under Comments (Turnstile when `TURNSTILE_SITE_KEY` and
+`TURNSTILE_SECRET_KEY` are set), patterns are reusable content, and Settings →
+Languages publishes translations under `/<code>/`. Staff can sign in with an
+authenticator app or a passkey, and General settings can require it. It needs a
+FastDB database: `fastdb serve` locally, or a FastDB Cloud database
+(`FASTDB_URL`, `FASTDB_TOKEN`). The first visit to `/auth/setup` applies the
+schema and creates the administrator; it asks for `CMS_SETUP_CODE`. Media goes to
+R2 (`MEDIA` binding) on Workers, and to S3 (`S3_BUCKET`) or `MEDIA_DIR` on Node;
+images are resized with the Images binding (`IMAGES`) on Workers and `sharp` on
+Node. Maintenance runs every minute, publishing scheduled entries and delivering
+webhooks.
+
+A project whose `auth` already keeps users in the `database` feature cannot add
+`cms`; create a new project with `--features cms`. OAuth sign-in is not
+available with `cms` yet.
+
+```bash
+cossack add cms
+fastdb serve app.fastdb --create   # prints the URL and the token file
+```
+
+#### `cossack add plugin`
+
+Renders a plugin package (a directory, an `npm pack` tarball or an npm package)
+into `src/plugins/<name>/`. The package is read as data and never executed;
+npm installs run with `--ignore-scripts`. `cossack plugins list|check|upgrade|remove`
+manage rendered plugins, and `cossack <plugin>:<command>` runs a command a
+plugin manifest declares.
+
+```bash
+cossack add plugin ./support-desk-1.0.0.tgz
+cossack plugins check
+cossack plugins upgrade support-desk --source ./support-desk-1.1.0.tgz
+CMS_PASSWORD=… cossack support-desk:close-all --email admin@example.com
+```
 
 #### `cossack add database`
 

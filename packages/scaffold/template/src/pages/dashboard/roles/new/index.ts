@@ -1,16 +1,16 @@
 import { Cossack, Page, Store, State, Validate, Client, Server, storeRules } from '@cossackframework/core';
 import { Card, CardBody, CardHeader, Field, Input, Button, Checkbox, Form, toast } from '@cossackframework/ui';
 import { html, component, bind } from '@cossackframework/renderer';
-import { guard } from '../../../../services/rbac';
+import { requireRoleManager } from '../../../../services/rbac';
 import { createRole } from '../../../../services/roles';
-import { PERMISSIONS, type Permission } from '../../../../lib/permissions';
+import { PERMISSIONS, permissionLabel, type Permission } from '../../../../lib/permissions';
 
 interface NewRoleForm {
     name: string;
     permissions: Permission[];
 }
 
-@Page({ transport: 'http', middlewares: [guard.requireRole('admin')] })
+@Page({ transport: 'http', middlewares: [requireRoleManager] })
 export default class NewRolePage extends Cossack {
     @Store()
     @Validate({
@@ -78,7 +78,8 @@ export default class NewRolePage extends Cossack {
                                                 '@change': (e: any) => this.togglePermission(perm, e.target.checked),
                                             })}
                                             <span>
-                                                <span class="block text-sm text-foreground font-mono">${perm}</span>
+                                                <span class="block text-sm text-foreground">${__(permissionLabel(perm))}</span>
+                                                <span class="block text-xs text-muted-foreground font-mono">${perm}</span>
                                             </span>
                                         </label>
                                     `)}

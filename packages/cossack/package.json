@@ -52,6 +52,7 @@
       "types": "./src/vitest-reporter.d.ts",
       "import": "./src/vitest-reporter.js"
     },
+    "./plugin-policy": "./src/plugin-policy.js",
     "./package.json": "./package.json",
     "./src/*": "./src/*",
     "./bin/*": "./bin/*"

@@ -10,6 +10,7 @@ import { promisify } from 'node:util';
 import { createLinkedApp, repository } from './linked-app.js';
 
 export { repository };
+export const CMS_EDITOR_PACKAGES = ['@tiptap/core', '@tiptap/pm', '@tiptap/starter-kit', '@tiptap/extension-document', '@tiptap/extension-image', '@tiptap/extension-text-align', '@tiptap/extensions'];
 const roots = [];
 /** Removes `parent` in the next cleanupRoots(), for tests that create their own temp app. */
 export function trackRoot(parent) { roots.push(parent); }
@@ -18,8 +19,11 @@ export async function cleanupRoots() { await Promise.all(roots.splice(0).map(roo
 // Generated apps are copied from a cached scaffold+linked base (see fixtures/linked-app.js).
 // `owner` collects parents to remove: per test by default, or a describe-level list for shared apps.
 export async function project(adapter, features = [], options = {}, owner = roots) {
-  const { parent, root } = await createLinkedApp({ adapter, features, options, prefix: 'cossack-runtime-build-',
-    install: features.includes('dashboard') ? ['@cossackframework/solar-icons'] : [] });
+  const { parent, root } = await createLinkedApp({ adapter, features, options, prefix: 'cossack-runtime-build-', install: [
+    ...(features.includes('dashboard') || features.includes('cms') ? ['@cossackframework/solar-icons'] : []),
+    // The CMS editor's TipTap packages are not repository dependencies.
+    ...(features.includes('cms') ? CMS_EDITOR_PACKAGES : []),
+  ] });
   owner.push(parent);
   return root;
 }

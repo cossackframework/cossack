@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 
 export const repository = fileURLToPath(new URL('../../../../', import.meta.url));
 export const workspacePackages = Object.freeze([
-  'framework', 'core', 'renderer', 'auth', 'database', 'ui', 'scaffold', 'test-utils', 'node-adapter', 'desktop', 'typescript-plugin',
+  'framework', 'core', 'renderer', 'auth', 'database', 'ui', 'scaffold', 'test-utils', 'node-adapter', 'desktop', 'typescript-plugin', 'fastdb', 'cms',
 ]);
 
 /**
@@ -35,6 +35,8 @@ export async function linkRepositoryModules(root, { packages = workspacePackages
   }));
   await Promise.all(packages.map(name =>
     fs.symlink(path.join(repository, 'packages', name), path.join(modules, '@cossackframework', name), 'junction')));
+  // Generated apps depend on the CLI package too (vite.config imports cossack/plugin-policy).
+  await fs.symlink(path.join(repository, 'packages/cossack'), path.join(modules, 'cossack'), 'junction').catch(error => { if (error.code !== 'EEXIST') throw error; });
   return modules;
 }
 
@@ -99,7 +101,7 @@ async function buildBase(key, entry, { name, adapter, features, options, package
 
 async function cachedBase(settings) {
   const key = crypto.createHash('sha256').update(JSON.stringify({
-    version: 1, fingerprint: await fingerprintScaffold(), name: settings.name, adapter: settings.adapter,
+    version: 2, fingerprint: await fingerprintScaffold(), name: settings.name, adapter: settings.adapter,
     features: settings.features, options: settings.options, packages: settings.packages,
     includeHidden: settings.includeHidden, install: settings.install,
   })).digest('hex');

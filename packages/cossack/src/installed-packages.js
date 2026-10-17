@@ -8,7 +8,7 @@ import { createRequire } from 'node:module';
  */
 export const COSSACK_PACKAGES = Object.freeze(['cossack', ...[
   'core', 'renderer', 'framework', 'node-adapter', 'desktop', 'solar-icons', 'database', 'auth', 'scaffold', 'ui', 'studio',
-  'typescript-plugin',
+  'typescript-plugin', 'fastdb', 'cms',
 ].map(name => '@cossackframework/' + name)]);
 
 /** Locate manifests without requiring import-only entries or executing modules. */

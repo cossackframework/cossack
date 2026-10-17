@@ -189,7 +189,8 @@ describe('recipe resolution', () => {
       expect(layout).toContain('component(DropdownMenu');
       expect(layout).toContain('collapsible:');
       expect(layout).toContain('accountModules.map');
-      expect(layout).toContain('dashboardModules');
+      expect(layout).toContain('await navigation(this.c)');
+      expect(files.has('src/dashboard/access.ts')).toBe(true);
     }
     expect(files.has('src/pages/(public)/index.ts'))
       .toBe(recipe.resolvedFeatures.includes('examples'));

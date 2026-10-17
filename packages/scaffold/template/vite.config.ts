@@ -60,6 +60,12 @@ export default defineConfig(({ mode, command }) => ({
   },
   environments: {
     client: {
+      // Browser dependencies of the rendered pages, bundled before the first request
+      // so Vite does not find them one page at a time and reload the browser.
+      optimizeDeps: {
+        // @cossack:client-dependencies
+        include: [],
+      },
       build: {
         outDir: 'dist/client',
         target: 'esnext',
@@ -115,6 +121,10 @@ export default defineConfig(({ mode, command }) => ({
           '@cossackframework/framework/client/devtools',
           'hono/cookie',
         ],
+        // Pre-bundled packages import these rather than embedding copies: one
+        // renderer and one core keep directive classes and request state shared
+        // with application code (a copied renderer prints repeat() as text).
+        exclude: ['@cossackframework/core', '@cossackframework/renderer'],
       },
     },
   },

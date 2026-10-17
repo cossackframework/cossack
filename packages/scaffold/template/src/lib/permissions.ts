@@ -26,3 +26,9 @@ export const PERMISSIONS = [
 export type Permission = (typeof PERMISSIONS)[number];
 
 export const ALL_PERMISSIONS: Permission[] = [...PERMISSIONS];
+
+/** A readable name for a permission: `user:create` reads "Create users". */
+export function permissionLabel(permission: string): string {
+    const [subject, action] = permission.split(':');
+    return subject && action ? `${action.charAt(0).toUpperCase()}${action.slice(1)} ${subject}s` : permission;
+}

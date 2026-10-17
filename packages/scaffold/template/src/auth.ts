@@ -201,6 +201,16 @@ const credentials = createCredentialVerifier<User, PublicUser>({
 
 export const loginUser = credentials.verify;
 
+/** Whether visitors may create accounts on /auth/register. */
+export async function registrationOpen(): Promise<boolean> {
+  return true;
+}
+
+/** Whether the first account still has to be created through a setup step. */
+export async function setupRequired(): Promise<boolean> {
+  return false;
+}
+
 export async function registerUser(email: string, password: string, name?: string): Promise<PublicUser> {
   // Check for an existing email first so we surface a clean, user-facing
   // error instead of letting the raw UNIQUE-constraint rejection bubble up
@@ -223,6 +233,16 @@ export async function registerUser(email: string, password: string, name?: strin
 }
 
 // --- Profile updates -------------------------------------------------------
+/**
+ * Whether profile pictures can be uploaded. Without file storage, users enter an image URL;
+ * configure a storage provider and implement uploadAvatar to accept uploads.
+ */
+export const avatarUploads = false;
+
+export async function uploadAvatar(_userId: string, _file: File): Promise<string> {
+  throw new ClientVisibleError('Picture uploads need file storage. Enter an image URL instead.');
+}
+
 export interface ProfileUpdate {
   name?: string;
   avatar?: string | null;
@@ -269,6 +289,43 @@ async function consumePasswordResetToken(token: string): Promise<string | null> 
   const deleted = await Session.delete({ id: token, expiresAt: MoreThan(new Date()) });
   return deleted.meta.rowsAffected === 1 ? row.userId : null;
 }
+// --- Second factors ----------------------------------------------------------
+// Authenticator apps, recovery codes, passkeys and application passwords are kept by the
+// CMS auth store. This store signs in with passwords only; the pages hide those controls.
+export const twoFactorAvailable = false;
+export const apiTokensAvailable = false;
+export const TWO_FACTOR_COOKIE = 'two_factor';
+
+export interface SecurityStatus {
+  totp: boolean;
+  recoveryCodes: number;
+  passkeys: { id: string; name: string; deviceType: string | null; backedUp: boolean; createdAt: number; lastUsedAt: number | null }[];
+}
+
+export interface ApiToken { id: string; userId: string; name: string; scope: 'read' | 'write'; createdAt: number; lastUsedAt: number | null; expiresAt: number | null }
+
+const unavailable = () => new ClientVisibleError('Two-step sign-in is not available on this site.');
+
+export async function beginTwoFactor(_userId: string): Promise<string | null> { return null; }
+export async function completeTwoFactor(_challengeId: string, _code: string): Promise<{ user: PublicUser; recovery: boolean } | { error: string; expired: boolean }> {
+  return { error: 'The sign-in expired. Enter your password again.', expired: true };
+}
+export async function securityStatus(_userId: string): Promise<SecurityStatus> { return { totp: false, recoveryCodes: 0, passkeys: [] }; }
+export async function secondFactorRequired(_user: PublicUser): Promise<boolean> { return false; }
+export async function startAuthenticator(_user: PublicUser): Promise<{ secret: string; uri: string; qr: string }> { throw unavailable(); }
+export async function confirmAuthenticator(_userId: string, _code: string): Promise<string[]> { throw unavailable(); }
+export async function disableAuthenticator(_userId: string, _code: string): Promise<void> { throw unavailable(); }
+export async function newRecoveryCodes(_userId: string, _code: string): Promise<string[]> { throw unavailable(); }
+export async function resetSecondFactors(_userId: string): Promise<void> {}
+export async function passkeyRegistration(_c: Context, _user: PublicUser): Promise<{ challenge: string; options: unknown }> { throw unavailable(); }
+export async function addPasskey(_c: Context, _user: PublicUser, _challengeId: string, _response: unknown, _name: string): Promise<void> { throw unavailable(); }
+export async function removePasskey(_userId: string, _id: string): Promise<void> {}
+export async function passkeySignIn(_c: Context): Promise<{ challenge: string; options: unknown }> { throw unavailable(); }
+export async function completePasskeySignIn(_c: Context, _challengeId: string, _response: unknown): Promise<PublicUser | null> { return null; }
+export async function listApiTokens(_userId: string): Promise<ApiToken[]> { return []; }
+export async function createApiToken(_userId: string, _name: string, _scope: 'read' | 'write'): Promise<string> { throw new ClientVisibleError('Application passwords are not available on this site.'); }
+export async function revokeApiToken(_userId: string, _id: string): Promise<void> {}
+
 
 /**
  * Creates a reset token and emails it. Reads the `EMAIL` binding and

@@ -29,6 +29,8 @@ const packageDirectories = [
   'node-adapter',
   'desktop',
   'auth',
+  'fastdb',
+  'cms',
   'ui',
   'framework',
   'database',

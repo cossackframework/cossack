@@ -1,9 +1,10 @@
-import { sql } from '@cossackframework/database';
+import { In, sql } from '@cossackframework/database';
 import { ClientVisibleError } from '@cossackframework/core';
 import { uuidv7 } from '../lib/uuid';
 import { hashPassword, type PublicUser } from '../auth';
 import { User } from '../models/User';
 import { UserRole } from '../models/UserRole';
+import { Role } from '../models/Role';
 import type { RoleAssignment } from '../models/User';
 
 export interface UserSummary {
@@ -35,6 +36,8 @@ export interface CreateUserInput {
   email: string;
   password: string;
   name?: string;
+  /** Roles chosen by someone who may assign them; otherwise none. */
+  roleIds?: string[];
 }
 
 export interface UpdateUserInput {
@@ -146,6 +149,12 @@ export async function createUser(input: CreateUserInput): Promise<PublicUser> {
     meta: null,
     createdAt: new Date(),
   });
+  const roleIds = [...new Set(input.roleIds ?? [])];
+  if (roleIds.length) {
+    const known = await Role.find({ where: { id: In(roleIds) } });
+    if (known.length !== roleIds.length) throw new ClientVisibleError('Choose roles that exist.');
+    await syncUserRoles(id, roleIds);
+  }
   return { id, email: input.email, name: input.name ?? '', avatar: null, meta: null, roles: [] };
 }
 

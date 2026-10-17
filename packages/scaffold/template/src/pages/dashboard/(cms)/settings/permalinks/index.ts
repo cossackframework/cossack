@@ -1,0 +1,118 @@
+import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackframework/core';
+import { Button, Card, CardBody, toast } from '@cossackframework/ui';
+import { html, component } from '@cossackframework/renderer';
+import { isCmsError, PERMISSIONS } from '@cossackframework/cms';
+import { requireAny } from '../../../../../cms/guards';
+import { CONTROL, notice, pageHeader } from '../../../../../cms/ui';
+
+interface Base { name: string; label: string; singular: string; path: string }
+
+const SEGMENT = /^[a-z0-9]+(?:-[a-z0-9]+)*(?:\/[a-z0-9]+(?:-[a-z0-9]+)*)*$/;
+
+/**
+ * Permalinks, as in WordPress: posts at the site root (/sample-post) or under a base
+ * (/posts/sample-post), and the bases of term archives. Each choice is saved to the
+ * collection or taxonomy it belongs to.
+ */
+@Page({ transport: 'http', middlewares: [requireAny(PERMISSIONS.manageSettings)] })
+export default class PermalinksPage extends Cossack {
+    @State() groups: { id: string; label: string }[] = [];
+    @State() postsAtRoot = false;
+    @State() postsBase = 'posts';
+    @State() taxonomies: Base[] = [];
+    @State() origin = '';
+    @State() errors: Record<string, string> = {};
+    @State() error = '';
+
+    head(): HeadValue {
+        return { title: __('Permalink settings') };
+    }
+
+    async init() {
+        const cms = this.c.get('cms');
+        this.origin = new URL(this.c.req.url).origin;
+        this.groups = cms.settings.groups.filter(group => (group.permission ?? PERMISSIONS.manageSettings) === PERMISSIONS.manageSettings).map(group => ({ id: group.id, label: group.label }));
+        this.load();
+    }
+
+    @Server()
+    load() {
+        const cms = this.c.get('cms');
+        const posts = cms.collections().find(collection => collection.name === 'posts');
+        this.postsAtRoot = posts?.path === '';
+        this.postsBase = posts?.path || 'posts';
+        this.taxonomies = cms.taxonomies.declarations.filter(taxonomy => taxonomy.path).map(taxonomy => ({ name: taxonomy.name, label: taxonomy.label, singular: taxonomy.singular, path: taxonomy.path! }));
+    }
+
+    @Client()
+    setBase(name: string, path: string) {
+        this.taxonomies = this.taxonomies.map(taxonomy => taxonomy.name === name ? { ...taxonomy, path } : taxonomy);
+    }
+
+    @Client()
+    async submit(event: Event) {
+        event.preventDefault();
+        await this.save(this.postsAtRoot, this.postsBase, this.taxonomies.map(taxonomy => ({ name: taxonomy.name, path: taxonomy.path })));
+        if (this.error) toast.error(this.error); else toast.success(__('Permalink structure updated.'));
+    }
+
+    @Server()
+    async save(postsAtRoot: boolean, postsBase: string, bases: { name: string; path: string }[]) {
+        const cms = this.c.get('cms');
+        const principal = this.c.get('principal');
+        this.error = '';
+        this.errors = {};
+        const base = postsBase.trim().replace(/^\/+|\/+$/g, '');
+        if (!postsAtRoot && !SEGMENT.test(base)) this.errors = { ...this.errors, posts: __('Use lowercase letters, digits, hyphens and slashes.') };
+        for (const entry of bases) if (!SEGMENT.test(entry.path.trim()) || entry.path.includes('/')) this.errors = { ...this.errors, [entry.name]: __('Use lowercase letters, digits and hyphens.') };
+        if (Object.keys(this.errors).length) { this.error = __('Some permalinks are invalid.'); return; }
+        try {
+            const posts = cms.collection('posts');
+            const path = postsAtRoot ? '' : base;
+            if (posts.path !== path) await cms.saveCollection({ ...posts, path }, principal);
+            for (const entry of bases) {
+                const taxonomy = cms.taxonomies.declaration(entry.name);
+                if (taxonomy.path !== entry.path.trim()) await cms.saveTaxonomy({ ...taxonomy, path: entry.path.trim() }, principal);
+            }
+        } catch (error) {
+            this.error = isCmsError(error) ? error.message : __('The permalinks could not be saved.');
+        }
+        this.load();
+    }
+
+    render() {
+        const option = (atRoot: boolean, label: string, example: string) => html`<label class="flex cursor-pointer items-start gap-3 rounded-md border border-border p-3 has-[:checked]:border-primary">
+            <input type="radio" name="posts-structure" class="mt-1" .checked=${this.postsAtRoot === atRoot} @change=${() => { this.postsAtRoot = atRoot; }}>
+            <span><span class="block text-sm font-medium text-foreground">${label}</span><code class="text-xs text-muted-foreground">${example}</code></span>
+        </label>`;
+        return html`<div class="max-w-3xl space-y-6">
+            ${pageHeader(__('Permalink settings'), { description: __('Choose how the addresses of posts and archives look. Pages always use their own and their parents’ slugs. Old addresses keep working: they redirect to the new ones.') })}
+            <nav aria-label=${__('Settings')} class="flex flex-wrap gap-1 border-b border-border">
+                ${this.groups.map(group => html`<a href=${`/dashboard/settings/${group.id}`} class="-mb-px border-b-2 border-transparent px-3 py-2 text-sm text-muted-foreground no-underline hover:text-foreground">${group.label}</a>`)}
+                <a href="/dashboard/settings/permalinks" aria-current="page" class="-mb-px border-b-2 border-primary px-3 py-2 text-sm font-medium text-foreground no-underline">${__('Permalinks')}</a>
+            </nav>
+            ${this.error ? notice(this.error, 'error') : null}
+            ${component(Card, {}, component(CardBody, {}, html`<form class="space-y-6" @submit=${(event: Event) => this.submit(event)}>
+                <fieldset class="space-y-3">
+                    <legend class="mb-2 text-base font-semibold text-foreground">${__('Post permalinks')}</legend>
+                    ${option(true, __('Post name'), `${this.origin}/sample-post`)}
+                    ${option(false, __('Under a base'), `${this.origin}/${this.postsBase.trim() || 'posts'}/sample-post`)}
+                    ${this.postsAtRoot ? html`<p class="text-xs text-muted-foreground">${__('Post slugs stay unique across pages and the site’s own routes. Choose a posts page under Settings → Reading to list the latest posts.')}</p>`
+                        : html`<div class="space-y-1"><label for="posts-base" class="block text-sm font-medium text-foreground">${__('Posts base')}</label>
+                            <input id="posts-base" class=${CONTROL} .value=${this.postsBase} @input=${(event: Event) => { this.postsBase = (event.target as HTMLInputElement).value; }}>
+                            ${this.errors.posts ? html`<p role="alert" class="text-xs text-destructive">${this.errors.posts}</p>` : null}</div>`}
+                </fieldset>
+                ${this.taxonomies.length ? html`<fieldset class="space-y-3">
+                    <legend class="mb-2 text-base font-semibold text-foreground">${__('Archive bases')}</legend>
+                    ${this.taxonomies.map(taxonomy => html`<div class="space-y-1">
+                        <label for=${`base-${taxonomy.name}`} class="block text-sm font-medium text-foreground">${taxonomy.singular} ${__('base')}</label>
+                        <input id=${`base-${taxonomy.name}`} class=${CONTROL} .value=${taxonomy.path} @input=${(event: Event) => this.setBase(taxonomy.name, (event.target as HTMLInputElement).value)}>
+                        <p class="text-xs text-muted-foreground"><code>${this.origin}/${taxonomy.path || '…'}/sample-${taxonomy.singular.toLowerCase()}</code></p>
+                        ${this.errors[taxonomy.name] ? html`<p role="alert" class="text-xs text-destructive">${this.errors[taxonomy.name]}</p>` : null}
+                    </div>`)}
+                </fieldset>` : null}
+                <div>${component(Button, { type: 'submit' }, __('Save changes'))}</div>
+            </form>`))}
+        </div>`;
+    }
+}

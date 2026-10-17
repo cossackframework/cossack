@@ -74,8 +74,11 @@ function generatedFormPage(files, name, api) {
     if (name === '@cossackframework/core') return { Cossack: class {}, isClientVisibleError, ClientVisibleError, storeRules: v => v,
       Page: decorator, State: decorator, ClientState: decorator, ClientStore: decorator,
       Validate: decorator, Client: decorator, Server: decorator };
-    if (name === '../../../auth') return api;
+    // Accounts without a second factor sign in after the password.
+    if (name === '../../../auth') return { beginTwoFactor: async () => null, twoFactorAvailable: false, TWO_FACTOR_COOKIE: 'two_factor', ...api };
     if (name === '../../../auth-input') return schemaModule.exports;
+    if (name === '../../../passkeys.client') return { usePasskey: vi.fn() };
+    if (name === 'hono/cookie') return { setCookie: vi.fn(), getCookie: vi.fn(), deleteCookie: vi.fn() };
     if (name === '@cossackframework/ui' || name === '@cossackframework/renderer') return {};
     throw new Error(`Unexpected form dependency: ${name}`);
   }, module, module.exports);

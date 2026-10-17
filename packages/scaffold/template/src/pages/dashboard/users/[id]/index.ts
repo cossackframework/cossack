@@ -1,16 +1,17 @@
-import { Cossack, Page, State, Validate, Client, Server, Store, storeRules } from '@cossackframework/core';
+import { ClientVisibleError, Cossack, Page, State, ClientState, Validate, Client, Server, Store, storeRules } from '@cossackframework/core';
 import { Card, CardBody, CardHeader, Field, Input, PasswordInput, Button, Checkbox, Form, toast } from '@cossackframework/ui';
 import { html, component, bind } from '@cossackframework/renderer';
-import { guard } from '../../../../services/rbac';
+import { canAssignRoles, canManageUser, guard } from '../../../../services/rbac';
 import { getUser, updateUser, syncUserRoles, changeUserPassword, type UserDetail } from '../../../../services/users';
 import { listRoles, type RoleDetail } from '../../../../services/roles';
+import { avatarUploads, resetSecondFactors, securityStatus, twoFactorAvailable, uploadAvatar, type PublicUser } from '../../../../auth';
+import { avatarField } from '../../../../dashboard/avatar-field';
 
 @Page({ transport: 'http', middlewares: [guard.requireRole('admin')] })
 export default class EditUserPage extends Cossack {
     @Store()
     @Validate({
         rules: storeRules<UserDetail>({
-            avatar: { required: false, url: true, message: 'Enter a valid URL' },
             name: { required: true, message: 'Name is required' },
             email: { required: true, email: true, message: 'Enter a valid email' },
         }),
@@ -20,6 +21,15 @@ export default class EditUserPage extends Cossack {
 
     @State() assignedRoleIds: string[] = [];
     @State() allRoles: RoleDetail[] = [];
+    /** Only role managers (administrators by default) see and change roles. */
+    @State() canAssignRoles = false;
+    /** Accounts that can manage roles are read-only for other user managers. */
+    @State() readOnly = false;
+    @State() avatarUploads = false;
+    @ClientState() uploading = false;
+    @ClientState() avatarError = '';
+    /** The chosen picture while it uploads; browser-only, so server state never echoes it back. */
+    @ClientState() avatarPreview = '';
     // Renamed from `user` — `this.user` is a base-class accessor for the
     // logged-in user; redeclaring it would shadow that and break auth checks.
 
@@ -29,11 +39,15 @@ export default class EditUserPage extends Cossack {
     @State() saved = '';
     @State() passwordMessage = '';
     @State() error = '';
+    /** The user's second factors: an authenticator app and how many passkeys. */
+    @State() security: { available: boolean; totp: boolean; passkeys: number } = { available: false, totp: false, passkeys: 0 };
 
     @Server()
     async init() {
         const id = this.c.req.param('id')!;
-        const [user, roles] = await Promise.all([getUser(id), listRoles()]);
+        this.canAssignRoles = canAssignRoles(this.user as PublicUser | undefined);
+        this.avatarUploads = avatarUploads;
+        const [user, roles] = await Promise.all([getUser(id), this.canAssignRoles ? listRoles() : Promise.resolve([])]);
         this.allRoles = roles;
         if (!user) {
             this.error = __('User not found');
@@ -42,6 +56,28 @@ export default class EditUserPage extends Cossack {
 
         this.userDetail = user;
         this.assignedRoleIds = user.roles.map((r) => r.id);
+        this.readOnly = !canManageUser(this.user as PublicUser | undefined, user);
+        if (twoFactorAvailable) {
+            const status = await securityStatus(id);
+            this.security = { available: true, totp: status.totp, passkeys: status.passkeys.length };
+        }
+    }
+
+    /** For someone who lost their phone or security key: they sign in with the password alone again. */
+    @Server()
+    async resetSecurity() {
+        const id = await this.editable();
+        await resetSecondFactors(id);
+        this.security = { ...this.security, totp: false, passkeys: 0 };
+    }
+
+    /** Server methods load the account again and refuse when the signed-in user may not change it. */
+    private async editable(): Promise<string> {
+        const id = this.c.req.param('id')!;
+        const target = await getUser(id);
+        if (!target) throw new ClientVisibleError(__('User not found'));
+        if (!canManageUser(this.user as PublicUser | undefined, target)) throw new ClientVisibleError(__('Only an administrator can change this account.'));
+        return id;
     }
 
     @Client()
@@ -96,27 +132,75 @@ export default class EditUserPage extends Cossack {
             this.error = __('User not found');
             throw new Error(__('User not found'));
         }
+        if (user.id !== await this.editable()) throw new ClientVisibleError(__('User not found'));
 
         await updateUser(user.id, { name: user.name, email: user.email, avatar: user.avatar || null });
-        await syncUserRoles(user.id, this.assignedRoleIds);
+        // The client sends its roles with every save; only a role manager's are applied.
+        if (canAssignRoles(this.user as PublicUser | undefined)) await syncUserRoles(user.id, this.assignedRoleIds);
+    }
+
+    /** Upload a picture for this user: it shows at once and is saved when the upload finishes. */
+    @Client()
+    async chooseAvatar(file: File) {
+        if (!this.userDetail) return;
+        this.avatarError = '';
+        this.uploading = true;
+        const preview = URL.createObjectURL(file);
+        this.avatarPreview = preview;
+        try {
+            await this.storeAvatar(file);
+            toast.success(__('Picture updated.'));
+        } catch (e: any) {
+            this.avatarError = e?.message || __('The picture could not be uploaded.');
+        } finally {
+            this.uploading = false;
+            this.avatarPreview = '';
+            URL.revokeObjectURL(preview);
+        }
+    }
+
+    /** The stored picture's URL comes back as state. */
+    @Server()
+    async storeAvatar(file: File) {
+        const url = await uploadAvatar(await this.editable(), file);
+        if (this.userDetail) this.userDetail.avatar = url;
+    }
+
+    @Client()
+    async removeAvatar() {
+        if (!this.userDetail) return;
+        this.userDetail.avatar = null;
+        await this.clearAvatar();
+        toast.success(__('Picture removed.'));
+    }
+
+    @Server()
+    async clearAvatar() {
+        await updateUser(await this.editable(), { avatar: null });
+        if (this.userDetail) this.userDetail.avatar = null;
     }
 
     @Server()
     async applyPasswordChange(password: string) {
         const user = this.userDetail;
         if (!user) throw new Error(__('User not found'));
-        await changeUserPassword(user.id, password);
+        await changeUserPassword(await this.editable(), password);
     }
 
     render() {
         if (this.error) return html`<div class="text-sm text-destructive">${this.error}</div>`;
         if (!this.userDetail) return html`<div class="text-sm text-muted-foreground">${__('Loading user details...')}</div>`;
+        if (this.readOnly) return html`<div class="space-y-4 max-w-2xl">
+            <h1 class="text-2xl font-bold text-foreground">${this.userDetail.name || this.userDetail.email}</h1>
+            <p role="status" class="rounded-md border border-border px-3 py-2 text-sm text-foreground">${__('Only an administrator can change this account.')}</p>
+            <a href="/dashboard/users" class="text-sm text-primary hover:underline">← ${__('All users')}</a>
+        </div>`;
 
         return html`
             <div class="space-y-8 max-w-2xl">
                 <div>
                     <h1 class="text-2xl font-bold text-foreground">${this.userDetail.name || this.userDetail.email}</h1>
-                    <p class="mt-1 text-sm text-muted-foreground">${__('Edit user details and roles.')}</p>
+                    <p class="mt-1 text-sm text-muted-foreground">${this.canAssignRoles ? __('Edit user details and roles.') : __('Edit user details.')}</p>
                 </div>
 
                 ${component(Card, {}, html`
@@ -130,8 +214,9 @@ export default class EditUserPage extends Cossack {
                                 control: attributes => component(Input, { ...attributes, type: 'text', '.value': bind(this.userDetail, 'name') }) })}
                             ${component(Field, { label: __('Email'), for: 'email', error: this.getError('email'),
                                 control: attributes => component(Input, { ...attributes, type: 'email', '.value': bind(this.userDetail, 'email') }) })}
-                            ${component(Field, { label: __('Avatar URL'), for: 'avatar', error: this.getError('avatar'),
-                                control: attributes => component(Input, { ...attributes, type: 'url', placeholder: 'https://...', '.value': bind(this.userDetail, 'avatar') }) })}
+                            ${avatarField({ id: 'avatar', value: this.avatarPreview || this.userDetail.avatar || '', name: this.userDetail.name || this.userDetail.email, uploads: this.avatarUploads,
+                                uploading: this.uploading, error: this.avatarError, onFile: file => this.chooseAvatar(file),
+                                onUrl: url => { if (this.userDetail) this.userDetail.avatar = url; }, onRemove: () => this.removeAvatar() })}
                             <div>
                                 ${component(Button, { type: 'submit' }, __('Save changes'))}
                             </div>
@@ -161,7 +246,17 @@ export default class EditUserPage extends Cossack {
                     `)}
                 `)}
 
-                ${component(Card, {}, html`
+                ${this.security.available ? component(Card, {}, html`
+                    ${component(CardHeader, {}, html`<h2 class="text-base font-semibold text-foreground">${__('Two-step sign-in')}</h2>`)}
+                    ${component(CardBody, { class: 'space-y-3' }, html`
+                        <p class="text-sm text-muted-foreground">${this.security.totp || this.security.passkeys
+                            ? `${this.security.totp ? __('Authenticator app on.') : __('No authenticator app.')} ${this.security.passkeys} ${this.security.passkeys === 1 ? __('passkey') : __('passkeys')}.`
+                            : __('This user signs in with a password only.')}</p>
+                        ${this.security.totp || this.security.passkeys ? component(Button, { type: 'button', variant: 'outline', '@click': async () => { await this.resetSecurity(); toast.success(__('Two-step sign-in reset.')); } }, __('Reset two-step sign-in')) : null}
+                    `)}
+                `) : null}
+
+                ${this.canAssignRoles ? component(Card, {}, html`
                     ${component(CardHeader, {}, html`<h2 class="text-base font-semibold text-foreground">${__('Roles')}</h2>`)}
                     ${component(CardBody, {}, html`
                         <div class="space-y-3">
@@ -181,7 +276,7 @@ export default class EditUserPage extends Cossack {
                             ${component(Button, { variant: 'outline', '@click': () => this.handleSubmit({ preventDefault: () => {} } as any) }, __('Save roles'))}
                         </div>
                     `)}
-                `)}
+                `) : null}
             </div>
         `;
     }
