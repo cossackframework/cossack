@@ -12,8 +12,10 @@ export interface BlockDeclaration {
     readonly name: string;
     readonly label: string;
     readonly description?: string;
-    /** Solar icon name for the block picker, such as `text-field`. */
+    /** Solar icon name for the block picker, such as `text-field`. Unknown names show a generic icon. */
     readonly icon?: string;
+    /** The block picker's group. Default `widgets`. */
+    readonly category?: BlockCategory;
     readonly fields: { readonly [name: string]: FieldDeclaration };
 }
 
@@ -24,50 +26,66 @@ export interface Block {
     readonly data: { readonly [field: string]: unknown };
 }
 
+/** Groups of the block picker, in its order, as in WordPress. */
+export const BLOCK_CATEGORIES = Object.freeze([
+    { id: 'text', label: 'Text' },
+    { id: 'media', label: 'Media' },
+    { id: 'design', label: 'Design' },
+    { id: 'widgets', label: 'Widgets' },
+    { id: 'embeds', label: 'Embeds' },
+] as const);
+export type BlockCategory = (typeof BLOCK_CATEGORIES)[number]['id'];
+
+/** A block's category, `widgets` when it names none. */
+export function blockCategory(declaration: Pick<BlockDeclaration, 'category'>): BlockCategory {
+    return declaration.category ?? 'widgets';
+}
+
 export const BLOCK_NAME = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\/[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 /** Field kinds a block can hold. Blocks do not nest. */
+const ICON_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const BLOCK_FIELD_KINDS = new Set(['string', 'text', 'enum', 'integer', 'number', 'boolean', 'datetime', 'list', 'json']);
 
 /** Built-in block types. */
 const core: BlockDeclaration[] = [
-    { name: 'core/paragraph', label: 'Paragraph', icon: 'text-field', fields: { text: field.text({ required: true, max: 20_000, format: 'markdown', label: 'Text' }) } },
-    { name: 'core/heading', label: 'Heading', icon: 'text-bold', fields: {
+    { name: 'core/paragraph', label: 'Paragraph', icon: 'paragraph-spacing', category: 'text', fields: { text: field.text({ required: true, max: 20_000, format: 'markdown', label: 'Text' }) } },
+    { name: 'core/heading', label: 'Heading', icon: 'text-bold', category: 'text', fields: {
         text: field.string({ required: true, max: 200, label: 'Text' }),
         level: field.enum(['h2', 'h3', 'h4'], { default: 'h2', label: 'Level' }),
     } },
-    { name: 'core/image', label: 'Image', icon: 'gallery', fields: {
+    { name: 'core/image', label: 'Image', icon: 'gallery', category: 'media', fields: {
         image: field.media({ required: true, nullable: false, label: 'Image' }),
         caption: field.string({ max: 300, label: 'Caption' }),
         link: field.string({ max: 2048, pattern: '(?:https?://|/)\\S*', label: 'Link' }),
     } },
-    { name: 'core/gallery', label: 'Gallery', icon: 'gallery-wide', fields: {
+    { name: 'core/gallery', label: 'Gallery', icon: 'gallery-wide', category: 'media', fields: {
         images: { ...field.list('string', { label: 'Images' }), media: true },
         columns: field.integer({ default: 3, min: 1, max: 6, label: 'Columns' }),
     } },
-    { name: 'core/quote', label: 'Quote', icon: 'chat-round-line', fields: {
+    { name: 'core/quote', label: 'Quote', icon: 'chat-round-line', category: 'text', fields: {
         text: field.text({ required: true, max: 2000, label: 'Quote' }),
         citation: field.string({ max: 200, label: 'Citation' }),
     } },
-    { name: 'core/list', label: 'List', icon: 'list', fields: {
+    { name: 'core/list', label: 'List', icon: 'list', category: 'text', fields: {
         items: field.list('string', { label: 'Items', description: 'One item per line.' }),
         ordered: field.boolean({ default: false, label: 'Numbered' }),
     } },
-    { name: 'core/code', label: 'Code', icon: 'code-square', fields: {
+    { name: 'core/code', label: 'Code', icon: 'code-square', category: 'text', fields: {
         code: field.text({ required: true, max: 20_000, label: 'Code' }),
         language: field.string({ max: 40, pattern: '[a-z0-9+#-]*', label: 'Language' }),
     } },
-    { name: 'core/button', label: 'Button', icon: 'link', fields: {
+    { name: 'core/button', label: 'Button', icon: 'cursor-square', category: 'design', fields: {
         label: field.string({ required: true, max: 80, label: 'Label' }),
         url: field.string({ required: true, max: 2048, pattern: '(?:https?://|/|mailto:)\\S*', label: 'URL' }),
         style: field.enum(['primary', 'outline'], { default: 'primary', label: 'Style' }),
     } },
-    { name: 'core/embed', label: 'Video embed', icon: 'play', description: 'A YouTube or Vimeo video.', fields: {
+    { name: 'core/embed', label: 'Video embed', icon: 'play-circle', category: 'embeds', description: 'A YouTube or Vimeo video.', fields: {
         url: field.string({ required: true, max: 2048, pattern: 'https://(?:www\\.)?(?:youtube\\.com/watch\\?v=|youtu\\.be/|vimeo\\.com/)\\S+', label: 'Video URL' }),
         caption: field.string({ max: 300, label: 'Caption' }),
     } },
-    { name: 'core/divider', label: 'Divider', icon: 'minus-square', fields: {} },
+    { name: 'core/divider', label: 'Divider', icon: 'minus-square', category: 'design', fields: {} },
     // A synced pattern: the site renders the pattern's current content in its place.
-    { name: 'core/pattern', label: 'Pattern', icon: 'widget-add', description: 'A synced pattern.', fields: {
+    { name: 'core/pattern', label: 'Pattern', icon: 'widget-add', category: 'design', description: 'A synced pattern.', fields: {
         pattern: field.string({ required: true, max: 80, pattern: '[A-Za-z0-9_-]{1,80}', label: 'Pattern' }),
     } },
 ];
@@ -80,6 +98,10 @@ export function blockProblems(declaration: BlockDeclaration, owner?: string): st
     if (typeof declaration?.name !== 'string' || !BLOCK_NAME.test(declaration.name)) problems.push(`${at}: names are <owner>/<name> in lowercase with hyphens.`);
     else if (owner && !declaration.name.startsWith(`${owner}/`)) problems.push(`${at}: must be named ${owner}/<name>.`);
     if (typeof declaration?.label !== 'string' || !declaration.label.trim() || declaration.label.length > 80) problems.push(`${at}: needs a label of at most 80 characters.`);
+    if (declaration?.icon !== undefined && (typeof declaration.icon !== 'string' || declaration.icon.length > 60 || !ICON_NAME.test(declaration.icon))) problems.push(`${at}: icons are Solar icon names, such as text-field.`);
+    if (declaration?.category !== undefined && !BLOCK_CATEGORIES.some(category => category.id === declaration.category)) {
+        problems.push(`${at}: the category is one of ${BLOCK_CATEGORIES.map(category => category.id).join(', ')}.`);
+    }
     const fields = Object.entries(declaration?.fields ?? {});
     if (fields.length > 16) problems.push(`${at}: declare at most 16 fields.`);
     for (const [name, entry] of fields) {

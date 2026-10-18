@@ -431,7 +431,15 @@ async function currentSessionReference(userId: string, currentId: string): Promi
 
 /** Lists only the authenticated caller's active auth sessions as safe DTOs. */
 export async function listUserSessions(c: Context): Promise<SessionInfo[]> {
-  const { userId, currentId } = sessionOwner(c);
+  return sessionsOf(c, sessionOwner(c).userId);
+}
+
+/**
+ * Any user's active auth sessions, for the user screen. The page decides who may see
+ * them; the caller's own session is marked current.
+ */
+export async function sessionsOf(c: Context, userId: string): Promise<SessionInfo[]> {
+  const currentId = getCookie(c, SESSION_COOKIE);
   const rows = await Session.find({
     where: { userId, expiresAt: MoreThan(new Date()) },
   });
@@ -464,6 +472,22 @@ export async function revokeSession(c: Context, reference: string): Promise<bool
       AND meta = ${JSON.stringify({ type: 'auth' })}
       AND expires_at > ${new Date()}`;
   return result.meta.rowsAffected === 1;
+}
+
+/** End one of a user's auth sessions, never the caller's own. */
+export async function revokeSessionOf(c: Context, userId: string, reference: string): Promise<boolean> {
+  if (typeof reference !== 'string' || !PUBLIC_SESSION_REFERENCE.test(reference)) return false;
+  const result = await sql`DELETE FROM sessions
+    WHERE public_id = ${reference} AND user_id = ${userId} AND id <> ${getCookie(c, SESSION_COOKIE) ?? ''}
+      AND meta = ${JSON.stringify({ type: 'auth' })}
+      AND expires_at > ${new Date()}`;
+  return result.meta.rowsAffected === 1;
+}
+
+/** End all of a user's auth sessions except the caller's own. */
+export async function revokeSessionsOf(c: Context, userId: string): Promise<void> {
+  await sql`DELETE FROM sessions WHERE user_id = ${userId} AND id <> ${getCookie(c, SESSION_COOKIE) ?? ''}
+    AND meta = ${JSON.stringify({ type: 'auth' })}`;
 }
 
 /** Revoke the caller's auth rows. Reset and OAuth-state rows remain separate. */

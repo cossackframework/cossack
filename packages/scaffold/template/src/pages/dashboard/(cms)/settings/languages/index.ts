@@ -1,9 +1,8 @@
 import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackframework/core';
 import { Button, Card, CardBody, Checkbox, NativeSelect, toast } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
-import { isCmsError, LOCALE, PERMISSIONS } from '@cossackframework/cms';
+import { isCmsError, languageName, LOCALE, PERMISSIONS } from '@cossackframework/cms';
 import { requireAny } from '../../../../../cms/guards';
-import { languageName } from '../../../../../cms/site';
 import { CONTROL, notice, pageHeader } from '../../../../../cms/ui';
 
 /** Languages offered by name; any other code can be added. */

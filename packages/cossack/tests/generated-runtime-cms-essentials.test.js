@@ -50,6 +50,10 @@ const post = (title, extra = {}) => ({ title, slug: '', excerpt: '', body: doc(p
 async function essentials(origin, routeIds, diagnostics, { runtime }) {
   const web = browserless(origin, routeIds, diagnostics);
   expect((await web.post('/auth/setup', SETUP)).headers.get('location')).toBe('/dashboard');
+  // The server refuses a blank title too; the editor catches it before sending.
+  const untitled = await web.action(EDITOR, 'save', [post('   '), 'draft', 0], { params: { collection: 'posts', id: 'new' }, state: { route: 'posts', id: 'new' } });
+  expect(untitled._cossack_redirect).toBeUndefined();
+  expect(untitled.errors).toEqual({ title: 'is required.' });
 
   // Scheduling: a future time schedules; the list shows it; visitors do not see it yet.
   const future = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().slice(0, 16);
@@ -261,6 +265,30 @@ async function essentials(origin, routeIds, diagnostics, { runtime }) {
   contains(await eve.page('/dashboard/profile/security?required=1'), 'This site requires two-step sign-in');
   expect((await web.action('dashboard/(cms)/settings/[group]/index.ts', 'save', [{ requireTwoFactor: false }], { params: { group: 'general' } })).error).toBe('');
 
+  // An administrator issues an application password for Eve from her user screen; it acts as Eve.
+  const eveId = (await (await web.request('/dashboard/users?search=eve')).text()).match(/\/dashboard\/users\/(?!new\b)([A-Za-z0-9_-]{8,})/)[1];
+  const userScreen = 'dashboard/users/[id]/index.ts';
+  const issued = await web.action(userScreen, 'addToken', ['Eve build', 'read'], { params: { id: eveId } });
+  expect(issued._cossack_return).toBe(true);
+  expect(issued.newToken).toMatch(/^cms_/);
+  expect(issued.tokens.map(entry => entry.name)).toEqual(['Eve build']);
+  expect((await fetch(`${origin}/api/cms/content/posts/${pendingId}`, { headers: { authorization: `Bearer ${issued.newToken}` } })).status).toBe(200);
+  const revoked = await web.action(userScreen, 'deleteToken', [issued.tokens[0].id], { params: { id: eveId } });
+  expect(revoked.tokens).toEqual([]);
+  expect((await fetch(`${origin}/api/cms/content/posts/${pendingId}`, { headers: { authorization: `Bearer ${issued.newToken}` } })).status).toBe(401);
+  // Editors cannot open user screens; a user manager who is not an administrator sees no
+  // Sessions or Application passwords there, and the server refuses the actions.
+  await expect(eve.action(userScreen, 'addToken', ['Not mine', 'write'], { params: { id: eveId } })).rejects.toThrow(/answered 403/);
+  await web.action('dashboard/roles/new/index.ts', 'create', ['User manager', ['cms:dashboard', 'cms:users']]);
+  await web.action(editorUser, 'create', ['Max', 'max@example.com', 'max password 1', ['user-manager']]);
+  const max = browserless(origin, routeIds, diagnostics);
+  await max.action('auth/login/index.ts', 'login', [{ email: 'max@example.com', password: 'max password 1' }]);
+  const maxView = await max.page(`/dashboard/users/${eveId}`);
+  contains(maxView, 'Edit user details.');
+  expect(maxView).not.toContain('Application passwords');
+  await expect(max.action(userScreen, 'addToken', ['Not mine', 'write'], { params: { id: eveId } })).rejects.toThrow(/answered 400.*Only the user and administrators/);
+  await expect(max.action(userScreen, 'endOtherSessions', [], { params: { id: eveId } })).rejects.toThrow(/answered 400/);
+
   // Every new screen renders.
   for (const pathname of ['/dashboard/tools/webhooks', '/dashboard/settings/discussion', '/dashboard/settings/seo', '/dashboard/settings/languages', `/dashboard/media/${image.id}`,
     '/dashboard/content/patterns', '/dashboard/content/patterns/new', '/dashboard/profile/security']) await web.page(pathname);
@@ -357,6 +385,58 @@ describe.skipIf(!liveFastDBTests())('generated CMS essentials', () => {
       // The list shows the author's avatar and the slug.
       await page.goto(origin + '/dashboard/content/posts?status=pending');
       await browserExpect(page.locator('td code', { hasText: 'picked-status' })).toBeVisible();
+
+      // A blank title is caught before saving.
+      await page.goto(origin + '/dashboard/content/posts/new');
+      await ready();
+      await page.getByRole('button', { name: 'Save draft' }).click();
+      await browserExpect(page.locator('#field-title-error')).toHaveText('Enter a title.');
+      await browserExpect(page.locator('#field-title')).toBeFocused();
+      expect(page.url()).toBe(origin + '/dashboard/content/posts/new');
+      // The block inserter groups blocks by category and searches them.
+      await page.getByRole('button', { name: 'Add block' }).click();
+      const blocks = page.getByRole('dialog', { name: 'Blocks' });
+      await browserExpect(blocks.getByRole('heading', { name: 'Media' })).toBeVisible();
+      await blocks.getByLabel('Search blocks').fill('divid');
+      await browserExpect(blocks.getByRole('heading')).toHaveText(['Design']);
+      await blocks.getByRole('button', { name: 'Divider' }).click();
+      await browserExpect(blocks).toBeHidden();
+      await browserExpect(page.locator('.rich-text-surface')).toContainText('Divider');
+
+      // With two languages the posts list has a language column, and the sidebar still
+      // reaches it from other screens without a reload.
+      expect((await web.action('dashboard/(cms)/settings/languages/index.ts', 'save', ['en', ['fr']])).error).toBe('');
+      const navigation = page.locator('#dashboard-navigation');
+      for (const start of ['/dashboard/media', '/dashboard/content/pages', '/dashboard/settings/general']) {
+        await page.goto(origin + start);
+        await ready();
+        const allPosts = navigation.getByRole('link', { name: 'All posts' });
+        if (!(await allPosts.isVisible())) await navigation.locator('summary', { hasText: 'Posts' }).click();
+        await allPosts.click();
+        await page.waitForURL(origin + '/dashboard/content/posts');
+        await browserExpect(page.getByRole('columnheader', { name: 'Language' })).toBeVisible();
+      }
+
+      // Users: when each last signed in, and the Sessions tab for the user and administrators.
+      await page.goto(origin + '/dashboard/users');
+      await ready();
+      await browserExpect(page.getByRole('columnheader', { name: 'Last signed in' })).toBeVisible();
+      const adaRow = page.getByRole('row').filter({ hasText: SETUP.email });
+      await browserExpect(adaRow.locator('time')).toHaveCount(1);
+      await adaRow.getByRole('link').first().click();
+      await ready();
+      await page.getByRole('tab', { name: /^Sessions/ }).click();
+      await browserExpect(page.locator('#user-sessions')).toBeVisible();
+      await browserExpect(page.locator('#user-sessions').getByText('Current')).toBeVisible();
+      expect(new URL(page.url()).searchParams.get('tab')).toBe('sessions');
+      // Application passwords on the user screen, shown once after creation.
+      await page.getByRole('tab', { name: /^Application passwords/ }).click();
+      await page.locator('#token-name').fill('Build server');
+      await page.getByRole('button', { name: 'Add application password' }).click();
+      await browserExpect(page.locator('[data-new-token]')).toHaveValue(/^cms_/);
+      await browserExpect(page.locator('li[data-token="Build server"]')).toBeVisible();
+      await browserExpect(page.locator('#token-name')).toHaveValue('');
+      expect(new URL(page.url()).searchParams.get('tab')).toBe('passwords');
 
       // Collection fields: new ones go last, and dragged order survives saving.
       await page.goto(origin + '/dashboard/collections/posts');

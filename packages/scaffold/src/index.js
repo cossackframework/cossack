@@ -297,7 +297,9 @@ const CREDENTIAL_AUTH_PATHS = new Set([
 ]);
 const DASHBOARD_CORE_PATHS = new Set([
   'src/dashboard/access.ts',
+  'src/dashboard/app-passwords.ts',
   'src/dashboard/avatar-field.ts',
+  'src/dashboard/session-list.ts',
   'src/pages/dashboard/index.ts',
   'src/pages/dashboard/layout.ts',
 ]);

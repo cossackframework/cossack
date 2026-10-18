@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-    checkComment, collectionProblems, compareRecords, diffWords, field, imageEditsProblems, imageSrcset, imageUrl, posts, redirectPath, redirectProblems,
-    validateValue, variantRect, variantWidth, webhookUrlProblem,
+    blockCategory, blockProblems, checkComment, collectionProblems, compareRecords, CORE_BLOCKS, diffWords, field, imageEditsProblems, imageSrcset, imageUrl, languageName,
+    posts, redirectPath, redirectProblems, validateValue, variantRect, variantWidth, webhookUrlProblem,
 } from '../src/index';
 import { negotiateFormat } from '../src/server/images';
 
@@ -27,6 +27,21 @@ describe('essentials helpers', () => {
         expect(validateValue('seo', seo, { other: 1 })).toBe('has no subfield other.');
         expect(collectionProblems({ ...posts, fieldOrder: ['Not valid'] })).toContain('The field order names at most 64 fields.');
         expect(collectionProblems({ ...posts, comments: 'yes' as never })).toContain('Comments are on or off.');
+        // Blank text does not fill a required field.
+        expect(validateValue('title', field.string({ required: true }), '   ')).toBe('is required.');
+        expect(validateValue('title', field.string({ required: true }), 'Hello')).toBeUndefined();
+        expect(validateValue('note', field.string(), '')).toBeUndefined();
+    });
+
+    it('names languages and groups blocks', () => {
+        expect(languageName('fr')).toBe('Français');
+        expect(languageName('not a code')).toBe('not a code');
+        expect(CORE_BLOCKS.every(block => block.icon && block.category)).toBe(true);
+        expect(blockCategory({})).toBe('widgets');
+        const block = { name: 'acme/card', label: 'Card', fields: {} };
+        expect(blockProblems({ ...block, icon: 'star', category: 'design' })).toEqual([]);
+        expect(blockProblems({ ...block, icon: 'Not An Icon' })).toHaveLength(1);
+        expect(blockProblems({ ...block, category: 'layout' as never })).toEqual(['block acme/card: the category is one of text, media, design, widgets, embeds.']);
     });
 
     it('checks redirects and webhook URLs', () => {

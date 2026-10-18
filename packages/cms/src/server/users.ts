@@ -18,6 +18,8 @@ export interface CmsUser {
     /** Permissions of all roles together. */
     readonly permissions: readonly string[];
     readonly createdAt: number;
+    /** When the user last started a session, or null when never. */
+    readonly lastSignInAt: number | null;
 }
 
 export interface CmsRole {
@@ -111,7 +113,7 @@ export class CmsUsers {
         if (!wanted.length) return new Map();
         const list = inList('u', wanted);
         const result = await this.#db.read([
-            { sql: `SELECT id, email, name, avatar, status, created_at FROM cms_users WHERE id IN ${list.sql}`, params: list.params },
+            { sql: `SELECT id, email, name, avatar, status, created_at, last_sign_in_at FROM cms_users WHERE id IN ${list.sql}`, params: list.params },
             { sql: `SELECT ur.user_id, r.id, r.name, r.permissions FROM cms_user_roles ur JOIN cms_roles r ON r.id = ur.role_id WHERE ur.user_id IN ${list.sql} ORDER BY r.id`, params: list.params },
         ]);
         const roles = new Map<string, CmsUser['assignments'][number][]>();
@@ -125,7 +127,7 @@ export class CmsUsers {
             const assignments = roles.get(row[0] as string) ?? [];
             users.set(row[0] as string, Object.freeze({
                 id: row[0] as string, email: row[1] as string, name: row[2] as string, avatar: row[3] as string | null,
-                status: row[4] as CmsUser['status'], createdAt: Number(row[5] as bigint),
+                status: row[4] as CmsUser['status'], createdAt: Number(row[5] as bigint), lastSignInAt: row[6] === null ? null : Number(row[6] as bigint),
                 roles: Object.freeze(assignments.map(role => role.id)), assignments: Object.freeze(assignments),
                 permissions: Object.freeze([...new Set(assignments.flatMap(role => role.permissions))].sort()),
             }));

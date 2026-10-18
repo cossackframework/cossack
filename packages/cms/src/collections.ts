@@ -16,6 +16,14 @@ export type ContentStatus = (typeof CONTENT_STATUSES)[number];
 /** A language code in URLs and entries: `en`, `pt-br`, `zh-hans`. */
 export const LOCALE = /^[a-z]{2,3}(?:-[a-z0-9]{2,8})?$/;
 
+/** A language's own name, such as `Français` for `fr`. Client-safe: dashboards render it. */
+export function languageName(code: string): string {
+    try {
+        const name = new Intl.DisplayNames([code], { type: 'language' }).of(code) ?? code;
+        return name.charAt(0).toLocaleUpperCase(code) + name.slice(1);
+    } catch { return code; }
+}
+
 /** An entry's search and sharing settings; each falls back to the entry's own values. */
 export const SEO_FIELDS = Object.freeze({
     title: field.string({ max: 200, label: 'SEO title' }),

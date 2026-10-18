@@ -2,7 +2,7 @@
  * Server helpers for the dashboard's content screens: which resource a route names, the
  * editor's view of it, and saving entries. Pages call these from their server methods.
  */
-import { CmsError, CORE_FIELDS, isCmsError, mediaUrl, recordTitle, type CollectionDefinition, type Principal, type RecordShape, type Resource } from '@cossackframework/cms';
+import { blockCategory, CmsError, CORE_FIELDS, isCmsError, mediaUrl, recordTitle, type CollectionDefinition, type Principal, type RecordShape, type Resource } from '@cossackframework/cms';
 import type { CmsHost } from '@cossackframework/cms/server';
 import { controlValue, editorField, editorFields, editorInput, type BlockOption, type EditorTaxonomy, type EditorValues, type EditorView, type TermOption } from './editor';
 
@@ -29,10 +29,12 @@ export async function editorView(cms: CmsHost, route: string): Promise<EditorVie
         taxonomies.push({ name: declaration.name, label: declaration.label, singular: declaration.singular, hierarchical: declaration.hierarchical,
             terms: declaration.hierarchical ? await termOptions(cms, taxonomy) : (await cms.taxonomies.list(taxonomy, { limit: 100 })).items.map(term => ({ id: term.id, name: term.name, depth: 0 })) });
     }
-    const blocks: BlockOption[] = (await cms.blocks()).map(block => ({ name: block.name, label: block.label, description: block.description ?? '', fields: editorFields(block.fields, []) }));
+    const blocks: BlockOption[] = (await cms.blocks()).map(block => ({ name: block.name, label: block.label, description: block.description ?? '', icon: block.icon ?? '',
+        category: blockCategory(block), fields: editorFields(block.fields, []) }));
+    const titleField = collection ? 'title' : resource.titleField ?? '';
     return {
         resource: resource.id, route, label: resource.label ?? resource.id, singular: collection?.singular ?? 'Entry',
-        titleField: collection ? 'title' : resource.titleField ?? '',
+        titleField, titleRequired: Boolean(titleField && resource.fields[titleField]?.required),
         slug: Boolean(collection && collection.slug !== false), publishable: Boolean(collection && collection.publishable !== false), hierarchical: Boolean(collection?.hierarchical),
         path: collection?.path ?? null,
         fields: editorFields(resource.fields, special),
@@ -142,6 +144,9 @@ export async function entryInput(cms: CmsHost, route: string, values: EditorValu
 export async function saveEntry(cms: CmsHost, route: string, id: string | null, values: EditorValues, intent: SaveIntent, revision: number, principal: Principal): Promise<RecordShape> {
     const view = await editorView(cms, route);
     const { resource } = routeResource(cms, route);
+    const repository = cms.resource(resource.id);
+    // Moving to the trash changes only the status, as in WordPress; edits are not saved.
+    if (intent === 'trash' && id && view.publishable) return repository.update(id, { status: 'trash' }, { principal, expectedRevision: revision });
     const input = await entryInput(cms, route, values);
     for (const taxonomy of view.taxonomies) {
         const raw = values[taxonomy.name];
@@ -152,7 +157,6 @@ export async function saveEntry(cms: CmsHost, route: string, id: string | null, 
         const current = typeof values.status === 'string' && ['draft', 'pending', 'scheduled', 'published'].includes(values.status) ? values.status : 'draft';
         input.status = intent === 'publish' ? 'published' : intent === 'draft' ? 'draft' : intent === 'trash' ? 'trash' : intent === 'restore' ? 'draft' : current;
     }
-    const repository = cms.resource(resource.id);
     const record = id ? await repository.update(id, input, { principal, expectedRevision: revision }) : await repository.create(input, { principal });
     // The saved entry replaces the editor's autosave.
     await cms.discardAutosave(resource.id, id ?? 'new', principal).catch(() => undefined);

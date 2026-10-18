@@ -164,6 +164,26 @@ and stronger sign-in.
   dashboard; they are sent to Profile → Security until they add one.
 - **ORM applications** keep password sign-in; their pages hide the controls.
 
+### Dashboard follow-ups (2026-10-17)
+
+- **Client-safe helpers.** Page `render()` code must not call server-only modules (`cms/site.ts`
+  imports the server entry): the stub throws in the browser and client navigation stops.
+  `languageName` moved to `@cossackframework/cms`.
+- **Blocks.** A block type names a Solar `icon` and a `category` (text, media, design,
+  widgets, embeds; default widgets). Blocks fields and rich text share a block picker
+  grouped by category, with search. Tools → Blocks groups them too.
+- **Titles.** A required text field rejects blank text on the server; the editor stops a
+  blank title before sending. Move to trash changes only the status.
+- **Last sign-in.** Starting a session stamps `cms_users.last_sign_in_at` (host step 6,
+  backfilled from sessions), so it survives sign-out. ORM applications read the newest
+  auth session, which sign-out removes.
+- **Sessions and application passwords.** The user screen gets Profile, Sessions and
+  Application passwords tabs. The last two show to the user and administrators (role
+  managers) only (`canManageAccess`), and their server methods check again.
+- **API tokens stay per user.** No site-wide keys under Settings: a token acts as its user,
+  so roles bound it, writes are attributed and removing the user ends it. Integrations get
+  their own user with a narrow role; an administrator issues its password from its screen.
+
 ## Done when
 
 `packages/cms` live suites cover each area; a generated Node and Workers application pass the

@@ -1,13 +1,13 @@
 import { Cossack, Page, State, ClientState, Server, Client, PreventNavigation, type HeadValue } from '@cossackframework/core';
 import { Button, Checkbox, Input, Modal, NativeSelect, Textarea, toast } from '@cossackframework/ui';
 import { html, component, unsafeHTML, type TemplateResult } from '@cossackframework/renderer';
-import { blockId, evaluateRule, formatBytes, isCmsError, mediaKind, recordTitle, richTextBlocks, type EmbeddedBlock, type MediaKind, type RecordShape, type RichTextDoc } from '@cossackframework/cms';
+import { blockId, evaluateRule, formatBytes, isCmsError, languageName, mediaKind, recordTitle, richTextBlocks, type EmbeddedBlock, type MediaKind, type RecordShape, type RichTextDoc } from '@cossackframework/cms';
 import { renderMarkdown } from '@cossackframework/cms/server';
 import { editorView, entryValues, fieldErrors, mediaPreviews, parentOptions, routeResource, saveEntry, termOptions, type MediaPreview, type SaveIntent } from '../../../../../../cms/content';
 import { blockDefaults, controlValue, editorInput, entryUrl, suggestedSlug, type EditorField, type EditorValues, type EditorView, type TermOption } from '../../../../../../cms/editor';
 import { RichTextField, richTextEditors } from '../../../../../../cms/rich-text-field';
+import { BlockInserter } from '../../../../../../cms/block-inserter';
 import { box, CONTROL, linkButton, notice, shortDate, STATUS_LABELS, statusBadge } from '../../../../../../cms/ui';
-import { languageName } from '../../../../../../cms/site';
 import { siteOrigin } from '../../../../../../cms/seo';
 
 type MediaTarget = { field: string; block?: number; key?: string; multiple?: boolean; insert?: boolean; richText?: boolean; dialog?: boolean; group?: boolean };
@@ -47,7 +47,6 @@ export default class EntryEditor extends Cossack {
     @State() picker: { open: boolean; target: MediaTarget | null; search: string; kind: string; items: (MediaPreview & { size: string; name: string })[] } = { open: false, target: null, search: '', kind: '', items: [] };
     @State() termDrafts: Record<string, { name: string; parent: string }> = {};
     @State() tagDrafts: Record<string, string> = {};
-    @State() blockChoice: Record<string, string> = {};
     @State() canManageTerms = false;
     @State() blockDialog: BlockDialog | null = null;
     /** The saved status, which the Publish button's label depends on. */
@@ -189,6 +188,7 @@ export default class EntryEditor extends Cossack {
         this.values = { ...this.values, [title]: value, ...(this.view?.slug && !this.slugTouched ? { slug: suggestedSlug(value) } : {}) };
         this.dirty = true;
         this.unsaved = true;
+        if (this.errors[title]) this.errors = Object.fromEntries(Object.entries(this.errors).filter(([key]) => key !== title));
     }
 
     /** A field of a group, such as the SEO title. */
@@ -396,8 +396,7 @@ export default class EntryEditor extends Cossack {
     }
 
     @Client()
-    addBlock(field: string, allowed: string[]) {
-        const type = this.blockChoice[field] || allowed[0];
+    addBlock(field: string, type: string) {
         const option = this.view?.blocks.find(block => block.name === type);
         if (!option) return;
         this.set(field, [...this.blocks(field), { id: blockId(), type: option.name, data: blockDefaults(option) }]);
@@ -557,6 +556,14 @@ export default class EntryEditor extends Cossack {
 
     @Client()
     async submit(intent: SaveIntent) {
+        // A blank title is caught here, before the request; the server refuses it too.
+        const title = this.view?.titleField ?? '';
+        if (this.view?.titleRequired && intent !== 'trash' && !String(this.values[title] ?? '').trim()) {
+            this.errors = { ...this.errors, [title]: __('Enter a title.') };
+            toast.error(__('Enter a title before saving.'));
+            document.getElementById('field-title')?.focus();
+            return;
+        }
         this.saving = true;
         this.error = '';
         this.message = '';
@@ -655,7 +662,7 @@ export default class EntryEditor extends Cossack {
             case 'blocks': return this.blocksControl(field);
             case 'richtext': return component(RichTextField, {
                 id, label: field.label, value: (value as RichTextDoc | null) ?? null,
-                blocks: (this.view?.blocks ?? []).filter(block => block.name !== 'core/pattern' && (!field.blocks.length || field.blocks.includes(block.name))).map(block => ({ name: block.name, label: block.label })),
+                blocks: (this.view?.blocks ?? []).filter(block => block.name !== 'core/pattern' && (!field.blocks.length || field.blocks.includes(block.name))),
                 onChange: (doc: RichTextDoc) => change(doc),
                 onMedia: () => this.openPicker({ field: field.name, richText: true }),
                 onInsertBlock: (type: string) => this.insertRichBlock(field.name, type),
@@ -731,11 +738,7 @@ export default class EntryEditor extends Cossack {
                     </div>
                 </section>`;
             })}
-            ${allowed.length ? html`<div class="flex flex-wrap items-center gap-2">
-                ${component(NativeSelect, { size: 'sm', 'aria-label': __('Block type'), '@change': (event: Event) => { this.blockChoice = { ...this.blockChoice, [field.name]: (event.target as HTMLSelectElement).value }; } }, html`
-                    ${allowed.map(option => html`<option value=${option.name} ?selected=${(this.blockChoice[field.name] || allowed[0]!.name) === option.name}>${option.label}</option>`)}`)}
-                ${component(Button, { type: 'button', size: 'sm', variant: 'outline', '@click': () => this.addBlock(field.name, allowed.map(option => option.name)) }, __('Add block'))}
-            </div>` : null}
+            ${allowed.length ? component(BlockInserter, { id: `field-${field.name}-blocks`, blocks: allowed, onPick: (type: string) => this.addBlock(field.name, type) }) : null}
             ${this.errorFor(field.name)}
         </div>`;
     }
@@ -1011,9 +1014,10 @@ export default class EntryEditor extends Cossack {
                 <div class="min-w-0 space-y-5">
                     ${titleField ? html`<div class="space-y-1">
                         <label for="field-title" class="sr-only">${__('Title')}</label>
-                        <input id="field-title" class="w-full rounded-lg border border-input bg-background px-4 py-3 text-xl font-semibold text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-                            placeholder=${__('Add title')} .value=${String(this.values[titleField] ?? '')} @input=${(event: Event) => this.setTitle((event.target as HTMLInputElement).value)}>
-                        ${this.errorFor(titleField)}
+                        <input id="field-title" class=${`w-full rounded-lg border bg-background px-4 py-3 text-xl font-semibold text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring ${this.errors[titleField] ? 'border-destructive' : 'border-input'}`}
+                            placeholder=${__('Add title')} .value=${String(this.values[titleField] ?? '')} @input=${(event: Event) => this.setTitle((event.target as HTMLInputElement).value)}
+                            ?required=${view.titleRequired} aria-invalid=${this.errors[titleField] ? 'true' : 'false'} aria-describedby=${this.errors[titleField] ? 'field-title-error' : undefined}>
+                        ${this.errors[titleField] ? html`<p id="field-title-error" role="alert" class="text-xs text-destructive">${this.errors[titleField]}</p>` : null}
                     </div>` : null}
                     ${permalink !== null ? html`<div class="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
                         <span>${__('Permalink')}:</span>

@@ -10,6 +10,8 @@ export interface UserSummary {
   name: string;
   avatar: string | null;
   createdAt: string;
+  /** When the user last signed in, recorded when a session starts; null when never. */
+  lastSignedInAt: string | null;
   roles: RoleAssignment[];
 }
 
@@ -46,6 +48,7 @@ export interface UpdateUserInput {
 function summary(user: CmsUser): UserSummary {
   return {
     id: user.id, email: user.email, name: user.name, avatar: user.avatar, createdAt: new Date(user.createdAt).toISOString(),
+    lastSignedInAt: user.lastSignInAt === null ? null : new Date(user.lastSignInAt).toISOString(),
     roles: user.assignments.map(role => ({ id: role.id, name: role.name, permissions: [...role.permissions] })),
   };
 }

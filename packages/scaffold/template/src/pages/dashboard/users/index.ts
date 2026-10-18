@@ -141,6 +141,14 @@ export default class UsersPage extends Cossack {
         }
     }
 
+    private formatDateTime(iso: string): string {
+        try {
+            return new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+        } catch {
+            return iso;
+        }
+    }
+
     render() {
         const totalPages = Math.max(1, Math.ceil(this.total / PAGE_SIZE));
         const from = this.total === 0 ? 0 : (this.page - 1) * PAGE_SIZE + 1;
@@ -203,6 +211,7 @@ export default class UsersPage extends Cossack {
                                     <tr class="text-left text-xs uppercase tracking-wide text-muted-foreground">
                                         <th class="py-2 pr-4 font-medium">${__('User')}</th>
                                         <th class="py-2 pr-4 font-medium">${__('Roles')}</th>
+                                        <th class="py-2 pr-4 font-medium">${__('Last signed in')}</th>
                                         <th class="py-2 pr-4 font-medium">${__('Created')}</th>
                                         <th class="py-2 text-right font-medium">${__('Actions')}</th>
                                     </tr>
@@ -225,6 +234,11 @@ export default class UsersPage extends Cossack {
                                                         ? html`<span class="text-xs text-muted-foreground">—</span>`
                                                         : u.roles.map((r) => component(Badge, { variant: 'outline' }, r.name))}
                                                 </div>
+                                            </td>
+                                            <td class="py-3 pr-4 text-sm text-muted-foreground">
+                                                ${u.lastSignedInAt
+                                                    ? html`<time datetime=${u.lastSignedInAt}>${this.formatDateTime(u.lastSignedInAt)}</time>`
+                                                    : __('Never')}
                                             </td>
                                             <td class="py-3 pr-4 text-sm text-muted-foreground">${this.formatDate(u.createdAt)}</td>
                                             <td class="py-3">

@@ -36,6 +36,15 @@ import { TextFieldIcon } from '@cossackframework/solar-icons/text-field/line';
 import { Palette2Icon } from '@cossackframework/solar-icons/palette-2/line';
 import { WidgetAddIcon } from '@cossackframework/solar-icons/widget-add/line';
 import { ChatRoundDotsIcon } from '@cossackframework/solar-icons/chat-round-dots/line';
+import { ParagraphSpacingIcon } from '@cossackframework/solar-icons/paragraph-spacing/line';
+import { TextBoldIcon } from '@cossackframework/solar-icons/text-bold/line';
+import { GalleryWideIcon } from '@cossackframework/solar-icons/gallery-wide/line';
+import { ChatRoundLineIcon } from '@cossackframework/solar-icons/chat-round-line/line';
+import { ListIcon } from '@cossackframework/solar-icons/list/line';
+import { CodeSquareIcon } from '@cossackframework/solar-icons/code-square/line';
+import { CursorSquareIcon } from '@cossackframework/solar-icons/cursor-square/line';
+import { PlayCircleIcon } from '@cossackframework/solar-icons/play-circle/line';
+import { MinusSquareIcon } from '@cossackframework/solar-icons/minus-square/line';
 
 export const ICONS: Readonly<Record<string, IconEntry>> = Object.freeze({
     'document-text': { line: DocumentTextIcon },
@@ -74,6 +83,16 @@ export const ICONS: Readonly<Record<string, IconEntry>> = Object.freeze({
     'palette-2': { line: Palette2Icon },
     'widget-add': { line: WidgetAddIcon },
     'chat-round-dots': { line: ChatRoundDotsIcon },
+    // Blocks.
+    'paragraph-spacing': { line: ParagraphSpacingIcon },
+    'text-bold': { line: TextBoldIcon },
+    'gallery-wide': { line: GalleryWideIcon },
+    'chat-round-line': { line: ChatRoundLineIcon },
+    'list': { line: ListIcon },
+    'code-square': { line: CodeSquareIcon },
+    'cursor-square': { line: CursorSquareIcon },
+    'play-circle': { line: PlayCircleIcon },
+    'minus-square': { line: MinusSquareIcon },
 });
 
 /** Names offered for collections, in the builder's order. */
@@ -81,4 +100,9 @@ export const COLLECTION_ICONS = Object.freeze(['document-text', 'notebook', 'box
 
 export function icon(name: string | undefined, fallback = 'document-text'): IconEntry {
     return ICONS[name ?? ''] ?? ICONS[fallback]!;
+}
+
+/** A block's icon; plugin blocks naming an icon this map lacks get a generic one. */
+export function blockIcon(name: string | undefined): IconEntry {
+    return icon(name, 'widget-4');
 }

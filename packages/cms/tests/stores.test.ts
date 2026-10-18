@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { Hono } from 'hono';
 import { createSessionManager } from '@cossackframework/auth';
 import type { StorageProvider } from '@cossackframework/core/storage';
-import { beforeWrite, createCMS, createCmsAuth, FileService, systemPrincipal, userPrincipal, type CmsHost, type PluginContext } from '../src/server/index';
+import { beforeWrite, createCMS, createCmsAuth, FileService, HOST_STEPS, systemPrincipal, userPrincipal, type CmsHost, type PluginContext } from '../src/server/index';
 import { fastdbService, live } from './helpers';
 
 const context = {} as never;
@@ -131,6 +131,14 @@ describe.skipIf(!live)('CMS stores on FastDB', () => {
         const me = await (await app.request('/me', { headers: { cookie } })).json() as { principal: { kind: string; id?: string } };
         expect(me.principal).toMatchObject({ kind: 'user', id: user.id });
         expect((await (await app.request('/me')).json() as { principal: { kind: string } }).principal.kind).toBe('anonymous');
+        // The session's start is the user's last sign-in; the upgrade step derives it from sessions.
+        expect(user.lastSignInAt).toBeNull();
+        const signedIn = (await cms.users.get(user.id))!.lastSignInAt;
+        expect(signedIn).toBeGreaterThan(Date.now() - 60_000);
+        const db = service.database();
+        await db.write([{ sql: 'UPDATE cms_users SET last_sign_in_at = NULL WHERE id = $id', params: { $id: user.id } }]);
+        await db.write([HOST_STEPS.find(step => step.version === 6)!.statements[1]!]);
+        expect((await cms.users.get(user.id))!.lastSignInAt).toBe(signedIn);
 
         const token = cookie.split('=')[1]!;
         const descriptor = await kit.realtime.capture(token, user.id, context);

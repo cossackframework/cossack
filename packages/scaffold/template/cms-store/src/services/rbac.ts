@@ -32,6 +32,11 @@ export function canAssignRoles(user: PublicUser | null | undefined): boolean {
     return !!user && hasPermission(user.principal, PERMISSIONS.manageRoles);
 }
 
+/** Who may see and end a user's sessions and application passwords: the user and administrators. */
+export function canManageAccess(user: PublicUser | null | undefined, userId: string): boolean {
+    return !!user && (user.id === userId || canAssignRoles(user));
+}
+
 /** Guard of the role screens. */
 export const requireRoleManager: MiddlewareHandler = guard.requirePermission(PERMISSIONS.manageRoles);
 

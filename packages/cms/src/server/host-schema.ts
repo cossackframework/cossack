@@ -149,4 +149,12 @@ export const HOST_STEPS: readonly HostStep[] = [{
             expires_at INTEGER NOT NULL)` },
         { sql: 'CREATE INDEX cms_auth_challenges_expiry ON cms_auth_challenges (expires_at)' },
     ],
+}, {
+    version: 6,
+    description: 'Record when users last signed in',
+    statements: [
+        // Sessions are deleted at sign-out; the user keeps the time of the newest one.
+        { sql: 'ALTER TABLE cms_users ADD COLUMN last_sign_in_at INTEGER' },
+        { sql: 'UPDATE cms_users SET last_sign_in_at = (SELECT max(s.created_at) FROM cms_auth_sessions s WHERE s.user_id = cms_users.id)' },
+    ],
 }];

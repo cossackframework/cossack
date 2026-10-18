@@ -1,11 +1,12 @@
 import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackframework/core';
-import { Alert, Badge, Button, Card, CardBody, CardHeader, Field, Input, NativeSelect, toast } from '@cossackframework/ui';
+import { Alert, Badge, Button, Card, CardBody, CardHeader, Field, Input, toast } from '@cossackframework/ui';
 import { html, component, unsafeHTML, type TemplateResult } from '@cossackframework/renderer';
 import {
     addPasskey, apiTokensAvailable, confirmAuthenticator, createApiToken, disableAuthenticator, listApiTokens, newRecoveryCodes, passkeyRegistration,
     removePasskey, revokeApiToken, securityStatus, startAuthenticator, twoFactorAvailable, type ApiToken, type PublicUser, type SecurityStatus,
 } from '../../../../auth';
 import { createPasskey } from '../../../../passkeys.client';
+import { AppPasswords } from '../../../../dashboard/app-passwords';
 
 const date = (value: number | null) => value ? new Date(value).toISOString().slice(0, 16).replace('T', ' ') + ' UTC' : '—';
 
@@ -23,7 +24,6 @@ export default class SecurityPage extends Cossack {
     @State() recoveryCodes: string[] = [];
     @State() passkeyName = '';
     @State() tokens: ApiToken[] = [];
-    @State() tokenForm = { name: '', scope: 'write' as 'read' | 'write' };
     @State() newToken = '';
     @State() required = false;
     @State() recovered = false;
@@ -133,26 +133,24 @@ export default class SecurityPage extends Cossack {
 
     // --- Application passwords -----------------------------------------------------
 
+    /** Returns whether the password was created; the form keeps its values otherwise. */
     @Server()
-    async addToken(name: string, scope: 'read' | 'write') {
+    async addToken(name: string, scope: 'read' | 'write'): Promise<boolean> {
         this.error = '';
         try {
             this.newToken = await createApiToken(this.user!.id, name, scope === 'read' ? 'read' : 'write');
-            this.tokenForm = { name: '', scope: 'write' };
             await this.load();
-        } catch (error) { this.error = (error as Error).message; }
+            return true;
+        } catch (error) {
+            this.error = (error as Error).message;
+            return false;
+        }
     }
 
     @Server()
     async deleteToken(id: string) {
         await revokeApiToken(this.user!.id, id);
         await this.load();
-    }
-
-    @Client()
-    async copyToken() {
-        try { await navigator.clipboard.writeText(this.newToken); toast.success(__('Copied.')); }
-        catch { toast.error(__('Copy it from the box.')); }
     }
 
     private authenticator(): TemplateResult {
@@ -227,24 +225,8 @@ export default class SecurityPage extends Cossack {
                     </div>`)}`) : null}
             ${this.tokensAvailable ? component(Card, {}, html`${component(CardHeader, {}, html`<h2 class="text-base font-semibold text-foreground">${__('Application passwords')}</h2>
                 <p class="text-sm text-muted-foreground">${__('Let apps and scripts use the content API as you: send the password as Authorization: Bearer. Revoke one to cut off its app.')}</p>`)}
-                ${component(CardBody, { class: 'space-y-4' }, html`
-                    ${this.newToken ? html`<div class="space-y-2 rounded-md border border-emerald-500/40 bg-emerald-500/5 p-3">
-                        <p class="text-sm font-medium text-foreground">${__('Copy your new application password now. You will not see it again.')}</p>
-                        <div class="flex gap-2"><input readonly class="w-full rounded-md border border-input bg-background px-3 py-1.5 font-mono text-xs" aria-label=${__('New application password')} .value=${this.newToken} data-new-token>
-                            ${component(Button, { type: 'button', size: 'sm', variant: 'outline', '@click': () => this.copyToken() }, __('Copy'))}</div>
-                    </div>` : null}
-                    <form class="flex flex-wrap items-end gap-2" @submit=${(event: Event) => { event.preventDefault(); void this.addToken(this.tokenForm.name, this.tokenForm.scope); }}>
-                        ${component(Field, { label: __('Name'), for: 'token-name', control: attributes => component(Input, { ...attributes, required: true, maxlength: 80, placeholder: __('Such as Mobile app'),
-                            '.value': this.tokenForm.name, '@input': (event: Event) => { this.tokenForm = { ...this.tokenForm, name: (event.target as HTMLInputElement).value }; } }) })}
-                        ${component(Field, { label: __('Access'), for: 'token-scope', control: attributes => component(NativeSelect, { ...attributes, '@change': (event: Event) => { this.tokenForm = { ...this.tokenForm, scope: (event.target as HTMLSelectElement).value as 'read' | 'write' }; } }, html`
-                            <option value="write" ?selected=${this.tokenForm.scope === 'write'}>${__('Read and write')}</option><option value="read" ?selected=${this.tokenForm.scope === 'read'}>${__('Read only')}</option>`) })}
-                        ${component(Button, { type: 'submit', disabled: !this.tokenForm.name.trim() }, __('Add application password'))}
-                    </form>
-                    ${this.tokens.length ? html`<ul class="divide-y divide-border rounded-md border border-border">${this.tokens.map(token => html`<li class="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-sm" data-token=${token.name}>
-                        <span><span class="font-medium text-foreground">${token.name}</span> ${component(Badge, { variant: 'secondary' }, token.scope === 'read' ? __('Read only') : __('Read and write'))}
-                            <span class="block text-xs text-muted-foreground">${__('created')} ${date(token.createdAt)} · ${__('last used')} ${date(token.lastUsedAt)}</span></span>
-                        <button type="button" class="text-xs text-destructive hover:underline bg-transparent border-none p-0 cursor-pointer" @click=${() => this.deleteToken(token.id)}>${__('Revoke')}</button>
-                    </li>`)}</ul>` : null}`)}`) : null}
+                ${component(CardBody, {}, component(AppPasswords, { tokens: this.tokens, newToken: this.newToken,
+                    onAdd: (name: string, scope: 'read' | 'write') => this.addToken(name, scope), onRevoke: (id: string) => this.deleteToken(id) }))}`) : null}
         </div>`;
     }
 }

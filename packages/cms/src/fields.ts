@@ -201,6 +201,8 @@ export function validateValue(name: string, declaration: FieldDeclaration, value
     switch (declaration.kind) {
         case 'string': case 'text': {
             if (typeof value !== 'string') return 'must be text.';
+            // Blank text does not fill a required field.
+            if (declaration.required && !value.trim()) return 'is required.';
             if (/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(value)) return 'must be well-formed text.';
             const length = [...value].length;
             if (declaration.max !== undefined && length > declaration.max) return `must be at most ${declaration.max} characters.`;

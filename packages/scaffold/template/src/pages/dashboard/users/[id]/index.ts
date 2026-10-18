@@ -1,11 +1,16 @@
 import { ClientVisibleError, Cossack, Page, State, ClientState, Validate, Client, Server, Store, storeRules } from '@cossackframework/core';
-import { Card, CardBody, CardHeader, Field, Input, PasswordInput, Button, Checkbox, Form, toast } from '@cossackframework/ui';
+import { Card, CardBody, CardHeader, Field, Input, PasswordInput, Button, Checkbox, Form, Tabs, toast } from '@cossackframework/ui';
 import { html, component, bind } from '@cossackframework/renderer';
-import { canAssignRoles, canManageUser, guard } from '../../../../services/rbac';
+import { canAssignRoles, canManageUser, canManageAccess, guard } from '../../../../services/rbac';
 import { getUser, updateUser, syncUserRoles, changeUserPassword, type UserDetail } from '../../../../services/users';
 import { listRoles, type RoleDetail } from '../../../../services/roles';
-import { avatarUploads, resetSecondFactors, securityStatus, twoFactorAvailable, uploadAvatar, type PublicUser } from '../../../../auth';
+import {
+    apiTokensAvailable, avatarUploads, createApiToken, listApiTokens, resetSecondFactors, revokeApiToken, revokeSessionOf, revokeSessionsOf, securityStatus, sessionsOf,
+    twoFactorAvailable, uploadAvatar, type ApiToken, type PublicUser, type SessionInfo,
+} from '../../../../auth';
+import { AppPasswords } from '../../../../dashboard/app-passwords';
 import { avatarField } from '../../../../dashboard/avatar-field';
+import { sessionTable } from '../../../../dashboard/session-list';
 
 @Page({ transport: 'http', middlewares: [guard.requireRole('admin')] })
 export default class EditUserPage extends Cossack {
@@ -41,6 +46,17 @@ export default class EditUserPage extends Cossack {
     @State() error = '';
     /** The user's second factors: an authenticator app and how many passkeys. */
     @State() security: { available: boolean; totp: boolean; passkeys: number } = { available: false, totp: false, passkeys: 0 };
+    /** The Sessions and Application passwords tabs show to the user and to administrators only. */
+    @State() canSeeAccess = false;
+    @State() sessions: SessionInfo[] = [];
+    @State() sessionsError = '';
+    @State() tokensAvailable = false;
+    @State() tokens: ApiToken[] = [];
+    /** A password just created for this user, shown once. */
+    @State() newToken = '';
+    @State() tokensError = '';
+    /** The open tab; `?tab=sessions` or `?tab=passwords` opens that one. */
+    @State() tab = 'profile';
 
     @Server()
     async init() {
@@ -61,6 +77,72 @@ export default class EditUserPage extends Cossack {
             const status = await securityStatus(id);
             this.security = { available: true, totp: status.totp, passkeys: status.passkeys.length };
         }
+        this.canSeeAccess = canManageAccess(this.user as PublicUser | undefined, id);
+        if (this.canSeeAccess) {
+            this.sessions = await sessionsOf(this.c, id);
+            this.tokensAvailable = apiTokensAvailable;
+            if (this.tokensAvailable) this.tokens = await listApiTokens(id);
+            const tab = this.c.req.query('tab');
+            if (tab === 'sessions' || (tab === 'passwords' && this.tokensAvailable)) this.tab = tab;
+        }
+    }
+
+    // --- Sessions ----------------------------------------------------------------
+
+    /** Server methods check again who may see the sessions and passwords; the caller's own session stays. */
+    private accessOwner(): string {
+        const id = this.c.req.param('id')!;
+        if (!canManageAccess(this.user as PublicUser | undefined, id)) throw new ClientVisibleError(__('Only the user and administrators can manage this.'));
+        return id;
+    }
+
+    @Server()
+    async endSession(reference: string) {
+        const id = this.accessOwner();
+        this.sessionsError = (await revokeSessionOf(this.c, id, reference)) ? '' : __('The session could not be ended.');
+        this.sessions = await sessionsOf(this.c, id);
+    }
+
+    @Server()
+    async endOtherSessions() {
+        const id = this.accessOwner();
+        await revokeSessionsOf(this.c, id);
+        this.sessionsError = '';
+        this.sessions = await sessionsOf(this.c, id);
+    }
+
+    // --- Application passwords -------------------------------------------------------
+
+    /** An administrator's password for another user acts as that user. Returns whether it was created. */
+    @Server()
+    async addToken(name: string, scope: 'read' | 'write'): Promise<boolean> {
+        const id = this.accessOwner();
+        this.tokensError = '';
+        try {
+            this.newToken = await createApiToken(id, name, scope === 'read' ? 'read' : 'write');
+            this.tokens = await listApiTokens(id);
+            return true;
+        } catch (error) {
+            this.tokensError = (error as Error).message;
+            return false;
+        }
+    }
+
+    @Server()
+    async deleteToken(tokenId: string) {
+        const id = this.accessOwner();
+        await revokeApiToken(id, tokenId);
+        this.tokens = await listApiTokens(id);
+    }
+
+    @Client()
+    showTab(value: string) {
+        this.tab = value;
+        // Keep the tab in the address so a reload or a shared link opens it.
+        const url = new URL(window.location.href);
+        if (value === 'profile') url.searchParams.delete('tab');
+        else url.searchParams.set('tab', value);
+        window.history.replaceState(window.history.state, '', url);
     }
 
     /** For someone who lost their phone or security key: they sign in with the password alone again. */
@@ -196,87 +278,128 @@ export default class EditUserPage extends Cossack {
             <a href="/dashboard/users" class="text-sm text-primary hover:underline">← ${__('All users')}</a>
         </div>`;
 
+        const profile = html`<div class="space-y-8 max-w-2xl">
+            ${component(Card, {}, html`
+                ${component(CardHeader, {}, html`<h2 class="text-base font-semibold text-foreground">${__('Profile')}</h2>`)}
+                ${component(CardBody, {}, html`
+                    ${component(Form, {
+                        submit: (e: Event) => this.handleSubmit(e),
+                    }, html`
+                        <div class="flex flex-col space-y-6">
+                        ${component(Field, { label: __('Name'), for: 'name', error: this.getError('name'),
+                            control: attributes => component(Input, { ...attributes, type: 'text', '.value': bind(this.userDetail, 'name') }) })}
+                        ${component(Field, { label: __('Email'), for: 'email', error: this.getError('email'),
+                            control: attributes => component(Input, { ...attributes, type: 'email', '.value': bind(this.userDetail, 'email') }) })}
+                        ${avatarField({ id: 'avatar', value: this.avatarPreview || this.userDetail.avatar || '', name: this.userDetail.name || this.userDetail.email, uploads: this.avatarUploads,
+                            uploading: this.uploading, error: this.avatarError, onFile: file => this.chooseAvatar(file),
+                            onUrl: url => { if (this.userDetail) this.userDetail.avatar = url; }, onRemove: () => this.removeAvatar() })}
+                        <div>
+                            ${component(Button, { type: 'submit' }, __('Save changes'))}
+                        </div>
+                        </div>
+                    `)}
+                `)}
+            `)}
+
+            ${component(Card, {}, html`
+                ${component(CardHeader, {}, html`<h2 class="text-base font-semibold text-foreground">${__('Change password')}</h2>`)}
+                ${component(CardBody, {}, html`
+                    ${component(Form, {
+                        submit: (e: Event) => this.handleChangePassword(e),
+                    }, html`
+                        <div class="flex flex-col space-y-4">
+                            ${component(Field, { label: __('New password'), for: 'new-password', hint: __('Leave the user a way back in — they\'ll need the new password to sign in.'),
+                                control: attributes => component(PasswordInput, {
+                                    ...attributes,
+                                    value: this.newPassword,
+                                    onValueChange: (v: string) => this.newPassword = v,
+                                }) })}
+                            <div>
+                                ${component(Button, { type: 'submit', variant: 'outline' }, __('Update password'))}
+                            </div>
+                        </div>
+                    `)}
+                `)}
+            `)}
+
+            ${this.security.available ? component(Card, {}, html`
+                ${component(CardHeader, {}, html`<h2 class="text-base font-semibold text-foreground">${__('Two-step sign-in')}</h2>`)}
+                ${component(CardBody, { class: 'space-y-3' }, html`
+                    <p class="text-sm text-muted-foreground">${this.security.totp || this.security.passkeys
+                        ? `${this.security.totp ? __('Authenticator app on.') : __('No authenticator app.')} ${this.security.passkeys} ${this.security.passkeys === 1 ? __('passkey') : __('passkeys')}.`
+                        : __('This user signs in with a password only.')}</p>
+                    ${this.security.totp || this.security.passkeys ? component(Button, { type: 'button', variant: 'outline', '@click': async () => { await this.resetSecurity(); toast.success(__('Two-step sign-in reset.')); } }, __('Reset two-step sign-in')) : null}
+                `)}
+            `) : null}
+
+            ${this.canAssignRoles ? component(Card, {}, html`
+                ${component(CardHeader, {}, html`<h2 class="text-base font-semibold text-foreground">${__('Roles')}</h2>`)}
+                ${component(CardBody, {}, html`
+                    <div class="space-y-3">
+                        ${this.allRoles.length === 0
+                            ? html`<p class="text-sm text-muted-foreground">${__('No roles defined yet.')}</p>`
+                            : this.allRoles.map((role) => html`
+                                <label class="flex items-center gap-3 cursor-pointer">
+                                    ${component(Checkbox, {
+                                        checked: this.assignedRoleIds.includes(role.id),
+                                        '@change': (e: any) => this.toggleRole(role.id, e.target.checked),
+                                    })}
+                                    <span class="text-sm font-medium text-foreground">${role.name}</span>
+                                </label>
+                            `)}
+                    </div>
+                    <div class="mt-6">
+                        ${component(Button, { variant: 'outline', '@click': () => this.handleSubmit({ preventDefault: () => {} } as any) }, __('Save roles'))}
+                    </div>
+                `)}
+            `) : null}
+        </div>`;
+        const own = this.userDetail.id === this.user?.id;
+        const sessions = html`<div class="space-y-4">
+            ${component(Card, {}, html`
+                ${component(CardHeader, {}, html`<h2 class="text-base font-semibold text-foreground">${__('Active sessions')}</h2>
+                    <p class="mt-1 text-sm text-muted-foreground">${own ? __('Devices signed in to your account.') : __('Devices signed in to this account.')}</p>`)}
+                ${component(CardBody, {}, html`
+                    ${this.sessionsError ? html`<p role="alert" class="mb-3 text-sm text-destructive">${this.sessionsError}</p>` : null}
+                    ${sessionTable(this.sessions, { id: 'user-sessions', onRevoke: async (reference) => { await this.endSession(reference); if (!this.sessionsError) toast.success(__('Session ended.')); } })}`)}
+            `)}
+            ${this.sessions.some((session) => !session.current) ? html`<div class="flex justify-end">
+                ${component(Button, { type: 'button', variant: 'outline', size: 'sm', '@click': async () => { await this.endOtherSessions(); toast.success(__('Signed out.')); } },
+                    own ? __('Sign out other sessions') : __('Sign out everywhere'))}
+            </div>` : null}
+        </div>`;
+
+        const passwords = html`<div class="max-w-3xl">
+            ${component(Card, {}, html`
+                ${component(CardHeader, {}, html`<h2 class="text-base font-semibold text-foreground">${__('Application passwords')}</h2>
+                    <p class="mt-1 text-sm text-muted-foreground">${own
+                        ? __('Let apps and scripts use the content API as you: send the password as Authorization: Bearer.')
+                        : __('Apps and scripts using these act as this user, with the user\'s roles. Create one for an integration account, then hand it to the app.')}</p>`)}
+                ${component(CardBody, { class: 'space-y-3' }, html`
+                    ${this.tokensError ? html`<p role="alert" class="text-sm text-destructive">${this.tokensError}</p>` : null}
+                    ${component(AppPasswords, { tokens: this.tokens, newToken: this.newToken,
+                        onAdd: (name: string, scope: 'read' | 'write') => this.addToken(name, scope), onRevoke: (tokenId: string) => this.deleteToken(tokenId) })}`)}
+            `)}
+        </div>`;
+
         return html`
-            <div class="space-y-8 max-w-2xl">
+            <div class=${`space-y-8 ${this.canSeeAccess ? 'max-w-4xl' : 'max-w-2xl'}`}>
                 <div>
                     <h1 class="text-2xl font-bold text-foreground">${this.userDetail.name || this.userDetail.email}</h1>
                     <p class="mt-1 text-sm text-muted-foreground">${this.canAssignRoles ? __('Edit user details and roles.') : __('Edit user details.')}</p>
                 </div>
 
-                ${component(Card, {}, html`
-                    ${component(CardHeader, {}, html`<h2 class="text-base font-semibold text-foreground">${__('Profile')}</h2>`)}
-                    ${component(CardBody, {}, html`
-                        ${component(Form, {
-                            submit: (e: Event) => this.handleSubmit(e),
-                        }, html`
-                            <div class="flex flex-col space-y-6">
-                            ${component(Field, { label: __('Name'), for: 'name', error: this.getError('name'),
-                                control: attributes => component(Input, { ...attributes, type: 'text', '.value': bind(this.userDetail, 'name') }) })}
-                            ${component(Field, { label: __('Email'), for: 'email', error: this.getError('email'),
-                                control: attributes => component(Input, { ...attributes, type: 'email', '.value': bind(this.userDetail, 'email') }) })}
-                            ${avatarField({ id: 'avatar', value: this.avatarPreview || this.userDetail.avatar || '', name: this.userDetail.name || this.userDetail.email, uploads: this.avatarUploads,
-                                uploading: this.uploading, error: this.avatarError, onFile: file => this.chooseAvatar(file),
-                                onUrl: url => { if (this.userDetail) this.userDetail.avatar = url; }, onRemove: () => this.removeAvatar() })}
-                            <div>
-                                ${component(Button, { type: 'submit' }, __('Save changes'))}
-                            </div>
-                            </div>
-                        `)}
-                    `)}
-                `)}
-
-                ${component(Card, {}, html`
-                    ${component(CardHeader, {}, html`<h2 class="text-base font-semibold text-foreground">${__('Change password')}</h2>`)}
-                    ${component(CardBody, {}, html`
-                        ${component(Form, {
-                            submit: (e: Event) => this.handleChangePassword(e),
-                        }, html`
-                            <div class="flex flex-col space-y-4">
-                                ${component(Field, { label: __('New password'), for: 'new-password', hint: __('Leave the user a way back in — they\'ll need the new password to sign in.'),
-                                    control: attributes => component(PasswordInput, {
-                                        ...attributes,
-                                        value: this.newPassword,
-                                        onValueChange: (v: string) => this.newPassword = v,
-                                    }) })}
-                                <div>
-                                    ${component(Button, { type: 'submit', variant: 'outline' }, __('Update password'))}
-                                </div>
-                            </div>
-                        `)}
-                    `)}
-                `)}
-
-                ${this.security.available ? component(Card, {}, html`
-                    ${component(CardHeader, {}, html`<h2 class="text-base font-semibold text-foreground">${__('Two-step sign-in')}</h2>`)}
-                    ${component(CardBody, { class: 'space-y-3' }, html`
-                        <p class="text-sm text-muted-foreground">${this.security.totp || this.security.passkeys
-                            ? `${this.security.totp ? __('Authenticator app on.') : __('No authenticator app.')} ${this.security.passkeys} ${this.security.passkeys === 1 ? __('passkey') : __('passkeys')}.`
-                            : __('This user signs in with a password only.')}</p>
-                        ${this.security.totp || this.security.passkeys ? component(Button, { type: 'button', variant: 'outline', '@click': async () => { await this.resetSecurity(); toast.success(__('Two-step sign-in reset.')); } }, __('Reset two-step sign-in')) : null}
-                    `)}
-                `) : null}
-
-                ${this.canAssignRoles ? component(Card, {}, html`
-                    ${component(CardHeader, {}, html`<h2 class="text-base font-semibold text-foreground">${__('Roles')}</h2>`)}
-                    ${component(CardBody, {}, html`
-                        <div class="space-y-3">
-                            ${this.allRoles.length === 0
-                                ? html`<p class="text-sm text-muted-foreground">${__('No roles defined yet.')}</p>`
-                                : this.allRoles.map((role) => html`
-                                    <label class="flex items-center gap-3 cursor-pointer">
-                                        ${component(Checkbox, {
-                                            checked: this.assignedRoleIds.includes(role.id),
-                                            '@change': (e: any) => this.toggleRole(role.id, e.target.checked),
-                                        })}
-                                        <span class="text-sm font-medium text-foreground">${role.name}</span>
-                                    </label>
-                                `)}
-                        </div>
-                        <div class="mt-6">
-                            ${component(Button, { variant: 'outline', '@click': () => this.handleSubmit({ preventDefault: () => {} } as any) }, __('Save roles'))}
-                        </div>
-                    `)}
-                `) : null}
+                ${this.canSeeAccess
+                    ? component(Tabs, {
+                          id: 'user-tabs', label: __('User'), value: this.tab, variant: 'underline',
+                          onValueChange: (value: string) => this.showTab(value),
+                          items: [
+                              { value: 'profile', label: __('Profile'), content: profile },
+                              { value: 'sessions', label: `${__('Sessions')} (${this.sessions.length})`, content: sessions },
+                              ...(this.tokensAvailable ? [{ value: 'passwords', label: `${__('Application passwords')} (${this.tokens.length})`, content: passwords }] : []),
+                          ],
+                      })
+                    : profile}
             </div>
         `;
     }

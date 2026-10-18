@@ -3,9 +3,10 @@
  * The editor loads in the browser only; the field stores the document as JSON.
  */
 import { Client, ClientState, Component, Cossack } from '@cossackframework/core';
-import { html, type TemplateResult } from '@cossackframework/renderer';
+import { component, html, type TemplateResult } from '@cossackframework/renderer';
 import type { EmbeddedBlock, RichTextDoc } from '@cossackframework/cms';
 import type { RichTextCommand, RichTextHandle } from './rich-text.client';
+import { BlockInserter, type BlockInserterProps } from './block-inserter';
 import { PROSE } from './site-view';
 
 export type RichTextFieldProps = {
@@ -15,7 +16,7 @@ export type RichTextFieldProps = {
     value: RichTextDoc | null;
     placeholder?: string;
     /** Block types that can be embedded. */
-    blocks: { name: string; label: string }[];
+    blocks: BlockInserterProps['blocks'];
     onChange(doc: RichTextDoc): void;
     /** Open the media library to insert an image or file. */
     onMedia(): void;
@@ -42,7 +43,6 @@ export class RichTextField extends Cossack {
     @ClientState() private linkOpen = false;
     @ClientState() private linkUrl = '';
     @ClientState() private linkNewTab = false;
-    @ClientState() private blockChoice = '';
     private handle?: RichTextHandle;
     private surface?: HTMLElement;
 
@@ -127,13 +127,8 @@ export class RichTextField extends Cossack {
                 ${separator}
                 ${this.tool(__('Add media'), __('Add media'), () => this.props.onMedia())}
                 ${this.props.onPatterns ? this.tool(__('Patterns'), __('Insert a pattern'), () => this.props.onPatterns?.()) : null}
-                ${this.props.blocks.length ? html`<span class="inline-flex items-center gap-1">
-                    <select aria-label=${__('Block type')} ?disabled=${!this.ready} class="h-7 rounded border border-input bg-background px-1.5 text-xs text-foreground"
-                        @change=${(event: Event) => { this.blockChoice = (event.target as HTMLSelectElement).value; }}>
-                        ${this.props.blocks.map(block => html`<option value=${block.name} ?selected=${(this.blockChoice || this.props.blocks[0]!.name) === block.name}>${block.label}</option>`)}
-                    </select>
-                    ${this.tool(__('Add block'), __('Add block'), () => this.props.onInsertBlock(this.blockChoice || this.props.blocks[0]!.name))}
-                </span>` : null}
+                ${this.props.blocks.length ? component(BlockInserter, { id: `${this.props.id}-blocks`, blocks: this.props.blocks, disabled: !this.ready, compact: true,
+                    onPick: (name: string) => this.props.onInsertBlock(name) }) : null}
             </div>
             ${this.linkOpen ? html`<form class="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2" @submit=${(event: Event) => this.applyLink(event)}>
                 <input type="text" inputmode="url" aria-label=${__('Link URL')} placeholder="https://" .value=${this.linkUrl} autofocus

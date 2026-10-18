@@ -4,7 +4,7 @@
  * from `init()` and hand the views to the theme's templates.
  */
 import {
-    ANONYMOUS, editedSize, escapeHtml, formatSiteDate, imageSrcset, imageUrl, isCmsError, mediaUrl, recordTitle, richTextBlocks, richTextExcerpt, richTextParts, systemPrincipal, transformable,
+    ANONYMOUS, editedSize, escapeHtml, formatSiteDate, imageSrcset, imageUrl, isCmsError, languageName, mediaUrl, recordTitle, richTextBlocks, richTextExcerpt, richTextParts, systemPrincipal, transformable,
     type ArchiveView, type BodyPart, type CollectionDefinition, type CommentShape, type CommentView, type CommentsView, type EntryView, type FieldFilter, type LanguageLink,
     type MediaView, type MenuItemView, type RecordShape, type RenderedBlock, type RichTextDoc, type SiteSettings, type SiteView, type TermShape,
 } from '@cossackframework/cms';
@@ -26,14 +26,6 @@ export async function themeState(cms: CmsHost): Promise<ThemeState> {
     const settings = await cms.settings.all();
     const options = Object.fromEntries(Object.keys(theme?.options?.fields ?? {}).map(option => [option, settings[`${name}.${option}`]]));
     return { name, options };
-}
-
-/** A language's own name, such as `Français` for `fr`. */
-export function languageName(code: string): string {
-    try {
-        const name = new Intl.DisplayNames([code], { type: 'language' }).of(code) ?? code;
-        return name.charAt(0).toLocaleUpperCase(code) + name.slice(1);
-    } catch { return code; }
 }
 
 /** The URL prefix of a language: empty for the default one. */

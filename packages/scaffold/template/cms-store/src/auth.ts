@@ -373,13 +373,31 @@ function sessionOwner(c: Context): { userId: string; currentId: string } {
 
 /** Lists only the authenticated caller's active sessions as safe DTOs. */
 export async function listUserSessions(c: Context): Promise<SessionInfo[]> {
-  const { userId, currentId } = sessionOwner(c);
+  return sessionsOf(c, sessionOwner(c).userId);
+}
+
+/**
+ * Any user's active sessions, for the user screen. The page decides who may see them;
+ * the caller's own session is marked current.
+ */
+export async function sessionsOf(c: Context, userId: string): Promise<SessionInfo[]> {
   const host = cms(c);
-  const current = await host.authSessions.publicReference(currentId);
+  const currentId = getCookie(c, SESSION_COOKIE);
+  const current = currentId ? await host.authSessions.publicReference(currentId) : null;
   return (await host.authSessions.listForUser(userId, Date.now())).map(row => ({
     reference: row.reference, createdAt: new Date(row.createdAt).toISOString(), expiresAt: new Date(row.expiresAt).toISOString(),
     current: row.reference === current, location: null, userAgent: row.userAgent, ipAddress: row.ip,
   }));
+}
+
+/** End one of a user's sessions, never the caller's own. */
+export async function revokeSessionOf(c: Context, userId: string, reference: string): Promise<boolean> {
+  return cms(c).authSessions.revokeByReference(userId, reference, getCookie(c, SESSION_COOKIE));
+}
+
+/** End all of a user's sessions except the caller's own. */
+export async function revokeSessionsOf(c: Context, userId: string): Promise<void> {
+  await cms(c).authSessions.revokeAllForUser(userId, getCookie(c, SESSION_COOKIE));
 }
 
 /** Revoke one other session owned by the authenticated caller. */

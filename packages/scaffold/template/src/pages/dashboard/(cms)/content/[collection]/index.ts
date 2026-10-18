@@ -1,11 +1,10 @@
 import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackframework/core';
 import { Avatar, Card, CardBody, Button, NativeSelect, Input, Pagination, AlertDialog } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
-import { evaluateRule, isCmsError, recordTitle, type FieldFilter, type ListFilter, type RecordShape } from '@cossackframework/cms';
+import { evaluateRule, isCmsError, languageName, recordTitle, type FieldFilter, type ListFilter, type RecordShape } from '@cossackframework/cms';
 import { routeResource, termOptions } from '../../../../../cms/content';
 import type { TermOption } from '../../../../../cms/editor';
 import { linkButton, notice, pageHeader, shortDate, statusBadge } from '../../../../../cms/ui';
-import { languageName } from '../../../../../cms/site';
 
 const PAGE_SIZE = 20;
 

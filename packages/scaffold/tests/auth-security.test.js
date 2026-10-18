@@ -54,6 +54,7 @@ function generatedSessionsPage(files, api) {
   new Function('require', 'module', 'exports', code)(name => {
     if (name === '@cossackframework/core') return { Cossack: class {}, Page: () => () => {}, State: () => () => {}, Server: () => () => {} };
     if (name === '../../../auth') return api;
+    if (name === '../../../dashboard/session-list') return { sessionTable: () => null };
     if (name === 'hono/cookie') return { getCookie: c => c?.cookie };
     if (name === '@cossackframework/ui' || name.startsWith('@cossackframework/solar-icons/')) return {};
     if (name === '@cossackframework/renderer') return {};

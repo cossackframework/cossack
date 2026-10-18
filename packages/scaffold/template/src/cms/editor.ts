@@ -3,7 +3,7 @@
  * conversion from form values to typed record input. Client-safe; the server converts and
  * validates again before writing.
  */
-import { slugify, validateValue, type FieldDeclaration, type FieldKind } from '@cossackframework/cms';
+import { slugify, validateValue, type BlockCategory, type FieldDeclaration, type FieldKind } from '@cossackframework/cms';
 
 /** One field as the editor shows it. */
 export interface EditorField {
@@ -46,6 +46,9 @@ export interface BlockOption {
     name: string;
     label: string;
     description: string;
+    /** Solar icon name; see `blockIcon`. */
+    icon: string;
+    category: BlockCategory;
     fields: EditorField[];
 }
 
@@ -57,6 +60,8 @@ export interface EditorView {
     label: string;
     singular: string;
     titleField: string;
+    /** Saving needs a title that is not blank. */
+    titleRequired: boolean;
     slug: boolean;
     publishable: boolean;
     hierarchical: boolean;
