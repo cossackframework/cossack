@@ -1,7 +1,7 @@
 import { Cossack, Page, State, type HeadValue } from '@cossackframework/core';
 import { isCmsError, type ArchiveView, type EntryView } from '@cossackframework/cms';
 import { commentResult, homeView, languageLinks, pageNumber, themeState, type ThemeState } from '../../cms/site';
-import { siteTheme, themeHelpers, unavailable } from '../../cms/site-view';
+import { archiveTemplate, entryTemplate, siteTheme, themeHelpers, unavailable } from '../../cms/site-view';
 import { entrySeo, homeSeo } from '../../cms/seo';
 import { emptySeo, seoHead, type SeoView } from '../../cms/seo-head';
 
@@ -10,7 +10,7 @@ import { emptySeo, seoHead, type SeoView } from '../../cms/seo-head';
 export default class HomePage extends Cossack {
     @State() mode: 'posts' | 'page' | 'unavailable' = 'posts';
     @State() page: EntryView | null = null;
-    @State() view: ArchiveView = { kind: 'home', title: '', description: '', entries: [], paging: { page: 1, pages: 1, base: '/' }, query: '' };
+    @State() view: ArchiveView = { kind: 'home', collection: 'posts', taxonomy: null, title: '', description: '', entries: [], paging: { page: 1, pages: 1, base: '/' }, query: '' };
     @State() theme: ThemeState = { name: null, options: {} };
     @State() seo: SeoView = emptySeo();
 
@@ -45,7 +45,7 @@ export default class HomePage extends Cossack {
         if (this.mode === 'unavailable') return unavailable();
         const theme = siteTheme(this.theme.name);
         const helpers = themeHelpers(theme, this.theme.options, (path, exact) => this.isActive(path, exact));
-        if (this.mode === 'page' && this.page) return theme.entry(this.page, helpers);
-        return (theme.home ?? theme.archive)(this.view, helpers);
+        if (this.mode === 'page' && this.page) return entryTemplate(theme, this.page.collection)(this.page, helpers);
+        return archiveTemplate(theme, this.view)(this.view, helpers);
     }
 }

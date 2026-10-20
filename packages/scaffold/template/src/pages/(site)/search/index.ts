@@ -1,12 +1,12 @@
 import { Cossack, Page, State, type HeadValue } from '@cossackframework/core';
 import type { ArchiveView } from '@cossackframework/cms';
 import { searchEntries, themeState, type ThemeState } from '../../../cms/site';
-import { siteTheme, themeHelpers } from '../../../cms/site-view';
+import { archiveTemplate, siteTheme, themeHelpers } from '../../../cms/site-view';
 
 /** Search published entries of every collection on the site. */
 @Page({ transport: 'http' })
 export default class SearchPage extends Cossack {
-    @State() view: ArchiveView = { kind: 'search', title: '', description: '', entries: [], paging: { page: 1, pages: 1, base: '/search' }, query: '' };
+    @State() view: ArchiveView = { kind: 'search', collection: null, taxonomy: null, title: '', description: '', entries: [], paging: { page: 1, pages: 1, base: '/search' }, query: '' };
     @State() theme: ThemeState = { name: null, options: {} };
 
     head(): HeadValue {
@@ -22,6 +22,6 @@ export default class SearchPage extends Cossack {
 
     render() {
         const theme = siteTheme(this.theme.name);
-        return (theme.search ?? theme.archive)(this.view, themeHelpers(theme, this.theme.options, (path, exact) => this.isActive(path, exact)));
+        return archiveTemplate(theme, this.view)(this.view, themeHelpers(theme, this.theme.options, (path, exact) => this.isActive(path, exact)));
     }
 }

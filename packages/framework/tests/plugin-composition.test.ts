@@ -102,9 +102,13 @@ describe('plugin registry', () => {
     // Logos and covers are build assets in both environments.
     expect(client).toContain("import.meta.glob('/src/plugins/*/assets/*.{png,jpg,jpeg,webp,gif,avif,svg}', { eager: true, query: '?url', import: 'default' })");
     expect(client).toContain('assets: assetsOf(plugin.name)');
+    // Theme templates are one module per file, in both environments.
+    expect(client).toContain("import.meta.glob('/src/plugins/*/templates/*.ts', { eager: true })");
+    expect(client).toContain('templates: templatesOf(plugin.name)');
     const server = pluginRegistryModule(plugins, true);
     expect(server).toContain("import.meta.glob('/src/plugins/*/plugin.json', { eager: true, import: 'default' })");
     expect(server).toContain("import.meta.glob('/src/plugins/*/server.ts', { eager: true })");
+    expect(server).toContain('templates: templatesOf(name)');
   });
 
   it('is served by the pages plugin', () => {

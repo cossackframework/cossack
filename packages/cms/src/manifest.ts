@@ -54,7 +54,7 @@ export interface CmsPluginManifest {
         readonly slots?: { readonly [slot: string]: readonly SlotLink[] };
     };
     readonly commands?: readonly PluginCommand[];
-    /** A site theme: its `ui.ts` exports `theme`, the templates. */
+    /** A site theme: its `templates/` files (or `ui.ts` `theme` export) are the site templates. */
     readonly theme?: ThemeManifest;
     /** A square image in the plugin's `assets/` directory, such as `assets/logo.png`. Default: `assets/logo.*`. */
     readonly logo?: string;

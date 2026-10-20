@@ -368,12 +368,12 @@ async function canonical(cms: CmsHost, collection: CollectionDefinition, record:
 }
 
 /** Entries of every collection that uses the term's taxonomy, including terms below it, in one language. */
-export async function termArchive(cms: CmsHost, term: TermShape, page: number, base: string, locale?: string): Promise<Pick<ArchiveView, 'entries' | 'paging'>> {
+export async function termArchive(cms: CmsHost, term: TermShape, page: number, base: string, locale?: string): Promise<Pick<ArchiveView, 'entries' | 'paging' | 'collection' | 'taxonomy'>> {
     const subtree = (await cms.taxonomies.subtree(term.id)).slice(0, 50);
     const usage = cms.taxonomies.usage(term.taxonomy).filter(entry => entry.resource.startsWith('cms/'));
     const collection = usage.length ? cms.collection(usage[0]!.resource.slice(4)) : null;
-    if (!collection) return { entries: [], paging: { page: 1, pages: 1, base } };
-    return archive(cms, collection, page, { where: { [usage[0]!.field]: { containsAny: subtree } }, base, ...(locale ? { locale } : {}) });
+    if (!collection) return { entries: [], paging: { page: 1, pages: 1, base }, collection: null, taxonomy: term.taxonomy };
+    return { ...await archive(cms, collection, page, { where: { [usage[0]!.field]: { containsAny: subtree } }, base, ...(locale ? { locale } : {}) }), collection: collection.name, taxonomy: term.taxonomy };
 }
 
 /** Published entries of every collection on the site that match the query, in one language. */
@@ -425,7 +425,7 @@ export async function languageLinks(cms: CmsHost, resolved: Resolved | { kind: '
  * A language's home page: Settings → Reading's front page (its translation in other
  * languages), or that language's latest posts.
  */
-export async function homeView(cms: CmsHost, locale: string, page: number, options: EntryViewOptions = {}): Promise<{ page: EntryView | null; record: RecordShape | null; view: Pick<ArchiveView, 'entries' | 'paging' | 'title' | 'description'> }> {
+export async function homeView(cms: CmsHost, locale: string, page: number, options: EntryViewOptions = {}): Promise<{ page: EntryView | null; record: RecordShape | null; view: Pick<ArchiveView, 'entries' | 'paging' | 'title' | 'description' | 'collection'> }> {
     const settings = await cms.settings.all();
     const languages = await cms.languages();
     const front = settings['reading.showOnFront'] === 'page' ? settings['reading.pageOnFront'] : '';
@@ -433,11 +433,11 @@ export async function homeView(cms: CmsHost, locale: string, page: number, optio
         let record = await cms.resource('cms/pages').get(front, visitor);
         if (record && languages.multilingual && (record.locale ?? languages.default) !== locale) record = (await cms.translations(cms.collection('pages'), record)).get(locale) ?? null;
         if (record && record.status === 'published') {
-            return { page: (await entryViews(cms, cms.collection('pages'), [record], { ...options, full: true }))[0]!, record, view: { title: '', description: '', entries: [], paging: { page: 1, pages: 1, base: '/' } } };
+            return { page: (await entryViews(cms, cms.collection('pages'), [record], { ...options, full: true }))[0]!, record, view: { title: '', description: '', entries: [], paging: { page: 1, pages: 1, base: '/' }, collection: null } };
         }
     }
     const result = await archive(cms, cms.collection('posts'), page, { base: localePrefix(languages, locale) || '/', locale });
-    return { page: null, record: null, view: { title: settings['general.siteTitle'], description: settings['general.tagline'], ...result } };
+    return { page: null, record: null, view: { title: settings['general.siteTitle'], description: settings['general.tagline'], collection: 'posts', ...result } };
 }
 
 export function pageNumber(value: string | undefined): number {

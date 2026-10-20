@@ -3,7 +3,7 @@ import { isTransportPath } from '@cossackframework/core/transport-routes';
 import { html } from '@cossackframework/renderer';
 import { isCmsError, type ArchiveView, type EntryView } from '@cossackframework/cms';
 import { archive, commentResult, entryViews, homeView, languageLinks, pageNumber, redirectFor, resolvePath, searchEntries, termArchive, themeState, type Resolved, type ThemeState } from '../../../cms/site';
-import { siteTheme, themeHelpers, unavailable } from '../../../cms/site-view';
+import { archiveTemplate, entryTemplate, siteTheme, themeHelpers, unavailable } from '../../../cms/site-view';
 import { entrySeo, homeSeo, listSeo } from '../../../cms/seo';
 import { emptySeo, seoHead, type SeoView } from '../../../cms/seo-head';
 
@@ -43,7 +43,7 @@ const resolveSitePath = defineServerMiddleware(async (c, next) => {
 export default class SitePath extends Cossack {
     @State() kind: 'entry' | 'list' | 'home' | 'none' | 'gone' | 'unavailable' = 'none';
     @State() entry: EntryView | null = null;
-    @State() view: ArchiveView = { kind: 'archive', title: '', description: '', entries: [], paging: { page: 1, pages: 1, base: '/' }, query: '' };
+    @State() view: ArchiveView = { kind: 'archive', collection: null, taxonomy: null, title: '', description: '', entries: [], paging: { page: 1, pages: 1, base: '/' }, query: '' };
     @State() theme: ThemeState = { name: null, options: {} };
     @State() seo: SeoView = emptySeo();
 
@@ -79,12 +79,12 @@ export default class SitePath extends Cossack {
             } else if (resolved.kind === 'search') {
                 const query = (this.c.req.query('q') ?? '').trim().slice(0, 200);
                 this.kind = 'list';
-                this.view = { ...this.view, kind: 'search', query, title: query ? `${__('Results for')} “${query}”` : __('Search'), entries: query ? await searchEntries(cms, query, resolved.locale) : [] };
+                this.view = { ...this.view, kind: 'search', collection: null, query, title: query ? `${__('Results for')} “${query}”` : __('Search'), entries: query ? await searchEntries(cms, query, resolved.locale) : [] };
                 this.seo = await listSeo(cms, this.c, { title: this.view.title, description: '', url: base, locale: resolved.locale, links, noindex: true });
             } else if (resolved.kind === 'entry' && resolved.collection.name === 'pages' && resolved.record.id === settings['reading.pageForPosts']) {
                 // Settings → Reading's posts page lists the latest posts under its own title.
                 this.kind = 'list';
-                this.view = { ...this.view, title: String(resolved.record.title ?? ''), ...await archive(cms, cms.collection('posts'), page, { base, locale: resolved.locale }) };
+                this.view = { ...this.view, title: String(resolved.record.title ?? ''), collection: 'posts', ...await archive(cms, cms.collection('posts'), page, { base, locale: resolved.locale }) };
                 this.seo = await listSeo(cms, this.c, { title: this.view.title, description: '', url: base, locale: resolved.locale, links });
             } else if (resolved.kind === 'entry') {
                 this.kind = 'entry';
@@ -92,7 +92,7 @@ export default class SitePath extends Cossack {
                 this.seo = await entrySeo(cms, this.c, resolved.collection, resolved.record, this.entry, links);
             } else if (resolved.kind === 'archive') {
                 this.kind = 'list';
-                this.view = { ...this.view, title: resolved.collection.label, description: resolved.collection.description ?? '', ...await archive(cms, resolved.collection, page, { base, locale: resolved.locale }) };
+                this.view = { ...this.view, title: resolved.collection.label, description: resolved.collection.description ?? '', collection: resolved.collection.name, ...await archive(cms, resolved.collection, page, { base, locale: resolved.locale }) };
                 this.seo = await listSeo(cms, this.c, { title: this.view.title, description: this.view.description, url: base, locale: resolved.locale, links });
             } else if (resolved.kind === 'term') {
                 const taxonomy = cms.taxonomies.declaration(resolved.term.taxonomy);
@@ -111,9 +111,8 @@ export default class SitePath extends Cossack {
         if (this.kind === 'unavailable') return unavailable();
         const theme = siteTheme(this.theme.name);
         const helpers = themeHelpers(theme, this.theme.options, (path, exact) => this.isActive(path, exact));
-        if (this.kind === 'entry' && this.entry) return theme.entry(this.entry, helpers);
-        if (this.kind === 'home') return (theme.home ?? theme.archive)(this.view, helpers);
-        if (this.kind === 'list') return (this.view.kind === 'search' ? theme.search ?? theme.archive : theme.archive)(this.view, helpers);
+        if (this.kind === 'entry' && this.entry) return entryTemplate(theme, this.entry.collection)(this.entry, helpers);
+        if (this.kind === 'home' || this.kind === 'list') return archiveTemplate(theme, this.view)(this.view, helpers);
         if (this.kind === 'gone') return html`<section class="space-y-3 py-16 text-center">
             <h1 class="text-3xl font-bold text-foreground">${__('Page removed')}</h1>
             <p class="text-muted-foreground">${__('This page was removed and is not coming back.')}</p>

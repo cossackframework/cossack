@@ -1,8 +1,9 @@
 /**
  * Themes. As in VS Code, a theme is an extension: a plugin whose manifest has a `theme` field
- * and whose `ui.ts` exports `theme`, the site templates. One theme is active at a time and
- * switching is a settings write. Templates receive plain view data and helpers; they never
- * read the database.
+ * and that ships the site templates, as files under `templates/` or as the `theme` export of
+ * its `ui.ts`. One theme is active at a time and switching is a settings write. Templates
+ * receive plain view data and helpers; they never read the database. Themes own templates,
+ * never routes: the site's URLs come from its content.
  */
 import type { TemplateResult } from '@cossackframework/renderer';
 import { fieldProblems } from './fields';
@@ -166,6 +167,10 @@ export interface Paging {
 export interface ArchiveView {
     /** `home` is the latest posts on the front page. */
     readonly kind: 'home' | 'archive' | 'term' | 'search';
+    /** The collection listed, such as `posts`; null for a search across collections. */
+    readonly collection: string | null;
+    /** term: the taxonomy, such as `category`. */
+    readonly taxonomy: string | null;
     readonly title: string;
     readonly description: string;
     readonly entries: readonly EntryView[];
@@ -203,7 +208,16 @@ export interface ThemeHelpers {
     isActive(url: string): boolean;
 }
 
-/** The `theme` export of a theme's `ui.ts`. */
+/** An entry template, from `templates/entry.ts` or `templates/entry-<collection>.ts`. */
+export type EntryTemplate = (entry: EntryView, helpers: ThemeHelpers) => TemplateResult;
+/** A list template: an archive, a term, the home page or search results. */
+export type ArchiveTemplate = (view: ArchiveView, helpers: ThemeHelpers) => TemplateResult;
+
+/**
+ * A theme's templates: the `theme` export of its `ui.ts`, or the default exports of its
+ * `templates/` files, assembled by `assembleSiteTheme`. The site picks the most specific one
+ * for each page (`entryTemplate`, `archiveTemplate`).
+ */
 export interface SiteTheme {
     /** The frame around every page. */
     layout(site: SiteView, content: TemplateResult, helpers: ThemeHelpers): TemplateResult;
@@ -214,17 +228,88 @@ export interface SiteTheme {
     home?(view: ArchiveView, helpers: ThemeHelpers): TemplateResult;
     search?(view: ArchiveView, helpers: ThemeHelpers): TemplateResult;
     notFound?(helpers: ThemeHelpers): TemplateResult;
+    /**
+     * More specific templates by name: `entry-<collection>`, `archive-<collection>`, `term` and
+     * `term-<taxonomy>`. A file `templates/entry-posts.ts` lands here as `entry-posts`.
+     */
+    readonly templates?: { readonly [name: string]: EntryTemplate | ArchiveTemplate };
     /** Block renderers that replace the core ones, by block type. */
     readonly blocks?: { readonly [type: string]: (block: RenderedBlock, helpers: ThemeHelpers) => TemplateResult | null };
 }
 
-/** Problems with a `ui.ts` `theme` export; empty when it can render the site. */
+/** Template files that fill the theme's named slots; every other file is a specific template. */
+const TEMPLATE_FILES: { readonly [stem: string]: keyof SiteTheme } = { layout: 'layout', entry: 'entry', archive: 'archive', home: 'home', search: 'search', 'not-found': 'notFound' };
+/** Names a specific template can have. */
+export const SPECIFIC_TEMPLATE = /^(?:entry-[a-z][a-z0-9-]*|archive-[a-z][a-z0-9-]*|term(?:-[a-z][a-z0-9-]*)?)$/;
+
+/** The parts of a plugin registration a theme is assembled from. */
+export interface ThemeSource {
+    /** The `ui.ts` exports. */
+    readonly ui?: { readonly [name: string]: unknown } | null;
+    /** The `templates/*.ts` modules by file stem, such as `entry-posts`. */
+    readonly templates?: { readonly [stem: string]: { readonly [name: string]: unknown } };
+}
+
+/**
+ * A plugin's theme: its `templates/` files, with the `ui.ts` `theme` export on top, slot by slot.
+ * `templates/layout.ts`, `entry.ts`, `archive.ts`, `home.ts`, `search.ts` and `not-found.ts`
+ * fill the named slots; any other file is a specific template under its stem. Undefined when
+ * the plugin ships neither; the result still needs `siteThemeProblems` before use.
+ */
+export function assembleSiteTheme(source: ThemeSource): unknown {
+    const theme: { [name: string]: unknown } = {};
+    const specific: { [name: string]: unknown } = {};
+    for (const [stem, module] of Object.entries(source.templates ?? {})) {
+        const template = module && typeof module === 'object' ? module.default : undefined;
+        const slot = TEMPLATE_FILES[stem];
+        if (slot) theme[slot] = template;
+        else specific[stem] = template;
+    }
+    const exported = source.ui?.theme;
+    if (exported && typeof exported === 'object') {
+        const { templates, ...rest } = exported as { [name: string]: unknown };
+        Object.assign(theme, rest);
+        if (templates && typeof templates === 'object') Object.assign(specific, templates);
+    } else if (exported !== undefined) {
+        return exported;
+    }
+    if (Object.keys(specific).length) theme.templates = specific;
+    return Object.keys(theme).length ? theme : undefined;
+}
+
+/** Problems with a theme's templates; empty when it can render the site. */
 export function siteThemeProblems(theme: unknown): string[] {
-    if (!theme || typeof theme !== 'object') return ['ui.ts must export theme.'];
+    if (!theme || typeof theme !== 'object') return ['The theme has no templates: add templates/layout.ts, entry.ts and archive.ts, or export theme from ui.ts.'];
     const value = theme as { [name: string]: unknown };
     const problems: string[] = [];
     for (const name of ['layout', 'entry', 'archive']) if (typeof value[name] !== 'function') problems.push(`theme.${name} must be a function.`);
     for (const name of ['home', 'search', 'notFound']) if (value[name] !== undefined && typeof value[name] !== 'function') problems.push(`theme.${name} must be a function.`);
+    if (value.templates !== undefined) {
+        if (typeof value.templates !== 'object' || value.templates === null) problems.push('theme.templates must map template names to functions.');
+        else for (const [name, template] of Object.entries(value.templates)) {
+            if (!SPECIFIC_TEMPLATE.test(name)) problems.push(`theme.templates.${name}: name it entry-<collection>, archive-<collection>, term or term-<taxonomy>.`);
+            else if (typeof template !== 'function') problems.push(`theme.templates.${name} must be a function.`);
+        }
+    }
     if (value.blocks !== undefined && (typeof value.blocks !== 'object' || value.blocks === null || Object.values(value.blocks).some(entry => typeof entry !== 'function'))) problems.push('theme.blocks must map block types to functions.');
     return problems;
+}
+
+/** The template for an entry: `entry-<collection>`, else `entry`. */
+export function entryTemplate(theme: SiteTheme, collection: string): EntryTemplate {
+    return (theme.templates?.[`entry-${collection}`] as EntryTemplate | undefined) ?? theme.entry;
+}
+
+/**
+ * The template for a list, most specific first. A term: `term-<taxonomy>`, `term`, then the
+ * collection's archive. The home page: `home`; search: `search`. An archive: `archive-<collection>`.
+ * Everything falls back to `archive`.
+ */
+export function archiveTemplate(theme: SiteTheme, view: Pick<ArchiveView, 'kind' | 'collection' | 'taxonomy'>): ArchiveTemplate {
+    const specific = (name: string | null) => name ? theme.templates?.[name] as ArchiveTemplate | undefined : undefined;
+    const archive = specific(view.collection && `archive-${view.collection}`) ?? theme.archive;
+    if (view.kind === 'home') return theme.home ?? archive;
+    if (view.kind === 'search') return theme.search ?? archive;
+    if (view.kind === 'term') return specific(view.taxonomy && `term-${view.taxonomy}`) ?? specific('term') ?? archive;
+    return archive;
 }

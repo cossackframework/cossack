@@ -27,7 +27,7 @@ describe.skipIf(!liveFastDBTests())('CMS plugin trust', () => {
     trackRoot(v1.directory);
     expect(JSON.parse((await cossack(root, ['add', 'plugin', v1.tarball, '--json'])).stdout).data).toMatchObject({ status: 'added', name: 'support-desk' });
     // The default theme is a rendered plugin too, and passes the same lints.
-    expect(JSON.parse((await cossack(root, ['plugins', 'check', '--json'])).stdout).data.plugins).toEqual([{ plugin: 'default-theme', files: 4, errors: 0 }, { plugin: 'support-desk', files: 4, errors: 0 }]);
+    expect(JSON.parse((await cossack(root, ['plugins', 'check', '--json'])).stdout).data.plugins).toEqual([{ plugin: 'default-theme', files: 14, errors: 0 }, { plugin: 'support-desk', files: 4, errors: 0 }]);
     await cossack(root, ['config', '--generate']);
     await typecheck(root, 'cms plugin application');
 

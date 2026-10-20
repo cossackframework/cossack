@@ -41,7 +41,7 @@ describe('cms recipe', () => {
     expect(middlewares.indexOf('cmsMiddleware,')).toBeLessThan(middlewares.indexOf('auth.middleware,'));
     expect(middlewares.indexOf('auth.middleware,')).toBeLessThan(middlewares.indexOf('cmsPrincipal,'));
     // The default theme is a plugin rendered as application source; the editor is TipTap, pinned.
-    for (const rel of ['src/plugins/default-theme/plugin.json', 'src/plugins/default-theme/ui.ts', 'src/cms/rich-text.client.ts', 'src/pages/dashboard/(cms)/appearance/menus/[id]/index.ts',
+    for (const rel of ['src/plugins/default-theme/plugin.json', 'src/plugins/default-theme/templates/layout.ts', 'src/plugins/default-theme/templates/entry.ts', 'src/plugins/default-theme/templates/archive.ts', 'src/plugins/default-theme/parts/comments.ts', 'src/cms/rich-text.client.ts', 'src/pages/dashboard/(cms)/appearance/menus/[id]/index.ts',
       'src/pages/api/cms/content/[collection]/index.ts', 'src/pages/api/cms/menus/[location].ts'])
       expect(files.has(rel), rel).toBe(true);
     expect(JSON.parse(text(files, 'src/plugins/default-theme/plugin.json')).theme.locations).toEqual({ primary: 'Primary menu', footer: 'Footer menu' });

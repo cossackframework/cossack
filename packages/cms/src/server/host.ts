@@ -10,7 +10,7 @@ import { collectionProblems, collectionResource, CORE_FIELDS, entryUrl, extendCo
 import { CmsError } from '../errors';
 import type { CmsModule } from '../module';
 import { appearance, general, media, type SettingsGroup } from '../settings';
-import { siteThemeProblems, type ThemeManifest } from '../theme';
+import { assembleSiteTheme, siteThemeProblems, type ThemeManifest } from '../theme';
 import type { MenuItem, MenuItemView } from '../menus';
 import { recordTitle } from '../forms';
 import type { RecordShape } from '../records';
@@ -50,6 +50,8 @@ export interface PluginRegistrationLike {
     readonly manifest?: { readonly [field: string]: unknown };
     readonly module?: { readonly [name: string]: unknown } | null;
     readonly ui?: { readonly [name: string]: unknown } | null;
+    /** The plugin's `templates/*.ts` modules by file stem; a theme's templates. */
+    readonly templates?: { readonly [stem: string]: { readonly [name: string]: unknown } };
     /** URLs of the plugin's images by path, such as `assets/logo.png`. */
     readonly assets?: { readonly [path: string]: string };
 }
@@ -1178,7 +1180,7 @@ export class CmsHost {
     #hostTheme(plugin: HostedPlugin, groups: ReadonlySet<string>): ThemeInfo {
         const manifest = plugin.manifest.theme as ThemeManifest;
         const problems = [...plugin.problems];
-        if (!problems.length) problems.push(...siteThemeProblems(plugin.registration.ui?.theme));
+        if (!problems.length) problems.push(...siteThemeProblems(assembleSiteTheme(plugin.registration)));
         const options = manifest && Object.keys(manifest.options ?? {}).length ? { id: plugin.manifest.name, label: manifest.label, permission: PERMISSIONS.manageAppearance, fields: manifest.options! } : null;
         if (options && (groups.has(options.id) || !/^[a-z][a-z0-9-]{0,40}$/.test(options.id))) problems.push(`Its options need a settings group named ${options.id}, which is taken or too long.`);
         return Object.freeze({

@@ -52,8 +52,10 @@ Data contract:
   resolved when the site renders.
 - A plugin runs only when its resources are migrated and an administrator grants what its
   manifest requests. Builds run the plugin policy lints (`cossack plugins check`).
-- A theme is a plugin whose manifest has a `theme` field and whose `ui.ts` exports the
-  templates. Activating one is a settings write; its templates need no grant.
+- A theme is a plugin whose manifest has a `theme` field and whose `templates/` files (or
+  `ui.ts` `theme` export) are the site templates, picked per page from most specific
+  (`entry-posts`, `term-category`) to general (`entry`, `archive`). Themes own templates, not
+  routes. Activating one is a settings write; its templates need no grant.
 - Scheduled entries are published by maintenance as a system write, so their outbox events
   and webhooks fire when they go live. A published entry's URL change records a 301 in the
   same batch.

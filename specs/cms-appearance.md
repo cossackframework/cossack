@@ -6,10 +6,28 @@ Updated 2026-10-16. See [Outcome](#outcome).
 ## Decisions
 
 - **Themes are plugins.** As in VS Code, a theme is an extension: a plugin whose manifest has a
-  `theme` field (label, description, menu locations, options) and whose `ui.ts` exports `theme`
-  (the site templates). A package can be only a theme, or a plugin that also ships one. Theme
-  templates are presentation and need no grant; a theme's resources, hooks or network access
-  follow the plugin grant like any plugin's.
+  `theme` field (label, description, menu locations, options) and that ships the site templates,
+  as files under `templates/` or as the `theme` export of its `ui.ts`. A package can be only a
+  theme, or a plugin that also ships one. Theme templates are presentation and need no grant; a
+  theme's resources, hooks or network access follow the plugin grant like any plugin's.
+- **Themes own templates, not routes.** The active theme is a setting read per request, while
+  routes are fixed at build time, so a theme never overlays `src/pages`: its pages would stay
+  mounted after a switch, two installed themes would collide, and a theme route at `/posts`
+  would bypass the catch-all's resolution (collections, nested pages, languages, redirects,
+  previews, SEO). A route a theme needs beyond the content, such as a custom form, is an
+  ordinary plugin page under `pages/`, present whether or not the theme is active; a path the
+  application also defines stays a build error.
+- **Template files.** One template per file under `src/plugins/<theme>/templates/`, each a
+  default export, in the registry of every environment (`registration.templates`, keyed by file
+  stem). `layout.ts`, `entry.ts`, `archive.ts`, `home.ts`, `search.ts` and `not-found.ts` fill the
+  named slots. Narrower templates follow a hierarchy resolved at render time, so switching
+  themes keeps working and the catch-all stays in charge of URLs: an entry uses
+  `entry-<collection>` then `entry`; an archive `archive-<collection>` then `archive`; a term
+  `term-<taxonomy>`, `term`, `archive-<collection>`, then `archive`; the home page `home` and
+  search `search`, each falling back to `archive`. `assembleSiteTheme` builds the `SiteTheme`
+  from the files, with a `ui.ts` `theme` export on top slot by slot; `siteThemeProblems` checks
+  the result; `entryTemplate` and `archiveTemplate` pick the template for a view. Shared pieces
+  (menus, cards, comments) are plain modules the templates import, by convention under `parts/`.
 - **Artwork.** A plugin's `logo` and `cover` are images in its `assets/` (default
   `assets/logo.*` and `assets/cover.*`), served as build assets through the plugin
   registry. Without them, the dashboard draws initials and a gradient from the name.
@@ -22,8 +40,9 @@ Updated 2026-10-16. See [Outcome](#outcome).
   content width, footer text, search box) are a settings group named after the plugin and
   shown under Appearance → Customize.
 - **Theme contract.** `@cossackframework/cms` exports `SiteTheme`: `layout`, `home`, `entry`,
-  `archive`, `search` and `notFound` templates over plain view data (`SiteView`, `EntryView`,
-  `ArchiveView`, menus). Templates receive helpers that render blocks, so plugin block
+  `archive`, `search` and `notFound` templates, plus `templates` (the narrower ones by name) and
+  `blocks`, over plain view data (`SiteView`, `EntryView`, `ArchiveView` with its `collection`
+  and `taxonomy`, menus). Templates receive helpers that render blocks, so plugin block
   components work in every theme.
 - **Menus.** `cms_menus` holds a menu's items as one JSON tree with a revision. Saving is one
   conditional `UPDATE` on the revision, so a stale editor writes nothing. A menu is small and

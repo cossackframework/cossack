@@ -23,6 +23,8 @@ export const PLUGIN_MANIFEST_FILE = 'plugin.json';
 export const PLUGIN_SERVER_ENTRY = 'server.ts';
 /** Optional UI entry (components for host slots); imported in every environment. */
 export const PLUGIN_UI_ENTRY = 'ui.ts';
+/** A theme's templates, one default export per file; imported in every environment. */
+export const PLUGIN_TEMPLATES = 'templates/*.ts';
 /** Images a plugin ships, such as its logo and cover, served as build assets. */
 export const PLUGIN_ASSETS = 'assets/*.{png,jpg,jpeg,webp,gif,avif,svg}';
 
@@ -134,15 +136,20 @@ export function readRenderedPlugins(projectRoot: string): RenderedPlugin[] {
 /** Source of `virtual:cossack-plugins` for one environment. */
 export function pluginRegistryModule(plugins: readonly RenderedPlugin[], server: boolean): string {
   const ui = `const uiModules = import.meta.glob('/${PLUGINS_DIRECTORY}/*/${PLUGIN_UI_ENTRY}', { eager: true });
+    const templateModules = import.meta.glob('/${PLUGINS_DIRECTORY}/*/${PLUGIN_TEMPLATES}', { eager: true });
     const assetUrls = import.meta.glob('/${PLUGINS_DIRECTORY}/*/${PLUGIN_ASSETS}', { eager: true, query: '?url', import: 'default' });
     function assetsOf(name) {
       const prefix = '/${PLUGINS_DIRECTORY}/' + name + '/';
       return Object.freeze(Object.fromEntries(Object.entries(assetUrls).filter(([file]) => file.startsWith(prefix)).map(([file, url]) => [file.slice(prefix.length), url])));
+    }
+    function templatesOf(name) {
+      const prefix = '/${PLUGINS_DIRECTORY}/' + name + '/templates/';
+      return Object.freeze(Object.fromEntries(Object.entries(templateModules).filter(([file]) => file.startsWith(prefix)).map(([file, module]) => [file.slice(prefix.length, -3), module])));
     }`;
   if (!server) {
     // The browser learns names, versions and UI modules; manifests and server entries stay on the server.
     return `${ui}
-    const plugins = Object.freeze(${JSON.stringify(plugins.map(({ name, version }) => ({ name, version })))}.map(plugin => Object.freeze({ ...plugin, ui: uiModules['/${PLUGINS_DIRECTORY}/' + plugin.name + '/${PLUGIN_UI_ENTRY}'] ?? null, assets: assetsOf(plugin.name) })));
+    const plugins = Object.freeze(${JSON.stringify(plugins.map(({ name, version }) => ({ name, version })))}.map(plugin => Object.freeze({ ...plugin, ui: uiModules['/${PLUGINS_DIRECTORY}/' + plugin.name + '/${PLUGIN_UI_ENTRY}'] ?? null, templates: templatesOf(plugin.name), assets: assetsOf(plugin.name) })));
     export { plugins };
     export default plugins;
     `;
@@ -168,6 +175,7 @@ export function pluginRegistryModule(plugins: readonly RenderedPlugin[], server:
         name, version: manifest.version, manifest: freeze(manifest),
         module: modules['/${PLUGINS_DIRECTORY}/' + name + '/${PLUGIN_SERVER_ENTRY}'] ?? null,
         ui: uiModules['/${PLUGINS_DIRECTORY}/' + name + '/${PLUGIN_UI_ENTRY}'] ?? null,
+        templates: templatesOf(name),
         assets: assetsOf(name),
       });
     }));

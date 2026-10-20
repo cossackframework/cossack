@@ -5,16 +5,18 @@
  */
 import { component, html, ifDefined, unsafeHTML, type TemplateResult } from '@cossackframework/renderer';
 import { plugins } from '@cossackframework/framework/plugins';
-import { siteThemeProblems, type ArchiveView, type EntryView, type MediaView, type MenuItemView, type RenderedBlock, type SiteTheme, type ThemeHelpers } from '@cossackframework/cms';
+import { archiveTemplate, assembleSiteTheme, entryTemplate, siteThemeProblems, type ArchiveView, type EntryView, type MediaView, type MenuItemView, type RenderedBlock, type SiteTheme, type ThemeHelpers } from '@cossackframework/cms';
 
+export { archiveTemplate, entryTemplate };
 export type { ArchiveView, EntryView, MediaView, Paging, RenderedBlock, SiteView } from '@cossackframework/cms';
 
 /** Prose styles for rendered bodies. */
 export const PROSE = 'cms-prose max-w-none text-foreground leading-7 [&_a]:text-primary [&_a]:underline [&_h1]:mt-8 [&_h1]:text-3xl [&_h1]:font-bold [&_h2]:mt-8 [&_h2]:text-2xl [&_h2]:font-semibold [&_h3]:mt-6 [&_h3]:text-xl [&_h3]:font-semibold [&_h4]:mt-4 [&_h4]:font-semibold [&_p]:my-4 [&_ul]:my-4 [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:my-4 [&_ol]:list-decimal [&_ol]:pl-6 [&_li_p]:my-1 [&_blockquote]:my-6 [&_blockquote]:border-l-4 [&_blockquote]:border-border [&_blockquote]:pl-4 [&_blockquote]:italic [&_pre]:my-4 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-muted [&_pre]:p-4 [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_img]:my-6 [&_img]:h-auto [&_img]:max-w-full [&_img]:rounded-lg [&_hr]:my-8 [&_table]:my-4 [&_th]:border [&_th]:border-border [&_th]:px-2 [&_td]:border [&_td]:border-border [&_td]:px-2';
 
-/** The theme a plugin's `ui.ts` exports, or the built-in fallback when it is missing or invalid. */
+/** A plugin's theme (its `templates/` files and `ui.ts` `theme` export), or the built-in fallback when it is missing or invalid. */
 export function siteTheme(name: string | null): SiteTheme {
-    const theme = name ? (plugins.find(plugin => plugin.name === name)?.ui as { theme?: unknown } | null | undefined)?.theme : undefined;
+    const plugin = name ? plugins.find(plugin => plugin.name === name) : undefined;
+    const theme = plugin ? assembleSiteTheme(plugin) : undefined;
     return theme && !siteThemeProblems(theme).length ? theme as SiteTheme : fallbackTheme;
 }
 

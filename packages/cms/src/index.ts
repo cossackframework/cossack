@@ -25,8 +25,8 @@ export {
     type RichTextDoc, type RichTextNode, type RichTextMark, type EmbeddedBlock, type ContentPart, type RichTextRenderOptions, type RichTextMediaInfo,
 } from './richtext';
 export {
-    themeProblems, siteThemeProblems,
-    type ThemeManifest, type SiteTheme, type ThemeHelpers, type SiteView, type EntryView, type ArchiveView, type RenderedBlock, type BodyPart, type MediaView, type TermLink, type Paging,
+    themeProblems, siteThemeProblems, assembleSiteTheme, entryTemplate, archiveTemplate, SPECIFIC_TEMPLATE,
+    type ThemeManifest, type SiteTheme, type ThemeSource, type EntryTemplate, type ArchiveTemplate, type ThemeHelpers, type SiteView, type EntryView, type ArchiveView, type RenderedBlock, type BodyPart, type MediaView, type TermLink, type Paging,
     type CommentView, type CommentsView, type CommentFormView, type LanguageLink,
 } from './theme';
 export { diffWords, compareRecords, comparableValue, type DiffPart, type FieldChange } from './diff';

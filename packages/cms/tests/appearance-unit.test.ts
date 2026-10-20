@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
     allowedMoves, buildMenu, checkRichText, dropDepths, flattenMenu, manifestProblems, menuProblems, moveRows, normalizeMenu, richTextBlocks, richTextEmpty,
-    richTextFromPlain, richTextHtml, richTextMedia, richTextParts, richTextPlain, safeLinkUrl, shiftRows, siteThemeProblems, themeProblems, validateValue, field,
+    richTextFromPlain, richTextHtml, richTextMedia, richTextParts, richTextPlain, safeLinkUrl, shiftRows, siteThemeProblems, themeProblems, validateValue, field, assembleSiteTheme, entryTemplate, archiveTemplate, type SiteTheme,
     type MenuItem, type MenuRow, type RichTextDoc,
 } from '../src/index';
 import { collectionSpec } from '../src/server/schema';
@@ -143,10 +143,42 @@ describe('themes', () => {
         expect(themeProblems({ label: 'X', options: { data: { kind: 'json' } } })).toEqual([expect.stringMatching(/must be a string/)]);
     });
 
-    it('checks the ui.ts theme export', () => {
+    it('assembles a theme from template files, with the ui.ts export on top', () => {
+        const layout = () => null, entry = () => null, archive = () => null, posts = () => null, override = () => null;
+        expect(assembleSiteTheme({})).toBeUndefined();
+        expect(assembleSiteTheme({ ui: {} })).toBeUndefined();
+        expect(assembleSiteTheme({ templates: { layout: { default: layout }, entry: { default: entry }, archive: { default: archive }, 'not-found': { default: posts }, 'entry-posts': { default: posts } } }))
+            .toEqual({ layout, entry, archive, notFound: posts, templates: { 'entry-posts': posts } });
+        // ui.ts wins slot by slot and adds its own specific templates.
+        expect(assembleSiteTheme({ ui: { theme: { entry: override, templates: { term: override } } }, templates: { layout: { default: layout }, entry: { default: entry }, 'entry-posts': { default: posts } } }))
+            .toEqual({ layout, entry: override, templates: { 'entry-posts': posts, term: override } });
+        // A file without a default export leaves the slot empty, which validation reports.
+        expect(siteThemeProblems(assembleSiteTheme({ templates: { layout: {}, entry: { default: entry }, archive: { default: archive } } }))).toEqual(['theme.layout must be a function.']);
+        expect(siteThemeProblems({ layout, entry, archive, templates: { 'entry-posts': posts, 'page-about': posts, term: 'x' } }))
+            .toEqual([expect.stringMatching(/^theme\.templates\.page-about: name it/), 'theme.templates.term must be a function.']);
+    });
+
+    it('picks the most specific template for a view', () => {
+        const named = (name: string) => Object.assign(() => null as never, { templateName: name });
+        const theme: SiteTheme = { layout: named('layout'), entry: named('entry'), archive: named('archive'), home: named('home'),
+            templates: { 'entry-posts': named('entry-posts'), 'archive-products': named('archive-products'), term: named('term'), 'term-category': named('term-category') } };
+        const name = (template: unknown) => (template as { templateName: string }).templateName;
+        expect(name(entryTemplate(theme, 'posts'))).toBe('entry-posts');
+        expect(name(entryTemplate(theme, 'pages'))).toBe('entry');
+        expect(name(archiveTemplate(theme, { kind: 'archive', collection: 'products', taxonomy: null }))).toBe('archive-products');
+        expect(name(archiveTemplate(theme, { kind: 'archive', collection: 'posts', taxonomy: null }))).toBe('archive');
+        expect(name(archiveTemplate(theme, { kind: 'term', collection: 'posts', taxonomy: 'category' }))).toBe('term-category');
+        expect(name(archiveTemplate(theme, { kind: 'term', collection: 'posts', taxonomy: 'tag' }))).toBe('term');
+        expect(name(archiveTemplate({ ...theme, templates: { 'archive-products': named('archive-products') } }, { kind: 'term', collection: 'products', taxonomy: 'tag' }))).toBe('archive-products');
+        expect(name(archiveTemplate(theme, { kind: 'home', collection: 'posts', taxonomy: null }))).toBe('home');
+        // No search template: the archive.
+        expect(name(archiveTemplate(theme, { kind: 'search', collection: null, taxonomy: null }))).toBe('archive');
+    });
+
+    it('checks the assembled theme', () => {
         const noop = () => null;
         expect(siteThemeProblems({ layout: noop, entry: noop, archive: noop })).toEqual([]);
         expect(siteThemeProblems({ layout: noop })).toEqual(['theme.entry must be a function.', 'theme.archive must be a function.']);
-        expect(siteThemeProblems(undefined)).toEqual(['ui.ts must export theme.']);
+        expect(siteThemeProblems(undefined)).toEqual([expect.stringMatching(/no templates/)]);
     });
 });

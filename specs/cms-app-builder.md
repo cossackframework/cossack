@@ -293,7 +293,7 @@ Platform contract. The Platform calls only published interfaces:
 | Describe the app for generation | `cossack specs --json` |
 | Migrate and activate | `cms.plan()`, `cms.migrate()`, `cms.grantPlugin()`, `cms.status()` behind an operator command or the dashboard |
 | Define content types | `cms.saveCollection()`, `cms.saveTaxonomy()`; plugin manifests add block types |
-| Ship a site design | A plugin with a manifest `theme` field and a `ui.ts` `theme` export; `cms.activateTheme()`, `cms.menus` |
+| Ship a site design | A plugin with a manifest `theme` field and `templates/` files (or a `ui.ts` `theme` export); `cms.activateTheme()`, `cms.menus` |
 
 ## Sources
 
