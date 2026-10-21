@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createHookRegistry } from '@cossackframework/core/hooks';
 import {
-    beforeWrite, blockConditionProblem, blockProblems, choiceOptions, collectionProblems, collectionResource, CORE_BLOCKS, displayValue, emailAddresses, FORM_BLOCKS, FORM_EMBED_BLOCK, formDataValues, formInputs,
+    beforeWrite, blockConditionProblem, field, inputFields, manifestProblems, requestedGrants, blockProblems, choiceOptions, collectionProblems, collectionResource, CORE_BLOCKS, displayValue, emailAddresses, FORM_BLOCKS, FORM_EMBED_BLOCK, formDataValues, formInputs,
     forms, formSettings, formsModule, formVisibility, inputName, notificationProblems, renderMergeTags, resolveResource, ruleMatches, submissionOf, submissionResource, submissionResourceName, validateBlocks,
     validateSubmission, visibleBlocks, type Block, type BlockDeclaration,
 } from '../src/index';
@@ -210,5 +210,22 @@ describe('the forms collection', () => {
         expect(renderMergeTags(rule.body, context)).toBe('You wrote:\nYour name: Ada\nEmail: ada@example.com\nTopic: Sales\nCall me: No\nSite');
         expect(renderMergeTags('{field:email} {admin_email} {submission:id} {user:email}|{unknown} {field:gone}', context)).toBe('ada@example.com admin@example.com s1 |{unknown} {field:gone}');
         expect(emailAddresses(renderMergeTags('{field:email}, {admin_email}, nobody, ada@example.com', context))).toEqual(['ada@example.com', 'admin@example.com']);
+    });
+});
+
+describe('plugins and forms', () => {
+    it('declare form hooks and input blocks in their manifest', () => {
+        const manifest = {
+            schemaVersion: 1, name: 'acme', version: '1.0.0',
+            hooks: [{ point: 'cms.form.validate', version: 1 }, { point: 'cms.form.submitted', version: 1 }],
+            blocks: [{ name: 'acme/rating', label: 'Rating', category: 'form', input: { kind: 'number' }, fields: inputFields({ stars: field.integer({ default: 5, min: 3, max: 10, label: 'Stars' }) }) }],
+        };
+        expect(manifestProblems(manifest)).toEqual([]);
+        expect(requestedGrants(manifest as never)).toEqual(['hook:cms.form.submitted', 'hook:cms.form.validate']);
+        expect(manifestProblems({ ...manifest, hooks: [{ point: 'cms.form.sent', version: 1 }] })).toEqual(['hooks: cms.form.sent is not a CMS extension point.']);
+        // A plugin's input block is checked like the built-in ones.
+        const types = new Map([...FORM_BLOCKS, manifest.blocks[0] as BlockDeclaration].map(block => [block.name, block]));
+        const blocks = validateBlocks([{ id: 'r', type: 'acme/rating', data: { label: 'How did we do?' } }], types, { form: true }).blocks;
+        expect(formInputs(blocks, types).map(input => [input.name, input.kind])).toEqual([['howDidWeDo', 'number']]);
     });
 });

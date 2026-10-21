@@ -16,7 +16,11 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 
 /** CMS extension points by their exported binding name in `@cossackframework/cms`. */
-export const EXTENSION_POINT_EXPORTS = Object.freeze({ beforeWrite: 'cms.resource.before-write', afterCommit: 'cms.resource.after-commit' });
+export const EXTENSION_POINT_EXPORTS = Object.freeze({
+  beforeWrite: 'cms.resource.before-write', afterCommit: 'cms.resource.after-commit',
+  formValidate: 'cms.form.validate', formBeforeSubmit: 'cms.form.before-submit', formPrefill: 'cms.form.prefill',
+  formConfirmation: 'cms.form.confirmation', formNotification: 'cms.form.notification', formSubmitted: 'cms.form.submitted',
+});
 /** Permissions the CMS host defines. */
 export const HOST_PERMISSIONS = Object.freeze(['cms:dashboard']);
 const SECRET = /^(?:FASTDB_TOKEN|FASTDB_URL|APP_SECRET|CMS_SETUP_CODE|OAUTH_SECRET)$|(?:_SECRET|_TOKEN|_PASSWORD|_KEY)$/;

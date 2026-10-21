@@ -150,7 +150,7 @@ export default class SitePath extends Cossack {
         const found = editable ? await editableRecord(cms, editable.collection, editable.id, this.c.get('principal')) : null;
         if (!found) { this.editable = null; this.draft = null; return; }
         this.draft = await siteDraft(cms, found.collection, found.record, this.c.get('principal'));
-        this.entry = await draftEntry(cms, found.collection, found.record, this.draft.values);
+        this.entry = await draftEntry(cms, found.collection, found.record, this.draft.values, this.formRequest());
     }
 
     /** Render the page from the draft's values. Invalid values keep the last rendering and show why. */
@@ -161,7 +161,7 @@ export default class SitePath extends Cossack {
         const found = draft ? await editableRecord(cms, draft.collection, draft.id, this.c.get('principal')) : null;
         if (!draft || !found) { this.draft = null; return; }
         try {
-            this.entry = await draftEntry(cms, found.collection, found.record, values);
+            this.entry = await draftEntry(cms, found.collection, found.record, values, this.formRequest());
             this.draft = { ...draft, values, changed: true, error: '', errors: {} };
         } catch (error) {
             if (!isCmsError(error)) throw error;
@@ -180,7 +180,7 @@ export default class SitePath extends Cossack {
         try {
             const record = await saveDraft(cms, draft, values, principal);
             this.draft = { ...await siteDraft(cms, found.collection, record, principal), chooser: draft.chooser };
-            this.entry = await draftEntry(cms, found.collection, record, this.draft.values);
+            this.entry = await draftEntry(cms, found.collection, record, this.draft.values, this.formRequest());
         } catch (error) {
             if (!isCmsError(error)) throw error;
             this.draft = { ...draft, values, conflict: error.code === 'CMS_CONFLICT', error: error.message, errors: fieldErrors(error) };
@@ -194,7 +194,12 @@ export default class SitePath extends Cossack {
         const draft = this.draft;
         this.draft = null;
         const found = draft ? await editableRecord(cms, draft.collection, draft.id, this.c.get('principal')) : null;
-        if (found) this.entry = (await entryViews(cms, found.collection, [found.record], { full: true }))[0]!;
+        if (found) this.entry = (await entryViews(cms, found.collection, [found.record], { full: true, forms: this.formRequest() }))[0]!;
+    }
+
+    /** What the entry's forms need in edit mode, whose server methods run under /crpc: the editor and the entry's page. */
+    private formRequest() {
+        return { query: {}, principal: this.c.get('principal'), url: this.entry?.url ?? '/' };
     }
 
     /** The media library, for the editor of this entry only. */

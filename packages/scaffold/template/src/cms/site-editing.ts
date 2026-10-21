@@ -4,6 +4,7 @@
  * dashboard editor's save, with its revision check.
  */
 import { CmsError, recordTitle, type CollectionDefinition, type EntryView, type Principal, type RecordShape } from '@cossackframework/cms';
+import type { FormRequest } from './site-forms';
 import type { CmsHost } from '@cossackframework/cms/server';
 import { editorView, entryInput, entryValues, findMedia, mediaPreviews, saveEntry } from './content';
 import { editorBlocks, type EditorValues } from './editor';
@@ -50,12 +51,12 @@ export async function siteDraft(cms: CmsHost, collection: CollectionDefinition, 
     };
 }
 
-/** The entry as the site shows it with the draft's values, like a preview. Invalid values throw. */
-export async function draftEntry(cms: CmsHost, collection: CollectionDefinition, record: RecordShape, values: EditorValues): Promise<EntryView> {
+/** The entry as the site shows it with the draft's values, like a preview, with its forms. Invalid values throw. */
+export async function draftEntry(cms: CmsHost, collection: CollectionDefinition, record: RecordShape, values: EditorValues, forms?: FormRequest): Promise<EntryView> {
     const input = await entryInput(cms, collection.name, values);
     // Typed tags are names until the save creates their terms; the preview keeps the saved ones.
     for (const name of Object.keys(input)) if (cms.resourceById(`cms/${collection.name}`).fields[name]?.taxonomy) delete input[name];
-    return (await entryViews(cms, collection, [{ ...record, ...input }], { full: true }))[0]!;
+    return (await entryViews(cms, collection, [{ ...record, ...input }], { full: true, ...(forms ? { forms } : {}) }))[0]!;
 }
 
 /** Save the draft over the revision it started from. A newer save makes a CMS_CONFLICT. */

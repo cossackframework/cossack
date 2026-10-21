@@ -7,7 +7,9 @@ users and sign-in with authenticator apps and passkeys, the framework stores, an
 plugin hosting. Publishing tools: scheduled entries, preview links, autosaves, revisions you
 can compare and restore, automatic and managed redirects, per-entry SEO, resized image
 variants with crops and focal points, application passwords for the content API, signed
-webhooks, moderated comments, reusable patterns and translations. Add it to an
+webhooks, moderated comments, reusable patterns and translations. Forms are built from
+input blocks with conditional logic, and each keeps its submissions in a table of its own,
+with notifications, webhooks and hooks like Gravity Forms'. Add it to an
 application with `cossack add cms`, which renders the shared `auth` and `dashboard` pages
 over CMS storage and a default theme into `src/plugins/default-theme/`. It runs on Cloudflare Workers
 with FastDB Cloud and on Node.js with `fastdb serve`.
@@ -72,6 +74,13 @@ Data contract:
   theme; `theme.areas` declares widget areas; a manifest's `collections` ship site
   collections with the plugin. Editors can choose an entry's template and edit its blocks on
   the public page.
+- A form is a `forms` entry whose `body` holds input blocks (`input: { kind }` in the
+  declaration), laid out with the containers and shown or hidden by a block's `when`. Its
+  submissions are the resource `cms/form_<form id>`, stored in its own table and extended
+  when inputs are added. A submission is one batch: the record, a receipt and its
+  `form.submitted` outbox event, which sends the form's notifications and webhooks. Hooks:
+  `cms.form.validate`, `before-submit`, `prefill`, `confirmation`, `notification` and
+  `submitted`.
 - Scheduled entries are published by maintenance as a system write, so their outbox events
   and webhooks fire when they go live. A published entry's URL change records a 301 in the
   same batch.

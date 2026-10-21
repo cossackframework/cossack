@@ -73,6 +73,18 @@ describe('plugin policy', () => {
     expect(manifestOnly).toEqual([expect.objectContaining({ code: 'COSSACK_PLUGIN_PERMISSION', file: 'src/plugins/support-desk/plugin.json' })]);
   });
 
+  it('checks form hooks against the manifest', () => {
+    const source = `
+      import { formSubmitted, formValidate } from '@cossackframework/cms';
+      export function register(context: any) {
+        context.hooks.addFilter(formValidate, (errors: any) => errors);
+        context.hooks.addAction(formSubmitted, () => {});
+      }
+    `;
+    expect(codes(source)).toEqual(['COSSACK_PLUGIN_HOOK', 'COSSACK_PLUGIN_HOOK']);
+    expect(codes(source, { hooks: [{ point: 'cms.form.validate', version: 1 }, { point: 'cms.form.submitted', version: 1 }] })).toEqual([]);
+  });
+
   it('treats the collections a plugin ships as its own', () => {
     const source = `export const loaders = { entry: (_: unknown, { cms, principal }: any) => cms.resource('cms/projects').list({}, { principal }) };`;
     expect(codes(source)).toEqual(['COSSACK_PLUGIN_PERMISSION']);

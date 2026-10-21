@@ -1,7 +1,7 @@
 # Forms: a block-based form builder with per-form submission tables
 
 Builds on `specs/cms-essentials.md` (collections, comments, webhooks, outbox) and
-`specs/cms-layout.md` (nested blocks). Status: in progress on branch `cms-foundation`, 2026-10-21. Phases 1 (model), 2 (host), 3 (site) and 4 (dashboard) done.
+`specs/cms-layout.md` (nested blocks). Status: implemented on branch `cms-foundation`, 2026-10-21. See [Outcome](#outcome).
 
 A form is an entry of a built-in `forms` collection whose `body` is blocks: inputs are
 block types, and the core containers lay them out. Every form stores its submissions in a
@@ -132,8 +132,8 @@ after the submission is committed.
   choices) and each conditional block with `shown`; the closed message, sign-in link or
   the returning post's notice; `_started`; the Turnstile key; input kinds for the script.
   Starting values are the inputs' defaults, hidden inputs from the page's query, then
-  `cms.form.prefill`. Entries, the home page, previews and widget areas place forms; the
-  site editor's draft view does not yet. A theme overrides `blocks['core/form']` or any
+  `cms.form.prefill`. Entries, the home page, previews, the site editor's draft view and widget
+  areas place forms. A theme overrides `blocks['core/form']` or any
   input block, or wraps `formBlock` and `inputBlock` from `cms/form-view.ts`.
 - **Rendering.** `coreBlock` renders `core/form` and `form/*` through `cms/form-view.ts`:
   label, control, help and error, plain HTML with `novalidate` that posts without
@@ -201,8 +201,8 @@ is a block with `input.kind: 'file'`, a page break a container.
   and the page submits with JavaScript off and on.
 - A submission lands in the form's own table `r__cms__form_<id>` with the typed values, IP, user agent and
   status `new`; the dashboard shows it under Forms (1), marks it read and exports CSV.
-- A filled honeypot stores `spam` and sends nothing; a sixth submission past
-  `limit: 5` gets the closed message.
+- A filled honeypot stores `spam` and sends nothing; a submission past the form's
+  `limit` gets the closed message.
 - A notification rule emails the admin with merge tags filled and an autoresponder
   reaches the submitted email, both delivered from the outbox and not sent twice on
   a retry.
@@ -210,3 +210,17 @@ is a block with `input.kind: 'file'`, a page break a container.
   to receive the event; its manifest names both points.
 - Adding an input to a live form migrates the resource without touching rows, and the
   old submissions still list.
+
+## Outcome
+
+| Area | Delivered | Verified by |
+| --- | --- | --- |
+| Model (`packages/cms`) | `BlockDeclaration.input`, `INPUT_KINDS`, `Block.when` (`blockConditionProblem`), `validateBlocks(…, { allowed, form })` with names from labels (`inputName`), distinct and unreserved names and conditions on the form's inputs; `field.blocks` `form: true`; `FORM_BLOCKS`, `FORM_EMBED_BLOCK`, `inputFields`; `formInputs`, `ruleMatches`, `conditionShows`, `formVisibility`, `visibleBlocks`, `formDataValues`, `validateSubmission`, `displayValue`; the `forms` collection and `formsModule` with `FORM_SETTINGS` checks; `submissionResource` (`cms/form_<id>`); `notificationProblems`, `MERGE_TAGS`, `renderMergeTags`, `escapeMarkdown`; six form extension points; `cms:submissions` | `forms-unit.test.ts` |
+| Host | `cms.forms` (`CmsForms`): per-form table sync and drop, `submit` (schedule, limit, sign-in, bot check, throttle, trap and fill time, validation hooks, once rules, one atomic batch), `closed`, `prefill`, notifications once per event, rule and address, `form.submitted` webhooks, `list`, `counts`, `inboxCounts`, `submission`, `setStatus`, `delete`, `setNote`, `csv`, `maintain`, post results; outbox topics; `CmsOptions.mail` and `mailFrom`; repository `insert` and time cursors; schemaless index rebuilds; host step 8 (`cms_form_sends`, `cms_form_mail`, `cms_form_results`); the `cms.forms.submit` reconciler | `forms.test.ts` against live FastDB; `schema.test.ts`, `unit.test.ts` |
+| Site (scaffold) | `core/form` and `form/*` renderers (`cms/form-view.ts`), `FormView` and `InputView` from `cms/site-forms.ts`, `cms/form.client.ts`, `blocks.css` rules, `POST`/`GET /api/cms/forms/<slug>`, the submissions API and CSV export, forms on entries, the home page, previews and widget areas | `generated-runtime-cms-forms.test.js` on Node and Workers, and in Chromium |
+| Dashboard (scaffold) | Forms navigation with the new count; `/dashboard/forms`; the submissions inbox and one submission; the entry editor's input picker, conditional logic control, notification list, slug line and submissions link; form icons | `generated-runtime-cms-forms.test.js` (HTTP and Chromium) |
+| Plugins | Form hooks in manifests and the plugin policy lint (`EXTENSION_POINT_EXPORTS`); input blocks from plugins | `forms-unit.test.ts`, `plugin-policy.test.js` |
+| Docs | `cms-forms` guide in `agent-docs.json`; README data contract | `fastdb-cms-guide-coverage.test.js` |
+
+Left for later: a multi-select dropdown, and a drag-and-drop form canvas beyond the block
+tree.
