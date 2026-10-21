@@ -9,7 +9,7 @@
 import { html, type TemplateResult } from '@cossackframework/renderer';
 import { presetStyle, type SiteView, type ThemeHelpers } from '@cossackframework/cms';
 import { desktopMenu, languageSwitcher, link, mobileMenu, searchBox } from '../parts/menu';
-import { accentStyle, width } from '../parts/options';
+import { accentStyle, typographyCss, width } from '../parts/options';
 
 export default function layout(site: SiteView, content: TemplateResult, helpers: ThemeHelpers): TemplateResult {
     const primary = site.menus.primary ?? [];
@@ -17,7 +17,9 @@ export default function layout(site: SiteView, content: TemplateResult, helpers:
     const frame = `mx-auto w-full px-6 ${helpers.options.width === 'wide' ? 'max-w-6xl' : 'max-w-5xl'}`;
     const footerText = typeof helpers.options.footerText === 'string' && helpers.options.footerText.trim() ? helpers.options.footerText : `© ${new Date().getFullYear()} ${site.title}`;
     // The presets' variables sit on the root, so widget areas outside the content root resolve them too.
+    // The typography options as a stylesheet here rather than in a head template, so a child theme with its own head keeps them.
     return html`<div class="flex min-h-screen flex-col bg-background text-foreground" style=${`${accentStyle(helpers)} ${presetStyle(helpers.presets)}`} data-theme="default-theme">
+        <style data-theme-typography>${typographyCss(helpers)}</style>
         <a href="#content" class="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-background focus:px-3 focus:py-2 focus:shadow">${__('Skip to content')}</a>
         <header class="border-b border-border">
             <div class=${`${frame} flex flex-wrap items-center justify-between gap-x-8 gap-y-2 py-5`}>
