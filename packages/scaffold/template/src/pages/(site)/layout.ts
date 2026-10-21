@@ -32,7 +32,8 @@ export default class SiteLayout extends Cossack {
             ],
             links: [...(contributed.links ?? []), ...(this.site.blog ? [{ tag: 'link', attributes: { rel: 'alternate', type: 'application/rss+xml', title: this.site.title, href: '/feed' } }] : [])],
             ...(contributed.scripts ? { scripts: contributed.scripts } : {}),
-            ...(contributed.tags ? { tags: contributed.tags } : {}),
+            // The site's Additional CSS, checked on save, after the theme's own tags.
+            tags: [...(contributed.tags ?? []), ...(this.theme.customCss ? [{ tag: 'style', attributes: { 'data-cms-custom-css': '' }, children: this.theme.customCss }] : [])],
         };
     }
 

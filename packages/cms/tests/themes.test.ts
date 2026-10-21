@@ -37,7 +37,8 @@ const plugins: PluginRegistrationLike[] = [
     {
         name: 'folio', version: '1.0.0', templates, module: { loaders: folioLoaders },
         manifest: { schemaVersion: 1, name: 'folio', version: '1.0.0', theme: { label: 'Folio', locations: { primary: 'Primary menu' }, areas: { footer: 'Footer widgets' },
-            options: { accent: { kind: 'enum', values: ['blue', 'red'], default: 'blue', label: 'Accent' } } }, permissions: { resources: { 'cms/posts': ['read'] } } },
+            options: { accent: { kind: 'enum', values: ['blue', 'red'], default: 'blue', label: 'Accent' } },
+            presets: { colors: [{ slug: 'base', name: 'Base', value: '#ffffff' }, { slug: 'brand', name: 'Brand', value: '#2563eb' }] } }, permissions: { resources: { 'cms/posts': ['read'] } } },
     },
     // Only a theme: active without a grant, so its loaders run, but it may read nothing.
     { name: 'plain', version: '1.0.0', templates: { ...templates, 'entry-wide': { default: noop }, 'entry-posts': { default: noop } }, module: { loaders: plainLoaders },
@@ -47,7 +48,7 @@ const plugins: PluginRegistrationLike[] = [
     // A child theme: its own entry template and loader over folio's layout and loaders.
     { name: 'folio-dark', version: '1.0.0', templates: { entry: { default: noop }, 'entry-dark': { default: noop } }, module: { loaders: { 'entry-posts': () => ({ child: true }) } },
         manifest: { schemaVersion: 1, name: 'folio-dark', version: '1.0.0', theme: { label: 'Folio Dark', extends: 'folio', locations: { footer: 'Footer menu' }, areas: { sidebar: 'Sidebar' },
-            options: { tone: { kind: 'enum', values: ['dark', 'darker'], default: 'dark', label: 'Tone' } } } } },
+            options: { tone: { kind: 'enum', values: ['dark', 'darker'], default: 'dark', label: 'Tone' } }, presets: { colors: [{ slug: 'brand', name: 'Brand', value: '#60a5fa' }] } } } },
     { name: 'orphan', version: '1.0.0', templates, manifest: { schemaVersion: 1, name: 'orphan', version: '1.0.0', theme: { label: 'Orphan', extends: 'missing' } } },
     { name: 'grandchild', version: '1.0.0', manifest: { schemaVersion: 1, name: 'grandchild', version: '1.0.0', theme: { label: 'Grandchild', extends: 'folio-dark' } } },
     // A collection name that is taken makes the plugin invalid, and nothing of it is hosted.
@@ -166,6 +167,9 @@ describe.skipIf(!live)('themes: loaders', () => {
             areas: [{ name: 'footer', label: 'Footer widgets' }, { name: 'sidebar', label: 'Sidebar' }] });
         // Its option values are its own, with its parent's options and its own.
         expect(child.options).toMatchObject({ id: 'folio-dark', fields: { accent: { kind: 'enum' }, tone: { kind: 'enum' } } });
+        // Its presets layer over its parent's by slug.
+        expect(child.presets.colors).toEqual([{ slug: 'brand', name: 'Brand', value: '#60a5fa' }, { slug: 'base', name: 'Base', value: '#ffffff' }]);
+        expect(themes.get('plain')!.presets).toEqual({});
         expect(themes.get('orphan')!.problems).toEqual(['It extends missing, which is not an installed theme.']);
         expect(themes.get('grandchild')!.problems).toEqual(['Its parent theme folio-dark extends another theme; themes extend one level.']);
         expect(cms.themeLoaders('folio-dark').sort()).toEqual(['archive', 'entry', 'entry-posts', 'home', 'layout', 'search']);
@@ -210,5 +214,23 @@ describe.skipIf(!live)('themes: loaders', () => {
         expect((await cms.areas.get('footer'))?.blocks).toEqual(expected);
         await expect(cms.areas.save('footer', [{ id: 'c', type: 'core/column', data: {} }], { principal: admin, expectedRevision: 1, known }))
             .rejects.toMatchObject({ code: 'CMS_VALIDATION', message: 'c: core/column goes inside core/columns.' });
+    });
+
+    it('saves a block\'s style and keeps what its type supports', async () => {
+        const known = (await cms.areaLocations()).map(area => area.name);
+        const blocks = [
+            { id: 'p', type: 'core/paragraph', data: { text: 'Styled' }, style: { background: 'brand', align: 'center' }, layout: { anchor: 'intro', className: 'hero' } },
+            { id: 'd', type: 'core/divider', data: {}, style: { background: 'brand', padding: 'large' } },
+        ];
+        await expect(cms.areas.save('sidebar', [{ id: 'p', type: 'core/paragraph', data: { text: 'x' }, style: { background: 'Brand' } }], { principal: admin, expectedRevision: 2, known }))
+            .rejects.toMatchObject({ code: 'CMS_VALIDATION' });
+        const saved = await cms.areas.save('sidebar', blocks.slice(0, 1), { principal: admin, expectedRevision: 2, known });
+        expect(saved.blocks).toEqual([{ id: 'p', type: 'core/paragraph', data: { text: 'Styled' }, style: { background: 'brand', align: 'center' }, layout: { anchor: 'intro', className: 'hero' } }]);
+        // A design block supports colour and spacing; an unsupported property is dropped, not refused (the unit tests cover the drop).
+        const divider = await cms.areas.save('sidebar', [{ id: 'd', type: 'core/divider', data: {}, style: { ...blocks[1]!.style, fontSize: 'large' } }], { principal: admin, expectedRevision: 3, known });
+        expect(divider.blocks[0]).toEqual({ id: 'd', type: 'core/divider', data: {}, style: { background: 'brand', padding: 'large' } });
+        const settings = await cms.settings.update('appearance', { presets: { 'folio-dark': { colors: { brand: '#0a0' }, custom: [{ slug: 'mine', name: 'Mine', value: '#123' }] } }, customCss: '.hero { color: red }' }, { principal: admin });
+        expect(settings['appearance.presets']).toEqual({ 'folio-dark': { colors: { brand: '#0a0' }, custom: [{ slug: 'mine', name: 'Mine', value: '#123' }] } });
+        expect(settings['appearance.customCss']).toBe('.hero { color: red }');
     });
 });

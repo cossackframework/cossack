@@ -59,6 +59,10 @@ export const appearance: SettingsGroup = {
     permission: 'cms:appearance',
     fields: {
         theme: field.string({ max: 64, default: '', pattern: '(?:[a-z][a-z0-9]*(?:-[a-z0-9]+)*)?', label: 'Theme' }),
+        /** The site's colour changes and additions, by theme: `{ [theme]: { colors: { [slug]: value }, custom: Preset[] } }`. Checked by `presetOverridesProblem` on write. */
+        presets: field.json({ label: 'Colours' }),
+        /** Site-wide CSS added under Customize; `customCssProblem` keeps it to styling. */
+        customCss: field.text({ max: 20_000, default: '', label: 'Additional CSS' }),
     },
 };
 
@@ -143,6 +147,8 @@ export interface SiteSettings {
     'general.requireTwoFactor': boolean;
     'media.maxUploadMb': number;
     'appearance.theme': string;
+    'appearance.presets': { readonly [theme: string]: { readonly colors?: { readonly [slug: string]: string }; readonly custom?: readonly { slug: string; name: string; value: string }[] } } | null;
+    'appearance.customCss': string;
     'writing.defaultCategory': string;
     'writing.defaultStatus': 'draft' | 'published';
     'reading.showOnFront': 'posts' | 'page';

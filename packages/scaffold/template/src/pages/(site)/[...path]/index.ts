@@ -279,11 +279,11 @@ export default class SitePath extends Cossack {
         const theme = siteTheme(this.theme);
         const helpers = themeHelpers(theme, { ...this.theme, data: { page: this.data }, editing: Boolean(this.draft) }, (path, exact) => this.isActive(path, exact));
         if (this.kind === 'entry' && this.entry) {
-            const page = siteContent(entryTemplate(theme, this.entry.collection, this.entry.template)(this.entry, helpers));
+            const page = siteContent(entryTemplate(theme, this.entry.collection, this.entry.template)(this.entry, helpers), this.theme);
             // Visitors get the theme's page alone. The editor sits outside the content root, which contains fixed elements.
             return this.editable || this.draft ? html`${page}${this.editor()}` : page;
         }
-        if (this.kind === 'home' || this.kind === 'list') return siteContent(archiveTemplate(theme, this.view)(this.view, helpers));
+        if (this.kind === 'home' || this.kind === 'list') return siteContent(archiveTemplate(theme, this.view)(this.view, helpers), this.theme);
         if (this.kind === 'gone') return html`<section class="space-y-3 py-16 text-center">
             <h1 class="text-3xl font-bold text-foreground">${__('Page removed')}</h1>
             <p class="text-muted-foreground">${__('This page was removed and is not coming back.')}</p>

@@ -49,7 +49,7 @@ export default class HomePage extends Cossack {
         if (this.mode === 'unavailable') return unavailable();
         const theme = siteTheme(this.theme);
         const helpers = themeHelpers(theme, { ...this.theme, data: { page: this.data } }, (path, exact) => this.isActive(path, exact));
-        if (this.mode === 'page' && this.page) return siteContent(entryTemplate(theme, this.page.collection, this.page.template)(this.page, helpers));
-        return siteContent(archiveTemplate(theme, this.view)(this.view, helpers));
+        if (this.mode === 'page' && this.page) return siteContent(entryTemplate(theme, this.page.collection, this.page.template)(this.page, helpers), this.theme);
+        return siteContent(archiveTemplate(theme, this.view)(this.view, helpers), this.theme);
     }
 }

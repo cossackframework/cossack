@@ -3,7 +3,7 @@
  * conversion from form values to typed record input. Client-safe; the server converts and
  * validates again before writing.
  */
-import { slugify, validateValue, type BlockCategory, type Breakpoint, type FieldDeclaration, type FieldKind } from '@cossackframework/cms';
+import { slugify, validateValue, type BlockCategory, type BlockStyle, type Breakpoint, type FieldDeclaration, type FieldKind, type StyleProperty, type ThemePresets } from '@cossackframework/cms';
 
 /** One field as the editor shows it. */
 export interface EditorField {
@@ -54,6 +54,8 @@ export interface BlockOption {
     children: { allowed: string[]; max: number | null } | null;
     /** Types this block goes inside alone, such as a column in columns. */
     parent: string[];
+    /** The Style tab's properties, from the type's supports and category. */
+    supports: StyleProperty[];
 }
 
 /** A block as editors hold it: its data as control values, nested blocks under a container. */
@@ -61,7 +63,8 @@ export interface EditorBlock {
     id: string;
     type: string;
     data: Record<string, unknown>;
-    layout?: { hide?: Breakpoint[] };
+    layout?: { hide?: Breakpoint[]; anchor?: string; className?: string };
+    style?: BlockStyle;
     children?: EditorBlock[];
 }
 
@@ -83,6 +86,8 @@ export interface EditorView {
     fields: EditorField[];
     taxonomies: EditorTaxonomy[];
     blocks: BlockOption[];
+    /** The active theme's presets, for the blocks' Style tab. */
+    presets: Required<ThemePresets>;
 }
 
 /** Values the form controls hold: strings, booleans and lists. */
@@ -214,12 +219,22 @@ export function blocksInput(raw: readonly EditorBlock[], types: ReadonlyMap<stri
             if ('error' in value) return { error: `${entry.label} ${value.error}` };
             if (value.value !== undefined && value.value !== null && value.value !== '') data[entry.name] = value.value;
         }
-        const hide = block.layout?.hide?.filter(Boolean) ?? [];
+        const layout = blockLayoutInput(block.layout);
+        const style = Object.fromEntries(Object.entries(block.style ?? {}).filter(([, value]) => typeof value === 'string' && value)) as BlockStyle;
         const children = Array.isArray(block.children) ? blocksInput(block.children, types) : undefined;
         if (children && 'error' in children) return children;
-        converted.push({ id: block.id, type: block.type, data, ...(hide.length ? { layout: { hide } } : {}), ...(children ? { children: children.value } : {}) });
+        converted.push({ id: block.id, type: block.type, data, ...(layout ? { layout } : {}), ...(Object.keys(style).length ? { style } : {}), ...(children ? { children: children.value } : {}) });
     }
     return { value: converted };
+}
+
+/** A block's layout without empty entries; undefined when it has none. */
+function blockLayoutInput(layout: EditorBlock['layout']): EditorBlock['layout'] | undefined {
+    const hide = layout?.hide?.filter(Boolean) ?? [];
+    const anchor = layout?.anchor?.trim() ?? '';
+    const className = layout?.className?.trim() ?? '';
+    const result = { ...(hide.length ? { hide } : {}), ...(anchor ? { anchor } : {}), ...(className ? { className } : {}) };
+    return Object.keys(result).length ? result : undefined;
 }
 
 /** The slug an untouched slug field follows. */

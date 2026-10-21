@@ -677,7 +677,7 @@ export default class EntryEditor extends Cossack {
     private blocksControl(field: EditorField): TemplateResult {
         return html`<div class="space-y-3">
             ${component(BlockTree, {
-                id: `field-${field.name}`, blocks: this.blocks(field.name), options: this.view?.blocks ?? [], allowed: field.blocks, inline: true, error: this.errors[field.name] ?? '',
+                id: `field-${field.name}`, blocks: this.blocks(field.name), options: this.view?.blocks ?? [], allowed: field.blocks, inline: true, error: this.errors[field.name] ?? '', presets: this.view?.presets,
                 onChange: (blocks: EditorBlock[]) => this.set(field.name, blocks),
                 control: (entry: EditorField, value: unknown, change: (value: unknown) => void, block: EditorBlock, id: string) => this.control(entry, value, change, { field: field.name, block: block.id, key: entry.name }, id),
             })}

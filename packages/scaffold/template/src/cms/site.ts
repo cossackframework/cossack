@@ -4,18 +4,22 @@
  * from `init()` and hand the views to the theme's templates.
  */
 import {
-    ANONYMOUS, editedSize, escapeHtml, formatSiteDate, imageSrcset, imageUrl, isCmsError, languageName, mediaUrl, recordTitle, richTextBlocks, richTextExcerpt, richTextParts, systemPrincipal, templateCandidates, transformable,
-    type Principal, type TemplatePage, type ThemeData,
+    ANONYMOUS, editedSize, escapeHtml, formatSiteDate, imageSrcset, imageUrl, isCmsError, languageName, mediaUrl, recordTitle, resolvePresets, richTextBlocks, richTextExcerpt, richTextParts, systemPrincipal, templateCandidates, transformable,
+    type Principal, type TemplatePage, type ThemeData, type ThemePresets,
     type ArchiveView, type BodyPart, type CollectionDefinition, type CommentShape, type CommentView, type CommentsView, type EntryReference, type EntryView, type FieldDeclaration, type FieldFilter,
     type FieldView, type LanguageLink, type MediaView, type MenuItemView, type RecordShape, type RenderedBlock, type RichTextDoc, type SiteSettings, type SiteView, type TermLink, type TermShape,
 } from '@cossackframework/cms';
 import { excerptOf, renderMarkdown, type CmsFile, type CmsHost, type SiteLanguages } from '@cossackframework/cms/server';
 
-/** The active theme, the theme it extends, and its option values, which every site page renders with. */
+/** The active theme, the theme it extends, its option values and presets, which every site page renders with. */
 export interface ThemeState {
     name: string | null;
     parent?: string | null;
     options: Record<string, unknown>;
+    /** The presets blocks pick from, the site's colour changes applied. */
+    presets?: Required<ThemePresets>;
+    /** The site's Additional CSS, already checked. */
+    customCss?: string;
 }
 
 const visitor = { principal: ANONYMOUS };
@@ -27,7 +31,15 @@ export async function themeState(cms: CmsHost): Promise<ThemeState> {
     const theme = cms.themes().find(entry => entry.name === name);
     const settings = await cms.settings.all();
     const options = Object.fromEntries(Object.keys(theme?.options?.fields ?? {}).map(option => [option, settings[`${name}.${option}`]]));
-    return { name, parent: theme?.parent ?? null, options };
+    return { name, parent: theme?.parent ?? null, options, presets: resolvePresets(theme?.presets, name ? settings['appearance.presets']?.[name] : null), customCss: settings['appearance.customCss'] ?? '' };
+}
+
+/** The active theme's presets with the site's changes, for the editors' Style tab. */
+export async function activePresets(cms: CmsHost): Promise<Required<ThemePresets>> {
+    const name = await cms.activeTheme();
+    const theme = cms.themes().find(entry => entry.name === name);
+    const settings = await cms.settings.all();
+    return resolvePresets(theme?.presets, name ? settings['appearance.presets']?.[name] : null);
 }
 
 /**
@@ -112,7 +124,7 @@ export function mediaView(file: CmsFile | undefined, resizes: boolean): MediaVie
 }
 
 /** A block with its Markdown fields rendered and its media resolved; a container's children too. */
-function renderedBlock(cms: CmsHost, block: { id: string; type: string; data: Record<string, unknown>; layout?: RenderedBlock['layout']; children?: readonly unknown[] }, files: ReadonlyMap<string, CmsFile>): RenderedBlock {
+function renderedBlock(cms: CmsHost, block: { id: string; type: string; data: Record<string, unknown>; layout?: RenderedBlock['layout']; style?: RenderedBlock['style']; children?: readonly unknown[] }, files: ReadonlyMap<string, CmsFile>): RenderedBlock {
     const html: Record<string, string> = {};
     const media: Record<string, MediaView> = {};
     const resizes = cms.files?.resizes ?? false;
@@ -125,7 +137,7 @@ function renderedBlock(cms: CmsHost, block: { id: string; type: string; data: Re
         }
     }
     const children = Array.isArray(block.children) ? (block.children as RenderedBlock[]).map(child => renderedBlock(cms, child, files)) : undefined;
-    return { id: block.id, type: block.type, data: block.data, html, media, ...(block.layout?.hide?.length ? { layout: block.layout } : {}), ...(children ? { children } : {}) };
+    return { id: block.id, type: block.type, data: block.data, html, media, ...(block.layout ? { layout: block.layout } : {}), ...(block.style ? { style: block.style } : {}), ...(children ? { children } : {}) };
 }
 
 function blockMediaIds(cms: CmsHost, block: { type: string; data: Record<string, unknown>; children?: readonly unknown[] }, into: Set<string>): void {

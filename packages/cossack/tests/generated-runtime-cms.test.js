@@ -202,7 +202,7 @@ async function exercise(origin, routeIds, diagnostics) {
   expect(plugins).toMatch(/data-plugin="?default-theme/);
   contains(plugins, 'Manage in Appearance');
   const customize = 'dashboard/(cms)/appearance/customize/index.ts';
-  const customized = await web.action(customize, 'save', [{ accent: 'rose', width: 'wide', showSearch: false, footerText: 'Made with rockets' }], { state: { theme: { name: 'default-theme', label: 'Cossack Default' } } });
+  const customized = await web.action(customize, 'save', [{ accent: 'rose', width: 'wide', showSearch: false, footerText: 'Made with rockets' }, [], [], ''], { state: { theme: { name: 'default-theme', label: 'Cossack Default' } } });
   expect(customized.error).toBe('');
   const themed = await visitor.page('/');
   contains(themed, 'Made with rockets');

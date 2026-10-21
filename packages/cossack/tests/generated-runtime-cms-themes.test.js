@@ -126,9 +126,10 @@ describe.skipIf(!liveFastDBTests())('CMS themes', () => {
 
       // Layout blocks: columns with a span and a column hidden on phones, rendered as a grid
       // that responds to the content root's width. The hidden column stays in the HTML.
+      // The left column and the right paragraph carry styles: preset slugs of the parent theme's palette.
       await project('Layout', 'Wile E.', [{ id: 'cols', type: 'core/columns', data: { gap: 'small', stack: 'mobile' }, children: [
-        { id: 'left', type: 'core/column', data: { span: '4', verticalAlign: 'top' }, children: [{ id: 'lh', type: 'core/heading', data: { text: 'Left heading', level: 'h3' } }] },
-        { id: 'right', type: 'core/column', data: { span: '', verticalAlign: 'top' }, layout: { hide: ['sm'] }, children: [{ id: 'rp', type: 'core/paragraph', data: { text: 'Right column' } }] },
+        { id: 'left', type: 'core/column', data: { span: '4', verticalAlign: 'top' }, style: { background: 'secondary', padding: 'large' }, layout: { anchor: 'aside' }, children: [{ id: 'lh', type: 'core/heading', data: { text: 'Left heading', level: 'h3' } }] },
+        { id: 'right', type: 'core/column', data: { span: '', verticalAlign: 'top' }, layout: { hide: ['sm'] }, children: [{ id: 'rp', type: 'core/paragraph', data: { text: 'Right column' }, style: { text: 'primary', align: 'center' }, layout: { className: 'lead' } }] },
       ] }]);
       const layoutHtml = visible(await visitor.page('/projects/layout'));
       expect(layoutHtml).toMatch(/class="?cms-content"?/);
@@ -137,12 +138,32 @@ describe.skipIf(!liveFastDBTests())('CMS themes', () => {
       expect(layoutHtml).toMatch(/--cms-span: ?8/);
       expect(layoutHtml).toMatch(/data-hide="?sm"?/);
       expect(layoutHtml.indexOf('Left heading')).toBeLessThan(layoutHtml.indexOf('Right column'));
+      // Styles: one wrapper per styled block with its classes and the palette's variables; the root carries the palette.
+      expect(layoutHtml).toMatch(/class="?cms-block cms-bg-secondary cms-p-large cms-column-box"? id="?aside"? style="?background-color: ?var\(--cms-color-secondary\); ?padding: ?var\(--cms-space-large\); ?--cms-span: ?4/);
+      expect(layoutHtml).toMatch(/class="?cms-block cms-text-primary cms-align-center lead"? style="?color: ?var\(--cms-color-primary\); ?text-align: ?center/);
+      expect(layoutHtml).toMatch(/--cms-color-primary: ?#2563eb/);
+      expect(layoutHtml).toMatch(/--cms-space-large: ?3rem/);
       // The layout rules ship in the application stylesheet, as container queries.
       const appCss = [...layoutHtml.matchAll(/<link rel="?stylesheet"? href="?([^"\s>]+\.css)/g)].map(match => match[1]).find(href => !href.includes('portfolio'));
       expect(appCss, 'application stylesheet').toBeTruthy();
       const appCssText = await (await fetch(server.origin + appCss)).text();
       expect(appCssText).toContain('@container');
       expect(appCssText).toContain('.cms-columns');
+
+      // Customize changes a palette colour and adds Additional CSS: the page recolours without a resave.
+      const customize = 'dashboard/(cms)/appearance/customize/index.ts';
+      const refusedCss = await web.action(customize, 'save', [{}, [{ slug: 'primary', value: '#0a0a0a' }], [], '@import url(evil.css);'], { state: { theme: { name: 'portfolio', label: 'Portfolio' } } });
+      expect(refusedCss.error).toBe('Additional CSS cannot use @import.');
+      const customized = await web.action(customize, 'save', [{}, [{ slug: 'primary', value: '#0a0a0a' }], [{ slug: 'custom-1', name: 'Mine', value: '#123456' }], '.lead { letter-spacing: 0.05em }'], { state: { theme: { name: 'portfolio', label: 'Portfolio' } } });
+      expect(customized.error).toBe('');
+      const recoloured = visible(await visitor.page('/projects/layout'));
+      expect(recoloured).toMatch(/--cms-color-primary: ?#0a0a0a/);
+      expect(recoloured).toMatch(/--cms-color-custom-1: ?#123456/);
+      // Production HTML is minified, the inline CSS with it.
+      expect(recoloured).toMatch(/<style data-cms-custom-css[^>]*>[^<]*\.lead\s*\{\s*letter-spacing:\s*0?\.05em;?\s*\}[^<]*<\/style>/);
+      const customizePage = visible(await web.page('/dashboard/appearance/customize'));
+      expect(customizePage).toContain('Additional CSS');
+      expect(customizePage).toMatch(/data-color="?custom-1/);
 
       // A widget in the parent theme's footer area.
       const widgets = 'dashboard/(cms)/appearance/widgets/index.ts';
@@ -216,6 +237,14 @@ describe.skipIf(!liveFastDBTests())('CMS themes', () => {
       await form.getByRole('button', { name: 'Apply' }).click();
       await browserExpect(sections.getByText('First section, edited on the site')).toBeVisible();
       await browserExpect(bar.getByRole('status')).toHaveText('Unsaved changes');
+      // The Style tab: a background from the palette wraps the block on the page.
+      await sections.getByText('First section, edited on the site').click();
+      const styled = tab.getByRole('dialog', { name: 'Edit Paragraph' });
+      await styled.getByRole('tab', { name: 'Style' }).click();
+      await styled.getByRole('radiogroup', { name: 'Background' }).getByRole('radio', { name: 'Mine' }).click();
+      await styled.getByRole('button', { name: 'Apply' }).click();
+      await browserExpect(sections.locator('.cms-block.cms-bg-custom-1')).toHaveCount(1);
+      expect(await sections.locator('.cms-block.cms-bg-custom-1').evaluate(element => getComputedStyle(element).backgroundColor)).toBe('rgb(18, 52, 86)');
       // An edit in progress changes nothing for visitors.
       expect(visible(await (await visitor.request('/projects/rocket')).text())).toBe(visible(await (await visitor.request('/projects/rocket')).text()));
       expect(visible(await (await visitor.request('/projects/rocket')).text())).toBe(beforeEdit);
@@ -229,6 +258,7 @@ describe.skipIf(!liveFastDBTests())('CMS themes', () => {
       const sectionsHtml = after.slice(after.indexOf('data-sections'));
       expect(sectionsHtml.indexOf('Second section')).toBeLessThan(sectionsHtml.indexOf('cms-group'));
       expect(sectionsHtml.indexOf('cms-group')).toBeLessThan(sectionsHtml.indexOf('First section, edited on the site'));
+      expect(sectionsHtml).toMatch(/cms-block cms-bg-custom-1/);
       lacks(after, 'data-cms-edit');
       const editorPage = await web.page(`/dashboard/content/projects/${rocket}`);
       expect(editorPage).toMatch(/#2 · [^<]*<span class="?text-foreground"?>Ada<\/span>/);

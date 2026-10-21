@@ -79,6 +79,6 @@ export default class PreviewPage extends Cossack {
                 <span><strong>${__('Preview')}</strong> · ${this.status === 'published' ? __('Published') : __('Not published')}${this.autosaved ? html` · ${__('with unsaved changes')}` : null}</span>
                 ${this.editUrl ? html`<a href=${this.editUrl} class="text-primary hover:underline">${__('Back to the editor')}</a>` : null}
             </div>
-            ${siteContent(entryTemplate(theme, this.entry.collection, this.entry.template)(this.entry, helpers))}`;
+            ${siteContent(entryTemplate(theme, this.entry.collection, this.entry.template)(this.entry, helpers), this.theme)}`;
     }
 }

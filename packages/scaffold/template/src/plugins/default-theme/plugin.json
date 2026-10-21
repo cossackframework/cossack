@@ -18,6 +18,16 @@
     "areas": {
       "footer": "Footer widgets"
     },
+    "presets": {
+      "colors": [
+        { "slug": "base", "name": "Base", "value": "#ffffff" },
+        { "slug": "contrast", "name": "Contrast", "value": "#111827" },
+        { "slug": "primary", "name": "Primary", "value": "#2563eb" },
+        { "slug": "secondary", "name": "Secondary", "value": "#f1f5f9" },
+        { "slug": "accent", "name": "Accent", "value": "#f59e0b" },
+        { "slug": "muted", "name": "Muted", "value": "#64748b" }
+      ]
+    },
     "options": {
       "accent": {
         "kind": "enum",

@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
-    blockAllowedIn, blockCategory, blockMedia, blockProblems, blocksShapeProblem, blockTreeProblem, checkComment, collectionProblems, compareRecords, CORE_BLOCKS, diffWords,
-    field, findBlock, flattenBlocks, imageEditsProblems, imageSrcset, imageUrl, insertBlock, languageName, moveBlock, placeBlocks, posts, redirectPath, redirectProblems, removeBlock,
-    normalizeRichText, richTextBlocks, shiftBlock, validateBlocks, validateValue, variantRect, variantWidth, webhookUrlProblem, type Block,
+    blockAllowedIn, blockCategory, blockMedia, blockProblems, blocksShapeProblem, blockStyleAttributes, blockSupports, blockTreeProblem, checkComment, collectionProblems, compareRecords, CORE_BLOCKS, customCssProblem, DEFAULT_PRESETS, diffWords,
+    field, findBlock, flattenBlocks, imageEditsProblems, imageSrcset, imageUrl, insertBlock, languageName, layerPresets, moveBlock, placeBlocks, posts, presetOverridesProblem, presetProblems, presetStyle, redirectPath, redirectProblems, removeBlock,
+    normalizeRichText, resolvePresets, richTextBlocks, shiftBlock, themeProblems, validateBlocks, validateValue, variantRect, variantWidth, webhookUrlProblem, type Block,
 } from '../src/index';
 import { negotiateFormat } from '../src/server/images';
 
@@ -101,6 +101,69 @@ describe('essentials helpers', () => {
         const doc = normalizeRichText({ type: 'doc', content: [{ type: 'cmsBlock', attrs: { id: 'cols', type: 'core/columns', data: {}, children: columns.children, layout: { hide: ['lg'] } } }] });
         expect(richTextBlocks(doc)[0]).toMatchObject({ id: 'cols', layout: { hide: ['lg'] }, children: [{ id: 'a' }, { id: 'b' }] });
         expect(() => normalizeRichText({ type: 'doc', content: [{ type: 'cmsBlock', attrs: { id: 'x', type: 'core/group', data: {}, children: 'no' } }] })).toThrow();
+    });
+
+    it('styles blocks from theme presets', () => {
+        const types = new Map(CORE_BLOCKS.map(block => [block.name, block]));
+        // Supports: the category's defaults, narrowed or widened by the declaration.
+        expect(blockSupports({ category: 'text' })).toEqual(['background', 'text', 'padding', 'margin', 'fontSize', 'align']);
+        expect(blockSupports({ category: 'media' })).toEqual(['padding', 'margin']);
+        expect(blockSupports({})).toEqual(['background', 'text', 'padding', 'margin']);
+        expect(blockSupports({ category: 'design', supports: { color: false, typography: ['align'], spacing: ['padding'] } })).toEqual(['padding', 'align']);
+        expect(blockProblems({ name: 'acme/box', label: 'Box', fields: {}, supports: { color: ['background'], typography: true } })).toEqual([]);
+        expect(blockProblems({ name: 'acme/box', label: 'Box', fields: {}, supports: { border: true } as never })).toEqual(['block acme/box: supports has no border; it takes color, spacing, typography.']);
+        expect(blockProblems({ name: 'acme/box', label: 'Box', fields: {}, supports: { color: ['shadow'] } as never })).toEqual(['block acme/box: supports.color is true, false or some of background, text.']);
+        // The shape: slugs per property, an alignment, the anchor and class names.
+        expect(blocksShapeProblem([{ id: 'a', type: 'core/divider', data: {}, style: { background: 'Brand' } }])).toBe('block style.background is a preset slug.');
+        expect(blocksShapeProblem([{ id: 'a', type: 'core/divider', data: {}, style: { align: 'justify' } }])).toBe('block style.align is left, center, right.');
+        expect(blocksShapeProblem([{ id: 'a', type: 'core/divider', data: {}, style: { shadow: 'x' } }])).toBe('block style has no shadow; it takes background, text, padding, margin, fontSize, align.');
+        expect(blocksShapeProblem([{ id: 'a', type: 'core/divider', data: {}, layout: { anchor: '1st' } }])).toContain('block layout.anchor is an HTML id');
+        expect(blocksShapeProblem([{ id: 'a', type: 'core/divider', data: {}, layout: { className: 'ok bad!' } }])).toContain('block layout.className lists class names');
+        expect(blocksShapeProblem([{ id: 'a', type: 'core/divider', data: {}, style: { padding: 'large', align: 'center' }, layout: { anchor: 'top', className: 'hero  wide' } }])).toBeUndefined();
+        // Validation keeps the properties the type supports and drops the rest; empty extras go.
+        const checked = validateBlocks([
+            { id: 'p', type: 'core/paragraph', data: { text: 'Hi' }, style: { background: 'brand', align: 'center', padding: '' }, layout: { hide: [], anchor: ' intro ', className: ' a  b ' } },
+            { id: 'i', type: 'core/image', data: { image: 'f1' }, style: { background: 'brand', padding: 'large' }, layout: { anchor: '' } },
+        ], types);
+        expect(checked.errors).toEqual({});
+        expect(checked.blocks[0]).toEqual({ id: 'p', type: 'core/paragraph', data: { text: 'Hi' }, style: { background: 'brand', align: 'center' }, layout: { anchor: 'intro', className: 'a b' } });
+        expect(checked.blocks[1]).toEqual({ id: 'i', type: 'core/image', data: { image: 'f1' }, style: { padding: 'large' } });
+        // The wrapper's attributes: classes per property, the variables inline, the anchor and class names.
+        expect(blockStyleAttributes({ style: { background: 'brand', text: 'light', padding: 'large', margin: 'none', fontSize: 'x-large', align: 'center' }, layout: { anchor: 'intro', className: 'hero' } })).toEqual({
+            className: 'cms-block cms-bg-brand cms-text-light cms-p-large cms-m-none cms-size-x-large cms-align-center hero', id: 'intro',
+            style: 'background-color: var(--cms-color-brand); color: var(--cms-color-light); padding: var(--cms-space-large); margin-block: var(--cms-space-none); font-size: var(--cms-size-x-large); text-align: center',
+        });
+        expect(blockStyleAttributes({ style: {}, layout: { hide: ['sm'] } })).toBeNull();
+        expect(blockStyleAttributes({ style: { background: 'bad slug' } })).toBeNull();
+        // Presets: the manifest's checks, the defaults, layering, the site's overrides, the variables.
+        expect(presetProblems({ colors: [{ slug: 'brand', name: 'Brand', value: '#0f172a' }, { slug: 'glow', name: 'Glow', value: 'oklch(0.7 0.1 200)' }], spacing: [{ slug: 'tight', name: 'Tight', value: 'clamp(0.5rem, 2vw, 1rem)' }] })).toEqual([]);
+        expect(presetProblems({ colors: [{ slug: 'Brand', name: 'Brand', value: '#fff' }] })).toEqual(['colors: slugs are lowercase letters, digits and hyphens.']);
+        expect(presetProblems({ colors: [{ slug: 'brand', name: 'Brand', value: 'url(x)' }, { slug: 'brand', name: 'Again', value: '#fff' }] })).toEqual(['colors.brand needs a CSS colour.', 'colors.brand is listed twice.']);
+        expect(presetProblems({ shadows: [] })).toEqual(['shadows is not a preset kind; use colors, fontSizes, spacing.']);
+        expect(presetProblems({ fontSizes: [{ slug: 'big', name: 'Big', value: '2rem; color: red' }] })).toEqual(['fontSizes.big needs a CSS length.']);
+        expect(themeProblems({ label: 'T', presets: { colors: [{ slug: 'x', name: '', value: '#fff' }] } })).toEqual(['theme.presets: colors.x needs a name of at most 40 characters.']);
+        const layered = layerPresets({ colors: [{ slug: 'base', name: 'Base', value: '#fff' }, { slug: 'brand', name: 'Brand', value: '#00f' }] }, { colors: [{ slug: 'brand', name: 'Brand', value: '#f00' }] });
+        expect(layered.colors).toEqual([{ slug: 'brand', name: 'Brand', value: '#f00' }, { slug: 'base', name: 'Base', value: '#fff' }]);
+        expect(layered.spacing).toBeUndefined();
+        const resolved = resolvePresets({ colors: [{ slug: 'brand', name: 'Brand', value: '#00f' }] }, { colors: { brand: '#0a0' }, custom: [{ slug: 'mine', name: 'Mine', value: '#123' }, { slug: 'brand', name: 'Dupe', value: '#000' }] });
+        expect(resolved.colors).toEqual([{ slug: 'brand', name: 'Brand', value: '#0a0' }, { slug: 'mine', name: 'Mine', value: '#123' }]);
+        expect(resolved.fontSizes).toEqual(DEFAULT_PRESETS.fontSizes);
+        expect(resolved.spacing.map(preset => preset.slug)).toEqual(['none', 'small', 'medium', 'large', 'x-large']);
+        expect(presetOverridesProblem({ colors: { brand: '#0a0' } })).toBeUndefined();
+        expect(presetOverridesProblem({ colors: { brand: 'url(x)' } })).toBe('brand needs a CSS colour.');
+        expect(presetOverridesProblem({ custom: [{ slug: 'ok', name: 'Ok', value: 'nope!' }] })).toBe('ok needs a CSS colour.');
+        expect(presetOverridesProblem([])).toBe('Preset overrides are an object.');
+        expect(presetStyle({ colors: [{ slug: 'brand', name: 'Brand', value: ' #0a0 ' }], spacing: [{ slug: 'none', name: 'None', value: '0' }] })).toBe('--cms-color-brand: #0a0; --cms-space-none: 0;');
+        // Additional CSS may style, not load or run.
+        expect(customCssProblem('.hero { color: red }')).toBeUndefined();
+        expect(customCssProblem('@import url(x);')).toBe('Additional CSS cannot use @import.');
+        expect(customCssProblem('.a { background: url(x) }')).toBe('Additional CSS cannot use url().');
+        expect(customCssProblem('.a { width: expression(1) }')).toBe('Additional CSS cannot run scripts.');
+        expect(customCssProblem('</style><script>')).toBe('Additional CSS cannot contain HTML tags.');
+        // A body's embedded block carries its style.
+        const doc = normalizeRichText({ type: 'doc', content: [{ type: 'cmsBlock', attrs: { id: 'q', type: 'core/quote', data: { text: 'q' }, style: { background: 'brand' } } }] });
+        expect(richTextBlocks(doc)[0]).toMatchObject({ id: 'q', style: { background: 'brand' } });
+        expect(() => normalizeRichText({ type: 'doc', content: [{ type: 'cmsBlock', attrs: { id: 'q', type: 'core/quote', data: { text: 'q' }, style: { background: 'Bad' } } }] })).toThrow();
     });
 
     it('checks redirects and webhook URLs', () => {

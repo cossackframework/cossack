@@ -11,7 +11,7 @@ import { collectionProblems, collectionResource, CORE_FIELDS, entryUrl, extendCo
 import { CmsError } from '../errors';
 import type { CmsModule } from '../module';
 import { appearance, general, media, type SettingsGroup } from '../settings';
-import { assembleSiteTheme, entryTemplateChoices, siteThemeProblems, type ArchiveView, type SiteTheme, type EntryView, type SiteView, type ThemeData, type ThemeManifest } from '../theme';
+import { assembleSiteTheme, entryTemplateChoices, layerPresets, siteThemeProblems, type ArchiveView, type SiteTheme, type EntryView, type SiteView, type ThemeData, type ThemeManifest, type ThemePresets } from '../theme';
 import type { MenuItem, MenuItemView } from '../menus';
 import { recordTitle } from '../forms';
 import type { RecordShape } from '../records';
@@ -123,6 +123,8 @@ export interface ThemeInfo {
     readonly cover: string | null;
     /** The settings group of its options (its parent's and its own), named after the plugin, or null. */
     readonly options: SettingsGroup | null;
+    /** Its presets over its parent's, slug by slug; `resolvePresets` adds the defaults and the site's changes. */
+    readonly presets: ThemePresets;
     /** Why the theme cannot be used; empty when it can. */
     readonly problems: readonly string[];
 }
@@ -1383,7 +1385,7 @@ export class CmsHost {
             name: plugin.registration.name, version: plugin.registration.version,
             label: typeof manifest?.label === 'string' ? manifest.label : plugin.registration.name, description: typeof manifest?.description === 'string' ? manifest.description : '',
             locations: named({ ...inherited?.locations, ...manifest?.locations }), areas: named({ ...inherited?.areas, ...manifest?.areas }),
-            parent: inherited ? manifest.extends! : null, ...artwork(plugin), options, problems,
+            parent: inherited ? manifest.extends! : null, ...artwork(plugin), options, presets: layerPresets(inherited?.presets, manifest?.presets), problems,
         });
     }
 

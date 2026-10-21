@@ -2,8 +2,9 @@
  * Server helpers for the dashboard's content screens: which resource a route names, the
  * editor's view of it, and saving entries. Pages call these from their server methods.
  */
-import { blockCategory, blockMedia, CmsError, CORE_FIELDS, flattenBlocks, isCmsError, mediaUrl, recordTitle, type Block, type CollectionDefinition, type MediaKind, type Principal, type RecordShape, type Resource } from '@cossackframework/cms';
+import { blockCategory, blockMedia, blockSupports, CmsError, CORE_FIELDS, flattenBlocks, isCmsError, mediaUrl, recordTitle, type Block, type CollectionDefinition, type MediaKind, type Principal, type RecordShape, type Resource } from '@cossackframework/cms';
 import type { CmsHost } from '@cossackframework/cms/server';
+import { activePresets } from './site';
 import { controlValue, editorField, editorFields, editorInput, type BlockOption, type EditorBlock, type EditorTaxonomy, type EditorValues, type EditorView, type TermOption } from './editor';
 
 /** A collection by name (`posts`), or a plugin or application resource as `<owner>.<name>`. */
@@ -37,7 +38,7 @@ export async function editorView(cms: CmsHost, route: string): Promise<EditorVie
         slug: Boolean(collection && collection.slug !== false), publishable: Boolean(collection && collection.publishable !== false), hierarchical: Boolean(collection?.hierarchical),
         path: collection?.path ?? null,
         fields: editorFields(resource.fields, special),
-        taxonomies, blocks,
+        taxonomies, blocks, presets: await activePresets(cms),
     };
 }
 
@@ -76,7 +77,7 @@ import type { MediaPreview } from './field-controls';
 export async function blockOptions(cms: CmsHost): Promise<BlockOption[]> {
     return (await cms.blocks()).map(block => ({ name: block.name, label: block.label, description: block.description ?? '', icon: block.icon ?? '',
         category: blockCategory(block), fields: editorFields(block.fields, []),
-        children: block.children ? { allowed: [...(block.children.allowed ?? [])], max: block.children.max ?? null } : null, parent: [...(block.parent ?? [])] }));
+        children: block.children ? { allowed: [...(block.children.allowed ?? [])], max: block.children.max ?? null } : null, parent: [...(block.parent ?? [])], supports: [...blockSupports(block)] }));
 }
 
 /** Previews of files by ID; missing files are left out. */

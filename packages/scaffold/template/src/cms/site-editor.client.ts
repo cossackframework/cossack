@@ -7,11 +7,13 @@
  */
 import { Client, ClientState, Component, Cossack } from '@cossackframework/core';
 import { component, html, type TemplateResult } from '@cossackframework/renderer';
-import { Button, Checkbox } from '@cossackframework/ui';
+import { Button, Checkbox, Icon } from '@cossackframework/ui';
 import { blockId, BREAKPOINTS, findBlock, insertBlock, placeBlocks, removeBlock, shiftBlock, updateBlock, type BlockMove, type BlockPlace, type Breakpoint, type EmbeddedBlock, type RichTextDoc } from '@cossackframework/cms';
 import { blockDefaults, controlValue, editorInput, newBlock, type BlockOption, type EditorValues } from './editor';
-import { declarationsOf, offeredIn } from './block-tree';
+import { BREAKPOINT_DEVICES, declarationsOf, offeredIn } from './block-tree';
+import { icon } from './icons';
 import { blockFields, fieldControl, type MediaHooks, type MediaPreview } from './field-controls';
+import { blockTabs, styleControls, styleValues, withStyle, type BlockTab, type StyleValues } from './style-controls';
 import { mediaChooser, uploadMedia, withFile } from './media-chooser';
 import { RichTextField, richTextEditors } from './rich-text-field';
 import { BlockInserter } from './block-inserter';
@@ -19,6 +21,8 @@ import { reorderBlocks, type DraftBlock, type SiteEditorProps } from './site-edi
 import { CONTROL } from './ui';
 
 const BODY_EDITOR = 'site-editor-body';
+/** The removal buttons' icon; a fresh template each time, as the renderer keys templates by instance. */
+const trash = () => html`<span class="inline-flex [&_svg]:size-3.5">${component(Icon, { entry: icon('trash-bin-trash'), size: 14 })}</span>`;
 const PANEL = 'fixed z-50 flex flex-col overflow-hidden border border-border bg-background text-foreground shadow-2xl';
 const STYLE = `
 [data-cms-edit] > * { cursor: pointer; }
@@ -27,14 +31,13 @@ const STYLE = `
 `;
 
 /** A block's form: in a popover by the block, or in the Blocks panel when the theme does not show it. */
-interface BlockForm { id: string; values: Record<string, unknown>; errors: Record<string, string>; top: number; left: number; docked: boolean }
+interface BlockForm { id: string; values: Record<string, unknown>; style: StyleValues; tab: BlockTab; errors: Record<string, string>; top: number; left: number; docked: boolean }
 /** A block embedded in the body, edited from the rich text editor. */
 interface EmbeddedForm { id: string; type: string; values: Record<string, unknown>; errors: Record<string, string> }
 type ChooserTarget = { kind: 'block' | 'embedded' | 'entry'; field: string } | { kind: 'richtext' };
 interface Drag { from: number; to: number; y: number; depth: number; moved: boolean }
 type Device = 'desktop' | 'tablet' | 'phone';
 const DEVICE_LABELS: { readonly [key in Device]: string } = { desktop: 'Desktop', tablet: 'Tablet', phone: 'Phone' };
-const BREAKPOINT_LABELS: { readonly [key in Breakpoint]: string } = { sm: 'phones', md: 'tablets', lg: 'desktops' };
 
 @Component()
 export class SiteEditor extends Cossack {
@@ -52,6 +55,7 @@ export class SiteEditor extends Cossack {
     private handles = new Map<string, HTMLElement>();
     private pointer: { id: number; x: number; y: number; tops: number[]; bottoms: number[] } | null = null;
     private style?: HTMLStyleElement;
+    private observer?: MutationObserver;
 
     private readonly onDocumentClick = (event: MouseEvent) => {
         const target = event.target as Element | null;
@@ -86,9 +90,12 @@ export class SiteEditor extends Cossack {
         document.addEventListener('click', this.onDocumentClick, true);
         document.addEventListener('keydown', this.onKey);
         window.addEventListener('beforeunload', this.onLeave);
+        this.observer = new MutationObserver(() => this.syncSelection());
+        this.observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-block-id'] });
     }
 
     onCleanup() {
+        this.observer?.disconnect();
         this.style?.remove();
         document.removeEventListener('click', this.onDocumentClick, true);
         document.removeEventListener('keydown', this.onKey);
@@ -97,9 +104,13 @@ export class SiteEditor extends Cossack {
         delete document.documentElement.dataset.cmsDevice;
     }
 
-    updated(changed: Map<string | number | symbol, unknown>) {
-        super.updated(changed);
-        // The page re-renders blocks after each change; mark the selected one again.
+    /**
+     * Mark the selected block on the page. The page re-renders blocks after each change, so
+     * a mutation observer (set up in onMount) marks it again; `updated` is not a lifecycle the
+     * client bundle keeps.
+     */
+    @Client()
+    private syncSelection() {
         for (const marker of document.querySelectorAll('[data-cms-selected]')) if (marker.getAttribute('data-block-id') !== this.form?.id) marker.removeAttribute('data-cms-selected');
         if (this.form) document.querySelector(`[data-cms-edit="block"][data-block-id="${CSS.escape(this.form.id)}"]`)?.setAttribute('data-cms-selected', '');
     }
@@ -174,7 +185,7 @@ export class SiteEditor extends Cossack {
         const bottom = rects.length ? Math.max(...rects.map(rect => rect.bottom)) : 0;
         const left = rects.length ? Math.min(...rects.map(rect => rect.left)) : 0;
         this.form = {
-            id, errors: {}, docked: !rects.length,
+            id, errors: {}, docked: !rects.length, tab: this.form?.tab ?? 'general', style: styleValues(block),
             values: Object.fromEntries(option.fields.map(field => [field.name, block.data[field.name] ?? controlValue(field, field.defaultValue)])),
             top: Math.min(Math.max(bottom + 8, 8), Math.max(window.innerHeight - 320, 8)), left: Math.min(Math.max(left, 8), window.innerWidth - width - 8),
         };
@@ -187,6 +198,16 @@ export class SiteEditor extends Cossack {
     }
 
     @Client()
+    private setFormStyle(style: StyleValues) {
+        if (this.form) this.form = { ...this.form, style };
+    }
+
+    @Client()
+    private showFormTab(tab: BlockTab) {
+        if (this.form) this.form = { ...this.form, tab };
+    }
+
+    @Client()
     private apply(event: Event) {
         event.preventDefault();
         const form = this.form;
@@ -196,7 +217,7 @@ export class SiteEditor extends Cossack {
         const errors = this.check(option, form.values);
         if (Object.keys(errors).length) { this.form = { ...form, errors }; return; }
         // Blocks keep control values, as the dashboard editor does; saving converts them.
-        this.setBlocks(updateBlock(this.blocks(), form.id, entry => ({ ...entry, data: { ...form.values } })));
+        this.setBlocks(updateBlock(this.blocks(), form.id, entry => withStyle({ ...entry, data: { ...form.values } }, form.style)));
         this.form = null;
     }
 
@@ -214,7 +235,7 @@ export class SiteEditor extends Cossack {
         const block = newBlock(type, this.props.draft.view.blocks, blockId);
         if (!option || !block) return;
         this.setBlocks(insertBlock(this.blocks(), parent, block), `${option.label} ${__('added.')}`);
-        if (option.fields.length) this.selectWhenShown(block.id);
+        this.selectWhenShown(block.id);
     }
 
     /** Where a block sits after a move, for the announcement. */
@@ -243,7 +264,7 @@ export class SiteEditor extends Cossack {
         const hide = block.layout?.hide ?? [];
         const next = hide.includes(breakpoint) ? hide.filter(entry => entry !== breakpoint) : [...BREAKPOINTS].filter(entry => entry === breakpoint || hide.includes(entry));
         this.setBlocks(updateBlock(this.blocks(), id, entry => ({ ...entry, layout: { ...entry.layout, hide: next } })),
-            `${this.label(block)}: ${next.length ? `${__('hidden on')} ${next.map(entry => __(BREAKPOINT_LABELS[entry])).join(', ')}` : __('shown everywhere')}`);
+            `${this.label(block)}: ${next.length ? `${__('hidden on')} ${next.map(entry => __(BREAKPOINT_DEVICES[entry].label)).join(', ')}` : __('shown everywhere')}`);
     }
 
     @Client()
@@ -437,20 +458,26 @@ export class SiteEditor extends Cossack {
                         ${this.iconButton('↓', __('Move down'), () => this.shift(block.id, 'down'), place.index === siblings.length - 1)}
                         ${this.iconButton('←', __('Move out of the container'), () => this.shift(block.id, 'out'), !place.parent)}
                         ${this.iconButton('→', __('Move into the block above'), () => this.shift(block.id, 'in'), !this.canGoIn(block.id))}
-                        ${this.iconButton('✕', `${__('Remove')} ${option.label}`, () => this.remove(block.id))}
+                        ${this.iconButton(trash(), `${__('Remove')} ${option.label}`, () => this.remove(block.id))}
                     </span>
                 </div>
                 <div class="flex flex-wrap items-center gap-1 text-xs text-muted-foreground" role="group" aria-label=${__('Hide on')}>
                     <span>${__('Hide on')}</span>
-                    ${BREAKPOINTS.map(breakpoint => html`<button type="button" aria-pressed=${hide.includes(breakpoint) ? 'true' : 'false'} data-hide-toggle=${breakpoint}
-                        class=${`rounded border border-border px-2 py-0.5 cursor-pointer ${hide.includes(breakpoint) ? 'bg-muted text-foreground line-through' : 'bg-background hover:bg-muted'}`}
-                        @click=${() => this.toggleHide(block.id, breakpoint)}>${__(BREAKPOINT_LABELS[breakpoint])}</button>`)}
+                    ${BREAKPOINTS.map(breakpoint => {
+                        const hidden = hide.includes(breakpoint);
+                        const device = __(BREAKPOINT_DEVICES[breakpoint].label);
+                        return html`<button type="button" aria-pressed=${hidden ? 'true' : 'false'} data-hide-toggle=${breakpoint} aria-label=${`${__('Hide on')} ${device}`} title=${hidden ? `${__('Hidden on')} ${device}` : `${__('Hide on')} ${device}`}
+                            class=${`inline-flex h-7 w-7 items-center justify-center rounded border cursor-pointer [&_svg]:size-4 ${hidden ? 'border-destructive/40 bg-destructive/10 text-destructive' : 'border-border bg-background hover:bg-muted'}`}
+                            @click=${() => this.toggleHide(block.id, breakpoint)}>${component(Icon, { entry: icon(BREAKPOINT_DEVICES[breakpoint].icon), size: 16 })}</button>`;
+                    })}
                 </div>
-                ${option.fields.length ? blockFields(option, form.values, (name, value) => this.setFormValue(name, value), `site-block-${block.id}`, name => this.media({ kind: 'block', field: name }), form.errors)
+                ${blockTabs(form.tab, tab => this.showFormTab(tab), `site-block-${block.id}`)}
+                ${form.tab === 'style' ? styleControls(form.style, option.supports, this.props.draft.view.presets, `site-block-${block.id}-style`, style => this.setFormStyle(style))
+                : option.fields.length ? blockFields(option, form.values, (name, value) => this.setFormValue(name, value), `site-block-${block.id}`, name => this.media({ kind: 'block', field: name }), form.errors)
                     : html`<p class="text-sm text-muted-foreground">${__('This block has no settings.')}</p>`}
                 <div class="flex justify-end gap-2">
                     ${component(Button, { type: 'button', variant: 'outline', size: 'sm', '@click': () => { this.form = null; } }, __('Cancel'))}
-                    ${option.fields.length ? component(Button, { type: 'submit', size: 'sm' }, __('Apply')) : null}
+                    ${component(Button, { type: 'submit', size: 'sm' }, __('Apply'))}
                 </div>
             </div>
         </form>`;
@@ -461,7 +488,7 @@ export class SiteEditor extends Cossack {
         return shiftBlock(this.blocks(), id, 'in', declarationsOf(this.props.draft.view.blocks)) !== this.blocks();
     }
 
-    private iconButton(label: string, title: string, run: () => void, disabled = false): TemplateResult {
+    private iconButton(label: string | TemplateResult, title: string, run: () => void, disabled = false): TemplateResult {
         return html`<button type="button" title=${title} aria-label=${title} ?disabled=${disabled}
             class="rounded border border-border bg-background px-2 py-0.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer disabled:cursor-default disabled:opacity-40" @click=${run}>${label}</button>`;
     }
@@ -491,13 +518,13 @@ export class SiteEditor extends Cossack {
                                 <svg aria-hidden="true" viewBox="0 0 10 16" class="h-4 w-2.5 fill-current"><circle cx="2" cy="2" r="1.5"/><circle cx="8" cy="2" r="1.5"/><circle cx="2" cy="8" r="1.5"/><circle cx="8" cy="8" r="1.5"/><circle cx="2" cy="14" r="1.5"/><circle cx="8" cy="14" r="1.5"/></svg>
                             </button>
                             <span class="min-w-0 flex-1">
-                                <span class="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">${this.label(block)}${hide.length ? html` <span class="normal-case tracking-normal" data-hidden-on=${hide.join(' ')}>· ${__('hidden on')} ${hide.map(entry => __(BREAKPOINT_LABELS[entry])).join(', ')}</span>` : null}</span>
+                                <span class="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">${this.label(block)}${hide.length ? html` <span class="normal-case tracking-normal" data-hidden-on=${hide.join(' ')}>· ${__('hidden on')} ${hide.map(entry => __(BREAKPOINT_DEVICES[entry].label)).join(', ')}</span>` : null}</span>
                                 <span class="block truncate text-sm">${this.summary(block)}</span>
                             </span>
                             ${offered.length && (option?.children?.max === null || (block.children ?? []).length < (option?.children?.max ?? 0))
                                 ? component(BlockInserter, { id: `site-editor-add-${block.id}`, blocks: offered, compact: true, onPick: (type: string) => this.add(type, block.id) }) : null}
                             ${option?.fields.length ? this.iconButton(__('Edit'), `${__('Edit')} ${this.label(block)}`, () => this.edit(block.id)) : null}
-                            ${this.iconButton('✕', `${__('Remove')} ${this.label(block)}`, () => this.remove(block.id))}
+                            ${this.iconButton(trash(), `${__('Remove')} ${this.label(block)}`, () => this.remove(block.id))}
                         </div>
                         ${this.form?.docked && this.form.id === block.id ? html`<div class="mt-1.5">${this.formCard()}</div>` : null}
                     </li>`;

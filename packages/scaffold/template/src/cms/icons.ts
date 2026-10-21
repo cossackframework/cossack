@@ -49,8 +49,26 @@ import { LayersIcon } from '@cossackframework/solar-icons/layers/line';
 import { WidgetIcon } from '@cossackframework/solar-icons/widget/line';
 import { Widget2Icon } from '@cossackframework/solar-icons/widget-2/line';
 import { Widget3Icon } from '@cossackframework/solar-icons/widget-3/line';
+import { SmartphoneIcon } from '@cossackframework/solar-icons/smartphone/line';
+import { TabletIcon } from '@cossackframework/solar-icons/tablet/line';
+import { MonitorIcon } from '@cossackframework/solar-icons/monitor/line';
+import { TrashBinTrashIcon } from '@cossackframework/solar-icons/trash-bin-trash/line';
+import { AltArrowDownIcon } from '@cossackframework/solar-icons/alt-arrow-down/line';
+import { AltArrowRightIcon } from '@cossackframework/solar-icons/alt-arrow-right/line';
+import { ArrowUpIcon } from '@cossackframework/solar-icons/arrow-up/line';
+import { ArrowDownIcon } from '@cossackframework/solar-icons/arrow-down/line';
+import { ArrowLeftIcon } from '@cossackframework/solar-icons/arrow-left/line';
+import { ArrowRightIcon } from '@cossackframework/solar-icons/arrow-right/line';
+import { AlignLeftIcon } from '@cossackframework/solar-icons/align-left/line';
+import { AlignHorizontalCenterIcon } from '@cossackframework/solar-icons/align-horizontal-center/line';
+import { AlignRightIcon } from '@cossackframework/solar-icons/align-right/line';
+import { PaletteIcon } from '@cossackframework/solar-icons/palette/line';
 
 export const ICONS: Readonly<Record<string, IconEntry>> = Object.freeze({
+    'align-left': { line: AlignLeftIcon },
+    'align-horizontal-center': { line: AlignHorizontalCenterIcon },
+    'align-right': { line: AlignRightIcon },
+    'palette': { line: PaletteIcon },
     'document-text': { line: DocumentTextIcon },
     'notebook': { line: NotebookIcon },
     'box': { line: BoxIcon },
@@ -101,6 +119,17 @@ export const ICONS: Readonly<Record<string, IconEntry>> = Object.freeze({
     'widget': { line: WidgetIcon },
     'widget-2': { line: Widget2Icon },
     'widget-3': { line: Widget3Icon },
+    // Editors: devices, moves and removal.
+    'smartphone': { line: SmartphoneIcon },
+    'tablet': { line: TabletIcon },
+    'monitor': { line: MonitorIcon },
+    'trash-bin-trash': { line: TrashBinTrashIcon },
+    'alt-arrow-down': { line: AltArrowDownIcon },
+    'alt-arrow-right': { line: AltArrowRightIcon },
+    'arrow-up': { line: ArrowUpIcon },
+    'arrow-down': { line: ArrowDownIcon },
+    'arrow-left': { line: ArrowLeftIcon },
+    'arrow-right': { line: ArrowRightIcon },
 });
 
 /** Names offered for collections, in the builder's order. */

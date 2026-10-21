@@ -1,13 +1,15 @@
 import { Cossack, Page, State, type HeadValue } from '@cossackframework/core';
 import { Badge, Card, CardBody, Icon } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
-import { BLOCK_CATEGORIES, blockCategory, PERMISSIONS, type BlockCategory } from '@cossackframework/cms';
+import { BLOCK_CATEGORIES, blockCategory, blockSupports, PERMISSIONS, type BlockCategory } from '@cossackframework/cms';
 import { FIELD_TYPES, typeOf } from '../../../../cms/builder';
 import { requireAny } from '../../../../cms/guards';
 import { blockIcon } from '../../../../cms/icons';
 import { pageHeader } from '../../../../cms/ui';
 
-interface BlockRow { name: string; label: string; description: string; icon: string; category: BlockCategory; plugin: string; fields: { name: string; label: string; type: string; required: boolean }[]; holds: string; parent: string }
+const STYLE_LABELS = { background: 'background', text: 'text colour', padding: 'padding', margin: 'margin', fontSize: 'font size', align: 'alignment' } as const;
+
+interface BlockRow { name: string; label: string; description: string; icon: string; category: BlockCategory; plugin: string; fields: { name: string; label: string; type: string; required: boolean }[]; holds: string; parent: string; style: string }
 
 /** The block types available to blocks fields, by category: built-in ones and those of active plugins. */
 @Page({ transport: 'http', middlewares: [requireAny(PERMISSIONS.manageCollections)] })
@@ -25,6 +27,7 @@ export default class BlocksPage extends Cossack {
                 type: FIELD_TYPES.find(option => option.type === typeOf(declaration))?.label ?? declaration.kind })),
             holds: block.children ? (block.children.allowed?.length ? block.children.allowed.join(', ') : __('any block')) + (block.children.max ? ` (${__('at most')} ${block.children.max})` : '') : '',
             parent: block.parent?.join(', ') ?? '',
+            style: blockSupports(block).map(property => STYLE_LABELS[property]).join(', '),
         }));
     }
 
@@ -48,7 +51,8 @@ export default class BlocksPage extends Cossack {
                             ? block.fields.map(entry => html`<li><span class="text-foreground">${entry.label}</span> · ${entry.type}${entry.required ? ` · ${__('required')}` : ''}</li>`)
                             : html`<li>${__('No fields.')}</li>`}
                             ${block.holds ? html`<li>${__('Holds')}: ${block.holds}</li>` : null}
-                            ${block.parent ? html`<li>${__('Goes inside')}: ${block.parent}</li>` : null}</ul>`))}
+                            ${block.parent ? html`<li>${__('Goes inside')}: ${block.parent}</li>` : null}
+                            <li>${__('Style')}: ${block.style || __('none')}</li></ul>`))}
                 </li>`)}</ul>
             </section>`)}
         </div>`;

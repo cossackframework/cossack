@@ -8,9 +8,9 @@ export { beforeWrite, afterCommit, EXTENSION_POINTS, type BeforeWriteInput, type
 export type { RecordShape, RecordPage, RevisionShape, FieldFilter, ListFilter, ListOptions } from './records';
 export { contentModule, categories, tags, patterns } from './modules/content';
 export { CONTENT_STATUSES, CORE_FIELDS, ENTRY_TEMPLATE, LOCALE, SEO_FIELDS, collectionProblems, collectionResource, entryUrl, extendCollection, languageName, orderedFields, posts, pages, type CollectionDefinition, type ContentStatus } from './collections';
-export { CORE_BLOCKS, BLOCK_CATEGORIES, BLOCK_NAME, BLOCK_LIMITS, BREAKPOINTS, blockCategory, blockProblems, blocksShapeProblem, blockLayoutProblem, blockAllowedIn, validateBlocks, blockMedia, blockId,
+export { CORE_BLOCKS, BLOCK_CATEGORIES, BLOCK_NAME, BLOCK_LIMITS, BREAKPOINTS, STYLE_PROPERTIES, TEXT_ALIGNMENTS, PRESET_SLUG, blockCategory, blockProblems, blocksShapeProblem, blockLayoutProblem, blockStyleProblem, blockSupports, blockAllowedIn, validateBlocks, blockMedia, blockId,
     flattenBlocks, placeBlocks, findBlock, updateBlock, removeBlock, insertBlock, moveBlock, shiftBlock, blockTreeProblem,
-    type Block, type BlockCategory, type BlockDeclaration, type BlockLayout, type BlockMove, type BlockPlace, type Breakpoint } from './blocks';
+    type Block, type BlockCategory, type BlockDeclaration, type BlockLayout, type BlockStyle, type BlockSupports, type BlockMove, type BlockPlace, type Breakpoint, type StyleProperty } from './blocks';
 export { formInput, formValue, recordTitle, isSameOriginPost, type FormInput, type SubmittedForm } from './forms';
 export { manifestProblems, validateManifest, requestedGrants, commandInput, ManifestError, HOST_SLOTS, type CmsPluginManifest, type PluginCommand, type CommandOption, type SlotLink, type HostSlot } from './manifest';
 export { MEDIA_TYPES, AVATAR_TYPES, MEDIA_FILTERS, mediaKind, mediaUrl, formatBytes, matchesSignature, imageSize, type MediaKind } from './media';
@@ -28,6 +28,8 @@ export {
 } from './richtext';
 export {
     themeProblems, siteThemeProblems, assembleSiteTheme, layerSiteThemes, entryTemplate, archiveTemplate, entryTemplateChoices, templateCandidates, pickTemplate, SPECIFIC_TEMPLATE,
+    PRESET_KINDS, DEFAULT_PRESETS, presetProblems, layerPresets, resolvePresets, presetOverridesProblem, presetStyle, blockStyleAttributes, customCssProblem,
+    type Preset, type PresetKind, type ThemePresets, type PresetOverrides,
     type ThemeManifest, type SiteTheme, type ThemeSource, type EntryTemplate, type ArchiveTemplate, type TemplatePage, type ThemeData, type FieldView, type EntryReference, type ThemeHelpers, type SiteView, type EntryView, type ArchiveView, type RenderedBlock, type BodyPart, type MediaView, type TermLink, type Paging,
     type CommentView, type CommentsView, type CommentFormView, type LanguageLink,
 } from './theme';

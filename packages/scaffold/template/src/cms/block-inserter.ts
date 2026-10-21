@@ -41,7 +41,7 @@ export class BlockInserter extends Cossack {
         const size = this.props.compact ? 'h-7 px-2 text-xs' : 'h-8 px-3 text-sm';
         return component(Popover, {
             id: this.props.id, side: 'bottom', align: 'start', '?disabled': Boolean(this.props.disabled),
-            class: `gap-1.5 border border-border bg-background font-medium text-foreground hover:bg-muted ${size}`,
+            class: `cms-add-block gap-1.5 font-medium text-foreground ${size}`,
             trigger: html`${component(Icon, { entry: addIcon, size: 16 })}<span>${__('Add block')}</span>`,
             contentProps: { role: 'dialog', 'aria-label': __('Blocks'), class: 'w-80 max-w-[calc(100vw-2rem)] space-y-3' },
         }, html`

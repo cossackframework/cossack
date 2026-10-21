@@ -5,7 +5,7 @@
  */
 import { component, html, ifDefined, unsafeHTML, type TemplateResult } from '@cossackframework/renderer';
 import { plugins } from '@cossackframework/framework/plugins';
-import { archiveTemplate, assembleSiteTheme, entryTemplate, siteThemeProblems, type ArchiveView, type EntryView, type MediaView, type MenuItemView, type RenderedBlock, type SiteTheme, type ThemeData, type ThemeHelpers } from '@cossackframework/cms';
+import { archiveTemplate, assembleSiteTheme, blockStyleAttributes, entryTemplate, presetStyle, resolvePresets, siteThemeProblems, type ArchiveView, type EntryView, type MediaView, type MenuItemView, type RenderedBlock, type SiteTheme, type ThemeData, type ThemeHelpers, type ThemePresets } from '@cossackframework/cms';
 
 export { archiveTemplate, entryTemplate };
 export type { ArchiveView, EntryView, MediaView, Paging, RenderedBlock, SiteView } from '@cossackframework/cms';
@@ -30,6 +30,8 @@ export interface ThemeRenderState {
     /** The theme a child theme extends, whose assets it falls back to. */
     readonly parent?: string | null;
     readonly options: Record<string, unknown>;
+    /** The presets blocks pick from; the defaults when absent. */
+    readonly presets?: Required<ThemePresets>;
     readonly data?: { readonly layout?: ThemeData; readonly page?: ThemeData };
     /**
      * The page is in edit mode: blocks and the body are wrapped in `display: contents` markers
@@ -45,6 +47,7 @@ export function themeHelpers(theme: SiteTheme, state: ThemeRenderState, isActive
     const assets: Readonly<Record<string, string>> = { ...assetsOf(state.parent), ...assetsOf(state.name) };
     const helpers: ThemeHelpers = {
         options: state.options,
+        presets: state.presets ?? resolvePresets(undefined),
         data: { layout: state.data?.layout ?? {}, page: state.data?.page ?? {} },
         asset: path => assets[path] ?? '',
         isActive: url => {
@@ -61,9 +64,15 @@ export function themeHelpers(theme: SiteTheme, state: ThemeRenderState, isActive
     };
     const render = (block: RenderedBlock) => {
         const rendered = theme.blocks?.[block.type]?.(block, helpers) ?? coreBlock(block, helpers);
+        // A styled block gets one wrapper: classes per property and the presets' variables inline.
+        // A column's wrapper takes its grid placement, as cms/blocks.css places `.cms-column-box`.
+        const attributes = blockStyleAttributes(block);
+        const column = block.type === 'core/column';
+        const styled = attributes ? html`<div class=${column ? `${attributes.className} cms-column-box` : attributes.className} id=${ifDefined(attributes.id || undefined)}
+            style=${ifDefined([attributes.style, column ? `--cms-span: ${columnSpan(block)}` : ''].filter(Boolean).join('; ') || undefined)}>${rendered}</div>` : rendered;
         // A hidden block stays in the HTML; the stylesheet drops it at those container widths.
         const hide = block.layout?.hide ?? [];
-        return hide.length ? html`<div data-hide=${hide.join(' ')} style="display: contents">${rendered}</div>` : rendered;
+        return hide.length ? html`<div data-hide=${hide.join(' ')} style="display: contents">${styled}</div>` : styled;
     };
     return helpers;
 }
@@ -73,8 +82,13 @@ export function themeHelpers(theme: SiteTheme, state: ThemeRenderState, isActive
  * not the viewport's, so the editor's device toggle only narrows it. Site pages wrap the
  * theme's page in it; a theme wraps widget areas it renders.
  */
-export function siteContent(page: TemplateResult): TemplateResult {
-    return html`<div class="cms-content">${page}</div>`;
+export function siteContent(page: TemplateResult, theme?: Pick<ThemeRenderState, 'presets'>): TemplateResult {
+    return html`<div class="cms-content" style=${ifDefined(presetStyle(theme?.presets) || undefined)}>${page}</div>`;
+}
+
+/** A column's width out of 12, from the span the columns block computed for it. */
+function columnSpan(block: RenderedBlock): number {
+    return Math.min(Math.max(Number(block.data.span) || 12, 1), 12);
 }
 
 /** An image with its resized variants, for blocks; `sizes` is how wide it shows. */
@@ -151,7 +165,7 @@ export function coreBlock(block: RenderedBlock, helpers: ThemeHelpers): Template
             const spans = columnSpans(children);
             return html`<div class="cms-columns" data-gap=${text('gap') || 'medium'} data-stack=${text('stack') || 'mobile'}>${children.map((column, index) => helpers.block({ ...column, data: { ...column.data, span: spans[index] } }))}</div>`;
         }
-        case 'core/column': return html`<div class="cms-column" data-valign=${text('verticalAlign') || 'top'} style=${`--cms-span: ${Math.min(Math.max(Number(block.data.span) || 12, 1), 12)}`}>${children.map(child => helpers.block(child))}</div>`;
+        case 'core/column': return html`<div class="cms-column" data-valign=${text('verticalAlign') || 'top'} style=${`--cms-span: ${columnSpan(block)}`}>${children.map(child => helpers.block(child))}</div>`;
         case 'core/grid': {
             const count = (name: string, fallback: number) => Math.min(Math.max(Number(block.data[name]) || fallback, 1), 6);
             return html`<div class="cms-grid" data-gap=${text('gap') || 'medium'} style=${`--cms-cols-lg: ${count('columns', 3)}; --cms-cols-md: ${count('columnsMd', 2)}; --cms-cols-sm: ${count('columnsSm', 1)}`}>

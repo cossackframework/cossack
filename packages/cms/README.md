@@ -51,6 +51,12 @@ Data contract:
   container width). A type declares what it holds (`children`) and where it goes (`parent`);
   at most 200 blocks and 4 levels per field. Layouts are blocks, so revisions, patterns and
   the front-end editor cover them; nothing is stored beside the block list.
+- A block's `style` holds slugs of the theme's presets (`background`, `text`, `padding`,
+  `margin`, `fontSize`) and an `align`; `layout` adds an `anchor` and `className`. A type's
+  `supports` narrows what its Style tab offers over its category's defaults. Themes declare
+  `presets` (colours, font sizes, spacing) in their manifest, Customize adjusts the palette
+  and adds site-level CSS, and `blockStyleAttributes` renders a styled block's wrapper with
+  classes and custom properties, so a palette change recolours stored content.
 - Rich text is validated against an allow-list of nodes, marks and attributes on every
   write and rendered to escaped HTML; its plain text feeds the full-text index.
 - A menu is one JSON tree saved with a revision check. Entries and terms are stored by ID and

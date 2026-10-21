@@ -8,8 +8,18 @@
  */
 import { field, validateValue, type FieldDeclaration } from './fields';
 
-export { blocksShapeProblem, blockLayoutProblem, BLOCK_LIMITS, BREAKPOINTS, type Breakpoint } from './block-shape';
-import { BLOCK_LIMITS, BREAKPOINTS, type Breakpoint } from './block-shape';
+export { blocksShapeProblem, blockLayoutProblem, blockStyleProblem, BLOCK_LIMITS, BREAKPOINTS, STYLE_PROPERTIES, TEXT_ALIGNMENTS, PRESET_SLUG, type Breakpoint, type StyleProperty } from './block-shape';
+import { BLOCK_LIMITS, BREAKPOINTS, STYLE_PROPERTIES, TEXT_ALIGNMENTS, type Breakpoint, type StyleProperty } from './block-shape';
+
+/**
+ * Which style properties a block type offers, as Gutenberg's block supports: `true` for all
+ * of a kind, a list for some, `false` for none. Absent kinds follow the category's defaults.
+ */
+export interface BlockSupports {
+    readonly color?: boolean | readonly ('background' | 'text')[];
+    readonly spacing?: boolean | readonly ('padding' | 'margin')[];
+    readonly typography?: boolean | readonly ('fontSize' | 'align')[];
+}
 
 export interface BlockDeclaration {
     /** `<owner>/<name>`, such as `core/paragraph` or `support-desk/ticket-form`. */
@@ -25,12 +35,28 @@ export interface BlockDeclaration {
     readonly children?: { readonly allowed?: readonly string[]; readonly max?: number };
     /** The block goes only inside these types, as a column goes inside columns. Pickers offer it there alone. */
     readonly parent?: readonly string[];
+    /** The Style tab's controls; the category decides when absent. See `blockSupports`. */
+    readonly supports?: BlockSupports;
 }
 
 /** How a block shows, apart from its type's data. Checked by core for every block. */
 export interface BlockLayout {
     /** Container widths the block is hidden at: `sm` below 640px, `md` below 1024px, `lg` from there. */
     readonly hide?: readonly Breakpoint[];
+    /** The block's HTML id, for in-page links. */
+    readonly anchor?: string;
+    /** Extra class names on the block's wrapper, for the theme's stylesheet. */
+    readonly className?: string;
+}
+
+/** A block's style: slugs of the theme's presets, and a text alignment. Rendered as classes and custom properties. */
+export interface BlockStyle {
+    readonly background?: string;
+    readonly text?: string;
+    readonly padding?: string;
+    readonly margin?: string;
+    readonly fontSize?: string;
+    readonly align?: (typeof TEXT_ALIGNMENTS)[number];
 }
 
 export interface Block {
@@ -39,6 +65,7 @@ export interface Block {
     readonly type: string;
     readonly data: { readonly [field: string]: unknown };
     readonly layout?: BlockLayout;
+    readonly style?: BlockStyle;
     /** The blocks inside a container. */
     readonly children?: readonly Block[];
 }
@@ -56,6 +83,26 @@ export type BlockCategory = (typeof BLOCK_CATEGORIES)[number]['id'];
 /** A block's category, `widgets` when it names none. */
 export function blockCategory(declaration: Pick<BlockDeclaration, 'category'>): BlockCategory {
     return declaration.category ?? 'widgets';
+}
+
+const SUPPORT_KINDS = Object.freeze({ color: ['background', 'text'], spacing: ['padding', 'margin'], typography: ['fontSize', 'align'] } as const);
+type SupportKind = keyof typeof SUPPORT_KINDS;
+
+/**
+ * The style properties a block type offers: its `supports` over the category's defaults.
+ * Text blocks get colour, spacing and typography; media blocks spacing alone; the rest
+ * colour and spacing.
+ */
+export function blockSupports(declaration: Pick<BlockDeclaration, 'category' | 'supports'>): readonly StyleProperty[] {
+    const category = blockCategory(declaration);
+    const defaults: Record<SupportKind, boolean> = { color: category !== 'media', spacing: true, typography: category === 'text' };
+    const properties: StyleProperty[] = [];
+    for (const kind of Object.keys(SUPPORT_KINDS) as SupportKind[]) {
+        const support = declaration.supports?.[kind] ?? defaults[kind];
+        if (support === false) continue;
+        for (const property of SUPPORT_KINDS[kind]) if (support === true || (Array.isArray(support) && (support as readonly string[]).includes(property))) properties.push(property);
+    }
+    return properties;
 }
 
 export const BLOCK_NAME = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\/[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
@@ -157,6 +204,15 @@ export function blockProblems(declaration: BlockDeclaration, owner?: string): st
     if (declaration?.parent !== undefined && (!Array.isArray(declaration.parent) || !declaration.parent.length || !declaration.parent.every(name => typeof name === 'string' && BLOCK_NAME.test(name)))) {
         problems.push(`${at}: parent lists block names.`);
     }
+    const supports = declaration?.supports;
+    if (supports !== undefined) {
+        if (!supports || typeof supports !== 'object' || Array.isArray(supports)) problems.push(`${at}: supports is an object.`);
+        else for (const [kind, support] of Object.entries(supports)) {
+            const known = (SUPPORT_KINDS as Record<string, readonly string[] | undefined>)[kind];
+            if (!known) problems.push(`${at}: supports has no ${kind}; it takes ${Object.keys(SUPPORT_KINDS).join(', ')}.`);
+            else if (typeof support !== 'boolean' && (!Array.isArray(support) || !support.every(property => known.includes(property as string)))) problems.push(`${at}: supports.${kind} is true, false or some of ${known.join(', ')}.`);
+        }
+    }
     return problems;
 }
 
@@ -198,17 +254,40 @@ export function validateBlocks(value: readonly Block[], types: ReadonlyMap<strin
             const children = block.children ?? [];
             if (children.length && !type.children) { errors[block.id] = `${block.type} does not hold blocks.`; continue; }
             if (type.children?.max !== undefined && children.length > type.children.max) { errors[block.id] = `holds at most ${type.children.max} blocks.`; continue; }
-            const hide = block.layout?.hide?.filter((entry, index, all) => all.indexOf(entry) === index);
-            const layout = hide?.length ? Object.freeze({ hide: Object.freeze([...BREAKPOINTS].filter(breakpoint => hide.includes(breakpoint))) }) : undefined;
+            const layout = blockLayoutOf(block);
+            const style = blockStyleOf(block, blockSupports(type));
             blocks.push(Object.freeze({
                 id: block.id, type: block.type, data: Object.freeze(data),
                 ...(layout ? { layout } : {}),
+                ...(style ? { style } : {}),
                 ...(type.children ? { children: Object.freeze(visit(children, block.type)) } : {}),
             }));
         }
         return blocks;
     };
     return { blocks: visit(value, null), errors };
+}
+
+/** A block's `layout` with `hide` in breakpoint order and empty extras dropped; undefined when it has none. */
+function blockLayoutOf(block: Block): BlockLayout | undefined {
+    const hide = block.layout?.hide?.filter((entry, index, all) => all.indexOf(entry) === index);
+    const anchor = block.layout?.anchor?.trim();
+    const className = block.layout?.className?.trim().split(/\s+/).filter(Boolean).join(' ');
+    const layout = {
+        ...(hide?.length ? { hide: Object.freeze([...BREAKPOINTS].filter(breakpoint => hide.includes(breakpoint))) } : {}),
+        ...(anchor ? { anchor } : {}), ...(className ? { className } : {}),
+    };
+    return Object.keys(layout).length ? Object.freeze(layout) : undefined;
+}
+
+/** A block's `style` with the properties its type supports; undefined when none is set. */
+function blockStyleOf(block: Block, supports: readonly StyleProperty[]): BlockStyle | undefined {
+    const style: Record<string, string> = {};
+    for (const property of supports) {
+        const value = block.style?.[property];
+        if (typeof value === 'string' && value) style[property] = value;
+    }
+    return Object.keys(style).length ? Object.freeze(style) as BlockStyle : undefined;
 }
 
 /** Media file IDs referenced by blocks, nested ones included, for existence checks. */

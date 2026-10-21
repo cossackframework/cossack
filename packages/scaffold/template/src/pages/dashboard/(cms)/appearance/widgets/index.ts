@@ -1,7 +1,7 @@
 import { Client, Cossack, Page, Server, State, type HeadValue } from '@cossackframework/core';
 import { Badge, Button, Card, CardBody, Modal, toast } from '@cossackframework/ui';
 import { component, html, type TemplateResult } from '@cossackframework/renderer';
-import { findBlock, hasPermission, isCmsError, PERMISSIONS, updateBlock } from '@cossackframework/cms';
+import { findBlock, hasPermission, isCmsError, PERMISSIONS, updateBlock, type ThemePresets } from '@cossackframework/cms';
 import { requireAny } from '../../../../../cms/guards';
 import { notice, pageHeader } from '../../../../../cms/ui';
 import { blockFilePreviews, blockOptions, findMedia } from '../../../../../cms/content';
@@ -9,10 +9,12 @@ import { blocksInput, controlValue, editorBlocks, editorInput, type BlockOption,
 import { blockFields, type MediaHooks, type MediaPreview } from '../../../../../cms/field-controls';
 import { BlockTree } from '../../../../../cms/block-tree';
 import { closedChooser, mediaChooser, uploadMedia, withFile, type MediaChooserState } from '../../../../../cms/media-chooser';
+import { activePresets } from '../../../../../cms/site';
+import { blockTabs, styleControls, styleValues, withStyle, type BlockTab, type StyleValues } from '../../../../../cms/style-controls';
 
 interface AreaRow { name: string; label: string; theme: string; active: boolean; revision: number; blocks: EditorBlock[]; changed: boolean }
-/** The block being edited in the dialog. */
-interface BlockDialog { area: string; id: string; values: Record<string, unknown>; errors: Record<string, string> }
+/** The block being edited in the dialog: its fields' values on the General tab, its style on the Style tab. */
+interface BlockDialog { area: string; id: string; values: Record<string, unknown>; style: StyleValues; tab: BlockTab; errors: Record<string, string> }
 
 /**
  * Widgets: the blocks of the themes' widget areas, such as a footer or a sidebar. The active
@@ -24,6 +26,7 @@ export default class WidgetsPage extends Cossack {
     @State() areas: AreaRow[] = [];
     @State() options: BlockOption[] = [];
     @State() previews: Record<string, MediaPreview> = {};
+    @State() presets: Required<ThemePresets> = { colors: [], fontSizes: [], spacing: [] };
     @State() dialog: BlockDialog | null = null;
     @State() chooser: MediaChooserState = closedChooser();
     @State() error = '';
@@ -47,6 +50,7 @@ export default class WidgetsPage extends Cossack {
             return { ...area, revision: stored?.revision ?? 0, blocks: editorBlocks((stored?.blocks ?? []) as EditorBlock[], this.options), changed: false };
         });
         this.previews = await blockFilePreviews(cms, this.areas.flatMap(area => area.blocks));
+        this.presets = await activePresets(cms);
     }
 
     @Server()
@@ -87,7 +91,17 @@ export default class WidgetsPage extends Cossack {
         const block = findBlock(this.blocksOf(name), id);
         const option = this.options.find(entry => entry.name === block?.type);
         if (!block || !option) return;
-        this.dialog = { area: name, id, errors: {}, values: Object.fromEntries(option.fields.map(field => [field.name, block.data[field.name] ?? controlValue(field, field.defaultValue)])) };
+        this.dialog = { area: name, id, errors: {}, tab: 'general', style: styleValues(block), values: Object.fromEntries(option.fields.map(field => [field.name, block.data[field.name] ?? controlValue(field, field.defaultValue)])) };
+    }
+
+    @Client()
+    showTab(tab: BlockTab) {
+        if (this.dialog) this.dialog = { ...this.dialog, tab };
+    }
+
+    @Client()
+    setStyle(style: StyleValues) {
+        if (this.dialog) this.dialog = { ...this.dialog, style };
     }
 
     @Client()
@@ -105,7 +119,7 @@ export default class WidgetsPage extends Cossack {
         const { input, errors } = editorInput(option.fields, dialog.values);
         for (const field of option.fields) if (field.required && (input[field.name] === undefined || input[field.name] === '' || input[field.name] === null)) errors[field.name] ??= __('is required.');
         if (Object.keys(errors).length) { this.dialog = { ...dialog, errors }; return; }
-        this.change(dialog.area, updateBlock(this.blocksOf(dialog.area), dialog.id, entry => ({ ...entry, data: { ...dialog.values } })));
+        this.change(dialog.area, updateBlock(this.blocksOf(dialog.area), dialog.id, entry => withStyle({ ...entry, data: { ...dialog.values } }, dialog.style)));
         this.dialog = null;
     }
 
@@ -143,7 +157,7 @@ export default class WidgetsPage extends Cossack {
                 ${area.active ? null : component(Badge, { variant: 'secondary' }, `${__('Theme')}: ${area.theme}`)}
             </div>
             ${component(BlockTree, {
-                id: `area-${area.name}`, blocks: area.blocks, options: this.options, allowed: [], inline: false, previews: this.previews,
+                id: `area-${area.name}`, blocks: area.blocks, options: this.options, allowed: [], inline: false, previews: this.previews, presets: this.presets,
                 onChange: (blocks: EditorBlock[]) => this.change(area.name, blocks), onEdit: (id: string) => this.edit(area.name, id), control: () => null,
             })}
             <div class="flex justify-end">
@@ -159,7 +173,10 @@ export default class WidgetsPage extends Cossack {
         return component(Modal, { open: Boolean(dialog && option), size: 'max-w-xl', 'aria-label': option?.label ?? __('Block'), onOpenChange: (open: boolean) => { if (!open) this.dialog = null; } },
             dialog && option ? html`<form class="space-y-4" @submit=${(event: Event) => this.apply(event)}>
                 <h2 class="text-lg font-semibold text-foreground">${option.label}</h2>
-                ${blockFields(option, dialog.values, (name, value) => this.setValue(name, value), `widget-${dialog.area}-${dialog.id}`, media, dialog.errors)}
+                ${blockTabs(dialog.tab, tab => this.showTab(tab), `widget-${dialog.area}-${dialog.id}`)}
+                ${dialog.tab === 'style' ? styleControls(dialog.style, option.supports, this.presets, `widget-${dialog.area}-${dialog.id}-style`, style => this.setStyle(style))
+                : option.fields.length ? blockFields(option, dialog.values, (name, value) => this.setValue(name, value), `widget-${dialog.area}-${dialog.id}`, media, dialog.errors)
+                : html`<p class="text-sm text-muted-foreground">${__('This block has no settings.')}</p>`}
                 <div class="flex justify-end gap-2">
                     ${component(Button, { type: 'button', variant: 'outline', '@click': () => { this.dialog = null; } }, __('Cancel'))}
                     ${component(Button, { type: 'submit' }, __('Apply'))}

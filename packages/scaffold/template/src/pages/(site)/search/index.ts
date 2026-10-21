@@ -26,6 +26,6 @@ export default class SearchPage extends Cossack {
 
     render() {
         const theme = siteTheme(this.theme);
-        return siteContent(archiveTemplate(theme, this.view)(this.view, themeHelpers(theme, { ...this.theme, data: { page: this.data } }, (path, exact) => this.isActive(path, exact))));
+        return siteContent(archiveTemplate(theme, this.view)(this.view, themeHelpers(theme, { ...this.theme, data: { page: this.data } }, (path, exact) => this.isActive(path, exact))), this.theme);
     }
 }

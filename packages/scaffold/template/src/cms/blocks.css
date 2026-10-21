@@ -17,11 +17,26 @@
 .cms-group[data-align="left"] { max-width: var(--cms-narrow, 40rem); margin-inline-end: auto; }
 .cms-group[data-align="right"] { max-width: var(--cms-narrow, 40rem); margin-inline-start: auto; }
 
-.cms-columns { grid-template-columns: repeat(12, minmax(0, 1fr)); }
-.cms-column { grid-column: span var(--cms-span, 12); display: flex; flex-direction: column; min-width: 0; }
+/*
+ * Columns: twelve tracks. A column, or the wrapper of a styled column (`.cms-column-box`), is
+ * the grid item. Stacking is a custom property the columns block sets and its columns inherit,
+ * so edit markers and wrappers between them change nothing, and nested columns keep their own.
+ */
+.cms-columns { grid-template-columns: repeat(12, minmax(0, 1fr)); --cms-stack-sm: initial; --cms-stack-md: initial; }
+.cms-columns[data-stack="mobile"] { --cms-stack-sm: 12; }
+.cms-columns[data-stack="tablet"] { --cms-stack-sm: 12; --cms-stack-md: 12; }
+.cms-column, .cms-column-box { grid-column: span var(--cms-span, 12); min-width: 0; }
+.cms-column { display: flex; flex-direction: column; }
+.cms-column-box { display: flex; flex-direction: column; }
+.cms-column-box > .cms-column { flex: 1; }
 .cms-column[data-valign="center"] { justify-content: center; }
 .cms-column[data-valign="bottom"] { justify-content: flex-end; }
 .cms-column > :first-child { margin-top: 0; }
+
+/* A styled block's wrapper: `blockStyleAttributes` sets its colours, spacing, size and alignment inline through the presets' variables. */
+.cms-block { min-width: 0; }
+.cms-block > :first-child { margin-top: 0; }
+.cms-block > :last-child { margin-bottom: 0; }
 
 .cms-grid { grid-template-columns: repeat(var(--cms-cols-lg, 3), minmax(0, 1fr)); }
 
@@ -33,14 +48,27 @@
 }
 @container (width < 1024px) {
     .cms-grid { grid-template-columns: repeat(var(--cms-cols-md, 2), minmax(0, 1fr)); }
-    .cms-columns[data-stack="tablet"] > .cms-column { grid-column: span 12; }
+    .cms-column, .cms-column-box { grid-column: span var(--cms-stack-md, var(--cms-span, 12)); }
 }
 @container (width < 640px) {
     [data-hide~="sm"] { display: none; }
     .cms-grid { grid-template-columns: repeat(var(--cms-cols-sm, 1), minmax(0, 1fr)); }
-    .cms-columns[data-stack="mobile"] > .cms-column { grid-column: span 12; }
+    .cms-column, .cms-column-box { grid-column: span var(--cms-stack-sm, var(--cms-span, 12)); }
 }
 
 /* The site editor's device toggle narrows the content root; nothing else changes. */
 html[data-cms-device="tablet"] .cms-content { max-width: 48rem; margin-inline: auto; }
 html[data-cms-device="phone"] .cms-content { max-width: 24rem; margin-inline: auto; }
+
+/* The editors' "Add block" button: a slowly turning rainbow border, so it stands out among the controls. */
+@property --cms-angle { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
+.cms-add-block {
+    border: 1px solid transparent;
+    background: linear-gradient(var(--background), var(--background)) padding-box,
+        conic-gradient(from var(--cms-angle), #f472b6, #fb923c, #facc15, #4ade80, #22d3ee, #818cf8, #c084fc, #f472b6) border-box;
+    animation: cms-rainbow 6s linear infinite;
+}
+.cms-add-block:hover { background: linear-gradient(var(--muted), var(--muted)) padding-box,
+    conic-gradient(from var(--cms-angle), #f472b6, #fb923c, #facc15, #4ade80, #22d3ee, #818cf8, #c084fc, #f472b6) border-box; }
+@keyframes cms-rainbow { to { --cms-angle: 360deg; } }
+@media (prefers-reduced-motion: reduce) { .cms-add-block { animation: none; } }

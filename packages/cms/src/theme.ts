@@ -10,6 +10,25 @@ import type { TemplateResult } from '@cossackframework/renderer';
 import { fieldProblems } from './fields';
 import { MENU_LOCATION, type MenuItemView } from './menus';
 import type { SettingDeclaration } from './settings';
+import { PRESET_SLUG, STYLE_PROPERTIES, TEXT_ALIGNMENTS, type StyleProperty } from './block-shape';
+import type { BlockLayout, BlockStyle } from './blocks';
+
+/** A named value blocks pick by slug: a colour, a font size or a spacing step. */
+export interface Preset {
+    readonly slug: string;
+    readonly name: string;
+    /** A CSS colour, or a CSS length for sizes and spacing. */
+    readonly value: string;
+}
+
+/** The presets a theme offers the Style tab. Absent kinds take `DEFAULT_PRESETS`. */
+export interface ThemePresets {
+    readonly colors?: readonly Preset[];
+    readonly fontSizes?: readonly Preset[];
+    readonly spacing?: readonly Preset[];
+}
+export type PresetKind = keyof ThemePresets;
+export const PRESET_KINDS = Object.freeze(['colors', 'fontSizes', 'spacing'] as const);
 
 /** The `theme` field of a plugin manifest. */
 export interface ThemeManifest {
@@ -27,6 +46,8 @@ export interface ThemeManifest {
     readonly extends?: string;
     /** Widget areas: block lists edited under Appearance → Widgets, such as `{ "sidebar": "Sidebar" }`. */
     readonly areas?: { readonly [name: string]: string };
+    /** The palette, font sizes and spacing steps blocks pick from; the site adjusts colours under Customize. */
+    readonly presets?: ThemePresets;
 }
 
 const OPTION_KINDS = new Set(['string', 'text', 'enum', 'boolean', 'integer', 'number']);
@@ -58,7 +79,139 @@ export function themeProblems(theme: unknown): string[] {
         if (option.unique || option.index || option.search || option.slugFrom || option.taxonomy || option.media) problems.push(`theme.options.${name} cannot be indexed, searched or derived.`);
         problems.push(...fieldProblems(name, option).map(problem => `theme.options: ${problem}`));
     }
+    if (value.presets !== undefined) problems.push(...presetProblems(value.presets).map(problem => `theme.presets: ${problem}`));
     return problems;
+}
+
+
+/** A CSS colour: hex, a named colour, or a colour function without nested parentheses. */
+const COLOR_VALUE = /^(?:#[0-9a-f]{3,8}|[a-z]{3,30}|(?:rgb|rgba|hsl|hsla|hwb|lab|lch|oklab|oklch|color)\([^()]{1,60}\))$/i;
+/** A CSS length, or `clamp()`, `min()`, `max()` and `calc()` of lengths. */
+const LENGTH_VALUE = /^(?:-?\d*\.?\d+(?:px|rem|em|%|vw|vh|ch|cqi|cqw)?|(?:clamp|min|max|calc)\([-+*/\d.\s,%a-z]{1,60}\))$/i;
+const PRESET_LIMITS: Readonly<Record<PresetKind, number>> = { colors: 24, fontSizes: 8, spacing: 8 };
+
+/** Problems with presets, as a manifest declares them or as the site's custom colours; empty when valid. */
+export function presetProblems(presets: unknown): string[] {
+    if (!presets || typeof presets !== 'object' || Array.isArray(presets)) return ['presets is an object of colors, fontSizes and spacing.'];
+    const problems: string[] = [];
+    for (const [kind, list] of Object.entries(presets)) {
+        if (!(PRESET_KINDS as readonly string[]).includes(kind)) { problems.push(`${kind} is not a preset kind; use ${PRESET_KINDS.join(', ')}.`); continue; }
+        if (!Array.isArray(list)) { problems.push(`${kind} is a list.`); continue; }
+        if (list.length > PRESET_LIMITS[kind as PresetKind]) problems.push(`${kind} lists at most ${PRESET_LIMITS[kind as PresetKind]} presets.`);
+        const slugs = new Set<string>();
+        for (const entry of list as Preset[]) {
+            const at = `${kind}.${String(entry?.slug)}`;
+            if (typeof entry?.slug !== 'string' || !PRESET_SLUG.test(entry.slug) || entry.slug.length > 40) { problems.push(`${kind}: slugs are lowercase letters, digits and hyphens.`); continue; }
+            if (slugs.has(entry.slug)) problems.push(`${at} is listed twice.`);
+            slugs.add(entry.slug);
+            if (typeof entry.name !== 'string' || !entry.name.trim() || entry.name.length > 40) problems.push(`${at} needs a name of at most 40 characters.`);
+            if (typeof entry.value !== 'string' || !(kind === 'colors' ? COLOR_VALUE : LENGTH_VALUE).test(entry.value.trim())) problems.push(`${at} needs a CSS ${kind === 'colors' ? 'colour' : 'length'}.`);
+        }
+    }
+    return problems;
+}
+
+/** What a theme without its own gets: no palette, five font sizes and five spacing steps. */
+export const DEFAULT_PRESETS: ThemePresets = Object.freeze({
+    colors: Object.freeze([]),
+    fontSizes: Object.freeze([
+        { slug: 'small', name: 'Small', value: '0.875rem' }, { slug: 'medium', name: 'Medium', value: '1rem' }, { slug: 'large', name: 'Large', value: '1.25rem' },
+        { slug: 'x-large', name: 'Extra large', value: '1.5rem' }, { slug: 'xx-large', name: 'Huge', value: '2.25rem' },
+    ]),
+    spacing: Object.freeze([
+        { slug: 'none', name: 'None', value: '0' }, { slug: 'small', name: 'Small', value: '0.75rem' }, { slug: 'medium', name: 'Medium', value: '1.5rem' },
+        { slug: 'large', name: 'Large', value: '3rem' }, { slug: 'x-large', name: 'Extra large', value: '5rem' },
+    ]),
+});
+
+/** `top`'s presets over `base`'s, slug by slug, kind by kind; a kind `top` lists at all is its own list plus the base's extra slugs. */
+export function layerPresets(base: ThemePresets | undefined, top: ThemePresets | undefined): ThemePresets {
+    const result: { -readonly [K in PresetKind]?: Preset[] } = {};
+    for (const kind of PRESET_KINDS) {
+        const lower = base?.[kind];
+        const upper = top?.[kind];
+        if (!lower && !upper) continue;
+        const merged = new Map<string, Preset>();
+        for (const preset of upper ?? []) merged.set(preset.slug, preset);
+        for (const preset of lower ?? []) if (!merged.has(preset.slug)) merged.set(preset.slug, preset);
+        result[kind] = [...merged.values()];
+    }
+    return result;
+}
+
+/** The site's changes to the active theme's palette: new values by slug, and colours it added. */
+export interface PresetOverrides {
+    readonly colors?: { readonly [slug: string]: string };
+    readonly custom?: readonly Preset[];
+}
+
+/** A problem with `appearance.presets` entries, which are overrides keyed by theme; undefined when valid. */
+export function presetOverridesProblem(value: unknown): string | undefined {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return 'Preset overrides are an object.';
+    const { colors, custom } = value as PresetOverrides;
+    if (colors !== undefined) {
+        if (!colors || typeof colors !== 'object' || Array.isArray(colors)) return 'colors maps slugs to colours.';
+        for (const [slug, color] of Object.entries(colors)) {
+            if (!PRESET_SLUG.test(slug) || typeof color !== 'string' || !COLOR_VALUE.test(color.trim())) return `${slug} needs a CSS colour.`;
+        }
+    }
+    if (custom !== undefined) {
+        const problems = presetProblems({ colors: custom });
+        if (problems.length) return problems[0]!.replace(/^colors[.:]?\s?/, '');
+    }
+    return undefined;
+}
+
+/** The presets blocks pick from: the theme's over the defaults, with the site's colour changes and additions. */
+export function resolvePresets(theme: ThemePresets | undefined, overrides?: PresetOverrides | null): Required<ThemePresets> {
+    const layered = layerPresets(DEFAULT_PRESETS, theme);
+    const colors = (layered.colors ?? []).map(preset => overrides?.colors?.[preset.slug] ? { ...preset, value: overrides.colors[preset.slug]! } : preset);
+    const custom = (overrides?.custom ?? []).filter(preset => !colors.some(entry => entry.slug === preset.slug));
+    return { colors: [...colors, ...custom], fontSizes: layered.fontSizes ?? [], spacing: layered.spacing ?? [] };
+}
+
+const PRESET_VARIABLES: Readonly<Record<PresetKind, string>> = { colors: '--cms-color', fontSizes: '--cms-size', spacing: '--cms-space' };
+
+/** The presets as custom properties for an inline `style`, such as `--cms-color-brand: #0f172a;`. */
+export function presetStyle(presets: ThemePresets | undefined): string {
+    if (!presets) return '';
+    return PRESET_KINDS.flatMap(kind => (presets[kind] ?? []).map(preset => `${PRESET_VARIABLES[kind]}-${preset.slug}: ${preset.value.trim()};`)).join(' ');
+}
+
+/** What a styled block's wrapper carries: classes per property, the `id`, and inline properties through the presets' variables. Null for an unstyled block. */
+export function blockStyleAttributes(block: { readonly style?: BlockStyle; readonly layout?: Pick<BlockLayout, 'anchor' | 'className'> }): { className: string; style: string; id: string } | null {
+    const classes: string[] = [];
+    const rules: string[] = [];
+    const slug = (property: StyleProperty) => {
+        const value = block.style?.[property];
+        return typeof value === 'string' && PRESET_SLUG.test(value) && value.length <= 40 ? value : '';
+    };
+    const background = slug('background');
+    if (background) { classes.push(`cms-bg-${background}`); rules.push(`background-color: var(--cms-color-${background})`); }
+    const text = slug('text');
+    if (text) { classes.push(`cms-text-${text}`); rules.push(`color: var(--cms-color-${text})`); }
+    const padding = slug('padding');
+    if (padding) { classes.push(`cms-p-${padding}`); rules.push(`padding: var(--cms-space-${padding})`); }
+    const margin = slug('margin');
+    if (margin) { classes.push(`cms-m-${margin}`); rules.push(`margin-block: var(--cms-space-${margin})`); }
+    const fontSize = slug('fontSize');
+    if (fontSize) { classes.push(`cms-size-${fontSize}`); rules.push(`font-size: var(--cms-size-${fontSize})`); }
+    const align = block.style?.align;
+    if (align && (TEXT_ALIGNMENTS as readonly string[]).includes(align)) { classes.push(`cms-align-${align}`); rules.push(`text-align: ${align}`); }
+    const extra = (block.layout?.className ?? '').trim().split(/\s+/).filter(name => /^-?[_A-Za-z][\w-]*$/.test(name));
+    const id = /^[A-Za-z][\w-]{0,59}$/.test(block.layout?.anchor ?? '') ? block.layout!.anchor! : '';
+    if (!classes.length && !extra.length && !id) return null;
+    return { className: ['cms-block', ...classes, ...extra].join(' '), style: rules.join('; '), id };
+}
+
+/** Why a site's Additional CSS is refused: it may not load other resources or run scripts. Undefined when fine. */
+export function customCssProblem(css: string): string | undefined {
+    if (css.length > 20_000) return 'Additional CSS is at most 20,000 characters.';
+    if (/@import\b/i.test(css)) return 'Additional CSS cannot use @import.';
+    if (/\burl\s*\(/i.test(css)) return 'Additional CSS cannot use url().';
+    if (/\bexpression\s*\(|\bbehavior\s*:|-moz-binding|javascript:/i.test(css)) return 'Additional CSS cannot run scripts.';
+    if (/<\/?\s*(?:style|script)\b/i.test(css)) return 'Additional CSS cannot contain HTML tags.';
+    return undefined;
 }
 
 export interface MediaView {
@@ -89,8 +242,10 @@ export interface RenderedBlock {
     readonly html: { readonly [field: string]: string };
     /** Media the block uses, by file ID. */
     readonly media: { readonly [id: string]: MediaView };
-    /** How the block shows: `hide` lists the container widths it is hidden at. */
-    readonly layout?: { readonly hide?: readonly ('sm' | 'md' | 'lg')[] };
+    /** How the block shows: `hide` lists the container widths it is hidden at; `anchor` and `className` go on its wrapper. */
+    readonly layout?: BlockLayout;
+    /** Preset slugs the block's wrapper renders as classes and custom properties; see `blockStyleAttributes`. */
+    readonly style?: BlockStyle;
     /** The rendered blocks a container holds. */
     readonly children?: readonly RenderedBlock[];
 }
@@ -258,6 +413,8 @@ export type ThemeData = { readonly [key: string]: unknown };
 export interface ThemeHelpers {
     /** The active theme's option values, defaults applied. */
     readonly options: { readonly [name: string]: unknown };
+    /** The presets blocks pick from, the site's changes applied; `presetStyle(helpers.presets)` renders them as custom properties. */
+    readonly presets: Required<ThemePresets>;
     /**
      * What the theme's loaders returned: `layout` in the layout and head templates, `page` in
      * the page's template. Empty when the theme has no loader for the page, or it failed.
