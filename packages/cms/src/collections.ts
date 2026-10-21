@@ -70,10 +70,14 @@ export interface CollectionDefinition {
     readonly fieldOrder?: readonly string[];
     /** Shipped with a module: core settings and fields cannot change, but fields can be added. */
     readonly builtin?: boolean;
+    /** The plugin that ships the collection. Its entries are on the site and in the dashboard only while the plugin is active. */
+    readonly plugin?: string;
 }
 
 /** Field names the host derives from a definition. */
-export const CORE_FIELDS = Object.freeze(['title', 'slug', 'status', 'publishedAt', 'parent', 'menuOrder', 'seo', 'locale', 'translationGroup', 'commentsOpen']);
+export const CORE_FIELDS = Object.freeze(['title', 'slug', 'status', 'publishedAt', 'parent', 'menuOrder', 'seo', 'locale', 'translationGroup', 'commentsOpen', 'template']);
+/** A template an editor can choose for one entry: one of the active theme's `entry-*` templates. Empty for the default. */
+export const ENTRY_TEMPLATE = 'entry-[a-z][a-z0-9_-]{0,73}';
 const RESERVED = new Set(['media', 'users', 'roles', 'terms', 'settings', 'collections', 'taxonomies', 'blocks', 'plugins', 'schema', 'content', 'new']);
 const PATH = /^[a-z0-9]+(?:-[a-z0-9]+)*(?:\/[a-z0-9]+(?:-[a-z0-9]+)*)*$/;
 const ICON = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -129,6 +133,8 @@ export function collectionResource(definition: CollectionDefinition, labels: { r
         translationGroup: field.string({ max: 80, nullable: true, index: true, pattern: '[A-Za-z0-9_-]{1,80}', label: 'Translations' }),
         // New entries take Settings → Discussion's default; null reads as open.
         ...(definition.comments ? { commentsOpen: field.boolean({ nullable: true, label: 'Allow comments' }) } : {}),
+        // Entries on the site can use another of the active theme's templates.
+        ...(typeof definition.path === 'string' ? { template: field.string({ max: 80, nullable: true, pattern: `(?:${ENTRY_TEMPLATE})?`, label: 'Template' }) } : {}),
     };
     for (const taxonomy of definition.taxonomies ?? []) fields[taxonomy] = field.terms(taxonomy, { label: labels[taxonomy] ?? taxonomy });
     for (const [name, declaration] of Object.entries(definition.fields)) fields[name] = declaration;

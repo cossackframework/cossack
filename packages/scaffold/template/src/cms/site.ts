@@ -4,15 +4,17 @@
  * from `init()` and hand the views to the theme's templates.
  */
 import {
-    ANONYMOUS, editedSize, escapeHtml, formatSiteDate, imageSrcset, imageUrl, isCmsError, languageName, mediaUrl, recordTitle, richTextBlocks, richTextExcerpt, richTextParts, systemPrincipal, transformable,
-    type ArchiveView, type BodyPart, type CollectionDefinition, type CommentShape, type CommentView, type CommentsView, type EntryView, type FieldFilter, type LanguageLink,
-    type MediaView, type MenuItemView, type RecordShape, type RenderedBlock, type RichTextDoc, type SiteSettings, type SiteView, type TermShape,
+    ANONYMOUS, editedSize, escapeHtml, formatSiteDate, imageSrcset, imageUrl, isCmsError, languageName, mediaUrl, recordTitle, richTextBlocks, richTextExcerpt, richTextParts, systemPrincipal, templateCandidates, transformable,
+    type Principal, type TemplatePage, type ThemeData,
+    type ArchiveView, type BodyPart, type CollectionDefinition, type CommentShape, type CommentView, type CommentsView, type EntryReference, type EntryView, type FieldDeclaration, type FieldFilter,
+    type FieldView, type LanguageLink, type MediaView, type MenuItemView, type RecordShape, type RenderedBlock, type RichTextDoc, type SiteSettings, type SiteView, type TermLink, type TermShape,
 } from '@cossackframework/cms';
 import { excerptOf, renderMarkdown, type CmsFile, type CmsHost, type SiteLanguages } from '@cossackframework/cms/server';
 
-/** The active theme and its option values, which every site page renders with. */
+/** The active theme, the theme it extends, and its option values, which every site page renders with. */
 export interface ThemeState {
     name: string | null;
+    parent?: string | null;
     options: Record<string, unknown>;
 }
 
@@ -25,7 +27,15 @@ export async function themeState(cms: CmsHost): Promise<ThemeState> {
     const theme = cms.themes().find(entry => entry.name === name);
     const settings = await cms.settings.all();
     const options = Object.fromEntries(Object.keys(theme?.options?.fields ?? {}).map(option => [option, settings[`${name}.${option}`]]));
-    return { name, options };
+    return { name, parent: theme?.parent ?? null, options };
+}
+
+/**
+ * What the active theme's loader for a page returns: the first of the page's template
+ * candidates the theme has a loader for (`layout` for the layout). Empty when there is none.
+ */
+export function themeData(cms: CmsHost, theme: ThemeState, page: TemplatePage | 'layout', view: SiteView | EntryView | ArchiveView, principal: Principal, locale?: string): Promise<ThemeData> {
+    return cms.themeData(theme.name, page === 'layout' ? ['layout'] : templateCandidates(page), view, { principal, options: theme.options, ...(locale ? { locale } : {}) });
 }
 
 /** The URL prefix of a language: empty for the default one. */
@@ -43,7 +53,8 @@ export async function siteView(cms: CmsHost, theme: ThemeState, options: { local
     const settings = await cms.settings.all();
     const languages = await cms.languages();
     const locale = options.locale ?? languages.default;
-    const declared = cms.themes().find(entry => entry.name === theme.name)?.locations.map(location => location.name) ?? [];
+    const info = cms.themes().find(entry => entry.name === theme.name);
+    const declared = info?.locations.map(location => location.name) ?? [];
     const locations = declared.length ? declared : ['primary'];
     const menus: Record<string, readonly MenuItemView[]> = {};
     for (const location of locations) {
@@ -56,7 +67,20 @@ export async function siteView(cms: CmsHost, theme: ThemeState, options: { local
     return {
         title: settings['general.siteTitle'], tagline: settings['general.tagline'], blog, menus, noindex: settings['reading.discourageSearchEngines'],
         locale, languages: options.languages ?? [], searchUrl: `${localePrefix(languages, locale)}/search`, homeUrl: localePrefix(languages, locale) || '/',
+        areas: await areaViews(cms, info?.areas.map(area => area.name) ?? []),
     };
+}
+
+/** The blocks of the theme's widget areas, rendered; blocks of inactive plugins are left out. */
+async function areaViews(cms: CmsHost, names: readonly string[]): Promise<Record<string, RenderedBlock[]>> {
+    if (!names.length) return {};
+    const saved = await cms.areas.all().catch(() => new Map<string, { blocks: readonly { id: string; type: string; data: Record<string, unknown> }[] }>());
+    const available = new Set((await cms.blocks()).map(block => block.name));
+    const blocks = new Map(names.map(name => [name, (saved.get(name)?.blocks ?? []).filter(block => available.has(block.type))]));
+    const ids = new Set<string>();
+    for (const list of blocks.values()) for (const block of list) blockMediaIds(cms, block as { type: string; data: Record<string, unknown> }, ids);
+    const files = cms.files && ids.size ? await cms.files.getMany([...ids]) : new Map<string, CmsFile>();
+    return Object.fromEntries([...blocks].map(([name, list]) => [name, list.map(block => renderedBlock(cms, block as { id: string; type: string; data: Record<string, unknown> }, files))]));
 }
 
 /** Without an assigned menu, the primary location lists the published top-level pages. */
@@ -87,8 +111,8 @@ export function mediaView(file: CmsFile | undefined, resizes: boolean): MediaVie
     };
 }
 
-/** A block with its Markdown fields rendered and its media resolved. */
-function renderedBlock(cms: CmsHost, block: { id: string; type: string; data: Record<string, unknown> }, files: ReadonlyMap<string, CmsFile>): RenderedBlock {
+/** A block with its Markdown fields rendered and its media resolved; a container's children too. */
+function renderedBlock(cms: CmsHost, block: { id: string; type: string; data: Record<string, unknown>; layout?: RenderedBlock['layout']; children?: readonly unknown[] }, files: ReadonlyMap<string, CmsFile>): RenderedBlock {
     const html: Record<string, string> = {};
     const media: Record<string, MediaView> = {};
     const resizes = cms.files?.resizes ?? false;
@@ -100,15 +124,17 @@ function renderedBlock(cms: CmsHost, block: { id: string; type: string; data: Re
             if (view) media[id as string] = view;
         }
     }
-    return { id: block.id, type: block.type, data: block.data, html, media };
+    const children = Array.isArray(block.children) ? (block.children as RenderedBlock[]).map(child => renderedBlock(cms, child, files)) : undefined;
+    return { id: block.id, type: block.type, data: block.data, html, media, ...(block.layout?.hide?.length ? { layout: block.layout } : {}), ...(children ? { children } : {}) };
 }
 
-function blockMediaIds(cms: CmsHost, block: { type: string; data: Record<string, unknown> }, into: Set<string>): void {
+function blockMediaIds(cms: CmsHost, block: { type: string; data: Record<string, unknown>; children?: readonly unknown[] }, into: Set<string>): void {
     for (const [key, declaration] of Object.entries(cms.blockTypes.get(block.type)?.fields ?? {})) {
         const entry = block.data[key];
         if (declaration.media && typeof entry === 'string') into.add(entry);
         if (declaration.media && Array.isArray(entry)) for (const id of entry) into.add(id as string);
     }
+    for (const child of Array.isArray(block.children) ? block.children as RenderedBlock[] : []) blockMediaIds(cms, child, into);
 }
 
 function docMediaIds(cms: CmsHost, doc: RichTextDoc, into: Set<string>): void {
@@ -147,7 +173,32 @@ export interface EntryViewOptions {
     user?: { name: string } | null;
 }
 
-/** Views of entries: bodies rendered with their blocks, patterns and media, authors, URLs, term links and comments. */
+/** Fields a details list leaves out: core fields themes show on their own, and internal ones. */
+const NOT_DETAILS = new Set(['title', 'slug', 'status', 'publishedAt', 'parent', 'menuOrder', 'excerpt', 'sticky', 'seo', 'locale', 'translationGroup', 'commentsOpen', 'template']);
+/** Fields entry views leave out: search settings have their own head tags; translations their own links. */
+const NOT_FIELDS = new Set(['seo', 'translationGroup']);
+
+/** The titles and URLs of the records reference fields point at, by `<target>:<id>`. Records visitors cannot read are left out. */
+async function referencedRecords(cms: CmsHost, fields: readonly (readonly [string, FieldDeclaration])[], records: readonly RecordShape[]): Promise<Map<string, EntryReference>> {
+    const byTarget = new Map<string, Set<string>>();
+    for (const [name, declaration] of fields) {
+        if (declaration.kind !== 'reference' || !declaration.target) continue;
+        for (const record of records) if (typeof record[name] === 'string' && record[name]) byTarget.set(declaration.target, (byTarget.get(declaration.target) ?? new Set()).add(record[name] as string));
+    }
+    const found = new Map<string, EntryReference>();
+    for (const [target, ids] of byTarget) {
+        try {
+            const resource = cms.resourceById(target);
+            const rows = await cms.resource(target).getMany([...ids].slice(0, 100), visitor);
+            const collection = target.startsWith('cms/') ? cms.collections().find(entry => entry.name === target.slice(4)) : undefined;
+            const urls = collection ? await cms.entryUrls(collection, [...rows.values()]) : new Map<string, string | null>();
+            for (const row of rows.values()) found.set(`${target}:${row.id}`, { id: row.id, title: recordTitle(row, resource.titleField ?? 'title'), url: urls.get(row.id) ?? null });
+        } catch (error) { if (!isCmsError(error)) throw error; }
+    }
+    return found;
+}
+
+/** Views of entries: bodies rendered with their blocks, patterns and media, authors, URLs, term links, typed fields and comments. */
 export async function entryViews(cms: CmsHost, collection: CollectionDefinition, records: readonly RecordShape[], options: EntryViewOptions = {}): Promise<EntryView[]> {
     const resource = cms.resourceById(`cms/${collection.name}`);
     const settings = await cms.settings.all();
@@ -172,6 +223,7 @@ export async function entryViews(cms: CmsHost, collection: CollectionDefinition,
     for (const doc of [...docs, ...patterns.values()]) docMediaIds(cms, doc, mediaIds);
     const files = cms.files ? await cms.files.getMany([...mediaIds]) : new Map<string, CmsFile>();
     const owners = await cms.users.getMany(records.map(record => record.owner).filter((owner): owner is string => !!owner));
+    const references = await referencedRecords(cms, fields, records);
     const taxonomyFields = fields.filter(([, declaration]) => declaration.taxonomy);
     const terms = await cms.taxonomies.getMany(records.flatMap(record => taxonomyFields.flatMap(([name]) => (record[name] as string[] | undefined) ?? [])));
     const urls = await cms.entryUrls(collection, records);
@@ -191,6 +243,20 @@ export async function entryViews(cms: CmsHost, collection: CollectionDefinition,
         }
         return [{ kind: 'block' as const, block: renderedBlock(cms, part.block as RenderedBlock, files) }];
     });
+    /** A field's typed value; undefined leaves it out (rich text, Markdown and blocks in lists, vectors). */
+    const fieldView = (name: string, declaration: FieldDeclaration, value: unknown, locale: string, full: boolean): FieldView | undefined => {
+        if (declaration.kind === 'vector' || declaration.kind === 'bigint') return undefined;
+        if ((declaration.kind === 'richtext' || declaration.kind === 'blocks' || (declaration.kind === 'text' && declaration.format === 'markdown')) && !full) return undefined;
+        if (value === undefined || value === null || value === '') return null;
+        if (declaration.taxonomy) return ((value as string[] | undefined) ?? []).map(id => terms.get(id)).filter((term): term is TermShape => !!term).map((term): TermLink => ({ name: term.name, url: termUrl(term, locale) }));
+        if (declaration.media && Array.isArray(value)) return value.map(id => mediaView(files.get(String(id)), resizes)).filter((view): view is MediaView => !!view);
+        if (declaration.media) return mediaView(files.get(String(value)), resizes);
+        if (declaration.kind === 'reference') return references.get(`${declaration.target}:${String(value)}`) ?? null;
+        if (declaration.kind === 'richtext') return typeof value === 'object' ? parts(value as RichTextDoc) : null;
+        if (declaration.kind === 'text' && declaration.format === 'markdown') return [{ kind: 'html', html: renderMarkdown(String(value)) }];
+        if (declaration.kind === 'blocks') return Array.isArray(value) ? (value as RenderedBlock[]).map(block => renderedBlock(cms, block, files)) : [];
+        return value as FieldView;
+    };
     const views: EntryView[] = [];
     for (const record of records) {
         const value = body ? record[body[0]] : null;
@@ -201,9 +267,16 @@ export async function entryViews(cms: CmsHost, collection: CollectionDefinition,
         if (options.full && richText) bodyParts = parts(richText);
         else if (options.full && markdown) bodyParts = [{ kind: 'html', html: renderMarkdown(markdown) }];
         const blocks = options.full && blocksField ? ((record[blocksField[0]] as RenderedBlock[] | null) ?? []).map(block => renderedBlock(cms, block, files)) : [];
-        const details = options.full ? fields.filter(([name, declaration]) => !['title', 'slug', 'status', 'publishedAt', 'parent', 'menuOrder', 'excerpt', 'sticky', 'seo', 'locale', 'translationGroup', 'commentsOpen'].includes(name)
-            && !declaration.taxonomy && !declaration.media && !['text', 'blocks', 'richtext', 'json', 'reference'].includes(declaration.kind) && record[name] !== null && record[name] !== '' && record[name] !== undefined)
-            .map(([name, declaration]) => ({ label: declaration.label ?? name, value: displayValue(declaration.kind, record[name], settings) })) : [];
+        const typed: Record<string, FieldView> = {};
+        for (const [name, declaration] of fields) {
+            if (NOT_FIELDS.has(name)) continue;
+            // The body and blocks are rendered once, for `body` and `blocks` and their fields.
+            const view = body && name === body[0] && options.full ? bodyParts : blocksField && name === blocksField[0] && options.full ? blocks : fieldView(name, declaration, record[name], locale, options.full === true);
+            if (view !== undefined) typed[name] = view;
+        }
+        const details = options.full ? fields.filter(([name, declaration]) => !NOT_DETAILS.has(name) && !declaration.taxonomy && !declaration.media
+            && !['text', 'blocks', 'richtext', 'json', 'reference', 'vector', 'bigint'].includes(declaration.kind) && typed[name] !== null && typed[name] !== undefined && typed[name] !== '')
+            .map(([name, declaration]) => ({ label: declaration.label ?? name, value: displayValue(declaration.kind, typed[name], settings) })) : [];
         views.push({
             id: record.id, title: recordTitle(record, 'title'), url: urls.get(record.id) ?? null, collection: collection.name, kind: collection.singular,
             date: typeof record.publishedAt === 'number' ? formatSiteDate(record.publishedAt, settings) : '',
@@ -216,7 +289,9 @@ export async function entryViews(cms: CmsHost, collection: CollectionDefinition,
                 label: cms.taxonomies.declaration(declaration.taxonomy!).label,
                 terms: ((record[name] as string[] | undefined) ?? []).map(id => terms.get(id)).filter((term): term is TermShape => !!term).map(term => ({ name: term.name, url: termUrl(term, locale) })),
             })),
+            fields: typed,
             details,
+            template: typeof record.template === 'string' && record.template ? record.template : null,
             locale,
             comments: options.full && collection.comments ? await commentsView(cms, collection, record, urls.get(record.id) ?? '/', settings, options) : null,
         });

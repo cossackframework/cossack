@@ -33,6 +33,8 @@ export default function layout(site: SiteView, content: TemplateResult, helpers:
         </header>
         <main id="content" class=${`mx-auto w-full flex-1 px-6 py-10 ${width(helpers)}`}>${content}</main>
         <footer class="border-t border-border">
+            ${site.areas.footer?.length ? html`<div class=${`${frame} grid gap-8 border-b border-border py-8 text-sm sm:grid-cols-2 lg:grid-cols-3`}>
+                ${site.areas.footer.map(block => html`<div class="cms-content min-w-0">${helpers.block(block)}</div>`)}</div>` : null}
             <div class=${`${frame} flex flex-col gap-4 py-8 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between`}>
                 ${footer.length ? html`<nav aria-label=${__('Footer')}><ul class="flex flex-wrap gap-x-5 gap-y-2">
                     ${footer.flatMap(item => [item, ...item.children]).map(item => html`<li>${link(item, 'no-underline', helpers)}</li>`)}</ul></nav>` : null}

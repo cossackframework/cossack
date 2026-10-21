@@ -5,7 +5,7 @@ import { isCmsError, PERMISSIONS } from '@cossackframework/cms';
 import { requireAny } from '../../../../cms/guards';
 import { artwork, linkButton, notice, pageHeader } from '../../../../cms/ui';
 
-interface ThemeRow { name: string; label: string; description: string; version: string; locations: string[]; options: boolean; problems: string[]; active: boolean; logo: string | null; cover: string | null }
+interface ThemeRow { name: string; label: string; description: string; version: string; locations: string[]; parent: string; options: boolean; problems: string[]; active: boolean; logo: string | null; cover: string | null }
 
 /** Themes, WordPress style: every theme plugin as a card, the active one first. */
 @Page({ transport: 'http', middlewares: [requireAny(PERMISSIONS.manageAppearance)] })
@@ -25,8 +25,10 @@ export default class ThemesPage extends Cossack {
     async load() {
         const cms = this.c.get('cms');
         const active = await cms.activeTheme();
+        const labels = new Map(cms.themes().map(theme => [theme.name, theme.label]));
         this.themes = cms.themes().map(theme => ({
             name: theme.name, label: theme.label, description: theme.description, version: theme.version, locations: theme.locations.map(location => location.label),
+            parent: theme.parent ? labels.get(theme.parent) ?? theme.parent : '',
             options: Boolean(theme.options), problems: [...theme.problems], active: theme.name === active, logo: theme.logo, cover: theme.cover,
         })).sort((a, b) => Number(b.active) - Number(a.active));
     }
@@ -67,6 +69,7 @@ export default class ThemesPage extends Cossack {
                         ${theme.active ? component(Badge, { variant: 'success' }, __('Active')) : theme.problems.length ? component(Badge, { variant: 'destructive' }, __('Broken')) : null}
                     </div>
                     ${theme.description ? html`<p class="text-sm text-muted-foreground">${theme.description}</p>` : null}
+                    ${theme.parent ? html`<p class="text-xs text-muted-foreground">${__('Child theme of')} ${theme.parent}</p>` : null}
                     ${theme.locations.length ? html`<p class="text-xs text-muted-foreground">${__('Menu locations')}: ${theme.locations.join(', ')}</p>` : null}
                     ${theme.problems.length ? html`<ul role="alert" class="list-disc space-y-1 pl-5 text-xs text-destructive">${theme.problems.map(problem => html`<li>${problem}</li>`)}</ul>` : null}
                     <div class="flex flex-wrap gap-2 pt-1">

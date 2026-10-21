@@ -11,8 +11,9 @@ pure functions over view data and never read the database. Every item below keep
   derived from `fields`, so a theme never sees two values for one field.
 - **Head contributions.** An optional `templates/head.ts` returns a `HeadValue` for
   `(site, helpers)`; the site layout merges it under the page's own head, so a page's title
-  and meta win. Theme stylesheets and fonts ship under `assets/`, served like logos, and the
-  head template links them by their registry URLs.
+  and meta win. Theme stylesheets and fonts ship under `assets/` (`.css`, `.woff2`, `.woff`,
+  `.ttf`, `.otf` besides images), served like logos, and the head template links them with
+  `helpers.asset('assets/<file>')`.
 - **Loaders, not database access in templates.** A theme's `server.ts` exports `loaders`,
   keyed like templates (`layout`, `home`, `entry`, `entry-<collection>`, `archive`, `term`,
   `term-<taxonomy>`, `search`). Each receives the resolved view and the plugin's
@@ -27,20 +28,31 @@ pure functions over view data and never read the database. Every item below keep
   grants an administrator sees. A theme with loaders that request grants is no longer
   theme-only; its templates still render before the grant, with `helpers.data` empty. A
   declarative form (named queries in `plugin.json`) can follow.
-- **Per-entry template.** Collections get an optional `template` field; the editor offers
-  the active theme's template names and saving validates against them; `entryTemplate`
-  tries the stored name before `entry-<collection>`. A name the active theme lacks, as
-  after a theme switch, falls back silently.
-- **Site collections from plugins.** A plugin resource may set `site: true`: it gets URLs,
-  an archive, path resolution and a dashboard section like posts. A theme can then ship the
-  collections it is designed for, migrated and granted with the plugin.
-- **Child themes.** Manifest `extends: "<parent>"`. The host resolves the parent
-  registration and `assembleSiteTheme` layers the child's templates, options and locations
-  over the parent's, slot by slot, as it already layers `ui.ts` over files. A child stores
-  its option values under its own name (`<child>.<option>`), so switching between parent
-  and child stays a settings write; a child starts from its defaults.
-- **Widget areas.** A location whose items are blocks, edited under Appearance and exposed
-  on `SiteView.areas`. Blocks and patterns already cover what shortcodes and widgets did.
+- **Per-entry template.** Collections on the site (those with a `path`) get a core `template`
+  field; the editor offers the active theme's `entry-*` templates except those named after a
+  collection (`cms.entryTemplates()`), and a write that changes the value validates against
+  them; `entryTemplate` tries the stored name before `entry-<collection>`. A name the active
+  theme lacks, as after a theme switch, falls back silently and survives other edits.
+- **Site collections from plugins.** A plugin manifest declares `collections`, definitions
+  like a module's: each is stored as `cms/<name>` and gets URLs, an archive, path resolution
+  and a dashboard section like posts, because every site and dashboard path already keys
+  collections that way (a `site: true` flag on generic plugin resources would need all of
+  them generalized). A theme can then ship the collections it is designed for, migrated and
+  granted with the plugin: they are hidden from the site and the dashboard until the plugin
+  is active, count as the plugin's own resources for its repositories and the policy lints,
+  and make it more than theme-only. A name another module or plugin declares makes the plugin invalid.
+- **Child themes.** `theme.extends: "<parent>"` in the manifest. The host resolves the parent
+  registration and `assembleSiteTheme` layers the child's templates, loaders, assets,
+  options, locations and areas over the parent's, slot by slot, as it already layers `ui.ts`
+  over files. Themes extend one level; a missing or invalid parent makes the child unusable.
+  A child stores its option values under its own name (`<child>.<option>`), so switching
+  between parent and child stays a settings write; a child starts from its defaults. Pages
+  carry the parent's name in their theme state so the browser assembles the same theme.
+- **Widget areas.** `theme.areas` names them, like locations. Each area's blocks are one
+  `cms_areas` row (host step 7) saved with a revision check and validated like a blocks
+  field; areas keep their blocks across theme switches. Appearance → Widgets edits them;
+  `SiteView.areas` carries them rendered. Blocks and patterns already cover what shortcodes
+  and widgets did.
 - **No render-time hooks.** Plugins add data through loaders and markup through blocks.
   Nothing rewrites a theme's output.
 
@@ -49,10 +61,11 @@ pure functions over view data and never read the database. Every item below keep
 - **Why it is possible.** Blocks are stored as JSON with ids and arrive on the page as
   `RenderedBlock` with `id`, `type`, `data` and rendered `html`; bodies are ProseMirror JSON.
   Edits write JSON back and the same template re-renders. There is no second representation.
-- **Edit mode is page state.** A signed-in user with write access to the entry sees a
-  toolbar component in the site layout. The toolbar is a lazily imported chunk behind that
-  check: a static import from the site layout would land in every visitor's bundle.
-  Visitors get no extra markup or script.
+- **Edit mode is page state.** A signed-in user with write access to the entry sees a small
+  bar on the entry's page (fixed to the viewport, rendered by the page, which knows the
+  entry); `?edit` or its button enters edit mode. The editor is `site-editor.client.ts`,
+  imported only on entering edit mode: a static import would land in every visitor's
+  bundle. Visitors get no extra markup or script, and editors' pages are `private, no-store`.
 - **Marking blocks.** `helpers.block` and `helpers.content` wrap each block in edit mode with
   a `display: contents` marker carrying the block id. Themes never learn about editing; a
   theme that renders blocks through the helpers is editable. Core block renderers go
@@ -64,8 +77,10 @@ pure functions over view data and never read the database. Every item below keep
   The blocks field is a true array: drag or use the keyboard to reorder; it is a splice,
   reusing the menu editor's drag and move code. Title, slug, terms and custom fields open
   in a side panel reusing dashboard forms.
-- **Saving.** Through the existing content API with the revision check; a stale page gets
-  a conflict notice and reloads. Edit mode renders the draft like a preview, so previews,
+- **Saving.** Through the dashboard editor's save (`saveEntry`, the same repository update
+  with the revision check that the content API makes, plus typed tags becoming terms); a
+  stale page gets a conflict notice and reloads. Every server call checks again that the
+  user may update the entry. Edit mode renders the draft like a preview, so previews,
   revisions and scheduling apply unchanged.
 - **Out of scope.** Options and menus stay in Customize. Loader data is read-only on the
   page. Blocks a theme renders outside the helpers are not editable in place.
@@ -88,4 +103,15 @@ pure functions over view data and never read the database. Every item below keep
 - A signed-in editor reorders and edits blocks on the public page and the change shows in
   the dashboard's revision history.
 - Visitors' HTML and client bundle are unchanged by edit mode, checked by a test that
-  compares both with and without the editor present.
+  compares a visitor's page before and during an unsaved edit, and the scripts a visitor's
+  page and an editor's page load; the editor's chunk loads only on entering edit mode.
+
+## Outcome
+
+| Area | Delivered | Verified by |
+| --- | --- | --- |
+| CMS package | `EntryView.fields` (`FieldView`, `EntryReference`), `EntryView.template`; `ThemeHelpers.data` and `asset()`; `SiteTheme.head`; `templateCandidates`, `pickTemplate`, `entryTemplate` with a chosen template, `entryTemplateChoices`; `cms.themeData()` and `cms.themeLoaders()` (`ThemeLoaders`, `ThemeLoaderContext`, `themeLoaderTimeoutMs`, `themeDataLimit`); manifest `collections` (`CollectionDefinition.plugin`, shown only while the plugin is active, own resources of its plugin); the core `template` field (`ENTRY_TEMPLATE`, `cms.entryTemplates()`, checked on change); `theme.extends` (`layerSiteThemes`, `ThemeInfo.parent`); `theme.areas`, `cms.areas` (`CmsAreas`, host step 7 `cms_areas`), `cms.areaLocations()`, `SiteView.areas` | `tests/themes.test.ts` (live: loaders under grants, failures, timeouts and limits; plugin collections; chosen templates across a theme switch; child themes; widget areas) and unit tests for candidates, layering and manifest checks; 108 tests in the package |
+| Framework | The plugin registry carries `templates/*.ts` modules and serves `.css` and font files from `assets/` | `plugin-composition.test.ts` |
+| CLI | Plugin policy lints treat a plugin's collections as its own resources | `plugin-policy.test.js` |
+| Scaffold | Entry views with typed fields and references; site pages run loaders and merge theme heads; the Template box in the entry editor; Appearance → Widgets; the default theme's footer area; the site editor (`site-editor.ts`, `site-editing.ts`, `site-editor.client.ts`) with shared field controls and media chooser; the SSR build names assets like the client build, so theme stylesheets resolve | Recipe tests; `generated-runtime-cms-themes.test.js` |
+| Generated app | The flow in [Done when](#done-when): a portfolio child theme ships `projects`, lists related projects through its loader once granted and links its stylesheet; a page uses `entry-wide`; a footer widget shows; in Chromium an editor reorders a block with the keyboard, edits another in place, saves (revision 2 by them in the dashboard) and gets a conflict notice after a save elsewhere; visitors' HTML has no edit markup and the editor chunk loads only in edit mode | `generated-runtime-cms-themes.test.js` |

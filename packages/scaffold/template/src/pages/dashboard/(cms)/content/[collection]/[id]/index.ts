@@ -1,19 +1,19 @@
 import { Cossack, Page, State, ClientState, Server, Client, PreventNavigation, type HeadValue } from '@cossackframework/core';
 import { Button, Checkbox, Input, Modal, NativeSelect, Textarea, toast } from '@cossackframework/ui';
 import { html, component, unsafeHTML, type TemplateResult } from '@cossackframework/renderer';
-import { blockId, evaluateRule, formatBytes, isCmsError, languageName, mediaKind, recordTitle, richTextBlocks, type EmbeddedBlock, type MediaKind, type RecordShape, type RichTextDoc } from '@cossackframework/cms';
+import { blockId, evaluateRule, findBlock, formatBytes, isCmsError, languageName, mediaKind, recordTitle, richTextBlocks, updateBlock, type EmbeddedBlock, type MediaKind, type RecordShape, type RichTextDoc } from '@cossackframework/cms';
 import { renderMarkdown } from '@cossackframework/cms/server';
 import { editorView, entryValues, fieldErrors, mediaPreviews, parentOptions, routeResource, saveEntry, termOptions, type MediaPreview, type SaveIntent } from '../../../../../../cms/content';
-import { blockDefaults, controlValue, editorInput, entryUrl, suggestedSlug, type EditorField, type EditorValues, type EditorView, type TermOption } from '../../../../../../cms/editor';
+import { blockDefaults, controlValue, editorInput, entryUrl, suggestedSlug, type EditorBlock, type EditorField, type EditorValues, type EditorView, type TermOption } from '../../../../../../cms/editor';
 import { RichTextField, richTextEditors } from '../../../../../../cms/rich-text-field';
-import { BlockInserter } from '../../../../../../cms/block-inserter';
+import { BlockTree } from '../../../../../../cms/block-tree';
+import { fieldControl } from '../../../../../../cms/field-controls';
 import { box, CONTROL, linkButton, notice, shortDate, STATUS_LABELS, statusBadge } from '../../../../../../cms/ui';
 import { siteOrigin } from '../../../../../../cms/seo';
 
-type MediaTarget = { field: string; block?: number; key?: string; multiple?: boolean; insert?: boolean; richText?: boolean; dialog?: boolean; group?: boolean };
+type MediaTarget = { field: string; block?: string; key?: string; multiple?: boolean; insert?: boolean; richText?: boolean; dialog?: boolean; group?: boolean };
 /** A block embedded in a rich text field, being edited in the block dialog. */
 interface BlockDialog { field: string; id: string; type: string; values: Record<string, unknown>; errors: Record<string, string> }
-interface Block { id: string; type: string; data: Record<string, unknown> }
 
 /** A translation of the entry, or a language it has none in yet. */
 interface TranslationLink { code: string; label: string; id: string | null; title: string; status: string }
@@ -52,6 +52,8 @@ export default class EntryEditor extends Cossack {
     /** The saved status, which the Publish button's label depends on. */
     @State() savedStatus = '';
     @State() comments = false;
+    /** The active theme's templates an editor can choose for this entry, such as `entry-wide`. */
+    @State() templates: string[] = [];
     @State() languages: { multilingual: boolean; options: { code: string; label: string }[] } = { multilingual: false, options: [] };
     @State() translations: TranslationLink[] = [];
     @State() seo = { origin: '', siteTitle: '', separator: '–' };
@@ -103,6 +105,7 @@ export default class EntryEditor extends Cossack {
             }
             const collection = resource.owner === 'cms' ? cms.collection(resource.name) : null;
             this.comments = Boolean(collection?.comments);
+            if (resource.fields.template) this.templates = await cms.entryTemplates();
             if (record) {
                 this.rev = record.rev;
                 this.savedStatus = String(record.status ?? '');
@@ -391,34 +394,13 @@ export default class EntryEditor extends Cossack {
 
     // --- Blocks ----------------------------------------------------------------
 
-    private blocks(field: string): Block[] {
-        return (this.values[field] as Block[] | undefined) ?? [];
+    private blocks(field: string): EditorBlock[] {
+        return (this.values[field] as EditorBlock[] | undefined) ?? [];
     }
 
     @Client()
-    addBlock(field: string, type: string) {
-        const option = this.view?.blocks.find(block => block.name === type);
-        if (!option) return;
-        this.set(field, [...this.blocks(field), { id: blockId(), type: option.name, data: blockDefaults(option) }]);
-    }
-
-    @Client()
-    moveBlock(field: string, index: number, delta: number) {
-        const blocks = [...this.blocks(field)];
-        const target = index + delta;
-        if (target < 0 || target >= blocks.length) return;
-        [blocks[index], blocks[target]] = [blocks[target]!, blocks[index]!];
-        this.set(field, blocks);
-    }
-
-    @Client()
-    removeBlock(field: string, index: number) {
-        this.set(field, this.blocks(field).filter((_, position) => position !== index));
-    }
-
-    @Client()
-    setBlock(field: string, index: number, key: string, value: unknown) {
-        this.set(field, this.blocks(field).map((block, position) => position === index ? { ...block, data: { ...block.data, [key]: value } } : block));
+    setBlock(field: string, id: string, key: string, value: unknown) {
+        this.set(field, updateBlock(this.blocks(field), id, block => ({ ...block, data: { ...block.data, [key]: value } })));
     }
 
     // --- Media -----------------------------------------------------------------
@@ -461,8 +443,7 @@ export default class EntryEditor extends Cossack {
             const markdown = mediaKind(file.contentType) === 'image' ? `![${file.alt || file.title}](${file.url})` : `[${file.title}](${file.url})`;
             this.format(target.field, `${markdown}\n`);
         } else if (target.block !== undefined && target.key) {
-            const block = this.blocks(target.field)[target.block];
-            const current = block?.data[target.key];
+            const current = findBlock(this.blocks(target.field), target.block)?.data[target.key];
             this.setBlock(target.field, target.block, target.key, target.multiple ? [...new Set([...(Array.isArray(current) ? current : []), file.id])] : file.id);
         } else {
             const current = this.values[target.field];
@@ -641,24 +622,10 @@ export default class EntryEditor extends Cossack {
                 ${component(Checkbox, { checked: chosen.includes(choice.name), '@change': (event: Event) => change((event.target as HTMLInputElement).checked
                     ? [...new Set([...chosen, choice.name])].join('\n') : chosen.filter(name => name !== choice.name).join('\n')) })} ${choice.label}</label>`)}</div>`;
         }
-        const input = (type: 'text' | 'number' | 'datetime-local') => component(Input, { id, type, '.value': String(value ?? ''), step: field.kind === 'integer' ? 1 : 'any',
-            ...(field.kind === 'string' && field.max ? { maxlength: field.max } : {}), '@input': (event: Event) => change((event.target as HTMLInputElement).value) });
         switch (field.kind) {
-            case 'boolean': return html`<label class="flex items-center gap-2 text-sm text-foreground cursor-pointer">
-                ${component(Checkbox, { id, checked: value === true, '@change': (event: Event) => change((event.target as HTMLInputElement).checked) })} ${field.label}</label>`;
-            case 'enum': return component(NativeSelect, { id, '@change': (event: Event) => change((event.target as HTMLSelectElement).value) }, html`
-                ${field.required ? null : html`<option value="" ?selected=${!value}>—</option>`}
-                ${field.choices.map(choice => html`<option value=${choice.value} ?selected=${choice.value === value}>${choice.label}</option>`)}`);
-            case 'integer': case 'number': return input('number');
-            case 'datetime': return input('datetime-local');
-            case 'reference': return component(NativeSelect, { id, '@change': (event: Event) => change((event.target as HTMLSelectElement).value) }, html`
-                <option value="" ?selected=${!value}>—</option>
-                ${(this.references[field.name] ?? []).map(option => html`<option value=${option.id} ?selected=${option.id === value}>${option.title}</option>`)}`);
-            case 'json': return component(Textarea, { id, rows: 6, class: 'font-mono text-xs', '.value': String(value ?? ''), '@input': (event: Event) => change((event.target as HTMLTextAreaElement).value) });
-            case 'list': return field.media ? this.mediaControl({ ...target, multiple: true }, value, field.label)
-                : component(Textarea, { id, rows: 4, '.value': String(value ?? ''), '@input': (event: Event) => change((event.target as HTMLTextAreaElement).value) });
-            case 'text': return field.format === 'markdown' && target.block === undefined ? this.markdownControl(field, value, change, id)
-                : component(Textarea, { id, rows: field.format === 'markdown' ? 6 : 4, '.value': String(value ?? ''), '@input': (event: Event) => change((event.target as HTMLTextAreaElement).value) });
+            // Media files open this editor's picker, which knows where the chosen file goes.
+            case 'list': if (field.media) return this.mediaControl({ ...target, multiple: true }, value, field.label); break;
+            case 'text': if (field.format === 'markdown' && target.block === undefined) return this.markdownControl(field, value, change, id); break;
             case 'blocks': return this.blocksControl(field);
             case 'richtext': return component(RichTextField, {
                 id, label: field.label, value: (value as RichTextDoc | null) ?? null,
@@ -671,8 +638,9 @@ export default class EntryEditor extends Cossack {
                 // Patterns are not inserted into patterns.
                 ...(this.view?.route === 'patterns' ? {} : { onPatterns: () => this.openPatterns(field.name) }),
             });
-            default: return field.media ? this.mediaControl(target, value, field.label) : input('text');
+            default: if (field.media && field.kind === 'string') return this.mediaControl(target, value, field.label);
         }
+        return fieldControl(field, value, change, id, { options: this.references[field.name] ?? [] }) ?? html``;
     }
 
     private markdownControl(field: EditorField, value: unknown, change: (value: unknown) => void, id: string): TemplateResult {
@@ -707,38 +675,12 @@ export default class EntryEditor extends Cossack {
     }
 
     private blocksControl(field: EditorField): TemplateResult {
-        const allowed = (this.view?.blocks ?? []).filter(block => block.name !== 'core/pattern' && (!field.blocks.length || field.blocks.includes(block.name)));
-        const blocks = this.blocks(field.name);
-        const iconButton = (label: string, title: string, run: () => void, disabled = false) => html`<button type="button" title=${title} aria-label=${title} ?disabled=${disabled}
-            class="rounded px-2 py-0.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground border border-border bg-background cursor-pointer disabled:opacity-40 disabled:cursor-default" @click=${run}>${label}</button>`;
         return html`<div class="space-y-3">
-            ${blocks.length ? null : html`<p class="rounded-md border border-dashed border-border p-4 text-center text-sm text-muted-foreground">${__('No blocks yet. Add the first one below.')}</p>`}
-            ${blocks.map((block, index) => {
-                const option = allowed.find(entry => entry.name === block.type) ?? this.view?.blocks.find(entry => entry.name === block.type);
-                return html`<section class="rounded-lg border border-border bg-card" aria-label=${`${option?.label ?? block.type} ${index + 1}`}>
-                    <header class="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
-                        <span class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">${option?.label ?? block.type}</span>
-                        <span class="flex gap-1">
-                            ${iconButton('↑', __('Move up'), () => this.moveBlock(field.name, index, -1), index === 0)}
-                            ${iconButton('↓', __('Move down'), () => this.moveBlock(field.name, index, 1), index === blocks.length - 1)}
-                            ${iconButton('✕', __('Remove block'), () => this.removeBlock(field.name, index))}
-                        </span>
-                    </header>
-                    <div class="space-y-3 p-3">
-                        ${option ? option.fields.map(entry => {
-                            const id = `field-${field.name}-${block.id}-${entry.name}`;
-                            const error = this.errors[field.name]?.includes(`${block.id}.${entry.name}`) ? this.errors[field.name] : '';
-                            return html`<div class="space-y-1">
-                                ${entry.kind === 'boolean' ? null : html`<label for=${id} class="block text-xs font-medium text-foreground">${entry.label}${entry.required ? ' *' : ''}</label>`}
-                                ${this.control(entry, block.data[entry.name], value => this.setBlock(field.name, index, entry.name, value), { field: field.name, block: index, key: entry.name }, id)}
-                                ${entry.description ? html`<p class="text-xs text-muted-foreground">${entry.description}</p>` : null}
-                                ${error ? html`<p role="alert" class="text-xs text-destructive">${error}</p>` : null}
-                            </div>`;
-                        }) : html`<p class="text-sm text-muted-foreground">${__('This block type is no longer available. Its content stays until you remove it.')}</p>`}
-                    </div>
-                </section>`;
+            ${component(BlockTree, {
+                id: `field-${field.name}`, blocks: this.blocks(field.name), options: this.view?.blocks ?? [], allowed: field.blocks, inline: true, error: this.errors[field.name] ?? '',
+                onChange: (blocks: EditorBlock[]) => this.set(field.name, blocks),
+                control: (entry: EditorField, value: unknown, change: (value: unknown) => void, block: EditorBlock, id: string) => this.control(entry, value, change, { field: field.name, block: block.id, key: entry.name }, id),
             })}
-            ${allowed.length ? component(BlockInserter, { id: `field-${field.name}-blocks`, blocks: allowed, onPick: (type: string) => this.addBlock(field.name, type) }) : null}
             ${this.errorFor(field.name)}
         </div>`;
     }
@@ -984,6 +926,23 @@ export default class EntryEditor extends Cossack {
             </form>` : html``);
     }
 
+    /** The theme template for this entry, when the active theme offers more than its default. */
+    templateBox(): TemplateResult | null {
+        const current = String(this.values.template ?? '');
+        if (!this.templates.length && !current) return null;
+        // A template the active theme no longer has stays listed, so saving keeps it.
+        const choices = current && !this.templates.includes(current) ? [...this.templates, current] : this.templates;
+        const label = (name: string) => name.slice('entry-'.length).replace(/[-_]+/g, ' ').replace(/^./, letter => letter.toUpperCase());
+        return box(__('Template'), html`<div class="space-y-1">
+            <label for="field-template" class="sr-only">${__('Template')}</label>
+            <select id="field-template" class=${CONTROL} @change=${(event: Event) => this.set('template', (event.target as HTMLSelectElement).value)}>
+                <option value="" ?selected=${!current}>${__('Default template')}</option>
+                ${choices.map(name => html`<option value=${name} ?selected=${name === current}>${label(name)}${this.templates.includes(name) ? '' : ` (${__('not in the active theme')})`}</option>`)}
+            </select>
+            ${this.errorFor('template')}
+        </div>`);
+    }
+
     render() {
         const view = this.view;
         if (!view) return html`<div class="space-y-4">${notice(this.error || __('Loading…'), this.error ? 'error' : 'info')}${linkButton(__('Back'), `/dashboard/content/${this.route}`, 'outline')}</div>`;
@@ -1048,6 +1007,7 @@ export default class EntryEditor extends Cossack {
                             ${component(Input, { id: 'field-menuOrder', type: 'number', size: 'sm', '.value': String(this.values.menuOrder ?? '0'), '@input': (event: Event) => this.set('menuOrder', (event.target as HTMLInputElement).value) })}
                         </div>`) : null}
                     ${this.languages.multilingual && this.values.locale !== undefined && view.resource.startsWith('cms/') ? this.languagesBox(view) : null}
+                    ${this.templateBox()}
                     ${view.taxonomies.map(taxonomy => this.taxonomyBox(taxonomy))}
                     ${sidebar.length ? box(__('Details'), sidebar.map(field => this.fieldRow(field))) : null}
                     ${this.comments ? box(__('Discussion'), html`<label class="flex items-center gap-2 text-sm text-foreground cursor-pointer">

@@ -10,7 +10,7 @@ const manifest = {
   commands: [{ name: 'close', description: 'Close tickets.', permission: 'support-desk:triage' }],
 };
 const lint = (source, override = {}) => lintPlugin({ manifest: { ...manifest, ...override }, files: [{ path: 'src/plugins/support-desk/server.ts', source }], parse: parseSync });
-const codes = source => lint(source).map(diagnostic => diagnostic.code);
+const codes = (source, override = {}) => lint(source, override).map(diagnostic => diagnostic.code);
 
 describe('plugin policy', () => {
   it('accepts a plugin that stays within its manifest', () => {
@@ -71,6 +71,12 @@ describe('plugin policy', () => {
     `)).toEqual(['COSSACK_PLUGIN_PERMISSION', 'COSSACK_PLUGIN_PERMISSION', 'COSSACK_PLUGIN_HOOK', 'COSSACK_PLUGIN_PERMISSION']);
     const manifestOnly = lintPlugin({ manifest: { ...manifest, commands: [{ name: 'close', description: 'x', permission: 'cms:users' }] }, files: [], parse: parseSync });
     expect(manifestOnly).toEqual([expect.objectContaining({ code: 'COSSACK_PLUGIN_PERMISSION', file: 'src/plugins/support-desk/plugin.json' })]);
+  });
+
+  it('treats the collections a plugin ships as its own', () => {
+    const source = `export const loaders = { entry: (_: unknown, { cms, principal }: any) => cms.resource('cms/projects').list({}, { principal }) };`;
+    expect(codes(source)).toEqual(['COSSACK_PLUGIN_PERMISSION']);
+    expect(codes(source, { collections: [{ name: 'projects', label: 'Projects', singular: 'Project', fields: {} }] })).toEqual([]);
   });
 
   it('rejects host secrets', () => {

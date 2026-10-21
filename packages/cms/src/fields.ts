@@ -27,6 +27,8 @@ export interface FieldDeclaration {
     readonly min?: number;
     /** enum: allowed values. */
     readonly values?: readonly string[];
+    /** enum: labels for values, by value. */
+    readonly choices?: { readonly [value: string]: string };
     /** string: regular expression checked on write by the host. */
     readonly pattern?: string;
     /** reference: target resource ID (`owner/name`). */
@@ -259,24 +261,8 @@ export function validateValue(name: string, declaration: FieldDeclaration, value
     }
 }
 
-const BLOCK_ID = /^[A-Za-z0-9_-]{1,40}$/;
-const BLOCK_TYPE = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\/[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
-
-/** The shape of a `blocks` value: `{ id, type, data }` items. Each block's data is checked against its type separately. */
-export function blocksShapeProblem(value: unknown): string | undefined {
-    if (!Array.isArray(value) || value.length > 200) return 'must be a list of at most 200 blocks.';
-    const ids = new Set<string>();
-    for (const block of value) {
-        if (!block || typeof block !== 'object' || Array.isArray(block)) return 'must contain blocks.';
-        const { id, type, data } = block as { id?: unknown; type?: unknown; data?: unknown };
-        if (typeof id !== 'string' || !BLOCK_ID.test(id) || ids.has(id)) return 'blocks need distinct IDs.';
-        ids.add(id);
-        if (typeof type !== 'string' || !BLOCK_TYPE.test(type)) return 'blocks need a type such as core/paragraph.';
-        if (!data || typeof data !== 'object' || Array.isArray(data) || Object.getPrototypeOf(data) !== Object.prototype) return 'block data must be an object.';
-    }
-    if (JSON.stringify(value).length > 512 * 1024) return 'must be at most 512 KB.';
-    return undefined;
-}
+export { blocksShapeProblem } from './block-shape';
+import { blocksShapeProblem } from './block-shape';
 
 function isJsonObject(value: unknown, depth: number): boolean {
     if (depth > 32 || value === null || typeof value !== 'object' || Array.isArray(value) || Object.getPrototypeOf(value) !== Object.prototype) return false;

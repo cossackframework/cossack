@@ -7,7 +7,7 @@ import { planSchema, type Catalog } from '../src/server/schema';
 
 const catalog = (tables: Catalog['tables'] = new Map(), ledger: Partial<Catalog['ledger']> = {}): Catalog => ({
     sequence: 7, engineVersion: '2.8.0', tables,
-    ledger: { host: new Set([1, 2, 3, 4, 5, 6]), explicit: new Map(), hashes: new Map(), ...ledger },
+    ledger: { host: new Set([1, 2, 3, 4, 5, 6, 7]), explicit: new Map(), hashes: new Map(), ...ledger },
 });
 
 describe('fields', () => {

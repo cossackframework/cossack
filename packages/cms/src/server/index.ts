@@ -1,7 +1,8 @@
 // Server-only CMS host. Import from server code; the security transform keeps it out of the client.
-export { CmsHost, createCMS, PLUGIN_ENABLED, type SiteLanguages, type ThemeInfo, type CmsOptions, type CmsModule, type PluginContext, type PluginCms, type PluginResource, type PluginRegistrationLike, type ActivationStatus, type PluginStatus, type CommandHandler, type CommandContext } from './host';
+export { CmsHost, createCMS, PLUGIN_ENABLED, type SiteLanguages, type ThemeInfo, type CmsOptions, type CmsModule, type PluginContext, type PluginCms, type PluginResource, type PluginRegistrationLike, type ActivationStatus, type PluginStatus, type CommandHandler, type CommandContext, type ThemeLoader, type ThemeLoaders, type ThemeLoaderContext } from './host';
 export { ResourceRepository, type OperationContext, type ListOptions, type ListFilter, type FieldFilter } from './repository';
 export { CmsMenus, type MenuSummary } from './menus';
+export { CmsAreas, type AreaShape } from './areas';
 export { collectionSpec, searchTextPath, defineFieldSql, indexSql, readCatalog, planSchema, migrate, type Catalog, type SchemaPlan, type PlannedStep, type SchemaProblem, type MigrationReport, type CollectionSpec, type FieldSpec, type IndexSpec } from './schema';
 export { HOST_STEPS, HOST_TABLES } from './host-schema';
 export { Outbox, type DispatchReport, type OutboxOptions } from './outbox';

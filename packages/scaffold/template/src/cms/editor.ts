@@ -3,7 +3,7 @@
  * conversion from form values to typed record input. Client-safe; the server converts and
  * validates again before writing.
  */
-import { slugify, validateValue, type BlockCategory, type FieldDeclaration, type FieldKind } from '@cossackframework/cms';
+import { slugify, validateValue, type BlockCategory, type Breakpoint, type FieldDeclaration, type FieldKind } from '@cossackframework/cms';
 
 /** One field as the editor shows it. */
 export interface EditorField {
@@ -50,6 +50,19 @@ export interface BlockOption {
     icon: string;
     category: BlockCategory;
     fields: EditorField[];
+    /** A container: the types it holds (empty for any) and how many at most. Null for a leaf block. */
+    children: { allowed: string[]; max: number | null } | null;
+    /** Types this block goes inside alone, such as a column in columns. */
+    parent: string[];
+}
+
+/** A block as editors hold it: its data as control values, nested blocks under a container. */
+export interface EditorBlock {
+    id: string;
+    type: string;
+    data: Record<string, unknown>;
+    layout?: { hide?: Breakpoint[] };
+    children?: EditorBlock[];
 }
 
 export interface EditorView {
@@ -161,18 +174,8 @@ function convert(field: EditorField, raw: unknown, blocks: readonly BlockOption[
     if (field.kind === 'richtext') return { value: raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : field.nullable ? null : undefined };
     if (field.kind === 'blocks') {
         if (!Array.isArray(raw)) return { value: [] };
-        const types = new Map(blocks.map(block => [block.name, block]));
-        const converted = [];
-        for (const block of raw as { id: string; type: string; data: Record<string, unknown> }[]) {
-            const data: Record<string, unknown> = {};
-            for (const entry of types.get(block.type)?.fields ?? []) {
-                const value = convert(entry, block.data?.[entry.name], []);
-                if ('error' in value) return { error: `${entry.label} ${value.error}` };
-                if (value.value !== undefined && value.value !== null && value.value !== '') data[entry.name] = value.value;
-            }
-            converted.push({ id: block.id, type: block.type, data });
-        }
-        return { value: converted };
+        const converted = blocksInput(raw as EditorBlock[], new Map(blocks.map(block => [block.name, block])));
+        return 'error' in converted ? converted : { value: converted.value };
     }
     if (field.kind === 'list' && field.media) return { value: Array.isArray(raw) ? raw.filter(item => typeof item === 'string') : [] };
     const text = typeof raw === 'string' ? (field.kind === 'text' || field.kind === 'json' ? raw : raw.trim()) : raw === undefined || raw === null ? '' : String(raw);
@@ -201,6 +204,24 @@ function convert(field: EditorField, raw: unknown, blocks: readonly BlockOption[
     }
 }
 
+/** Typed blocks from editor blocks, through the tree; a block's `layout` and `children` come along. */
+export function blocksInput(raw: readonly EditorBlock[], types: ReadonlyMap<string, BlockOption>): { value: EditorBlock[] } | { error: string } {
+    const converted: EditorBlock[] = [];
+    for (const block of raw) {
+        const data: Record<string, unknown> = {};
+        for (const entry of types.get(block.type)?.fields ?? []) {
+            const value = convert(entry, block.data?.[entry.name], []);
+            if ('error' in value) return { error: `${entry.label} ${value.error}` };
+            if (value.value !== undefined && value.value !== null && value.value !== '') data[entry.name] = value.value;
+        }
+        const hide = block.layout?.hide?.filter(Boolean) ?? [];
+        const children = Array.isArray(block.children) ? blocksInput(block.children, types) : undefined;
+        if (children && 'error' in children) return children;
+        converted.push({ id: block.id, type: block.type, data, ...(hide.length ? { layout: { hide } } : {}), ...(children ? { children: children.value } : {}) });
+    }
+    return { value: converted };
+}
+
 /** The slug an untouched slug field follows. */
 export function suggestedSlug(title: string): string {
     return slugify(title) || '';
@@ -212,4 +233,24 @@ export { entryUrl } from '@cossackframework/cms';
 /** A new block's data: each field's default, or empty. */
 export function blockDefaults(block: BlockOption): Record<string, unknown> {
     return Object.fromEntries(block.fields.map(field => [field.name, controlValue(field, field.defaultValue)]));
+}
+
+/** A new block of a type: defaults, and for columns two columns to start with. */
+export function newBlock(type: string, options: readonly BlockOption[], id: () => string): EditorBlock | null {
+    const option = options.find(entry => entry.name === type);
+    if (!option) return null;
+    const block: EditorBlock = { id: id(), type, data: blockDefaults(option), ...(option.children ? { children: [] } : {}) };
+    if (type === 'core/columns') block.children = [1, 2].flatMap(() => newBlock('core/column', options, id) ?? []);
+    return block;
+}
+
+/** Stored block data as control values, through the tree, so the editor's controls can show them. */
+export function editorBlocks(blocks: readonly EditorBlock[], options: readonly BlockOption[]): EditorBlock[] {
+    return blocks.map(block => {
+        const option = options.find(entry => entry.name === block.type);
+        return {
+            ...block, data: option ? Object.fromEntries(option.fields.map(field => [field.name, controlValue(field, block.data[field.name])])) : { ...block.data },
+            ...(block.children ? { children: editorBlocks(block.children, options) } : {}),
+        };
+    });
 }

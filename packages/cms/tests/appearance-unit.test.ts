@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
     allowedMoves, buildMenu, checkRichText, dropDepths, flattenMenu, manifestProblems, menuProblems, moveRows, normalizeMenu, richTextBlocks, richTextEmpty,
-    richTextFromPlain, richTextHtml, richTextMedia, richTextParts, richTextPlain, safeLinkUrl, shiftRows, siteThemeProblems, themeProblems, validateValue, field, assembleSiteTheme, entryTemplate, archiveTemplate, type SiteTheme,
+    richTextFromPlain, richTextHtml, richTextMedia, richTextParts, richTextPlain, safeLinkUrl, shiftRows, siteThemeProblems, themeProblems, validateValue, field, assembleSiteTheme, layerSiteThemes, entryTemplate, archiveTemplate, templateCandidates, entryTemplateChoices, type SiteTheme,
     type MenuItem, type MenuRow, type RichTextDoc,
 } from '../src/index';
 import { collectionSpec } from '../src/server/schema';
@@ -131,6 +131,8 @@ describe('menus', () => {
     });
 });
 
+const noopTemplate = () => null;
+
 describe('themes', () => {
     const manifest = (theme: unknown) => ({ schemaVersion: 1, name: 'paper', version: '1.0.0', theme });
 
@@ -173,6 +175,51 @@ describe('themes', () => {
         expect(name(archiveTemplate(theme, { kind: 'home', collection: 'posts', taxonomy: null }))).toBe('home');
         // No search template: the archive.
         expect(name(archiveTemplate(theme, { kind: 'search', collection: null, taxonomy: null }))).toBe('archive');
+    });
+
+    it('lists template candidates, which loaders follow too', () => {
+        expect(templateCandidates({ kind: 'entry', collection: 'posts' })).toEqual(['entry-posts', 'entry']);
+        expect(templateCandidates({ kind: 'entry', collection: 'pages', template: 'entry-wide' })).toEqual(['entry-wide', 'entry-pages', 'entry']);
+        // Only entry templates can be chosen for an entry.
+        expect(templateCandidates({ kind: 'entry', collection: 'pages', template: 'archive-posts' })).toEqual(['entry-pages', 'entry']);
+        expect(templateCandidates({ kind: 'entry', collection: 'my_things' })).toEqual(['entry-my_things', 'entry']);
+        expect(templateCandidates({ kind: 'term', collection: 'posts', taxonomy: 'tags' })).toEqual(['term-tags', 'term', 'archive-posts', 'archive']);
+        expect(templateCandidates({ kind: 'home', collection: 'posts', taxonomy: null })).toEqual(['home', 'archive-posts', 'archive']);
+        expect(templateCandidates({ kind: 'search', collection: null, taxonomy: null })).toEqual(['search', 'archive']);
+        expect(templateCandidates({ kind: 'not-found' })).toEqual(['not-found']);
+    });
+
+    it('uses a chosen entry template, and falls back when the theme lacks it', () => {
+        const named = (name: string) => Object.assign(() => null as never, { templateName: name });
+        const theme: SiteTheme = { layout: named('layout'), entry: named('entry'), archive: named('archive'), templates: { 'entry-wide': named('entry-wide'), 'entry-posts': named('entry-posts'), term: named('term') } };
+        const name = (template: unknown) => (template as { templateName: string }).templateName;
+        expect(name(entryTemplate(theme, 'pages', 'entry-wide'))).toBe('entry-wide');
+        expect(name(entryTemplate(theme, 'posts', 'entry-gone'))).toBe('entry-posts');
+        expect(name(entryTemplate(theme, 'pages', 'entry-gone'))).toBe('entry');
+        expect(entryTemplateChoices(theme)).toEqual(['entry-posts', 'entry-wide']);
+        expect(entryTemplateChoices(undefined)).toEqual([]);
+    });
+
+    it('layers a child theme over its parent, slot by slot', () => {
+        const parent = { layout: () => 1, entry: () => 2, archive: () => 3, templates: { term: () => 4 }, blocks: { 'x/a': () => 5 } };
+        const child = { entry: () => 6, templates: { 'entry-wide': () => 7 }, blocks: { 'x/b': () => 8 } };
+        const layered = layerSiteThemes(parent, child) as Record<string, unknown>;
+        expect(layered.layout).toBe(parent.layout);
+        expect(layered.entry).toBe(child.entry);
+        expect(Object.keys(layered.templates as object)).toEqual(['term', 'entry-wide']);
+        expect(Object.keys(layered.blocks as object)).toEqual(['x/a', 'x/b']);
+        expect(layerSiteThemes(undefined, child)).toBe(child);
+        expect(layerSiteThemes(parent, undefined)).toBe(parent);
+        // Assembled from files, the parent's first.
+        const files = (stems: string[]) => Object.fromEntries(stems.map(stem => [stem, { default: () => stem }]));
+        expect(Object.keys(assembleSiteTheme({ templates: files(['entry']) }, { templates: files(['layout', 'entry', 'archive']) }) as object)).toEqual(['layout', 'entry', 'archive']);
+        expect(themeProblems({ label: 'X', extends: 'Bad Name', areas: { Side: '' } })).toEqual(['theme.extends must name a theme plugin.', expect.stringMatching(/theme.areas: Side must be/), expect.stringMatching(/theme.areas.Side needs a label/)]);
+    });
+
+    it('takes the head template from templates/head.ts', () => {
+        const head = () => ({ links: [] });
+        expect(assembleSiteTheme({ templates: { head: { default: head } } })).toEqual({ head });
+        expect(siteThemeProblems({ layout: noopTemplate, entry: noopTemplate, archive: noopTemplate, head: 'x' })).toEqual(['theme.head must be a function.']);
     });
 
     it('checks the assembled theme', () => {

@@ -25,8 +25,8 @@ export const PLUGIN_SERVER_ENTRY = 'server.ts';
 export const PLUGIN_UI_ENTRY = 'ui.ts';
 /** A theme's templates, one default export per file; imported in every environment. */
 export const PLUGIN_TEMPLATES = 'templates/*.ts';
-/** Images a plugin ships, such as its logo and cover, served as build assets. */
-export const PLUGIN_ASSETS = 'assets/*.{png,jpg,jpeg,webp,gif,avif,svg}';
+/** Files a plugin ships, served as build assets: its logo and cover, and a theme's stylesheets and fonts. */
+export const PLUGIN_ASSETS = 'assets/*.{png,jpg,jpeg,webp,gif,avif,svg,css,woff2,woff,ttf,otf}';
 
 export class PluginSourceError extends Error {
   readonly code: 'COSSACK_PLUGIN_NAME_INVALID' | 'COSSACK_PLUGIN_ROUTE_CONFLICT' | 'COSSACK_PLUGIN_MANIFEST_INVALID';

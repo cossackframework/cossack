@@ -4,6 +4,7 @@
  * only after this check, the policy lints and an administrator's grant.
  */
 import { blockProblems, type BlockDeclaration } from './blocks';
+import { collectionProblems, type CollectionDefinition } from './collections';
 import { EXTENSION_POINTS } from './hooks';
 import { OWNER_NAME, resourceProblems, type ResourceAction, type ResourceDeclaration } from './resource';
 import { themeProblems, type ThemeManifest } from './theme';
@@ -37,6 +38,11 @@ export interface CmsPluginManifest {
     readonly compatibility?: { readonly [pkg: string]: string };
     readonly dependencies?: { readonly [pkg: string]: string };
     readonly resources?: readonly ResourceDeclaration[];
+    /**
+     * Site collections, such as a portfolio theme's `projects`: entries with URLs, an archive
+     * and a dashboard section like posts, stored as `cms/<name>`. Migrated and granted with the plugin.
+     */
+    readonly collections?: readonly Omit<CollectionDefinition, 'builtin' | 'plugin'>[];
     /** Block types named `<plugin>/<name>`; `ui.ts` renders them through its `blocks` export. */
     readonly blocks?: readonly BlockDeclaration[];
     /** Extension points the plugin's server code registers handlers for. */
@@ -69,7 +75,7 @@ export interface CmsPluginManifest {
 export const HOST_SLOTS = Object.freeze(['dashboard.nav', 'dashboard.overview'] as const);
 export type HostSlot = (typeof HOST_SLOTS)[number];
 
-const KNOWN_FIELDS = new Set(['schemaVersion', 'name', 'version', 'description', 'compatibility', 'dependencies', 'resources', 'blocks', 'hooks', 'permissions', 'ui', 'commands', 'theme', 'logo', 'cover', 'package', 'source']);
+const KNOWN_FIELDS = new Set(['schemaVersion', 'name', 'version', 'description', 'compatibility', 'dependencies', 'resources', 'collections', 'blocks', 'hooks', 'permissions', 'ui', 'commands', 'theme', 'logo', 'cover', 'package', 'source']);
 const ARTWORK = /^assets\/[A-Za-z0-9][A-Za-z0-9._-]{0,80}\.(?:png|jpe?g|webp|gif|avif|svg)$/;
 const HOST = /^(?:\*\.)?(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$|^localhost$/;
 const ACTIONS = new Set(['read', 'create', 'update', 'delete']);
@@ -91,6 +97,14 @@ export function manifestProblems(manifest: unknown): string[] {
         for (const problem of resourceProblems({ ...resource, owner: name })) problems.push(`resource ${resource.name}: ${problem}`);
         if (resourceNames.has(resource.name)) problems.push(`resource ${resource.name} is declared twice.`);
         resourceNames.add(resource.name);
+    }
+    const collectionNames = new Set<string>();
+    for (const [index, collection] of (Array.isArray(value.collections) ? value.collections : value.collections === undefined ? [] : [null]).entries()) {
+        if (!collection || typeof collection !== 'object') { problems.push(`collections[${index}] must be a collection definition.`); continue; }
+        if ('builtin' in collection || 'plugin' in collection) problems.push(`collection ${collection.name}: builtin and plugin are set by the host.`);
+        for (const problem of collectionProblems(collection as CollectionDefinition)) problems.push(`collection ${collection.name}: ${problem}`);
+        if (collectionNames.has(collection.name)) problems.push(`collection ${collection.name} is declared twice.`);
+        collectionNames.add(collection.name);
     }
     const blockNames = new Set<string>();
     for (const [index, block] of (Array.isArray(value.blocks) ? value.blocks : value.blocks === undefined ? [] : [null]).entries()) {

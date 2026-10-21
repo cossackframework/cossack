@@ -389,6 +389,7 @@ export class ResourceRepository {
         // Filters can change values; validate the result again.
         const final = filtered === draft ? draft : this.#validate(action, filtered, previous, context.principal);
         await this.#checkReferences(final, id);
+        await this.#checkTemplate(final, previous);
         return this.#uniqueSlugs(final, id, context);
     }
 
@@ -420,6 +421,18 @@ export class ResourceRepository {
                     current = row instanceof RecordId ? String(row.key) : null;
                 }
             }
+        }
+    }
+
+    /**
+     * An entry's chosen template must be one of the active theme's when it changes. A value
+     * the theme no longer has, as after a theme switch, stays: the site falls back silently.
+     */
+    async #checkTemplate(draft: Draft, previous: RecordShape | null): Promise<void> {
+        const value = draft.template;
+        if (this.resource.owner !== 'cms' || !this.resource.fields.template || typeof value !== 'string' || !value || value === previous?.template) return;
+        if (!(await this.#host.entryTemplates()).includes(value)) {
+            throw new CmsError('CMS_VALIDATION', `${value} is not a template of the active theme.`, { fields: { template: 'is not a template of the active theme.' } });
         }
     }
 

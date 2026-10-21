@@ -2,6 +2,7 @@
 @import "@cossackframework/ui/theme/base.css";
 @import "@cossackframework/ui/theme/theme.css";
 @source "../node_modules/@cossackframework/ui/dist";
+@import "./cms/blocks.css";
 
 /*
  * View Transition animations.

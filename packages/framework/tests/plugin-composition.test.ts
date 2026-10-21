@@ -99,8 +99,8 @@ describe('plugin registry', () => {
     expect(client).not.toContain('server.ts');
     expect(client).not.toContain('plugin.json');
     expect(client).toContain("import.meta.glob('/src/plugins/*/ui.ts', { eager: true })");
-    // Logos and covers are build assets in both environments.
-    expect(client).toContain("import.meta.glob('/src/plugins/*/assets/*.{png,jpg,jpeg,webp,gif,avif,svg}', { eager: true, query: '?url', import: 'default' })");
+    // Logos, covers and theme stylesheets and fonts are build assets in both environments.
+    expect(client).toContain("import.meta.glob('/src/plugins/*/assets/*.{png,jpg,jpeg,webp,gif,avif,svg,css,woff2,woff,ttf,otf}', { eager: true, query: '?url', import: 'default' })");
     expect(client).toContain('assets: assetsOf(plugin.name)');
     // Theme templates are one module per file, in both environments.
     expect(client).toContain("import.meta.glob('/src/plugins/*/templates/*.ts', { eager: true })");

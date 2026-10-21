@@ -5,6 +5,7 @@
  * receive plain view data and helpers; they never read the database. Themes own templates,
  * never routes: the site's URLs come from its content.
  */
+import type { HeadValue } from '@cossackframework/core';
 import type { TemplateResult } from '@cossackframework/renderer';
 import { fieldProblems } from './fields';
 import { MENU_LOCATION, type MenuItemView } from './menus';
@@ -18,6 +19,14 @@ export interface ThemeManifest {
     readonly locations?: { readonly [name: string]: string };
     /** Options shown under Appearance → Customize, stored as settings `<plugin>.<option>`. */
     readonly options?: { readonly [name: string]: SettingDeclaration };
+    /**
+     * A parent theme, by plugin name. The child's templates, loaders, assets, options, menu
+     * locations and widget areas are layered over the parent's, slot by slot. Its option
+     * values are its own.
+     */
+    readonly extends?: string;
+    /** Widget areas: block lists edited under Appearance → Widgets, such as `{ "sidebar": "Sidebar" }`. */
+    readonly areas?: { readonly [name: string]: string };
 }
 
 const OPTION_KINDS = new Set(['string', 'text', 'enum', 'boolean', 'integer', 'number']);
@@ -34,6 +43,13 @@ export function themeProblems(theme: unknown): string[] {
     for (const [name, label] of locations) {
         if (!MENU_LOCATION.test(name)) problems.push(`theme.locations: ${name} must be lowercase letters, digits and hyphens.`);
         if (typeof label !== 'string' || !label.trim() || label.length > 60) problems.push(`theme.locations.${name} needs a label of at most 60 characters.`);
+    }
+    if (value.extends !== undefined && (typeof value.extends !== 'string' || !/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(value.extends))) problems.push('theme.extends must name a theme plugin.');
+    const areas = Object.entries(value.areas ?? {});
+    if (areas.length > 8) problems.push('theme.areas: declare at most 8 widget areas.');
+    for (const [name, label] of areas) {
+        if (!MENU_LOCATION.test(name)) problems.push(`theme.areas: ${name} must be lowercase letters, digits and hyphens.`);
+        if (typeof label !== 'string' || !label.trim() || label.length > 60) problems.push(`theme.areas.${name} needs a label of at most 60 characters.`);
     }
     const options = Object.entries(value.options ?? {});
     if (options.length > 16) problems.push('theme.options: declare at most 16 options.');
@@ -73,6 +89,10 @@ export interface RenderedBlock {
     readonly html: { readonly [field: string]: string };
     /** Media the block uses, by file ID. */
     readonly media: { readonly [id: string]: MediaView };
+    /** How the block shows: `hide` lists the container widths it is hidden at. */
+    readonly layout?: { readonly hide?: readonly ('sm' | 'md' | 'lg')[] };
+    /** The rendered blocks a container holds. */
+    readonly children?: readonly RenderedBlock[];
 }
 
 /** A run of escaped HTML from the body, or a block embedded in it. */
@@ -131,6 +151,32 @@ export interface LanguageLink {
     readonly current: boolean;
 }
 
+/** A reference field's target: an entry with its title and URL, or a record of another resource. */
+export interface EntryReference {
+    readonly id: string;
+    readonly title: string;
+    /** The entry's public URL; null for records that are not on the site. */
+    readonly url: string | null;
+}
+
+/**
+ * A field's value on an entry view, by the field's kind: text, enums and slugs as strings,
+ * numbers and datetimes (Unix milliseconds) as numbers, booleans, media as `MediaView` (a
+ * list of media as `MediaView[]`), references as `EntryReference`, taxonomy terms as
+ * `TermLink[]`, other lists as arrays, groups as objects, and in full views rich text and
+ * Markdown as `BodyPart[]` (render with `helpers.content`) and blocks as `RenderedBlock[]`.
+ * Absent and empty values are null.
+ */
+export type FieldView =
+    | string | number | boolean | null
+    | readonly (string | number | boolean)[]
+    | MediaView | readonly MediaView[]
+    | EntryReference
+    | readonly TermLink[]
+    | readonly BodyPart[]
+    | readonly RenderedBlock[]
+    | { readonly [name: string]: unknown };
+
 export interface EntryView {
     readonly id: string;
     readonly title: string;
@@ -149,8 +195,15 @@ export interface EntryView {
     readonly blocks: readonly RenderedBlock[];
     readonly image: MediaView | null;
     readonly terms: readonly { readonly label: string; readonly terms: readonly TermLink[] }[];
-    /** Other fields with values, for a details list. */
+    /**
+     * Every field by name with its typed value (see `FieldView`), so a theme can lay out a
+     * collection's own fields. Rich text, Markdown and blocks are present in full views only.
+     */
+    readonly fields: { readonly [name: string]: FieldView };
+    /** Scalar fields with values as labelled text, derived from `fields`, for a details list. */
     readonly details: readonly { readonly label: string; readonly value: string }[];
+    /** The template an editor chose for this entry, such as `entry-wide`; null for the default. */
+    readonly template: string | null;
     /** The entry's language code. */
     readonly locale: string;
     /** Comments, when the collection takes them and the view is full; else null. */
@@ -194,12 +247,24 @@ export interface SiteView {
     readonly searchUrl: string;
     /** The home page in this language, such as `/` or `/fr`. */
     readonly homeUrl: string;
+    /** The blocks of the theme's widget areas, by area; render them with `helpers.block`. */
+    readonly areas: { readonly [area: string]: readonly RenderedBlock[] };
 }
+
+/** Plain JSON a theme's loaders return. */
+export type ThemeData = { readonly [key: string]: unknown };
 
 /** What the host gives every template. */
 export interface ThemeHelpers {
     /** The active theme's option values, defaults applied. */
     readonly options: { readonly [name: string]: unknown };
+    /**
+     * What the theme's loaders returned: `layout` in the layout and head templates, `page` in
+     * the page's template. Empty when the theme has no loader for the page, or it failed.
+     */
+    readonly data: { readonly layout: ThemeData; readonly page: ThemeData };
+    /** The URL of a file in the theme's `assets/`, such as `asset('assets/theme.css')`; empty when it has none. */
+    asset(path: string): string;
     /** A body: HTML runs and embedded blocks. */
     content(parts: readonly BodyPart[]): TemplateResult;
     /** A block through the theme's renderer, a plugin's component or the core one. */
@@ -228,6 +293,8 @@ export interface SiteTheme {
     home?(view: ArchiveView, helpers: ThemeHelpers): TemplateResult;
     search?(view: ArchiveView, helpers: ThemeHelpers): TemplateResult;
     notFound?(helpers: ThemeHelpers): TemplateResult;
+    /** Tags for the document head: stylesheets, fonts, meta. The page's own title and meta win. */
+    head?(site: SiteView, helpers: ThemeHelpers): HeadValue;
     /**
      * More specific templates by name: `entry-<collection>`, `archive-<collection>`, `term` and
      * `term-<taxonomy>`. A file `templates/entry-posts.ts` lands here as `entry-posts`.
@@ -238,9 +305,9 @@ export interface SiteTheme {
 }
 
 /** Template files that fill the theme's named slots; every other file is a specific template. */
-const TEMPLATE_FILES: { readonly [stem: string]: keyof SiteTheme } = { layout: 'layout', entry: 'entry', archive: 'archive', home: 'home', search: 'search', 'not-found': 'notFound' };
+const TEMPLATE_FILES: { readonly [stem: string]: keyof SiteTheme } = { layout: 'layout', entry: 'entry', archive: 'archive', home: 'home', search: 'search', 'not-found': 'notFound', head: 'head' };
 /** Names a specific template can have. */
-export const SPECIFIC_TEMPLATE = /^(?:entry-[a-z][a-z0-9-]*|archive-[a-z][a-z0-9-]*|term(?:-[a-z][a-z0-9-]*)?)$/;
+export const SPECIFIC_TEMPLATE = /^(?:entry-[a-z][a-z0-9_-]*|archive-[a-z][a-z0-9_-]*|term(?:-[a-z][a-z0-9_-]*)?)$/;
 
 /** The parts of a plugin registration a theme is assembled from. */
 export interface ThemeSource {
@@ -252,11 +319,31 @@ export interface ThemeSource {
 
 /**
  * A plugin's theme: its `templates/` files, with the `ui.ts` `theme` export on top, slot by slot.
- * `templates/layout.ts`, `entry.ts`, `archive.ts`, `home.ts`, `search.ts` and `not-found.ts`
- * fill the named slots; any other file is a specific template under its stem. Undefined when
- * the plugin ships neither; the result still needs `siteThemeProblems` before use.
+ * `templates/layout.ts`, `entry.ts`, `archive.ts`, `home.ts`, `search.ts`, `not-found.ts` and
+ * `head.ts` fill the named slots; any other file is a specific template under its stem. A child
+ * theme passes its parent, whose theme it is layered over. Undefined when neither ships
+ * templates; the result still needs `siteThemeProblems` before use.
  */
-export function assembleSiteTheme(source: ThemeSource): unknown {
+export function assembleSiteTheme(source: ThemeSource, parent?: ThemeSource): unknown {
+    return parent ? layerSiteThemes(assembleOwnTheme(parent), assembleOwnTheme(source)) : assembleOwnTheme(source);
+}
+
+/** A theme layered over another, slot by slot: the top's named templates, specific templates and blocks win. */
+export function layerSiteThemes(base: unknown, top: unknown): unknown {
+    if (!base || typeof base !== 'object') return top;
+    if (!top || typeof top !== 'object') return base;
+    const under = base as { [name: string]: unknown };
+    const over = top as { [name: string]: unknown };
+    const merged: { [name: string]: unknown } = { ...under };
+    for (const [name, value] of Object.entries(over)) if (value !== undefined && name !== 'templates' && name !== 'blocks') merged[name] = value;
+    for (const name of ['templates', 'blocks']) {
+        const both = { ...(under[name] as object | undefined), ...(over[name] as object | undefined) };
+        if (Object.keys(both).length) merged[name] = both;
+    }
+    return merged;
+}
+
+function assembleOwnTheme(source: ThemeSource): unknown {
     const theme: { [name: string]: unknown } = {};
     const specific: { [name: string]: unknown } = {};
     for (const [stem, module] of Object.entries(source.templates ?? {})) {
@@ -283,7 +370,7 @@ export function siteThemeProblems(theme: unknown): string[] {
     const value = theme as { [name: string]: unknown };
     const problems: string[] = [];
     for (const name of ['layout', 'entry', 'archive']) if (typeof value[name] !== 'function') problems.push(`theme.${name} must be a function.`);
-    for (const name of ['home', 'search', 'notFound']) if (value[name] !== undefined && typeof value[name] !== 'function') problems.push(`theme.${name} must be a function.`);
+    for (const name of ['home', 'search', 'notFound', 'head']) if (value[name] !== undefined && typeof value[name] !== 'function') problems.push(`theme.${name} must be a function.`);
     if (value.templates !== undefined) {
         if (typeof value.templates !== 'object' || value.templates === null) problems.push('theme.templates must map template names to functions.');
         else for (const [name, template] of Object.entries(value.templates)) {
@@ -295,21 +382,52 @@ export function siteThemeProblems(theme: unknown): string[] {
     return problems;
 }
 
-/** The template for an entry: `entry-<collection>`, else `entry`. */
-export function entryTemplate(theme: SiteTheme, collection: string): EntryTemplate {
-    return (theme.templates?.[`entry-${collection}`] as EntryTemplate | undefined) ?? theme.entry;
-}
+/** What a site page shows, for choosing its template and loader. */
+export type TemplatePage =
+    | { readonly kind: 'entry'; readonly collection: string; readonly template?: string | null }
+    | Pick<ArchiveView, 'kind' | 'collection' | 'taxonomy'>
+    | { readonly kind: 'not-found' };
 
 /**
- * The template for a list, most specific first. A term: `term-<taxonomy>`, `term`, then the
- * collection's archive. The home page: `home`; search: `search`. An archive: `archive-<collection>`.
- * Everything falls back to `archive`.
+ * Template names for a page, most specific first. An entry: the template an editor chose,
+ * `entry-<collection>`, `entry`. A term: `term-<taxonomy>`, `term`, `archive-<collection>`,
+ * `archive`. The home page: `home`, `archive-<collection>`, `archive`. Search: `search`,
+ * `archive`. An archive: `archive-<collection>`, `archive`. Loaders are picked from the same list.
  */
-export function archiveTemplate(theme: SiteTheme, view: Pick<ArchiveView, 'kind' | 'collection' | 'taxonomy'>): ArchiveTemplate {
-    const specific = (name: string | null) => name ? theme.templates?.[name] as ArchiveTemplate | undefined : undefined;
-    const archive = specific(view.collection && `archive-${view.collection}`) ?? theme.archive;
-    if (view.kind === 'home') return theme.home ?? archive;
-    if (view.kind === 'search') return theme.search ?? archive;
-    if (view.kind === 'term') return specific(view.taxonomy && `term-${view.taxonomy}`) ?? specific('term') ?? archive;
+export function templateCandidates(page: TemplatePage): string[] {
+    if (page.kind === 'not-found') return ['not-found'];
+    if (page.kind === 'entry') return [...new Set([...(page.template && SPECIFIC_TEMPLATE.test(page.template) && page.template.startsWith('entry-') ? [page.template] : []), `entry-${page.collection}`, 'entry'])];
+    const archive = [...(page.collection ? [`archive-${page.collection}`] : []), 'archive'];
+    if (page.kind === 'home') return ['home', ...archive];
+    if (page.kind === 'search') return ['search', 'archive'];
+    if (page.kind === 'term') return [...(page.taxonomy ? [`term-${page.taxonomy}`] : []), 'term', ...archive];
     return archive;
+}
+
+/** The theme's template of that name: a named slot (`entry`, `not-found`, ...) or a specific one. */
+function namedTemplate(theme: SiteTheme, name: string): unknown {
+    const slot = TEMPLATE_FILES[name];
+    return slot ? theme[slot] : theme.templates?.[name];
+}
+
+/** The first of the candidates the theme has, or null. */
+export function pickTemplate(theme: SiteTheme, candidates: readonly string[]): string | null {
+    return candidates.find(name => typeof namedTemplate(theme, name) === 'function') ?? null;
+}
+
+/** The template for an entry: the one an editor chose, `entry-<collection>`, else `entry`. */
+export function entryTemplate(theme: SiteTheme, collection: string, template?: string | null): EntryTemplate {
+    const name = pickTemplate(theme, templateCandidates({ kind: 'entry', collection, template }));
+    return name ? namedTemplate(theme, name) as EntryTemplate : theme.entry;
+}
+
+/** The template for a list, most specific first (see `templateCandidates`). Everything falls back to `archive`. */
+export function archiveTemplate(theme: SiteTheme, view: Pick<ArchiveView, 'kind' | 'collection' | 'taxonomy'>): ArchiveTemplate {
+    const name = pickTemplate(theme, templateCandidates(view));
+    return name ? namedTemplate(theme, name) as ArchiveTemplate : theme.archive;
+}
+
+/** Templates an editor can choose for one entry: the theme's `entry-*` templates, by name. */
+export function entryTemplateChoices(theme: SiteTheme | undefined): string[] {
+    return Object.keys(theme?.templates ?? {}).filter(name => name.startsWith('entry-')).sort();
 }

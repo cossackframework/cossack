@@ -7,7 +7,7 @@ import { requireAny } from '../../../../cms/guards';
 import { blockIcon } from '../../../../cms/icons';
 import { pageHeader } from '../../../../cms/ui';
 
-interface BlockRow { name: string; label: string; description: string; icon: string; category: BlockCategory; plugin: string; fields: { name: string; label: string; type: string; required: boolean }[] }
+interface BlockRow { name: string; label: string; description: string; icon: string; category: BlockCategory; plugin: string; fields: { name: string; label: string; type: string; required: boolean }[]; holds: string; parent: string }
 
 /** The block types available to blocks fields, by category: built-in ones and those of active plugins. */
 @Page({ transport: 'http', middlewares: [requireAny(PERMISSIONS.manageCollections)] })
@@ -23,6 +23,8 @@ export default class BlocksPage extends Cossack {
             name: block.name, label: block.label, description: block.description ?? '', icon: block.icon ?? '', category: blockCategory(block), plugin: block.plugin ?? '',
             fields: Object.entries(block.fields).map(([name, declaration]) => ({ name, label: declaration.label ?? name, required: declaration.required === true,
                 type: FIELD_TYPES.find(option => option.type === typeOf(declaration))?.label ?? declaration.kind })),
+            holds: block.children ? (block.children.allowed?.length ? block.children.allowed.join(', ') : __('any block')) + (block.children.max ? ` (${__('at most')} ${block.children.max})` : '') : '',
+            parent: block.parent?.join(', ') ?? '',
         }));
     }
 
@@ -44,7 +46,9 @@ export default class BlocksPage extends Cossack {
                         ${block.description ? html`<p class="text-sm text-muted-foreground">${block.description}</p>` : null}
                         <ul class="space-y-0.5 text-xs text-muted-foreground">${block.fields.length
                             ? block.fields.map(entry => html`<li><span class="text-foreground">${entry.label}</span> · ${entry.type}${entry.required ? ` · ${__('required')}` : ''}</li>`)
-                            : html`<li>${__('No fields.')}</li>`}</ul>`))}
+                            : html`<li>${__('No fields.')}</li>`}
+                            ${block.holds ? html`<li>${__('Holds')}: ${block.holds}</li>` : null}
+                            ${block.parent ? html`<li>${__('Goes inside')}: ${block.parent}</li>` : null}</ul>`))}
                 </li>`)}</ul>
             </section>`)}
         </div>`;

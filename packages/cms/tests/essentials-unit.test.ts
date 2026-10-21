@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
-    blockCategory, blockProblems, checkComment, collectionProblems, compareRecords, CORE_BLOCKS, diffWords, field, imageEditsProblems, imageSrcset, imageUrl, languageName,
-    posts, redirectPath, redirectProblems, validateValue, variantRect, variantWidth, webhookUrlProblem,
+    blockAllowedIn, blockCategory, blockMedia, blockProblems, blocksShapeProblem, blockTreeProblem, checkComment, collectionProblems, compareRecords, CORE_BLOCKS, diffWords,
+    field, findBlock, flattenBlocks, imageEditsProblems, imageSrcset, imageUrl, insertBlock, languageName, moveBlock, placeBlocks, posts, redirectPath, redirectProblems, removeBlock,
+    normalizeRichText, richTextBlocks, shiftBlock, validateBlocks, validateValue, variantRect, variantWidth, webhookUrlProblem, type Block,
 } from '../src/index';
 import { negotiateFormat } from '../src/server/images';
 
@@ -42,6 +43,64 @@ describe('essentials helpers', () => {
         expect(blockProblems({ ...block, icon: 'star', category: 'design' })).toEqual([]);
         expect(blockProblems({ ...block, icon: 'Not An Icon' })).toHaveLength(1);
         expect(blockProblems({ ...block, category: 'layout' as never })).toEqual(['block acme/card: the category is one of text, media, design, widgets, embeds.']);
+    });
+
+    it('nests blocks in containers', () => {
+        const types = new Map(CORE_BLOCKS.map(block => [block.name, block]));
+        expect(blockProblems({ name: 'acme/box', label: 'Box', fields: {}, children: { allowed: ['core/paragraph'], max: 3 }, parent: ['core/group'] })).toEqual([]);
+        expect(blockProblems({ name: 'acme/box', label: 'Box', fields: {}, children: { max: 0 } })).toEqual(['block acme/box: children.max is 1 to 200.']);
+        expect(blockProblems({ name: 'acme/box', label: 'Box', fields: {}, parent: [] })).toEqual(['block acme/box: parent lists block names.']);
+        const columns: Block = { id: 'cols', type: 'core/columns', data: {}, children: [
+            { id: 'a', type: 'core/column', data: { span: 4 }, children: [{ id: 'h', type: 'core/heading', data: { text: 'Left' } }] },
+            { id: 'b', type: 'core/column', data: {}, layout: { hide: ['sm', 'sm'] }, children: [] },
+        ] };
+        const checked = validateBlocks([columns], types);
+        expect(checked.errors).toEqual({});
+        expect(checked.blocks[0]).toEqual({ id: 'cols', type: 'core/columns', data: { gap: 'medium', stack: 'mobile' }, children: [
+            { id: 'a', type: 'core/column', data: { span: 4, verticalAlign: 'top' }, children: [{ id: 'h', type: 'core/heading', data: { text: 'Left', level: 'h2' } }] },
+            { id: 'b', type: 'core/column', data: { verticalAlign: 'top' }, layout: { hide: ['sm'] }, children: [] },
+        ] });
+        // A column goes only inside columns, columns hold only columns, a leaf holds nothing.
+        expect(validateBlocks([{ id: 'c', type: 'core/column', data: {} }], types).errors).toEqual({ c: 'core/column goes inside core/columns.' });
+        expect(validateBlocks([{ id: 'cols', type: 'core/columns', data: {}, children: [{ id: 'p', type: 'core/paragraph', data: { text: 'x' } }] }], types).errors).toEqual({ p: 'core/paragraph cannot go inside core/columns.' });
+        expect(validateBlocks([{ id: 'p', type: 'core/paragraph', data: { text: 'x' }, children: [{ id: 'q', type: 'core/divider', data: {} }] }], types).errors).toEqual({ p: 'core/paragraph does not hold blocks.' });
+        expect(validateBlocks([{ id: 'cols', type: 'core/columns', data: {}, children: Array.from({ length: 7 }, (_, index) => ({ id: `c${index}`, type: 'core/column', data: {} })) }], types).errors).toEqual({ cols: 'holds at most 6 blocks.' });
+        // A field's allowed list applies at the top level; the containers' rules below it.
+        expect(validateBlocks([{ id: 'g', type: 'core/group', data: {}, children: [{ id: 'q', type: 'core/quote', data: { text: 'q' } }] }], types, ['core/group']).errors).toEqual({});
+        expect(validateBlocks([{ id: 'q', type: 'core/quote', data: { text: 'q' } }], types, ['core/group']).errors).toEqual({ q: 'core/quote is not an available block.' });
+        // The shape: distinct IDs across the tree, the depth and count limits, the layout.
+        expect(blocksShapeProblem([{ id: 'a', type: 'core/group', data: {}, children: [{ id: 'a', type: 'core/divider', data: {} }] }])).toBe('blocks need distinct IDs.');
+        const deep = (depth: number): Block => depth ? { id: `d${depth}`, type: 'core/group', data: {}, children: [deep(depth - 1)] } : { id: 'leaf', type: 'core/divider', data: {} };
+        expect(blocksShapeProblem([deep(3)])).toBeUndefined();
+        expect(blocksShapeProblem([deep(4)])).toBe('blocks nest at most 4 deep.');
+        expect(blocksShapeProblem([{ id: 'a', type: 'core/divider', data: {}, layout: { hide: ['xl'] } }])).toBe('block layout.hide lists sm, md, lg.');
+        expect(blocksShapeProblem([{ id: 'a', type: 'core/group', data: {}, children: 'no' }])).toBe('block children must be a list of blocks.');
+        expect(blockMedia([{ id: 'g', type: 'core/group', data: {}, children: [{ id: 'i', type: 'core/image', data: { image: 'file-1' } }] }], types)).toEqual(['file-1']);
+        // The tree helpers editors use.
+        const tree: Block[] = [columns, { id: 'p', type: 'core/paragraph', data: { text: 'After' } }];
+        expect(flattenBlocks(tree).map(block => block.id)).toEqual(['cols', 'a', 'h', 'b', 'p']);
+        expect(placeBlocks(tree).map(place => [place.block.id, place.depth, place.parent, place.index])).toEqual([['cols', 0, null, 0], ['a', 1, 'cols', 0], ['h', 2, 'a', 0], ['b', 1, 'cols', 1], ['p', 0, null, 1]]);
+        expect(findBlock(tree, 'h')?.data).toEqual({ text: 'Left' });
+        expect(findBlock(moveBlock(tree, 'p', 'b', 0), 'b')?.children?.map(block => block.id)).toEqual(['p']);
+        expect(moveBlock(tree, 'cols', 'a', 0)).toEqual(tree);
+        expect(flattenBlocks(removeBlock(tree, 'a')).map(block => block.id)).toEqual(['cols', 'b', 'p']);
+        expect(flattenBlocks(insertBlock(tree, 'b', { id: 'n', type: 'core/divider', data: {} })).map(block => block.id)).toEqual(['cols', 'a', 'h', 'b', 'n', 'p']);
+        // Moves: in goes under the sibling above when the types allow it, out follows the container.
+        expect(shiftBlock(tree, 'p', 'in', types)).toBe(tree);
+        const grouped: Block[] = [{ id: 'g', type: 'core/group', data: {}, children: [] }, { id: 'p', type: 'core/paragraph', data: { text: 'x' } }];
+        const inside = shiftBlock(grouped, 'p', 'in', types);
+        expect(placeBlocks(inside).map(place => [place.block.id, place.parent])).toEqual([['g', null], ['p', 'g']]);
+        expect(placeBlocks(shiftBlock(inside, 'p', 'out', types)).map(place => place.parent)).toEqual([null, null]);
+        expect(shiftBlock(tree, 'h', 'up', types)).toBe(tree);
+        expect(flattenBlocks(shiftBlock(tree, 'b', 'up', types)).map(block => block.id)).toEqual(['cols', 'b', 'a', 'h', 'p']);
+        expect(blockTreeProblem([{ id: 'c', type: 'core/column', data: {} }], types)).toBe('Column goes inside Columns.');
+        expect(blockTreeProblem(tree, types)).toBeUndefined();
+        expect(blockAllowedIn(types, 'core/column', 'core/columns')).toBe(true);
+        expect(blockAllowedIn(types, 'core/group', 'core/columns')).toBe(false);
+        // A body embeds a container with its children.
+        const doc = normalizeRichText({ type: 'doc', content: [{ type: 'cmsBlock', attrs: { id: 'cols', type: 'core/columns', data: {}, children: columns.children, layout: { hide: ['lg'] } } }] });
+        expect(richTextBlocks(doc)[0]).toMatchObject({ id: 'cols', layout: { hide: ['lg'] }, children: [{ id: 'a' }, { id: 'b' }] });
+        expect(() => normalizeRichText({ type: 'doc', content: [{ type: 'cmsBlock', attrs: { id: 'x', type: 'core/group', data: {}, children: 'no' } }] })).toThrow();
     });
 
     it('checks redirects and webhook URLs', () => {

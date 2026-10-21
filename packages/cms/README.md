@@ -46,6 +46,11 @@ Data contract:
   renames, backfills, tighter rules and drops are explicit, versioned steps. Each step is one
   batch sent with `ifSequence`; a conflict re-plans.
 - A resource is active only when the database records its current declaration.
+- Blocks are one tree: `{ id, type, data }`, with `children` under a container (`core/group`,
+  `core/columns` holding `core/column`, `core/grid`) and a core-checked `layout` (`hide` by
+  container width). A type declares what it holds (`children`) and where it goes (`parent`);
+  at most 200 blocks and 4 levels per field. Layouts are blocks, so revisions, patterns and
+  the front-end editor cover them; nothing is stored beside the block list.
 - Rich text is validated against an allow-list of nodes, marks and attributes on every
   write and rendered to escaped HTML; its plain text feeds the full-text index.
 - A menu is one JSON tree saved with a revision check. Entries and terms are stored by ID and
@@ -55,7 +60,12 @@ Data contract:
 - A theme is a plugin whose manifest has a `theme` field and whose `templates/` files (or
   `ui.ts` `theme` export) are the site templates, picked per page from most specific
   (`entry-posts`, `term-category`) to general (`entry`, `archive`). Themes own templates, not
-  routes. Activating one is a settings write; its templates need no grant.
+  routes. Activating one is a settings write; its templates need no grant. A theme's
+  `server.ts` exports `loaders` that read data under the plugin's grants for its templates;
+  `templates/head.ts` adds stylesheets and fonts from `assets/`; `theme.extends` makes a child
+  theme; `theme.areas` declares widget areas; a manifest's `collections` ship site
+  collections with the plugin. Editors can choose an entry's template and edit its blocks on
+  the public page.
 - Scheduled entries are published by maintenance as a system write, so their outbox events
   and webhooks fire when they go live. A published entry's URL change records a 301 in the
   same batch.

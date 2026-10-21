@@ -21,7 +21,7 @@ export const HOST_TABLES = [
     'cms_password_resets', 'cms_sessions', 'cms_session_values', 'cms_grants', 'cms_audit', 'cms_revisions', 'cms_outbox', 'cms_files',
     'cms_terms', 'cms_settings', 'cms_collections', 'cms_taxonomies', 'cms_menus', 'cms_menu_locations',
     'cms_preview_tokens', 'cms_autosaves', 'cms_file_variants', 'cms_redirects', 'cms_api_tokens', 'cms_webhooks', 'cms_webhook_deliveries',
-    'cms_comments', 'cms_user_security', 'cms_passkeys', 'cms_auth_challenges',
+    'cms_comments', 'cms_user_security', 'cms_passkeys', 'cms_auth_challenges', 'cms_areas',
     'cossack_jobs', 'cossack_notifications',
 ] as const;
 
@@ -156,5 +156,12 @@ export const HOST_STEPS: readonly HostStep[] = [{
         // Sessions are deleted at sign-out; the user keeps the time of the newest one.
         { sql: 'ALTER TABLE cms_users ADD COLUMN last_sign_in_at INTEGER' },
         { sql: 'UPDATE cms_users SET last_sign_in_at = (SELECT max(s.created_at) FROM cms_auth_sessions s WHERE s.user_id = cms_users.id)' },
+    ],
+}, {
+    version: 7,
+    description: 'Add widget areas',
+    statements: [
+        // A theme's widget area: its blocks as JSON, saved with a revision check.
+        { sql: 'CREATE TABLE cms_areas (name TEXT PRIMARY KEY, blocks TEXT NOT NULL, revision INTEGER NOT NULL, updated_at INTEGER NOT NULL, updated_by TEXT)' },
     ],
 }];

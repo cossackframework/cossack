@@ -32,7 +32,8 @@ const DB_METHODS = new Set(['read', 'write', 'prepareWrite', 'submit', 'recover'
 export function lintPlugin({ manifest, files, parse }) {
   const diagnostics = [];
   const name = manifest?.name ?? 'unknown';
-  const own = new Set((manifest?.resources ?? []).map(resource => `${name}/${resource.name}`));
+  // Its resources, and the site collections it ships, stored as cms/<name>.
+  const own = new Set([...(manifest?.resources ?? []).map(resource => `${name}/${resource.name}`), ...(manifest?.collections ?? []).map(collection => `cms/${collection.name}`)]);
   const granted = new Set(Object.keys(manifest?.permissions?.resources ?? {}));
   const defined = new Set(manifest?.permissions?.define ?? []);
   const hosts = manifest?.permissions?.network ?? [];

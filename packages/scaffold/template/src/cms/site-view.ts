@@ -5,7 +5,7 @@
  */
 import { component, html, ifDefined, unsafeHTML, type TemplateResult } from '@cossackframework/renderer';
 import { plugins } from '@cossackframework/framework/plugins';
-import { archiveTemplate, assembleSiteTheme, entryTemplate, siteThemeProblems, type ArchiveView, type EntryView, type MediaView, type MenuItemView, type RenderedBlock, type SiteTheme, type ThemeHelpers } from '@cossackframework/cms';
+import { archiveTemplate, assembleSiteTheme, entryTemplate, siteThemeProblems, type ArchiveView, type EntryView, type MediaView, type MenuItemView, type RenderedBlock, type SiteTheme, type ThemeData, type ThemeHelpers } from '@cossackframework/cms';
 
 export { archiveTemplate, entryTemplate };
 export type { ArchiveView, EntryView, MediaView, Paging, RenderedBlock, SiteView } from '@cossackframework/cms';
@@ -13,26 +13,68 @@ export type { ArchiveView, EntryView, MediaView, Paging, RenderedBlock, SiteView
 /** Prose styles for rendered bodies. */
 export const PROSE = 'cms-prose max-w-none text-foreground leading-7 [&_a]:text-primary [&_a]:underline [&_h1]:mt-8 [&_h1]:text-3xl [&_h1]:font-bold [&_h2]:mt-8 [&_h2]:text-2xl [&_h2]:font-semibold [&_h3]:mt-6 [&_h3]:text-xl [&_h3]:font-semibold [&_h4]:mt-4 [&_h4]:font-semibold [&_p]:my-4 [&_ul]:my-4 [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:my-4 [&_ol]:list-decimal [&_ol]:pl-6 [&_li_p]:my-1 [&_blockquote]:my-6 [&_blockquote]:border-l-4 [&_blockquote]:border-border [&_blockquote]:pl-4 [&_blockquote]:italic [&_pre]:my-4 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-muted [&_pre]:p-4 [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_img]:my-6 [&_img]:h-auto [&_img]:max-w-full [&_img]:rounded-lg [&_hr]:my-8 [&_table]:my-4 [&_th]:border [&_th]:border-border [&_th]:px-2 [&_td]:border [&_td]:border-border [&_td]:px-2';
 
-/** A plugin's theme (its `templates/` files and `ui.ts` `theme` export), or the built-in fallback when it is missing or invalid. */
-export function siteTheme(name: string | null): SiteTheme {
-    const plugin = name ? plugins.find(plugin => plugin.name === name) : undefined;
-    const theme = plugin ? assembleSiteTheme(plugin) : undefined;
+/**
+ * A plugin's theme (its `templates/` files and `ui.ts` `theme` export), layered over its
+ * parent's for a child theme, or the built-in fallback when it is missing or invalid.
+ */
+export function siteTheme(state: { readonly name: string | null; readonly parent?: string | null }): SiteTheme {
+    const plugin = state.name ? plugins.find(entry => entry.name === state.name) : undefined;
+    const parent = state.parent ? plugins.find(entry => entry.name === state.parent) : undefined;
+    const theme = plugin ? assembleSiteTheme(plugin, parent) : undefined;
     return theme && !siteThemeProblems(theme).length ? theme as SiteTheme : fallbackTheme;
 }
 
+/** What a site page renders its theme with: the theme, its option values and its loaders' data. */
+export interface ThemeRenderState {
+    readonly name: string | null;
+    /** The theme a child theme extends, whose assets it falls back to. */
+    readonly parent?: string | null;
+    readonly options: Record<string, unknown>;
+    readonly data?: { readonly layout?: ThemeData; readonly page?: ThemeData };
+    /**
+     * The page is in edit mode: blocks and the body are wrapped in `display: contents` markers
+     * carrying their IDs, which the site editor finds. Themes never see it; visitors never get it.
+     */
+    readonly editing?: boolean;
+}
+
 /** The helpers every template receives. `isActive` is the component's own: an exact path, or a prefix. */
-export function themeHelpers(theme: SiteTheme, options: Record<string, unknown>, isActive: (path: string, exact: boolean) => boolean): ThemeHelpers {
+export function themeHelpers(theme: SiteTheme, state: ThemeRenderState, isActive: (path: string, exact: boolean) => boolean): ThemeHelpers {
+    const assetsOf = (name: string | null | undefined) => name ? plugins.find(plugin => plugin.name === name)?.assets ?? {} : {};
+    // A child theme's files win over its parent's.
+    const assets: Readonly<Record<string, string>> = { ...assetsOf(state.parent), ...assetsOf(state.name) };
     const helpers: ThemeHelpers = {
-        options,
+        options: state.options,
+        data: { layout: state.data?.layout ?? {}, page: state.data?.page ?? {} },
+        asset: path => assets[path] ?? '',
         isActive: url => {
             const path = url.replace(/[?#].*$/, '').replace(/(.)\/$/, '$1');
             if (!path.startsWith('/')) return false;
             return path === '/' ? isActive('/', true) : isActive(path, true) || isActive(`${path}/`, false);
         },
-        block: block => theme.blocks?.[block.type]?.(block, helpers) ?? coreBlock(block),
-        content: parts => html`${parts.map(part => part.kind === 'html' ? html`<div class=${PROSE}>${unsafeHTML(part.html)}</div>` : helpers.block(part.block))}`,
+        block: block => state.editing ? html`<div data-cms-edit="block" data-block-id=${block.id} style="display: contents">${render(block)}</div>` : render(block),
+        content: parts => {
+            const body = html`${parts.map(part => part.kind === 'html' ? html`<div class=${PROSE}>${unsafeHTML(part.html)}</div>` : render(part.block))}`;
+            // The body is one document, edited as a whole.
+            return state.editing ? html`<div data-cms-edit="body" style="display: contents">${body}</div>` : body;
+        },
+    };
+    const render = (block: RenderedBlock) => {
+        const rendered = theme.blocks?.[block.type]?.(block, helpers) ?? coreBlock(block, helpers);
+        // A hidden block stays in the HTML; the stylesheet drops it at those container widths.
+        const hide = block.layout?.hide ?? [];
+        return hide.length ? html`<div data-hide=${hide.join(' ')} style="display: contents">${rendered}</div>` : rendered;
     };
     return helpers;
+}
+
+/**
+ * The root the layout blocks respond to: columns stack and hidden blocks hide by its width,
+ * not the viewport's, so the editor's device toggle only narrows it. Site pages wrap the
+ * theme's page in it; a theme wraps widget areas it renders.
+ */
+export function siteContent(page: TemplateResult): TemplateResult {
+    return html`<div class="cms-content">${page}</div>`;
 }
 
 /** An image with its resized variants, for blocks; `sizes` is how wide it shows. */
@@ -54,9 +96,18 @@ function safeLink(url: unknown): string {
     return typeof url === 'string' && /^(?:https?:\/\/|\/|mailto:)/.test(url) ? url : '#';
 }
 
+/** Columns' track spans out of twelve: a declared `span`, the rest shared equally. */
+export function columnSpans(columns: readonly RenderedBlock[]): number[] {
+    const declared = columns.map(column => Number.isInteger(column.data.span) ? Math.min(Math.max(column.data.span as number, 1), 12) : 0);
+    const auto = declared.filter(span => !span).length;
+    const share = auto ? Math.max(Math.floor((12 - declared.reduce((sum, span) => sum + span, 0)) / auto), 1) : 0;
+    return declared.map(span => span || share);
+}
+
 /** A block of a core type, or of a plugin type through its `ui.ts` component. Unknown types render nothing. */
-export function coreBlock(block: RenderedBlock): TemplateResult | null {
+export function coreBlock(block: RenderedBlock, helpers: ThemeHelpers): TemplateResult | null {
     const text = (name: string) => typeof block.data[name] === 'string' ? block.data[name] as string : '';
+    const children = block.children ?? [];
     switch (block.type) {
         case 'core/paragraph': return html`<div class=${PROSE}>${unsafeHTML(block.html.text ?? '')}</div>`;
         case 'core/heading': {
@@ -94,11 +145,23 @@ export function coreBlock(block: RenderedBlock): TemplateResult | null {
                 ${text('caption') ? html`<figcaption class="mt-2 text-center text-sm text-muted-foreground">${text('caption')}</figcaption>` : null}</figure>` : null;
         }
         case 'core/divider': return html`<hr class="my-8 border-border">`;
+        // Layout blocks: CSS grid from cms/blocks.css, responding to the content root's width.
+        case 'core/group': return html`<div class="cms-group" data-align=${text('align') || 'full'}>${children.map(child => helpers.block(child))}</div>`;
+        case 'core/columns': {
+            const spans = columnSpans(children);
+            return html`<div class="cms-columns" data-gap=${text('gap') || 'medium'} data-stack=${text('stack') || 'mobile'}>${children.map((column, index) => helpers.block({ ...column, data: { ...column.data, span: spans[index] } }))}</div>`;
+        }
+        case 'core/column': return html`<div class="cms-column" data-valign=${text('verticalAlign') || 'top'} style=${`--cms-span: ${Math.min(Math.max(Number(block.data.span) || 12, 1), 12)}`}>${children.map(child => helpers.block(child))}</div>`;
+        case 'core/grid': {
+            const count = (name: string, fallback: number) => Math.min(Math.max(Number(block.data[name]) || fallback, 1), 6);
+            return html`<div class="cms-grid" data-gap=${text('gap') || 'medium'} style=${`--cms-cols-lg: ${count('columns', 3)}; --cms-cols-md: ${count('columnsMd', 2)}; --cms-cols-sm: ${count('columnsSm', 1)}`}>
+                ${children.map(child => html`<div class="min-w-0">${helpers.block(child)}</div>`)}</div>`;
+        }
         default: {
             const plugin = plugins.find(entry => block.type.startsWith(`${entry.name}/`));
             const blocks = (plugin?.ui as { blocks?: Record<string, unknown> } | null | undefined)?.blocks;
             const view = blocks?.[block.type.slice(block.type.indexOf('/') + 1)] ?? blocks?.[block.type];
-            return view ? component(view as never, { block }) : null;
+            return view ? component(view as never, { block, helpers }) : null;
         }
     }
 }

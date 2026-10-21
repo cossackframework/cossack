@@ -36,10 +36,10 @@ describe.skipIf(!live)('schema planner and migration ledger', () => {
         const db = service.database();
         const cms = createCMS({ db, resources: [tickets] });
         const plan = await cms.plan();
-        expect(plan.steps.map(step => step.kind)).toEqual(['host', 'host', 'host', 'host', 'host', 'host', 'additive']);
+        expect(plan.steps.map(step => step.kind)).toEqual(['host', 'host', 'host', 'host', 'host', 'host', 'host', 'additive']);
         expect(plan.steps.every(step => step.statements.length <= 30)).toBe(true);
         expect(plan.blocked).toEqual([]);
-        const create = plan.steps[6]!.statements.map(statement => statement.sql);
+        const create = plan.steps[7]!.statements.map(statement => statement.sql);
         expect(create[0]).toBe('CREATE TABLE r__app__tickets');
         expect(create).toContain('DEFINE FIELD "subject" ON r__app__tickets TYPE string REQUIRED CHECK(length("subject") <= 120)');
         expect(create).toContain(`DEFINE FIELD "status" ON r__app__tickets TYPE string REQUIRED DEFAULT 'open' CHECK("status" IN ('open', 'closed'))`);
@@ -48,15 +48,15 @@ describe.skipIf(!live)('schema planner and migration ledger', () => {
         expect(create).toContain('CREATE SEARCH INDEX r__app__tickets__text ON r__app__tickets("subject", "body") USING FULLTEXT');
         const report = await cms.migrate();
         expect(report.failed).toBeUndefined();
-        expect(report.applied).toHaveLength(7);
+        expect(report.applied).toHaveLength(8);
         const again = await cms.plan();
         expect(again.steps).toEqual([]);
         expect(again.current).toEqual(['app/tickets']);
         expect((await cms.status()).resources).toEqual([{ id: 'app/tickets', active: true }]);
         const ledger = await db.read([{ sql: 'SELECT kind, resource, engine_version, sql FROM cms_migrations ORDER BY applied_at, id' }]);
-        expect(ledger.results[0]!.rows.map(row => row[0])).toEqual(['host', 'host', 'host', 'host', 'host', 'host', 'additive']);
-        expect(ledger.results[0]!.rows[6]![2]).toMatch(/^2\./);
-        expect(ledger.results[0]!.rows[6]![3]).toContain('CREATE TABLE r__app__tickets');
+        expect(ledger.results[0]!.rows.map(row => row[0])).toEqual(['host', 'host', 'host', 'host', 'host', 'host', 'host', 'additive']);
+        expect(ledger.results[0]!.rows[7]![2]).toMatch(/^2\./);
+        expect(ledger.results[0]!.rows[7]![3]).toContain('CREATE TABLE r__app__tickets');
     });
 
     it('produces identical DDL for one declaration on two databases', async () => {

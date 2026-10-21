@@ -1,9 +1,9 @@
 import { Cossack, Page, State, type HeadValue } from '@cossackframework/core';
 import { html } from '@cossackframework/renderer';
-import { isCmsError, type EntryView, type RecordShape } from '@cossackframework/cms';
+import { isCmsError, type EntryView, type RecordShape, type ThemeData } from '@cossackframework/cms';
 import { entryInput } from '../../../../../cms/content';
-import { entryViews, themeState, type ThemeState } from '../../../../../cms/site';
-import { siteTheme, themeHelpers } from '../../../../../cms/site-view';
+import { entryViews, themeData, themeState, type ThemeState } from '../../../../../cms/site';
+import { entryTemplate, siteContent, siteTheme, themeHelpers } from '../../../../../cms/site-view';
 
 /**
  * An entry as the site will show it, whatever its status. Its editors see their newest
@@ -16,6 +16,7 @@ export default class PreviewPage extends Cossack {
     @State() autosaved = false;
     @State() editUrl = '';
     @State() theme: ThemeState = { name: null, options: {} };
+    @State() data: ThemeData = {};
 
     head(): HeadValue {
         return {
@@ -60,6 +61,7 @@ export default class PreviewPage extends Cossack {
             }
             this.status = String(record.status ?? '');
             this.entry = (await entryViews(cms, collection, [record], { full: true }))[0]!;
+            this.data = await themeData(cms, this.theme, { kind: 'entry', collection: collection.name, template: this.entry.template }, this.entry, principal, this.entry.locale);
         } catch (error) {
             if (!isCmsError(error)) throw error;
             this.c.status(error.status === 503 ? 503 : 404);
@@ -71,12 +73,12 @@ export default class PreviewPage extends Cossack {
             <h1 class="text-3xl font-bold text-foreground">${__('Preview not available')}</h1>
             <p class="text-muted-foreground">${__('The link expired, or you cannot edit this entry.')}</p>
         </section>`;
-        const theme = siteTheme(this.theme.name);
-        const helpers = themeHelpers(theme, this.theme.options, (path, exact) => this.isActive(path, exact));
+        const theme = siteTheme(this.theme);
+        const helpers = themeHelpers(theme, { ...this.theme, data: { page: this.data } }, (path, exact) => this.isActive(path, exact));
         return html`<div role="status" class="mb-6 flex flex-wrap items-center justify-between gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-2 text-sm text-foreground">
                 <span><strong>${__('Preview')}</strong> · ${this.status === 'published' ? __('Published') : __('Not published')}${this.autosaved ? html` · ${__('with unsaved changes')}` : null}</span>
                 ${this.editUrl ? html`<a href=${this.editUrl} class="text-primary hover:underline">${__('Back to the editor')}</a>` : null}
             </div>
-            ${theme.entry(this.entry, helpers)}`;
+            ${siteContent(entryTemplate(theme, this.entry.collection, this.entry.template)(this.entry, helpers))}`;
     }
 }

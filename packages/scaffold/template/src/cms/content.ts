@@ -2,9 +2,9 @@
  * Server helpers for the dashboard's content screens: which resource a route names, the
  * editor's view of it, and saving entries. Pages call these from their server methods.
  */
-import { blockCategory, CmsError, CORE_FIELDS, isCmsError, mediaUrl, recordTitle, type CollectionDefinition, type Principal, type RecordShape, type Resource } from '@cossackframework/cms';
+import { blockCategory, blockMedia, CmsError, CORE_FIELDS, flattenBlocks, isCmsError, mediaUrl, recordTitle, type Block, type CollectionDefinition, type MediaKind, type Principal, type RecordShape, type Resource } from '@cossackframework/cms';
 import type { CmsHost } from '@cossackframework/cms/server';
-import { controlValue, editorField, editorFields, editorInput, type BlockOption, type EditorTaxonomy, type EditorValues, type EditorView, type TermOption } from './editor';
+import { controlValue, editorField, editorFields, editorInput, type BlockOption, type EditorBlock, type EditorTaxonomy, type EditorValues, type EditorView, type TermOption } from './editor';
 
 /** A collection by name (`posts`), or a plugin or application resource as `<owner>.<name>`. */
 export function routeResource(cms: CmsHost, route: string): { resource: Resource; collection: CollectionDefinition | null } {
@@ -29,8 +29,7 @@ export async function editorView(cms: CmsHost, route: string): Promise<EditorVie
         taxonomies.push({ name: declaration.name, label: declaration.label, singular: declaration.singular, hierarchical: declaration.hierarchical,
             terms: declaration.hierarchical ? await termOptions(cms, taxonomy) : (await cms.taxonomies.list(taxonomy, { limit: 100 })).items.map(term => ({ id: term.id, name: term.name, depth: 0 })) });
     }
-    const blocks: BlockOption[] = (await cms.blocks()).map(block => ({ name: block.name, label: block.label, description: block.description ?? '', icon: block.icon ?? '',
-        category: blockCategory(block), fields: editorFields(block.fields, []) }));
+    const blocks = await blockOptions(cms);
     const titleField = collection ? 'title' : resource.titleField ?? '';
     return {
         resource: resource.id, route, label: resource.label ?? resource.id, singular: collection?.singular ?? 'Entry',
@@ -70,7 +69,35 @@ export async function entryValues(cms: CmsHost, view: EditorView, record: Record
     return values;
 }
 
-export interface MediaPreview { id: string; url: string; title: string; alt: string; contentType: string; width: number | null; height: number | null }
+export type { MediaPreview } from './field-controls';
+import type { MediaPreview } from './field-controls';
+
+/** The block types editors can add: those of modules and active plugins. */
+export async function blockOptions(cms: CmsHost): Promise<BlockOption[]> {
+    return (await cms.blocks()).map(block => ({ name: block.name, label: block.label, description: block.description ?? '', icon: block.icon ?? '',
+        category: blockCategory(block), fields: editorFields(block.fields, []),
+        children: block.children ? { allowed: [...(block.children.allowed ?? [])], max: block.children.max ?? null } : null, parent: [...(block.parent ?? [])] }));
+}
+
+/** Previews of files by ID; missing files are left out. */
+export async function filePreviews(cms: CmsHost, ids: Iterable<string>): Promise<Record<string, MediaPreview>> {
+    const wanted = [...new Set(ids)].filter(Boolean).slice(0, 200);
+    if (!cms.files || !wanted.length) return {};
+    const files = await cms.files.getMany(wanted);
+    return Object.fromEntries([...files.values()].map(file => [file.id, { id: file.id, url: mediaUrl(file), title: file.title, alt: file.alt, contentType: file.contentType, width: file.width, height: file.height }]));
+}
+
+/** Previews of the files blocks use. */
+export function blockFilePreviews(cms: CmsHost, blocks: readonly Block[]): Promise<Record<string, MediaPreview>> {
+    return filePreviews(cms, blockMedia(blocks, cms.blockTypes));
+}
+
+/** The media library's newest files matching a search, for a media chooser. */
+export async function findMedia(cms: CmsHost, search: string, kind = ''): Promise<MediaPreview[]> {
+    if (!cms.files) return [];
+    const page = await cms.files.list({ search: search.slice(0, 100), limit: 40, ...(kind ? { kind: kind as MediaKind } : {}) });
+    return page.items.map(file => ({ id: file.id, url: mediaUrl(file), title: file.title, alt: file.alt, contentType: file.contentType, width: file.width, height: file.height }));
+}
 
 /** Previews of the media an entry's fields and blocks use. */
 export async function mediaPreviews(cms: CmsHost, values: EditorValues, view: EditorView): Promise<Record<string, MediaPreview>> {
@@ -81,7 +108,7 @@ export async function mediaPreviews(cms: CmsHost, values: EditorValues, view: Ed
             if (field.media && typeof value === 'string' && value) ids.add(value);
             if (field.media && Array.isArray(value)) for (const id of value) if (typeof id === 'string') ids.add(id);
             if (field.kind === 'blocks' && Array.isArray(value)) {
-                for (const block of value as { type: string; data: Record<string, unknown> }[]) collect(view.blocks.find(option => option.name === block.type)?.fields ?? [], block.data ?? {});
+                for (const block of flattenBlocks(value as EditorBlock[])) collect(view.blocks.find(option => option.name === block.type)?.fields ?? [], block.data ?? {});
             }
         }
     };
@@ -128,7 +155,7 @@ export async function entryInput(cms: CmsHost, route: string, values: EditorValu
     const fields = [...view.fields];
     const titleField = view.titleField;
     if (titleField && resource.fields[titleField]) fields.push(editorField(titleField, resource.fields[titleField]!));
-    for (const name of ['slug', 'publishedAt', 'parent', 'menuOrder', 'seo', 'locale', 'commentsOpen']) {
+    for (const name of ['slug', 'publishedAt', 'parent', 'menuOrder', 'seo', 'locale', 'commentsOpen', 'template']) {
         if (resource.fields[name] && (name !== 'slug' || view.slug) && (name !== 'publishedAt' || view.publishable)) fields.push(editorField(name, resource.fields[name]!));
     }
     const { input, errors } = editorInput(fields, values, view.blocks);

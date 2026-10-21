@@ -1,7 +1,7 @@
 import { Cossack, Page, State, type HeadValue } from '@cossackframework/core';
-import { isCmsError, type ArchiveView, type EntryView } from '@cossackframework/cms';
-import { commentResult, homeView, languageLinks, pageNumber, themeState, type ThemeState } from '../../cms/site';
-import { archiveTemplate, entryTemplate, siteTheme, themeHelpers, unavailable } from '../../cms/site-view';
+import { isCmsError, type ArchiveView, type EntryView, type ThemeData } from '@cossackframework/cms';
+import { commentResult, homeView, languageLinks, pageNumber, themeData, themeState, type ThemeState } from '../../cms/site';
+import { archiveTemplate, entryTemplate, siteContent, siteTheme, themeHelpers, unavailable } from '../../cms/site-view';
 import { entrySeo, homeSeo } from '../../cms/seo';
 import { emptySeo, seoHead, type SeoView } from '../../cms/seo-head';
 
@@ -12,6 +12,8 @@ export default class HomePage extends Cossack {
     @State() page: EntryView | null = null;
     @State() view: ArchiveView = { kind: 'home', collection: 'posts', taxonomy: null, title: '', description: '', entries: [], paging: { page: 1, pages: 1, base: '/' }, query: '' };
     @State() theme: ThemeState = { name: null, options: {} };
+    /** What the theme's loader for the page returned. */
+    @State() data: ThemeData = {};
     @State() seo: SeoView = emptySeo();
 
     head(): HeadValue {
@@ -29,9 +31,11 @@ export default class HomePage extends Cossack {
                 this.mode = 'page';
                 this.page = home.page;
                 this.seo = await entrySeo(cms, this.c, cms.collection('pages'), home.record, { ...home.page, url: '/' }, links);
+                this.data = await themeData(cms, this.theme, { kind: 'entry', collection: 'pages', template: home.page.template }, home.page, this.c.get('principal'), languages.default);
                 return;
             }
             this.view = { ...this.view, ...home.view };
+            this.data = await themeData(cms, this.theme, this.view, this.view, this.c.get('principal'), languages.default);
             this.seo = await homeSeo(cms, this.c, { url: '/', locale: languages.default, links, searchUrl: '/search' });
         } catch (error) {
             // Before setup, or while a migration is pending, content is unavailable.
@@ -43,9 +47,9 @@ export default class HomePage extends Cossack {
 
     render() {
         if (this.mode === 'unavailable') return unavailable();
-        const theme = siteTheme(this.theme.name);
-        const helpers = themeHelpers(theme, this.theme.options, (path, exact) => this.isActive(path, exact));
-        if (this.mode === 'page' && this.page) return entryTemplate(theme, this.page.collection)(this.page, helpers);
-        return archiveTemplate(theme, this.view)(this.view, helpers);
+        const theme = siteTheme(this.theme);
+        const helpers = themeHelpers(theme, { ...this.theme, data: { page: this.data } }, (path, exact) => this.isActive(path, exact));
+        if (this.mode === 'page' && this.page) return siteContent(entryTemplate(theme, this.page.collection, this.page.template)(this.page, helpers));
+        return siteContent(archiveTemplate(theme, this.view)(this.view, helpers));
     }
 }

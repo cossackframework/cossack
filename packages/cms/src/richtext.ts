@@ -1,3 +1,5 @@
+import { blockLayoutProblem, blocksShapeProblem } from './block-shape';
+
 /**
  * Rich text: a ProseMirror (TipTap) JSON document, `{ type: 'doc', content }`. The dashboard
  * edits it in the browser, the site renders it to HTML on the server, and the content API
@@ -28,6 +30,9 @@ export interface EmbeddedBlock {
     readonly id: string;
     readonly type: string;
     readonly data: { readonly [field: string]: unknown };
+    readonly layout?: { readonly hide?: readonly ('sm' | 'md' | 'lg')[] };
+    /** The blocks a container holds. */
+    readonly children?: readonly EmbeddedBlock[];
 }
 
 export const RICH_TEXT_LIMITS = Object.freeze({ bytes: 512 * 1024, nodes: 20_000, depth: 24, text: 100_000 });
@@ -72,6 +77,8 @@ const NODE_ATTRIBUTES: { readonly [type: string]: { readonly [name: string]: Att
         id: value => typeof value === 'string' && BLOCK_ID.test(value) ? value : INVALID,
         type: value => typeof value === 'string' && BLOCK_TYPE.test(value) ? value : INVALID,
         data: value => isPlainObject(value) ? value : INVALID,
+        layout: value => blockLayoutProblem(value) ? INVALID : value,
+        children: value => Array.isArray(value) && !blocksShapeProblem(value) ? value : INVALID,
     },
 };
 const REQUIRED_ATTRIBUTES: { readonly [type: string]: readonly string[] } = { heading: ['level'], image: ['src'], cmsBlock: ['id', 'type', 'data'] };
@@ -241,6 +248,8 @@ export function richTextExcerpt(doc: RichTextDoc | null | undefined, words = 55)
 export function richTextBlocks(doc: RichTextDoc | null | undefined): EmbeddedBlock[] {
     return (doc?.content ?? []).filter(node => node.type === 'cmsBlock' && node.attrs).map(node => ({
         id: node.attrs!.id as string, type: node.attrs!.type as string, data: (node.attrs!.data ?? {}) as EmbeddedBlock['data'],
+        ...(node.attrs!.layout ? { layout: node.attrs!.layout as EmbeddedBlock['layout'] } : {}),
+        ...(node.attrs!.children ? { children: node.attrs!.children as EmbeddedBlock['children'] } : {}),
     }));
 }
 
@@ -264,7 +273,7 @@ export function withRichTextBlocks(doc: RichTextDoc, blocks: readonly EmbeddedBl
         type: 'doc',
         content: Object.freeze(doc.content.map(node => {
             const block = node.type === 'cmsBlock' ? byId.get(node.attrs?.id as string) : undefined;
-            return block ? Object.freeze({ type: 'cmsBlock', attrs: Object.freeze({ id: block.id, type: block.type, data: block.data }) }) : node;
+            return block ? Object.freeze({ type: 'cmsBlock', attrs: Object.freeze({ id: block.id, type: block.type, data: block.data, ...(block.layout ? { layout: block.layout } : {}), ...(block.children ? { children: block.children } : {}) }) }) : node;
         })),
     });
 }

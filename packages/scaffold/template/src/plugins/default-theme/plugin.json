@@ -15,6 +15,9 @@
       "primary": "Primary menu",
       "footer": "Footer menu"
     },
+    "areas": {
+      "footer": "Footer widgets"
+    },
     "options": {
       "accent": {
         "kind": "enum",

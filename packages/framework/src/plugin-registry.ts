@@ -3,7 +3,7 @@
  * Server environments get each manifest and the plugin's optional `server.ts` module;
  * every environment gets names, versions, the optional `ui.ts` module (host slot
  * components), the `templates/*.ts` modules (a theme's templates) and the URLs of images in
- * `assets/`, such as a logo and a cover. Nothing scans packages at request time.
+ * `assets/`, such as a logo, a cover or a theme's stylesheet. Nothing scans packages at request time.
  */
 import registry from 'virtual:cossack-plugins';
 
@@ -25,7 +25,7 @@ export interface PluginRegistration {
   readonly ui: Record<string, unknown> | null;
   /** The plugin's `templates/*.ts` modules by file stem (`entry-posts` for `templates/entry-posts.ts`), in every environment. */
   readonly templates: Readonly<Record<string, Record<string, unknown>>>;
-  /** URLs of the images in the plugin's `assets/` directory, by path such as `assets/logo.png`. */
+  /** URLs of the files in the plugin's `assets/` directory (images, stylesheets, fonts), by path such as `assets/logo.png`. */
   readonly assets: Readonly<Record<string, string>>;
 }
 

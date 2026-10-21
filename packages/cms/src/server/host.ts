@@ -5,12 +5,13 @@
 import { createHookRegistry, type ActionHandler, type ActionPoint, type FilterHandler, type FilterPoint, type HookRegistry } from '@cossackframework/core/hooks';
 import type { StorageProvider } from '@cossackframework/core/storage';
 import { ClientError, type FastDB, type Statement, type Value, type WorkLimits } from '@cossackframework/fastdb';
-import { blockProblems, type BlockDeclaration } from '../blocks';
+import { blockMedia, blockProblems, validateBlocks, type Block, type BlockDeclaration } from '../blocks';
+import { blocksShapeProblem } from '../fields';
 import { collectionProblems, collectionResource, CORE_FIELDS, entryUrl, extendCollection, LOCALE, orderedFields, type CollectionDefinition } from '../collections';
 import { CmsError } from '../errors';
 import type { CmsModule } from '../module';
 import { appearance, general, media, type SettingsGroup } from '../settings';
-import { assembleSiteTheme, siteThemeProblems, type ThemeManifest } from '../theme';
+import { assembleSiteTheme, entryTemplateChoices, siteThemeProblems, type ArchiveView, type SiteTheme, type EntryView, type SiteView, type ThemeData, type ThemeManifest } from '../theme';
 import type { MenuItem, MenuItemView } from '../menus';
 import { recordTitle } from '../forms';
 import type { RecordShape } from '../records';
@@ -27,6 +28,7 @@ import { HOST_STEPS, HOST_TABLES } from './host-schema';
 import { CmsSettings } from './site-settings';
 import { createAuthSessionStore, createJobStore, createNotificationStore, createOAuthStateStore, createSessionStore } from './stores';
 import { CmsMenus } from './menus';
+import { CmsAreas } from './areas';
 import { CmsTaxonomies } from './taxonomies';
 import { CmsUsers } from './users';
 import { CmsPreviews, type PreviewLink } from './previews';
@@ -89,6 +91,10 @@ export interface CmsOptions {
      * cannot take as slugs. Default: api, auth, dashboard, feed, media, preview and search.
      */
     readonly reservedPaths?: readonly string[];
+    /** How long a theme loader may run before the page renders without its data. Default 1500 ms. */
+    readonly themeLoaderTimeoutMs?: number;
+    /** The largest JSON a theme loader may return, in characters. Default 65536. */
+    readonly themeDataLimit?: number;
 }
 
 /** The site's languages: the default one without a URL prefix, the others under `/<code>/`. */
@@ -108,10 +114,14 @@ export interface ThemeInfo {
     readonly label: string;
     readonly description: string;
     readonly locations: readonly { readonly name: string; readonly label: string }[];
+    /** Its widget areas, its parent's first. */
+    readonly areas: readonly { readonly name: string; readonly label: string }[];
+    /** The theme it extends, or null. */
+    readonly parent: string | null;
     /** Image URLs from the plugin's assets, or null for the default artwork. */
     readonly logo: string | null;
     readonly cover: string | null;
-    /** The settings group of its options, named after the plugin, or null. */
+    /** The settings group of its options (its parent's and its own), named after the plugin, or null. */
     readonly options: SettingsGroup | null;
     /** Why the theme cannot be used; empty when it can. */
     readonly problems: readonly string[];
@@ -145,6 +155,30 @@ export interface PluginContext {
 export interface PluginCms {
     resource(id: string): PluginResource;
 }
+
+/** What a theme loader receives besides the view. Reads go through the plugin's grants as the visitor. */
+export interface ThemeLoaderContext {
+    /** The theme plugin's repositories: its own resources and its granted ones. */
+    readonly cms: PluginCms;
+    /** The visitor; pass it to every read, such as `cms.resource(id).list(query, { principal })`. */
+    readonly principal: Principal;
+    /** Aborts when the loader runs out of time. */
+    readonly signal: AbortSignal;
+    /** The active theme's option values. */
+    readonly options: { readonly [name: string]: unknown };
+    /** The page's language. */
+    readonly locale: string;
+    /** The loader's key, such as `entry-projects`. */
+    readonly template: string;
+}
+
+/**
+ * A theme loader, exported from the theme's `server.ts` as `loaders[<template>]`. `layout`
+ * receives the `SiteView`; entry loaders the `EntryView`; list loaders the `ArchiveView`. It
+ * returns plain JSON, which templates read as `helpers.data`.
+ */
+export type ThemeLoader = { bivarianceHack(view: SiteView | EntryView | ArchiveView, context: ThemeLoaderContext): unknown }['bivarianceHack'];
+export type ThemeLoaders = { readonly [template: string]: ThemeLoader };
 
 export type PluginResource = Pick<ResourceRepository, 'get' | 'list' | 'search' | 'create' | 'update' | 'delete'>;
 
@@ -198,6 +232,8 @@ export class CmsHost {
     readonly taxonomies: CmsTaxonomies;
     readonly settings: CmsSettings;
     readonly menus: CmsMenus;
+    /** Widget areas of themes: block lists edited under Appearance → Widgets. */
+    readonly areas: CmsAreas;
     readonly previews: CmsPreviews;
     readonly autosaves: CmsAutosaves;
     readonly redirects: CmsRedirects;
@@ -224,10 +260,14 @@ export class CmsHost {
     #taxonomies = new Map<string, TaxonomyDeclaration>();
     readonly #blocks = new Map<string, BlockDeclaration & { readonly plugin?: string }>();
     readonly #themes = new Map<string, ThemeInfo>();
+    /** Plugins that are active, as of the last `ready()` or grant: their collections are on the site. */
+    #activePlugins = new Set<string>();
     readonly #reservedPaths: ReadonlySet<string>;
     readonly #now: () => number;
     readonly #activationTtl: number;
     readonly #fetch: typeof globalThis.fetch;
+    readonly #loaderTimeout: number;
+    readonly #dataLimit: number;
     #activation: { at: number; state: Promise<Activation> } | undefined;
     #definitions: { at: number; state: Promise<void> } | undefined;
     #upgrading: Promise<void> | undefined;
@@ -240,6 +280,8 @@ export class CmsHost {
         this.#activationTtl = options.activationTtlMs ?? 30_000;
         this.#reservedPaths = new Set(options.reservedPaths ?? ['api', 'auth', 'dashboard', 'feed', 'media', 'preview', 'search']);
         this.#fetch = options.fetch ?? ((input, init) => globalThis.fetch(input, init));
+        this.#loaderTimeout = options.themeLoaderTimeoutMs ?? 1500;
+        this.#dataLimit = options.themeDataLimit ?? 65_536;
         this.readLimits = { rowsRead: 50_000, vmSteps: 2_000_000, ...options.workLimits?.read };
         this.writeLimits = { rowsRead: 50_000, rowMutations: 1_000, vmSteps: 2_000_000, ...options.workLimits?.write };
         const modules = options.modules ?? [];
@@ -255,6 +297,13 @@ export class CmsHost {
             const problems = collectionProblems(definition);
             if (problems.length || this.#builtinCollections.has(definition.name)) throw new Error(`Collection ${definition.name}: ${problems.join(' ') || 'declared twice.'}`);
             this.#builtinCollections.set(definition.name, Object.freeze({ ...definition, builtin: true }));
+        }
+        // Plugin collections are built in, tagged with the plugin; a name another declares makes the plugin invalid.
+        for (const plugin of [...this.#plugins.values()]) {
+            if (plugin.problems.length) continue;
+            const taken = (plugin.manifest.collections ?? []).filter(definition => this.#builtinCollections.has(definition.name)).map(definition => `Collection ${definition.name} is already declared.`);
+            if (taken.length) { this.#plugins.set(plugin.manifest.name, { ...plugin, problems: taken, requested: [] }); continue; }
+            for (const definition of plugin.manifest.collections ?? []) this.#builtinCollections.set(definition.name, Object.freeze({ ...definition, builtin: true, plugin: plugin.manifest.name }));
         }
         const blocks = [...modules.flatMap(module => (module.blocks ?? []).map(block => ({ block, owner: undefined as string | undefined }))), ...(options.blocks ?? []).map(block => ({ block, owner: undefined }))];
         for (const plugin of this.#plugins.values()) if (!plugin.problems.length) blocks.push(...(plugin.manifest.blocks ?? []).map(block => ({ block, owner: plugin.manifest.name })));
@@ -300,6 +349,7 @@ export class CmsHost {
         }
         this.settings = new CmsSettings(this.db, groups, { now: this.#now });
         this.menus = new CmsMenus(this.db, { now: this.#now, resolve: (items, locale) => this.#resolveMenu(items, locale) });
+        this.areas = new CmsAreas(this.db, { now: this.#now, check: blocks => this.#checkBlocks(blocks) });
         this.previews = new CmsPreviews(this.db, { now: this.#now });
         this.autosaves = new CmsAutosaves(this.db, { now: this.#now });
         this.files = options.storage ? new FileService(this.db, options.storage, { now: this.#now, ...(options.images ? { images: options.images } : {}), ...options.files }) : null;
@@ -335,16 +385,29 @@ export class CmsHost {
     ready(options: { force?: boolean } = {}): Promise<void> {
         const now = this.#now();
         if (options.force || !this.#definitions || now - this.#definitions.at > this.#activationTtl) {
-            const state = this.#loadDefinitions().then(() => options.force ? undefined : this.#upgrade());
+            const state = this.#loadDefinitions().then(() => options.force ? undefined : this.#upgrade()).then(() => this.#refreshPlugins());
             this.#definitions = { at: now, state };
             state.catch(() => { this.#definitions = undefined; });
         }
         return this.#definitions.state;
     }
 
-    /** Current collections: built-in ones first, then by label. */
+    /** Current collections: built-in ones first, then by label. Collections of inactive plugins are left out. */
     collections(): CollectionDefinition[] {
-        return [...this.#collections.values()].sort((a, b) => Number(!a.builtin) - Number(!b.builtin) || a.label.localeCompare(b.label));
+        return [...this.#collections.values()].filter(collection => this.#shown(collection))
+            .sort((a, b) => Number(!a.builtin) - Number(!b.builtin) || a.label.localeCompare(b.label));
+    }
+
+    #shown(collection: CollectionDefinition): boolean {
+        return !collection.plugin || this.#activePlugins.has(collection.plugin);
+    }
+
+    /** Which plugins are active, for the collections they ship. */
+    async #refreshPlugins(): Promise<void> {
+        const state = await this.#state().catch(() => null);
+        const active = new Set<string>();
+        if (state) for (const plugin of this.#plugins.values()) if ((await this.#pluginStatus(plugin, state)).active) active.add(plugin.manifest.name);
+        this.#activePlugins = active;
     }
 
     /** The module's definition of a built-in collection, without fields an administrator added. */
@@ -354,7 +417,7 @@ export class CmsHost {
 
     collection(name: string): CollectionDefinition {
         const definition = this.#collections.get(name);
-        if (!definition) throw new CmsError('CMS_NOT_FOUND', `Unknown collection ${name}.`);
+        if (!definition || !this.#shown(definition)) throw new CmsError('CMS_NOT_FOUND', `Unknown collection ${name}.`);
         return definition;
     }
 
@@ -592,6 +655,119 @@ export class CmsHost {
         if (!theme) throw new CmsError('CMS_NOT_FOUND', `Unknown theme ${name}.`);
         if (theme.problems.length) throw new CmsError('CMS_VALIDATION', `${theme.label} cannot be used: ${theme.problems.join(' ')}`);
         await this.settings.update('appearance', { theme: name }, { principal });
+    }
+
+    /**
+     * Templates an editor can choose for one entry: the active theme's `entry-*` templates,
+     * except those named after a collection (`entry-posts`), which apply to it already.
+     */
+    async entryTemplates(): Promise<string[]> {
+        const theme = this.#siteTheme(await this.activeTheme());
+        const collections = new Set([...this.#collections.keys()].map(collection => `entry-${collection}`));
+        return entryTemplateChoices(theme && !siteThemeProblems(theme).length ? theme as SiteTheme : undefined).filter(template => !collections.has(template));
+    }
+
+    /** The keys of a theme's loaders, from its `server.ts` `loaders` export. */
+    themeLoaders(name: string | null): string[] {
+        return [...new Set(this.#themeChain(name).flatMap(plugin => Object.keys(loadersOf(plugin))))];
+    }
+
+    /** A theme's plugin and its parent's, child first. */
+    #themeChain(name: string | null): HostedPlugin[] {
+        const plugin = name ? this.#plugins.get(name) : undefined;
+        if (!plugin?.manifest.theme) return [];
+        const parent = this.#parentOf(plugin);
+        return parent ? [plugin, parent] : [plugin];
+    }
+
+    #parentOf(plugin: HostedPlugin): HostedPlugin | undefined {
+        const name = (plugin.manifest.theme as ThemeManifest | undefined)?.extends;
+        const parent = name && name !== plugin.manifest.name ? this.#plugins.get(name) : undefined;
+        return parent?.manifest.theme ? parent : undefined;
+    }
+
+    /** A usable theme's templates, layered over its parent's; undefined when it has problems. */
+    #siteTheme(name: string | null): SiteTheme | undefined {
+        const info = name ? this.#themes.get(name) : undefined;
+        if (!info || info.problems.length) return undefined;
+        const [plugin, parent] = this.#themeChain(name);
+        return assembleSiteTheme(plugin!.registration, parent?.registration) as SiteTheme;
+    }
+
+    /**
+     * Run the first of the candidates a theme has a loader for, with the theme plugin's grants,
+     * the visitor principal and a time limit. Returns its plain JSON, or `{}` when the theme has
+     * no such loader, is not active, fails, runs out of time or returns too much.
+     */
+    async themeData(name: string | null, candidates: readonly string[], view: SiteView | EntryView | ArchiveView,
+        context: { principal: Principal; options?: { readonly [name: string]: unknown }; locale?: string }): Promise<ThemeData> {
+        // A child's loader wins over its parent's for the same key; each runs with its own plugin's grants.
+        const chain = this.#themeChain(name);
+        let plugin: HostedPlugin | undefined;
+        let template: string | undefined;
+        for (const candidate of candidates) {
+            plugin = chain.find(entry => typeof loadersOf(entry)[candidate] === 'function');
+            if (plugin) { template = candidate; break; }
+        }
+        const loaders = plugin ? loadersOf(plugin) : undefined;
+        if (!plugin || !template || !loaders || plugin.problems.length || this.#themes.get(name!)?.problems.length) return {};
+        if (!(await this.pluginActive(plugin.manifest.name))) return {};
+        const controller = new AbortController();
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const timeout = new Promise<never>((_, reject) => {
+            timer = setTimeout(() => { controller.abort(); reject(new Error(`timed out after ${this.#loaderTimeout} ms`)); }, this.#loaderTimeout);
+        });
+        try {
+            const result = await Promise.race([Promise.resolve().then(() => loaders![template]!(view, {
+                cms: this.pluginCms(plugin.manifest.name), principal: context.principal, signal: controller.signal,
+                options: context.options ?? {}, locale: context.locale ?? ('locale' in view && typeof view.locale === 'string' ? view.locale : 'en'), template,
+            })), timeout]);
+            if (result === undefined || result === null) return {};
+            if (typeof result !== 'object' || Array.isArray(result)) throw new Error('it must return an object.');
+            const json = JSON.stringify(result);
+            if (json.length > this.#dataLimit) throw new Error(`it returned ${json.length} characters, more than ${this.#dataLimit}.`);
+            return JSON.parse(json) as ThemeData;
+        } catch (error) {
+            console.warn(`[cms] theme loader ${plugin.manifest.name}.${template} failed: ${(error as Error).message}`);
+            return {};
+        } finally {
+            clearTimeout(timer);
+        }
+    }
+
+    /** Widget areas of the active theme, then those only other themes declare. */
+    async areaLocations(): Promise<{ name: string; label: string; theme: string; active: boolean }[]> {
+        const active = await this.activeTheme();
+        const seen = new Set<string>();
+        const areas: { name: string; label: string; theme: string; active: boolean }[] = [];
+        for (const theme of [...this.themes()].sort((a, b) => Number(b.name === active) - Number(a.name === active))) {
+            if (theme.problems.length) continue;
+            for (const area of theme.areas) {
+                if (seen.has(area.name)) continue;
+                seen.add(area.name);
+                areas.push({ ...area, theme: theme.name, active: theme.name === active });
+            }
+        }
+        return areas;
+    }
+
+    /** Blocks for a widget area, checked as a blocks field checks them; their files must be ready. */
+    async #checkBlocks(value: unknown): Promise<Block[]> {
+        const shape = blocksShapeProblem(value);
+        if (shape) throw new CmsError('CMS_VALIDATION', `Widgets ${shape}`, { fields: { blocks: shape } });
+        const { blocks, errors } = validateBlocks(value as Block[], this.#blocks);
+        const first = Object.entries(errors)[0];
+        if (first) throw new CmsError('CMS_VALIDATION', `${first[0]}: ${first[1]}`, { fields: errors });
+        const plugins = [...new Set(blocks.map(block => this.#blocks.get(block.type)?.plugin).filter((plugin): plugin is string => !!plugin))];
+        for (const plugin of plugins) if (!(await this.pluginActive(plugin))) throw new CmsError('CMS_VALIDATION', `Blocks of ${plugin} are not available while the plugin is inactive.`);
+        const files = [...new Set(blockMedia(blocks, this.#blocks))];
+        if (files.length > 100) throw new CmsError('CMS_VALIDATION', 'Widgets name too many files.');
+        if (files.length) {
+            const list = files.map((_, index) => `$m${index}`).join(', ');
+            const found = await this.db.read([{ sql: `SELECT count(*) FROM cms_files WHERE status = 'ready' AND id IN (${list})`, params: Object.fromEntries(files.map((file, index) => [`$m${index}`, file])) }]);
+            if (Number(found.results[0]!.rows[0]![0] as bigint) !== files.length) throw new CmsError('CMS_VALIDATION', 'Widgets name a missing file.');
+        }
+        return blocks;
     }
 
     /** Menu locations of the active theme, then those only other themes declare. */
@@ -959,8 +1135,9 @@ export class CmsHost {
         if (hash !== await declarationHash(current)) {
             throw new CmsError('CMS_UNAVAILABLE', `${resource.id} is waiting for a schema migration.`);
         }
-        const plugin = this.#plugins.get(resource.owner);
-        if (plugin && !(await this.#pluginStatus(plugin, await this.#state())).active) throw new CmsError('CMS_UNAVAILABLE', `Plugin ${resource.owner} is not active.`);
+        const owner = collection ? this.#collections.get(resource.name)?.plugin ?? resource.owner : resource.owner;
+        const plugin = this.#plugins.get(owner);
+        if (plugin && !(await this.#pluginStatus(plugin, await this.#state())).active) throw new CmsError('CMS_UNAVAILABLE', `Plugin ${owner} is not active.`);
     }
 
     async status(): Promise<ActivationStatus> {
@@ -993,6 +1170,7 @@ export class CmsHost {
             })),
         ], { kind: 'cms.grants', retryConflicts: 5 });
         this.#activation = undefined;
+        await this.#refreshPlugins();
         return this.#pluginStatus(plugin, await this.#state());
     }
 
@@ -1001,6 +1179,7 @@ export class CmsHost {
         if (!hasPermission(principal, PERMISSIONS.managePlugins)) throw new CmsError('CMS_FORBIDDEN', 'Not allowed to manage plugins.');
         await this.db.write([{ sql: 'DELETE FROM cms_grants WHERE subject = $subject', params: { $subject: `plugin:${name}` } }], { kind: 'cms.grants', retryConflicts: 5 });
         this.#activation = undefined;
+        await this.#refreshPlugins();
     }
 
     /** Commands plugin manifests declare. */
@@ -1042,14 +1221,19 @@ export class CmsHost {
     }
 
     /** Forget cached activation, for example after a migration or grant made elsewhere. */
-    refreshActivation(): void { this.#activation = undefined; }
+    refreshActivation(): void {
+        this.#activation = undefined;
+        // The next ready() re-reads which plugins are active, for their collections.
+        this.#definitions = undefined;
+    }
 
     /** Repositories limited to a plugin's own resources and its granted ones. */
     pluginCms(name: string): PluginCms {
         return {
             resource: id => {
                 const plugin = this.#plugins.get(name);
-                const own = plugin?.resources.includes(id) ?? false;
+                // Its own resources and the collections it ships.
+                const own = (plugin?.resources.includes(id) || plugin?.manifest.collections?.some(collection => `cms/${collection.name}` === id)) ?? false;
                 const requested = new Set((plugin?.requested ?? []).filter(grant => grant.startsWith(`resource:${id}:`)).map(grant => grant.slice(`resource:${id}:`.length) as ResourceAction));
                 if (!own && !requested.size) throw new CmsError('CMS_FORBIDDEN', `Plugin ${name} has no grant for ${id}.`);
                 const repository = this.resource(id);
@@ -1180,13 +1364,26 @@ export class CmsHost {
     #hostTheme(plugin: HostedPlugin, groups: ReadonlySet<string>): ThemeInfo {
         const manifest = plugin.manifest.theme as ThemeManifest;
         const problems = [...plugin.problems];
-        if (!problems.length) problems.push(...siteThemeProblems(assembleSiteTheme(plugin.registration)));
-        const options = manifest && Object.keys(manifest.options ?? {}).length ? { id: plugin.manifest.name, label: manifest.label, permission: PERMISSIONS.manageAppearance, fields: manifest.options! } : null;
+        const parent = this.#parentOf(plugin);
+        const parentManifest = parent?.manifest.theme as ThemeManifest | undefined;
+        if (!problems.length && manifest?.extends) {
+            if (manifest.extends === plugin.manifest.name) problems.push('A theme cannot extend itself.');
+            else if (!parent) problems.push(`It extends ${manifest.extends}, which is not an installed theme.`);
+            else if (parent.problems.length) problems.push(`Its parent theme ${manifest.extends} is invalid.`);
+            else if (parentManifest?.extends) problems.push(`Its parent theme ${manifest.extends} extends another theme; themes extend one level.`);
+        }
+        if (!problems.length) problems.push(...siteThemeProblems(assembleSiteTheme(plugin.registration, parent?.registration)));
+        // A child's options, locations and areas are layered over its parent's; its option values are its own.
+        const inherited = manifest?.extends && parentManifest ? parentManifest : undefined;
+        const fields = { ...inherited?.options, ...manifest?.options };
+        const options = manifest && Object.keys(fields).length ? { id: plugin.manifest.name, label: manifest.label, permission: PERMISSIONS.manageAppearance, fields } : null;
         if (options && (groups.has(options.id) || !/^[a-z][a-z0-9-]{0,40}$/.test(options.id))) problems.push(`Its options need a settings group named ${options.id}, which is taken or too long.`);
+        const named = (entries: { readonly [name: string]: string }) => Object.entries(entries).map(([name, label]) => ({ name, label }));
         return Object.freeze({
             name: plugin.registration.name, version: plugin.registration.version,
             label: typeof manifest?.label === 'string' ? manifest.label : plugin.registration.name, description: typeof manifest?.description === 'string' ? manifest.description : '',
-            locations: Object.entries(manifest?.locations ?? {}).map(([name, label]) => ({ name, label })), ...artwork(plugin), options, problems,
+            locations: named({ ...inherited?.locations, ...manifest?.locations }), areas: named({ ...inherited?.areas, ...manifest?.areas }),
+            parent: inherited ? manifest.extends! : null, ...artwork(plugin), options, problems,
         });
     }
 
@@ -1312,7 +1509,10 @@ export class CmsHost {
         // A theme alone runs nothing on the server: choosing it under Appearance is all it needs.
         if (themeOnly) return { ...base, active: true, missing: [] };
         const unmigrated: string[] = [];
-        for (const id of plugin.resources) if (state.hashes.get(id) !== await declarationHash(this.resourceById(id))) unmigrated.push(id);
+        for (const id of [...plugin.resources, ...(plugin.manifest.collections ?? []).map(collection => `cms/${collection.name}`)]) {
+            const resource = this.#resources.get(id);
+            if (!resource || state.hashes.get(id) !== await declarationHash(resource)) unmigrated.push(id);
+        }
         const granted = state.grants.get(`plugin:${plugin.manifest.name}`) ?? new Set<string>();
         const missing = [PLUGIN_ENABLED, ...plugin.requested].filter(grant => !granted.has(grant));
         if (unmigrated.length) return { ...base, active: false, reason: `Waiting for a migration of ${unmigrated.join(', ')}.`, missing };
@@ -1367,9 +1567,15 @@ async function commentStatus(fields: { content: string; authorName: string; auth
     return 'approved';
 }
 
+/** A plugin's theme loaders, from its `server.ts` `loaders` export. */
+function loadersOf(plugin: HostedPlugin): ThemeLoaders {
+    const loaders = plugin.registration.module?.loaders;
+    return loaders && typeof loaders === 'object' ? Object.fromEntries(Object.entries(loaders).filter(([, loader]) => typeof loader === 'function')) as ThemeLoaders : {};
+}
+
 /** A plugin that only ships a theme: no resources, blocks, hooks, commands, slots or permissions. */
 function isThemeOnly(manifest: CmsPluginManifest): boolean {
-    return manifest.theme !== undefined && !manifest.resources?.length && !manifest.blocks?.length && !manifest.hooks?.length && !manifest.commands?.length
+    return manifest.theme !== undefined && !manifest.resources?.length && !manifest.collections?.length && !manifest.blocks?.length && !manifest.hooks?.length && !manifest.commands?.length
         && !Object.keys(manifest.ui?.slots ?? {}).length && !Object.keys(manifest.permissions?.resources ?? {}).length && !manifest.permissions?.network?.length && !manifest.permissions?.define?.length;
 }
 

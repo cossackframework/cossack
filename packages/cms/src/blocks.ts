@@ -1,11 +1,15 @@
 /**
- * Blocks: ordered, typed content sections stored in a `blocks` field as `{ id, type, data }`.
- * A block type declares its fields like a collection does. The host validates every block's
- * data on write; the site renders each type with its own component.
+ * Blocks: ordered, typed content sections stored in a `blocks` field as `{ id, type, data }`,
+ * with `children` under a container and `layout` for how a block shows. A block type declares
+ * its fields like a collection does, and which blocks it holds. The host validates every
+ * block's data on write; the site renders each type with its own component. Layouts are
+ * blocks: a group, columns and a grid hold other blocks, so one tree is stored, edited,
+ * diffed and shared as a pattern.
  */
 import { field, validateValue, type FieldDeclaration } from './fields';
 
-export { blocksShapeProblem } from './fields';
+export { blocksShapeProblem, blockLayoutProblem, BLOCK_LIMITS, BREAKPOINTS, type Breakpoint } from './block-shape';
+import { BLOCK_LIMITS, BREAKPOINTS, type Breakpoint } from './block-shape';
 
 export interface BlockDeclaration {
     /** `<owner>/<name>`, such as `core/paragraph` or `support-desk/ticket-form`. */
@@ -17,13 +21,26 @@ export interface BlockDeclaration {
     /** The block picker's group. Default `widgets`. */
     readonly category?: BlockCategory;
     readonly fields: { readonly [name: string]: FieldDeclaration };
+    /** The block holds other blocks: those named, or any, up to `max`. Absent for a leaf block. */
+    readonly children?: { readonly allowed?: readonly string[]; readonly max?: number };
+    /** The block goes only inside these types, as a column goes inside columns. Pickers offer it there alone. */
+    readonly parent?: readonly string[];
+}
+
+/** How a block shows, apart from its type's data. Checked by core for every block. */
+export interface BlockLayout {
+    /** Container widths the block is hidden at: `sm` below 640px, `md` below 1024px, `lg` from there. */
+    readonly hide?: readonly Breakpoint[];
 }
 
 export interface Block {
-    /** Stable within its field: 1-40 letters, digits, `_` or `-`. */
+    /** Stable within its field: 1-40 letters, digits, `_` or `-`; distinct across the whole tree. */
     readonly id: string;
     readonly type: string;
     readonly data: { readonly [field: string]: unknown };
+    readonly layout?: BlockLayout;
+    /** The blocks inside a container. */
+    readonly children?: readonly Block[];
 }
 
 /** Groups of the block picker, in its order, as in WordPress. */
@@ -42,9 +59,11 @@ export function blockCategory(declaration: Pick<BlockDeclaration, 'category'>): 
 }
 
 export const BLOCK_NAME = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\/[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
-/** Field kinds a block can hold. Blocks do not nest. */
 const ICON_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+/** Field kinds a block can hold. Nesting is through `children`, not fields. */
 const BLOCK_FIELD_KINDS = new Set(['string', 'text', 'enum', 'integer', 'number', 'boolean', 'datetime', 'list', 'json']);
+
+const GAP = field.enum(['none', 'small', 'medium', 'large'], { default: 'medium', label: 'Gap' });
 
 /** Built-in block types. */
 const core: BlockDeclaration[] = [
@@ -84,6 +103,25 @@ const core: BlockDeclaration[] = [
         caption: field.string({ max: 300, label: 'Caption' }),
     } },
     { name: 'core/divider', label: 'Divider', icon: 'minus-square', category: 'design', fields: {} },
+    // Layout: containers that hold other blocks. They render as CSS grid and respond to the
+    // width of the content they are in, so columns inside a column stack on their own.
+    { name: 'core/group', label: 'Group', icon: 'layers', category: 'design', description: 'A stack of blocks with one width.', fields: {
+        align: field.enum(['full', 'wide', 'center', 'left', 'right'], { default: 'full', label: 'Width', choices: { full: 'Full width', wide: 'Wide', center: 'Narrow, centered', left: 'Narrow, left', right: 'Narrow, right' } }),
+    }, children: {} },
+    { name: 'core/columns', label: 'Columns', icon: 'widget-2', category: 'design', description: 'Blocks side by side; they stack on small screens.', fields: {
+        gap: GAP,
+        stack: field.enum(['mobile', 'tablet', 'never'], { default: 'mobile', label: 'Stack', choices: { mobile: 'On phones', tablet: 'On phones and tablets', never: 'Never' } }),
+    }, children: { allowed: ['core/column'], max: 6 } },
+    { name: 'core/column', label: 'Column', icon: 'widget', category: 'design', parent: ['core/columns'], fields: {
+        span: field.integer({ min: 1, max: 12, label: 'Width', description: 'Out of 12; empty shares the space equally.' }),
+        verticalAlign: field.enum(['top', 'center', 'bottom'], { default: 'top', label: 'Vertical alignment' }),
+    }, children: {} },
+    { name: 'core/grid', label: 'Grid', icon: 'widget-3', category: 'design', description: 'Blocks in equal cells.', fields: {
+        columns: field.integer({ default: 3, min: 1, max: 6, label: 'Columns' }),
+        columnsMd: field.integer({ default: 2, min: 1, max: 6, label: 'Columns on tablets' }),
+        columnsSm: field.integer({ default: 1, min: 1, max: 6, label: 'Columns on phones' }),
+        gap: GAP,
+    }, children: { max: 24 } },
     // A synced pattern: the site renders the pattern's current content in its place.
     { name: 'core/pattern', label: 'Pattern', icon: 'widget-add', category: 'design', description: 'A synced pattern.', fields: {
         pattern: field.string({ required: true, max: 80, pattern: '[A-Za-z0-9_-]{1,80}', label: 'Pattern' }),
@@ -108,40 +146,75 @@ export function blockProblems(declaration: BlockDeclaration, owner?: string): st
         if (!BLOCK_FIELD_KINDS.has(entry.kind)) problems.push(`${at}: field ${name} cannot be ${entry.kind}.`);
         if (entry.unique || entry.index || entry.search || entry.slugFrom || entry.taxonomy) problems.push(`${at}: field ${name} cannot be indexed, searched or derived.`);
     }
+    const children = declaration?.children;
+    if (children !== undefined) {
+        if (!children || typeof children !== 'object' || Array.isArray(children)) problems.push(`${at}: children is an object.`);
+        else {
+            if (children.allowed !== undefined && (!Array.isArray(children.allowed) || !children.allowed.every(name => typeof name === 'string' && BLOCK_NAME.test(name)))) problems.push(`${at}: children.allowed lists block names.`);
+            if (children.max !== undefined && (!Number.isInteger(children.max) || children.max < 1 || children.max > BLOCK_LIMITS.count)) problems.push(`${at}: children.max is 1 to ${BLOCK_LIMITS.count}.`);
+        }
+    }
+    if (declaration?.parent !== undefined && (!Array.isArray(declaration.parent) || !declaration.parent.length || !declaration.parent.every(name => typeof name === 'string' && BLOCK_NAME.test(name)))) {
+        problems.push(`${at}: parent lists block names.`);
+    }
     return problems;
+}
+
+/** Whether `type` may go directly inside a block of `parent` (null for the top level), by their declarations. */
+export function blockAllowedIn(types: ReadonlyMap<string, BlockDeclaration>, type: string, parent: string | null): boolean {
+    const declaration = types.get(type);
+    if (!declaration) return false;
+    if (declaration.parent && (!parent || !declaration.parent.includes(parent))) return false;
+    if (parent === null) return true;
+    const container = types.get(parent)?.children;
+    return !!container && (!container.allowed || container.allowed.includes(type));
 }
 
 /**
  * Validate blocks against their types. Returns the blocks with defaults applied and unknown
- * data removed, or errors keyed by `<block id>.<field>`.
+ * data removed, or errors keyed by `<block id>.<field>`, or `<block id>` for a block that is
+ * not available or does not fit where it is.
  */
 export function validateBlocks(value: readonly Block[], types: ReadonlyMap<string, BlockDeclaration>, allowed?: readonly string[]): { blocks: Block[]; errors: { [path: string]: string } } {
     const errors: { [path: string]: string } = {};
-    const blocks: Block[] = [];
-    for (const block of value) {
-        const type = types.get(block.type);
-        if (!type || (allowed && allowed.length && !allowed.includes(block.type))) { errors[block.id] = `${block.type} is not an available block.`; continue; }
-        const data: { [field: string]: unknown } = {};
-        for (const [name, declaration] of Object.entries(type.fields)) {
-            const entry = block.data[name];
-            if (entry === undefined || entry === '' || entry === null) {
-                if (declaration.default !== undefined) data[name] = declaration.default;
-                else if (declaration.required) errors[`${block.id}.${name}`] = 'is required.';
-                continue;
+    const visit = (list: readonly Block[], parent: string | null): Block[] => {
+        const blocks: Block[] = [];
+        for (const block of list) {
+            const type = types.get(block.type);
+            if (!type || (parent === null && allowed && allowed.length && !allowed.includes(block.type))) { errors[block.id] = `${block.type} is not an available block.`; continue; }
+            if (!blockAllowedIn(types, block.type, parent)) { errors[block.id] = parent ? `${block.type} cannot go inside ${parent}.` : `${block.type} goes inside ${type.parent?.join(' or ')}.`; continue; }
+            const data: { [field: string]: unknown } = {};
+            for (const [name, declaration] of Object.entries(type.fields)) {
+                const entry = block.data[name];
+                if (entry === undefined || entry === '' || entry === null) {
+                    if (declaration.default !== undefined) data[name] = declaration.default;
+                    else if (declaration.required) errors[`${block.id}.${name}`] = 'is required.';
+                    continue;
+                }
+                const error = validateValue(name, declaration, entry);
+                if (error) errors[`${block.id}.${name}`] = error;
+                else data[name] = entry;
             }
-            const error = validateValue(name, declaration, entry);
-            if (error) errors[`${block.id}.${name}`] = error;
-            else data[name] = entry;
+            const children = block.children ?? [];
+            if (children.length && !type.children) { errors[block.id] = `${block.type} does not hold blocks.`; continue; }
+            if (type.children?.max !== undefined && children.length > type.children.max) { errors[block.id] = `holds at most ${type.children.max} blocks.`; continue; }
+            const hide = block.layout?.hide?.filter((entry, index, all) => all.indexOf(entry) === index);
+            const layout = hide?.length ? Object.freeze({ hide: Object.freeze([...BREAKPOINTS].filter(breakpoint => hide.includes(breakpoint))) }) : undefined;
+            blocks.push(Object.freeze({
+                id: block.id, type: block.type, data: Object.freeze(data),
+                ...(layout ? { layout } : {}),
+                ...(type.children ? { children: Object.freeze(visit(children, block.type)) } : {}),
+            }));
         }
-        blocks.push(Object.freeze({ id: block.id, type: block.type, data: Object.freeze(data) }));
-    }
-    return { blocks, errors };
+        return blocks;
+    };
+    return { blocks: visit(value, null), errors };
 }
 
-/** Media file IDs referenced by blocks, for existence checks. */
+/** Media file IDs referenced by blocks, nested ones included, for existence checks. */
 export function blockMedia(blocks: readonly Block[], types: ReadonlyMap<string, BlockDeclaration>): string[] {
     const ids: string[] = [];
-    for (const block of blocks) {
+    for (const block of flattenBlocks(blocks)) {
         for (const [name, declaration] of Object.entries(types.get(block.type)?.fields ?? {})) {
             if (!declaration.media) continue;
             const value = block.data[name];
@@ -155,4 +228,111 @@ export function blockMedia(blocks: readonly Block[], types: ReadonlyMap<string, 
 /** A new block ID. */
 export function blockId(): string {
     return crypto.randomUUID().replaceAll('-', '').slice(0, 12);
+}
+
+// --- The tree, for editors ---------------------------------------------------------
+
+/** Every block of a tree in document order, with where it sits. */
+export interface BlockPlace<T extends Block = Block> {
+    readonly block: T;
+    readonly depth: number;
+    /** The container's ID, or null at the top level. */
+    readonly parent: string | null;
+    /** Its position among its siblings. */
+    readonly index: number;
+}
+
+/** The blocks of a tree in document order. */
+export function flattenBlocks<T extends Block>(blocks: readonly T[]): T[] {
+    return placeBlocks(blocks).map(place => place.block);
+}
+
+/** The blocks of a tree in document order, with their depth, parent and index. */
+export function placeBlocks<T extends Block>(blocks: readonly T[], parent: string | null = null, depth = 0): BlockPlace<T>[] {
+    return blocks.flatMap((block, index) => [{ block, depth, parent, index }, ...placeBlocks((block.children ?? []) as readonly T[], block.id, depth + 1)]);
+}
+
+/** The block with an ID anywhere in the tree. */
+export function findBlock<T extends Block>(blocks: readonly T[], id: string): T | undefined {
+    return flattenBlocks(blocks).find(block => block.id === id);
+}
+
+/** The tree with one block replaced by what `change` returns for it. */
+export function updateBlock<T extends Block>(blocks: readonly T[], id: string, change: (block: T) => T): T[] {
+    return blocks.map(block => block.id === id ? change(block) : block.children ? { ...block, children: updateBlock(block.children as readonly T[], id, change) } : block);
+}
+
+/** The tree without one block and what it held. */
+export function removeBlock<T extends Block>(blocks: readonly T[], id: string): T[] {
+    return blocks.filter(block => block.id !== id).map(block => block.children ? { ...block, children: removeBlock(block.children as readonly T[], id) } : block);
+}
+
+/** The tree with a block inserted under `parent` (null for the top level) at `index`, or last. */
+export function insertBlock<T extends Block>(blocks: readonly T[], parent: string | null, block: T, index?: number): T[] {
+    const at = (list: readonly T[]): T[] => {
+        const position = index === undefined ? list.length : Math.min(Math.max(index, 0), list.length);
+        return [...list.slice(0, position), block, ...list.slice(position)];
+    };
+    if (parent === null) return at(blocks);
+    return blocks.map(entry => entry.id === parent ? { ...entry, children: at((entry.children ?? []) as readonly T[]) }
+        : entry.children ? { ...entry, children: insertBlock(entry.children as readonly T[], parent, block, index) } : entry);
+}
+
+/**
+ * The tree with a block moved under `parent` at `index`, counted among the siblings without
+ * it. Unchanged when the target is the block itself or inside it.
+ */
+export function moveBlock<T extends Block>(blocks: readonly T[], id: string, parent: string | null, index: number): T[] {
+    const block = findBlock(blocks, id);
+    if (!block || parent === id || (parent && findBlock(block.children ?? [], parent))) return [...blocks];
+    return insertBlock(removeBlock(blocks, id), parent, block, index);
+}
+
+export type BlockMove = 'up' | 'down' | 'in' | 'out';
+
+/**
+ * WordPress's moves: up or down past a sibling, in as the last child of the sibling above,
+ * or out to follow its container. Returns the same array when the move is not possible or
+ * the types do not allow it there.
+ */
+export function shiftBlock<T extends Block>(blocks: readonly T[], id: string, move: BlockMove, types: ReadonlyMap<string, BlockDeclaration>): readonly T[] {
+    const places = placeBlocks(blocks);
+    const place = places.find(entry => entry.block.id === id);
+    if (!place) return blocks;
+    const siblings = place.parent === null ? blocks : (findBlock(blocks, place.parent)?.children ?? []) as readonly T[];
+    let next: T[] | undefined;
+    switch (move) {
+        case 'up': if (place.index > 0) next = moveBlock(blocks, id, place.parent, place.index - 1); break;
+        case 'down': if (place.index < siblings.length - 1) next = moveBlock(blocks, id, place.parent, place.index + 1); break;
+        case 'in': {
+            const above = siblings[place.index - 1];
+            if (above && types.get(above.type)?.children) next = moveBlock(blocks, id, above.id, (above.children ?? []).length);
+            break;
+        }
+        case 'out': {
+            if (place.parent === null) break;
+            const container = places.find(entry => entry.block.id === place.parent)!;
+            next = moveBlock(blocks, id, container.parent, container.index + 1);
+            break;
+        }
+    }
+    return next && !blockTreeProblem(next, types) ? next : blocks;
+}
+
+/** Why a tree breaks the types' nesting rules or the limits; undefined when it is fine. */
+export function blockTreeProblem(blocks: readonly Block[], types: ReadonlyMap<string, BlockDeclaration>): string | undefined {
+    const places = placeBlocks(blocks);
+    if (places.length > BLOCK_LIMITS.count) return `At most ${BLOCK_LIMITS.count} blocks.`;
+    const typeOf = new Map(places.map(place => [place.block.id, place.block.type]));
+    for (const { block, parent: parentId, depth } of places) {
+        if (depth >= BLOCK_LIMITS.depth) return `Blocks nest at most ${BLOCK_LIMITS.depth} deep.`;
+        const type = types.get(block.type);
+        if (!type) continue;
+        const parent = parentId ? typeOf.get(parentId) ?? null : null;
+        if (!blockAllowedIn(types, block.type, parent)) return parent ? `${type.label} cannot go inside ${types.get(parent)?.label ?? parent}.` : `${type.label} goes inside ${type.parent?.map(name => types.get(name)?.label ?? name).join(' or ')}.`;
+        const children = block.children ?? [];
+        if (children.length && !type.children) return `${type.label} does not hold blocks.`;
+        if (type.children?.max !== undefined && children.length > type.children.max) return `${type.label} holds at most ${type.children.max} blocks.`;
+    }
+    return undefined;
 }

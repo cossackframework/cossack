@@ -57,7 +57,7 @@ export async function navigation(c: Context): Promise<DashboardModule[]> {
     const admin: DashboardModule[] = [];
     if (can(PERMISSIONS.manageAppearance)) {
         admin.push({ id: 'appearance', label: 'Appearance', href: '/dashboard/appearance', icon: icon('palette-2'), authorization: { permission: PERMISSIONS.manageAppearance },
-            children: [{ label: 'Themes', href: '/dashboard/appearance' }, { label: 'Customize', href: '/dashboard/appearance/customize' }, { label: 'Menus', href: '/dashboard/appearance/menus' }] });
+            children: [{ label: 'Themes', href: '/dashboard/appearance' }, { label: 'Customize', href: '/dashboard/appearance/customize' }, { label: 'Menus', href: '/dashboard/appearance/menus' }, { label: 'Widgets', href: '/dashboard/appearance/widgets' }] });
     }
     if (can(PERMISSIONS.manageCollections)) {
         admin.push({ id: 'collections', label: 'Collections', href: '/dashboard/collections', icon: icon('structure'), authorization: { permission: PERMISSIONS.manageCollections },

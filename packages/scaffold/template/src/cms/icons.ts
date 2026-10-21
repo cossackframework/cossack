@@ -45,6 +45,10 @@ import { CodeSquareIcon } from '@cossackframework/solar-icons/code-square/line';
 import { CursorSquareIcon } from '@cossackframework/solar-icons/cursor-square/line';
 import { PlayCircleIcon } from '@cossackframework/solar-icons/play-circle/line';
 import { MinusSquareIcon } from '@cossackframework/solar-icons/minus-square/line';
+import { LayersIcon } from '@cossackframework/solar-icons/layers/line';
+import { WidgetIcon } from '@cossackframework/solar-icons/widget/line';
+import { Widget2Icon } from '@cossackframework/solar-icons/widget-2/line';
+import { Widget3Icon } from '@cossackframework/solar-icons/widget-3/line';
 
 export const ICONS: Readonly<Record<string, IconEntry>> = Object.freeze({
     'document-text': { line: DocumentTextIcon },
@@ -93,6 +97,10 @@ export const ICONS: Readonly<Record<string, IconEntry>> = Object.freeze({
     'cursor-square': { line: CursorSquareIcon },
     'play-circle': { line: PlayCircleIcon },
     'minus-square': { line: MinusSquareIcon },
+    'layers': { line: LayersIcon },
+    'widget': { line: WidgetIcon },
+    'widget-2': { line: Widget2Icon },
+    'widget-3': { line: Widget3Icon },
 });
 
 /** Names offered for collections, in the builder's order. */
