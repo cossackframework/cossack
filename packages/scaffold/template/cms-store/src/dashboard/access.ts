@@ -18,6 +18,8 @@ export async function navigation(c: Context): Promise<DashboardModule[]> {
     const content: DashboardModule[] = [];
     const ordered = [...cms.collections()].sort((a, b) => (a.name === 'posts' ? -1 : b.name === 'posts' ? 1 : 0));
     for (const collection of ordered) {
+        // Forms have their own section, after Comments.
+        if (collection.name === 'forms') continue;
         const resource = cms.resourceById(`cms/${collection.name}`);
         const create = evaluateRule(resource.access.create, principal) !== 'deny';
         if (!create && !can(`cms/${collection.name}:update`) && !can(`cms/${collection.name}:read`)) continue;
@@ -48,6 +50,16 @@ export async function navigation(c: Context): Promise<DashboardModule[]> {
     if (can(PERMISSIONS.moderateComments) && cms.collections().some(collection => collection.comments)) {
         const pending = await cms.comments.counts().then(counts => counts.pending).catch(() => 0);
         content.push({ id: 'comments', label: pending ? `Comments (${pending})` : 'Comments', href: '/dashboard/comments', icon: icon('chat-round-dots'), authorization: { permission: PERMISSIONS.moderateComments } });
+    }
+    // Forms follow comments; the label counts new submissions.
+    if (cms.collections().some(collection => collection.name === 'forms')) {
+        const create = evaluateRule(cms.resourceById('cms/forms').access.create, principal) !== 'deny';
+        if (create || can('cms/forms:read') || can('cms/forms:update') || can(PERMISSIONS.manageSubmissions)) {
+            const fresh = can(PERMISSIONS.manageSubmissions)
+                ? await cms.forms.all().then(forms => cms.forms.inboxCounts(forms, principal)).then(counts => [...counts.values()].reduce((sum, count) => sum + count.fresh, 0)).catch(() => 0) : 0;
+            content.push({ id: 'forms', label: fresh ? `Forms (${fresh})` : 'Forms', href: '/dashboard/forms', icon: icon('checklist-minimalistic'), authorization: 'authenticated',
+                children: [{ label: 'All forms', href: '/dashboard/forms' }, ...(create ? [{ label: 'Add new', href: '/dashboard/content/forms/new' }] : [])] });
+        }
     }
     // Host slot: active plugins add navigation links.
     for (const link of await cms.slotLinks('dashboard.nav', principal).catch(() => [])) {

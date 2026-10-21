@@ -134,7 +134,7 @@ describe.skipIf(!live)('forms', () => {
         expect(lines[1]).toContain(",new,Cy,cy@example.com,,One,Yes,'+1 555 0100,198.51.100.1,/contact,Test,,Called back,");
         expect(lines[2]).toContain(',read,Ada,ada@example.com,Support,Help *me*,No,,203.0.113.7');
         expect(lines).toHaveLength(3);
-        expect((await cms.forms.newCounts([form], editor)).get(contact.id)).toBe(1);
+        expect((await cms.forms.inboxCounts([form], editor)).get(contact.id)).toEqual({ fresh: 1, kept: 2 });
     });
 
     it('adds inputs without touching stored submissions', async () => {

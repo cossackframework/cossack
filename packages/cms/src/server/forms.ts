@@ -97,6 +97,8 @@ export class CmsForms {
     readonly #resources = new Map<string, Resource>();
     /** The declaration hash each resource's table is known to have. */
     readonly #synced = new Map<string, string>();
+    /** Forms loaded in this isolate, by ID, with the revision they were loaded at. */
+    readonly #loaded = new Map<string, { key: string; form: LoadedForm }>();
     #warned = false;
 
     constructor(host: CmsHost, options: { mail?: CmsMail; mailFrom?: string } = {}) {
@@ -128,6 +130,19 @@ export class CmsForms {
 
     /** A form from its record. Brings its submissions table up to date when the inputs changed. */
     async load(record: RecordShape): Promise<LoadedForm> {
+        // A form at the same revision, with the same block types, has the same table.
+        const key = `${record.rev}:${record.updatedAt}:${this.#host.blockTypes.size}`;
+        const cached = this.#loaded.get(record.id);
+        if (cached?.key === key && this.#synced.has(cached.form.resource.id)) {
+            this.#resources.set(cached.form.resource.id, cached.form.resource);
+            return cached.form;
+        }
+        const form = await this.#build(record);
+        this.#loaded.set(record.id, { key, form });
+        return form;
+    }
+
+    async #build(record: RecordShape): Promise<LoadedForm> {
         const blocks = Array.isArray(record.body) ? record.body as Block[] : [];
         const inputs = formInputs(blocks, this.#host.blockTypes);
         const settings = formSettings(record.settings);
@@ -168,6 +183,7 @@ export class CmsForms {
         ], { kind: 'cms.migration' });
         this.#resources.delete(id);
         this.#synced.delete(id);
+        this.#loaded.delete(formId);
         this.#host.refreshActivation();
     }
 
@@ -379,16 +395,22 @@ export class CmsForms {
         return Object.fromEntries(SUBMISSION_STATUSES.map((status, index) => [status, counts[index]!])) as { [K in SubmissionStatus]: number };
     }
 
-    /** New submissions of each form, for the navigation and the forms list. Forms whose table cannot be read count 0. */
-    async newCounts(forms: readonly LoadedForm[], principal: Principal): Promise<Map<string, number>> {
+    /**
+     * New and kept (new and read) submissions of each form, for the navigation and the forms
+     * list. Forms whose table cannot be read count 0.
+     */
+    async inboxCounts(forms: readonly LoadedForm[], principal: Principal): Promise<Map<string, { fresh: number; kept: number }>> {
         if (!hasPermission(principal, PERMISSIONS.manageSubmissions) || !forms.length) return new Map();
-        const counts = new Map<string, number>();
-        for (let offset = 0; offset < forms.length; offset += 30) {
-            const chunk = forms.slice(offset, offset + 30);
+        const counts = new Map<string, { fresh: number; kept: number }>();
+        for (let offset = 0; offset < forms.length; offset += 15) {
+            const chunk = forms.slice(offset, offset + 15);
             try {
-                const result = await this.#host.db.read(chunk.map(form => ({ sql: `SELECT count(*) FROM ${form.resource.storage} WHERE status = 'new'` })));
-                chunk.forEach((form, index) => counts.set(form.ref.id, Number(result.results[index]!.rows[0]![0] as bigint)));
-            } catch { for (const form of chunk) counts.set(form.ref.id, 0); }
+                const result = await this.#host.db.read(chunk.flatMap(form => [
+                    { sql: `SELECT count(*) FROM ${form.resource.storage} WHERE status = 'new'` },
+                    { sql: `SELECT count(*) FROM ${form.resource.storage} WHERE status IN ('new', 'read')` },
+                ]));
+                chunk.forEach((form, index) => counts.set(form.ref.id, { fresh: Number(result.results[index * 2]!.rows[0]![0] as bigint), kept: Number(result.results[index * 2 + 1]!.rows[0]![0] as bigint) }));
+            } catch { for (const form of chunk) counts.set(form.ref.id, { fresh: 0, kept: 0 }); }
         }
         return counts;
     }

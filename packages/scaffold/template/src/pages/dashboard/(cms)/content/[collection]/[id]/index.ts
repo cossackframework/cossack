@@ -9,6 +9,8 @@ import { RichTextField, richTextEditors } from '../../../../../../cms/rich-text-
 import { BlockTree } from '../../../../../../cms/block-tree';
 import { fieldControl } from '../../../../../../cms/field-controls';
 import { box, CONTROL, linkButton, notice, shortDate, STATUS_LABELS, statusBadge } from '../../../../../../cms/ui';
+import { conditionFields } from '../../../../../../cms/condition-control';
+import { notificationRulesControl } from '../../../../../../cms/notification-rules';
 import { siteOrigin } from '../../../../../../cms/seo';
 
 type MediaTarget = { field: string; block?: string; key?: string; multiple?: boolean; insert?: boolean; richText?: boolean; dialog?: boolean; group?: boolean };
@@ -622,6 +624,10 @@ export default class EntryEditor extends Cossack {
                 ${component(Checkbox, { checked: chosen.includes(choice.name), '@change': (event: Event) => change((event.target as HTMLInputElement).checked
                     ? [...new Set([...chosen, choice.name])].join('\n') : chosen.filter(name => name !== choice.name).join('\n')) })} ${choice.label}</label>`)}</div>`;
         }
+        // A form's notifications: a list of emails, not JSON.
+        if (this.view?.route === 'forms' && field.name === 'notifications' && target.block === undefined) {
+            return notificationRulesControl(String(value ?? ''), conditionFields(this.blocks('body'), this.view.blocks), id, change);
+        }
         switch (field.kind) {
             // Media files open this editor's picker, which knows where the chosen file goes.
             case 'list': if (field.media) return this.mediaControl({ ...target, multiple: true }, value, field.label); break;
@@ -950,7 +956,9 @@ export default class EntryEditor extends Cossack {
         const main = view.fields.filter(field => field.placement === 'main');
         const sidebar = view.fields.filter(field => field.placement === 'sidebar');
         const base = `/dashboard/content/${view.route}`;
-        const permalink = view.slug ? entryUrl(view.path, [String(this.values.slug ?? '') || '…']) : null;
+        // Forms have no URL: their slug names them where the Form block places them.
+        const form = view.route === 'forms';
+        const permalink = view.slug ? form ? String(this.values.slug ?? '') || '…' : entryUrl(view.path, [String(this.values.slug ?? '') || '…']) : null;
         return html`<div class="space-y-6">
             <div class="flex flex-wrap items-center justify-between gap-3">
                 <div class="flex items-center gap-3">
@@ -959,7 +967,8 @@ export default class EntryEditor extends Cossack {
                 </div>
                 <div class="flex items-center gap-3 text-sm">
                     ${this.meta.url ? html`<a href=${this.meta.url} class="text-primary hover:underline" target="_blank" rel="noopener">${__('View')} ${view.singular.toLowerCase()} ↗</a>` : null}
-                    <a href=${base} class="text-muted-foreground hover:text-foreground">← ${__('All')} ${view.label.toLowerCase()}</a>
+                    ${form && this.id !== 'new' ? html`<a href=${`/dashboard/forms/${this.id}/submissions`} class="text-primary hover:underline">${__('Submissions')}</a>` : null}
+                    <a href=${form ? '/dashboard/forms' : base} class="text-muted-foreground hover:text-foreground">← ${__('All')} ${view.label.toLowerCase()}</a>
                 </div>
             </div>
             ${this.message ? notice(this.message, 'success') : null}
@@ -979,13 +988,14 @@ export default class EntryEditor extends Cossack {
                         ${this.errors[titleField] ? html`<p id="field-title-error" role="alert" class="text-xs text-destructive">${this.errors[titleField]}</p>` : null}
                     </div>` : null}
                     ${permalink !== null ? html`<div class="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-                        <span>${__('Permalink')}:</span>
+                        <span>${form ? __('Slug') : __('Permalink')}:</span>
                         ${this.editingSlug ? html`<input id="field-slug" class=${`${CONTROL} max-w-xs py-1`} aria-label=${__('Slug')} .value=${String(this.values.slug ?? '')}
                                 @input=${(event: Event) => this.setSlug((event.target as HTMLInputElement).value)}>
                             ${component(Button, { type: 'button', size: 'sm', variant: 'outline', '@click': () => { this.editingSlug = false; } }, __('OK'))}`
                             : html`<code class="rounded bg-muted px-1.5 py-0.5 text-foreground">${permalink}</code>
                             <button type="button" class="text-primary hover:underline bg-transparent border-none p-0 cursor-pointer" @click=${() => { this.editingSlug = true; }}>${__('Edit')}</button>`}
                         <span class="sr-only" aria-live="polite">${String(this.values.slug ?? '')}</span>
+                        ${form ? html`<span class="basis-full text-xs">${__('Place the form on a page with the Form block and this slug.')}</span>` : null}
                         ${this.errorFor('slug')}
                     </div>` : null}
                     ${main.map(field => this.fieldRow(field))}

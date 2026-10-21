@@ -46,8 +46,10 @@ async function contactPage(origin, routeIds, diagnostics) {
   return { web, form: created.item };
 }
 
+const INBOX = 'dashboard/(cms)/forms/[id]/submissions/index.ts';
+
 async function forms(origin, routeIds, diagnostics) {
-  const { web } = await contactPage(origin, routeIds, diagnostics);
+  const { web, form } = await contactPage(origin, routeIds, diagnostics);
 
   // The page renders the form as HTML; the phone waits for its condition; the hidden field has its default.
   const html = await (await fetch(`${origin}/write-to-us?source=ad`)).text();
@@ -63,7 +65,8 @@ async function forms(origin, routeIds, diagnostics) {
 
   // Without JavaScript: a post with errors returns to the page once, with the errors and what was typed.
   const started = String(Date.now() - 60_000);
-  const send = (fields, ip, headers = {}) => web.request('/api/cms/forms/contact', { method: 'POST', headers: { 'x-forwarded-for': ip, ...headers }, body: new URLSearchParams({ _page: '/write-to-us', _started: started, ...fields }) });
+  // Workers read the sender from cf-connecting-ip, Node from x-forwarded-for.
+  const send = (fields, ip, headers = {}) => web.request('/api/cms/forms/contact', { method: 'POST', headers: { 'x-forwarded-for': ip, 'cf-connecting-ip': ip, ...headers }, body: new URLSearchParams({ _page: '/write-to-us', _started: started, ...fields }) });
   const invalid = await send({ name: 'Bo', email: 'not mail', message: '', callMe: 'on' }, '198.51.100.1');
   expect(invalid.status).toBe(303);
   const back = invalid.headers.get('location');
@@ -108,6 +111,44 @@ async function forms(origin, routeIds, diagnostics) {
   expect(inbox.items[0].meta).toMatchObject({ ip: '198.51.100.4', page: '/write-to-us' });
   const spam = await (await web.request('/api/cms/forms/contact/submissions?status=spam')).json();
   expect(spam.items.map(item => item.values.name)).toEqual(['Bot']);
+
+  // The dashboard: the section counts new submissions; the forms list; the inbox; one submission.
+  contains(await web.page('/dashboard'), 'Forms (2)');
+  const list = await web.page('/dashboard/forms');
+  contains(list, 'Contact');
+  contains(list, '2 new');
+  const inboxPage = await web.page(`/dashboard/forms/${form.id}/submissions`);
+  contains(inboxPage, 'Ed');
+  contains(inboxPage, 'cy@example.com');
+  lacks(inboxPage, 'bot@example.com');
+  const [ed, cy] = inbox.items;
+  const detail = await web.page(`/dashboard/forms/${form.id}/submissions/${ed.id}`);
+  contains(detail, '+44 20 7946 0000');
+  contains(detail, '198.51.100.4');
+  contains(detail, '/write-to-us');
+  // Opening a submission marks it read.
+  contains(await web.page('/dashboard'), 'Forms (1)');
+  // Bulk actions run through the inbox's server method.
+  await web.action(INBOX, 'apply', [[cy.id], 'trash'], { params: { id: form.id } });
+  expect((await (await web.request('/api/cms/forms/contact/submissions?status=trash')).json()).items.map(item => item.id)).toEqual([cy.id]);
+  await web.action(INBOX, 'apply', [[cy.id], 'read'], { params: { id: form.id } });
+  // The export: a header from the inputs' labels, a row per submission, formulas defused.
+  const exported = await web.request('/api/cms/forms/contact/submissions/export');
+  expect(exported.headers.get('content-type')).toBe('text/csv; charset=utf-8');
+  expect(exported.headers.get('content-disposition')).toMatch(/^attachment; filename="contact-submissions-\d{4}-\d{2}-\d{2}\.csv"$/);
+  const bytes = new Uint8Array(await exported.arrayBuffer());
+  // A byte order mark, so spreadsheets read the file as UTF-8.
+  expect([...bytes.slice(0, 3)]).toEqual([0xef, 0xbb, 0xbf]);
+  const csv = new TextDecoder().decode(bytes).split('\r\n');
+  expect(csv[0]).toBe('Submitted at,Status,Your name,Email,Topic,Message,Call me,Phone,Source,IP address,Page,Browser,User,Note,ID');
+  expect(csv[1]).toContain(",read,Ed,ed@example.com,,Hi,Yes,'+44 20 7946 0000,ad,198.51.100.4,/write-to-us,");
+  expect(csv[2]).toContain(',read,Cy,cy@example.com,Support,Hello *there*,No,,,198.51.100.2,');
+  expect(csv).toHaveLength(4);
+  expect((await fetch(`${origin}/api/cms/forms/contact/submissions/export`)).status).toBe(401);
+  // The form's editor names its slug and links to its submissions.
+  const editor = await web.page(`/dashboard/content/forms/${form.id}`);
+  contains(editor, 'Place the form on a page with the Form block and this slug.');
+  contains(editor, `/dashboard/forms/${form.id}/submissions`);
   return { web };
 }
 
@@ -129,6 +170,25 @@ describe.skipIf(!liveFastDBTests())('generated CMS forms', () => {
     try {
       await forms(app.server.origin, app.routeIds, () => app.server.diagnostics());
     } finally { await app.close(); }
+  }, 600_000);
+
+  it('posts and stores forms on Cloudflare Workers', async () => {
+    const root = await project('cloudflare', ['cms']);
+    const database = await startFastDBService();
+    try {
+      await vite(root, []);
+      const configPath = path.join(root, 'dist/ssr/wrangler.json');
+      await fs.writeFile(path.join(path.dirname(configPath), '.dev.vars'), [
+        'APP_SECRET=generated-cms-test-secret-0123456789abcdef', `FASTDB_URL=${database.url}`, `FASTDB_TOKEN=${database.token}`, 'CMS_SETUP_CODE=setup-code-for-tests',
+      ].join('\n') + '\n');
+      const routeIds = JSON.parse(await fs.readFile(path.join(root, 'dist/client/cossack-routes.json'), 'utf8')).filePathToId;
+      const { createTestHarness } = await import('wrangler');
+      const runtime = createTestHarness({ root, workers: [{ configPath }] });
+      try {
+        const { url } = await runtime.listen();
+        await forms(new URL(url).origin, routeIds, () => '');
+      } finally { await runtime.close(); }
+    } finally { await database.stop(); }
   }, 600_000);
 
   it('applies conditions, checks fields and sends in place in the browser', async () => {
@@ -171,6 +231,51 @@ describe.skipIf(!liveFastDBTests())('generated CMS forms', () => {
       expect(errors).toEqual([]);
       const inbox = await (await web.request('/api/cms/forms/contact/submissions')).json();
       expect(inbox.items.map(item => item.values)).toEqual([{ name: 'Ada', email: 'ada@example.com', topic: 'support', message: 'Please call.', callMe: true, phone: '+1 555 0100', source: 'site' }]);
+
+      // In the dashboard: a new form from input blocks, a field shown on a checkbox, and an email.
+      const context = await browser.newContext();
+      await context.addCookies([...web.jar].map(([name, value]) => ({ name, value, url: origin })));
+      const admin = await context.newPage();
+      admin.on('pageerror', error => errors.push(error.message));
+      const ready = () => admin.waitForFunction(() => window.__cossackReady === true);
+      const addBlock = async (search, name) => {
+        await admin.getByRole('button', { name: 'Add block', exact: true }).last().click();
+        const picker = admin.getByRole('dialog', { name: 'Blocks' });
+        await browserExpect(picker.getByRole('heading', { name: 'Form fields' })).toBeVisible();
+        await picker.getByLabel('Search blocks').fill(search);
+        await picker.getByRole('button', { name, exact: true }).click();
+        await browserExpect(picker).toBeHidden();
+      };
+      await admin.goto(`${origin}/dashboard/content/forms/new`);
+      await ready();
+      await admin.getByPlaceholder('Add title').fill('Newsletter');
+      await addBlock('email', 'Email');
+      await admin.getByRole('region', { name: 'Email 1' }).getByLabel('Label *').fill('Your email');
+      await addBlock('checkbox', 'Checkbox');
+      await admin.getByRole('region', { name: 'Checkbox 2' }).getByLabel('Label *').fill('Tell us more');
+      await addBlock('text', 'Text');
+      const more = admin.getByRole('region', { name: 'Text 3' });
+      await more.getByLabel('Label *').fill('Interests');
+      await more.getByLabel('Conditional logic').check();
+      await more.getByLabel('Field', { exact: true }).selectOption('tellUsMore');
+      await more.getByLabel('Value', { exact: true }).fill('true');
+      await admin.getByRole('button', { name: 'Add notification' }).click();
+      await admin.getByRole('button', { name: 'Save', exact: true }).click();
+      await admin.waitForURL(/\/dashboard\/content\/forms\/[0-9a-f-]{36}\?saved=1$/);
+      const built = await (await fetch(`${origin}/api/cms/forms/newsletter`)).json();
+      expect(built.inputs.map(entry => [entry.name, entry.kind])).toEqual([['yourEmail', 'email'], ['tellUsMore', 'boolean'], ['interests', 'string']]);
+      expect(built.blocks[2].when).toEqual({ rules: [{ field: 'tellUsMore', op: 'is', value: 'true' }] });
+      const saved = await (await web.request(`/api/cms/content/forms/${built.id}`)).json();
+      expect(saved.item.notifications.rules).toEqual([expect.objectContaining({ label: 'Admin notification', to: '{admin_email}' })]);
+      // Other content does not offer input blocks.
+      await admin.goto(`${origin}/dashboard/content/posts/new`);
+      await ready();
+      await admin.getByRole('button', { name: 'Add block' }).click();
+      const picker = admin.getByRole('dialog', { name: 'Blocks' });
+      await browserExpect(picker.getByRole('heading', { name: 'Widgets' })).toBeVisible();
+      await browserExpect(picker.getByRole('heading', { name: 'Form fields' })).toHaveCount(0);
+      await browserExpect(picker.getByRole('button', { name: 'Form', exact: true })).toBeVisible();
+      expect(errors).toEqual([]);
     } finally {
       await browser?.close();
       await app.close();

@@ -1,7 +1,7 @@
 # Forms: a block-based form builder with per-form submission tables
 
 Builds on `specs/cms-essentials.md` (collections, comments, webhooks, outbox) and
-`specs/cms-layout.md` (nested blocks). Status: in progress on branch `cms-foundation`, 2026-10-21. Phases 1 (model), 2 (host) and 3 (site) done.
+`specs/cms-layout.md` (nested blocks). Status: in progress on branch `cms-foundation`, 2026-10-21. Phases 1 (model), 2 (host), 3 (site) and 4 (dashboard) done.
 
 A form is an entry of a built-in `forms` collection whose `body` is blocks: inputs are
 block types, and the core containers lay them out. Every form stores its submissions in a
@@ -159,18 +159,23 @@ after the submission is committed.
 
 ### Dashboard
 
-- **Forms** in the content navigation after Comments, with the new-submission count,
-  for `cms/forms:read` or `cms:submissions`. `/dashboard/forms` lists forms with their
-  counts; `/dashboard/forms/new` and `/dashboard/forms/<id>` is the form editor, built
-  from the entry editor's pieces: the block tree for `fields` (picker limited to form
-  blocks and containers, a condition control on the General tab that lists the form's
-  inputs), the group control for `settings`, and a rules editor for `notifications`
-  with a merge-tag menu. The generic entry editor still opens `cms/forms`, so nothing is
-  lost before the dedicated screen lands.
-- **Submissions** at `/dashboard/forms/<id>/submissions`: status tabs with counts,
-  search, a table of the first four inputs plus time and status, bulk mark, a detail
-  drawer with every value, the metadata and the note, and Export CSV. Permission
-  `cms:submissions`, granted to Editors by default.
+- **Forms** in the content navigation after Comments, labelled with the new-submission
+  count, for `cms/forms:*` or `cms:submissions`; the generic collection entry is left
+  out. `/dashboard/forms` lists forms with their slug, fields, kept and new submissions,
+  and whether they are accepting.
+- **The form editor is the entry editor** at `/dashboard/content/forms/<id>`, with what a
+  form needs: the block tree offers input blocks (other fields never do) and a
+  conditional logic control on each block's General tab, listing the form's inputs; the
+  slug shows with how to place the form; `notifications` is a list of emails (name,
+  recipients, reply-to, subject, message, an optional condition) with a merge-tag list;
+  a link opens the submissions. A separate screen would duplicate the editor's autosave,
+  revisions and validation for no gain.
+- **Submissions** at `/dashboard/forms/<id>/submissions`: tabs (all, unread, read, spam,
+  trash) with counts, search, a table of the first four inputs and the time, bulk
+  actions, cursor pages, Export CSV (`/api/cms/forms/<slug>/submissions/export`, UTF-8
+  with a byte order mark). One submission at `.../submissions/<submission>` (the URL
+  notification emails link to): every answer, the details, a note, status actions; opening
+  a new one marks it read. Permission `cms:submissions`, granted to Editors by default.
 
 ### Out of scope now
 

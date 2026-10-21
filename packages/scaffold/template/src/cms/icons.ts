@@ -63,6 +63,21 @@ import { AlignLeftIcon } from '@cossackframework/solar-icons/align-left/line';
 import { AlignHorizontalCenterIcon } from '@cossackframework/solar-icons/align-horizontal-center/line';
 import { AlignRightIcon } from '@cossackframework/solar-icons/align-right/line';
 import { PaletteIcon } from '@cossackframework/solar-icons/palette/line';
+import { ChecklistMinimalisticIcon } from '@cossackframework/solar-icons/checklist-minimalistic/line';
+import { LetterIcon } from '@cossackframework/solar-icons/letter/line';
+import { LinkIcon } from '@cossackframework/solar-icons/link/line';
+import { PhoneIcon } from '@cossackframework/solar-icons/phone/line';
+import { TextSquareIcon } from '@cossackframework/solar-icons/text-square/line';
+import { CalculatorIcon } from '@cossackframework/solar-icons/calculator/line';
+import { CalendarIcon } from '@cossackframework/solar-icons/calendar/line';
+import { ListDownIcon } from '@cossackframework/solar-icons/list-down/line';
+import { RecordCircleIcon } from '@cossackframework/solar-icons/record-circle/line';
+import { ChecklistIcon } from '@cossackframework/solar-icons/checklist/line';
+import { CheckSquareIcon } from '@cossackframework/solar-icons/check-square/line';
+import { ShieldCheckIcon } from '@cossackframework/solar-icons/shield-check/line';
+import { EyeClosedIcon } from '@cossackframework/solar-icons/eye-closed/line';
+import { InboxIcon } from '@cossackframework/solar-icons/inbox/line';
+import { DownloadMinimalisticIcon } from '@cossackframework/solar-icons/download-minimalistic/line';
 
 export const ICONS: Readonly<Record<string, IconEntry>> = Object.freeze({
     'align-left': { line: AlignLeftIcon },
@@ -130,6 +145,22 @@ export const ICONS: Readonly<Record<string, IconEntry>> = Object.freeze({
     'arrow-down': { line: ArrowDownIcon },
     'arrow-left': { line: ArrowLeftIcon },
     'arrow-right': { line: ArrowRightIcon },
+    // Forms: the section, its input blocks and the submissions screen.
+    'checklist-minimalistic': { line: ChecklistMinimalisticIcon },
+    'letter': { line: LetterIcon },
+    'link': { line: LinkIcon },
+    'phone': { line: PhoneIcon },
+    'text-square': { line: TextSquareIcon },
+    'calculator': { line: CalculatorIcon },
+    'calendar': { line: CalendarIcon },
+    'list-down': { line: ListDownIcon },
+    'record-circle': { line: RecordCircleIcon },
+    'checklist': { line: ChecklistIcon },
+    'check-square': { line: CheckSquareIcon },
+    'shield-check': { line: ShieldCheckIcon },
+    'eye-closed': { line: EyeClosedIcon },
+    'inbox': { line: InboxIcon },
+    'download-minimalistic': { line: DownloadMinimalisticIcon },
 });
 
 /** Names offered for collections, in the builder's order. */
