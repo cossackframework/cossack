@@ -1,7 +1,7 @@
 # Forms: a block-based form builder with per-form submission tables
 
 Builds on `specs/cms-essentials.md` (collections, comments, webhooks, outbox) and
-`specs/cms-layout.md` (nested blocks). Status: in progress on branch `cms-foundation`, 2026-10-21. Phases 1 (model) and 2 (host) done.
+`specs/cms-layout.md` (nested blocks). Status: in progress on branch `cms-foundation`, 2026-10-21. Phases 1 (model), 2 (host) and 3 (site) done.
 
 A form is an entry of a built-in `forms` collection whose `body` is blocks: inputs are
 block types, and the core containers lay them out. Every form stores its submissions in a
@@ -126,26 +126,36 @@ after the submission is committed.
 
 ### Site and API
 
-- **Placing a form.** A `core/form` block (widgets) with `form` naming a form by slug
-  renders it inline through `helpers.form(view)`. `FormView` carries the form's blocks,
-  settings, prefilled values (`cms.form.prefill` filter over the query string),
-  errors, the honeypot and start fields, the Turnstile key and the action URL. The
-  default theme renders it; a theme overrides `blocks['core/form']` or any input block.
-- **Rendering.** `coreBlock` gains the input renderers in `cms/form-blocks.ts`: label,
-  control, description, error, `data-when` for conditions, `data-input` for the script.
-  Markup is plain HTML that submits without JavaScript. `cms/forms.css` joins
-  `blocks.css`.
-- **Routes.** `POST /api/cms/forms/<slug>` accepts form data or JSON. A form post returns
-  303 to the page with `?form=<slug>&result=<ok|error>&id=` and the page re-renders the
-  form with the stored errors and values from a one-time `cms_form_results` row (so a
-  refresh does not resubmit and errors survive the redirect); JSON gets
-  `{ confirmation }` or `{ errors }`. `GET /api/cms/forms/<slug>` returns the form for
-  headless sites; `GET /api/cms/forms/<slug>/submissions` lists with an API token that
-  has `cms:submissions`.
-- **Client script.** `cms/form.client.ts`, loaded when a page has a form: applies
-  conditions as values change, validates with `validateSubmission` on submit, posts as
-  JSON, shows errors inline and the confirmation in place or follows the redirect.
-  Nothing works differently when it fails to load.
+- **Placing a form.** A `core/form` block (widgets, shipped by `formsModule`) with `form`
+  naming a form by slug. Site pages give each one its `FormView` (`RenderedBlock.form`):
+  the form's blocks rendered, each input block with its `InputView` (name, value, error,
+  choices) and each conditional block with `shown`; the closed message, sign-in link or
+  the returning post's notice; `_started`; the Turnstile key; input kinds for the script.
+  Starting values are the inputs' defaults, hidden inputs from the page's query, then
+  `cms.form.prefill`. Entries, the home page, previews and widget areas place forms; the
+  site editor's draft view does not yet. A theme overrides `blocks['core/form']` or any
+  input block, or wraps `formBlock` and `inputBlock` from `cms/form-view.ts`.
+- **Rendering.** `coreBlock` renders `core/form` and `form/*` through `cms/form-view.ts`:
+  label, control, help and error, plain HTML with `novalidate` that posts without
+  JavaScript. A conditional block is wrapped in `data-cms-when`, marked `data-hidden` while
+  hidden; `blocks.css` hides those only under `@media (scripting: enabled)`, so without
+  JavaScript every field shows and the server applies the conditions. The trap field
+  `_website` sits off screen.
+- **Routes.** `POST /api/cms/forms/<slug>` accepts form data or JSON, same-origin only.
+  A form post returns 303 to `_page` with `?form=<slug>&result=<key>#form-<slug>`, and the
+  page shows the confirmation, or the errors with what was typed, from a one-time
+  `cms_form_results` row (a refresh does not resubmit); a redirect confirmation goes to
+  its page. With `Accept: application/json` the answer is `{ confirmation }` (a message as
+  HTML, or a URL) or the usual error JSON with `fields`. `GET /api/cms/forms/<slug>`
+  returns the form for headless sites; `GET /api/cms/forms/<slug>/submissions` lists for
+  an application password or session with `cms:submissions`.
+- **Client script.** `cms/form.client.ts`, loaded by the form's `ref` once a form is on
+  the page: applies conditions as values change, shows `validateSubmission`'s messages
+  as fields are left and on sending, posts the form data asking for JSON, then shows the
+  confirmation in place or follows the redirect. It writes only into elements rendered
+  empty and toggles attributes, so hydration markers stay intact.
+- **Scaffold wiring.** `modules` include `formsModule`; `cmsFor` passes the `EMAIL`
+  binding and `MAIL_FROM` as the host's mail; maintenance runs `cms.forms.maintain()`.
 
 ### Dashboard
 

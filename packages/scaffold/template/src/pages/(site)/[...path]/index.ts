@@ -85,7 +85,10 @@ export default class SitePath extends Cossack {
             }
             const settings = await cms.settings.all();
             const links = await languageLinks(cms, resolved);
-            const viewOptions = { comment: commentResult(this.c.req.query('comment')), user: this.user ? { name: this.user.name } : null };
+            const viewOptions = {
+                comment: commentResult(this.c.req.query('comment')), user: this.user ? { name: this.user.name } : null,
+                forms: { query: this.c.req.query(), principal: this.c.get('principal'), url: base },
+            };
             if (resolved.kind === 'home') {
                 const home = await homeView(cms, resolved.locale, page, viewOptions);
                 if (home.page && home.record) {

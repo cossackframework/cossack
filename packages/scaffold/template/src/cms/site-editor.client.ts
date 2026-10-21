@@ -568,7 +568,7 @@ export class SiteEditor extends Cossack {
     private bodyPanel(): TemplateResult | null {
         const field = this.props.draft.view.fields.find(entry => entry.name === this.props.draft.bodyField);
         if (!field) return null;
-        const blocks = this.props.draft.view.blocks.filter(block => block.name !== 'core/pattern' && (!field.blocks.length || field.blocks.includes(block.name)));
+        const blocks = this.props.draft.view.blocks.filter(block => block.name !== 'core/pattern' && !block.input && (!field.blocks.length || field.blocks.includes(block.name)));
         const form = this.embedded;
         const option = form ? this.option(form.type) : undefined;
         return html`<div class="space-y-3">

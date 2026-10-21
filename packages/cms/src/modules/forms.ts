@@ -1,5 +1,5 @@
 import { CmsError } from '../errors';
-import { FORM_BLOCKS, forms, formInputs, formSettings, notificationProblems } from '../form-builder';
+import { FORM_BLOCKS, FORM_EMBED_BLOCK, forms, formInputs, formSettings, notificationProblems } from '../form-builder';
 import { beforeWrite } from '../hooks';
 import type { CmsModule } from '../module';
 import type { Block } from '../blocks';
@@ -7,14 +7,15 @@ import type { Block } from '../blocks';
 export { forms, FORM_BLOCKS } from '../form-builder';
 
 /**
- * The built-in forms module: the `forms` collection and its input blocks. A form's settings
- * and notifications are checked against its inputs when it is saved.
+ * The built-in forms module: the `forms` collection, its input blocks and `core/form`, which
+ * places a form in content. A form's settings and notifications are checked against its
+ * inputs when it is saved.
  */
 export const formsModule: CmsModule = {
     owner: 'cms',
     resources: [],
     collections: [forms],
-    blocks: FORM_BLOCKS,
+    blocks: [...FORM_BLOCKS, FORM_EMBED_BLOCK],
     register({ hooks, blocks }) {
         hooks.addFilter(beforeWrite, (draft, { input }) => {
             if (input.resource !== 'cms/forms') return draft;

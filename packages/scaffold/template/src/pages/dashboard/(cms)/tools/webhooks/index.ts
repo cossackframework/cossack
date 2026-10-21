@@ -7,7 +7,7 @@ import { notice, pageHeader, shortDate } from '../../../../../cms/ui';
 
 const EVENT_LABELS: Record<WebhookEvent, string> = {
     'entry.created': 'An entry is created', 'entry.updated': 'An entry changes', 'entry.published': 'An entry is published',
-    'entry.unpublished': 'An entry is unpublished', 'entry.deleted': 'An entry is deleted',
+    'entry.unpublished': 'An entry is unpublished', 'entry.deleted': 'An entry is deleted', 'form.submitted': 'A form is submitted',
 };
 
 interface Form { id: string; name: string; url: string; events: string[]; collections: string[]; active: boolean }

@@ -77,7 +77,7 @@ import type { MediaPreview } from './field-controls';
 export async function blockOptions(cms: CmsHost): Promise<BlockOption[]> {
     return (await cms.blocks()).map(block => ({ name: block.name, label: block.label, description: block.description ?? '', icon: block.icon ?? '',
         category: blockCategory(block), fields: editorFields(block.fields, []),
-        children: block.children ? { allowed: [...(block.children.allowed ?? [])], max: block.children.max ?? null } : null, parent: [...(block.parent ?? [])], supports: [...blockSupports(block)] }));
+        children: block.children ? { allowed: [...(block.children.allowed ?? [])], max: block.children.max ?? null } : null, parent: [...(block.parent ?? [])], supports: [...blockSupports(block)], input: Boolean(block.input) }));
 }
 
 /** Previews of files by ID; missing files are left out. */

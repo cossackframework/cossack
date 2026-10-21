@@ -42,7 +42,7 @@ export {
     PRESET_KINDS, DEFAULT_PRESETS, presetProblems, layerPresets, resolvePresets, presetOverridesProblem, presetStyle, blockStyleAttributes, customCssProblem,
     type Preset, type PresetKind, type ThemePresets, type PresetOverrides,
     type ThemeManifest, type SiteTheme, type ThemeSource, type EntryTemplate, type ArchiveTemplate, type TemplatePage, type ThemeData, type FieldView, type EntryReference, type ThemeHelpers, type SiteView, type EntryView, type ArchiveView, type RenderedBlock, type BodyPart, type MediaView, type TermLink, type Paging,
-    type CommentView, type CommentsView, type CommentFormView, type LanguageLink,
+    type CommentView, type CommentsView, type CommentFormView, type LanguageLink, type FormView, type InputView,
 } from './theme';
 export { diffWords, compareRecords, comparableValue, type DiffPart, type FieldChange } from './diff';
 export { REDIRECT_STATUSES, REDIRECT_PATH, redirectPath, redirectProblems, type Redirect, type RedirectInput, type RedirectStatus } from './redirects';

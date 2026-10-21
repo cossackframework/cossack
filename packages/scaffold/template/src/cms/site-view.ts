@@ -5,6 +5,7 @@
  */
 import { component, html, ifDefined, unsafeHTML, type TemplateResult } from '@cossackframework/renderer';
 import { plugins } from '@cossackframework/framework/plugins';
+import { formBlock, inputBlock } from './form-view';
 import { archiveTemplate, assembleSiteTheme, blockStyleAttributes, entryTemplate, presetStyle, resolvePresets, siteThemeProblems, type ArchiveView, type EntryView, type MediaView, type MenuItemView, type RenderedBlock, type SiteTheme, type ThemeData, type ThemeHelpers, type ThemePresets } from '@cossackframework/cms';
 
 export { archiveTemplate, entryTemplate };
@@ -72,7 +73,9 @@ export function themeHelpers(theme: SiteTheme, state: ThemeRenderState, isActive
             style=${ifDefined([attributes.style, column ? `--cms-span: ${columnSpan(block)}` : ''].filter(Boolean).join('; ') || undefined)}>${rendered}</div>` : rendered;
         // A hidden block stays in the HTML; the stylesheet drops it at those container widths.
         const hide = block.layout?.hide ?? [];
-        return hide.length ? html`<div data-hide=${hide.join(' ')} style="display: contents">${styled}</div>` : styled;
+        const sized = hide.length ? html`<div data-hide=${hide.join(' ')} style="display: contents">${styled}</div>` : styled;
+        // In a form, a block with a condition shows or hides as the form's values change.
+        return block.when ? html`<div data-cms-when=${block.id} ?data-hidden=${block.shown === false} style="display: contents">${sized}</div>` : sized;
     };
     return helpers;
 }
@@ -171,7 +174,9 @@ export function coreBlock(block: RenderedBlock, helpers: ThemeHelpers): Template
             return html`<div class="cms-grid" data-gap=${text('gap') || 'medium'} style=${`--cms-cols-lg: ${count('columns', 3)}; --cms-cols-md: ${count('columnsMd', 2)}; --cms-cols-sm: ${count('columnsSm', 1)}`}>
                 ${children.map(child => html`<div class="min-w-0">${helpers.block(child)}</div>`)}</div>`;
         }
+        case 'core/form': return formBlock(block, helpers);
         default: {
+            if (block.type.startsWith('form/')) return inputBlock(block);
             const plugin = plugins.find(entry => block.type.startsWith(`${entry.name}/`));
             const blocks = (plugin?.ui as { blocks?: Record<string, unknown> } | null | undefined)?.blocks;
             const view = blocks?.[block.type.slice(block.type.indexOf('/') + 1)] ?? blocks?.[block.type];

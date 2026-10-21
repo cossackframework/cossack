@@ -15,6 +15,8 @@ import { newBlock, type BlockOption, type EditorBlock, type EditorField } from '
 import type { MediaPreview } from './field-controls';
 import { blockIcon, icon } from './icons';
 import { blockTabs, styleControls, styleValues, withStyle, type BlockTab } from './style-controls';
+import { conditionControl, conditionFields } from './condition-control';
+import type { BlockCondition } from '@cossackframework/cms';
 
 export type BlockTreeProps = {
     /** Page-unique prefix for control IDs. */
@@ -24,6 +26,8 @@ export type BlockTreeProps = {
     options: BlockOption[];
     /** Types the field allows at the top level; empty for all. */
     allowed: string[];
+    /** The field holds a form: input blocks are offered. */
+    form?: boolean;
     onChange(blocks: EditorBlock[]): void;
     /** A field's control; the screen's own, so media choosing lands in the right block. */
     control(field: EditorField, value: unknown, change: (value: unknown) => void, block: EditorBlock, id: string): TemplateResult | null;
@@ -43,8 +47,8 @@ export const BREAKPOINT_DEVICES: { readonly [key in Breakpoint]: { label: string
 };
 
 /** Types the inserter offers inside `parent` (null at the top level), by the types' nesting rules. */
-export function offeredIn(options: readonly BlockOption[], parent: BlockOption | null, allowed: readonly string[] = []): BlockOption[] {
-    return options.filter(option => option.name !== 'core/pattern' && (parent
+export function offeredIn(options: readonly BlockOption[], parent: BlockOption | null, allowed: readonly string[] = [], form = false): BlockOption[] {
+    return options.filter(option => option.name !== 'core/pattern' && (form || !option.input) && (parent
         ? !!parent.children && (!parent.children.allowed.length || parent.children.allowed.includes(option.name)) && (!option.parent.length || option.parent.includes(parent.name))
         : !option.parent.length && (!allowed.length || allowed.includes(option.name))));
 }
@@ -121,6 +125,14 @@ export class BlockTree extends Cossack {
     @Client()
     private setValue(id: string, key: string, value: unknown) {
         this.props.onChange(updateBlock(this.props.blocks, id, block => ({ ...block, data: { ...block.data, [key]: value } })));
+    }
+
+    @Client()
+    private setCondition(id: string, when: BlockCondition | undefined) {
+        this.props.onChange(updateBlock(this.props.blocks, id, block => {
+            const { when: _previous, ...rest } = block;
+            return when ? { ...rest, when } : rest;
+        }));
     }
 
     @Client()
@@ -247,7 +259,10 @@ export class BlockTree extends Cossack {
             <div role="tabpanel" id=${`${prefix}-panel-${tab}`} aria-labelledby=${`${prefix}-tab-${tab}`}>
                 ${tab === 'style' ? styleControls(styleValues(block), option.supports, this.props.presets ?? { colors: [], fontSizes: [], spacing: [] }, prefix,
                     values => this.props.onChange(updateBlock(this.props.blocks, block.id, entry => withStyle(entry, values))))
-                : option.fields.length ? this.fields(block, option) : html`<p class="text-sm text-muted-foreground">${__('This block has no settings.')}</p>`}
+                : html`<div class="space-y-3">
+                    ${option.fields.length ? this.fields(block, option) : this.props.form ? null : html`<p class="text-sm text-muted-foreground">${__('This block has no settings.')}</p>`}
+                    ${this.props.form ? conditionControl(block.when, conditionFields(this.props.blocks, this.props.options, block.id), prefix, when => this.setCondition(block.id, when)) : null}
+                </div>`}
             </div>
         </div>`;
     }
@@ -308,7 +323,7 @@ export class BlockTree extends Cossack {
 
     private list(blocks: readonly EditorBlock[], parent: EditorBlock | null, depth: number): TemplateResult {
         const container = parent ? this.option(parent.type) ?? null : null;
-        const offered = offeredIn(this.props.options, container, this.props.allowed);
+        const offered = offeredIn(this.props.options, container, this.props.allowed, this.props.form === true);
         const full = container?.children?.max !== null && container?.children?.max !== undefined && blocks.length >= container.children.max;
         return html`<div class=${depth ? 'space-y-3 border-l-2 pl-3' : 'space-y-3'} style=${depth ? levelBorder(depth) : ''} data-block-tree-list=${parent?.id ?? ''}>
             ${blocks.length ? blocks.map((block, index) => this.section(block, index, blocks, parent, depth))

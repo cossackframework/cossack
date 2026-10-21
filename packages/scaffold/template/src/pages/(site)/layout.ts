@@ -45,7 +45,7 @@ export default class SiteLayout extends Cossack {
             // The catch-all route resolves its path first; other routes are in the default language.
             const resolved = this.c.get('cms.site');
             const page = resolved && 'locale' in resolved ? resolved : { kind: this.c.req.path === '/' ? 'home' as const : 'search' as const, locale: languages.default };
-            this.site = await siteView(cms, this.theme, { locale: page.locale, languages: await languageLinks(cms, page) });
+            this.site = await siteView(cms, this.theme, { locale: page.locale, languages: await languageLinks(cms, page), forms: { query: this.c.req.query(), principal: this.c.get('principal'), url: this.c.req.path } });
             this.data = await themeData(cms, this.theme, 'layout', this.site, this.c.get('principal'), page.locale);
         } catch { this.site = { ...this.site, title: config('app.name') }; }
     }

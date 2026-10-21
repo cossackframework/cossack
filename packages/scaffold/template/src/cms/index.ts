@@ -13,6 +13,10 @@ export interface CmsBindings extends PendingBindings, MediaBindings {
     /** Database grant (Cloud `query` scope) or the local service token. Server-only. */
     FASTDB_TOKEN?: string;
     APP_URL?: string;
+    /** Sends form notifications: Cloudflare's Email Service binding, or any `{ send(message) }`. */
+    EMAIL?: { send(message: { to: string; from: string; subject: string; text: string; replyTo?: string }): Promise<unknown> };
+    /** The sender of form notifications. */
+    MAIL_FROM?: string;
 }
 
 declare module 'hono' {
@@ -34,7 +38,11 @@ export function cmsFor(env: CmsBindings): CmsHost {
         const db = createFastDB({ url, token, pending: pendingWrites(env), reconcilers: cmsReconcilers() });
         const storage = mediaStorage(env);
         const images = imageTransformer(env);
-        current = { key, cms: createCMS({ db, modules, resources, plugins, ...(storage ? { storage } : {}), ...(images ? { images } : {}) }) };
+        const mail = env.EMAIL;
+        current = { key, cms: createCMS({
+            db, modules, resources, plugins, ...(storage ? { storage } : {}), ...(images ? { images } : {}),
+            ...(mail ? { mail: { send: message => mail.send(message) }, mailFrom: env.MAIL_FROM || 'no-reply@example.com' } : {}),
+        }) };
     }
     return current.cms;
 }

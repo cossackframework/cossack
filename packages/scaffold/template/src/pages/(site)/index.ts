@@ -26,7 +26,10 @@ export default class HomePage extends Cossack {
             this.theme = await themeState(cms);
             const languages = await cms.languages();
             const links = await languageLinks(cms, { kind: 'home', locale: languages.default });
-            const home = await homeView(cms, languages.default, pageNumber(this.c.req.query('page')), { comment: commentResult(this.c.req.query('comment')), user: this.user ? { name: this.user.name } : null });
+            const home = await homeView(cms, languages.default, pageNumber(this.c.req.query('page')), {
+                comment: commentResult(this.c.req.query('comment')), user: this.user ? { name: this.user.name } : null,
+                forms: { query: this.c.req.query(), principal: this.c.get('principal'), url: '/' },
+            });
             if (home.page && home.record) {
                 this.mode = 'page';
                 this.page = home.page;

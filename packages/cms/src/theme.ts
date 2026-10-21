@@ -11,7 +11,8 @@ import { fieldProblems } from './fields';
 import { MENU_LOCATION, type MenuItemView } from './menus';
 import type { SettingDeclaration } from './settings';
 import { PRESET_SLUG, STYLE_PROPERTIES, TEXT_ALIGNMENTS, type StyleProperty } from './block-shape';
-import type { BlockLayout, BlockStyle } from './blocks';
+import type { BlockCondition, BlockLayout, BlockStyle, InputKind } from './blocks';
+import type { ChoiceOption, FormValue } from './form-builder';
 
 /** A named value blocks pick by slug: a colour, a font size or a spacing step. */
 export interface Preset {
@@ -246,8 +247,56 @@ export interface RenderedBlock {
     readonly layout?: BlockLayout;
     /** Preset slugs the block's wrapper renders as classes and custom properties; see `blockStyleAttributes`. */
     readonly style?: BlockStyle;
+    /** In a form: when the block shows, from the form's values. */
+    readonly when?: BlockCondition;
+    /** In a form: false while its condition hides it. The block still renders, marked `data-hidden`. */
+    readonly shown?: boolean;
+    /** An input block in a form: its name, value and error. */
+    readonly input?: InputView;
+    /** `core/form`: the form it places; absent when the form is gone. */
+    readonly form?: FormView;
     /** The rendered blocks a container holds. */
     readonly children?: readonly RenderedBlock[];
+}
+
+/** An input block's state in a rendered form. */
+export interface InputView {
+    readonly name: string;
+    readonly kind: InputKind;
+    /** The control's HTML id, unique on the page. */
+    readonly id: string;
+    /** What the form starts with, or what the sender typed when the post came back with errors. */
+    readonly value: FormValue | null;
+    readonly error: string;
+    readonly options: readonly ChoiceOption[];
+}
+
+/**
+ * A form as themes render it: its blocks with their inputs' state, and what the post needs.
+ * The default renderer posts it as HTML and lets `cms/form.client.ts` apply conditions and
+ * check values in the browser.
+ */
+export interface FormView {
+    readonly id: string;
+    readonly slug: string;
+    readonly title: string;
+    /** POST target: `/api/cms/forms/<slug>`. */
+    readonly action: string;
+    /** The page the form is on, where a post returns. */
+    readonly page: string;
+    readonly blocks: readonly RenderedBlock[];
+    readonly submitLabel: string;
+    /** After a post came back: the confirmation, or what went wrong, as escaped HTML. */
+    readonly notice: { readonly kind: 'success' | 'error'; readonly html: string } | null;
+    /** The closed message as escaped HTML when the form takes no submissions; its fields are not shown. */
+    readonly closed: string | null;
+    /** Visitors must sign in first: where to. */
+    readonly signInUrl: string | null;
+    /** When the page was rendered, for the hidden `_started` field. */
+    readonly startedAt: number;
+    readonly turnstileSiteKey: string | null;
+    /** Input kinds by block type, for the browser's checks. */
+    readonly kinds: { readonly [type: string]: InputKind };
 }
 
 /** A run of escaped HTML from the body, or a block embedded in it. */

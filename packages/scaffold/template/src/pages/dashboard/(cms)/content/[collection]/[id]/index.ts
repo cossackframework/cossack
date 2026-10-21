@@ -629,7 +629,7 @@ export default class EntryEditor extends Cossack {
             case 'blocks': return this.blocksControl(field);
             case 'richtext': return component(RichTextField, {
                 id, label: field.label, value: (value as RichTextDoc | null) ?? null,
-                blocks: (this.view?.blocks ?? []).filter(block => block.name !== 'core/pattern' && (!field.blocks.length || field.blocks.includes(block.name))),
+                blocks: (this.view?.blocks ?? []).filter(block => block.name !== 'core/pattern' && !block.input && (!field.blocks.length || field.blocks.includes(block.name))),
                 onChange: (doc: RichTextDoc) => change(doc),
                 onMedia: () => this.openPicker({ field: field.name, richText: true }),
                 onInsertBlock: (type: string) => this.insertRichBlock(field.name, type),
@@ -677,7 +677,7 @@ export default class EntryEditor extends Cossack {
     private blocksControl(field: EditorField): TemplateResult {
         return html`<div class="space-y-3">
             ${component(BlockTree, {
-                id: `field-${field.name}`, blocks: this.blocks(field.name), options: this.view?.blocks ?? [], allowed: field.blocks, inline: true, error: this.errors[field.name] ?? '', presets: this.view?.presets,
+                id: `field-${field.name}`, blocks: this.blocks(field.name), options: this.view?.blocks ?? [], allowed: field.blocks, form: field.form, inline: true, error: this.errors[field.name] ?? '', presets: this.view?.presets,
                 onChange: (blocks: EditorBlock[]) => this.set(field.name, blocks),
                 control: (entry: EditorField, value: unknown, change: (value: unknown) => void, block: EditorBlock, id: string) => this.control(entry, value, change, { field: field.name, block: block.id, key: entry.name }, id),
             })}

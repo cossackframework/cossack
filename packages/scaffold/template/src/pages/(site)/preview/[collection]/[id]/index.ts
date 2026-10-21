@@ -60,7 +60,7 @@ export default class PreviewPage extends Cossack {
                 return;
             }
             this.status = String(record.status ?? '');
-            this.entry = (await entryViews(cms, collection, [record], { full: true }))[0]!;
+            this.entry = (await entryViews(cms, collection, [record], { full: true, forms: { query: {}, principal, url: this.c.req.path } }))[0]!;
             this.data = await themeData(cms, this.theme, { kind: 'entry', collection: collection.name, template: this.entry.template }, this.entry, principal, this.entry.locale);
         } catch (error) {
             if (!isCmsError(error)) throw error;

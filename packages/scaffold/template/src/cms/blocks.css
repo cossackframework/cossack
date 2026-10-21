@@ -72,3 +72,13 @@ html[data-cms-device="phone"] .cms-content { max-width: 24rem; margin-inline: au
     conic-gradient(from var(--cms-angle), #f472b6, #fb923c, #facc15, #4ade80, #22d3ee, #818cf8, #c084fc, #f472b6) border-box; }
 @keyframes cms-rainbow { to { --cms-angle: 360deg; } }
 @media (prefers-reduced-motion: reduce) { .cms-add-block { animation: none; } }
+
+/*
+ * Forms (cms/form-view.ts). A block whose condition hides it stays in the HTML with
+ * `data-hidden`; without JavaScript every block shows and the server applies the conditions.
+ * The trap field is off screen for people and left in the page for bots.
+ */
+@media (scripting: enabled) {
+  .cms-form [data-cms-when][data-hidden] { display: none !important; }
+}
+.cms-form-trap { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }

@@ -10,6 +10,8 @@ import {
     type FieldView, type LanguageLink, type MediaView, type MenuItemView, type RecordShape, type RenderedBlock, type RichTextDoc, type SiteSettings, type SiteView, type TermLink, type TermShape,
 } from '@cossackframework/cms';
 import { excerptOf, renderMarkdown, type CmsFile, type CmsHost, type SiteLanguages } from '@cossackframework/cms/server';
+import type { FormView } from '@cossackframework/cms';
+import { formView, type FormRequest } from './site-forms';
 
 /** The active theme, the theme it extends, its option values and presets, which every site page renders with. */
 export interface ThemeState {
@@ -61,7 +63,7 @@ function localeWhere(languages: SiteLanguages, locale: string): { [field: string
 }
 
 /** The layout's data: site title, tagline, the menus of the active theme's locations and the language links. */
-export async function siteView(cms: CmsHost, theme: ThemeState, options: { locale?: string; languages?: readonly LanguageLink[] } = {}): Promise<SiteView & { noindex: boolean }> {
+export async function siteView(cms: CmsHost, theme: ThemeState, options: { locale?: string; languages?: readonly LanguageLink[]; forms?: FormRequest } = {}): Promise<SiteView & { noindex: boolean }> {
     const settings = await cms.settings.all();
     const languages = await cms.languages();
     const locale = options.locale ?? languages.default;
@@ -79,12 +81,12 @@ export async function siteView(cms: CmsHost, theme: ThemeState, options: { local
     return {
         title: settings['general.siteTitle'], tagline: settings['general.tagline'], blog, menus, noindex: settings['reading.discourageSearchEngines'],
         locale, languages: options.languages ?? [], searchUrl: `${localePrefix(languages, locale)}/search`, homeUrl: localePrefix(languages, locale) || '/',
-        areas: await areaViews(cms, info?.areas.map(area => area.name) ?? []),
+        areas: await areaViews(cms, info?.areas.map(area => area.name) ?? [], options.forms),
     };
 }
 
 /** The blocks of the theme's widget areas, rendered; blocks of inactive plugins are left out. */
-async function areaViews(cms: CmsHost, names: readonly string[]): Promise<Record<string, RenderedBlock[]>> {
+async function areaViews(cms: CmsHost, names: readonly string[], forms?: FormRequest): Promise<Record<string, RenderedBlock[]>> {
     if (!names.length) return {};
     const saved = await cms.areas.all().catch(() => new Map<string, { blocks: readonly { id: string; type: string; data: Record<string, unknown> }[] }>());
     const available = new Set((await cms.blocks()).map(block => block.name));
@@ -92,7 +94,28 @@ async function areaViews(cms: CmsHost, names: readonly string[]): Promise<Record
     const ids = new Set<string>();
     for (const list of blocks.values()) for (const block of list) blockMediaIds(cms, block as { type: string; data: Record<string, unknown> }, ids);
     const files = cms.files && ids.size ? await cms.files.getMany([...ids]) : new Map<string, CmsFile>();
-    return Object.fromEntries([...blocks].map(([name, list]) => [name, list.map(block => renderedBlock(cms, block as { id: string; type: string; data: Record<string, unknown> }, files))]));
+    const areas = Object.fromEntries([...blocks].map(([name, list]) => [name, list.map(block => renderedBlock(cms, block as { id: string; type: string; data: Record<string, unknown> }, files))]));
+    await withForms(cms, Object.values(areas).flat(), forms);
+    return areas;
+}
+
+/** Give each `core/form` block among these its form, for the page's request. A form that is gone renders nothing. */
+async function withForms(cms: CmsHost, blocks: readonly RenderedBlock[], request: FormRequest | undefined): Promise<void> {
+    if (!request) return;
+    const found: RenderedBlock[] = [];
+    const walk = (list: readonly RenderedBlock[]) => { for (const block of list) { if (block.type === 'core/form') found.push(block); if (block.children) walk(block.children); } };
+    walk(blocks);
+    for (const block of found) {
+        const slug = typeof block.data.form === 'string' ? block.data.form : '';
+        try {
+            const form = slug ? await cms.forms.get(slug) : null;
+            if (!form) continue;
+            const ids = new Set<string>();
+            for (const entry of form.blocks) blockMediaIds(cms, entry, ids);
+            const files = cms.files && ids.size ? await cms.files.getMany([...ids]) : new Map<string, CmsFile>();
+            (block as { form?: FormView }).form = await formView(cms, form, request, entry => renderedBlock(cms, entry, files));
+        } catch (error) { if (!isCmsError(error)) throw error; }
+    }
 }
 
 /** Without an assigned menu, the primary location lists the published top-level pages. */
@@ -124,7 +147,7 @@ export function mediaView(file: CmsFile | undefined, resizes: boolean): MediaVie
 }
 
 /** A block with its Markdown fields rendered and its media resolved; a container's children too. */
-function renderedBlock(cms: CmsHost, block: { id: string; type: string; data: Record<string, unknown>; layout?: RenderedBlock['layout']; style?: RenderedBlock['style']; children?: readonly unknown[] }, files: ReadonlyMap<string, CmsFile>): RenderedBlock {
+function renderedBlock(cms: CmsHost, block: { id: string; type: string; data: Record<string, unknown>; layout?: RenderedBlock['layout']; style?: RenderedBlock['style']; when?: RenderedBlock['when']; children?: readonly unknown[] }, files: ReadonlyMap<string, CmsFile>): RenderedBlock {
     const html: Record<string, string> = {};
     const media: Record<string, MediaView> = {};
     const resizes = cms.files?.resizes ?? false;
@@ -137,7 +160,7 @@ function renderedBlock(cms: CmsHost, block: { id: string; type: string; data: Re
         }
     }
     const children = Array.isArray(block.children) ? (block.children as RenderedBlock[]).map(child => renderedBlock(cms, child, files)) : undefined;
-    return { id: block.id, type: block.type, data: block.data, html, media, ...(block.layout ? { layout: block.layout } : {}), ...(block.style ? { style: block.style } : {}), ...(children ? { children } : {}) };
+    return { id: block.id, type: block.type, data: block.data, html, media, ...(block.layout ? { layout: block.layout } : {}), ...(block.style ? { style: block.style } : {}), ...(block.when ? { when: block.when } : {}), ...(children ? { children } : {}) };
 }
 
 function blockMediaIds(cms: CmsHost, block: { type: string; data: Record<string, unknown>; children?: readonly unknown[] }, into: Set<string>): void {
@@ -183,6 +206,8 @@ export interface EntryViewOptions {
     comment?: Pick<CommentsView, 'notice' | 'error'>;
     /** The signed-in user, who comments without a name and email. */
     user?: { name: string } | null;
+    /** The request, for the forms the entry places; without it they render nothing. */
+    forms?: FormRequest;
 }
 
 /** Fields a details list leaves out: core fields themes show on their own, and internal ones. */
@@ -307,6 +332,7 @@ export async function entryViews(cms: CmsHost, collection: CollectionDefinition,
             locale,
             comments: options.full && collection.comments ? await commentsView(cms, collection, record, urls.get(record.id) ?? '/', settings, options) : null,
         });
+        if (options.full) await withForms(cms, [...blocks, ...bodyParts.flatMap(part => part.kind === 'block' ? [part.block] : [])], options.forms);
     }
     return views;
 }
