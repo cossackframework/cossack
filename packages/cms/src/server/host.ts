@@ -37,7 +37,8 @@ import { CmsRedirects } from './redirects';
 import { CmsApiTokens, type ApiTokenScope } from './api-tokens';
 import { CmsWebhooks } from './webhooks';
 import type { WebhookEvent } from '../webhooks';
-import { afterCommit, type ResourceEvent } from '../hooks';
+import { afterCommit, formSubmitted, type FormSubmittedEvent, type ResourceEvent } from '../hooks';
+import { CmsForms, type CmsMail } from './forms';
 import { CmsComments } from './comments';
 import { CmsSecurity } from './security';
 import type { ImageTransformer } from './images';
@@ -95,6 +96,10 @@ export interface CmsOptions {
     readonly themeLoaderTimeoutMs?: number;
     /** The largest JSON a theme loader may return, in characters. Default 65536. */
     readonly themeDataLimit?: number;
+    /** Sends form notification emails. Without it they are skipped. */
+    readonly mail?: CmsMail;
+    /** The sender of form notification emails. Default `no-reply@example.com`. */
+    readonly mailFrom?: string;
 }
 
 /** The site's languages: the default one without a URL prefix, the others under `/<code>/`. */
@@ -242,6 +247,8 @@ export class CmsHost {
     readonly apiTokens: CmsApiTokens;
     readonly webhooks: CmsWebhooks;
     readonly comments: CmsComments;
+    /** Forms' submissions: taking them, notifications, and handling them in the dashboard. */
+    readonly forms: CmsForms;
     /** Second factors and passkeys of users. */
     readonly security: CmsSecurity;
     /** Media files, when the host has object storage. */
@@ -320,9 +327,19 @@ export class CmsHost {
         this.apiTokens = new CmsApiTokens(this.db, { now: this.#now });
         this.webhooks = new CmsWebhooks(this.db, { now: this.#now, fetch: this.#fetch });
         this.comments = new CmsComments(this.db, { now: this.#now });
+        this.forms = new CmsForms(this, { ...(options.mail ? { mail: options.mail } : {}), ...(options.mailFrom ? { mailFrom: options.mailFrom } : {}) });
         this.security = new CmsSecurity(this.db, { now: this.#now });
         // Entry events become webhook deliveries; the outbox retries this until they are queued.
         this.hooks.addAction(afterCommit, event => this.#queueWebhooks(event), { plugin: 'cms' });
+        // A saved form brings its submissions table up to date; a deleted one takes its table along.
+        this.hooks.addAction(afterCommit, async event => {
+            if (event.resource !== 'cms/forms') return;
+            if (event.topic === 'resource.deleted') await this.forms.dropTable(event.id);
+            else if (event.record) await this.forms.load(event.record);
+        }, { plugin: 'cms' });
+        // Submissions send the form's notifications and queue webhooks; both retry with the outbox.
+        this.hooks.addAction(formSubmitted, event => this.forms.notify(event), { plugin: 'cms' });
+        this.hooks.addAction(formSubmitted, event => this.#queueFormWebhooks(event), { plugin: 'cms' });
         this.outbox = new Outbox(this.db, this.hooks, { now: this.#now, ...options.outbox });
         this.authSessions = createAuthSessionStore(this.db, { now: this.#now, request: requestMetadata });
         this.oauthStates = createOAuthStateStore(this.db);
@@ -365,7 +382,7 @@ export class CmsHost {
     get resources(): readonly Resource[] { return [...this.#resources.values()]; }
 
     resourceById(id: string): Resource {
-        const resource = this.#resources.get(id);
+        const resource = this.#resources.get(id) ?? this.forms.resourceById(id);
         if (!resource) throw new CmsError('CMS_NOT_FOUND', `Unknown resource ${id}.`);
         return resource;
     }
@@ -618,6 +635,16 @@ export class CmsHost {
         if (!hasPermission(principal, PERMISSIONS.moderateComments)) throw new CmsError(principal.kind === 'anonymous' ? 'CMS_UNAUTHENTICATED' : 'CMS_FORBIDDEN', 'Not allowed to moderate comments.');
         if (status === 'delete') await this.comments.delete(ids);
         else await this.comments.setStatus(ids, status);
+    }
+
+    async #queueFormWebhooks(event: FormSubmittedEvent): Promise<void> {
+        if (!(await this.webhooks.wants(['form.submitted'], 'forms'))) return;
+        const { submission } = event;
+        await this.webhooks.enqueue({
+            event: 'form.submitted', eventId: `${event.eventId}:form.submitted`, at: event.at, collection: 'forms',
+            form: { id: event.form.id, slug: event.form.slug, title: event.form.title },
+            submission: { id: submission.id, status: submission.status, values: submission.values, meta: submission.meta, user: submission.user, createdAt: submission.createdAt, stored: event.stored },
+        });
     }
 
     async #queueWebhooks(event: ResourceEvent): Promise<void> {

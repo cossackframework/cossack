@@ -105,6 +105,8 @@ export interface FormSubmittedEvent {
     readonly at: number;
     /** False when the form keeps no submissions: the event is all there is. */
     readonly stored: boolean;
+    /** The site's address the form was sent from, such as `https://example.com`, for links. */
+    readonly origin?: string;
 }
 
 /** After a submission is committed, run from the outbox, as Gravity Forms' `gform_after_submission`. Deliveries can repeat. */

@@ -1,5 +1,6 @@
 /** Webhooks: their events, shape and URL rules. Client-safe; the host stores and sends them. */
-export const WEBHOOK_EVENTS = Object.freeze(['entry.created', 'entry.updated', 'entry.published', 'entry.unpublished', 'entry.deleted'] as const);
+/** Entry events, and `form.submitted` for each kept or sent form submission (not spam). Form events go to webhooks for all collections or for Forms. */
+export const WEBHOOK_EVENTS = Object.freeze(['entry.created', 'entry.updated', 'entry.published', 'entry.unpublished', 'entry.deleted', 'form.submitted'] as const);
 export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number];
 
 export interface Webhook {
@@ -45,6 +46,9 @@ export interface WebhookPayload {
     readonly at: number;
     readonly collection?: string;
     readonly entry?: { readonly [field: string]: unknown };
+    /** `form.submitted`: the form and the submission. */
+    readonly form?: { readonly id: string; readonly slug: string; readonly title: string };
+    readonly submission?: { readonly [field: string]: unknown };
     readonly previousStatus?: string | null;
 }
 

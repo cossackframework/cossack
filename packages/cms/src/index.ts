@@ -12,7 +12,7 @@ export { formsModule } from './modules/forms';
 export {
     FORM_BLOCKS, FORM_EMBED_BLOCK, FORM_SETTINGS, SUBMISSION_STATUSES, SUBMISSION_META, SUBMISSION_PREFIX, NOTIFICATION_LIMIT, MERGE_TAGS,
     forms, inputFields, choiceOptions, formInputs, ruleMatches, conditionShows, formVisibility, visibleBlocks, formDataValues, validateSubmission, displayValue,
-    formSettings, submissionResourceName, submissionResource, submissionOf, notificationRules, notificationProblems, renderMergeTags, emailAddresses,
+    formSettings, submissionResourceName, submissionResource, submissionOf, notificationRules, notificationProblems, renderMergeTags, escapeMarkdown, emailAddresses,
     type ChoiceOption, type FormField, type FormValue, type FormValues, type SubmittedValues, type SubmissionCheck, type FormSettings, type SubmissionStatus,
     type SubmissionMeta, type SubmissionShape, type NotificationRule, type MergeContext,
 } from './form-builder';

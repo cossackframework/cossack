@@ -82,12 +82,16 @@ export class ResourceRepository {
         const params: { [key: string]: Value } = { $limit: limit + 1 };
         const conditions = this.#filters(options, context.principal, params);
         const order = this.#order(options.order);
+        // Cursors page through the default order and through the creation or update time.
+        const timed = !options.order ? '_updatedAt' : options.order.field === 'createdAt' ? '_createdAt' : options.order.field === 'updatedAt' ? '_updatedAt' : undefined;
+        const ascending = options.order?.direction === 'asc';
         if (options.after !== undefined) {
-            if (options.order || offset) throw new CmsError('CMS_VALIDATION', 'Cursors apply to the default order without an offset.');
+            if (!timed || offset) throw new CmsError('CMS_VALIDATION', 'Cursors apply to the default order, or the creation or update time, without an offset.');
             const cursor = decodeCursor(options.after);
             params.$afterAt = cursor.at;
             params.$afterKey = cursor.key;
-            conditions.push(`("_updatedAt" < $afterAt OR ("_updatedAt" = $afterAt AND record::id(id) < $afterKey))`);
+            const past = ascending ? '>' : '<';
+            conditions.push(`("${timed}" ${past} $afterAt OR ("${timed}" = $afterAt AND record::id(id) ${past} $afterKey))`);
         }
         if (offset) params.$offset = offset;
         const where = this.#conditions(access, context.principal, conditions, params);
@@ -97,9 +101,10 @@ export class ResourceRepository {
         )], this.#readOptions(context));
         const documents = result.results[0]!.rows.map(row => row[0] as Document);
         const page = documents.slice(0, limit).map(document => this.#public(document, context.principal));
-        const last = documents.length > limit && !options.order && !offset ? documents[limit - 1]! : undefined;
-        return last ? { records: page, next: encodeCursor(Number(last._updatedAt), (last.id as RecordId).key as string) }
-            : { records: page, ...(documents.length > limit ? { more: true } : {}) };
+        const last = documents.length > limit && timed && !offset ? documents[limit - 1]! : undefined;
+        if (!last) return { records: page, ...(documents.length > limit ? { more: true } : {}) };
+        const next = encodeCursor(Number(last[timed!]), (last.id as RecordId).key as string);
+        return options.order ? { records: page, next, more: true } : { records: page, next };
     }
 
     /** Records matching a filter that the principal may read. */
@@ -223,6 +228,34 @@ export class ResourceRepository {
             if (error.code === 'FDB_CONSTRAINT') throw new CmsError('CMS_CONFLICT', 'A record with the same unique value already exists.', { cause: error });
         });
         return this.#redact(record, context.principal);
+    }
+
+    /**
+     * Insert a record the host writes for itself, such as a form submission. The declared
+     * fields are checked, but no write hooks, revisions, audit rows or resource events run.
+     * `attach` adds statements to the batch; its guard holds once the record is written.
+     * The caller chooses the ID, the operation ID (the request ID) and the reconciler kind.
+     */
+    async insert(input: { readonly [field: string]: unknown }, context: OperationContext & {
+        readonly id: string; readonly op: string; readonly owner: string | null; readonly kind: string;
+        readonly attach?: (guard: { readonly sql: string; readonly params: { readonly [key: string]: Value } }) => readonly Statement[];
+    }): Promise<RecordShape> {
+        const access = await this.#authorize('create', context.principal);
+        if (access !== 'allow') throw new CmsError(context.principal.kind === 'user' ? 'CMS_FORBIDDEN' : 'CMS_UNAUTHENTICATED', `Not allowed to create ${this.resource.id}.`);
+        checkKey(context.id);
+        const draft = this.#validate('create', input, null, context.principal);
+        const now = this.#host.now();
+        const owner = this.resource.ownership ? context.owner : null;
+        const record = this.#shape(context.id, 1, now, now, owner, draft);
+        const document: { [field: string]: Value } = { id: new RecordId(this.resource.storage, context.id), _rev: 1, _op: context.op, _createdAt: now, _updatedAt: now, _owner: owner };
+        for (const [name, value] of Object.entries(draft)) if (value !== undefined) document[name] = this.#store(name, this.resource.fields[name]!, value);
+        for (const [path, text] of this.#searchText(draft)) document[path] = text;
+        const guard = { sql: `EXISTS (SELECT 1 FROM ${this.resource.storage} WHERE id = type::record('${this.resource.storage}', $key) AND "_op" = $op)`, params: { $key: context.id, $op: context.op } };
+        const statements: Statement[] = [{ sql: `INSERT INTO ${this.resource.storage} DOCUMENT $document`, params: { $document: document } }, ...(context.attach?.(guard) ?? [])];
+        await this.#write(statements, context.op, context, error => {
+            if (error.code === 'FDB_CONSTRAINT') throw new CmsError('CMS_CONFLICT', 'A record with the same unique value already exists.', { cause: error });
+        }, 0, context.kind);
+        return record;
     }
 
     /** Edit with an expected revision. A stale revision or lost access is a conflict, and nothing is written. */
@@ -536,9 +569,9 @@ export class ResourceRepository {
         return statements;
     }
 
-    async #write(statements: Statement[], op: string, context: OperationContext, onRolledBack?: (error: ClientError) => void, statement = 0): Promise<number> {
+    async #write(statements: Statement[], op: string, context: OperationContext, onRolledBack?: (error: ClientError) => void, statement = 0, kind = 'cms.resource.write'): Promise<number> {
         try {
-            const result = await this.#host.db.write(statements, { requestId: op, kind: 'cms.resource.write', ...(context.signal ? { signal: context.signal } : {}), workLimits: this.#host.writeLimits });
+            const result = await this.#host.db.write(statements, { requestId: op, kind, ...(context.signal ? { signal: context.signal } : {}), workLimits: this.#host.writeLimits });
             this.#host.outboxWritten();
             return Number(result.results[statement]!.affected);
         } catch (error) {

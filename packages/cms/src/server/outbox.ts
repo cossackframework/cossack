@@ -1,11 +1,16 @@
 /**
  * Durable after-commit delivery. Mutations commit their outbox row in the same batch;
- * the dispatcher leases due rows, runs `cms.resource.after-commit` handlers, and records
- * which plugins still need the event. Deliveries can repeat: consumers key on `eventId`.
+ * the dispatcher leases due rows, runs the handlers of the row's topic
+ * (`cms.resource.after-commit` for resource events, `cms.form.submitted` for form
+ * submissions), and records which plugins still need the event. Deliveries can repeat: consumers key on `eventId`.
  */
 import type { FastDB } from '@cossackframework/fastdb';
 import type { HookRegistry } from '@cossackframework/core/hooks';
-import { afterCommit, type ResourceEvent } from '../hooks';
+import type { ActionPoint } from '@cossackframework/core/hooks';
+import { afterCommit, formSubmitted, type ResourceEvent } from '../hooks';
+
+/** The action an outbox row runs, by its topic; resource events run `cms.resource.after-commit`. */
+const POINTS: { readonly [topic: string]: ActionPoint<unknown> } = { 'form.submitted': formSubmitted as ActionPoint<unknown> };
 
 export interface DispatchReport {
     readonly delivered: readonly string[];
@@ -56,14 +61,15 @@ export class Outbox {
                 WHERE id IN (SELECT id FROM cms_outbox WHERE delivered_at IS NULL AND available_at <= $now AND lease_until <= $now ORDER BY created_at, id LIMIT $limit)`,
             params: { $token: token, $until: now + this.#leaseMs, $now: now, $limit: limit },
         }], { ...call, kind: 'cms.outbox', retryConflicts: 5 });
-        const claimed = await this.#db.read([{ sql: 'SELECT id, payload, pending_plugins, attempts FROM cms_outbox WHERE lease_token = $token ORDER BY created_at, id', params: { $token: token } }], call);
+        const claimed = await this.#db.read([{ sql: 'SELECT id, payload, pending_plugins, attempts, topic FROM cms_outbox WHERE lease_token = $token ORDER BY created_at, id', params: { $token: token } }], call);
         const delivered: string[] = [];
         const retrying: { id: string; plugins: readonly string[] }[] = [];
         const deadLettered: string[] = [];
-        for (const [id, payload, pending, attempts] of claimed.results[0]!.rows) {
+        for (const [id, payload, pending, attempts, topic] of claimed.results[0]!.rows) {
             const event = JSON.parse(payload as string) as ResourceEvent;
             const only = pending ? JSON.parse(pending as string) as string[] : undefined;
-            const report = await this.#hooks.doAction(afterCommit, event, { ...call, ...(only ? { only } : {}) });
+            const point = POINTS[topic as string] ?? afterCommit as ActionPoint<unknown>;
+            const report = await this.#hooks.doAction(point, event, { ...call, ...(only ? { only } : {}) });
             const at = this.#now();
             if (report.ok) {
                 await this.#settle(id as string, token, { $done: at, $pending: null, $available: at }, call);

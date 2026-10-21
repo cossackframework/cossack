@@ -521,12 +521,14 @@ function inputField(input: FormField): FieldDeclaration {
  * records. Only the host writes them; reading and handling need `cms:submissions`. Added
  * inputs are new fields; removed ones keep their stored values.
  */
-export function submissionResource(form: { readonly id: string; readonly title?: string }, inputs: readonly FormField[]): ResourceDeclaration {
+export function submissionResource(form: { readonly id: string; readonly title?: string }, inputs: readonly FormField[], options: { readonly indexed?: readonly string[] } = {}): ResourceDeclaration {
     const fields: { [name: string]: FieldDeclaration } = {};
     let searched = 0;
     for (const input of inputs) {
         let declaration = inputField(input);
         if (declaration.search && ++searched > 16) declaration = { ...declaration, search: false };
+        // Inputs looked up on every submission, such as the email of "one per address".
+        if (options.indexed?.includes(input.name) && declaration.kind === 'string') declaration = { ...declaration, index: true };
         fields[input.name] = declaration;
     }
     fields.status = field.enum(SUBMISSION_STATUSES, { required: true, default: 'new', label: 'Status' });
@@ -678,24 +680,33 @@ export interface MergeContext {
     readonly site: { readonly title: string; readonly url: string; readonly adminEmail: string };
 }
 
-/** Fill a template's merge tags. Tags it does not know stay as written, so mistakes show. */
-export function renderMergeTags(template: string, context: MergeContext): string {
+/** Markdown's special characters escaped, so a sender's answer shows as typed in a Markdown message. */
+export function escapeMarkdown(text: string): string {
+    return text.replace(/[\\`*_{}[\]()#+\-.!<>|~]/g, character => `\\${character}`);
+}
+
+/**
+ * Fill a template's merge tags. Tags it does not know stay as written, so mistakes show.
+ * `escape` applies to what senders typed, such as `escapeMarkdown` for a Markdown message.
+ */
+export function renderMergeTags(template: string, context: MergeContext, options: { readonly escape?: (text: string) => string } = {}): string {
     const inputs = new Map(context.inputs.map(input => [input.name, input]));
+    const escape = options.escape ?? ((text: string) => text);
     return template.replace(TAG, (whole, name: string, argument?: string) => {
         switch (argument ? `${name}:${argument}` : name) {
             case 'all_fields': return context.inputs.filter(input => !blank(context.values[input.name]) || context.values[input.name] === false)
-                .map(input => `${input.label}: ${displayValue(input, context.values[input.name])}`).join('\n');
+                .map(input => `${escape(input.label)}: ${escape(displayValue(input, context.values[input.name]))}`).join('\n');
             case 'form:title': return context.form.title;
             case 'submission:id': return context.submission?.id ?? '';
             case 'submission:url': return context.submission?.url ?? '';
             case 'submission:date': return context.submission?.date ?? '';
-            case 'user:email': return context.user?.email ?? '';
-            case 'user:name': return context.user?.name ?? '';
+            case 'user:email': return escape(context.user?.email ?? '');
+            case 'user:name': return escape(context.user?.name ?? '');
             case 'site:title': return context.site.title;
             case 'site:url': return context.site.url;
             case 'admin_email': return context.site.adminEmail;
         }
-        if (name === 'field' && argument && inputs.has(argument)) return displayValue(inputs.get(argument)!, context.values[argument]);
+        if (name === 'field' && argument && inputs.has(argument)) return escape(displayValue(inputs.get(argument)!, context.values[argument]));
         return whole;
     });
 }

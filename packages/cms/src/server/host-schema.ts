@@ -21,7 +21,7 @@ export const HOST_TABLES = [
     'cms_password_resets', 'cms_sessions', 'cms_session_values', 'cms_grants', 'cms_audit', 'cms_revisions', 'cms_outbox', 'cms_files',
     'cms_terms', 'cms_settings', 'cms_collections', 'cms_taxonomies', 'cms_menus', 'cms_menu_locations',
     'cms_preview_tokens', 'cms_autosaves', 'cms_file_variants', 'cms_redirects', 'cms_api_tokens', 'cms_webhooks', 'cms_webhook_deliveries',
-    'cms_comments', 'cms_user_security', 'cms_passkeys', 'cms_auth_challenges', 'cms_areas',
+    'cms_comments', 'cms_user_security', 'cms_passkeys', 'cms_auth_challenges', 'cms_areas', 'cms_form_sends', 'cms_form_mail', 'cms_form_results',
     'cossack_jobs', 'cossack_notifications',
 ] as const;
 
@@ -163,5 +163,20 @@ export const HOST_STEPS: readonly HostStep[] = [{
     statements: [
         // A theme's widget area: its blocks as JSON, saved with a revision check.
         { sql: 'CREATE TABLE cms_areas (name TEXT PRIMARY KEY, blocks TEXT NOT NULL, revision INTEGER NOT NULL, updated_at INTEGER NOT NULL, updated_by TEXT)' },
+    ],
+}, {
+    version: 8,
+    description: 'Add form tables',
+    statements: [
+        // One row per form submission for a day: the write's receipt and the per-address throttle. Submissions live in each form's own table.
+        { sql: 'CREATE TABLE cms_form_sends (id TEXT PRIMARY KEY, form_id TEXT NOT NULL, ip_hash TEXT, at INTEGER NOT NULL)' },
+        { sql: 'CREATE INDEX cms_form_sends_ip ON cms_form_sends (form_id, ip_hash, at)' },
+        { sql: 'CREATE INDEX cms_form_sends_at ON cms_form_sends (at)' },
+        // Notification emails already sent, by event, rule and recipient, so outbox retries do not send them again.
+        { sql: 'CREATE TABLE cms_form_mail (id TEXT PRIMARY KEY, sent_at INTEGER NOT NULL)' },
+        { sql: 'CREATE INDEX cms_form_mail_sent ON cms_form_mail (sent_at)' },
+        // What a form post returns to the page after its redirect: the confirmation, or the errors and values. Read once.
+        { sql: 'CREATE TABLE cms_form_results (id TEXT PRIMARY KEY, form_id TEXT NOT NULL, data TEXT NOT NULL, expires_at INTEGER NOT NULL)' },
+        { sql: 'CREATE INDEX cms_form_results_expiry ON cms_form_results (expires_at)' },
     ],
 }];

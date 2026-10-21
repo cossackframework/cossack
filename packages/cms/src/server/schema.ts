@@ -294,7 +294,9 @@ export async function planSchema(resources: readonly Resource[], catalog: Catalo
                 if (!existing) { additive.push({ sql: indexSql(collection.name, index) }); continue; }
                 const paths = (existing.paths ?? (existing.path ? [existing.path] : [])).map(path => path.join('.'));
                 if (existing.kind !== index.kind || existing.unique !== index.unique || paths.join(',') !== index.paths.join(',')) {
-                    problems.push({ resource: resource.id, message: `Index ${index.name} differs from the database. Rename the index to replace it.` });
+                    // Schemaless collections rebuild a changed index, such as full-text search over a new field; strict ones rename it.
+                    if (resource.schemaless) additive.push({ sql: `DROP INDEX ${index.name}` }, { sql: indexSql(collection.name, index) });
+                    else problems.push({ resource: resource.id, message: `Index ${index.name} differs from the database. Rename the index to replace it.` });
                 }
             }
             for (const name of catalogIndexes.keys()) {

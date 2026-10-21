@@ -1,7 +1,7 @@
 # Forms: a block-based form builder with per-form submission tables
 
 Builds on `specs/cms-essentials.md` (collections, comments, webhooks, outbox) and
-`specs/cms-layout.md` (nested blocks). Status: in progress on branch `cms-foundation`, 2026-10-21. Phase 1 (model) done.
+`specs/cms-layout.md` (nested blocks). Status: in progress on branch `cms-foundation`, 2026-10-21. Phases 1 (model) and 2 (host) done.
 
 A form is an entry of a built-in `forms` collection whose `body` is blocks: inputs are
 block types, and the core containers lay them out. Every form stores its submissions in a
@@ -80,20 +80,27 @@ after the submission is committed.
 
 ### Host
 
-- **Registry.** `ready()` loads enabled forms and registers their submission resources
-  with the collections' resources, so `cms.resource('forms/contact')`, the schema
-  planner and grants see them. Saving a form (any write to `cms/forms`) migrates its
-  resource in the same request, as `saveCollection` does; `submitForm` checks the
-  declaration hash in `cms_schema_state` first and migrates when the dashboard did not.
-- **`submitForm(key, raw, context)`.** Same-origin check by the route; then: the form is
-  enabled, open (`opensAt`, `closesAt`, `limit` against the stored count), sign-in when
-  required, one per user or email when set; honeypot `_trap` and a `_started` time under
-  two seconds mark the submission `spam` (stored, no notifications, no hooks); one
-  submission per IP per form every five seconds; Turnstile when the setting and the keys
-  are on. Validation runs `validateSubmission`, then the `cms.form.validate` filter, then
-  `cms.form.before-submit`. With `store` on, the row is written with its outbox event;
-  with it off, the outbox row alone is written, so notifications still run. The
-  response is the confirmation after `cms.form.confirmation`.
+- **Registry.** `cms.forms` (`CmsForms`) loads a form by slug or ID and keeps its
+  submission resource in step: it compares the declaration hash with `cms_schema_state`
+  and migrates that one resource when they differ, then `cms.resource()` serves it.
+  Submission resources stay out of `cms.resources`, so Tools → Schema and the content
+  API's resource list do not grow with every form. A saved form is also synced from the
+  outbox, and a deleted form's table is dropped there. Schemaless resources now rebuild
+  an index whose definition changed (full-text search over a new text input) instead of
+  blocking.
+- **`cms.forms.submit(slug, raw, context)`.** Same-origin check by the route; then: the
+  form is enabled and open (`opensAt`, `closesAt`, `limit` against the kept count), sign-in
+  when required (`oncePerUser` implies it), the bot check through `context.botCheck` when
+  the form asks for Turnstile, one submission per address and form every five seconds.
+  The trap field and a `startedAt` under two seconds ago mark the submission `spam`: kept
+  when the form keeps submissions, no hooks or notifications, answered like any other.
+  Validation runs `validateSubmission`, then `cms.form.validate`, then
+  `cms.form.before-submit` (checked again), then one per user or email. With `store` on,
+  one batch writes the row, a `cms_form_sends` receipt (also the throttle and the
+  reconciler's proof) and the outbox event; with it off, the receipt and the event alone,
+  so notifications still run. The limit and the once rules count kept submissions only.
+  The response is the confirmation after `cms.form.confirmation`; merge tags in a message
+  are filled with the answers escaped for Markdown.
 - **Extension points**, versioned like the existing ones and listed in `EXTENSION_POINTS`
   so plugin manifests can name them:
   - `cms.form.validate` filter: `(errors, { form, values, actor })`, 2 s.
@@ -104,15 +111,18 @@ after the submission is committed.
   - `cms.form.submitted` action: `({ eventId, form, submission, values, actor, at })`,
     10 s, run from the outbox. The outbox row's topic is `form.submitted`; the
     dispatcher maps topics to points instead of assuming `after-commit`.
-- **Notifications and webhooks** are the forms module's own `cms.form.submitted`
-  handlers, so they retry with the outbox. Mail goes through a new `CmsOptions.mail`
-  (`{ send(message) }`), which the scaffold wires to the `EMAIL` binding; without it
-  rules are skipped and logged once. Webhooks gain the event `form.submitted`, filtered
-  by form slug in the webhook's `collections` list as `forms/<slug>`.
-- **Submission management.** `cms.submissions(form)`: list by status with search over
-  text inputs, counts, mark read, spam, trash, delete, restore, and `export()` that
-  streams CSV in pages of 500 with the input labels as headers. `cms.formCounts()`
-  returns new counts for the navigation. Maintenance empties `trash` older than 30 days.
+- **Notifications and webhooks** are the host's own `cms.form.submitted` handlers, so
+  they retry with the outbox. Mail goes through `CmsOptions.mail` (`{ send(message) }`)
+  and `mailFrom`, which the scaffold wires to the `EMAIL` binding; without it rules are
+  skipped and logged once. `cms_form_mail` records each email by event, rule and
+  address, so a retry sends only what failed. Webhooks gain the event `form.submitted`,
+  sent to webhooks for all collections or for Forms, with the form and the submission.
+- **Submission management** on `cms.forms`, with `cms:submissions`: `list` (new and read,
+  or one status, newest first with a cursor; or a full-text search), `counts`,
+  `newCounts` for the navigation, `submission`, `setStatus` (read, new, spam, trash),
+  `delete`, `setNote`, and `csv`, which streams pages of 100 with the input labels as
+  headers and quotes cells that would run as spreadsheet formulas. `maintain` empties
+  trash older than 30 days and forgets old receipts, sent-mail records and post results.
 
 ### Site and API
 

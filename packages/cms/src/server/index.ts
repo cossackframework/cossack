@@ -23,6 +23,7 @@ export { CmsRedirects } from './redirects';
 export { CmsApiTokens, API_TOKEN_LIMIT, type ApiToken, type ApiTokenScope } from './api-tokens';
 export { CmsWebhooks, verifyWebhookSignature } from './webhooks';
 export { CmsComments, type CommentListOptions } from './comments';
+export { CmsForms, type CmsMail, type LoadedForm, type SubmitContext, type SubmitResult, type SubmissionList } from './forms';
 export { sha256Hex, randomToken, base64Url, timingSafeEqual } from './tokens';
 export { FORMAT_TYPES, negotiateFormat, type ImageTransformer, type ImageTransformRequest, type ImageFormat } from './images';
 export { CmsSecurity, SIGN_IN_ATTEMPTS, type PasskeyInfo, type StoredPasskeyRow, type SecurityStatus, type ChallengeKind } from './security';
