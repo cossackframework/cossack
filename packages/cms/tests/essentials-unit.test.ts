@@ -42,7 +42,7 @@ describe('essentials helpers', () => {
         const block = { name: 'acme/card', label: 'Card', fields: {} };
         expect(blockProblems({ ...block, icon: 'star', category: 'design' })).toEqual([]);
         expect(blockProblems({ ...block, icon: 'Not An Icon' })).toHaveLength(1);
-        expect(blockProblems({ ...block, category: 'layout' as never })).toEqual(['block acme/card: the category is one of text, media, design, widgets, embeds.']);
+        expect(blockProblems({ ...block, category: 'layout' as never })).toEqual(['block acme/card: the category is one of text, media, design, widgets, embeds, form.']);
     });
 
     it('nests blocks in containers', () => {
@@ -66,8 +66,8 @@ describe('essentials helpers', () => {
         expect(validateBlocks([{ id: 'p', type: 'core/paragraph', data: { text: 'x' }, children: [{ id: 'q', type: 'core/divider', data: {} }] }], types).errors).toEqual({ p: 'core/paragraph does not hold blocks.' });
         expect(validateBlocks([{ id: 'cols', type: 'core/columns', data: {}, children: Array.from({ length: 7 }, (_, index) => ({ id: `c${index}`, type: 'core/column', data: {} })) }], types).errors).toEqual({ cols: 'holds at most 6 blocks.' });
         // A field's allowed list applies at the top level; the containers' rules below it.
-        expect(validateBlocks([{ id: 'g', type: 'core/group', data: {}, children: [{ id: 'q', type: 'core/quote', data: { text: 'q' } }] }], types, ['core/group']).errors).toEqual({});
-        expect(validateBlocks([{ id: 'q', type: 'core/quote', data: { text: 'q' } }], types, ['core/group']).errors).toEqual({ q: 'core/quote is not an available block.' });
+        expect(validateBlocks([{ id: 'g', type: 'core/group', data: {}, children: [{ id: 'q', type: 'core/quote', data: { text: 'q' } }] }], types, { allowed: ['core/group'] }).errors).toEqual({});
+        expect(validateBlocks([{ id: 'q', type: 'core/quote', data: { text: 'q' } }], types, { allowed: ['core/group'] }).errors).toEqual({ q: 'core/quote is not an available block.' });
         // The shape: distinct IDs across the tree, the depth and count limits, the layout.
         expect(blocksShapeProblem([{ id: 'a', type: 'core/group', data: {}, children: [{ id: 'a', type: 'core/divider', data: {} }] }])).toBe('blocks need distinct IDs.');
         const deep = (depth: number): Block => depth ? { id: `d${depth}`, type: 'core/group', data: {}, children: [deep(depth - 1)] } : { id: 'leaf', type: 'core/divider', data: {} };

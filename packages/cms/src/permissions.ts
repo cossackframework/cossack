@@ -44,12 +44,14 @@ export const PERMISSIONS = Object.freeze({
     manageRedirects: 'cms:redirects',
     /** Manage webhooks under Tools. */
     manageWebhooks: 'cms:webhooks',
+    /** Read, sort, export and delete form submissions. Forms themselves are `cms/forms:*`. */
+    manageSubmissions: 'cms:submissions',
 });
 
 /** Roles setup creates. Administrators can change them, except the administrator role itself. */
 export const DEFAULT_ROLES = Object.freeze([
     { id: 'admin', name: 'Administrator', permissions: ['*'] },
-    { id: 'editor', name: 'Editor', permissions: ['cms:dashboard', 'cms:terms', 'cms:media', 'cms:upload', 'cms:comments', 'cms/*', 'app/*'] },
+    { id: 'editor', name: 'Editor', permissions: ['cms:dashboard', 'cms:terms', 'cms:media', 'cms:upload', 'cms:comments', 'cms:submissions', 'cms/*', 'app/*'] },
     { id: 'author', name: 'Author', permissions: ['cms:dashboard', 'cms:upload', 'cms/posts:create'] },
     { id: 'subscriber', name: 'Subscriber', permissions: [] },
 ] as const);

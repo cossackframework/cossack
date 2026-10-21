@@ -475,7 +475,7 @@ export class ResourceRepository {
             if (error) { errors[name] = error; continue; }
             if (declaration.kind === 'blocks') {
                 // Each block's data is checked against its type's fields; defaults fill gaps.
-                const checked = validateBlocks(value as Block[], this.#host.blockTypes, declaration.blocks);
+                const checked = validateBlocks(value as Block[], this.#host.blockTypes, { ...(declaration.blocks ? { allowed: declaration.blocks } : {}), form: declaration.form === true });
                 const [path, message] = Object.entries(checked.errors)[0] ?? [];
                 if (path) { errors[name] = `block ${path} ${message}`; continue; }
                 draft[name] = checked.blocks;
@@ -484,7 +484,7 @@ export class ResourceRepository {
             if (declaration.kind === 'richtext') {
                 // A clean copy of the document; embedded blocks are checked like a blocks field.
                 const doc = normalizeRichText(value);
-                const checked = validateBlocks(richTextBlocks(doc), this.#host.blockTypes, declaration.blocks);
+                const checked = validateBlocks(richTextBlocks(doc), this.#host.blockTypes, declaration.blocks ? { allowed: declaration.blocks } : {});
                 const [path, message] = Object.entries(checked.errors)[0] ?? [];
                 if (path) { errors[name] = `block ${path} ${message}`; continue; }
                 draft[name] = withRichTextBlocks(doc, checked.blocks);

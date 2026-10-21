@@ -1,0 +1,187 @@
+# Forms: a block-based form builder with per-form submission tables
+
+Builds on `specs/cms-essentials.md` (collections, comments, webhooks, outbox) and
+`specs/cms-layout.md` (nested blocks). Status: in progress on branch `cms-foundation`, 2026-10-21. Phase 1 (model) done.
+
+A form is an entry of a built-in `forms` collection whose `body` is blocks: inputs are
+block types, and the core containers lay them out. Every form stores its submissions in a
+schemaless table of its own, typed from the form's inputs, so a form with 100k
+submissions is one table with its own indexes, not rows in a shared table as in Gravity
+Forms. The site and the API name a form by its slug (`/api/cms/forms/<slug>`); the table
+is named by the form's ID, so renaming a form never moves data. Plugins extend forms the way Gravity Forms does: filters on validation, on the
+data before it is stored, on the confirmation and on each notification, and an action
+after the submission is committed.
+
+## Decisions
+
+### Model (client-safe, `packages/cms`)
+
+- **Inputs are blocks.** A `BlockDeclaration` gains `input?: { kind: InputKind }`.
+  `InputKind` is `string`, `text`, `email`, `url`, `phone`, `number`, `boolean`, `date`,
+  `choice`, `choices`. A block with `input` collects one value named by its `name` data
+  field; the host validates and stores it under that name. Input blocks go only inside a
+  form: `validateBlocks` takes `{ allowed, form }` and rejects an input block at any
+  depth unless `form` is set, which a blocks field sets with `form: true` (the forms
+  collection's `body`). The block picker offers them there alone. Plugins ship input
+  blocks like any block (`stripe/amount`), and they render through `ui.ts` as now.
+- **Core input blocks**, category `form` (label "Form fields", after `widgets`):
+  `form/text`, `form/email`, `form/url`, `form/phone`, `form/textarea`, `form/number`,
+  `form/date`, `form/select`, `form/radio`, `form/checkbox` (one boolean),
+  `form/checkboxes` (multiple choice), `form/consent` (a required checkbox with its own
+  text), `form/hidden`. Every input declares `label`, `name` (`[a-z][a-zA-Z0-9]{0,39}`,
+  a field name, filled from the label in camel case when empty, distinct within the
+  form, not one of the submission's own names), `description` and `required`, through
+  `inputFields()`, which plugins use too. Text kinds add `placeholder`, `defaultValue`,
+  `minLength`, `maxLength` and (one-line text) `pattern`; number adds `min`, `max` and
+  `step`; choice kinds take `options` (one per line, `value|Label` or just the label).
+  Several choices from a list is `form/checkboxes`; a multi-select can come later. Submit
+  is not a block: the form's settings hold the button label and it renders last.
+- **Conditions are a block attribute.** `Block.when?: { action?: 'show' | 'hide';
+  match?: 'all' | 'any'; rules: { field, op, value? }[] }`, validated by core beside
+  `layout` and `style`, allowed only in a form, naming only the form's inputs. Operators: `is`, `isNot`, `contains`, `empty`, `notEmpty`, `gt`, `lt`,
+  `in`. Any block in a form can carry one, so a paragraph or a whole group shows or
+  hides; a hidden container hides its children. `formVisibility(blocks, types, values)`
+  is the one evaluation (hidden inputs count as empty, so dependent conditions follow),
+  used by the client script, by the server when it validates, and by the editor's
+  preview. Hidden inputs are not required and their values are not stored.
+- **The `forms` collection** is built in (`formsModule`), private, not publishable, no
+  path: `title`; `slug` (derived from the title, unique, names the form on the site and
+  in the API, free to change); `enabled` (boolean); `body` (blocks with `form: true`,
+  up to 48 inputs); `settings` (a group: `submitLabel`, `confirmation` of `message` or
+  `redirect`, `message` markdown, `redirectUrl`, `closedMessage`, `limit`, `opensAt`,
+  `closesAt`, `requireSignIn`, `oncePerUser`, `oncePerEmail` naming an email input,
+  `store` submissions on or off, `recordIp`, `turnstile` on or off); `notifications`
+  (`{ rules: [...] }`, see below). Editors manage forms through `cms/forms:*`. Saving a
+  form checks its settings and rules against its inputs.
+- **Submissions are a resource per form, one table each.** `submissionResource(form,
+  inputs)` builds `cms/form_<form id>` (the ID without hyphens), stored by the usual
+  `storageName` in its own FastDB collection `r__cms__form_<form id>`, never in a shared
+  submissions table. It sits in the host's `cms` namespace, so no plugin name can clash,
+  and collection names starting with `form_` are refused. The host's migrate step
+  creates the collection with its indexes and records the declaration hash, as it does
+  for collections; FastDB's auto-create on insert is only the safety net behind the
+  lazy hash check at submit time. Fields: one per input, typed from its `input.kind`
+  (`choices` a list of strings, `number` a number, `boolean` a boolean, the rest text;
+  text kinds searchable, up to 16), plus `status` (`new`, `read`, `spam`, `trash`,
+  indexed with the time), `note`, and `meta`: `ip`, `userAgent`, `referrer`, `page` (the
+  page the form was on), `locale`. The submitting user is `_owner`; `_createdAt` is the
+  time. Revisions off. Access: read, update and delete by `cms:submissions`; create
+  `none`, the host writes with `system:forms`. A new or changed input is an additive
+  step, so saving a form never rewrites rows; a removed input keeps its stored values.
+- **Validation is one pure function.** `validateSubmission(form, types, raw, options)`
+  takes the posted strings, applies conditions, checks each visible input by its kind
+  and its block data, and returns `{ values, errors }` keyed by input name. The site's
+  client script and the host run the same function.
+- **Notification rules.** `{ id, label, to, subject, body, replyTo?, when? }`, at most
+  10 per form. `to`, `subject`, `body` and `replyTo` take merge tags: `{field:name}`,
+  `{all_fields}`, `{form:title}`, `{submission:id}`, `{submission:url}`,
+  `{user:email}`, `{site:title}`, `{site:url}`. A rule with `to: {field:email}` is the
+  autoresponder. `when` is a condition like a block's. `renderMergeTags` is client-safe.
+
+### Host
+
+- **Registry.** `ready()` loads enabled forms and registers their submission resources
+  with the collections' resources, so `cms.resource('forms/contact')`, the schema
+  planner and grants see them. Saving a form (any write to `cms/forms`) migrates its
+  resource in the same request, as `saveCollection` does; `submitForm` checks the
+  declaration hash in `cms_schema_state` first and migrates when the dashboard did not.
+- **`submitForm(key, raw, context)`.** Same-origin check by the route; then: the form is
+  enabled, open (`opensAt`, `closesAt`, `limit` against the stored count), sign-in when
+  required, one per user or email when set; honeypot `_trap` and a `_started` time under
+  two seconds mark the submission `spam` (stored, no notifications, no hooks); one
+  submission per IP per form every five seconds; Turnstile when the setting and the keys
+  are on. Validation runs `validateSubmission`, then the `cms.form.validate` filter, then
+  `cms.form.before-submit`. With `store` on, the row is written with its outbox event;
+  with it off, the outbox row alone is written, so notifications still run. The
+  response is the confirmation after `cms.form.confirmation`.
+- **Extension points**, versioned like the existing ones and listed in `EXTENSION_POINTS`
+  so plugin manifests can name them:
+  - `cms.form.validate` filter: `(errors, { form, values, actor })`, 2 s.
+  - `cms.form.before-submit` filter: `(values, { form, errors: none, actor })`, 2 s.
+  - `cms.form.confirmation` filter: `(confirmation, { form, submission })`, 2 s.
+  - `cms.form.notification` filter: `(message | null, { form, submission, rule })`, 2 s;
+    null cancels.
+  - `cms.form.submitted` action: `({ eventId, form, submission, values, actor, at })`,
+    10 s, run from the outbox. The outbox row's topic is `form.submitted`; the
+    dispatcher maps topics to points instead of assuming `after-commit`.
+- **Notifications and webhooks** are the forms module's own `cms.form.submitted`
+  handlers, so they retry with the outbox. Mail goes through a new `CmsOptions.mail`
+  (`{ send(message) }`), which the scaffold wires to the `EMAIL` binding; without it
+  rules are skipped and logged once. Webhooks gain the event `form.submitted`, filtered
+  by form slug in the webhook's `collections` list as `forms/<slug>`.
+- **Submission management.** `cms.submissions(form)`: list by status with search over
+  text inputs, counts, mark read, spam, trash, delete, restore, and `export()` that
+  streams CSV in pages of 500 with the input labels as headers. `cms.formCounts()`
+  returns new counts for the navigation. Maintenance empties `trash` older than 30 days.
+
+### Site and API
+
+- **Placing a form.** A `core/form` block (widgets) with `form` naming a form by slug
+  renders it inline through `helpers.form(view)`. `FormView` carries the form's blocks,
+  settings, prefilled values (`cms.form.prefill` filter over the query string),
+  errors, the honeypot and start fields, the Turnstile key and the action URL. The
+  default theme renders it; a theme overrides `blocks['core/form']` or any input block.
+- **Rendering.** `coreBlock` gains the input renderers in `cms/form-blocks.ts`: label,
+  control, description, error, `data-when` for conditions, `data-input` for the script.
+  Markup is plain HTML that submits without JavaScript. `cms/forms.css` joins
+  `blocks.css`.
+- **Routes.** `POST /api/cms/forms/<slug>` accepts form data or JSON. A form post returns
+  303 to the page with `?form=<slug>&result=<ok|error>&id=` and the page re-renders the
+  form with the stored errors and values from a one-time `cms_form_results` row (so a
+  refresh does not resubmit and errors survive the redirect); JSON gets
+  `{ confirmation }` or `{ errors }`. `GET /api/cms/forms/<slug>` returns the form for
+  headless sites; `GET /api/cms/forms/<slug>/submissions` lists with an API token that
+  has `cms:submissions`.
+- **Client script.** `cms/form.client.ts`, loaded when a page has a form: applies
+  conditions as values change, validates with `validateSubmission` on submit, posts as
+  JSON, shows errors inline and the confirmation in place or follows the redirect.
+  Nothing works differently when it fails to load.
+
+### Dashboard
+
+- **Forms** in the content navigation after Comments, with the new-submission count,
+  for `cms/forms:read` or `cms:submissions`. `/dashboard/forms` lists forms with their
+  counts; `/dashboard/forms/new` and `/dashboard/forms/<id>` is the form editor, built
+  from the entry editor's pieces: the block tree for `fields` (picker limited to form
+  blocks and containers, a condition control on the General tab that lists the form's
+  inputs), the group control for `settings`, and a rules editor for `notifications`
+  with a merge-tag menu. The generic entry editor still opens `cms/forms`, so nothing is
+  lost before the dedicated screen lands.
+- **Submissions** at `/dashboard/forms/<id>/submissions`: status tabs with counts,
+  search, a table of the first four inputs plus time and status, bulk mark, a detail
+  drawer with every value, the metadata and the note, and Export CSV. Permission
+  `cms:submissions`, granted to Editors by default.
+
+### Out of scope now
+
+File inputs (needs private media), multi-page forms, payments, saved partial entries,
+per-field unique indexes chosen in the editor. Each fits the model later: a file input
+is a block with `input.kind: 'file'`, a page break a container.
+
+## Order
+
+1. Model: `input` on declarations, `Block.when` and `visibleBlocks`, the core input
+   blocks, `forms` collection, `submissionResource`, `validateSubmission`, merge tags,
+   notification rules, hooks. Unit tests in `essentials-unit.test.ts` style.
+2. Host: registry and storage sync, `submitForm`, outbox topics, mail option,
+   notifications, webhooks, submissions management and export, maintenance. FastDB tests.
+3. Site: `core/form`, input renderers, CSS, routes, result rows, client script.
+4. Dashboard: navigation, form list and editor, submissions screen, CSV.
+5. Generated-app test, README and `agent-docs.json`.
+
+## Done when
+
+- An editor creates a contact form with name, email, a subject select, a message and a
+  "call me" checkbox that reveals a phone input, places it on a page with `core/form`,
+  and the page submits with JavaScript off and on.
+- A submission lands in the form's own table `r__cms__form_<id>` with the typed values, IP, user agent and
+  status `new`; the dashboard shows it under Forms (1), marks it read and exports CSV.
+- A filled honeypot stores `spam` and sends nothing; a sixth submission past
+  `limit: 5` gets the closed message.
+- A notification rule emails the admin with merge tags filled and an autoresponder
+  reaches the submitted email, both delivered from the outbox and not sent twice on
+  a retry.
+- A plugin registers `cms.form.validate` to reject a domain and `cms.form.submitted`
+  to receive the event; its manifest names both points.
+- Adding an input to a live form migrates the resource without touching rows, and the
+  old submissions still list.

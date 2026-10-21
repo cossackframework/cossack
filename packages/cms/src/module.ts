@@ -13,6 +13,8 @@ export interface ModuleContext {
     readonly taxonomies: { get(id: string): Promise<TermShape | null> };
     /** A current collection by name, built in or defined in the dashboard. */
     readonly collection: (name: string) => CollectionDefinition | undefined;
+    /** Every block type, by name. */
+    readonly blocks: () => ReadonlyMap<string, BlockDeclaration>;
     readonly now: () => number;
 }
 

@@ -53,6 +53,8 @@ export interface FieldDeclaration {
     readonly media?: boolean;
     /** blocks, richtext: the block types allowed; all when omitted. */
     readonly blocks?: readonly string[];
+    /** blocks: the field holds a form, so input blocks and conditions are allowed in it. */
+    readonly form?: boolean;
     /** Where the dashboard editor shows the field. Default: by kind. */
     readonly placement?: 'main' | 'sidebar';
     /** text: how the dashboard edits and the site renders the value. */
@@ -144,6 +146,7 @@ export function fieldProblems(name: string, declaration: FieldDeclaration): stri
     // A list of strings or integers can have an array index; other kinds cannot be indexed.
     if (declaration.index && (['json', 'vector', 'text', 'blocks', 'richtext'].includes(kind) || (kind === 'list' && !['string', 'integer'].includes(declaration.items as string)))) problems.push(`${at}: ${kind} fields cannot be indexed.`);
     if (declaration.blocks !== undefined && ((kind !== 'blocks' && kind !== 'richtext') || !Array.isArray(declaration.blocks) || declaration.blocks.some(name => typeof name !== 'string' || !/^[a-z][a-z0-9-]*\/[a-z][a-z0-9-]*$/.test(name)))) problems.push(`${at}: blocks lists block type names and applies to blocks and rich text fields.`);
+    if (declaration.form !== undefined && (kind !== 'blocks' || typeof declaration.form !== 'boolean')) problems.push(`${at}: form applies to blocks fields and is true or false.`);
     if (declaration.placement !== undefined && !['main', 'sidebar'].includes(declaration.placement)) problems.push(`${at}: placement is main or sidebar.`);
     if (declaration.slugFrom !== undefined && (kind !== 'string' || typeof declaration.slugFrom !== 'string' || !FIELD_NAME.test(declaration.slugFrom))) problems.push(`${at}: slugFrom applies to string fields and names another field.`);
     if (declaration.taxonomy !== undefined && (kind !== 'list' || declaration.items !== 'string' || !TAXONOMY_NAME.test(declaration.taxonomy))) problems.push(`${at}: taxonomy applies to lists of strings and names a taxonomy.`);

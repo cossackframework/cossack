@@ -355,7 +355,7 @@ export class CmsHost {
         this.previews = new CmsPreviews(this.db, { now: this.#now });
         this.autosaves = new CmsAutosaves(this.db, { now: this.#now });
         this.files = options.storage ? new FileService(this.db, options.storage, { now: this.#now, ...(options.images ? { images: options.images } : {}), ...options.files }) : null;
-        for (const module of modules) module.register?.({ hooks: this.hooks, settings: this.settings, taxonomies: this.taxonomies, collection: name => this.#collections.get(name), now: this.#now });
+        for (const module of modules) module.register?.({ hooks: this.hooks, settings: this.settings, taxonomies: this.taxonomies, collection: name => this.#collections.get(name), blocks: () => this.#blocks, now: this.#now });
         for (const plugin of this.#plugins.values()) this.#registerPlugin(plugin);
         if (!options.hooks) this.hooks.freeze();
     }

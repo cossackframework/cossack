@@ -87,6 +87,8 @@ export function collectionProblems(definition: CollectionDefinition): string[] {
     const problems: string[] = [];
     if (typeof definition?.name !== 'string' || !RESOURCE_NAME.test(definition.name) || definition.name.includes('__')) problems.push('The name must be lowercase letters, digits and single underscores, starting with a letter.');
     else if (RESERVED.has(definition.name)) problems.push(`${definition.name} is reserved.`);
+    // Form submissions are stored as cms/form_<form id>.
+    else if (definition.name.startsWith('form_')) problems.push('Names starting with form_ are reserved for form submissions.');
     for (const key of ['label', 'singular'] as const) {
         if (typeof definition?.[key] !== 'string' || !definition[key].trim() || definition[key].length > 60) problems.push(`The ${key === 'label' ? 'plural label' : 'singular label'} must be 1-60 characters.`);
     }

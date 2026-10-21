@@ -4,13 +4,24 @@ export { defineResource, resolveResource, resourceProblems, storageName, permiss
 export { field, fieldProblems, validateValue, storageType, storageCheck, slugify, FIELD_NAME, SLUG_PATTERN, TAXONOMY_NAME, type FieldDeclaration, type FieldKind, type ListItemKind } from './fields';
 export { ANONYMOUS, PERMISSIONS, DEFAULT_ROLES, systemPrincipal, userPrincipal, hasPermission, permissionMatches, evaluateRule, ruleScope, principalId, type Principal, type RecordScope } from './permissions';
 export { CmsError, isCmsError, type CmsErrorCode } from './errors';
-export { beforeWrite, afterCommit, EXTENSION_POINTS, type BeforeWriteInput, type Draft, type ResourceEvent, type WriteActor } from './hooks';
+export { beforeWrite, afterCommit, formValidate, formBeforeSubmit, formPrefill, formConfirmation, formNotification, formSubmitted, EXTENSION_POINTS,
+    type BeforeWriteInput, type Draft, type ResourceEvent, type WriteActor, type FormRef, type SubmissionContext, type FormErrors, type FormConfirmation, type FormEmail, type FormSubmittedEvent } from './hooks';
 export type { RecordShape, RecordPage, RevisionShape, FieldFilter, ListFilter, ListOptions } from './records';
 export { contentModule, categories, tags, patterns } from './modules/content';
+export { formsModule } from './modules/forms';
+export {
+    FORM_BLOCKS, FORM_EMBED_BLOCK, FORM_SETTINGS, SUBMISSION_STATUSES, SUBMISSION_META, SUBMISSION_PREFIX, NOTIFICATION_LIMIT, MERGE_TAGS,
+    forms, inputFields, choiceOptions, formInputs, ruleMatches, conditionShows, formVisibility, visibleBlocks, formDataValues, validateSubmission, displayValue,
+    formSettings, submissionResourceName, submissionResource, submissionOf, notificationRules, notificationProblems, renderMergeTags, emailAddresses,
+    type ChoiceOption, type FormField, type FormValue, type FormValues, type SubmittedValues, type SubmissionCheck, type FormSettings, type SubmissionStatus,
+    type SubmissionMeta, type SubmissionShape, type NotificationRule, type MergeContext,
+} from './form-builder';
 export { CONTENT_STATUSES, CORE_FIELDS, ENTRY_TEMPLATE, LOCALE, SEO_FIELDS, collectionProblems, collectionResource, entryUrl, extendCollection, languageName, orderedFields, posts, pages, type CollectionDefinition, type ContentStatus } from './collections';
-export { CORE_BLOCKS, BLOCK_CATEGORIES, BLOCK_NAME, BLOCK_LIMITS, BREAKPOINTS, STYLE_PROPERTIES, TEXT_ALIGNMENTS, PRESET_SLUG, blockCategory, blockProblems, blocksShapeProblem, blockLayoutProblem, blockStyleProblem, blockSupports, blockAllowedIn, validateBlocks, blockMedia, blockId,
+export { CORE_BLOCKS, BLOCK_CATEGORIES, BLOCK_NAME, BLOCK_LIMITS, BREAKPOINTS, STYLE_PROPERTIES, TEXT_ALIGNMENTS, PRESET_SLUG, INPUT_KINDS, INPUT_NAME, CONDITION_OPERATORS, CONDITION_LIMIT, FORM_INPUT_LIMIT, RESERVED_INPUT_NAMES,
+    blockCategory, blockProblems, blocksShapeProblem, blockLayoutProblem, blockStyleProblem, blockConditionProblem, blockSupports, blockAllowedIn, validateBlocks, blockMedia, blockId, inputName,
     flattenBlocks, placeBlocks, findBlock, updateBlock, removeBlock, insertBlock, moveBlock, shiftBlock, blockTreeProblem,
-    type Block, type BlockCategory, type BlockDeclaration, type BlockLayout, type BlockStyle, type BlockSupports, type BlockMove, type BlockPlace, type Breakpoint, type StyleProperty } from './blocks';
+    type Block, type BlockCategory, type BlockDeclaration, type BlockLayout, type BlockStyle, type BlockSupports, type BlockMove, type BlockPlace, type Breakpoint, type StyleProperty,
+    type BlockCondition, type ConditionRule, type ConditionOperator, type InputKind, type ValidateBlocksOptions } from './blocks';
 export { formInput, formValue, recordTitle, isSameOriginPost, type FormInput, type SubmittedForm } from './forms';
 export { manifestProblems, validateManifest, requestedGrants, commandInput, ManifestError, HOST_SLOTS, type CmsPluginManifest, type PluginCommand, type CommandOption, type SlotLink, type HostSlot } from './manifest';
 export { MEDIA_TYPES, AVATAR_TYPES, MEDIA_FILTERS, mediaKind, mediaUrl, formatBytes, matchesSignature, imageSize, type MediaKind } from './media';
