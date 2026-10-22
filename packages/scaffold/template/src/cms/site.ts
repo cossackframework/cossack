@@ -4,7 +4,8 @@
  * from `init()` and hand the views to the theme's templates.
  */
 import {
-    ANONYMOUS, editedSize, escapeHtml, formatSiteDate, imageSrcset, imageUrl, isCmsError, languageName, mediaUrl, recordTitle, resolvePresets, richTextBlocks, richTextExcerpt, richTextParts, systemPrincipal, templateCandidates, transformable,
+    ANONYMOUS, blockDocuments, blockIsData, blocksPlain, editedSize, flattenBlocks, escapeHtml, formatSiteDate, imageSrcset, imageUrl, isCmsError, languageName, mediaUrl, recordTitle, resolvePresets, richTextBlocks, richTextExcerpt, richTextParts, richTextPlain, systemPrincipal, templateCandidates, transformable,
+    type Block,
     type Principal, type TemplatePage, type ThemeData, type ThemePresets,
     type ArchiveView, type BodyPart, type CollectionDefinition, type CommentShape, type CommentView, type CommentsView, type EntryReference, type EntryView, type FieldDeclaration, type FieldFilter,
     type FieldView, type LanguageLink, type MediaView, type MenuItemView, type RecordShape, type RenderedBlock, type RichTextDoc, type SiteSettings, type SiteView, type TermLink, type TermShape,
@@ -91,12 +92,69 @@ async function areaViews(cms: CmsHost, names: readonly string[], forms?: FormReq
     const saved = await cms.areas.all().catch(() => new Map<string, { blocks: readonly { id: string; type: string; data: Record<string, unknown> }[] }>());
     const available = new Set((await cms.blocks()).map(block => block.name));
     const blocks = new Map(names.map(name => [name, (saved.get(name)?.blocks ?? []).filter(block => available.has(block.type))]));
+    const all = [...blocks.values()].flat() as Block[];
+    const patterns = await usedPatterns(cms, blockDocuments(all, cms.blockTypes), all);
+    const expanded = new Map([...blocks].map(([name, list]) => [name, expandPatterns(list as Block[], patterns)]));
     const ids = new Set<string>();
-    for (const list of blocks.values()) for (const block of list) blockMediaIds(cms, block as { type: string; data: Record<string, unknown> }, ids);
+    for (const list of expanded.values()) for (const block of list) blockMediaIds(cms, block as { type: string; data: Record<string, unknown> }, ids);
     const files = cms.files && ids.size ? await cms.files.getMany([...ids]) : new Map<string, CmsFile>();
-    const areas = Object.fromEntries([...blocks].map(([name, list]) => [name, list.map(block => renderedBlock(cms, block as { id: string; type: string; data: Record<string, unknown> }, files))]));
+    const richText = bodyRenderer(cms, files, patterns);
+    const areas = Object.fromEntries([...expanded].map(([name, list]) => [name, list.map(block => renderedBlock(cms, block as { id: string; type: string; data: Record<string, unknown> }, files, richText))]));
     await withForms(cms, Object.values(areas).flat(), forms);
+    await withLatest(cms, Object.values(areas).flat());
     return areas;
+}
+
+/**
+ * Give each `core/latest-entries` block among these its entries: the newest published entries
+ * of the collection it names, with the term it asks for, as list views (no bodies).
+ */
+async function withLatest(cms: CmsHost, blocks: readonly RenderedBlock[], locale?: string): Promise<void> {
+    const found: RenderedBlock[] = [];
+    const walk = (list: readonly RenderedBlock[]) => { for (const block of list) { if (block.type === 'core/latest-entries') found.push(block); if (block.children) walk(block.children); } };
+    walk(blocks);
+    const languages = found.length ? await cms.languages() : null;
+    for (const block of found) {
+        const name = typeof block.data.collection === 'string' ? block.data.collection : '';
+        const collection = cms.collections().find(entry => entry.name === name);
+        if (!collection || collection.publishable === false) continue;
+        const term = typeof block.data.term === 'string' && block.data.term ? block.data.term : '';
+        const count = Math.min(Math.max(Number(block.data.count) || 5, 1), 24);
+        const order = block.data.order === 'title' ? { field: 'title', direction: 'asc' as const } : { field: 'publishedAt', direction: block.data.order === 'oldest' ? 'asc' as const : 'desc' as const };
+        try {
+            const where: { [field: string]: FieldFilter } = { status: 'published', ...(languages && locale ? localeWhere(languages, locale) : {}) };
+            if (term) {
+                const found = await cms.taxonomies.get(term);
+                const field = found ? collection.taxonomies?.find(taxonomy => taxonomy === found.taxonomy) : undefined;
+                if (!field) { (block as { entries?: readonly EntryView[] }).entries = []; continue; }
+                where[field] = { containsAny: (await cms.taxonomies.subtree(term)).slice(0, 50) };
+            }
+            const page = await cms.resource(`cms/${collection.name}`).list({ where, order, limit: count }, visitor);
+            (block as { entries?: readonly EntryView[] }).entries = await entryViews(cms, collection, page.records);
+        } catch (error) { if (!isCmsError(error)) throw error; }
+    }
+}
+
+/**
+ * Rich text as body parts: HTML runs and rendered blocks, synced patterns expanded one level.
+ * Shared by entries' bodies and the rich text inside blocks.
+ */
+function bodyRenderer(cms: CmsHost, files: ReadonlyMap<string, CmsFile>, patterns: ReadonlyMap<string, Block[]>): (doc: RichTextDoc, depth?: number) => BodyPart[] {
+    const resizes = cms.files?.resizes ?? false;
+    const media = (id: string) => {
+        const view = mediaView(files.get(id), resizes);
+        return view ? { url: view.url, width: view.width, height: view.height, srcset: view.srcset } : null;
+    };
+    const parts = (doc: RichTextDoc, depth = 0): BodyPart[] => richTextParts(doc, { media }).flatMap((part): BodyPart[] => {
+        if (part.kind === 'html') return [part];
+        const inner = depth === 0 ? (doc: RichTextDoc) => parts(doc, 1) : undefined;
+        if (part.block.type === 'core/pattern') {
+            // A pattern embedded in rich text: its blocks in its place, once.
+            return depth === 0 ? expandPatterns([part.block as Block], patterns).map(block => ({ kind: 'block' as const, block: renderedBlock(cms, block, files, inner) })) : [];
+        }
+        return [{ kind: 'block' as const, block: renderedBlock(cms, part.block as RenderedBlock, files, inner) }];
+    });
+    return parts;
 }
 
 /** Give each `core/form` block among these its form, for the page's request. A form that is gone renders nothing. */
@@ -128,7 +186,7 @@ async function pageMenu(cms: CmsHost, languages: SiteLanguages, locale: string):
         const urls = await cms.entryUrls(pages, top.records);
         return top.records.flatMap(record => {
             const url = urls.get(record.id);
-            return url ? [{ id: record.id, label: recordTitle(record, 'title'), url, newTab: false, kind: 'entry' as const, children: [] }] : [];
+            return url ? [{ id: record.id, label: recordTitle(record, 'title'), url, newTab: false, kind: 'entry' as const, className: '', attributes: {}, meta: {}, children: [] }] : [];
         });
     } catch { return []; /* before setup, or without pages */ }
 }
@@ -147,20 +205,26 @@ export function mediaView(file: CmsFile | undefined, resizes: boolean): MediaVie
 }
 
 /** A block with its Markdown fields rendered and its media resolved; a container's children too. */
-function renderedBlock(cms: CmsHost, block: { id: string; type: string; data: Record<string, unknown>; layout?: RenderedBlock['layout']; style?: RenderedBlock['style']; when?: RenderedBlock['when']; children?: readonly unknown[] }, files: ReadonlyMap<string, CmsFile>): RenderedBlock {
+/** A block with its Markdown rendered, its rich text as parts (through `richText`, when given), its media resolved and its children rendered. */
+function renderedBlock(cms: CmsHost, block: { id: string; type: string; data: Record<string, unknown>; layout?: RenderedBlock['layout']; style?: RenderedBlock['style']; when?: RenderedBlock['when']; children?: readonly unknown[] },
+    files: ReadonlyMap<string, CmsFile>, richText?: (doc: RichTextDoc) => BodyPart[]): RenderedBlock {
     const html: Record<string, string> = {};
     const media: Record<string, MediaView> = {};
+    const content: Record<string, BodyPart[]> = {};
     const resizes = cms.files?.resizes ?? false;
-    for (const [key, declaration] of Object.entries(cms.blockTypes.get(block.type)?.fields ?? {})) {
+    const type = cms.blockTypes.get(block.type);
+    for (const [key, declaration] of Object.entries(type?.fields ?? {})) {
         const entry = block.data[key];
         if (declaration.kind === 'text' && declaration.format === 'markdown' && typeof entry === 'string') html[key] = renderMarkdown(entry);
+        if (declaration.kind === 'richtext' && entry && typeof entry === 'object') content[key] = richText ? richText(entry as RichTextDoc) : richTextParts(entry as RichTextDoc).filter(part => part.kind === 'html');
         for (const id of declaration.media ? (Array.isArray(entry) ? entry : [entry]) : []) {
             const view = mediaView(files.get(id as string), resizes);
             if (view) media[id as string] = view;
         }
     }
-    const children = Array.isArray(block.children) ? (block.children as RenderedBlock[]).map(child => renderedBlock(cms, child, files)) : undefined;
-    return { id: block.id, type: block.type, data: block.data, html, media, ...(block.layout ? { layout: block.layout } : {}), ...(block.style ? { style: block.style } : {}), ...(block.when ? { when: block.when } : {}), ...(children ? { children } : {}) };
+    const children = Array.isArray(block.children) ? (block.children as RenderedBlock[]).map(child => renderedBlock(cms, child, files, richText)) : undefined;
+    return { id: block.id, type: block.type, data: block.data, html, media, ...(Object.keys(content).length ? { content } : {}), ...(type && blockIsData(type) ? { dataOnly: true } : {}),
+        ...(block.layout ? { layout: block.layout } : {}), ...(block.style ? { style: block.style } : {}), ...(block.when ? { when: block.when } : {}), ...(children ? { children } : {}) };
 }
 
 function blockMediaIds(cms: CmsHost, block: { type: string; data: Record<string, unknown>; children?: readonly unknown[] }, into: Set<string>): void {
@@ -168,6 +232,7 @@ function blockMediaIds(cms: CmsHost, block: { type: string; data: Record<string,
         const entry = block.data[key];
         if (declaration.media && typeof entry === 'string') into.add(entry);
         if (declaration.media && Array.isArray(entry)) for (const id of entry) into.add(id as string);
+        if (declaration.kind === 'richtext' && entry && typeof entry === 'object') docMediaIds(cms, entry as RichTextDoc, into);
     }
     for (const child of Array.isArray(block.children) ? block.children as RenderedBlock[] : []) blockMediaIds(cms, child, into);
 }
@@ -179,17 +244,32 @@ function docMediaIds(cms: CmsHost, doc: RichTextDoc, into: Set<string>): void {
     }
 }
 
-/** Synced patterns the documents use, by ID. Patterns inside patterns are not expanded. */
-async function usedPatterns(cms: CmsHost, docs: readonly RichTextDoc[]): Promise<Map<string, RichTextDoc>> {
-    const ids = [...new Set(docs.flatMap(doc => richTextBlocks(doc).filter(block => block.type === 'core/pattern').map(block => String(block.data.pattern ?? ''))))].filter(Boolean);
+/** Synced patterns the blocks and documents use, by ID: their blocks. Patterns inside patterns are not expanded. */
+async function usedPatterns(cms: CmsHost, docs: readonly RichTextDoc[], blocks: readonly Block[] = []): Promise<Map<string, Block[]>> {
+    const ids = [...new Set([...docs.flatMap(doc => richTextBlocks(doc)), ...flattenBlocks(blocks)].filter(block => block.type === 'core/pattern').map(block => String(block.data.pattern ?? '')))].filter(Boolean);
     if (!ids.length) return new Map();
     try {
         const patterns = await cms.resource('cms/patterns').getMany(ids, renderer);
-        return new Map([...patterns].flatMap(([id, record]) => record.content && typeof record.content === 'object' ? [[id, record.content as RichTextDoc]] : []));
+        return new Map([...patterns].flatMap(([id, record]) => Array.isArray(record.content) ? [[id, record.content as Block[]]] : []));
     } catch (error) {
         if (isCmsError(error)) return new Map();
         throw error;
     }
+}
+
+/** Blocks with each Pattern block replaced by the pattern's blocks, their IDs prefixed so they stay distinct; patterns inside patterns are left out. */
+function expandPatterns(blocks: readonly Block[], patterns: ReadonlyMap<string, Block[]>): Block[] {
+    return blocks.flatMap(block => {
+        if (block.type === 'core/pattern') {
+            const id = String(block.data.pattern ?? '');
+            return (patterns.get(id) ?? []).filter(inner => inner.type !== 'core/pattern').map(inner => prefixIds(inner, `${block.id}-`));
+        }
+        return [block.children ? { ...block, children: expandPatterns(block.children, patterns) } : block];
+    });
+}
+
+function prefixIds(block: Block, prefix: string): Block {
+    return { ...block, id: `${prefix}${block.id}`.slice(0, 40), ...(block.children ? { children: block.children.map(child => prefixIds(child, prefix)) } : {}) };
 }
 
 /** The `?comment=` result of posting a comment, as the comment view's notice or error. */
@@ -244,20 +324,29 @@ export async function entryViews(cms: CmsHost, collection: CollectionDefinition,
     const fields = Object.entries(resource.fields);
     const body = fields.find(([name, declaration]) => name === 'body' && (declaration.kind === 'richtext' || declaration.kind === 'text'))
         ?? fields.find(([, declaration]) => declaration.kind === 'richtext' || (declaration.kind === 'text' && declaration.format === 'markdown'));
-    const blocksField = fields.find(([, declaration]) => declaration.kind === 'blocks');
+    // The content and any other blocks fields render into `entry.blocks`, in declared order; `entry.fields` keeps them apart.
+    const blocksFields = fields.filter(([, declaration]) => declaration.kind === 'blocks' && !declaration.form);
+    const blocksField = blocksFields[0];
     const imageField = fields.find(([, declaration]) => declaration.kind === 'string' && declaration.media);
     const excerptField = fields.find(([name, declaration]) => name === 'excerpt' && declaration.kind === 'text');
-    const docs = options.full ? records.flatMap(record => fields.filter(([, declaration]) => declaration.kind === 'richtext').map(([name]) => record[name]).filter((value): value is RichTextDoc => !!value && typeof value === 'object')) : [];
-    const patterns = await usedPatterns(cms, docs);
+    const docs = options.full ? records.flatMap(record => [
+        ...fields.filter(([, declaration]) => declaration.kind === 'richtext').map(([name]) => record[name]).filter((value): value is RichTextDoc => !!value && typeof value === 'object'),
+        // Entries saved with a rich text body before content became blocks still render it.
+        ...(!body && record.body && typeof record.body === 'object' && (record.body as RichTextDoc).type === 'doc' ? [record.body as RichTextDoc] : []),
+        ...fields.filter(([, declaration]) => declaration.kind === 'blocks').flatMap(([name]) => Array.isArray(record[name]) ? blockDocuments(record[name] as Block[], cms.blockTypes) : []),
+    ]) : [];
+    const stored = (record: RecordShape) => blocksFields.flatMap(([name]) => Array.isArray(record[name]) ? record[name] as Block[] : []);
+    const patterns = await usedPatterns(cms, docs, options.full ? records.flatMap(stored) : []);
     const mediaIds = new Set<string>();
     for (const record of records) for (const [name, declaration] of fields) {
         const value = record[name];
         if (declaration.media && typeof value === 'string') mediaIds.add(value);
         if (declaration.media && Array.isArray(value)) for (const id of value) mediaIds.add(id as string);
         if (!options.full) continue;
-        if (declaration.kind === 'blocks' && Array.isArray(value)) for (const block of value as RenderedBlock[]) blockMediaIds(cms, block, mediaIds);
+        if (declaration.kind === 'blocks' && Array.isArray(value)) for (const block of expandPatterns(value as Block[], patterns) as RenderedBlock[]) blockMediaIds(cms, block, mediaIds);
     }
-    for (const doc of [...docs, ...patterns.values()]) docMediaIds(cms, doc, mediaIds);
+    for (const doc of docs) docMediaIds(cms, doc, mediaIds);
+    if (options.full) for (const list of patterns.values()) for (const block of list as RenderedBlock[]) blockMediaIds(cms, block, mediaIds);
     const files = cms.files ? await cms.files.getMany([...mediaIds]) : new Map<string, CmsFile>();
     const owners = await cms.users.getMany(records.map(record => record.owner).filter((owner): owner is string => !!owner));
     const references = await referencedRecords(cms, fields, records);
@@ -268,30 +357,20 @@ export async function entryViews(cms: CmsHost, collection: CollectionDefinition,
         const taxonomy = cms.taxonomies.declaration(term.taxonomy);
         return taxonomy.path ? `${localePrefix(languages, locale)}/${taxonomy.path}/${term.slug}` : null;
     };
-    const media = (id: string) => {
-        const view = mediaView(files.get(id), resizes);
-        return view ? { url: view.url, width: view.width, height: view.height, srcset: view.srcset } : null;
-    };
-    const parts = (doc: RichTextDoc, depth = 0): BodyPart[] => richTextParts(doc, { media }).flatMap(part => {
-        if (part.kind === 'html') return [part];
-        if (part.block.type === 'core/pattern') {
-            const pattern = patterns.get(String(part.block.data.pattern ?? ''));
-            return pattern && depth === 0 ? parts(pattern, 1).filter(inner => inner.kind === 'html' || inner.block.type !== 'core/pattern') : [];
-        }
-        return [{ kind: 'block' as const, block: renderedBlock(cms, part.block as RenderedBlock, files) }];
-    });
+    const parts = bodyRenderer(cms, files, patterns);
+    const render = (block: RenderedBlock) => renderedBlock(cms, block, files, doc => parts(doc));
     /** A field's typed value; undefined leaves it out (rich text, Markdown and blocks in lists, vectors). */
     const fieldView = (name: string, declaration: FieldDeclaration, value: unknown, locale: string, full: boolean): FieldView | undefined => {
         if (declaration.kind === 'vector' || declaration.kind === 'bigint') return undefined;
         if ((declaration.kind === 'richtext' || declaration.kind === 'blocks' || (declaration.kind === 'text' && declaration.format === 'markdown')) && !full) return undefined;
         if (value === undefined || value === null || value === '') return null;
-        if (declaration.taxonomy) return ((value as string[] | undefined) ?? []).map(id => terms.get(id)).filter((term): term is TermShape => !!term).map((term): TermLink => ({ name: term.name, url: termUrl(term, locale) }));
+        if (declaration.taxonomy) return ((value as string[] | undefined) ?? []).map(id => terms.get(id)).filter((term): term is TermShape => !!term).map((term): TermLink => ({ name: term.name, url: termUrl(term, locale), icon: term.icon }));
         if (declaration.media && Array.isArray(value)) return value.map(id => mediaView(files.get(String(id)), resizes)).filter((view): view is MediaView => !!view);
         if (declaration.media) return mediaView(files.get(String(value)), resizes);
         if (declaration.kind === 'reference') return references.get(`${declaration.target}:${String(value)}`) ?? null;
         if (declaration.kind === 'richtext') return typeof value === 'object' ? parts(value as RichTextDoc) : null;
         if (declaration.kind === 'text' && declaration.format === 'markdown') return [{ kind: 'html', html: renderMarkdown(String(value)) }];
-        if (declaration.kind === 'blocks') return Array.isArray(value) ? (value as RenderedBlock[]).map(block => renderedBlock(cms, block, files)) : [];
+        if (declaration.kind === 'blocks') return Array.isArray(value) ? (value as RenderedBlock[]).map(render) : [];
         return value as FieldView;
     };
     const views: EntryView[] = [];
@@ -300,15 +379,17 @@ export async function entryViews(cms: CmsHost, collection: CollectionDefinition,
         const richText = body?.[1].kind === 'richtext' ? value as RichTextDoc | null : null;
         const markdown = body?.[1].kind === 'text' && typeof value === 'string' ? value : '';
         const locale = typeof record.locale === 'string' ? record.locale : languages.default;
+        const legacy = !body && record.body && typeof record.body === 'object' && (record.body as RichTextDoc).type === 'doc' ? record.body as RichTextDoc : null;
         let bodyParts: BodyPart[] = [];
-        if (options.full && richText) bodyParts = parts(richText);
+        if (options.full && (richText ?? legacy)) bodyParts = parts((richText ?? legacy)!);
         else if (options.full && markdown) bodyParts = [{ kind: 'html', html: renderMarkdown(markdown) }];
-        const blocks = options.full && blocksField ? ((record[blocksField[0]] as RenderedBlock[] | null) ?? []).map(block => renderedBlock(cms, block, files)) : [];
+        const content = stored(record);
+        const blocks = options.full ? (expandPatterns(content, patterns) as RenderedBlock[]).map(render) : [];
         const typed: Record<string, FieldView> = {};
         for (const [name, declaration] of fields) {
             if (NOT_FIELDS.has(name)) continue;
-            // The body and blocks are rendered once, for `body` and `blocks` and their fields.
-            const view = body && name === body[0] && options.full ? bodyParts : blocksField && name === blocksField[0] && options.full ? blocks : fieldView(name, declaration, record[name], locale, options.full === true);
+            // The body and the content are rendered once, for `body` and `blocks` and their fields.
+            const view = body && name === body[0] && options.full ? bodyParts : blocksField && name === blocksField[0] && options.full && blocksFields.length === 1 ? blocks : fieldView(name, declaration, record[name], locale, options.full === true);
             if (view !== undefined) typed[name] = view;
         }
         const details = options.full ? fields.filter(([name, declaration]) => !NOT_DETAILS.has(name) && !declaration.taxonomy && !declaration.media
@@ -318,13 +399,14 @@ export async function entryViews(cms: CmsHost, collection: CollectionDefinition,
             id: record.id, title: recordTitle(record, 'title'), url: urls.get(record.id) ?? null, collection: collection.name, kind: collection.singular,
             date: typeof record.publishedAt === 'number' ? formatSiteDate(record.publishedAt, settings) : '',
             author: record.owner && collection.name === 'posts' ? owners.get(record.owner)?.name ?? '' : '',
-            excerpt: excerptField && record.excerpt ? String(record.excerpt) : richText ? richTextExcerpt(richText, 40) : excerptOf(markdown, 40),
+            excerpt: excerptField && record.excerpt ? String(record.excerpt) : richText ? richTextExcerpt(richText, 40) : legacy ? richTextExcerpt(legacy, 40)
+                : content.length ? excerptOf(blocksPlain(content, cms.blockTypes, doc => richTextPlain(doc), 4000), 40) : excerptOf(markdown, 40),
             body: bodyParts,
             blocks,
             image: imageField ? mediaView(files.get(String(record[imageField[0]] ?? '')), resizes) : null,
             terms: taxonomyFields.map(([name, declaration]) => ({
                 label: cms.taxonomies.declaration(declaration.taxonomy!).label,
-                terms: ((record[name] as string[] | undefined) ?? []).map(id => terms.get(id)).filter((term): term is TermShape => !!term).map(term => ({ name: term.name, url: termUrl(term, locale) })),
+                terms: ((record[name] as string[] | undefined) ?? []).map(id => terms.get(id)).filter((term): term is TermShape => !!term).map(term => ({ name: term.name, url: termUrl(term, locale), icon: term.icon })),
             })),
             fields: typed,
             details,
@@ -332,7 +414,11 @@ export async function entryViews(cms: CmsHost, collection: CollectionDefinition,
             locale,
             comments: options.full && collection.comments ? await commentsView(cms, collection, record, urls.get(record.id) ?? '/', settings, options) : null,
         });
-        if (options.full) await withForms(cms, [...blocks, ...bodyParts.flatMap(part => part.kind === 'block' ? [part.block] : [])], options.forms);
+        if (options.full) {
+            const all = [...blocks, ...bodyParts.flatMap(part => part.kind === 'block' ? [part.block] : [])];
+            await withForms(cms, all, options.forms);
+            await withLatest(cms, all, locale);
+        }
     }
     return views;
 }

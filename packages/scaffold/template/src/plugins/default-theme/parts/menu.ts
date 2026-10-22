@@ -2,10 +2,11 @@
 import { html, type TemplateResult } from '@cossackframework/renderer';
 import type { LanguageLink, MenuItemView, ThemeHelpers } from '@cossackframework/cms';
 
+/** A menu item's link, with the class names and attributes set under the item's Advanced tab. */
 export function link(item: MenuItemView, className: string, helpers: ThemeHelpers): TemplateResult {
     const active = helpers.isActive(item.url);
-    return html`<a href=${item.url} class=${`${className} ${active ? 'font-medium text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
-        aria-current=${active ? 'page' : 'false'} target=${item.newTab ? '_blank' : ''} rel=${item.newTab ? 'noopener noreferrer' : ''}>${item.label}</a>`;
+    return html`<a href=${item.url} class=${`${className} ${active ? 'font-medium text-foreground' : 'text-muted-foreground hover:text-foreground'} ${item.className}`}
+        aria-current=${active ? 'page' : 'false'} target=${item.newTab ? '_blank' : ''} rel=${item.newTab ? 'noopener noreferrer' : ''} ...=${item.attributes}>${item.label}</a>`;
 }
 
 /** The header menu: dropdowns open on hover and keyboard focus. */

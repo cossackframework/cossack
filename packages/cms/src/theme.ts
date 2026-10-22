@@ -180,7 +180,7 @@ export function presetStyle(presets: ThemePresets | undefined): string {
 }
 
 /** What a styled block's wrapper carries: classes per property, the `id`, and inline properties through the presets' variables. Null for an unstyled block. */
-export function blockStyleAttributes(block: { readonly style?: BlockStyle; readonly layout?: Pick<BlockLayout, 'anchor' | 'className'> }): { className: string; style: string; id: string } | null {
+export function blockStyleAttributes(block: { readonly style?: BlockStyle; readonly layout?: BlockLayout }): { className: string; style: string; id: string } | null {
     const classes: string[] = [];
     const rules: string[] = [];
     const slug = (property: StyleProperty) => {
@@ -232,6 +232,8 @@ export interface MediaView {
 export interface TermLink {
     readonly name: string;
     readonly url: string | null;
+    /** The term's icon name, or empty. Themes may show it before the name. */
+    readonly icon?: string;
 }
 
 /** A block with its Markdown fields rendered and its media resolved. */
@@ -255,6 +257,12 @@ export interface RenderedBlock {
     readonly input?: InputView;
     /** `core/form`: the form it places; absent when the form is gone. */
     readonly form?: FormView;
+    /** Rich text fields rendered: HTML runs and embedded blocks, for `helpers.content`. */
+    readonly content?: { readonly [field: string]: readonly BodyPart[] };
+    /** `core/latest-entries`: the entries it lists. */
+    readonly entries?: readonly EntryView[];
+    /** A data block: it holds values for themes and the API and renders nothing. */
+    readonly dataOnly?: boolean;
     /** The rendered blocks a container holds. */
     readonly children?: readonly RenderedBlock[];
 }

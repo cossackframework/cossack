@@ -35,6 +35,9 @@ export interface CmsPluginManifest {
     readonly name: string;
     readonly version: string;
     readonly description?: string;
+    /** Who made the plugin, shown on its card: a name, with a website. */
+    readonly author?: string;
+    readonly authorUrl?: string;
     readonly compatibility?: { readonly [pkg: string]: string };
     readonly dependencies?: { readonly [pkg: string]: string };
     readonly resources?: readonly ResourceDeclaration[];
@@ -75,7 +78,7 @@ export interface CmsPluginManifest {
 export const HOST_SLOTS = Object.freeze(['dashboard.nav', 'dashboard.overview'] as const);
 export type HostSlot = (typeof HOST_SLOTS)[number];
 
-const KNOWN_FIELDS = new Set(['schemaVersion', 'name', 'version', 'description', 'compatibility', 'dependencies', 'resources', 'collections', 'blocks', 'hooks', 'permissions', 'ui', 'commands', 'theme', 'logo', 'cover', 'package', 'source']);
+const KNOWN_FIELDS = new Set(['schemaVersion', 'name', 'version', 'description', 'author', 'authorUrl', 'compatibility', 'dependencies', 'resources', 'collections', 'blocks', 'hooks', 'permissions', 'ui', 'commands', 'theme', 'logo', 'cover', 'package', 'source']);
 const ARTWORK = /^assets\/[A-Za-z0-9][A-Za-z0-9._-]{0,80}\.(?:png|jpe?g|webp|gif|avif|svg)$/;
 const HOST = /^(?:\*\.)?(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$|^localhost$/;
 const ACTIONS = new Set(['read', 'create', 'update', 'delete']);
@@ -135,6 +138,8 @@ export function manifestProblems(manifest: unknown): string[] {
         }
     }
     if (value.theme !== undefined) problems.push(...themeProblems(value.theme));
+    if (value.author !== undefined && (typeof value.author !== 'string' || !value.author.trim() || value.author.length > 120)) problems.push('author is a name of at most 120 characters.');
+    if (value.authorUrl !== undefined && (typeof value.authorUrl !== 'string' || !/^https?:\/\/[^\s]{1,300}$/.test(value.authorUrl))) problems.push('authorUrl is a web address starting with https://.');
     for (const key of ['logo', 'cover'] as const) {
         if (value[key] !== undefined && (typeof value[key] !== 'string' || !ARTWORK.test(value[key]))) problems.push(`${key} must name a PNG, JPEG, WebP, GIF, AVIF or SVG file in assets/, such as assets/${key}.png.`);
     }

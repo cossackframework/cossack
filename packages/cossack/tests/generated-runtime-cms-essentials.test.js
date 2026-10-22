@@ -45,7 +45,8 @@ async function save(web, collection, values, id = 'new', rev = 0) {
   return result;
 }
 
-const post = (title, extra = {}) => ({ title, slug: '', excerpt: '', body: doc(paragraph(`${title} body`)), status: 'published', publishedAt: '', sticky: false, featuredImage: '', categories: [], tags: [], ...extra });
+const richText = (...content) => [{ id: 'rt', type: 'core/richtext', data: { text: doc(...content) } }];
+const post = (title, extra = {}) => ({ title, slug: '', excerpt: '', content: richText(paragraph(`${title} body`)), status: 'published', publishedAt: '', sticky: false, featuredImage: '', categories: [], tags: [], ...extra });
 
 async function essentials(origin, routeIds, diagnostics, { runtime }) {
   const web = browserless(origin, routeIds, diagnostics);
@@ -86,8 +87,8 @@ async function essentials(origin, routeIds, diagnostics, { runtime }) {
   expect(restored.values.title).toBe('Needs review, edited');
 
   // Revisions: compare two versions word by word, then restore the first.
-  const draftId = await save(web, 'posts', post('Versioned', { status: 'draft', body: doc(paragraph('The quick brown fox')) }));
-  await save(web, 'posts', post('Versioned', { status: 'draft', slug: 'versioned', body: doc(paragraph('The slow brown fox jumps')) }), draftId, 1);
+  const draftId = await save(web, 'posts', post('Versioned', { status: 'draft', content: richText(paragraph('The quick brown fox')) }));
+  await save(web, 'posts', post('Versioned', { status: 'draft', slug: 'versioned', content: richText(paragraph('The slow brown fox jumps')) }), draftId, 1);
   const compare = await web.page(`/dashboard/content/posts/${draftId}/revisions?from=1&to=2`);
   expect(compare).toMatch(/<del[^>]*>quick<\/del>/);
   expect(compare).toMatch(/<ins[^>]*>slow<\/ins>/);
@@ -161,7 +162,7 @@ async function essentials(origin, routeIds, diagnostics, { runtime }) {
   const reader = (await web.action(security, 'addToken', ['Reader', 'read'])).newToken;
   expect(writer).toMatch(/^cms_/);
   const created = await fetch(`${origin}/api/cms/content/posts`, { method: 'POST', headers: { authorization: `Bearer ${writer}`, 'content-type': 'application/json' },
-    body: JSON.stringify({ title: 'From the app', body: doc(paragraph('Written over the API')), status: 'published' }) });
+    body: JSON.stringify({ title: 'From the app', content: richText(paragraph('Written over the API')), status: 'published' }) });
   const createdBody = await created.json();
   expect(created.status, JSON.stringify(createdBody)).toBe(201);
   expect(createdBody.item).toMatchObject({ title: 'From the app', url: '/posts/from-the-app' });
@@ -205,10 +206,10 @@ async function essentials(origin, routeIds, diagnostics, { runtime }) {
   expect(comments.items.map(item => item.content)).toEqual(['Great read!']);
 
   // Synced patterns render their current content wherever they are used.
-  const patternId = await save(web, 'patterns', { title: 'Call to action', content: doc(paragraph('Subscribe to our newsletter')), synced: true, starter: '' });
-  await save(web, 'posts', post('With a pattern', { body: doc(paragraph('Intro'), { type: 'cmsBlock', attrs: { id: 'p1', type: 'core/pattern', data: { pattern: patternId } } }) }));
+  const patternId = await save(web, 'patterns', { title: 'Call to action', content: [{ id: 'cta', type: 'core/paragraph', data: { text: 'Subscribe to our newsletter' } }], synced: true, starter: '' });
+  await save(web, 'posts', post('With a pattern', { content: [...richText(paragraph('Intro')), { id: 'p1', type: 'core/pattern', data: { pattern: patternId } }] }));
   contains(visible(await visitor.page('/posts/with-a-pattern')), 'Subscribe to our newsletter');
-  await save(web, 'patterns', { title: 'Call to action', content: doc(paragraph('Follow us everywhere')), synced: true, starter: '' }, patternId, 1);
+  await save(web, 'patterns', { title: 'Call to action', content: [{ id: 'cta', type: 'core/paragraph', data: { text: 'Follow us everywhere' } }], synced: true, starter: '' }, patternId, 1);
   const updatedPattern = visible(await visitor.page('/posts/with-a-pattern'));
   contains(updatedPattern, 'Follow us everywhere');
   lacks(updatedPattern, 'Subscribe to our newsletter');
@@ -217,10 +218,10 @@ async function essentials(origin, routeIds, diagnostics, { runtime }) {
 
   // Translations: French pages under /fr with alternates and a language switcher.
   expect((await web.action('dashboard/(cms)/settings/languages/index.ts', 'save', ['en', ['fr']])).error).toBe('');
-  const aboutId = await save(web, 'pages', { title: 'About us', slug: '', status: 'published', publishedAt: '', body: doc(paragraph('Who we are')), excerpt: '', featuredImage: '', parent: '', menuOrder: '0', locale: 'en' });
+  const aboutId = await save(web, 'pages', { title: 'About us', slug: '', status: 'published', publishedAt: '', content: richText(paragraph('Who we are')), excerpt: '', featuredImage: '', parent: '', menuOrder: '0', locale: 'en' });
   const translated = await web.action(EDITOR, 'translate', ['fr'], { params: { collection: 'pages', id: aboutId }, state: { route: 'pages', id: aboutId } });
   const frenchId = translated._cossack_redirect.split('/').at(-1);
-  await save(web, 'pages', { title: 'À propos', slug: 'a-propos', status: 'published', publishedAt: '', body: doc(paragraph('Qui sommes-nous')), excerpt: '', featuredImage: '', parent: '', menuOrder: '0' }, frenchId, 1);
+  await save(web, 'pages', { title: 'À propos', slug: 'a-propos', status: 'published', publishedAt: '', content: richText(paragraph('Qui sommes-nous')), excerpt: '', featuredImage: '', parent: '', menuOrder: '0' }, frenchId, 1);
   const french = await visitor.page('/fr/a-propos');
   contains(french, 'Qui sommes-nous');
   expect(french).toMatch(/<link rel="?alternate"? hreflang="?en"? href="?https?:\/\/[^/"\s]+\/about-us/);
@@ -401,7 +402,8 @@ describe.skipIf(!liveFastDBTests())('generated CMS essentials', () => {
       await browserExpect(blocks.getByRole('heading')).toHaveText(['Design']);
       await blocks.getByRole('button', { name: 'Divider' }).click();
       await browserExpect(blocks).toBeHidden();
-      await browserExpect(page.locator('.rich-text-surface')).toContainText('Divider');
+      // The block joins the content tree after the Rich text block the post starts with.
+      await browserExpect(page.locator('[data-block-tree-item]').filter({ hasText: 'Divider' })).toBeVisible();
 
       // With two languages the posts list has a language column, and the sidebar still
       // reaches it from other screens without a reload.
@@ -446,7 +448,8 @@ describe.skipIf(!liveFastDBTests())('generated CMS essentials', () => {
       const names = () => page.locator('li[data-field]').evaluateAll(items => items.map(item => item.getAttribute('data-field')));
       expect((await names()).at(-1)).toBe('subtitle');
       const handle = page.locator('li[data-field="subtitle"] [data-handle]');
-      const target = await page.locator('li[data-field="excerpt"]').boundingBox();
+      // Content is the first field of posts; the new one is dragged above it.
+      const target = await page.locator('li[data-field="content"]').boundingBox();
       const box = await handle.boundingBox();
       await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
       await page.mouse.down();

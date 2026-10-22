@@ -4,28 +4,40 @@
  * act as the signed-in user or the password's owner, otherwise as a visitor.
  */
 import type { Context } from 'hono';
-import { isCmsError, isSameOriginPost, richTextBlocks, richTextHtml, systemPrincipal, type CollectionDefinition, type RecordShape, type RichTextDoc } from '@cossackframework/cms';
+import { flattenBlocks, isCmsError, isSameOriginPost, richTextBlocks, richTextHtml, systemPrincipal, type Block, type CollectionDefinition, type RecordShape, type RichTextDoc } from '@cossackframework/cms';
 import type { CmsHost } from '@cossackframework/cms/server';
+import { blocksHtml } from './content';
 
 export interface ApiEntry { [field: string]: unknown; id: string; url: string | null }
 
-/** Entries with their public URLs and, with `?format=html`, their rich text rendered. */
+/** Entries with their public URLs and, with `?format=html`, their rich text and blocks rendered. */
 export async function apiEntries(cms: CmsHost, collection: CollectionDefinition, records: readonly RecordShape[], html: boolean): Promise<ApiEntry[]> {
     const urls = await cms.entryUrls(collection, records);
-    const rich = Object.entries(cms.resourceById(`cms/${collection.name}`).fields).filter(([, field]) => field.kind === 'richtext').map(([name]) => name);
+    const fields = Object.entries(cms.resourceById(`cms/${collection.name}`).fields);
+    const rich = fields.filter(([, field]) => field.kind === 'richtext').map(([name]) => name);
+    const blocks = fields.filter(([, field]) => field.kind === 'blocks' && !field.form).map(([name]) => name);
+    const files = html && blocks.length && cms.files ? await cms.files.getMany([...new Set(records.flatMap(record => blocks.flatMap(name => Array.isArray(record[name]) ? flattenBlocks(record[name] as Block[]).flatMap(block => Object.values(block.data).filter((value): value is string => typeof value === 'string')) : [])))].slice(0, 200)).catch(() => new Map()) : new Map();
     return records.map(record => ({
         ...record, url: urls.get(record.id) ?? null,
-        ...(html && rich.length ? { html: Object.fromEntries(rich.map(name => [name, record[name] ? richTextHtml(record[name] as RichTextDoc, { block: () => '' }) : ''])) } : {}),
+        ...(html && (rich.length || blocks.length) ? { html: Object.fromEntries([
+            ...rich.map(name => [name, record[name] ? richTextHtml(record[name] as RichTextDoc, { block: () => '' }) : '']),
+            ...blocks.map(name => [name, Array.isArray(record[name]) ? blocksHtml(cms, record[name] as Block[], files) : '']),
+        ]) } : {}),
     }));
 }
 
-/** Synced patterns the entries' rich text uses, by ID: their title and content. */
-export async function apiPatterns(cms: CmsHost, collection: CollectionDefinition, records: readonly RecordShape[]): Promise<Record<string, { title: string; content: RichTextDoc | null }>> {
-    const rich = Object.entries(cms.resourceById(`cms/${collection.name}`).fields).filter(([, field]) => field.kind === 'richtext').map(([name]) => name);
-    const ids = [...new Set(records.flatMap(record => rich.flatMap(name => record[name] ? richTextBlocks(record[name] as RichTextDoc) : [])).filter(block => block.type === 'core/pattern').map(block => String(block.data.pattern ?? '')))].filter(Boolean);
+/** Synced patterns the entries' content and rich text use, by ID: their title and blocks. */
+export async function apiPatterns(cms: CmsHost, collection: CollectionDefinition, records: readonly RecordShape[]): Promise<Record<string, { title: string; content: readonly Block[] }>> {
+    const fields = Object.entries(cms.resourceById(`cms/${collection.name}`).fields);
+    const rich = fields.filter(([, field]) => field.kind === 'richtext').map(([name]) => name);
+    const blocks = fields.filter(([, field]) => field.kind === 'blocks').map(([name]) => name);
+    const ids = [...new Set(records.flatMap(record => [
+        ...rich.flatMap(name => record[name] ? richTextBlocks(record[name] as RichTextDoc) : []),
+        ...blocks.flatMap(name => Array.isArray(record[name]) ? flattenBlocks(record[name] as Block[]) : []),
+    ]).filter(block => block.type === 'core/pattern').map(block => String(block.data.pattern ?? '')))].filter(Boolean);
     if (!ids.length) return {};
     const found = await cms.resource('cms/patterns').getMany(ids, { principal: systemPrincipal('api') }).catch(() => new Map<string, RecordShape>());
-    return Object.fromEntries([...found].map(([id, record]) => [id, { title: String(record.title ?? ''), content: (record.content as RichTextDoc | null) ?? null }]));
+    return Object.fromEntries([...found].map(([id, record]) => [id, { title: String(record.title ?? ''), content: Array.isArray(record.content) ? record.content as Block[] : [] }]));
 }
 
 /** JSON for a CMS error, or rethrow anything else. */

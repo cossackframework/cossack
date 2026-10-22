@@ -4,7 +4,7 @@ import { html, component } from '@cossackframework/renderer';
 import { BLOCK_CATEGORIES, blockCategory, blockSupports, PERMISSIONS, type BlockCategory } from '@cossackframework/cms';
 import { FIELD_TYPES, typeOf } from '../../../../cms/builder';
 import { requireAny } from '../../../../cms/guards';
-import { blockIcon } from '../../../../cms/icons';
+import { blockIcon, blockIconColor } from '../../../../cms/icons';
 import { pageHeader } from '../../../../cms/ui';
 
 const STYLE_LABELS = { background: 'background', text: 'text colour', padding: 'padding', margin: 'margin', fontSize: 'font size', align: 'alignment' } as const;
@@ -34,14 +34,14 @@ export default class BlocksPage extends Cossack {
     render() {
         const groups = BLOCK_CATEGORIES.map(category => ({ ...category, blocks: this.blocks.filter(block => block.category === category.id) })).filter(group => group.blocks.length);
         return html`<div class="space-y-8">
-            ${pageHeader(__('Blocks'), { description: __('Add a Blocks field to a collection to build entries from these. Plugins can add block types.') })}
+            ${pageHeader(__('Blocks'), { description: __('Entries are built from these in their Content field; a collection can start every entry from a template of them. Plugins add block types. Data blocks store values without showing anything.') })}
             ${groups.map(group => html`<section class="space-y-3" aria-labelledby=${`blocks-${group.id}`}>
                 <h2 id=${`blocks-${group.id}`} class="text-sm font-semibold uppercase tracking-wide text-muted-foreground">${__(group.label)}</h2>
                 <ul class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">${group.blocks.map(block => html`<li>
                     ${component(Card, { class: 'h-full' }, component(CardBody, { class: 'space-y-2' }, html`
                         <div class="flex items-center justify-between gap-2">
                             <h3 class="flex items-center gap-2 text-base font-semibold text-foreground">
-                                <span class="inline-flex text-muted-foreground [&_svg]:size-5">${component(Icon, { entry: blockIcon(block.icon), size: 20 })}</span>${block.label}
+                                <span class=${`inline-flex [&_svg]:size-5 ${blockIconColor(block.category)}`}>${component(Icon, { entry: blockIcon(block.icon), size: 20 })}</span>${block.label}
                             </h3>
                             ${component(Badge, { variant: block.plugin ? 'outline' : 'secondary' }, block.plugin || __('Core'))}
                         </div>
@@ -52,7 +52,7 @@ export default class BlocksPage extends Cossack {
                             : html`<li>${__('No fields.')}</li>`}
                             ${block.holds ? html`<li>${__('Holds')}: ${block.holds}</li>` : null}
                             ${block.parent ? html`<li>${__('Goes inside')}: ${block.parent}</li>` : null}
-                            <li>${__('Style')}: ${block.style || __('none')}</li></ul>`))}
+                            ${block.category === 'data' ? html`<li>${__('Data only: stored with the entry, nothing shows on the page.')}</li>` : html`<li>${__('Style')}: ${block.style || __('none')}</li>`}</ul>`))}
                 </li>`)}</ul>
             </section>`)}
         </div>`;

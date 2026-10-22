@@ -71,7 +71,7 @@ async function exercise(origin, routeIds, diagnostics) {
   // A post with a generated slug, a category, typed tags and a featured image.
   const editor = 'dashboard/(cms)/content/[collection]/[id]/index.ts';
   const created = await web.action(editor, 'save', [{
-    title: 'Hello, World!', slug: '', excerpt: '', body: doc(paragraph(text('First '), text('post', ['bold']), text(' about a zeppelin <script>alert(1)</script>'))), status: 'draft', publishedAt: '',
+    title: 'Hello, World!', slug: '', excerpt: '', content: [{ id: 'rt', type: 'core/richtext', data: { text: doc(paragraph(text('First '), text('post', ['bold']), text(' about a zeppelin <script>alert(1)</script>'))) } }], status: 'draft', publishedAt: '',
     sticky: false, featuredImage: image.id, categories: [news.id], tags: ['Intro', 'Weather'],
   }, 'publish', 0], { params: { collection: 'posts', id: 'new' }, state: { route: 'posts', id: 'new' } });
   expect(created._cossack_redirect).toMatch(/^\/dashboard\/content\/posts\/[0-9a-f-]{36}\?saved=1$/);
@@ -95,7 +95,7 @@ async function exercise(origin, routeIds, diagnostics) {
   const list = await web.page('/dashboard/content/posts');
   contains(list, 'Hello, World!');
   expect(/Published\s*<span[^>]*>\(1\)/.test(list), 'one published post in the status tabs').toBe(true);
-  // Quick Draft turns its plain text into a rich text body.
+  // Quick Draft turns its plain text into a Rich text block.
   await web.action('dashboard/index.ts', 'quickDraft', ['Quick idea', 'Line one\n\nLine two']);
   contains(await web.page('/dashboard/content/posts?status=draft'), 'Quick idea');
 
@@ -168,10 +168,10 @@ async function exercise(origin, routeIds, diagnostics) {
   const takeover = await manager.action('dashboard/users/[id]/index.ts', 'applyPasswordChange', ['taken over!'], { params: { id: adaId }, state: { userDetail: { id: adaId, name: 'Ada', email: 'ada@example.com', avatar: null, createdAt: new Date().toISOString(), roles: [] } } }).catch(error => error);
   expect(String(takeover?.message ?? JSON.stringify(takeover))).toContain('Only an administrator');
 
-  const home = await web.action(editor, 'save', [{ title: 'Home', slug: '', status: 'draft', publishedAt: '', body: doc(paragraph(text('Welcome home'))), excerpt: '', featuredImage: '', parent: '', menuOrder: '0' }, 'publish', 0],
+  const home = await web.action(editor, 'save', [{ title: 'Home', slug: '', status: 'draft', publishedAt: '', content: [{ id: 'rt', type: 'core/richtext', data: { text: doc(paragraph(text('Welcome home'))) } }], excerpt: '', featuredImage: '', parent: '', menuOrder: '0' }, 'publish', 0],
     { params: { collection: 'pages', id: 'new' }, state: { route: 'pages', id: 'new' } });
   const homeId = home._cossack_redirect.split('/').at(-1).split('?')[0];
-  const team = await web.action(editor, 'save', [{ title: 'Team', slug: '', status: 'draft', publishedAt: '', body: doc(paragraph(text('Our team'))), excerpt: '', featuredImage: '', parent: homeId, menuOrder: '1' }, 'publish', 0],
+  const team = await web.action(editor, 'save', [{ title: 'Team', slug: '', status: 'draft', publishedAt: '', content: [{ id: 'rt', type: 'core/richtext', data: { text: doc(paragraph(text('Our team'))) } }], excerpt: '', featuredImage: '', parent: homeId, menuOrder: '1' }, 'publish', 0],
     { params: { collection: 'pages', id: 'new' }, state: { route: 'pages', id: 'new' } });
   const teamId = team._cossack_redirect.split('/').at(-1).split('?')[0];
   contains(await visitor.page('/home/team'), 'Our team');
@@ -241,14 +241,14 @@ async function exercise(origin, routeIds, diagnostics) {
   ]);
   contains(await web.page('/dashboard/appearance/menus'), 'Main menu');
 
-  // The content API returns rich text as JSON, or rendered on request.
+  // The content API returns the content as blocks with rich text as JSON, or rendered on request.
   const apiList = await (await fetch(origin + '/api/cms/content/posts')).json();
   expect(apiList.items.map(item => item.title)).toEqual(['Hello, World!']);
-  expect(apiList.items[0].body.type).toBe('doc');
+  expect(apiList.items[0].content[0]).toMatchObject({ type: 'core/richtext', data: { text: { type: 'doc' } } });
   expect(apiList.items[0].url).toBe('/posts/hello-world');
   const apiEntry = await (await fetch(origin + '/api/cms/content/posts/hello-world?format=html')).json();
-  expect(apiEntry.item.html.body).toContain('<strong>post</strong>');
-  expect(apiEntry.item.html.body).toContain('&lt;script&gt;');
+  expect(apiEntry.item.html.content).toContain('<strong>post</strong>');
+  expect(apiEntry.item.html.content).toContain('&lt;script&gt;');
   expect((await (await fetch(origin + '/api/cms/content/posts?term=categories:news')).json()).total).toBe(1);
   expect((await fetch(origin + '/api/cms/content/nothing')).status).toBe(404);
 
@@ -259,13 +259,13 @@ async function exercise(origin, routeIds, diagnostics) {
   // Old addresses redirect to the new ones.
   const oldPost = await fetch(origin + '/posts/hello-world', { redirect: 'manual' });
   expect([oldPost.status, oldPost.headers.get('location')]).toEqual([301, '/hello-world']);
-  const blogPage = await web.action(editor, 'save', [{ title: 'Blog', slug: '', status: 'draft', publishedAt: '', body: null, excerpt: '', featuredImage: '', parent: '', menuOrder: '5' }, 'publish', 0],
+  const blogPage = await web.action(editor, 'save', [{ title: 'Blog', slug: '', status: 'draft', publishedAt: '', content: [], excerpt: '', featuredImage: '', parent: '', menuOrder: '5' }, 'publish', 0],
     { params: { collection: 'pages', id: 'new' }, state: { route: 'pages', id: 'new' } });
   expect((await web.action(settings, 'save', [{ pageForPosts: blogPage._cossack_redirect.split('/').at(-1).split('?')[0] }], { params: { group: 'reading' } })).error).toBe('');
   contains(await visitor.page('/blog'), 'Hello, World!');
   contains(await visitor.page('/blog'), 'href="/hello-world"');
   // A new post cannot take a slug the site's routes own.
-  const reserved = await web.action(editor, 'save', [{ title: 'Search', slug: '', excerpt: '', body: null, status: 'draft', publishedAt: '', sticky: false, featuredImage: '', categories: [], tags: [] }, 'publish', 0],
+  const reserved = await web.action(editor, 'save', [{ title: 'Search', slug: '', excerpt: '', content: [], status: 'draft', publishedAt: '', sticky: false, featuredImage: '', categories: [], tags: [] }, 'publish', 0],
     { params: { collection: 'posts', id: 'new' }, state: { route: 'posts', id: 'new' } });
   contains(await web.page(reserved._cossack_redirect), '/search-2');
   expect((await web.action(permalinks, 'save', [false, 'posts', [{ name: 'categories', path: 'category' }, { name: 'tags', path: 'tag' }]])).error).toBe('');
@@ -355,8 +355,8 @@ describe.skipIf(!liveFastDBTests())('generated CMS application', () => {
       await ready();
       await page.getByPlaceholder('Add title').fill('Browser post: first try');
       await browserExpect(page.getByText('/posts/browser-post-first-try')).toBeVisible();
-      // The rich text editor: type, make a word bold, publish; the site renders the JSON body.
-      const surface = page.locator('#field-body .ProseMirror');
+      // The post starts from its template, a Rich text block: type, make a word bold, publish; the site renders the JSON document.
+      const surface = page.locator('[data-block-tree-item] .ProseMirror').first();
       await surface.click();
       await page.keyboard.type('Some ');
       await page.getByRole('button', { name: 'Bold', exact: true }).click();
@@ -369,7 +369,7 @@ describe.skipIf(!liveFastDBTests())('generated CMS application', () => {
       await page.getByRole('button', { name: 'Publish', exact: true }).click();
       await page.waitForURL(/\/dashboard\/content\/posts\/[0-9a-f-]{36}\?saved=1$/);
       await browserExpect(page.getByRole('status').filter({ hasText: 'Saved.' }).first()).toBeVisible();
-      await browserExpect(page.locator('#field-body .ProseMirror strong')).toHaveText('bold');
+      await browserExpect(page.locator('[data-block-tree-item] .ProseMirror strong').first()).toHaveText('bold');
       await page.goto(server.origin + '/posts/browser-post-first-try');
       await browserExpect(page.getByRole('heading', { name: 'Browser post: first try' })).toBeVisible();
       await browserExpect(page.locator('article .cms-prose strong')).toHaveText('bold');
@@ -385,7 +385,7 @@ describe.skipIf(!liveFastDBTests())('generated CMS application', () => {
 
       // A menu built by dragging: Team goes under About, then out and back with the keyboard.
       for (const title of ['About', 'Team']) {
-        await web.action('dashboard/(cms)/content/[collection]/[id]/index.ts', 'save', [{ title, slug: '', status: 'draft', publishedAt: '', body: null, excerpt: '', featuredImage: '', parent: '', menuOrder: '0' }, 'publish', 0],
+        await web.action('dashboard/(cms)/content/[collection]/[id]/index.ts', 'save', [{ title, slug: '', status: 'draft', publishedAt: '', content: [], excerpt: '', featuredImage: '', parent: '', menuOrder: '0' }, 'publish', 0],
           { params: { collection: 'pages', id: 'new' }, state: { route: 'pages', id: 'new' } });
       }
       await page.goto(server.origin + '/dashboard/appearance/menus');
@@ -394,7 +394,8 @@ describe.skipIf(!liveFastDBTests())('generated CMS application', () => {
       await page.getByRole('button', { name: 'Create menu' }).click();
       await page.waitForURL(/\/dashboard\/appearance\/menus\/[0-9a-f-]{36}$/);
       await ready();
-      const pagesBox = page.locator('details', { has: page.locator('summary', { hasText: /^Pages$/ }) });
+      // The summary carries the collection's icon before its label.
+      const pagesBox = page.locator('details', { has: page.locator('summary', { hasText: 'Pages' }) });
       await pagesBox.getByLabel('About').check();
       await pagesBox.getByLabel('Team').check();
       await pagesBox.getByRole('button', { name: 'Add to menu' }).click();

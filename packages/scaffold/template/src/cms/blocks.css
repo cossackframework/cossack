@@ -82,3 +82,49 @@ html[data-cms-device="phone"] .cms-content { max-width: 24rem; margin-inline: au
   .cms-form [data-cms-when][data-hidden] { display: none !important; }
 }
 .cms-form-trap { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
+
+/*
+ * Dividers (core/divider): a line of a thickness and length, a palette colour or a CSS colour,
+ * with text in the middle if asked; or a vertical line between things in a row.
+ */
+.cms-divider { --cms-divider-size: 1px; border: 0; margin-block: 2rem; margin-inline: auto; }
+.cms-divider[data-thickness="medium"] { --cms-divider-size: 2px; }
+.cms-divider[data-thickness="thick"] { --cms-divider-size: 4px; }
+.cms-divider[data-width="wide"] { width: 75%; }
+.cms-divider[data-width="narrow"] { width: 25%; }
+hr.cms-divider { height: var(--cms-divider-size); background: var(--cms-divider-color, var(--border)); }
+.cms-divider-text { display: flex; align-items: center; gap: 1rem; color: var(--muted-foreground); font-size: 0.875rem; }
+.cms-divider-text::before, .cms-divider-text::after { content: ''; flex: 1; height: var(--cms-divider-size); background: var(--cms-divider-color, var(--border)); }
+.cms-divider-vertical { width: var(--cms-divider-size); min-height: 4rem; align-self: stretch; margin-block: 0; margin-inline: 1rem; background: var(--cms-divider-color, var(--border)); }
+.cms-divider-vertical[data-width="wide"] { min-height: 8rem; width: var(--cms-divider-size); }
+.cms-divider-vertical[data-width="full"] { min-height: 100%; width: var(--cms-divider-size); }
+
+/* Cards (core/card): the image above, left of or right of the text. */
+.cms-card { display: grid; overflow: hidden; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--card); margin-block: 1.5rem; }
+.cms-card-media { min-height: 0; }
+.cms-card-media img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.cms-card[data-layout="top"] .cms-card-media img { aspect-ratio: 16 / 9; }
+.cms-card-body { padding: 1.25rem; }
+@container (width >= 640px) {
+    .cms-card[data-layout="left"], .cms-card[data-layout="right"] { grid-template-columns: 2fr 3fr; }
+    .cms-card[data-layout="right"] .cms-card-media { order: 2; }
+}
+
+/* Carousels (core/carousel): a scroll-snapping track; carousel.client.ts adds arrows, dots and autoplay. */
+.cms-carousel { position: relative; }
+.cms-carousel-track { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; scroll-behavior: smooth; gap: 0; border-radius: 0.75rem; background: var(--muted); scrollbar-width: none; }
+.cms-carousel-track::-webkit-scrollbar { display: none; }
+.cms-carousel-slide { position: relative; flex: 0 0 100%; margin: 0; scroll-snap-align: start; }
+.cms-carousel-image { display: block; width: 100%; height: 100%; object-fit: cover; }
+.cms-carousel[data-aspect="video"] .cms-carousel-image { aspect-ratio: 16 / 9; }
+.cms-carousel[data-aspect="wide"] .cms-carousel-image { aspect-ratio: 21 / 9; }
+.cms-carousel[data-aspect="square"] .cms-carousel-image { aspect-ratio: 1; }
+.cms-carousel-caption { position: absolute; inset-inline: 0; bottom: 0; padding: 0.5rem 1rem; background: color-mix(in oklab, black 55%, transparent); color: white; font-size: 0.875rem; }
+.cms-carousel-arrow { position: absolute; top: 50%; translate: 0 -50%; display: none; width: 2.5rem; height: 2.5rem; border: 0; border-radius: 9999px; background: color-mix(in oklab, var(--background) 85%, transparent); color: var(--foreground); font-size: 1.5rem; line-height: 1; cursor: pointer; box-shadow: 0 1px 3px rgb(0 0 0 / 0.2); }
+.cms-carousel-prev { left: 0.75rem; }
+.cms-carousel-next { right: 0.75rem; }
+.cms-carousel-dots { display: none; justify-content: center; gap: 0.5rem; margin-top: 0.75rem; }
+.cms-carousel-dots button { width: 0.625rem; height: 0.625rem; padding: 0; border: 0; border-radius: 9999px; background: var(--border); cursor: pointer; }
+.cms-carousel-dots button[aria-selected="true"] { background: var(--primary); }
+.cms-carousel[data-enhanced] .cms-carousel-arrow, .cms-carousel[data-enhanced] .cms-carousel-dots { display: flex; align-items: center; justify-content: center; }
+@media (prefers-reduced-motion: reduce) { .cms-carousel-track { scroll-behavior: auto; } }

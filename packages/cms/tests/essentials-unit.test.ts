@@ -42,7 +42,7 @@ describe('essentials helpers', () => {
         const block = { name: 'acme/card', label: 'Card', fields: {} };
         expect(blockProblems({ ...block, icon: 'star', category: 'design' })).toEqual([]);
         expect(blockProblems({ ...block, icon: 'Not An Icon' })).toHaveLength(1);
-        expect(blockProblems({ ...block, category: 'layout' as never })).toEqual(['block acme/card: the category is one of text, media, design, widgets, embeds, form.']);
+        expect(blockProblems({ ...block, category: 'layout' as never })).toEqual(['block acme/card: the category is one of text, media, design, widgets, embeds, form, field, data.']);
     });
 
     it('nests blocks in containers', () => {

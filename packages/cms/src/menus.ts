@@ -25,6 +25,12 @@ export interface MenuItem {
     readonly term?: string;
     /** Open in a new tab. */
     readonly newTab?: boolean;
+    /** Extra class names on the item's link, for the theme's stylesheet. */
+    readonly className?: string;
+    /** Extra attributes on the item's link, such as `data-track` or `rel`. */
+    readonly attributes?: { readonly [name: string]: string };
+    /** Values of the field groups attached to menu items. */
+    readonly meta?: { readonly [field: string]: unknown };
     readonly children: readonly MenuItem[];
 }
 
@@ -44,10 +50,16 @@ export interface MenuItemView {
     readonly url: string;
     readonly newTab: boolean;
     readonly kind: MenuItemKind;
+    readonly className: string;
+    readonly attributes: { readonly [name: string]: string };
+    readonly meta: { readonly [field: string]: unknown };
     readonly children: readonly MenuItemView[];
 }
 
-export const MENU_LIMITS = Object.freeze({ items: 300, depth: 5, label: 120, name: 80 });
+export const MENU_LIMITS = Object.freeze({ items: 300, depth: 5, label: 120, name: 80, className: 200, attributes: 10, attributeValue: 500 });
+/** Attribute names an item may set: lowercase, hyphenated, never an event handler or what the link already sets. */
+export const MENU_ATTRIBUTE = /^(?!on)[a-z][a-z0-9-]{0,60}$/;
+const FIXED_ATTRIBUTES = new Set(['href', 'class', 'target', 'style', 'srcdoc']);
 export const MENU_LOCATION = /^[a-z][a-z0-9-]{0,31}$/;
 
 const ITEM_ID = /^[A-Za-z0-9_-]{1,40}$/;
@@ -77,6 +89,17 @@ export function menuProblems(items: unknown): string[] {
             if (item.kind === 'entry' && (typeof item.entry !== 'string' || !RECORD_ID.test(item.entry))) problems.push(`${at} needs an entry.`);
             if (item.kind === 'term' && (typeof item.taxonomy !== 'string' || !/^[a-z][a-zA-Z0-9]{0,40}$/.test(item.taxonomy) || typeof item.term !== 'string' || !RECORD_ID.test(item.term))) problems.push(`${at} needs a term.`);
             if (item.newTab !== undefined && typeof item.newTab !== 'boolean') problems.push(`${at}: newTab is true or false.`);
+            if (item.className !== undefined && (typeof item.className !== 'string' || item.className.length > MENU_LIMITS.className)) problems.push(`${at}: class names are at most ${MENU_LIMITS.className} characters.`);
+            if (item.attributes !== undefined) {
+                const entries = item.attributes && typeof item.attributes === 'object' && !Array.isArray(item.attributes) ? Object.entries(item.attributes) : null;
+                if (!entries) problems.push(`${at}: attributes map names to values.`);
+                else if (entries.length > MENU_LIMITS.attributes) problems.push(`${at}: at most ${MENU_LIMITS.attributes} attributes.`);
+                else for (const [name, value] of entries) {
+                    if (!MENU_ATTRIBUTE.test(name) || FIXED_ATTRIBUTES.has(name)) problems.push(`${at}: ${name} is not an attribute an item can set.`);
+                    if (typeof value !== 'string' || value.length > MENU_LIMITS.attributeValue) problems.push(`${at}: the value of ${name} is at most ${MENU_LIMITS.attributeValue} characters.`);
+                }
+            }
+            if (item.meta !== undefined && (item.meta === null || typeof item.meta !== 'object' || Array.isArray(item.meta))) problems.push(`${at}: meta is an object of fields.`);
             if (!Array.isArray(item.children)) { problems.push(`${at}: children must be a list.`); continue; }
             if (item.children.length && depth + 1 >= MENU_LIMITS.depth) problems.push(`${at}: menus nest at most ${MENU_LIMITS.depth} levels deep.`);
             else visit(item.children, depth + 1);
@@ -96,6 +119,9 @@ export function normalizeMenu(items: readonly MenuItem[]): MenuItem[] {
         ...(item.kind === 'entry' ? { entry: item.entry } : {}),
         ...(item.kind === 'term' ? { taxonomy: item.taxonomy, term: item.term } : {}),
         ...(item.newTab ? { newTab: true } : {}),
+        ...(item.className?.trim() ? { className: item.className.trim().split(/\s+/).join(' ') } : {}),
+        ...(item.attributes && Object.keys(item.attributes).length ? { attributes: Object.freeze(Object.fromEntries(Object.entries(item.attributes).map(([name, value]) => [name, value.trim()]))) } : {}),
+        ...(item.meta && Object.keys(item.meta).length ? { meta: Object.freeze({ ...item.meta }) } : {}),
         children: Object.freeze(normalizeMenu(item.children)),
     }));
 }

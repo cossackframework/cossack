@@ -19,7 +19,7 @@ const split = (script: string): Statement[] => script.split(';').map(sql => sql.
 export const HOST_TABLES = [
     'cms_migrations', 'cms_schema_state', 'cms_users', 'cms_roles', 'cms_user_roles', 'cms_auth_sessions', 'cms_oauth_states',
     'cms_password_resets', 'cms_sessions', 'cms_session_values', 'cms_grants', 'cms_audit', 'cms_revisions', 'cms_outbox', 'cms_files',
-    'cms_terms', 'cms_settings', 'cms_collections', 'cms_taxonomies', 'cms_menus', 'cms_menu_locations',
+    'cms_terms', 'cms_settings', 'cms_collections', 'cms_taxonomies', 'cms_field_groups', 'cms_menus', 'cms_menu_locations',
     'cms_preview_tokens', 'cms_autosaves', 'cms_file_variants', 'cms_redirects', 'cms_api_tokens', 'cms_webhooks', 'cms_webhook_deliveries',
     'cms_comments', 'cms_user_security', 'cms_passkeys', 'cms_auth_challenges', 'cms_areas', 'cms_form_sends', 'cms_form_mail', 'cms_form_results',
     'cossack_jobs', 'cossack_notifications',
@@ -178,5 +178,19 @@ export const HOST_STEPS: readonly HostStep[] = [{
         // What a form post returns to the page after its redirect: the confirmation, or the errors and values. Read once.
         { sql: 'CREATE TABLE cms_form_results (id TEXT PRIMARY KEY, form_id TEXT NOT NULL, data TEXT NOT NULL, expires_at INTEGER NOT NULL)' },
         { sql: 'CREATE INDEX cms_form_results_expiry ON cms_form_results (expires_at)' },
+    ],
+}, {
+    version: 9,
+    description: 'Give terms an icon',
+    statements: [
+        { sql: "ALTER TABLE cms_terms ADD COLUMN icon TEXT NOT NULL DEFAULT ''" },
+    ],
+}, {
+    version: 10,
+    description: 'Field groups, and meta on terms and users',
+    statements: [
+        { sql: 'CREATE TABLE cms_field_groups (id TEXT PRIMARY KEY, definition TEXT NOT NULL, sort INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL, updated_by TEXT)' },
+        { sql: "ALTER TABLE cms_terms ADD COLUMN meta TEXT NOT NULL DEFAULT '{}'" },
+        { sql: "ALTER TABLE cms_users ADD COLUMN meta TEXT NOT NULL DEFAULT '{}'" },
     ],
 }];

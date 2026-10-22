@@ -7,7 +7,7 @@ import { html, component } from '@cossackframework/renderer';
 import { BLOCK_CATEGORIES, type BlockCategory } from '@cossackframework/cms';
 import { Icon, Popover } from '@cossackframework/ui';
 import { AddSquareIcon } from '@cossackframework/solar-icons/add-square/line';
-import { blockIcon } from './icons';
+import { blockIcon, blockIconColor } from './icons';
 
 const addIcon = { line: AddSquareIcon };
 
@@ -54,7 +54,7 @@ export class BlockInserter extends Cossack {
                     <ul class="grid grid-cols-3 gap-1">${group.blocks.map(block => html`<li>
                         <button type="button" title=${block.description || block.label} @click=${() => this.pick(block.name)}
                             class="flex w-full flex-col items-center gap-1.5 rounded-md border-none bg-transparent px-1 py-2 text-xs text-foreground cursor-pointer hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                            <span class="inline-flex text-muted-foreground [&_svg]:size-5">${component(Icon, { entry: blockIcon(block.icon), size: 20 })}</span>
+                            <span class=${`inline-flex [&_svg]:size-5 ${blockIconColor(block.category)}`}>${component(Icon, { entry: blockIcon(block.icon), size: 20 })}</span>
                             <span class="text-center leading-tight">${block.label}</span>
                         </button>
                     </li>`)}</ul>

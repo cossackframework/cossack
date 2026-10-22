@@ -1,12 +1,14 @@
 import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackframework/core';
-import { AlertDialog, Button, Card, CardBody, Field, Input, NativeSelect, Textarea, toast } from '@cossackframework/ui';
+import { AlertDialog, Button, Card, CardBody, Field, Icon, Input, NativeSelect, Textarea, toast } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { isCmsError, PERMISSIONS, slugify, type TermShape } from '@cossackframework/cms';
 import { requireAny } from '../../../../../cms/guards';
+import { icon } from '../../../../../cms/icons';
+import { iconSelect } from '../../../../../cms/term-icons';
 import { notice, pageHeader } from '../../../../../cms/ui';
 
-interface Row { id: string; name: string; slug: string; description: string; depth: number; count: number }
-interface Draft { name: string; slug: string; parent: string; description: string }
+interface Row { id: string; name: string; slug: string; description: string; icon: string; depth: number; count: number }
+interface Draft { name: string; slug: string; parent: string; description: string; icon: string }
 
 /** Terms of one taxonomy, WordPress style: an add form beside the table of terms with their counts. */
 @Page({ transport: 'http', middlewares: [requireAny(PERMISSIONS.manageTerms)] })
@@ -14,7 +16,9 @@ export default class TermsPage extends Cossack {
     @State() taxonomy = { name: '', label: '', singular: '', hierarchical: false, path: '' as string | null };
     @State() rows: Row[] = [];
     @State() search = '';
-    @State() draft: Draft = { name: '', slug: '', parent: '', description: '' };
+    @State() draft: Draft = { name: '', slug: '', parent: '', description: '', icon: '' };
+    /** The slug follows the name until it is typed. */
+    @State() slugTouched = false;
     @State() errors: Record<string, string> = {};
     @State() error = '';
     @State() pendingDelete: Row | null = null;
@@ -37,12 +41,14 @@ export default class TermsPage extends Cossack {
         } catch { this.error = __('This taxonomy does not exist.'); this.c.status(404); return; }
         const terms: TermShape[] = this.search ? (await cms.taxonomies.list(this.taxonomy.name, { search: this.search, limit: 200 })).items : await cms.taxonomies.tree(this.taxonomy.name);
         const counts = await cms.taxonomies.counts(this.taxonomy.name, terms.map(term => term.id));
-        this.rows = terms.map(term => ({ id: term.id, name: term.name, slug: term.slug, description: term.description, depth: this.search ? 0 : term.depth, count: counts.get(term.id) ?? 0 }));
+        this.rows = terms.map(term => ({ id: term.id, name: term.name, slug: term.slug, description: term.description, icon: term.icon, depth: this.search ? 0 : term.depth, count: counts.get(term.id) ?? 0 }));
     }
 
     @Client()
     setDraft(name: keyof Draft, value: string) {
-        this.draft = { ...this.draft, [name]: value };
+        if (name === 'slug') this.slugTouched = value.trim() !== '';
+        // The slug is generated from the name, as WordPress does, until it is edited.
+        this.draft = { ...this.draft, [name]: value, ...(name === 'name' && !this.slugTouched ? { slug: slugify(value) } : {}) };
     }
 
     @Client()
@@ -57,8 +63,10 @@ export default class TermsPage extends Cossack {
         this.errors = {};
         this.error = '';
         try {
-            await this.c.get('cms').taxonomies.create(this.taxonomy.name, { name: draft.name, slug: draft.slug, description: draft.description, parent: draft.parent || null }, { principal: this.c.get('principal') });
-            this.draft = { name: '', slug: '', parent: '', description: '' };
+            const terms = this.c.get('cms').taxonomies;
+            await terms.create(this.taxonomy.name, { name: draft.name, slug: draft.slug, description: draft.description, parent: draft.parent || null, icon: draft.icon }, { principal: this.c.get('principal') });
+            this.draft = { name: '', slug: '', parent: '', description: '', icon: '' };
+            this.slugTouched = false;
             await this.load();
         } catch (error) {
             this.errors = isCmsError(error) && error.fields ? { ...error.fields } : {};
@@ -86,7 +94,7 @@ export default class TermsPage extends Cossack {
                     <form class="space-y-4" @submit=${(event: Event) => this.submit(event)}>
                         ${component(Field, { label: __('Name'), for: 'term-name', error: this.errors.name, hint: __('The name is how it appears on your site.'),
                             control: attributes => component(Input, { ...attributes, '.value': this.draft.name, '@input': (event: Event) => this.setDraft('name', (event.target as HTMLInputElement).value) }) })}
-                        ${component(Field, { label: __('Slug'), for: 'term-slug', error: this.errors.slug, hint: `${__('Lowercase letters, digits and hyphens. Leave empty to use')} “${slugify(this.draft.name) || '…'}”.`,
+                        ${component(Field, { label: __('Slug'), for: 'term-slug', error: this.errors.slug, hint: __('Generated from the name; lowercase letters, digits and hyphens.'),
                             control: attributes => component(Input, { ...attributes, '.value': this.draft.slug, '@input': (event: Event) => this.setDraft('slug', (event.target as HTMLInputElement).value) }) })}
                         ${this.taxonomy.hierarchical ? component(Field, { label: __('Parent'), for: 'term-parent', error: this.errors.parent,
                             control: attributes => component(NativeSelect, { ...attributes, '@change': (event: Event) => this.setDraft('parent', (event.target as HTMLSelectElement).value) }, html`
@@ -94,6 +102,7 @@ export default class TermsPage extends Cossack {
                                 ${this.rows.map(row => html`<option value=${row.id} ?selected=${row.id === this.draft.parent}>${'— '.repeat(row.depth)}${row.name}</option>`)}`) }) : null}
                         ${component(Field, { label: __('Description'), for: 'term-description', error: this.errors.description,
                             control: attributes => component(Textarea, { ...attributes, rows: 3, '.value': this.draft.description, '@input': (event: Event) => this.setDraft('description', (event.target as HTMLTextAreaElement).value) }) })}
+                        ${iconSelect('term-icon', this.draft.icon, value => this.setDraft('icon', value), this.errors.icon)}
                         ${component(Button, { type: 'submit', disabled: !this.draft.name.trim() }, `${__('Add new')} ${this.taxonomy.singular.toLowerCase()}`)}
                     </form>`))}
                 <div class="space-y-3">
@@ -108,7 +117,7 @@ export default class TermsPage extends Cossack {
                         </tr></thead>
                         <tbody>${this.rows.map(row => html`<tr class="group border-b border-border last:border-0 align-top">
                             <td class="px-4 py-3">
-                                <a href=${`${base}/${row.id}`} class="font-medium text-foreground hover:text-primary no-underline">${'— '.repeat(row.depth)}${row.name}</a>
+                                <a href=${`${base}/${row.id}`} class="inline-flex items-center gap-1.5 font-medium text-foreground hover:text-primary no-underline">${'— '.repeat(row.depth)}${row.icon ? html`<span class="inline-flex text-muted-foreground [&_svg]:size-4">${component(Icon, { entry: icon(row.icon), size: 16 })}</span>` : null}${row.name}</a>
                                 <div class="mt-1 flex gap-2 text-xs opacity-80 group-hover:opacity-100">
                                     <a href=${`${base}/${row.id}`} class="text-primary hover:underline">${__('Edit')}</a><span aria-hidden="true" class="text-muted-foreground">|</span>
                                     <button type="button" class="text-destructive hover:underline bg-transparent border-none p-0 cursor-pointer" @click=${() => { this.pendingDelete = row; }}>${__('Delete')}</button>

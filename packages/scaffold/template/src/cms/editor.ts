@@ -61,6 +61,17 @@ export interface BlockOption {
     supports: StyleProperty[];
     /** A form input, offered only in a form's blocks. */
     input: boolean;
+    /** A field block's kind, offered only in a field group; empty otherwise. */
+    field: string;
+}
+
+/** A field group attached to the entry's collection, as the editor shows it: a box of its layout. */
+export interface EditorGroup {
+    id: string;
+    title: string;
+    description: string;
+    placement: 'main' | 'sidebar';
+    blocks: EditorBlock[];
 }
 
 /** A block as editors hold it: its data as control values, nested blocks under a container. */
@@ -95,6 +106,17 @@ export interface EditorView {
     blocks: BlockOption[];
     /** The active theme's presets, for the blocks' Style tab. */
     presets: Required<ThemePresets>;
+    /** The blocks a new entry's content starts with, and how far they may change. */
+    template: EditorBlock[];
+    templateLock?: 'all' | 'insert';
+    /** The collection's own layout: field blocks and layout blocks for the main column. */
+    layout: EditorBlock[];
+    /** Field groups attached to the collection, in order. */
+    groups: EditorGroup[];
+    /** Every collection, for blocks that name one, such as Latest entries. */
+    collections: { name: string; label: string }[];
+    /** Every term with its taxonomy, for blocks that pick one. */
+    termChoices: { id: string; name: string; taxonomy: string; depth: number }[];
 }
 
 /** Values the form controls hold: strings, booleans and lists. */
@@ -120,6 +142,13 @@ export function editorField(name: string, declaration: FieldDeclaration & { choi
 
 /** The value a control shows for a stored value. */
 export function controlValue(field: EditorField, value: unknown): unknown {
+    // Rows edit as a list of objects of their fields' control values, each with its id.
+    if (field.kind === 'rows') {
+        return (Array.isArray(value) ? value : []).map(row => {
+            const object = row && typeof row === 'object' ? row as Record<string, unknown> : {};
+            return { _id: typeof object._id === 'string' ? object._id : '', ...Object.fromEntries(field.fields.map(sub => [sub.name, controlValue(sub, object[sub.name])])) };
+        });
+    }
     // A group edits as an object of its subfields' control values.
     if (field.fields.length) {
         const object = value && typeof value === 'object' ? value as Record<string, unknown> : {};
@@ -170,6 +199,21 @@ export function editorInput(fields: readonly EditorField[], values: EditorValues
 }
 
 function convert(field: EditorField, raw: unknown, blocks: readonly BlockOption[]): { value: unknown } | { error: string } {
+    if (field.kind === 'rows') {
+        // Each row keeps its id and the fields that were set; the server checks what is required.
+        const rows: Record<string, unknown>[] = [];
+        for (const [index, row] of (Array.isArray(raw) ? raw : []).entries()) {
+            const source = row && typeof row === 'object' ? row as Record<string, unknown> : {};
+            const converted: Record<string, unknown> = typeof source._id === 'string' && source._id ? { _id: source._id } : {};
+            for (const sub of field.fields) {
+                const value = convert(sub, source[sub.name], blocks);
+                if ('error' in value) return { error: `${__('row')} ${index + 1}: ${sub.label} ${value.error}` };
+                if (value.value !== undefined && value.value !== null && value.value !== '' && value.value !== false) converted[sub.name] = value.value;
+            }
+            rows.push(converted);
+        }
+        return { value: rows };
+    }
     if (field.fields.length) {
         // Empty subfields and unchecked boxes are left out, so the group holds only what was set.
         const source = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};

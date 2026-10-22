@@ -7,7 +7,7 @@ import { richTextProblem } from './richtext';
 
 export type FieldKind =
     | 'string' | 'text' | 'enum' | 'integer' | 'bigint' | 'number' | 'boolean'
-    | 'datetime' | 'reference' | 'json' | 'list' | 'vector' | 'blocks' | 'richtext';
+    | 'datetime' | 'reference' | 'json' | 'list' | 'vector' | 'blocks' | 'richtext' | 'rows';
 
 export type ListItemKind = 'string' | 'integer' | 'number' | 'boolean';
 
@@ -21,9 +21,9 @@ export interface FieldDeclaration {
     readonly default?: string | number | boolean | null;
     readonly label?: string;
     readonly description?: string;
-    /** string/text: maximum length in characters. */
+    /** string/text: maximum length in characters; rows: the most rows. */
     readonly max?: number;
-    /** string/text: minimum length; integer/number: minimum value. */
+    /** string/text: minimum length; integer/number: minimum value; rows: the fewest rows. */
     readonly min?: number;
     /** enum: allowed values. */
     readonly values?: readonly string[];
@@ -59,9 +59,20 @@ export interface FieldDeclaration {
     readonly placement?: 'main' | 'sidebar';
     /** text: how the dashboard edits and the site renders the value. */
     readonly format?: 'plain' | 'markdown';
-    /** json: a group of declared subfields; the value is an object of them, each optional. */
+    /** json: a group of declared subfields; the value is an object of them, each optional. rows: the fields of each row. */
     readonly fields?: { readonly [name: string]: FieldDeclaration };
+    /**
+     * The field is kept by the host from a path into a rows field: the distinct values at
+     * `derived` across every row, as a list, so filters on rows seek through an array index.
+     * Never written by clients and never returned.
+     */
+    readonly derived?: readonly string[];
 }
+
+/** A row's identity: 1-40 letters, digits, `_` or `-`, distinct within its list. */
+export const ROW_ID = /^[A-Za-z0-9_-]{1,40}$/;
+/** Rows a field holds at most, by default and at the limit. */
+export const ROW_LIMITS = Object.freeze({ default: 200, max: 1000, depth: 8 });
 
 type Options = Omit<FieldDeclaration, 'kind'>;
 
@@ -96,10 +107,17 @@ export const field = {
      * media or lists of strings; each is optional and validated like a field.
      */
     group: (fields: { readonly [name: string]: FieldDeclaration }, options: Omit<Options, 'default' | 'fields'> = {}): FieldDeclaration => ({ kind: 'json', fields, nullable: true, ...options }),
+    /**
+     * A list of rows, each an object of the declared fields with an `_id`, as a repeater: at
+     * most `max` rows. Rows nest when a field is itself rows.
+     */
+    rows: (fields: { readonly [name: string]: FieldDeclaration }, options: Omit<Options, 'default' | 'fields'> = {}): FieldDeclaration => ({ kind: 'rows', fields, ...options }),
 };
 
 /** Kinds a group's subfields can have. */
 const GROUP_KINDS = new Set<FieldKind>(['string', 'text', 'enum', 'integer', 'number', 'boolean', 'datetime', 'list']);
+/** Kinds a row's fields can have: anything a value in a document can be, but the big or special ones. */
+const ROW_KINDS = new Set<FieldKind>(['string', 'text', 'enum', 'integer', 'number', 'boolean', 'datetime', 'reference', 'json', 'list', 'rows']);
 
 /** Lowercase letters and digits separated by single hyphens. */
 export const SLUG_PATTERN = '[a-z0-9]+(?:-[a-z0-9]+)*';
@@ -115,16 +133,18 @@ export function slugify(text: string, max = 200): string {
 }
 
 export const FIELD_NAME = /^[a-z][a-zA-Z0-9]{0,62}$/;
+/** A derived field's name: the row path's names joined by `__`. */
+export const DERIVED_NAME = /^[a-z][a-zA-Z0-9]{0,62}(?:__[a-z][a-zA-Z0-9]{0,62})+$/;
 export const TAXONOMY_NAME = /^[a-z][a-zA-Z0-9]{0,40}$/;
 const ENUM_VALUE = /^[A-Za-z0-9_.-]{1,64}$/;
 const MAX_SAFE = Number.MAX_SAFE_INTEGER;
 
 /** Check a declaration's own consistency. Returns problems; empty when valid. */
-export function fieldProblems(name: string, declaration: FieldDeclaration): string[] {
+export function fieldProblems(name: string, declaration: FieldDeclaration, depth = 0): string[] {
     const problems: string[] = [];
     const at = `field ${name}`;
-    if (!FIELD_NAME.test(name)) problems.push(`${at}: names start with a lowercase letter and use letters and digits only.`);
-    const kinds: FieldKind[] = ['string', 'text', 'enum', 'integer', 'bigint', 'number', 'boolean', 'datetime', 'reference', 'json', 'list', 'vector', 'blocks', 'richtext'];
+    if (!(declaration?.derived ? DERIVED_NAME : FIELD_NAME).test(name)) problems.push(`${at}: names start with a lowercase letter and use letters and digits only.`);
+    const kinds: FieldKind[] = ['string', 'text', 'enum', 'integer', 'bigint', 'number', 'boolean', 'datetime', 'reference', 'json', 'list', 'vector', 'blocks', 'richtext', 'rows'];
     if (!kinds.includes(declaration.kind)) return [...problems, `${at}: unknown kind ${String(declaration.kind)}.`];
     const { kind } = declaration;
     if (declaration.max !== undefined && (!Number.isSafeInteger(declaration.max) || declaration.max < 1)) problems.push(`${at}: max must be a positive integer.`);
@@ -141,10 +161,12 @@ export function fieldProblems(name: string, declaration: FieldDeclaration): stri
         if (kind !== 'string') problems.push(`${at}: pattern applies to string fields only.`);
         else try { new RegExp(declaration.pattern, 'u'); } catch { problems.push(`${at}: pattern is not a valid regular expression.`); }
     }
-    if (declaration.search && kind !== 'string' && kind !== 'text' && kind !== 'richtext') problems.push(`${at}: only string, text and rich text fields can be searched.`);
-    if (declaration.unique && ['json', 'list', 'vector', 'text', 'blocks', 'richtext'].includes(kind)) problems.push(`${at}: ${kind} fields cannot be indexed.`);
+    // Rows are searched through their fields' own `search` flags.
+    if (declaration.search && !['string', 'text', 'richtext', 'blocks'].includes(kind)) problems.push(`${at}: only string, text, rich text and blocks fields can be searched.`);
+    if (declaration.unique && ['json', 'list', 'vector', 'text', 'blocks', 'richtext', 'rows'].includes(kind)) problems.push(`${at}: ${kind} fields cannot be indexed.`);
     // A list of strings or integers can have an array index; other kinds cannot be indexed.
-    if (declaration.index && (['json', 'vector', 'text', 'blocks', 'richtext'].includes(kind) || (kind === 'list' && !['string', 'integer'].includes(declaration.items as string)))) problems.push(`${at}: ${kind} fields cannot be indexed.`);
+    if (declaration.index && (['json', 'vector', 'text', 'blocks', 'richtext', 'rows'].includes(kind) || (kind === 'list' && !['string', 'integer'].includes(declaration.items as string)))) problems.push(`${at}: ${kind} fields cannot be indexed.`);
+    if (declaration.derived !== undefined && (kind !== 'list' || !Array.isArray(declaration.derived) || declaration.derived.length < 2 || declaration.derived.some(part => !FIELD_NAME.test(part)))) problems.push(`${at}: derived names a path of two or more fields and applies to lists.`);
     if (declaration.blocks !== undefined && ((kind !== 'blocks' && kind !== 'richtext') || !Array.isArray(declaration.blocks) || declaration.blocks.some(name => typeof name !== 'string' || !/^[a-z][a-z0-9-]*\/[a-z][a-z0-9-]*$/.test(name)))) problems.push(`${at}: blocks lists block type names and applies to blocks and rich text fields.`);
     if (declaration.form !== undefined && (kind !== 'blocks' || typeof declaration.form !== 'boolean')) problems.push(`${at}: form applies to blocks fields and is true or false.`);
     if (declaration.placement !== undefined && !['main', 'sidebar'].includes(declaration.placement)) problems.push(`${at}: placement is main or sidebar.`);
@@ -152,7 +174,19 @@ export function fieldProblems(name: string, declaration: FieldDeclaration): stri
     if (declaration.taxonomy !== undefined && (kind !== 'list' || declaration.items !== 'string' || !TAXONOMY_NAME.test(declaration.taxonomy))) problems.push(`${at}: taxonomy applies to lists of strings and names a taxonomy.`);
     if (declaration.media !== undefined && (!(kind === 'string' || (kind === 'list' && declaration.items === 'string')) || typeof declaration.media !== 'boolean')) problems.push(`${at}: media applies to string fields and lists of strings.`);
     if (declaration.format !== undefined && (kind !== 'text' || !['plain', 'markdown'].includes(declaration.format))) problems.push(`${at}: format applies to text fields and is plain or markdown.`);
-    if (declaration.fields !== undefined) {
+    if (kind === 'rows') {
+        const entries = declaration.fields && typeof declaration.fields === 'object' ? Object.entries(declaration.fields) : [];
+        if (!entries.length || entries.length > 48) problems.push(`${at}: rows hold 1-48 fields.`);
+        if (depth >= ROW_LIMITS.depth) problems.push(`${at}: rows nest at most ${ROW_LIMITS.depth} levels.`);
+        if (declaration.max !== undefined && declaration.max > ROW_LIMITS.max) problems.push(`${at}: rows hold at most ${ROW_LIMITS.max} rows.`);
+        if (declaration.min !== undefined && (!Number.isSafeInteger(declaration.min) || declaration.min < 0)) problems.push(`${at}: min rows must be a whole number.`);
+        for (const [sub, nested] of entries) {
+            if (!nested || !ROW_KINDS.has(nested.kind)) { problems.push(`${at}.${sub}: row fields cannot be blocks, rich text, vectors or big integers.`); continue; }
+            // Indexes and search on a row field are derived by the host; uniqueness is within the entry.
+            if (nested.slugFrom || nested.derived) problems.push(`${at}.${sub}: row fields cannot be derived.`);
+            problems.push(...fieldProblems(sub, nested, depth + 1).map(problem => problem.replace(/^field /, `${at}.`)));
+        }
+    } else if (declaration.fields !== undefined) {
         const entries = declaration.fields && typeof declaration.fields === 'object' ? Object.entries(declaration.fields) : [];
         if (kind !== 'json' || !entries.length || entries.length > 16) problems.push(`${at}: fields groups 1-16 subfields in a json field.`);
         for (const [sub, nested] of entries) {
@@ -183,7 +217,7 @@ export function storageType(declaration: FieldDeclaration, references: (target: 
         case 'json': return 'object';
         case 'list': return `array<${declaration.items}>`;
         case 'vector': return `vector<${declaration.dimensions}>`;
-        case 'blocks': return 'array<object>';
+        case 'blocks': case 'rows': return 'array<object>';
         case 'richtext': return 'object';
     }
 }
@@ -261,6 +295,31 @@ export function validateValue(name: string, declaration: FieldDeclaration, value
             return (value as { data: unknown }[]).every(block => isJsonObject(block.data, 1)) ? undefined : 'block data must be plain JSON.';
         }
         case 'richtext': return richTextProblem(value) ?? (isJsonObject(value, 0) ? undefined : 'must be plain JSON.');
+        case 'rows': {
+            const max = declaration.max ?? ROW_LIMITS.default;
+            if (!Array.isArray(value) || value.length > max) return `must be a list of at most ${max} rows.`;
+            if (declaration.min !== undefined && value.length < declaration.min) return `needs at least ${declaration.min} ${declaration.min === 1 ? 'row' : 'rows'}.`;
+            const ids = new Set<string>();
+            for (const [index, row] of value.entries()) {
+                if (!isJsonObject(row, 0)) return `row ${index + 1} must be an object.`;
+                const entries = row as { [key: string]: unknown };
+                if (entries._id !== undefined) {
+                    if (typeof entries._id !== 'string' || !ROW_ID.test(entries._id) || ids.has(entries._id)) return `row ${index + 1} has an invalid or repeated _id.`;
+                    ids.add(entries._id);
+                }
+                for (const [key, nested] of Object.entries(declaration.fields ?? {})) {
+                    const entry = entries[key];
+                    if (entry === undefined || entry === null || entry === '') {
+                        if (nested.required) return `row ${index + 1}: ${nested.label ?? key} is required.`;
+                        continue;
+                    }
+                    const error = validateValue(key, nested, entry);
+                    if (error) return `row ${index + 1}: ${nested.label ?? key} ${error}`;
+                }
+                for (const key of Object.keys(entries)) if (key !== '_id' && !Object.hasOwn(declaration.fields ?? {}, key)) return `row ${index + 1} has no field ${key}.`;
+            }
+            return undefined;
+        }
     }
 }
 

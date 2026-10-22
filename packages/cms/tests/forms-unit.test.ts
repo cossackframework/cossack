@@ -36,7 +36,7 @@ describe('form blocks', () => {
         ]);
         // Inputs and conditions belong to forms.
         expect(validateBlocks([input('n', 'text', { name: 'name' })], types).errors).toEqual({ n: 'form/text goes only in a form.' });
-        expect(validateBlocks([{ id: 'p', type: 'core/paragraph', data: { text: 'x' }, when: { rules: [{ field: 'a', op: 'empty' }] } }], types).errors).toEqual({ p: 'conditions apply only in forms.' });
+        expect(validateBlocks([{ id: 'p', type: 'core/paragraph', data: { text: 'x' }, when: { rules: [{ field: 'a', op: 'empty' }] } }], types).errors).toEqual({ p: 'conditions apply only in forms and field groups.' });
     });
 
     it('names inputs from labels and checks the form as a whole', () => {

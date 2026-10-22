@@ -31,7 +31,7 @@ describe('cms recipe', () => {
       expect(files.has(rel), rel).toBe(false);
     // CMS screens under /dashboard, setup under /auth, the site at /.
     for (const rel of ['src/pages/dashboard/(cms)/content/[collection]/[id]/index.ts', 'src/pages/dashboard/(cms)/collections/[name]/index.ts', 'src/pages/dashboard/(cms)/media/index.ts',
-      'src/pages/dashboard/(cms)/terms/[taxonomy]/index.ts', 'src/pages/dashboard/(cms)/settings/[group]/index.ts', 'src/pages/auth/setup/index.ts', 'src/pages/(site)/index.ts',
+      'src/pages/dashboard/(cms)/terms/[taxonomy]/index.ts', 'src/pages/dashboard/(cms)/field-groups/[id]/index.ts', 'src/pages/dashboard/(cms)/settings/[group]/index.ts', 'src/pages/auth/setup/index.ts', 'src/pages/(site)/index.ts',
       'src/pages/(site)/[...path]/index.ts', 'src/pages/(site)/media/[id]/[name]/index.ts', 'src/pages/api/auth/session.ts', 'src/cms/media.ts'])
       expect(files.has(rel), rel).toBe(true);
     expect(files.has('src/pages/index.ts')).toBe(false);

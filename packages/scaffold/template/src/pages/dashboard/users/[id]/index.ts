@@ -11,6 +11,7 @@ import {
 import { AppPasswords } from '../../../../dashboard/app-passwords';
 import { avatarField } from '../../../../dashboard/avatar-field';
 import { sessionTable } from '../../../../dashboard/session-list';
+import { countBadge } from '../../../../cms/ui';
 
 @Page({ transport: 'http', middlewares: [guard.requireRole('admin')] })
 export default class EditUserPage extends Cossack {
@@ -395,8 +396,8 @@ export default class EditUserPage extends Cossack {
                           onValueChange: (value: string) => this.showTab(value),
                           items: [
                               { value: 'profile', label: __('Profile'), content: profile },
-                              { value: 'sessions', label: `${__('Sessions')} (${this.sessions.length})`, content: sessions },
-                              ...(this.tokensAvailable ? [{ value: 'passwords', label: `${__('Application passwords')} (${this.tokens.length})`, content: passwords }] : []),
+                              { value: 'sessions', label: html`${__('Sessions')}${countBadge(this.sessions.length)}`, ariaLabel: `${__('Sessions')} (${this.sessions.length})`, content: sessions },
+                              ...(this.tokensAvailable ? [{ value: 'passwords', label: html`${__('Application passwords')}${countBadge(this.tokens.length)}`, ariaLabel: `${__('Application passwords')} (${this.tokens.length})`, content: passwords }] : []),
                           ],
                       })
                     : profile}

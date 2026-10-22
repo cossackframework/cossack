@@ -1,4 +1,5 @@
 import { CORE_BLOCKS } from '../blocks';
+import { FIELD_BLOCKS } from '../field-groups';
 import { pages, patterns, posts } from '../collections';
 import { beforeWrite } from '../hooks';
 import type { CmsModule } from '../module';
@@ -23,7 +24,7 @@ export const contentModule: CmsModule = {
     resources: [],
     collections: [posts, pages, patterns],
     taxonomies: [categories, tags],
-    blocks: CORE_BLOCKS,
+    blocks: [...CORE_BLOCKS, ...FIELD_BLOCKS],
     settings: [writing, reading, discussion, seo, languages],
     register({ hooks, settings, taxonomies, collection, now }) {
         hooks.addFilter(beforeWrite, async (draft, { input }) => {

@@ -7,6 +7,7 @@
  * diffed and shared as a pattern.
  */
 import { field, slugify, validateValue, type FieldDeclaration } from './fields';
+import { richTextBlocks, richTextMedia, type RichTextDoc } from './richtext';
 
 export { blocksShapeProblem, blockLayoutProblem, blockStyleProblem, blockConditionProblem, BLOCK_LIMITS, BREAKPOINTS, STYLE_PROPERTIES, TEXT_ALIGNMENTS, PRESET_SLUG, INPUT_NAME, CONDITION_OPERATORS, CONDITION_LIMIT,
     type Breakpoint, type StyleProperty, type ConditionOperator } from './block-shape';
@@ -55,7 +56,16 @@ export interface BlockDeclaration {
      * its `label`. Input blocks go only in a form's blocks field.
      */
     readonly input?: { readonly kind: InputKind };
+    /**
+     * The block is a field of a field group: it declares one field of the group's target under
+     * its `name` data field, labelled by its `label`. Field blocks go only in a field group.
+     */
+    readonly field?: { readonly kind: FieldBlockKind };
 }
+
+/** The builder's field types, one field block each. */
+export const FIELD_BLOCK_KINDS = Object.freeze(['text', 'textarea', 'markdown', 'number', 'integer', 'boolean', 'date', 'choice', 'media', 'gallery', 'reference', 'list', 'blocks', 'json', 'repeater'] as const);
+export type FieldBlockKind = (typeof FIELD_BLOCK_KINDS)[number];
 
 /** One test of a condition: an input's value against `value`. */
 export interface ConditionRule {
@@ -113,12 +123,21 @@ export const BLOCK_CATEGORIES = Object.freeze([
     { id: 'widgets', label: 'Widgets' },
     { id: 'embeds', label: 'Embeds' },
     { id: 'form', label: 'Form fields' },
+    // Field blocks declare a field group's fields; they are offered in field groups alone.
+    { id: 'field', label: 'Fields' },
+    // Data blocks store values with the entry and draw nothing: metadata, custom fields, settings a theme reads.
+    { id: 'data', label: 'Data' },
 ] as const);
 export type BlockCategory = (typeof BLOCK_CATEGORIES)[number]['id'];
 
 /** A block's category, `widgets` when it names none. */
 export function blockCategory(declaration: Pick<BlockDeclaration, 'category'>): BlockCategory {
     return declaration.category ?? 'widgets';
+}
+
+/** A data-only block: it stores values and the site renders nothing for it. */
+export function blockIsData(declaration: Pick<BlockDeclaration, 'category'>): boolean {
+    return blockCategory(declaration) === 'data';
 }
 
 const SUPPORT_KINDS = Object.freeze({ color: ['background', 'text'], spacing: ['padding', 'margin'], typography: ['fontSize', 'align'] } as const);
@@ -131,6 +150,7 @@ type SupportKind = keyof typeof SUPPORT_KINDS;
  */
 export function blockSupports(declaration: Pick<BlockDeclaration, 'category' | 'supports'>): readonly StyleProperty[] {
     const category = blockCategory(declaration);
+    if (category === 'data' || category === 'field') return [];
     const defaults: Record<SupportKind, boolean> = { color: category !== 'media', spacing: true, typography: category === 'text' };
     const properties: StyleProperty[] = [];
     for (const kind of Object.keys(SUPPORT_KINDS) as SupportKind[]) {
@@ -144,12 +164,15 @@ export function blockSupports(declaration: Pick<BlockDeclaration, 'category' | '
 export const BLOCK_NAME = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\/[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 const ICON_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 /** Field kinds a block can hold. Nesting is through `children`, not fields. */
-const BLOCK_FIELD_KINDS = new Set(['string', 'text', 'enum', 'integer', 'number', 'boolean', 'datetime', 'list', 'json']);
+const BLOCK_FIELD_KINDS = new Set(['string', 'text', 'enum', 'integer', 'number', 'boolean', 'datetime', 'list', 'json', 'richtext']);
+const LINK = '(?:https?://|/|mailto:|tel:|#)\\S*';
 
 const GAP = field.enum(['none', 'small', 'medium', 'large'], { default: 'medium', label: 'Gap' });
 
 /** Built-in block types. */
 const core: BlockDeclaration[] = [
+    // The word processor block: formatted text with headings, lists, links and images, as the body of a WordPress post.
+    { name: 'core/richtext', label: 'Rich text', icon: 'text-selection', category: 'text', description: 'Formatted text with headings, lists, links and images.', fields: { text: field.richText({ label: 'Text' }) } },
     { name: 'core/paragraph', label: 'Paragraph', icon: 'paragraph-spacing', category: 'text', fields: { text: field.text({ required: true, max: 20_000, format: 'markdown', label: 'Text' }) } },
     { name: 'core/heading', label: 'Heading', icon: 'text-bold', category: 'text', fields: {
         text: field.string({ required: true, max: 200, label: 'Text' }),
@@ -185,7 +208,42 @@ const core: BlockDeclaration[] = [
         url: field.string({ required: true, max: 2048, pattern: 'https://(?:www\\.)?(?:youtube\\.com/watch\\?v=|youtu\\.be/|vimeo\\.com/)\\S+', label: 'Video URL' }),
         caption: field.string({ max: 300, label: 'Caption' }),
     } },
-    { name: 'core/divider', label: 'Divider', icon: 'minus-square', category: 'design', fields: {} },
+    { name: 'core/divider', label: 'Divider', icon: 'minus-square', category: 'design', description: 'A line between sections, with text in the middle if you like.', fields: {
+        orientation: field.enum(['horizontal', 'vertical'], { default: 'horizontal', label: 'Orientation', choices: { horizontal: 'Horizontal', vertical: 'Vertical' } }),
+        thickness: field.enum(['thin', 'medium', 'thick'], { default: 'thin', label: 'Thickness' }),
+        width: field.enum(['full', 'wide', 'narrow'], { default: 'full', label: 'Length', choices: { full: 'Full width', wide: 'Three quarters', narrow: 'A quarter' } }),
+        color: field.string({ max: 60, pattern: '(?:#[0-9a-fA-F]{3,8}|[a-z][a-z0-9-]*(?:\\([^)]*\\))?)?', label: 'Colour', description: 'A palette slug or a CSS colour; empty uses the border colour.' }),
+        text: field.string({ max: 80, label: 'Text', description: 'Shown in the middle of the line.' }),
+    } },
+    { name: 'core/card', label: 'Card', icon: 'card', category: 'design', description: 'An image with a title, text and a link, in a box.', fields: {
+        image: field.media({ label: 'Image' }),
+        title: field.string({ max: 200, label: 'Title' }),
+        text: field.text({ max: 5000, format: 'markdown', label: 'Text' }),
+        url: field.string({ max: 2048, pattern: LINK, label: 'Link' }),
+        linkLabel: field.string({ max: 80, label: 'Link text', description: 'Empty links the title and the image.' }),
+        layout: field.enum(['top', 'left', 'right'], { default: 'top', label: 'Image position', choices: { top: 'Above the text', left: 'Left of the text', right: 'Right of the text' } }),
+    } },
+    { name: 'core/carousel', label: 'Carousel', icon: 'posts-carousel-horizontal', category: 'media', description: 'Images one at a time, with arrows and dots; swipe on touch screens.', fields: {
+        images: { ...field.list('string', { label: 'Images' }), media: true },
+        aspect: field.enum(['video', 'wide', 'square', 'auto'], { default: 'video', label: 'Shape', choices: { video: '16:9', wide: '21:9', square: 'Square', auto: 'As uploaded' } }),
+        autoplay: field.boolean({ default: false, label: 'Play automatically' }),
+        interval: field.integer({ default: 5, min: 2, max: 30, label: 'Seconds per image' }),
+        captions: field.boolean({ default: true, label: 'Show captions' }),
+    } },
+    { name: 'core/latest-entries', label: 'Latest entries', icon: 'list-arrow-down', category: 'widgets', description: 'The newest published entries of a collection, kept up to date.', fields: {
+        collection: field.string({ required: true, max: 40, pattern: '[a-z][a-z0-9_]*', default: 'posts', label: 'Collection' }),
+        count: field.integer({ default: 5, min: 1, max: 24, label: 'How many' }),
+        term: field.string({ max: 80, pattern: '[A-Za-z0-9_-]*', label: 'Only with the term', description: 'A category, tag or other term; empty shows every entry.' }),
+        order: field.enum(['newest', 'oldest', 'title'], { default: 'newest', label: 'Order', choices: { newest: 'Newest first', oldest: 'Oldest first', title: 'By title' } }),
+        layout: field.enum(['list', 'grid', 'titles'], { default: 'list', label: 'Layout', choices: { list: 'List with excerpts', grid: 'Grid of cards', titles: 'Titles only' } }),
+        columns: field.integer({ default: 3, min: 1, max: 4, label: 'Columns', description: 'For the grid.' }),
+        showImage: field.boolean({ default: true, label: 'Show the featured image' }),
+        showDate: field.boolean({ default: true, label: 'Show the date' }),
+    } },
+    // Data: stored with the entry, shown nowhere. Themes read `entry.blocks` and the API returns them.
+    { name: 'core/meta', label: 'Custom fields', icon: 'database', category: 'data', description: 'Named values stored with the entry for themes and integrations; nothing shows on the page.', fields: {
+        fields: field.list('string', { label: 'Fields', description: 'One per line, as name: value.' }),
+    } },
     // Layout: containers that hold other blocks. They render as CSS grid and respond to the
     // width of the content they are in, so columns inside a column stack on their own.
     { name: 'core/group', label: 'Group', icon: 'layers', category: 'design', description: 'A stack of blocks with one width.', fields: {
@@ -205,6 +263,12 @@ const core: BlockDeclaration[] = [
         columnsSm: field.integer({ default: 1, min: 1, max: 6, label: 'Columns on phones' }),
         gap: GAP,
     }, children: { max: 24 } },
+    // Tabs: one panel shown at a time. In a field group they are the dashboard's tabs.
+    { name: 'core/tabs', label: 'Tabs', icon: 'window-frame', category: 'design', description: 'Panels shown one at a time.', fields: {}, children: { allowed: ['core/tab'], max: 12 } },
+    { name: 'core/tab', label: 'Tab', icon: 'tuning-square', category: 'design', parent: ['core/tabs'], fields: {
+        label: field.string({ required: true, max: 80, label: 'Label' }),
+        icon: field.string({ max: 60, pattern: '[a-z0-9]+(?:-[a-z0-9]+)*', label: 'Icon', description: 'A Solar icon name, such as settings.' }),
+    }, children: {} },
     // A synced pattern: the site renders the pattern's current content in its place.
     { name: 'core/pattern', label: 'Pattern', icon: 'widget-add', category: 'design', description: 'A synced pattern.', fields: {
         pattern: field.string({ required: true, max: 80, pattern: '[A-Za-z0-9_-]{1,80}', label: 'Pattern' }),
@@ -273,6 +337,12 @@ export interface ValidateBlocksOptions {
     readonly allowed?: readonly string[];
     /** The field holds a form: input blocks and conditions are allowed, and checked as a whole. */
     readonly form?: boolean;
+    /**
+     * The blocks are a field group: field blocks and layout blocks alone, conditions allowed,
+     * names from labels and distinct across the group, rows included. `scope` names fields of
+     * the target a condition may test besides the group's own.
+     */
+    readonly fieldGroup?: boolean | { readonly scope?: readonly string[] };
 }
 
 /**
@@ -284,8 +354,11 @@ export interface ValidateBlocksOptions {
 export function validateBlocks(value: readonly Block[], types: ReadonlyMap<string, BlockDeclaration>, options: ValidateBlocksOptions = {}): { blocks: Block[]; errors: { [path: string]: string } } {
     const errors: { [path: string]: string } = {};
     const { allowed, form = false } = options;
+    const fieldGroup = options.fieldGroup !== undefined && options.fieldGroup !== false;
+    const conditional = form || fieldGroup;
     // Names given in the tree, so a name taken from a label does not take one of them.
-    const taken = new Set(form ? flattenBlocks(value).filter(block => types.get(block.type)?.input).map(block => block.data.name).filter((name): name is string => typeof name === 'string' && name.trim() !== '') : []);
+    const named = (block: Block) => form ? !!types.get(block.type)?.input : fieldGroup ? !!types.get(block.type)?.field : false;
+    const taken = new Set(conditional ? flattenBlocks(value).filter(named).map(block => block.data.name).filter((name): name is string => typeof name === 'string' && name.trim() !== '') : []);
     const visit = (list: readonly Block[], parent: string | null): Block[] => {
         const blocks: Block[] = [];
         for (const block of list) {
@@ -293,9 +366,11 @@ export function validateBlocks(value: readonly Block[], types: ReadonlyMap<strin
             if (!type || (parent === null && allowed && allowed.length && !allowed.includes(block.type))) { errors[block.id] = `${block.type} is not an available block.`; continue; }
             if (!blockAllowedIn(types, block.type, parent)) { errors[block.id] = parent ? `${block.type} cannot go inside ${parent}.` : `${block.type} goes inside ${type.parent?.join(' or ')}.`; continue; }
             if (type.input && !form) { errors[block.id] = `${block.type} goes only in a form.`; continue; }
-            if (block.when !== undefined && !form) { errors[block.id] = 'conditions apply only in forms.'; continue; }
+            if (type.field && !fieldGroup) { errors[block.id] = `${block.type} goes only in a field group.`; continue; }
+            if (fieldGroup && !type.field && !FIELD_GROUP_LAYOUT.has(block.type)) { errors[block.id] = `${block.type} does not go in a field group.`; continue; }
+            if (block.when !== undefined && !conditional) { errors[block.id] = 'conditions apply only in forms and field groups.'; continue; }
             let source = block.data;
-            if (type.input && (typeof source.name !== 'string' || !source.name.trim())) {
+            if (named(block) && (typeof source.name !== 'string' || !source.name.trim())) {
                 const name = uniqueInputName(inputName(typeof source.label === 'string' ? source.label : ''), taken);
                 taken.add(name);
                 source = { ...source, name };
@@ -330,8 +405,64 @@ export function validateBlocks(value: readonly Block[], types: ReadonlyMap<strin
     };
     const blocks = visit(value, null);
     if (form) Object.assign(errors, formTreeErrors(blocks, types));
+    if (fieldGroup) Object.assign(errors, fieldGroupTreeErrors(blocks, types, typeof options.fieldGroup === 'object' ? options.fieldGroup.scope ?? [] : []));
     return { blocks, errors };
 }
+
+/** Core blocks a field group lays its fields out with. They render as dashboard UI there. */
+export const FIELD_GROUP_LAYOUT: ReadonlySet<string> = new Set(['core/group', 'core/columns', 'core/column', 'core/grid', 'core/tabs', 'core/tab', 'core/heading', 'core/paragraph', 'core/divider']);
+/** Fields a group holds at most, rows included. */
+export const FIELD_GROUP_LIMIT = 96;
+
+/**
+ * A field group's own rules: at most 96 fields, names distinct across the group (rows
+ * included) and not a target's own, conditions naming fields in reach: the group's at the
+ * same or an outer row level, and `scope`'s.
+ */
+function fieldGroupTreeErrors(blocks: readonly Block[], types: ReadonlyMap<string, BlockDeclaration>, scope: readonly string[]): { [path: string]: string } {
+    const errors: { [path: string]: string } = {};
+    const fields = flattenBlocks(blocks).filter(block => types.get(block.type)?.field);
+    if (fields.length > FIELD_GROUP_LIMIT) errors[fields[FIELD_GROUP_LIMIT]!.id] = `A field group holds at most ${FIELD_GROUP_LIMIT} fields.`;
+    // A row's field sits inside its row, so only a top-level field can take a name the target has.
+    const inRows = new Set(fields.filter(block => types.get(block.type)?.field?.kind === 'repeater').flatMap(block => flattenBlocks(block.children ?? []).map(child => child.id)));
+    const named = new Map<string, Block>();
+    for (const block of fields) {
+        const name = block.data.name as string;
+        if (RESERVED_FIELD_NAMES.has(name) || (scope.includes(name) && !inRows.has(block.id))) errors[`${block.id}.name`] = 'is used by the target itself.';
+        else if (named.has(name)) errors[`${block.id}.name`] = 'is used by another field.';
+        else named.set(name, block);
+    }
+    // The names in reach of a row level: the outer levels' and its own, whatever the order.
+    const visit = (list: readonly Block[], visible: ReadonlySet<string>) => {
+        const here = new Set(visible);
+        const collect = (items: readonly Block[]) => {
+            for (const block of items) {
+                const type = types.get(block.type);
+                if (type?.field) here.add(block.data.name as string);
+                if (block.children && !type?.field) collect(block.children);
+            }
+        };
+        collect(list);
+        const check = (items: readonly Block[]) => {
+            for (const block of items) {
+                const type = types.get(block.type);
+                for (const rule of block.when?.rules ?? []) {
+                    if (!here.has(rule.field)) errors[block.id] = `shows on ${rule.field}, which is not a field in reach.`;
+                    else if (named.get(rule.field) === block) errors[block.id] = 'cannot show on its own value.';
+                }
+                if (!block.children) continue;
+                if (type?.field) visit(block.children, here);
+                else check(block.children);
+            }
+        };
+        check(list);
+    };
+    visit(blocks, new Set(scope));
+    return errors;
+}
+
+/** Field names every record keeps for itself; a target's own fields come through `scope`. */
+export const RESERVED_FIELD_NAMES: ReadonlySet<string> = new Set(['id', 'rev', 'owner', 'createdAt', 'updatedAt', 'meta', '_id']);
 
 /** A form's own rules: at most 48 inputs, distinct names that are not reserved, conditions on its inputs. */
 function formTreeErrors(blocks: readonly Block[], types: ReadonlyMap<string, BlockDeclaration>): { [path: string]: string } {
@@ -408,18 +539,64 @@ function blockStyleOf(block: Block, supports: readonly StyleProperty[]): BlockSt
     return Object.keys(style).length ? Object.freeze(style) as BlockStyle : undefined;
 }
 
-/** Media file IDs referenced by blocks, nested ones included, for existence checks. */
+/** Media file IDs referenced by blocks, nested ones and rich text inside them included, for existence checks. */
 export function blockMedia(blocks: readonly Block[], types: ReadonlyMap<string, BlockDeclaration>): string[] {
     const ids: string[] = [];
     for (const block of flattenBlocks(blocks)) {
         for (const [name, declaration] of Object.entries(types.get(block.type)?.fields ?? {})) {
-            if (!declaration.media) continue;
             const value = block.data[name];
+            if (declaration.kind === 'richtext') {
+                const doc = value as RichTextDoc | null | undefined;
+                ids.push(...richTextMedia(doc), ...blockMedia(richTextBlocks(doc), types));
+                continue;
+            }
+            if (!declaration.media) continue;
             if (typeof value === 'string') ids.push(value);
             else if (Array.isArray(value)) ids.push(...value.filter((item): item is string => typeof item === 'string'));
         }
     }
     return [...new Set(ids)];
+}
+
+/** The rich text documents inside blocks, nested ones included, for patterns and media. */
+export function blockDocuments(blocks: readonly Block[], types: ReadonlyMap<string, BlockDeclaration>): RichTextDoc[] {
+    const docs: RichTextDoc[] = [];
+    for (const block of flattenBlocks(blocks)) {
+        for (const [name, declaration] of Object.entries(types.get(block.type)?.fields ?? {})) {
+            const value = block.data[name];
+            if (declaration.kind === 'richtext' && value && typeof value === 'object') docs.push(value as RichTextDoc);
+        }
+    }
+    return docs;
+}
+
+/**
+ * The plain text of blocks, for search and excerpts: their string and text fields and the
+ * text of their rich text, in document order. Data blocks are left out.
+ */
+export function blocksPlain(blocks: readonly Block[], types: ReadonlyMap<string, BlockDeclaration>, plain: (doc: RichTextDoc) => string, max = 100_000): string {
+    const parts: string[] = [];
+    let length = 0;
+    for (const block of flattenBlocks(blocks)) {
+        const type = types.get(block.type);
+        if (!type || blockIsData(type)) continue;
+        for (const [name, declaration] of Object.entries(type.fields)) {
+            const value = block.data[name];
+            const text = declaration.kind === 'richtext' ? (value && typeof value === 'object' ? plain(value as RichTextDoc) : '')
+                : (declaration.kind === 'string' || declaration.kind === 'text') && typeof value === 'string' && !declaration.media && !declaration.pattern ? value
+                : declaration.kind === 'list' && declaration.items === 'string' && !declaration.media && Array.isArray(value) ? value.join('\n') : '';
+            if (!text.trim()) continue;
+            parts.push(text.trim());
+            length += text.length;
+            if (length >= max) return parts.join('\n\n').slice(0, max);
+        }
+    }
+    return parts.join('\n\n');
+}
+
+/** Blocks with fresh IDs, for copies of a template or a pattern. */
+export function cloneBlocks<T extends Block>(blocks: readonly T[], id: () => string = blockId): T[] {
+    return blocks.map(block => ({ ...block, id: id(), ...(block.children ? { children: cloneBlocks(block.children as readonly T[], id) } : {}) }));
 }
 
 /** A new block ID. */

@@ -8,6 +8,7 @@ import { ClientError, type FastDB, type Statement } from '@cossackframework/fast
 import { CmsError } from '../errors';
 import { MENU_LIMITS, MENU_LOCATION, menuProblems, menuSize, normalizeMenu, type MenuItem, type MenuItemView, type MenuShape } from '../menus';
 import { hasPermission, PERMISSIONS, principalId, type Principal } from '../permissions';
+import type { MenuWriteInput } from '../hooks';
 
 export interface MenuSummary {
     readonly id: string;
@@ -20,6 +21,10 @@ export interface MenuSummary {
 export interface CmsMenusOptions {
     /** Items with entries and terms resolved for visitors; items whose target is gone are left out. */
     readonly resolve: (items: readonly MenuItem[], locale?: string) => Promise<MenuItemView[]>;
+    /** The `cms.menu.before-save` filter: plugins adjust or refuse the items before they are written. */
+    readonly beforeSave?: (items: readonly MenuItem[], input: MenuWriteInput) => Promise<readonly MenuItem[]>;
+    /** Each item's meta checked against the field groups attached to menu items. */
+    readonly checkMeta?: (meta: unknown, previous: { readonly [field: string]: unknown } | null) => Promise<{ readonly [field: string]: unknown }>;
     readonly now?: () => number;
     readonly ttlMs?: number;
 }
@@ -31,6 +36,8 @@ const COLUMNS = 'id, name, items, revision, created_at, updated_at';
 export class CmsMenus {
     readonly #db: FastDB;
     readonly #resolve: CmsMenusOptions['resolve'];
+    readonly #beforeSave: CmsMenusOptions['beforeSave'];
+    readonly #checkMeta: CmsMenusOptions['checkMeta'];
     readonly #now: () => number;
     readonly #ttl: number;
     #cache = new Map<string, { at: number; value: Promise<MenuItemView[] | null> }>();
@@ -38,6 +45,8 @@ export class CmsMenus {
     constructor(db: FastDB, options: CmsMenusOptions) {
         this.#db = db;
         this.#resolve = options.resolve;
+        this.#beforeSave = options.beforeSave;
+        this.#checkMeta = options.checkMeta;
         this.#now = options.now ?? Date.now;
         this.#ttl = options.ttlMs ?? 30_000;
     }
@@ -55,6 +64,24 @@ export class CmsMenus {
         });
     }
 
+    /** Items with their meta checked against the field groups; an item keeps the stored meta it does not send. */
+    async #withMeta(items: readonly MenuItem[], previous: readonly MenuItem[]): Promise<MenuItem[]> {
+        const check = this.#checkMeta;
+        if (!check) return [...items];
+        const stored = new Map(flattenItems(previous).map(item => [item.id, item.meta ?? null]));
+        const visit = async (list: readonly MenuItem[]): Promise<MenuItem[]> => {
+            const result: MenuItem[] = [];
+            for (const item of list) {
+                let meta: { readonly [field: string]: unknown };
+                try { meta = await check(item.meta, stored.get(item.id) ?? null); }
+                catch (error) { throw error instanceof CmsError ? new CmsError('CMS_VALIDATION', `Item “${item.label.slice(0, 40)}”: ${error.message}`, { fields: { items: error.message } }) : error; }
+                result.push(Object.freeze({ ...item, ...(Object.keys(meta).length ? { meta } : {}), children: Object.freeze(await visit(item.children)) }));
+            }
+            return result;
+        };
+        return visit(items);
+    }
+
     async get(id: string): Promise<MenuShape | null> {
         if (typeof id !== 'string' || !ID.test(id)) return null;
         const result = await this.#db.read([{ sql: `SELECT ${COLUMNS} FROM cms_menus WHERE id = $id`, params: { $id: id } }]);
@@ -65,7 +92,7 @@ export class CmsMenus {
     async create(input: { name: string; items?: readonly MenuItem[] }, context: { principal: Principal }): Promise<MenuShape> {
         authorize(context.principal);
         const name = checkName(input.name);
-        const items = checkItems(input.items ?? []);
+        const items = await this.#filtered(await this.#withMeta(checkItems(input.items ?? []), []), { id: null, name, actor: actorOf(context.principal) });
         const id = crypto.randomUUID();
         const now = this.#now();
         await this.#write([{ sql: `INSERT INTO cms_menus (${COLUMNS}, updated_by) VALUES ($id, $name, $items, 1, $now, $now, $by)`,
@@ -79,7 +106,7 @@ export class CmsMenus {
         const current = await this.get(id);
         if (!current) throw new CmsError('CMS_NOT_FOUND', 'Menu not found.');
         const name = input.name === undefined ? current.name : checkName(input.name);
-        const items = input.items === undefined ? current.items : checkItems(input.items);
+        const items = input.items === undefined ? current.items : await this.#filtered(await this.#withMeta(checkItems(input.items), current.items), { id, name, actor: actorOf(context.principal) });
         const result = await this.#write([{
             sql: 'UPDATE cms_menus SET name = $name, items = $items, revision = revision + 1, updated_at = $now, updated_by = $by WHERE id = $id AND revision = $revision',
             params: { $name: name, $items: JSON.stringify(items), $now: this.#now(), $by: principalId(context.principal), $id: id, $revision: context.expectedRevision },
@@ -167,6 +194,14 @@ export class CmsMenus {
         return this.#resolve(parseItems(row[0] as string), locale);
     }
 
+    /** The items after the before-save filter, checked again. */
+    async #filtered(items: MenuItem[], input: MenuWriteInput): Promise<MenuItem[]> {
+        if (!this.#beforeSave) return items;
+        const next = await this.#beforeSave(Object.freeze(items), Object.freeze(input));
+        if (!Array.isArray(next)) throw new CmsError('CMS_VALIDATION', 'A plugin returned an invalid menu.');
+        return next === items ? items : checkItems(next);
+    }
+
     async #write(statements: Statement[]) {
         try {
             return await this.#db.write(statements, WRITE);
@@ -179,6 +214,10 @@ export class CmsMenus {
     }
 }
 
+function actorOf(principal: Principal) {
+    return { kind: principal.kind, id: principalId(principal) };
+}
+
 function authorize(principal: Principal): void {
     if (!hasPermission(principal, PERMISSIONS.manageAppearance)) throw new CmsError(principal.kind === 'anonymous' ? 'CMS_UNAUTHENTICATED' : 'CMS_FORBIDDEN', 'Not allowed to manage menus.');
 }
@@ -186,6 +225,10 @@ function authorize(principal: Principal): void {
 function checkName(name: unknown): string {
     if (typeof name !== 'string' || !name.trim() || name.trim().length > MENU_LIMITS.name) throw new CmsError('CMS_VALIDATION', `Menu names are 1-${MENU_LIMITS.name} characters.`, { fields: { name: 'is required.' } });
     return name.trim();
+}
+
+function flattenItems(items: readonly MenuItem[]): MenuItem[] {
+    return items.flatMap(item => [item, ...flattenItems(item.children)]);
 }
 
 function checkItems(items: readonly MenuItem[]): MenuItem[] {

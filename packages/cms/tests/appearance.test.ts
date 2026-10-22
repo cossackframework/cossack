@@ -125,31 +125,30 @@ describe.skipIf(!live)('themes, menus and rich text', () => {
         expect(await cms.archiveUrl(cms.collection('posts'))).toBe('/posts');
     });
 
-    it('stores rich text bodies as JSON and searches their text', async () => {
+    it('stores rich text in content blocks and searches their text', async () => {
         const posts = cms.resource('cms/posts');
-        const body: RichTextDoc = { type: 'doc', content: [
+        const text: RichTextDoc = { type: 'doc', content: [
             { type: 'heading', attrs: { level: 2, textAlign: null }, content: [{ type: 'text', text: 'Launch notes' }] },
             { type: 'paragraph', content: [{ type: 'text', text: 'The zeppelin departs at noon.', marks: [{ type: 'italic' }] }] },
-            { type: 'cmsBlock', attrs: { id: 'cta', type: 'core/button', data: { label: 'Book', url: '/book' } } },
         ] };
-        const post = await posts.create({ title: 'Airship', body, status: 'published' }, { principal: admin });
-        expect(post.body).toEqual({ type: 'doc', content: [
-            { type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'Launch notes' }] },
-            { type: 'paragraph', content: [{ type: 'text', text: 'The zeppelin departs at noon.', marks: [{ type: 'italic' }] }] },
-            // Block data gets its defaults, as in a blocks field.
-            { type: 'cmsBlock', attrs: { id: 'cta', type: 'core/button', data: { label: 'Book', url: '/book', style: 'primary' } } },
-        ] });
-        expect(Object.keys(post)).not.toContain('_text_body');
+        const post = await posts.create({ title: 'Airship', content: [{ id: 'rt', type: 'core/richtext', data: { text } }, { id: 'cta', type: 'core/button', data: { label: 'Book', url: '/book' } }], status: 'published' }, { principal: admin });
+        // Block data gets its defaults; the rich text is stored as the document it was.
+        expect(post.content).toMatchObject([{ id: 'rt', type: 'core/richtext', data: { text: { type: 'doc' } } }, { id: 'cta', type: 'core/button', data: { label: 'Book', url: '/book', style: 'primary' } }]);
+        expect(Object.keys(post)).not.toContain('_text_content');
         expect((await posts.search('zeppelin', {}, { principal: ANONYMOUS })).map(record => record.id)).toEqual([post.id]);
-        // Editing the body re-indexes its text.
-        await posts.update(post.id, { body: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Now a hot air balloon.' }] }] } }, { principal: admin, expectedRevision: 1 });
+        // Editing the content re-indexes its text.
+        await posts.update(post.id, { content: [{ id: 'rt', type: 'core/richtext', data: { text: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Now a hot air balloon.' }] }] } } }] }, { principal: admin, expectedRevision: 1 });
         expect(await posts.search('zeppelin', {}, { principal: ANONYMOUS })).toEqual([]);
         expect((await posts.search('balloon', {}, { principal: ANONYMOUS })).map(record => record.id)).toEqual([post.id]);
 
-        await expect(posts.create({ title: 'Bad', body: '<p>HTML</p>' }, { principal: admin })).rejects.toMatchObject({ fields: { body: expect.stringContaining('rich text') } });
-        await expect(posts.create({ title: 'Bad', body: { type: 'doc', content: [{ type: 'image', attrs: { src: '/media/none/x.png', mediaId: 'none' } }] } }, { principal: admin }))
-            .rejects.toMatchObject({ fields: { body: 'names a missing file.' } });
-        await expect(posts.create({ title: 'Bad', body: { type: 'doc', content: [{ type: 'cmsBlock', attrs: { id: 'b', type: 'core/button', data: { label: 'X', url: 'javascript:x' } } }] } }, { principal: admin }))
-            .rejects.toMatchObject({ fields: { body: expect.stringContaining('b.url') } });
+        await expect(posts.create({ title: 'Bad', content: [{ id: 'rt', type: 'core/richtext', data: { text: '<p>HTML</p>' } }] }, { principal: admin })).rejects.toMatchObject({ fields: { content: expect.stringContaining('rich text') } });
+        await expect(posts.create({ title: 'Bad', content: [{ id: 'rt', type: 'core/richtext', data: { text: { type: 'doc', content: [{ type: 'image', attrs: { src: '/media/none/x.png', mediaId: 'none' } }] } } }] }, { principal: admin }))
+            .rejects.toMatchObject({ fields: { content: 'names a missing file.' } });
+        await expect(posts.create({ title: 'Bad', content: [{ id: 'b', type: 'core/button', data: { label: 'X', url: 'javascript:x' } }] }, { principal: admin }))
+            .rejects.toMatchObject({ fields: { content: expect.stringContaining('b.url') } });
+        // A collection's template is checked the same way, and new entries are what the dashboard starts them from.
+        await expect(cms.saveCollection({ ...cms.collection('posts'), template: [{ id: 't', type: 'core/button', data: { label: 'X', url: 'javascript:x' } }] }, admin)).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
+        const saved = await cms.saveCollection({ ...cms.collection('posts'), template: [{ id: 'h', type: 'core/heading', data: { text: 'Overview' } }, { id: 'm', type: 'core/meta', data: {} }], templateLock: 'insert' }, admin);
+        expect(saved).toMatchObject({ template: [{ id: 'h', type: 'core/heading' }, { id: 'm', type: 'core/meta' }], templateLock: 'insert' });
     });
 });

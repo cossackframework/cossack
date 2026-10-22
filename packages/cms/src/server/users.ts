@@ -4,6 +4,7 @@ import { ClientError, type FastDB, type Statement, type Value } from '@cossackfr
 import { CmsError } from '../errors';
 import { slugify } from '../fields';
 import { userPrincipal, type Principal } from '../permissions';
+import { parseMeta, type MetaCheck } from './taxonomies';
 
 export interface CmsUser {
     readonly id: string;
@@ -20,6 +21,8 @@ export interface CmsUser {
     readonly createdAt: number;
     /** When the user last started a session, or null when never. */
     readonly lastSignInAt: number | null;
+    /** Values of the field groups attached to users. */
+    readonly meta: { readonly [field: string]: unknown };
 }
 
 export interface CmsRole {
@@ -61,12 +64,14 @@ export class CmsUsers {
     readonly #db: FastDB;
     readonly #hasher: PasswordHasher;
     readonly #now: () => number;
+    readonly #checkMeta: MetaCheck | undefined;
     readonly verifier: CredentialVerifier<CmsUser>;
 
-    constructor(db: FastDB, options: { hasher?: PasswordHasher; now?: () => number } = {}) {
+    constructor(db: FastDB, options: { hasher?: PasswordHasher; now?: () => number; checkMeta?: MetaCheck } = {}) {
         this.#db = db;
         this.#hasher = options.hasher ?? createPasswordHasher();
         this.#now = options.now ?? Date.now;
+        this.#checkMeta = options.checkMeta;
         type Row = { id: string; hash: string | null; status: string };
         this.verifier = createCredentialVerifier<Row, CmsUser>({
             find: async email => {
@@ -85,21 +90,30 @@ export class CmsUsers {
         });
     }
 
-    async create(input: { email: string; name: string; password?: string; roles?: readonly string[]; id?: string; avatar?: string | null }): Promise<CmsUser> {
+    async create(input: { email: string; name: string; password?: string; roles?: readonly string[]; id?: string; avatar?: string | null; meta?: unknown }): Promise<CmsUser> {
         const email = normalizeEmail(input.email);
         checkProfile({ email, name: input.name, avatar: input.avatar ?? null });
+        const meta = await this.#meta(input.meta, null);
         if (input.password !== undefined) checkPassword(input.password);
         const id = input.id ?? crypto.randomUUID();
         if (!ID.test(id)) throw new CmsError('CMS_VALIDATION', 'Invalid user ID.');
         const hash = input.password === undefined ? null : await this.#hasher.hash(input.password);
         const now = this.#now();
         const statements: Statement[] = [{
-            sql: "INSERT INTO cms_users (id, email, name, password_hash, avatar, status, created_at, updated_at) VALUES ($id, $email, $name, $hash, $avatar, 'active', $now, $now)",
-            params: { $id: id, $email: email, $name: input.name.trim(), $hash: hash, $avatar: input.avatar ?? null, $now: now },
+            sql: "INSERT INTO cms_users (id, email, name, password_hash, avatar, status, created_at, updated_at, meta) VALUES ($id, $email, $name, $hash, $avatar, 'active', $now, $now, $meta)",
+            params: { $id: id, $email: email, $name: input.name.trim(), $hash: hash, $avatar: input.avatar ?? null, $now: now, $meta: JSON.stringify(meta) },
         }, ...roleStatements(id, input.roles ?? [])];
         try { await this.#db.write(statements, WRITE); }
         catch (error) { throw uniqueEmail(error); }
         return (await this.get(id))!;
+    }
+
+    /** The meta to store: the field groups' check, or the input as given when users have no groups. */
+    async #meta(meta: unknown, previous: { readonly [field: string]: unknown } | null): Promise<{ readonly [field: string]: unknown }> {
+        if (this.#checkMeta) return this.#checkMeta(meta, previous);
+        if (meta === undefined) return previous ?? {};
+        if (meta === null || typeof meta !== 'object' || Array.isArray(meta)) throw new CmsError('CMS_VALIDATION', 'Meta must be an object of fields.', { fields: { meta: 'must be an object of fields.' } });
+        return { ...previous, ...(meta as { [field: string]: unknown }) };
     }
 
     async get(id: string): Promise<CmsUser | null> {
@@ -113,7 +127,7 @@ export class CmsUsers {
         if (!wanted.length) return new Map();
         const list = inList('u', wanted);
         const result = await this.#db.read([
-            { sql: `SELECT id, email, name, avatar, status, created_at, last_sign_in_at FROM cms_users WHERE id IN ${list.sql}`, params: list.params },
+            { sql: `SELECT id, email, name, avatar, status, created_at, last_sign_in_at, meta FROM cms_users WHERE id IN ${list.sql}`, params: list.params },
             { sql: `SELECT ur.user_id, r.id, r.name, r.permissions FROM cms_user_roles ur JOIN cms_roles r ON r.id = ur.role_id WHERE ur.user_id IN ${list.sql} ORDER BY r.id`, params: list.params },
         ]);
         const roles = new Map<string, CmsUser['assignments'][number][]>();
@@ -127,7 +141,7 @@ export class CmsUsers {
             const assignments = roles.get(row[0] as string) ?? [];
             users.set(row[0] as string, Object.freeze({
                 id: row[0] as string, email: row[1] as string, name: row[2] as string, avatar: row[3] as string | null,
-                status: row[4] as CmsUser['status'], createdAt: Number(row[5] as bigint), lastSignInAt: row[6] === null ? null : Number(row[6] as bigint),
+                status: row[4] as CmsUser['status'], createdAt: Number(row[5] as bigint), lastSignInAt: row[6] === null ? null : Number(row[6] as bigint), meta: parseMeta(row[7]),
                 roles: Object.freeze(assignments.map(role => role.id)), assignments: Object.freeze(assignments),
                 permissions: Object.freeze([...new Set(assignments.flatMap(role => role.permissions))].sort()),
             }));
@@ -166,14 +180,15 @@ export class CmsUsers {
     }
 
     /** Change name, email or avatar. */
-    async update(id: string, patch: { name?: string; email?: string; avatar?: string | null }): Promise<boolean> {
+    async update(id: string, patch: { name?: string; email?: string; avatar?: string | null; meta?: unknown }): Promise<boolean> {
         const current = await this.get(id);
         if (!current) return false;
         const next = { name: patch.name ?? current.name, email: patch.email === undefined ? current.email : normalizeEmail(patch.email), avatar: patch.avatar === undefined ? current.avatar : patch.avatar || null };
         checkProfile(next);
+        const meta = patch.meta === undefined ? current.meta : await this.#meta(patch.meta, current.meta);
         try {
-            const result = await this.#db.write([{ sql: 'UPDATE cms_users SET name = $name, email = $email, avatar = $avatar, updated_at = $now WHERE id = $id',
-                params: { $name: next.name.trim(), $email: next.email, $avatar: next.avatar, $now: this.#now(), $id: id } }], WRITE);
+            const result = await this.#db.write([{ sql: 'UPDATE cms_users SET name = $name, email = $email, avatar = $avatar, meta = $meta, updated_at = $now WHERE id = $id',
+                params: { $name: next.name.trim(), $email: next.email, $avatar: next.avatar, $meta: JSON.stringify(meta), $now: this.#now(), $id: id } }], WRITE);
             return result.results[0]!.affected === 1n;
         } catch (error) { throw uniqueEmail(error); }
     }

@@ -1,8 +1,9 @@
 import { Cossack, Page, State, Server, Client, flash, flashed, type HeadValue } from '@cossackframework/core';
-import { Button, Card, CardBody, Input, NativeSelect, Pagination, toast } from '@cossackframework/ui';
+import { Button, Card, CardBody, Icon, Input, NativeSelect, Pagination, toast } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { formatBytes, isSameOriginPost, mediaKind, mediaUrl, PERMISSIONS, type MediaKind } from '@cossackframework/cms';
 import { requireAny } from '../../../../cms/guards';
+import { icon } from '../../../../cms/icons';
 import { formFiles, uploadFiles } from '../../../../cms/uploads';
 import { notice, pageHeader, shortDate } from '../../../../cms/ui';
 
@@ -112,7 +113,7 @@ export default class MediaLibrary extends Cossack {
     render() {
         const totalPages = Math.max(1, Math.ceil(this.total / PAGE_SIZE));
         return html`<div class="space-y-6">
-            ${pageHeader(__('Media library'), { actions: component(Button, { type: 'button', '@click': () => { this.showUploader = !this.showUploader; } }, __('Add new media file')) })}
+            ${pageHeader(__('Media library'), { titleActions: component(Button, { type: 'button', size: 'sm', '@click': () => { this.showUploader = !this.showUploader; } }, __('Add new media file')) })}
             ${this.configured ? null : notice(__('Media storage is not configured. Bind an R2 bucket as MEDIA, or set S3_BUCKET or MEDIA_DIR.'), 'error')}
             ${this.message ? notice(this.message, 'success') : null}
             ${this.errors.map(error => notice(error, 'error'))}
@@ -128,11 +129,11 @@ export default class MediaLibrary extends Cossack {
                 <p class="text-xs text-muted-foreground">${__('Images, PDF, plain text, MP4, WebM and MP3. The size limit is in Settings → Media.')}</p>
             </form>` : null}
             <form method="get" action="/dashboard/media" class="flex flex-wrap items-center gap-2" role="search">
-                ${component(NativeSelect, { name: 'kind', size: 'sm', 'aria-label': __('Media type') }, html`
+                <div class="w-44">${component(NativeSelect, { name: 'kind', size: 'sm', 'aria-label': __('Media type') }, html`
                     ${[['', __('All media items')], ['image', __('Images')], ['video', __('Video')], ['audio', __('Audio')], ['document', __('Documents')]]
-                        .map(([value, label]) => html`<option value=${value} ?selected=${this.kind === value}>${label}</option>`)}`)}
-                ${component(Input, { type: 'search', name: 'q', size: 'sm', value: this.search, placeholder: __('Search media'), 'aria-label': __('Search media') })}
-                ${component(Button, { type: 'submit', size: 'sm', variant: 'outline' }, __('Filter'))}
+                        .map(([value, label]) => html`<option value=${value} ?selected=${this.kind === value}>${label}</option>`)}`)}</div>
+                <div class="w-64 max-w-full">${component(Input, { type: 'search', name: 'q', size: 'sm', value: this.search, placeholder: __('Search media'), 'aria-label': __('Search media') })}</div>
+                ${component(Button, { type: 'submit', size: 'sm', variant: 'outline', class: 'gap-1.5' }, html`${component(Icon, { entry: icon('filter'), size: 16 })}${__('Filter')}`)}
                 <span class="ml-auto text-xs text-muted-foreground">${this.total} ${this.total === 1 ? __('item') : __('items')}</span>
             </form>
             ${this.items.length ? html`<ul class="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6">

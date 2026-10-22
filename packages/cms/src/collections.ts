@@ -3,6 +3,7 @@
  * schemaless resource `cms/<name>` stored in its own document table; the host validates the
  * fields. Built-in collections keep their core fields and accept added ones.
  */
+import { blocksShapeProblem, type Block } from './blocks';
 import { FIELD_NAME, field, fieldProblems, TAXONOMY_NAME, type FieldDeclaration } from './fields';
 import { RESOURCE_NAME, type AccessRule, type ResourceDeclaration } from './resource';
 
@@ -64,6 +65,20 @@ export interface CollectionDefinition {
     /** Fields besides the core ones (title, slug, status, publication time, parent and taxonomies). */
     readonly fields: { readonly [name: string]: FieldDeclaration };
     /**
+     * How the editor lays the fields out: field blocks and layout blocks, as a field group.
+     * `fields` is compiled from it when it is saved. Absent for definitions written by hand,
+     * which get one field block per field.
+     */
+    readonly layout?: readonly Block[];
+    /**
+     * The blocks a new entry's content starts with, as WordPress's block templates: a structure
+     * such as a heading, an image and a rich text, with data blocks for what the entry stores.
+     * Applies to the collection's first blocks field.
+     */
+    readonly template?: readonly Block[];
+    /** How far entries may change the template: `insert` keeps its blocks (no adding or removing), `all` keeps their order too. */
+    readonly templateLock?: 'all' | 'insert';
+    /**
      * The order of the fields, for built-in collections, whose module fields are not stored with
      * the added ones. Fields it does not name follow in their declared order.
      */
@@ -101,6 +116,12 @@ export function collectionProblems(definition: CollectionDefinition): string[] {
     if (!Array.isArray(taxonomies) || taxonomies.length > 8 || taxonomies.some(name => typeof name !== 'string' || !TAXONOMY_NAME.test(name)) || new Set(taxonomies).size !== taxonomies.length) problems.push('Choose at most 8 distinct taxonomies.');
     const fields = Object.entries(definition.fields ?? {});
     if (fields.length > 32) problems.push('Add at most 32 fields.');
+    if (definition.template !== undefined) {
+        const shape = blocksShapeProblem(definition.template);
+        if (shape) problems.push(`The content template ${shape}`);
+        else if (definition.template.length > 50) problems.push('The content template holds at most 50 blocks.');
+    }
+    if (definition.templateLock !== undefined && !['all', 'insert'].includes(definition.templateLock)) problems.push('The template lock is all or insert.');
     if (definition.fieldOrder !== undefined && (!Array.isArray(definition.fieldOrder) || definition.fieldOrder.length > 64 || definition.fieldOrder.some(name => typeof name !== 'string' || !FIELD_NAME.test(name)))) problems.push('The field order names at most 64 fields.');
     const taken = new Set([...CORE_FIELDS, ...taxonomies]);
     for (const [name, declaration] of fields) {
@@ -188,6 +209,9 @@ export function extendCollection(builtin: CollectionDefinition, stored: Partial<
         ...(stored.icon !== undefined ? { icon: stored.icon } : {}),
         ...(stored.path !== undefined ? { path: builtin.path === '' ? '' : stored.path } : {}),
         ...(stored.comments !== undefined ? { comments: stored.comments } : {}),
+        ...(stored.template !== undefined ? { template: stored.template } : {}),
+        ...(stored.templateLock !== undefined ? { templateLock: stored.templateLock } : {}),
+        ...(stored.layout !== undefined ? { layout: stored.layout } : {}),
         taxonomies: [...new Set([...(builtin.taxonomies ?? []), ...(stored.taxonomies ?? [])])],
         fields: orderedFields({ ...builtin.fields, ...added }, stored.fieldOrder),
         builtin: true,
@@ -205,11 +229,13 @@ export const posts: CollectionDefinition = {
     path: 'posts',
     comments: true,
     fields: {
+        // The content is blocks, as in WordPress; the Rich text block is the word processor among them.
+        content: field.blocks({ search: true, label: 'Content' }),
         excerpt: field.text({ max: 1000, label: 'Excerpt', description: 'A short summary for lists and feeds.' }),
-        body: field.richText({ search: true, label: 'Body' }),
         sticky: field.boolean({ default: false, placement: 'sidebar', label: 'Stick to the top of the blog' }),
         featuredImage: field.media({ placement: 'sidebar', label: 'Featured image' }),
     },
+    template: [{ id: 'text', type: 'core/richtext', data: {} }],
 };
 
 /** Built-in pages: nested; a page's URL is its ancestors' slugs. */
@@ -222,16 +248,17 @@ export const pages: CollectionDefinition = {
     hierarchical: true,
     path: '',
     fields: {
-        body: field.richText({ search: true, label: 'Body' }),
+        content: field.blocks({ search: true, label: 'Content' }),
         excerpt: field.text({ max: 1000, label: 'Summary', description: 'Shown to search engines and in link previews.' }),
         featuredImage: field.media({ placement: 'sidebar', label: 'Featured image' }),
     },
+    template: [{ id: 'text', type: 'core/richtext', data: {} }],
 };
 
 /**
- * Built-in patterns: saved content to reuse. A synced pattern is inserted as a reference, so
- * editing it changes every entry that uses it; an unsynced one is inserted as a copy. Starter
- * patterns are offered as the first content of new entries.
+ * Built-in patterns: saved blocks to reuse. A synced pattern is inserted as one Pattern block,
+ * so editing it changes every entry that uses it; an unsynced one is inserted as a copy of its
+ * blocks. Starter patterns are offered as the first content of new entries.
  */
 export const patterns: CollectionDefinition = {
     name: 'patterns',
@@ -243,7 +270,7 @@ export const patterns: CollectionDefinition = {
     publishable: false,
     visibility: 'private',
     fields: {
-        content: field.richText({ label: 'Content' }),
+        content: field.blocks({ label: 'Content' }),
         synced: field.boolean({ default: true, placement: 'sidebar', label: 'Synced', description: 'Changes show everywhere the pattern is used.' }),
         starter: field.list('string', { placement: 'sidebar', label: 'Starting layout for', description: 'Collections whose new entries can start from this pattern.' }),
     },

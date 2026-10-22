@@ -9,6 +9,8 @@ interface PluginRow {
     name: string;
     version: string;
     description: string;
+    author: string;
+    authorUrl: string;
     logo: string | null;
     cover: string | null;
     themeOnly: boolean;
@@ -34,7 +36,7 @@ export default class PluginsPage extends Cossack {
     async init() {
         const status = await this.c.get('cms').status();
         this.plugins = status.plugins.map(plugin => ({
-            name: plugin.name, version: plugin.version, description: plugin.description, logo: plugin.logo, cover: plugin.cover, themeOnly: plugin.themeOnly,
+            name: plugin.name, version: plugin.version, description: plugin.description, author: plugin.author, authorUrl: plugin.authorUrl, logo: plugin.logo, cover: plugin.cover, themeOnly: plugin.themeOnly,
             active: plugin.active, reason: plugin.reason ?? '', missing: [...plugin.missing],
         }));
         this.message = flashed<string>('cms.message') ?? '';
@@ -68,13 +70,13 @@ export default class PluginsPage extends Cossack {
             ${this.plugins.length ? null : html`<p class="text-sm text-muted-foreground">${__('No plugins. Render one with')} <code>cossack add plugin</code>.</p>`}
             <ul class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">${this.plugins.map(plugin => html`<li data-plugin=${plugin.name} data-version=${plugin.version} data-active=${plugin.active ? 'true' : 'false'}>${component(Card, { class: 'flex h-full flex-col overflow-hidden' }, html`
                 ${artwork('cover', plugin.cover, plugin.name, plugin.name, 'aspect-[2/1] border-b border-border')}
-                ${component(CardBody, { class: 'flex flex-1 flex-col gap-3' }, html`
+                ${component(CardBody, { class: 'flex flex-1 flex-col gap-3 pt-5' }, html`
                     <div class="flex items-start justify-between gap-3">
-                        <div class="flex min-w-0 items-center gap-3">
+                        <div class="flex min-w-0 items-center gap-4">
                             ${artwork('logo', plugin.logo, plugin.name, plugin.name)}
                             <div class="min-w-0">
                                 <p class="truncate text-sm font-semibold text-foreground">${plugin.name}</p>
-                                <p class="text-xs text-muted-foreground">${__('version')} ${plugin.version}</p>
+                                <p class="text-xs text-muted-foreground">${__('version')} ${plugin.version}${plugin.author ? html` · ${__('by')} ${plugin.authorUrl ? html`<a href=${plugin.authorUrl} target="_blank" rel="noopener noreferrer" class="text-primary hover:underline">${plugin.author}</a>` : plugin.author}` : null}</p>
                             </div>
                         </div>
                         ${plugin.themeOnly ? component(Badge, { variant: 'secondary' }, __('Theme'))

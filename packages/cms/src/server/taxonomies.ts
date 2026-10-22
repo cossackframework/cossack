@@ -7,7 +7,8 @@
 import { ClientError, type FastDB, type Statement, type Value } from '@cossackframework/fastdb';
 import { CmsError } from '../errors';
 import { slugify } from '../fields';
-import { hasPermission, PERMISSIONS, type Principal } from '../permissions';
+import { hasPermission, PERMISSIONS, principalId, type Principal } from '../permissions';
+import type { TermDraft, TermWriteInput, WriteActor } from '../hooks';
 import type { TaxonomyDeclaration, TermShape } from '../taxonomy';
 import { containsPattern, inList } from './users';
 
@@ -26,12 +27,20 @@ export interface TermInput {
     readonly description?: string;
     /** Parent term ID, or null for a top-level term. Hierarchical taxonomies only. */
     readonly parent?: string | null;
+    /** Solar icon name, such as `tag`, or empty for none. */
+    readonly icon?: string;
+    /** Values of the field groups attached to the taxonomy; omitted fields keep their values. */
+    readonly meta?: { readonly [field: string]: unknown };
 }
+
+/** A target's meta, checked against its field groups: errors by field, or the values to store. */
+export type MetaCheck = (meta: unknown, previous: { readonly [field: string]: unknown } | null) => Promise<{ readonly [field: string]: unknown }>;
 
 const ID = /^[A-Za-z0-9_-]{1,80}$/;
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const WRITE = { kind: 'cms.terms', retryConflicts: 5 } as const;
-const COLUMNS = 'id, taxonomy, name, slug, description, parent_id, path, depth, created_at, updated_at';
+const COLUMNS = 'id, taxonomy, name, slug, description, parent_id, path, depth, created_at, updated_at, icon, meta';
+const ICON = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const MAX_TERMS = 1000;
 
 export class CmsTaxonomies {
@@ -41,6 +50,8 @@ export class CmsTaxonomies {
     readonly #usage: (taxonomy: string) => readonly TermUsage[];
     readonly #canAssign: (principal: Principal, taxonomy: TaxonomyDeclaration) => boolean;
     readonly #slugChanged: ((taxonomy: TaxonomyDeclaration, from: string, to: string, guard: { sql: string; params: { [key: string]: Value } }) => Statement[]) | undefined;
+    readonly #beforeSave: ((draft: TermDraft, input: TermWriteInput) => Promise<TermDraft>) | undefined;
+    readonly #checkMeta: ((taxonomy: string) => MetaCheck) | undefined;
 
     constructor(db: FastDB, options: {
         /** Current declarations: built-in and those defined in the dashboard. */
@@ -50,6 +61,10 @@ export class CmsTaxonomies {
         canAssign: (principal: Principal, taxonomy: TaxonomyDeclaration) => boolean;
         /** Statements to add when a term's slug changes, such as a redirect, run only when `guard` holds. */
         slugChanged?: (taxonomy: TaxonomyDeclaration, from: string, to: string, guard: { sql: string; params: { [key: string]: Value } }) => Statement[];
+        /** The `cms.term.before-save` filter: plugins adjust or refuse a term before it is written. */
+        beforeSave?: (draft: TermDraft, input: TermWriteInput) => Promise<TermDraft>;
+        /** The meta check for a taxonomy's field groups. */
+        checkMeta?: (taxonomy: string) => MetaCheck;
         now?: () => number;
     }) {
         this.#db = db;
@@ -58,6 +73,8 @@ export class CmsTaxonomies {
         this.#usage = options.usage;
         this.#canAssign = options.canAssign;
         this.#slugChanged = options.slugChanged;
+        this.#beforeSave = options.beforeSave;
+        this.#checkMeta = options.checkMeta;
     }
 
     get declarations(): readonly TaxonomyDeclaration[] { return [...this.#taxonomies().values()]; }
@@ -161,18 +178,22 @@ export class CmsTaxonomies {
     async create(taxonomy: string, input: TermInput, context: { principal: Principal }): Promise<TermShape> {
         this.#authorize(context.principal);
         const declaration = this.declaration(taxonomy);
-        const name = checkName(input.name);
-        const parent = await this.#parent(declaration, input.parent ?? null);
+        const meta = await this.#meta(taxonomy, input.meta, null);
+        const draft = await this.#filtered({ name: checkName(input.name), slug: input.slug?.trim() ?? '', description: checkDescription(input.description), parent: input.parent ?? null, icon: checkIcon(input.icon), meta },
+            { taxonomy, action: 'create', id: null, previous: null, actor: actorOf(context.principal) });
+        const name = checkName(draft.name);
+        const parent = await this.#parent(declaration, draft.parent);
         const id = crypto.randomUUID();
-        const slug = await this.#uniqueSlug(taxonomy, input.slug?.trim() ? checkSlug(input.slug) : slugify(name, 120) || 'term', null);
+        const slug = await this.#uniqueSlug(taxonomy, draft.slug.trim() ? checkSlug(draft.slug) : slugify(name, 120) || 'term', null);
         const now = this.#now();
         const params = {
-            $id: id, $taxonomy: taxonomy, $name: name, $slug: slug, $description: checkDescription(input.description), $parent: parent?.id ?? null,
-            $path: `${parent?.path ?? '/'}${id}/`, $depth: parent ? parent.depth + 1 : 0, $now: now, $parentPath: parent?.path ?? null,
+            $id: id, $taxonomy: taxonomy, $name: name, $slug: slug, $description: checkDescription(draft.description), $parent: parent?.id ?? null,
+            $path: `${parent?.path ?? '/'}${id}/`, $depth: parent ? parent.depth + 1 : 0, $now: now, $parentPath: parent?.path ?? null, $icon: checkIcon(draft.icon),
+            $meta: JSON.stringify(draft.meta ?? {}),
         };
         // A parent that moved or disappeared since it was read inserts nothing.
         const guard = parent ? ' WHERE EXISTS (SELECT 1 FROM cms_terms WHERE id = $parent AND path = $parentPath)' : '';
-        const result = await this.#write([bound(`INSERT INTO cms_terms (${COLUMNS}) SELECT $id, $taxonomy, $name, $slug, $description, $parent, $path, $depth, $now, $now${guard}`, params)]);
+        const result = await this.#write([bound(`INSERT INTO cms_terms (${COLUMNS}) SELECT $id, $taxonomy, $name, $slug, $description, $parent, $path, $depth, $now, $now, $icon, $meta${guard}`, params)]);
         if (result.results[0]!.affected !== 1n) throw new CmsError('CMS_CONFLICT', 'The parent changed while the term was saved. Try again.');
         return (await this.get(id))!;
     }
@@ -183,16 +204,23 @@ export class CmsTaxonomies {
         const term = await this.get(id);
         if (!term) throw new CmsError('CMS_NOT_FOUND', 'Term not found.');
         const declaration = this.declaration(term.taxonomy);
-        const name = input.name === undefined ? term.name : checkName(input.name);
-        const slug = input.slug === undefined || input.slug.trim() === term.slug ? term.slug
-            : await this.#uniqueSlug(term.taxonomy, input.slug.trim() ? checkSlug(input.slug) : slugify(name, 120) || 'term', id);
-        const description = input.description === undefined ? term.description : checkDescription(input.description);
+        const draft = await this.#filtered({
+            name: input.name === undefined ? term.name : checkName(input.name), slug: input.slug === undefined ? term.slug : input.slug.trim(),
+            description: input.description === undefined ? term.description : checkDescription(input.description), parent: input.parent === undefined ? term.parent : input.parent,
+            icon: input.icon === undefined ? term.icon : checkIcon(input.icon),
+            meta: input.meta === undefined ? term.meta : await this.#meta(term.taxonomy, input.meta, term.meta),
+        }, { taxonomy: term.taxonomy, action: 'update', id, previous: term, actor: actorOf(context.principal) });
+        const name = checkName(draft.name);
+        const slug = draft.slug.trim() === term.slug ? term.slug
+            : await this.#uniqueSlug(term.taxonomy, draft.slug.trim() ? checkSlug(draft.slug) : slugify(name, 120) || 'term', id);
+        const description = checkDescription(draft.description);
+        const icon = checkIcon(draft.icon);
         const now = this.#now();
         const statements: Statement[] = [];
         let path = term.path;
         let parentId = term.parent;
-        if (input.parent !== undefined && input.parent !== term.parent) {
-            const parent = await this.#parent(declaration, input.parent);
+        if (draft.parent !== term.parent) {
+            const parent = await this.#parent(declaration, draft.parent);
             if (parent && parent.path.startsWith(term.path)) throw new CmsError('CMS_VALIDATION', 'A term cannot move below itself.', { fields: { parent: 'is inside this term.' } });
             path = `${parent?.path ?? '/'}${id}/`;
             parentId = parent?.id ?? null;
@@ -205,8 +233,8 @@ export class CmsTaxonomies {
                 $parent: parent?.id ?? null, $parentPath: parent?.path ?? null,
             }));
         }
-        statements.push({ sql: `UPDATE cms_terms SET name = $name, slug = $slug, description = $description, parent_id = $parentId, updated_at = $now WHERE id = $id AND path = $path`,
-            params: { $name: name, $slug: slug, $description: description, $parentId: parentId, $now: now, $id: id, $path: path } });
+        statements.push({ sql: `UPDATE cms_terms SET name = $name, slug = $slug, description = $description, parent_id = $parentId, icon = $icon, meta = $meta, updated_at = $now WHERE id = $id AND path = $path`,
+            params: { $name: name, $slug: slug, $description: description, $parentId: parentId, $icon: icon, $meta: JSON.stringify(draft.meta ?? {}), $now: now, $id: id, $path: path } });
         const own = statements.length - 1;
         if (slug !== term.slug && this.#slugChanged) {
             statements.push(...this.#slugChanged(declaration, term.slug, slug, { sql: 'EXISTS (SELECT 1 FROM cms_terms WHERE id = $tId AND slug = $tSlug AND updated_at = $tNow)', params: { $tId: id, $tSlug: slug, $tNow: now } }));
@@ -256,7 +284,7 @@ export class CmsTaxonomies {
                 const id = crypto.randomUUID();
                 bySlug.set(slug, id);
                 // A term another request created first wins; its ID is read back below.
-                return { sql: `INSERT INTO cms_terms (${COLUMNS}) VALUES ($id, $taxonomy, $name, $slug, '', NULL, $path, 0, $now, $now) ON CONFLICT (taxonomy, slug) DO NOTHING`,
+                return { sql: `INSERT INTO cms_terms (${COLUMNS}) VALUES ($id, $taxonomy, $name, $slug, '', NULL, $path, 0, $now, $now, '', '{}') ON CONFLICT (taxonomy, slug) DO NOTHING`,
                     params: { $id: id, $taxonomy: taxonomy, $name: checkName(name), $slug: SLUG.test(slug) ? slug : slugify(slug) || `term-${id.slice(0, 8)}`, $path: `/${id}/`, $now: now } };
             });
             await this.#write(statements);
@@ -276,6 +304,22 @@ export class CmsTaxonomies {
         const list = inList('t', unique);
         const result = await this.#db.read([{ sql: `SELECT count(*) FROM cms_terms WHERE taxonomy = $taxonomy AND id IN ${list.sql}`, params: { $taxonomy: taxonomy, ...list.params } }]);
         if (Number(result.results[0]!.rows[0]![0] as bigint) !== unique.length) throw new CmsError('CMS_VALIDATION', `${field} names a term that does not exist.`, { fields: { [field]: 'names a missing term.' } });
+    }
+
+    /** The draft after the before-save filter, when the host has one. */
+    /** The meta to store: the field groups' check, or the input as given when the taxonomy has none. */
+    async #meta(taxonomy: string, meta: unknown, previous: { readonly [field: string]: unknown } | null): Promise<{ readonly [field: string]: unknown }> {
+        if (this.#checkMeta) return this.#checkMeta(taxonomy)(meta, previous);
+        if (meta === undefined) return previous ?? {};
+        if (meta === null || typeof meta !== 'object' || Array.isArray(meta)) throw new CmsError('CMS_VALIDATION', 'Meta must be an object of fields.', { fields: { meta: 'must be an object of fields.' } });
+        return { ...previous, ...(meta as { [field: string]: unknown }) };
+    }
+
+    async #filtered(draft: TermDraft, input: TermWriteInput): Promise<TermDraft> {
+        if (!this.#beforeSave) return draft;
+        const next = await this.#beforeSave(Object.freeze(draft), Object.freeze(input));
+        if (!next || typeof next !== 'object') throw new CmsError('CMS_VALIDATION', 'A plugin returned an invalid term.');
+        return { name: next.name, slug: typeof next.slug === 'string' ? next.slug : '', description: next.description ?? '', parent: next.parent ?? null, icon: typeof next.icon === 'string' ? next.icon : '', meta: next.meta && typeof next.meta === 'object' && !Array.isArray(next.meta) ? next.meta : draft.meta };
     }
 
     #authorize(principal: Principal): void {
@@ -323,7 +367,28 @@ function termOf(row: readonly Value[]): TermShape {
     return Object.freeze({
         id: row[0] as string, taxonomy: row[1] as string, name: row[2] as string, slug: row[3] as string, description: row[4] as string,
         parent: row[5] as string | null, path: row[6] as string, depth: Number(row[7] as bigint), createdAt: Number(row[8] as bigint), updatedAt: Number(row[9] as bigint),
+        icon: typeof row[10] === 'string' ? row[10] : '',
+        meta: parseMeta(row[11]),
     });
+}
+
+/** Stored meta as an object; anything else reads as empty. */
+export function parseMeta(value: unknown): { readonly [field: string]: unknown } {
+    if (typeof value !== 'string' || !value) return Object.freeze({});
+    try {
+        const parsed = JSON.parse(value) as unknown;
+        return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? Object.freeze(parsed as { [field: string]: unknown }) : Object.freeze({});
+    } catch { return Object.freeze({}); }
+}
+
+function actorOf(principal: Principal): WriteActor {
+    return { kind: principal.kind, id: principalId(principal) };
+}
+
+function checkIcon(icon: unknown): string {
+    if (icon === undefined || icon === null || icon === '') return '';
+    if (typeof icon !== 'string' || icon.length > 60 || !ICON.test(icon)) throw new CmsError('CMS_VALIDATION', 'Icons are Solar icon names, such as tag.', { fields: { icon: 'is not an icon name.' } });
+    return icon;
 }
 
 function checkName(name: unknown): string {

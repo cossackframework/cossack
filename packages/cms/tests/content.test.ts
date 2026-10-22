@@ -82,7 +82,7 @@ describe.skipIf(!live)('content, taxonomies, settings, users and media', () => {
         const next = await pages.list({ where: { ...filter, menuOrder: { gte: 1 } }, order: { field: 'menuOrder', direction: 'asc' }, limit: 2, offset: 2 }, context);
         expect(next.records.map(record => record.title)).toEqual(['Filter 3']);
         expect(next.more).toBeUndefined();
-        await expect(pages.list({ order: { field: 'body' } }, context)).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
+        await expect(pages.list({ order: { field: 'content' } }, context)).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
         expect(await pages.count({ owner: editor.kind === 'user' ? editor.id : '' }, context)).toBeGreaterThanOrEqual(4);
     });
 

@@ -1,21 +1,25 @@
 import { Cossack, Page, State, ClientState, Server, Client, PreventNavigation, type HeadValue } from '@cossackframework/core';
 import { Button, Checkbox, Input, Modal, NativeSelect, Textarea, toast } from '@cossackframework/ui';
 import { html, component, unsafeHTML, type TemplateResult } from '@cossackframework/renderer';
-import { blockId, evaluateRule, findBlock, formatBytes, isCmsError, languageName, mediaKind, recordTitle, richTextBlocks, updateBlock, type EmbeddedBlock, type MediaKind, type RecordShape, type RichTextDoc } from '@cossackframework/cms';
+import { blockId, evaluateRule, fieldVisibility, findBlock, flattenBlocks, flattenGroupFields, formatBytes, isCmsError, languageName, mediaKind, recordTitle, richTextBlocks, updateBlock, type Block, type BlockCondition, type EmbeddedBlock, type MediaKind, type RecordShape, type RichTextDoc } from '@cossackframework/cms';
+import { blockPanel } from '../../../../../../cms/block-panel';
+import { styleValues, withStyle, type BlockTab, type StyleValues } from '../../../../../../cms/style-controls';
 import { renderMarkdown } from '@cossackframework/cms/server';
-import { editorView, entryValues, fieldErrors, mediaPreviews, parentOptions, routeResource, saveEntry, termOptions, type MediaPreview, type SaveIntent } from '../../../../../../cms/content';
-import { blockDefaults, controlValue, editorInput, entryUrl, suggestedSlug, type EditorBlock, type EditorField, type EditorValues, type EditorView, type TermOption } from '../../../../../../cms/editor';
+import { contentField, editorView, entryValues, fieldErrors, mediaPreviews, parentOptions, patternBlocks, routeResource, saveEntry, termOptions, type MediaPreview, type SaveIntent } from '../../../../../../cms/content';
+import { blockDefaults, controlValue, editorBlocks, editorInput, entryUrl, suggestedSlug, type EditorBlock, type EditorField, type EditorValues, type EditorView, type TermOption } from '../../../../../../cms/editor';
 import { RichTextField, richTextEditors } from '../../../../../../cms/rich-text-field';
 import { BlockTree } from '../../../../../../cms/block-tree';
 import { fieldControl } from '../../../../../../cms/field-controls';
+import { FieldGroupView, plainBlocks, visibilityTypes, type RowPath } from '../../../../../../cms/field-group-view';
 import { box, CONTROL, linkButton, notice, shortDate, STATUS_LABELS, statusBadge } from '../../../../../../cms/ui';
-import { conditionFields } from '../../../../../../cms/condition-control';
+import { conditionControl, conditionFields } from '../../../../../../cms/condition-control';
 import { notificationRulesControl } from '../../../../../../cms/notification-rules';
 import { siteOrigin } from '../../../../../../cms/seo';
 
-type MediaTarget = { field: string; block?: string; key?: string; multiple?: boolean; insert?: boolean; richText?: boolean; dialog?: boolean; group?: boolean };
-/** A block embedded in a rich text field, being edited in the block dialog. */
-interface BlockDialog { field: string; id: string; type: string; values: Record<string, unknown>; errors: Record<string, string> }
+type MediaTarget = { field: string; block?: string; key?: string; multiple?: boolean; insert?: boolean; richText?: boolean; dialog?: boolean; group?: boolean; /** The rich text editor to insert into, when it is not the field's own. */ editor?: string;
+    /** The rows the value sits in, from the top down: `key` is then a field of the innermost row. */ rows?: RowPath };
+/** A block being edited in the side panel: one of a blocks field's tree, or one embedded in a rich text field. */
+interface BlockDialog { field: string; id: string; type: string; values: Record<string, unknown>; errors: Record<string, string>; embedded: boolean; tab: BlockTab; style: StyleValues; /** In a form: when the block shows. */ when?: BlockCondition }
 
 /** A translation of the entry, or a language it has none in yet. */
 interface TranslationLink { code: string; label: string; id: string | null; title: string; status: string }
@@ -93,6 +97,9 @@ export default class EntryEditor extends Cossack {
             if (!record && evaluateRule(resource.access.create, principal) === 'deny') { this.error = __('You cannot create entries here.'); this.c.status(403); return; }
             this.view = view;
             this.values = await entryValues(cms, view, record);
+            // A new entry starts from the collection's content template.
+            const content = contentField(view);
+            if (!record && content && view.template.length && !this.blocks(content).length) this.values = { ...this.values, [content]: view.template };
             if (!record && view.publishable && view.resource === 'cms/posts') {
                 this.values = { ...this.values, status: await cms.settings.get('writing.defaultStatus') };
             }
@@ -159,10 +166,11 @@ export default class EntryEditor extends Cossack {
         });
     }
 
-    /** Titles of the synced patterns the entry's rich text uses, for their blocks. */
+    /** Titles of the synced patterns the entry's content and rich text use, for their blocks. */
     private async loadPatternTitles() {
         const ids = Object.values(this.values).flatMap(value => value && typeof value === 'object' && (value as RichTextDoc).type === 'doc'
-            ? richTextBlocks(value as RichTextDoc).filter(block => block.type === 'core/pattern').map(block => String(block.data.pattern)) : []);
+            ? richTextBlocks(value as RichTextDoc).filter(block => block.type === 'core/pattern').map(block => String(block.data.pattern))
+            : Array.isArray(value) && value.every(entry => entry && typeof entry === 'object' && 'type' in entry) ? flattenBlocks(value as Block[]).filter(block => block.type === 'core/pattern').map(block => String(block.data.pattern)) : []);
         if (!ids.length) return;
         const found = await this.c.get('cms').resource('cms/patterns').getMany(ids, { principal: this.c.get('principal') }).catch(() => new Map<string, RecordShape>());
         this.patternTitles = { ...this.patternTitles, ...Object.fromEntries([...found].map(([id, record]) => [id, recordTitle(record, 'title')])) };
@@ -200,6 +208,29 @@ export default class EntryEditor extends Cossack {
     @Client()
     setGroup(name: string, key: string, value: unknown) {
         this.set(name, { ...((this.values[name] as Record<string, unknown> | undefined) ?? {}), [key]: value });
+    }
+
+    /** The value of a row's field, through the rows above it. */
+    private rowValue(field: string, rows: RowPath, key: string): unknown {
+        let current: unknown = this.values[field];
+        for (const [index, row] of rows.entries()) {
+            const list = Array.isArray(current) ? current as Record<string, unknown>[] : [];
+            const found = list.find(entry => entry._id === row.id);
+            if (!found) return undefined;
+            current = index === rows.length - 1 ? found[key] : found[rows[index + 1]!.field];
+        }
+        return current;
+    }
+
+    /** Set a row's field through the rows above it; the rows are copied on the way down. */
+    @Client()
+    setRowValue(field: string, rows: RowPath, key: string, value: unknown) {
+        const update = (list: unknown, depth: number): unknown => {
+            const entries = Array.isArray(list) ? list as Record<string, unknown>[] : [];
+            const row = rows[depth]!;
+            return entries.map(entry => entry._id !== row.id ? entry : depth === rows.length - 1 ? { ...entry, [key]: value } : { ...entry, [rows[depth + 1]!.field]: update(entry[rows[depth + 1]!.field], depth + 1) });
+        };
+        this.set(field, update(this.values[field], 0));
     }
 
     // --- Autosave ----------------------------------------------------------------
@@ -319,30 +350,25 @@ export default class EntryEditor extends Cossack {
     }
 
     /** Insert a pattern: synced ones as a reference that follows the pattern, others as a copy. */
+    /** Add a pattern to the content: a synced one as a Pattern block, otherwise a copy of its blocks. A starting layout replaces the content. */
     @Client()
     async insertPattern(id: string, copy: boolean) {
         const picker = this.patternPicker;
         this.patternPicker = { open: false, field: '', starter: false };
         const choice = this.patternChoices.find(entry => entry.id === id);
-        if (!choice) return;
-        const field = picker.starter ? this.view?.fields.find(entry => entry.kind === 'richtext')?.name ?? '' : picker.field;
+        const view = this.view;
+        if (!choice || !view) return;
+        const field = picker.starter ? contentField(view) ?? '' : picker.field;
         const content = await this.patternContent(id);
         if (!field || !content) return;
         this.patternTitles = { ...this.patternTitles, [id]: choice.title };
-        if (picker.starter) {
-            // A starting layout fills the empty entry with the pattern's content.
-            this.set(field, choice.synced && !copy ? { type: 'doc', content: [{ type: 'cmsBlock', attrs: { id: blockId(), type: 'core/pattern', data: { pattern: id } } }] } : content);
-            return;
-        }
-        const editor = richTextEditors.get(`field-${field}`);
-        if (choice.synced && !copy) editor?.insertBlock({ id: blockId(), type: 'core/pattern', data: { pattern: id } });
-        else editor?.insertContent(content);
+        const added: EditorBlock[] = choice.synced && !copy ? [{ id: blockId(), type: 'core/pattern', data: { pattern: id } }] : editorBlocks(content as EditorBlock[], view.blocks);
+        this.set(field, picker.starter ? added : [...this.blocks(field), ...added]);
     }
 
     @Server()
-    async patternContent(id: string): Promise<RichTextDoc | null> {
-        const record = await this.c.get('cms').resource('cms/patterns').get(id, { principal: this.c.get('principal') }).catch(() => null);
-        return (record?.content as RichTextDoc | null) ?? null;
+    async patternContent(id: string): Promise<Block[] | null> {
+        return patternBlocks(this.c.get('cms'), id, this.c.get('principal'));
     }
 
     @Client()
@@ -433,11 +459,14 @@ export default class EntryEditor extends Cossack {
         if (!target) return;
         this.previews = { ...this.previews, [file.id]: file };
         if (target.richText) {
-            const editor = richTextEditors.get(`field-${target.field}`);
+            const editor = richTextEditors.get(target.editor ?? `field-${target.field}`);
             if (mediaKind(file.contentType) === 'image') editor?.insertImage({ src: file.url, alt: file.alt || file.title, mediaId: file.id });
             else editor?.insertLink(file.title || __('Download'), file.url);
         } else if (target.group && target.key) {
             this.setGroup(target.field, target.key, file.id);
+        } else if (target.rows?.length && target.key) {
+            const current = this.rowValue(target.field, target.rows, target.key);
+            this.setRowValue(target.field, target.rows, target.key, target.multiple ? [...new Set([...(Array.isArray(current) ? current as string[] : []), file.id])] : file.id);
         } else if (target.dialog && target.key && this.blockDialog) {
             const current = this.blockDialog.values[target.key];
             this.setDialogValue(target.key, target.multiple ? [...new Set([...(Array.isArray(current) ? current as string[] : []), file.id])] : file.id);
@@ -480,16 +509,28 @@ export default class EntryEditor extends Cossack {
         const values = blockDefaults(option);
         const block: EmbeddedBlock = { id: blockId(), type, data: editorInput(option.fields, values).input };
         editor.insertBlock(block);
-        if (option.fields.length) this.blockDialog = { field, id: block.id, type, values, errors: {} };
+        if (option.fields.length) this.blockDialog = { field, id: block.id, type, values, errors: {}, embedded: true, tab: 'general', style: styleValues({}) };
     }
 
     @Client()
     editRichBlock(field: string, block: EmbeddedBlock) {
-        if (block.type === 'core/pattern') { this.blockDialog = { field, id: block.id, type: block.type, values: { pattern: block.data.pattern }, errors: {} }; return; }
+        const empty = { tab: 'general' as const, style: styleValues({}) };
+        if (block.type === 'core/pattern') { this.blockDialog = { field, id: block.id, type: block.type, values: { pattern: block.data.pattern }, errors: {}, embedded: true, ...empty }; return; }
         const option = this.view?.blocks.find(entry => entry.name === block.type);
         if (!option) { toast.error(__('This block type is no longer available.')); return; }
-        this.blockDialog = { field, id: block.id, type: block.type, errors: {},
+        this.blockDialog = { field, id: block.id, type: block.type, errors: {}, embedded: true, ...empty,
             values: Object.fromEntries(option.fields.map(entry => [entry.name, controlValue(entry, block.data[entry.name] ?? entry.defaultValue)])) };
+    }
+
+    /** Open a block of a blocks field in the side panel: its settings on the General tab, its style on the Style tab. */
+    @Client()
+    editTreeBlock(field: string, id: string) {
+        const block = findBlock(this.blocks(field), id);
+        const option = this.view?.blocks.find(entry => entry.name === block?.type);
+        if (block?.type === 'core/pattern') { this.blockDialog = { field, id, type: block.type, values: { pattern: block.data.pattern }, errors: {}, embedded: false, tab: 'general', style: styleValues({}) }; return; }
+        if (!block || !option) return;
+        this.blockDialog = { field, id, type: block.type, errors: {}, embedded: false, tab: 'general', style: styleValues(block), ...(block.when ? { when: block.when } : {}),
+            values: Object.fromEntries(option.fields.filter(entry => entry.kind !== 'richtext').map(entry => [entry.name, block.data[entry.name] ?? controlValue(entry, entry.defaultValue)])) };
     }
 
     @Client()
@@ -498,14 +539,47 @@ export default class EntryEditor extends Cossack {
         this.blockDialog = { ...this.blockDialog, values: { ...this.blockDialog.values, [name]: value }, errors: { ...this.blockDialog.errors, [name]: '' } };
     }
 
-    /** Replace a synced pattern with a copy of its content, which no longer follows the pattern. */
+    @Client()
+    setDialogStyle(style: StyleValues) {
+        if (this.blockDialog) this.blockDialog = { ...this.blockDialog, style };
+    }
+
+    @Client()
+    showDialogTab(tab: BlockTab) {
+        if (this.blockDialog) this.blockDialog = { ...this.blockDialog, tab };
+    }
+
+    /** Apply the panel: an embedded block goes back into its rich text, a tree block into its field with its style. */
+    @Client()
+    applyBlockDialog() {
+        const dialog = this.blockDialog;
+        if (!dialog) return;
+        if (dialog.embedded) { this.saveRichBlock(); return; }
+        const option = this.view?.blocks.find(block => block.name === dialog.type);
+        if (!option) return;
+        const fields = option.fields.filter(entry => entry.kind !== 'richtext');
+        const { input, errors } = editorInput(fields, dialog.values);
+        for (const entry of fields) if (entry.required && (input[entry.name] === undefined || input[entry.name] === '' || input[entry.name] === null)) errors[entry.name] ??= __('is required.');
+        if (Object.keys(errors).length) { this.blockDialog = { ...dialog, errors }; return; }
+        // Rich text stays as it is in the tree; the panel's values replace the rest, and the condition follows the panel.
+        this.set(dialog.field, updateBlock(this.blocks(dialog.field), dialog.id, block => {
+            const { when: _previous, ...rest } = block;
+            return withStyle({ ...rest, ...(dialog.when ? { when: dialog.when } : {}), data: { ...Object.fromEntries(Object.entries(block.data).filter(([name]) => option.fields.find(entry => entry.name === name)?.kind === 'richtext')), ...dialog.values } }, dialog.style);
+        }));
+        this.blockDialog = null;
+    }
+
+    /** Replace a synced pattern in the content with a copy of its blocks, which no longer follow the pattern. */
     @Client()
     async detachPattern() {
         const dialog = this.blockDialog;
-        if (!dialog) return;
+        if (!dialog || dialog.embedded || !this.view) return;
         this.blockDialog = null;
         const content = await this.patternContent(String(dialog.values.pattern ?? ''));
-        if (content) richTextEditors.get(`field-${dialog.field}`)?.replaceBlock(dialog.id, content);
+        if (!content) return;
+        const copy = editorBlocks(content as EditorBlock[], this.view.blocks);
+        const replace = (blocks: EditorBlock[]): EditorBlock[] => blocks.flatMap(block => block.id === dialog.id ? copy : [block.children ? { ...block, children: replace(block.children) } : block]);
+        this.set(dialog.field, replace(this.blocks(dialog.field)));
     }
 
     @Client()
@@ -596,6 +670,7 @@ export default class EntryEditor extends Cossack {
     private mediaControl(target: MediaTarget, value: unknown, label: string): TemplateResult {
         const ids = Array.isArray(value) ? value as string[] : typeof value === 'string' && value ? [value] : [];
         const remove = (id: string) => target.group && target.key ? this.setGroup(target.field, target.key, null)
+            : target.rows?.length && target.key ? this.setRowValue(target.field, target.rows, target.key, target.multiple ? ids.filter(entry => entry !== id) : null)
             : target.dialog && target.key ? this.setDialogValue(target.key, target.multiple ? ids.filter(entry => entry !== id) : null)
             : target.block !== undefined && target.key
             ? this.setBlock(target.field, target.block, target.key, target.multiple ? ids.filter(entry => entry !== id) : null)
@@ -628,21 +703,39 @@ export default class EntryEditor extends Cossack {
         if (this.view?.route === 'forms' && field.name === 'notifications' && target.block === undefined) {
             return notificationRulesControl(String(value ?? ''), conditionFields(this.blocks('body'), this.view.blocks), id, change);
         }
+        // Blocks that name a collection or a term, such as Latest entries, choose from the site's.
+        if (target.block !== undefined && field.name === 'collection' && this.view?.collections.length) {
+            return component(NativeSelect, { id, '@change': (event: Event) => change((event.target as HTMLSelectElement).value) }, html`
+                ${this.view.collections.map(entry => html`<option value=${entry.name} ?selected=${entry.name === value}>${entry.label}</option>`)}`);
+        }
+        if (target.block !== undefined && field.name === 'term' && this.view?.termChoices.length) {
+            return component(NativeSelect, { id, '@change': (event: Event) => change((event.target as HTMLSelectElement).value) }, html`
+                <option value="" ?selected=${!value}>${__('Every entry')}</option>
+                ${this.view.termChoices.map(term => html`<option value=${term.id} ?selected=${term.id === value}>${term.taxonomy}: ${'— '.repeat(term.depth)}${term.name}</option>`)}`);
+        }
         switch (field.kind) {
+            // Rows outside a layout (a plugin resource's): the group view renders them with this editor's controls.
+            case 'rows': return component(FieldGroupView, {
+                id, blocks: [{ id: field.name, type: 'field/repeater', data: { name: field.name, label: field.label } }], options: this.view?.blocks ?? [], fields: [field], values: { [field.name]: value },
+                onChange: (_name: string, next: unknown) => change(next), hidden: new Set<string>(), control: (sub: EditorField, subValue: unknown, subChange: (value: unknown) => void, rows: RowPath, subId: string) => this.control(sub, subValue, subChange, { field: target.field, rows, key: sub.name }, subId),
+            });
             // Media files open this editor's picker, which knows where the chosen file goes.
             case 'list': if (field.media) return this.mediaControl({ ...target, multiple: true }, value, field.label); break;
             case 'text': if (field.format === 'markdown' && target.block === undefined) return this.markdownControl(field, value, change, id); break;
             case 'blocks': return this.blocksControl(field);
-            case 'richtext': return component(RichTextField, {
+            // Rich text inside a block: the word processor alone, written in the tree.
+            case 'richtext': if (target.block !== undefined) return component(RichTextField, {
+                id, label: field.label, value: (value as RichTextDoc | null) ?? null, blocks: [], onChange: (doc: RichTextDoc) => change(doc),
+                onMedia: () => this.openPicker({ field: target.field, richText: true, editor: id }), onInsertBlock: () => undefined, onEditBlock: () => undefined,
+            });
+            return component(RichTextField, {
                 id, label: field.label, value: (value as RichTextDoc | null) ?? null,
-                blocks: (this.view?.blocks ?? []).filter(block => block.name !== 'core/pattern' && !block.input && (!field.blocks.length || field.blocks.includes(block.name))),
+                blocks: (this.view?.blocks ?? []).filter(block => block.name !== 'core/pattern' && !block.input && block.category !== 'data' && (!field.blocks.length || field.blocks.includes(block.name))),
                 onChange: (doc: RichTextDoc) => change(doc),
                 onMedia: () => this.openPicker({ field: field.name, richText: true }),
                 onInsertBlock: (type: string) => this.insertRichBlock(field.name, type),
                 onEditBlock: (block: EmbeddedBlock) => this.editRichBlock(field.name, block),
                 patternTitles: this.patternTitles,
-                // Patterns are not inserted into patterns.
-                ...(this.view?.route === 'patterns' ? {} : { onPatterns: () => this.openPatterns(field.name) }),
             });
             default: if (field.media && field.kind === 'string') return this.mediaControl(target, value, field.label);
         }
@@ -683,7 +776,11 @@ export default class EntryEditor extends Cossack {
     private blocksControl(field: EditorField): TemplateResult {
         return html`<div class="space-y-3">
             ${component(BlockTree, {
-                id: `field-${field.name}`, blocks: this.blocks(field.name), options: this.view?.blocks ?? [], allowed: field.blocks, form: field.form, inline: true, error: this.errors[field.name] ?? '', presets: this.view?.presets,
+                // Every block opens in the panel; in a form, with its conditional logic.
+                id: `field-${field.name}`, blocks: this.blocks(field.name), options: this.view?.blocks ?? [], allowed: field.blocks, form: field.form, error: this.errors[field.name] ?? '',
+                onEdit: (id: string) => this.editTreeBlock(field.name, id), lock: this.view?.templateLock,
+                // Patterns go into the content; not into forms, and not into patterns.
+                ...(field.form || this.view?.route === 'patterns' ? {} : { onPatterns: () => this.openPatterns(field.name) }),
                 onChange: (blocks: EditorBlock[]) => this.set(field.name, blocks),
                 control: (entry: EditorField, value: unknown, change: (value: unknown) => void, block: EditorBlock, id: string) => this.control(entry, value, change, { field: field.name, block: block.id, key: entry.name }, id),
             })}
@@ -906,30 +1003,30 @@ export default class EntryEditor extends Cossack {
                     <p class="text-sm text-muted-foreground">${__('This pattern shows its current content wherever it is used. Edit the pattern to change it everywhere, or detach it to change it only here.')}</p>
                     <div class="flex flex-wrap justify-end gap-2">
                         <a href=${`/dashboard/content/patterns/${id}`} target="_blank" rel="noopener" class="inline-flex items-center rounded-md border border-border px-3 py-1.5 text-sm text-foreground no-underline hover:bg-muted">${__('Edit pattern')} ↗</a>
-                        ${component(Button, { type: 'button', variant: 'outline', '@click': () => this.detachPattern() }, __('Detach'))}
+                        ${dialog.embedded ? null : component(Button, { type: 'button', variant: 'outline', '@click': () => this.detachPattern() }, __('Detach'))}
                         ${component(Button, { type: 'button', '@click': () => { this.blockDialog = null; } }, __('Done'))}
                     </div>
                 </div>`);
         }
-        const option = this.view?.blocks.find(block => block.name === dialog?.type);
-        return component(Modal, { open: Boolean(dialog && option), size: 'max-w-xl', 'aria-label': option?.label ?? __('Block'), onOpenChange: (open: boolean) => { if (!open) this.blockDialog = null; } }, dialog && option ? html`
-            <form class="space-y-4" @submit=${(event: Event) => { event.preventDefault(); this.saveRichBlock(); }}>
-                <h2 class="text-lg font-semibold text-foreground">${option.label}</h2>
-                ${option.description ? html`<p class="text-sm text-muted-foreground">${option.description}</p>` : null}
-                ${option.fields.map(entry => {
-                    const id = `block-${dialog.id}-${entry.name}`;
-                    return html`<div class="space-y-1">
-                        ${entry.kind === 'boolean' ? null : html`<label for=${id} class="block text-sm font-medium text-foreground">${entry.label}${entry.required ? ' *' : ''}</label>`}
-                        ${this.control(entry, dialog.values[entry.name], value => this.setDialogValue(entry.name, value), { field: dialog.field, key: entry.name, dialog: true }, id)}
-                        ${entry.description ? html`<p class="text-xs text-muted-foreground">${entry.description}</p>` : null}
-                        ${dialog.errors[entry.name] ? html`<p role="alert" class="text-xs text-destructive">${entry.label} ${dialog.errors[entry.name]}</p>` : null}
-                    </div>`;
-                })}
-                <div class="flex justify-end gap-2">
-                    ${component(Button, { type: 'button', variant: 'outline', '@click': () => { this.blockDialog = null; } }, __('Cancel'))}
-                    ${component(Button, { type: 'submit' }, __('Save block'))}
-                </div>
-            </form>` : html``);
+        const option = this.view?.blocks.find(block => block.name === dialog?.type) ?? null;
+        const fields = dialog && option ? option.fields.filter(entry => dialog.embedded || entry.kind !== 'richtext') : [];
+        return blockPanel({
+            id: 'entry-block', open: Boolean(dialog && option), option, tab: dialog?.tab ?? 'general', style: dialog?.style ?? styleValues({}), presets: this.view?.presets ?? { colors: [], fontSizes: [], spacing: [] },
+            styleTab: dialog ? !dialog.embedded : false, applyLabel: dialog?.embedded ? __('Save block') : __('Apply'),
+            onTab: tab => this.showDialogTab(tab), onStyle: style => this.setDialogStyle(style), onApply: () => this.applyBlockDialog(), onClose: () => { this.blockDialog = null; },
+            general: dialog && option ? html`${fields.length ? fields.map(entry => {
+                const id = `block-${dialog.id}-${entry.name}`;
+                return html`<div class="space-y-1">
+                    ${entry.kind === 'boolean' ? null : html`<label for=${id} class="block text-sm font-medium text-foreground">${entry.label}${entry.required ? ' *' : ''}</label>`}
+                    ${this.control(entry, dialog.values[entry.name], value => this.setDialogValue(entry.name, value), { field: dialog.field, key: entry.name, dialog: true }, id)}
+                    ${entry.description ? html`<p class="text-xs text-muted-foreground">${entry.description}</p>` : null}
+                    ${dialog.errors[entry.name] ? html`<p role="alert" class="text-xs text-destructive">${entry.label} ${dialog.errors[entry.name]}</p>` : null}
+                </div>`;
+            }) : html`<p class="text-sm text-muted-foreground">${__('This block has no settings.')}</p>`}
+            ${!dialog.embedded && this.view?.fields.find(entry => entry.name === dialog.field)?.form
+                ? conditionControl(dialog.when, conditionFields(this.blocks(dialog.field), this.view.blocks, dialog.id), `block-${dialog.id}`, when => { if (this.blockDialog) this.blockDialog = { ...this.blockDialog, ...(when ? { when } : { when: undefined }) }; })
+                : null}` : html``,
+        });
     }
 
     /** The theme template for this entry, when the active theme offers more than its default. */
@@ -953,8 +1050,19 @@ export default class EntryEditor extends Cossack {
         const view = this.view;
         if (!view) return html`<div class="space-y-4">${notice(this.error || __('Loading…'), this.error ? 'error' : 'info')}${linkButton(__('Back'), `/dashboard/content/${this.route}`, 'outline')}</div>`;
         const titleField = view.titleField;
-        const main = view.fields.filter(field => field.placement === 'main');
-        const sidebar = view.fields.filter(field => field.placement === 'sidebar');
+        // Fields the layout and the groups place; the rest keep their declared place.
+        const groupBlocks = [...view.layout, ...view.groups.flatMap(group => group.blocks)];
+        const laidOut = new Set(flattenGroupFields(plainBlocks(groupBlocks)).map(block => String(block.data.name ?? '')));
+        const main = view.fields.filter(field => field.placement === 'main' && !laidOut.has(field.name));
+        const sidebar = view.fields.filter(field => field.placement === 'sidebar' && !laidOut.has(field.name));
+        const hidden = fieldVisibility(plainBlocks(groupBlocks), visibilityTypes(view.blocks), this.values).hidden;
+        const groupView = (id: string, blocks: EditorBlock[]) => component(FieldGroupView, {
+            id, blocks, options: view.blocks, fields: view.fields, values: this.values, hidden, errors: this.errors,
+            onChange: (name: string, value: unknown) => this.set(name, value),
+            control: (field: EditorField, value: unknown, change: (value: unknown) => void, rows: RowPath, controlId: string) =>
+                this.control(field, value, change, rows.length ? { field: rows[0]!.field, rows, key: field.name } : { field: field.name }, controlId),
+        });
+        const groupBox = (group: EditorView['groups'][number]) => box(group.title, html`${group.description ? html`<p class="text-xs text-muted-foreground">${group.description}</p>` : null}${groupView(`group-${group.id}`, group.blocks)}`, { id: `group-${group.id}-title` });
         const base = `/dashboard/content/${view.route}`;
         // Forms have no URL: their slug names them where the Form block places them.
         const form = view.route === 'forms';
@@ -998,7 +1106,9 @@ export default class EntryEditor extends Cossack {
                         ${form ? html`<span class="basis-full text-xs">${__('Place the form on a page with the Form block and this slug.')}</span>` : null}
                         ${this.errorFor('slug')}
                     </div>` : null}
+                    ${view.layout.length ? groupView('layout', view.layout) : null}
                     ${main.map(field => this.fieldRow(field))}
+                    ${view.groups.filter(group => group.placement === 'main').map(groupBox)}
                     ${view.path !== null && this.values.seo !== undefined ? this.seoBox() : null}
                 </div>
                 <aside class="space-y-4">
@@ -1020,6 +1130,7 @@ export default class EntryEditor extends Cossack {
                     ${this.templateBox()}
                     ${view.taxonomies.map(taxonomy => this.taxonomyBox(taxonomy))}
                     ${sidebar.length ? box(__('Details'), sidebar.map(field => this.fieldRow(field))) : null}
+                    ${view.groups.filter(group => group.placement === 'sidebar').map(groupBox)}
                     ${this.comments ? box(__('Discussion'), html`<label class="flex items-center gap-2 text-sm text-foreground cursor-pointer">
                         ${component(Checkbox, { id: 'field-commentsOpen', checked: this.values.commentsOpen !== false, '@change': (event: Event) => this.set('commentsOpen', (event.target as HTMLInputElement).checked) })} ${__('Allow comments')}</label>
                         ${this.id === 'new' ? null : html`<a href=${`/dashboard/comments?collection=${view.route}&entry=${this.id}`} class="text-xs text-primary hover:underline">${__('Comments on this entry')}</a>`}`) : null}

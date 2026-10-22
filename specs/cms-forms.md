@@ -164,8 +164,9 @@ after the submission is committed.
   out. `/dashboard/forms` lists forms with their slug, fields, kept and new submissions,
   and whether they are accepting.
 - **The form editor is the entry editor** at `/dashboard/content/forms/<id>`, with what a
-  form needs: the block tree offers input blocks (other fields never do) and a
-  conditional logic control on each block's General tab, listing the form's inputs; the
+  form needs: the block tree offers input blocks (other fields never do), every block has
+  an Edit button, and the panel's General tab has a conditional logic control listing the
+  form's inputs (the tree marks a conditional block with "Shown if…" or "Hidden if…"); the
   slug shows with how to place the form; `notifications` is a list of emails (name,
   recipients, reply-to, subject, message, an optional condition) with a merge-tag list;
   a link opens the submissions. A separate screen would duplicate the editor's autosave,

@@ -5,9 +5,11 @@
 import { createHookRegistry, type ActionHandler, type ActionPoint, type FilterHandler, type FilterPoint, type HookRegistry } from '@cossackframework/core/hooks';
 import type { StorageProvider } from '@cossackframework/core/storage';
 import { ClientError, type FastDB, type Statement, type Value, type WorkLimits } from '@cossackframework/fastdb';
-import { blockMedia, blockProblems, validateBlocks, type Block, type BlockDeclaration } from '../blocks';
-import { blocksShapeProblem } from '../fields';
+import { blockId, blockMedia, blockProblems, validateBlocks, type Block, type BlockDeclaration } from '../blocks';
+import { blocksShapeProblem, type FieldDeclaration } from '../fields';
 import { collectionProblems, collectionResource, CORE_FIELDS, entryUrl, extendCollection, LOCALE, orderedFields, type CollectionDefinition } from '../collections';
+import { derivedFields, fieldGroupDeclarations, fieldGroupProblems, fieldVisibility, flattenGroupFields, metaProblems, sameTarget, type FieldGroup, type FieldGroupTarget } from '../field-groups';
+import { CmsFieldGroups } from './field-groups';
 import { CmsError } from '../errors';
 import type { CmsModule } from '../module';
 import { appearance, general, media, type SettingsGroup } from '../settings';
@@ -37,12 +39,12 @@ import { CmsRedirects } from './redirects';
 import { CmsApiTokens, type ApiTokenScope } from './api-tokens';
 import { CmsWebhooks } from './webhooks';
 import type { WebhookEvent } from '../webhooks';
-import { afterCommit, formSubmitted, type FormSubmittedEvent, type ResourceEvent } from '../hooks';
+import { afterCommit, commentBeforeSave, formSubmitted, menuBeforeSave, termBeforeSave, type FormSubmittedEvent, type ResourceEvent, type WriteActor } from '../hooks';
 import { CmsForms, type CmsMail } from './forms';
 import { CmsComments } from './comments';
 import { CmsSecurity } from './security';
 import type { ImageTransformer } from './images';
-import { checkComment, type CommentShape, type CommentStatus } from '../comments';
+import { checkComment, COMMENT_STATUSES, type CommentShape, type CommentStatus } from '../comments';
 import { sha256Hex } from './tokens';
 import type { SiteSettings } from '../settings';
 
@@ -118,6 +120,9 @@ export interface ThemeInfo {
     readonly version: string;
     readonly label: string;
     readonly description: string;
+    /** From the plugin's manifest; empty when it names none. */
+    readonly author: string;
+    readonly authorUrl: string;
     readonly locations: readonly { readonly name: string; readonly label: string }[];
     /** Its widget areas, its parent's first. */
     readonly areas: readonly { readonly name: string; readonly label: string }[];
@@ -193,6 +198,9 @@ export interface PluginStatus {
     readonly name: string;
     readonly version: string;
     readonly description: string;
+    /** From the manifest; empty when it names none. */
+    readonly author: string;
+    readonly authorUrl: string;
     /** Image URLs from the plugin's assets, or null for the default artwork. */
     readonly logo: string | null;
     readonly cover: string | null;
@@ -241,6 +249,8 @@ export class CmsHost {
     readonly menus: CmsMenus;
     /** Widget areas of themes: block lists edited under Appearance → Widgets. */
     readonly areas: CmsAreas;
+    /** Field groups: meta boxes attached to collections, taxonomies, users and menu items. */
+    readonly fieldGroups: CmsFieldGroups;
     readonly previews: CmsPreviews;
     readonly autosaves: CmsAutosaves;
     readonly redirects: CmsRedirects;
@@ -266,6 +276,8 @@ export class CmsHost {
     readonly #builtinCollections = new Map<string, CollectionDefinition>();
     readonly #builtinTaxonomies = new Map<string, TaxonomyDeclaration>();
     #collections = new Map<string, CollectionDefinition>();
+    /** Stored field groups, as last loaded; `#apply` merges their fields into the targets. */
+    #groups: readonly FieldGroup[] = [];
     #taxonomies = new Map<string, TaxonomyDeclaration>();
     readonly #blocks = new Map<string, BlockDeclaration & { readonly plugin?: string }>();
     readonly #themes = new Map<string, ThemeInfo>();
@@ -322,7 +334,8 @@ export class CmsHost {
             this.#blocks.set(block.name, Object.freeze({ ...block, ...(owner ? { plugin: owner } : {}) }));
         }
         this.#apply(new Map(), new Map());
-        this.users = new CmsUsers(this.db, { now: this.#now });
+        this.fieldGroups = new CmsFieldGroups(this.db, { now: this.#now });
+        this.users = new CmsUsers(this.db, { now: this.#now, checkMeta: (meta, previous) => this.#checkMeta({ kind: 'users' }, meta, previous) });
         this.redirects = new CmsRedirects(this.db, { now: this.#now });
         this.apiTokens = new CmsApiTokens(this.db, { now: this.#now });
         this.webhooks = new CmsWebhooks(this.db, { now: this.#now, fetch: this.#fetch });
@@ -347,6 +360,8 @@ export class CmsHost {
         this.taxonomies = new CmsTaxonomies(this.db, {
             taxonomies: () => this.#taxonomies,
             now: this.#now,
+            beforeSave: (draft, input) => this.hooks.applyFilters(termBeforeSave, draft, input),
+            checkMeta: taxonomy => (meta, previous) => this.#checkMeta({ kind: 'taxonomy', name: taxonomy }, meta, previous),
             usage: name => this.resources.flatMap(resource => Object.entries(resource.fields)
                 .filter(([, declaration]) => declaration.taxonomy === name).map(([field]) => ({ resource: resource.id, storage: resource.storage, field }))),
             canAssign: (principal, taxonomy) => this.taxonomies.usage(taxonomy.name).some(({ resource: id }) => {
@@ -367,7 +382,7 @@ export class CmsHost {
             this.#themes.set(theme.name, theme);
         }
         this.settings = new CmsSettings(this.db, groups, { now: this.#now });
-        this.menus = new CmsMenus(this.db, { now: this.#now, resolve: (items, locale) => this.#resolveMenu(items, locale) });
+        this.menus = new CmsMenus(this.db, { now: this.#now, checkMeta: (meta, previous) => this.#checkMeta({ kind: 'menus' }, meta, previous), resolve: (items, locale) => this.#resolveMenu(items, locale), beforeSave: (items, input) => this.hooks.applyFilters(menuBeforeSave, items, input) });
         this.areas = new CmsAreas(this.db, { now: this.#now, check: blocks => this.#checkBlocks(blocks) });
         this.previews = new CmsPreviews(this.db, { now: this.#now });
         this.autosaves = new CmsAutosaves(this.db, { now: this.#now });
@@ -624,8 +639,14 @@ export class CmsHost {
         }
         const status: CommentStatus = input.trap ? 'spam' : hasPermission(context.principal, PERMISSIONS.moderateComments) ? 'approved'
             : await commentStatus(fields, settings, () => this.comments.hasApproved(fields.authorEmail));
-        const comment = await this.comments.create({ id: crypto.randomUUID(), resource, recordId: record.id, parentId, userId: user?.id ?? null, ...fields,
-            status, ipHash, userAgent: context.userAgent?.slice(0, 300) ?? null });
+        // Plugins check, change or hold the comment: spam filters, profanity lists, extra rules.
+        const filtered = await this.hooks.applyFilters(commentBeforeSave, Object.freeze({ ...fields, status }), Object.freeze({
+            collection: collection.name, entry: record.id, parent: parentId, actor: writeActorOf(context.principal), ...(context.ip ? { ip: context.ip } : {}), ...(context.userAgent ? { userAgent: context.userAgent } : {}),
+        }));
+        if (!filtered || typeof filtered !== 'object' || !(COMMENT_STATUSES as readonly string[]).includes(filtered.status)) throw new CmsError('CMS_VALIDATION', 'A plugin returned an invalid comment.');
+        const checked = checkComment(filtered, !user && settings['discussion.requireNameEmail']);
+        const comment = await this.comments.create({ id: crypto.randomUUID(), resource, recordId: record.id, parentId, userId: user?.id ?? null, ...checked,
+            status: filtered.status, ipHash, userAgent: context.userAgent?.slice(0, 300) ?? null });
         const url = (await this.entryUrls(collection, [record])).get(record.id) ?? null;
         return { comment, collection, entry: record, url };
     }
@@ -976,15 +997,29 @@ export class CmsHost {
      * Create or change a collection. Its table and indexes change in one migration step that
      * also stores the definition; built-in collections store only their added fields.
      */
-    async saveCollection(input: CollectionDefinition, principal: Principal): Promise<CollectionDefinition> {
+    async saveCollection(given: CollectionDefinition, principal: Principal): Promise<CollectionDefinition> {
         this.#authorizeBuilder(principal);
         await this.ready({ force: true });
-        const before = this.#collections.get(input.name);
-        const builtin = this.#builtinCollections.get(input.name);
+        const before = this.#collections.get(given.name);
+        const builtin = this.#builtinCollections.get(given.name);
+        // A layout compiles to the fields; its field blocks are checked as a field group's.
+        let input = given;
+        if (given.layout !== undefined) {
+            const scope = [...CORE_FIELDS, ...(given.taxonomies ?? [])];
+            const checked = validateBlocks(Array.isArray(given.layout) ? given.layout : [], this.#blocks, { fieldGroup: { scope } });
+            const first = Object.entries(checked.errors)[0];
+            if (first) throw new CmsError('CMS_VALIDATION', `Layout block ${first[0]}: ${first[1]}`, { fields: { layout: `${first[0]}: ${first[1]}` } });
+            const fields = fieldGroupDeclarations(checked.blocks, this.#blocks);
+            for (const [name, declaration] of Object.entries(builtin?.fields ?? {})) if (Object.hasOwn(fields, name)) fields[name] = declaration;
+            input = { ...given, fields, fieldOrder: Object.keys(fields), layout: checked.blocks };
+        }
         const stored: CollectionDefinition = builtin ? {
             name: input.name, label: input.label, singular: input.singular, ...(input.description !== undefined ? { description: input.description } : {}),
             ...(input.icon !== undefined ? { icon: input.icon } : {}), ...(input.path !== undefined ? { path: input.path } : {}),
             ...(input.comments !== undefined ? { comments: input.comments } : {}),
+            ...(input.template !== undefined ? { template: input.template } : {}),
+            ...(input.templateLock !== undefined ? { templateLock: input.templateLock } : {}),
+            ...(input.layout !== undefined ? { layout: input.layout } : {}),
             taxonomies: (input.taxonomies ?? []).filter(name => !(builtin.taxonomies ?? []).includes(name)),
             fields: Object.fromEntries(Object.entries(input.fields ?? {}).filter(([name]) => !Object.hasOwn(builtin.fields, name))),
             // The module's fields are not stored, so their place among the added ones is.
@@ -998,8 +1033,16 @@ export class CmsHost {
             if (declaration.kind === 'reference' && declaration.target !== `cms/${definition.name}` && !this.#resources.has(declaration.target!)) problems.push(`Field ${name} refers to ${declaration.target}, which does not exist.`);
             for (const type of declaration.blocks ?? []) if (!this.#blocks.has(type)) problems.push(`Field ${name} allows ${type}, which is not a block type.`);
         }
+        // The content template is checked like an entry's blocks, against the content field's allowed types.
+        if (definition.template?.length && !problems.length) {
+            const content = Object.values(definition.fields).find(declaration => declaration.kind === 'blocks');
+            const { errors } = validateBlocks(definition.template, this.#blocks, content?.blocks ? { allowed: content.blocks } : {});
+            problems.push(...Object.entries(errors).map(([path, message]) => `Template block ${path}: ${message}`));
+        }
         if (problems.length) throw new CmsError('CMS_VALIDATION', problems.join(' '), { fields: { definition: problems.join(' ') } });
-        const resource = resolveResource(collectionResource(definition, this.#taxonomyLabels()), 'cms');
+        const groups = this.#groupFields({ kind: 'collection', name: definition.name });
+        const merged = { ...definition.fields, ...groups.fields };
+        const resource = resolveResource(collectionResource({ ...definition, fields: { ...merged, ...derivedFields(merged) } }, this.#taxonomyLabels()), 'cms');
         const row: Statement = {
             sql: 'INSERT INTO cms_collections (name, definition, updated_at, updated_by) VALUES ($name, $definition, $now, $by) ON CONFLICT (name) DO UPDATE SET definition = excluded.definition, updated_at = excluded.updated_at, updated_by = excluded.updated_by',
             params: { $name: definition.name, $definition: JSON.stringify(stored), $now: this.#now(), $by: principalId(principal) },
@@ -1353,7 +1396,117 @@ export class CmsHost {
         const parse = <T>(rows: readonly (readonly unknown[])[]) => new Map(rows.flatMap(([name, definition]) => {
             try { return [[name as string, JSON.parse(definition as string) as T] as const]; } catch { return []; }
         }));
+        this.fieldGroups.reset();
+        this.#groups = await this.fieldGroups.all();
         this.#apply(parse<CollectionDefinition>(collections), parse<TaxonomyDeclaration>(taxonomies));
+    }
+
+    /** The groups attached to a target, in order. */
+    #groupsFor(target: FieldGroupTarget): FieldGroup[] {
+        return this.#groups.filter(group => group.targets.some(entry => sameTarget(entry, target)));
+    }
+
+    /** A target's fields from its groups, after the group blocks are checked against the current types. */
+    #groupFields(target: FieldGroupTarget): { fields: { [name: string]: FieldDeclaration }; layout: Block[] } {
+        const fields: { [name: string]: FieldDeclaration } = {};
+        const layout: Block[] = [];
+        for (const group of this.#groupsFor(target)) {
+            const { blocks } = validateBlocks(group.blocks, this.#blocks, { fieldGroup: true });
+            Object.assign(fields, fieldGroupDeclarations(blocks, this.#blocks));
+            layout.push(...blocks);
+        }
+        return { fields, layout };
+    }
+
+    /**
+     * A target's meta as it is stored: the groups' fields checked, hidden fields cleared, the
+     * fields the input leaves out kept from `previous`.
+     */
+    async #checkMeta(target: FieldGroupTarget, meta: unknown, previous: { readonly [field: string]: unknown } | null): Promise<{ readonly [field: string]: unknown }> {
+        const { fields, layout } = this.#groupFields(target);
+        if (meta !== undefined && (meta === null || typeof meta !== 'object' || Array.isArray(meta))) throw new CmsError('CMS_VALIDATION', 'Meta must be an object of fields.', { fields: { meta: 'must be an object of fields.' } });
+        const merged = { ...previous, ...(meta as { [field: string]: unknown } | undefined) };
+        const { errors, values } = metaProblems(fields, merged, () => blockId());
+        const { hidden, values: cleared } = fieldVisibility(layout, this.#blocks, values);
+        const names = new Map(flattenGroupFields(layout).map(block => [block.id, block.data.name as string]));
+        for (const key of hidden) { const name = key.includes('/') ? undefined : names.get(key); if (name) { delete errors[name]; delete cleared[name]; } }
+        if (Object.keys(errors).length) throw new CmsError('CMS_VALIDATION', Object.entries(errors).map(([name, error]) => `${fields[name]?.label ?? name} ${error}`).join(' '), { fields: errors });
+        return cleared;
+    }
+
+    /** The field groups attached to a target, with their blocks, for editors. */
+    fieldGroupsFor(target: FieldGroupTarget): FieldGroup[] {
+        return this.#groupsFor(target);
+    }
+
+    /** Field names a group attached to the target cannot take: the target's own, core fields included. */
+    #targetScope(target: FieldGroupTarget): string[] {
+        switch (target.kind) {
+            case 'collection': {
+                const definition = this.#collections.get(target.name);
+                return [...CORE_FIELDS, ...(definition?.taxonomies ?? []), ...Object.keys(definition?.fields ?? {})];
+            }
+            case 'taxonomy': return ['name', 'slug', 'description', 'parent', 'icon', 'path', 'depth', 'taxonomy'];
+            case 'users': return ['email', 'name', 'avatar', 'status', 'roles', 'password'];
+            case 'menus': return ['label', 'kind', 'url', 'collection', 'entry', 'taxonomy', 'term', 'newTab', 'className', 'attributes', 'children'];
+        }
+    }
+
+    /** Save a field group: checked against the block types and each target's own fields, then the targets' schemas are planned. */
+    async saveFieldGroup(input: FieldGroup, principal: Principal): Promise<FieldGroup> {
+        this.#authorizeBuilder(principal);
+        await this.ready({ force: true });
+        const problems: string[] = [];
+        for (const target of input.targets ?? []) {
+            if (target.kind === 'collection' && !this.#collections.has(target.name)) problems.push(`Collection ${target.name} does not exist.`);
+            if (target.kind === 'taxonomy' && !this.#taxonomies.has(target.name)) problems.push(`Taxonomy ${target.name} does not exist.`);
+        }
+        const scope = [...new Set((input.targets ?? []).flatMap(target => this.#targetScope(target)))];
+        const checked = fieldGroupProblems(input, this.#blocks, scope);
+        problems.push(...checked.problems);
+        // Names are distinct across the groups of one target.
+        for (const target of input.targets ?? []) for (const other of this.#groupsFor(target)) {
+            if (other.id === input.id) continue;
+            for (const name of Object.keys(fieldGroupDeclarations(other.blocks, this.#blocks))) if (Object.hasOwn(checked.fields, name)) problems.push(`Field ${name} is already in the group “${other.title}”.`);
+        }
+        for (const [name, declaration] of Object.entries(checked.fields)) {
+            if (declaration.kind === 'reference' && !this.#resources.has(declaration.target!)) problems.push(`Field ${name} refers to ${declaration.target}, which does not exist.`);
+            for (const type of declaration.blocks ?? []) if (!this.#blocks.has(type)) problems.push(`Field ${name} allows ${type}, which is not a block type.`);
+        }
+        if (problems.length) throw new CmsError('CMS_VALIDATION', problems.join(' '), { fields: { definition: problems.join(' ') } });
+        const group: FieldGroup = {
+            id: input.id, title: input.title.trim(), ...(input.description?.trim() ? { description: input.description.trim() } : {}),
+            ...(input.placement ? { placement: input.placement } : {}), ...(input.order !== undefined ? { order: input.order } : {}),
+            targets: [...input.targets], blocks: checked.blocks,
+        };
+        await this.fieldGroups.put(group, principal);
+        await this.#migrateTargets(group, principal);
+        return (await this.fieldGroups.get(group.id))!;
+    }
+
+    async deleteFieldGroup(id: string, principal: Principal): Promise<void> {
+        this.#authorizeBuilder(principal);
+        const group = await this.fieldGroups.get(id);
+        if (!group) throw new CmsError('CMS_NOT_FOUND', 'Field group not found.');
+        await this.fieldGroups.remove(id);
+        await this.#migrateTargets(group, principal);
+    }
+
+    /** Re-resolve the collections a group touches and plan their schemas: indexes come and go, old values stay. */
+    async #migrateTargets(group: FieldGroup, principal: Principal): Promise<void> {
+        this.#activation = undefined;
+        await this.ready({ force: true });
+        const ids = group.targets.filter(target => target.kind === 'collection').map(target => `cms/${(target as { name: string }).name}`).filter(id => this.#resources.has(id));
+        if (!ids.length) return;
+        const resources = [...this.#resources.values()];
+        const plan = await planSchema(resources, await readCatalog(this.db, resources.filter(entry => ids.includes(entry.id)).map(entry => entry.storage)));
+        const blocked = plan.blocked.filter(problem => ids.includes(problem.resource));
+        if (blocked.length) throw new CmsError('CMS_VALIDATION', blocked.map(problem => problem.message).join(' '));
+        const report = await migrate(this.db, resources, { now: this.#now, only: ids });
+        if (report.failed) throw new CmsError('CMS_CONFLICT', `The schema could not be updated: ${report.failed.message}`);
+        void principal;
+        this.#activation = undefined;
+        await this.ready({ force: true });
     }
 
     /** Rebuild the registry from built-ins and stored definitions. Invalid stored definitions are skipped. */
@@ -1377,7 +1530,11 @@ export class CmsHost {
             const known = { ...definition, taxonomies: (definition.taxonomies ?? []).filter(name => taxonomies.has(name)) };
             if (collectionProblems(known).length || this.#static.has(`cms/${known.name}`)) continue;
             try {
-                const resource = resolveResource(collectionResource(known, labels), 'cms');
+                // The collection's own fields, then its groups', then the lists derived from rows for filtering.
+                const groups = this.#groupFields({ kind: 'collection', name: known.name });
+                const fields = { ...known.fields, ...groups.fields };
+                const layout = [...(known.layout ?? []), ...groups.layout];
+                const resource = resolveResource({ ...collectionResource({ ...known, fields: { ...fields, ...derivedFields(fields) } }, labels), ...(layout.length ? { layout } : {}) }, 'cms');
                 const previous = this.#resources.get(resource.id);
                 // Keep the same object when nothing changed, so callers holding it stay current. Field order counts.
                 resources.set(resource.id, previous && canonicalJson(previous) === canonicalJson(resource) && sameKeyOrder(previous.fields, resource.fields) ? previous : resource);
@@ -1409,7 +1566,7 @@ export class CmsHost {
         if (options && (groups.has(options.id) || !/^[a-z][a-z0-9-]{0,40}$/.test(options.id))) problems.push(`Its options need a settings group named ${options.id}, which is taken or too long.`);
         const named = (entries: { readonly [name: string]: string }) => Object.entries(entries).map(([name, label]) => ({ name, label }));
         return Object.freeze({
-            name: plugin.registration.name, version: plugin.registration.version,
+            name: plugin.registration.name, version: plugin.registration.version, ...authorOf(plugin),
             label: typeof manifest?.label === 'string' ? manifest.label : plugin.registration.name, description: typeof manifest?.description === 'string' ? manifest.description : '',
             locations: named({ ...inherited?.locations, ...manifest?.locations }), areas: named({ ...inherited?.areas, ...manifest?.areas }),
             parent: inherited ? manifest.extends! : null, ...artwork(plugin), options, presets: layerPresets(inherited?.presets, manifest?.presets), problems,
@@ -1470,7 +1627,8 @@ export class CmsHost {
                 target = term && taxonomy?.path ? { title: term.name, url: `${translate ? this.localePrefix(locale, languages) : ''}/${taxonomy.path}/${term.slug}` } : undefined;
             }
             if (!target?.url) return children;
-            return [Object.freeze({ id: item.id, label: item.label || target.title, url: target.url, newTab: item.newTab === true, kind: item.kind, children: Object.freeze(children) })];
+            return [Object.freeze({ id: item.id, label: item.label || target.title, url: target.url, newTab: item.newTab === true, kind: item.kind,
+                className: item.className ?? '', attributes: Object.freeze({ ...item.attributes }), meta: Object.freeze({ ...item.meta }), children: Object.freeze(children) })];
         });
         return resolve(items);
     }
@@ -1533,7 +1691,7 @@ export class CmsHost {
 
     async #pluginStatus(plugin: HostedPlugin, state: Activation): Promise<PluginStatus> {
         const themeOnly = isThemeOnly(plugin.manifest);
-        const base = { name: plugin.registration.name, version: plugin.registration.version, description: typeof plugin.manifest.description === 'string' ? plugin.manifest.description : '', ...artwork(plugin), themeOnly };
+        const base = { name: plugin.registration.name, version: plugin.registration.version, description: typeof plugin.manifest.description === 'string' ? plugin.manifest.description : '', ...authorOf(plugin), ...artwork(plugin), themeOnly };
         if (plugin.problems.length) return { ...base, active: false, reason: `Invalid manifest: ${plugin.problems.join(' ')}`, missing: [] };
         // A theme alone runs nothing on the server: choosing it under Appearance is all it needs.
         if (themeOnly) return { ...base, active: true, missing: [] };
@@ -1584,6 +1742,10 @@ function sameKeyOrder(a: object, b: object): boolean {
 }
 
 /** Where a visitor's comment goes: spam for disallowed words, held for links or moderation rules, else approved. */
+function writeActorOf(principal: Principal): WriteActor {
+    return { kind: principal.kind, id: principalId(principal) };
+}
+
 async function commentStatus(fields: { content: string; authorName: string; authorEmail: string; authorUrl: string }, settings: SiteSettings, approvedBefore: () => Promise<boolean>): Promise<CommentStatus> {
     const text = `${fields.content}\n${fields.authorName}\n${fields.authorEmail}\n${fields.authorUrl}`.toLowerCase();
     const blocked = settings['discussion.blockedWords'].split('\n').map(word => word.trim().toLowerCase()).filter(Boolean);
@@ -1609,6 +1771,10 @@ function isThemeOnly(manifest: CmsPluginManifest): boolean {
 }
 
 /** The plugin's logo and cover: the manifest's files, else `assets/logo.*` and `assets/cover.*`. */
+function authorOf(plugin: HostedPlugin): { author: string; authorUrl: string } {
+    return { author: typeof plugin.manifest.author === 'string' ? plugin.manifest.author.trim() : '', authorUrl: typeof plugin.manifest.authorUrl === 'string' ? plugin.manifest.authorUrl : '' };
+}
+
 function artwork(plugin: HostedPlugin): { logo: string | null; cover: string | null } {
     const assets = plugin.registration.assets ?? {};
     const pick = (declared: unknown, name: string) => (typeof declared === 'string' ? assets[declared] : undefined)

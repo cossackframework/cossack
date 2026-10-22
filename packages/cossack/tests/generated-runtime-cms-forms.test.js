@@ -42,7 +42,7 @@ async function contactPage(origin, routeIds, diagnostics) {
   };
   const created = await json('/api/cms/content/forms', 'POST', { title: 'Contact', body: CONTACT, settings: { message: 'Thanks, **{field:name}**!' } });
   expect(created.item.slug).toBe('contact');
-  await json('/api/cms/content/pages', 'POST', { title: 'Write to us', status: 'published', body: doc(paragraph('We answer within a day.'), { type: 'cmsBlock', attrs: { id: 'f1', type: 'core/form', data: { form: 'contact' } } }) });
+  await json('/api/cms/content/pages', 'POST', { title: 'Write to us', status: 'published', content: [{ id: 'rt', type: 'core/richtext', data: { text: doc(paragraph('We answer within a day.')) } }, { id: 'f1', type: 'core/form', data: { form: 'contact' } }] });
   return { web, form: created.item };
 }
 
@@ -246,19 +246,29 @@ describe.skipIf(!liveFastDBTests())('generated CMS forms', () => {
         await picker.getByRole('button', { name, exact: true }).click();
         await browserExpect(picker).toBeHidden();
       };
+      // A block's settings, conditional logic included, are in its panel.
+      const editBlock = async (region, type, fill) => {
+        await admin.getByRole('region', { name: region }).getByRole('button', { name: `Edit ${type}` }).click();
+        const panel = admin.getByRole('dialog', { name: type });
+        await fill(panel);
+        await panel.getByRole('button', { name: 'Apply' }).click();
+        await browserExpect(panel).toBeHidden();
+      };
       await admin.goto(`${origin}/dashboard/content/forms/new`);
       await ready();
       await admin.getByPlaceholder('Add title').fill('Newsletter');
       await addBlock('email', 'Email');
-      await admin.getByRole('region', { name: 'Email 1' }).getByLabel('Label *').fill('Your email');
+      await editBlock('Email 1', 'Email', panel => panel.getByLabel('Label *').fill('Your email'));
       await addBlock('checkbox', 'Checkbox');
-      await admin.getByRole('region', { name: 'Checkbox 2' }).getByLabel('Label *').fill('Tell us more');
+      await editBlock('Checkbox 2', 'Checkbox', panel => panel.getByLabel('Label *').fill('Tell us more'));
       await addBlock('text', 'Text');
-      const more = admin.getByRole('region', { name: 'Text 3' });
-      await more.getByLabel('Label *').fill('Interests');
-      await more.getByLabel('Conditional logic').check();
-      await more.getByLabel('Field', { exact: true }).selectOption('tellUsMore');
-      await more.getByLabel('Value', { exact: true }).fill('true');
+      await editBlock('Text 3', 'Text', async panel => {
+        await panel.getByLabel('Label *').fill('Interests');
+        await panel.getByLabel('Conditional logic').check();
+        await panel.getByLabel('Field', { exact: true }).selectOption('tellUsMore');
+        await panel.getByLabel('Value', { exact: true }).fill('true');
+      });
+      await browserExpect(admin.getByRole('region', { name: 'Text 3' }).getByText('Shown if…')).toBeVisible();
       await admin.getByRole('button', { name: 'Add notification' }).click();
       await admin.getByRole('button', { name: 'Save', exact: true }).click();
       await admin.waitForURL(/\/dashboard\/content\/forms\/[0-9a-f-]{36}\?saved=1$/);

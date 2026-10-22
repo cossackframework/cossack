@@ -35,6 +35,10 @@ export interface TermShape {
     readonly slug: string;
     readonly description: string;
     readonly parent: string | null;
+    /** Solar icon name chosen for the term, or empty. */
+    readonly icon: string;
+    /** Values of the field groups attached to the taxonomy. */
+    readonly meta: { readonly [field: string]: unknown };
     /** Ancestor IDs and its own, such as `/a/b/`. */
     readonly path: string;
     /** 0 for a top-level term. */

@@ -125,11 +125,12 @@ and stronger sign-in.
 
 ### Patterns
 
-- **Collection.** A built-in `patterns` collection (private, not publishable): title, rich text
+- **Collection.** A built-in `patterns` collection (private, not publishable): title, blocks
   `content`, `synced` and `starter` (the collections it starts new entries of).
 - **Synced patterns** insert a `core/pattern` block that renders the pattern's current
-  content, so editing it updates every use. **Unsynced** patterns insert a copy. A synced block
-  can be detached into a copy. Patterns are not expanded inside patterns.
+  blocks, so editing it updates every use. **Unsynced** patterns insert a copy of the blocks.
+  A synced block can be detached into a copy. Patterns are not expanded inside patterns.
+  (Since [CMS editing](cms-editing.md) patterns are blocks, not rich text.)
 - **Starting layouts.** A new entry of a collection with starter patterns offers them.
 - **Rendering.** Site pages resolve patterns with a system principal; the content API returns
   them in `patterns`.
@@ -170,7 +171,7 @@ and stronger sign-in.
   imports the server entry): the stub throws in the browser and client navigation stops.
   `languageName` moved to `@cossackframework/cms`.
 - **Blocks.** A block type names a Solar `icon` and a `category` (text, media, design,
-  widgets, embeds; default widgets). Blocks fields and rich text share a block picker
+  widgets, embeds, form, data; default widgets). Blocks fields and rich text share a block picker
   grouped by category, with search. Tools → Blocks groups them too.
 - **Titles.** A required text field rejects blank text on the server; the editor stops a
   blank title before sending. Move to trash changes only the status.

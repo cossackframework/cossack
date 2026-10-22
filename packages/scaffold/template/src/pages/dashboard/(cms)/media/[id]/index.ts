@@ -3,7 +3,8 @@ import { AlertDialog, Button, Card, CardBody, Field, Input, Textarea, toast } fr
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
 import { formatBytes, imageUrl, isCmsError, mediaKind, mediaUrl, PERMISSIONS, transformable, type ImageEdits, type ImageRect, type MediaKind } from '@cossackframework/cms';
 import { requireAny } from '../../../../../cms/guards';
-import { notice, pageHeader, shortDate } from '../../../../../cms/ui';
+import { mediaUsage, type MediaUse } from '../../../../../cms/media-usage';
+import { notice, pageHeader, shortDate, statusBadge } from '../../../../../cms/ui';
 
 interface Details { title: string; alt: string; caption: string; description: string }
 
@@ -19,6 +20,8 @@ export default class MediaDetails extends Cossack {
     @State() details: Details = { title: '', alt: '', caption: '', description: '' };
     @State() error = '';
     @State() confirmDelete = false;
+    /** Entries and widget areas that use the file. */
+    @State() usage: MediaUse[] = [];
     /** Image editing: available when the host resizes images. */
     @State() editable = false;
     @State() source = { width: 0, height: 0, version: 0 };
@@ -46,6 +49,7 @@ export default class MediaDetails extends Cossack {
         this.source = { width: file.width ?? 0, height: file.height ?? 0, version: file.updatedAt };
         this.crop = file.edits?.crop ?? null;
         this.focus = file.edits?.focus ?? null;
+        this.usage = await mediaUsage(cms, file.id, this.c.get('principal'));
     }
 
     // --- Crop and focal point ------------------------------------------------------
@@ -283,11 +287,18 @@ export default class MediaDetails extends Cossack {
                             ${component(Button, { type: 'submit' }, __('Update'))}
                         </div>
                     </form>
+                    <section class="rounded-lg border border-border p-4" aria-labelledby="media-usage">
+                        <h2 id="media-usage" class="text-sm font-semibold text-foreground">${__('Used in')}</h2>
+                        ${this.usage.length ? html`<ul class="mt-2 space-y-1.5 text-sm">${this.usage.map(use => html`<li class="flex items-center justify-between gap-2">
+                            <span class="min-w-0 truncate"><a href=${use.href} class="text-primary hover:underline">${use.title}</a> <span class="text-xs text-muted-foreground">${use.kind}</span></span>
+                            ${use.status && use.status !== 'published' ? statusBadge(use.status) : null}</li>`)}</ul>`
+                            : html`<p class="mt-2 text-xs text-muted-foreground">${__('No entry uses this file.')}</p>`}
+                    </section>
                 </div>
             </div>
             ${component(AlertDialog, {
                 id: 'delete-media-dialog', open: this.confirmDelete, title: __('Delete this file?'),
-                description: __('Entries that use it will show nothing in its place. This cannot be undone.'),
+                description: this.usage.length ? `${this.usage.length} ${this.usage.length === 1 ? __('entry uses this file and will show nothing in its place.') : __('entries use this file and will show nothing in its place.')} ${__('This cannot be undone.')}` : __('This cannot be undone.'),
                 cancelLabel: __('Cancel'), actionLabel: __('Delete'), actionVariant: 'destructive',
                 onAction: () => { this.confirmDelete = false; void this.deleteFile(); }, onOpenChange: () => { this.confirmDelete = false; },
             })}

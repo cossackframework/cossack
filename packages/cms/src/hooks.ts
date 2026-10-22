@@ -5,6 +5,9 @@
 import { defineAction, defineFilter } from '@cossackframework/core/hooks';
 import type { RecordShape } from './records';
 import type { FormField, FormValues, NotificationRule, SubmissionShape } from './form-builder';
+import type { CommentStatus } from './comments';
+import type { MenuItem } from './menus';
+import type { TermShape } from './taxonomy';
 
 export interface WriteActor {
     readonly kind: 'user' | 'system' | 'anonymous';
@@ -112,4 +115,99 @@ export interface FormSubmittedEvent {
 /** After a submission is committed, run from the outbox, as Gravity Forms' `gform_after_submission`. Deliveries can repeat. */
 export const formSubmitted = defineAction<FormSubmittedEvent>('cms.form.submitted', { version: 1, timeoutMs: 10_000 });
 
-export const EXTENSION_POINTS = Object.freeze([beforeWrite, afterCommit, formValidate, formBeforeSubmit, formPrefill, formConfirmation, formNotification, formSubmitted]);
+// --- Terms, comments and menus --------------------------------------------------------
+
+/** A term about to be written: what the dashboard or the API sent, after the host's own checks. */
+export interface TermDraft {
+    readonly name: string;
+    readonly slug: string;
+    readonly description: string;
+    readonly parent: string | null;
+    /** Solar icon name, or empty. */
+    readonly icon: string;
+    /** Values of the field groups attached to the taxonomy, checked before the filter runs. */
+    readonly meta: { readonly [field: string]: unknown };
+}
+
+export interface TermWriteInput {
+    readonly taxonomy: string;
+    readonly action: 'create' | 'update';
+    /** The term's ID; null on create until the host assigns it. */
+    readonly id: string | null;
+    readonly previous: TermShape | null;
+    readonly actor: WriteActor;
+}
+
+/** Adjust or reject a term before it is saved, such as to derive slugs your own way. Throw to reject. */
+export const termBeforeSave = defineFilter<TermDraft, TermWriteInput>('cms.term.before-save', { version: 1, timeoutMs: 2_000 });
+
+/** A comment about to be stored, with the status the Discussion settings chose for it. */
+export interface CommentDraft {
+    readonly content: string;
+    readonly authorName: string;
+    readonly authorEmail: string;
+    readonly authorUrl: string;
+    readonly status: CommentStatus;
+}
+
+export interface CommentWriteInput {
+    readonly collection: string;
+    readonly entry: string;
+    readonly parent: string | null;
+    readonly actor: WriteActor;
+    readonly ip?: string;
+    readonly userAgent?: string;
+}
+
+/**
+ * Moderate, check or change a comment before it is stored: return it with `status: 'spam'` to
+ * hold it, or throw a validation error to refuse it.
+ */
+export const commentBeforeSave = defineFilter<CommentDraft, CommentWriteInput>('cms.comment.before-save', { version: 1, timeoutMs: 3_000 });
+
+export interface MenuWriteInput {
+    /** The menu's ID; null while it is created. */
+    readonly id: string | null;
+    readonly name: string;
+    readonly actor: WriteActor;
+}
+
+/** Adjust or reject a menu's items before they are saved. They are checked again after. */
+export const menuBeforeSave = defineFilter<readonly MenuItem[], MenuWriteInput>('cms.menu.before-save', { version: 1, timeoutMs: 2_000 });
+
+// --- Dashboard lists -----------------------------------------------------------------------
+
+/** An action in an entry's row or the bulk actions menu: a link, or a plugin command to run. */
+export interface EntryAction {
+    readonly label: string;
+    /** Where the action goes. */
+    readonly href?: string;
+    /** The plugin command to run instead, with `{ resource, id }` or `{ resource, ids }` as its input. */
+    readonly command?: { readonly plugin: string; readonly name: string };
+    /** Shown in the destructive colour. */
+    readonly danger?: boolean;
+    /** A question to confirm before running. */
+    readonly confirm?: string;
+}
+
+/** A column a plugin adds to an entries list: its values by record ID. */
+export interface EntryColumn {
+    readonly id: string;
+    readonly label: string;
+    readonly values: { readonly [recordId: string]: string };
+}
+
+export interface EntryListInput {
+    readonly resource: string;
+    readonly actor: WriteActor;
+}
+
+/** The quick actions under an entry in its list: add yours to the built-in ones. */
+export const entryActions = defineFilter<readonly EntryAction[], EntryListInput & { readonly record: RecordShape }>('cms.dashboard.entry-actions', { version: 1, timeoutMs: 1_000 });
+/** Columns of an entries list after the built-in ones, with values for the records shown. */
+export const entryColumns = defineFilter<readonly EntryColumn[], EntryListInput & { readonly records: readonly RecordShape[] }>('cms.dashboard.entry-columns', { version: 1, timeoutMs: 2_000 });
+/** Actions offered for the selected entries of a list, after the built-in ones. */
+export const bulkActions = defineFilter<readonly EntryAction[], EntryListInput>('cms.dashboard.bulk-actions', { version: 1, timeoutMs: 1_000 });
+
+export const EXTENSION_POINTS = Object.freeze([beforeWrite, afterCommit, formValidate, formBeforeSubmit, formPrefill, formConfirmation, formNotification, formSubmitted,
+    termBeforeSave, commentBeforeSave, menuBeforeSave, entryActions, entryColumns, bulkActions]);

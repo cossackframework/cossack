@@ -19,7 +19,7 @@ const NO_VALUE = new Set<ConditionOperator>(['empty', 'notEmpty']);
 
 /** The inputs of an editor's form tree, in order, named as the server will name them. */
 export function conditionFields(blocks: readonly EditorBlock[], options: readonly BlockOption[], except?: string): ConditionField[] {
-    const inputs = new Set(options.filter(option => option.input).map(option => option.name));
+    const inputs = new Set(options.filter(option => option.input || option.field).map(option => option.name));
     const fields: ConditionField[] = [];
     const walk = (list: readonly EditorBlock[]) => {
         for (const block of list) {

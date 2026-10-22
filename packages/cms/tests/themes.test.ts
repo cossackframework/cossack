@@ -228,7 +228,7 @@ describe.skipIf(!live)('themes: loaders', () => {
         expect(saved.blocks).toEqual([{ id: 'p', type: 'core/paragraph', data: { text: 'Styled' }, style: { background: 'brand', align: 'center' }, layout: { anchor: 'intro', className: 'hero' } }]);
         // A design block supports colour and spacing; an unsupported property is dropped, not refused (the unit tests cover the drop).
         const divider = await cms.areas.save('sidebar', [{ id: 'd', type: 'core/divider', data: {}, style: { ...blocks[1]!.style, fontSize: 'large' } }], { principal: admin, expectedRevision: 3, known });
-        expect(divider.blocks[0]).toEqual({ id: 'd', type: 'core/divider', data: {}, style: { background: 'brand', padding: 'large' } });
+        expect(divider.blocks[0]).toEqual({ id: 'd', type: 'core/divider', data: { orientation: 'horizontal', thickness: 'thin', width: 'full' }, style: { background: 'brand', padding: 'large' } });
         const settings = await cms.settings.update('appearance', { presets: { 'folio-dark': { colors: { brand: '#0a0' }, custom: [{ slug: 'mine', name: 'Mine', value: '#123' }] } }, customCss: '.hero { color: red }' }, { principal: admin });
         expect(settings['appearance.presets']).toEqual({ 'folio-dark': { colors: { brand: '#0a0' }, custom: [{ slug: 'mine', name: 'Mine', value: '#123' }] } });
         expect(settings['appearance.customCss']).toBe('.hero { color: red }');

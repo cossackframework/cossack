@@ -5,7 +5,7 @@ import { isCmsError, PERMISSIONS } from '@cossackframework/cms';
 import { requireAny } from '../../../../cms/guards';
 import { artwork, linkButton, notice, pageHeader } from '../../../../cms/ui';
 
-interface ThemeRow { name: string; label: string; description: string; version: string; locations: string[]; parent: string; options: boolean; problems: string[]; active: boolean; logo: string | null; cover: string | null }
+interface ThemeRow { name: string; label: string; description: string; version: string; author: string; authorUrl: string; locations: string[]; parent: string; options: boolean; problems: string[]; active: boolean; logo: string | null; cover: string | null }
 
 /** Themes, WordPress style: every theme plugin as a card, the active one first. */
 @Page({ transport: 'http', middlewares: [requireAny(PERMISSIONS.manageAppearance)] })
@@ -27,7 +27,7 @@ export default class ThemesPage extends Cossack {
         const active = await cms.activeTheme();
         const labels = new Map(cms.themes().map(theme => [theme.name, theme.label]));
         this.themes = cms.themes().map(theme => ({
-            name: theme.name, label: theme.label, description: theme.description, version: theme.version, locations: theme.locations.map(location => location.label),
+            name: theme.name, label: theme.label, description: theme.description, version: theme.version, author: theme.author, authorUrl: theme.authorUrl, locations: theme.locations.map(location => location.label),
             parent: theme.parent ? labels.get(theme.parent) ?? theme.parent : '',
             options: Boolean(theme.options), problems: [...theme.problems], active: theme.name === active, logo: theme.logo, cover: theme.cover,
         })).sort((a, b) => Number(b.active) - Number(a.active));
@@ -57,13 +57,14 @@ export default class ThemesPage extends Cossack {
             ${this.themes.length ? html`<ul class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">${this.themes.map(theme => html`<li>
                 ${component(Card, { class: `overflow-hidden ${theme.active ? 'ring-2 ring-primary' : ''}` }, html`
                     ${artwork('cover', theme.cover, theme.name, theme.label, 'aspect-[4/3] border-b border-border')}
-                    ${component(CardBody, { class: 'space-y-3' }, html`
+                    ${component(CardBody, { class: 'space-y-3 pt-5' }, html`
                     <div class="flex items-start justify-between gap-3">
-                        <div class="flex min-w-0 items-center gap-3">
+                        <div class="flex min-w-0 items-center gap-4">
                             ${artwork('logo', theme.logo, theme.name, theme.label)}
                             <div class="min-w-0">
                                 <h2 class="truncate text-base font-semibold text-foreground">${theme.label}</h2>
                                 <p class="text-xs text-muted-foreground">${theme.name} · ${__('version')} ${theme.version}</p>
+                                ${theme.author ? html`<p class="text-xs text-muted-foreground">${__('By')} ${theme.authorUrl ? html`<a href=${theme.authorUrl} target="_blank" rel="noopener noreferrer" class="text-primary hover:underline">${theme.author}</a>` : theme.author}</p>` : null}
                             </div>
                         </div>
                         ${theme.active ? component(Badge, { variant: 'success' }, __('Active')) : theme.problems.length ? component(Badge, { variant: 'destructive' }, __('Broken')) : null}

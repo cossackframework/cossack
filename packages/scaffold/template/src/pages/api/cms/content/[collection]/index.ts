@@ -29,6 +29,16 @@ export const GET = async (c: Context) => {
             if (!term) return c.json({ error: 'Term not found.', code: 'CMS_NOT_FOUND' }, 404);
             where[taxonomy] = { containsAny: (await cms.taxonomies.subtree(term.id)).slice(0, 50) };
         }
+        // `filter[price]=10`, `filter[specs.name]=Weight`: equality on a scalar field, membership on a list or an indexed row field.
+        for (const [key, raw] of Object.entries(c.req.query())) {
+            const name = /^filter\[([a-zA-Z0-9_.]{1,200})\]$/.exec(key)?.[1];
+            if (!name || typeof raw !== 'string') continue;
+            const declaration = cms.resourceById(`cms/${collection.name}`).fields[name.includes('.') ? name.split('.').join('__') : name];
+            if (!declaration) return c.json({ error: `Cannot filter on ${name}.`, code: 'CMS_VALIDATION' }, 422);
+            const items = declaration.kind === 'list' ? declaration.items : declaration.kind;
+            const value = items === 'integer' || items === 'number' ? Number(raw) : items === 'boolean' ? raw === 'true' : raw;
+            where[name] = declaration.kind === 'list' ? { contains: value } : value;
+        }
         const query = (c.req.query('q') ?? '').trim().slice(0, 200);
         const html = c.req.query('format') === 'html';
         apiHeaders(c);

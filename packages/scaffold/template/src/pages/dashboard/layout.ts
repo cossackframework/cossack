@@ -130,11 +130,12 @@ export default class DashboardLayout extends Cossack {
                     id: 'dashboard-navigation', label: __('Dashboard navigation'),
                     expandLabel: __('Expand navigation'), collapseLabel: __('Collapse navigation'),
                     title: this.appName,
-                    brand: html`<a href="/dashboard" class="flex items-center gap-2 no-underline group-[.is-collapsed]:hidden" aria-label=${__('Dashboard')}>
+                    // The brand opens the site itself, as WordPress's admin bar does; Dashboard is the first navigation item.
+                    brand: html`<a href="/" class="flex items-center gap-2 no-underline group-[.is-collapsed]:hidden" aria-label=${__('View site')} title=${__('View site')}>
                         ${Image({ src: '/logo.svg', alt: '', width: 24, height: 24, loading: 'eager', class: 'size-6 shrink-0' })}
                         <span class="text-sm font-semibold text-foreground truncate">${this.appName}</span>
                     </a>
-                    <a href="/dashboard" class="hidden group-[.is-collapsed]:flex items-center justify-center" aria-label=${__('Dashboard')}>
+                    <a href="/" class="hidden group-[.is-collapsed]:flex items-center justify-center" aria-label=${__('View site')} title=${__('View site')}>
                         ${Image({ src: '/logo.svg', alt: '', width: 24, height: 24, loading: 'eager', class: 'size-6' })}
                     </a>`,
                     width: '248px',
@@ -142,21 +143,22 @@ export default class DashboardLayout extends Cossack {
                     collapsed: this.sidebarCollapsed,
                     onCollapsedChange: () => this.onToggleSidebar(),
                     items: items,
-                    // The toggle renders both states and the .dark class on <html> picks one, so
-                    // the server's markup matches before the cookie or system theme is known.
+                    // The toggle renders both modes and the .dark class on <html> shows the current
+                    // one (sun in light mode, moon in dark mode), so the server's markup matches
+                    // before the cookie or system theme is known. A click switches to the other.
                     footer: html`
                         <div class="flex items-center gap-1">
                             <button
                                 type="button"
                                 @click=${() => this.toggleTheme()}
                                 class="flex-1 flex items-center justify-center gap-2 px-2 py-1.5 rounded-md text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground cursor-pointer border-none bg-transparent group-[.is-collapsed]:px-0"
-                                title=${__('Toggle theme')}
-                                aria-label=${__('Toggle theme')}
+                                title=${__('Switch between light and dark mode')}
+                                aria-label=${__('Switch between light and dark mode')}
                             >
-                                <span class=${`${iconClass} in-[.dark]:hidden`}>${component(Icon, { entry: moonIcon, size: 16 })}</span>
-                                <span class=${`${iconClass} hidden in-[.dark]:inline-flex`}>${component(Icon, { entry: sunIcon, size: 16 })}</span>
-                                <span class="group-[.is-collapsed]:hidden in-[.dark]:hidden">${__('Dark')}</span>
-                                <span class="hidden group-[.is-collapsed]:hidden in-[.dark]:inline">${__('Light')}</span>
+                                <span class=${`${iconClass} dark:hidden`}>${component(Icon, { entry: sunIcon, size: 16 })}</span>
+                                <span class=${`${iconClass} hidden dark:inline-flex`}>${component(Icon, { entry: moonIcon, size: 16 })}</span>
+                                <span class="group-[.is-collapsed]:hidden dark:hidden">${__('Light mode')}</span>
+                                <span class="hidden group-[.is-collapsed]:hidden dark:inline">${__('Dark mode')}</span>
                             </button>
                         </div>
                         <div class="h-px bg-border my-1 group-[.is-collapsed]:hidden"></div>

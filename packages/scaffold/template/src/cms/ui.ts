@@ -1,15 +1,33 @@
 /** Small view helpers shared by the CMS dashboard screens. */
-import { component, html, type TemplateResult } from '@cossackframework/renderer';
-import { Badge } from '@cossackframework/ui';
+import { component, html, ifDefined, type TemplateResult } from '@cossackframework/renderer';
+import { Badge, Icon, Tooltip } from '@cossackframework/ui';
+import { icon } from './icons';
 
-export function pageHeader(title: string, options: { description?: string; actions?: TemplateResult | null } = {}): TemplateResult {
+/**
+ * The heading of a screen. `titleActions` sit beside the title, as WordPress puts "Add new"
+ * next to "Posts"; `actions` go to the right.
+ */
+export function pageHeader(title: string, options: { description?: string; actions?: TemplateResult | null; titleActions?: TemplateResult | null } = {}): TemplateResult {
     return html`<div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-            <h1 class="text-2xl font-bold text-foreground">${title}</h1>
+            <div class="flex flex-wrap items-center gap-3">
+                <h1 class="text-2xl font-bold text-foreground">${title}</h1>
+                ${options.titleActions ?? null}
+            </div>
             ${options.description ? html`<p class="mt-1 text-sm text-muted-foreground">${options.description}</p>` : null}
         </div>
         ${options.actions ? html`<div class="flex flex-wrap items-center gap-2">${options.actions}</div>` : null}
     </div>`;
+}
+
+/** A small square button with an icon alone; its label is a tooltip and its accessible name. */
+export function iconButton(id: string, name: string, label: string, run: (event: Event) => void, options: { disabled?: boolean; danger?: boolean; pressed?: boolean; class?: string; size?: 'sm' | 'md' } = {}): TemplateResult {
+    const size = options.size === 'md' ? 'h-8 w-8' : 'h-7 w-7';
+    const tone = options.danger ? 'hover:border-destructive/40 hover:bg-destructive/10 hover:text-destructive' : 'hover:bg-muted hover:text-foreground';
+    return component(Tooltip, { id: `${id}-tip`, label }, html`<button type="button" aria-describedby=${`${id}-tip`} aria-label=${label} ?disabled=${options.disabled === true}
+        aria-pressed=${ifDefined(options.pressed === undefined ? undefined : options.pressed ? 'true' : 'false')}
+        class=${`inline-flex ${size} items-center justify-center rounded border border-border bg-background text-muted-foreground cursor-pointer disabled:cursor-default disabled:opacity-40 [&_svg]:size-4 ${tone} ${options.class ?? ''}`}
+        @click=${run}>${component(Icon, { entry: icon(name), size: 16 })}</button>`);
 }
 
 const BUTTON = {
@@ -17,8 +35,14 @@ const BUTTON = {
     outline: 'border border-border text-foreground hover:bg-muted',
 } as const;
 
-export function linkButton(label: string, href: string, variant: keyof typeof BUTTON = 'primary'): TemplateResult {
-    return html`<a href=${href} class=${`inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium no-underline transition-colors ${BUTTON[variant]}`}>${label}</a>`;
+export function linkButton(label: string, href: string, variant: keyof typeof BUTTON = 'primary', options: { size?: 'sm' | 'md' } = {}): TemplateResult {
+    const size = options.size === 'sm' ? 'px-3 py-1.5 text-sm' : 'px-4 py-2 text-sm';
+    return html`<a href=${href} class=${`inline-flex items-center justify-center rounded-md font-medium no-underline transition-colors ${size} ${BUTTON[variant]}`}>${label}</a>`;
+}
+
+/** A count beside a label, such as a tab's items. */
+export function countBadge(count: number): TemplateResult {
+    return html`<span class="ml-1.5 inline-flex align-middle">${component(Badge, { variant: 'secondary' }, String(count))}</span>`;
 }
 
 /** Labels of entry statuses. */

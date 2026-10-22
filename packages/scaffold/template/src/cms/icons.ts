@@ -78,6 +78,41 @@ import { ShieldCheckIcon } from '@cossackframework/solar-icons/shield-check/line
 import { EyeClosedIcon } from '@cossackframework/solar-icons/eye-closed/line';
 import { InboxIcon } from '@cossackframework/solar-icons/inbox/line';
 import { DownloadMinimalisticIcon } from '@cossackframework/solar-icons/download-minimalistic/line';
+import { FilterIcon } from '@cossackframework/solar-icons/filter/line';
+import { CopyIcon } from '@cossackframework/solar-icons/copy/line';
+import { PenIcon } from '@cossackframework/solar-icons/pen/line';
+import { CloseCircleIcon } from '@cossackframework/solar-icons/close-circle/line';
+import { SortVerticalIcon } from '@cossackframework/solar-icons/sort-vertical/line';
+import { AltArrowUpIcon } from '@cossackframework/solar-icons/alt-arrow-up/line';
+import { Login2Icon } from '@cossackframework/solar-icons/login-2/line';
+import { PostsCarouselHorizontalIcon } from '@cossackframework/solar-icons/posts-carousel-horizontal/line';
+import { CardIcon } from '@cossackframework/solar-icons/card/line';
+import { TextSelectionIcon } from '@cossackframework/solar-icons/text-selection/line';
+import { DatabaseIcon } from '@cossackframework/solar-icons/database/line';
+import { ListArrowDownIcon } from '@cossackframework/solar-icons/list-arrow-down/line';
+import { LinkRoundIcon } from '@cossackframework/solar-icons/link-round/line';
+import { HamburgerMenuIcon } from '@cossackframework/solar-icons/hamburger-menu/line';
+import { HistoryIcon } from '@cossackframework/solar-icons/history/line';
+import { EyeIcon } from '@cossackframework/solar-icons/eye/line';
+import { CheckCircleIcon } from '@cossackframework/solar-icons/check-circle/line';
+import { RestartIcon } from '@cossackframework/solar-icons/restart/line';
+import { PenNewSquareIcon } from '@cossackframework/solar-icons/pen-new-square/line';
+import { FolderWithFilesIcon } from '@cossackframework/solar-icons/folder-with-files/line';
+import { UserIcon } from '@cossackframework/solar-icons/user/line';
+import { UsersGroupRoundedIcon } from '@cossackframework/solar-icons/users-group-rounded/line';
+import { ClockCircleIcon } from '@cossackframework/solar-icons/clock-circle/line';
+import { DangerTriangleIcon } from '@cossackframework/solar-icons/danger-triangle/line';
+import { InfoCircleIcon } from '@cossackframework/solar-icons/info-circle/line';
+import { HeartIcon } from '@cossackframework/solar-icons/heart/line';
+import { FlagIcon } from '@cossackframework/solar-icons/flag/line';
+import { PinIcon } from '@cossackframework/solar-icons/pin/line';
+import { LightbulbIcon } from '@cossackframework/solar-icons/lightbulb/line';
+import { BoltIcon } from '@cossackframework/solar-icons/bolt/line';
+import { GlobalIcon } from '@cossackframework/solar-icons/global/line';
+import { MapIcon } from '@cossackframework/solar-icons/map/line';
+import { CrownIcon } from '@cossackframework/solar-icons/crown/line';
+import { GiftIcon } from '@cossackframework/solar-icons/gift/line';
+import { RocketIcon } from '@cossackframework/solar-icons/rocket/line';
 
 export const ICONS: Readonly<Record<string, IconEntry>> = Object.freeze({
     'align-left': { line: AlignLeftIcon },
@@ -161,6 +196,43 @@ export const ICONS: Readonly<Record<string, IconEntry>> = Object.freeze({
     'eye-closed': { line: EyeClosedIcon },
     'inbox': { line: InboxIcon },
     'download-minimalistic': { line: DownloadMinimalisticIcon },
+    // Lists, menus, the dashboard home and the newer blocks.
+    'filter': { line: FilterIcon },
+    'copy': { line: CopyIcon },
+    'pen': { line: PenIcon },
+    'close-circle': { line: CloseCircleIcon },
+    'sort-vertical': { line: SortVerticalIcon },
+    'alt-arrow-up': { line: AltArrowUpIcon },
+    'login-2': { line: Login2Icon },
+    'posts-carousel-horizontal': { line: PostsCarouselHorizontalIcon },
+    'card': { line: CardIcon },
+    'text-selection': { line: TextSelectionIcon },
+    'database': { line: DatabaseIcon },
+    'list-arrow-down': { line: ListArrowDownIcon },
+    'link-round': { line: LinkRoundIcon },
+    'hamburger-menu': { line: HamburgerMenuIcon },
+    'history': { line: HistoryIcon },
+    'eye': { line: EyeIcon },
+    'check-circle': { line: CheckCircleIcon },
+    'restart': { line: RestartIcon },
+    'pen-new-square': { line: PenNewSquareIcon },
+    'folder-with-files': { line: FolderWithFilesIcon },
+    'user': { line: UserIcon },
+    'users-group-rounded': { line: UsersGroupRoundedIcon },
+    'clock-circle': { line: ClockCircleIcon },
+    'danger-triangle': { line: DangerTriangleIcon },
+    'info-circle': { line: InfoCircleIcon },
+    // Term icons.
+    'heart': { line: HeartIcon },
+    'flag': { line: FlagIcon },
+    'pin': { line: PinIcon },
+    'lightbulb': { line: LightbulbIcon },
+    'bolt': { line: BoltIcon },
+    'global': { line: GlobalIcon },
+    'map': { line: MapIcon },
+    'crown': { line: CrownIcon },
+    'gift': { line: GiftIcon },
+    'rocket': { line: RocketIcon },
 });
 
 /** Names offered for collections, in the builder's order. */
@@ -173,4 +245,25 @@ export function icon(name: string | undefined, fallback = 'document-text'): Icon
 /** A block's icon; plugin blocks naming an icon this map lacks get a generic one. */
 export function blockIcon(name: string | undefined): IconEntry {
     return icon(name, 'widget-4');
+}
+
+/**
+ * The colour of a block's icon by its category, so block types tell apart at a glance: text
+ * blue, media violet, design amber, widgets emerald, embeds sky, form fields rose, data slate.
+ */
+export const BLOCK_CATEGORY_COLORS: Readonly<Record<string, string>> = Object.freeze({
+    text: 'text-blue-600 dark:text-blue-400', media: 'text-violet-600 dark:text-violet-400', design: 'text-amber-600 dark:text-amber-400',
+    widgets: 'text-emerald-600 dark:text-emerald-400', embeds: 'text-sky-600 dark:text-sky-400', form: 'text-rose-600 dark:text-rose-400', field: 'text-teal-600 dark:text-teal-400', data: 'text-slate-500 dark:text-slate-400',
+});
+
+export function blockIconColor(category: string | undefined): string {
+    return BLOCK_CATEGORY_COLORS[category ?? ''] ?? 'text-muted-foreground';
+}
+
+/** The icon of a menu item's kind: the collection's own for entries and archives, a tag or folder for terms, a link for custom links. */
+export function menuItemIcon(kind: string, options: { collection?: string; hierarchical?: boolean } = {}): IconEntry {
+    if (kind === 'link') return icon('link-round');
+    if (kind === 'term') return icon(options.hierarchical ? 'folder' : 'tag');
+    if (kind === 'archive') return icon('folder-with-files');
+    return icon(options.collection, 'document-text');
 }

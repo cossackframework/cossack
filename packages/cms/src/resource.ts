@@ -1,3 +1,4 @@
+import type { Block } from './blocks';
 import { field, fieldProblems, validateValue, type FieldDeclaration } from './fields';
 
 /**
@@ -56,6 +57,11 @@ export interface ResourceDeclaration {
      */
     readonly schemaless?: boolean;
     readonly migrations?: readonly MigrationStep[];
+    /**
+     * The field groups' blocks that lay the fields out, for the conditions on them: a field a
+     * condition hides is not required and is cleared on write. Set by the host for collections.
+     */
+    readonly layout?: readonly Block[];
 }
 
 export interface Resource extends ResourceDeclaration {
@@ -102,7 +108,8 @@ export function resourceProblems(declaration: ResourceDeclaration): string[] {
     if (!declaration.fields || typeof declaration.fields !== 'object') return [...problems, 'fields are required.'];
     const names = Object.keys(declaration.fields);
     if (!names.length) problems.push('declare at least one field.');
-    const limit = declaration.schemaless ? 64 : 24;
+    // Field groups and their derived lists add up on a collection.
+    const limit = declaration.schemaless ? 160 : 24;
     if (names.length > limit) problems.push(`declare at most ${limit} fields per resource.`);
     const lower = new Set<string>();
     for (const name of names) {

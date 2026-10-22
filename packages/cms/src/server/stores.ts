@@ -48,6 +48,8 @@ export function createAuthSessionStore(db: FastDB, options: { now?: () => number
     publicReference(id: string): Promise<string | null>;
     findByReference(reference: string): Promise<{ id: string; userId: string; expiresAt: number } | null>;
     listForUser(userId: string, now: number): Promise<{ reference: string; createdAt: number; expiresAt: number; ip: string | null; userAgent: string | null }[]>;
+    /** The newest sessions across users, for the dashboard's sign-in activity. Sessions end at sign-out, so this shows who is signed in. */
+    listRecent(now: number, limit?: number): Promise<{ reference: string; userId: string; createdAt: number; ip: string | null; userAgent: string | null }[]>;
     revokeAllForUser(userId: string, except?: string): Promise<number>;
     /** Revoke one of the user's sessions by its public reference, never the `current` token. */
     revokeByReference(userId: string, reference: string, current?: string): Promise<boolean>;
@@ -105,6 +107,13 @@ export function createAuthSessionStore(db: FastDB, options: { now?: () => number
                 params: { $user: userId, $now: at },
             }]);
             return result.results[0]!.rows.map(row => ({ reference: row[0] as string, createdAt: n(row[1]), expiresAt: n(row[2]), ip: row[3] as string | null, userAgent: row[4] as string | null }));
+        },
+        async listRecent(at, limit = 10) {
+            const result = await db.read([{
+                sql: 'SELECT public_id, user_id, created_at, ip, user_agent FROM cms_auth_sessions WHERE expires_at > $now ORDER BY created_at DESC LIMIT $limit',
+                params: { $now: at, $limit: Math.min(Math.max(limit, 1), 100) },
+            }]);
+            return result.results[0]!.rows.map(row => ({ reference: row[0] as string, userId: row[1] as string, createdAt: n(row[2]), ip: row[3] as string | null, userAgent: row[4] as string | null }));
         },
         async revokeByReference(userId, reference, current) {
             if (!/^[0-9a-f-]{36}$/.test(reference)) return false;

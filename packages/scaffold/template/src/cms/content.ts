@@ -2,10 +2,10 @@
  * Server helpers for the dashboard's content screens: which resource a route names, the
  * editor's view of it, and saving entries. Pages call these from their server methods.
  */
-import { blockCategory, blockMedia, blockSupports, CmsError, CORE_FIELDS, flattenBlocks, isCmsError, mediaUrl, recordTitle, type Block, type CollectionDefinition, type MediaKind, type Principal, type RecordShape, type Resource } from '@cossackframework/cms';
-import type { CmsHost } from '@cossackframework/cms/server';
+import { blockCategory, blockMedia, blockSupports, bulkActions, cloneBlocks, fieldGroupDeclarations, layoutOf, type FieldGroupTarget, CmsError, CORE_FIELDS, entryActions, entryColumns, flattenBlocks, isCmsError, mediaUrl, principalId, recordTitle, richTextHtml, richTextMedia, type Block, type CollectionDefinition, type EntryAction, type EntryColumn, type MediaKind, type Principal, type RecordShape, type Resource, type RichTextDoc, type WriteActor } from '@cossackframework/cms';
+import { renderMarkdown, type CmsHost } from '@cossackframework/cms/server';
 import { activePresets } from './site';
-import { controlValue, editorField, editorFields, editorInput, type BlockOption, type EditorBlock, type EditorTaxonomy, type EditorValues, type EditorView, type TermOption } from './editor';
+import { controlValue, editorBlocks, editorField, editorFields, editorInput, type BlockOption, type EditorBlock, type EditorField, type EditorGroup, type EditorTaxonomy, type EditorValues, type EditorView, type TermOption } from './editor';
 
 /** A collection by name (`posts`), or a plugin or application resource as `<owner>.<name>`. */
 export function routeResource(cms: CmsHost, route: string): { resource: Resource; collection: CollectionDefinition | null } {
@@ -23,7 +23,9 @@ export async function termOptions(cms: CmsHost, taxonomy: string): Promise<TermO
 export async function editorView(cms: CmsHost, route: string): Promise<EditorView> {
     const { resource, collection } = routeResource(cms, route);
     const taxonomyFields = Object.entries(resource.fields).filter(([, field]) => field.taxonomy).map(([name, field]) => ({ name, taxonomy: field.taxonomy! }));
-    const special = collection ? [...CORE_FIELDS, ...taxonomyFields.map(entry => entry.name)] : [resource.titleField ?? '', ...taxonomyFields.map(entry => entry.name)];
+    // Derived lists are the host's; they are not edited.
+    const derived = Object.entries(resource.fields).filter(([, field]) => field.derived).map(([name]) => name);
+    const special = [...(collection ? [...CORE_FIELDS, ...taxonomyFields.map(entry => entry.name)] : [resource.titleField ?? '', ...taxonomyFields.map(entry => entry.name)]), ...derived];
     const taxonomies: EditorTaxonomy[] = [];
     for (const { taxonomy } of taxonomyFields) {
         const declaration = cms.taxonomies.declaration(taxonomy);
@@ -32,6 +34,8 @@ export async function editorView(cms: CmsHost, route: string): Promise<EditorVie
     }
     const blocks = await blockOptions(cms);
     const titleField = collection ? 'title' : resource.titleField ?? '';
+    const termChoices: EditorView['termChoices'] = [];
+    for (const declaration of cms.taxonomies.declarations) termChoices.push(...(await cms.taxonomies.tree(declaration.name)).slice(0, 200).map(term => ({ id: term.id, name: term.name, taxonomy: declaration.label, depth: term.depth })));
     return {
         resource: resource.id, route, label: resource.label ?? resource.id, singular: collection?.singular ?? 'Entry',
         titleField, titleRequired: Boolean(titleField && resource.fields[titleField]?.required),
@@ -39,7 +43,91 @@ export async function editorView(cms: CmsHost, route: string): Promise<EditorVie
         path: collection?.path ?? null,
         fields: editorFields(resource.fields, special),
         taxonomies, blocks, presets: await activePresets(cms),
+        template: editorBlocks(cloneBlocks(collection?.template ?? []) as EditorBlock[], blocks), ...(collection?.templateLock ? { templateLock: collection.templateLock } : {}),
+        collections: cms.collections().filter(entry => entry.publishable !== false && entry.name !== 'forms').map(entry => ({ name: entry.name, label: entry.label })),
+        termChoices,
+        layout: collection ? editorBlocks(layoutBlocks(collection, special) as EditorBlock[], blocks) : [],
+        groups: collection ? cms.fieldGroupsFor({ kind: 'collection', name: collection.name }).map(group => ({
+            id: group.id, title: group.title, description: group.description ?? '', placement: group.placement ?? 'main', blocks: editorBlocks(cloneBlocks(group.blocks) as EditorBlock[], blocks),
+        })) : [],
     };
+}
+
+/**
+ * A collection's own layout for the main column: the saved one, or one field block per field
+ * that is not placed in the sidebar by its declaration.
+ */
+export function layoutBlocks(collection: CollectionDefinition, special: readonly string[]): Block[] {
+    if (collection.layout) return cloneBlocks(collection.layout);
+    const fields = Object.fromEntries(Object.entries(collection.fields).filter(([name, declaration]) => !special.includes(name) && declaration.placement !== 'sidebar'));
+    return layoutOf(fields, collection.fieldOrder ?? []);
+}
+
+/** What a screen needs to show a target's field groups: the boxes, their fields and the block types. */
+export interface GroupsView {
+    groups: EditorGroup[];
+    fields: EditorField[];
+    options: BlockOption[];
+}
+
+/** The field groups attached to a target, for the editors of terms, users and menu items. */
+export async function groupsView(cms: CmsHost, target: FieldGroupTarget): Promise<GroupsView> {
+    const options = await blockOptions(cms);
+    const groups = cms.fieldGroupsFor(target);
+    const fields = editorFields(fieldGroupDeclarations(groups.flatMap(group => group.blocks), cms.blockTypes), []);
+    return {
+        groups: groups.map(group => ({ id: group.id, title: group.title, description: group.description ?? '', placement: group.placement ?? 'main', blocks: editorBlocks(cloneBlocks(group.blocks) as EditorBlock[], options) })),
+        fields, options,
+    };
+}
+
+/** A target's meta as control values. */
+export function metaValues(fields: readonly EditorField[], meta: { readonly [field: string]: unknown } | undefined): EditorValues {
+    return Object.fromEntries(fields.map(field => [field.name, controlValue(field, meta?.[field.name])]));
+}
+
+/** Typed meta from control values; invalid text is reported by field. */
+export function metaInput(fields: readonly EditorField[], values: EditorValues): { meta: Record<string, unknown>; errors: Record<string, string> } {
+    const { input, errors } = editorInput(fields, values);
+    return { meta: input, errors };
+}
+
+/** The name of the collection's content: its first blocks field, which the template and patterns fill. */
+export function contentField(view: Pick<EditorView, 'fields'>): string | null {
+    return view.fields.find(field => field.kind === 'blocks' && !field.form)?.name ?? null;
+}
+
+/** A pattern's blocks, with fresh IDs for the copy. Null when it is gone or private to someone else. */
+export async function patternBlocks(cms: CmsHost, id: string, principal: Principal): Promise<Block[] | null> {
+    const record = await cms.resource('cms/patterns').get(id, { principal }).catch(() => null);
+    return Array.isArray(record?.content) ? cloneBlocks(record.content as Block[]) : null;
+}
+
+/**
+ * Blocks as plain HTML, for feeds and the content API's `?format=html`: rich text and Markdown
+ * rendered, images as tags, the rest as its text. Containers render what they hold.
+ */
+export function blocksHtml(cms: CmsHost, blocks: readonly Block[], files: ReadonlyMap<string, { id: string; name: string; alt: string }> = new Map()): string {
+    const parts: string[] = [];
+    for (const block of blocks) {
+        const type = cms.blockTypes.get(block.type);
+        if (!type || blockCategory(type) === 'data') continue;
+        for (const [name, declaration] of Object.entries(type.fields)) {
+            const value = block.data[name];
+            if (declaration.kind === 'richtext' && value && typeof value === 'object') parts.push(richTextHtml(value as RichTextDoc, { block: () => '' }));
+            else if (declaration.kind === 'text' && declaration.format === 'markdown' && typeof value === 'string') parts.push(renderMarkdown(value));
+            else if (declaration.media && typeof value === 'string' && files.get(value)) parts.push(`<p><img src="${mediaUrl(files.get(value)!)}" alt="${(files.get(value)!.alt).replace(/"/g, '&quot;')}"></p>`);
+            else if (block.type === 'core/heading' && name === 'text' && typeof value === 'string') { const level = typeof block.data.level === 'string' ? block.data.level : 'h2'; parts.push(`<${level}>${escape(value)}</${level}>`); }
+            else if (block.type === 'core/list' && name === 'items' && Array.isArray(value)) parts.push(`<${block.data.ordered ? 'ol' : 'ul'}>${value.map(item => `<li>${escape(String(item))}</li>`).join('')}</${block.data.ordered ? 'ol' : 'ul'}>`);
+            else if (block.type === 'core/quote' && name === 'text' && typeof value === 'string') parts.push(`<blockquote><p>${escape(value)}</p></blockquote>`);
+        }
+        if (block.children?.length) parts.push(blocksHtml(cms, block.children, files));
+    }
+    return parts.join('\n');
+}
+
+function escape(text: string): string {
+    return text.replace(/[&<>"]/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[character]!);
 }
 
 /** Control values for an entry; tags show as names. */
@@ -77,7 +165,7 @@ import type { MediaPreview } from './field-controls';
 export async function blockOptions(cms: CmsHost): Promise<BlockOption[]> {
     return (await cms.blocks()).map(block => ({ name: block.name, label: block.label, description: block.description ?? '', icon: block.icon ?? '',
         category: blockCategory(block), fields: editorFields(block.fields, []),
-        children: block.children ? { allowed: [...(block.children.allowed ?? [])], max: block.children.max ?? null } : null, parent: [...(block.parent ?? [])], supports: [...blockSupports(block)], input: Boolean(block.input) }));
+        children: block.children ? { allowed: [...(block.children.allowed ?? [])], max: block.children.max ?? null } : null, parent: [...(block.parent ?? [])], supports: [...blockSupports(block)], field: block.field?.kind ?? '', input: Boolean(block.input) }));
 }
 
 /** Previews of files by ID; missing files are left out. */
@@ -108,6 +196,7 @@ export async function mediaPreviews(cms: CmsHost, values: EditorValues, view: Ed
             const value = source[field.name];
             if (field.media && typeof value === 'string' && value) ids.add(value);
             if (field.media && Array.isArray(value)) for (const id of value) if (typeof id === 'string') ids.add(id);
+            if (field.kind === 'richtext' && value && typeof value === 'object') for (const id of richTextMedia(value as RichTextDoc)) ids.add(id);
             if (field.kind === 'blocks' && Array.isArray(value)) {
                 for (const block of flattenBlocks(value as EditorBlock[])) collect(view.blocks.find(option => option.name === block.type)?.fields ?? [], block.data ?? {});
             }
@@ -189,6 +278,52 @@ export async function saveEntry(cms: CmsHost, route: string, id: string | null, 
     // The saved entry replaces the editor's autosave.
     await cms.discardAutosave(resource.id, id ?? 'new', principal).catch(() => undefined);
     return record;
+}
+
+/** Fields a copy of an entry does not take: its identity, its slug (derived again), its publication and its translation group. */
+const NOT_COPIED = new Set(['slug', 'status', 'publishedAt', 'translationGroup']);
+
+/**
+ * A draft copy of an entry, as WordPress's duplicate plugins make one: the same fields with
+ * "(Copy)" after the title, a new slug, unpublished, owned by whoever copies it.
+ */
+export async function duplicateEntry(cms: CmsHost, route: string, id: string, principal: Principal): Promise<RecordShape> {
+    const { resource, collection } = routeResource(cms, route);
+    const repository = cms.resource(resource.id);
+    const source = await repository.get(id, { principal });
+    if (!source) throw new CmsError('CMS_NOT_FOUND', 'The entry does not exist.');
+    const input: Record<string, unknown> = {};
+    for (const name of Object.keys(resource.fields)) {
+        if (NOT_COPIED.has(name) || source[name] === undefined) continue;
+        input[name] = source[name];
+    }
+    const titleField = resource.titleField ?? 'title';
+    if (typeof source[titleField] === 'string') input[titleField] = `${source[titleField]} (${__('Copy')})`;
+    if (collection && collection.publishable !== false) input.status = 'draft';
+    return repository.create(input, { principal });
+}
+
+function writeActor(principal: Principal): WriteActor {
+    return { kind: principal.kind, id: principalId(principal) };
+}
+
+/** What plugins add to an entries list: actions under each row, extra columns and bulk actions. */
+export async function listExtras(cms: CmsHost, resource: string, records: readonly RecordShape[], principal: Principal): Promise<{ actions: Record<string, EntryAction[]>; columns: EntryColumn[]; bulk: EntryAction[] }> {
+    const actor = writeActor(principal);
+    const actions: Record<string, EntryAction[]> = {};
+    for (const record of records) {
+        const added = await cms.hooks.applyFilters(entryActions, [], { resource, record, actor }).catch(() => []);
+        if (added.length) actions[record.id] = [...added];
+    }
+    const columns = await cms.hooks.applyFilters(entryColumns, [], { resource, records, actor }).catch(() => []);
+    const bulk = await cms.hooks.applyFilters(bulkActions, [], { resource, actor }).catch(() => []);
+    return { actions, columns: [...columns], bulk: [...bulk] };
+}
+
+/** Run a plugin command an action names, with the entry or entries as its input. */
+export async function runEntryCommand(cms: CmsHost, action: EntryAction, input: { resource: string; id?: string; ids?: readonly string[] }, principal: Principal, signal?: AbortSignal): Promise<void> {
+    if (!action.command) return;
+    await cms.runCommand(action.command.plugin, action.command.name, { resource: input.resource, ...(input.id ? { id: input.id } : {}), ...(input.ids ? { ids: input.ids.join(',') } : {}) }, { principal, ...(signal ? { signal } : {}) });
 }
 
 /** The CMS error's field messages with labels, for showing next to controls. */

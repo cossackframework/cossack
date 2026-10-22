@@ -70,8 +70,8 @@ describe.skipIf(!live)('scheduling, previews, revisions, redirects, tokens, webh
         const current = cms.collection('posts');
         clock += 1000;
         await cms.saveCollection({ ...current, fields: { ...current.fields, subtitle: field.string({ label: 'Subtitle' }) } }, admin);
-        expect(Object.keys(cms.collection('posts').fields)).toEqual(['excerpt', 'body', 'sticky', 'featuredImage', 'subtitle']);
-        const reordered = ['subtitle', 'body', 'excerpt', 'featuredImage', 'sticky'];
+        expect(Object.keys(cms.collection('posts').fields)).toEqual(['content', 'excerpt', 'sticky', 'featuredImage', 'subtitle']);
+        const reordered = ['subtitle', 'content', 'excerpt', 'featuredImage', 'sticky'];
         await cms.saveCollection({ ...cms.collection('posts'), fields: Object.fromEntries(reordered.map(name => [name, cms.collection('posts').fields[name]!])) }, admin);
         expect(Object.keys(cms.collection('posts').fields)).toEqual(reordered);
         expect(Object.keys(cms.resourceById('cms/posts').fields).filter(name => reordered.includes(name))).toEqual(reordered);

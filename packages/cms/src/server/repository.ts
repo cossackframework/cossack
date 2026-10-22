@@ -9,7 +9,8 @@ import { ClientError, Float64, RecordId, UncertainWriteError, Vector, type State
 import type { HookRegistry } from '@cossackframework/core/hooks';
 import { CmsError } from '../errors';
 import { slugify, validateValue, type FieldDeclaration } from '../fields';
-import { blockMedia, validateBlocks, type Block } from '../blocks';
+import { blockId, blockMedia, blocksPlain, flattenBlocks, validateBlocks, type Block } from '../blocks';
+import { derivedName, derivedValues, fieldVisibility, rowsPlain, rowsSearchable, rowUniqueProblem, withRowIds } from '../field-groups';
 import { normalizeRichText, richTextBlocks, richTextMedia, richTextPlain, withRichTextBlocks, type RichTextDoc } from '../richtext';
 import { searchTextPath } from './schema';
 import { afterCommit, beforeWrite, type Draft, type ResourceEvent, type WriteActor } from '../hooks';
@@ -243,7 +244,7 @@ export class ResourceRepository {
         const access = await this.#authorize('create', context.principal);
         if (access !== 'allow') throw new CmsError(context.principal.kind === 'user' ? 'CMS_FORBIDDEN' : 'CMS_UNAUTHENTICATED', `Not allowed to create ${this.resource.id}.`);
         checkKey(context.id);
-        const draft = this.#validate('create', input, null, context.principal);
+        const draft = this.#withDerived(this.#validate('create', input, null, context.principal));
         const now = this.#host.now();
         const owner = this.resource.ownership ? context.owner : null;
         const record = this.#shape(context.id, 1, now, now, owner, draft);
@@ -345,9 +346,11 @@ export class ResourceRepository {
         const conditions: string[] = [];
         let index = Object.keys(params).filter(name => name.startsWith('$w')).length;
         const parameter = (value: Value) => { const name = `$w${index++}`; params[name] = value; return name; };
-        for (const [name, condition] of Object.entries(filter.where ?? {})) {
+        for (const [given, condition] of Object.entries(filter.where ?? {})) {
+            // A row field, as `specs.name`, filters through the list the host keeps for it.
+            const name = given.includes('.') ? derivedName(given.split('.')) : given;
             const declaration = this.resource.fields[name];
-            if (!declaration || !this.#canRead(name, principal)) throw new CmsError('CMS_VALIDATION', `Cannot filter on ${name}.`);
+            if (!declaration || (declaration.derived && !given.includes('.')) || !this.#canRead(declaration.derived ? declaration.derived[0]! : name, principal)) throw new CmsError('CMS_VALIDATION', `Cannot filter on ${given}.`);
             const column = `${prefix}${quote(name)}`;
             const check = (value: unknown, kind: FieldDeclaration = declaration) => {
                 const error = validateValue(name, kind, value);
@@ -423,7 +426,7 @@ export class ResourceRepository {
         const final = filtered === draft ? draft : this.#validate(action, filtered, previous, context.principal);
         await this.#checkReferences(final, id);
         await this.#checkTemplate(final, previous);
-        return this.#uniqueSlugs(final, id, context);
+        return this.#withDerived(await this.#uniqueSlugs(final, id, context));
     }
 
     /** Terms, media and parent records named by the draft must exist; a record cannot be its own ancestor. */
@@ -497,10 +500,14 @@ export class ResourceRepository {
         const errors: { [field: string]: string } = {};
         const draft: { [field: string]: unknown } = {};
         const generate = new Set<string>();
+        // A field the layout's conditions hide may come back null, as a write filter sees it.
+        const hiddenBefore = this.#hiddenFields(previous, { ...input });
         for (const [name, value] of Object.entries(input)) {
             const declaration = this.resource.fields[name];
             if (!declaration) { errors[name] = 'is not a field of this resource.'; continue; }
             if (value === undefined) continue;
+            if (declaration.derived) { errors[name] = 'is kept by the host.'; continue; }
+            if (value === null && hiddenBefore.has(name)) { draft[name] = null; continue; }
             // An empty slug is derived from its source field below.
             if (declaration.slugFrom && (value === '' || value === null)) { generate.add(name); continue; }
             if (declaration.access?.write && !hasPermission(principal, declaration.access.write)) { errors[name] = 'cannot be changed by you.'; continue; }
@@ -512,6 +519,14 @@ export class ResourceRepository {
                 const [path, message] = Object.entries(checked.errors)[0] ?? [];
                 if (path) { errors[name] = `block ${path} ${message}`; continue; }
                 draft[name] = checked.blocks;
+                continue;
+            }
+            if (declaration.kind === 'rows') {
+                // Rows get IDs the editor did not give; unique row fields are unique within the record.
+                const rows = withRowIds(declaration, value, () => blockId());
+                const unique = rowUniqueProblem(name, declaration, rows);
+                if (unique) { errors[name] = unique.slice(name.length + 2); continue; }
+                draft[name] = rows;
                 continue;
             }
             if (declaration.kind === 'richtext') {
@@ -530,18 +545,52 @@ export class ResourceRepository {
             const source = draft[declaration.slugFrom] ?? previous?.[declaration.slugFrom];
             draft[name] = slugify(typeof source === 'string' ? source : '', declaration.max ?? 200) || 'untitled';
         }
+        // Fields the layout's conditions hide are not required and are cleared, rows included.
+        const hidden = this.#hiddenFields(previous, draft);
         if (action === 'create') {
             for (const [name, declaration] of Object.entries(this.resource.fields)) {
-                if (draft[name] === undefined && declaration.default !== undefined) draft[name] = declaration.default;
-                if (declaration.required && draft[name] === undefined && !errors[name]) errors[name] = 'is required.';
+                if (draft[name] === undefined && declaration.default !== undefined && !declaration.derived) draft[name] = declaration.default;
+                if (declaration.required && draft[name] === undefined && !errors[name] && !hidden.has(name)) errors[name] = 'is required.';
             }
         } else if (previous) {
             for (const [name, declaration] of Object.entries(this.resource.fields)) {
-                if (declaration.required && Object.hasOwn(input, name) && input[name] === null) errors[name] = 'is required.';
+                if (declaration.required && Object.hasOwn(input, name) && input[name] === null && !hidden.has(name)) errors[name] = 'is required.';
             }
         }
         if (Object.keys(errors).length) throw new CmsError('CMS_VALIDATION', 'Some fields are invalid.', { fields: errors });
+        for (const name of hidden) draft[name] = action === 'create' ? undefined : null;
         return Object.freeze(draft);
+    }
+
+    /** The draft with the derived lists that follow the rows it changes. */
+    #withDerived(draft: Draft): Draft {
+        const next: { [field: string]: unknown } = { ...draft };
+        for (const [name, declaration] of Object.entries(this.resource.fields)) {
+            if (!declaration.derived) continue;
+            const root = declaration.derived[0]!;
+            if (draft[root] !== undefined) next[name] = draft[root] === null ? [] : derivedValues(draft[root], declaration.derived);
+        }
+        return Object.freeze(next);
+    }
+
+    /**
+     * Top-level fields the layout's conditions hide for the record as it would be after the
+     * draft; rows in the draft lose the values hidden inside them in place.
+     */
+    #hiddenFields(previous: RecordShape | null, draft: { [field: string]: unknown }): Set<string> {
+        const layout = this.resource.layout;
+        if (!layout?.length) return new Set();
+        const values: { [field: string]: unknown } = { ...(previous ? this.#fieldsOf(previous) : {}), ...draft };
+        const { hidden, values: cleared } = fieldVisibility(layout, this.#host.blockTypes, values);
+        const names = new Map(flattenBlocks(layout).map(block => [block.id, typeof block.data.name === 'string' ? block.data.name : '']));
+        const top = new Set<string>();
+        for (const key of hidden) {
+            if (key.includes('/')) continue;
+            const name = names.get(key);
+            if (name && Object.hasOwn(this.resource.fields, name)) top.add(name);
+        }
+        for (const [name, declaration] of Object.entries(this.resource.fields)) if (declaration.kind === 'rows' && draft[name] !== undefined && !top.has(name)) draft[name] = cleared[name] ?? draft[name];
+        return top;
     }
 
     #sideEffects(guard: string, op: string, key: string, revision: number, action: 'create' | 'update' | 'delete', record: RecordShape | null, principal: Principal, now: number, extra: { [key: string]: Value } = {}, previous: RecordShape | null = null): Statement[] {
@@ -597,16 +646,18 @@ export class ResourceRepository {
             case 'reference': return new RecordId(this.#host.resourceById(declaration.target!).storage, value as string);
             case 'list': return declaration.items === 'number' ? (value as number[]).map(item => new Float64(item)) : value as Value;
             case 'vector': return Vector.float32(value as number[]);
-            case 'json': case 'blocks': case 'richtext': return storedJson(value);
+            case 'json': case 'blocks': case 'richtext': case 'rows': return storedJson(value);
             default: return value as Value;
         }
     }
 
-    /** Plain text of the draft's searchable rich text fields, at their search paths. */
+    /** Plain text of the draft's searchable rich text and blocks fields, at their search paths. */
     #searchText(draft: Draft): [string, string | null][] {
         return Object.entries(this.resource.fields)
-            .filter(([name, declaration]) => declaration.kind === 'richtext' && declaration.search && draft[name] !== undefined)
-            .map(([name]) => [searchTextPath(name), draft[name] === null ? null : richTextPlain(draft[name] as RichTextDoc)]);
+            .filter(([name, declaration]) => (((declaration.kind === 'richtext' || declaration.kind === 'blocks') && declaration.search) || rowsSearchable(declaration)) && draft[name] !== undefined)
+            .map(([name, declaration]) => [searchTextPath(name), draft[name] === null ? null
+                : declaration.kind === 'blocks' ? blocksPlain(draft[name] as Block[], this.#host.blockTypes, doc => richTextPlain(doc))
+                : declaration.kind === 'rows' ? rowsPlain(declaration, draft[name]) : richTextPlain(draft[name] as RichTextDoc)]);
     }
 
     #shapeOf(document: Document): RecordShape {
@@ -646,7 +697,7 @@ export class ResourceRepository {
 
     /** Remove fields the principal may not read. */
     #redact(record: RecordShape, principal: Principal): RecordShape {
-        const hidden = Object.keys(this.resource.fields).filter(name => !this.#canRead(name, principal));
+        const hidden = Object.keys(this.resource.fields).filter(name => this.resource.fields[name]!.derived || !this.#canRead(name, principal));
         if (!hidden.length) return record;
         const copy: { [field: string]: unknown } = { ...record };
         for (const name of hidden) delete copy[name];
@@ -663,7 +714,7 @@ function publicValue(declaration: FieldDeclaration, value: Value): unknown {
         case 'bigint': return String(value);
         case 'number': return value instanceof Float64 ? value.value : Number(value as bigint);
         case 'reference': return value instanceof RecordId ? String(value.key) : null;
-        case 'json': case 'blocks': case 'richtext': return toJson(value);
+        case 'json': case 'blocks': case 'richtext': case 'rows': return toJson(value);
         case 'list': return (value as Value[]).map(item => declaration.items === 'number' ? (item instanceof Float64 ? item.value : Number(item as bigint))
             : declaration.items === 'integer' ? Number(item as bigint) : item);
         case 'vector': {

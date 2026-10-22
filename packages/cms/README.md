@@ -40,6 +40,11 @@ Data contract:
 - Each collection is its own document table, `r__cms__<name>`. Only host fields are typed in
   the database; the host validates content fields, and reads tolerate values that no longer
   fit a changed field. Saving a definition changes only indexes.
+- Field groups are meta boxes built from blocks: field blocks laid out with the core layout
+  blocks, attached to collections, taxonomies, users and menu items. They compile to field
+  declarations, so values are stored flat by name; a `rows` field is a repeater (rows with an
+  `_id`, nested without limit) whose indexed row fields keep a derived list beside the
+  document for `array::contains` seeks. Conditions on fields clear what they hide on write.
 - Each mutation is one atomic batch: record, revision, audit and outbox rows, guarded by
   the operation ID, so a stale edit writes nothing.
 - Terms store their ancestors' IDs as a path, so a subtree is a prefix match and a move is
@@ -59,8 +64,16 @@ Data contract:
   `presets` (colours, font sizes, spacing) in their manifest, Customize adjusts the palette
   and adds site-level CSS, and `blockStyleAttributes` renders a styled block's wrapper with
   classes and custom properties, so a palette change recolours stored content.
-- Rich text is validated against an allow-list of nodes, marks and attributes on every
-  write and rendered to escaped HTML; its plain text feeds the full-text index.
+- An entry's content is blocks: posts and pages have a `content` blocks field, and the
+  `core/richtext` block is the word processor among them. A collection's `template` is the
+  blocks every new entry starts with (`templateLock` keeps them, or their order too); blocks
+  of the `data` category store values and render nothing. Rich text is validated against an
+  allow-list of nodes, marks and attributes on every write and rendered to escaped HTML; the
+  plain text of searchable rich text and blocks fields feeds the full-text index.
+- Extension points besides the resource and form hooks: `cms.term.before-save`,
+  `cms.comment.before-save` and `cms.menu.before-save` adjust or refuse writes;
+  `cms.dashboard.entry-actions`, `entry-columns` and `bulk-actions` add links, plugin
+  commands and columns to the dashboard's entry lists.
 - A menu is one JSON tree saved with a revision check. Entries and terms are stored by ID and
   resolved when the site renders.
 - A plugin runs only when its resources are migrated and an administrator grants what its

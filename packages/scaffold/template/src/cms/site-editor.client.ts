@@ -34,7 +34,7 @@ const STYLE = `
 interface BlockForm { id: string; values: Record<string, unknown>; style: StyleValues; tab: BlockTab; errors: Record<string, string>; top: number; left: number; docked: boolean }
 /** A block embedded in the body, edited from the rich text editor. */
 interface EmbeddedForm { id: string; type: string; values: Record<string, unknown>; errors: Record<string, string> }
-type ChooserTarget = { kind: 'block' | 'embedded' | 'entry'; field: string } | { kind: 'richtext' };
+type ChooserTarget = { kind: 'block' | 'embedded' | 'entry'; field: string } | { kind: 'richtext'; /** The editor to insert into; the body's by default. */ editor?: string };
 interface Drag { from: number; to: number; y: number; depth: number; moved: boolean }
 type Device = 'desktop' | 'tablet' | 'phone';
 const DEVICE_LABELS: { readonly [key in Device]: string } = { desktop: 'Desktop', tablet: 'Tablet', phone: 'Phone' };
@@ -422,7 +422,7 @@ export class SiteEditor extends Cossack {
         const chooser = this.props.draft.chooser;
         if (!target) return;
         this.props.onPreviews({ ...this.props.draft.previews, [file.id]: file });
-        if (target.kind === 'richtext') richTextEditors.get(BODY_EDITOR)?.insertImage({ src: file.url, alt: file.alt || file.title, mediaId: file.id });
+        if (target.kind === 'richtext') richTextEditors.get(target.editor ?? BODY_EDITOR)?.insertImage({ src: file.url, alt: file.alt || file.title, mediaId: file.id });
         else if (target.kind === 'block' && this.form) this.setFormValue(target.field, withFile(this.form.values[target.field], file.id, chooser.multiple));
         else if (target.kind === 'embedded' && this.embedded) this.setEmbeddedValue(target.field, withFile(this.embedded.values[target.field], file.id, chooser.multiple));
         else if (target.kind === 'entry') this.setValue(target.field, withFile(this.values[target.field], file.id, chooser.multiple));
@@ -473,7 +473,12 @@ export class SiteEditor extends Cossack {
                 </div>
                 ${blockTabs(form.tab, tab => this.showFormTab(tab), `site-block-${block.id}`)}
                 ${form.tab === 'style' ? styleControls(form.style, option.supports, this.props.draft.view.presets, `site-block-${block.id}-style`, style => this.setFormStyle(style))
-                : option.fields.length ? blockFields(option, form.values, (name, value) => this.setFormValue(name, value), `site-block-${block.id}`, name => this.media({ kind: 'block', field: name }), form.errors)
+                : option.fields.length ? html`
+                    ${option.fields.filter(field => field.kind === 'richtext').map(field => html`<div class="space-y-1"><label class="block text-sm font-medium text-foreground" for=${`site-block-${block.id}-${field.name}`}>${field.label}</label>
+                        ${component(RichTextField, { id: `site-block-${block.id}-${field.name}`, label: field.label, value: (form.values[field.name] as RichTextDoc | null) ?? null, blocks: [],
+                            onChange: (doc: RichTextDoc) => this.setFormValue(field.name, doc), onMedia: () => this.openChooser({ kind: 'richtext', editor: `site-block-${block.id}-${field.name}` }, false),
+                            onInsertBlock: () => undefined, onEditBlock: () => undefined })}</div>`)}
+                    ${blockFields({ ...option, fields: option.fields.filter(field => field.kind !== 'richtext') }, form.values, (name, value) => this.setFormValue(name, value), `site-block-${block.id}`, name => this.media({ kind: 'block', field: name }), form.errors)}`
                     : html`<p class="text-sm text-muted-foreground">${__('This block has no settings.')}</p>`}
                 <div class="flex justify-end gap-2">
                     ${component(Button, { type: 'button', variant: 'outline', size: 'sm', '@click': () => { this.form = null; } }, __('Cancel'))}

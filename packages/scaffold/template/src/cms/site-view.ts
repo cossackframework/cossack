@@ -64,6 +64,8 @@ export function themeHelpers(theme: SiteTheme, state: ThemeRenderState, isActive
         },
     };
     const render = (block: RenderedBlock) => {
+        // Data blocks hold values for themes and the API; nothing shows for them.
+        if (block.dataOnly) return null;
         const rendered = theme.blocks?.[block.type]?.(block, helpers) ?? coreBlock(block, helpers);
         // A styled block gets one wrapper: classes per property and the presets' variables inline.
         // A column's wrapper takes its grid placement, as cms/blocks.css places `.cms-column-box`.
@@ -110,7 +112,50 @@ export function embedUrl(url: string): string | null {
 }
 
 function safeLink(url: unknown): string {
-    return typeof url === 'string' && /^(?:https?:\/\/|\/|mailto:)/.test(url) ? url : '#';
+    return typeof url === 'string' && /^(?:https?:\/\/|\/|mailto:|tel:|#)/.test(url) ? url : '#';
+}
+
+/** A divider's colour: a palette slug as its variable, else the CSS colour given, else the border colour. */
+function dividerColor(value: string): string {
+    if (!value) return 'var(--border)';
+    return /^[a-z][a-z0-9-]*$/.test(value) && !/^(?:red|blue|green|black|white|gray|grey|transparent|currentcolor)$/.test(value) ? `var(--cms-color-${value}, ${value})` : value;
+}
+
+/** The carousel's browser part: arrows, dots and autoplay over a scroll-snapping track. Swiping works without it. */
+function enhanceCarousel(element: Element | undefined): void {
+    if (!element || typeof window === 'undefined') return;
+    void import('./carousel.client').then(module => module.enhanceCarousel(element as HTMLElement)).catch(() => undefined);
+}
+
+/** `core/latest-entries`: the entries as a list with excerpts, a grid of cards or titles alone. */
+function latestEntries(block: RenderedBlock): TemplateResult {
+    const entries = block.entries ?? [];
+    const layout = typeof block.data.layout === 'string' ? block.data.layout : 'list';
+    const showImage = block.data.showImage !== false;
+    const showDate = block.data.showDate !== false;
+    if (!entries.length) return html`<p class="my-4 text-sm text-muted-foreground">${__('Nothing published yet.')}</p>`;
+    if (layout === 'titles') return html`<ul class="my-4 space-y-1.5">${entries.map(entry => html`<li class="flex items-baseline justify-between gap-3">
+        <a href=${entry.url ?? '#'} class="text-primary hover:underline">${entry.title}</a>${showDate && entry.date ? html`<time class="shrink-0 text-xs text-muted-foreground">${entry.date}</time>` : null}</li>`)}</ul>`;
+    if (layout === 'grid') {
+        const columns = Math.min(Math.max(Number(block.data.columns) || 3, 1), 4);
+        return html`<div class="cms-grid my-6" data-gap="medium" style=${`--cms-cols-lg: ${columns}; --cms-cols-md: ${Math.min(columns, 2)}; --cms-cols-sm: 1`}>
+            ${entries.map(entry => html`<article class="flex min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-card">
+                ${showImage && entry.image ? html`<a href=${entry.url ?? '#'} class="block">${image(entry.image, 'aspect-[4/3] w-full object-cover', `(min-width: 1024px) ${Math.round(1024 / columns)}px, 100vw`)}</a>` : null}
+                <div class="space-y-1.5 p-4">
+                    <h3 class="text-base font-semibold"><a href=${entry.url ?? '#'} class="text-foreground no-underline hover:text-primary">${entry.title}</a></h3>
+                    ${showDate && entry.date ? html`<time class="block text-xs text-muted-foreground">${entry.date}</time>` : null}
+                    ${entry.excerpt ? html`<p class="text-sm text-muted-foreground">${entry.excerpt}</p>` : null}
+                </div>
+            </article>`)}</div>`;
+    }
+    return html`<div class="my-6 space-y-6">${entries.map(entry => html`<article class="grid gap-4 sm:grid-cols-[8rem_minmax(0,1fr)]">
+        ${showImage && entry.image ? html`<a href=${entry.url ?? '#'} class="block overflow-hidden rounded-md">${image(entry.image, 'aspect-[4/3] w-full object-cover', '(min-width: 640px) 8rem, 100vw')}</a>` : showImage ? html`<span class="hidden sm:block"></span>` : null}
+        <div class=${showImage ? 'space-y-1' : 'space-y-1 sm:col-span-2'}>
+            <h3 class="text-lg font-semibold"><a href=${entry.url ?? '#'} class="text-foreground no-underline hover:text-primary">${entry.title}</a></h3>
+            ${showDate && entry.date ? html`<time class="block text-xs text-muted-foreground">${entry.date}${entry.author ? ` · ${entry.author}` : ''}</time>` : null}
+            ${entry.excerpt ? html`<p class="text-sm leading-6 text-muted-foreground">${entry.excerpt}</p>` : null}
+        </div>
+    </article>`)}</div>`;
 }
 
 /** Columns' track spans out of twelve: a declared `span`, the rest shared equally. */
@@ -161,7 +206,47 @@ export function coreBlock(block: RenderedBlock, helpers: ThemeHelpers): Template
                 <iframe src=${src} title=${text('caption') || 'Video'} class="h-full w-full" loading="lazy" allow="encrypted-media; picture-in-picture" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe></div>
                 ${text('caption') ? html`<figcaption class="mt-2 text-center text-sm text-muted-foreground">${text('caption')}</figcaption>` : null}</figure>` : null;
         }
-        case 'core/divider': return html`<hr class="my-8 border-border">`;
+        case 'core/richtext': return helpers.content(block.content?.text ?? []);
+        case 'core/divider': {
+            const vertical = text('orientation') === 'vertical';
+            const style = `--cms-divider-color: ${dividerColor(text('color'))}`;
+            if (vertical) return html`<div class="cms-divider cms-divider-vertical" data-thickness=${text('thickness') || 'thin'} data-width=${text('width') || 'full'} style=${style} role="separator" aria-orientation="vertical"></div>`;
+            return text('text')
+                ? html`<div class="cms-divider cms-divider-text" data-thickness=${text('thickness') || 'thin'} data-width=${text('width') || 'full'} style=${style} role="separator"><span>${text('text')}</span></div>`
+                : html`<hr class="cms-divider" data-thickness=${text('thickness') || 'thin'} data-width=${text('width') || 'full'} style=${style}>`;
+        }
+        case 'core/card': {
+            const media = block.media[text('image')];
+            const url = text('url');
+            const title = text('title');
+            const picture = media ? image(media, 'h-full w-full object-cover') : null;
+            const framed = picture ? html`<div class="cms-card-media">${url && !text('linkLabel') ? html`<a href=${safeLink(url)}>${picture}</a>` : picture}</div>` : null;
+            return html`<div class="cms-card" data-layout=${media ? text('layout') || 'top' : 'none'}>
+                ${framed}
+                <div class="cms-card-body">
+                    ${title ? html`<h3 class="text-lg font-semibold text-foreground">${url && !text('linkLabel') ? html`<a href=${safeLink(url)} class="no-underline hover:text-primary">${title}</a>` : title}</h3>` : null}
+                    ${block.html.text ? html`<div class=${`${PROSE} text-sm [&_p]:my-2`}>${unsafeHTML(block.html.text)}</div>` : null}
+                    ${url && text('linkLabel') ? html`<p class="mt-3"><a href=${safeLink(url)} class="text-sm font-medium text-primary hover:underline">${text('linkLabel')} →</a></p>` : null}
+                </div>
+            </div>`;
+        }
+        case 'core/carousel': {
+            const ids = Array.isArray(block.data.images) ? (block.data.images as string[]).filter(id => block.media[id]) : [];
+            if (!ids.length) return null;
+            const captions = block.data.captions !== false;
+            return html`<div class="cms-carousel my-6" data-aspect=${text('aspect') || 'video'} data-autoplay=${block.data.autoplay === true ? 'true' : 'false'} data-interval=${String(Math.min(Math.max(Number(block.data.interval) || 5, 2), 30))}
+                role="region" aria-roledescription="carousel" aria-label=${__('Image carousel')} ref=${enhanceCarousel}>
+                <div class="cms-carousel-track" tabindex="0">${ids.map((id, index) => html`<figure class="cms-carousel-slide" id=${`${block.id}-slide-${index + 1}`} aria-roledescription="slide" aria-label=${`${index + 1} / ${ids.length}`}>
+                    ${image(block.media[id], 'cms-carousel-image', '(min-width: 1024px) 1024px, 100vw')}
+                    ${captions && block.media[id]?.caption ? html`<figcaption class="cms-carousel-caption">${block.media[id]!.caption}</figcaption>` : null}
+                </figure>`)}</div>
+                ${ids.length > 1 ? html`<button type="button" class="cms-carousel-arrow cms-carousel-prev" data-direction="-1" aria-label=${__('Previous image')}>‹</button>
+                    <button type="button" class="cms-carousel-arrow cms-carousel-next" data-direction="1" aria-label=${__('Next image')}>›</button>
+                    <div class="cms-carousel-dots" role="tablist">${ids.map((_, index) => html`<button type="button" role="tab" aria-label=${`${__('Image')} ${index + 1}`} aria-selected=${index === 0 ? 'true' : 'false'} data-index=${String(index)}></button>`)}</div>` : null}
+            </div>`;
+        }
+        case 'core/latest-entries': return latestEntries(block);
+        case 'core/meta': return null;
         // Layout blocks: CSS grid from cms/blocks.css, responding to the content root's width.
         case 'core/group': return html`<div class="cms-group" data-align=${text('align') || 'full'}>${children.map(child => helpers.block(child))}</div>`;
         case 'core/columns': {

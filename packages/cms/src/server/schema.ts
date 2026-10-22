@@ -4,6 +4,7 @@
  * drops are explicit versioned steps. Each step is one atomic batch sent with
  * `ifSequence` from the planning read, recorded in the relational migration ledger.
  */
+import { rowsSearchable } from '../field-groups';
 import { ClientError, encodeValue, type FastDB, type Statement, type Value } from '@cossackframework/fastdb';
 import { storageCheck, storageType, type FieldDeclaration } from '../fields';
 import { declarationHash, SYSTEM_FIELDS, type MigrationStep, type Resource } from '../resource';
@@ -125,8 +126,8 @@ export function collectionSpec(resource: Resource, storageOf: (resourceId: strin
     // Schemaless collections type only the system fields; the host validates the rest.
     const declared = resource.schemaless ? [] : Object.entries(resource.fields).flatMap(([name, declaration]) => [
         spec(name, declaration, storageOf),
-        // A searchable rich text field keeps its plain text beside the document.
-        ...(declaration.kind === 'richtext' && declaration.search ? [spec(searchTextPath(name), { kind: 'text', nullable: true }, storageOf)] : []),
+        // A searchable rich text or blocks field keeps its plain text beside the document.
+        ...(((declaration.kind === 'richtext' || declaration.kind === 'blocks') && declaration.search) || rowsSearchable(declaration) ? [spec(searchTextPath(name), { kind: 'text', nullable: true }, storageOf)] : []),
     ]);
     const indexes: IndexSpec[] = [{ name: `${resource.storage}___updated`, kind: 'scalar', paths: ['_updatedAt'], unique: false }];
     if (resource.ownership) indexes.push({ name: `${resource.storage}___owner`, kind: 'scalar', paths: ['_owner'], unique: false });
@@ -135,7 +136,8 @@ export function collectionSpec(resource: Resource, storageOf: (resourceId: strin
         else if (declaration.index || declaration.kind === 'reference') indexes.push({ name: `${resource.storage}__${name.toLowerCase()}`, kind: declaration.kind === 'list' ? 'array' : 'scalar', paths: [name], unique: false });
     }
     for (const index of resource.indexes) indexes.push({ name: `${resource.storage}__i_${index.name}`, kind: 'scalar', paths: [...index.fields], unique: index.unique === true });
-    const searchable = Object.entries(resource.fields).filter(([, declaration]) => declaration.search).map(([name, declaration]) => declaration.kind === 'richtext' ? searchTextPath(name) : name);
+    const searchable = Object.entries(resource.fields).filter(([, declaration]) => declaration.search || rowsSearchable(declaration))
+        .map(([name, declaration]) => declaration.kind === 'richtext' || declaration.kind === 'blocks' || declaration.kind === 'rows' ? searchTextPath(name) : name);
     if (searchable.length) indexes.push({ name: `${resource.storage}__text`, kind: 'fulltext', paths: searchable, unique: false });
     return { resource, name: resource.storage, fields: [...system, ...declared], indexes };
 }
@@ -156,7 +158,7 @@ function spec(name: string, declaration: FieldDeclaration, storageOf: (resourceI
     };
 }
 
-/** Where a searchable rich text field's plain text is stored, for the full-text index. */
+/** Where a searchable rich text or blocks field's plain text is stored, for the full-text index. */
 export function searchTextPath(field: string): string {
     return `_text_${field}`;
 }

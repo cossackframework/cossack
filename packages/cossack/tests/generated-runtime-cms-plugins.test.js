@@ -79,7 +79,7 @@ describe.skipIf(!liveFastDBTests())('CMS plugin trust', () => {
         [{ name: 'sections', label: 'Sections', type: 'blocks', required: false, description: '', placement: '', unique: false, search: false, max: '', min: '', choices: '', defaultValue: '', target: '', blocks: [], locked: false }],
       ], { params: { name: 'pages' } });
       expect(builder.error).toBe('');
-      await web.action(editor, 'save', [{ title: 'Contact', slug: '', status: 'draft', publishedAt: '', body: '', excerpt: '', showInMenu: true, featuredImage: '', parent: '', menuOrder: '0',
+      await web.action(editor, 'save', [{ title: 'Contact', slug: '', status: 'draft', publishedAt: '', content: [], excerpt: '', showInMenu: true, featuredImage: '', parent: '', menuOrder: '0',
         sections: [{ id: 'c1', type: 'support-desk/contact', data: { email: 'help@example.com' } }] }, 'publish', 0], { params: { collection: 'pages', id: 'new' }, state: { route: 'pages', id: 'new' } });
       contains(await web.page('/contact'), 'Write to help@example.com');
 

@@ -73,7 +73,7 @@ export async function navigation(c: Context): Promise<DashboardModule[]> {
     }
     if (can(PERMISSIONS.manageCollections)) {
         admin.push({ id: 'collections', label: 'Collections', href: '/dashboard/collections', icon: icon('structure'), authorization: { permission: PERMISSIONS.manageCollections },
-            children: [{ label: 'All collections', href: '/dashboard/collections' }, { label: 'Taxonomies', href: '/dashboard/taxonomies' }, { label: 'Blocks', href: '/dashboard/blocks' }] });
+            children: [{ label: 'All collections', href: '/dashboard/collections' }, { label: 'Field groups', href: '/dashboard/field-groups' }, { label: 'Taxonomies', href: '/dashboard/taxonomies' }, { label: 'Blocks', href: '/dashboard/blocks' }] });
     }
     if (can(PERMISSIONS.managePlugins)) admin.push({ id: 'plugins', label: 'Plugins', href: '/dashboard/plugins', icon: icon('plug-circle'), authorization: { permission: PERMISSIONS.managePlugins } });
     // Roles belong to role managers; the other administration modules to user managers.

@@ -1,16 +1,18 @@
 import { Client, Cossack, Page, Server, State, type HeadValue } from '@cossackframework/core';
-import { Badge, Button, Card, CardBody, Modal, toast } from '@cossackframework/ui';
+import { Badge, Button, Card, CardBody, toast } from '@cossackframework/ui';
 import { component, html, type TemplateResult } from '@cossackframework/renderer';
-import { findBlock, hasPermission, isCmsError, PERMISSIONS, updateBlock, type ThemePresets } from '@cossackframework/cms';
+import { findBlock, hasPermission, isCmsError, PERMISSIONS, updateBlock, type RichTextDoc, type ThemePresets } from '@cossackframework/cms';
 import { requireAny } from '../../../../../cms/guards';
 import { notice, pageHeader } from '../../../../../cms/ui';
 import { blockFilePreviews, blockOptions, findMedia } from '../../../../../cms/content';
-import { blocksInput, controlValue, editorBlocks, editorInput, type BlockOption, type EditorBlock } from '../../../../../cms/editor';
+import { blocksInput, controlValue, editorBlocks, editorInput, type BlockOption, type EditorBlock, type EditorField } from '../../../../../cms/editor';
+import { RichTextField, richTextEditors } from '../../../../../cms/rich-text-field';
 import { blockFields, type MediaHooks, type MediaPreview } from '../../../../../cms/field-controls';
 import { BlockTree } from '../../../../../cms/block-tree';
+import { blockPanel } from '../../../../../cms/block-panel';
 import { closedChooser, mediaChooser, uploadMedia, withFile, type MediaChooserState } from '../../../../../cms/media-chooser';
 import { activePresets } from '../../../../../cms/site';
-import { blockTabs, styleControls, styleValues, withStyle, type BlockTab, type StyleValues } from '../../../../../cms/style-controls';
+import { styleValues, withStyle, type BlockTab, type StyleValues } from '../../../../../cms/style-controls';
 
 interface AreaRow { name: string; label: string; theme: string; active: boolean; revision: number; blocks: EditorBlock[]; changed: boolean }
 /** The block being edited in the dialog: its fields' values on the General tab, its style on the Style tab. */
@@ -91,7 +93,8 @@ export default class WidgetsPage extends Cossack {
         const block = findBlock(this.blocksOf(name), id);
         const option = this.options.find(entry => entry.name === block?.type);
         if (!block || !option) return;
-        this.dialog = { area: name, id, errors: {}, tab: 'general', style: styleValues(block), values: Object.fromEntries(option.fields.map(field => [field.name, block.data[field.name] ?? controlValue(field, field.defaultValue)])) };
+        // Rich text is written in the tree; the panel takes the other fields.
+        this.dialog = { area: name, id, errors: {}, tab: 'general', style: styleValues(block), values: Object.fromEntries(option.fields.filter(field => field.kind !== 'richtext').map(field => [field.name, block.data[field.name] ?? controlValue(field, field.defaultValue)])) };
     }
 
     @Client()
@@ -116,10 +119,11 @@ export default class WidgetsPage extends Cossack {
         const block = dialog ? findBlock(this.blocksOf(dialog.area), dialog.id) : undefined;
         const option = this.options.find(entry => entry.name === block?.type);
         if (!dialog || !block || !option) return;
-        const { input, errors } = editorInput(option.fields, dialog.values);
-        for (const field of option.fields) if (field.required && (input[field.name] === undefined || input[field.name] === '' || input[field.name] === null)) errors[field.name] ??= __('is required.');
+        const fields = option.fields.filter(field => field.kind !== 'richtext');
+        const { input, errors } = editorInput(fields, dialog.values);
+        for (const field of fields) if (field.required && (input[field.name] === undefined || input[field.name] === '' || input[field.name] === null)) errors[field.name] ??= __('is required.');
         if (Object.keys(errors).length) { this.dialog = { ...dialog, errors }; return; }
-        this.change(dialog.area, updateBlock(this.blocksOf(dialog.area), dialog.id, entry => withStyle({ ...entry, data: { ...dialog.values } }, dialog.style)));
+        this.change(dialog.area, updateBlock(this.blocksOf(dialog.area), dialog.id, entry => withStyle({ ...entry, data: { ...Object.fromEntries(Object.entries(entry.data).filter(([name]) => option.fields.find(field => field.name === name)?.kind === 'richtext')), ...dialog.values } }, dialog.style)));
         this.dialog = null;
     }
 
@@ -138,6 +142,13 @@ export default class WidgetsPage extends Cossack {
     @Client()
     choose(file: MediaPreview) {
         this.previews = { ...this.previews, [file.id]: file };
+        if (this.chooser.field.includes('\u0000')) {
+            // An image for the rich text of a block in the tree.
+            const editor = this.chooser.field.split('\u0000')[3] ?? '';
+            richTextEditors.get(editor)?.insertImage({ src: file.url, alt: file.alt || file.title, mediaId: file.id });
+            this.chooser = { ...this.chooser, open: false };
+            return;
+        }
         this.setValue(this.chooser.field, withFile(this.dialog?.values[this.chooser.field], file.id, this.chooser.multiple));
         if (!this.chooser.multiple) this.chooser = { ...this.chooser, open: false };
     }
@@ -157,31 +168,43 @@ export default class WidgetsPage extends Cossack {
                 ${area.active ? null : component(Badge, { variant: 'secondary' }, `${__('Theme')}: ${area.theme}`)}
             </div>
             ${component(BlockTree, {
-                id: `area-${area.name}`, blocks: area.blocks, options: this.options, allowed: [], inline: false, previews: this.previews, presets: this.presets,
-                onChange: (blocks: EditorBlock[]) => this.change(area.name, blocks), onEdit: (id: string) => this.edit(area.name, id), control: () => null,
+                id: `area-${area.name}`, blocks: area.blocks, options: this.options, allowed: [], previews: this.previews,
+                onChange: (blocks: EditorBlock[]) => this.change(area.name, blocks), onEdit: (id: string) => this.edit(area.name, id),
+                control: (field: EditorField, value: unknown, change: (value: unknown) => void, block: EditorBlock, id: string) => this.richText(area.name, block, field, value, change, id),
             })}
             <div class="flex justify-end">
                 ${component(Button, { type: 'button', disabled: !area.changed, '@click': () => this.submit(area.name) }, __('Save widgets'))}
             </div>`));
     }
 
+    /** A rich text field of a widget block, written in the tree itself. */
+    private richText(area: string, block: EditorBlock, field: EditorField, value: unknown, change: (value: unknown) => void, id: string): TemplateResult | null {
+        if (field.kind !== 'richtext') return null;
+        return component(RichTextField, {
+            id, label: field.label, value: (value as RichTextDoc | null) ?? null, blocks: [], onChange: (doc: RichTextDoc) => change(doc),
+            onMedia: () => this.openRichMedia(area, block.id, field.name, id), onInsertBlock: () => undefined, onEditBlock: () => undefined,
+        });
+    }
+
+    /** The media chooser for an image in rich text: the chosen file is inserted into that editor. */
+    @Client()
+    async openRichMedia(area: string, block: string, field: string, editor: string) {
+        this.chooser = { ...this.chooser, open: true, field: `${area}\u0000${block}\u0000${field}\u0000${editor}`, multiple: false };
+        await this.searchMedia(this.chooser.search);
+    }
+
     private dialogModal(): TemplateResult {
         const dialog = this.dialog;
         const block = dialog ? findBlock(this.blocksOf(dialog.area), dialog.id) : undefined;
-        const option = this.options.find(entry => entry.name === block?.type);
+        const option = this.options.find(entry => entry.name === block?.type) ?? null;
         const media = (field: string): MediaHooks => ({ previews: this.previews, choose: multiple => this.openChooser(field, multiple) });
-        return component(Modal, { open: Boolean(dialog && option), size: 'max-w-xl', 'aria-label': option?.label ?? __('Block'), onOpenChange: (open: boolean) => { if (!open) this.dialog = null; } },
-            dialog && option ? html`<form class="space-y-4" @submit=${(event: Event) => this.apply(event)}>
-                <h2 class="text-lg font-semibold text-foreground">${option.label}</h2>
-                ${blockTabs(dialog.tab, tab => this.showTab(tab), `widget-${dialog.area}-${dialog.id}`)}
-                ${dialog.tab === 'style' ? styleControls(dialog.style, option.supports, this.presets, `widget-${dialog.area}-${dialog.id}-style`, style => this.setStyle(style))
-                : option.fields.length ? blockFields(option, dialog.values, (name, value) => this.setValue(name, value), `widget-${dialog.area}-${dialog.id}`, media, dialog.errors)
-                : html`<p class="text-sm text-muted-foreground">${__('This block has no settings.')}</p>`}
-                <div class="flex justify-end gap-2">
-                    ${component(Button, { type: 'button', variant: 'outline', '@click': () => { this.dialog = null; } }, __('Cancel'))}
-                    ${component(Button, { type: 'submit' }, __('Apply'))}
-                </div>
-            </form>` : html``);
+        const fields = option ? { ...option, fields: option.fields.filter(field => field.kind !== 'richtext') } : null;
+        return blockPanel({
+            id: 'widget-block', open: Boolean(dialog && option), option, tab: dialog?.tab ?? 'general', style: dialog?.style ?? styleValues({}), presets: this.presets,
+            onTab: tab => this.showTab(tab), onStyle: style => this.setStyle(style), onApply: () => this.apply(new Event('submit')), onClose: () => { this.dialog = null; },
+            general: dialog && fields ? (fields.fields.length ? blockFields(fields, dialog.values, (name, value) => this.setValue(name, value), `widget-${dialog.area}-${dialog.id}`, media, dialog.errors)
+                : html`<p class="text-sm text-muted-foreground">${__('This block has no settings.')}</p>`) : html``,
+        });
     }
 
     render() {

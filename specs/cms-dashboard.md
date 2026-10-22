@@ -56,12 +56,15 @@ features and adds the WordPress-style content tools a site needs.
   row together, adding or dropping only indexes (unique, search, term arrays).
   A stale isolate that sees a newer hash reloads definitions instead of failing.
 - **Blocks.** A `blocks` field holds an ordered list of `{ id, type, data }`.
-  Block types declare fields like collections do. Built-in types: paragraph,
-  heading, image, gallery, quote, list, code, button, embed and divider.
+  Block types declare fields like collections do. Built-in types: rich text,
+  paragraph, heading, image, gallery, carousel, quote, list, code, button, card,
+  embed, divider, latest entries, the layout containers and custom fields (data).
   Plugins add types through their manifest's `blocks` and render them with
   components from `ui.ts`. The host validates each block's data on write.
-- **Content.** Markdown bodies are rendered on the server with raw HTML
-  escaped. Publishable collections have draft, pending review, scheduled,
+- **Content.** An entry's content is blocks, as in WordPress: posts and pages
+  have a `content` field, and the Rich text block is the word processor among
+  the blocks (see [CMS editing](cms-editing.md)). Markdown fields are rendered
+  on the server with raw HTML escaped. Publishable collections have draft, pending review, scheduled,
   published and trash states; published entries are public, the others only to
   their authors and editors. Scheduling, previews, revisions, redirects, SEO,
   comments, patterns and translations are in [CMS essentials](cms-essentials.md).
