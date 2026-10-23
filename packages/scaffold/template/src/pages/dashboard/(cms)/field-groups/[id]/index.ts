@@ -5,6 +5,7 @@ import { CORE_FIELDS, isCmsError, PERMISSIONS, type Block, type FieldGroup, type
 import { blockOptions } from '../../../../../cms/content';
 import { blocksInput, editorBlocks, type BlockOption, type EditorBlock } from '../../../../../cms/editor';
 import { FieldGroupEditor } from '../../../../../cms/field-group-editor';
+import { describeBlockError } from '../../../../../cms/block-errors';
 import { requireAny } from '../../../../../cms/guards';
 import { notice, pageHeader } from '../../../../../cms/ui';
 
@@ -126,12 +127,12 @@ export default class FieldGroupPage extends Cossack {
                     ${component(Button, { type: 'button', '@click': () => this.submit() }, __('Save field group'))}`,
             })}
             ${this.message ? notice(this.message, 'success') : null}
-            ${this.error ? notice(this.error, 'error') : null}
+            ${this.error ? notice(describeBlockError(this.error, this.blocks, this.options), 'error') : null}
             <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
                 ${component(Card, {}, html`
                     ${component(CardHeader, {}, html`<h2 class="text-base font-semibold text-foreground">${__('Fields')}</h2>
                         <p class="text-sm text-muted-foreground">${__('Field blocks between columns, tabs, headings and notes, as the box should show them. A repeater holds rows of fields. Conditional logic shows a field on the values of the others.')}</p>`)}
-                    ${component(CardBody, {}, component(FieldGroupEditor, { id: 'group', blocks: this.blocks, options: this.options, scope, onChange: (blocks: EditorBlock[]) => this.changeBlocks(blocks) }))}
+                    ${component(CardBody, {}, component(FieldGroupEditor, { id: 'group', blocks: this.blocks, options: this.options, scope, error: this.error, onChange: (blocks: EditorBlock[]) => this.changeBlocks(blocks) }))}
                 `)}
                 <aside class="space-y-6">
                     ${component(Card, {}, component(CardBody, { class: 'space-y-4' }, html`

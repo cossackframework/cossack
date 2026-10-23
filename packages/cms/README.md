@@ -58,6 +58,9 @@ Data contract:
   container width). A type declares what it holds (`children`) and where it goes (`parent`);
   at most 200 blocks and 4 levels per field. Layouts are blocks, so revisions, patterns and
   the front-end editor cover them; nothing is stored beside the block list.
+- A block's text fields may bind to the entry's fields: `$.price` shows the field, `{{ $.price }}`
+  puts it inside text (`resolveBindings`, `resolveBlockBindings`). The site resolves them when
+  it renders an entry; the editor keeps the syntax and offers the fields in a picker.
 - A block's `style` holds slugs of the theme's presets (`background`, `text`, `padding`,
   `margin`, `fontSize`) and an `align`; `layout` adds an `anchor` and `className`. A type's
   `supports` narrows what its Style tab offers over its category's defaults. Themes declare

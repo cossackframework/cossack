@@ -1,10 +1,11 @@
-import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackframework/core';
-import { Avatar, Badge, Button, Card, CardBody, CardHeader, Icon, Input, Textarea, toast } from '@cossackframework/ui';
+import { Cossack, Page, State, Server, type HeadValue } from '@cossackframework/core';
+import { Avatar, Badge, Icon } from '@cossackframework/ui';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
 import { plugins } from '@cossackframework/framework/plugins';
-import { blockId, evaluateRule, hasPermission, isCmsError, PERMISSIONS, recordTitle, richTextFromPlain } from '@cossackframework/cms';
+import { evaluateRule, hasPermission, PERMISSIONS, recordTitle } from '@cossackframework/cms';
 import { icon } from '../../cms/icons';
-import { linkButton, notice, shortDate } from '../../cms/ui';
+import { box, notice, shortDate } from '../../cms/ui';
+import { agentIcon, browserIcon, osIcon } from '../../dashboard/agent-icons';
 import { parseUserAgent } from '../../dashboard/session-list';
 
 /** Components active plugins export as `slots['dashboard.overview']` from their ui.ts. */
@@ -16,11 +17,11 @@ function overviewWidgets(active: readonly string[]): TemplateResult[] {
 }
 
 interface Glance { label: string; href: string; icon: string; published: number; drafts: number }
-interface Item { title: string; href: string; at: number; meta?: string }
-/** A sign-in: the account and the device, from the session's user agent. */
-interface SignIn { name: string; avatar: string | null; href: string; at: number; device: string; ip: string }
+interface Item { title: string; href: string; at: number; meta?: string; /** The author, for an avatar before the title. */ author?: { name: string; avatar: string | null } }
+/** A sign-in: the account and the device, from the session's user agent; browser and OS are empty when unknown. */
+interface SignIn { name: string; avatar: string | null; href: string; at: number; browser: string; os: string; ip: string }
 
-/** The dashboard home: at a glance, a quick draft, recent activity and what needs attention. */
+/** The dashboard home: at a glance, recent activity and what needs attention, in collapsible boxes. */
 @Page({ transport: 'http' })
 export default class DashboardPage extends Cossack {
     @State() userName = '';
@@ -28,7 +29,6 @@ export default class DashboardPage extends Cossack {
     @State() glance: Glance[] = [];
     @State() media = -1;
     @State() users = -1;
-    @State() drafts: Item[] = [];
     @State() published: Item[] = [];
     /** Entries waiting for review, across collections, for editors. */
     @State() pending: Item[] = [];
@@ -36,8 +36,6 @@ export default class DashboardPage extends Cossack {
     /** Who signed in lately, for user managers. */
     @State() signIns: SignIn[] = [];
     @State() canSeeSignIns = false;
-    @State() canDraft = false;
-    @State() quick = { title: '', body: '' };
     @State() attention: { text: string; href: string }[] = [];
     @State() outbox = 0;
     @State() unconfirmed = 0;
@@ -73,21 +71,19 @@ export default class DashboardPage extends Cossack {
         this.glance = glance;
         if (cms.files && (hasPermission(principal, PERMISSIONS.upload) || hasPermission(principal, PERMISSIONS.manageMedia))) this.media = (await cms.files.list({ limit: 1 })).total;
         if (hasPermission(principal, PERMISSIONS.manageUsers)) this.users = (await cms.users.list({ limit: 1 })).total;
-        const posts = cms.resource('cms/posts');
-        this.canDraft = evaluateRule(posts.resource.access.create, principal) !== 'deny';
-        if (this.canDraft) {
-            const mine = principal.kind === 'user' ? principal.id : '';
-            const drafts = await posts.list({ where: { status: 'draft' }, ...(mine ? { owner: mine } : {}), limit: 5 }, context).catch(() => ({ records: [] }));
-            this.drafts = drafts.records.map(record => ({ title: recordTitle(record, 'title'), href: `/dashboard/content/posts/${record.id}`, at: record.updatedAt }));
-        }
-        // The newest published entries of every publishable collection, together.
-        const recent: Item[] = [];
+        // The newest published entries of every publishable collection, together, with their authors.
+        const recent: (Item & { owner: string })[] = [];
         for (const collection of cms.collections()) {
             if (collection.publishable === false || collection.name === 'forms') continue;
             const page = await cms.resource(`cms/${collection.name}`).list({ where: { status: 'published' }, order: { field: 'publishedAt', direction: 'desc' }, limit: 5 }, context).catch(() => ({ records: [] }));
-            recent.push(...page.records.map(record => ({ title: recordTitle(record, 'title'), href: `/dashboard/content/${collection.name}/${record.id}`, at: Number(record.publishedAt), meta: collection.singular })));
+            recent.push(...page.records.map(record => ({ title: recordTitle(record, 'title'), href: `/dashboard/content/${collection.name}/${record.id}`, at: Number(record.publishedAt), meta: collection.singular, owner: record.owner ?? '' })));
         }
-        this.published = recent.sort((a, b) => b.at - a.at).slice(0, 8);
+        const newest = recent.sort((a, b) => b.at - a.at).slice(0, 8);
+        const authors = await cms.users.getMany([...new Set(newest.map(item => item.owner).filter(Boolean))]);
+        this.published = newest.map(({ owner, ...item }) => {
+            const author = owner ? authors.get(owner) : undefined;
+            return author ? { ...item, author: { name: author.name || author.email, avatar: author.avatar ?? null } } : item;
+        });
         const status = await cms.status();
         this.canMigrate = hasPermission(principal, PERMISSIONS.manageSchema);
         // Comments and reviews waiting for someone.
@@ -122,7 +118,7 @@ export default class DashboardPage extends Cossack {
                 const user = users.get(session.userId);
                 const agent = parseUserAgent(session.userAgent);
                 return { name: user?.name || user?.email || __('Deleted user'), avatar: user?.avatar ?? null, href: user ? `/dashboard/users/${user.id}?tab=sessions` : '/dashboard/users',
-                    at: session.createdAt, device: session.userAgent ? `${agent.browser} · ${agent.os}` : __('Unknown device'), ip: session.ip ?? '' };
+                    at: session.createdAt, browser: session.userAgent ? agent.browser : '', os: session.userAgent ? agent.os : '', ip: session.ip ?? '' };
             });
         }
         this.attention = [
@@ -137,34 +133,28 @@ export default class DashboardPage extends Cossack {
         this.widgets = status.plugins.filter(plugin => plugin.active).map(plugin => plugin.name);
     }
 
-    @Client()
-    async saveQuickDraft(event: Event) {
-        event.preventDefault();
-        const created = await this.quickDraft(this.quick.title, this.quick.body);
-        if (created) { this.quick = { title: '', body: '' }; toast.success(__('Draft saved.')); }
-    }
-
-    @Server()
-    async quickDraft(title: string, body: string): Promise<boolean> {
-        try {
-            // The text becomes the post's first Rich text block.
-            await this.c.get('cms').resource('cms/posts').create({ title, content: body.trim() ? [{ id: blockId(), type: 'core/richtext', data: { text: richTextFromPlain(body) } }] : [], status: 'draft' }, { principal: this.c.get('principal') });
-            await this.load();
-            return true;
-        } catch (error) {
-            this.attention = [{ text: isCmsError(error) ? error.message : __('The draft could not be saved.'), href: '/dashboard/content/posts/new' }, ...this.attention];
-            return false;
-        }
-    }
-
     render() {
         const widgets = overviewWidgets(this.widgets);
         const list = (items: Item[], empty: string) => items.length
-            ? html`<ul class="space-y-2">${items.map(item => html`<li class="flex items-baseline justify-between gap-3 text-sm">
-                <span class="min-w-0 truncate"><a href=${item.href} class="text-primary hover:underline">${item.title}</a>${item.meta ? html`<span class="ml-2 text-xs text-muted-foreground">${item.meta}</span>` : null}</span>
+            ? html`<ul class="space-y-2">${items.map(item => html`<li class="flex items-center justify-between gap-3 text-sm">
+                <span class="flex min-w-0 items-center gap-2">
+                    ${item.author ? html`<span class="inline-flex shrink-0" title=${item.author.name}>${component(Avatar, { src: item.author.avatar ?? undefined, alt: item.author.name, size: 24 })}</span>` : null}
+                    <span class="min-w-0 truncate"><a href=${item.href} class="text-primary hover:underline">${item.title}</a>${item.meta ? html`<span class="ml-2 text-xs text-muted-foreground">${item.meta}</span>` : null}</span>
+                </span>
                 <span class="shrink-0 text-xs text-muted-foreground">${shortDate(item.at)}</span></li>`)}</ul>`
             : html`<p class="text-sm text-muted-foreground">${empty}</p>`;
-        const heading = (title: string, extra: TemplateResult | null = null) => component(CardHeader, {}, html`<div class="flex items-center justify-between gap-3"><h2 class="text-base font-semibold text-foreground">${title}</h2>${extra}</div>`);
+        const glance = [...this.glance.map(entry => ({ ...entry, note: entry.drafts ? `${entry.drafts} ${entry.drafts === 1 ? __('draft') : __('drafts')}` : '' })),
+            ...(this.media >= 0 ? [{ label: __('Media'), href: '/dashboard/media', icon: 'gallery', published: this.media, note: '' }] : []),
+            ...(this.users >= 0 ? [{ label: __('Users'), href: '/dashboard/users', icon: 'users-group-rounded', published: this.users, note: '' }] : [])];
+        const signIns = this.signIns.length ? html`<ul class="divide-y divide-border">${this.signIns.map(entry => html`<li class="flex items-center gap-3 py-2 text-sm first:pt-0 last:pb-0">
+            ${component(Avatar, { src: entry.avatar ?? undefined, alt: entry.name, size: 28 })}
+            <span class="min-w-0 flex-1"><a href=${entry.href} class="block truncate font-medium text-foreground no-underline hover:text-primary">${entry.name}</a>
+                <span class="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    ${entry.browser || entry.os ? html`${agentIcon(browserIcon(entry.browser), entry.browser || __('Unknown browser'), 14)}${agentIcon(osIcon(entry.os), entry.os || __('Unknown system'), 14)}` : html`<span>${__('Unknown device')}</span>`}
+                    ${entry.ip ? html`<span class="truncate">${entry.ip}</span>` : null}
+                </span></span>
+            <span class="shrink-0 text-xs text-muted-foreground">${shortDate(entry.at)}</span></li>`)}</ul>`
+            : html`<p class="text-sm text-muted-foreground">${__('No one is signed in.')}</p>`;
         return html`<div class="space-y-6">
             <div class="flex items-center gap-4">
                 ${component(Avatar, { src: this.userAvatar ?? undefined, alt: this.userName, size: 48 })}
@@ -176,54 +166,25 @@ export default class DashboardPage extends Cossack {
             ${this.attention.map(item => html`<a href=${item.href} class="block no-underline">${notice(item.text, 'error')}</a>`)}
             <div class="grid gap-6 xl:grid-cols-3">
                 <div class="space-y-6 xl:col-span-2">
-                    ${component(Card, {}, html`
-                        ${heading(__('At a glance'))}
-                        ${component(CardBody, {}, html`<dl class="grid grid-cols-2 gap-4 sm:grid-cols-3">
-                            ${[...this.glance.map(entry => ({ ...entry, note: entry.drafts ? `${entry.drafts} ${entry.drafts === 1 ? __('draft') : __('drafts')}` : '' })),
-                                ...(this.media >= 0 ? [{ label: __('Media'), href: '/dashboard/media', icon: 'gallery', published: this.media, note: '' }] : []),
-                                ...(this.users >= 0 ? [{ label: __('Users'), href: '/dashboard/users', icon: 'users-group-rounded', published: this.users, note: '' }] : [])]
-                            .map(entry => html`<a href=${entry.href} class="group rounded-lg border border-border p-4 no-underline transition-colors hover:border-primary/50 hover:bg-muted/40">
-                                <dt class="flex items-center gap-2 text-sm text-muted-foreground group-hover:text-foreground"><span class="inline-flex [&_svg]:size-4">${component(Icon, { entry: icon(entry.icon), size: 16 })}</span>${entry.label}</dt>
-                                <dd class="mt-1 text-2xl font-semibold text-foreground">${entry.published}</dd>
-                                ${entry.note ? html`<dd class="text-xs text-muted-foreground">${entry.note}</dd>` : null}
-                            </a>`)}
-                        </dl>`)}
-                    `)}
-                    ${this.pendingTotal ? html`<div id="pending-review">${component(Card, {}, html`
-                        ${heading(__('Waiting for review'), component(Badge, { variant: 'warning' }, String(this.pendingTotal)))}
-                        ${component(CardBody, {}, html`${list(this.pending, '')}
-                            ${this.pendingTotal > this.pending.length ? html`<p class="mt-3 text-xs"><a href="/dashboard/content/posts?status=pending" class="text-primary hover:underline">${__('Show everything pending')}</a></p>` : null}`)}
-                    `)}</div>` : null}
-                    ${component(Card, {}, html`
-                        ${heading(__('Recently published'))}
-                        ${component(CardBody, {}, list(this.published, __('Nothing published yet.')))}
-                    `)}
-                    ${this.canSeeSignIns ? component(Card, {}, html`
-                        ${heading(__('Recent sign-ins'), html`<a href="/dashboard/users" class="text-xs text-primary hover:underline">${__('All users')}</a>`)}
-                        ${component(CardBody, {}, this.signIns.length ? html`<ul class="divide-y divide-border">${this.signIns.map(entry => html`<li class="flex items-center gap-3 py-2 text-sm first:pt-0 last:pb-0">
-                            ${component(Avatar, { src: entry.avatar ?? undefined, alt: entry.name, size: 28 })}
-                            <span class="min-w-0 flex-1"><a href=${entry.href} class="block truncate font-medium text-foreground no-underline hover:text-primary">${entry.name}</a>
-                                <span class="block truncate text-xs text-muted-foreground">${entry.device}${entry.ip ? ` · ${entry.ip}` : ''}</span></span>
-                            <span class="shrink-0 text-xs text-muted-foreground">${shortDate(entry.at)}</span></li>`)}</ul>`
-                            : html`<p class="text-sm text-muted-foreground">${__('No one is signed in.')}</p>`)}
-                    `) : null}
+                    ${box(__('At a glance'), html`<dl class="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                        ${glance.map(entry => html`<a href=${entry.href} class="group rounded-lg border border-border p-3 no-underline transition-colors hover:border-primary/50 hover:bg-muted/40">
+                            <dt class="flex items-center gap-2 text-sm text-muted-foreground group-hover:text-foreground"><span class="inline-flex [&_svg]:size-4">${component(Icon, { entry: icon(entry.icon), size: 16 })}</span>${entry.label}</dt>
+                            <dd class="mt-1 text-2xl font-semibold text-foreground">${entry.published}</dd>
+                            ${entry.note ? html`<dd class="text-xs text-muted-foreground">${entry.note}</dd>` : null}
+                        </a>`)}
+                    </dl>`, { id: 'box-glance' })}
+                    ${this.pendingTotal ? html`<div id="pending-review">${box(__('Waiting for review'), html`${list(this.pending, '')}
+                        ${this.pendingTotal > this.pending.length ? html`<p class="mt-3 text-xs"><a href="/dashboard/content/posts?status=pending" class="text-primary hover:underline">${__('Show everything pending')}</a></p>` : null}`,
+                        { id: 'box-pending', extra: component(Badge, { variant: 'warning' }, String(this.pendingTotal)) })}</div>` : null}
+                    ${box(__('Recently published'), list(this.published, __('Nothing published yet.')), { id: 'box-published' })}
                     ${widgets.length ? html`<section class="grid gap-4 sm:grid-cols-2">${widgets}</section>` : null}
-                    ${this.canMigrate ? html`<dl class="grid grid-cols-2 gap-4">
-                        <div class="rounded-lg border border-border p-4"><dt class="text-sm text-muted-foreground">${__('Events waiting for delivery')}</dt><dd class="text-2xl font-semibold text-foreground" data-testid="outbox">${this.outbox}</dd></div>
-                        <div class="rounded-lg border border-border p-4"><dt class="text-sm text-muted-foreground">${__('Writes waiting for confirmation')}</dt><dd class="text-2xl font-semibold text-foreground">${this.unconfirmed}</dd></div>
-                    </dl>` : null}
                 </div>
                 <div class="space-y-6">
-                    ${this.canDraft ? component(Card, {}, html`
-                        ${component(CardHeader, {}, html`<h2 class="text-base font-semibold text-foreground">${__('Quick draft')}</h2>`)}
-                        ${component(CardBody, {}, html`<form class="space-y-3" @submit=${(event: Event) => this.saveQuickDraft(event)}>
-                            ${component(Input, { 'aria-label': __('Title'), placeholder: __('Title'), '.value': this.quick.title, '@input': (event: Event) => { this.quick = { ...this.quick, title: (event.target as HTMLInputElement).value }; } })}
-                            ${component(Textarea, { 'aria-label': __('Content'), placeholder: __("What's on your mind?"), rows: 4, '.value': this.quick.body, '@input': (event: Event) => { this.quick = { ...this.quick, body: (event.target as HTMLTextAreaElement).value }; } })}
-                            ${component(Button, { type: 'submit', disabled: !this.quick.title.trim() }, __('Save draft'))}
-                        </form>
-                        <div class="mt-6 space-y-2"><h3 class="text-sm font-semibold text-foreground">${__('Your recent drafts')}</h3>${list(this.drafts, __('No drafts.'))}</div>`)}
-                    `) : component(Card, {}, component(CardBody, {}, html`<p class="text-sm text-muted-foreground">${__('Manage your profile and sessions from the account menu.')}</p>
-                        <div class="mt-3">${linkButton(__('Edit profile'), '/dashboard/profile', 'outline')}</div>`))}
+                    ${this.canSeeSignIns ? box(__('Recent sign-ins'), signIns, { id: 'box-sign-ins', extra: html`<a href="/dashboard/users" class="text-xs font-normal text-primary hover:underline">${__('All users')}</a>` }) : null}
+                    ${this.canMigrate ? box(__('Delivery'), html`<dl class="grid grid-cols-2 gap-3">
+                        <div class="rounded-lg border border-border p-3"><dt class="text-sm text-muted-foreground">${__('Events waiting for delivery')}</dt><dd class="text-2xl font-semibold text-foreground" data-testid="outbox">${this.outbox}</dd></div>
+                        <div class="rounded-lg border border-border p-3"><dt class="text-sm text-muted-foreground">${__('Writes waiting for confirmation')}</dt><dd class="text-2xl font-semibold text-foreground">${this.unconfirmed}</dd></div>
+                    </dl>`, { id: 'box-delivery' }) : null}
                 </div>
             </div>
         </div>`;

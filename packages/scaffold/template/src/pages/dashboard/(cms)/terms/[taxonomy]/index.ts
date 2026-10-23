@@ -112,11 +112,11 @@ export default class TermsPage extends Cossack {
                     </form>
                     ${component(Card, {}, component(CardBody, { class: 'p-0' }, html`<div class="overflow-x-auto"><table class="w-full text-sm">
                         <thead><tr class="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
-                            <th class="px-4 py-3 font-medium">${__('Name')}</th><th class="px-4 py-3 font-medium">${__('Description')}</th>
-                            <th class="px-4 py-3 font-medium">${__('Slug')}</th><th class="px-4 py-3 text-right font-medium">${__('Count')}</th>
+                            <th class="px-3 py-2 font-medium">${__('Name')}</th><th class="px-3 py-2 font-medium">${__('Description')}</th>
+                            <th class="px-3 py-2 font-medium">${__('Slug')}</th><th class="px-3 py-2 text-right font-medium">${__('Count')}</th>
                         </tr></thead>
                         <tbody>${this.rows.map(row => html`<tr class="group border-b border-border last:border-0 align-top">
-                            <td class="px-4 py-3">
+                            <td class="px-3 py-2">
                                 <a href=${`${base}/${row.id}`} class="inline-flex items-center gap-1.5 font-medium text-foreground hover:text-primary no-underline">${'— '.repeat(row.depth)}${row.icon ? html`<span class="inline-flex text-muted-foreground [&_svg]:size-4">${component(Icon, { entry: icon(row.icon), size: 16 })}</span>` : null}${row.name}</a>
                                 <div class="mt-1 flex gap-2 text-xs opacity-80 group-hover:opacity-100">
                                     <a href=${`${base}/${row.id}`} class="text-primary hover:underline">${__('Edit')}</a><span aria-hidden="true" class="text-muted-foreground">|</span>
@@ -124,9 +124,9 @@ export default class TermsPage extends Cossack {
                                     ${this.taxonomy.path ? html`<span aria-hidden="true" class="text-muted-foreground">|</span><a href=${`/${this.taxonomy.path}/${row.slug}`} class="text-primary hover:underline">${__('View')}</a>` : null}
                                 </div>
                             </td>
-                            <td class="px-4 py-3 text-muted-foreground">${row.description || '—'}</td>
-                            <td class="px-4 py-3 font-mono text-xs text-muted-foreground">${row.slug}</td>
-                            <td class="px-4 py-3 text-right text-muted-foreground">${row.count}</td>
+                            <td class="px-3 py-2 text-muted-foreground">${row.description || '—'}</td>
+                            <td class="px-3 py-2 font-mono text-xs text-muted-foreground">${row.slug}</td>
+                            <td class="px-3 py-2 text-right text-muted-foreground">${row.count}</td>
                         </tr>`)}</tbody>
                     </table>${this.rows.length ? null : html`<p class="px-4 py-10 text-center text-sm text-muted-foreground">${__('No terms found.')}</p>`}</div>`))}
                 </div>

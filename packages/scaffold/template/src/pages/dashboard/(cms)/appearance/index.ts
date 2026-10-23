@@ -3,7 +3,7 @@ import { Badge, Button, Card, CardBody, toast } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { isCmsError, PERMISSIONS } from '@cossackframework/cms';
 import { requireAny } from '../../../../cms/guards';
-import { artwork, linkButton, notice, pageHeader } from '../../../../cms/ui';
+import { artwork, authorLine, linkButton, notice, pageHeader } from '../../../../cms/ui';
 
 interface ThemeRow { name: string; label: string; description: string; version: string; author: string; authorUrl: string; locations: string[]; parent: string; options: boolean; problems: string[]; active: boolean; logo: string | null; cover: string | null }
 
@@ -64,7 +64,7 @@ export default class ThemesPage extends Cossack {
                             <div class="min-w-0">
                                 <h2 class="truncate text-base font-semibold text-foreground">${theme.label}</h2>
                                 <p class="text-xs text-muted-foreground">${theme.name} · ${__('version')} ${theme.version}</p>
-                                ${theme.author ? html`<p class="text-xs text-muted-foreground">${__('By')} ${theme.authorUrl ? html`<a href=${theme.authorUrl} target="_blank" rel="noopener noreferrer" class="text-primary hover:underline">${theme.author}</a>` : theme.author}</p>` : null}
+                                ${authorLine(theme.author, theme.authorUrl)}
                             </div>
                         </div>
                         ${theme.active ? component(Badge, { variant: 'success' }, __('Active')) : theme.problems.length ? component(Badge, { variant: 'destructive' }, __('Broken')) : null}

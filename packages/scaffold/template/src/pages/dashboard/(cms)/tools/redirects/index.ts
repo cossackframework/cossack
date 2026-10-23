@@ -123,16 +123,16 @@ export default class RedirectsPage extends Cossack {
             </div>
             ${component(Card, {}, component(CardBody, { class: 'p-0' }, html`<div class="overflow-x-auto"><table class="w-full text-sm">
                 <thead><tr class="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
-                    <th class="px-4 py-3 font-medium">${__('Source')}</th><th class="px-4 py-3 font-medium">${__('Target')}</th><th class="px-4 py-3 font-medium">${__('Type')}</th>
-                    <th class="px-4 py-3 font-medium">${__('Hits')}</th><th class="px-4 py-3 font-medium"><span class="sr-only">${__('Actions')}</span></th>
+                    <th class="px-3 py-2 font-medium">${__('Source')}</th><th class="px-3 py-2 font-medium">${__('Target')}</th><th class="px-3 py-2 font-medium">${__('Type')}</th>
+                    <th class="px-3 py-2 font-medium">${__('Hits')}</th><th class="px-3 py-2 font-medium"><span class="sr-only">${__('Actions')}</span></th>
                 </tr></thead>
                 <tbody>${this.items.map(item => html`<tr class="border-b border-border last:border-0 align-top" data-redirect=${item.source}>
-                    <td class="px-4 py-3"><code class="break-all text-foreground">${item.source}</code>${item.note ? html`<span class="block text-xs text-muted-foreground">${item.note}</span>` : null}</td>
-                    <td class="px-4 py-3"><code class="break-all text-muted-foreground">${item.status === 410 ? '—' : item.target}</code></td>
-                    <td class="px-4 py-3"><span class="flex flex-wrap gap-1">${component(Badge, { variant: item.status === 410 ? 'destructive' : 'secondary' }, String(item.status))}
+                    <td class="px-3 py-2"><code class="break-all text-foreground">${item.source}</code>${item.note ? html`<span class="block text-xs text-muted-foreground">${item.note}</span>` : null}</td>
+                    <td class="px-3 py-2"><code class="break-all text-muted-foreground">${item.status === 410 ? '—' : item.target}</code></td>
+                    <td class="px-3 py-2"><span class="flex flex-wrap gap-1">${component(Badge, { variant: item.status === 410 ? 'destructive' : 'secondary' }, String(item.status))}
                         ${item.kind === 'auto' ? component(Badge, { variant: 'outline' }, __('Automatic')) : null}</span></td>
-                    <td class="px-4 py-3 text-muted-foreground">${item.hits}${item.lastHitAt ? html`<span class="block text-xs">${shortDate(item.lastHitAt)}</span>` : null}</td>
-                    <td class="px-4 py-3 text-right"><span class="flex justify-end gap-3 text-xs">
+                    <td class="px-3 py-2 text-muted-foreground">${item.hits}${item.lastHitAt ? html`<span class="block text-xs">${shortDate(item.lastHitAt)}</span>` : null}</td>
+                    <td class="px-3 py-2 text-right"><span class="flex justify-end gap-3 text-xs">
                         <button type="button" class="text-primary hover:underline bg-transparent border-none p-0 cursor-pointer" @click=${() => this.edit(item)}>${__('Edit')}</button>
                         <button type="button" class="text-destructive hover:underline bg-transparent border-none p-0 cursor-pointer" @click=${() => { this.pendingDelete = item; }}>${__('Delete')}</button>
                     </span></td>

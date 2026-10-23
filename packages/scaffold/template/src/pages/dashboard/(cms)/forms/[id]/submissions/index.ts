@@ -119,10 +119,10 @@ export default class SubmissionsPage extends Cossack {
         const detail = `/dashboard/forms/${this.form?.id ?? ''}/submissions/${row.id}`;
         const unread = row.status === 'new';
         return html`<tr class=${`border-b border-border last:border-0 align-top ${unread ? 'font-semibold' : ''}`} data-submission=${row.id} data-status=${row.status}>
-            <td class="px-4 py-3">${component(Checkbox, { checked: this.selected.includes(row.id), 'aria-label': `${__('Select submission from')} ${row.date}`, '@change': (event: Event) => this.toggle(row.id, (event.target as HTMLInputElement).checked) })}</td>
-            ${row.cells.map((cell, index) => html`<td class="max-w-xs px-4 py-3"><span class="block truncate">${index === 0 ? html`<a href=${detail} class="text-foreground hover:text-primary">${cell || __('(empty)')}</a>` : cell}</span></td>`)}
-            <td class="whitespace-nowrap px-4 py-3 text-xs text-muted-foreground"><a href=${detail} class="text-muted-foreground hover:text-primary">${row.date}</a></td>
-            <td class="px-4 py-3">${unread ? component(Badge, { variant: 'default' }, __('New')) : row.status === 'spam' ? component(Badge, { variant: 'destructive' }, __('Spam'))
+            <td class="px-3 py-2">${component(Checkbox, { checked: this.selected.includes(row.id), 'aria-label': `${__('Select submission from')} ${row.date}`, '@change': (event: Event) => this.toggle(row.id, (event.target as HTMLInputElement).checked) })}</td>
+            ${row.cells.map((cell, index) => html`<td class="max-w-xs px-3 py-2"><span class="block truncate">${index === 0 ? html`<a href=${detail} class="text-foreground hover:text-primary">${cell || __('(empty)')}</a>` : cell}</span></td>`)}
+            <td class="whitespace-nowrap px-3 py-2 text-xs text-muted-foreground"><a href=${detail} class="text-muted-foreground hover:text-primary">${row.date}</a></td>
+            <td class="px-3 py-2">${unread ? component(Badge, { variant: 'default' }, __('New')) : row.status === 'spam' ? component(Badge, { variant: 'destructive' }, __('Spam'))
                 : row.status === 'trash' ? component(Badge, { variant: 'secondary' }, __('Trash')) : null}</td>
         </tr>`;
     }
@@ -155,9 +155,9 @@ export default class SubmissionsPage extends Cossack {
             </div>
             ${component(Card, {}, component(CardBody, { class: 'p-0' }, html`<div class="overflow-x-auto"><table class="w-full text-sm">
                 <thead><tr class="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
-                    <th class="w-10 px-4 py-3">${component(Checkbox, { checked: this.rows.length > 0 && this.selected.length === this.rows.length, 'aria-label': __('Select all'), '@change': (event: Event) => this.toggleAll((event.target as HTMLInputElement).checked) })}</th>
-                    ${this.columns.map(column => html`<th class="px-4 py-3 font-medium">${column}</th>`)}
-                    <th class="px-4 py-3 font-medium">${__('Submitted')}</th><th class="px-4 py-3"><span class="sr-only">${__('Status')}</span></th>
+                    <th class="w-10 px-3 py-2">${component(Checkbox, { checked: this.rows.length > 0 && this.selected.length === this.rows.length, 'aria-label': __('Select all'), '@change': (event: Event) => this.toggleAll((event.target as HTMLInputElement).checked) })}</th>
+                    ${this.columns.map(column => html`<th class="px-3 py-2 font-medium">${column}</th>`)}
+                    <th class="px-3 py-2 font-medium">${__('Submitted')}</th><th class="px-3 py-2"><span class="sr-only">${__('Status')}</span></th>
                 </tr></thead>
                 <tbody>${this.rows.map(row => this.row(row))}</tbody></table>
                 ${this.rows.length ? null : html`<p class="px-4 py-10 text-center text-sm text-muted-foreground">${this.search ? __('No submissions match.') : __('No submissions yet.')}</p>`}</div>`))}

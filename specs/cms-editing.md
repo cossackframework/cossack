@@ -28,12 +28,22 @@ and plugins get hooks on terms, comments, menus and the lists.
   rich text); the site expands it one level, with prefixed block IDs. An unsynced pattern is a
   copy of its blocks. Patterns are offered beside the top-level inserter.
 - **Panel editing.** Block settings open in a sheet at the side (`block-panel.ts`): General
-  and Style tabs, Apply and Cancel. The tree shows a summary, the rich text in place, and
+  and Style tabs. Every change applies to the block at once, as editing in place does, and
+  Done closes the panel; saving the entry checks what is required. A validation message that
+  names a block (`block <id>.<field>`) is shown with the block's label and the field's
+  (`cms/block-errors.ts`), and the tree opens to that block, flashes it and scrolls to it.
+  The tree shows a summary, the rich text in place, and
   icon buttons with tooltips; removing a block asks first. Block icons are coloured by
   category. Widgets, the builder and forms use the same panel; the tree has no inline
   mode, so a form's conditional logic is in the panel too. Only containers collapse, and
   they start collapsed with a count of what they hold; a new container, or one a block is
   moved into, opens. Blocks with nothing to edit in place have a header alone.
+- **Dynamic content.** A block's text field may bind to a field of the entry it renders on:
+  `$.price` as the whole value, or `{{ $.price }}` inside text (`bindings.ts`; dotted paths
+  walk into rows, `$.specs.0.name`). The site resolves bindings when it renders an entry's
+  blocks, the entry's own fields and its field groups' alike; a database button beside text
+  controls in the block panel picks the field. Widget areas have no entry, so they keep the
+  text as written.
 - **New blocks.** Rich text, Card (image, title, Markdown, link, image position), Carousel
   (scroll-snapping track; `carousel.client.ts` adds arrows, dots, keys and autoplay), Latest
   entries (collection, count, term, order, list/grid/titles; resolved on the server like

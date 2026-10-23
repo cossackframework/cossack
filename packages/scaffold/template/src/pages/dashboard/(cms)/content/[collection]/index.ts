@@ -1,5 +1,5 @@
 import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackframework/core';
-import { Avatar, Card, CardBody, Button, Checkbox, HoverCard, Icon, NativeSelect, Input, Pagination, AlertDialog, toast } from '@cossackframework/ui';
+import { Avatar, Card, CardBody, Button, Checkbox, HoverCard, Icon, NativeSelect, Input, Pagination, AlertDialog, Tooltip, toast } from '@cossackframework/ui';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
 import { evaluateRule, isCmsError, languageName, mediaUrl, recordTitle, type EntryAction, type EntryColumn, type FieldFilter, type ListFilter, type RecordShape } from '@cossackframework/cms';
 import { duplicateEntry, listExtras, routeResource, runEntryCommand, termOptions } from '../../../../../cms/content';
@@ -23,7 +23,7 @@ interface Row {
     date: string;
     dateLabel: string;
     /** The entry's featured image, when the collection has one. */
-    image: { url: string; alt: string } | null;
+    image: { url: string; alt: string; caption: string } | null;
     /** Actions plugins add under the row. */
     actions: EntryAction[];
 }
@@ -172,7 +172,7 @@ export default class EntriesPage extends Cossack {
                     terms: this.taxonomy ? ((record[this.taxonomy.name] as string[] | undefined) ?? []).map(id => terms.get(id)?.name).filter((name): name is string => !!name) : [],
                     date: shortDate(published || scheduled ? record.publishedAt : record.updatedAt),
                     dateLabel: published ? __('Published') : scheduled ? __('Scheduled for') : __('Last modified'),
-                    image: image ? { url: mediaUrl(image), alt: image.alt } : null,
+                    image: image ? { url: mediaUrl(image), alt: image.alt, caption: image.caption } : null,
                     actions: extras.actions[record.id] ?? [],
                 };
             });
@@ -350,13 +350,39 @@ export default class EntriesPage extends Cossack {
             <span class="inline-flex [&_svg]:size-3.5" aria-hidden="true">${component(Icon, { entry: icon(active ? (this.dir === 'asc' ? 'alt-arrow-up' : 'alt-arrow-down') : 'sort-vertical'), size: 14 })}</span></a>`;
     }
 
-    /** The featured image as a small thumbnail; hovering or focusing it shows the picture. */
+    /** The featured image as a small thumbnail; hovering or focusing it shows the picture large, with its alt text and caption. */
     private thumbnail(row: Row): TemplateResult {
         if (!row.image) return html`<span class="flex size-10 shrink-0 items-center justify-center rounded-md border border-dashed border-border text-muted-foreground [&_svg]:size-4" aria-hidden="true">${component(Icon, { entry: icon('gallery'), size: 16 })}</span>`;
-        return component(HoverCard, { id: `thumb-${row.id}`, label: row.title, side: 'right', contentProps: { class: 'w-72 p-1' },
-            content: html`<img src=${row.image.url} alt=${row.image.alt} class="max-h-72 w-full rounded-md object-contain" loading="lazy">` },
+        const image = row.image;
+        return component(HoverCard, { id: `thumb-${row.id}`, label: row.title, side: 'right', contentProps: { class: 'w-[36rem] max-w-[calc(100vw-4rem)] p-2' },
+            content: html`<figure class="space-y-2">
+                <img src=${image.url} alt=${image.alt} class="max-h-[36rem] w-full rounded-md bg-muted object-contain" loading="lazy">
+                ${image.alt || image.caption ? html`<figcaption class="space-y-1 px-1 pb-1 text-xs">
+                    ${image.caption ? html`<p class="text-foreground">${image.caption}</p>` : null}
+                    ${image.alt ? html`<p class="text-muted-foreground"><span class="font-medium">${__('Alt text')}:</span> ${image.alt}</p>` : null}
+                </figcaption>` : null}
+            </figure>` },
             html`<a href=${`/dashboard/content/${this.route}/${row.id}`} class="block shrink-0" tabindex="0" aria-label=${`${__('Edit')} ${row.title}`}>
-                <img src=${row.image.url} alt="" class="size-10 rounded-md border border-border bg-muted object-cover" loading="lazy"></a>`);
+                <img src=${image.url} alt="" class="size-10 rounded-md border border-border bg-muted object-cover" loading="lazy"></a>`);
+    }
+
+    /** The author as an avatar alone; the name shows on hover and focus. */
+    private authorCell(row: Row): TemplateResult {
+        if (row.author === '—') return html`<span class="text-muted-foreground">—</span>`;
+        const tip = `author-${row.id}-tip`;
+        return component(Tooltip, { id: tip, label: row.author }, html`<span tabindex="0" aria-describedby=${tip} aria-label=${row.author} class="inline-flex rounded-full">${component(Avatar, { src: row.avatar ?? undefined, alt: row.author, size: 28 })}</span>`);
+    }
+
+    /** The bulk action select and its Apply button, above and below the table. */
+    private bulkBar(position: 'top' | 'bottom'): TemplateResult {
+        const choices = this.bulkChoices();
+        return html`<div class="flex flex-wrap items-center gap-2">
+            <div class="w-44">${component(NativeSelect, { id: `bulk-${position}`, size: 'sm', 'aria-label': __('Bulk actions'), '@change': (event: Event) => { this.bulk = (event.target as HTMLSelectElement).value; } }, html`
+                <option value="" ?selected=${!this.bulk}>${__('Bulk actions')}</option>
+                ${choices.map(choice => html`<option value=${choice.key} ?selected=${this.bulk === choice.key}>${choice.label}</option>`)}`)}</div>
+            ${component(Button, { type: 'button', size: 'sm', variant: 'outline', disabled: !this.bulk || !this.selected.length, '@click': () => this.submitBulk() }, __('Apply'))}
+            ${this.selected.length ? html`<span class="text-xs text-muted-foreground">${this.selected.length} ${__('selected')}</span>` : null}
+        </div>`;
     }
 
     private quickActions(row: Row, base: string): TemplateResult {
@@ -384,8 +410,8 @@ export default class EntriesPage extends Cossack {
         const base = `/dashboard/content/${this.route}`;
         const totalPages = Math.max(1, Math.ceil(this.total / PAGE_SIZE));
         const allSelected = this.rows.length > 0 && this.rows.every(row => this.selected.includes(row.id));
-        const choices = this.bulkChoices();
-        const th = 'px-4 py-3 font-medium';
+        const th = 'px-3 py-2 font-medium';
+        const td = 'px-3 py-2';
         return html`<div class="space-y-6">
             ${pageHeader(this.label, { titleActions: this.canCreate ? linkButton(`${__('Add new')} ${this.singular.toLowerCase()}`, `${base}/new`, 'primary', { size: 'sm' }) : null })}
             ${this.message ? notice(this.message, 'success') : null}
@@ -408,30 +434,24 @@ export default class EntriesPage extends Cossack {
                     <div class="w-64 max-w-full">${component(Input, { type: 'search', name: 'q', value: this.search, size: 'sm', placeholder: `${__('Search')} ${this.label.toLowerCase()}`, 'aria-label': __('Search') })}</div>
                     ${component(Button, { type: 'submit', size: 'sm', variant: 'outline', class: 'gap-1.5' }, html`${component(Icon, { entry: icon('filter'), size: 16 })}${__('Filter')}`)}
                 </form>
-                <div class="flex flex-wrap items-center gap-2">
-                    <div class="w-44">${component(NativeSelect, { size: 'sm', 'aria-label': __('Bulk actions'), '@change': (event: Event) => { this.bulk = (event.target as HTMLSelectElement).value; } }, html`
-                        <option value="" ?selected=${!this.bulk}>${__('Bulk actions')}</option>
-                        ${choices.map(choice => html`<option value=${choice.key} ?selected=${this.bulk === choice.key}>${choice.label}</option>`)}`)}</div>
-                    ${component(Button, { type: 'button', size: 'sm', variant: 'outline', disabled: !this.bulk || !this.selected.length, '@click': () => this.submitBulk() }, __('Apply'))}
-                    ${this.selected.length ? html`<span class="text-xs text-muted-foreground">${this.selected.length} ${__('selected')}</span>` : null}
-                </div>
+                ${this.bulkBar('top')}
             </div>
             ${component(Card, {}, component(CardBody, { class: 'p-0' }, html`
                 <div class="overflow-x-auto">
                     <table class="w-full text-sm">
                         <thead><tr class="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
-                            <th class="w-10 px-4 py-3">${component(Checkbox, { checked: allSelected, indeterminate: !allSelected && this.selected.length > 0, 'aria-label': __('Select all'), '@change': (event: Event) => this.toggleAll((event.target as HTMLInputElement).checked) })}</th>
+                            <th class="w-10 px-3 py-2">${component(Checkbox, { checked: allSelected, indeterminate: !allSelected && this.selected.length > 0, 'aria-label': __('Select all'), '@change': (event: Event) => this.toggleAll((event.target as HTMLInputElement).checked) })}</th>
                             <th class=${th} aria-sort=${this.sort === 'title' ? (this.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>${this.sortable(__('Title'), 'title')}</th>
                             ${this.hasSlug ? html`<th class=${th}>${__('Slug')}</th>` : null}
-                            <th class=${th}>${__('Author')}</th>
+                            <th class=${`${th} w-14`}>${__('Author')}</th>
                             ${this.languages.length ? html`<th class=${th}>${__('Language')}</th>` : null}
                             ${this.taxonomy ? html`<th class=${th}>${this.taxonomy.label}</th>` : null}
                             ${this.columns.map(column => html`<th class=${th}>${column.label}</th>`)}
                             <th class=${th} aria-sort=${this.sort === 'date' ? (this.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>${this.sortable(__('Date'), 'date')}</th>
                         </tr></thead>
                         <tbody>${this.rows.map(row => html`<tr class=${`group border-b border-border last:border-0 align-top ${this.selected.includes(row.id) ? 'bg-primary/5' : ''}`} data-entry=${row.id}>
-                            <td class="px-4 py-3">${component(Checkbox, { checked: this.selected.includes(row.id), 'aria-label': `${__('Select')} ${row.title}`, '@change': (event: Event) => this.toggle(row.id, (event.target as HTMLInputElement).checked) })}</td>
-                            <td class="px-4 py-3">
+                            <td class=${td}>${component(Checkbox, { checked: this.selected.includes(row.id), 'aria-label': `${__('Select')} ${row.title}`, '@change': (event: Event) => this.toggle(row.id, (event.target as HTMLInputElement).checked) })}</td>
+                            <td class=${td}>
                                 <div class="flex items-start gap-3">
                                     ${this.hasImage ? this.thumbnail(row) : null}
                                     <div class="min-w-0">
@@ -441,17 +461,17 @@ export default class EntriesPage extends Cossack {
                                     </div>
                                 </div>
                             </td>
-                            ${this.hasSlug ? html`<td class="px-4 py-3"><code class="break-all text-xs text-muted-foreground">${row.slug}</code></td>` : null}
-                            <td class="px-4 py-3 text-muted-foreground"><span class="flex items-center gap-2">
-                                ${row.author !== '—' ? component(Avatar, { src: row.avatar ?? undefined, alt: row.author, size: 24 }) : null}<span>${row.author}</span></span></td>
-                            ${this.languages.length ? html`<td class="px-4 py-3 text-muted-foreground"><span title=${languageName(row.locale)}>${row.locale.toUpperCase()}</span></td>` : null}
-                            ${this.taxonomy ? html`<td class="px-4 py-3 text-muted-foreground">${row.terms.join(', ') || '—'}</td>` : null}
-                            ${this.columns.map(column => html`<td class="px-4 py-3 text-muted-foreground">${column.values[row.id] ?? '—'}</td>`)}
-                            <td class="px-4 py-3 text-muted-foreground"><span class="block">${row.dateLabel}</span><span class="block text-xs">${row.date}</span></td>
+                            ${this.hasSlug ? html`<td class=${td}><code class="break-all text-xs text-muted-foreground">${row.slug}</code></td>` : null}
+                            <td class=${td}>${this.authorCell(row)}</td>
+                            ${this.languages.length ? html`<td class=${`${td} text-muted-foreground`}><span title=${languageName(row.locale)}>${row.locale.toUpperCase()}</span></td>` : null}
+                            ${this.taxonomy ? html`<td class=${`${td} text-muted-foreground`}>${row.terms.join(', ') || '—'}</td>` : null}
+                            ${this.columns.map(column => html`<td class=${`${td} text-muted-foreground`}>${column.values[row.id] ?? '—'}</td>`)}
+                            <td class=${`${td} text-muted-foreground`}><span class="block">${row.dateLabel}</span><span class="block text-xs">${row.date}</span></td>
                         </tr>`)}</tbody>
                     </table>
-                    ${this.rows.length ? null : html`<p class="px-4 py-10 text-center text-sm text-muted-foreground">${__('Nothing found.')}</p>`}
+                    ${this.rows.length ? null : html`<p class="px-3 py-8 text-center text-sm text-muted-foreground">${__('Nothing found.')}</p>`}
                 </div>`))}
+            ${this.rows.length ? this.bulkBar('bottom') : null}
             <div class="flex flex-col items-center justify-between gap-3 sm:flex-row">
                 <p class="text-xs text-muted-foreground">${this.total} ${this.total === 1 ? __('item') : __('items')}</p>
                 ${totalPages > 1 ? component(Pagination, {

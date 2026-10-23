@@ -4,7 +4,7 @@
  * from `init()` and hand the views to the theme's templates.
  */
 import {
-    ANONYMOUS, blockDocuments, blockIsData, blocksPlain, editedSize, flattenBlocks, escapeHtml, formatSiteDate, imageSrcset, imageUrl, isCmsError, languageName, mediaUrl, recordTitle, resolvePresets, richTextBlocks, richTextExcerpt, richTextParts, richTextPlain, systemPrincipal, templateCandidates, transformable,
+    ANONYMOUS, blockDocuments, blockIsData, blocksPlain, editedSize, resolveBlockBindings, flattenBlocks, escapeHtml, formatSiteDate, imageSrcset, imageUrl, isCmsError, languageName, mediaUrl, recordTitle, resolvePresets, richTextBlocks, richTextExcerpt, richTextParts, richTextPlain, systemPrincipal, templateCandidates, transformable,
     type Block,
     type Principal, type TemplatePage, type ThemeData, type ThemePresets,
     type ArchiveView, type BodyPart, type CollectionDefinition, type CommentShape, type CommentView, type CommentsView, type EntryReference, type EntryView, type FieldDeclaration, type FieldFilter,
@@ -139,20 +139,20 @@ async function withLatest(cms: CmsHost, blocks: readonly RenderedBlock[], locale
  * Rich text as body parts: HTML runs and rendered blocks, synced patterns expanded one level.
  * Shared by entries' bodies and the rich text inside blocks.
  */
-function bodyRenderer(cms: CmsHost, files: ReadonlyMap<string, CmsFile>, patterns: ReadonlyMap<string, Block[]>): (doc: RichTextDoc, depth?: number) => BodyPart[] {
+function bodyRenderer(cms: CmsHost, files: ReadonlyMap<string, CmsFile>, patterns: ReadonlyMap<string, Block[]>): (doc: RichTextDoc, scope?: Readonly<Record<string, unknown>>, depth?: number) => BodyPart[] {
     const resizes = cms.files?.resizes ?? false;
     const media = (id: string) => {
         const view = mediaView(files.get(id), resizes);
         return view ? { url: view.url, width: view.width, height: view.height, srcset: view.srcset } : null;
     };
-    const parts = (doc: RichTextDoc, depth = 0): BodyPart[] => richTextParts(doc, { media }).flatMap((part): BodyPart[] => {
+    const parts = (doc: RichTextDoc, scope?: Readonly<Record<string, unknown>>, depth = 0): BodyPart[] => richTextParts(doc, { media }).flatMap((part): BodyPart[] => {
         if (part.kind === 'html') return [part];
-        const inner = depth === 0 ? (doc: RichTextDoc) => parts(doc, 1) : undefined;
+        const inner = depth === 0 ? (doc: RichTextDoc) => parts(doc, scope, 1) : undefined;
         if (part.block.type === 'core/pattern') {
             // A pattern embedded in rich text: its blocks in its place, once.
-            return depth === 0 ? expandPatterns([part.block as Block], patterns).map(block => ({ kind: 'block' as const, block: renderedBlock(cms, block, files, inner) })) : [];
+            return depth === 0 ? expandPatterns([part.block as Block], patterns).map(block => ({ kind: 'block' as const, block: renderedBlock(cms, block, files, inner, scope) })) : [];
         }
-        return [{ kind: 'block' as const, block: renderedBlock(cms, part.block as RenderedBlock, files, inner) }];
+        return [{ kind: 'block' as const, block: renderedBlock(cms, part.block as RenderedBlock, files, inner, scope) }];
     });
     return parts;
 }
@@ -204,17 +204,22 @@ export function mediaView(file: CmsFile | undefined, resizes: boolean): MediaVie
     };
 }
 
-/** A block with its Markdown fields rendered and its media resolved; a container's children too. */
-/** A block with its Markdown rendered, its rich text as parts (through `richText`, when given), its media resolved and its children rendered. */
+/**
+ * A block with its Markdown rendered, its rich text as parts (through `richText`, when given),
+ * its media resolved and its children rendered. With a `scope` (the entry's record), text
+ * fields bound to entry fields (`$.price`, `{{ $.price }}`) show the entry's values.
+ */
 function renderedBlock(cms: CmsHost, block: { id: string; type: string; data: Record<string, unknown>; layout?: RenderedBlock['layout']; style?: RenderedBlock['style']; when?: RenderedBlock['when']; children?: readonly unknown[] },
-    files: ReadonlyMap<string, CmsFile>, richText?: (doc: RichTextDoc) => BodyPart[]): RenderedBlock {
+    files: ReadonlyMap<string, CmsFile>, richText?: (doc: RichTextDoc) => BodyPart[], scope?: Readonly<Record<string, unknown>>): RenderedBlock {
     const html: Record<string, string> = {};
     const media: Record<string, MediaView> = {};
     const content: Record<string, BodyPart[]> = {};
     const resizes = cms.files?.resizes ?? false;
     const type = cms.blockTypes.get(block.type);
+    const bound = Object.entries(type?.fields ?? {}).filter(([, declaration]) => (declaration.kind === 'string' && !declaration.media) || declaration.kind === 'text').map(([key]) => key);
+    const data = scope && bound.length ? resolveBlockBindings(block.data, bound, scope) : block.data;
     for (const [key, declaration] of Object.entries(type?.fields ?? {})) {
-        const entry = block.data[key];
+        const entry = data[key];
         if (declaration.kind === 'text' && declaration.format === 'markdown' && typeof entry === 'string') html[key] = renderMarkdown(entry);
         if (declaration.kind === 'richtext' && entry && typeof entry === 'object') content[key] = richText ? richText(entry as RichTextDoc) : richTextParts(entry as RichTextDoc).filter(part => part.kind === 'html');
         for (const id of declaration.media ? (Array.isArray(entry) ? entry : [entry]) : []) {
@@ -222,8 +227,8 @@ function renderedBlock(cms: CmsHost, block: { id: string; type: string; data: Re
             if (view) media[id as string] = view;
         }
     }
-    const children = Array.isArray(block.children) ? (block.children as RenderedBlock[]).map(child => renderedBlock(cms, child, files, richText)) : undefined;
-    return { id: block.id, type: block.type, data: block.data, html, media, ...(Object.keys(content).length ? { content } : {}), ...(type && blockIsData(type) ? { dataOnly: true } : {}),
+    const children = Array.isArray(block.children) ? (block.children as RenderedBlock[]).map(child => renderedBlock(cms, child, files, richText, scope)) : undefined;
+    return { id: block.id, type: block.type, data, html, media, ...(Object.keys(content).length ? { content } : {}), ...(type && blockIsData(type) ? { dataOnly: true } : {}),
         ...(block.layout ? { layout: block.layout } : {}), ...(block.style ? { style: block.style } : {}), ...(block.when ? { when: block.when } : {}), ...(children ? { children } : {}) };
 }
 
@@ -357,10 +362,11 @@ export async function entryViews(cms: CmsHost, collection: CollectionDefinition,
         const taxonomy = cms.taxonomies.declaration(term.taxonomy);
         return taxonomy.path ? `${localePrefix(languages, locale)}/${taxonomy.path}/${term.slug}` : null;
     };
+    // Blocks bind to the entry's own fields (`$.price`), so each record renders with itself as the scope.
     const parts = bodyRenderer(cms, files, patterns);
-    const render = (block: RenderedBlock) => renderedBlock(cms, block, files, doc => parts(doc));
+    const render = (block: RenderedBlock, scope: RecordShape) => renderedBlock(cms, block, files, doc => parts(doc, scope), scope);
     /** A field's typed value; undefined leaves it out (rich text, Markdown and blocks in lists, vectors). */
-    const fieldView = (name: string, declaration: FieldDeclaration, value: unknown, locale: string, full: boolean): FieldView | undefined => {
+    const fieldView = (name: string, declaration: FieldDeclaration, value: unknown, locale: string, full: boolean, scope: RecordShape): FieldView | undefined => {
         if (declaration.kind === 'vector' || declaration.kind === 'bigint') return undefined;
         if ((declaration.kind === 'richtext' || declaration.kind === 'blocks' || (declaration.kind === 'text' && declaration.format === 'markdown')) && !full) return undefined;
         if (value === undefined || value === null || value === '') return null;
@@ -368,9 +374,9 @@ export async function entryViews(cms: CmsHost, collection: CollectionDefinition,
         if (declaration.media && Array.isArray(value)) return value.map(id => mediaView(files.get(String(id)), resizes)).filter((view): view is MediaView => !!view);
         if (declaration.media) return mediaView(files.get(String(value)), resizes);
         if (declaration.kind === 'reference') return references.get(`${declaration.target}:${String(value)}`) ?? null;
-        if (declaration.kind === 'richtext') return typeof value === 'object' ? parts(value as RichTextDoc) : null;
+        if (declaration.kind === 'richtext') return typeof value === 'object' ? parts(value as RichTextDoc, scope) : null;
         if (declaration.kind === 'text' && declaration.format === 'markdown') return [{ kind: 'html', html: renderMarkdown(String(value)) }];
-        if (declaration.kind === 'blocks') return Array.isArray(value) ? (value as RenderedBlock[]).map(render) : [];
+        if (declaration.kind === 'blocks') return Array.isArray(value) ? (value as RenderedBlock[]).map(block => render(block, scope)) : [];
         return value as FieldView;
     };
     const views: EntryView[] = [];
@@ -381,15 +387,15 @@ export async function entryViews(cms: CmsHost, collection: CollectionDefinition,
         const locale = typeof record.locale === 'string' ? record.locale : languages.default;
         const legacy = !body && record.body && typeof record.body === 'object' && (record.body as RichTextDoc).type === 'doc' ? record.body as RichTextDoc : null;
         let bodyParts: BodyPart[] = [];
-        if (options.full && (richText ?? legacy)) bodyParts = parts((richText ?? legacy)!);
+        if (options.full && (richText ?? legacy)) bodyParts = parts((richText ?? legacy)!, record);
         else if (options.full && markdown) bodyParts = [{ kind: 'html', html: renderMarkdown(markdown) }];
         const content = stored(record);
-        const blocks = options.full ? (expandPatterns(content, patterns) as RenderedBlock[]).map(render) : [];
+        const blocks = options.full ? (expandPatterns(content, patterns) as RenderedBlock[]).map(block => render(block, record)) : [];
         const typed: Record<string, FieldView> = {};
         for (const [name, declaration] of fields) {
             if (NOT_FIELDS.has(name)) continue;
             // The body and the content are rendered once, for `body` and `blocks` and their fields.
-            const view = body && name === body[0] && options.full ? bodyParts : blocksField && name === blocksField[0] && options.full && blocksFields.length === 1 ? blocks : fieldView(name, declaration, record[name], locale, options.full === true);
+            const view = body && name === body[0] && options.full ? bodyParts : blocksField && name === blocksField[0] && options.full && blocksFields.length === 1 ? blocks : fieldView(name, declaration, record[name], locale, options.full === true, record);
             if (view !== undefined) typed[name] = view;
         }
         const details = options.full ? fields.filter(([name, declaration]) => !NOT_DETAILS.has(name) && !declaration.taxonomy && !declaration.media

@@ -67,18 +67,18 @@ export default class TaxonomiesPage extends Cossack {
             <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
                 ${component(Card, {}, component(CardBody, { class: 'p-0' }, html`<table class="w-full text-sm">
                     <thead><tr class="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
-                        <th class="px-4 py-3 font-medium">${__('Taxonomy')}</th><th class="px-4 py-3 font-medium">${__('Used by')}</th>
-                        <th class="px-4 py-3 font-medium">${__('URL')}</th><th class="px-4 py-3 text-right font-medium">${__('Terms')}</th>
+                        <th class="px-3 py-2 font-medium">${__('Taxonomy')}</th><th class="px-3 py-2 font-medium">${__('Used by')}</th>
+                        <th class="px-3 py-2 font-medium">${__('URL')}</th><th class="px-3 py-2 text-right font-medium">${__('Terms')}</th>
                     </tr></thead>
                     <tbody>${this.rows.map(row => html`<tr class="border-b border-border last:border-0">
-                        <td class="px-4 py-3">
+                        <td class="px-3 py-2">
                             <a href=${`/dashboard/taxonomies/${row.name}`} class="font-medium text-foreground hover:text-primary no-underline">${row.label}</a>
                             <span class="ml-2 inline-flex gap-1">${row.hierarchical ? component(Badge, { variant: 'outline' }, __('Nested')) : null}${row.builtin ? component(Badge, { variant: 'secondary' }, __('Built in')) : null}</span>
                             <div class="mt-1 text-xs"><a href=${`/dashboard/terms/${row.name}`} class="text-primary hover:underline">${__('Manage terms')}</a></div>
                         </td>
-                        <td class="px-4 py-3 text-muted-foreground">${row.collections.join(', ') || '—'}</td>
-                        <td class="px-4 py-3 font-mono text-xs text-muted-foreground">${row.path ? `/${row.path}/…` : '—'}</td>
-                        <td class="px-4 py-3 text-right text-muted-foreground">${row.terms}</td>
+                        <td class="px-3 py-2 text-muted-foreground">${row.collections.join(', ') || '—'}</td>
+                        <td class="px-3 py-2 font-mono text-xs text-muted-foreground">${row.path ? `/${row.path}/…` : '—'}</td>
+                        <td class="px-3 py-2 text-right text-muted-foreground">${row.terms}</td>
                     </tr>`)}</tbody>
                 </table>`))}
                 ${component(Card, {}, component(CardBody, {}, html`

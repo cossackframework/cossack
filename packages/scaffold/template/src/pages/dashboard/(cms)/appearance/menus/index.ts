@@ -111,20 +111,20 @@ export default class MenusPage extends Cossack {
                 </div>
                 ${component(Card, {}, component(CardBody, { class: 'p-0' }, html`<div class="overflow-x-auto"><table class="w-full text-sm">
                     <thead><tr class="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
-                        <th class="px-4 py-3 font-medium">${__('Name')}</th><th class="px-4 py-3 font-medium">${__('Locations')}</th>
-                        <th class="px-4 py-3 text-right font-medium">${__('Items')}</th><th class="px-4 py-3 font-medium">${__('Last modified')}</th>
+                        <th class="px-3 py-2 font-medium">${__('Name')}</th><th class="px-3 py-2 font-medium">${__('Locations')}</th>
+                        <th class="px-3 py-2 text-right font-medium">${__('Items')}</th><th class="px-3 py-2 font-medium">${__('Last modified')}</th>
                     </tr></thead>
                     <tbody>${this.menus.map(menu => html`<tr class="group border-b border-border last:border-0 align-top">
-                        <td class="px-4 py-3">
+                        <td class="px-3 py-2">
                             <a href=${`/dashboard/appearance/menus/${menu.id}`} class="font-medium text-foreground hover:text-primary no-underline">${menu.name}</a>
                             <div class="mt-1 flex gap-2 text-xs opacity-80 group-hover:opacity-100">
                                 <a href=${`/dashboard/appearance/menus/${menu.id}`} class="text-primary hover:underline">${__('Edit')}</a><span aria-hidden="true" class="text-muted-foreground">|</span>
                                 <button type="button" class="text-destructive hover:underline bg-transparent border-none p-0 cursor-pointer" @click=${() => { this.pendingDelete = menu; }}>${__('Delete')}</button>
                             </div>
                         </td>
-                        <td class="px-4 py-3"><span class="flex flex-wrap gap-1">${menu.locations.length ? menu.locations.map(name => component(Badge, { variant: 'secondary' }, label(name))) : html`<span class="text-muted-foreground">—</span>`}</span></td>
-                        <td class="px-4 py-3 text-right text-muted-foreground">${menu.items}</td>
-                        <td class="px-4 py-3 text-muted-foreground">${shortDate(menu.updatedAt)}</td>
+                        <td class="px-3 py-2"><span class="flex flex-wrap gap-1">${menu.locations.length ? menu.locations.map(name => component(Badge, { variant: 'secondary' }, label(name))) : html`<span class="text-muted-foreground">—</span>`}</span></td>
+                        <td class="px-3 py-2 text-right text-muted-foreground">${menu.items}</td>
+                        <td class="px-3 py-2 text-muted-foreground">${shortDate(menu.updatedAt)}</td>
                     </tr>`)}</tbody>
                 </table>${this.menus.length ? null : html`<p class="px-4 py-10 text-center text-sm text-muted-foreground">${__('No menus yet. Create one to start.')}</p>`}</div>`))}
             </div>

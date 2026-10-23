@@ -95,19 +95,20 @@ async function exercise(origin, routeIds, diagnostics) {
   const list = await web.page('/dashboard/content/posts');
   contains(list, 'Hello, World!');
   expect(/Published\s*<span[^>]*>\(1\)/.test(list), 'one published post in the status tabs').toBe(true);
-  // Quick Draft turns its plain text into a Rich text block.
-  await web.action('dashboard/index.ts', 'quickDraft', ['Quick idea', 'Line one\n\nLine two']);
+  // A draft saved from the editor shows in the Drafts tab.
+  await web.action(editor, 'save', [{ title: 'Quick idea', slug: '', status: 'draft', publishedAt: '', content: [{ id: 'q1', type: 'core/paragraph', data: { text: 'Line one' } }] }, 'draft', 0],
+    { params: { collection: 'posts', id: 'new' }, state: { route: 'posts', id: 'new' } });
   contains(await web.page('/dashboard/content/posts?status=draft'), 'Quick idea');
 
   // A collection built in the dashboard, with a blocks field and a taxonomy.
-  const collections = 'dashboard/(cms)/collections/index.ts';
+  const collections = 'dashboard/(cms)/collections/new/index.ts';
   expect((await web.action(collections, 'create', ['Products', 'Product', 'box']))._cossack_redirect).toBe('/dashboard/collections/products?created=1');
-  const field = (name, label, type, extra = {}) => ({ name, label, type, required: false, description: '', placement: '', unique: false, search: false,
-    max: '', min: '', choices: '', defaultValue: '', target: '', blocks: [], locked: false, ...extra });
+  // The builder lays fields out as field blocks.
+  const field = (name, label, kind, extra = {}) => ({ id: name, type: `field/${kind}`, data: { name, label, ...extra } });
   const builder = await web.action('dashboard/(cms)/collections/[name]/index.ts', 'save', [
     { name: 'products', label: 'Products', singular: 'Product', description: 'Things we sell.', icon: 'box', path: 'shop', public: true, slug: true, publishable: true,
       hierarchical: false, visibility: 'private', taxonomies: ['tags'], builtin: false },
-    [field('price', 'Price', 'number', { required: true, min: '0' }), field('sku', 'SKU', 'text', { unique: true }), field('content', 'Content', 'blocks')],
+    [field('price', 'Price', 'number', { required: true, min: 0 }), field('sku', 'SKU', 'text', { unique: true }), field('content', 'Content', 'blocks')],
   ], { params: { name: 'products' } });
   expect(builder.error).toBe('');
   contains(await web.page('/dashboard'), 'href="/dashboard/content/products"');
@@ -421,7 +422,7 @@ describe.skipIf(!liveFastDBTests())('generated CMS application', () => {
       const primary = page.locator('nav[aria-label="Primary"]');
       await browserExpect(primary.locator('li li a', { hasText: 'Team' }).first()).toHaveAttribute('href', '/team');
 
-      await page.goto(server.origin + '/dashboard/collections');
+      await page.goto(server.origin + '/dashboard/collections/new');
       await ready();
       await page.getByLabel('Plural name').fill('Events');
       await page.getByLabel('Singular name').fill('Event');

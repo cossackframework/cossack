@@ -104,27 +104,24 @@ export default class WidgetsPage extends Cossack {
 
     @Client()
     setStyle(style: StyleValues) {
-        if (this.dialog) this.dialog = { ...this.dialog, style };
+        if (this.dialog) this.apply({ ...this.dialog, style });
     }
 
     @Client()
     setValue(name: string, value: unknown) {
-        if (this.dialog) this.dialog = { ...this.dialog, values: { ...this.dialog.values, [name]: value }, errors: { ...this.dialog.errors, [name]: '' } };
+        if (this.dialog) this.apply({ ...this.dialog, values: { ...this.dialog.values, [name]: value }, errors: { ...this.dialog.errors, [name]: '' } });
     }
 
+    /** The panel's values and style go into the block at once; a value its field cannot take stays in the panel with its message. */
     @Client()
-    apply(event: Event) {
-        event.preventDefault();
-        const dialog = this.dialog;
-        const block = dialog ? findBlock(this.blocksOf(dialog.area), dialog.id) : undefined;
+    apply(dialog: BlockDialog) {
+        const block = findBlock(this.blocksOf(dialog.area), dialog.id);
         const option = this.options.find(entry => entry.name === block?.type);
-        if (!dialog || !block || !option) return;
+        if (!block || !option) return;
         const fields = option.fields.filter(field => field.kind !== 'richtext');
         const { input, errors } = editorInput(fields, dialog.values);
-        for (const field of fields) if (field.required && (input[field.name] === undefined || input[field.name] === '' || input[field.name] === null)) errors[field.name] ??= __('is required.');
-        if (Object.keys(errors).length) { this.dialog = { ...dialog, errors }; return; }
-        this.change(dialog.area, updateBlock(this.blocksOf(dialog.area), dialog.id, entry => withStyle({ ...entry, data: { ...Object.fromEntries(Object.entries(entry.data).filter(([name]) => option.fields.find(field => field.name === name)?.kind === 'richtext')), ...dialog.values } }, dialog.style)));
-        this.dialog = null;
+        this.dialog = { ...dialog, errors: { ...dialog.errors, ...errors } };
+        this.change(dialog.area, updateBlock(this.blocksOf(dialog.area), dialog.id, entry => withStyle({ ...entry, data: { ...Object.fromEntries(Object.entries(entry.data).filter(([name]) => option.fields.find(field => field.name === name)?.kind === 'richtext')), ...input } }, dialog.style)));
     }
 
     @Server()
@@ -201,7 +198,7 @@ export default class WidgetsPage extends Cossack {
         const fields = option ? { ...option, fields: option.fields.filter(field => field.kind !== 'richtext') } : null;
         return blockPanel({
             id: 'widget-block', open: Boolean(dialog && option), option, tab: dialog?.tab ?? 'general', style: dialog?.style ?? styleValues({}), presets: this.presets,
-            onTab: tab => this.showTab(tab), onStyle: style => this.setStyle(style), onApply: () => this.apply(new Event('submit')), onClose: () => { this.dialog = null; },
+            onTab: tab => this.showTab(tab), onStyle: style => this.setStyle(style), onClose: () => { this.dialog = null; },
             general: dialog && fields ? (fields.fields.length ? blockFields(fields, dialog.values, (name, value) => this.setValue(name, value), `widget-${dialog.area}-${dialog.id}`, media, dialog.errors)
                 : html`<p class="text-sm text-muted-foreground">${__('This block has no settings.')}</p>`) : html``,
         });

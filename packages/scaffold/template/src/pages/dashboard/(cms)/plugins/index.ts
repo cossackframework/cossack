@@ -3,7 +3,7 @@ import { Badge, Card, CardBody } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { isCmsError, isSameOriginPost, PERMISSIONS } from '@cossackframework/cms';
 import { requireAny } from '../../../../cms/guards';
-import { artwork, notice, pageHeader } from '../../../../cms/ui';
+import { artwork, authorLine, notice, pageHeader } from '../../../../cms/ui';
 
 interface PluginRow {
     name: string;
@@ -76,7 +76,8 @@ export default class PluginsPage extends Cossack {
                             ${artwork('logo', plugin.logo, plugin.name, plugin.name)}
                             <div class="min-w-0">
                                 <p class="truncate text-sm font-semibold text-foreground">${plugin.name}</p>
-                                <p class="text-xs text-muted-foreground">${__('version')} ${plugin.version}${plugin.author ? html` · ${__('by')} ${plugin.authorUrl ? html`<a href=${plugin.authorUrl} target="_blank" rel="noopener noreferrer" class="text-primary hover:underline">${plugin.author}</a>` : plugin.author}` : null}</p>
+                                <p class="text-xs text-muted-foreground">${__('version')} ${plugin.version}</p>
+                                ${authorLine(plugin.author, plugin.authorUrl)}
                             </div>
                         </div>
                         ${plugin.themeOnly ? component(Badge, { variant: 'secondary' }, __('Theme'))

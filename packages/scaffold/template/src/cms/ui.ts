@@ -1,4 +1,5 @@
 /** Small view helpers shared by the CMS dashboard screens. */
+import { Client, ClientState, Component, Cossack } from '@cossackframework/core';
 import { component, html, ifDefined, type TemplateResult } from '@cossackframework/renderer';
 import { Badge, Icon, Tooltip } from '@cossackframework/ui';
 import { icon } from './icons';
@@ -74,12 +75,82 @@ export function shortDate(value: unknown): string {
 
 export const CONTROL = 'w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring';
 
-/** A boxed section in the editor's sidebar, like WordPress meta boxes. */
-export function box(title: string, body: TemplateResult | TemplateResult[] | null, options: { id?: string } = {}): TemplateResult {
-    return html`<section class="rounded-lg border border-border bg-card" aria-labelledby=${options.id ?? ''}>
-        <h2 id=${options.id ?? ''} class="border-b border-border px-4 py-2.5 text-sm font-semibold text-foreground">${title}</h2>
-        <div class="space-y-3 p-4">${body}</div>
-    </section>`;
+export type MetaBoxProps = {
+    title: string;
+    body: TemplateResult | TemplateResult[] | null;
+    /** The heading's ID; also the key the open state is remembered under. */
+    id?: string;
+    /** Something beside the title, such as a count or a link. */
+    extra?: TemplateResult | null;
+    /** Start collapsed. */
+    collapsed?: boolean;
+};
+
+/**
+ * A boxed section like a WordPress meta box: its heading toggles the body with an animated
+ * collapse, and the state is remembered per box in this browser.
+ */
+@Component()
+export class MetaBox extends Cossack {
+    declare props: MetaBoxProps;
+    /** The visitor's choice; null until they toggle or a remembered state loads. */
+    @ClientState() private open: boolean | null = null;
+
+    private get key(): string {
+        return `cms.box.${this.props.id ?? this.props.title}`;
+    }
+
+    private get isOpen(): boolean {
+        return this.open ?? this.props.collapsed !== true;
+    }
+
+    onMount() {
+        try {
+            const stored = localStorage.getItem(this.key);
+            if (stored === 'open' || stored === 'closed') this.open = stored === 'open';
+        } catch { /* storage unavailable */ }
+    }
+
+    @Client()
+    toggle() {
+        this.open = !this.isOpen;
+        try { localStorage.setItem(this.key, this.open ? 'open' : 'closed'); } catch { /* storage unavailable */ }
+    }
+
+    render(): TemplateResult {
+        const open = this.isOpen;
+        const heading = this.props.id ?? '';
+        const panel = heading ? `${heading}-panel` : '';
+        return html`<section class="cs-meta-box rounded-lg border border-border bg-card" aria-labelledby=${ifDefined(heading || undefined)}>
+            <h2 id=${ifDefined(heading || undefined)} class=${`flex items-center gap-2 px-4 py-2.5 text-sm font-semibold text-foreground ${open ? 'border-b border-border' : ''}`}>
+                <button type="button" class="flex min-w-0 flex-1 items-center gap-2 border-none bg-transparent p-0 text-left text-sm font-semibold text-foreground cursor-pointer"
+                    aria-expanded=${open ? 'true' : 'false'} aria-controls=${ifDefined(panel || undefined)} aria-label=${`${open ? __('Collapse') : __('Expand')} ${this.props.title}`} @click=${() => this.toggle()}>
+                    <span class=${`inline-flex shrink-0 text-muted-foreground transition-transform duration-200 motion-reduce:transition-none [&_svg]:size-4 ${open ? 'rotate-90' : ''}`} aria-hidden="true">${component(Icon, { entry: icon('alt-arrow-right'), size: 16 })}</span>
+                    <span class="min-w-0 flex-1 truncate">${this.props.title}</span>
+                </button>
+                ${this.props.extra ?? null}
+            </h2>
+            <div id=${ifDefined(panel || undefined)} class=${`grid transition-[grid-template-rows] duration-200 ease-out motion-reduce:transition-none ${open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`} ?inert=${!open} aria-hidden=${open ? 'false' : 'true'}>
+                <div class="min-h-0 overflow-hidden"><div class="space-y-3 p-4">${this.props.body}</div></div>
+            </div>
+        </section>`;
+    }
+}
+
+/** A boxed section in the editor's sidebar, like WordPress meta boxes: collapsible, with its state remembered. */
+export function box(title: string, body: TemplateResult | TemplateResult[] | null, options: { id?: string; extra?: TemplateResult | null; collapsed?: boolean } = {}): TemplateResult {
+    return component(MetaBox, { title, body, ...options });
+}
+
+/**
+ * Who made a plugin or theme: the author's name, and their website as a link showing its
+ * address, so both are read without hovering. Nothing when the manifest names no author.
+ */
+export function authorLine(author: string, url: string | null | undefined): TemplateResult | null {
+    if (!author && !url) return null;
+    let host = '';
+    try { host = url ? new URL(url).host.replace(/^www\./, '') : ''; } catch { host = url ?? ''; }
+    return html`<p class="text-xs text-muted-foreground">${author ? html`${__('By')} <span class="text-foreground">${author}</span>` : null}${url ? html`${author ? ' · ' : ''}<a href=${url} target="_blank" rel="noopener noreferrer" class="text-primary hover:underline">${host}</a>` : null}</p>`;
 }
 
 /** A stable hue from a name, for generated artwork. */

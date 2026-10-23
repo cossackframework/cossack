@@ -53,18 +53,18 @@ export default class FormsPage extends Cossack {
             : row.closed ? component(Badge, { variant: 'warning' }, __('Closed')) : component(Badge, { variant: 'success' }, __('Accepting'));
         const submissions = `/dashboard/forms/${row.id}/submissions`;
         return html`<tr class="border-b border-border last:border-0 align-top" data-form=${row.slug}>
-            <td class="px-4 py-3">
+            <td class="px-3 py-2">
                 ${this.canEdit ? html`<a href=${`/dashboard/content/forms/${row.id}`} class="font-medium text-foreground hover:text-primary">${row.title}</a>` : html`<span class="font-medium text-foreground">${row.title}</span>`}
                 <div class="mt-1 flex flex-wrap gap-x-3 text-xs">
                     ${this.canEdit ? html`<a href=${`/dashboard/content/forms/${row.id}`} class="text-primary hover:underline">${__('Edit')}</a>` : null}
                     ${this.canHandle ? html`<a href=${submissions} class="text-primary hover:underline">${__('Submissions')}</a>` : null}
                 </div>
             </td>
-            <td class="px-4 py-3"><code class="text-xs">${row.slug}</code></td>
-            <td class="px-4 py-3 text-muted-foreground">${row.fields}</td>
-            <td class="px-4 py-3">${this.canHandle ? html`<a href=${submissions} class="text-foreground no-underline hover:text-primary">${row.kept}</a>
+            <td class="px-3 py-2"><code class="text-xs">${row.slug}</code></td>
+            <td class="px-3 py-2 text-muted-foreground">${row.fields}</td>
+            <td class="px-3 py-2">${this.canHandle ? html`<a href=${submissions} class="text-foreground no-underline hover:text-primary">${row.kept}</a>
                 ${row.fresh ? html` <a href=${`${submissions}?status=new`} class="no-underline">${component(Badge, { variant: 'default' }, `${row.fresh} ${__('new')}`)}</a>` : null}` : html`<span class="text-muted-foreground">—</span>`}</td>
-            <td class="px-4 py-3">${status}</td>
+            <td class="px-3 py-2">${status}</td>
         </tr>`;
     }
 
@@ -76,8 +76,8 @@ export default class FormsPage extends Cossack {
             })}
             ${component(Card, {}, component(CardBody, { class: 'p-0' }, html`<div class="overflow-x-auto"><table class="w-full text-sm">
                 <thead><tr class="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
-                    <th class="px-4 py-3 font-medium">${__('Title')}</th><th class="px-4 py-3 font-medium">${__('Slug')}</th><th class="px-4 py-3 font-medium">${__('Fields')}</th>
-                    <th class="px-4 py-3 font-medium">${__('Submissions')}</th><th class="px-4 py-3 font-medium">${__('Status')}</th>
+                    <th class="px-3 py-2 font-medium">${__('Title')}</th><th class="px-3 py-2 font-medium">${__('Slug')}</th><th class="px-3 py-2 font-medium">${__('Fields')}</th>
+                    <th class="px-3 py-2 font-medium">${__('Submissions')}</th><th class="px-3 py-2 font-medium">${__('Status')}</th>
                 </tr></thead>
                 <tbody>${this.rows.map(row => this.row(row))}</tbody></table>
                 ${this.rows.length ? null : html`<p class="px-4 py-10 text-center text-sm text-muted-foreground">${__('No forms yet.')}</p>`}</div>`))}

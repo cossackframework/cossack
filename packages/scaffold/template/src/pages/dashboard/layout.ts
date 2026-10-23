@@ -89,6 +89,8 @@ export default class DashboardLayout extends Cossack {
 
     render(): TemplateResult {
         const iconClass = 'inline-flex items-center justify-center [&_svg]:size-4';
+        // The theme icons: only one shows, so `hidden` must not share the element with `inline-flex`.
+        const themeIcon = 'items-center justify-center [&_svg]:size-4';
         const availableModules = this.modules;
         const navigationModules = availableModules.filter(
             (module) => module.placement !== 'account',
@@ -155,8 +157,8 @@ export default class DashboardLayout extends Cossack {
                                 title=${__('Switch between light and dark mode')}
                                 aria-label=${__('Switch between light and dark mode')}
                             >
-                                <span class=${`${iconClass} dark:hidden`}>${component(Icon, { entry: sunIcon, size: 16 })}</span>
-                                <span class=${`${iconClass} hidden dark:inline-flex`}>${component(Icon, { entry: moonIcon, size: 16 })}</span>
+                                <span class=${`${themeIcon} inline-flex dark:hidden`}>${component(Icon, { entry: sunIcon, size: 16 })}</span>
+                                <span class=${`${themeIcon} hidden dark:inline-flex`}>${component(Icon, { entry: moonIcon, size: 16 })}</span>
                                 <span class="group-[.is-collapsed]:hidden dark:hidden">${__('Light mode')}</span>
                                 <span class="hidden group-[.is-collapsed]:hidden dark:inline">${__('Dark mode')}</span>
                             </button>

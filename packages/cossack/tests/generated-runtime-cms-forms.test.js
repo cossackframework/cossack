@@ -251,7 +251,7 @@ describe.skipIf(!liveFastDBTests())('generated CMS forms', () => {
         await admin.getByRole('region', { name: region }).getByRole('button', { name: `Edit ${type}` }).click();
         const panel = admin.getByRole('dialog', { name: type });
         await fill(panel);
-        await panel.getByRole('button', { name: 'Apply' }).click();
+        await panel.getByRole('button', { name: 'Done' }).click();
         await browserExpect(panel).toBeHidden();
       };
       await admin.goto(`${origin}/dashboard/content/forms/new`);

@@ -7,6 +7,14 @@
 /* Dark mode follows the `dark` class on <html>, which App.ts sets from the theme store, so `dark:` utilities match the theme tokens. */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* A block the editor's validation message names flashes a few times so it is found in a long tree. */
+.cms-block-error { animation: cms-block-flash 0.6s ease-in-out 4; }
+@keyframes cms-block-flash {
+    0%, 100% { box-shadow: 0 0 0 0 transparent; }
+    50% { box-shadow: 0 0 0 4px color-mix(in oklab, var(--destructive) 45%, transparent); }
+}
+@media (prefers-reduced-motion: reduce) { .cms-block-error { animation: none; } }
+
 /*
  * View Transition animations.
  *

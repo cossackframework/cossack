@@ -1,14 +1,14 @@
 import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackframework/core';
 import { AlertDialog, Badge, Button, Card, CardBody, CardHeader, Checkbox, Field, Input, NativeSelect, Textarea, toast } from '@cossackframework/ui';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
-import { CORE_FIELDS, findBlock, hasPermission, isCmsError, layoutOf, PERMISSIONS, updateBlock, type Block, type RichTextDoc, type ThemePresets } from '@cossackframework/cms';
+import { CORE_FIELDS, findBlock, flattenGroupFields, hasPermission, isCmsError, layoutOf, PERMISSIONS, updateBlock, type Block, type RichTextDoc, type ThemePresets } from '@cossackframework/cms';
 import { collectionDraft, definitionOf, type CollectionDraft } from '../../../../../cms/builder';
 import { FieldGroupEditor } from '../../../../../cms/field-group-editor';
 import { blockPanel } from '../../../../../cms/block-panel';
 import { BlockTree } from '../../../../../cms/block-tree';
 import { blockFilePreviews, blockOptions, findMedia } from '../../../../../cms/content';
 import { blocksInput, controlValue, editorBlocks, editorInput, type BlockOption, type EditorBlock, type EditorField } from '../../../../../cms/editor';
-import { blockFields, type MediaHooks, type MediaPreview } from '../../../../../cms/field-controls';
+import { bindingChoices, blockFields, type BindingChoice, type MediaHooks, type MediaPreview } from '../../../../../cms/field-controls';
 import { requireAny } from '../../../../../cms/guards';
 import { COLLECTION_ICONS } from '../../../../../cms/icons';
 import { closedChooser, mediaChooser, uploadMedia, withFile, type MediaChooserState } from '../../../../../cms/media-chooser';
@@ -147,21 +147,35 @@ export default class CollectionBuilder extends Cossack {
 
     @Client()
     setDialogValue(name: string, value: unknown) {
-        if (this.dialog) this.dialog = { ...this.dialog, values: { ...this.dialog.values, [name]: value }, errors: { ...this.dialog.errors, [name]: '' } };
+        if (this.dialog) this.applyDialog({ ...this.dialog, values: { ...this.dialog.values, [name]: value }, errors: { ...this.dialog.errors, [name]: '' } });
     }
 
     @Client()
-    applyDialog() {
-        const dialog = this.dialog;
-        const block = dialog ? findBlock(this.template, dialog.id) : undefined;
+    setDialogStyle(style: StyleValues) {
+        if (this.dialog) this.applyDialog({ ...this.dialog, style });
+    }
+
+    /** The panel's values and style go into the template block at once; a value its field cannot take stays in the panel with its message. */
+    @Client()
+    applyDialog(dialog: BlockDialog) {
+        const block = findBlock(this.template, dialog.id);
         const option = this.options.find(entry => entry.name === block?.type);
-        if (!dialog || !block || !option) return;
+        if (!block || !option) return;
         const fields = option.fields.filter(field => field.kind !== 'richtext');
         const { input, errors } = editorInput(fields, dialog.values);
-        for (const field of fields) if (field.required && (input[field.name] === undefined || input[field.name] === '' || input[field.name] === null)) errors[field.name] ??= __('is required.');
-        if (Object.keys(errors).length) { this.dialog = { ...dialog, errors }; return; }
-        this.template = updateBlock(this.template, dialog.id, entry => withStyle({ ...entry, data: { ...Object.fromEntries(Object.entries(entry.data).filter(([name]) => option.fields.find(field => field.name === name)?.kind === 'richtext')), ...dialog.values } }, dialog.style));
-        this.dialog = null;
+        this.dialog = { ...dialog, errors: { ...dialog.errors, ...errors } };
+        this.template = updateBlock(this.template, dialog.id, entry => withStyle({ ...entry, data: { ...Object.fromEntries(Object.entries(entry.data).filter(([name]) => option.fields.find(field => field.name === name)?.kind === 'richtext')), ...input } }, dialog.style));
+    }
+
+    /** The collection's fields a template block's text may show (`$.price`): the title and the layout's text-like fields. */
+    private bindings(): BindingChoice[] {
+        const kinds: Record<string, EditorField['kind']> = { text: 'string', textarea: 'text', markdown: 'text', number: 'number', integer: 'integer', boolean: 'boolean', choice: 'enum', date: 'datetime' };
+        const own = flattenGroupFields(this.layout as unknown as Block[]).flatMap(block => {
+            const kind = kinds[block.type.replace(/^field\//, '')];
+            const name = String(block.data.name ?? '');
+            return kind && name ? [{ name, label: String(block.data.label ?? name), kind, media: false }] : [];
+        });
+        return bindingChoices([{ name: 'title', label: __('Title'), kind: 'string', media: false }, ...own]);
     }
 
     @Server()
@@ -227,9 +241,9 @@ export default class CollectionBuilder extends Cossack {
         `)}
         ${blockPanel({
             id: 'template-block', open: Boolean(dialog && option), option, tab: dialog?.tab ?? 'general', style: dialog?.style ?? styleValues({}), presets: this.presets,
-            onTab: tab => { if (this.dialog) this.dialog = { ...this.dialog, tab }; }, onStyle: style => { if (this.dialog) this.dialog = { ...this.dialog, style }; },
-            onApply: () => this.applyDialog(), onClose: () => { this.dialog = null; },
-            general: dialog && fields ? (fields.fields.length ? blockFields(fields, dialog.values, (name, value) => this.setDialogValue(name, value), `template-${dialog.id}`, media, dialog.errors)
+            onTab: tab => { if (this.dialog) this.dialog = { ...this.dialog, tab }; }, onStyle: style => this.setDialogStyle(style),
+            onClose: () => { this.dialog = null; },
+            general: dialog && fields ? (fields.fields.length ? blockFields(fields, dialog.values, (name, value) => this.setDialogValue(name, value), `template-${dialog.id}`, media, dialog.errors, this.bindings())
                 : html`<p class="text-sm text-muted-foreground">${__('This block has no settings.')}</p>`) : html``,
         })}
         ${mediaChooser(this.chooser, { search: text => this.searchMedia(text), choose: file => this.chooseFile(file), upload: event => this.uploadFile(event), close: () => { this.chooser = { ...this.chooser, open: false }; } })}`;

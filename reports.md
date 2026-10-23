@@ -62,3 +62,28 @@ on the last list it sent to `onChange` until the parent re-renders it. After
 that re-render, it uses `value` again, so a parent can still reject an edit.
 `max` also counts edits that are not rendered yet. Tests:
 `packages/ui/tests/multi-select-controlled.test.ts`.
+
+## Soft delete: `DeleteDateColumn` only affects `orm.remove()`; `IsNull()` is untyped
+
+**Found in:** storm-matching, bulk actions / soft delete (2026-10-22).
+
+**What happened:** Adding `deleted_at` to five tables. The ORM exports
+`DeleteDateColumn`, but only `orm.remove(entity)` honours it: `Model.find()`,
+`findOne()`, `count()`, `exists()` and the static `Model.delete()` neither
+skip soft-deleted rows nor offer a `withDeleted` option, and there is no
+`restore()`. So the app had to filter `deleted_at IS NULL` by hand in every
+query and write its own restore / permanent delete SQL.
+
+Also `IsNull()` is declared as `() => FindOperator` (`FindOperator<unknown>`),
+so `where: { deletedAt: IsNull() }` fails type-checking against a
+`Date | string | null` column and needs a cast
+(`IsNull() as FindOperator<Date | string | null>`).
+
+**Expected:** With a `DeleteDateColumn`, reads exclude soft-deleted rows by
+default, with `withDeleted: true` to include them; `Model.softDelete(where)`,
+`Model.restore(where)` and `Model.delete(where, { force: true })` (or similar)
+for the three operations. `IsNull()` typed as `<T>() => FindOperator<T | null>`
+(or `FindOperator<any>`).
+
+**Workaround:** Plain `@Column({ type: 'datetime', nullable: true })` plus raw
+`sql` for the filters and the restore / destroy statements.

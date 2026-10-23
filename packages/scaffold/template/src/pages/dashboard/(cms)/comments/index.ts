@@ -162,12 +162,12 @@ export default class CommentsPage extends Cossack {
     private row(row: Row): TemplateResult {
         const editing = this.editing?.id === row.id ? this.editing : null;
         return html`<tr class=${`border-b border-border last:border-0 align-top ${row.status === 'pending' ? 'bg-amber-500/5' : ''}`} data-comment=${row.id} data-status=${row.status}>
-            <td class="px-4 py-3">${component(Checkbox, { checked: this.selected.includes(row.id), 'aria-label': `${__('Select comment by')} ${row.author}`, '@change': (event: Event) => this.toggle(row.id, (event.target as HTMLInputElement).checked) })}</td>
-            <td class="px-4 py-3"><span class="flex items-start gap-2">${component(Avatar, { src: row.avatar ?? undefined, alt: row.author, size: 32 })}
+            <td class="px-3 py-2">${component(Checkbox, { checked: this.selected.includes(row.id), 'aria-label': `${__('Select comment by')} ${row.author}`, '@change': (event: Event) => this.toggle(row.id, (event.target as HTMLInputElement).checked) })}</td>
+            <td class="px-3 py-2"><span class="flex items-start gap-2">${component(Avatar, { src: row.avatar ?? undefined, alt: row.author, size: 32 })}
                 <span class="min-w-0"><span class="block font-medium text-foreground">${row.author}</span>
                     ${row.email ? html`<a href=${`mailto:${row.email}`} class="block truncate text-xs text-primary hover:underline">${row.email}</a>` : null}
                     ${row.url ? html`<span class="block truncate text-xs text-muted-foreground">${row.url}</span>` : null}</span></span></td>
-            <td class="max-w-xl px-4 py-3">
+            <td class="max-w-xl px-3 py-2">
                 ${row.status !== 'approved' ? html`<span class="mb-1 inline-block">${component(Badge, { variant: row.status === 'pending' ? 'warning' : row.status === 'spam' ? 'destructive' : 'secondary' },
                     row.status === 'pending' ? __('Pending') : row.status === 'spam' ? __('Spam') : __('Trash'))}</span>` : null}
                 ${row.parentAuthor ? html`<p class="text-xs text-muted-foreground">${__('In reply to')} ${row.parentAuthor}</p>` : null}
@@ -185,10 +185,10 @@ export default class CommentsPage extends Cossack {
                     <div class="flex gap-2">${component(Button, { type: 'submit', size: 'sm', disabled: !this.replyText.trim() }, __('Reply'))}${component(Button, { type: 'button', size: 'sm', variant: 'ghost', '@click': () => { this.replying = ''; } }, __('Cancel'))}</div>
                 </form>` : null}
             </td>
-            <td class="px-4 py-3">${row.entry ? html`<a href=${row.entry.edit} class="font-medium text-foreground hover:text-primary">${row.entry.title}</a>
+            <td class="px-3 py-2">${row.entry ? html`<a href=${row.entry.edit} class="font-medium text-foreground hover:text-primary">${row.entry.title}</a>
                 ${row.entry.view ? html`<a href=${`${row.entry.view}#comment-${row.id}`} class="block text-xs text-primary hover:underline">${__('View')}</a>` : null}
                 <a href=${this.href({ collection: row.collection, entry: row.entryId, page: 1 })} class="block text-xs text-muted-foreground hover:text-foreground">${__('All comments on it')}</a>` : html`<span class="text-muted-foreground">—</span>`}</td>
-            <td class="px-4 py-3 text-xs text-muted-foreground">${row.date}</td>
+            <td class="px-3 py-2 text-xs text-muted-foreground">${row.date}</td>
         </tr>`;
     }
 
@@ -218,8 +218,8 @@ export default class CommentsPage extends Cossack {
             </div>
             ${component(Card, {}, component(CardBody, { class: 'p-0' }, html`<div class="overflow-x-auto"><table class="w-full text-sm">
                 <thead><tr class="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
-                    <th class="w-10 px-4 py-3"><span class="sr-only">${__('Select')}</span></th><th class="px-4 py-3 font-medium">${__('Author')}</th><th class="px-4 py-3 font-medium">${__('Comment')}</th>
-                    <th class="px-4 py-3 font-medium">${__('In response to')}</th><th class="px-4 py-3 font-medium">${__('Submitted on')}</th>
+                    <th class="w-10 px-3 py-2"><span class="sr-only">${__('Select')}</span></th><th class="px-3 py-2 font-medium">${__('Author')}</th><th class="px-3 py-2 font-medium">${__('Comment')}</th>
+                    <th class="px-3 py-2 font-medium">${__('In response to')}</th><th class="px-3 py-2 font-medium">${__('Submitted on')}</th>
                 </tr></thead>
                 <tbody>${this.rows.map(row => this.row(row))}</tbody></table>
                 ${this.rows.length ? null : html`<p class="px-4 py-10 text-center text-sm text-muted-foreground">${__('No comments found.')}</p>`}</div>`))}

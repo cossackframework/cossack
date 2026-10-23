@@ -1,6 +1,6 @@
 /**
  * The field group editor: the block tree in field group mode (field blocks and layout blocks)
- * with the side panel for a block's settings and its condition. Shared by the collection
+ * with the side panel for a block's settings and its condition, applied as they change. Shared by the collection
  * builder and the field group screen. Client-safe: the blocks are control values, and the
  * screen saves them.
  */
@@ -23,6 +23,8 @@ export type FieldGroupEditorProps = {
     options: BlockOption[];
     /** The target's own fields a condition may test, such as an entry's status. */
     scope?: ConditionField[];
+    /** The screen's validation message, for the tree to open and flash the block it names. */
+    error?: string;
     onChange(blocks: EditorBlock[]): void;
 };
 
@@ -53,24 +55,32 @@ export class FieldGroupEditor extends Cossack {
         const values = { ...this.dialog.values, [name]: value };
         // An unnamed field follows its label, as form inputs do.
         if (name === 'label' && !String(this.dialog.values.name ?? '').trim()) values.name = '';
-        this.dialog = { ...this.dialog, values, errors: { ...this.dialog.errors, [name]: '' } };
+        this.commit({ ...this.dialog, values, errors: { ...this.dialog.errors, [name]: '' } });
     }
 
     @Client()
-    private apply() {
-        const dialog = this.dialog;
-        const block = dialog ? findBlock(this.props.blocks, dialog.id) : undefined;
+    private setCondition(when: BlockCondition | null) {
+        if (!this.dialog) return;
+        const { when: _previous, ...rest } = this.dialog;
+        this.commit(when ? { ...rest, when } : rest);
+    }
+
+    /**
+     * The panel's values go into the block at once. A value its field cannot take stays in the
+     * panel with its message; a missing name follows the label, as saving derives it.
+     */
+    @Client()
+    private commit(dialog: Dialog) {
+        const block = findBlock(this.props.blocks, dialog.id);
         const option = this.props.options.find(entry => entry.name === block?.type);
-        if (!dialog || !block || !option) return;
+        if (!block || !option) return;
         const { input, errors } = editorInput(option.fields, dialog.values);
-        for (const field of option.fields) if (field.required && (input[field.name] === undefined || input[field.name] === '' || input[field.name] === null)) errors[field.name] ??= __('is required.');
-        if (option.field && !String(input.name ?? '').trim()) input.name = fieldName(String(input.label ?? ''));
-        if (Object.keys(errors).length) { this.dialog = { ...dialog, errors }; return; }
+        if (option.field && !String(input.name ?? '').trim() && String(input.label ?? '').trim()) input.name = fieldName(String(input.label ?? ''));
+        this.dialog = { ...dialog, errors: { ...dialog.errors, ...errors } };
         this.props.onChange(updateBlock(this.props.blocks, dialog.id, entry => {
             const { when: _previous, ...rest } = entry;
             return { ...rest, ...(dialog.when ? { when: dialog.when } : {}), data: { ...entry.data, ...input } };
         }));
-        this.dialog = null;
     }
 
     render(): TemplateResult {
@@ -80,18 +90,18 @@ export class FieldGroupEditor extends Cossack {
         const prefix = `${this.props.id}-block`;
         return html`<div class="space-y-3">
             ${component(BlockTree, {
-                id: this.props.id, blocks: this.props.blocks, options: this.props.options, allowed: [], fieldGroup: true,
+                id: this.props.id, blocks: this.props.blocks, options: this.props.options, allowed: [], fieldGroup: true, error: this.props.error ?? '',
                 onChange: (blocks: EditorBlock[]) => this.props.onChange(blocks), onEdit: (id: string) => this.open(id),
                 control: () => null,
             })}
             ${blockPanel({
                 id: prefix, open: Boolean(dialog && option), option, tab: 'general', style: styleValues({}), presets: { colors: [], fontSizes: [], spacing: [] }, styleTab: false,
-                onTab: () => undefined, onStyle: () => undefined, onApply: () => this.apply(), onClose: () => { this.dialog = null; },
+                onTab: () => undefined, onStyle: () => undefined, onClose: () => { this.dialog = null; },
                 general: dialog && option ? html`
                     ${option.fields.length ? blockFields(option, dialog.values, (name, value) => this.setValue(name, value), `${prefix}-${dialog.id}`, () => ({ previews: {}, choose: () => undefined }), dialog.errors)
                         : html`<p class="text-sm text-muted-foreground">${__('This block has no settings.')}</p>`}
                     ${conditionControl(dialog.when, [...(this.props.scope ?? []), ...conditionFields(this.props.blocks, this.props.options, dialog.id)], `${prefix}-${dialog.id}`,
-                        when => { if (this.dialog) this.dialog = { ...this.dialog, ...(when ? { when } : { when: undefined }) }; },
+                        when => this.setCondition(when ?? null),
                         { toggle: __('Conditional logic'), subject: __('this'), show: __('Show'), hide: __('Hide') })}` : html``,
             })}
         </div>`;

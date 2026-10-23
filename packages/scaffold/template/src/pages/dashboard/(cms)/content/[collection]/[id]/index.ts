@@ -3,13 +3,14 @@ import { Button, Checkbox, Input, Modal, NativeSelect, Textarea, toast } from '@
 import { html, component, unsafeHTML, type TemplateResult } from '@cossackframework/renderer';
 import { blockId, evaluateRule, fieldVisibility, findBlock, flattenBlocks, flattenGroupFields, formatBytes, isCmsError, languageName, mediaKind, recordTitle, richTextBlocks, updateBlock, type Block, type BlockCondition, type EmbeddedBlock, type MediaKind, type RecordShape, type RichTextDoc } from '@cossackframework/cms';
 import { blockPanel } from '../../../../../../cms/block-panel';
+import { describeBlockError } from '../../../../../../cms/block-errors';
 import { styleValues, withStyle, type BlockTab, type StyleValues } from '../../../../../../cms/style-controls';
 import { renderMarkdown } from '@cossackframework/cms/server';
 import { contentField, editorView, entryValues, fieldErrors, mediaPreviews, parentOptions, patternBlocks, routeResource, saveEntry, termOptions, type MediaPreview, type SaveIntent } from '../../../../../../cms/content';
 import { blockDefaults, controlValue, editorBlocks, editorInput, entryUrl, suggestedSlug, type EditorBlock, type EditorField, type EditorValues, type EditorView, type TermOption } from '../../../../../../cms/editor';
 import { RichTextField, richTextEditors } from '../../../../../../cms/rich-text-field';
 import { BlockTree } from '../../../../../../cms/block-tree';
-import { fieldControl } from '../../../../../../cms/field-controls';
+import { bindingChoices, fieldControl, type BindingChoice } from '../../../../../../cms/field-controls';
 import { FieldGroupView, plainBlocks, visibilityTypes, type RowPath } from '../../../../../../cms/field-group-view';
 import { box, CONTROL, linkButton, notice, shortDate, STATUS_LABELS, statusBadge } from '../../../../../../cms/ui';
 import { conditionControl, conditionFields } from '../../../../../../cms/condition-control';
@@ -18,6 +19,9 @@ import { siteOrigin } from '../../../../../../cms/seo';
 
 type MediaTarget = { field: string; block?: string; key?: string; multiple?: boolean; insert?: boolean; richText?: boolean; dialog?: boolean; group?: boolean; /** The rich text editor to insert into, when it is not the field's own. */ editor?: string;
     /** The rows the value sits in, from the top down: `key` is then a field of the innermost row. */ rows?: RowPath };
+/** Field block kinds whose values read as text, as editor field kinds, for the binding picker. */
+const BINDABLE_FIELD_BLOCKS: Record<string, EditorField['kind']> = { text: 'string', textarea: 'text', markdown: 'text', number: 'number', integer: 'integer', boolean: 'boolean', choice: 'enum', date: 'datetime' };
+
 /** A block being edited in the side panel: one of a blocks field's tree, or one embedded in a rich text field. */
 interface BlockDialog { field: string; id: string; type: string; values: Record<string, unknown>; errors: Record<string, string>; embedded: boolean; tab: BlockTab; style: StyleValues; /** In a form: when the block shows. */ when?: BlockCondition }
 
@@ -536,12 +540,19 @@ export default class EntryEditor extends Cossack {
     @Client()
     setDialogValue(name: string, value: unknown) {
         if (!this.blockDialog) return;
-        this.blockDialog = { ...this.blockDialog, values: { ...this.blockDialog.values, [name]: value }, errors: { ...this.blockDialog.errors, [name]: '' } };
+        this.applyBlockDialog({ ...this.blockDialog, values: { ...this.blockDialog.values, [name]: value }, errors: { ...this.blockDialog.errors, [name]: '' } });
     }
 
     @Client()
     setDialogStyle(style: StyleValues) {
-        if (this.blockDialog) this.blockDialog = { ...this.blockDialog, style };
+        if (this.blockDialog) this.applyBlockDialog({ ...this.blockDialog, style });
+    }
+
+    @Client()
+    setDialogCondition(when: BlockCondition | null) {
+        if (!this.blockDialog) return;
+        const { when: _previous, ...rest } = this.blockDialog;
+        this.applyBlockDialog(when ? { ...rest, when } : rest);
     }
 
     @Client()
@@ -549,24 +560,29 @@ export default class EntryEditor extends Cossack {
         if (this.blockDialog) this.blockDialog = { ...this.blockDialog, tab };
     }
 
-    /** Apply the panel: an embedded block goes back into its rich text, a tree block into its field with its style. */
+    /**
+     * The panel's state goes into its block at once: an embedded block back into its rich text,
+     * a tree block into its field with its style and condition. A value its field cannot take
+     * stays in the panel with its message; saving checks what is required.
+     */
     @Client()
-    applyBlockDialog() {
-        const dialog = this.blockDialog;
-        if (!dialog) return;
-        if (dialog.embedded) { this.saveRichBlock(); return; }
+    applyBlockDialog(dialog: BlockDialog) {
         const option = this.view?.blocks.find(block => block.name === dialog.type);
         if (!option) return;
+        if (dialog.embedded) {
+            const { input, errors } = editorInput(option.fields, dialog.values);
+            this.blockDialog = { ...dialog, errors: { ...dialog.errors, ...errors } };
+            richTextEditors.get(`field-${dialog.field}`)?.updateBlock(dialog.id, input);
+            return;
+        }
         const fields = option.fields.filter(entry => entry.kind !== 'richtext');
         const { input, errors } = editorInput(fields, dialog.values);
-        for (const entry of fields) if (entry.required && (input[entry.name] === undefined || input[entry.name] === '' || input[entry.name] === null)) errors[entry.name] ??= __('is required.');
-        if (Object.keys(errors).length) { this.blockDialog = { ...dialog, errors }; return; }
+        this.blockDialog = { ...dialog, errors: { ...dialog.errors, ...errors } };
         // Rich text stays as it is in the tree; the panel's values replace the rest, and the condition follows the panel.
         this.set(dialog.field, updateBlock(this.blocks(dialog.field), dialog.id, block => {
             const { when: _previous, ...rest } = block;
-            return withStyle({ ...rest, ...(dialog.when ? { when: dialog.when } : {}), data: { ...Object.fromEntries(Object.entries(block.data).filter(([name]) => option.fields.find(entry => entry.name === name)?.kind === 'richtext')), ...dialog.values } }, dialog.style);
+            return withStyle({ ...rest, ...(dialog.when ? { when: dialog.when } : {}), data: { ...Object.fromEntries(Object.entries(block.data).filter(([name]) => option.fields.find(entry => entry.name === name)?.kind === 'richtext')), ...input } }, dialog.style);
         }));
-        this.blockDialog = null;
     }
 
     /** Replace a synced pattern in the content with a copy of its blocks, which no longer follow the pattern. */
@@ -580,18 +596,6 @@ export default class EntryEditor extends Cossack {
         const copy = editorBlocks(content as EditorBlock[], this.view.blocks);
         const replace = (blocks: EditorBlock[]): EditorBlock[] => blocks.flatMap(block => block.id === dialog.id ? copy : [block.children ? { ...block, children: replace(block.children) } : block]);
         this.set(dialog.field, replace(this.blocks(dialog.field)));
-    }
-
-    @Client()
-    saveRichBlock() {
-        const dialog = this.blockDialog;
-        const option = this.view?.blocks.find(block => block.name === dialog?.type);
-        if (!dialog || !option) return;
-        const { input, errors } = editorInput(option.fields, dialog.values);
-        for (const entry of option.fields) if (entry.required && (input[entry.name] === undefined || input[entry.name] === '' || input[entry.name] === null)) errors[entry.name] ??= __('is required.');
-        if (Object.keys(errors).length) { this.blockDialog = { ...dialog, errors }; return; }
-        richTextEditors.get(`field-${dialog.field}`)?.updateBlock(dialog.id, input);
-        this.blockDialog = null;
     }
 
     // --- Terms -----------------------------------------------------------------
@@ -664,7 +668,14 @@ export default class EntryEditor extends Cossack {
     // --- Rendering -------------------------------------------------------------
 
     private errorFor(name: string): TemplateResult | null {
-        return this.errors[name] ? html`<p role="alert" class="text-xs text-destructive">${this.errors[name]}</p>` : null;
+        return this.errors[name] ? html`<p role="alert" class="text-xs text-destructive">${this.describe(this.errors[name]!)}</p>` : null;
+    }
+
+    /** A message naming a block by its ID, said with the block's name instead. */
+    private describe(message: string): string {
+        const view = this.view;
+        if (!view) return message;
+        return describeBlockError(message, view.fields.filter(field => field.kind === 'blocks').flatMap(field => this.blocks(field.name)), view.blocks);
     }
 
     private mediaControl(target: MediaTarget, value: unknown, label: string): TemplateResult {
@@ -739,7 +750,21 @@ export default class EntryEditor extends Cossack {
             });
             default: if (field.media && field.kind === 'string') return this.mediaControl(target, value, field.label);
         }
-        return fieldControl(field, value, change, id, { options: this.references[field.name] ?? [] }) ?? html``;
+        return fieldControl(field, value, change, id, { options: this.references[field.name] ?? [], ...(target.block !== undefined && !field.media ? { bindings: this.bindings() } : {}) }) ?? html``;
+    }
+
+    /** The entry's fields a block's text may show (`$.price`): the collection's own and its field groups', apart from blocks and rich text. */
+    private bindings(): BindingChoice[] {
+        const view = this.view;
+        if (!view) return [];
+        const grouped = flattenGroupFields(plainBlocks([...view.layout, ...view.groups.flatMap(group => group.blocks)]))
+            .flatMap(block => {
+                const kind = BINDABLE_FIELD_BLOCKS[block.type.replace(/^field\//, '')];
+                const name = String(block.data.name ?? '');
+                return kind && name ? [{ name, label: String(block.data.label ?? name), kind, media: false }] : [];
+            });
+        const own = view.fields.filter(field => !grouped.some(entry => entry.name === field.name));
+        return bindingChoices([...own, ...grouped]);
     }
 
     private markdownControl(field: EditorField, value: unknown, change: (value: unknown) => void, id: string): TemplateResult {
@@ -1012,8 +1037,8 @@ export default class EntryEditor extends Cossack {
         const fields = dialog && option ? option.fields.filter(entry => dialog.embedded || entry.kind !== 'richtext') : [];
         return blockPanel({
             id: 'entry-block', open: Boolean(dialog && option), option, tab: dialog?.tab ?? 'general', style: dialog?.style ?? styleValues({}), presets: this.view?.presets ?? { colors: [], fontSizes: [], spacing: [] },
-            styleTab: dialog ? !dialog.embedded : false, applyLabel: dialog?.embedded ? __('Save block') : __('Apply'),
-            onTab: tab => this.showDialogTab(tab), onStyle: style => this.setDialogStyle(style), onApply: () => this.applyBlockDialog(), onClose: () => { this.blockDialog = null; },
+            styleTab: dialog ? !dialog.embedded : false,
+            onTab: tab => this.showDialogTab(tab), onStyle: style => this.setDialogStyle(style), onClose: () => { this.blockDialog = null; },
             general: dialog && option ? html`${fields.length ? fields.map(entry => {
                 const id = `block-${dialog.id}-${entry.name}`;
                 return html`<div class="space-y-1">
@@ -1024,7 +1049,7 @@ export default class EntryEditor extends Cossack {
                 </div>`;
             }) : html`<p class="text-sm text-muted-foreground">${__('This block has no settings.')}</p>`}
             ${!dialog.embedded && this.view?.fields.find(entry => entry.name === dialog.field)?.form
-                ? conditionControl(dialog.when, conditionFields(this.blocks(dialog.field), this.view.blocks, dialog.id), `block-${dialog.id}`, when => { if (this.blockDialog) this.blockDialog = { ...this.blockDialog, ...(when ? { when } : { when: undefined }) }; })
+                ? conditionControl(dialog.when, conditionFields(this.blocks(dialog.field), this.view.blocks, dialog.id), `block-${dialog.id}`, when => this.setDialogCondition(when ?? null))
                 : null}` : html``,
         });
     }
@@ -1080,7 +1105,7 @@ export default class EntryEditor extends Cossack {
                 </div>
             </div>
             ${this.message ? notice(this.message, 'success') : null}
-            ${this.error ? notice(this.error, 'error') : null}
+            ${this.error ? notice(this.describe(this.error), 'error') : null}
             ${this.autosaveOffer ? html`<div role="status" class="flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-foreground">
                 <span>${this.id === 'new' ? __('You have unsaved work from') : __('There is an autosave of this entry that is newer than the version below, from')} ${shortDate(this.autosaveOffer.at)}.</span>
                 <span class="flex gap-2">${component(Button, { type: 'button', size: 'sm', '@click': () => this.restoreAutosave() }, __('Restore the autosave'))}

@@ -12,6 +12,7 @@ import { blockId, BREAKPOINTS, FIELD_GROUP_LAYOUT, insertBlock, placeBlocks, rem
 import { fieldName } from './builder';
 import { BlockInserter } from './block-inserter';
 import { reorderBlocks } from './block-rows';
+import { blockErrorPath, blockErrorTarget, describeBlockError } from './block-errors';
 import { newBlock, type BlockOption, type EditorBlock, type EditorField } from './editor';
 import type { MediaPreview } from './field-controls';
 import { blockIcon, blockIconColor, icon } from './icons';
@@ -42,7 +43,10 @@ export type BlockTreeProps = {
     /** Offer saved patterns beside the top-level inserter. */
     onPatterns?(): void;
     previews?: Record<string, MediaPreview>;
-    /** The field's validation message; shown under the block it names (`block <id>.<field> …`). */
+    /**
+     * The field's validation message. The tree opens to the block it names (`block <id>.<field> …`),
+     * flashes it, scrolls it into view and shows the message under it with the block's name.
+     */
     error?: string;
 };
 
@@ -107,9 +111,22 @@ export class BlockTree extends Cossack {
         return this.drag?.blocks ?? this.props.blocks;
     }
 
-    /** Containers are collapsed until opened; a new one, or one a block just went into, is open. */
+    /** Containers are collapsed until opened; a new one, one a block just went into, or one holding the block an error names, is open. */
     private isCollapsed(block: EditorBlock, option: BlockOption | undefined): boolean {
-        return !!option?.children && (this.collapsed[block.id] ?? true);
+        return !!option?.children && (this.collapsed[block.id] ?? true) && !this.errorPath.has(block.id);
+    }
+
+    /** The block the error names and its containers; computed per render. */
+    private errorPath = new Set<string>();
+    /** The error the tree last scrolled to, so it scrolls once per message. */
+    private scrolledTo = '';
+
+    updated(changed: Map<string | number | symbol, unknown>) {
+        super.updated(changed);
+        const target = blockErrorTarget(this.props.error);
+        if (!target || !this.props.error || this.scrolledTo === this.props.error) return;
+        this.scrolledTo = this.props.error;
+        this.headers.get(target.id)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
     }
 
     @Client()
@@ -263,13 +280,15 @@ export class BlockTree extends Cossack {
         const above = siblings[index - 1];
         const locked = this.props.lock === 'all';
         const canGoIn = !ghost && !locked && !!above && !!this.option(above.type)?.children && shiftBlock(this.props.blocks, block.id, 'in', declarationsOf(this.props.options)) !== this.props.blocks;
-        const error = this.props.error?.includes(`block ${block.id} `) ? this.props.error : '';
+        // The message names this block (or one of its fields): shown here in words, and the block flashes.
+        const target = blockErrorTarget(this.props.error);
+        const error = target?.id === block.id ? describeBlockError(this.props.error!, this.props.blocks, this.props.options) : '';
         const summary = option?.field ? (typeof block.data.description === 'string' ? block.data.description : '') : blockSummary(block, this.props.previews);
         const prefix = `${this.props.id}-${block.id}`;
         // Rich text is written in place, whichever way the block's other settings are edited.
         const inlineFields = option?.fields.filter(field => field.kind === 'richtext') ?? [];
         const data = option?.category === 'data';
-        return html`<section class=${`rounded-lg border bg-card ${ghost ? 'border-dashed border-primary bg-primary/5 opacity-50' : data ? 'border-dashed border-border' : 'border-border'}`} aria-label=${`${label} ${index + 1}`} data-block-tree-item=${block.id}>
+        return html`<section class=${`rounded-lg border bg-card ${ghost ? 'border-dashed border-primary bg-primary/5 opacity-50' : error ? 'cms-block-error border-destructive' : data ? 'border-dashed border-border' : 'border-border'}`} aria-label=${`${label} ${index + 1}`} data-block-tree-item=${block.id}>
             <header class="flex flex-wrap items-center gap-1.5 border-b border-border px-2 py-1.5" ref=${(element: Element) => { if (element) this.headers.set(block.id, element as HTMLElement); else this.headers.delete(block.id); }}>
                 <button type="button" class=${`flex h-7 w-5 shrink-0 touch-none items-center justify-center rounded border-none bg-transparent text-muted-foreground ${locked ? 'cursor-default opacity-40' : 'cursor-grab hover:bg-muted active:cursor-grabbing'}`} data-handle
                     aria-label=${locked ? `${label}. ${__('The template keeps this order.')}` : `${__('Move')} ${label}. ${__('Drag, or use the arrow keys.')}`} ?disabled=${locked}
@@ -331,6 +350,7 @@ export class BlockTree extends Cossack {
     }
 
     render() {
+        this.errorPath = blockErrorPath(this.props.error, this.props.blocks);
         const places = placeBlocks(this.props.blocks);
         const containers = this.containers();
         const allCollapsed = containers.every(block => this.collapsed[block.id] ?? true);

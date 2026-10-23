@@ -16,7 +16,7 @@ const SETUP = { code: 'setup-code-for-tests', siteTitle: 'Fields', name: 'Ada', 
 const fieldBlock = (id, kind, data, extra = {}) => ({ id, type: `field/${kind}`, data: { label: id, ...data }, ...extra });
 
 const BUILDER = 'dashboard/(cms)/collections/[name]/index.ts';
-const GROUPS = 'dashboard/(cms)/field-groups/index.ts';
+const GROUPS = 'dashboard/(cms)/field-groups/new/index.ts';
 const GROUP = 'dashboard/(cms)/field-groups/[id]/index.ts';
 
 /** A products collection with two columns and a Sale tab, and a Specifications group with a repeater. */
@@ -44,7 +44,7 @@ const DRAFT = { name: 'products', label: 'Products', singular: 'Product', descri
 async function shop(origin, routeIds, diagnostics) {
   const web = browserless(origin, routeIds, diagnostics);
   expect((await web.post('/auth/setup', SETUP)).headers.get('location')).toBe('/dashboard');
-  const created = await web.action('dashboard/(cms)/collections/index.ts', 'create', ['Products', 'Product', 'box']);
+  const created = await web.action('dashboard/(cms)/collections/new/index.ts', 'create', ['Products', 'Product', 'box']);
   expect(created._cossack_redirect).toBe('/dashboard/collections/products?created=1');
   const built = await web.action(BUILDER, 'save', [DRAFT, LAYOUT, []], { params: { name: 'products' } });
   expect(built.error).toBe('');
@@ -152,7 +152,7 @@ describe.skipIf(!liveFastDBTests())('generated CMS field groups', () => {
       await panel.getByLabel('Conditional logic').check();
       await panel.getByLabel('Field', { exact: true }).selectOption('status');
       await panel.getByLabel('Value', { exact: true }).fill('published');
-      await panel.getByRole('button', { name: 'Apply' }).click();
+      await panel.getByRole('button', { name: 'Done' }).click();
       await browserExpect(panel).toBeHidden();
       await browserExpect(added.getByText('fragile', { exact: true })).toBeVisible();
       await page.getByRole('button', { name: 'Save field group' }).click();
