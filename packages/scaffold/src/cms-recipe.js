@@ -1,16 +1,45 @@
 /**
  * The cms feature: the FastDB CMS host, its dashboard screens under /dashboard, first-run
- * setup, the public site and its default theme (src/plugins/default-theme). It requires auth and dashboard, whose storage modules come from
- * template/cms-store. Static files live under template/src/{cms,pages/dashboard/(cms),pages/(site)};
- * this module renders the parts that depend on the runtime adapter and patches entry files.
+ * setup, the public site and its default theme (src/plugins/default-theme). It requires auth and
+ * dashboard; the files the feature owns, including the FastDB storage modules that replace the
+ * database ones, live in the @cossackframework/cms package under `app/` and are listed in its
+ * `cossack-recipe.json`. This module renders the parts that depend on the runtime adapter and
+ * patches entry files.
  */
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { createRequire } from 'node:module';
 
-/** Files owned by the cms capability. */
+/** The CMS application inside @cossackframework/cms: the source of the feature's files. */
+export const cmsAppDir = path.join(path.dirname(createRequire(import.meta.url).resolve('@cossackframework/cms/package.json')), 'app');
+const manifest = JSON.parse(await fs.readFile(path.join(cmsAppDir, 'cossack-recipe.json'), 'utf8'));
+const cmsDirectories = manifest.files.filter(entry => entry.endsWith('/'));
+const cmsFiles = new Set(manifest.files.filter(entry => !entry.endsWith('/')));
+/** Shared auth and dashboard modules the CMS store replaces; the scaffold's versions serve other recipes. */
+const cmsReplaces = manifest.replaces;
+/** Produced by {@link cmsRecipeFiles} for the runtime adapter; a copy in the CMS application is its own. */
+const cmsRendered = new Set(manifest.rendered);
+
+/** Files only the cms capability renders. */
 export function isCmsPath(rel) {
-  return rel.startsWith('src/cms/') || rel.startsWith('src/pages/dashboard/(cms)/') || rel.startsWith('src/pages/(site)/')
-    || rel.startsWith('src/pages/auth/setup/') || rel.startsWith('src/pages/api/cms/') || rel.startsWith('src/pages/api/auth/') || rel === 'src/config/cms.ts'
-    // The default theme is a plugin rendered as application source.
-    || rel.startsWith('src/plugins/default-theme/');
+  return cmsFiles.has(rel) || cmsDirectories.some(directory => rel.startsWith(directory));
+}
+
+/** The feature's files, as paths relative to the application root, read from the CMS package. */
+export async function cmsAppFiles() {
+  const files = [...cmsFiles, ...cmsReplaces];
+  for (const directory of cmsDirectories) {
+    const root = path.join(cmsAppDir, directory);
+    const walk = async (dir, prefix) => {
+      for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
+        const rel = `${prefix}${entry.name}`;
+        if (entry.isDirectory()) await walk(path.join(dir, entry.name), `${rel}/`);
+        else if (entry.isFile() && !cmsRendered.has(rel)) files.push(rel);
+      }
+    };
+    await walk(root, directory);
+  }
+  return files.sort();
 }
 
 export function cmsRecipeFiles({ adapter }) {

@@ -1,6 +1,7 @@
 packages:
   - packages/*
   - examples/*
+  - packages/cms/app
 
 nodeLinker: hoisted
 

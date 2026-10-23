@@ -12,12 +12,16 @@
   "main": "src/index.ts",
   "files": [
     "src",
+    "app",
     "agent-docs.json"
   ],
   "publishConfig": {
     "access": "public"
   },
   "scripts": {
+    "dev": "pnpm --dir app run dev",
+    "sync": "pnpm --dir app run sync",
+    "fastdb": "pnpm --dir app run fastdb",
     "test": "vitest"
   },
   "dependencies": {

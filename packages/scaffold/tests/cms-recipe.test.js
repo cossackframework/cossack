@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { addFeature, createApp, renderRecipe, resolveRecipe, withClientDependencies } from '../src/index.js';
 import { authStore } from '../src/registry.js';
 
@@ -131,5 +132,18 @@ describe('cms recipe', () => {
     directories.push(cwd);
     const { projectDir } = await createApp('orm-auth', { cwd, adapter: 'node', preset: 'auth', interactive: false });
     await expect(addFeature(projectDir, 'cms', { interactive: false })).rejects.toThrow(/keeps its users in the database feature/);
+  });
+  it('reads the files it owns from the CMS application, and the template keeps none of them', async () => {
+    const { cmsAppDir, isCmsPath } = await import('../src/cms-recipe.js');
+    const manifest = JSON.parse(await fs.readFile(path.join(cmsAppDir, 'cossack-recipe.json'), 'utf8'));
+    for (const rel of [...manifest.files, ...manifest.replaces]) await expect(fs.access(path.join(cmsAppDir, rel)), rel).resolves.toBeUndefined();
+    for (const rel of manifest.rendered) expect(isCmsPath(rel)).toBe(true);
+    const template = path.join(path.dirname(fileURLToPath(import.meta.url)), '../template');
+    const walk = async (dir, prefix = '') => (await Promise.all((await fs.readdir(dir, { withFileTypes: true })).map(entry =>
+      entry.isDirectory() ? walk(path.join(dir, entry.name), `${prefix}${entry.name}/`) : [`${prefix}${entry.name}`]))).flat();
+    expect((await walk(template)).filter(isCmsPath)).toEqual([]);
+    // Shared modules the CMS store replaces come from the application only with the cms feature.
+    const database = await renderRecipe(resolveRecipe({ adapter: 'node', preset: 'minimal', features: ['auth'] }));
+    expect(text(database, 'src/auth.ts')).not.toContain("from './cms/index'");
   });
 });

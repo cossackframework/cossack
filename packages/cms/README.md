@@ -12,7 +12,9 @@ input blocks with conditional logic, and each keeps its submissions in a table o
 with notifications, webhooks and hooks like Gravity Forms'. Add it to an
 application with `cossack add cms`, which renders the shared `auth` and `dashboard` pages
 over CMS storage and a default theme into `src/plugins/default-theme/`. It runs on Cloudflare Workers
-with FastDB Cloud and on Node.js with `fastdb serve`.
+with FastDB Cloud and on Node.js with `fastdb serve`. The package is also an application: `app/`
+holds the pages, components and API routes that `cossack add cms` renders, and `pnpm dev` here (or
+`pnpm dev:cms` at the repository root) runs them from the workspace; see `app/README.md`.
 
 ```ts
 import { field, type CollectionDefinition } from '@cossackframework/cms';

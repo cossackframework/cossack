@@ -1,5 +1,5 @@
 import { workflowsRecipeFiles } from './workflow-recipes.js';
-import { cmsRecipeFiles, cmsSetupCode, isCmsPath, patchCmsNodeEntry, patchCmsViteConfig, patchCmsWorkerEntry } from './cms-recipe.js';
+import { cmsAppDir, cmsAppFiles, cmsRecipeFiles, cmsSetupCode, isCmsPath, patchCmsNodeEntry, patchCmsViteConfig, patchCmsWorkerEntry } from './cms-recipe.js';
 import { jobsRecipeFiles, turnstileRecipeFiles, schedulesRecipeFiles, notificationsRecipeFiles } from './service-recipes.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -1802,12 +1802,12 @@ export async function renderRecipe(recipe, options = {}) {
   if (!recipe.resolvedFeatures.includes('examples') && !recipe.resolvedFeatures.includes('cms')) {
     files.set('src/pages/index.ts', { content: text(minimalPage()), capability: 'base' });
   }
-  if (authStore(recipe.resolvedFeatures) === 'cms') {
-    // The CMS store renders the same auth and dashboard modules over FastDB.
-    const variants = path.join(templateDir, 'cms-store');
-    for (const rel of await walk(variants)) {
+  if (recipe.resolvedFeatures.includes('cms')) {
+    // The CMS application in @cossackframework/cms owns these files, among them the auth and
+    // dashboard storage modules over FastDB that replace the database ones rendered above.
+    for (const rel of await cmsAppFiles()) {
       const capability = capabilityFor(rel, recipe);
-      if (capability) files.set(rel, { content: await fs.readFile(path.join(variants, rel)), capability });
+      if (capability) files.set(rel, { content: await fs.readFile(path.join(cmsAppDir, rel)), capability });
     }
   }
   if (recipe.resolvedFeatures.includes('database')) {

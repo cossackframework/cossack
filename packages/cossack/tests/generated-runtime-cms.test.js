@@ -429,9 +429,17 @@ describe.skipIf(!liveFastDBTests())('generated CMS application', () => {
       await page.getByRole('button', { name: 'Create collection' }).click();
       await page.waitForURL(/\/dashboard\/collections\/events/);
       await ready();
-      await page.getByLabel('New field label').fill('Venue');
-      await page.getByRole('button', { name: 'Add field' }).click();
-      await browserExpect(page.locator('code', { hasText: 'venue' })).toBeVisible();
+      // The builder lays fields out as field blocks: a Text field from the picker, named from its label.
+      await page.getByRole('button', { name: 'Add block', exact: true }).first().click();
+      const picker = page.getByRole('dialog', { name: 'Blocks' });
+      await picker.getByLabel('Search blocks').fill('text');
+      await picker.getByRole('button', { name: 'Text', exact: true }).click();
+      const venue = page.getByRole('region', { name: 'Text 1' });
+      await venue.getByRole('button', { name: 'Edit Text' }).click();
+      const panel = page.getByRole('dialog', { name: 'Text' });
+      await panel.getByLabel('Label *').fill('Venue');
+      await panel.getByRole('button', { name: 'Done' }).click();
+      await browserExpect(venue.locator('code', { hasText: 'venue' })).toBeVisible();
       await page.getByRole('button', { name: 'Save collection' }).click();
       await browserExpect(page.getByRole('status').filter({ hasText: 'Collection saved.' }).first()).toBeVisible();
       await page.goto(server.origin + '/dashboard/content/events/new');

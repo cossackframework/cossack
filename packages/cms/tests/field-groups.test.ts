@@ -64,6 +64,10 @@ describe.skipIf(!live)('field groups', () => {
         expect(Object.keys(saved.fields)).toEqual(['sku', 'price', 'onSale', 'salePrice']);
         expect(saved.fields.price).toMatchObject({ kind: 'number', required: true, min: 0, index: true });
         expect(saved.layout?.map(block => block.id)).toEqual(['cols', 'tabs']);
+        // The migration records the resource with its layout, so entries are written straight away.
+        const first = await cms.resource('cms/products').create({ title: 'First', price: 1, sku: 'FIRST' }, { principal: editor });
+        expect(first).toMatchObject({ price: 1, sku: 'FIRST' });
+        await cms.resource('cms/products').delete(first.id, { principal: editor, expectedRevision: first.rev });
 
         await expect(cms.saveFieldGroup({ ...specs, targets: [{ kind: 'collection', name: 'nope' }] }, admin)).rejects.toMatchObject({ code: 'CMS_VALIDATION', message: expect.stringContaining('nope') });
         await expect(cms.saveFieldGroup({ ...specs, blocks: [fieldBlock('x', 'text', { name: 'price', label: 'Price' })] }, admin)).rejects.toMatchObject({ message: expect.stringContaining('used by the target') });

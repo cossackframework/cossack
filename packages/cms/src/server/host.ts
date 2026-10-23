@@ -1040,9 +1040,8 @@ export class CmsHost {
             problems.push(...Object.entries(errors).map(([path, message]) => `Template block ${path}: ${message}`));
         }
         if (problems.length) throw new CmsError('CMS_VALIDATION', problems.join(' '), { fields: { definition: problems.join(' ') } });
-        const groups = this.#groupFields({ kind: 'collection', name: definition.name });
-        const merged = { ...definition.fields, ...groups.fields };
-        const resource = resolveResource(collectionResource({ ...definition, fields: { ...merged, ...derivedFields(merged) } }, this.#taxonomyLabels()), 'cms');
+        // The same resource `ready()` builds from the stored definition; its hash is what the migration records.
+        const resource = this.#collectionResource(definition, this.#taxonomyLabels());
         const row: Statement = {
             sql: 'INSERT INTO cms_collections (name, definition, updated_at, updated_by) VALUES ($name, $definition, $now, $by) ON CONFLICT (name) DO UPDATE SET definition = excluded.definition, updated_at = excluded.updated_at, updated_by = excluded.updated_by',
             params: { $name: definition.name, $definition: JSON.stringify(stored), $now: this.#now(), $by: principalId(principal) },
@@ -1350,6 +1349,18 @@ export class CmsHost {
         if (!hasPermission(principal, PERMISSIONS.manageCollections)) throw new CmsError(principal.kind === 'anonymous' ? 'CMS_UNAUTHENTICATED' : 'CMS_FORBIDDEN', 'Not allowed to change collections.');
     }
 
+    /**
+     * A collection's resource: its own fields, then its groups', then the lists derived from rows
+     * for filtering, with the layout of both. Saving and reloading build it the same way, so the
+     * declaration hash a migration records is the one `ready()` checks writes against.
+     */
+    #collectionResource(definition: CollectionDefinition, labels: { [name: string]: string }): Resource {
+        const groups = this.#groupFields({ kind: 'collection', name: definition.name });
+        const fields = { ...definition.fields, ...groups.fields };
+        const layout = [...(definition.layout ?? []), ...groups.layout];
+        return resolveResource({ ...collectionResource({ ...definition, fields: { ...fields, ...derivedFields(fields) } }, labels), ...(layout.length ? { layout } : {}) }, 'cms');
+    }
+
     #taxonomyLabels(): { [name: string]: string } {
         return Object.fromEntries([...this.#taxonomies.values()].map(taxonomy => [taxonomy.name, taxonomy.label]));
     }
@@ -1530,11 +1541,7 @@ export class CmsHost {
             const known = { ...definition, taxonomies: (definition.taxonomies ?? []).filter(name => taxonomies.has(name)) };
             if (collectionProblems(known).length || this.#static.has(`cms/${known.name}`)) continue;
             try {
-                // The collection's own fields, then its groups', then the lists derived from rows for filtering.
-                const groups = this.#groupFields({ kind: 'collection', name: known.name });
-                const fields = { ...known.fields, ...groups.fields };
-                const layout = [...(known.layout ?? []), ...groups.layout];
-                const resource = resolveResource({ ...collectionResource({ ...known, fields: { ...fields, ...derivedFields(fields) } }, labels), ...(layout.length ? { layout } : {}) }, 'cms');
+                const resource = this.#collectionResource(known, labels);
                 const previous = this.#resources.get(resource.id);
                 // Keep the same object when nothing changed, so callers holding it stay current. Field order counts.
                 resources.set(resource.id, previous && canonicalJson(previous) === canonicalJson(resource) && sameKeyOrder(previous.fields, resource.fields) ? previous : resource);

@@ -1,0 +1,28 @@
+{
+  "feature": "cms",
+  "description": "What the cms feature renders into an application. `files`: paths only the CMS has (a trailing slash names a directory). `replaces`: shared auth and dashboard modules whose FastDB versions replace the scaffold's database ones. `rendered`: produced per runtime adapter by the scaffold's cms recipe, not read from here. Everything else under this folder is the shared application shell, rendered here by `pnpm sync` from packages/scaffold/template.",
+  "files": [
+    "src/cms/",
+    "src/pages/dashboard/(cms)/",
+    "src/pages/(site)/",
+    "src/pages/auth/setup/",
+    "src/pages/api/cms/",
+    "src/pages/api/auth/",
+    "src/config/cms.ts",
+    "src/plugins/default-theme/"
+  ],
+  "replaces": [
+    "src/auth.ts",
+    "src/passkeys.client.ts",
+    "src/services/users.ts",
+    "src/services/roles.ts",
+    "src/services/rbac.ts",
+    "src/lib/permissions.ts",
+    "src/dashboard/access.ts",
+    "src/pages/dashboard/index.ts"
+  ],
+  "rendered": [
+    "src/cms/media.ts",
+    "src/cms/pending.ts"
+  ]
+}
