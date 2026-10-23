@@ -121,12 +121,14 @@ export class BlockTree extends Cossack {
     /** The error the tree last scrolled to, so it scrolls once per message. */
     private scrolledTo = '';
 
-    updated(changed: Map<string | number | symbol, unknown>) {
-        super.updated(changed);
-        const target = blockErrorTarget(this.props.error);
-        if (!target || !this.props.error || this.scrolledTo === this.props.error) return;
-        this.scrolledTo = this.props.error;
-        this.headers.get(target.id)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    /** Scroll to the block a new error names, once the render that opened its containers has committed. */
+    @Client()
+    private revealError() {
+        const error = this.props.error;
+        const target = blockErrorTarget(error);
+        if (!target || !error || this.scrolledTo === error) return;
+        this.scrolledTo = error;
+        requestAnimationFrame(() => this.headers.get(target.id)?.scrollIntoView({ block: 'center', behavior: 'smooth' }));
     }
 
     @Client()
@@ -351,6 +353,7 @@ export class BlockTree extends Cossack {
 
     render() {
         this.errorPath = blockErrorPath(this.props.error, this.props.blocks);
+        if (typeof window !== 'undefined') this.revealError();
         const places = placeBlocks(this.props.blocks);
         const containers = this.containers();
         const allCollapsed = containers.every(block => this.collapsed[block.id] ?? true);
