@@ -2,7 +2,7 @@
  * Server helpers for the dashboard's content screens: which resource a route names, the
  * editor's view of it, and saving entries. Pages call these from their server methods.
  */
-import { blockCategory, blockMedia, blockSupports, bulkActions, cloneBlocks, fieldGroupDeclarations, layoutOf, type FieldGroupTarget, CmsError, CORE_FIELDS, entryActions, entryColumns, flattenBlocks, isCmsError, mediaUrl, principalId, recordTitle, richTextHtml, richTextMedia, type Block, type CollectionDefinition, type EntryAction, type EntryColumn, type MediaKind, type Principal, type RecordShape, type Resource, type RichTextDoc, type WriteActor } from '@cossackframework/cms';
+import { blockCategory, blockMedia, blockSupports, bulkActions, cloneBlocks, fieldGroupDeclarations, type FieldGroupTarget, CmsError, CORE_FIELDS, entryActions, entryColumns, flattenBlocks, isCmsError, mediaUrl, principalId, recordTitle, richTextHtml, richTextMedia, type Block, type CollectionDefinition, type EntryAction, type EntryColumn, type MediaKind, type Principal, type RecordShape, type Resource, type RichTextDoc, type WriteActor } from '@cossackframework/cms';
 import { renderMarkdown, type CmsHost } from '@cossackframework/cms/server';
 import { activePresets } from './site';
 import { controlValue, editorBlocks, editorField, editorFields, editorInput, type BlockOption, type EditorBlock, type EditorField, type EditorGroup, type EditorTaxonomy, type EditorValues, type EditorView, type TermOption } from './editor';
@@ -44,23 +44,12 @@ export async function editorView(cms: CmsHost, route: string): Promise<EditorVie
         fields: editorFields(resource.fields, special),
         taxonomies, blocks, presets: await activePresets(cms),
         template: editorBlocks(cloneBlocks(collection?.template ?? []) as EditorBlock[], blocks), ...(collection?.templateLock ? { templateLock: collection.templateLock } : {}),
-        collections: cms.collections().filter(entry => entry.publishable !== false && entry.name !== 'forms').map(entry => ({ name: entry.name, label: entry.label })),
+        collections: cms.collections().filter(entry => entry.publishable !== false && !entry.managed).map(entry => ({ name: entry.name, label: entry.label })),
         termChoices,
-        layout: collection ? editorBlocks(layoutBlocks(collection, special) as EditorBlock[], blocks) : [],
         groups: collection ? cms.fieldGroupsFor({ kind: 'collection', name: collection.name }).map(group => ({
             id: group.id, title: group.title, description: group.description ?? '', placement: group.placement ?? 'main', blocks: editorBlocks(cloneBlocks(group.blocks) as EditorBlock[], blocks),
         })) : [],
     };
-}
-
-/**
- * A collection's own layout for the main column: the saved one, or one field block per field
- * that is not placed in the sidebar by its declaration.
- */
-export function layoutBlocks(collection: CollectionDefinition, special: readonly string[]): Block[] {
-    if (collection.layout) return cloneBlocks(collection.layout);
-    const fields = Object.fromEntries(Object.entries(collection.fields).filter(([name, declaration]) => !special.includes(name) && declaration.placement !== 'sidebar'));
-    return layoutOf(fields, collection.fieldOrder ?? []);
 }
 
 /** What a screen needs to show a target's field groups: the boxes, their fields and the block types. */
@@ -92,7 +81,7 @@ export function metaInput(fields: readonly EditorField[], values: EditorValues):
     return { meta: input, errors };
 }
 
-/** The name of the collection's content: its first blocks field, which the template and patterns fill. */
+/** The name of the collection's content: the `content` feature, or a plugin resource's first blocks field, which the template and patterns fill. */
 export function contentField(view: Pick<EditorView, 'fields'>): string | null {
     return view.fields.find(field => field.kind === 'blocks' && !field.form)?.name ?? null;
 }

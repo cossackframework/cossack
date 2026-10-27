@@ -16,7 +16,8 @@ and plugins get hooks on terms, comments, menus and the lists.
   searched: their plain text (string, text and rich text fields of non-data blocks) is kept
   beside the document, as rich text fields' was. Entries saved with a rich text `body` still
   render it; the feed and `?format=html` render blocks to plain HTML.
-- **Templates.** A collection's `template` is the blocks a new entry starts with, checked
+- **Templates.** A collection's `template` is the blocks a new entry's `content` starts with
+  (since 2026-10-27 the `content` feature; see [cms-collection-manager.md](cms-collection-manager.md)), checked
   like an entry's blocks; `templateLock` is `insert` (keep the blocks, reorder them) or `all`
   (fill them in only). Posts and pages start with one Rich text block. The builder edits the
   template with the same tree and panel as entries. Starter patterns still replace the content.
@@ -39,8 +40,9 @@ and plugins get hooks on terms, comments, menus and the lists.
   they start collapsed with a count of what they hold; a new container, or one a block is
   moved into, opens. Blocks with nothing to edit in place have a header alone.
 - **Dynamic content.** A block's text field may bind to a field of the entry it renders on:
-  `$.price` as the whole value, or `{{ $.price }}` inside text (`bindings.ts`; dotted paths
-  walk into rows, `$.specs.0.name`). The site resolves bindings when it renders an entry's
+  `{{ $.price }}` inside text (`bindings.ts`; dotted paths walk into rows,
+  `{{ $.specs.0.name }}`; the bare `$.price` form was dropped 2026-10-27 so words and
+  formatting can always surround a value). The site resolves bindings when it renders an entry's
   blocks, the entry's own fields and its field groups' alike; a database button beside text
   controls in the block panel picks the field. Widget areas have no entry, so they keep the
   text as written.

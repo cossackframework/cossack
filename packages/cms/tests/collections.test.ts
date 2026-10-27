@@ -12,10 +12,10 @@ const products: CollectionDefinition = {
     icon: 'box',
     path: 'shop',
     taxonomies: ['brands'],
+    features: { content: { blocks: ['core/paragraph', 'core/heading', 'core/button'] } },
     fields: {
         price: field.number({ required: true, min: 0, label: 'Price' }),
         sku: field.string({ max: 40, unique: true, label: 'SKU' }),
-        content: field.blocks({ blocks: ['core/paragraph', 'core/heading', 'core/button'], label: 'Content' }),
     },
 };
 
@@ -67,7 +67,7 @@ describe.skipIf(!live)('collections built in the dashboard', () => {
         const entries = cms.resource('cms/products');
         const before = (await entries.list({}, { principal: admin })).records[0]!;
         const changed: CollectionDefinition = {
-            ...products,
+            ...products, features: {},
             fields: { price: field.string({ label: 'Price text' }), sku: field.string({ max: 40, label: 'SKU' }), color: field.enum(['red', 'blue'], { default: 'red', label: 'Color' }) },
         };
         await cms.saveCollection(changed, admin);
@@ -98,7 +98,9 @@ describe.skipIf(!live)('collections built in the dashboard', () => {
         await expect(cms.saveCollection({ ...cms.collection('posts'), fields: { title: field.string() } }, admin)).rejects.toMatchObject({ message: expect.stringContaining('title is a core field') });
         const extended = await cms.saveCollection({ ...cms.collection('posts'), label: 'Articles', path: 'blog', fields: { ...cms.collection('posts').fields, subtitle: field.string({ max: 120, label: 'Subtitle' }) } }, admin);
         expect(extended).toMatchObject({ label: 'Articles', path: 'blog', builtin: true });
-        expect(Object.keys(extended.fields)).toEqual(expect.arrayContaining(['subtitle', 'content', 'featuredImage']));
+        expect(Object.keys(extended.fields)).toEqual(['sticky', 'subtitle']);
+        expect(extended.features).toEqual({ content: true, excerpt: true, featuredImage: true });
+        expect(Object.keys(cms.resourceById('cms/posts').fields)).toEqual(expect.arrayContaining(['subtitle', 'content', 'featuredImage', 'sticky']));
         const post = await cms.resource('cms/posts').create({ title: 'With subtitle', subtitle: 'Below the title' }, { principal: admin });
         expect(post).toMatchObject({ subtitle: 'Below the title', slug: 'with-subtitle' });
         const stored = await cms.db.read([{ rql: "SELECT definition FROM cms_collections WHERE name = 'posts'" }]);

@@ -5,7 +5,7 @@
 import type { Block, CollectionDefinition, FieldDeclaration } from '@cossackframework/cms';
 
 export const FIELD_TYPES = [
-    { type: 'text', label: 'Text', description: 'A single line, such as a subtitle or SKU.' },
+    { type: 'text', label: 'Single line', description: 'One line of text, such as a subtitle or SKU.' },
     { type: 'textarea', label: 'Long text', description: 'Plain paragraphs.' },
     { type: 'markdown', label: 'Rich text', description: 'Markdown with a toolbar and preview.' },
     { type: 'number', label: 'Number', description: 'Prices, ratings and measurements.' },
@@ -69,6 +69,12 @@ export interface CollectionDraft {
     comments: boolean;
     taxonomies: string[];
     builtin: boolean;
+    /** The standard fields: blocks content, an excerpt and a featured image. */
+    content: boolean;
+    excerpt: boolean;
+    featuredImage: boolean;
+    /** A revision of every write. */
+    revisions: boolean;
     /** How far entries may change the content template: free, keep its blocks, or keep their order too. */
     templateLock: '' | 'insert' | 'all';
 }
@@ -78,18 +84,20 @@ export function collectionDraft(definition: CollectionDefinition): CollectionDra
         name: definition.name, label: definition.label, singular: definition.singular, description: definition.description ?? '', icon: definition.icon ?? 'document-text',
         path: definition.path ?? '', public: definition.path !== null && definition.path !== undefined, slug: definition.slug !== false, publishable: definition.publishable !== false,
         hierarchical: definition.hierarchical === true, visibility: definition.visibility ?? 'private', comments: definition.comments === true, taxonomies: [...(definition.taxonomies ?? [])], builtin: definition.builtin === true,
+        content: Boolean(definition.features?.content), excerpt: definition.features?.excerpt === true, featuredImage: definition.features?.featuredImage === true, revisions: definition.features?.revisions !== false,
         templateLock: definition.templateLock ?? '',
     };
 }
 
-/** The definition a draft, its layout and its content template describe. The host compiles the layout's field blocks into fields. */
-export function definitionOf(draft: CollectionDraft, layout: readonly Block[], template: readonly Block[] = []): CollectionDefinition {
+/** The definition a draft and its content template describe. Fields live in the groups attached to the collection. */
+export function definitionOf(draft: CollectionDraft, template: readonly Block[] = []): CollectionDefinition {
     return {
         name: draft.name, label: draft.label.trim(), singular: draft.singular.trim(), ...(draft.description.trim() ? { description: draft.description.trim() } : {}),
         icon: draft.icon, path: draft.public ? draft.path.trim().replace(/^\/+|\/+$/g, '') : null,
         slug: draft.slug, publishable: draft.publishable, hierarchical: draft.hierarchical, ...(draft.publishable ? {} : { visibility: draft.visibility }), comments: draft.comments,
         taxonomies: [...draft.taxonomies],
-        fields: {}, layout: [...layout],
-        template: [...template], ...(draft.templateLock && template.length ? { templateLock: draft.templateLock } : {}),
+        features: { content: draft.content, excerpt: draft.excerpt, featuredImage: draft.featuredImage, revisions: draft.revisions },
+        fields: {},
+        template: draft.content ? [...template] : [], ...(draft.content && draft.templateLock && template.length ? { templateLock: draft.templateLock } : {}),
     };
 }

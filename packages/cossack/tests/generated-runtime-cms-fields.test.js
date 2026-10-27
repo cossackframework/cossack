@@ -1,7 +1,8 @@
-// Field groups in a generated application against a local `romedb serve`: a collection laid
-// out in the builder, a field group with a repeater attached to it, entries with rows through
-// the content API and its row filter, the boxes in the entry and term editors, and the
-// field group editor and repeater rows in the browser.
+// Field groups in a generated application against a local `romedb serve`: a collection whose
+// fields come from a group made for it and a group with a repeater attached to it, in order
+// from the collection manager; entries with rows through the content API and its row filter;
+// the boxes in the entry and term editors; and the field group editor and repeater rows in
+// the browser.
 import { afterEach, describe, expect, it } from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -19,8 +20,8 @@ const BUILDER = 'dashboard/(cms)/collections/[name]/index.ts';
 const GROUPS = 'dashboard/(cms)/field-groups/new/index.ts';
 const GROUP = 'dashboard/(cms)/field-groups/[id]/index.ts';
 
-/** A products collection with two columns and a Sale tab, and a Specifications group with a repeater. */
-const LAYOUT = [
+/** A Details group with two columns and a Sale tab, made for products, and a Specifications group with a repeater. */
+const DETAILS = [
   { id: 'cols', type: 'core/columns', data: {}, children: [
     { id: 'c1', type: 'core/column', data: {}, children: [fieldBlock('sku', 'text', { name: 'sku', label: 'SKU', unique: true, max: 40 })] },
     { id: 'c2', type: 'core/column', data: {}, children: [fieldBlock('price', 'number', { name: 'price', label: 'Price', min: 0, required: true, index: true })] },
@@ -38,22 +39,34 @@ const SPECS = [
     fieldBlock('url', 'text', { name: 'url', label: 'URL' }, { when: { rules: [{ field: 'kind', op: 'is', value: 'link' }] } }),
   ] }),
 ];
-const DRAFT = { name: 'products', label: 'Products', singular: 'Product', description: '', icon: 'box', path: 'shop', public: true, slug: true, publishable: true, hierarchical: false, visibility: 'private', comments: false, taxonomies: ['categories'], builtin: false, templateLock: '' };
+const DRAFT = { name: 'products', label: 'Products', singular: 'Product', description: '', icon: 'box', path: 'shop', public: true, slug: true, publishable: true, hierarchical: false, visibility: 'private', comments: false, taxonomies: ['categories'], builtin: false, content: true, excerpt: false, featuredImage: true, revisions: true, templateLock: '' };
 
-/** Set the site up, build the collection and attach the group. */
+/** Set the site up, create the collection, make its Details group from it and attach Specifications in order. */
 async function shop(origin, routeIds, diagnostics) {
   const web = browserless(origin, routeIds, diagnostics);
   expect((await web.post('/auth/setup', SETUP)).headers.get('location')).toBe('/dashboard');
   const created = await web.action('dashboard/(cms)/collections/new/index.ts', 'create', ['Products', 'Product', 'box']);
   expect(created._cossack_redirect).toBe('/dashboard/collections/products?created=1');
-  const built = await web.action(BUILDER, 'save', [DRAFT, LAYOUT, []], { params: { name: 'products' } });
-  expect(built.error).toBe('');
-  expect(built.layout.map(block => block.id)).toEqual(['cols', 'tabs']);
+  // A group made from the collection manager is attached to the collection when it is created.
+  const details = await web.action(GROUPS, 'create', ['Details', 'products']);
+  expect(details._cossack_redirect).toBe('/dashboard/field-groups/details?created=1');
+  const laid = await web.action(GROUP, 'save', [{ id: 'details', title: 'Details', description: '', placement: 'main', order: '' }, [{ kind: 'collection', name: 'products', order: 0 }], DETAILS], { params: { id: 'details' } });
+  expect(laid.error).toBe('');
+  expect(laid.blocks.map(block => block.id)).toEqual(['cols', 'tabs']);
   const group = await web.action(GROUPS, 'create', ['Specifications']);
   expect(group._cossack_redirect).toBe('/dashboard/field-groups/specifications?created=1');
   const saved = await web.action(GROUP, 'save', [{ id: 'specifications', title: 'Specifications', description: 'What the product is made of.', placement: 'main', order: '' }, [{ kind: 'collection', name: 'products' }, { kind: 'taxonomy', name: 'categories' }], SPECS], { params: { id: 'specifications' } });
   expect(saved.error).toBe('');
   expect(saved.blocks[1].children.map(block => block.data.name)).toEqual(['name', 'kind', 'url']);
+  // The collection manager lists the attached groups in order and saves that order with the features.
+  const loaded = await web.action(BUILDER, 'load', ['products'], { params: { name: 'products' } });
+  expect(loaded.groups.map(entry => entry.id)).toEqual(['details', 'specifications']);
+  expect(loaded.available).toEqual([]);
+  const built = await web.action(BUILDER, 'save', [DRAFT, ['specifications', 'details'], []], { params: { name: 'products' } });
+  expect(built.error).toBe('');
+  expect(built.groups.map(entry => entry.id)).toEqual(['specifications', 'details']);
+  const reordered = await web.action(BUILDER, 'save', [DRAFT, ['details', 'specifications'], []], { params: { name: 'products' } });
+  expect(reordered.groups.map(entry => entry.id)).toEqual(['details', 'specifications']);
   return web;
 }
 
@@ -64,7 +77,7 @@ async function fields(origin, routeIds, diagnostics) {
     return { status: response.status, body: await response.json() };
   };
 
-  // Entries carry the layout's fields and the group's rows; hidden fields clear; rows get IDs.
+  // Entries carry the Details fields and the Specifications rows; hidden fields clear; rows get IDs.
   const bad = await json('/api/cms/content/products', 'POST', { title: 'Bad', price: 1, onSale: true });
   expect(bad.status).toBe(422);
   expect(bad.body.fields).toEqual({ salePrice: 'is required.' });
@@ -88,7 +101,7 @@ async function fields(origin, routeIds, diagnostics) {
   const nope = await fetch(`${origin}/api/cms/content/products?filter[nope]=1`);
   expect(nope.status).toBe(422);
 
-  // The entry editor shows the layout and the group's box; the term editor shows the box too.
+  // The entry editor shows both boxes; the term editor shows the Specifications box too.
   const editor = await web.page(`/dashboard/content/products/${item.id}`);
   contains(editor, 'Specifications');
   contains(editor, 'What the product is made of.');
@@ -98,6 +111,9 @@ async function fields(origin, routeIds, diagnostics) {
   const list = await web.page('/dashboard/field-groups');
   contains(list, 'Specifications');
   contains(list, 'Products, Categories');
+  const manager = await web.page('/dashboard/collections/products');
+  contains(manager, 'data-group=details');
+  contains(manager, 'Content template');
   return { web, item };
 }
 
@@ -114,7 +130,7 @@ async function nodeApp() {
 }
 
 describe.skipIf(!liveRomeDBTests())('generated CMS field groups', () => {
-  it('lays collections out, attaches groups, stores rows and filters on them on Node', async () => {
+  it('attaches groups from the collection, stores rows and filters on them on Node', async () => {
     const app = await nodeApp();
     try {
       await fields(app.server.origin, app.routeIds, () => app.server.diagnostics());

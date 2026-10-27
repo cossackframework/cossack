@@ -207,7 +207,7 @@ export function mediaView(file: CmsFile | undefined, resizes: boolean): MediaVie
 /**
  * A block with its Markdown rendered, its rich text as parts (through `richText`, when given),
  * its media resolved and its children rendered. With a `scope` (the entry's record), text
- * fields bound to entry fields (`$.price`, `{{ $.price }}`) show the entry's values.
+ * fields bound to entry fields (`{{ $.price }}`) show the entry's values.
  */
 function renderedBlock(cms: CmsHost, block: { id: string; type: string; data: Record<string, unknown>; layout?: RenderedBlock['layout']; style?: RenderedBlock['style']; when?: RenderedBlock['when']; children?: readonly unknown[] },
     files: ReadonlyMap<string, CmsFile>, richText?: (doc: RichTextDoc) => BodyPart[], scope?: Readonly<Record<string, unknown>>): RenderedBlock {
@@ -362,7 +362,7 @@ export async function entryViews(cms: CmsHost, collection: CollectionDefinition,
         const taxonomy = cms.taxonomies.declaration(term.taxonomy);
         return taxonomy.path ? `${localePrefix(languages, locale)}/${taxonomy.path}/${term.slug}` : null;
     };
-    // Blocks bind to the entry's own fields (`$.price`), so each record renders with itself as the scope.
+    // Blocks bind to the entry's own fields (`{{ $.price }}`), so each record renders with itself as the scope.
     const parts = bodyRenderer(cms, files, patterns);
     const render = (block: RenderedBlock, scope: RecordShape) => renderedBlock(cms, block, files, doc => parts(doc, scope), scope);
     /** A field's typed value; undefined leaves it out (rich text, Markdown and blocks in lists, vectors). */

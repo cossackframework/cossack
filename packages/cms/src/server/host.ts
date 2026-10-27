@@ -7,8 +7,8 @@ import type { StorageProvider } from '@cossackframework/core/storage';
 import { ClientError, type RomeDB, type Statement, type Value, type WorkLimits } from '@cossackframework/romedb';
 import { blockId, blockMedia, blockProblems, validateBlocks, type Block, type BlockDeclaration } from '../blocks';
 import { blocksShapeProblem, type FieldDeclaration } from '../fields';
-import { collectionProblems, collectionResource, CORE_FIELDS, entryUrl, extendCollection, LOCALE, orderedFields, type CollectionDefinition } from '../collections';
-import { derivedFields, fieldGroupDeclarations, fieldGroupProblems, fieldVisibility, flattenGroupFields, metaProblems, sameTarget, type FieldGroup, type FieldGroupTarget } from '../field-groups';
+import { collectionProblems, collectionResource, contentBlocks, entryUrl, extendCollection, LOCALE, orderedFields, RESERVED_FIELDS, type CollectionDefinition } from '../collections';
+import { derivedFields, fieldGroupDeclarations, fieldGroupProblems, fieldVisibility, flattenGroupFields, groupsForTarget, metaProblems, withTarget, type FieldGroup, type FieldGroupTarget } from '../field-groups';
 import { CmsFieldGroups } from './field-groups';
 import { CmsError } from '../errors';
 import type { CmsModule } from '../module';
@@ -995,31 +995,25 @@ export class CmsHost {
 
     /**
      * Create or change a collection. Its table and indexes change in one migration step that
-     * also stores the definition; built-in collections store only their added fields.
+     * also stores the definition; built-in collections store only what was changed. With
+     * `groups`, the field groups attached to the collection are set to that list in that order:
+     * groups it leaves out are detached, and the schema is planned once for all of it.
      */
-    async saveCollection(given: CollectionDefinition, principal: Principal): Promise<CollectionDefinition> {
+    async saveCollection(given: CollectionDefinition, principal: Principal, options: { readonly groups?: readonly { readonly id: string; readonly order?: number }[] } = {}): Promise<CollectionDefinition> {
         this.#authorizeBuilder(principal);
         await this.ready({ force: true });
         const before = this.#collections.get(given.name);
         const builtin = this.#builtinCollections.get(given.name);
-        // A layout compiles to the fields; its field blocks are checked as a field group's.
-        let input = given;
-        if (given.layout !== undefined) {
-            const scope = [...CORE_FIELDS, ...(given.taxonomies ?? [])];
-            const checked = validateBlocks(Array.isArray(given.layout) ? given.layout : [], this.#blocks, { fieldGroup: { scope } });
-            const first = Object.entries(checked.errors)[0];
-            if (first) throw new CmsError('CMS_VALIDATION', `Layout block ${first[0]}: ${first[1]}`, { fields: { layout: `${first[0]}: ${first[1]}` } });
-            const fields = fieldGroupDeclarations(checked.blocks, this.#blocks);
-            for (const [name, declaration] of Object.entries(builtin?.fields ?? {})) if (Object.hasOwn(fields, name)) fields[name] = declaration;
-            input = { ...given, fields, fieldOrder: Object.keys(fields), layout: checked.blocks };
-        }
+        if (builtin?.managed) throw new CmsError('CMS_FORBIDDEN', `${builtin.label} is managed by its module and has its own screens.`);
+        // Layouts of older versions are converted to groups on load; a definition never carries one in. Managed is the module's to declare.
+        const { layout: _layout, managed: _managed, ...input } = given;
         const stored: CollectionDefinition = builtin ? {
             name: input.name, label: input.label, singular: input.singular, ...(input.description !== undefined ? { description: input.description } : {}),
             ...(input.icon !== undefined ? { icon: input.icon } : {}), ...(input.path !== undefined ? { path: input.path } : {}),
             ...(input.comments !== undefined ? { comments: input.comments } : {}),
+            ...(input.features !== undefined ? { features: input.features } : {}),
             ...(input.template !== undefined ? { template: input.template } : {}),
             ...(input.templateLock !== undefined ? { templateLock: input.templateLock } : {}),
-            ...(input.layout !== undefined ? { layout: input.layout } : {}),
             taxonomies: (input.taxonomies ?? []).filter(name => !(builtin.taxonomies ?? []).includes(name)),
             fields: Object.fromEntries(Object.entries(input.fields ?? {}).filter(([name]) => !Object.hasOwn(builtin.fields, name))),
             // The module's fields are not stored, so their place among the added ones is.
@@ -1033,13 +1027,34 @@ export class CmsHost {
             if (declaration.kind === 'reference' && declaration.target !== `cms/${definition.name}` && !this.#resources.has(declaration.target!)) problems.push(`Field ${name} refers to ${declaration.target}, which does not exist.`);
             for (const type of declaration.blocks ?? []) if (!this.#blocks.has(type)) problems.push(`Field ${name} allows ${type}, which is not a block type.`);
         }
-        // The content template is checked like an entry's blocks, against the content field's allowed types.
+        // The content template is checked like an entry's blocks, against the content's allowed types.
         if (definition.template?.length && !problems.length) {
-            const content = Object.values(definition.fields).find(declaration => declaration.kind === 'blocks');
-            const { errors } = validateBlocks(definition.template, this.#blocks, content?.blocks ? { allowed: content.blocks } : {});
+            const allowed = contentBlocks(definition.features?.content) ?? [];
+            const { errors } = validateBlocks(definition.template, this.#blocks, allowed.length ? { allowed } : {});
             problems.push(...Object.entries(errors).map(([path, message]) => `Template block ${path}: ${message}`));
         }
+        // The attached groups: each checked against the collection's fields and the other attached groups.
+        const target: FieldGroupTarget = { kind: 'collection', name: definition.name };
+        const changed: FieldGroup[] = [];
+        if (options.groups) {
+            const wanted = new Map(options.groups.map((entry, index) => [entry.id, entry.order ?? index]));
+            for (const id of wanted.keys()) if (!this.#groups.some(group => group.id === id)) problems.push(`Field group ${id} does not exist.`);
+            const attached = this.#groups.map(group => wanted.has(group.id) ? withTarget(group, target, true, wanted.get(group.id)) : withTarget(group, target, false));
+            for (const [index, group] of attached.entries()) if (canonicalJson(group) !== canonicalJson(this.#groups[index])) changed.push(group);
+            const scope = [...RESERVED_FIELDS, ...(definition.taxonomies ?? []), ...Object.keys(definition.fields)];
+            const taken = new Map<string, string>();
+            for (const group of groupsForTarget(attached, target)) {
+                const checked = fieldGroupProblems(group, this.#blocks, scope);
+                problems.push(...checked.problems.map(problem => `Field group ${group.title}: ${problem}`));
+                for (const name of Object.keys(checked.fields)) {
+                    if (taken.has(name)) problems.push(`Field ${name} is in both “${taken.get(name)}” and “${group.title}”.`);
+                    taken.set(name, group.title);
+                }
+            }
+        }
         if (problems.length) throw new CmsError('CMS_VALIDATION', problems.join(' '), { fields: { definition: problems.join(' ') } });
+        for (const group of changed) await this.fieldGroups.put(group, principal);
+        if (changed.length) this.#groups = await this.fieldGroups.all();
         // The same resource `ready()` builds from the stored definition; its hash is what the migration records.
         const resource = this.#collectionResource(definition, this.#taxonomyLabels());
         const row: Statement = {
@@ -1122,6 +1137,8 @@ export class CmsHost {
             { rql: 'DELETE FROM cms_collections WHERE name = $name', params: { $name: name } },
             { rql: 'DELETE FROM cms_schema_state WHERE resource = $id', params: { $id: id } },
         ], { kind: 'cms.collections' });
+        // The groups attached to it stay, for other targets, without it.
+        for (const group of groupsForTarget(this.#groups, { kind: 'collection', name })) await this.fieldGroups.put(withTarget(group, { kind: 'collection', name }, false), principal);
         this.#activation = undefined;
         await this.ready({ force: true });
     }
@@ -1135,7 +1152,7 @@ export class CmsHost {
             : { name: input.name, label: input.label, singular: input.singular, hierarchical: input.hierarchical, path: input.path ?? null, ...(input.description !== undefined ? { description: input.description } : {}) };
         const problems = taxonomyProblems(declaration);
         // Collections store a taxonomy's terms in a field of the same name.
-        if (!builtin && (CORE_FIELDS.includes(declaration.name) || [...this.#collections.values()].some(collection => Object.hasOwn(collection.fields, declaration.name)))) problems.push(`${declaration.name} is already a field name.`);
+        if (!builtin && (RESERVED_FIELDS.includes(declaration.name) || [...this.#collections.values()].some(collection => Object.hasOwn(collection.fields, declaration.name)))) problems.push(`${declaration.name} is already a field name.`);
         if (problems.length) throw new CmsError('CMS_VALIDATION', problems.join(' '));
         const current = this.#taxonomies.get(declaration.name);
         if (current?.hierarchical && !declaration.hierarchical) {
@@ -1350,14 +1367,16 @@ export class CmsHost {
     }
 
     /**
-     * A collection's resource: its own fields, then its groups', then the lists derived from rows
-     * for filtering, with the layout of both. Saving and reloading build it the same way, so the
-     * declaration hash a migration records is the one `ready()` checks writes against.
+     * A collection's resource: its declared fields, then its groups' (a group field named as a
+     * core field or a feature is left out), then the lists derived from rows for filtering, with
+     * the groups' layout. Saving and reloading build it the same way, so the declaration hash a
+     * migration records is the one `ready()` checks writes against.
      */
     #collectionResource(definition: CollectionDefinition, labels: { [name: string]: string }): Resource {
         const groups = this.#groupFields({ kind: 'collection', name: definition.name });
-        const fields = { ...definition.fields, ...groups.fields };
-        const layout = [...(definition.layout ?? []), ...groups.layout];
+        const taken = new Set([...RESERVED_FIELDS, ...(definition.taxonomies ?? []), ...Object.keys(definition.fields)]);
+        const fields = { ...definition.fields, ...Object.fromEntries(Object.entries(groups.fields).filter(([name]) => !taken.has(name))) };
+        const layout = groups.layout;
         return resolveResource({ ...collectionResource({ ...definition, fields: { ...fields, ...derivedFields(fields) } }, labels), ...(layout.length ? { layout } : {}) }, 'cms');
     }
 
@@ -1409,12 +1428,57 @@ export class CmsHost {
         }));
         this.fieldGroups.reset();
         this.#groups = await this.fieldGroups.all();
-        this.#apply(parse<CollectionDefinition>(collections), parse<TaxonomyDeclaration>(taxonomies));
+        this.#apply(await this.#convertLayouts(parse<CollectionDefinition>(collections)), parse<TaxonomyDeclaration>(taxonomies));
     }
 
-    /** The groups attached to a target, in order. */
+    /**
+     * Collections stored by older versions with a field tree (`layout`): each becomes a field
+     * group named after the collection, attached first, and the stored row keeps its settings and
+     * hand-declared fields. Field blocks named as a core field, a feature or a module field are
+     * dropped, and a blocks field named `content`, text `excerpt` or media `featuredImage` turns
+     * the feature on instead. Idempotent, so concurrent isolates agree.
+     */
+    async #convertLayouts(stored: ReadonlyMap<string, CollectionDefinition>): Promise<ReadonlyMap<string, CollectionDefinition>> {
+        const result = new Map(stored);
+        let converted = false;
+        for (const [name, definition] of stored) {
+            if (definition.layout === undefined) continue;
+            const builtin = this.#builtinCollections.get(name);
+            const skip = new Set([...RESERVED_FIELDS, ...(definition.taxonomies ?? []), ...(builtin?.taxonomies ?? []), ...Object.keys(builtin?.fields ?? {})]);
+            const features = { ...definition.features };
+            const promote: { [field: string]: { feature: keyof typeof features; kind: string } } = { content: { feature: 'content', kind: 'field/blocks' }, excerpt: { feature: 'excerpt', kind: 'field/textarea' }, featuredImage: { feature: 'featuredImage', kind: 'field/media' } };
+            const prune = (blocks: readonly Block[]): Block[] => blocks.flatMap(block => {
+                const field = block.type.startsWith('field/') ? String(block.data.name ?? '') : '';
+                if (field && promote[field]?.kind === block.type) features[promote[field]!.feature] = true;
+                if (field && skip.has(field)) return [];
+                return [block.children ? { ...block, children: prune(block.children) } : block];
+            });
+            // The layout compiled to these fields, which the group now declares; a module's own fields were never stored.
+            const compiled = new Set(flattenGroupFields(definition.layout).map(block => String(block.data.name ?? '')));
+            const blocks = prune(definition.layout);
+            const { layout: _layout, fieldOrder: _order, ...rest } = definition;
+            const next: CollectionDefinition = { ...rest, fields: Object.fromEntries(Object.entries(definition.fields ?? {}).filter(([field]) => !compiled.has(field) && !skip.has(field))), ...(Object.keys(features).length ? { features } : {}) };
+            const principal = systemPrincipal('upgrade');
+            if (flattenGroupFields(blocks).length) {
+                const id = `${name.replaceAll('_', '-')}-fields`;
+                const existing = this.#groups.find(group => group.id === id);
+                const group: FieldGroup = existing ? withTarget(existing, { kind: 'collection', name }, true, -1) : { id, title: `${definition.label ?? builtin?.label ?? name} fields`, placement: 'main', targets: [{ kind: 'collection', name, order: -1 }], blocks };
+                await this.fieldGroups.put(group, principal);
+            }
+            await this.db.write([{
+                rql: 'UPDATE cms_collections SET definition = $definition, updated_at = $now, updated_by = $by WHERE name = $name',
+                params: { $name: name, $definition: JSON.stringify(next), $now: this.#now(), $by: principalId(principal) },
+            }], { kind: 'cms.collections', retryConflicts: 5 });
+            result.set(name, next);
+            converted = true;
+        }
+        if (converted) this.#groups = await this.fieldGroups.all();
+        return result;
+    }
+
+    /** The groups attached to a target, in their order there. */
     #groupsFor(target: FieldGroupTarget): FieldGroup[] {
-        return this.#groups.filter(group => group.targets.some(entry => sameTarget(entry, target)));
+        return groupsForTarget(this.#groups, target);
     }
 
     /** A target's fields from its groups, after the group blocks are checked against the current types. */
@@ -1455,7 +1519,7 @@ export class CmsHost {
         switch (target.kind) {
             case 'collection': {
                 const definition = this.#collections.get(target.name);
-                return [...CORE_FIELDS, ...(definition?.taxonomies ?? []), ...Object.keys(definition?.fields ?? {})];
+                return [...RESERVED_FIELDS, ...(definition?.taxonomies ?? []), ...Object.keys(definition?.fields ?? {})];
             }
             case 'taxonomy': return ['name', 'slug', 'description', 'parent', 'icon', 'path', 'depth', 'taxonomy'];
             case 'users': return ['email', 'name', 'avatar', 'status', 'roles', 'password'];
@@ -1470,6 +1534,7 @@ export class CmsHost {
         const problems: string[] = [];
         for (const target of input.targets ?? []) {
             if (target.kind === 'collection' && !this.#collections.has(target.name)) problems.push(`Collection ${target.name} does not exist.`);
+            else if (target.kind === 'collection' && this.#collections.get(target.name)?.managed) problems.push(`${this.#collections.get(target.name)!.label} is managed by its module; groups cannot attach to it.`);
             if (target.kind === 'taxonomy' && !this.#taxonomies.has(target.name)) problems.push(`Taxonomy ${target.name} does not exist.`);
         }
         const scope = [...new Set((input.targets ?? []).flatMap(target => this.#targetScope(target)))];

@@ -2,6 +2,11 @@ import { html, component, repeat } from '@cossackframework/renderer';
 import { Cossack, Component, ClientState } from '@cossackframework/core';
 import { Icon } from '../icons/Icon';
 import { CloseCircleIcon } from '@cossackframework/solar-icons/close-circle';
+import { InfoCircleIcon } from '@cossackframework/solar-icons/info-circle';
+import { CheckCircleIcon } from '@cossackframework/solar-icons/check-circle';
+import { DangerTriangleIcon } from '@cossackframework/solar-icons/danger-triangle';
+import { DangerCircleIcon } from '@cossackframework/solar-icons/danger-circle';
+import type { IconEntry } from '@cossackframework/solar-icons/types';
 import type { GlobalAttributes } from '../native-attributes';
 
 export type ToastVariant = 'default' | 'success' | 'warning' | 'destructive';
@@ -137,9 +142,15 @@ const positions = {
     'bottom-right': 'bottom-0 right-0', 'bottom-left': 'bottom-0 left-0',
     'bottom-center': 'bottom-0 left-1/2 -translate-x-1/2',
 };
+// A toast looks like an inline status message: a tinted, bordered card in the page's text colour,
+// with the tone carried by its border, background and icon.
 const styles: Record<ToastVariant, string> = {
-    default: 'bg-popover text-popover-foreground border', success: 'bg-success/10 text-success-text border-transparent',
-    warning: 'bg-warning/10 text-warning-text border-transparent', destructive: 'bg-destructive/10 text-destructive border-transparent',
+    default: 'border-border bg-card', success: 'border-success/40 bg-success/10',
+    warning: 'border-warning/40 bg-warning/10', destructive: 'border-destructive/40 bg-destructive/10',
+};
+const icons: Record<ToastVariant, { entry: IconEntry; tone: string }> = {
+    default: { entry: InfoCircleIcon, tone: 'text-muted-foreground' }, success: { entry: CheckCircleIcon, tone: 'text-success-text' },
+    warning: { entry: DangerTriangleIcon, tone: 'text-warning-text' }, destructive: { entry: DangerCircleIcon, tone: 'text-destructive' },
 };
 
 /** A named notification region with one live announcer and owned browser lifecycle. */
@@ -167,8 +178,10 @@ export class Toaster extends Cossack {
             popover="manual" ...=${rest} role="region" aria-label=${label} tabindex="-1" ref=${(element: Element) => { this.rootElement = element as HTMLDivElement; this.schedulePresenter(); }}>
             <div class="sr-only" role="status" aria-live="polite" aria-atomic="false" aria-relevant="additions">${repeat(this.toasts, item => item.id, item => html`<div>${item.message}</div>`)}</div>
             <ol class="cs-toaster__items flex flex-col gap-2 m-0 p-0 list-none">${repeat(this.toasts, item => item.id, item => html`<li data-toast-id=${item.id}
-                class=${`cs-toast pointer-events-auto rounded-md shadow-lg p-4 pe-10 w-full min-w-0 break-words text-sm relative ${styles[item.variant]}`}>
-                <span>${item.message}</span><button type="button" class="cs-toast__close absolute top-2 end-2 size-6 inline-flex items-center justify-center rounded-sm hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
+                class=${`cs-toast cs-toast--${item.variant} pointer-events-auto flex items-start gap-3 rounded-md border px-3 py-2 w-full min-w-0 break-words text-sm text-foreground shadow-xs ${styles[item.variant]}`}>
+                <span aria-hidden="true" class=${`mt-0.5 shrink-0 [&_svg]:size-4 ${icons[item.variant].tone}`}>${component(Icon, { entry: icons[item.variant].entry, size: 16 })}</span>
+                <span class="min-w-0 flex-1 leading-5">${item.message}</span>
+                <button type="button" class="cs-toast__close -me-1 -mt-0.5 size-6 shrink-0 inline-flex items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
                     aria-label=${`${dismissLabel}: ${item.message}`} @click=${() => store.dismiss(item.id)}><span aria-hidden="true">${component(Icon, { entry: CloseCircleIcon, size: 16 })}</span></button>
             </li>`)}</ol>
         </div>`;

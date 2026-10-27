@@ -34,6 +34,11 @@ export const richTextEditors = new Map<string, RichTextHandle>();
 
 const SURFACE = `${PROSE} min-h-[22rem] px-4 py-3 focus:outline-none [&_p.is-editor-empty:first-child]:before:pointer-events-none [&_p.is-editor-empty:first-child]:before:float-left [&_p.is-editor-empty:first-child]:before:h-0 [&_p.is-editor-empty:first-child]:before:text-muted-foreground [&_p.is-editor-empty:first-child]:before:content-[attr(data-placeholder)] [&_img.ProseMirror-selectednode]:ring-2 [&_img.ProseMirror-selectednode]:ring-ring`;
 
+/** A document as JSON, for telling the editor's own value from one set from outside. */
+function docKey(value: RichTextDoc | null | undefined): string {
+    try { return JSON.stringify(value ?? null); } catch { return ''; }
+}
+
 @Component()
 export class RichTextField extends Cossack {
     declare props: RichTextFieldProps;
@@ -45,6 +50,23 @@ export class RichTextField extends Cossack {
     @ClientState() private linkNewTab = false;
     private handle?: RichTextHandle;
     private surface?: HTMLElement;
+    /** The document the editor holds, as JSON: what it last emitted or was given. */
+    private held = '';
+
+    /**
+     * A value that changed outside the editor (a restored autosave, the entry as saved, a pattern
+     * put in by the page) replaces the document; the editor's own edits come back as the same
+     * value and leave it alone.
+     */
+    @Client()
+    updated(changed: Map<string | number | symbol, unknown>) {
+        super.updated(changed);
+        if (!this.handle || !this.ready) return;
+        const next = docKey(this.props.value);
+        if (next === this.held) return;
+        this.held = next;
+        this.handle.setContent(this.props.value);
+    }
 
     @Client()
     private async connect(element: Element | undefined) {
@@ -59,11 +81,12 @@ export class RichTextField extends Cossack {
                 blockLabel: type => type === 'core/pattern' ? __('Synced pattern') : labels.get(type) ?? type,
                 blockSummary: block => block.type === 'core/pattern' ? this.props.patternTitles?.[String(block.data.pattern)] ?? __('Pattern')
                     : Object.values(block.data).find((value): value is string => typeof value === 'string' && value.trim() !== '') ?? '',
-                onChange: doc => this.props.onChange(doc),
+                onChange: doc => { this.held = docKey(doc); this.props.onChange(doc); },
                 onSelection: active => { if (active.join() !== this.active.join()) this.active = active; },
                 onEditBlock: block => this.props.onEditBlock(block),
             });
             richTextEditors.set(this.props.id, this.handle);
+            this.held = docKey(this.props.value);
             this.ready = true;
         } catch (error) {
             console.error('[cms] the rich text editor could not load', error);

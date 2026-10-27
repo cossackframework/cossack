@@ -73,12 +73,13 @@ describe.skipIf(!liveRomeDBTests())('CMS plugin trust', () => {
       contains(overview, 'href="/dashboard/content/support-desk.tickets"');
       contains(await web.page('/dashboard/support'), 'Open tickets: 2');
 
-      // The plugin's block type: added to pages through the builder, rendered by its ui.ts.
-      const builder = await web.action('dashboard/(cms)/collections/[name]/index.ts', 'save', [
-        { name: 'pages', label: 'Pages', singular: 'Page', description: '', icon: 'notebook', path: '', public: true, slug: true, publishable: true, hierarchical: true, visibility: 'private', taxonomies: [], builtin: true },
-        [{ name: 'sections', label: 'Sections', type: 'blocks', required: false, description: '', placement: '', unique: false, search: false, max: '', min: '', choices: '', defaultValue: '', target: '', blocks: [], locked: false }],
-      ], { params: { name: 'pages' } });
-      expect(builder.error).toBe('');
+      // The plugin's block type: added to pages through a field group made for them, rendered by its ui.ts.
+      expect((await web.action('dashboard/(cms)/field-groups/new/index.ts', 'create', ['Sections', 'pages']))._cossack_redirect).toBe('/dashboard/field-groups/sections?created=1');
+      const group = await web.action('dashboard/(cms)/field-groups/[id]/index.ts', 'save', [
+        { id: 'sections', title: 'Sections', description: '', placement: 'main', order: '' }, [{ kind: 'collection', name: 'pages', order: 0 }],
+        [{ id: 'sections', type: 'field/blocks', data: { name: 'sections', label: 'Sections' } }],
+      ], { params: { id: 'sections' } });
+      expect(group.error).toBe('');
       await web.action(editor, 'save', [{ title: 'Contact', slug: '', status: 'draft', publishedAt: '', content: [], excerpt: '', showInMenu: true, featuredImage: '', parent: '', menuOrder: '0',
         sections: [{ id: 'c1', type: 'support-desk/contact', data: { email: 'help@example.com' } }] }, 'publish', 0], { params: { collection: 'pages', id: 'new' }, state: { route: 'pages', id: 'new' } });
       contains(await web.page('/contact'), 'Write to help@example.com');

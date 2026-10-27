@@ -7,10 +7,13 @@ const editor: Principal = { kind: 'user', id: 'editor-1', roles: ['editor'], per
 
 const fieldBlock = (id: string, kind: string, data: { [key: string]: unknown }, extra: Partial<Block> = {}): Block => ({ id, type: `field/${kind}`, data: { label: id, ...data }, ...extra });
 
-/** Products: a layout of two columns and a pricing tab, saved with the collection. */
-const products: CollectionDefinition = {
-    name: 'products', label: 'Products', singular: 'Product', icon: 'box', path: 'shop', fields: {},
-    layout: [
+/** Products, with content and a featured image; its fields come from groups. */
+const products: CollectionDefinition = { name: 'products', label: 'Products', singular: 'Product', icon: 'box', path: 'shop', features: { content: true, featuredImage: true }, fields: {} };
+
+/** Details: two columns and a pricing tab, made for products and attached from the collection. */
+const details: FieldGroup = {
+    id: 'details', title: 'Details', targets: [],
+    blocks: [
         { id: 'cols', type: 'core/columns', data: {}, children: [
             { id: 'c1', type: 'core/column', data: {}, children: [fieldBlock('sku', 'text', { name: 'sku', label: 'SKU', unique: true, max: 40 })] },
             { id: 'c2', type: 'core/column', data: {}, children: [fieldBlock('price', 'number', { name: 'price', label: 'Price', min: 0, required: true, index: true })] },
@@ -59,27 +62,45 @@ describe.skipIf(!live)('field groups', () => {
         await cms.ready();
     }, 30_000);
 
-    it('compiles a collection layout to fields and attaches a group with a repeater', async () => {
-        const saved = await cms.saveCollection(products, admin);
-        expect(Object.keys(saved.fields)).toEqual(['sku', 'price', 'onSale', 'salePrice']);
-        expect(saved.fields.price).toMatchObject({ kind: 'number', required: true, min: 0, index: true });
-        expect(saved.layout?.map(block => block.id)).toEqual(['cols', 'tabs']);
-        // The migration records the resource with its layout, so entries are written straight away.
+    it('attaches groups from the collection, in order, and one with a repeater on its own', async () => {
+        await cms.saveCollection(products, admin);
+        expect(Object.keys(cms.resourceById('cms/products').fields)).toEqual(expect.arrayContaining(['content', 'featuredImage']));
+        await cms.saveFieldGroup(details, admin);
+        await expect(cms.saveCollection(products, admin, { groups: [{ id: 'nope' }] })).rejects.toMatchObject({ code: 'CMS_VALIDATION', message: expect.stringContaining('nope') });
+        // A group whose field is a feature of the collection cannot attach.
+        await cms.saveFieldGroup({ id: 'clash', title: 'Clash', targets: [], blocks: [fieldBlock('x', 'text', { name: 'excerpt', label: 'Excerpt' })] }, admin);
+        await expect(cms.saveCollection({ ...products, features: { ...products.features, excerpt: true } }, admin, { groups: [{ id: 'clash' }] })).rejects.toMatchObject({ code: 'CMS_VALIDATION', message: expect.stringContaining('Clash') });
+        const saved = await cms.saveCollection(products, admin, { groups: [{ id: 'details' }] });
+        expect(saved.fields).toEqual({});
+        expect(cms.fieldGroupsFor({ kind: 'collection', name: 'products' }).map(group => group.id)).toEqual(['details']);
+        expect((await cms.fieldGroups.get('details'))!.targets).toEqual([{ kind: 'collection', name: 'products', order: 0 }]);
+        const resource = cms.resourceById('cms/products');
+        expect(Object.keys(resource.fields)).toEqual(expect.arrayContaining(['sku', 'price', 'onSale', 'salePrice']));
+        expect(resource.fields.price).toMatchObject({ kind: 'number', required: true, min: 0, index: true });
+        expect(resource.layout?.map(block => block.id)).toEqual(['cols', 'tabs']);
+        // The migration records the resource with the group's fields, so entries are written straight away.
         const first = await cms.resource('cms/products').create({ title: 'First', price: 1, sku: 'FIRST' }, { principal: editor });
         expect(first).toMatchObject({ price: 1, sku: 'FIRST' });
         await cms.resource('cms/products').delete(first.id, { principal: editor, expectedRevision: first.rev });
 
         await expect(cms.saveFieldGroup({ ...specs, targets: [{ kind: 'collection', name: 'nope' }] }, admin)).rejects.toMatchObject({ code: 'CMS_VALIDATION', message: expect.stringContaining('nope') });
-        await expect(cms.saveFieldGroup({ ...specs, blocks: [fieldBlock('x', 'text', { name: 'price', label: 'Price' })] }, admin)).rejects.toMatchObject({ message: expect.stringContaining('used by the target') });
+        await expect(cms.saveFieldGroup({ ...specs, blocks: [fieldBlock('x', 'text', { name: 'price', label: 'Price' })] }, admin)).rejects.toMatchObject({ message: expect.stringContaining('already in the group') });
         await expect(cms.saveFieldGroup(specs, editor)).rejects.toMatchObject({ code: 'CMS_FORBIDDEN' });
         const group = await cms.saveFieldGroup(specs, admin);
         expect(group.blocks[1]!.children!.map(block => block.data.name)).toEqual(['name', 'kind', 'url', 'notes']);
-        expect(cms.fieldGroupsFor({ kind: 'collection', name: 'products' }).map(entry => entry.id)).toEqual(['specs']);
+        expect(cms.fieldGroupsFor({ kind: 'collection', name: 'products' }).map(entry => entry.id)).toEqual(['details', 'specs']);
+        // Reordering from the collection writes the groups' targets; a group left out is detached and attached again.
+        await cms.saveCollection(products, admin, { groups: [{ id: 'specs' }, { id: 'details' }] });
+        expect(cms.fieldGroupsFor({ kind: 'collection', name: 'products' }).map(entry => entry.id)).toEqual(['specs', 'details']);
+        await cms.saveCollection(products, admin, { groups: [{ id: 'specs' }] });
+        expect(cms.resourceById('cms/products').fields.price).toBeUndefined();
+        await cms.saveCollection(products, admin, { groups: [{ id: 'details' }, { id: 'specs' }] });
+        expect(cms.fieldGroupsFor({ kind: 'collection', name: 'products' }).map(entry => entry.id)).toEqual(['details', 'specs']);
 
-        const resource = cms.resourceById('cms/products');
-        expect(resource.fields.specs).toMatchObject({ kind: 'rows', max: 10 });
-        expect(resource.fields.specs__name).toMatchObject({ kind: 'list', items: 'string', index: true, derived: ['specs', 'name'] });
-        expect(resource.fields.specs__notes__tag).toMatchObject({ derived: ['specs', 'notes', 'tag'] });
+        const withSpecs = cms.resourceById('cms/products');
+        expect(withSpecs.fields.specs).toMatchObject({ kind: 'rows', max: 10 });
+        expect(withSpecs.fields.specs__name).toMatchObject({ kind: 'list', items: 'string', index: true, derived: ['specs', 'name'] });
+        expect(withSpecs.fields.specs__notes__tag).toMatchObject({ derived: ['specs', 'notes', 'tag'] });
         const info = await cms.db.read([{ rql: 'INFO FOR TABLE r__cms__products' }]);
         const table = info.results[0]!.rows[0]![0] as { indexes: { name: string; kind: string }[] };
         expect(table.indexes.map(index => `${index.name}:${index.kind}`)).toEqual(expect.arrayContaining(['r__cms__products__price:scalar', 'r__cms__products__specs__name:array', 'r__cms__products__specs__notes__tag:array', 'r__cms__products__text:fulltext']));
@@ -160,5 +181,36 @@ describe.skipIf(!live)('field groups', () => {
         await expect(cms.deleteFieldGroup('specs', admin)).rejects.toMatchObject({ code: 'CMS_NOT_FOUND' });
         await cms.saveFieldGroup({ ...specs, blocks: [fieldBlock('specs', 'text', { name: 'specs', label: 'Specs as text' })] }, admin);
         expect(cms.resourceById('cms/products').fields.specs).toMatchObject({ kind: 'string' });
+    });
+
+    it('turns a stored layout of an older version into a group on load and promotes its content field', async () => {
+        const legacy = {
+            name: 'events', label: 'Events', singular: 'Event', icon: 'calendar', path: 'events', slug: true, publishable: true, taxonomies: [], builtin: false,
+            fields: { content: field.blocks({ search: true, label: 'Content' }), venue: field.string({ label: 'Venue' }) }, fieldOrder: ['content', 'venue'],
+            layout: [fieldBlock('content', 'blocks', { name: 'content', label: 'Content' }), fieldBlock('venue', 'text', { name: 'venue', label: 'Venue', max: 80 })],
+            template: [{ id: 'text', type: 'core/richtext', data: {} }],
+        };
+        await cms.db.write([{ rql: 'INSERT INTO cms_collections (name, definition, updated_at, updated_by) VALUES ($name, $definition, $now, $by)', params: { $name: 'events', $definition: JSON.stringify(legacy), $now: Date.now(), $by: 'test' } }], { kind: 'test' });
+        const other = createCMS({ db: service.database(), modules: [contentModule] });
+        await other.ready();
+        const events = other.collection('events');
+        expect(events.layout).toBeUndefined();
+        expect(events.fields).toEqual({});
+        expect(events.features).toEqual({ content: true });
+        expect(events.template).toEqual(legacy.template);
+        const group = (await other.fieldGroups.get('events-fields'))!;
+        expect(group.title).toBe('Events fields');
+        expect(group.targets).toEqual([{ kind: 'collection', name: 'events', order: -1 }]);
+        expect(group.blocks.map(block => block.data.name)).toEqual(['venue']);
+        expect(Object.keys(other.resourceById('cms/events').fields)).toEqual(expect.arrayContaining(['content', 'venue']));
+        expect(other.resourceById('cms/events').fields.venue).toMatchObject({ kind: 'string', max: 80 });
+        // Loading again converts nothing more.
+        const again = createCMS({ db: service.database(), modules: [contentModule] });
+        await again.ready();
+        expect((await again.fieldGroups.get('events-fields'))!.blocks).toEqual(group.blocks);
+        const stored = await again.db.read([{ rql: "SELECT definition FROM cms_collections WHERE name = 'events'" }]);
+        expect(JSON.parse(stored.results[0]!.rows[0]![0] as string)).not.toHaveProperty('layout');
+        await again.deleteCollection('events', admin);
+        expect((await again.fieldGroups.get('events-fields'))!.targets).toEqual([]);
     });
 });

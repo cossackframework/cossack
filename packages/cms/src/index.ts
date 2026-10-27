@@ -3,7 +3,7 @@ export { defineResource, resolveResource, resourceProblems, storageName, permiss
     type ResourceDeclaration, type Resource, type ResourceAccess, type ResourceAction, type AccessRule, type IndexDeclaration, type MigrationStep } from './resource';
 export { field, fieldProblems, validateValue, storageType, storageCheck, slugify, FIELD_NAME, SLUG_PATTERN, TAXONOMY_NAME, ROW_ID, ROW_LIMITS, DERIVED_NAME, type FieldDeclaration, type FieldKind, type ListItemKind } from './fields';
 export {
-    FIELD_BLOCK_TYPES, FIELD_BLOCKS, FIELD_GROUP_ID, FIELD_GROUP_LIMITS, fieldBlockFields, fieldBlockDeclaration, rowsSearchable, metaProblems, flattenGroupFields, fieldGroupDeclarations, fieldBlockKindOf, fieldBlockOf, layoutOf, sameTarget, fieldGroupProblems,
+    FIELD_BLOCK_TYPES, FIELD_BLOCKS, FIELD_GROUP_ID, FIELD_GROUP_LIMITS, fieldBlockFields, fieldBlockDeclaration, rowsSearchable, metaProblems, flattenGroupFields, fieldGroupDeclarations, fieldBlockKindOf, fieldBlockOf, layoutOf, sameTarget, targetOrder, groupsForTarget, withTarget, fieldGroupProblems,
     withRowIds, derivedName, derivedFields, derivedValues, rowsPlain, rowUniqueProblem, conditionValues, hiddenKey, fieldVisibility, clearHidden,
     type FieldGroup, type FieldGroupTarget, type Row,
 } from './field-groups';
@@ -22,7 +22,7 @@ export {
     type ChoiceOption, type FormField, type FormValue, type FormValues, type SubmittedValues, type SubmissionCheck, type FormSettings, type SubmissionStatus,
     type SubmissionMeta, type SubmissionShape, type NotificationRule, type MergeContext,
 } from './form-builder';
-export { CONTENT_STATUSES, CORE_FIELDS, ENTRY_TEMPLATE, LOCALE, SEO_FIELDS, collectionProblems, collectionResource, entryUrl, extendCollection, languageName, orderedFields, posts, pages, type CollectionDefinition, type ContentStatus } from './collections';
+export { CONTENT_STATUSES, CORE_FIELDS, ENTRY_TEMPLATE, FEATURE_FIELDS, RESERVED_FIELDS, LOCALE, SEO_FIELDS, collectionProblems, collectionResource, contentBlocks, entryUrl, extendCollection, languageName, orderedFields, posts, pages, type CollectionDefinition, type CollectionFeatures, type ContentStatus } from './collections';
 export { CORE_BLOCKS, BLOCK_CATEGORIES, BLOCK_NAME, BLOCK_LIMITS, FIELD_BLOCK_KINDS, FIELD_GROUP_LAYOUT, FIELD_GROUP_LIMIT, RESERVED_FIELD_NAMES, BREAKPOINTS, STYLE_PROPERTIES, TEXT_ALIGNMENTS, PRESET_SLUG, INPUT_KINDS, INPUT_NAME, CONDITION_OPERATORS, CONDITION_LIMIT, FORM_INPUT_LIMIT, RESERVED_INPUT_NAMES,
     blockCategory, blockIsData, blockProblems, blocksShapeProblem, blockLayoutProblem, blockStyleProblem, blockConditionProblem, blockSupports, blockAllowedIn, validateBlocks, blockMedia, blockDocuments, blocksPlain, cloneBlocks, blockId, inputName,
     flattenBlocks, placeBlocks, findBlock, updateBlock, removeBlock, insertBlock, moveBlock, shiftBlock, blockTreeProblem,

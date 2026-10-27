@@ -1,25 +1,21 @@
 /**
- * Dynamic block content: a block's text field may name a field of the entry it is rendered on
- * instead of holding text. `$.price` as the whole value shows that field; `{{ $.price }}` inside
- * text puts the field there. A path walks into objects and lists with dots: `$.specs.0.name`.
- * The site resolves bindings when it renders an entry's blocks; the editor keeps the syntax.
+ * Dynamic block content: a block's text field may put fields of the entry it is rendered on
+ * inside its text with `{{ $.price }}`, so words and formatting can surround the value. A path
+ * walks into objects and lists with dots: `{{ $.specs.0.name }}`. The site resolves bindings
+ * when it renders an entry's blocks; the editor keeps the syntax.
  */
 
-/** A path the whole value is: `$.a.b`. */
-const WHOLE = /^\s*\$\.([A-Za-z_][\w-]*(?:\.[\w-]+)*)\s*$/;
 /** Paths inside text: `{{ $.a.b }}`. */
 const INLINE = /\{\{\s*\$\.([A-Za-z_][\w-]*(?:\.[\w-]+)*)\s*\}\}/g;
 
 /** Whether a value binds to a field at all, so a renderer knows to resolve it. */
 export function hasBinding(value: unknown): value is string {
-    return typeof value === 'string' && (WHOLE.test(value) || /\{\{\s*\$\./.test(value));
+    return typeof value === 'string' && /\{\{\s*\$\./.test(value);
 }
 
 /** The field paths a value binds to, in order, for pickers and checks. */
 export function bindingPaths(value: unknown): string[] {
     if (typeof value !== 'string') return [];
-    const whole = WHOLE.exec(value);
-    if (whole) return [whole[1]!];
     return [...value.matchAll(INLINE)].map(match => match[1]!);
 }
 
@@ -48,13 +44,8 @@ export function bindingText(value: unknown): string {
     return '';
 }
 
-/**
- * The value with its bindings replaced by the scope's fields. A whole-value binding becomes the
- * field's text; inline bindings are replaced in place. Unknown paths become empty text.
- */
+/** The value with its bindings replaced by the scope's fields, in place. Unknown paths become empty text. */
 export function resolveBindings(value: string, scope: Readonly<Record<string, unknown>>): string {
-    const whole = WHOLE.exec(value);
-    if (whole) return bindingText(bindingValue(scope, whole[1]!));
     return value.replace(INLINE, (_match, path: string) => bindingText(bindingValue(scope, path)));
 }
 
@@ -74,8 +65,8 @@ export function resolveBlockBindings(data: Readonly<Record<string, unknown>>, fi
     return changed ? next : { ...data };
 }
 
-/** The field a binding picker inserts: `$.name` alone in an empty value, `{{ $.name }}` appended to text. */
+/** The value with `{{ $.name }}` appended, after a space when there is text. */
 export function withBinding(value: unknown, path: string): string {
     const current = typeof value === 'string' ? value : '';
-    return current.trim() === '' ? `$.${path}` : `${current}${current.endsWith(' ') ? '' : ' '}{{ $.${path} }}`;
+    return current.trim() === '' ? `{{ $.${path} }}` : `${current}${current.endsWith(' ') ? '' : ' '}{{ $.${path} }}`;
 }

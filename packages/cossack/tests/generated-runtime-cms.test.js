@@ -103,12 +103,18 @@ async function exercise(origin, routeIds, diagnostics) {
   // A collection built in the dashboard, with a blocks field and a taxonomy.
   const collections = 'dashboard/(cms)/collections/new/index.ts';
   expect((await web.action(collections, 'create', ['Products', 'Product', 'box']))._cossack_redirect).toBe('/dashboard/collections/products?created=1');
-  // The builder lays fields out as field blocks.
+  // Its fields are a group made from the collection manager, laid out as field blocks; content is a feature.
   const field = (name, label, kind, extra = {}) => ({ id: name, type: `field/${kind}`, data: { name, label, ...extra } });
+  expect((await web.action('dashboard/(cms)/field-groups/new/index.ts', 'create', ['Product details', 'products']))._cossack_redirect).toBe('/dashboard/field-groups/product-details?created=1');
+  const group = await web.action('dashboard/(cms)/field-groups/[id]/index.ts', 'save', [
+    { id: 'product-details', title: 'Product details', description: '', placement: 'main', order: '' }, [{ kind: 'collection', name: 'products', order: 0 }],
+    [field('price', 'Price', 'number', { required: true, min: 0 }), field('sku', 'SKU', 'text', { unique: true })],
+  ], { params: { id: 'product-details' } });
+  expect(group.error).toBe('');
   const builder = await web.action('dashboard/(cms)/collections/[name]/index.ts', 'save', [
     { name: 'products', label: 'Products', singular: 'Product', description: 'Things we sell.', icon: 'box', path: 'shop', public: true, slug: true, publishable: true,
-      hierarchical: false, visibility: 'private', taxonomies: ['tags'], builtin: false },
-    [field('price', 'Price', 'number', { required: true, min: 0 }), field('sku', 'SKU', 'text', { unique: true }), field('content', 'Content', 'blocks')],
+      hierarchical: false, visibility: 'private', comments: false, taxonomies: ['tags'], builtin: false, content: true, excerpt: false, featuredImage: false, revisions: true, templateLock: '' },
+    ['product-details'], [],
   ], { params: { name: 'products' } });
   expect(builder.error).toBe('');
   contains(await web.page('/dashboard'), 'href="/dashboard/content/products"');
@@ -119,16 +125,20 @@ async function exercise(origin, routeIds, diagnostics) {
   }, 'publish', 0], { params: { collection: 'products', id: 'new' }, state: { route: 'products', id: 'new' } });
   // A button that links to script is refused.
   expect(product.errors.content).toContain('b4.url');
+  // A field of the entry reaches the page through a binding in a block's text; the theme lists no fields on its own.
   const saved = await web.action(editor, 'save', [{
     title: 'Rocket skates', slug: '', status: 'draft', publishedAt: '', price: '19.5', sku: 'RS-1', tags: ['Intro'],
     content: [{ id: 'b1', type: 'core/heading', data: { text: 'Fast wheels', level: 'h2' } }, { id: 'b2', type: 'core/paragraph', data: { text: 'Very **fast**' } },
-      { id: 'b3', type: 'core/image', data: { image: image.id, caption: 'A pixel', link: '' } }],
+      { id: 'b3', type: 'core/image', data: { image: image.id, caption: 'A pixel', link: '' } }, { id: 'b5', type: 'core/paragraph', data: { text: 'Price: **{{ $.price }}**' } }],
   }, 'publish', 0], { params: { collection: 'products', id: 'new' }, state: { route: 'products', id: 'new' } });
   expect(saved._cossack_redirect).toMatch(/^\/dashboard\/content\/products\//);
   const productPage = await web.page('/shop/rocket-skates');
   contains(productPage, 'Fast wheels');
   contains(productPage, 'Very <strong>fast</strong>');
-  contains(productPage, '19.5');
+  contains(productPage, 'Price: <strong>19.5</strong>');
+  // The SKU is in the page's state for editing, but the theme prints no field list of its own.
+  lacks(productPage, '>SKU</dt>');
+  lacks(productPage, '<dl');
   contains(productPage, 'A pixel');
   contains(await web.page('/shop'), 'Rocket skates');
   contains(await web.page('/tag/intro'), 'Hello, World!');
@@ -429,19 +439,35 @@ describe.skipIf(!liveRomeDBTests())('generated CMS application', () => {
       await page.getByRole('button', { name: 'Create collection' }).click();
       await page.waitForURL(/\/dashboard\/collections\/events/);
       await ready();
-      // The builder lays fields out as field blocks: a Text field from the picker, named from its label.
+      // The manager's Features and a group made from it: its editor lays fields out as field blocks, a Text field from the picker, named from its label.
+      await browserExpect(page.getByLabel('Content')).toBeChecked();
+      await page.getByRole('link', { name: 'New field group' }).click();
+      await page.waitForURL(/\/dashboard\/field-groups\/new\?collection=events$/);
+      await ready();
+      await page.getByLabel('Title').fill('Event details');
+      await page.getByRole('button', { name: 'Create field group' }).click();
+      await page.waitForURL(/\/dashboard\/field-groups\/event-details/);
+      await ready();
+      await browserExpect(page.getByLabel('Events', { exact: true })).toBeChecked();
       await page.getByRole('button', { name: 'Add block', exact: true }).first().click();
       const picker = page.getByRole('dialog', { name: 'Blocks' });
       await picker.getByLabel('Search blocks').fill('text');
-      await picker.getByRole('button', { name: 'Text', exact: true }).click();
-      const venue = page.getByRole('region', { name: 'Text 1' });
-      await venue.getByRole('button', { name: 'Edit Text' }).click();
-      const panel = page.getByRole('dialog', { name: 'Text' });
+      await picker.getByRole('button', { name: 'Single line', exact: true }).click();
+      const venue = page.getByRole('region', { name: 'Single line 1' });
+      await venue.getByRole('button', { name: 'Edit Single line' }).click();
+      const panel = page.getByRole('dialog', { name: 'Single line' });
       await panel.getByLabel('Label *').fill('Venue');
       await panel.getByRole('button', { name: 'Done' }).click();
       await browserExpect(venue.locator('code', { hasText: 'venue' })).toBeVisible();
+      await page.getByRole('button', { name: 'Save field group' }).click();
+      await browserExpect(page.getByRole('status').filter({ hasText: 'Field group saved.' }).first()).toBeVisible();
+      // The manager lists the group; saving the collection keeps it attached.
+      await page.goto(server.origin + '/dashboard/collections/events');
+      await ready();
+      await browserExpect(page.locator('li[data-group="event-details"]')).toBeVisible();
       await page.getByRole('button', { name: 'Save collection' }).click();
       await browserExpect(page.getByRole('status').filter({ hasText: 'Collection saved.' }).first()).toBeVisible();
+      await browserExpect(page.locator('li[data-group="event-details"]')).toBeVisible();
       await page.goto(server.origin + '/dashboard/content/events/new');
       await browserExpect(page.getByLabel('Venue')).toBeVisible();
       expect(errors).toEqual([]);

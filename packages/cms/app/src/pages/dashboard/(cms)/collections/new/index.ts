@@ -35,7 +35,7 @@ export default class NewCollectionPage extends Cossack {
         try {
             await this.c.get('cms').saveCollection({
                 name, label, singular: singular.trim() || label.trim().replace(/s$/i, ''), icon: iconName,
-                path: name.replaceAll('_', '-'), slug: true, publishable: true, fields: {},
+                path: name.replaceAll('_', '-'), slug: true, publishable: true, features: { content: true }, fields: {},
             }, this.c.get('principal'));
             return this.redirect(`/dashboard/collections/${name}?created=1`);
         } catch (error) {
@@ -46,7 +46,7 @@ export default class NewCollectionPage extends Cossack {
     render() {
         return html`<div class="space-y-6">
             ${pageHeader(__('Add new collection'), {
-                description: __('A content type with its own list, editor and site URLs. Add its fields in the builder next.'),
+                description: __('A content type with its own list, editor and site URLs. Choose its features and attach field groups next.'),
                 actions: html`<a href="/dashboard/collections" class="text-sm text-muted-foreground hover:text-foreground">← ${__('Collections')}</a>`,
             })}
             ${this.error ? notice(this.error, 'error') : null}

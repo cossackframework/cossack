@@ -58,7 +58,7 @@ export default class FieldGroupsPage extends Cossack {
                             <td class=${`${td} text-right text-muted-foreground`}>${row.fields}</td>
                         </tr>`)}</tbody>
                     </table>
-                    ${this.rows.length ? null : html`<p class="px-3 py-8 text-center text-sm text-muted-foreground">${__('No field groups yet. A collection\'s own fields are laid out in its builder; a field group adds a box of fields to several places at once.')}</p>`}
+                    ${this.rows.length ? null : html`<p class="px-3 py-8 text-center text-sm text-muted-foreground">${__('No field groups yet. A field group holds a collection\'s fields as a box in its editor, and can show in several places at once.')}</p>`}
                 </div>`))}
         </div>`;
     }

@@ -19,7 +19,7 @@ export interface MediaHooks {
     choose(multiple: boolean): void;
 }
 
-/** A field of the entry a block's text may show instead of static text: `$.name` on the site becomes the entry's value. */
+/** A field of the entry a block's text may show: `{{ $.name }}` on the site becomes the entry's value. */
 export interface BindingChoice { name: string; label: string }
 
 /** A list of binding choices from editor fields: the kinds whose values read as text. */
@@ -53,15 +53,18 @@ export function fieldControl(field: EditorField, value: unknown, change: (value:
             ${(extra.options ?? []).map(option => html`<option value=${option.id} ?selected=${option.id === value}>${option.title}</option>`)}`);
         case 'json': return textarea(6, 'font-mono text-xs');
         case 'list': return field.media && extra.media ? mediaControl(value, change, field.label, true, extra.media) : textarea(4);
-        case 'text': return bindable(textarea(field.format === 'markdown' ? 6 : 4));
+        // Markdown in a block is a short passage: a compact box that grows with its text, no tabs or toolbar.
+        case 'text': return field.format === 'markdown'
+            ? html`<div class="space-y-1">${bindable(textarea(3, 'field-sizing-content min-h-[4.5rem] max-h-[40vh]'))}<p class="text-xs text-muted-foreground">${__('Markdown: **bold**, _italic_, [link](https://…).')}</p></div>`
+            : bindable(textarea(4));
         case 'blocks': case 'richtext': case 'vector': case 'bigint': return null;
         default: return field.media && extra.media ? mediaControl(value, change, field.label, false, extra.media) : bindable(input('text'));
     }
 }
 
 /**
- * A text control with a picker of the entry's fields beside it. Picking one writes `$.name` into
- * an empty control, or `{{ $.name }}` after its text; the site shows the entry's value there.
+ * A text control with a picker of the entry's fields beside it. Picking one appends `{{ $.name }}`
+ * to its text; the site shows the entry's value there, with the words around it.
  */
 export function bindingControl(control: TemplateResult, value: unknown, change: (value: unknown) => void, id: string, choices: readonly BindingChoice[]): TemplateResult {
     const bound = hasBinding(value);
@@ -73,9 +76,9 @@ export function bindingControl(control: TemplateResult, value: unknown, change: 
                 trigger: component(Icon, { entry: icon('database'), size: 16 }) }, html`
                 <p class="px-2 py-1.5 text-xs text-muted-foreground">${__('Show the value of')}</p>
                 ${choices.map(choice => html`<button type="button" role="menuitem" tabindex="-1" class="flex w-full items-center justify-between gap-3 rounded-sm px-2 py-1.5 text-left text-sm text-foreground hover:bg-muted cursor-pointer border-none bg-transparent"
-                    @click=${() => change(withBinding(value, choice.name))}><span class="truncate">${choice.label}</span><code class="shrink-0 text-xs text-muted-foreground">$.${choice.name}</code></button>`)}`)}
+                    @click=${() => change(withBinding(value, choice.name))}><span class="truncate">${choice.label}</span><code class="shrink-0 text-xs text-muted-foreground">{{ $.${choice.name} }}</code></button>`)}`)}
         </div>
-        ${bound ? html`<p class="text-xs text-muted-foreground">${__('Shows the entry\'s field on the site; `{{ $.name }}` inside text puts the value there.')}</p>` : null}
+        ${bound ? html`<p class="text-xs text-muted-foreground">${__('On the site, each {{ $.name }} is replaced by that field of the entry.')}</p>` : null}
     </div>`;
 }
 

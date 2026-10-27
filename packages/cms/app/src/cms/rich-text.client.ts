@@ -30,6 +30,8 @@ export interface RichTextHandle {
     insertContent(doc: RichTextDoc): void;
     /** Replace an embedded block with a document's content, such as when detaching a synced pattern. */
     replaceBlock(id: string, doc: RichTextDoc): void;
+    /** Replace the whole document from outside (a restored autosave, a saved entry), without reporting it as a change. */
+    setContent(doc: RichTextDoc | null): void;
     focus(): void;
     destroy(): void;
 }
@@ -255,6 +257,7 @@ export function mountRichText(element: HTMLElement, options: RichTextOptions): R
             const found = find(id);
             if (found) chain().insertContentAt({ from: found.position, to: found.position + found.size }, doc.content).run();
         },
+        setContent(doc) { editor.commands.setContent(doc && doc.content.length ? doc as never : '', { emitUpdate: false }); },
         focus() { editor.commands.focus(); },
         destroy() { editor.destroy(); },
     };

@@ -41,10 +41,17 @@ and stronger sign-in.
 - **Compare and restore.** A revisions screen compares any two revisions field by field,
   with word-level diffs for text and rich text (by paragraph). Restoring copies every field
   except status and publication time into a new revision.
-- **Autosave.** The editor saves its form values every 30 seconds while there are unsaved
-  changes, one row per user and entry (`new` for unsaved entries), up to 1 MB. A newer
-  autosave than the entry is offered for restore. Saving the entry deletes it; maintenance
-  drops autosaves older than 30 days.
+- **Autosave.** Every 30 seconds the editor compares its form values with those last loaded,
+  saved or autosaved and, when they differ, posts them to
+  `POST /api/cms/content/<collection>/<id>/autosave` with a plain request (since 2026-10-27;
+  a server method would re-apply the page's state and re-render the editor mid-keystroke).
+  One row per user and entry (`new` for unsaved entries), up to 1 MB. A newer autosave than
+  the entry is offered for restore. Saving the entry deletes it; maintenance drops autosaves
+  older than 30 days. Rich text editors replace their document when the value changes from
+  outside (a restore, a save), and leave it alone for their own edits. A reload keeps
+  unsaved values in session storage (`beforeunload`) and the editor puts them back on load
+  without asking, so a dev server reload or an accidental refresh loses nothing
+  (`generated-runtime-cms-autosave.test.js` covers the whole cycle in Chromium).
 
 ### Redirects
 

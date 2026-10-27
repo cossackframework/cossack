@@ -1,4 +1,8 @@
-/** One entry: a post, a page or an entry of another collection. Copy to entry-<collection>.ts for one collection. */
+/**
+ * One entry: a post, a page or an entry of another collection. Copy to entry-<collection>.ts for
+ * one collection. Custom fields reach the page through the content's blocks (`{{ $.price }}` in a
+ * block's text, or a data block), never as a list of every field; `entry.fields` has them all.
+ */
 import { html, type TemplateResult } from '@cossackframework/renderer';
 import type { EntryView, ThemeHelpers } from '@cossackframework/cms';
 import { comments } from '../parts/comments';
@@ -11,8 +15,6 @@ export default function entry(entry: EntryView, helpers: ThemeHelpers): Template
             ${entry.date || entry.author ? html`<p class="text-sm text-muted-foreground">${entry.date}${entry.author ? html` · ${entry.author}` : null}</p>` : null}
         </header>
         ${entry.image ? html`<figure>${image(entry.image, 'aspect-video w-full rounded-xl object-cover', '(min-width: 1024px) 1024px, 100vw', true)}${entry.image.caption ? html`<figcaption class="mt-2 text-sm text-muted-foreground">${entry.image.caption}</figcaption>` : null}</figure>` : null}
-        ${entry.details.length ? html`<dl class="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 rounded-lg border border-border p-4 text-sm">
-            ${entry.details.map(detail => html`<dt class="text-muted-foreground">${detail.label}</dt><dd class="text-foreground">${detail.value}</dd>`)}</dl>` : null}
         ${entry.body.length ? helpers.content(entry.body) : null}
         ${entry.blocks.length ? html`<div>${entry.blocks.map(block => helpers.block(block))}</div>` : null}
         ${entry.terms.some(group => group.terms.length) ? html`<footer class="space-y-1 border-t border-border pt-4 text-sm text-muted-foreground">

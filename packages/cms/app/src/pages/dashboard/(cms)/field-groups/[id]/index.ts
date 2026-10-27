@@ -45,7 +45,7 @@ export default class FieldGroupPage extends Cossack {
         this.draft = { id: group.id, title: group.title, description: group.description ?? '', placement: group.placement ?? 'main', order: group.order === undefined ? '' : String(group.order) };
         this.targets = [...group.targets];
         this.choices = [
-            ...cms.collections().filter(collection => collection.name !== 'forms').map(collection => ({ kind: 'collection' as const, name: collection.name, label: collection.label })),
+            ...cms.collections().filter(collection => !collection.managed).map(collection => ({ kind: 'collection' as const, name: collection.name, label: collection.label })),
             ...cms.taxonomies.declarations.map(taxonomy => ({ kind: 'taxonomy' as const, name: taxonomy.name, label: taxonomy.label })),
             { kind: 'users', name: '', label: __('Users') }, { kind: 'menus', name: '', label: __('Menu items') },
         ];
@@ -62,7 +62,9 @@ export default class FieldGroupPage extends Cossack {
     toggleTarget(choice: TargetChoice, checked: boolean) {
         const target: FieldGroupTarget = choice.kind === 'collection' || choice.kind === 'taxonomy' ? { kind: choice.kind, name: choice.name } : { kind: choice.kind };
         const same = (entry: FieldGroupTarget) => entry.kind === target.kind && ('name' in entry ? entry.name : '') === choice.name;
-        this.targets = checked ? [...this.targets.filter(entry => !same(entry)), target] : this.targets.filter(entry => !same(entry));
+        // A target already there keeps its place among the target's boxes.
+        if (checked && this.targets.some(same)) return;
+        this.targets = checked ? [...this.targets, target] : this.targets.filter(entry => !same(entry));
     }
 
     @Client()

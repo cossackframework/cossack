@@ -262,7 +262,7 @@ export class BlockTree extends Cossack {
             const id = `${this.props.id}-${block.id}-${field.name}`;
             const fieldError = this.props.error?.includes(`${block.id}.${field.name}`) ? this.props.error : '';
             return html`<div class="min-w-0 space-y-1">
-                ${field.kind === 'boolean' ? null : html`<label for=${id} class="block text-xs font-medium text-foreground">${field.label}${field.required ? ' *' : ''}</label>`}
+                ${field.kind === 'boolean' || field.kind === 'richtext' ? null : html`<label for=${id} class="block text-xs font-medium text-foreground">${field.label}${field.required ? ' *' : ''}</label>`}
                 ${this.props.control(field, block.data[field.name], value => this.setValue(block.id, field.name, value), block, id)}
                 ${field.description ? html`<p class="text-xs text-muted-foreground">${field.description}</p>` : null}
                 ${fieldError ? html`<p role="alert" class="text-xs text-destructive">${fieldError}</p>` : null}
@@ -287,7 +287,8 @@ export class BlockTree extends Cossack {
         const error = target?.id === block.id ? describeBlockError(this.props.error!, this.props.blocks, this.props.options) : '';
         const summary = option?.field ? (typeof block.data.description === 'string' ? block.data.description : '') : blockSummary(block, this.props.previews);
         const prefix = `${this.props.id}-${block.id}`;
-        // Rich text is written in place, whichever way the block's other settings are edited.
+        // Rich text is written in place, whichever way the block's other settings are edited; its
+        // toolbar names it, so it has no label of its own above the block's header.
         const inlineFields = option?.fields.filter(field => field.kind === 'richtext') ?? [];
         const data = option?.category === 'data';
         return html`<section class=${`rounded-lg border bg-card ${ghost ? 'border-dashed border-primary bg-primary/5 opacity-50' : error ? 'cms-block-error border-destructive' : data ? 'border-dashed border-border' : 'border-border'}`} aria-label=${`${label} ${index + 1}`} data-block-tree-item=${block.id}>

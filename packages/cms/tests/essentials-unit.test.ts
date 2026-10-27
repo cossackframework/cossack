@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-    blockAllowedIn, blockCategory, blockMedia, blockProblems, blocksShapeProblem, blockStyleAttributes, blockSupports, blockTreeProblem, checkComment, collectionProblems, compareRecords, CORE_BLOCKS, customCssProblem, DEFAULT_PRESETS, diffWords,
+    blockAllowedIn, blockCategory, blockMedia, blockProblems, blocksShapeProblem, blockStyleAttributes, blockSupports, blockTreeProblem, checkComment, collectionProblems, collectionResource, compareRecords, contentBlocks, extendCollection, CORE_BLOCKS, customCssProblem, DEFAULT_PRESETS, diffWords,
     field, findBlock, flattenBlocks, imageEditsProblems, imageSrcset, imageUrl, insertBlock, languageName, layerPresets, moveBlock, placeBlocks, posts, presetOverridesProblem, presetProblems, presetStyle, redirectPath, redirectProblems, removeBlock,
     normalizeRichText, resolvePresets, richTextBlocks, shiftBlock, themeProblems, validateBlocks, validateValue, variantRect, variantWidth, webhookUrlProblem, type Block,
 } from '../src/index';
@@ -28,10 +28,32 @@ describe('essentials helpers', () => {
         expect(validateValue('seo', seo, { other: 1 })).toBe('has no subfield other.');
         expect(collectionProblems({ ...posts, fieldOrder: ['Not valid'] })).toContain('The field order names at most 64 fields.');
         expect(collectionProblems({ ...posts, comments: 'yes' as never })).toContain('Comments are on or off.');
+        expect(collectionProblems({ ...posts, managed: 'yes' as never })).toContain('Managed is on or off.');
         // Blank text does not fill a required field.
         expect(validateValue('title', field.string({ required: true }), '   ')).toBe('is required.');
         expect(validateValue('title', field.string({ required: true }), 'Hello')).toBeUndefined();
         expect(validateValue('note', field.string(), '')).toBeUndefined();
+    });
+
+    it('turns features into fixed fields and keeps their names reserved', () => {
+        const base = { name: 'products', label: 'Products', singular: 'Product', fields: {} };
+        expect(Object.keys(collectionResource({ ...base }).fields)).not.toEqual(expect.arrayContaining(['content', 'excerpt', 'featuredImage']));
+        const resource = collectionResource({ ...base, features: { content: { blocks: ['core/paragraph'] }, excerpt: true, featuredImage: true, revisions: false } });
+        expect(Object.keys(resource.fields).slice(0, 4)).toEqual(['title', 'slug', 'content', 'excerpt']);
+        expect(resource.fields.content).toMatchObject({ kind: 'blocks', search: true, blocks: ['core/paragraph'] });
+        expect(resource.fields.featuredImage).toMatchObject({ kind: 'string', media: true, placement: 'sidebar' });
+        expect(resource.revisions).toBe(false);
+        expect(collectionResource(posts).revisions).toBe(true);
+        expect(contentBlocks(true)).toEqual([]);
+        expect(contentBlocks({ blocks: ['a'] })).toEqual(['a']);
+        expect(contentBlocks(false)).toBeNull();
+        expect(contentBlocks({ blocks: [1] } as never)).toBeNull();
+        expect(collectionProblems({ ...base, fields: { content: field.blocks() } })).toContain('content is a feature; turn it on instead of declaring it.');
+        expect(collectionProblems({ ...base, features: { sticky: true } as never })).toContain('Features are content, excerpt, featuredImage, revisions, each on or off.');
+        expect(collectionProblems({ ...base, template: [{ id: 'a', type: 'core/richtext', data: {} }] })).toContain('The content template needs the content feature.');
+        expect(collectionProblems({ ...base, features: { content: true }, template: [{ id: 'a', type: 'core/richtext', data: {} }] })).toEqual([]);
+        // A built-in collection's features stay on; stored ones add to them.
+        expect(extendCollection(posts, { features: { excerpt: false, revisions: false } }).features).toEqual({ content: true, excerpt: true, featuredImage: true, revisions: false });
     });
 
     it('names languages and groups blocks', () => {

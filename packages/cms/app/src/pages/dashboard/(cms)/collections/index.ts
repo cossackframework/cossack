@@ -21,7 +21,8 @@ export default class CollectionsPage extends Cossack {
         const cms = this.c.get('cms');
         const principal = this.c.get('principal');
         const labels = new Map(cms.taxonomies.declarations.map(taxonomy => [taxonomy.name, taxonomy.label]));
-        this.rows = await Promise.all(cms.collections().map(async collection => ({
+        // A managed collection (forms) has screens of its own and is not listed.
+        this.rows = await Promise.all(cms.collections().filter(collection => !collection.managed).map(async collection => ({
             name: collection.name, label: collection.label, singular: collection.singular, icon: collection.icon ?? 'document-text', builtin: collection.builtin === true,
             entries: await cms.resource(`cms/${collection.name}`).count({}, { principal }).catch(() => 0),
             fields: Object.keys(collection.fields).length, taxonomies: (collection.taxonomies ?? []).map(name => labels.get(name) ?? name), path: collection.path ?? null,

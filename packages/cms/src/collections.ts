@@ -34,6 +34,32 @@ export const SEO_FIELDS = Object.freeze({
     noindex: field.boolean({ label: 'Hide from search engines' }),
 });
 
+/**
+ * The standard fields and behaviours a collection turns on, with fixed names so themes and
+ * code can rely on `entry.content`, `entry.excerpt` and `entry.featuredImage`.
+ */
+export interface CollectionFeatures {
+    /** A `content` blocks field, searchable, which the content template fills; by hand, with the block types it allows. */
+    readonly content?: boolean | { readonly blocks?: readonly string[] };
+    /** An `excerpt` text field: a short summary for lists and feeds. */
+    readonly excerpt?: boolean;
+    /** A `featuredImage` media field in the sidebar. */
+    readonly featuredImage?: boolean;
+    /** A revision of every write, with compare and restore. Default true. */
+    readonly revisions?: boolean;
+}
+
+/** The feature names that are fields; a feature off leaves its name reserved. */
+export const FEATURE_FIELDS = Object.freeze(['content', 'excerpt', 'featuredImage'] as const);
+
+/** The block types a content feature allows: `[]` for every type, null when it is off or malformed. */
+export function contentBlocks(content: CollectionFeatures['content']): readonly string[] | null {
+    if (content === true) return [];
+    if (!content || typeof content !== 'object' || Array.isArray(content)) return null;
+    const blocks = content.blocks ?? [];
+    return Array.isArray(blocks) && blocks.every(type => typeof type === 'string') ? blocks : null;
+}
+
 export interface CollectionDefinition {
     /** Lowercase name, such as `products`. The resource is `cms/<name>`. */
     readonly name: string;
@@ -62,18 +88,22 @@ export interface CollectionDefinition {
     readonly visibility?: 'public' | 'private';
     /** Visitors can comment on published entries; each entry can close its comments. Default false. */
     readonly comments?: boolean;
-    /** Fields besides the core ones (title, slug, status, publication time, parent and taxonomies). */
+    /** The standard fields and behaviours that are on. Built-in collections lock theirs. */
+    readonly features?: CollectionFeatures;
+    /**
+     * Fields declared by hand (modules and plugins), besides the core ones and the features'.
+     * Fields made in the dashboard live in field groups attached to the collection.
+     */
     readonly fields: { readonly [name: string]: FieldDeclaration };
     /**
-     * How the editor lays the fields out: field blocks and layout blocks, as a field group.
-     * `fields` is compiled from it when it is saved. Absent for definitions written by hand,
-     * which get one field block per field.
+     * Stored by older versions: the dashboard's field tree. A host upgrade turns it into a field
+     * group attached to the collection and drops it.
      */
     readonly layout?: readonly Block[];
     /**
      * The blocks a new entry's content starts with, as WordPress's block templates: a structure
      * such as a heading, an image and a rich text, with data blocks for what the entry stores.
-     * Applies to the collection's first blocks field.
+     * Needs the `content` feature.
      */
     readonly template?: readonly Block[];
     /** How far entries may change the template: `insert` keeps its blocks (no adding or removing), `all` keeps their order too. */
@@ -87,10 +117,19 @@ export interface CollectionDefinition {
     readonly builtin?: boolean;
     /** The plugin that ships the collection. Its entries are on the site and in the dashboard only while the plugin is active. */
     readonly plugin?: string;
+    /**
+     * Shipped with screens of its own, as forms are: the module or plugin owns its settings and
+     * fields, so the collection manager leaves it out, no field group can attach to it, and the
+     * dashboard cannot save it. Declared by the module or plugin, never from the dashboard.
+     */
+    readonly managed?: boolean;
 }
 
 /** Field names the host derives from a definition. */
 export const CORE_FIELDS = Object.freeze(['title', 'slug', 'status', 'publishedAt', 'parent', 'menuOrder', 'seo', 'locale', 'translationGroup', 'commentsOpen', 'template']);
+/** Field names no declared field or group field may take: the core fields and the features'. */
+export const RESERVED_FIELDS = Object.freeze([...CORE_FIELDS, ...FEATURE_FIELDS]);
+const FEATURES = Object.freeze(['content', 'excerpt', 'featuredImage', 'revisions'] as const);
 /** A template an editor can choose for one entry: one of the active theme's `entry-*` templates. Empty for the default. */
 export const ENTRY_TEMPLATE = 'entry-[a-z][a-z0-9_-]{0,73}';
 const RESERVED = new Set(['media', 'users', 'roles', 'terms', 'settings', 'collections', 'taxonomies', 'blocks', 'plugins', 'schema', 'content', 'new']);
@@ -112,20 +151,24 @@ export function collectionProblems(definition: CollectionDefinition): string[] {
     if (definition.path !== undefined && definition.path !== null && definition.path !== '' && (typeof definition.path !== 'string' || !PATH.test(definition.path) || definition.path.length > 100)) problems.push('The URL path uses lowercase letters, digits, hyphens and slashes.');
     if (definition.visibility !== undefined && !['public', 'private'].includes(definition.visibility)) problems.push('Visibility is public or private.');
     if (definition.comments !== undefined && typeof definition.comments !== 'boolean') problems.push('Comments are on or off.');
+    if (definition.managed !== undefined && typeof definition.managed !== 'boolean') problems.push('Managed is on or off.');
     const taxonomies = definition.taxonomies ?? [];
     if (!Array.isArray(taxonomies) || taxonomies.length > 8 || taxonomies.some(name => typeof name !== 'string' || !TAXONOMY_NAME.test(name)) || new Set(taxonomies).size !== taxonomies.length) problems.push('Choose at most 8 distinct taxonomies.');
     const fields = Object.entries(definition.fields ?? {});
     if (fields.length > 32) problems.push('Add at most 32 fields.');
+    if (definition.features !== undefined && (definition.features === null || typeof definition.features !== 'object' || Array.isArray(definition.features)
+        || Object.entries(definition.features).some(([name, value]) => !(FEATURES as readonly string[]).includes(name) || (typeof value !== 'boolean' && !(name === 'content' && contentBlocks(value) !== null))))) problems.push(`Features are ${FEATURES.join(', ')}, each on or off.`);
     if (definition.template !== undefined) {
         const shape = blocksShapeProblem(definition.template);
         if (shape) problems.push(`The content template ${shape}`);
         else if (definition.template.length > 50) problems.push('The content template holds at most 50 blocks.');
+        else if (definition.template.length && !definition.features?.content) problems.push('The content template needs the content feature.');
     }
     if (definition.templateLock !== undefined && !['all', 'insert'].includes(definition.templateLock)) problems.push('The template lock is all or insert.');
     if (definition.fieldOrder !== undefined && (!Array.isArray(definition.fieldOrder) || definition.fieldOrder.length > 64 || definition.fieldOrder.some(name => typeof name !== 'string' || !FIELD_NAME.test(name)))) problems.push('The field order names at most 64 fields.');
-    const taken = new Set([...CORE_FIELDS, ...taxonomies]);
+    const taken = new Set([...RESERVED_FIELDS, ...taxonomies]);
     for (const [name, declaration] of fields) {
-        if (taken.has(name)) problems.push(`${name} is a core field of every collection.`);
+        if (taken.has(name)) problems.push((FEATURE_FIELDS as readonly string[]).includes(name) ? `${name} is a feature; turn it on instead of declaring it.` : `${name} is a core field of every collection.`);
         if (!FIELD_NAME.test(name)) problems.push(`Field ${name}: names start with a lowercase letter and use letters and digits.`);
         if (declaration?.kind === 'vector' || declaration?.kind === 'bigint') problems.push(`Field ${name}: ${declaration.kind} fields are not available in collections.`);
         if (declaration?.taxonomy) problems.push(`Field ${name}: choose taxonomies on the collection instead.`);
@@ -139,9 +182,14 @@ export function collectionResource(definition: CollectionDefinition, labels: { r
     const id = `cms/${definition.name}`;
     const slug = definition.slug !== false;
     const publishable = definition.publishable !== false;
+    const features = definition.features ?? {};
     const fields: { [name: string]: FieldDeclaration } = {
         title: field.string({ required: true, max: 200, search: true, label: 'Title' }),
         ...(slug ? { slug: field.slug('title', { required: true, label: 'Slug' }) } : {}),
+        // The content is blocks, as in WordPress; the Rich text block is the word processor among them.
+        ...(contentBlocks(features.content) ? { content: field.blocks({ search: true, label: 'Content', ...(contentBlocks(features.content)!.length ? { blocks: contentBlocks(features.content)! } : {}) }) } : {}),
+        ...(features.excerpt ? { excerpt: field.text({ max: 1000, label: 'Excerpt', description: 'A short summary for lists, feeds and link previews.' }) } : {}),
+        ...(features.featuredImage ? { featuredImage: field.media({ placement: 'sidebar', label: 'Featured image' }) } : {}),
         ...(publishable ? {
             status: field.enum(CONTENT_STATUSES, { required: true, default: 'draft', index: true, label: 'Status' }),
             publishedAt: field.datetime({ nullable: true, index: true, label: 'Published at' }),
@@ -170,6 +218,7 @@ export function collectionResource(definition: CollectionDefinition, labels: { r
         titleField: 'title',
         ownership: true,
         schemaless: true,
+        revisions: features.revisions !== false,
         fields,
         indexes: publishable ? [{ name: 'published', fields: ['status', 'publishedAt'] }] : [],
         access: {
@@ -196,8 +245,8 @@ export function orderedFields<T>(fields: { readonly [name: string]: T }, order: 
 }
 
 /**
- * A built-in collection with fields an administrator added, after the module's own unless
- * `fieldOrder` places them. Core settings and fields win.
+ * A built-in collection with what an administrator changed: labels, URL, comments, template,
+ * added taxonomies and features. Core settings, features and fields win.
  */
 export function extendCollection(builtin: CollectionDefinition, stored: Partial<CollectionDefinition>): CollectionDefinition {
     const added = Object.fromEntries(Object.entries(stored.fields ?? {}).filter(([name]) => !Object.hasOwn(builtin.fields, name)));
@@ -212,6 +261,8 @@ export function extendCollection(builtin: CollectionDefinition, stored: Partial<
         ...(stored.template !== undefined ? { template: stored.template } : {}),
         ...(stored.templateLock !== undefined ? { templateLock: stored.templateLock } : {}),
         ...(stored.layout !== undefined ? { layout: stored.layout } : {}),
+        // The module's features are locked; stored ones add to them.
+        ...(builtin.features || stored.features ? { features: { ...stored.features, ...builtin.features } } : {}),
         taxonomies: [...new Set([...(builtin.taxonomies ?? []), ...(stored.taxonomies ?? [])])],
         fields: orderedFields({ ...builtin.fields, ...added }, stored.fieldOrder),
         builtin: true,
@@ -228,12 +279,9 @@ export const posts: CollectionDefinition = {
     taxonomies: ['categories', 'tags'],
     path: 'posts',
     comments: true,
+    features: { content: true, excerpt: true, featuredImage: true },
     fields: {
-        // The content is blocks, as in WordPress; the Rich text block is the word processor among them.
-        content: field.blocks({ search: true, label: 'Content' }),
-        excerpt: field.text({ max: 1000, label: 'Excerpt', description: 'A short summary for lists and feeds.' }),
         sticky: field.boolean({ default: false, placement: 'sidebar', label: 'Stick to the top of the blog' }),
-        featuredImage: field.media({ placement: 'sidebar', label: 'Featured image' }),
     },
     template: [{ id: 'text', type: 'core/richtext', data: {} }],
 };
@@ -247,11 +295,8 @@ export const pages: CollectionDefinition = {
     builtin: true,
     hierarchical: true,
     path: '',
-    fields: {
-        content: field.blocks({ search: true, label: 'Content' }),
-        excerpt: field.text({ max: 1000, label: 'Summary', description: 'Shown to search engines and in link previews.' }),
-        featuredImage: field.media({ placement: 'sidebar', label: 'Featured image' }),
-    },
+    features: { content: true, excerpt: true, featuredImage: true },
+    fields: {},
     template: [{ id: 'text', type: 'core/richtext', data: {} }],
 };
 
@@ -269,8 +314,8 @@ export const patterns: CollectionDefinition = {
     slug: false,
     publishable: false,
     visibility: 'private',
+    features: { content: true },
     fields: {
-        content: field.blocks({ label: 'Content' }),
         synced: field.boolean({ default: true, placement: 'sidebar', label: 'Synced', description: 'Changes show everywhere the pattern is used.' }),
         starter: field.list('string', { placement: 'sidebar', label: 'Starting layout for', description: 'Collections whose new entries can start from this pattern.' }),
     },

@@ -65,6 +65,8 @@ derived array beside the document, so filters on rows seek through RomeDB's arra
   `fields` and no `layout` (plugins, modules, old rows) gets a layout of one field block
   per field in `fieldOrder`. Built-in collections' module fields appear as locked field
   blocks. The builder's flat field list is replaced by the tree.
+  *Superseded 2026-10-27 by [the collection manager revision](cms-collection-manager.md):
+  fields live only in groups, a stored `layout` is converted to a group on load.*
 - **Conditions on fields** reuse `Block.when` with the form builder's rules. Scope: a
   field block's rules name fields of the group and of the target (the collection's own
   fields and core fields `status`, `parent`, taxonomies as lists of term IDs); inside a

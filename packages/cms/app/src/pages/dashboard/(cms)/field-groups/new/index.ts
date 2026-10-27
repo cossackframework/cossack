@@ -11,6 +11,12 @@ import { notice, pageHeader } from '../../../../../cms/ui';
 export default class NewFieldGroupPage extends Cossack {
     @State() title = '';
     @State() error = '';
+    /** The collection the group is made for, from the collection manager: attached on creation. */
+    @State() collection = '';
+
+    async init() {
+        this.collection = this.c.req.query('collection') ?? '';
+    }
 
     head(): HeadValue {
         return { title: __('Add new field group') };
@@ -19,15 +25,17 @@ export default class NewFieldGroupPage extends Cossack {
     @Client()
     async submit(event: Event) {
         event.preventDefault();
-        await this.create(this.title);
+        await this.create(this.title, this.collection);
     }
 
     @Server()
-    async create(title: string) {
+    async create(title: string, collection = '') {
         this.error = '';
         const id = collectionName(title).replaceAll('_', '-');
+        const cms = this.c.get('cms');
+        const targets = collection && cms.collections().some(entry => entry.name === collection && !entry.managed) ? [{ kind: 'collection' as const, name: collection, order: cms.fieldGroupsFor({ kind: 'collection', name: collection }).length }] : [];
         try {
-            await this.c.get('cms').saveFieldGroup({ id, title: title.trim(), targets: [], blocks: [] }, this.c.get('principal'));
+            await cms.saveFieldGroup({ id, title: title.trim(), targets, blocks: [] }, this.c.get('principal'));
             return this.redirect(`/dashboard/field-groups/${id}?created=1`);
         } catch (error) {
             this.error = isCmsError(error) ? error.message : __('The field group could not be created.');
@@ -38,7 +46,8 @@ export default class NewFieldGroupPage extends Cossack {
         return html`<div class="space-y-6">
             ${pageHeader(__('Add new field group'), {
                 description: __('A box of fields for editors. Lay its fields out and choose where it shows next.'),
-                actions: html`<a href="/dashboard/field-groups" class="text-sm text-muted-foreground hover:text-foreground">← ${__('Field groups')}</a>`,
+                actions: this.collection ? html`<a href=${`/dashboard/collections/${this.collection}`} class="text-sm text-muted-foreground hover:text-foreground">← ${__('Collection')}</a>`
+                    : html`<a href="/dashboard/field-groups" class="text-sm text-muted-foreground hover:text-foreground">← ${__('Field groups')}</a>`,
             })}
             ${this.error ? notice(this.error, 'error') : null}
             ${component(Card, { class: 'max-w-xl' }, component(CardBody, {}, html`

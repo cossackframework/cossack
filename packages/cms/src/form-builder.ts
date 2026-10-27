@@ -457,6 +457,8 @@ export const forms: CollectionDefinition = {
     singular: 'Form',
     icon: 'checklist-minimalistic',
     builtin: true,
+    // Forms have their own screens; the collection manager and field groups stay out of them.
+    managed: true,
     publishable: false,
     visibility: 'private',
     description: 'Forms built from blocks, with their own submissions.',

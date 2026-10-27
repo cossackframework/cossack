@@ -1,38 +1,49 @@
 import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackframework/core';
 import { AlertDialog, Badge, Button, Card, CardBody, CardHeader, Checkbox, Field, Input, NativeSelect, Textarea, toast } from '@cossackframework/ui';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
-import { CORE_FIELDS, findBlock, flattenGroupFields, hasPermission, isCmsError, layoutOf, PERMISSIONS, updateBlock, type Block, type RichTextDoc, type ThemePresets } from '@cossackframework/cms';
+import { bindingPaths, findBlock, flattenBlocks, flattenGroupFields, hasPermission, isCmsError, PERMISSIONS, RESERVED_FIELDS, updateBlock, type Block, type RichTextDoc, type ThemePresets } from '@cossackframework/cms';
 import { collectionDraft, definitionOf, type CollectionDraft } from '../../../../../cms/builder';
-import { FieldGroupEditor } from '../../../../../cms/field-group-editor';
 import { blockPanel } from '../../../../../cms/block-panel';
 import { BlockTree } from '../../../../../cms/block-tree';
 import { blockFilePreviews, blockOptions, findMedia } from '../../../../../cms/content';
 import { blocksInput, controlValue, editorBlocks, editorInput, type BlockOption, type EditorBlock, type EditorField } from '../../../../../cms/editor';
-import { bindingChoices, blockFields, type BindingChoice, type MediaHooks, type MediaPreview } from '../../../../../cms/field-controls';
+import { bindingChoices, blockFields, moveItem, type BindingChoice, type MediaHooks, type MediaPreview } from '../../../../../cms/field-controls';
 import { requireAny } from '../../../../../cms/guards';
 import { COLLECTION_ICONS } from '../../../../../cms/icons';
 import { closedChooser, mediaChooser, uploadMedia, withFile, type MediaChooserState } from '../../../../../cms/media-chooser';
 import { RichTextField, richTextEditors } from '../../../../../cms/rich-text-field';
 import { activePresets } from '../../../../../cms/site';
 import { styleValues, withStyle, type BlockTab, type StyleValues } from '../../../../../cms/style-controls';
-import { notice, pageHeader } from '../../../../../cms/ui';
+import { iconButton, linkButton, notice, pageHeader } from '../../../../../cms/ui';
 
 /** The template block being edited in the panel. */
 interface BlockDialog { id: string; values: Record<string, unknown>; style: StyleValues; tab: BlockTab; errors: Record<string, string> }
 
+/** A field group as the manager lists it: attached in this order, with its fields for the template's bindings. */
+interface GroupRow { id: string; title: string; placement: 'main' | 'sidebar'; fields: { name: string; label: string; kind: string }[] }
+
+/** The bindable kind of a field block's type. */
+const BINDABLE: Record<string, EditorField['kind']> = { text: 'string', textarea: 'text', markdown: 'text', number: 'number', integer: 'integer', boolean: 'boolean', choice: 'enum', date: 'datetime' };
+
 /**
- * Define a collection: its names, URL, publishing, nesting, taxonomies and fields. The fields
- * are laid out in the block tree as a field group: field blocks between columns, tabs and
- * headings. Saving changes no data; new unique, search and term fields add indexes.
+ * Define a collection in three parts: its features (the standard fields and behaviours, as
+ * toggles), the field groups attached to it in order, and the content template new entries
+ * start with. Saving changes no data; attaching and detaching groups adds and drops indexes.
  */
 @Page({ transport: 'http', middlewares: [requireAny(PERMISSIONS.manageCollections)] })
 export default class CollectionBuilder extends Cossack {
     @State() draft: CollectionDraft | null = null;
-    /** The fields' layout: field blocks and layout blocks, held as control values while edited. */
-    @State() layout: EditorBlock[] = [];
-    /** Names of the module's own fields, whose settings the host keeps. */
+    /** Fields the module declares by hand, which the manager shows but does not edit. */
     @State() builtinFields: string[] = [];
+    /** The module's features, which stay on. */
+    @State() builtinFeatures: string[] = [];
     @State() builtinTaxonomies: string[] = [];
+    /** The groups attached to the collection, in order. */
+    @State() groups: GroupRow[] = [];
+    /** Groups that exist and are not attached. */
+    @State() available: { id: string; title: string }[] = [];
+    /** The group picked to attach. */
+    @State() attaching = '';
     @State() taxonomies: { name: string; label: string }[] = [];
     @State() blocks: { name: string; label: string }[] = [];
     @State() targets: { name: string; label: string }[] = [];
@@ -62,17 +73,23 @@ export default class CollectionBuilder extends Cossack {
         let definition;
         try { definition = cms.collection(name); }
         catch { this.error = __('This collection does not exist.'); this.c.status(404); return; }
+        if (definition.managed) { this.error = __('This collection is managed by its module and has its own screens.'); this.c.status(404); return; }
         const builtin = cms.builtinCollection(name);
         this.draft = collectionDraft(definition);
         this.builtinTaxonomies = [...(builtin?.taxonomies ?? [])];
         this.builtinFields = Object.keys(builtin?.fields ?? {});
+        this.builtinFeatures = Object.entries(builtin?.features ?? {}).filter(([, on]) => on).map(([feature]) => feature);
+        const attached = cms.fieldGroupsFor({ kind: 'collection', name });
+        this.groups = attached.map(group => ({ id: group.id, title: group.title, placement: group.placement ?? 'main', fields: this.groupFields(group.blocks) }));
+        this.available = (await cms.fieldGroups.all()).filter(group => !attached.some(entry => entry.id === group.id)).map(group => ({ id: group.id, title: group.title }));
+        this.attaching = '';
         this.taxonomies = cms.taxonomies.declarations.map(taxonomy => ({ name: taxonomy.name, label: taxonomy.label }));
         this.blocks = (await cms.blocks()).map(block => ({ name: block.name, label: block.label }));
         this.targets = cms.collections().map(collection => ({ name: collection.name, label: collection.label }));
-        // The template is built from the same blocks as entries, patterns and form inputs aside; the layout from the field and layout blocks.
+        // The template is built from the same blocks as entries, patterns, form inputs and field blocks aside.
         const options = await blockOptions(cms);
-        this.options = options.filter(option => option.name !== 'core/pattern' && !option.input);
-        this.layout = editorBlocks((definition.layout ?? layoutOf(definition.fields, definition.fieldOrder ?? [])) as EditorBlock[], options);
+        this.options = options.filter(option => option.name !== 'core/pattern' && !option.input && !option.field);
+        this.template = editorBlocks((definition.template ?? []) as EditorBlock[], options);
         this.previews = await blockFilePreviews(cms, this.template);
         this.presets = await activePresets(cms);
     }
@@ -88,31 +105,55 @@ export default class CollectionBuilder extends Cossack {
         this.setDraft('taxonomies', checked ? [...new Set([...this.draft.taxonomies, name])] : this.draft.taxonomies.filter(entry => entry !== name));
     }
 
+    /** A group's fields at any depth, with the kind a template binding may show. */
+    private groupFields(blocks: readonly Block[]): GroupRow['fields'] {
+        return flattenGroupFields(blocks).flatMap(block => {
+            const name = String(block.data.name ?? '');
+            return name ? [{ name, label: String(block.data.label ?? name), kind: BINDABLE[block.type.replace(/^field\//, '')] ?? '' }] : [];
+        });
+    }
+
     @Client()
-    private changeLayout(blocks: EditorBlock[]) {
-        this.layout = blocks;
+    moveGroup(index: number, delta: number) {
+        this.groups = moveItem(this.groups, index, delta);
+    }
+
+    @Client()
+    detachGroup(id: string) {
+        const group = this.groups.find(entry => entry.id === id);
+        this.groups = this.groups.filter(entry => entry.id !== id);
+        if (group) this.available = [...this.available, { id: group.id, title: group.title }];
+    }
+
+    /** Attach a group: its fields are read on the server, so the template's bindings know them. */
+    @Server()
+    async attachGroup(id: string) {
+        if (!hasPermission(this.c.get('principal'), PERMISSIONS.manageCollections) || this.groups.some(entry => entry.id === id)) return;
+        const group = await this.c.get('cms').fieldGroups.get(id);
+        if (!group) return;
+        this.groups = [...this.groups, { id: group.id, title: group.title, placement: group.placement ?? 'main', fields: this.groupFields(group.blocks) }];
+        this.available = this.available.filter(entry => entry.id !== id);
+        this.attaching = '';
     }
 
     @Client()
     async submit() {
         if (!this.draft) return;
-        await this.save(this.draft, this.layout, this.template);
+        await this.save(this.draft, this.groups.map(group => group.id), this.template);
         if (this.error) toast.error(this.error); else toast.success(__('Collection saved.'));
     }
 
     @Server()
-    async save(draft: CollectionDraft, layout: EditorBlock[], template: EditorBlock[] = []) {
+    async save(draft: CollectionDraft, groups: string[], template: EditorBlock[] = []) {
         this.error = '';
         this.message = '';
-        // The block types are read again here: the layout and the template are checked against what the host has.
+        // The block types are read again here: the template is checked against what the host has.
         const options = await blockOptions(this.c.get('cms'));
         const types = new Map(options.map(option => [option.name, option]));
-        const fields = blocksInput(layout, types);
-        if ('error' in fields) { this.error = `${__('Fields')}: ${fields.error}`; return; }
         const converted = blocksInput(template, types);
         if ('error' in converted) { this.error = `${__('Content template')}: ${converted.error}`; return; }
         try {
-            const saved = await this.c.get('cms').saveCollection(definitionOf(draft, fields.value as Block[], converted.value as Block[]), this.c.get('principal'));
+            const saved = await this.c.get('cms').saveCollection(definitionOf(draft, converted.value as Block[]), this.c.get('principal'), { groups: groups.map((id, order) => ({ id, order })) });
             await this.load(saved.name);
             this.message = __('Collection saved.');
         } catch (error) {
@@ -167,15 +208,17 @@ export default class CollectionBuilder extends Cossack {
         this.template = updateBlock(this.template, dialog.id, entry => withStyle({ ...entry, data: { ...Object.fromEntries(Object.entries(entry.data).filter(([name]) => option.fields.find(field => field.name === name)?.kind === 'richtext')), ...input } }, dialog.style));
     }
 
-    /** The collection's fields a template block's text may show (`$.price`): the title and the layout's text-like fields. */
+    /** The collection's fields a template block's text may show (`{{ $.price }}`): the title, the excerpt and the attached groups' text-like fields. */
     private bindings(): BindingChoice[] {
-        const kinds: Record<string, EditorField['kind']> = { text: 'string', textarea: 'text', markdown: 'text', number: 'number', integer: 'integer', boolean: 'boolean', choice: 'enum', date: 'datetime' };
-        const own = flattenGroupFields(this.layout as unknown as Block[]).flatMap(block => {
-            const kind = kinds[block.type.replace(/^field\//, '')];
-            const name = String(block.data.name ?? '');
-            return kind && name ? [{ name, label: String(block.data.label ?? name), kind, media: false }] : [];
-        });
-        return bindingChoices([{ name: 'title', label: __('Title'), kind: 'string', media: false }, ...own]);
+        const own = this.groups.flatMap(group => group.fields).flatMap(field => field.kind ? [{ name: field.name, label: field.label, kind: field.kind as EditorField['kind'], media: false }] : []);
+        return bindingChoices([{ name: 'title', label: __('Title'), kind: 'string', media: false }, ...(this.draft?.excerpt ? [{ name: 'excerpt', label: __('Excerpt'), kind: 'text' as const, media: false }] : []), ...own]);
+    }
+
+    /** Template bindings that name no field of the collection: a detached group's, or a renamed one. The site shows them empty. */
+    private unresolvedBindings(): string[] {
+        const known = new Set([...RESERVED_FIELDS, ...(this.draft?.taxonomies ?? []), ...this.builtinFields, ...this.groups.flatMap(group => group.fields.map(field => field.name))]);
+        const paths = flattenBlocks(this.template as unknown as Block[]).flatMap(block => Object.values(block.data).flatMap(value => bindingPaths(value)));
+        return [...new Set(paths.filter(path => !known.has(path.split('.')[0]!)))];
     }
 
     @Server()
@@ -225,10 +268,12 @@ export default class CollectionBuilder extends Cossack {
         const option = this.options.find(entry => entry.name === block?.type) ?? null;
         const media = (field: string): MediaHooks => ({ previews: this.previews, choose: multiple => this.openChooser(field, multiple) });
         const fields = option ? { ...option, fields: option.fields.filter(field => field.kind !== 'richtext') } : null;
+        const unresolved = this.unresolvedBindings();
         return html`${component(Card, {}, html`
             ${component(CardHeader, {}, html`<h2 class="text-base font-semibold text-foreground">${__('Content template')}</h2>
                 <p class="text-sm text-muted-foreground">${__('The blocks every new entry starts with, in this order: a structure such as a heading, an image and a rich text, with data blocks for what the entry stores. Editors fill them in.')}</p>`)}
             ${component(CardBody, { class: 'space-y-4' }, html`
+                ${unresolved.length ? notice(`${__('These bindings name no field of the collection and show nothing on the site')}: ${unresolved.map(path => `{{ $.${path} }}`).join(', ')}.`, 'error') : null}
                 ${component(BlockTree, {
                     id: 'template', blocks: this.template, options: this.options, allowed: [], previews: this.previews,
                     onChange: (blocks: EditorBlock[]) => this.changeTemplate(blocks), onEdit: (id: string) => this.editTemplateBlock(id),
@@ -256,11 +301,36 @@ export default class CollectionBuilder extends Cossack {
         </label>`;
     }
 
+    /** The attached groups, in order, with Attach and New. */
+    private groupsCard(draft: CollectionDraft): TemplateResult {
+        const row = (group: GroupRow, index: number) => html`<li class="flex items-center gap-3 rounded-md border border-border bg-background px-3 py-2" data-group=${group.id}>
+            <div class="min-w-0 flex-1">
+                <a href=${`/dashboard/field-groups/${group.id}`} class="font-medium text-foreground hover:text-primary no-underline">${group.title}</a>
+                <p class="text-xs text-muted-foreground">${group.fields.length === 1 ? __('1 field') : `${group.fields.length} ${__('fields')}`} · ${group.placement === 'sidebar' ? __('Sidebar') : __('Main column')}</p>
+            </div>
+            ${iconButton(`group-${group.id}-up`, 'arrow-up', `${__('Move up')} ${group.title}`, () => this.moveGroup(index, -1), { disabled: index === 0 })}
+            ${iconButton(`group-${group.id}-down`, 'arrow-down', `${__('Move down')} ${group.title}`, () => this.moveGroup(index, 1), { disabled: index === this.groups.length - 1 })}
+            ${iconButton(`group-${group.id}-remove`, 'close-circle', `${__('Remove')} ${group.title}`, () => this.detachGroup(group.id), { danger: true })}
+        </li>`;
+        return component(Card, {}, html`
+            ${component(CardHeader, {}, html`<h2 class="text-base font-semibold text-foreground">${__('Field groups')}</h2>
+                <p class="text-sm text-muted-foreground">${__('The boxes of fields entries of this collection have, in this order. A group can show on several collections; edit its fields on its own page.')}
+                ${this.builtinFields.length ? ` ${__('Built-in fields')}: ${this.builtinFields.join(', ')}.` : ''}</p>`)}
+            ${component(CardBody, { class: 'space-y-4' }, html`
+                ${this.groups.length ? html`<ol class="space-y-2">${this.groups.map(row)}</ol>` : html`<p class="text-sm text-muted-foreground">${__('No field groups attached. Entries have the features above only.')}</p>`}
+                <div class="flex flex-wrap items-end gap-2">
+                    ${this.available.length ? html`<div class="min-w-48 flex-1">${component(Field, { label: __('Attach a group'), for: 'collection-attach', control: attributes => component(NativeSelect, { ...attributes, '@change': (event: Event) => { this.attaching = (event.target as HTMLSelectElement).value; } }, html`
+                        <option value="" ?selected=${!this.attaching}>${__('Choose a field group…')}</option>
+                        ${this.available.map(group => html`<option value=${group.id} ?selected=${group.id === this.attaching}>${group.title}</option>`)}`) })}</div>
+                    ${component(Button, { type: 'button', variant: 'outline', disabled: !this.attaching, '@click': () => this.attachGroup(this.attaching) }, __('Attach'))}` : null}
+                    ${linkButton(__('New field group'), `/dashboard/field-groups/new?collection=${draft.name}`, 'outline')}
+                </div>`)}`);
+    }
+
     render() {
         const draft = this.draft;
         if (!draft) return notice(this.error || __('This collection does not exist.'), 'error');
-        const core = [__('Title'), ...(draft.slug ? [__('Slug')] : []), ...(draft.publishable ? [__('Status'), __('Publication time')] : []), ...(draft.hierarchical ? [__('Parent'), __('Order')] : [])];
-        const scope = [...CORE_FIELDS, ...draft.taxonomies].map(name => ({ name, label: name }));
+        const locked = (feature: string) => draft.builtin && this.builtinFeatures.includes(feature);
         const control = (key: 'label' | 'singular' | 'description' | 'path', label: string, hint?: string) => component(Field, { label, for: `collection-${key}`, ...(hint ? { hint } : {}),
             control: attributes => component(Input, { ...attributes, '.value': draft[key], '@input': (event: Event) => this.setDraft(key, (event.target as HTMLInputElement).value) }) });
         return html`<div class="space-y-6">
@@ -274,12 +344,28 @@ export default class CollectionBuilder extends Cossack {
             <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
                 <div class="space-y-6">
                     ${component(Card, {}, html`
-                        ${component(CardHeader, {}, html`<h2 class="text-base font-semibold text-foreground">${__('Fields')}</h2>
-                            <p class="text-sm text-muted-foreground">${__('Every entry has')} ${core.join(', ')}. ${__('Add the fields this collection needs, laid out with columns, tabs and headings as the editor should show them.')}
-                            ${this.builtinFields.length ? ` ${__('Built-in fields keep their settings')}: ${this.builtinFields.join(', ')}.` : ''}</p>`)}
-                        ${component(CardBody, {}, component(FieldGroupEditor, { id: 'layout', blocks: this.layout, options: this.options, scope, onChange: (blocks: EditorBlock[]) => this.changeLayout(blocks) }))}
+                        ${component(CardHeader, {}, html`<h2 class="text-base font-semibold text-foreground">${__('Features')}</h2>
+                            <p class="text-sm text-muted-foreground">${__('The standard fields and behaviours every entry has, with fixed names themes and code rely on. Every entry has a title.')}</p>`)}
+                        ${component(CardBody, {}, html`<div class="grid gap-x-8 gap-y-3 md:grid-cols-2">
+                            ${this.check(__('Content'), draft.content, checked => this.setDraft('content', checked), { disabled: locked('content'), hint: __('Blocks: headings, images and rich text, which the content template starts.') })}
+                            ${this.check(__('Excerpt'), draft.excerpt, checked => this.setDraft('excerpt', checked), { disabled: locked('excerpt'), hint: __('A short summary for lists, feeds and link previews.') })}
+                            ${this.check(__('Featured image'), draft.featuredImage, checked => this.setDraft('featuredImage', checked), { disabled: locked('featuredImage'), hint: __('One image from the media library, in the sidebar.') })}
+                            ${this.check(__('Revisions'), draft.revisions, checked => this.setDraft('revisions', checked), { hint: __('Keep every version of an entry to compare and restore.') })}
+                            ${this.check(__('Generate slugs from titles'), draft.slug, checked => this.setDraft('slug', checked), { disabled: draft.builtin })}
+                            ${this.check(__('Drafts and publishing'), draft.publishable, checked => this.setDraft('publishable', checked), { disabled: draft.builtin, hint: __('Visitors see published entries only.') })}
+                            ${this.check(__('Nested entries'), draft.hierarchical, checked => this.setDraft('hierarchical', checked), { disabled: draft.builtin, hint: __('Entries can have a parent, like pages.') })}
+                            ${this.check(__('Comments'), draft.comments, checked => this.setDraft('comments', checked), { hint: __('Visitors can comment on published entries; Settings → Discussion moderates them.') })}
+                        </div>
+                        <div class="mt-5 border-t border-border pt-4">
+                            <h3 class="mb-2 text-sm font-semibold text-foreground">${__('Taxonomies')}</h3>
+                            <div class="grid gap-x-8 gap-y-2 md:grid-cols-2">
+                                ${this.taxonomies.map(taxonomy => this.check(taxonomy.label, draft.taxonomies.includes(taxonomy.name), checked => this.toggleTaxonomy(taxonomy.name, checked), { disabled: this.builtinTaxonomies.includes(taxonomy.name) }))}
+                            </div>
+                            <a href="/dashboard/taxonomies" class="mt-2 inline-block text-sm text-primary hover:underline">${__('Manage taxonomies')}</a>
+                        </div>`)}
                     `)}
-                    ${this.layout.some(block => block.type === 'field/blocks') || this.template.length ? this.templateCard(draft) : null}
+                    ${this.groupsCard(draft)}
+                    ${draft.content ? this.templateCard(draft) : null}
                 </div>
                 <aside class="space-y-6">
                     ${component(Card, {}, component(CardBody, { class: 'space-y-4' }, html`
@@ -293,18 +379,9 @@ export default class CollectionBuilder extends Cossack {
                         ${draft.public && !(draft.builtin && draft.name === 'pages') ? control('path', __('URL path'), draft.path.trim()
                             ? `${__('Entries at')} /${draft.path.trim()}/${draft.slug ? 'slug' : 'id'}`
                             : `${__('Entries at the site root')}: /${draft.slug ? 'slug' : 'id'}. ${__('Slugs stay unique across pages and other root collections.')}`) : null}
-                        ${this.check(__('Generate slugs from titles'), draft.slug, checked => this.setDraft('slug', checked), { disabled: draft.builtin })}
-                        ${this.check(__('Drafts and publishing'), draft.publishable, checked => this.setDraft('publishable', checked), { disabled: draft.builtin, hint: __('Visitors see published entries only.') })}
                         ${draft.publishable ? null : component(Field, { label: __('Who can read entries'), for: 'collection-visibility', control: attributes => component(NativeSelect, { ...attributes, '@change': (event: Event) => this.setDraft('visibility', (event.target as HTMLSelectElement).value as 'public' | 'private') }, html`
                             <option value="private" ?selected=${draft.visibility === 'private'}>${__('Editors only')}</option>
                             <option value="public" ?selected=${draft.visibility === 'public'}>${__('Everyone')}</option>`) })}
-                        ${this.check(__('Nested entries'), draft.hierarchical, checked => this.setDraft('hierarchical', checked), { disabled: draft.builtin, hint: __('Entries can have a parent, like pages.') })}
-                        ${this.check(__('Comments'), draft.comments, checked => this.setDraft('comments', checked), { hint: __('Visitors can comment on published entries; Settings → Discussion moderates them.') })}
-                    `))}
-                    ${component(Card, {}, component(CardBody, { class: 'space-y-3' }, html`
-                        <h2 class="text-base font-semibold text-foreground">${__('Taxonomies')}</h2>
-                        ${this.taxonomies.map(taxonomy => this.check(taxonomy.label, draft.taxonomies.includes(taxonomy.name), checked => this.toggleTaxonomy(taxonomy.name, checked), { disabled: this.builtinTaxonomies.includes(taxonomy.name) }))}
-                        <a href="/dashboard/taxonomies" class="text-sm text-primary hover:underline">${__('Manage taxonomies')}</a>
                     `))}
                     ${draft.builtin ? null : component(Card, {}, component(CardBody, { class: 'space-y-3' }, html`
                         <h2 class="text-base font-semibold text-destructive">${__('Delete collection')}</h2>

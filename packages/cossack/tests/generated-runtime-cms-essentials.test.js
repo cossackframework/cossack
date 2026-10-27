@@ -80,8 +80,11 @@ async function essentials(origin, routeIds, diagnostics, { runtime }) {
   await web.action(EDITOR, 'revokePreviewLinks', [], { params: { collection: 'posts', id: scheduledId }, state: editorState });
   expect((await fetch(origin + previewPath)).status).toBe(404);
 
-  // Autosave: unsaved values come back when the editor opens.
-  await web.action(EDITOR, 'storeAutosave', [{ ...post('Needs review, edited'), status: 'pending' }], { params: { collection: 'posts', id: pendingId }, state: { ...editorState, id: pendingId } });
+  // Autosave: the editor posts changed values to the autosave API, and they come back when it opens.
+  const autosaved = await web.request(`/api/cms/content/posts/${pendingId}/autosave`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...post('Needs review, edited'), status: 'pending' }) });
+  expect(autosaved.status).toBe(200);
+  expect((await autosaved.json()).at).toEqual(expect.any(Number));
+  expect((await web.request('/api/cms/content/posts/nope/autosave', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '[]' })).status).toBe(400);
   contains(await web.page(`/dashboard/content/posts/${pendingId}`), 'There is an autosave of this entry');
   const restored = await web.action(EDITOR, 'restoreAutosave', [], { params: { collection: 'posts', id: pendingId }, state: { ...editorState, id: pendingId } });
   expect(restored.values.title).toBe('Needs review, edited');
@@ -440,32 +443,40 @@ describe.skipIf(!liveRomeDBTests())('generated CMS essentials', () => {
       await browserExpect(page.locator('#token-name')).toHaveValue('');
       expect(new URL(page.url()).searchParams.get('tab')).toBe('passwords');
 
-      // Collection fields: new ones go last, and dragged order survives saving.
+      // Collection fields: a group made from the collection manager is attached to it, and the post editor shows its field.
       await page.goto(origin + '/dashboard/collections/posts');
       await ready();
-      await page.getByLabel('New field label').fill('Subtitle');
-      await page.getByRole('button', { name: 'Add field' }).click();
-      const names = () => page.locator('li[data-field]').evaluateAll(items => items.map(item => item.getAttribute('data-field')));
-      expect((await names()).at(-1)).toBe('subtitle');
-      const handle = page.locator('li[data-field="subtitle"] [data-handle]');
-      // Content is the first field of posts; the new one is dragged above it.
-      const target = await page.locator('li[data-field="content"]').boundingBox();
-      const box = await handle.boundingBox();
-      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-      await page.mouse.down();
-      await page.mouse.move(box.x + box.width / 2, target.y + 6, { steps: 8 });
-      await page.mouse.move(box.x + box.width / 2, target.y + 4, { steps: 2 });
-      await page.mouse.up();
-      expect((await names())[0]).toBe('subtitle');
+      await browserExpect(page.getByLabel('Content')).toBeChecked();
+      await browserExpect(page.getByLabel('Content')).toBeDisabled();
+      await page.getByRole('link', { name: 'New field group' }).click();
+      await page.waitForURL(/\/dashboard\/field-groups\/new\?collection=posts$/);
+      await ready();
+      await page.getByLabel('Title').fill('Post extras');
+      await page.getByRole('button', { name: 'Create field group' }).click();
+      await page.waitForURL(/\/dashboard\/field-groups\/post-extras/);
+      await ready();
+      await page.getByRole('button', { name: 'Add block', exact: true }).first().click();
+      const picker = page.getByRole('dialog', { name: 'Blocks' });
+      await picker.getByLabel('Search blocks').fill('text');
+      await picker.getByRole('button', { name: 'Single line', exact: true }).click();
+      const subtitle = page.getByRole('region', { name: 'Single line 1' });
+      await subtitle.getByRole('button', { name: 'Edit Single line' }).click();
+      const panel = page.getByRole('dialog', { name: 'Single line' });
+      await panel.getByLabel('Label *').fill('Subtitle');
+      await panel.getByRole('button', { name: 'Done' }).click();
+      await page.getByRole('button', { name: 'Save field group' }).click();
+      await browserExpect(page.getByRole('status').filter({ hasText: 'Field group saved.' }).first()).toBeVisible();
+      await page.goto(origin + '/dashboard/collections/posts');
+      await ready();
+      await browserExpect(page.locator('li[data-group="post-extras"]')).toBeVisible();
       await page.getByRole('button', { name: 'Save collection' }).click();
       await browserExpect(page.getByRole('status').filter({ hasText: 'Collection saved.' }).first()).toBeVisible();
       await page.reload();
       await ready();
-      expect((await names())[0]).toBe('subtitle');
-      // The keyboard moves a field too.
-      await page.locator('li[data-field="subtitle"] [data-handle]').focus();
-      await page.keyboard.press('ArrowDown');
-      expect((await names())[1]).toBe('subtitle');
+      await browserExpect(page.locator('li[data-group="post-extras"]')).toBeVisible();
+      await page.goto(origin + '/dashboard/content/posts/new');
+      await ready();
+      await browserExpect(page.getByLabel('Subtitle')).toBeVisible();
 
       // Passkeys: add one with a virtual authenticator, then sign in with it alone.
       const cdp = await context.newCDPSession(page);

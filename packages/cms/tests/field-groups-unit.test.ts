@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
     CORE_BLOCKS, FIELD_BLOCKS, FIELD_BLOCK_TYPES, FIELD_BLOCK_KINDS, blockProblems, blockSupports, clearHidden, derivedFields, derivedValues, field, fieldBlockOf, fieldGroupDeclarations,
-    fieldGroupProblems, fieldProblems, fieldVisibility, hiddenKey, layoutOf, rowsPlain, rowUniqueProblem, storageType, validateBlocks, validateValue, withRowIds,
+    fieldGroupProblems, fieldProblems, fieldVisibility, groupsForTarget, hiddenKey, layoutOf, rowsPlain, rowUniqueProblem, storageType, targetOrder, validateBlocks, validateValue, withRowIds, withTarget,
     type Block, type BlockDeclaration, type FieldGroup,
 } from '../src/index';
 
@@ -109,6 +109,33 @@ describe('field groups', () => {
         expect(again).toEqual(fields);
         expect(fieldBlockOf('cover', field.media({ label: 'Cover' })).type).toBe('field/media');
         expect(fieldBlockOf('tags', { ...field.list('string', { label: 'Tags' }), media: true }).type).toBe('field/gallery');
+    });
+});
+
+describe('targets', () => {
+    const group = (id: string, order: number | undefined, targets: FieldGroup['targets']): FieldGroup => ({ id, title: id, ...(order !== undefined ? { order } : {}), targets, blocks: [] });
+    const products = { kind: 'collection', name: 'products' } as const;
+
+    it('orders a target\'s groups by their order there, then by the group\'s order and id', () => {
+        const groups = [
+            group('b', 5, [{ ...products, order: 1 }, { kind: 'users' }]),
+            group('a', 1, [products]),
+            group('c', 0, [{ ...products, order: -1 }, { kind: 'taxonomy', name: 'tags', order: 3 }]),
+            group('d', undefined, [{ kind: 'taxonomy', name: 'tags' }]),
+        ];
+        expect(groupsForTarget(groups, products).map(entry => entry.id)).toEqual(['c', 'a', 'b']);
+        expect(groupsForTarget(groups, { kind: 'taxonomy', name: 'tags' }).map(entry => entry.id)).toEqual(['d', 'c']);
+        expect(groupsForTarget(groups, { kind: 'users' }).map(entry => entry.id)).toEqual(['b']);
+        expect(targetOrder(groups[0]!, products)).toBe(1);
+        expect(targetOrder(groups[0]!, { kind: 'users' })).toBe(5);
+    });
+
+    it('attaches and detaches a target, keeping the others', () => {
+        const base = group('a', undefined, [{ kind: 'users' }, { ...products, order: 2 }]);
+        expect(withTarget(base, products, true, 7).targets).toEqual([{ kind: 'users' }, { ...products, order: 7 }]);
+        expect(withTarget(base, { ...products, order: 9 }, true).targets).toEqual([{ kind: 'users' }, products]);
+        expect(withTarget(base, products, false).targets).toEqual([{ kind: 'users' }]);
+        expect(fieldGroupProblems(group('a', undefined, [{ ...products, order: 1.5 }]), types).problems).toContain('Target 1: the order is a whole number.');
     });
 });
 

@@ -6,7 +6,7 @@
  */
 import { ClientError, type RomeDB } from '@cossackframework/romedb';
 import { CmsError } from '../errors';
-import { sameTarget, type FieldGroup, type FieldGroupTarget } from '../field-groups';
+import { groupsForTarget, type FieldGroup, type FieldGroupTarget } from '../field-groups';
 import { principalId, type Principal } from '../permissions';
 
 const WRITE = { kind: 'cms.fieldGroups', retryConflicts: 5 } as const;
@@ -32,9 +32,9 @@ export class CmsFieldGroups {
         return (await this.all()).find(group => group.id === id) ?? null;
     }
 
-    /** The groups attached to a target, in order. */
+    /** The groups attached to a target, in their order there. */
     async forTarget(target: FieldGroupTarget): Promise<FieldGroup[]> {
-        return (await this.all()).filter(group => group.targets.some(entry => sameTarget(entry, target)));
+        return groupsForTarget(await this.all(), target);
     }
 
     /** Insert or replace a group the host has checked. */

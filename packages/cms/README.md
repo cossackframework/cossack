@@ -25,9 +25,9 @@ export const products: CollectionDefinition = {
   singular: 'Product',
   path: 'shop',
   taxonomies: ['tags'],
+  features: { content: { blocks: ['core/heading', 'core/paragraph', 'core/image'] }, featuredImage: true },
   fields: {
     price: field.number({ required: true, min: 0 }),
-    content: field.blocks({ blocks: ['core/heading', 'core/paragraph', 'core/image'] }),
   },
 };
 ```
@@ -42,9 +42,12 @@ Data contract:
 - Each collection is its own document table, `r__cms__<name>`. Only host fields are typed in
   the database; the host validates content fields, and reads tolerate values that no longer
   fit a changed field. Saving a definition changes only indexes.
-- Field groups are meta boxes built from blocks: field blocks laid out with the core layout
-  blocks, attached to collections, taxonomies, users and menu items. They compile to field
-  declarations, so values are stored flat by name; a `rows` field is a repeater (rows with an
+- A collection's standard fields are its features (`content`, `excerpt`, `featuredImage`,
+  `revisions`), fixed names themes rely on; its other fields are the field groups attached
+  to it, in the order the collection manager sets. Field groups are meta boxes built from
+  blocks: field blocks laid out with the core layout blocks, attached to collections,
+  taxonomies, users and menu items. They compile to field declarations, so values are
+  stored flat by name; a `rows` field is a repeater (rows with an
   `_id`, nested without limit) whose indexed row fields keep a derived list beside the
   document for `array::contains` seeks. Conditions on fields clear what they hide on write.
 - Each mutation is one atomic batch: record, revision, audit and outbox rows, guarded by
@@ -60,8 +63,9 @@ Data contract:
   container width). A type declares what it holds (`children`) and where it goes (`parent`);
   at most 200 blocks and 4 levels per field. Layouts are blocks, so revisions, patterns and
   the front-end editor cover them; nothing is stored beside the block list.
-- A block's text fields may bind to the entry's fields: `$.price` shows the field, `{{ $.price }}`
-  puts it inside text (`resolveBindings`, `resolveBlockBindings`). The site resolves them when
+- A block's text fields may bind to the entry's fields: `{{ $.price }}` puts the value inside
+  the text, with words and formatting around it (`resolveBindings`, `resolveBlockBindings`);
+  the default theme lists no fields on its own. The site resolves them when
   it renders an entry; the editor keeps the syntax and offers the fields in a picker.
 - A block's `style` holds slugs of the theme's presets (`background`, `text`, `padding`,
   `margin`, `fontSize`) and an `align`; `layout` adds an `anchor` and `className`. A type's
@@ -69,9 +73,9 @@ Data contract:
   `presets` (colours, font sizes, spacing) in their manifest, Customize adjusts the palette
   and adds site-level CSS, and `blockStyleAttributes` renders a styled block's wrapper with
   classes and custom properties, so a palette change recolours stored content.
-- An entry's content is blocks: posts and pages have a `content` blocks field, and the
+- An entry's content is blocks: the `content` feature, on for posts and pages, and the
   `core/richtext` block is the word processor among them. A collection's `template` is the
-  blocks every new entry starts with (`templateLock` keeps them, or their order too); blocks
+  blocks every new entry's content starts with (`templateLock` keeps them, or their order too); blocks
   of the `data` category store values and render nothing. Rich text is validated against an
   allow-list of nodes, marks and attributes on every write and rendered to escaped HTML; the
   plain text of searchable rich text and blocks fields feeds the full-text index.

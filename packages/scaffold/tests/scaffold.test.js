@@ -246,7 +246,7 @@ describe('recipe resolution', () => {
         .toMatch(/noExternal:\s*\[[\s\S]*'@cossackframework\/ui'[\s\S]*'@cossackframework\/solar-icons'/);
     }
     expect(files.get('vite.config.ts').content.toString())
-      .toContain("ignored: ['**/.wrangler/**']");
+      .toContain("ignored: ['**/.wrangler/**', '**/storage/**', '**/.cossack/*-pending/**']");
     expect(files.get('vite.config.ts').content.toString())
       .toContain("path.resolve(import.meta.dirname, './src')");
     expect(files.get('vite.config.ts').content.toString())

@@ -10,11 +10,15 @@ import { cossackSecurityPlugin } from '@cossackframework/framework/vite-security
 import { cossackSsg } from '@cossackframework/framework/vite-ssg-plugin';
 
 export default defineConfig(({ mode, command }) => ({
-  // Local D1 updates its WAL/SHM files for authenticated reads and writes.
-  // Those runtime files are not source code and must never trigger Vite HMR.
+  // Runtime files are not source code and must never reach Vite's watcher:
+  // local D1 updates its WAL/SHM files under .wrangler, RomeDB and media land
+  // in storage/, and queued RomeDB writes pass through .cossack/*-pending.
+  // Tailwind treats a changed file of unknown extension as a possible class
+  // source and answers it with a full page reload, which would drop unsaved
+  // form input on every database write.
   server: {
     watch: {
-      ignored: ['**/.wrangler/**'],
+      ignored: ['**/.wrangler/**', '**/storage/**', '**/.cossack/*-pending/**'],
     },
   },
   plugins: [

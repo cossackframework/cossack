@@ -13,7 +13,7 @@ import { conditionShows, type FormValue, type FormValues } from './form-builder'
 
 /** The builder's field types as the picker shows them. */
 export const FIELD_BLOCK_TYPES: readonly { readonly kind: FieldBlockKind; readonly label: string; readonly icon: string; readonly description: string }[] = Object.freeze([
-    { kind: 'text', label: 'Text', icon: 'text-field', description: 'A single line, such as a subtitle or SKU.' },
+    { kind: 'text', label: 'Single line', icon: 'text-field', description: 'One line of text, such as a subtitle or SKU.' },
     { kind: 'textarea', label: 'Long text', icon: 'text-square', description: 'Plain paragraphs.' },
     { kind: 'markdown', label: 'Rich text', icon: 'text-bold-square', description: 'Markdown with a toolbar and preview.' },
     { kind: 'number', label: 'Number', icon: 'hashtag-square', description: 'Prices, ratings and measurements.' },
@@ -191,8 +191,8 @@ export function layoutOf(fields: { readonly [name: string]: FieldDeclaration }, 
 
 // --- Groups -------------------------------------------------------------------------------
 
-/** Where a field group shows. */
-export type FieldGroupTarget = { readonly kind: 'collection' | 'taxonomy'; readonly name: string } | { readonly kind: 'users' | 'menus' };
+/** Where a field group shows. `order` places the box among the target's groups; the group's own `order` is the fallback. */
+export type FieldGroupTarget = { readonly kind: 'collection' | 'taxonomy'; readonly name: string; readonly order?: number } | { readonly kind: 'users' | 'menus'; readonly order?: number };
 
 export interface FieldGroup {
     /** 1-40 letters, digits, `_` or `-`. */
@@ -201,7 +201,7 @@ export interface FieldGroup {
     readonly description?: string;
     /** Where the box shows in an entry editor. Terms, users and menu items have one column. */
     readonly placement?: 'main' | 'sidebar';
-    /** Boxes of one target in ascending order. */
+    /** Boxes of one target in ascending order, for targets without their own `order`. */
     readonly order?: number;
     readonly targets: readonly FieldGroupTarget[];
     readonly blocks: readonly Block[];
@@ -210,9 +210,29 @@ export interface FieldGroup {
 export const FIELD_GROUP_ID = /^[A-Za-z0-9_-]{1,40}$/;
 export const FIELD_GROUP_LIMITS = Object.freeze({ title: 120, description: 500, targets: 50 });
 
-/** Whether two targets are the same. */
+/** Whether two targets are the same place; their order does not count. */
 export function sameTarget(a: FieldGroupTarget, b: FieldGroupTarget): boolean {
     return a.kind === b.kind && ('name' in a ? a.name : '') === ('name' in b ? b.name : '');
+}
+
+/** A group's place among a target's boxes: the target's order, or the group's. */
+export function targetOrder(group: FieldGroup, target: FieldGroupTarget): number {
+    return group.targets.find(entry => sameTarget(entry, target))?.order ?? group.order ?? 0;
+}
+
+/** The groups attached to a target, in their order there, then by the group's order and ID. */
+export function groupsForTarget(groups: readonly FieldGroup[], target: FieldGroupTarget): FieldGroup[] {
+    return groups.filter(group => group.targets.some(entry => sameTarget(entry, target)))
+        .sort((a, b) => targetOrder(a, target) - targetOrder(b, target) || (a.order ?? 0) - (b.order ?? 0) || a.id.localeCompare(b.id));
+}
+
+/** The group with the target attached at `order` (in its place when already there), or without it. */
+export function withTarget(group: FieldGroup, target: FieldGroupTarget, attached: boolean, order?: number): FieldGroup {
+    const { order: _order, ...place } = target;
+    const next = { ...place, ...(order !== undefined ? { order } : {}) };
+    const index = group.targets.findIndex(entry => sameTarget(entry, target));
+    if (!attached) return { ...group, targets: group.targets.filter(entry => !sameTarget(entry, target)) };
+    return { ...group, targets: index === -1 ? [...group.targets, next] : group.targets.map((entry, at) => at === index ? next : entry) };
 }
 
 /**
@@ -233,6 +253,7 @@ export function fieldGroupProblems(group: FieldGroup, types: ReadonlyMap<string,
         const valid = target && typeof target === 'object' && (((target.kind === 'collection' || target.kind === 'taxonomy') && typeof (target as { name?: unknown }).name === 'string' && /^[a-z][a-zA-Z0-9_]{0,40}$/.test((target as { name: string }).name))
             || ((target.kind === 'users' || target.kind === 'menus') && !('name' in target)));
         if (!valid) problems.push(`Target ${index + 1} is not a collection, taxonomy, users or menus.`);
+        else if (target.order !== undefined && !Number.isSafeInteger(target.order)) problems.push(`Target ${index + 1}: the order is a whole number.`);
         else if (targets.slice(0, index).some(other => sameTarget(other, target))) problems.push(`Target ${index + 1} is listed twice.`);
     }
     if (!Array.isArray(group?.blocks)) return { problems: [...problems, 'Blocks are required.'], blocks: [], fields: {} };

@@ -1,4 +1,4 @@
-import { Cossack, Page, State, ClientState, Server, Client, PreventNavigation, type HeadValue } from '@cossackframework/core';
+import { Cossack, Page, State, ClientState, Server, Client, OnWindow, PreventNavigation, type HeadValue } from '@cossackframework/core';
 import { Button, Checkbox, Input, Modal, NativeSelect, Textarea, toast } from '@cossackframework/ui';
 import { html, component, unsafeHTML, type TemplateResult } from '@cossackframework/renderer';
 import { blockId, evaluateRule, fieldVisibility, findBlock, flattenBlocks, flattenGroupFields, formatBytes, isCmsError, languageName, mediaKind, recordTitle, richTextBlocks, updateBlock, type Block, type BlockCondition, type EmbeddedBlock, type MediaKind, type RecordShape, type RichTextDoc } from '@cossackframework/cms';
@@ -31,8 +31,10 @@ interface TranslationLink { code: string; label: string; id: string | null; titl
 /**
  * The entry editor for every collection and resource. A new entry is `/new`. The title drives
  * the slug until the slug is edited; the Publish box's status select and button set the status,
- * and a future publication time schedules the entry. Unsaved changes are autosaved every 30
- * seconds and offered back when the editor opens.
+ * and a future publication time schedules the entry. Changed values are autosaved every 30
+ * seconds through the autosave API, which touches no state here, and offered back when the
+ * editor opens. A reload (the browser's, or the dev server's) keeps unsaved values in session
+ * storage and puts them back without asking.
  */
 @Page({ transport: 'http' })
 export default class EntryEditor extends Cossack {
@@ -82,6 +84,9 @@ export default class EntryEditor extends Cossack {
     /** Changes since the last save. */
     @ClientState() unsaved = false;
     private autosaveTimer: ReturnType<typeof setInterval> | undefined;
+    /** The values as last loaded, saved or autosaved, so an unchanged editor sends nothing. */
+    private autosaved = '';
+    private autosaving = false;
 
     head(): HeadValue {
         const title = this.view ? (this.id === 'new' ? `${__('Add new')} ${this.view.singular.toLowerCase()}` : `${__('Edit')} ${this.view.singular.toLowerCase()}`) : __('Editor');
@@ -240,19 +245,80 @@ export default class EntryEditor extends Cossack {
     // --- Autosave ----------------------------------------------------------------
 
     onMount() {
+        this.autosaved = this.snapshot();
         this.autosaveTimer = setInterval(() => { void this.autosaveTick(); }, 30_000);
+        this.recoverDraft();
     }
 
     onCleanup() {
         if (this.autosaveTimer) clearInterval(this.autosaveTimer);
     }
 
+    /** Where unsaved values wait out a reload: one key per editor URL. */
+    private draftKey(): string {
+        return `cms:draft:${window.location.pathname}`;
+    }
+
+    /** Before a reload or a close, unsaved values go to session storage; a saved editor leaves nothing. */
+    @OnWindow('beforeunload')
+    keepDraft() {
+        try {
+            if (this.unsaved && this.view) window.sessionStorage.setItem(this.draftKey(), JSON.stringify({ at: Date.now(), values: this.values }));
+            else window.sessionStorage.removeItem(this.draftKey());
+        } catch { /* storage may be unavailable; the autosave still has the draft */ }
+    }
+
+    /** After a reload, recent unsaved values come straight back; the autosave stays as the fallback. */
+    @Client()
+    private recoverDraft() {
+        let stored: { at?: number; values?: EditorValues } | null = null;
+        try {
+            const raw = window.sessionStorage.getItem(this.draftKey());
+            window.sessionStorage.removeItem(this.draftKey());
+            stored = raw ? JSON.parse(raw) as { at?: number; values?: EditorValues } : null;
+        } catch { return; }
+        if (!stored?.values || typeof stored.values !== 'object' || typeof stored.at !== 'number' || Date.now() - stored.at > 15 * 60_000) return;
+        this.values = { ...this.values, ...stored.values };
+        this.unsaved = true;
+        this.dirty = true;
+        this.autosaveOffer = null;
+        this.message = __('Your unsaved changes were kept through the reload. Save to keep them.');
+        void this.refreshPreviews(this.values);
+    }
+
+    /** Previews of the media the recovered values name. */
+    @Server()
+    async refreshPreviews(values: EditorValues) {
+        const cms = this.c.get('cms');
+        this.previews = await mediaPreviews(cms, values, this.view ?? await editorView(cms, this.route));
+    }
+
+    /** The values as the autosave stores them; a control that cannot be serialized counts as unchanged. */
+    private snapshot(): string {
+        try { return JSON.stringify(this.values); } catch { return this.autosaved; }
+    }
+
+    /**
+     * Store the values when they changed since the last load, save or autosave. A plain request
+     * to the autosave API, not a server method: nothing of this page's state comes back, so the
+     * editor keeps its focus, selection and any keystrokes in flight.
+     */
     @Client()
     async autosaveTick() {
-        if (!this.dirty || this.saving || !this.view) return;
-        this.dirty = false;
-        try { await this.storeAutosave(this.values); }
-        catch { this.dirty = true; }
+        if (this.saving || this.autosaving || !this.view) return;
+        const snapshot = this.snapshot();
+        if (snapshot === this.autosaved) { this.dirty = false; return; }
+        this.autosaving = true;
+        try {
+            const response = await fetch(`/api/cms/content/${this.route}/${this.id}/autosave`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: snapshot, credentials: 'same-origin' });
+            if (!response.ok) throw new Error(`autosave ${response.status}`);
+            const { at } = await response.json() as { at: number };
+            this.autosaved = snapshot;
+            this.dirty = false;
+            this.autosavedAt = at;
+        } catch (error) {
+            console.warn('[cms] the draft could not be autosaved', error);
+        } finally { this.autosaving = false; }
     }
 
     /** The resource this editor's route names, read on the server. */
@@ -263,6 +329,14 @@ export default class EntryEditor extends Cossack {
     @Server()
     async storeAutosave(values: EditorValues) {
         this.autosavedAt = await this.c.get('cms').autosave(this.resourceId(), this.id, this.c.get('principal'), values);
+    }
+
+    /** Restore the autosave; the restored values are what is stored, so the next tick sends nothing. */
+    @Client()
+    async restore() {
+        await this.restoreAutosave();
+        this.autosaved = this.snapshot();
+        this.unsaved = true;
     }
 
     @Server()
@@ -300,6 +374,7 @@ export default class EntryEditor extends Cossack {
         try {
             await this.storeAutosave(this.values);
             this.dirty = false;
+            this.autosaved = this.snapshot();
             if (preview) preview.location.href = `/preview/${this.view.route}/${this.id}`;
         } catch { preview?.close(); toast.error(__('The preview could not be prepared.')); }
     }
@@ -634,6 +709,7 @@ export default class EntryEditor extends Cossack {
         else {
             this.dirty = false;
             this.unsaved = false;
+            this.autosaved = this.snapshot();
             if (this.message) toast.success(this.message);
         }
     }
@@ -753,11 +829,11 @@ export default class EntryEditor extends Cossack {
         return fieldControl(field, value, change, id, { options: this.references[field.name] ?? [], ...(target.block !== undefined && !field.media ? { bindings: this.bindings() } : {}) }) ?? html``;
     }
 
-    /** The entry's fields a block's text may show (`$.price`): the collection's own and its field groups', apart from blocks and rich text. */
+    /** The entry's fields a block's text may show (`{{ $.price }}`): the collection's and its field groups', apart from blocks and rich text. */
     private bindings(): BindingChoice[] {
         const view = this.view;
         if (!view) return [];
-        const grouped = flattenGroupFields(plainBlocks([...view.layout, ...view.groups.flatMap(group => group.blocks)]))
+        const grouped = flattenGroupFields(plainBlocks(view.groups.flatMap(group => group.blocks)))
             .flatMap(block => {
                 const kind = BINDABLE_FIELD_BLOCKS[block.type.replace(/^field\//, '')];
                 const name = String(block.data.name ?? '');
@@ -1075,8 +1151,8 @@ export default class EntryEditor extends Cossack {
         const view = this.view;
         if (!view) return html`<div class="space-y-4">${notice(this.error || __('Loading…'), this.error ? 'error' : 'info')}${linkButton(__('Back'), `/dashboard/content/${this.route}`, 'outline')}</div>`;
         const titleField = view.titleField;
-        // Fields the layout and the groups place; the rest keep their declared place.
-        const groupBlocks = [...view.layout, ...view.groups.flatMap(group => group.blocks)];
+        // Fields the groups place; the rest keep their declared place.
+        const groupBlocks = view.groups.flatMap(group => group.blocks);
         const laidOut = new Set(flattenGroupFields(plainBlocks(groupBlocks)).map(block => String(block.data.name ?? '')));
         const main = view.fields.filter(field => field.placement === 'main' && !laidOut.has(field.name));
         const sidebar = view.fields.filter(field => field.placement === 'sidebar' && !laidOut.has(field.name));
@@ -1108,7 +1184,7 @@ export default class EntryEditor extends Cossack {
             ${this.error ? notice(this.describe(this.error), 'error') : null}
             ${this.autosaveOffer ? html`<div role="status" class="flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-foreground">
                 <span>${this.id === 'new' ? __('You have unsaved work from') : __('There is an autosave of this entry that is newer than the version below, from')} ${shortDate(this.autosaveOffer.at)}.</span>
-                <span class="flex gap-2">${component(Button, { type: 'button', size: 'sm', '@click': () => this.restoreAutosave() }, __('Restore the autosave'))}
+                <span class="flex gap-2">${component(Button, { type: 'button', size: 'sm', '@click': () => this.restore() }, __('Restore the autosave'))}
                     ${component(Button, { type: 'button', size: 'sm', variant: 'ghost', '@click': () => this.dismissAutosave() }, __('Dismiss'))}</span>
             </div>` : null}
             <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
@@ -1131,7 +1207,6 @@ export default class EntryEditor extends Cossack {
                         ${form ? html`<span class="basis-full text-xs">${__('Place the form on a page with the Form block and this slug.')}</span>` : null}
                         ${this.errorFor('slug')}
                     </div>` : null}
-                    ${view.layout.length ? groupView('layout', view.layout) : null}
                     ${main.map(field => this.fieldRow(field))}
                     ${view.groups.filter(group => group.placement === 'main').map(groupBox)}
                     ${view.path !== null && this.values.seo !== undefined ? this.seoBox() : null}

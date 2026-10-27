@@ -47,16 +47,17 @@ let scaffoldFingerprint;
 async function fingerprintScaffold() {
   scaffoldFingerprint ??= (async () => {
     const hash = crypto.createHash('sha256');
-    const scaffold = path.join(repository, 'packages/scaffold');
-    const visit = async directory => {
+    // The scaffold, and the CMS application `cossack add cms` renders files from (its theme among them).
+    const sources = [path.join(repository, 'packages/scaffold'), path.join(repository, 'packages/cms/app')];
+    const visit = async (root, directory) => {
       for (const entry of (await fs.readdir(directory, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name))) {
-        if (entry.name === 'node_modules' || entry.name === 'tests') continue;
+        if (['node_modules', 'tests', 'dist', 'storage', '.cossack', '.env'].includes(entry.name)) continue;
         const file = path.join(directory, entry.name);
-        if (entry.isDirectory()) await visit(file);
-        else { const stat = await fs.stat(file); hash.update(`${path.relative(scaffold, file)}:${stat.size}:${stat.mtimeMs}\n`); }
+        if (entry.isDirectory()) await visit(root, file);
+        else { const stat = await fs.stat(file); hash.update(`${path.relative(repository, file)}:${stat.size}:${stat.mtimeMs}\n`); }
       }
     };
-    await visit(scaffold);
+    for (const source of sources) await visit(source, source);
     hash.update((await fs.readdir(path.join(repository, 'node_modules'))).sort().join('\n'));
     return hash.digest('hex');
   })();

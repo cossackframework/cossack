@@ -109,8 +109,6 @@ export interface EditorView {
     /** The blocks a new entry's content starts with, and how far they may change. */
     template: EditorBlock[];
     templateLock?: 'all' | 'insert';
-    /** The collection's own layout: field blocks and layout blocks for the main column. */
-    layout: EditorBlock[];
     /** Field groups attached to the collection, in order. */
     groups: EditorGroup[];
     /** Every collection, for blocks that name one, such as Latest entries. */

@@ -4,13 +4,14 @@ import { bindingPaths, bindingText, bindingValue, hasBinding, resolveBindings, r
 const scope = { title: 'Rocket skates', price: 19.5, onSale: true, tags: ['fast', 'wheels'], specs: [{ name: 'Weight', value: '1.2 kg' }], image: 'file-1' };
 
 describe('block bindings', () => {
-    it('recognises whole-value and inline bindings', () => {
-        expect(hasBinding('$.price')).toBe(true);
-        expect(hasBinding('  $.specs.0.name ')).toBe(true);
-        expect(hasBinding('Only {{ $.price }} today')).toBe(true);
+    it('recognises inline bindings only', () => {
+        expect(hasBinding('{{ $.price }}')).toBe(true);
+        expect(hasBinding('Only {{ $.specs.0.name }} today')).toBe(true);
+        // A bare path is plain text: words and markup can surround a value only inside braces.
+        expect(hasBinding('$.price')).toBe(false);
         expect(hasBinding('$price')).toBe(false);
         expect(hasBinding(19.5)).toBe(false);
-        expect(bindingPaths('$.price')).toEqual(['price']);
+        expect(bindingPaths('$.price')).toEqual([]);
         expect(bindingPaths('{{ $.title }} for {{$.price}}')).toEqual(['title', 'price']);
     });
 
@@ -30,20 +31,21 @@ describe('block bindings', () => {
     });
 
     it('resolves a value against the scope', () => {
-        expect(resolveBindings('$.title', scope)).toBe('Rocket skates');
+        expect(resolveBindings('{{ $.title }}', scope)).toBe('Rocket skates');
+        expect(resolveBindings('$.title', scope)).toBe('$.title');
         expect(resolveBindings('Only {{ $.price }} for {{ $.title }}', scope)).toBe('Only 19.5 for Rocket skates');
         expect(resolveBindings('{{ $.missing }}!', scope)).toBe('!');
         expect(resolveBindings('plain text', scope)).toBe('plain text');
     });
 
     it('resolves only the named text fields of a block', () => {
-        const data = { text: '$.title', caption: '{{ $.price }} each', image: '$.image', level: 'h2' };
-        expect(resolveBlockBindings(data, ['text', 'caption'], scope)).toEqual({ text: 'Rocket skates', caption: '19.5 each', image: '$.image', level: 'h2' });
+        const data = { text: '**{{ $.title }}**', caption: '{{ $.price }} each', image: '{{ $.image }}', level: 'h2' };
+        expect(resolveBlockBindings(data, ['text', 'caption'], scope)).toEqual({ text: '**Rocket skates**', caption: '19.5 each', image: '{{ $.image }}', level: 'h2' });
         expect(resolveBlockBindings({ text: 'static' }, ['text'], scope)).toEqual({ text: 'static' });
     });
 
     it('writes a binding into a control value', () => {
-        expect(withBinding('', 'price')).toBe('$.price');
+        expect(withBinding('', 'price')).toBe('{{ $.price }}');
         expect(withBinding('Price:', 'price')).toBe('Price: {{ $.price }}');
         expect(withBinding('Price: ', 'price')).toBe('Price: {{ $.price }}');
     });

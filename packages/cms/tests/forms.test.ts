@@ -54,6 +54,12 @@ describe.skipIf(!live)('forms', () => {
         }, { principal: editor });
     }, 60_000);
 
+    it('is managed by its module: the dashboard cannot save it and no group attaches to it', async () => {
+        expect(cms.collection('forms').managed).toBe(true);
+        await expect(cms.saveCollection({ ...cms.collection('forms'), label: 'Enquiries' }, admin)).rejects.toMatchObject({ code: 'CMS_FORBIDDEN', message: expect.stringContaining('managed') });
+        await expect(cms.saveFieldGroup({ id: 'extra', title: 'Extra', targets: [{ kind: 'collection', name: 'forms' }], blocks: [] }, admin)).rejects.toMatchObject({ code: 'CMS_VALIDATION', message: expect.stringContaining('managed') });
+    });
+
     it('keeps each form in its own table', async () => {
         expect(contact.slug).toBe('contact');
         const form = (await cms.forms.get('contact'))!;
