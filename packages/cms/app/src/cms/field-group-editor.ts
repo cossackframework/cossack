@@ -33,7 +33,7 @@ interface Dialog { id: string; values: Record<string, unknown>; errors: Record<s
 
 /** The block types a field group is built from. */
 export function fieldGroupOptions(options: readonly BlockOption[]): BlockOption[] {
-    return options.filter(option => option.field || FIELD_GROUP_LAYOUT.has(option.name));
+    return options.filter(option => option.field || option.common || FIELD_GROUP_LAYOUT.has(option.name));
 }
 
 @Component()

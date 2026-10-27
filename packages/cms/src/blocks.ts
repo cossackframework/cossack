@@ -44,6 +44,14 @@ export interface BlockDeclaration {
     readonly icon?: string;
     /** The block picker's group. Default `widgets`. */
     readonly category?: BlockCategory;
+    /** Other words the picker's search finds the block by, such as `wysiwyg` for Rich text. */
+    readonly keywords?: readonly string[];
+    /**
+     * Offered everywhere blocks go, forms and field groups included, whatever its category: a
+     * heading or a paragraph is as useful beside a form's inputs as in a page. Input and field
+     * blocks keep to their own places regardless.
+     */
+    readonly common?: boolean;
     readonly fields: { readonly [name: string]: FieldDeclaration };
     /** The block holds other blocks: those named, or any, up to `max`. Absent for a leaf block. */
     readonly children?: { readonly allowed?: readonly string[]; readonly max?: number };
@@ -122,8 +130,9 @@ export const BLOCK_CATEGORIES = Object.freeze([
     { id: 'design', label: 'Design' },
     { id: 'widgets', label: 'Widgets' },
     { id: 'embeds', label: 'Embeds' },
-    { id: 'form', label: 'Form fields' },
-    // Field blocks declare a field group's fields; they are offered in field groups alone.
+    // Input blocks collect a form's values; field blocks declare a field group's fields. Each family is offered in its own
+    // place alone, under one label: both are the fields of what is being built.
+    { id: 'form', label: 'Fields' },
     { id: 'field', label: 'Fields' },
     // Data blocks store values with the entry and draw nothing: metadata, custom fields, settings a theme reads.
     { id: 'data', label: 'Data' },
@@ -172,50 +181,50 @@ const GAP = field.enum(['none', 'small', 'medium', 'large'], { default: 'medium'
 /** Built-in block types. */
 const core: BlockDeclaration[] = [
     // The word processor block: formatted text with headings, lists, links and images, as the body of a WordPress post.
-    { name: 'core/richtext', label: 'Rich text', icon: 'text-selection', category: 'text', description: 'Formatted text with headings, lists, links and images.', fields: { text: field.richText({ label: 'Text' }) } },
-    { name: 'core/paragraph', label: 'Paragraph', icon: 'paragraph-spacing', category: 'text', fields: { text: field.text({ required: true, max: 20_000, format: 'markdown', label: 'Text' }) } },
-    { name: 'core/heading', label: 'Heading', icon: 'text-bold', category: 'text', fields: {
+    { name: 'core/richtext', keywords: ['wysiwyg', 'editor', 'word processor', 'text'], common: true, label: 'Rich text', icon: 'text-selection', category: 'text', description: 'Formatted text with headings, lists, links and images.', fields: { text: field.richText({ label: 'Text' }) } },
+    { name: 'core/paragraph', keywords: ['text', 'markdown'], common: true, label: 'Paragraph', icon: 'paragraph-spacing', category: 'text', fields: { text: field.text({ required: true, max: 20_000, format: 'markdown', label: 'Text' }) } },
+    { name: 'core/heading', keywords: ['title', 'h2', 'h3', 'subtitle'], common: true, label: 'Heading', icon: 'text-bold', category: 'text', fields: {
         text: field.string({ required: true, max: 200, label: 'Text' }),
         level: field.enum(['h2', 'h3', 'h4'], { default: 'h2', label: 'Level' }),
     } },
-    { name: 'core/image', label: 'Image', icon: 'gallery', category: 'media', fields: {
+    { name: 'core/image', keywords: ['picture', 'photo', 'figure'], common: true, label: 'Image', icon: 'gallery', category: 'media', fields: {
         image: field.media({ required: true, nullable: false, label: 'Image' }),
         caption: field.string({ max: 300, label: 'Caption' }),
         link: field.string({ max: 2048, pattern: '(?:https?://|/)\\S*', label: 'Link' }),
     } },
-    { name: 'core/gallery', label: 'Gallery', icon: 'gallery-wide', category: 'media', fields: {
+    { name: 'core/gallery', keywords: ['images', 'photos'], label: 'Gallery', icon: 'gallery-wide', category: 'media', fields: {
         images: { ...field.list('string', { label: 'Images' }), media: true },
         columns: field.integer({ default: 3, min: 1, max: 6, label: 'Columns' }),
     } },
-    { name: 'core/quote', label: 'Quote', icon: 'chat-round-line', category: 'text', fields: {
+    { name: 'core/quote', keywords: ['blockquote', 'citation'], label: 'Quote', icon: 'chat-round-line', category: 'text', fields: {
         text: field.text({ required: true, max: 2000, label: 'Quote' }),
         citation: field.string({ max: 200, label: 'Citation' }),
     } },
-    { name: 'core/list', label: 'List', icon: 'list', category: 'text', fields: {
+    { name: 'core/list', keywords: ['bullets', 'numbered', 'ul', 'ol'], label: 'List', icon: 'list', category: 'text', fields: {
         items: field.list('string', { label: 'Items', description: 'One item per line.' }),
         ordered: field.boolean({ default: false, label: 'Numbered' }),
     } },
-    { name: 'core/code', label: 'Code', icon: 'code-square', category: 'text', fields: {
-        code: field.text({ required: true, max: 20_000, label: 'Code' }),
-        language: field.string({ max: 40, pattern: '[a-z0-9+#-]*', label: 'Language' }),
+    { name: 'core/code', keywords: ['snippet', 'pre', 'source'], label: 'Code', icon: 'code-square', category: 'text', fields: {
+        code: field.text({ required: true, max: 20_000, format: 'code', label: 'Code' }),
+        language: field.string({ max: 40, pattern: '[a-z0-9+#-]*', label: 'Language', description: 'Such as html, css, js, ts, json, python or bash.' }),
     } },
-    { name: 'core/button', label: 'Button', icon: 'cursor-square', category: 'design', fields: {
+    { name: 'core/button', keywords: ['link', 'cta', 'call to action'], label: 'Button', icon: 'cursor-square', category: 'design', fields: {
         label: field.string({ required: true, max: 80, label: 'Label' }),
         url: field.string({ required: true, max: 2048, pattern: '(?:https?://|/|mailto:)\\S*', label: 'URL' }),
         style: field.enum(['primary', 'outline'], { default: 'primary', label: 'Style' }),
     } },
-    { name: 'core/embed', label: 'Video embed', icon: 'play-circle', category: 'embeds', description: 'A YouTube or Vimeo video.', fields: {
+    { name: 'core/embed', keywords: ['youtube', 'vimeo', 'video'], label: 'Video embed', icon: 'play-circle', category: 'embeds', description: 'A YouTube or Vimeo video.', fields: {
         url: field.string({ required: true, max: 2048, pattern: 'https://(?:www\\.)?(?:youtube\\.com/watch\\?v=|youtu\\.be/|vimeo\\.com/)\\S+', label: 'Video URL' }),
         caption: field.string({ max: 300, label: 'Caption' }),
     } },
-    { name: 'core/divider', label: 'Divider', icon: 'minus-square', category: 'design', description: 'A line between sections, with text in the middle if you like.', fields: {
+    { name: 'core/divider', keywords: ['separator', 'hr', 'line', 'rule'], common: true, label: 'Divider', icon: 'minus-square', category: 'design', description: 'A line between sections, with text in the middle if you like.', fields: {
         orientation: field.enum(['horizontal', 'vertical'], { default: 'horizontal', label: 'Orientation', choices: { horizontal: 'Horizontal', vertical: 'Vertical' } }),
         thickness: field.enum(['thin', 'medium', 'thick'], { default: 'thin', label: 'Thickness' }),
         width: field.enum(['full', 'wide', 'narrow'], { default: 'full', label: 'Length', choices: { full: 'Full width', wide: 'Three quarters', narrow: 'A quarter' } }),
         color: field.string({ max: 60, pattern: '(?:#[0-9a-fA-F]{3,8}|[a-z][a-z0-9-]*(?:\\([^)]*\\))?)?', label: 'Colour', description: 'A palette slug or a CSS colour; empty uses the border colour.' }),
         text: field.string({ max: 80, label: 'Text', description: 'Shown in the middle of the line.' }),
     } },
-    { name: 'core/card', label: 'Card', icon: 'card', category: 'design', description: 'An image with a title, text and a link, in a box.', fields: {
+    { name: 'core/card', keywords: ['box', 'tile'], label: 'Card', icon: 'card', category: 'design', description: 'An image with a title, text and a link, in a box.', fields: {
         image: field.media({ label: 'Image' }),
         title: field.string({ max: 200, label: 'Title' }),
         text: field.text({ max: 5000, format: 'markdown', label: 'Text' }),
@@ -223,14 +232,14 @@ const core: BlockDeclaration[] = [
         linkLabel: field.string({ max: 80, label: 'Link text', description: 'Empty links the title and the image.' }),
         layout: field.enum(['top', 'left', 'right'], { default: 'top', label: 'Image position', choices: { top: 'Above the text', left: 'Left of the text', right: 'Right of the text' } }),
     } },
-    { name: 'core/carousel', label: 'Carousel', icon: 'posts-carousel-horizontal', category: 'media', description: 'Images one at a time, with arrows and dots; swipe on touch screens.', fields: {
+    { name: 'core/carousel', keywords: ['slider', 'slideshow'], label: 'Carousel', icon: 'posts-carousel-horizontal', category: 'media', description: 'Images one at a time, with arrows and dots; swipe on touch screens.', fields: {
         images: { ...field.list('string', { label: 'Images' }), media: true },
         aspect: field.enum(['video', 'wide', 'square', 'auto'], { default: 'video', label: 'Shape', choices: { video: '16:9', wide: '21:9', square: 'Square', auto: 'As uploaded' } }),
         autoplay: field.boolean({ default: false, label: 'Play automatically' }),
         interval: field.integer({ default: 5, min: 2, max: 30, label: 'Seconds per image' }),
         captions: field.boolean({ default: true, label: 'Show captions' }),
     } },
-    { name: 'core/latest-entries', label: 'Latest entries', icon: 'list-arrow-down', category: 'widgets', description: 'The newest published entries of a collection, kept up to date.', fields: {
+    { name: 'core/latest-entries', keywords: ['posts', 'recent', 'query', 'loop'], label: 'Latest entries', icon: 'list-arrow-down', category: 'widgets', description: 'The newest published entries of a collection, kept up to date.', fields: {
         collection: field.string({ required: true, max: 40, pattern: '[a-z][a-z0-9_]*', default: 'posts', label: 'Collection' }),
         count: field.integer({ default: 5, min: 1, max: 24, label: 'How many' }),
         term: field.string({ max: 80, pattern: '[A-Za-z0-9_-]*', label: 'Only with the term', description: 'A category, tag or other term; empty shows every entry.' }),
@@ -241,15 +250,15 @@ const core: BlockDeclaration[] = [
         showDate: field.boolean({ default: true, label: 'Show the date' }),
     } },
     // Data: stored with the entry, shown nowhere. Themes read `entry.blocks` and the API returns them.
-    { name: 'core/meta', label: 'Custom fields', icon: 'database', category: 'data', description: 'Named values stored with the entry for themes and integrations; nothing shows on the page.', fields: {
+    { name: 'core/meta', keywords: ['metadata', 'data', 'key value'], label: 'Custom fields', icon: 'database', category: 'data', description: 'Named values stored with the entry for themes and integrations; nothing shows on the page.', fields: {
         fields: field.list('string', { label: 'Fields', description: 'One per line, as name: value.' }),
     } },
     // Layout: containers that hold other blocks. They render as CSS grid and respond to the
     // width of the content they are in, so columns inside a column stack on their own.
-    { name: 'core/group', label: 'Group', icon: 'layers', category: 'design', description: 'A stack of blocks with one width.', fields: {
+    { name: 'core/group', keywords: ['container', 'section', 'stack'], label: 'Group', icon: 'layers', category: 'design', description: 'A stack of blocks with one width.', fields: {
         align: field.enum(['full', 'wide', 'center', 'left', 'right'], { default: 'full', label: 'Width', choices: { full: 'Full width', wide: 'Wide', center: 'Narrow, centered', left: 'Narrow, left', right: 'Narrow, right' } }),
     }, children: {} },
-    { name: 'core/columns', label: 'Columns', icon: 'widget-2', category: 'design', description: 'Blocks side by side; they stack on small screens.', fields: {
+    { name: 'core/columns', keywords: ['row', 'side by side', 'layout'], label: 'Columns', icon: 'widget-2', category: 'design', description: 'Blocks side by side; they stack on small screens.', fields: {
         gap: GAP,
         stack: field.enum(['mobile', 'tablet', 'never'], { default: 'mobile', label: 'Stack', choices: { mobile: 'On phones', tablet: 'On phones and tablets', never: 'Never' } }),
     }, children: { allowed: ['core/column'], max: 6 } },
@@ -257,14 +266,14 @@ const core: BlockDeclaration[] = [
         span: field.integer({ min: 1, max: 12, label: 'Width', description: 'Out of 12; empty shares the space equally.' }),
         verticalAlign: field.enum(['top', 'center', 'bottom'], { default: 'top', label: 'Vertical alignment' }),
     }, children: {} },
-    { name: 'core/grid', label: 'Grid', icon: 'widget-3', category: 'design', description: 'Blocks in equal cells.', fields: {
+    { name: 'core/grid', keywords: ['cells', 'layout'], label: 'Grid', icon: 'widget-3', category: 'design', description: 'Blocks in equal cells.', fields: {
         columns: field.integer({ default: 3, min: 1, max: 6, label: 'Columns' }),
         columnsMd: field.integer({ default: 2, min: 1, max: 6, label: 'Columns on tablets' }),
         columnsSm: field.integer({ default: 1, min: 1, max: 6, label: 'Columns on phones' }),
         gap: GAP,
     }, children: { max: 24 } },
     // Tabs: one panel shown at a time. In a field group they are the dashboard's tabs.
-    { name: 'core/tabs', label: 'Tabs', icon: 'window-frame', category: 'design', description: 'Panels shown one at a time.', fields: {}, children: { allowed: ['core/tab'], max: 12 } },
+    { name: 'core/tabs', keywords: ['panels'], label: 'Tabs', icon: 'window-frame', category: 'design', description: 'Panels shown one at a time.', fields: {}, children: { allowed: ['core/tab'], max: 12 } },
     { name: 'core/tab', label: 'Tab', icon: 'tuning-square', category: 'design', parent: ['core/tabs'], fields: {
         label: field.string({ required: true, max: 80, label: 'Label' }),
         icon: field.string({ max: 60, pattern: '[a-z0-9]+(?:-[a-z0-9]+)*', label: 'Icon', description: 'A Solar icon name, such as settings.' }),
@@ -284,6 +293,9 @@ export function blockProblems(declaration: BlockDeclaration, owner?: string): st
     else if (owner && !declaration.name.startsWith(`${owner}/`)) problems.push(`${at}: must be named ${owner}/<name>.`);
     if (typeof declaration?.label !== 'string' || !declaration.label.trim() || declaration.label.length > 80) problems.push(`${at}: needs a label of at most 80 characters.`);
     if (declaration?.icon !== undefined && (typeof declaration.icon !== 'string' || declaration.icon.length > 60 || !ICON_NAME.test(declaration.icon))) problems.push(`${at}: icons are Solar icon names, such as text-field.`);
+    if (declaration?.keywords !== undefined && (!Array.isArray(declaration.keywords) || declaration.keywords.length > 12 || declaration.keywords.some(word => typeof word !== 'string' || !word.trim() || word.length > 40))) problems.push(`${at}: keywords are at most 12 words of at most 40 characters.`);
+    if (declaration?.common !== undefined && typeof declaration.common !== 'boolean') problems.push(`${at}: common is on or off.`);
+    if (declaration?.common && (declaration.input || declaration.field)) problems.push(`${at}: an input or field block cannot be common.`);
     if (declaration?.category !== undefined && !BLOCK_CATEGORIES.some(category => category.id === declaration.category)) {
         problems.push(`${at}: the category is one of ${BLOCK_CATEGORIES.map(category => category.id).join(', ')}.`);
     }
@@ -367,7 +379,7 @@ export function validateBlocks(value: readonly Block[], types: ReadonlyMap<strin
             if (!blockAllowedIn(types, block.type, parent)) { errors[block.id] = parent ? `${block.type} cannot go inside ${parent}.` : `${block.type} goes inside ${type.parent?.join(' or ')}.`; continue; }
             if (type.input && !form) { errors[block.id] = `${block.type} goes only in a form.`; continue; }
             if (type.field && !fieldGroup) { errors[block.id] = `${block.type} goes only in a field group.`; continue; }
-            if (fieldGroup && !type.field && !FIELD_GROUP_LAYOUT.has(block.type)) { errors[block.id] = `${block.type} does not go in a field group.`; continue; }
+            if (fieldGroup && !type.field && !type.common && !FIELD_GROUP_LAYOUT.has(block.type)) { errors[block.id] = `${block.type} does not go in a field group.`; continue; }
             if (block.when !== undefined && !conditional) { errors[block.id] = 'conditions apply only in forms and field groups.'; continue; }
             let source = block.data;
             if (named(block) && (typeof source.name !== 'string' || !source.name.trim())) {

@@ -40,7 +40,7 @@ async function contactPage(origin, routeIds, diagnostics) {
     expect(response.status, JSON.stringify(answer)).toBeLessThan(300);
     return answer;
   };
-  const created = await json('/api/cms/content/forms', 'POST', { title: 'Contact', body: CONTACT, settings: { message: 'Thanks, **{field:name}**!' } });
+  const created = await json('/api/cms/content/forms', 'POST', { title: 'Contact', status: 'published', body: CONTACT, settings: { message: 'Thanks, **{field:name}**!' } });
   expect(created.item.slug).toBe('contact');
   await json('/api/cms/content/pages', 'POST', { title: 'Write to us', status: 'published', content: [{ id: 'rt', type: 'core/richtext', data: { text: doc(paragraph('We answer within a day.')) } }, { id: 'f1', type: 'core/form', data: { form: 'contact' } }] });
   return { web, form: created.item };
@@ -241,7 +241,7 @@ describe.skipIf(!liveRomeDBTests())('generated CMS forms', () => {
       const addBlock = async (search, name) => {
         await admin.getByRole('button', { name: 'Add block', exact: true }).last().click();
         const picker = admin.getByRole('dialog', { name: 'Blocks' });
-        await browserExpect(picker.getByRole('heading', { name: 'Form fields' })).toBeVisible();
+        await browserExpect(picker.getByRole('heading', { name: 'Fields' })).toBeVisible();
         await picker.getByLabel('Search blocks').fill(search);
         await picker.getByRole('button', { name, exact: true }).click();
         await browserExpect(picker).toBeHidden();
@@ -270,8 +270,10 @@ describe.skipIf(!liveRomeDBTests())('generated CMS forms', () => {
       });
       await browserExpect(admin.getByRole('region', { name: 'Text 3' }).getByText('Shown if…')).toBeVisible();
       await admin.getByRole('button', { name: 'Add notification' }).click();
-      await admin.getByRole('button', { name: 'Save', exact: true }).click();
-      await admin.waitForURL(/\/dashboard\/content\/forms\/[0-9a-f-]{36}\?saved=1$/);
+      // Forms publish like other content: a draft is nowhere on the site.
+      await admin.getByLabel('Status', { exact: true }).selectOption('published');
+      await admin.getByRole('button', { name: 'Publish', exact: true }).click();
+      await admin.waitForURL(/\/dashboard\/content\/forms\/[0-9a-f-]{36}$/);
       const built = await (await fetch(`${origin}/api/cms/forms/newsletter`)).json();
       expect(built.inputs.map(entry => [entry.name, entry.kind])).toEqual([['yourEmail', 'email'], ['tellUsMore', 'boolean'], ['interests', 'string']]);
       expect(built.blocks[2].when).toEqual({ rules: [{ field: 'tellUsMore', op: 'is', value: 'true' }] });
@@ -283,7 +285,7 @@ describe.skipIf(!liveRomeDBTests())('generated CMS forms', () => {
       await admin.getByRole('button', { name: 'Add block' }).click();
       const picker = admin.getByRole('dialog', { name: 'Blocks' });
       await browserExpect(picker.getByRole('heading', { name: 'Widgets' })).toBeVisible();
-      await browserExpect(picker.getByRole('heading', { name: 'Form fields' })).toHaveCount(0);
+      await browserExpect(picker.getByRole('heading', { name: 'Fields' })).toHaveCount(0);
       await browserExpect(picker.getByRole('button', { name: 'Form', exact: true })).toBeVisible();
       expect(errors).toEqual([]);
     } finally {

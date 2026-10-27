@@ -40,6 +40,8 @@ export interface LoadedForm {
     /** The rules that are on. */
     readonly rules: readonly NotificationRule[];
     readonly enabled: boolean;
+    /** Published forms are on the site and take submissions; drafts are only in the dashboard. */
+    readonly published: boolean;
     readonly resource: Resource;
 }
 
@@ -125,7 +127,7 @@ export class CmsForms {
     async all(): Promise<LoadedForm[]> {
         const page = await this.#host.resource('cms/forms').list({ order: { field: 'title', direction: 'asc' }, limit: 100 }, { principal: SYSTEM });
         const second = page.more ? await this.#host.resource('cms/forms').list({ order: { field: 'title', direction: 'asc' }, limit: 100, offset: 100 }, { principal: SYSTEM }) : { records: [] };
-        return Promise.all([...page.records, ...second.records].map(record => this.load(record)));
+        return Promise.all([...page.records, ...second.records].filter(record => record.status !== 'trash').map(record => this.load(record)));
     }
 
     /** A form from its record. Brings its submissions table up to date when the inputs changed. */
@@ -150,7 +152,7 @@ export class CmsForms {
         const resource = resolveResource(submissionResource({ id: record.id, title }, inputs, { indexed: settings.oncePerEmail ? [settings.oncePerEmail] : [] }), 'cms');
         await this.#sync(resource);
         return Object.freeze({
-            record, blocks, settings, resource, enabled: record.enabled !== false,
+            record, blocks, settings, resource, enabled: record.enabled !== false, published: record.status === 'published',
             ref: Object.freeze({ id: record.id, slug: typeof record.slug === 'string' ? record.slug : record.id, title, inputs }),
             rules: Object.freeze(notificationRules(record.notifications).filter(rule => rule.enabled !== false)),
         });
@@ -219,7 +221,7 @@ export class CmsForms {
      */
     async submit(key: string, raw: SubmittedValues, context: SubmitContext): Promise<SubmitResult> {
         const form = await this.get(key, context.signal ? { signal: context.signal } : {});
-        if (!form) throw new CmsError('CMS_NOT_FOUND', 'This form does not exist.');
+        if (!form?.published) throw new CmsError('CMS_NOT_FOUND', 'This form does not exist.');
         const { settings } = form;
         const types = this.#host.blockTypes;
         const closed = await this.closed(form);

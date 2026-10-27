@@ -1,4 +1,5 @@
 import { S3Client, CreateMultipartUploadCommand, UploadPartCommand, CompleteMultipartUploadCommand, AbortMultipartUploadCommand, PutObjectCommand, GetObjectCommand, HeadObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { StorageError, type StorageMetadata, type StorageProvider } from '@cossackframework/core/storage';
 import { storageParts, storageReadBody, checkStorageSignal, storageProviderFailure, storageCleanup, storageSinglePut, storageSingleBody } from './r2.js';
 
@@ -47,6 +48,23 @@ export function createS3StorageProvider({ client, bucket }: S3StorageProviderOpt
         },
         async head(key, options = {}) { try { checkStorageSignal(options.signal); return s3Metadata(key, await client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }), { abortSignal: options.signal })); } catch (error) { if (missing(error)) return null; throw storageProviderFailure(options.signal?.aborted ? 'COSSACK_STORAGE_ABORTED' : undefined); } },
         async delete(key, options = {}) { try { checkStorageSignal(options.signal); await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }), { abortSignal: options.signal }); } catch { throw storageProviderFailure(options.signal?.aborted ? 'COSSACK_STORAGE_ABORTED' : undefined); } },
+        /**
+         * A presigned PutObject: the content type and length are signed, so the browser must send
+         * them as given; metadata travels in the URL. The client needs `requestChecksumCalculation:
+         * 'WHEN_REQUIRED'`: otherwise the SDK signs a checksum of the empty body it was given, and
+         * the bucket would refuse the real one.
+         */
+        async presign(key, options) {
+            if (!Number.isSafeInteger(options.size) || options.size < 0 || !Number.isInteger(options.expiresIn) || options.expiresIn < 1 || options.expiresIn > 604_800) throw new StorageError('COSSACK_STORAGE_ACCESS_INVALID', 'A presigned upload needs a size and expires within a week.');
+            const checksums = typeof client.config.requestChecksumCalculation === 'function' ? await client.config.requestChecksumCalculation().catch(() => undefined) : undefined;
+            if (checksums !== 'WHEN_REQUIRED') throw new StorageError('COSSACK_STORAGE_CONFIG_INVALID', "Create the S3Client with requestChecksumCalculation: 'WHEN_REQUIRED' to presign uploads.");
+            const headers: Record<string, string> = { 'content-length': String(options.size), ...(options.contentType ? { 'content-type': options.contentType } : {}) };
+            try {
+                const command = new PutObjectCommand({ Bucket: bucket, Key: key, ContentType: options.contentType, ContentLength: options.size, Metadata: options.customMetadata });
+                const url = await getSignedUrl(client, command, { expiresIn: options.expiresIn, signableHeaders: new Set(Object.keys(headers)) });
+                return { url, method: 'PUT', headers };
+            } catch { throw storageProviderFailure(); }
+        },
     };
 }
 function s3Metadata(key: string, value: { ContentLength?: number; ETag?: string; ContentType?: string; Metadata?: Record<string, string>; LastModified?: Date }): StorageMetadata {

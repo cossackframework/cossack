@@ -5,7 +5,7 @@ import type { MediaPreview } from './content';
 /** Store uploaded files, one at a time, within the Media settings' size limit. */
 export async function uploadFiles(cms: CmsHost, files: readonly File[], principal: Principal, signal?: AbortSignal): Promise<{ files: MediaPreview[]; errors: string[] }> {
     const service = cms.files;
-    if (!service) return { files: [], errors: ['Media storage is not configured.'] };
+    if (!service) return { files: [], errors: ['File storage is not configured.'] };
     const maxBytes = (await cms.settings.get('media.maxUploadMb')) * 1024 * 1024;
     const uploaded: MediaPreview[] = [];
     const errors: string[] = [];

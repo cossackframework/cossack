@@ -47,10 +47,12 @@ export interface CollectionFeatures {
     readonly featuredImage?: boolean;
     /** A revision of every write, with compare and restore. Default true. */
     readonly revisions?: boolean;
+    /** A `password` field: visitors type it to read the entry on the site, as WordPress protects posts. */
+    readonly password?: boolean;
 }
 
 /** The feature names that are fields; a feature off leaves its name reserved. */
-export const FEATURE_FIELDS = Object.freeze(['content', 'excerpt', 'featuredImage'] as const);
+export const FEATURE_FIELDS = Object.freeze(['content', 'excerpt', 'featuredImage', 'password'] as const);
 
 /** The block types a content feature allows: `[]` for every type, null when it is off or malformed. */
 export function contentBlocks(content: CollectionFeatures['content']): readonly string[] | null {
@@ -129,7 +131,7 @@ export interface CollectionDefinition {
 export const CORE_FIELDS = Object.freeze(['title', 'slug', 'status', 'publishedAt', 'parent', 'menuOrder', 'seo', 'locale', 'translationGroup', 'commentsOpen', 'template']);
 /** Field names no declared field or group field may take: the core fields and the features'. */
 export const RESERVED_FIELDS = Object.freeze([...CORE_FIELDS, ...FEATURE_FIELDS]);
-const FEATURES = Object.freeze(['content', 'excerpt', 'featuredImage', 'revisions'] as const);
+const FEATURES = Object.freeze(['content', 'excerpt', 'featuredImage', 'revisions', 'password'] as const);
 /** A template an editor can choose for one entry: one of the active theme's `entry-*` templates. Empty for the default. */
 export const ENTRY_TEMPLATE = 'entry-[a-z][a-z0-9_-]{0,73}';
 const RESERVED = new Set(['media', 'users', 'roles', 'terms', 'settings', 'collections', 'taxonomies', 'blocks', 'plugins', 'schema', 'content', 'new']);
@@ -190,6 +192,7 @@ export function collectionResource(definition: CollectionDefinition, labels: { r
         ...(contentBlocks(features.content) ? { content: field.blocks({ search: true, label: 'Content', ...(contentBlocks(features.content)!.length ? { blocks: contentBlocks(features.content)! } : {}) }) } : {}),
         ...(features.excerpt ? { excerpt: field.text({ max: 1000, label: 'Excerpt', description: 'A short summary for lists, feeds and link previews.' }) } : {}),
         ...(features.featuredImage ? { featuredImage: field.media({ placement: 'sidebar', label: 'Featured image' }) } : {}),
+        ...(features.password ? { password: field.string({ max: 100, placement: 'sidebar', label: 'Password', description: 'Visitors type it to read this entry. Empty for none.' }) } : {}),
         ...(publishable ? {
             status: field.enum(CONTENT_STATUSES, { required: true, default: 'draft', index: true, label: 'Status' }),
             publishedAt: field.datetime({ nullable: true, index: true, label: 'Published at' }),
@@ -279,7 +282,7 @@ export const posts: CollectionDefinition = {
     taxonomies: ['categories', 'tags'],
     path: 'posts',
     comments: true,
-    features: { content: true, excerpt: true, featuredImage: true },
+    features: { content: true, excerpt: true, featuredImage: true, password: true },
     fields: {
         sticky: field.boolean({ default: false, placement: 'sidebar', label: 'Stick to the top of the blog' }),
     },
@@ -295,7 +298,7 @@ export const pages: CollectionDefinition = {
     builtin: true,
     hierarchical: true,
     path: '',
-    features: { content: true, excerpt: true, featuredImage: true },
+    features: { content: true, excerpt: true, featuredImage: true, password: true },
     fields: {},
     template: [{ id: 'text', type: 'core/richtext', data: {} }],
 };

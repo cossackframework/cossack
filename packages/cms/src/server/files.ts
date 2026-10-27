@@ -3,10 +3,10 @@
  * ownership and metadata in RomeDB. Upload and delete are recoverable two-phase operations:
  * the metadata row records intent first, and `sweep()` finishes or cleans up interrupted work.
  */
-import type { StorageProvider } from '@cossackframework/core/storage';
+import type { StoragePresignedUpload, StorageProvider } from '@cossackframework/core/storage';
 import type { RomeDB, Value } from '@cossackframework/romedb';
 import { CmsError } from '../errors';
-import { imageSize, matchesSignature, MEDIA_FILTERS, MEDIA_TYPES, type MediaKind } from '../media';
+import { declaredType, imageSize, matchesSignature, MEDIA_FILTER_EXCLUDES, MEDIA_FILTERS, sanitizeSvg, SVG_TYPE, type MediaKind } from '../media';
 import { hasPermission, PERMISSIONS, principalId, type Principal } from '../permissions';
 import { containsPattern } from './users';
 import { imageEditsProblems, transformable, variantRect, variantWidth, type ImageEdits } from '../images';
@@ -34,12 +34,24 @@ export interface FileServiceOptions {
     /** Makes resized variants of images; without it, images serve as uploaded. */
     images?: ImageTransformer;
     now?: () => number;
-    /** Largest accepted file. Default 25 MiB. */
+    /** Largest accepted file. Default: no limit beyond what the caller passes. */
     maxBytes?: number;
-    /** Content types accepted; default `MEDIA_TYPES`. */
+    /** Content types accepted. Default: every type. */
     contentTypes?: readonly string[];
     /** How long an unfinished upload or delete may wait before `sweep()` resolves it. Default 15 minutes. */
     staleMs?: number;
+    /** How long a presigned upload URL stays valid. Default one hour. */
+    presignSeconds?: number;
+}
+
+/** An upload the browser sends itself: where to PUT the bytes, then `complete()` makes the file. */
+export interface PendingUpload {
+    readonly id: string;
+    readonly name: string;
+    readonly contentType: string;
+    readonly size: number;
+    /** The provider's presigned PUT, or null when the bytes go through the application (`receive()`). */
+    readonly direct: StoragePresignedUpload | null;
 }
 
 export interface FileMetadata {
@@ -54,14 +66,17 @@ const COLUMNS = 'id, name, content_type, size, owner_id, title, alt, caption, de
 const WRITE = { kind: 'cms.files', retryConflicts: 5 } as const;
 /** Enough bytes to check a signature and read image dimensions behind typical metadata. */
 const HEAD_BYTES = 1024 * 1024;
+/** SVG is sanitized as text, so it is held in memory; larger files are refused. */
+const SVG_MAX_BYTES = 8 * 1024 * 1024;
 
 export class FileService {
     readonly #db: RomeDB;
     readonly #storage: StorageProvider;
     readonly #now: () => number;
     readonly #maxBytes: number;
-    readonly #types: readonly string[];
+    readonly #types: readonly string[] | null;
     readonly #staleMs: number;
+    readonly #presignSeconds: number;
     readonly #images: ImageTransformer | undefined;
     #warned = false;
 
@@ -69,13 +84,18 @@ export class FileService {
         this.#db = db;
         this.#storage = storage;
         this.#now = options.now ?? Date.now;
-        this.#maxBytes = options.maxBytes ?? 25 * 1024 * 1024;
-        this.#types = options.contentTypes ?? MEDIA_TYPES;
+        this.#maxBytes = options.maxBytes ?? Number.MAX_SAFE_INTEGER;
+        this.#types = options.contentTypes ?? null;
         this.#staleMs = options.staleMs ?? 15 * 60_000;
+        this.#presignSeconds = options.presignSeconds ?? 3600;
         this.#images = options.images;
     }
 
-    get contentTypes(): readonly string[] { return this.#types; }
+    /** The accepted content types, or null for every type. */
+    get contentTypes(): readonly string[] | null { return this.#types; }
+
+    /** Whether the provider presigns uploads, so browsers send bytes to the bucket directly. */
+    get direct(): boolean { return typeof this.#storage.presign === 'function'; }
 
     /** Whether resized variants, crops and focal points apply. */
     get resizes(): boolean { return this.#images !== undefined; }
@@ -140,23 +160,89 @@ export class FileService {
 
     /**
      * Record intent, store the bytes, then mark the file ready. The declared type must match
-     * the file's signature; image dimensions are read from its first bytes.
+     * the file's signature; image dimensions are read from its first bytes; SVG is sanitized.
      */
     async upload(file: { name: string; contentType: string; size: number; body: ReadableStream<Uint8Array> } & FileMetadata,
         context: { principal: Principal; signal?: AbortSignal; maxBytes?: number; owner?: string }): Promise<CmsFile> {
+        const { id, key, contentType } = await this.#begin(file, context);
+        const { head, body } = await peek(file.body, Math.min(HEAD_BYTES, file.size));
+        if (!matchesSignature(contentType, head)) {
+            await body.cancel().catch(() => undefined);
+            await this.#abandon(id);
+            throw new CmsError('CMS_VALIDATION', `The file is not a valid ${contentType} file.`);
+        }
+        let size = file.size;
+        try {
+            if (contentType === SVG_TYPE) {
+                const clean = await this.#cleanSvg(id, body, file.size);
+                size = clean.byteLength;
+                await this.#storage.put(key, streamOf(clean), { size, contentType, ...(context.signal ? { signal: context.signal } : {}) });
+            } else await this.#storage.put(key, body, { size, contentType, ...(context.signal ? { signal: context.signal } : {}) });
+        } catch (error) {
+            if (!(error instanceof CmsError)) await this.#abandon(id).catch(() => undefined);
+            throw error;
+        }
+        return this.#ready(id, size, imageSize(contentType, head));
+    }
+
+    /**
+     * Start an upload the browser sends itself. The row records intent; the bytes go to
+     * `direct` (the bucket's presigned URL) or through `receive()`; `complete()` checks them
+     * and makes the file. Stale uploads that never complete are swept.
+     */
+    async begin(file: { name: string; contentType: string; size: number } & FileMetadata, context: { principal: Principal; maxBytes?: number; owner?: string }): Promise<PendingUpload> {
+        const { id, key, name, contentType } = await this.#begin(file, context);
+        let direct: StoragePresignedUpload | null = null;
+        if (this.#storage.presign) {
+            try { direct = await this.#storage.presign(key, { size: file.size, contentType, expiresIn: this.#presignSeconds }); }
+            catch { direct = null; }
+        }
+        return { id, name, contentType, size: file.size, direct };
+    }
+
+    /** Store the bytes of an upload the browser sends through the application, as begun. */
+    async receive(id: string, body: ReadableStream<Uint8Array>, context: { principal: Principal; signal?: AbortSignal }): Promise<void> {
+        const pending = await this.#pending(id, context.principal);
+        await this.#storage.put(pending.key, body, { size: pending.size, contentType: pending.contentType, ...(context.signal ? { signal: context.signal } : {}) });
+    }
+
+    /**
+     * Finish an upload: the object must exist with the declared size and a matching signature.
+     * SVG is sanitized in place; image dimensions are read. A failed check removes both the
+     * object and the row.
+     */
+    async complete(id: string, context: { principal: Principal; signal?: AbortSignal }): Promise<CmsFile> {
+        const pending = await this.#pending(id, context.principal);
+        const refuse = async (message: string) => { await this.#abandon(id); return new CmsError('CMS_VALIDATION', message); };
+        const stored = await this.#storage.head(pending.key, context.signal ? { signal: context.signal } : {});
+        if (!stored) throw await refuse('The upload did not finish.');
+        if (stored.size !== pending.size) throw await refuse(`The upload has ${stored.size} bytes, not the ${pending.size} declared.`);
+        const object = await this.#storage.get(pending.key, context.signal ? { signal: context.signal } : {});
+        if (!object) throw await refuse('The upload did not finish.');
+        const { head, body } = await peek(object.body, Math.min(HEAD_BYTES, pending.size));
+        if (!matchesSignature(pending.contentType, head)) {
+            await body.cancel().catch(() => undefined);
+            throw await refuse(`The file is not a valid ${pending.contentType} file.`);
+        }
+        let size = pending.size;
+        if (pending.contentType === SVG_TYPE) {
+            const clean = await this.#cleanSvg(id, body, pending.size);
+            size = clean.byteLength;
+            await this.#storage.put(pending.key, streamOf(clean), { size, contentType: pending.contentType });
+        } else await body.cancel().catch(() => undefined);
+        return this.#ready(id, size, imageSize(pending.contentType, head));
+    }
+
+    /** Check the upload and record intent; the row is pending until the bytes are in. */
+    async #begin(file: { name: string; contentType: string; size: number } & FileMetadata, context: { principal: Principal; maxBytes?: number; owner?: string }): Promise<{ id: string; key: string; name: string; contentType: string }> {
         if (!hasPermission(context.principal, PERMISSIONS.upload) && !hasPermission(context.principal, PERMISSIONS.manageMedia)) {
             throw new CmsError(context.principal.kind === 'anonymous' ? 'CMS_UNAUTHENTICATED' : 'CMS_FORBIDDEN', 'Not allowed to upload files.');
         }
         const maxBytes = Math.min(context.maxBytes ?? this.#maxBytes, this.#maxBytes);
-        if (!Number.isSafeInteger(file.size) || file.size < 1 || file.size > maxBytes) throw new CmsError('CMS_LIMIT', `Files must be 1 byte to ${Math.floor(maxBytes / 1024 / 1024)} MB.`);
-        const contentType = file.contentType.split(';')[0]!.trim().toLowerCase();
-        if (!this.#types.includes(contentType)) throw new CmsError('CMS_VALIDATION', `Files of type ${contentType || 'unknown'} are not accepted.`);
-        const { head, body } = await peek(file.body, Math.min(HEAD_BYTES, file.size));
-        if (!matchesSignature(contentType, head)) {
-            await body.cancel().catch(() => undefined);
-            throw new CmsError('CMS_VALIDATION', `The file is not a valid ${contentType} file.`);
-        }
-        const dimensions = imageSize(contentType, head);
+        if (!Number.isSafeInteger(file.size) || file.size < 1 || file.size > maxBytes) throw new CmsError('CMS_LIMIT', maxBytes === Number.MAX_SAFE_INTEGER ? 'Files must be at least 1 byte.' : `Files must be 1 byte to ${Math.floor(maxBytes / 1024 / 1024)} MB.`);
+        const contentType = declaredType(file.contentType);
+        if (this.#types && !this.#types.includes(contentType)) throw new CmsError('CMS_VALIDATION', `Files of type ${contentType} are not accepted.`);
+        if (contentType === SVG_TYPE && file.size > SVG_MAX_BYTES) throw new CmsError('CMS_LIMIT', `SVG files must be at most ${SVG_MAX_BYTES / 1024 / 1024} MB.`);
         const name = file.name.replace(/[\x00-\x1f\x7f/\\]/g, '_').trim().slice(0, 200) || 'file';
         const id = crypto.randomUUID();
         const key = `cms/files/${id}`;
@@ -166,13 +252,43 @@ export class FileService {
         const metadata = checkMetadata({ title: file.title ?? name.replace(/\.[^.]+$/, ''), alt: file.alt ?? '', caption: file.caption ?? '', description: file.description ?? '' });
         await this.#db.write([{
             rql: `INSERT INTO cms_files (id, key, owner_id, name, content_type, size, status, title, alt, caption, description, width, height, created_at, updated_at)
-                VALUES ($id, $key, $owner, $name, $type, $size, 'pending', $title, $alt, $caption, $description, $width, $height, $now, $now)`,
-            params: { $id: id, $key: key, $owner: owner, $name: name, $type: contentType, $size: file.size, ...prefixed(metadata), $width: dimensions?.width ?? null, $height: dimensions?.height ?? null, $now: now },
+                VALUES ($id, $key, $owner, $name, $type, $size, 'pending', $title, $alt, $caption, $description, NULL, NULL, $now, $now)`,
+            params: { $id: id, $key: key, $owner: owner, $name: name, $type: contentType, $size: file.size, ...prefixed(metadata), $now: now },
         }], WRITE);
-        await this.#storage.put(key, body, { size: file.size, contentType, ...(context.signal ? { signal: context.signal } : {}) });
-        const ready = await this.#db.write([{ rql: "UPDATE cms_files SET status = 'ready', updated_at = $now WHERE id = $id AND status = 'pending'", params: { $id: id, $now: this.#now() } }], WRITE);
+        return { id, key, name, contentType };
+    }
+
+    /** A pending upload the principal may finish: its owner, a media manager, or host work. */
+    async #pending(id: string, principal: Principal): Promise<{ key: string; owner: string | null; contentType: string; size: number }> {
+        if (!ID.test(id)) throw new CmsError('CMS_NOT_FOUND', 'Upload not found.');
+        const result = await this.#db.read([{ rql: "SELECT key, owner_id, content_type, size FROM cms_files WHERE id = $id AND status = 'pending'", params: { $id: id } }]);
+        const row = result.results[0]!.rows[0];
+        if (!row) throw new CmsError('CMS_NOT_FOUND', 'Upload not found.');
+        const pending = { key: row[0] as string, owner: row[1] as string | null, contentType: row[2] as string, size: Number(row[3] as bigint) };
+        const own = principal.kind === 'user' && pending.owner === principalId(principal) && hasPermission(principal, PERMISSIONS.upload);
+        if (!own && principal.kind !== 'system' && !hasPermission(principal, PERMISSIONS.manageMedia)) throw new CmsError(principal.kind === 'anonymous' ? 'CMS_UNAUTHENTICATED' : 'CMS_FORBIDDEN', 'Not allowed to finish this upload.');
+        return pending;
+    }
+
+    /** Sanitized SVG bytes from the stream; refuses what is not an SVG document. */
+    async #cleanSvg(id: string, body: ReadableStream<Uint8Array>, size: number): Promise<Uint8Array> {
+        const bytes = new Uint8Array(await new Response(body).arrayBuffer());
+        const clean = bytes.byteLength <= Math.max(size, SVG_MAX_BYTES) ? sanitizeSvg(new TextDecoder().decode(bytes)) : null;
+        if (clean === null) { await this.#abandon(id); throw new CmsError('CMS_VALIDATION', 'The file is not a valid SVG document.'); }
+        return new TextEncoder().encode(clean);
+    }
+
+    async #ready(id: string, size: number, dimensions: { width: number; height: number } | null): Promise<CmsFile> {
+        const ready = await this.#db.write([{ rql: "UPDATE cms_files SET status = 'ready', size = $size, width = $width, height = $height, updated_at = $now WHERE id = $id AND status = 'pending'",
+            params: { $id: id, $size: size, $width: dimensions?.width ?? null, $height: dimensions?.height ?? null, $now: this.#now() } }], WRITE);
         if (ready.results[0]!.affected !== 1n) throw new CmsError('CMS_CONFLICT', 'The upload was cancelled.');
         return (await this.get(id))!;
+    }
+
+    /** Drop a pending upload: its bytes, if any, and its row. */
+    async #abandon(id: string): Promise<void> {
+        const marked = await this.#db.write([{ rql: "UPDATE cms_files SET status = 'deleting', updated_at = $now WHERE id = $id AND status = 'pending'", params: { $id: id, $now: this.#now() } }], WRITE);
+        if (marked.results[0]!.affected === 1n) await this.#finishDelete(id);
     }
 
     async get(id: string): Promise<CmsFile | null> {
@@ -198,6 +314,8 @@ export class FileService {
             const prefixes = MEDIA_FILTERS[options.kind];
             if (!prefixes) throw new CmsError('CMS_VALIDATION', `Unknown media kind ${options.kind}.`);
             conditions.push(`(${prefixes.map((prefix, index) => { params[`$k${index}`] = `${prefix}%`; return `content_type LIKE $k${index}`; }).join(' OR ')})`);
+            const excluded = MEDIA_FILTER_EXCLUDES[options.kind] ?? [];
+            if (excluded.length) conditions.push(`content_type NOT IN (${excluded.map((type, index) => { params[`$x${index}`] = type; return `$x${index}`; }).join(', ')})`);
         }
         if (options.search?.trim()) {
             conditions.push("(lower(name) LIKE $q ESCAPE '\\' OR lower(title) LIKE $q ESCAPE '\\')");

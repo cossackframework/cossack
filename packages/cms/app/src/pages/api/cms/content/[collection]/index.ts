@@ -44,14 +44,14 @@ export const GET = async (c: Context) => {
         apiHeaders(c);
         if (query) {
             const records = await repository.search(query, { limit: perPage, where }, { principal });
-            return c.json({ items: await apiEntries(cms, collection, records, html), page: 1, pages: 1, total: records.length });
+            return c.json({ items: await apiEntries(cms, collection, records, html, principal), page: 1, pages: 1, total: records.length });
         }
         const order = publishable ? { field: 'publishedAt', direction: 'desc' as const } : { field: 'title', direction: 'asc' as const };
         const [list, total] = await Promise.all([
             repository.list({ where, order, limit: perPage, offset: Math.min((page - 1) * perPage, 10_000) }, { principal }),
             repository.count({ where }, { principal }),
         ]);
-        return c.json({ items: await apiEntries(cms, collection, list.records, html), page, pages: Math.max(1, Math.ceil(total / perPage)), total });
+        return c.json({ items: await apiEntries(cms, collection, list.records, html, principal), page, pages: Math.max(1, Math.ceil(total / perPage)), total });
     } catch (error) { return apiError(c, error); }
 };
 

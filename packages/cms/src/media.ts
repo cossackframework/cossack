@@ -3,13 +3,22 @@
  * image dimensions and public URLs. Pure functions over bytes; no I/O.
  */
 
-/** Content types accepted by default. SVG and HTML are excluded: they can run script. */
+/**
+ * Content types with a known signature. Every type is accepted: these are checked against the
+ * file's first bytes, SVG is sanitized, and the rest are stored as declared and served as
+ * downloads. A `FileService` can still be limited to a list.
+ */
 export const MEDIA_TYPES = Object.freeze([
-    'image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif',
+    'image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif', 'image/svg+xml',
     'application/pdf', 'text/plain', 'video/mp4', 'video/webm', 'audio/mpeg',
 ]);
 
-export type MediaKind = 'image' | 'video' | 'audio' | 'document';
+export const SVG_TYPE = 'image/svg+xml';
+
+/** Archives, for the library's filter. */
+export const ARCHIVE_TYPES = Object.freeze(['application/zip', 'application/x-zip-compressed', 'application/gzip', 'application/x-gzip', 'application/x-tar', 'application/x-7z-compressed', 'application/x-rar-compressed', 'application/vnd.rar', 'application/x-bzip2']);
+
+export type MediaKind = 'image' | 'video' | 'audio' | 'archive' | 'document';
 
 /** Profile pictures: still and animated images (GIF, APNG, animated WebP and AVIF). */
 export const AVATAR_TYPES = Object.freeze(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif']);
@@ -18,13 +27,43 @@ export function mediaKind(contentType: string): MediaKind {
     if (contentType.startsWith('image/')) return 'image';
     if (contentType.startsWith('video/')) return 'video';
     if (contentType.startsWith('audio/')) return 'audio';
+    if (ARCHIVE_TYPES.includes(contentType)) return 'archive';
     return 'document';
 }
 
-/** Content type prefixes for each library filter. */
+/** Content type prefixes for each library filter; `document` is everything else. */
 export const MEDIA_FILTERS: { readonly [K in MediaKind]: readonly string[] } = Object.freeze({
-    image: ['image/'], video: ['video/'], audio: ['audio/'], document: ['application/', 'text/'],
+    image: ['image/'], video: ['video/'], audio: ['audio/'], archive: ARCHIVE_TYPES, document: ['application/', 'text/'],
 });
+
+/** The types a kind filter leaves out, for `document`. */
+export const MEDIA_FILTER_EXCLUDES: { readonly [K in MediaKind]?: readonly string[] } = Object.freeze({ document: ARCHIVE_TYPES });
+
+/** A file's name with a content type the browser did not name: `application/octet-stream`. */
+export function declaredType(contentType: string): string {
+    const type = contentType.split(';')[0]!.trim().toLowerCase();
+    return /^[a-z0-9][a-z0-9!#$&^_.+-]{0,126}\/[a-z0-9][a-z0-9!#$&^_.+-]{0,126}$/.test(type) ? type : 'application/octet-stream';
+}
+
+/**
+ * SVG with its script removed: `<script>`, event handler attributes, `javascript:` URLs,
+ * `<foreignObject>`, and references to other documents. The result is still the same drawing.
+ * The site also serves SVG under a Content Security Policy that forbids script, so this is the
+ * second of two locks. Null when the text is not an SVG document.
+ */
+export function sanitizeSvg(text: string): string | null {
+    if (!/^\s*(?:<\?xml[^>]*\?>\s*)?(?:<!--[\s\S]*?-->\s*)*(?:<!DOCTYPE[^>]*>\s*)?<svg[\s>]/i.test(text)) return null;
+    let clean = text.replace(/<!DOCTYPE[^>]*(?:\[[\s\S]*?\])?[^>]*>/gi, '');
+    // Elements that run or load code, with their content.
+    clean = clean.replace(/<(script|foreignObject|iframe|embed|object|set|animate|animateTransform|animateMotion|handler|listener)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, '').replace(/<(script|foreignObject|iframe|embed|object|set|animate|animateTransform|animateMotion|handler|listener)\b[^>]*\/?>/gi, '');
+    // Event handlers and script URLs in attributes.
+    clean = clean.replace(/\s+on[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '');
+    clean = clean.replace(/\s+(href|xlink:href|src|action|formaction|data)\s*=\s*("|')\s*(?:javascript|data|vbscript)\s*:[^"']*\2/gi, '');
+    // Links to other documents keep the picture from fetching anything: only fragment references stay.
+    clean = clean.replace(/\s+(href|xlink:href)\s*=\s*("|')(?!#)[^"']*\2/gi, '');
+    clean = clean.replace(/url\(\s*(?:"|')?\s*(?!#)[^)]*\)/gi, 'none');
+    return clean;
+}
 
 /** The public URL of a stored file. The name is decorative; the ID selects the file. */
 export function mediaUrl(file: { readonly id: string; readonly name: string }): string {
@@ -58,7 +97,9 @@ export function matchesSignature(contentType: string, head: Uint8Array): boolean
         case 'video/webm': return head.length >= 4 && head[0] === 0x1a && head[1] === 0x45 && head[2] === 0xdf && head[3] === 0xa3;
         case 'audio/mpeg': return ascii(head, 0, 3) === 'ID3' || (head.length >= 2 && head[0] === 0xff && (head[1]! & 0xe0) === 0xe0);
         case 'text/plain': return !head.includes(0);
-        default: return false;
+        case 'image/svg+xml': return /^\s*(?:<\?xml[\s\S]{0,200}?\?>\s*)?(?:<!--[\s\S]*?-->\s*)*(?:<!DOCTYPE[\s\S]{0,500}?>\s*)?<svg[\s>]/i.test(new TextDecoder().decode(head.subarray(0, 2048)));
+        // Other types have no signature to check: they are stored as declared and served as downloads.
+        default: return true;
     }
 }
 

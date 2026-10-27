@@ -2,7 +2,7 @@
  * The CMS host: resource registry, repositories, plugin hooks and commands, schema and
  * grant activation, outbox, users and stores, all over one RomeDB binding.
  */
-import { createHookRegistry, type ActionHandler, type ActionPoint, type FilterHandler, type FilterPoint, type HookRegistry } from '@cossackframework/core/hooks';
+import { createHookRegistry, type ActionHandler, type ActionPoint, type ActionReport, type ExtensionPoint, type FilterHandler, type FilterPoint, type HookRegistry, type InvokeOptions } from '@cossackframework/core/hooks';
 import type { StorageProvider } from '@cossackframework/core/storage';
 import { ClientError, type RomeDB, type Statement, type Value, type WorkLimits } from '@cossackframework/romedb';
 import { blockId, blockMedia, blockProblems, validateBlocks, type Block, type BlockDeclaration } from '../blocks';
@@ -18,7 +18,7 @@ import type { MenuItem, MenuItemView } from '../menus';
 import { recordTitle } from '../forms';
 import type { RecordShape } from '../records';
 import { taxonomyProblems, type TaxonomyDeclaration } from '../taxonomy';
-import { manifestProblems, requestedGrants, type CmsPluginManifest, type PluginCommand, type SlotLink } from '../manifest';
+import { isPluginPoint, manifestProblems, providedPoints, requestedGrants, type CmsPluginManifest, type PluginCommand, type SlotLink } from '../manifest';
 import { ANONYMOUS, evaluateRule, hasPermission, PERMISSIONS, principalId, systemPrincipal, userPrincipal, type Principal } from '../permissions';
 import { AVATAR_TYPES, mediaUrl } from '../media';
 import { canonicalJson, declarationHash, resolveResource, type Resource, type ResourceAction, type ResourceDeclaration } from '../resource';
@@ -153,8 +153,18 @@ export interface PluginContext {
     /** Resource IDs the plugin declares. */
     readonly resources: readonly string[];
     readonly hooks: {
+        /** Handle a point the manifest lists in `hooks`: the CMS's own or one another plugin provides. */
         addAction<P>(point: ActionPoint<P>, handler: ActionHandler<P>, options?: { priority?: number }): void;
         addFilter<V, I>(point: FilterPoint<V, I>, handler: FilterHandler<V, I>, options?: { priority?: number }): void;
+        /**
+         * A point by name: one the manifest lists in `hooks` or `provides`, as the host built it
+         * from its provider's declaration. Cast it to the payload types the provider documents.
+         */
+        point<P>(name: string, kind: 'action'): ActionPoint<P>;
+        point<V, I = undefined>(name: string, kind: 'filter'): FilterPoint<V, I>;
+        /** Run the handlers of a point the plugin provides. Nothing runs while the plugin is inactive. */
+        doAction<P>(point: ActionPoint<P>, payload: P, options?: InvokeOptions): Promise<ActionReport>;
+        applyFilters<V, I>(point: FilterPoint<V, I>, value: V, input: I, options?: InvokeOptions): Promise<V>;
     };
     /** Handlers for the manifest's commands: `cossack <plugin>:<command>`. */
     readonly commands: { add(name: string, handler: CommandHandler): void };
@@ -273,6 +283,8 @@ export class CmsHost {
     #resources = new Map<string, Resource>();
     readonly #repositories = new Map<string, ResourceRepository>();
     readonly #plugins = new Map<string, HostedPlugin>();
+    /** Extension points plugins provide, by name, built from their manifests. */
+    readonly #pluginPoints = new Map<string, { readonly point: ExtensionPoint; readonly plugin: string }>();
     readonly #builtinCollections = new Map<string, CollectionDefinition>();
     readonly #builtinTaxonomies = new Map<string, TaxonomyDeclaration>();
     #collections = new Map<string, CollectionDefinition>();
@@ -309,6 +321,7 @@ export class CmsHost {
         for (const module of modules) for (const declaration of module.resources) this.#register(resolveResource(declaration, module.owner));
         for (const declaration of options.resources ?? []) this.#register(resolveResource(declaration, declaration.owner ?? 'app'));
         for (const registration of options.plugins ?? []) this.#host(registration);
+        this.#resolvePluginPoints();
         for (const taxonomy of [...modules.flatMap(module => module.taxonomies ?? []), ...(options.taxonomies ?? [])]) {
             const problems = taxonomyProblems(taxonomy);
             if (problems.length || this.#builtinTaxonomies.has(taxonomy.name)) throw new Error(`Taxonomy ${taxonomy.name}: ${problems.join(' ') || 'declared twice.'}`);
@@ -472,7 +485,7 @@ export class CmsHost {
     async uploadAvatar(userId: string, file: { name: string; contentType: string; size: number; body: ReadableStream<Uint8Array> }, context: { principal: Principal; signal?: AbortSignal }): Promise<string> {
         const self = context.principal.kind === 'user' && context.principal.id === userId;
         if (!self && !hasPermission(context.principal, PERMISSIONS.manageUsers)) throw new CmsError(context.principal.kind === 'anonymous' ? 'CMS_UNAUTHENTICATED' : 'CMS_FORBIDDEN', 'Not allowed to change this picture.');
-        if (!this.files) throw new CmsError('CMS_UNAVAILABLE', 'Media storage is not configured.');
+        if (!this.files) throw new CmsError('CMS_UNAVAILABLE', 'File storage is not configured.');
         if (!AVATAR_TYPES.includes(file.contentType.split(';')[0]!.trim().toLowerCase())) throw new CmsError('CMS_VALIDATION', 'Choose a PNG, JPEG, GIF, WebP or AVIF image.');
         const user = await this.users.get(userId);
         if (!user) throw new CmsError('CMS_NOT_FOUND', 'User not found.');
@@ -1716,15 +1729,47 @@ export class CmsHost {
         this.#plugins.set(registration.name, { registration, manifest, problems, resources, requested: problems.length ? [] : requestedGrants(manifest), commands: new Map() });
     }
 
+    /**
+     * Pair each plugin's `hooks` on another plugin's points with that plugin's `provides`. A
+     * consumer of a point no installed plugin provides, or of another version, is invalid.
+     * Registration order never matters: the registry matches points by name, and every point
+     * is built here before any plugin's `register()` runs.
+     */
+    #resolvePluginPoints(): void {
+        for (const plugin of this.#plugins.values()) {
+            if (plugin.problems.length) continue;
+            for (const point of providedPoints(plugin.manifest)) this.#pluginPoints.set(point.name, { point, plugin: plugin.manifest.name });
+        }
+        for (const plugin of [...this.#plugins.values()]) {
+            if (plugin.problems.length) continue;
+            const problems: string[] = [];
+            for (const hook of plugin.manifest.hooks ?? []) {
+                if (!isPluginPoint(hook.point)) continue;
+                const provided = this.#pluginPoints.get(hook.point);
+                if (!provided) problems.push(`hooks: ${hook.point} is provided by no installed plugin.`);
+                else if (provided.point.version !== hook.version) problems.push(`hooks: ${hook.point} is version ${provided.point.version}, not ${hook.version}.`);
+            }
+            if (problems.length) this.#plugins.set(plugin.manifest.name, { ...plugin, problems, requested: [] });
+        }
+    }
+
     #registerPlugin(plugin: HostedPlugin): void {
         const register = plugin.registration.module?.register;
         if (plugin.problems.length || typeof register !== 'function') return;
         const name = plugin.manifest.name;
         const active = () => this.pluginActive(name);
         const declared = new Set((plugin.manifest.hooks ?? []).map(hook => hook.point));
+        const provided = new Set((plugin.manifest.provides ?? []).map(declaration => declaration.point));
         const declaredCommands = new Set((plugin.manifest.commands ?? []).map(command => command.name));
-        const checkHook = (point: string) => {
-            if (!declared.has(point)) throw new Error(`Plugin ${name} registers ${point}, which its manifest does not declare in hooks.`);
+        const checkHook = (point: ExtensionPoint) => {
+            if (!declared.has(point.name)) throw new Error(`Plugin ${name} registers ${point.name}, which its manifest does not declare in hooks.`);
+            const known = this.#pluginPoints.get(point.name);
+            if (known && (known.point.kind !== point.kind || known.point.version !== point.version)) throw new Error(`Plugin ${name} registers ${point.name} as a version ${point.version} ${point.kind}; ${known.plugin} provides a version ${known.point.version} ${known.point.kind}.`);
+        };
+        const checkProvided = (point: ExtensionPoint) => {
+            const known = this.#pluginPoints.get(point.name);
+            if (!provided.has(point.name) || !known) throw new Error(`Plugin ${name} invokes ${point.name}, which its manifest does not declare in provides.`);
+            if (known.point.kind !== point.kind || known.point.version !== point.version) throw new Error(`Plugin ${name} invokes ${point.name} as a version ${point.version} ${point.kind}, not the version ${known.point.version} ${known.point.kind} it provides.`);
         };
         const context: PluginContext = {
             name,
@@ -1733,12 +1778,28 @@ export class CmsHost {
             hooks: {
                 // A disabled, unmigrated or ungranted plugin's handlers do not run.
                 addAction: (point, handler, options = {}) => {
-                    checkHook(point.name);
+                    checkHook(point);
                     this.hooks.addAction(point, async (payload, ctx) => { if (await active()) await handler(payload, ctx); }, { ...options, plugin: name });
                 },
                 addFilter: (point, handler, options = {}) => {
-                    checkHook(point.name);
+                    checkHook(point);
                     this.hooks.addFilter(point, async (value, ctx) => await active() ? handler(value, ctx) : value, { ...options, plugin: name });
+                },
+                point: ((pointName: string, kind: 'action' | 'filter') => {
+                    const known = this.#pluginPoints.get(pointName);
+                    if (!known || (!declared.has(pointName) && !provided.has(pointName))) throw new Error(`Plugin ${name} asks for ${pointName}, which its manifest does not declare in hooks or provides.`);
+                    if (known.point.kind !== kind) throw new Error(`${pointName} is ${known.point.kind === 'action' ? 'an action' : 'a filter'}, not ${kind === 'action' ? 'an action' : 'a filter'}.`);
+                    return known.point;
+                }) as PluginContext['hooks']['point'],
+                doAction: async (point, payload, options) => {
+                    checkProvided(point);
+                    if (!(await active())) return Object.freeze({ ok: true, outcomes: Object.freeze([]), failed: Object.freeze([]) });
+                    return this.hooks.doAction(point, payload, options);
+                },
+                applyFilters: async (point, value, input, options) => {
+                    checkProvided(point);
+                    if (!(await active())) return value;
+                    return this.hooks.applyFilters(point, value, ...[input, options] as never);
                 },
             },
             commands: {

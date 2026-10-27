@@ -1,16 +1,17 @@
 import { Cossack, Page, State, ClientState, Server, Client, OnWindow, PreventNavigation, type HeadValue } from '@cossackframework/core';
-import { Button, Checkbox, Input, Modal, NativeSelect, Textarea, toast } from '@cossackframework/ui';
+import { Button, Checkbox, Input, Modal, NativeSelect, Textarea, toast, CodeEditor } from '@cossackframework/ui';
 import { html, component, unsafeHTML, type TemplateResult } from '@cossackframework/renderer';
 import { blockId, evaluateRule, fieldVisibility, findBlock, flattenBlocks, flattenGroupFields, formatBytes, isCmsError, languageName, mediaKind, recordTitle, richTextBlocks, updateBlock, type Block, type BlockCondition, type EmbeddedBlock, type MediaKind, type RecordShape, type RichTextDoc } from '@cossackframework/cms';
 import { blockPanel } from '../../../../../../cms/block-panel';
 import { describeBlockError } from '../../../../../../cms/block-errors';
 import { styleValues, withStyle, type BlockTab, type StyleValues } from '../../../../../../cms/style-controls';
-import { renderMarkdown } from '@cossackframework/cms/server';
-import { contentField, editorView, entryValues, fieldErrors, mediaPreviews, parentOptions, patternBlocks, routeResource, saveEntry, termOptions, type MediaPreview, type SaveIntent } from '../../../../../../cms/content';
+import { renderMarkdown, type CmsHost } from '@cossackframework/cms/server';
+import { applyEntryJson, contentField, editorView, entryJson, entryValues, fieldErrors, mediaPreviews, parentOptions, patternBlocks, routeResource, saveEntry, termOptions, type MediaPreview, type SaveIntent } from '../../../../../../cms/content';
 import { blockDefaults, controlValue, editorBlocks, editorInput, entryUrl, suggestedSlug, type EditorBlock, type EditorField, type EditorValues, type EditorView, type TermOption } from '../../../../../../cms/editor';
 import { RichTextField, richTextEditors } from '../../../../../../cms/rich-text-field';
 import { BlockTree } from '../../../../../../cms/block-tree';
-import { bindingChoices, fieldControl, type BindingChoice } from '../../../../../../cms/field-controls';
+import { bindingChoices, fieldControl, groupFields, type BindingChoice } from '../../../../../../cms/field-controls';
+import { uploadFile } from '../../../../../../cms/media-chooser';
 import { FieldGroupView, plainBlocks, visibilityTypes, type RowPath } from '../../../../../../cms/field-group-view';
 import { box, CONTROL, linkButton, notice, shortDate, STATUS_LABELS, statusBadge } from '../../../../../../cms/ui';
 import { conditionControl, conditionFields } from '../../../../../../cms/condition-control';
@@ -55,6 +56,10 @@ export default class EntryEditor extends Cossack {
     @State() references: Record<string, { id: string; title: string }[]> = {};
     @State() previews: Record<string, MediaPreview> = {};
     @State() tabs: Record<string, 'write' | 'preview'> = {};
+    /** The editor's view: the fields, or the entry as JSON in the API's shape. */
+    @State() mode: 'edit' | 'json' = 'edit';
+    @State() json = '';
+    @State() jsonDirty = false;
     @State() rendered: Record<string, string> = {};
     @State() picker: { open: boolean; target: MediaTarget | null; search: string; kind: string; items: (MediaPreview & { size: string; name: string })[] } = { open: false, target: null, search: '', kind: '', items: [] };
     @State() termDrafts: Record<string, { name: string; parent: string }> = {};
@@ -567,12 +572,8 @@ export default class EntryEditor extends Cossack {
         const input = event.currentTarget as HTMLInputElement;
         const files = [...(input.files ?? [])];
         for (const file of files) {
-            const body = new FormData();
-            body.append('file', file);
-            const response = await fetch('/api/cms/media', { method: 'POST', body });
-            const result = await response.json().catch(() => ({ error: __('The upload failed.') })) as { files?: MediaPreview[]; error?: string };
-            if (!response.ok || !result.files?.length) { toast.error(result.error ?? __('The upload failed.')); continue; }
-            this.choose(result.files[0]!);
+            try { this.choose(await uploadFile(file)); }
+            catch (error) { toast.error((error as Error).message || __('The upload failed.')); }
         }
         input.value = '';
         await this.findMedia('', this.picker.kind);
@@ -710,8 +711,17 @@ export default class EntryEditor extends Cossack {
             this.dirty = false;
             this.unsaved = false;
             this.autosaved = this.snapshot();
+            this.settleUrl();
             if (this.message) toast.success(this.message);
         }
+    }
+
+    /** After the first save, the address becomes the entry's, without a reload: the editor keeps its state. */
+    @Client()
+    private settleUrl() {
+        if (this.id === 'new' || !window.location.pathname.endsWith('/new')) return;
+        const url = `/dashboard/content/${this.route}/${this.id}${window.location.search}${window.location.hash}`;
+        window.history.replaceState(window.history.state, '', url);
     }
 
     @Server()
@@ -720,25 +730,89 @@ export default class EntryEditor extends Cossack {
         this.errors = {};
         try {
             const record = await saveEntry(cms, this.route, this.id === 'new' ? null : this.id, values, intent, rev, this.c.get('principal'));
-            if (this.id === 'new') return this.redirect(`/dashboard/content/${this.route}/${record.id}?saved=1`);
-            this.rev = record.rev;
-            const view = this.view ?? await editorView(cms, this.route);
-            const before = this.savedStatus;
-            this.savedStatus = String(record.status ?? '');
-            this.values = await entryValues(cms, view, record);
-            this.previews = await mediaPreviews(cms, this.values, view);
-            const collection = cms.resourceById(view.resource).owner === 'cms' ? cms.collection(cms.resourceById(view.resource).name) : null;
-            const url = collection ? (await cms.entryUrls(collection, [record])).get(record.id) ?? null : null;
-            this.meta = { ...this.meta, updatedAt: record.updatedAt, url: view.publishable && record.status !== 'published' ? null : url };
-            this.autosaveOffer = null;
-            this.message = intent === 'trash' ? __('Moved to the trash.') : intent === 'restore' ? __('Restored as a draft.')
-                : record.status === 'scheduled' ? __('Scheduled.') : record.status === 'published' && before !== 'published' ? __('Published.')
-                : record.status === 'pending' && before !== 'pending' ? __('Submitted for review.') : __('Saved.');
-            await this.loadRevisions(record.id);
+            // A new entry becomes this editor's entry: the page stays, and the browser's URL follows.
+            if (this.id === 'new') this.id = record.id;
+            await this.refreshSaved(cms, record, intent);
         } catch (error) {
             this.errors = fieldErrors(error);
             this.error = isCmsError(error) ? error.message : __('The entry could not be saved.');
         }
+    }
+
+
+    /** What the editor shows after a write: the saved values, the status, the URL and the revisions. */
+    private async refreshSaved(cms: CmsHost, record: RecordShape, intent: SaveIntent) {
+        this.rev = record.rev;
+        const view = this.view ?? await editorView(cms, this.route);
+        const before = this.savedStatus;
+        this.savedStatus = String(record.status ?? '');
+        this.values = await entryValues(cms, view, record);
+        this.previews = await mediaPreviews(cms, this.values, view);
+        const collection = cms.resourceById(view.resource).owner === 'cms' ? cms.collection(cms.resourceById(view.resource).name) : null;
+        const url = collection ? (await cms.entryUrls(collection, [record])).get(record.id) ?? null : null;
+        this.meta = { ...this.meta, updatedAt: record.updatedAt, url: view.publishable && record.status !== 'published' ? null : url };
+        this.autosaveOffer = null;
+        this.message = intent === 'trash' ? __('Moved to the trash.') : intent === 'restore' ? __('Restored as a draft.')
+            : record.status === 'scheduled' ? __('Scheduled.') : record.status === 'published' && before !== 'published' ? __('Published.')
+            : record.status === 'pending' && before !== 'pending' ? __('Submitted for review.') : __('Saved.');
+        await this.loadRevisions(record.id);
+        if (this.mode === 'json' || this.json) { this.json = await entryJson(cms, this.route, record); this.jsonDirty = false; }
+    }
+
+    @Server()
+    async loadJson() {
+        const cms = this.c.get('cms');
+        try {
+            const { resource } = routeResource(cms, this.route);
+            const record = await cms.resource(resource.id).get(this.id, { principal: this.c.get('principal') });
+            if (!record) { this.error = __('This entry does not exist or you cannot read it.'); return; }
+            this.json = await entryJson(cms, this.route, record);
+            this.jsonDirty = false;
+        } catch (error) {
+            this.error = isCmsError(error) ? error.message : __('The entry could not be loaded.');
+        }
+    }
+
+    @Server()
+    async applyJson(text: string, rev: number) {
+        const cms = this.c.get('cms');
+        this.errors = {};
+        this.error = '';
+        try {
+            const record = await applyEntryJson(cms, this.route, this.id, text, rev, this.c.get('principal'));
+            await this.refreshSaved(cms, record, 'update');
+        } catch (error) {
+            this.errors = fieldErrors(error);
+            this.error = isCmsError(error) ? error.message : __('The entry could not be saved.');
+        }
+    }
+
+    @Client()
+    async showMode(mode: 'edit' | 'json') {
+        if (mode === this.mode) return;
+        this.mode = mode;
+        if (mode === 'json' && !this.jsonDirty) await this.loadJson();
+    }
+
+    @Client()
+    async submitJson() {
+        this.saving = true;
+        try { await this.applyJson(this.json, this.rev); }
+        finally { this.saving = false; }
+        if (this.error) toast.error(this.error);
+        else { this.dirty = false; this.unsaved = false; this.autosaved = this.snapshot(); toast.success(this.message || __('Saved.')); }
+    }
+
+    private jsonPanel(): TemplateResult {
+        return html`<div class="space-y-3" role="tabpanel" id="entry-json" aria-labelledby="entry-tab-json">
+            <p class="text-sm text-muted-foreground">${__('The entry as the content API answers it. Fields such as id, rev and url are read-only; everything else is saved as a PATCH would be, with the same checks.')}</p>
+            ${component(CodeEditor, { id: 'field-json', value: this.json, language: 'json', label: __('Entry JSON'), class: 'min-h-[24rem] rounded-md border border-input bg-background shadow-xs focus-within:border-ring focus-within:ring-ring/50 focus-within:ring-[3px]',
+                onChange: (value: string) => { this.json = value; this.jsonDirty = true; this.dirty = true; } })}
+            <div class="flex items-center gap-2">
+                ${component(Button, { type: 'button', size: 'sm', disabled: this.saving || !this.jsonDirty, '@click': () => this.submitJson() }, __('Apply JSON'))}
+                ${component(Button, { type: 'button', size: 'sm', variant: 'outline', disabled: this.saving, '@click': () => this.loadJson() }, __('Reload'))}
+            </div>
+        </div>`;
     }
 
     // --- Rendering -------------------------------------------------------------
@@ -786,6 +860,10 @@ export default class EntryEditor extends Cossack {
                 ${component(Checkbox, { checked: chosen.includes(choice.name), '@change': (event: Event) => change((event.target as HTMLInputElement).checked
                     ? [...new Set([...chosen, choice.name])].join('\n') : chosen.filter(name => name !== choice.name).join('\n')) })} ${choice.label}</label>`)}</div>`;
         }
+        // A group of an entry (a form's settings): its subfields with this editor's controls, media and Markdown included.
+        if (field.kind === 'json' && field.fields.length && target.block === undefined && !target.group) {
+            return groupFields(field, value, change, id, (sub, subValue, subChange, subId) => this.control(sub, subValue, subChange, { field: target.field, group: true, key: sub.name }, subId));
+        }
         // A form's notifications: a list of emails, not JSON.
         if (this.view?.route === 'forms' && field.name === 'notifications' && target.block === undefined) {
             return notificationRulesControl(String(value ?? ''), conditionFields(this.blocks('body'), this.view.blocks), id, change);
@@ -826,7 +904,8 @@ export default class EntryEditor extends Cossack {
             });
             default: if (field.media && field.kind === 'string') return this.mediaControl(target, value, field.label);
         }
-        return fieldControl(field, value, change, id, { options: this.references[field.name] ?? [], ...(target.block !== undefined && !field.media ? { bindings: this.bindings() } : {}) }) ?? html``;
+        return fieldControl(field, value, change, id, { options: this.references[field.name] ?? [], ...(target.block !== undefined && !field.media ? { bindings: this.bindings() } : {}),
+            ...(target.dialog && this.blockDialog ? { language: String(this.blockDialog.values.language ?? '') } : {}) }) ?? html``;
     }
 
     /** The entry's fields a block's text may show (`{{ $.price }}`): the collection's and its field groups', apart from blocks and rich text. */
@@ -1180,14 +1259,20 @@ export default class EntryEditor extends Cossack {
                     <a href=${form ? '/dashboard/forms' : base} class="text-muted-foreground hover:text-foreground">← ${__('All')} ${view.label.toLowerCase()}</a>
                 </div>
             </div>
+            ${this.id !== 'new' ? html`<div role="tablist" aria-label=${__('Editor view')} class="flex gap-1 border-b border-border">
+                ${(['edit', 'json'] as const).map(mode => html`<button type="button" role="tab" id=${`entry-tab-${mode}`} aria-selected=${this.mode === mode ? 'true' : 'false'} aria-controls=${mode === 'json' ? 'entry-json' : 'entry-fields'}
+                    class=${`-mb-px border-b-2 px-3 py-2 text-sm font-medium bg-transparent cursor-pointer ${this.mode === mode ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+                    @click=${() => this.showMode(mode)}>${mode === 'json' ? 'JSON' : __('Edit')}</button>`)}
+            </div>` : null}
             ${this.message ? notice(this.message, 'success') : null}
             ${this.error ? notice(this.describe(this.error), 'error') : null}
+            ${this.mode === 'json' ? this.jsonPanel() : null}
             ${this.autosaveOffer ? html`<div role="status" class="flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-foreground">
                 <span>${this.id === 'new' ? __('You have unsaved work from') : __('There is an autosave of this entry that is newer than the version below, from')} ${shortDate(this.autosaveOffer.at)}.</span>
                 <span class="flex gap-2">${component(Button, { type: 'button', size: 'sm', '@click': () => this.restore() }, __('Restore the autosave'))}
                     ${component(Button, { type: 'button', size: 'sm', variant: 'ghost', '@click': () => this.dismissAutosave() }, __('Dismiss'))}</span>
             </div>` : null}
-            <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
+            <div id="entry-fields" role="tabpanel" aria-labelledby="entry-tab-edit" class=${`grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem] ${this.mode === 'json' ? 'hidden' : ''}`}>
                 <div class="min-w-0 space-y-5">
                     ${titleField ? html`<div class="space-y-1">
                         <label for="field-title" class="sr-only">${__('Title')}</label>

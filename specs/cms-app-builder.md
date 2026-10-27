@@ -180,6 +180,17 @@ Before-write filters validate a draft under a deadline before the batch is
 prepared. After-commit actions run from the outbox. No external effects inside a
 filter.
 
+Plugins define extension points too. A manifest's `provides` lists them as
+`<plugin>.<name>` with a kind, a version and an optional per-handler timeout; the
+host builds the points from the manifests before any plugin's `register()` runs,
+so load order never matters. The provider invokes its own points through
+`context.hooks.doAction` and `applyFilters` (nothing runs while it is inactive);
+a consumer lists the point in `hooks` with the provider's version, gets the
+`hook:<point>` grant like any other, and finds the point by name with
+`context.hooks.point(name, kind)`. A consumer of a point no installed plugin
+provides, or of another version, is an invalid plugin. Payload types are the
+provider's own TypeScript; nothing is generated.
+
 A plugin package carries a JSON manifest and source and never executes during
 installation. `cossack add plugin` renders it through the scaffold recipe engine
 into `src/plugins/<name>/`, using the engine's conflict-safe change sets and

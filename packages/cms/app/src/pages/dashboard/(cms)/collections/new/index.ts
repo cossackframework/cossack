@@ -1,10 +1,10 @@
 import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackframework/core';
-import { Button, Card, CardBody, Field, Input, NativeSelect } from '@cossackframework/ui';
+import { Button, Card, CardBody, Field, IconPicker, Input, NativeSelect } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { isCmsError, PERMISSIONS } from '@cossackframework/cms';
 import { collectionName } from '../../../../../cms/builder';
 import { requireAny } from '../../../../../cms/guards';
-import { COLLECTION_ICONS } from '../../../../../cms/icons';
+import { ICONS } from '../../../../../cms/icons';
 import { notice, pageHeader } from '../../../../../cms/ui';
 
 /** A new collection: its names and icon; the builder takes over once it exists. */
@@ -56,9 +56,8 @@ export default class NewCollectionPage extends Cossack {
                         control: attributes => component(Input, { ...attributes, '.value': this.draft.label, '@input': (event: Event) => this.setDraft('label', (event.target as HTMLInputElement).value) }) })}
                     ${component(Field, { label: __('Singular name'), for: 'collection-singular', hint: __('Such as Product.'),
                         control: attributes => component(Input, { ...attributes, '.value': this.draft.singular, '@input': (event: Event) => this.setDraft('singular', (event.target as HTMLInputElement).value) }) })}
-                    ${component(Field, { label: __('Icon'), for: 'collection-icon',
-                        control: attributes => component(NativeSelect, { ...attributes, '@change': (event: Event) => this.setDraft('icon', (event.target as HTMLSelectElement).value) }, html`
-                            ${COLLECTION_ICONS.map(name => html`<option value=${name} ?selected=${name === this.draft.icon}>${name}</option>`)}`) })}
+                    ${component(Field, { label: __('Icon'), for: 'collection-icon-picker',
+                        control: () => component(IconPicker, { id: 'collection-icon', value: this.draft.icon, icons: ICONS, label: __('Icon'), allowEmpty: false, onChange: (name: string) => this.setDraft('icon', name) }) })}
                     ${component(Button, { type: 'submit', disabled: !collectionName(this.draft.label) }, __('Create collection'))}
                 </form>`))}
         </div>`;

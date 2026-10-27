@@ -85,3 +85,15 @@ Findings:
   the system preference instead.
 - A collection with several blocks fields renders all of them into `entry.blocks`, in
   declared order; `entry.fields` keeps them apart for themes that place them differently.
+
+## UX follow-ups (2026-10-27)
+
+From `plan-cms-ux-improvements.md`:
+
+- **Saving stays in place.** Creating an entry no longer redirects to `?saved=1`: `save()` adopts the new ID, refreshes the editor's state, and the client replaces the address (`settleUrl`). No unload happens, so no session-storage draft is left to be recovered on the next new entry.
+- **Edit and JSON tabs.** A saved entry has a JSON tab showing it as the content API answers it (`entryJson`), edited in the `CodeEditor` and applied like a `PATCH` (`applyEntryJson` drops the read-only fields and writes through the same validation).
+- **Group fields render their subfields** (`groupFields`), so a form's settings are controls, not JSON.
+- **`CodeEditor` (`@cossackframework/ui`)**: CodeMirror 6 loaded in the browser on first use, languages on demand; the Code block's `code` field is `format: 'code'` with the block's `language`; revisions show JSON fields as a line diff and keep the word diff for blocks.
+- **Blocks** declare `keywords` (searched by the picker) and `common` (offered in forms and field groups too); both field families are listed as "Fields"; the binding button is always shown on a block's text controls, disabled when the entry has no fields.
+- **Files**: any type uploads through `POST /api/cms/uploads` + PUT (to the bucket when the provider presigns, else to the application) + `complete`; SVG is sanitized; `Settings → Files` holds the only size limit.
+

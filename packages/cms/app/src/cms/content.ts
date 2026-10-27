@@ -154,7 +154,7 @@ import type { MediaPreview } from './field-controls';
 export async function blockOptions(cms: CmsHost): Promise<BlockOption[]> {
     return (await cms.blocks()).map(block => ({ name: block.name, label: block.label, description: block.description ?? '', icon: block.icon ?? '',
         category: blockCategory(block), fields: editorFields(block.fields, []),
-        children: block.children ? { allowed: [...(block.children.allowed ?? [])], max: block.children.max ?? null } : null, parent: [...(block.parent ?? [])], supports: [...blockSupports(block)], field: block.field?.kind ?? '', input: Boolean(block.input) }));
+        children: block.children ? { allowed: [...(block.children.allowed ?? [])], max: block.children.max ?? null } : null, parent: [...(block.parent ?? [])], supports: [...blockSupports(block)], field: block.field?.kind ?? '', input: Boolean(block.input), keywords: [...(block.keywords ?? [])], common: block.common === true }));
 }
 
 /** Previews of files by ID; missing files are left out. */
@@ -318,4 +318,28 @@ export async function runEntryCommand(cms: CmsHost, action: EntryAction, input: 
 /** The CMS error's field messages with labels, for showing next to controls. */
 export function fieldErrors(error: unknown): Record<string, string> {
     return isCmsError(error) && error.fields ? { ...error.fields } : {};
+}
+
+/** Fields the API answers but no one writes: the JSON tab shows them and ignores edits to them. */
+const READ_ONLY_JSON = new Set(['id', 'rev', 'createdAt', 'updatedAt', 'createdBy', 'updatedBy', 'url', 'html']);
+
+/** An entry as the content API answers it, as indented JSON for the editor's JSON tab. */
+export async function entryJson(cms: CmsHost, route: string, record: RecordShape): Promise<string> {
+    const { collection } = routeResource(cms, route);
+    const url = collection ? (await cms.entryUrls(collection, [record])).get(record.id) ?? null : null;
+    return JSON.stringify({ ...record, ...(collection ? { url } : {}) }, null, 2);
+}
+
+/**
+ * Save an entry from the JSON tab: the document is the API's shape, so read-only fields are
+ * dropped and the rest is written as a `PATCH /api/cms/content/<collection>/<id>` would be,
+ * through the same validation.
+ */
+export async function applyEntryJson(cms: CmsHost, route: string, id: string, text: string, revision: number, principal: Principal): Promise<RecordShape> {
+    let parsed: unknown;
+    try { parsed = JSON.parse(text); } catch (error) { throw new CmsError('CMS_VALIDATION', `The JSON is not valid: ${(error as Error).message}`); }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new CmsError('CMS_VALIDATION', 'The JSON must be an object of the entry\'s fields.');
+    const fields = Object.fromEntries(Object.entries(parsed as Record<string, unknown>).filter(([name]) => !READ_ONLY_JSON.has(name)));
+    const { resource } = routeResource(cms, route);
+    return cms.resource(resource.id).update(id, fields, { principal, expectedRevision: revision });
 }

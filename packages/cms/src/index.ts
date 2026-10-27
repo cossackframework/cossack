@@ -30,8 +30,8 @@ export { CORE_BLOCKS, BLOCK_CATEGORIES, BLOCK_NAME, BLOCK_LIMITS, FIELD_BLOCK_KI
     type BlockCondition, type ConditionRule, type ConditionOperator, type InputKind, type FieldBlockKind, type ValidateBlocksOptions } from './blocks';
 export { hasBinding, bindingPaths, bindingValue, bindingText, resolveBindings, resolveBlockBindings, withBinding } from './bindings';
 export { formInput, formValue, recordTitle, isSameOriginPost, type FormInput, type SubmittedForm } from './forms';
-export { manifestProblems, validateManifest, requestedGrants, commandInput, ManifestError, HOST_SLOTS, type CmsPluginManifest, type PluginCommand, type CommandOption, type SlotLink, type HostSlot } from './manifest';
-export { MEDIA_TYPES, AVATAR_TYPES, MEDIA_FILTERS, mediaKind, mediaUrl, formatBytes, matchesSignature, imageSize, type MediaKind } from './media';
+export { manifestProblems, validateManifest, requestedGrants, commandInput, isPluginPoint, pointOwner, providedPoints, ManifestError, HOST_SLOTS, type CmsPluginManifest, type ProvidedPoint, type PluginCommand, type CommandOption, type SlotLink, type HostSlot } from './manifest';
+export { MEDIA_TYPES, AVATAR_TYPES, ARCHIVE_TYPES, SVG_TYPE, MEDIA_FILTERS, MEDIA_FILTER_EXCLUDES, mediaKind, mediaUrl, formatBytes, matchesSignature, imageSize, declaredType, sanitizeSvg, type MediaKind } from './media';
 export { taxonomyProblems, type TaxonomyDeclaration, type TermShape } from './taxonomy';
 export { general, media, appearance, writing, reading, discussion, seo, languages, DATE_FORMATS, TIME_FORMATS, TITLE_SEPARATORS, formatSiteDate, validTimeZone, type SettingsGroup, type SettingDeclaration, type SettingSource, type SiteSettings } from './settings';
 export type { CmsModule, ModuleContext } from './module';

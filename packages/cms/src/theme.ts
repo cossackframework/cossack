@@ -420,6 +420,17 @@ export interface EntryView {
     readonly locale: string;
     /** Comments, when the collection takes them and the view is full; else null. */
     readonly comments: CommentsView | null;
+    /** Password protected and not unlocked by this visitor: the excerpt, body and blocks are withheld. */
+    readonly locked: boolean;
+}
+
+/** What the password form of a protected entry shows. */
+export interface LockedView {
+    readonly entry: EntryView;
+    /** Where the form posts: the entry's own URL. */
+    readonly action: string;
+    /** Set after a wrong password. */
+    readonly error: boolean;
 }
 
 export interface Paging {
@@ -461,6 +472,8 @@ export interface SiteView {
     readonly homeUrl: string;
     /** The blocks of the theme's widget areas, by area; render them with `helpers.block`. */
     readonly areas: { readonly [area: string]: readonly RenderedBlock[] };
+    /** The template of the entry shown, such as `entry-blank`, so a layout can leave out its frame; null elsewhere. */
+    readonly template: string | null;
 }
 
 /** Plain JSON a theme's loaders return. */
@@ -507,6 +520,8 @@ export interface SiteTheme {
     home?(view: ArchiveView, helpers: ThemeHelpers): TemplateResult;
     search?(view: ArchiveView, helpers: ThemeHelpers): TemplateResult;
     notFound?(helpers: ThemeHelpers): TemplateResult;
+    /** The form asking for a protected entry's password; the host draws a plain one otherwise. */
+    password?(view: LockedView, helpers: ThemeHelpers): TemplateResult;
     /** Tags for the document head: stylesheets, fonts, meta. The page's own title and meta win. */
     head?(site: SiteView, helpers: ThemeHelpers): HeadValue;
     /**
@@ -519,7 +534,7 @@ export interface SiteTheme {
 }
 
 /** Template files that fill the theme's named slots; every other file is a specific template. */
-const TEMPLATE_FILES: { readonly [stem: string]: keyof SiteTheme } = { layout: 'layout', entry: 'entry', archive: 'archive', home: 'home', search: 'search', 'not-found': 'notFound', head: 'head' };
+const TEMPLATE_FILES: { readonly [stem: string]: keyof SiteTheme } = { layout: 'layout', entry: 'entry', archive: 'archive', home: 'home', search: 'search', 'not-found': 'notFound', head: 'head', password: 'password' };
 /** Names a specific template can have. */
 export const SPECIFIC_TEMPLATE = /^(?:entry-[a-z][a-z0-9_-]*|archive-[a-z][a-z0-9_-]*|term(?:-[a-z][a-z0-9_-]*)?)$/;
 

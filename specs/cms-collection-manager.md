@@ -49,7 +49,7 @@ So the revision is mostly about removing one concept, not adding three.
    - "Add fields" in the manager creates a group pre-targeted at the collection and opens its editor (`/dashboard/field-groups/new?collection=<name>`). Groups made this way are ordinary groups; nothing is "owned" by a collection.
 
 2. **Features = the standard fields and behaviours, as toggles with fixed names.** The existing settings (`slug`, `publishable`, `hierarchical`, `comments`, `path`, taxonomies) are already features; the section adds the fields posts and pages declare by hand today:
-   - `content` (blocks, searchable), `excerpt` (text), `featuredImage` (media, sidebar), `author` (shown in the editor; ownership already exists), `revisions` (already on the resource, default on; exposed), `menuOrder` stays tied to `hierarchical`.
+   - `content` (blocks, searchable), `excerpt` (text), `featuredImage` (media, sidebar), `password` (string, sidebar: visitors type it to read the entry; on for posts and pages, see `specs/cms-appearance.md`), `author` (shown in the editor; ownership already exists), `revisions` (already on the resource, default on; exposed), `menuOrder` stays tied to `hierarchical`.
    - `title` stays always on: lists, search, slugs and `titleField` depend on it. Not a toggle.
    - Model: `CollectionDefinition.features?: { content?, excerpt?, featuredImage?, author?, revisions? }`, derived in `collectionResource` like `slug` is now, with fixed labels and placements. Posts and pages declare them as features instead of `fields`; `sticky` stays a declared built-in field of posts.
    - Rule: a feature name is reserved; no group may declare `content`, `excerpt` or `featuredImage` (extend the `scope` check in `fieldGroupProblems`).

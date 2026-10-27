@@ -17,6 +17,16 @@ Updated 2026-10-16. See [Outcome](#outcome).
   previews, SEO). A route a theme needs beyond the content, such as a custom form, is an
   ordinary plugin page under `pages/`, present whether or not the theme is active; a path the
   application also defines stays a build error.
+- **A blank canvas is the layout's call.** `SiteView.template` names the template of the entry
+  shown (`entry-blank` in the default theme, which ships `templates/entry-blank.ts` with the
+  content alone), so a layout can leave out its header and footer for landing pages while the
+  catch-all keeps resolving the URL. Themes own the frame; the host never skips `layout`.
+- **Password protection.** The `password` collection feature adds a sidebar field. The site
+  shows a visitor the title and a password form (`templates/password.ts` restyles it), posts
+  it to the entry's URL, and remembers a right answer in a cookie for ten days; editors who
+  may update the entry read it without one. Search leaves protected entries out, lists show
+  their titles without excerpts, and the content API withholds their content, never sending
+  the password.
 - **Template files.** One template per file under `src/plugins/<theme>/templates/`, each a
   default export, in the registry of every environment (`registration.templates`, keyed by file
   stem). `layout.ts`, `entry.ts`, `archive.ts`, `home.ts`, `search.ts` and `not-found.ts` fill the

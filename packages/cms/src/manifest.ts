@@ -5,6 +5,7 @@
  */
 import { blockProblems, type BlockDeclaration } from './blocks';
 import { collectionProblems, type CollectionDefinition } from './collections';
+import { defineAction, defineFilter, type ExtensionPoint } from '@cossackframework/core/hooks';
 import { EXTENSION_POINTS } from './hooks';
 import { OWNER_NAME, resourceProblems, type ResourceAction, type ResourceDeclaration } from './resource';
 import { themeProblems, type ThemeManifest } from './theme';
@@ -22,6 +23,18 @@ export interface PluginCommand {
     readonly options?: { readonly [name: string]: CommandOption };
     /** Permission the operator needs, in addition to the dashboard. */
     readonly permission?: string;
+}
+
+/** An extension point a plugin defines. */
+export interface ProvidedPoint {
+    /** `<plugin>.<name>`, such as `shop.order-placed`. */
+    readonly point: string;
+    readonly kind: 'action' | 'filter';
+    /** Incremented for incompatible payload or value changes. */
+    readonly version: number;
+    /** Per-handler deadline in milliseconds. Default 5000. */
+    readonly timeoutMs?: number;
+    readonly description?: string;
 }
 
 export interface SlotLink {
@@ -48,8 +61,17 @@ export interface CmsPluginManifest {
     readonly collections?: readonly Omit<CollectionDefinition, 'builtin' | 'plugin'>[];
     /** Block types named `<plugin>/<name>`; `ui.ts` renders them through its `blocks` export. */
     readonly blocks?: readonly BlockDeclaration[];
-    /** Extension points the plugin's server code registers handlers for. */
+    /**
+     * Extension points the plugin's server code registers handlers for: the CMS's own, or those
+     * another installed plugin `provides`. Each needs the `hook:<point>` grant.
+     */
     readonly hooks?: readonly { readonly point: string; readonly version: number }[];
+    /**
+     * Extension points the plugin defines for other plugins, named `<plugin>.<point>`. The host
+     * builds them from this list; the plugin invokes them through `context.hooks.doAction` and
+     * `applyFilters`, and a consumer looks one up by name with `context.hooks.point()`.
+     */
+    readonly provides?: readonly ProvidedPoint[];
     readonly permissions?: {
         /** Access to resources the plugin does not own: `{ "cms/posts": ["read"] }`. */
         readonly resources?: { readonly [resource: string]: readonly ResourceAction[] };
@@ -78,10 +100,30 @@ export interface CmsPluginManifest {
 export const HOST_SLOTS = Object.freeze(['dashboard.nav', 'dashboard.overview'] as const);
 export type HostSlot = (typeof HOST_SLOTS)[number];
 
-const KNOWN_FIELDS = new Set(['schemaVersion', 'name', 'version', 'description', 'author', 'authorUrl', 'compatibility', 'dependencies', 'resources', 'collections', 'blocks', 'hooks', 'permissions', 'ui', 'commands', 'theme', 'logo', 'cover', 'package', 'source']);
+const KNOWN_FIELDS = new Set(['schemaVersion', 'name', 'version', 'description', 'author', 'authorUrl', 'compatibility', 'dependencies', 'resources', 'collections', 'blocks', 'hooks', 'permissions', 'ui', 'provides', 'commands', 'theme', 'logo', 'cover', 'package', 'source']);
 const ARTWORK = /^assets\/[A-Za-z0-9][A-Za-z0-9._-]{0,80}\.(?:png|jpe?g|webp|gif|avif|svg)$/;
 const HOST = /^(?:\*\.)?(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$|^localhost$/;
 const ACTIONS = new Set(['read', 'create', 'update', 'delete']);
+/** An extension point name, as `@cossackframework/core/hooks` accepts it. */
+const POINT = /^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$/;
+
+/** Whether a point name belongs to a plugin rather than the CMS: `<plugin>.<name>` with a plugin prefix other than `cms`. */
+export function isPluginPoint(point: string): boolean {
+    return POINT.test(point) && point.includes('.') && !point.startsWith('cms.');
+}
+
+/** The plugin a point name belongs to: the segment before its first dot. */
+export function pointOwner(point: string): string {
+    return point.slice(0, point.indexOf('.'));
+}
+
+/** The extension points a manifest provides, built for the hook registry. Call on a valid manifest. */
+export function providedPoints(manifest: CmsPluginManifest): ExtensionPoint[] {
+    return (manifest.provides ?? []).map(declaration => {
+        const options = { version: declaration.version, ...(declaration.timeoutMs !== undefined ? { timeoutMs: declaration.timeoutMs } : {}) };
+        return declaration.kind === 'action' ? defineAction(declaration.point, options) : defineFilter(declaration.point, options);
+    });
+}
 
 /** Problems with a manifest's CMS fields. Empty when it can be hosted. */
 export function manifestProblems(manifest: unknown): string[] {
@@ -116,10 +158,26 @@ export function manifestProblems(manifest: unknown): string[] {
         if (blockNames.has(block.name)) problems.push(`block ${block.name} is declared twice.`);
         blockNames.add(block.name);
     }
+    const provided = new Set<string>();
+    for (const [index, declaration] of (Array.isArray(value.provides) ? value.provides : value.provides === undefined ? [] : [null]).entries()) {
+        if (!declaration || typeof declaration !== 'object') { problems.push(`provides[${index}] must be an extension point declaration.`); continue; }
+        const point = String(declaration.point);
+        if (typeof declaration.point !== 'string' || !isPluginPoint(declaration.point) || pointOwner(declaration.point) !== name) problems.push(`provides: ${point} must be named ${name}.<name>.`);
+        else if (provided.has(point)) problems.push(`provides: ${point} is declared twice.`);
+        provided.add(point);
+        if (declaration.kind !== 'action' && declaration.kind !== 'filter') problems.push(`provides: ${point} must be an action or a filter.`);
+        if (!Number.isSafeInteger(declaration.version) || declaration.version < 1) problems.push(`provides: ${point} needs a version of 1 or more.`);
+        if (declaration.timeoutMs !== undefined && (!Number.isSafeInteger(declaration.timeoutMs) || declaration.timeoutMs < 1 || declaration.timeoutMs > 600_000)) problems.push(`provides: ${point} timeoutMs must be 1 to 600000.`);
+        if (declaration.description !== undefined && (typeof declaration.description !== 'string' || declaration.description.length > 300)) problems.push(`provides: ${point} description is at most 300 characters.`);
+    }
     const points = new Map(EXTENSION_POINTS.map(point => [point.name, point.version]));
     for (const hook of value.hooks ?? []) {
-        if (!points.has(hook?.point)) problems.push(`hooks: ${String(hook?.point)} is not a CMS extension point.`);
-        else if (hook.version !== points.get(hook.point)) problems.push(`hooks: ${hook.point} is version ${points.get(hook.point)}, not ${String(hook.version)}.`);
+        const point = hook?.point;
+        // A plugin's point is checked against its provider when the host loads both.
+        if (typeof point === 'string' && isPluginPoint(point)) {
+            if (!Number.isSafeInteger(hook.version) || hook.version < 1) problems.push(`hooks: ${point} needs a version of 1 or more.`);
+        } else if (!points.has(point)) problems.push(`hooks: ${String(point)} is not a CMS extension point.`);
+        else if (hook.version !== points.get(point)) problems.push(`hooks: ${point} is version ${points.get(point)}, not ${String(hook.version)}.`);
     }
     const permissions = value.permissions ?? {};
     for (const [resource, actions] of Object.entries(permissions.resources ?? {})) {

@@ -9,7 +9,7 @@ export { collectionSpec, searchTextPath, defineFieldRql, indexRql, readCatalog, 
 export { HOST_STEPS, HOST_TABLES } from './host-schema';
 export { Outbox, type DispatchReport, type OutboxOptions } from './outbox';
 export { CmsUsers, normalizeEmail, type CmsUser, type CmsRole, type UserPage } from './users';
-export { FileService, type CmsFile, type FileServiceOptions, type FileMetadata } from './files';
+export { FileService, type CmsFile, type FileServiceOptions, type FileMetadata, type PendingUpload } from './files';
 export { CmsTaxonomies, freeSlug, type TermUsage, type TermInput } from './taxonomies';
 export { CmsSettings } from './site-settings';
 export { renderMarkdown, excerptOf } from './markdown';
@@ -30,3 +30,4 @@ export { sha256Hex, randomToken, base64Url, timingSafeEqual } from './tokens';
 export { FORMAT_TYPES, negotiateFormat, type ImageTransformer, type ImageTransformRequest, type ImageFormat } from './images';
 export { CmsSecurity, SIGN_IN_ATTEMPTS, type PasskeyInfo, type StoredPasskeyRow, type SecurityStatus, type ChallengeKind } from './security';
 export * from '../index';
+export { seedStarterContent, type SeedReport } from './seed';

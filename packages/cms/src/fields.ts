@@ -58,7 +58,8 @@ export interface FieldDeclaration {
     /** Where the dashboard editor shows the field. Default: by kind. */
     readonly placement?: 'main' | 'sidebar';
     /** text: how the dashboard edits and the site renders the value. */
-    readonly format?: 'plain' | 'markdown';
+    /** text: `markdown` for a short passage with formatting, `code` for source edited in a code editor. */
+    readonly format?: 'plain' | 'markdown' | 'code';
     /** json: a group of declared subfields; the value is an object of them, each optional. rows: the fields of each row. */
     readonly fields?: { readonly [name: string]: FieldDeclaration };
     /**
@@ -173,7 +174,7 @@ export function fieldProblems(name: string, declaration: FieldDeclaration, depth
     if (declaration.slugFrom !== undefined && (kind !== 'string' || typeof declaration.slugFrom !== 'string' || !FIELD_NAME.test(declaration.slugFrom))) problems.push(`${at}: slugFrom applies to string fields and names another field.`);
     if (declaration.taxonomy !== undefined && (kind !== 'list' || declaration.items !== 'string' || !TAXONOMY_NAME.test(declaration.taxonomy))) problems.push(`${at}: taxonomy applies to lists of strings and names a taxonomy.`);
     if (declaration.media !== undefined && (!(kind === 'string' || (kind === 'list' && declaration.items === 'string')) || typeof declaration.media !== 'boolean')) problems.push(`${at}: media applies to string fields and lists of strings.`);
-    if (declaration.format !== undefined && (kind !== 'text' || !['plain', 'markdown'].includes(declaration.format))) problems.push(`${at}: format applies to text fields and is plain or markdown.`);
+    if (declaration.format !== undefined && (kind !== 'text' || !['plain', 'markdown', 'code'].includes(declaration.format))) problems.push(`${at}: format applies to text fields and is plain, markdown or code.`);
     if (kind === 'rows') {
         const entries = declaration.fields && typeof declaration.fields === 'object' ? Object.entries(declaration.fields) : [];
         if (!entries.length || entries.length > 48) problems.push(`${at}: rows hold 1-48 fields.`);

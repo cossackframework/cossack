@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-    commandInput, declarationHash, defineResource, evaluateRule, field, formInput, formValue, manifestProblems, permissionMatches,
+    commandInput, declarationHash, defineResource, evaluateRule, field, formInput, formValue, isPluginPoint, manifestProblems, permissionMatches, providedPoints,
     requestedGrants, resolveResource, resourceProblems, storageCheck, storageName, userPrincipal, validateValue,
 } from '../src/index';
 import { planSchema, type Catalog } from '../src/server/schema';
@@ -90,6 +90,23 @@ describe('plugin manifests', () => {
         expect(manifestProblems({ ...manifest, hooks: [{ point: 'cms.resource.after-commit', version: 2 }], extra: true, permissions: { define: ['other:x'], network: ['not a host'] } }))
             .toEqual(['extra is not a manifest field.', 'hooks: cms.resource.after-commit is version 1, not 2.', 'permissions.network: not a host is not a host name.', 'permissions.define: other:x must be named desk:<name>.']);
         expect(manifestProblems({ ...manifest, ui: { slots: { 'dashboard.footer': [] } } })).toEqual([expect.stringContaining('not a host slot')]);
+    });
+
+    it('lets a plugin provide extension points and others hook into them', () => {
+        const provider = { ...manifest, provides: [{ point: 'desk.ticket-closed', kind: 'action', version: 2, timeoutMs: 100 }, { point: 'desk.priority', kind: 'filter', version: 1, description: 'The priority of a new ticket.' }] };
+        expect(manifestProblems(provider)).toEqual([]);
+        const [closed, priority] = providedPoints(provider as never);
+        expect(closed).toMatchObject({ name: 'desk.ticket-closed', kind: 'action', version: 2, timeoutMs: 100 });
+        expect(priority).toMatchObject({ name: 'desk.priority', kind: 'filter', version: 1, timeoutMs: 5_000 });
+        expect(manifestProblems({ ...manifest, provides: [{ point: 'other.x', kind: 'action', version: 1 }, { point: 'desk.y', kind: 'event', version: 0, timeoutMs: 0 }, { point: 'desk.y', kind: 'filter', version: 1 }] })).toEqual([
+            'provides: other.x must be named desk.<name>.', 'provides: desk.y must be an action or a filter.', 'provides: desk.y needs a version of 1 or more.', 'provides: desk.y timeoutMs must be 1 to 600000.', 'provides: desk.y is declared twice.']);
+        // A consumer names another plugin's point; the host checks it against the provider.
+        const consumer = { schemaVersion: 1, name: 'loyalty', version: '1.0.0', hooks: [{ point: 'desk.ticket-closed', version: 2 }, { point: 'cms.nope', version: 1 }, { point: 'desk.priority', version: 0 }] };
+        expect(manifestProblems(consumer)).toEqual(['hooks: cms.nope is not a CMS extension point.', 'hooks: desk.priority needs a version of 1 or more.']);
+        expect(requestedGrants({ ...consumer, hooks: consumer.hooks.slice(0, 1) } as never)).toEqual(['hook:desk.ticket-closed']);
+        expect(isPluginPoint('desk.ticket-closed')).toBe(true);
+        expect(isPluginPoint('cms.resource.before-write')).toBe(false);
+        expect(isPluginPoint('nodot')).toBe(false);
     });
 
     it('checks command input against declared options', () => {
@@ -184,6 +201,26 @@ describe('content helpers', () => {
         expect(matchesSignature('image/jpeg', jpeg)).toBe(true);
         expect(imageSize('image/jpeg', jpeg)).toEqual({ width: 32, height: 16 });
         expect(matchesSignature('text/plain', new Uint8Array([104, 0, 105]))).toBe(false);
+        const { declaredType, mediaKind, sanitizeSvg } = await import('../src/index');
+        const text = (value: string) => new TextEncoder().encode(value);
+        // SVG by its root element; any other type by its declaration alone.
+        expect(matchesSignature('image/svg+xml', text('<?xml version="1.0"?>\n<!-- made by hand -->\n<svg xmlns="http://www.w3.org/2000/svg"></svg>'))).toBe(true);
+        expect(matchesSignature('image/svg+xml', text('<html><svg></svg></html>'))).toBe(false);
+        expect(matchesSignature('application/zip', new Uint8Array([1, 2, 3]))).toBe(true);
+        expect(matchesSignature('application/x-msdownload', new Uint8Array([77, 90]))).toBe(true);
+        expect(declaredType('Image/PNG; charset=binary')).toBe('image/png');
+        expect(declaredType('')).toBe('application/octet-stream');
+        expect(declaredType('not a type')).toBe('application/octet-stream');
+        expect(mediaKind('application/zip')).toBe('archive');
+        expect(mediaKind('application/pdf')).toBe('document');
+        expect(mediaKind('image/svg+xml')).toBe('image');
+        const dirty = '<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"><script>alert(2)</script><a href="javascript:alert(3)"><circle r="1" fill="url(http://evil.example/x)"/></a>'
+            + '<use href="#ok"/><image href="https://evil.example/track.png"/><foreignObject><body onclick="x"></body></foreignObject><set attributeName="x" to="1"/></svg>';
+        const clean = sanitizeSvg(dirty)!;
+        expect(clean).not.toMatch(/script|onload|onclick|javascript|evil\.example|foreignObject|<set/i);
+        expect(clean).toContain('<use href="#ok"/>');
+        expect(clean).toContain('<circle r="1" fill="none"/>');
+        expect(sanitizeSvg('<html><body>no</body></html>')).toBeNull();
     });
 
     it('renders Markdown with raw HTML escaped', async () => {

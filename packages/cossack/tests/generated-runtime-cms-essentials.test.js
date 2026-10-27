@@ -20,7 +20,7 @@ afterEach(cleanupRoots);
 const doc = (...content) => ({ type: 'doc', content });
 const paragraph = value => ({ type: 'paragraph', content: [{ type: 'text', text: value }] });
 const EDITOR = 'dashboard/(cms)/content/[collection]/[id]/index.ts';
-const SETUP = { code: 'setup-code-for-tests', siteTitle: 'Essentials', name: 'Ada', email: 'ada@example.com', password: 'long password' };
+const SETUP = { code: 'setup-code-for-tests', siteTitle: 'Essentials', name: 'Ada', email: 'ada@example.com', password: 'long password', starter: 'on' };
 
 /** A local receiver for webhook deliveries. */
 async function receiver() {
@@ -38,8 +38,9 @@ async function receiver() {
 async function save(web, collection, values, id = 'new', rev = 0) {
   const result = await web.action(EDITOR, 'save', [values, 'update', rev], { params: { collection, id }, state: { route: collection, id } });
   if (id === 'new') {
-    expect(result._cossack_redirect, JSON.stringify(result.errors ?? result.error)).toMatch(new RegExp(`^/dashboard/content/${collection}/`));
-    return result._cossack_redirect.split('/').at(-1).split('?')[0];
+    // The editor adopts the new entry: its ID comes back with the state. A failed save shows its answer instead.
+    expect(typeof result.id === 'string' && result.id !== 'new' ? result.id : JSON.stringify(result)).toMatch(/^[0-9a-f-]{36}$/);
+    return result.id;
   }
   expect(result.error, JSON.stringify(result.errors)).toBe('');
   return result;
@@ -51,10 +52,42 @@ const post = (title, extra = {}) => ({ title, slug: '', excerpt: '', content: ri
 async function essentials(origin, routeIds, diagnostics, { runtime }) {
   const web = browserless(origin, routeIds, diagnostics);
   expect((await web.post('/auth/setup', SETUP)).headers.get('location')).toBe('/dashboard');
+  // Setup added the starter content: a first post in Uncategorized, and a Contact page with its form.
+  contains(await web.page('/posts/hello-world'), 'This is your first post');
+  contains(await web.page('/category/uncategorized'), 'Hello World!');
+  const contactPage = await web.page('/contact');
+  contains(contactPage, 'Send us a message');
+  expect(contactPage).toMatch(/action="?\/api\/cms\/forms\/contact-form"?/);
   // The server refuses a blank title too; the editor catches it before sending.
   const untitled = await web.action(EDITOR, 'save', [post('   '), 'draft', 0], { params: { collection: 'posts', id: 'new' }, state: { route: 'posts', id: 'new' } });
   expect(untitled._cossack_redirect).toBeUndefined();
   expect(untitled.errors).toEqual({ title: 'is required.' });
+
+  // Password protection: visitors see the title and a form; the password unlocks it for ten days; editors and search behave.
+  const visitorOf = () => browserless(origin, routeIds, diagnostics);
+  const secretId = await save(web, 'posts', post('Members only', { password: 'open sesame', excerpt: 'For members' }));
+  const locked = visitorOf();
+  const lockedPage = await locked.page('/posts/members-only');
+  contains(lockedPage, 'Members only');
+  contains(lockedPage, 'password protected');
+  lacks(lockedPage, 'Members only body');
+  const wrongTry = await locked.post('/posts/members-only', { password: 'nope' });
+  expect(wrongTry.headers.get('location')).toBe('/posts/members-only?password=wrong#password');
+  contains(await locked.page('/posts/members-only?password=wrong'), 'not right');
+  const right = await locked.post('/posts/members-only', { password: 'open sesame' });
+  expect(right.headers.get('location')).toBe('/posts/members-only');
+  expect(right.headers.get('set-cookie')).toMatch(new RegExp(`^cms_unlock_${secretId}=[0-9a-f]{64}; Path=/posts/members-only;`));
+  contains(await locked.page('/posts/members-only'), 'Members only body');
+  // The editor reads it without the password; the API keeps the content and the password from visitors.
+  contains(await web.page('/posts/members-only'), 'Members only body');
+  const secretItem = (await (await fetch(`${origin}/api/cms/content/posts/${secretId}`)).json()).item;
+  expect(secretItem).toMatchObject({ title: 'Members only', protected: true });
+  expect(secretItem.password).toBeUndefined();
+  expect(secretItem.content).toBeUndefined();
+  expect(secretItem.excerpt).toBeUndefined();
+  expect((await (await web.request(`/api/cms/content/posts/${secretId}`)).json()).item).toMatchObject({ password: 'open sesame', excerpt: 'For members' });
+  lacks(await visitorOf().page('/search?q=sesame'), 'Members only');
+  lacks(await visitorOf().page('/'), 'For members');
 
   // Scheduling: a future time schedules; the list shows it; visitors do not see it yet.
   const future = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().slice(0, 16);
@@ -154,6 +187,17 @@ async function essentials(origin, routeIds, diagnostics, { runtime }) {
   const square = await fetch(`${origin}${image.url}?w=320&v=2`, { headers: { accept: 'image/webp' } });
   expect(square.headers.get('content-type')).toBe('image/webp');
   if (runtime === 'node') expect(await sharp(Buffer.from(await square.arrayBuffer())).metadata()).toMatchObject({ width: 320, height: 320 });
+  // Site and app icons from Settings → General: the head links them, the manifest lists resized app icons.
+  expect((await web.action('dashboard/(cms)/settings/[group]/index.ts', 'save', [{ favicon: image.url, appIcon: image.url }], { params: { group: 'general' } })).error).toBe('');
+  const homeHead = await (await fetch(`${origin}/`)).text();
+  expect(homeHead).toMatch(new RegExp(`<link rel="?icon"? href="?${image.url.replaceAll('.', '\\.')}"?`));
+  expect(homeHead).toMatch(/rel="?apple-touch-icon"? sizes="?180x180"? href="?\/media\/[^"\s>]+\?w=180&(?:amp;)?h=180/);
+  expect(homeHead).toMatch(/rel="?manifest"? href="?\/manifest\.webmanifest/);
+  const manifest = await (await fetch(`${origin}/manifest.webmanifest`)).json();
+  expect(manifest.name).toBe('Essentials');
+  expect(manifest.icons.map(entry => entry.sizes)).toEqual(['192x192', '512x512']);
+  expect(manifest.icons[0].src).toBe(`${image.url}?w=192&h=192`);
+  expect((await fetch(`${origin}${manifest.icons[0].src}`)).status).toBe(200);
   const imaged = await save(web, 'posts', post('Pictured', { featuredImage: image.id }));
   void imaged;
   // The featured image fills a 16:9 frame around its focal point.
@@ -384,7 +428,7 @@ describe.skipIf(!liveRomeDBTests())('generated CMS essentials', () => {
       await page.getByPlaceholder('Add title').fill('Picked status');
       await page.getByLabel('Status', { exact: true }).selectOption('pending');
       await page.getByRole('button', { name: 'Submit for review' }).click();
-      await page.waitForURL(/\/dashboard\/content\/posts\/[0-9a-f-]{36}\?saved=1$/);
+      await page.waitForURL(/\/dashboard\/content\/posts\/[0-9a-f-]{36}$/);
       await browserExpect(page.getByLabel('Status', { exact: true })).toHaveValue('pending');
       // The list shows the author's avatar and the slug.
       await page.goto(origin + '/dashboard/content/posts?status=pending');

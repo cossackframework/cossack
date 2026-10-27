@@ -14,7 +14,7 @@ const addIcon = { line: AddSquareIcon };
 export type BlockInserterProps = {
     /** Page-unique ID of the button; the panel is `<id>-content`. */
     id: string;
-    blocks: { name: string; label: string; description?: string; icon: string; category: BlockCategory }[];
+    blocks: { name: string; label: string; description?: string; icon: string; category: BlockCategory; keywords?: readonly string[] }[];
     onPick(name: string): void;
     disabled?: boolean;
     /** Smaller button for toolbars. */
@@ -36,7 +36,7 @@ export class BlockInserter extends Cossack {
     render() {
         const query = this.search.trim().toLowerCase();
         const matches = this.props.blocks.filter(block => !query || block.label.toLowerCase().includes(query) || block.name.includes(query)
-            || (block.description ?? '').toLowerCase().includes(query));
+            || (block.description ?? '').toLowerCase().includes(query) || (block.keywords ?? []).some(word => word.toLowerCase().includes(query)));
         const groups = BLOCK_CATEGORIES.map(category => ({ ...category, blocks: matches.filter(block => block.category === category.id) })).filter(group => group.blocks.length);
         const size = this.props.compact ? 'h-7 px-2 text-xs' : 'h-8 px-3 text-sm';
         return component(Popover, {

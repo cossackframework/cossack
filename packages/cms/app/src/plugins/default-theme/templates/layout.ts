@@ -12,6 +12,11 @@ import { desktopMenu, languageSwitcher, link, mobileMenu, searchBox } from '../p
 import { accentStyle, typographyCss, width } from '../parts/options';
 
 export default function layout(site: SiteView, content: TemplateResult, helpers: ThemeHelpers): TemplateResult {
+    // A blank canvas: the page's content alone, with the theme's colours and type but no header or footer.
+    if (site.template === 'entry-blank') return html`<div class="min-h-screen bg-background text-foreground" style=${`${accentStyle(helpers)} ${presetStyle(helpers.presets)}`} data-theme="default-theme" data-frame="blank">
+        <style data-theme-typography>${typographyCss(helpers)}</style>
+        <main id="content">${content}</main>
+    </div>`;
     const primary = site.menus.primary ?? [];
     const footer = site.menus.footer ?? [];
     const frame = `mx-auto w-full px-6 ${helpers.options.width === 'wide' ? 'max-w-6xl' : 'max-w-5xl'}`;

@@ -5,7 +5,8 @@
 import { field, type FieldDeclaration } from './fields';
 
 /** Choices filled in by the host when a form renders, such as the list of roles. */
-export type SettingSource = 'roles' | 'pages' | 'categories' | 'timezones';
+/** Where a setting's choices come from; `media` lists the library's images by their URL. */
+export type SettingSource = 'roles' | 'pages' | 'categories' | 'timezones' | 'media';
 
 export interface SettingDeclaration extends FieldDeclaration {
     readonly source?: SettingSource;
@@ -41,14 +42,16 @@ export const general: SettingsGroup = {
         timeFormat: { ...field.enum(Object.keys(TIME_FORMATS), { default: '12h', label: 'Time format' }), choices: TIME_FORMATS },
         weekStartsOn: { ...field.enum(['sunday', 'monday', 'saturday'], { default: 'monday', label: 'Week starts on' }), choices: { sunday: 'Sunday', monday: 'Monday', saturday: 'Saturday' } },
         requireTwoFactor: field.boolean({ default: false, label: 'Require two-step sign-in for everyone who can use the dashboard', description: 'They add an authenticator app or a passkey before they can continue.' }),
+        favicon: { ...field.string({ max: 2000, default: '', pattern: '(?:https?://[^\\s]+|/[^\\s]*)?', label: 'Site icon', description: 'Shown in browser tabs and bookmarks: an SVG or a square PNG from the library.' }), source: 'media' },
+        appIcon: { ...field.string({ max: 2000, default: '', pattern: '(?:https?://[^\\s]+|/[^\\s]*)?', label: 'App icon', description: 'For home screens and the web app manifest: a square PNG of at least 512 pixels from the library; it is resized as needed.' }), source: 'media' },
     },
 };
 
 export const media: SettingsGroup = {
     id: 'media',
-    label: 'Media',
+    label: 'Files',
     fields: {
-        maxUploadMb: field.integer({ default: 25, min: 1, max: 100, label: 'Maximum upload size (MB)' }),
+        maxUploadMb: field.integer({ default: 100, min: 1, max: 1_000_000, label: 'Maximum upload size (MB)', description: 'Uploads go straight to the bucket, so the limit is yours to set.' }),
     },
 };
 
@@ -145,6 +148,8 @@ export interface SiteSettings {
     'general.timeFormat': keyof typeof TIME_FORMATS;
     'general.weekStartsOn': 'sunday' | 'monday' | 'saturday';
     'general.requireTwoFactor': boolean;
+    'general.favicon': string;
+    'general.appIcon': string;
     'media.maxUploadMb': number;
     'appearance.theme': string;
     'appearance.presets': { readonly [theme: string]: { readonly colors?: { readonly [slug: string]: string }; readonly custom?: readonly { slug: string; name: string; value: string }[] } } | null;

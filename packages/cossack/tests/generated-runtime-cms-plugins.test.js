@@ -27,7 +27,7 @@ describe.skipIf(!liveRomeDBTests())('CMS plugin trust', () => {
     trackRoot(v1.directory);
     expect(JSON.parse((await cossack(root, ['add', 'plugin', v1.tarball, '--json'])).stdout).data).toMatchObject({ status: 'added', name: 'support-desk' });
     // The default theme is a rendered plugin too, and passes the same lints.
-    expect(JSON.parse((await cossack(root, ['plugins', 'check', '--json'])).stdout).data.plugins).toEqual([{ plugin: 'default-theme', files: 14, errors: 0 }, { plugin: 'support-desk', files: 4, errors: 0 }]);
+    expect(JSON.parse((await cossack(root, ['plugins', 'check', '--json'])).stdout).data.plugins).toEqual([{ plugin: 'default-theme', files: 15, errors: 0 }, { plugin: 'support-desk', files: 4, errors: 0 }]);
     await cossack(root, ['config', '--generate']);
     await typecheck(root, 'cms plugin application');
 
@@ -62,7 +62,7 @@ describe.skipIf(!liveRomeDBTests())('CMS plugin trust', () => {
       await web.post('/dashboard/plugins', { plugin: 'support-desk', _action: 'grant' });
       expect(await web.page('/dashboard/plugins')).toMatch(/data-plugin="?support-desk"? data-version="?1\.0\.0"? data-active="?true/);
       const created = await web.action(editor, 'save', [ticket('  Printer jam  '), 'update', 0], { params: { collection: 'support-desk.tickets', id: 'new' }, state: { route: 'support-desk.tickets', id: 'new' } });
-      expect(created._cossack_redirect).toMatch(/^\/dashboard\/content\/support-desk\.tickets\/[0-9a-f-]{36}\?saved=1$/);
+      expect(created.id).toMatch(/^[0-9a-f-]{36}$/);
       await web.action(editor, 'save', [ticket('Printer jam'), 'update', 0], { params: { collection: 'support-desk.tickets', id: 'new' }, state: { route: 'support-desk.tickets', id: 'new' } });
       // The plugin's before-write hook trimmed the subject.
       const list = await web.page('/dashboard/content/support-desk.tickets');
@@ -80,9 +80,10 @@ describe.skipIf(!liveRomeDBTests())('CMS plugin trust', () => {
         [{ id: 'sections', type: 'field/blocks', data: { name: 'sections', label: 'Sections' } }],
       ], { params: { id: 'sections' } });
       expect(group.error).toBe('');
-      await web.action(editor, 'save', [{ title: 'Contact', slug: '', status: 'draft', publishedAt: '', content: [], excerpt: '', showInMenu: true, featuredImage: '', parent: '', menuOrder: '0',
+      // Setup seeds a Contact page already, so this one has its own name.
+      await web.action(editor, 'save', [{ title: 'Help desk', slug: '', status: 'draft', publishedAt: '', content: [], excerpt: '', showInMenu: true, featuredImage: '', parent: '', menuOrder: '0',
         sections: [{ id: 'c1', type: 'support-desk/contact', data: { email: 'help@example.com' } }] }, 'publish', 0], { params: { collection: 'pages', id: 'new' }, state: { route: 'pages', id: 'new' } });
-      contains(await web.page('/contact'), 'Write to help@example.com');
+      contains(await web.page('/help-desk'), 'Write to help@example.com');
 
       // The plugin command runs in the application as the signed-in user.
       const env = { ...process.env, CMS_PASSWORD: 'long password' };

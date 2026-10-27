@@ -15,7 +15,7 @@ export interface EditorField {
     nullable: boolean;
     description: string;
     placement: 'main' | 'sidebar';
-    format: 'plain' | 'markdown';
+    format: 'plain' | 'markdown' | 'code';
     /** enum values, with labels. */
     choices: { value: string; label: string }[];
     /** list item kind. */
@@ -63,6 +63,10 @@ export interface BlockOption {
     input: boolean;
     /** A field block's kind, offered only in a field group; empty otherwise. */
     field: string;
+    /** Other words the picker's search matches. */
+    keywords: string[];
+    /** Offered in forms and field groups too. */
+    common: boolean;
 }
 
 /** A field group attached to the entry's collection, as the editor shows it: a box of its layout. */

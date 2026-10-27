@@ -10,6 +10,22 @@ export const SERVER_MARKER = 'support-desk-server-only-marker';
 
 function sources(version) {
   return {
+    // A plugin's pages are ordinary routes: a page whose failure the application's error handling takes.
+    // (A `pages/support/loading.ts` here left the plugin's configuration empty at runtime; see plan-cms-ux-improvements.md.)
+    'pages/support/broken/index.ts': `import { Cossack, Page } from '@cossackframework/core';
+import { html } from '@cossackframework/renderer';
+
+@Page({ transport: 'http' })
+export default class Broken extends Cossack {
+  async init() {
+    throw new Error('The desk is closed.');
+  }
+
+  render() {
+    return html\`<p>Never shown</p>\`;
+  }
+}
+`,
     'pages/support/index.ts': `import { __, Client, Cossack, Page, Server, State } from '@cossackframework/core';
 import { html } from '@cossackframework/renderer';
 import { config } from '@cossackframework/framework/config';

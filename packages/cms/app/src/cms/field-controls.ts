@@ -4,7 +4,7 @@
  * Remove buttons; the screen opens its own media chooser.
  */
 import { component, html, type TemplateResult } from '@cossackframework/renderer';
-import { Button, Checkbox, DropdownMenu, Icon, Input, NativeSelect, Textarea } from '@cossackframework/ui';
+import { Button, Checkbox, CodeEditor, DropdownMenu, Icon, Input, NativeSelect, Textarea } from '@cossackframework/ui';
 import { hasBinding, mediaKind, withBinding } from '@cossackframework/cms';
 import type { BlockOption, EditorField } from './editor';
 import { icon } from './icons';
@@ -33,13 +33,13 @@ export function bindingChoices(fields: readonly Pick<EditorField, 'name' | 'labe
  * `options` lists a reference field's choices.
  */
 export function fieldControl(field: EditorField, value: unknown, change: (value: unknown) => void, id: string,
-    extra: { media?: MediaHooks; options?: readonly { id: string; title: string }[]; /** Entry fields the text may bind to; a picker button offers them. */ bindings?: readonly BindingChoice[] } = {}): TemplateResult | null {
+    extra: { media?: MediaHooks; options?: readonly { id: string; title: string }[]; /** Entry fields the text may bind to; a picker button offers them. */ bindings?: readonly BindingChoice[]; /** The language of a code field, from the block's `language` field. */ language?: string } = {}): TemplateResult | null {
     const input = (type: 'text' | 'number' | 'datetime-local') => component(Input, { id, type, '.value': String(value ?? ''), step: field.kind === 'integer' ? 1 : 'any',
         ...(field.kind === 'string' && field.max ? { maxlength: field.max } : {}), '@input': (event: Event) => change((event.target as HTMLInputElement).value) });
     const textarea = (rows: number, className = '') => component(Textarea, { id, rows, ...(className ? { class: className } : {}), '.value': String(value ?? ''),
         '@input': (event: Event) => change((event.target as HTMLTextAreaElement).value) });
     // Text may show an entry field instead: the picker beside the control writes the binding.
-    const bindable = (control: TemplateResult) => extra.bindings?.length ? bindingControl(control, value, change, id, extra.bindings) : control;
+    const bindable = (control: TemplateResult) => extra.bindings !== undefined ? bindingControl(control, value, change, id, extra.bindings) : control;
     switch (field.kind) {
         case 'boolean': return html`<label class="flex items-center gap-2 text-sm text-foreground cursor-pointer">
             ${component(Checkbox, { id, checked: value === true, '@change': (event: Event) => change((event.target as HTMLInputElement).checked) })} ${field.label}</label>`;
@@ -51,11 +51,14 @@ export function fieldControl(field: EditorField, value: unknown, change: (value:
         case 'reference': return component(NativeSelect, { id, '@change': (event: Event) => change((event.target as HTMLSelectElement).value) }, html`
             <option value="" ?selected=${!value}>—</option>
             ${(extra.options ?? []).map(option => html`<option value=${option.id} ?selected=${option.id === value}>${option.title}</option>`)}`);
-        case 'json': return textarea(6, 'font-mono text-xs');
+        case 'json': return field.fields.length
+            ? groupFields(field, value, change, id, (sub, subValue, subChange, subId) => fieldControl(sub, subValue, subChange, subId, extra) ?? html``)
+            : textarea(6, 'font-mono text-xs');
         case 'list': return field.media && extra.media ? mediaControl(value, change, field.label, true, extra.media) : textarea(4);
         // Markdown in a block is a short passage: a compact box that grows with its text, no tabs or toolbar.
         case 'text': return field.format === 'markdown'
             ? html`<div class="space-y-1">${bindable(textarea(3, 'field-sizing-content min-h-[4.5rem] max-h-[40vh]'))}<p class="text-xs text-muted-foreground">${__('Markdown: **bold**, _italic_, [link](https://…).')}</p></div>`
+            : field.format === 'code' ? component(CodeEditor, { id, value: String(value ?? ''), language: extra.language ?? '', label: field.label, onChange: (next: string) => change(next) })
             : bindable(textarea(4));
         case 'blocks': case 'richtext': case 'vector': case 'bigint': return null;
         default: return field.media && extra.media ? mediaControl(value, change, field.label, false, extra.media) : bindable(input('text'));
@@ -68,10 +71,14 @@ export function fieldControl(field: EditorField, value: unknown, change: (value:
  */
 export function bindingControl(control: TemplateResult, value: unknown, change: (value: unknown) => void, id: string, choices: readonly BindingChoice[]): TemplateResult {
     const bound = hasBinding(value);
+    // The button is always there, so people learn that text can show a field; without fields it says why it is off.
+    const none = __('This entry has no fields a block can show. Add fields to the collection or a field group.');
     return html`<div class="space-y-1">
         <div class="flex items-start gap-1.5">
             <div class="min-w-0 flex-1">${control}</div>
-            ${component(DropdownMenu, { id: `${id}-bind`, side: 'bottom', align: 'end', 'aria-label': __('Show a field of the entry'), title: __('Show a field of the entry'),
+            ${!choices.length ? html`<button type="button" id=${`${id}-bind`} disabled title=${none} aria-label=${__('Show a field of the entry')}
+                class="inline-flex h-9 w-9 shrink-0 cursor-not-allowed items-center justify-center rounded-md border border-input bg-background text-muted-foreground opacity-50 [&_svg]:size-4">${component(Icon, { entry: icon('database'), size: 16 })}</button>`
+            : component(DropdownMenu, { id: `${id}-bind`, side: 'bottom', align: 'end', 'aria-label': __('Show a field of the entry'), title: __('Show a field of the entry'),
                 class: `inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border bg-background [&_svg]:size-4 ${bound ? 'border-primary text-primary' : 'border-input text-muted-foreground hover:bg-muted hover:text-foreground'}`,
                 trigger: component(Icon, { entry: icon('database'), size: 16 }) }, html`
                 <p class="px-2 py-1.5 text-xs text-muted-foreground">${__('Show the value of')}</p>
@@ -102,6 +109,24 @@ export function mediaControl(value: unknown, change: (value: unknown) => void, l
     </div>`;
 }
 
+/**
+ * A group field (`field.group`, such as a form's settings) as a box of its subfields, one
+ * labelled control each. `render` draws a subfield's control; its change writes the subfield
+ * into the group's object.
+ */
+export function groupFields(field: EditorField, value: unknown, change: (value: unknown) => void, id: string,
+    render: (sub: EditorField, value: unknown, change: (value: unknown) => void, id: string) => TemplateResult): TemplateResult {
+    const object = value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+    return html`<div id=${id} class="space-y-4 rounded-md border border-border p-3">${field.fields.map(sub => {
+        const subId = `${id}-${sub.name}`;
+        return html`<div class="space-y-1">
+            ${sub.kind === 'boolean' ? null : html`<label for=${subId} class="block text-sm font-medium text-foreground">${sub.label}${sub.required ? html`<span class="text-destructive"> *</span>` : null}</label>`}
+            ${render(sub, object[sub.name], next => change({ ...object, [sub.name]: next }), subId)}
+            ${sub.description ? html`<p class="text-xs text-muted-foreground">${sub.description}</p>` : null}
+        </div>`;
+    })}</div>`;
+}
+
 /** A block's fields as a form: one labelled control each. `errors` are keyed by field name. */
 export function blockFields(option: BlockOption, values: Record<string, unknown>, change: (name: string, value: unknown) => void, idPrefix: string,
     media: (name: string) => MediaHooks, errors: Record<string, string> = {}, bindings: readonly BindingChoice[] = []): TemplateResult {
@@ -109,7 +134,7 @@ export function blockFields(option: BlockOption, values: Record<string, unknown>
         const id = `${idPrefix}-${entry.name}`;
         return html`<div class="space-y-1">
             ${entry.kind === 'boolean' ? null : html`<label for=${id} class="block text-sm font-medium text-foreground">${entry.label}${entry.required ? ' *' : ''}</label>`}
-            ${fieldControl(entry, values[entry.name], value => change(entry.name, value), id, { media: media(entry.name), bindings })}
+            ${fieldControl(entry, values[entry.name], value => change(entry.name, value), id, { media: media(entry.name), bindings, language: String(values.language ?? '') })}
             ${entry.description ? html`<p class="text-xs text-muted-foreground">${entry.description}</p>` : null}
             ${errors[entry.name] ? html`<p role="alert" class="text-xs text-destructive">${entry.label} ${errors[entry.name]}</p>` : null}
         </div>`;

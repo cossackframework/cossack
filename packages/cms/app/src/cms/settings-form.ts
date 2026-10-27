@@ -4,7 +4,7 @@
  */
 import { Checkbox, Field, Input, NativeSelect, Textarea } from '@cossackframework/ui';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
-import { recordTitle, type Principal, type SettingDeclaration, type SettingsGroup } from '@cossackframework/cms';
+import { mediaUrl, recordTitle, type Principal, type SettingDeclaration, type SettingsGroup } from '@cossackframework/cms';
 import type { CmsHost } from '@cossackframework/cms/server';
 
 export interface SettingRow { name: string; label: string; description: string; kind: string; min: number | null; max: number | null; choices: { value: string; label: string }[]; required: boolean }
@@ -31,6 +31,7 @@ async function choices(cms: CmsHost, declaration: SettingDeclaration, principal:
         case 'categories': return (await cms.taxonomies.tree('categories')).map(term => ({ value: term.id, label: `${'— '.repeat(term.depth)}${term.name}` }));
         case 'pages': return (await cms.resource('cms/pages').list({ where: { status: 'published' }, order: { field: 'title', direction: 'asc' }, limit: 100 }, { principal }))
             .records.map(record => ({ value: record.id, label: recordTitle(record, 'title') }));
+        case 'media': return cms.files ? (await cms.files.list({ kind: 'image', limit: 100 })).items.map(file => ({ value: mediaUrl(file), label: file.title || file.name })) : [];
         case 'timezones': {
             const zones = typeof Intl.supportedValuesOf === 'function' ? Intl.supportedValuesOf('timeZone') : [];
             return ['UTC', ...zones.filter(zone => zone !== 'UTC')].map(zone => ({ value: zone, label: zone.replaceAll('_', ' ') }));

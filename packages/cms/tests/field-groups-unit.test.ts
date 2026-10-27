@@ -47,8 +47,10 @@ describe('field blocks', () => {
 
     it('goes only in a field group, with layout blocks alone beside it', () => {
         expect(validateBlocks([fieldBlock('a', 'text', { name: 'a' })], types).errors).toEqual({ a: 'field/text goes only in a field group.' });
-        const { errors } = validateBlocks([{ id: 'img', type: 'core/image', data: { image: 'x' } }], types, { fieldGroup: true });
-        expect(errors).toEqual({ img: 'core/image does not go in a field group.' });
+        // Common blocks (an image, a heading) go anywhere; other content blocks stay out of field groups.
+        expect(validateBlocks([{ id: 'img', type: 'core/image', data: { image: 'x' } }], types, { fieldGroup: true }).errors).toEqual({});
+        const { errors } = validateBlocks([{ id: 'q', type: 'core/quote', data: { text: 'Said' } }], types, { fieldGroup: true });
+        expect(errors).toEqual({ q: 'core/quote does not go in a field group.' });
     });
 
     it('names fields from labels, keeps names distinct per scope and checks conditions in reach', () => {

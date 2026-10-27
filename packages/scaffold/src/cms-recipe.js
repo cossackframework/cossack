@@ -118,6 +118,8 @@ export function mediaStorage(env: MediaBindings): StorageProvider {
     if (!env.S3_BUCKET) return new LocalStorageProvider({ root: env.MEDIA_DIR || 'storage/media' });
     const client = new S3Client({
         region: env.S3_REGION || 'auto',
+        // Presigned browser uploads need this: otherwise the SDK signs a checksum of an empty body.
+        requestChecksumCalculation: 'WHEN_REQUIRED',
         ...(env.S3_ENDPOINT ? { endpoint: env.S3_ENDPOINT, forcePathStyle: true } : {}),
         ...(env.S3_ACCESS_KEY_ID && env.S3_SECRET_ACCESS_KEY ? { credentials: { accessKeyId: env.S3_ACCESS_KEY_ID, secretAccessKey: env.S3_SECRET_ACCESS_KEY } } : {}),
     });

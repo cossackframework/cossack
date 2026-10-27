@@ -36,7 +36,7 @@ export async function navigation(c: Context): Promise<DashboardModule[]> {
     }
     if (can(PERMISSIONS.upload) || can(PERMISSIONS.manageMedia)) {
         // Media follows posts, as in WordPress.
-        content.splice(Math.min(1, content.length), 0, { id: 'media', label: 'Media', href: '/dashboard/media', icon: icon('gallery'), authorization: 'authenticated',
+        content.splice(Math.min(1, content.length), 0, { id: 'media', label: 'Files', href: '/dashboard/media', icon: icon('folder-with-files'), authorization: 'authenticated',
             children: [{ label: 'Library', href: '/dashboard/media' }, { label: 'Add new', href: '/dashboard/media/new' }] });
     }
     for (const resource of cms.readable(principal)) {

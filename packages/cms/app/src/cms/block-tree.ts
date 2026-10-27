@@ -57,7 +57,7 @@ export const BREAKPOINT_DEVICES: { readonly [key in Breakpoint]: { label: string
 
 /** Types the inserter offers inside `parent` (null at the top level), by the types' nesting rules. */
 export function offeredIn(options: readonly BlockOption[], parent: BlockOption | null, allowed: readonly string[] = [], form = false, fieldGroup = false): BlockOption[] {
-    return options.filter(option => option.name !== 'core/pattern' && (form || !option.input) && (fieldGroup ? !!option.field || FIELD_GROUP_LAYOUT.has(option.name) : !option.field) && (parent
+    return options.filter(option => option.name !== 'core/pattern' && (form || !option.input) && (fieldGroup ? !!option.field || option.common || FIELD_GROUP_LAYOUT.has(option.name) : !option.field) && (parent
         ? !!parent.children && (!parent.children.allowed.length || parent.children.allowed.includes(option.name)) && (!option.parent.length || option.parent.includes(parent.name))
         : !option.parent.length && (!allowed.length || allowed.includes(option.name))));
 }

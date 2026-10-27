@@ -1,5 +1,5 @@
 import { Cossack, Page, State, Server, type HeadValue } from '@cossackframework/core';
-import { Button, Card, CardBody, NativeSelect } from '@cossackframework/ui';
+import { Button, Card, CardBody, CodeEditor, NativeSelect } from '@cossackframework/ui';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
 import { compareRecords, isCmsError, recordTitle, type FieldChange } from '@cossackframework/cms';
 import { routeResource } from '../../../../../../../cms/content';
@@ -85,7 +85,8 @@ export default class RevisionsPage extends Cossack {
             : kind === 'removed' ? html`<del class="rounded-sm bg-destructive/10 text-destructive">${text}</del>` : html`<span>${text}</span>`;
         return html`<section class="space-y-2" data-field=${change.name}>
             <h3 class="text-sm font-semibold text-foreground">${change.label}</h3>
-            ${change.kind === 'text' ? html`<div class="whitespace-pre-wrap break-words rounded-md border border-border bg-background p-3 text-sm leading-6 text-foreground">${change.parts.map(entry => part(entry.kind, entry.text))}</div>`
+            ${change.structured ? component(CodeEditor, { id: `diff-${change.name}`, value: change.after, original: change.before, language: 'json', label: `${change.label} ${__('changes')}`, class: 'rounded-md border border-border bg-background' })
+                : change.kind === 'text' ? html`<div class="whitespace-pre-wrap break-words rounded-md border border-border bg-background p-3 text-sm leading-6 text-foreground">${change.parts.map(entry => part(entry.kind, entry.text))}</div>`
                 : html`<div class="grid gap-2 text-sm sm:grid-cols-2">
                     <div class="rounded-md border border-border bg-destructive/5 p-3"><span class="block text-xs text-muted-foreground">${__('Before')}</span><span class="whitespace-pre-wrap break-words">${change.before || '—'}</span></div>
                     <div class="rounded-md border border-border bg-emerald-500/5 p-3"><span class="block text-xs text-muted-foreground">${__('After')}</span><span class="whitespace-pre-wrap break-words">${change.after || '—'}</span></div>

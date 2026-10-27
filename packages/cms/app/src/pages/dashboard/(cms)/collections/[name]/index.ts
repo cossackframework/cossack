@@ -9,7 +9,7 @@ import { blockFilePreviews, blockOptions, findMedia } from '../../../../../cms/c
 import { blocksInput, controlValue, editorBlocks, editorInput, type BlockOption, type EditorBlock, type EditorField } from '../../../../../cms/editor';
 import { bindingChoices, blockFields, moveItem, type BindingChoice, type MediaHooks, type MediaPreview } from '../../../../../cms/field-controls';
 import { requireAny } from '../../../../../cms/guards';
-import { COLLECTION_ICONS } from '../../../../../cms/icons';
+import { iconSelect } from '../../../../../cms/term-icons';
 import { closedChooser, mediaChooser, uploadMedia, withFile, type MediaChooserState } from '../../../../../cms/media-chooser';
 import { RichTextField, richTextEditors } from '../../../../../cms/rich-text-field';
 import { activePresets } from '../../../../../cms/site';
@@ -350,6 +350,7 @@ export default class CollectionBuilder extends Cossack {
                             ${this.check(__('Content'), draft.content, checked => this.setDraft('content', checked), { disabled: locked('content'), hint: __('Blocks: headings, images and rich text, which the content template starts.') })}
                             ${this.check(__('Excerpt'), draft.excerpt, checked => this.setDraft('excerpt', checked), { disabled: locked('excerpt'), hint: __('A short summary for lists, feeds and link previews.') })}
                             ${this.check(__('Featured image'), draft.featuredImage, checked => this.setDraft('featuredImage', checked), { disabled: locked('featuredImage'), hint: __('One image from the media library, in the sidebar.') })}
+                            ${this.check(__('Password protection'), draft.password, checked => this.setDraft('password', checked), { disabled: locked('password'), hint: __('A password field in the sidebar: visitors type it to read the entry.') })}
                             ${this.check(__('Revisions'), draft.revisions, checked => this.setDraft('revisions', checked), { hint: __('Keep every version of an entry to compare and restore.') })}
                             ${this.check(__('Generate slugs from titles'), draft.slug, checked => this.setDraft('slug', checked), { disabled: draft.builtin })}
                             ${this.check(__('Drafts and publishing'), draft.publishable, checked => this.setDraft('publishable', checked), { disabled: draft.builtin, hint: __('Visitors see published entries only.') })}
@@ -373,8 +374,7 @@ export default class CollectionBuilder extends Cossack {
                         ${control('label', __('Plural name'))}
                         ${control('singular', __('Singular name'))}
                         ${control('description', __('Description'))}
-                        ${component(Field, { label: __('Icon'), for: 'collection-icon', control: attributes => component(NativeSelect, { ...attributes, '@change': (event: Event) => this.setDraft('icon', (event.target as HTMLSelectElement).value) }, html`
-                            ${COLLECTION_ICONS.map(name => html`<option value=${name} ?selected=${name === draft.icon}>${name}</option>`)}`) })}
+                        ${iconSelect('collection-icon', draft.icon, value => this.setDraft('icon', value), undefined, { hint: __('Shown in the dashboard menu.'), allowEmpty: false })}
                         ${this.check(__('Show entries on the site'), draft.public, checked => this.setDraft('public', checked), { disabled: draft.builtin && draft.name === 'pages' })}
                         ${draft.public && !(draft.builtin && draft.name === 'pages') ? control('path', __('URL path'), draft.path.trim()
                             ? `${__('Entries at')} /${draft.path.trim()}/${draft.slug ? 'slug' : 'id'}`

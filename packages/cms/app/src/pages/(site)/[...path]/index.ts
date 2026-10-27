@@ -1,8 +1,9 @@
 import { Client, ClientState, Cossack, Page, Server, State, defineServerMiddleware, type HeadValue } from '@cossackframework/core';
 import { isTransportPath } from '@cossackframework/core/transport-routes';
+import { getCookie } from 'hono/cookie';
 import { component, html } from '@cossackframework/renderer';
-import { isCmsError, type ArchiveView, type EntryView, type ThemeData } from '@cossackframework/cms';
-import { archive, commentResult, entryViews, homeView, languageLinks, pageNumber, redirectFor, resolvePath, searchEntries, termArchive, themeData, themeState, type Resolved, type ThemeState } from '../../../cms/site';
+import { isCmsError, isSameOriginPost, type ArchiveView, type EntryView, type ThemeData } from '@cossackframework/cms';
+import { archive, commentResult, entryViews, homeView, isProtected, languageLinks, pageNumber, redirectFor, resolvePath, searchEntries, termArchive, themeData, themeState, unlockCookie, unlockToken, type Resolved, type ThemeState } from '../../../cms/site';
 import { archiveTemplate, entryTemplate, siteContent, siteTheme, themeHelpers, unavailable } from '../../../cms/site-view';
 import { entrySeo, homeSeo, listSeo } from '../../../cms/seo';
 import { emptySeo, seoHead, type SeoView } from '../../../cms/seo-head';
@@ -24,7 +25,9 @@ const segmentsOf = (path: string | undefined) => (path ?? '').split('/').filter(
  * routes registered after it, such as /crpc, so it acts only on page reads.
  */
 const resolveSitePath = defineServerMiddleware(async (c, next) => {
-    if ((c.req.method !== 'GET' && c.req.method !== 'HEAD') || isTransportPath(c.req.path)) { await next(); return; }
+    // Pages read with GET; a POST is a visitor's password for a protected entry, resolved the same way, never redirected.
+    const post = c.req.method === 'POST';
+    if ((c.req.method !== 'GET' && c.req.method !== 'HEAD' && !post) || isTransportPath(c.req.path)) { await next(); return; }
     // Unknown API paths keep their JSON 404.
     if (c.req.path === '/api' || c.req.path.startsWith('/api/')) return c.json({ error: 'Not Found', code: 'COSSACK_NOT_FOUND' }, 404);
     const cms = c.get('cms');
@@ -32,12 +35,12 @@ const resolveSitePath = defineServerMiddleware(async (c, next) => {
     // Before setup, or while a migration is pending, content is unavailable.
     try {
         resolved = await resolvePath(cms, segmentsOf(c.req.param('path')));
-        if (resolved.kind === 'none') {
+        if (resolved.kind === 'none' && !post) {
             const query = new URL(c.req.url).search.slice(1);
             resolved = await redirectFor(cms, c.req.path, query, work => { try { c.executionCtx.waitUntil(work.catch(() => undefined)); } catch { void work.catch(() => undefined); } }) ?? resolved;
         }
     } catch (error) { if (!isCmsError(error, 'CMS_UNAVAILABLE')) throw error; resolved = { kind: 'unavailable' }; }
-    if (resolved.kind === 'redirect') return c.redirect(resolved.url, resolved.status ?? 301);
+    if (resolved.kind === 'redirect') return post ? c.text('Not found', 404) : c.redirect(resolved.url, resolved.status ?? 301);
     c.set('cms.site', resolved);
     await next();
 });
@@ -52,6 +55,9 @@ const resolveSitePath = defineServerMiddleware(async (c, next) => {
 export default class SitePath extends Cossack {
     @State() kind: 'entry' | 'list' | 'home' | 'none' | 'gone' | 'unavailable' = 'none';
     @State() entry: EntryView | null = null;
+    /** A protected entry this visitor has not unlocked: the password form shows instead of the content. */
+    @State() locked = false;
+    @State() wrongPassword = false;
     @State() view: ArchiveView = { kind: 'archive', collection: null, taxonomy: null, title: '', description: '', entries: [], paging: { page: 1, pages: 1, base: '/' }, query: '' };
     @State() theme: ThemeState = { name: null, options: {} };
     /** What the theme's loader for the page returned. */
@@ -112,7 +118,13 @@ export default class SitePath extends Cossack {
                 this.seo = await listSeo(cms, this.c, { title: this.view.title, description: '', url: base, locale: resolved.locale, links });
             } else if (resolved.kind === 'entry') {
                 this.kind = 'entry';
-                this.entry = (await entryViews(cms, resolved.collection, [resolved.record], { ...viewOptions, full: true }))[0]!;
+                // Editors read their protected entries; visitors unlock them with the password, which a cookie remembers.
+                const unlocked = isProtected(resolved.record) && (getCookie(this.c, unlockCookie(resolved.record)) === await unlockToken(resolved.record)
+                    || (this.c.get('principal').kind === 'user' && cms.resource(`cms/${resolved.collection.name}`).canUpdate(resolved.record, this.c.get('principal'))));
+                this.locked = isProtected(resolved.record) && !unlocked;
+                this.wrongPassword = this.c.req.query('password') === 'wrong';
+                if (this.locked) this.c.header('cache-control', 'private, no-store');
+                this.entry = (await entryViews(cms, resolved.collection, [resolved.record], { ...viewOptions, full: true, ...(unlocked ? { unlocked: new Set([resolved.record.id]) } : {}) }))[0]!;
                 this.seo = await entrySeo(cms, this.c, resolved.collection, resolved.record, this.entry, links);
             } else if (resolved.kind === 'archive') {
                 this.kind = 'list';
@@ -138,6 +150,36 @@ export default class SitePath extends Cossack {
             this.kind = 'unavailable';
             this.c.status(503);
         }
+    }
+
+    /** A visitor's password for a protected entry: right, and a cookie remembers it; wrong, and the form says so. */
+    async post() {
+        if (!isSameOriginPost(this.c.req.raw)) return this.c.text('Forbidden', 403);
+        const resolved = this.c.get('cms.site');
+        if (!resolved || resolved.kind !== 'entry' || !isProtected(resolved.record)) return this.c.text('Not found', 404);
+        const form = await this.c.req.formData();
+        const typed = String(form.get('password') ?? '');
+        const url = this.c.req.path;
+        if (typed !== String(resolved.record.password)) return this.redirect(`${url}?password=wrong#password`);
+        const secure = new URL(this.c.req.url).protocol === 'https:' ? '; Secure' : '';
+        this.c.header('set-cookie', `${unlockCookie(resolved.record)}=${await unlockToken(resolved.record)}; Path=${url}; Max-Age=${10 * 24 * 3600}; HttpOnly; SameSite=Lax${secure}`, { append: true });
+        return this.redirect(url);
+    }
+
+    /** The password form of a protected entry: the theme's, or a plain one. */
+    private passwordForm(theme: ReturnType<typeof siteTheme>, helpers: ReturnType<typeof themeHelpers>) {
+        const entry = this.entry!;
+        const view = { entry, action: this.c.req.path, error: this.wrongPassword };
+        return theme.password?.(view, helpers) ?? html`<article class="space-y-6" data-protected>
+            <header><h1 class="text-4xl font-bold tracking-tight text-foreground">${entry.title}</h1></header>
+            <form id="password" method="post" action=${view.action} class="max-w-sm space-y-3">
+                <p class="text-sm text-muted-foreground">${__('This content is password protected. To view it, enter the password below.')}</p>
+                ${view.error ? html`<p role="alert" class="text-sm text-destructive">${__('That password is not right. Try again.')}</p>` : null}
+                <label for="entry-password" class="block text-sm font-medium text-foreground">${__('Password')}</label>
+                <input id="entry-password" name="password" type="password" required autocomplete="off" class="block w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring">
+                <button type="submit" class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground border-none cursor-pointer">${__('Enter')}</button>
+            </form>
+        </article>`;
     }
 
     // --- Editing on the site ------------------------------------------------------------------
@@ -286,6 +328,7 @@ export default class SitePath extends Cossack {
         if (this.kind === 'unavailable') return unavailable();
         const theme = siteTheme(this.theme);
         const helpers = themeHelpers(theme, { ...this.theme, data: { page: this.data }, editing: Boolean(this.draft) }, (path, exact) => this.isActive(path, exact));
+        if (this.kind === 'entry' && this.entry && this.locked) return siteContent(this.passwordForm(theme, helpers), this.theme);
         if (this.kind === 'entry' && this.entry) {
             const page = siteContent(entryTemplate(theme, this.entry.collection, this.entry.template)(this.entry, helpers), this.theme);
             // Visitors get the theme's page alone. The editor sits outside the content root, which contains fixed elements.

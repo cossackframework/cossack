@@ -60,6 +60,8 @@ it('renders a packed plugin and serves its pages, translations, configuration an
     expect(body).toContain('Hello from plugin configuration');
     expect(body).toContain('support-desk@1.0.0:Ticket desk');
     expect(body).toContain('Tickets: 0');
+    // A page that fails answers through the application's error handling.
+    expect((await fetch(server.origin + '/support/broken')).status).toBe(500);
 
     browser = await chromium.launch({ headless: true });
     const page = await browser.newPage();

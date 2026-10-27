@@ -74,10 +74,11 @@ async function exercise(origin, routeIds, diagnostics) {
     title: 'Hello, World!', slug: '', excerpt: '', content: [{ id: 'rt', type: 'core/richtext', data: { text: doc(paragraph(text('First '), text('post', ['bold']), text(' about a zeppelin <script>alert(1)</script>'))) } }], status: 'draft', publishedAt: '',
     sticky: false, featuredImage: image.id, categories: [news.id], tags: ['Intro', 'Weather'],
   }, 'publish', 0], { params: { collection: 'posts', id: 'new' }, state: { route: 'posts', id: 'new' } });
-  expect(created._cossack_redirect).toMatch(/^\/dashboard\/content\/posts\/[0-9a-f-]{36}\?saved=1$/);
-  const edit = await web.page(created._cossack_redirect);
+  // The editor keeps the new entry in place: its ID and the message come back with the state.
+  expect(created.id).toMatch(/^[0-9a-f-]{36}$/);
+  expect(created.message).toBe('Published.');
+  const edit = await web.page(`/dashboard/content/posts/${created.id}`);
   contains(edit, '/posts/hello-world');
-  contains(edit, 'Saved.');
   const post = visible(await web.page('/posts/hello-world'));
   contains(post, '<strong>post</strong>');
   contains(post, '&lt;script&gt;');
@@ -131,7 +132,7 @@ async function exercise(origin, routeIds, diagnostics) {
     content: [{ id: 'b1', type: 'core/heading', data: { text: 'Fast wheels', level: 'h2' } }, { id: 'b2', type: 'core/paragraph', data: { text: 'Very **fast**' } },
       { id: 'b3', type: 'core/image', data: { image: image.id, caption: 'A pixel', link: '' } }, { id: 'b5', type: 'core/paragraph', data: { text: 'Price: **{{ $.price }}**' } }],
   }, 'publish', 0], { params: { collection: 'products', id: 'new' }, state: { route: 'products', id: 'new' } });
-  expect(saved._cossack_redirect).toMatch(/^\/dashboard\/content\/products\//);
+  expect(saved.id).toMatch(/^[0-9a-f-]{36}$/);
   const productPage = await web.page('/shop/rocket-skates');
   contains(productPage, 'Fast wheels');
   contains(productPage, 'Very <strong>fast</strong>');
@@ -181,10 +182,10 @@ async function exercise(origin, routeIds, diagnostics) {
 
   const home = await web.action(editor, 'save', [{ title: 'Home', slug: '', status: 'draft', publishedAt: '', content: [{ id: 'rt', type: 'core/richtext', data: { text: doc(paragraph(text('Welcome home'))) } }], excerpt: '', featuredImage: '', parent: '', menuOrder: '0' }, 'publish', 0],
     { params: { collection: 'pages', id: 'new' }, state: { route: 'pages', id: 'new' } });
-  const homeId = home._cossack_redirect.split('/').at(-1).split('?')[0];
+  const homeId = home.id;
   const team = await web.action(editor, 'save', [{ title: 'Team', slug: '', status: 'draft', publishedAt: '', content: [{ id: 'rt', type: 'core/richtext', data: { text: doc(paragraph(text('Our team'))) } }], excerpt: '', featuredImage: '', parent: homeId, menuOrder: '1' }, 'publish', 0],
     { params: { collection: 'pages', id: 'new' }, state: { route: 'pages', id: 'new' } });
-  const teamId = team._cossack_redirect.split('/').at(-1).split('?')[0];
+  const teamId = team.id;
   contains(await visitor.page('/home/team'), 'Our team');
   const moved = await fetch(origin + '/team', { redirect: 'manual' });
   expect(moved.status).toBe(301);
@@ -272,13 +273,13 @@ async function exercise(origin, routeIds, diagnostics) {
   expect([oldPost.status, oldPost.headers.get('location')]).toEqual([301, '/hello-world']);
   const blogPage = await web.action(editor, 'save', [{ title: 'Blog', slug: '', status: 'draft', publishedAt: '', content: [], excerpt: '', featuredImage: '', parent: '', menuOrder: '5' }, 'publish', 0],
     { params: { collection: 'pages', id: 'new' }, state: { route: 'pages', id: 'new' } });
-  expect((await web.action(settings, 'save', [{ pageForPosts: blogPage._cossack_redirect.split('/').at(-1).split('?')[0] }], { params: { group: 'reading' } })).error).toBe('');
+  expect((await web.action(settings, 'save', [{ pageForPosts: blogPage.id }], { params: { group: 'reading' } })).error).toBe('');
   contains(await visitor.page('/blog'), 'Hello, World!');
   contains(await visitor.page('/blog'), 'href="/hello-world"');
   // A new post cannot take a slug the site's routes own.
   const reserved = await web.action(editor, 'save', [{ title: 'Search', slug: '', excerpt: '', content: [], status: 'draft', publishedAt: '', sticky: false, featuredImage: '', categories: [], tags: [] }, 'publish', 0],
     { params: { collection: 'posts', id: 'new' }, state: { route: 'posts', id: 'new' } });
-  contains(await web.page(reserved._cossack_redirect), '/search-2');
+  contains(await web.page(`/dashboard/content/posts/${reserved.id}`), '/search-2');
   expect((await web.action(permalinks, 'save', [false, 'posts', [{ name: 'categories', path: 'category' }, { name: 'tags', path: 'tag' }]])).error).toBe('');
   contains(await visitor.page('/posts/hello-world'), 'zeppelin');
 
@@ -378,8 +379,8 @@ describe.skipIf(!liveRomeDBTests())('generated CMS application', () => {
       // The status select picks Published; the button follows it.
       await page.getByLabel('Status', { exact: true }).selectOption('published');
       await page.getByRole('button', { name: 'Publish', exact: true }).click();
-      await page.waitForURL(/\/dashboard\/content\/posts\/[0-9a-f-]{36}\?saved=1$/);
-      await browserExpect(page.getByRole('status').filter({ hasText: 'Saved.' }).first()).toBeVisible();
+      await page.waitForURL(/\/dashboard\/content\/posts\/[0-9a-f-]{36}$/);
+      await browserExpect(page.getByRole('status').filter({ hasText: 'Published.' }).first()).toBeVisible();
       await browserExpect(page.locator('[data-block-tree-item] .ProseMirror strong').first()).toHaveText('bold');
       await page.goto(server.origin + '/posts/browser-post-first-try');
       await browserExpect(page.getByRole('heading', { name: 'Browser post: first try' })).toBeVisible();

@@ -168,7 +168,15 @@ describe.skipIf(!live)('CMS stores on RomeDB', () => {
         const file = await files.upload({ name: 'a/../b.txt', contentType: 'text/plain', size: 5, body: body() }, { principal });
         expect(file).toMatchObject({ name: 'a_.._b.txt', size: 5, owner: owner.id });
         expect(await new Response((await files.open(file.id))!.body).text()).toBe('hello');
-        await expect(files.upload({ name: 'x.exe', contentType: 'application/x-msdownload', size: 1, body: body() }, { principal })).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
+        // Any type is stored; a declared type with a signature must match the bytes.
+        const program = await files.upload({ name: 'x.exe', contentType: 'application/x-msdownload', size: 5, body: body() }, { principal });
+        expect(program).toMatchObject({ contentType: 'application/x-msdownload', size: 5 });
+        await files.delete(program.id, { principal });
+        await expect(files.upload({ name: 'evil.png', contentType: 'image/png', size: 5, body: body() }, { principal })).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
+        expect((await files.list()).total).toBe(1);
+        expect(objects.size).toBe(1);
+        const limited = new FileService(cms.db, storage, { now: () => now, contentTypes: ['text/plain'] });
+        await expect(limited.upload({ name: 'x.exe', contentType: 'application/x-msdownload', size: 5, body: body() }, { principal })).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
         // An interrupted upload: the row exists as pending and the bytes may exist.
         await cms.db.write([{ rql: "INSERT INTO cms_files (id, key, owner_id, name, content_type, size, status, created_at, updated_at) VALUES ('stuck', 'cms/files/stuck', NULL, 's', 'text/plain', 1, 'pending', 1000, 1000)" }]);
         objects.set('cms/files/stuck', new Uint8Array([1]));
@@ -181,6 +189,62 @@ describe.skipIf(!live)('CMS stores on RomeDB', () => {
         await files.delete(file.id, { principal });
         expect(await files.get(file.id)).toBeNull();
         expect(objects.size).toBe(0);
+    });
+
+    it('takes uploads the browser sends itself: begin, PUT, complete', async () => {
+        const objects = new Map<string, Uint8Array>();
+        const storage: StorageProvider = {
+            name: 'memory',
+            async put(key, body, options) { objects.set(key, new Uint8Array(await new Response(body).arrayBuffer())); return { key, size: options.size }; },
+            async get(key) { const bytes = objects.get(key); return bytes ? { key, size: bytes.length, body: new Response(bytes.slice().buffer as ArrayBuffer).body! } : null; },
+            async head(key) { const bytes = objects.get(key); return bytes ? { key, size: bytes.length } : null; },
+            async delete(key) { objects.delete(key); },
+        };
+        const files = new FileService(cms.db, storage, { staleMs: 100 });
+        await cms.users.defineRole({ id: 'uploader2', name: 'Direct uploader', permissions: ['cms:upload'] });
+        const principal = (await cms.users.principal((await cms.users.create({ email: 'direct@example.com', name: 'Direct', roles: ['uploader2'] })).id))!;
+        const stranger = (await cms.users.principal((await cms.users.create({ email: 'stranger2@example.com', name: 'Stranger', roles: ['uploader2'] })).id))!;
+        const bytes = (value: string) => new Response(value).body!;
+        // Without a presigning provider the bytes come through the application.
+        const pending = await files.begin({ name: 'notes.txt', contentType: 'text/plain', size: 5 }, { principal });
+        expect(pending).toMatchObject({ name: 'notes.txt', contentType: 'text/plain', size: 5, direct: null });
+        expect(files.direct).toBe(false);
+        expect(await files.get(pending.id)).toBeNull();
+        await expect(files.receive(pending.id, bytes('hello'), { principal: stranger })).rejects.toMatchObject({ code: 'CMS_FORBIDDEN' });
+        await expect(files.complete(pending.id, { principal })).rejects.toMatchObject({ code: 'CMS_VALIDATION', message: 'The upload did not finish.' });
+        // The failed completion dropped the upload; a new one goes through.
+        await expect(files.receive(pending.id, bytes('hello'), { principal })).rejects.toMatchObject({ code: 'CMS_NOT_FOUND' });
+        const again = await files.begin({ name: 'notes.txt', contentType: 'text/plain', size: 5 }, { principal });
+        await files.receive(again.id, bytes('hello'), { principal });
+        const file = await files.complete(again.id, { principal });
+        expect(file).toMatchObject({ id: again.id, name: 'notes.txt', size: 5, contentType: 'text/plain' });
+        expect(await new Response((await files.open(file.id))!.body).text()).toBe('hello');
+        // The declared size must match what arrived, and the signature the type.
+        const short = await files.begin({ name: 'short.txt', contentType: 'text/plain', size: 9 }, { principal });
+        await files.receive(short.id, bytes('hello'), { principal });
+        await expect(files.complete(short.id, { principal })).rejects.toMatchObject({ code: 'CMS_VALIDATION', message: expect.stringContaining('5 bytes, not the 9') });
+        expect(objects.has(`cms/files/${short.id}`)).toBe(false);
+        const fake = await files.begin({ name: 'fake.png', contentType: 'image/png', size: 5 }, { principal });
+        await files.receive(fake.id, bytes('hello'), { principal });
+        await expect(files.complete(fake.id, { principal })).rejects.toMatchObject({ code: 'CMS_VALIDATION', message: expect.stringContaining('not a valid image/png') });
+        // SVG is sanitized on completion, and its size follows.
+        const svg = '<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"><script>alert(2)</script><circle r="1"/></svg>';
+        const drawing = await files.begin({ name: 'logo.svg', contentType: 'image/svg+xml', size: svg.length }, { principal });
+        await files.receive(drawing.id, bytes(svg), { principal });
+        const stored = await files.complete(drawing.id, { principal });
+        const clean = await new Response((await files.open(stored.id))!.body).text();
+        expect(clean).toBe('<svg xmlns="http://www.w3.org/2000/svg"><circle r="1"/></svg>');
+        expect(stored.size).toBe(clean.length);
+        // A provider that presigns hands the browser the bucket's URL.
+        storage.presign = async (key, options) => ({ url: `https://bucket.example/${key}?signed`, method: 'PUT', headers: { 'content-type': options.contentType!, 'content-length': String(options.size) } });
+        expect(files.direct).toBe(true);
+        const direct = await files.begin({ name: 'big.zip', contentType: 'application/zip', size: 3 }, { principal });
+        expect(direct.direct).toEqual({ url: `https://bucket.example/cms/files/${direct.id}?signed`, method: 'PUT', headers: { 'content-type': 'application/zip', 'content-length': '3' } });
+        objects.set(`cms/files/${direct.id}`, new Uint8Array([1, 2, 3]));
+        expect(await files.complete(direct.id, { principal })).toMatchObject({ contentType: 'application/zip', size: 3 });
+        expect((await files.list({ kind: 'archive' })).items.map(item => item.name)).toEqual(['big.zip']);
+        expect((await files.list({ kind: 'document' })).items.map(item => item.name)).toEqual(['notes.txt']);
+        for (const item of (await files.list()).items) await files.delete(item.id, { principal });
     });
 
     it('activates a plugin only when it is migrated and granted, and limits it to its grants', async () => {
@@ -257,5 +321,61 @@ describe.skipIf(!live)('CMS stores on RomeDB', () => {
 
         const invalid = createCMS({ db, plugins: [{ name: 'bad', version: '1.0.0', manifest: { schemaVersion: 1, name: 'bad', version: '1.0.0', hooks: [{ point: 'cms.nope', version: 1 }] } }] });
         expect((await invalid.status()).plugins[0]).toMatchObject({ active: false, reason: expect.stringContaining('not a CMS extension point') });
+    });
+
+    it('runs the extension points one plugin provides for the handlers of another', async () => {
+        const seen: string[] = [];
+        const shop = (version: number) => ({
+            name: 'shop', version: '1.0.0',
+            manifest: {
+                schemaVersion: 1, name: 'shop', version: '1.0.0',
+                provides: [{ point: 'shop.order-placed', kind: 'action', version }, { point: 'shop.price', kind: 'filter', version: 1 }],
+                commands: [{ name: 'order', description: 'Place an order.', options: { price: { type: 'number', required: true } } }],
+            },
+            module: {
+                register(context: PluginContext) {
+                    const placed = context.hooks.point<{ total: number }>('shop.order-placed', 'action');
+                    const price = context.hooks.point<number, { sku: string }>('shop.price', 'filter');
+                    expect(() => context.hooks.point('shop.price', 'action')).toThrow(/a filter, not an action/);
+                    expect(() => context.hooks.point('cms.resource.before-write', 'filter')).toThrow(/does not declare/);
+                    context.commands.add('order', async input => {
+                        const total = await context.hooks.applyFilters(price, Number(input.price), { sku: 'mug' });
+                        const report = await context.hooks.doAction(placed, { total });
+                        return { total, handlers: report.outcomes.map(outcome => `${outcome.plugin}:${outcome.status}`) };
+                    });
+                },
+            },
+        });
+        // The consumer is listed first: order never matters, the host builds every point before any register() runs.
+        const loyalty = {
+            name: 'loyalty', version: '1.0.0',
+            manifest: { schemaVersion: 1, name: 'loyalty', version: '1.0.0', hooks: [{ point: 'shop.order-placed', version: 1 }, { point: 'shop.price', version: 1 }] },
+            module: {
+                register(context: PluginContext) {
+                    context.hooks.addFilter(context.hooks.point<number, { sku: string }>('shop.price', 'filter'), (value, ctx) => { seen.push(`price:${ctx.input.sku}`); return value * 0.9; });
+                    context.hooks.addAction(context.hooks.point<{ total: number }>('shop.order-placed', 'action'), payload => { seen.push(`placed:${payload.total}`); });
+                    void expect(context.hooks.doAction(context.hooks.point<{ total: number }>('shop.order-placed', 'action'), { total: 1 })).rejects.toThrow(/does not declare in provides/);
+                },
+            },
+        };
+        const db = service.database();
+        const host = createCMS({ db, plugins: [loyalty, shop(1)] });
+        const admin = systemPrincipal('test');
+        expect((await host.status()).plugins.map(plugin => plugin.active)).toEqual([false, false]);
+        expect((await host.status()).plugins[0]).toMatchObject({ name: 'loyalty', missing: ['plugin:enabled', 'hook:shop.order-placed', 'hook:shop.price'] });
+        await host.grantPlugin('shop', admin);
+        // The provider runs; the consumer's handlers are registered but do nothing until its grant.
+        expect(await host.runCommand('shop', 'order', { price: 10 }, { principal: admin })).toEqual({ total: 10, handlers: ['loyalty:ok'] });
+        await host.grantPlugin('loyalty', admin);
+        expect(await host.runCommand('shop', 'order', { price: 10 }, { principal: admin })).toEqual({ total: 9, handlers: ['loyalty:ok'] });
+        expect(seen).toEqual(['price:mug', 'placed:9']);
+        await host.revokePlugin('loyalty', admin);
+        expect(await host.runCommand('shop', 'order', { price: 10 }, { principal: admin })).toEqual({ total: 10, handlers: ['loyalty:ok'] });
+
+        // A point of a missing provider, or another version of it, makes the consumer invalid.
+        const alone = createCMS({ db, plugins: [loyalty] });
+        expect((await alone.status()).plugins[0]).toMatchObject({ name: 'loyalty', active: false, reason: expect.stringContaining('shop.order-placed is provided by no installed plugin') });
+        const bumped = createCMS({ db, plugins: [shop(2), loyalty] });
+        expect((await bumped.status()).plugins[1]).toMatchObject({ name: 'loyalty', active: false, reason: expect.stringContaining('shop.order-placed is version 2, not 1') });
     });
 });

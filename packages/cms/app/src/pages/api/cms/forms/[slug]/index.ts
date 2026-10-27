@@ -13,7 +13,7 @@ export const GET = async (c: Context) => {
     const cms = c.get('cms');
     try {
         const form = await cms.forms.get(c.req.param('slug') ?? '');
-        if (!form) return c.json({ error: 'This form does not exist.', code: 'CMS_NOT_FOUND' }, 404);
+        if (!form?.published) return c.json({ error: 'This form does not exist.', code: 'CMS_NOT_FOUND' }, 404);
         const closed = await cms.forms.closed(form);
         c.header('cache-control', 'public, max-age=60');
         return c.json({
@@ -43,7 +43,7 @@ export const POST = async (c: Context) => {
     const json = (c.req.header('accept') ?? '').includes('application/json') || (c.req.header('content-type') ?? '').includes('application/json');
     let form: LoadedForm | null;
     try { form = await cms.forms.get(c.req.param('slug') ?? ''); } catch (error) { return apiError(c, error); }
-    if (!form) return c.json({ error: 'This form does not exist.', code: 'CMS_NOT_FOUND' }, 404);
+    if (!form?.published) return c.json({ error: 'This form does not exist.', code: 'CMS_NOT_FOUND' }, 404);
     let values: SubmittedValues;
     let meta: { page?: string; started?: string; trap?: string; token?: string };
     try {

@@ -99,7 +99,7 @@ describe.skipIf(!live)('collections built in the dashboard', () => {
         const extended = await cms.saveCollection({ ...cms.collection('posts'), label: 'Articles', path: 'blog', fields: { ...cms.collection('posts').fields, subtitle: field.string({ max: 120, label: 'Subtitle' }) } }, admin);
         expect(extended).toMatchObject({ label: 'Articles', path: 'blog', builtin: true });
         expect(Object.keys(extended.fields)).toEqual(['sticky', 'subtitle']);
-        expect(extended.features).toEqual({ content: true, excerpt: true, featuredImage: true });
+        expect(extended.features).toEqual({ content: true, excerpt: true, featuredImage: true, password: true });
         expect(Object.keys(cms.resourceById('cms/posts').fields)).toEqual(expect.arrayContaining(['subtitle', 'content', 'featuredImage', 'sticky']));
         const post = await cms.resource('cms/posts').create({ title: 'With subtitle', subtitle: 'Below the title' }, { principal: admin });
         expect(post).toMatchObject({ subtitle: 'Below the title', slug: 'with-subtitle' });

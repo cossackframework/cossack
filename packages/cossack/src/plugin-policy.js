@@ -20,6 +20,8 @@ export const EXTENSION_POINT_EXPORTS = Object.freeze({
   beforeWrite: 'cms.resource.before-write', afterCommit: 'cms.resource.after-commit',
   formValidate: 'cms.form.validate', formBeforeSubmit: 'cms.form.before-submit', formPrefill: 'cms.form.prefill',
   formConfirmation: 'cms.form.confirmation', formNotification: 'cms.form.notification', formSubmitted: 'cms.form.submitted',
+  termBeforeSave: 'cms.term.before-save', commentBeforeSave: 'cms.comment.before-save', menuBeforeSave: 'cms.menu.before-save',
+  entryActions: 'cms.dashboard.entry-actions', entryColumns: 'cms.dashboard.entry-columns', bulkActions: 'cms.dashboard.bulk-actions',
 });
 /** Permissions the CMS host defines. */
 export const HOST_PERMISSIONS = Object.freeze(['cms:dashboard']);

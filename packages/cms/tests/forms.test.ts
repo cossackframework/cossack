@@ -46,7 +46,7 @@ describe.skipIf(!live)('forms', () => {
         editor = (await cms.users.principal((await cms.users.create({ email: 'editor@example.com', name: 'Editor', roles: ['editor'] })).id))!;
         await cms.settings.update('general', { adminEmail: 'admin@example.com', siteTitle: 'Example' }, { principal: admin });
         contact = await cms.resource('cms/forms').create({
-            title: 'Contact', body: contactBody,
+            title: 'Contact', status: 'published', body: contactBody,
             notifications: { rules: [
                 { id: 'admin', label: 'Admin', to: '{admin_email}', subject: 'New message from {field:name}', body: '{all_fields}\n\n{submission:url}', replyTo: '{field:email}' },
                 { id: 'auto', label: 'Autoresponder', to: '{field:email}', subject: 'Thanks, {field:name}', body: 'We will reply soon.', when: { rules: [{ field: 'topic', op: 'is', value: 'support' }] } },
@@ -161,11 +161,17 @@ describe.skipIf(!live)('forms', () => {
 
     it('closes forms by their settings', async () => {
         const forms = cms.resource('cms/forms');
-        const survey = await forms.create({
+        const draft = await forms.create({
             title: 'Survey', body: [input('e', 'email', { name: 'email', required: true }), input('s', 'number', { name: 'score', min: 1, max: 5 })],
             settings: { limit: 2, oncePerEmail: 'email', confirmation: 'redirect', redirectUrl: '/thanks', closedMessage: 'Survey is over.' },
         }, { principal: editor });
         const send = (email: string, ip: string) => cms.forms.submit('survey', { email, score: '4' }, { principal: ANONYMOUS, ip });
+        // A draft form is listed in the dashboard but is nowhere on the site.
+        expect((await cms.forms.get('survey'))?.published).toBe(false);
+        expect((await cms.forms.all()).map(form => form.ref.slug)).toContain('survey');
+        await expect(send('a@example.com', '10.0.0.1')).rejects.toMatchObject({ code: 'CMS_NOT_FOUND' });
+        const survey = await forms.update(draft.id, { status: 'published' }, { principal: editor, expectedRevision: draft.rev });
+        expect((await cms.forms.get('survey'))?.published).toBe(true);
         expect((await send('a@example.com', '10.0.0.1')).confirmation).toEqual({ kind: 'redirect', url: '/thanks' });
         await expect(send('a@example.com', '10.0.0.2')).rejects.toMatchObject({ code: 'CMS_CONFLICT', fields: { email: 'This address already sent this form.' } });
         await send('b@example.com', '10.0.0.3');
@@ -190,7 +196,7 @@ describe.skipIf(!live)('forms', () => {
         const forms = cms.resource('cms/forms');
         const hook = await cms.webhooks.save({ name: 'Leads', url: 'https://crm.example.com/hook', events: ['form.submitted'] }, { collections: cms.collections().map(entry => entry.name) });
         const ping = await forms.create({
-            title: 'Ping', body: [input('e', 'email', { name: 'email', required: true })], settings: { store: false },
+            title: 'Ping', status: 'published', body: [input('e', 'email', { name: 'email', required: true })], settings: { store: false },
             notifications: { rules: [{ id: 'admin', label: 'Admin', to: 'team@example.com', subject: 'Ping {field:email}', body: '{all_fields}' }] },
         }, { principal: editor });
         const before = sent.length;

@@ -28,64 +28,64 @@ export function inputFields(own: { readonly [name: string]: FieldDeclaration } =
     return { label: LABEL, name: NAME, description: HELP, required: REQUIRED, ...own };
 }
 
-const textInput = (name: string, label: string, icon: string, kind: InputKind, description: string): BlockDeclaration => ({
-    name, label, icon, category: 'form', description, input: { kind },
+const textInput = (name: string, label: string, icon: string, kind: InputKind, description: string, keywords: readonly string[]): BlockDeclaration => ({
+    name, label, icon, category: 'form', description, input: { kind }, keywords,
     fields: inputFields({ placeholder: PLACEHOLDER, defaultValue: field.string({ max: 500, label: 'Default value' }) }),
 });
 
 /** Built-in input blocks. A submit button is not a block: the form's settings label it. */
 export const FORM_BLOCKS: readonly BlockDeclaration[] = Object.freeze([
-    { name: 'form/text', label: 'Text', icon: 'text-field', category: 'form', description: 'One line of text.', input: { kind: 'string' }, fields: inputFields({
+    { name: 'form/text', keywords: ['single line', 'input', 'string', 'name'], label: 'Text', icon: 'text-field', category: 'form', description: 'One line of text.', input: { kind: 'string' }, fields: inputFields({
         placeholder: PLACEHOLDER,
         defaultValue: field.string({ max: 500, label: 'Default value' }),
         minLength: field.integer({ min: 0, max: 10_000, label: 'Minimum length' }),
         maxLength: field.integer({ default: 255, min: 1, max: 10_000, label: 'Maximum length' }),
         pattern: field.string({ max: 200, label: 'Pattern', description: 'A regular expression the whole value must match.' }),
     }) },
-    textInput('form/email', 'Email', 'letter', 'email', 'An email address.'),
-    textInput('form/url', 'Website', 'link', 'url', 'A web address.'),
-    textInput('form/phone', 'Phone', 'phone', 'phone', 'A phone number.'),
-    { name: 'form/textarea', label: 'Paragraph text', icon: 'text-square', category: 'form', description: 'Several lines of text.', input: { kind: 'text' }, fields: inputFields({
+    textInput('form/email', 'Email', 'letter', 'email', 'An email address.', ['mail', 'address', 'contact']),
+    textInput('form/url', 'Website', 'link', 'url', 'A web address.', ['url', 'link', 'homepage']),
+    textInput('form/phone', 'Phone', 'phone', 'phone', 'A phone number.', ['tel', 'telephone', 'mobile', 'number']),
+    { name: 'form/textarea', keywords: ['multi line', 'textarea', 'message', 'long text'], label: 'Paragraph text', icon: 'text-square', category: 'form', description: 'Several lines of text.', input: { kind: 'text' }, fields: inputFields({
         placeholder: PLACEHOLDER,
         defaultValue: field.text({ max: 5000, label: 'Default value' }),
         rows: field.integer({ default: 5, min: 2, max: 20, label: 'Rows' }),
         minLength: field.integer({ min: 0, max: 50_000, label: 'Minimum length' }),
         maxLength: field.integer({ default: 5000, min: 1, max: 50_000, label: 'Maximum length' }),
     }) },
-    { name: 'form/number', label: 'Number', icon: 'calculator', category: 'form', description: 'A number, within limits.', input: { kind: 'number' }, fields: inputFields({
+    { name: 'form/number', keywords: ['numeric', 'quantity', 'amount'], label: 'Number', icon: 'calculator', category: 'form', description: 'A number, within limits.', input: { kind: 'number' }, fields: inputFields({
         placeholder: PLACEHOLDER,
         defaultValue: field.number({ nullable: true, label: 'Default value' }),
         min: field.number({ nullable: true, label: 'Minimum' }),
         max: field.number({ nullable: true, label: 'Maximum' }),
         step: field.number({ nullable: true, min: 0, label: 'Step', description: 'Values go up in steps of this size from the minimum. Empty for any value; 1 for whole numbers.' }),
     }) },
-    { name: 'form/date', label: 'Date', icon: 'calendar', category: 'form', description: 'A day of the calendar.', input: { kind: 'date' }, fields: inputFields({
+    { name: 'form/date', keywords: ['calendar', 'day'], label: 'Date', icon: 'calendar', category: 'form', description: 'A day of the calendar.', input: { kind: 'date' }, fields: inputFields({
         defaultValue: field.string({ max: 10, pattern: DATE, label: 'Default value' }),
         min: field.string({ max: 10, pattern: DATE, label: 'Earliest' }),
         max: field.string({ max: 10, pattern: DATE, label: 'Latest' }),
     }) },
-    { name: 'form/select', label: 'Dropdown', icon: 'list-down', category: 'form', description: 'One choice from a list.', input: { kind: 'choice' }, fields: inputFields({
+    { name: 'form/select', keywords: ['select', 'list', 'choice', 'option'], label: 'Dropdown', icon: 'list-down', category: 'form', description: 'One choice from a list.', input: { kind: 'choice' }, fields: inputFields({
         options: OPTIONS,
         placeholder: field.string({ max: 200, default: 'Choose…', label: 'Prompt' }),
         defaultValue: field.string({ max: 200, label: 'Default value' }),
     }) },
-    { name: 'form/radio', label: 'Multiple choice', icon: 'record-circle', category: 'form', description: 'One choice, all shown.', input: { kind: 'choice' }, fields: inputFields({
+    { name: 'form/radio', keywords: ['radio', 'choice', 'option', 'single'], label: 'Multiple choice', icon: 'record-circle', category: 'form', description: 'One choice, all shown.', input: { kind: 'choice' }, fields: inputFields({
         options: OPTIONS, inline: INLINE,
         defaultValue: field.string({ max: 200, label: 'Default value' }),
     }) },
-    { name: 'form/checkboxes', label: 'Checkboxes', icon: 'checklist', category: 'form', description: 'Any number of choices.', input: { kind: 'choices' }, fields: inputFields({
+    { name: 'form/checkboxes', keywords: ['multiple', 'choices', 'options', 'tick'], label: 'Checkboxes', icon: 'checklist', category: 'form', description: 'Any number of choices.', input: { kind: 'choices' }, fields: inputFields({
         options: OPTIONS, inline: INLINE,
     }) },
-    { name: 'form/checkbox', label: 'Checkbox', icon: 'check-square', category: 'form', description: 'A yes or no.', input: { kind: 'boolean' }, fields: inputFields({
+    { name: 'form/checkbox', keywords: ['tick', 'boolean', 'yes no', 'toggle'], label: 'Checkbox', icon: 'check-square', category: 'form', description: 'A yes or no.', input: { kind: 'boolean' }, fields: inputFields({
         text: field.string({ max: 500, label: 'Checkbox text', description: 'Shown beside the box; the label when empty.' }),
         defaultValue: field.boolean({ default: false, label: 'Checked at first' }),
     }) },
-    { name: 'form/consent', label: 'Consent', icon: 'shield-check', category: 'form', description: 'A box people must tick to agree.', input: { kind: 'boolean' }, fields: {
+    { name: 'form/consent', keywords: ['agree', 'terms', 'gdpr', 'privacy'], label: 'Consent', icon: 'shield-check', category: 'form', description: 'A box people must tick to agree.', input: { kind: 'boolean' }, fields: {
         ...inputFields(),
         required: field.boolean({ default: true, label: 'Required' }),
         text: field.text({ required: true, max: 2000, format: 'markdown', label: 'Agreement', description: 'Shown beside the box. Links are allowed.' }),
     } },
-    { name: 'form/hidden', label: 'Hidden', icon: 'eye-closed', category: 'form', description: 'A value visitors do not see, from the default or the page address.', input: { kind: 'string' }, fields: inputFields({
+    { name: 'form/hidden', keywords: ['utm', 'tracking', 'source', 'secret'], label: 'Hidden', icon: 'eye-closed', category: 'form', description: 'A value visitors do not see, from the default or the page address.', input: { kind: 'string' }, fields: inputFields({
         defaultValue: field.string({ max: 500, label: 'Value' }),
     }) },
 ] satisfies BlockDeclaration[]);
@@ -459,7 +459,7 @@ export const forms: CollectionDefinition = {
     builtin: true,
     // Forms have their own screens; the collection manager and field groups stay out of them.
     managed: true,
-    publishable: false,
+    // Draft forms are built in the dashboard; the site shows and takes only published ones.
     visibility: 'private',
     description: 'Forms built from blocks, with their own submissions.',
     fields: {

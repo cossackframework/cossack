@@ -5,6 +5,7 @@ import { formatBytes, isSameOriginPost, mediaKind, mediaUrl, PERMISSIONS, type M
 import { requireAny } from '../../../../cms/guards';
 import { icon } from '../../../../cms/icons';
 import { formFiles, uploadFiles } from '../../../../cms/uploads';
+import { uploadFile } from '../../../../cms/media-chooser';
 import { notice, pageHeader, shortDate } from '../../../../cms/ui';
 
 const PAGE_SIZE = 40;
@@ -27,7 +28,7 @@ export default class MediaLibrary extends Cossack {
     @State() configured = true;
 
     head(): HeadValue {
-        return { title: 'Media' };
+        return { title: 'Files' };
     }
 
     async init() {
@@ -71,12 +72,8 @@ export default class MediaLibrary extends Cossack {
         this.errors = [];
         let uploaded = 0;
         for (const file of files) {
-            const body = new FormData();
-            body.append('file', file);
-            const response = await fetch('/api/cms/media', { method: 'POST', body });
-            const result = await response.json().catch(() => ({})) as { files?: unknown[]; error?: string };
-            if (response.ok) uploaded += result.files?.length ?? 0;
-            else this.errors = [...this.errors, result.error ?? `${file.name}: ${__('the upload failed.')}`];
+            try { await uploadFile(file); uploaded++; }
+            catch (error) { this.errors = [...this.errors, (error as Error).message || `${file.name}: ${__('the upload failed.')}`]; }
         }
         this.uploading = false;
         if (uploaded) {
@@ -113,8 +110,8 @@ export default class MediaLibrary extends Cossack {
     render() {
         const totalPages = Math.max(1, Math.ceil(this.total / PAGE_SIZE));
         return html`<div class="space-y-6">
-            ${pageHeader(__('Media library'), { titleActions: component(Button, { type: 'button', size: 'sm', '@click': () => { this.showUploader = !this.showUploader; } }, __('Add new media file')) })}
-            ${this.configured ? null : notice(__('Media storage is not configured. Bind an R2 bucket as MEDIA, or set S3_BUCKET or MEDIA_DIR.'), 'error')}
+            ${pageHeader(__('Files'), { titleActions: component(Button, { type: 'button', size: 'sm', '@click': () => { this.showUploader = !this.showUploader; } }, __('Add new file')) })}
+            ${this.configured ? null : notice(__('File storage is not configured. Bind an R2 bucket as MEDIA, or set S3_BUCKET or MEDIA_DIR.'), 'error')}
             ${this.message ? notice(this.message, 'success') : null}
             ${this.errors.map(error => notice(error, 'error'))}
             ${this.showUploader ? html`<form method="post" enctype="multipart/form-data"
@@ -126,13 +123,13 @@ export default class MediaLibrary extends Cossack {
                     ${__('Select files')}<input type="file" name="file" multiple class="sr-only" @change=${(event: Event) => this.onPick(event)}>
                 </label>
                 <noscript><button type="submit" class="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground">${__('Upload')}</button></noscript>
-                <p class="text-xs text-muted-foreground">${__('Images, PDF, plain text, MP4, WebM and MP3. The size limit is in Settings → Media.')}</p>
+                <p class="text-xs text-muted-foreground">${__('Any kind of file. The size limit is in Settings → Files.')}</p>
             </form>` : null}
             <form method="get" action="/dashboard/media" class="flex flex-wrap items-center gap-2" role="search">
-                <div class="w-44">${component(NativeSelect, { name: 'kind', size: 'sm', 'aria-label': __('Media type') }, html`
-                    ${[['', __('All media items')], ['image', __('Images')], ['video', __('Video')], ['audio', __('Audio')], ['document', __('Documents')]]
+                <div class="w-44">${component(NativeSelect, { name: 'kind', size: 'sm', 'aria-label': __('File type') }, html`
+                    ${[['', __('All files')], ['image', __('Images')], ['video', __('Video')], ['audio', __('Audio')], ['document', __('Documents')], ['archive', __('Archives')]]
                         .map(([value, label]) => html`<option value=${value} ?selected=${this.kind === value}>${label}</option>`)}`)}</div>
-                <div class="w-64 max-w-full">${component(Input, { type: 'search', name: 'q', size: 'sm', value: this.search, placeholder: __('Search media'), 'aria-label': __('Search media') })}</div>
+                <div class="w-64 max-w-full">${component(Input, { type: 'search', name: 'q', size: 'sm', value: this.search, placeholder: __('Search files'), 'aria-label': __('Search files') })}</div>
                 ${component(Button, { type: 'submit', size: 'sm', variant: 'outline', class: 'gap-1.5' }, html`${component(Icon, { entry: icon('filter'), size: 16 })}${__('Filter')}`)}
                 <span class="ml-auto text-xs text-muted-foreground">${this.total} ${this.total === 1 ? __('item') : __('items')}</span>
             </form>
@@ -145,7 +142,7 @@ export default class MediaLibrary extends Cossack {
                         <span class="block truncate px-2 pb-1.5 text-[11px] text-muted-foreground">${item.size}${item.dimensions ? ` · ${item.dimensions}` : ''} · ${shortDate(item.createdAt)}</span>
                     </a>
                 </li>`)}
-            </ul>` : component(Card, {}, component(CardBody, {}, html`<p class="py-8 text-center text-sm text-muted-foreground">${__('No media files found.')}</p>`))}
+            </ul>` : component(Card, {}, component(CardBody, {}, html`<p class="py-8 text-center text-sm text-muted-foreground">${__('No files found.')}</p>`))}
             ${totalPages > 1 ? component(Pagination, {
                 page: this.page, totalPages, label: __('Pagination'), previousLabel: __('Previous page'), nextLabel: __('Next page'),
                 pageLabel: (page: number) => `${__('Page')} ${page}`, href: (page: number) => this.href(page),

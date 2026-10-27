@@ -1,7 +1,7 @@
 /**
  * A media chooser for screens that edit blocks outside the entry editor: Appearance → Widgets
  * and the editor on the public site. Client-safe. The screen keeps the state and finds files
- * on the server; uploads go to `/api/cms/media`.
+ * on the server; uploads go through `uploadFile`.
  */
 import { component, html, type TemplateResult } from '@cossackframework/renderer';
 import { Button, Modal } from '@cossackframework/ui';
@@ -55,17 +55,33 @@ export function mediaChooser(state: MediaChooserState, handlers: MediaChooserHan
         </div>`);
 }
 
-/** Upload the files of a file input to the media library; returns the new files' previews and an error, if any. */
+/**
+ * Upload one file from the browser, of any size: begin the upload, PUT the bytes where the
+ * server says (the bucket itself, or this application), then complete it. Throws with a
+ * message people can read.
+ */
+export async function uploadFile(file: File, signal?: AbortSignal): Promise<MediaPreview> {
+    const failed = async (response: Response, fallback: string) => {
+        const result = await response.json().catch(() => ({})) as { error?: string };
+        return new Error(`${file.name}: ${result.error ?? fallback}`);
+    };
+    const began = await fetch('/api/cms/uploads', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: file.name, type: file.type, size: file.size }), signal });
+    if (!began.ok) throw await failed(began, __('the upload could not start.'));
+    const target = await began.json() as { id: string; url: string; method: string; headers: Record<string, string>; direct: boolean };
+    const sent = await fetch(target.url, { method: target.method, headers: target.headers, body: file, credentials: target.direct ? 'omit' : 'same-origin', signal });
+    if (!sent.ok) throw target.direct ? new Error(`${file.name}: ${__('the storage service refused the upload.')}`) : await failed(sent, __('the upload failed.'));
+    const completed = await fetch(`/api/cms/uploads/${target.id}/complete`, { method: 'POST', signal });
+    if (!completed.ok) throw await failed(completed, __('the upload failed.'));
+    return (await completed.json() as { file: MediaPreview }).file;
+}
+
+/** Upload the files of a file input to the library; returns the new files' previews and an error, if any. */
 export async function uploadMedia(input: HTMLInputElement): Promise<{ files: MediaPreview[]; error: string }> {
     const files: MediaPreview[] = [];
     let error = '';
     for (const file of [...(input.files ?? [])]) {
-        const body = new FormData();
-        body.append('file', file);
-        const response = await fetch('/api/cms/media', { method: 'POST', body });
-        const result = await response.json().catch(() => ({ error: __('The upload failed.') })) as { files?: MediaPreview[]; error?: string };
-        if (!response.ok || !result.files?.length) { error = result.error ?? __('The upload failed.'); continue; }
-        files.push(result.files[0]!);
+        try { files.push(await uploadFile(file)); }
+        catch (failure) { error = (failure as Error).message || __('The upload failed.'); }
     }
     input.value = '';
     return { files, error };

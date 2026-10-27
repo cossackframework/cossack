@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
     blockAllowedIn, blockCategory, blockMedia, blockProblems, blocksShapeProblem, blockStyleAttributes, blockSupports, blockTreeProblem, checkComment, collectionProblems, collectionResource, compareRecords, contentBlocks, extendCollection, CORE_BLOCKS, customCssProblem, DEFAULT_PRESETS, diffWords,
     field, findBlock, flattenBlocks, imageEditsProblems, imageSrcset, imageUrl, insertBlock, languageName, layerPresets, moveBlock, placeBlocks, posts, presetOverridesProblem, presetProblems, presetStyle, redirectPath, redirectProblems, removeBlock,
-    normalizeRichText, resolvePresets, richTextBlocks, shiftBlock, themeProblems, validateBlocks, validateValue, variantRect, variantWidth, webhookUrlProblem, type Block,
+    normalizeRichText, resolvePresets, richTextBlocks, shiftBlock, themeProblems, validateBlocks, validateValue, variantRect, variantWidth, webhookUrlProblem, BLOCK_CATEGORIES, FORM_BLOCKS, type Block,
 } from '../src/index';
 import { negotiateFormat } from '../src/server/images';
 
@@ -14,10 +14,38 @@ describe('essentials helpers', () => {
         expect(diffWords('', '')).toEqual([]);
         // Too many tokens are reported as replaced.
         expect(diffWords('a b c', 'x y z', 3)).toEqual([{ kind: 'removed', text: 'a b c' }, { kind: 'added', text: 'x y z' }]);
+        const base = { id: 's', rev: 1, createdAt: 0, updatedAt: 0, owner: null };
+        const settings = compareRecords({ settings: field.json({ label: 'Settings' }), note: field.text({ label: 'Note' }) }, { ...base, settings: { a: 1 }, note: 'x' }, { ...base, rev: 2, settings: { a: 2 }, note: 'y' });
+        expect(settings.map(change => [change.name, change.kind, change.structured])).toEqual([['settings', 'text', true], ['note', 'text', false]]);
+        expect(settings[0]!.after).toBe('{\n  "a": 2\n}');
         const changes = compareRecords({ title: field.string({ label: 'Title' }), sticky: field.boolean({ label: 'Sticky' }), body: field.richText({ label: 'Body' }) },
             { id: 'a', rev: 1, createdAt: 0, updatedAt: 0, owner: null, title: 'Old', sticky: false, body: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Same text' }] }] } },
             { id: 'a', rev: 2, createdAt: 0, updatedAt: 0, owner: null, title: 'New', sticky: true, body: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Same text' }] }] } });
         expect(changes.map(change => [change.name, change.kind, change.before, change.after])).toEqual([['title', 'text', 'Old', 'New'], ['sticky', 'value', 'No', 'Yes']]);
+    });
+
+    it('searches blocks by keyword and offers common blocks everywhere', () => {
+        const richText = CORE_BLOCKS.find(block => block.name === 'core/richtext')!;
+        expect(richText.keywords).toContain('wysiwyg');
+        expect(richText.common).toBe(true);
+        expect(CORE_BLOCKS.filter(block => block.common).map(block => block.name)).toEqual(['core/richtext', 'core/paragraph', 'core/heading', 'core/image', 'core/divider']);
+        expect(FORM_BLOCKS.find(block => block.name === 'form/email')!.keywords).toContain('mail');
+        // Input and field blocks keep to their own places; both are listed as fields.
+        expect(blockProblems({ name: 'acme/thing', label: 'Thing', keywords: ['a'], common: true, fields: {} })).toEqual([]);
+        expect(blockProblems({ name: 'acme/thing', label: 'Thing', keywords: [''], common: 'yes' as never, fields: {} })).toEqual([expect.stringContaining('keywords'), expect.stringContaining('common is on or off')]);
+        expect(blockProblems({ name: 'acme/thing', label: 'Thing', common: true, input: { kind: 'string' }, fields: { name: field.string(), label: field.string() } })).toEqual([expect.stringContaining('cannot be common')]);
+        expect(BLOCK_CATEGORIES.filter(category => category.label === 'Fields').map(category => category.id)).toEqual(['form', 'field']);
+        // A common block passes a field group's check; another non-field block does not.
+        const types = new Map(CORE_BLOCKS.map(block => [block.name, block]));
+        expect(validateBlocks([{ id: 'h', type: 'core/heading', data: { text: 'Section', level: 'h2' } }], types, { fieldGroup: true }).errors).toEqual({});
+        expect(Object.keys(validateBlocks([{ id: 'q', type: 'core/quote', data: { text: 'No' } }], types, { fieldGroup: true }).errors)).toEqual(['q']);
+    });
+
+    it('adds a password field for a protected collection', () => {
+        const resource = collectionResource({ name: 'docs', label: 'Docs', singular: 'Doc', fields: {}, features: { content: true, password: true } });
+        expect(resource.fields.password).toMatchObject({ kind: 'string', max: 100, placement: 'sidebar' });
+        expect(collectionResource({ name: 'docs', label: 'Docs', singular: 'Doc', fields: {} }).fields.password).toBeUndefined();
+        expect(collectionProblems({ name: 'docs', label: 'Docs', singular: 'Doc', fields: {}, features: { password: 'yes' as never } })).toEqual([expect.stringContaining('Features are content, excerpt, featuredImage, revisions, password')]);
     });
 
     it('validates group fields and field order', () => {
@@ -49,11 +77,11 @@ describe('essentials helpers', () => {
         expect(contentBlocks(false)).toBeNull();
         expect(contentBlocks({ blocks: [1] } as never)).toBeNull();
         expect(collectionProblems({ ...base, fields: { content: field.blocks() } })).toContain('content is a feature; turn it on instead of declaring it.');
-        expect(collectionProblems({ ...base, features: { sticky: true } as never })).toContain('Features are content, excerpt, featuredImage, revisions, each on or off.');
+        expect(collectionProblems({ ...base, features: { sticky: true } as never })).toContain('Features are content, excerpt, featuredImage, revisions, password, each on or off.');
         expect(collectionProblems({ ...base, template: [{ id: 'a', type: 'core/richtext', data: {} }] })).toContain('The content template needs the content feature.');
         expect(collectionProblems({ ...base, features: { content: true }, template: [{ id: 'a', type: 'core/richtext', data: {} }] })).toEqual([]);
         // A built-in collection's features stay on; stored ones add to them.
-        expect(extendCollection(posts, { features: { excerpt: false, revisions: false } }).features).toEqual({ content: true, excerpt: true, featuredImage: true, revisions: false });
+        expect(extendCollection(posts, { features: { excerpt: false, revisions: false } }).features).toEqual({ content: true, excerpt: true, featuredImage: true, password: true, revisions: false });
     });
 
     it('names languages and groups blocks', () => {

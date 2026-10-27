@@ -73,6 +73,8 @@ export interface CollectionDraft {
     content: boolean;
     excerpt: boolean;
     featuredImage: boolean;
+    /** A password visitors type to read an entry. */
+    password: boolean;
     /** A revision of every write. */
     revisions: boolean;
     /** How far entries may change the content template: free, keep its blocks, or keep their order too. */
@@ -84,7 +86,7 @@ export function collectionDraft(definition: CollectionDefinition): CollectionDra
         name: definition.name, label: definition.label, singular: definition.singular, description: definition.description ?? '', icon: definition.icon ?? 'document-text',
         path: definition.path ?? '', public: definition.path !== null && definition.path !== undefined, slug: definition.slug !== false, publishable: definition.publishable !== false,
         hierarchical: definition.hierarchical === true, visibility: definition.visibility ?? 'private', comments: definition.comments === true, taxonomies: [...(definition.taxonomies ?? [])], builtin: definition.builtin === true,
-        content: Boolean(definition.features?.content), excerpt: definition.features?.excerpt === true, featuredImage: definition.features?.featuredImage === true, revisions: definition.features?.revisions !== false,
+        content: Boolean(definition.features?.content), excerpt: definition.features?.excerpt === true, featuredImage: definition.features?.featuredImage === true, password: definition.features?.password === true, revisions: definition.features?.revisions !== false,
         templateLock: definition.templateLock ?? '',
     };
 }
@@ -96,7 +98,7 @@ export function definitionOf(draft: CollectionDraft, template: readonly Block[] 
         icon: draft.icon, path: draft.public ? draft.path.trim().replace(/^\/+|\/+$/g, '') : null,
         slug: draft.slug, publishable: draft.publishable, hierarchical: draft.hierarchical, ...(draft.publishable ? {} : { visibility: draft.visibility }), comments: draft.comments,
         taxonomies: [...draft.taxonomies],
-        features: { content: draft.content, excerpt: draft.excerpt, featuredImage: draft.featuredImage, revisions: draft.revisions },
+        features: { content: draft.content, excerpt: draft.excerpt, featuredImage: draft.featuredImage, password: draft.password === true, revisions: draft.revisions },
         fields: {},
         template: draft.content ? [...template] : [], ...(draft.content && draft.templateLock && template.length ? { templateLock: draft.templateLock } : {}),
     };

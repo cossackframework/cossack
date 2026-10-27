@@ -31,7 +31,7 @@ export const GET = async (c: Context) => {
         const languages = await cms.languages();
         const translations = languages.multilingual ? Object.fromEntries(await Promise.all([...await cms.translations(collection, record, { principal })]
             .map(async ([code, entry]) => [code, { id: entry.id, url: (await cms.entryUrls(collection, [entry])).get(entry.id) ?? null }] as const))) : {};
-        return c.json({ item: (await apiEntries(cms, collection, [record], c.req.query('format') === 'html'))[0], patterns: await apiPatterns(cms, collection, [record]), translations });
+        return c.json({ item: (await apiEntries(cms, collection, [record], c.req.query('format') === 'html', c.get('principal')))[0], patterns: await apiPatterns(cms, collection, [record]), translations });
     } catch (error) { return apiError(c, error); }
 };
 

@@ -16,6 +16,8 @@ export interface FieldChange {
     readonly label: string;
     /** Text fields are diffed by word; other values are shown before and after. */
     readonly kind: 'text' | 'value';
+    /** JSON fields: the texts are JSON documents, best compared line by line. Blocks keep the word diff, since their text is prose. */
+    readonly structured: boolean;
     readonly before: string;
     readonly after: string;
     readonly parts: readonly DiffPart[];
@@ -103,7 +105,7 @@ export function compareRecords(fields: { readonly [name: string]: FieldDeclarati
         if (from === to) continue;
         const text = ['string', 'text', 'richtext', 'list', 'json', 'blocks'].includes(declaration.kind);
         changes.push({
-            name, label: declaration.label ?? name, kind: text ? 'text' : 'value', before: from, after: to,
+            name, label: declaration.label ?? name, kind: text ? 'text' : 'value', structured: declaration.kind === 'json', before: from, after: to,
             parts: text ? diffWords(from, to) : [...(from ? [{ kind: 'removed' as const, text: from }] : []), ...(to ? [{ kind: 'added' as const, text: to }] : [])],
         });
     }

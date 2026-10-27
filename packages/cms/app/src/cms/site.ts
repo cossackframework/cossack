@@ -64,7 +64,7 @@ function localeWhere(languages: SiteLanguages, locale: string): { [field: string
 }
 
 /** The layout's data: site title, tagline, the menus of the active theme's locations and the language links. */
-export async function siteView(cms: CmsHost, theme: ThemeState, options: { locale?: string; languages?: readonly LanguageLink[]; forms?: FormRequest } = {}): Promise<SiteView & { noindex: boolean }> {
+export async function siteView(cms: CmsHost, theme: ThemeState, options: { locale?: string; languages?: readonly LanguageLink[]; forms?: FormRequest; template?: string | null } = {}): Promise<SiteView & { noindex: boolean }> {
     const settings = await cms.settings.all();
     const languages = await cms.languages();
     const locale = options.locale ?? languages.default;
@@ -83,6 +83,7 @@ export async function siteView(cms: CmsHost, theme: ThemeState, options: { local
         title: settings['general.siteTitle'], tagline: settings['general.tagline'], blog, menus, noindex: settings['reading.discourageSearchEngines'],
         locale, languages: options.languages ?? [], searchUrl: `${localePrefix(languages, locale)}/search`, homeUrl: localePrefix(languages, locale) || '/',
         areas: await areaViews(cms, info?.areas.map(area => area.name) ?? [], options.forms),
+        template: options.template ?? null,
     };
 }
 
@@ -167,7 +168,7 @@ async function withForms(cms: CmsHost, blocks: readonly RenderedBlock[], request
         const slug = typeof block.data.form === 'string' ? block.data.form : '';
         try {
             const form = slug ? await cms.forms.get(slug) : null;
-            if (!form) continue;
+            if (!form?.published) continue;
             const ids = new Set<string>();
             for (const entry of form.blocks) blockMediaIds(cms, entry, ids);
             const files = cms.files && ids.size ? await cms.files.getMany([...ids]) : new Map<string, CmsFile>();
@@ -291,6 +292,8 @@ export interface EntryViewOptions {
     comment?: Pick<CommentsView, 'notice' | 'error'>;
     /** The signed-in user, who comments without a name and email. */
     user?: { name: string } | null;
+    /** IDs of protected entries this visitor unlocked, whose content shows. */
+    unlocked?: ReadonlySet<string>;
     /** The request, for the forms the entry places; without it they render nothing. */
     forms?: FormRequest;
 }
@@ -321,6 +324,20 @@ async function referencedRecords(cms: CmsHost, fields: readonly (readonly [strin
 }
 
 /** Views of entries: bodies rendered with their blocks, patterns and media, authors, URLs, term links, typed fields and comments. */
+/** Whether an entry has a password visitors must type. */
+export function isProtected(record: RecordShape): boolean {
+    return typeof record.password === 'string' && record.password.length > 0;
+}
+
+/** The cookie that remembers an unlocked entry, and its value: a digest of the entry and its password. */
+export function unlockCookie(record: RecordShape): string {
+    return `cms_unlock_${record.id}`;
+}
+export async function unlockToken(record: RecordShape): Promise<string> {
+    const bytes = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`cms-unlock:${record.id}:${String(record.password)}`)));
+    return [...bytes].map(byte => byte.toString(16).padStart(2, '0')).join('');
+}
+
 export async function entryViews(cms: CmsHost, collection: CollectionDefinition, records: readonly RecordShape[], options: EntryViewOptions = {}): Promise<EntryView[]> {
     const resource = cms.resourceById(`cms/${collection.name}`);
     const settings = await cms.settings.all();
@@ -390,10 +407,14 @@ export async function entryViews(cms: CmsHost, collection: CollectionDefinition,
         if (options.full && (richText ?? legacy)) bodyParts = parts((richText ?? legacy)!, record);
         else if (options.full && markdown) bodyParts = [{ kind: 'html', html: renderMarkdown(markdown) }];
         const content = stored(record);
-        const blocks = options.full ? (expandPatterns(content, patterns) as RenderedBlock[]).map(block => render(block, record)) : [];
+        // A protected entry a visitor has not unlocked shows its title alone.
+        const locked = isProtected(record) && !options.unlocked?.has(record.id);
+        const blocks = options.full && !locked ? (expandPatterns(content, patterns) as RenderedBlock[]).map(block => render(block, record)) : [];
+        if (locked) bodyParts = [];
         const typed: Record<string, FieldView> = {};
         for (const [name, declaration] of fields) {
-            if (NOT_FIELDS.has(name)) continue;
+            // A locked entry shows nothing of its fields; the password itself is never a field of the view.
+            if (NOT_FIELDS.has(name) || name === 'password' || locked) continue;
             // The body and the content are rendered once, for `body` and `blocks` and their fields.
             const view = body && name === body[0] && options.full ? bodyParts : blocksField && name === blocksField[0] && options.full && blocksFields.length === 1 ? blocks : fieldView(name, declaration, record[name], locale, options.full === true, record);
             if (view !== undefined) typed[name] = view;
@@ -405,7 +426,7 @@ export async function entryViews(cms: CmsHost, collection: CollectionDefinition,
             id: record.id, title: recordTitle(record, 'title'), url: urls.get(record.id) ?? null, collection: collection.name, kind: collection.singular,
             date: typeof record.publishedAt === 'number' ? formatSiteDate(record.publishedAt, settings) : '',
             author: record.owner && collection.name === 'posts' ? owners.get(record.owner)?.name ?? '' : '',
-            excerpt: excerptField && record.excerpt ? String(record.excerpt) : richText ? richTextExcerpt(richText, 40) : legacy ? richTextExcerpt(legacy, 40)
+            excerpt: locked ? '' : excerptField && record.excerpt ? String(record.excerpt) : richText ? richTextExcerpt(richText, 40) : legacy ? richTextExcerpt(legacy, 40)
                 : content.length ? excerptOf(blocksPlain(content, cms.blockTypes, doc => richTextPlain(doc), 4000), 40) : excerptOf(markdown, 40),
             body: bodyParts,
             blocks,
@@ -418,7 +439,8 @@ export async function entryViews(cms: CmsHost, collection: CollectionDefinition,
             details,
             template: typeof record.template === 'string' && record.template ? record.template : null,
             locale,
-            comments: options.full && collection.comments ? await commentsView(cms, collection, record, urls.get(record.id) ?? '/', settings, options) : null,
+            comments: options.full && collection.comments && !locked ? await commentsView(cms, collection, record, urls.get(record.id) ?? '/', settings, options) : null,
+            locked,
         });
         if (options.full) {
             const all = [...blocks, ...bodyParts.flatMap(part => part.kind === 'block' ? [part.block] : [])];
@@ -591,7 +613,8 @@ export async function searchEntries(cms: CmsHost, query: string, locale?: string
         try {
             const where = { ...(collection.publishable === false ? {} : { status: 'published' }), ...localeWhere(languages, locale ?? languages.default) };
             const records = await cms.resource(resource.id).search(query, { limit: 10, where }, visitor);
-            results.push(...await entryViews(cms, collection, records));
+            // Protected entries match on their content, which visitors cannot read: they stay out.
+            results.push(...await entryViews(cms, collection, records.filter(record => !isProtected(record))));
         } catch (error) { if (!isCmsError(error)) throw error; }
     }
     return results;

@@ -4,6 +4,7 @@
  * act as the signed-in user or the password's owner, otherwise as a visitor.
  */
 import type { Context } from 'hono';
+import type { Principal } from '@cossackframework/cms';
 import { flattenBlocks, isCmsError, isSameOriginPost, richTextBlocks, richTextHtml, systemPrincipal, type Block, type CollectionDefinition, type RecordShape, type RichTextDoc } from '@cossackframework/cms';
 import type { CmsHost } from '@cossackframework/cms/server';
 import { blocksHtml } from './content';
@@ -11,7 +12,17 @@ import { blocksHtml } from './content';
 export interface ApiEntry { [field: string]: unknown; id: string; url: string | null }
 
 /** Entries with their public URLs and, with `?format=html`, their rich text and blocks rendered. */
-export async function apiEntries(cms: CmsHost, collection: CollectionDefinition, records: readonly RecordShape[], html: boolean): Promise<ApiEntry[]> {
+export async function apiEntries(cms: CmsHost, collection: CollectionDefinition, records: readonly RecordShape[], html: boolean, principal?: Principal): Promise<ApiEntry[]> {
+    const repository = cms.resource(`cms/${collection.name}`);
+    // The password itself never leaves; a protected entry's content stays with those who may edit it.
+    const redacted = records.map(record => {
+        const { password, ...rest } = record;
+        if (typeof password !== 'string' || !password) return record;
+        if (principal && repository.canUpdate(record, principal)) return record;
+        const { content, excerpt, body, ...bare } = rest as RecordShape & { content?: unknown; excerpt?: unknown; body?: unknown };
+        return { ...bare, protected: true } as RecordShape;
+    });
+    records = redacted;
     const urls = await cms.entryUrls(collection, records);
     const fields = Object.entries(cms.resourceById(`cms/${collection.name}`).fields);
     const rich = fields.filter(([, field]) => field.kind === 'richtext').map(([name]) => name);

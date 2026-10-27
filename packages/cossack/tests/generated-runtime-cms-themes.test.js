@@ -71,7 +71,16 @@ describe.skipIf(!liveRomeDBTests())('CMS themes', () => {
       expect(refused.errors).toMatchObject({ template: 'is not a template of the active theme.' });
       const wide = await web.action(EDITOR, 'save', [{ title: 'Wide page', slug: '', status: 'draft', publishedAt: '', template: 'entry-wide' }, 'publish', 0],
         { params: { collection: 'pages', id: 'new' }, state: { route: 'pages', id: 'new' } });
-      expect(wide._cossack_redirect).toMatch(/\?saved=1$/);
+      expect(wide.id).toMatch(/^[0-9a-f-]{36}$/);
+      // The blank canvas leaves out the frame: no header or footer around the content.
+      const landing = await web.action(EDITOR, 'save', [{ title: 'Landing', slug: '', status: 'published', publishedAt: '', template: 'entry-blank', content: [{ id: 'h', type: 'core/heading', data: { text: 'Big launch', level: 'h2' } }] }, 'publish', 0],
+        { params: { collection: 'pages', id: 'new' }, state: { route: 'pages', id: 'new' } });
+      expect(landing.id, JSON.stringify(landing.errors ?? landing.error)).toMatch(/^[0-9a-f-]{36}$/);
+      const blank = await visitor.page('/landing');
+      expect(blank).toMatch(/data-frame="?blank/);
+      expect(blank).toMatch(/data-template="?entry-blank/);
+      expect(blank).toContain('Big launch');
+      expect(blank).not.toMatch(/<header|<footer/);
       const ungranted = await visitor.page('/wide-page');
       expect(ungranted).toMatch(/data-template="?entry-wide/);
       expect(ungranted).toMatch(/<ul data-latest><\/ul>/);
@@ -82,13 +91,14 @@ describe.skipIf(!liveRomeDBTests())('CMS themes', () => {
       await web.post('/dashboard/plugins', { plugin: 'portfolio', _action: 'grant' });
       expect(await web.page('/dashboard')).toMatch(/href="?\/dashboard\/content\/projects"?[\s>]/);
       // With the grant, the wide template's loader reads posts.
-      expect(await visitor.page('/wide-page')).toMatch(/<ul data-latest><li>Hello from the blog<\/li><\/ul>/);
+      // The starter post from setup is listed too.
+      expect(await visitor.page('/wide-page')).toMatch(/<ul data-latest>(?:<li>[^<]*<\/li>)*<li>Hello from the blog<\/li>(?:<li>[^<]*<\/li>)*<\/ul>/);
 
       const project = async (title, client, sections) => {
         const saved = await web.action(EDITOR, 'save', [{ title, slug: '', status: 'draft', publishedAt: '', client, year: '2026', sections }, 'publish', 0],
           { params: { collection: 'projects', id: 'new' }, state: { route: 'projects', id: 'new' } });
-        expect(saved._cossack_redirect, JSON.stringify(saved.errors ?? saved.error)).toMatch(/^\/dashboard\/content\/projects\/[0-9a-f-]{36}\?saved=1$/);
-        return saved._cossack_redirect.split('/')[4].split('?')[0];
+        expect(saved.id, JSON.stringify(saved.errors ?? saved.error)).toMatch(/^[0-9a-f-]{36}$/);
+        return saved.id;
       };
       const rocket = await project('Rocket', 'ACME', [
         { id: 's1', type: 'core/paragraph', data: { text: 'First section' } },

@@ -15,6 +15,7 @@ interface Row {
     /** Why the form takes nothing now; empty while it is open. */
     closed: string;
     enabled: boolean;
+    published: boolean;
 }
 
 /**
@@ -44,12 +45,13 @@ export default class FormsPage extends Cossack {
         const closed = await Promise.all(forms.map(form => cms.forms.closed(form)));
         this.rows = forms.map((form, index) => ({
             id: form.ref.id, title: form.ref.title || __('(no title)'), slug: form.ref.slug, fields: form.ref.inputs.length,
-            fresh: counts.get(form.ref.id)?.fresh ?? 0, kept: counts.get(form.ref.id)?.kept ?? 0, closed: closed[index] ?? '', enabled: form.enabled,
+            fresh: counts.get(form.ref.id)?.fresh ?? 0, kept: counts.get(form.ref.id)?.kept ?? 0, closed: closed[index] ?? '', enabled: form.enabled, published: form.published,
         }));
     }
 
     private row(row: Row): TemplateResult {
-        const status = !row.enabled ? component(Badge, { variant: 'secondary' }, __('Off'))
+        const status = !row.published ? component(Badge, { variant: 'outline' }, __('Draft'))
+            : !row.enabled ? component(Badge, { variant: 'secondary' }, __('Off'))
             : row.closed ? component(Badge, { variant: 'warning' }, __('Closed')) : component(Badge, { variant: 'success' }, __('Accepting'));
         const submissions = `/dashboard/forms/${row.id}/submissions`;
         return html`<tr class="border-b border-border last:border-0 align-top" data-form=${row.slug}>
