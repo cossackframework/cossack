@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createCMS, defineResource, field, planSchema, readCatalog, resolveResource, type ResourceDeclaration } from '../src/server/index';
-import { fastdbService, live } from './helpers';
+import { romedbService, live } from './helpers';
 
 const tickets = defineResource({
     name: 'tickets',
@@ -18,7 +18,7 @@ const tickets = defineResource({
 });
 
 describe.skipIf(!live)('schema planner and migration ledger', () => {
-    const service = fastdbService();
+    const service = romedbService();
 
     it('reports resources as waiting for setup on a fresh database', async () => {
         const fresh = await service.fresh();
@@ -39,7 +39,7 @@ describe.skipIf(!live)('schema planner and migration ledger', () => {
         expect(plan.steps.map(step => step.kind)).toEqual(['host', 'host', 'host', 'host', 'host', 'host', 'host', 'host', 'host', 'host', 'additive']);
         expect(plan.steps.every(step => step.statements.length <= 30)).toBe(true);
         expect(plan.blocked).toEqual([]);
-        const create = plan.steps.find(step => step.kind === 'additive')!.statements.map(statement => statement.sql);
+        const create = plan.steps.find(step => step.kind === 'additive')!.statements.map(statement => statement.rql);
         expect(create[0]).toBe('CREATE TABLE r__app__tickets');
         expect(create).toContain('DEFINE FIELD "subject" ON r__app__tickets TYPE string REQUIRED CHECK(length("subject") <= 120)');
         expect(create).toContain(`DEFINE FIELD "status" ON r__app__tickets TYPE string REQUIRED DEFAULT 'open' CHECK("status" IN ('open', 'closed'))`);
@@ -53,9 +53,9 @@ describe.skipIf(!live)('schema planner and migration ledger', () => {
         expect(again.steps).toEqual([]);
         expect(again.current).toEqual(['app/tickets']);
         expect((await cms.status()).resources).toEqual([{ id: 'app/tickets', active: true }]);
-        const ledger = await db.read([{ sql: 'SELECT kind, resource, engine_version, sql FROM cms_migrations ORDER BY applied_at, id' }]);
+        const ledger = await db.read([{ rql: 'SELECT kind, resource, engine_version, rql FROM cms_migrations ORDER BY applied_at, id' }]);
         expect(ledger.results[0]!.rows.map(row => row[0])).toEqual(['host', 'host', 'host', 'host', 'host', 'host', 'host', 'host', 'host', 'host', 'additive']);
-        expect(ledger.results[0]!.rows[10]![2]).toMatch(/^2\./);
+        expect(ledger.results[0]!.rows[10]![2]).toMatch(/^0\./);
         expect(ledger.results[0]!.rows[10]![3]).toContain('CREATE TABLE r__app__tickets');
     });
 
@@ -75,7 +75,7 @@ describe.skipIf(!live)('schema planner and migration ledger', () => {
             fetch: async (input, init) => {
                 if (!interfered && String(input).endsWith('/query') && String(init?.body).includes('r__app__notes')) {
                     interfered = true;
-                    await other.write([{ sql: "INSERT INTO cms_audit (id, actor, action, resource, record_id, at) VALUES ('noise', 'x', 'noise', 'x', 'x', 0)" }]);
+                    await other.write([{ rql: "INSERT INTO cms_audit (id, actor, action, resource, record_id, at) VALUES ('noise', 'x', 'noise', 'x', 'x', 0)" }]);
                 }
                 return fetch(input, init);
             },
@@ -92,7 +92,7 @@ describe.skipIf(!live)('schema planner and migration ledger', () => {
         const db = service.database();
         const extended: ResourceDeclaration = { ...tickets, fields: { ...tickets.fields, assignee: field.string({ nullable: true }) } };
         const plan = await createCMS({ db, resources: [extended] }).plan();
-        expect(plan.steps.map(step => step.statements.map(statement => statement.sql))).toEqual([['DEFINE FIELD "assignee" ON r__app__tickets TYPE string NULLABLE CHECK(length("assignee") <= 255)']]);
+        expect(plan.steps.map(step => step.statements.map(statement => statement.rql))).toEqual([['DEFINE FIELD "assignee" ON r__app__tickets TYPE string NULLABLE CHECK(length("assignee") <= 255)']]);
 
         const changedType: ResourceDeclaration = { ...tickets, fields: { ...tickets.fields, priority: field.string() } };
         const blocked = await createCMS({ db, resources: [changedType] }).plan();
@@ -124,7 +124,7 @@ describe.skipIf(!live)('schema planner and migration ledger', () => {
         const report = await createCMS({ db, resources: [v2] }).migrate();
         expect(report.failed).toBeUndefined();
         expect(report.applied.map(step => step.kind)).toEqual(['additive', 'explicit', 'explicit', 'explicit']);
-        const rows = await db.read([{ sql: 'SELECT "name", "fullName" FROM r__app__contacts ORDER BY "email"' }]);
+        const rows = await db.read([{ rql: 'SELECT "name", "fullName" FROM r__app__contacts ORDER BY "email"' }]);
         expect(rows.results[0]!.rows).toEqual([['Ada', 'Ada'], ['Unknown', 'Unknown']]);
         expect((await createCMS({ db, resources: [v2] }).plan()).steps).toEqual([]);
 
@@ -135,7 +135,7 @@ describe.skipIf(!live)('schema planner and migration ledger', () => {
         });
         const dropped = await createCMS({ db, resources: [v3] }).migrate();
         expect(dropped.applied.map(step => step.description), JSON.stringify(dropped)).toEqual(['drop name on app/contacts']);
-        const info = await db.read([{ sql: 'INFO FOR TABLE r__app__contacts' }]);
+        const info = await db.read([{ rql: 'INFO FOR TABLE r__app__contacts' }]);
         expect((info.results[0]!.rows[0]![0] as { fields: { path: string[] }[] }).fields.map(entry => entry.path[0])).not.toContain('name');
     });
 
@@ -150,7 +150,7 @@ describe.skipIf(!live)('schema planner and migration ledger', () => {
         const next = createCMS({ db, resources: [v2] });
         const report = await next.migrate();
         expect(report.failed).toMatchObject({ code: 'FDB_CONSTRAINT', step: expect.objectContaining({ resource: 'app/codes' }) });
-        const info = await db.read([{ sql: 'INFO FOR TABLE r__app__codes' }]);
+        const info = await db.read([{ rql: 'INFO FOR TABLE r__app__codes' }]);
         expect((info.results[0]!.rows[0]![0] as { fields: { path: string[] }[] }).fields.map(entry => entry.path[0])).not.toContain('label');
         expect((await next.status()).resources).toEqual([{ id: 'app/codes', active: false }]);
         await expect(next.resource('app/codes').list({}, { principal: { kind: 'system', reason: 'test' } })).rejects.toMatchObject({ code: 'CMS_UNAVAILABLE' });

@@ -5,7 +5,7 @@
  * `ifSequence` from the planning read, recorded in the relational migration ledger.
  */
 import { rowsSearchable } from '../field-groups';
-import { ClientError, encodeValue, type FastDB, type Statement, type Value } from '@cossackframework/fastdb';
+import { ClientError, encodeValue, type RomeDB, type Statement, type Value } from '@cossackframework/romedb';
 import { storageCheck, storageType, type FieldDeclaration } from '../fields';
 import { declarationHash, SYSTEM_FIELDS, type MigrationStep, type Resource } from '../resource';
 import { HOST_STEPS, HOST_TABLES, type HostStep } from './host-schema';
@@ -164,17 +164,17 @@ export function searchTextPath(field: string): string {
 }
 
 /** `DEFINE FIELD` for a spec; `overwrite` replaces an existing definition. */
-export function defineFieldSql(collection: string, field: FieldSpec, options: { overwrite?: boolean; optional?: boolean } = {}): string {
-    let sql = `DEFINE FIELD ${options.overwrite ? 'OVERWRITE ' : ''}${quote(field.name)} ON ${collection} TYPE ${field.elementType ? `array<${field.elementType}>` : field.type}`;
-    if (field.required && !options.optional) sql += ' REQUIRED';
-    if (field.nullable) sql += ' NULLABLE';
-    if (field.flexible) sql += ' FLEXIBLE';
-    if (field.hasDefault) sql += ` DEFAULT ${literal(field.default as string | number | boolean | null)}`;
-    if (field.check) sql += ` CHECK(${field.check})`;
-    return sql;
+export function defineFieldRql(collection: string, field: FieldSpec, options: { overwrite?: boolean; optional?: boolean } = {}): string {
+    let rql = `DEFINE FIELD ${options.overwrite ? 'OVERWRITE ' : ''}${quote(field.name)} ON ${collection} TYPE ${field.elementType ? `array<${field.elementType}>` : field.type}`;
+    if (field.required && !options.optional) rql += ' REQUIRED';
+    if (field.nullable) rql += ' NULLABLE';
+    if (field.flexible) rql += ' FLEXIBLE';
+    if (field.hasDefault) rql += ` DEFAULT ${literal(field.default as string | number | boolean | null)}`;
+    if (field.check) rql += ` CHECK(${field.check})`;
+    return rql;
 }
 
-export function indexSql(collection: string, index: IndexSpec): string {
+export function indexRql(collection: string, index: IndexSpec): string {
     const paths = index.paths.map(quote).join(', ');
     if (index.kind === 'fulltext') return `CREATE SEARCH INDEX ${index.name} ON ${collection}(${paths}) USING FULLTEXT`;
     // One entry per element, so `array::contains(field, $value)` seeks.
@@ -183,17 +183,17 @@ export function indexSql(collection: string, index: IndexSpec): string {
 }
 
 /** Read the catalog in one snapshot sequence. Retries when a write lands between the reads. */
-export async function readCatalog(db: FastDB, collections: readonly string[], options: { signal?: AbortSignal } = {}): Promise<Catalog> {
+export async function readCatalog(db: RomeDB, collections: readonly string[], options: { signal?: AbortSignal } = {}): Promise<Catalog> {
     for (let attempt = 0; attempt < 5; attempt++) {
-        const first = await db.read([{ sql: 'INFO FOR DB' }], options);
+        const first = await db.read([{ rql: 'INFO FOR DB' }], options);
         const info = first.results[0]!.rows[0]![0] as { tables?: { name: string; model: string }[] };
         const names = new Map((info.tables ?? []).map(table => [table.name, table.model]));
         const wanted = collections.filter(name => names.get(name) === 'document');
-        const statements: Statement[] = wanted.map(name => ({ sql: `INFO FOR TABLE ${name}` }));
+        const statements: Statement[] = wanted.map(name => ({ rql: `INFO FOR TABLE ${name}` }));
         const ledgerQueries = names.has('cms_migrations') && names.has('cms_schema_state');
         if (ledgerQueries) {
-            statements.push({ sql: "SELECT kind, resource, version FROM cms_migrations WHERE kind IN ('host', 'explicit') ORDER BY kind, resource, version" });
-            statements.push({ sql: 'SELECT resource, declaration_hash FROM cms_schema_state ORDER BY resource' });
+            statements.push({ rql: "SELECT kind, resource, version FROM cms_migrations WHERE kind IN ('host', 'explicit') ORDER BY kind, resource, version" });
+            statements.push({ rql: 'SELECT resource, declaration_hash FROM cms_schema_state ORDER BY resource' });
         }
         const tables = new Map<string, CatalogTable>();
         for (const [name, model] of names) tables.set(name, { name, model });
@@ -205,10 +205,10 @@ export async function readCatalog(db: FastDB, collections: readonly string[], op
             if (result.sequence !== first.sequence) { consistent = false; break; }
             chunk.forEach((statement, index) => {
                 const rows = result.results[index]!.rows;
-                if (statement.sql.startsWith('INFO FOR TABLE ')) {
+                if (statement.rql.startsWith('INFO FOR TABLE ')) {
                     const table = rows[0]![0] as unknown as CatalogTable;
                     tables.set(table.name, table);
-                } else if (statement.sql.includes('FROM cms_migrations')) {
+                } else if (statement.rql.includes('FROM cms_migrations')) {
                     for (const [kind, resource, version] of rows) {
                         if (kind === 'host') ledger.host.add(Number(version));
                         else {
@@ -227,7 +227,7 @@ export async function readCatalog(db: FastDB, collections: readonly string[], op
     throw new Error('The database kept changing while the schema was read; retry the migration.');
 }
 
-/** Plan host tables, then each resource in ID order. Pure: the same inputs give the same SQL. */
+/** Plan host tables, then each resource in ID order. Pure: the same inputs give the same RomeQL. */
 export async function planSchema(resources: readonly Resource[], catalog: Catalog): Promise<SchemaPlan> {
     const steps: PlannedStep[] = [];
     const blocked: SchemaProblem[] = [];
@@ -257,10 +257,10 @@ export async function planSchema(resources: readonly Resource[], catalog: Catalo
             continue;
         }
         if (!table) {
-            const statements: Statement[] = [{ sql: `CREATE TABLE ${collection.name}` }];
-            for (const field of collection.fields) statements.push({ sql: defineFieldSql(collection.name, field) });
-            if (!resource.schemaless) statements.push({ sql: `DEFINE SCHEMA ON ${collection.name} STRICT` });
-            for (const index of collection.indexes) statements.push({ sql: indexSql(collection.name, index) });
+            const statements: Statement[] = [{ rql: `CREATE TABLE ${collection.name}` }];
+            for (const field of collection.fields) statements.push({ rql: defineFieldRql(collection.name, field) });
+            if (!resource.schemaless) statements.push({ rql: `DEFINE SCHEMA ON ${collection.name} STRICT` });
+            for (const index of collection.indexes) statements.push({ rql: indexRql(collection.name, index) });
             resourceSteps.push(...chunkSteps(resource, 'additive', 0, `Create ${resource.id}`, statements, hash));
             // A new collection has nothing to migrate; record its explicit steps as applied.
             for (const step of resource.migrations) resourceSteps.push(explicitStep(resource, step, [], hash));
@@ -274,9 +274,9 @@ export async function planSchema(resources: readonly Resource[], catalog: Catalo
                 if (!existing) {
                     if (field.required && !field.hasDefault) {
                         // Expand first: add the field as optional; a declared tighten step makes it required.
-                        additive.push({ sql: defineFieldSql(collection.name, field, { optional: true }) });
+                        additive.push({ rql: defineFieldRql(collection.name, field, { optional: true }) });
                         if (!pendingFor('tighten', field.name)) problems.push({ resource: resource.id, field: field.name, message: `${field.name} is new and required. Declare a backfill (if records exist) and a tighten step, or make it optional.` });
-                    } else additive.push({ sql: defineFieldSql(collection.name, field) });
+                    } else additive.push({ rql: defineFieldRql(collection.name, field) });
                     continue;
                 }
                 const drift = fieldDrift(field, existing);
@@ -293,18 +293,18 @@ export async function planSchema(resources: readonly Resource[], catalog: Catalo
             const catalogIndexes = new Map((table.indexes ?? []).map(index => [index.name, index]));
             for (const index of collection.indexes) {
                 const existing = catalogIndexes.get(index.name);
-                if (!existing) { additive.push({ sql: indexSql(collection.name, index) }); continue; }
+                if (!existing) { additive.push({ rql: indexRql(collection.name, index) }); continue; }
                 const paths = (existing.paths ?? (existing.path ? [existing.path] : [])).map(path => path.join('.'));
                 if (existing.kind !== index.kind || existing.unique !== index.unique || paths.join(',') !== index.paths.join(',')) {
                     // Schemaless collections rebuild a changed index, such as full-text search over a new field; strict ones rename it.
-                    if (resource.schemaless) additive.push({ sql: `DROP INDEX ${index.name}` }, { sql: indexSql(collection.name, index) });
+                    if (resource.schemaless) additive.push({ rql: `DROP INDEX ${index.name}` }, { rql: indexRql(collection.name, index) });
                     else problems.push({ resource: resource.id, message: `Index ${index.name} differs from the database. Rename the index to replace it.` });
                 }
             }
             for (const name of catalogIndexes.keys()) {
                 if (!name.startsWith(`${collection.name}__`) || collection.indexes.some(index => index.name === name)) continue;
                 // Dropping an index loses no data; schemaless collections drop the ones they no longer declare.
-                if (resource.schemaless) additive.push({ sql: `DROP INDEX ${name}` });
+                if (resource.schemaless) additive.push({ rql: `DROP INDEX ${name}` });
                 else warnings.push({ resource: resource.id, message: `Index ${name} is no longer declared.` });
             }
             if (additive.length) resourceSteps.push(...chunkSteps(resource, 'additive', 0, `Extend ${resource.id}`, additive, hash));
@@ -339,7 +339,7 @@ export interface MigrateOptions {
     attach?: (resource: string) => readonly Statement[];
 }
 
-export async function migrate(db: FastDB, resources: readonly Resource[], options: MigrateOptions = {}): Promise<MigrationReport> {
+export async function migrate(db: RomeDB, resources: readonly Resource[], options: MigrateOptions = {}): Promise<MigrationReport> {
     const applied: PlannedStep[] = [];
     const now = options.now ?? Date.now;
     let replans = 0;
@@ -399,22 +399,22 @@ function explicitStatements(collection: CollectionSpec, step: MigrationStep, cat
     if (schemaless) {
         // Only stored values change; the host validates the declared fields.
         switch (step.kind) {
-            case 'backfill': return [{ sql: `UPDATE ${table} SET ${quote(step.field)} = $value WHERE ${quote(step.field)} IS NULL`, params: { $value: step.value } }];
-            case 'rename': return [{ sql: `UPDATE ${table} SET ${quote(step.to)} = ${quote(step.from)} WHERE ${quote(step.to)} IS NULL AND ${quote(step.from)} IS NOT NULL` }];
+            case 'backfill': return [{ rql: `UPDATE ${table} SET ${quote(step.field)} = $value WHERE ${quote(step.field)} IS NULL`, params: { $value: step.value } }];
+            case 'rename': return [{ rql: `UPDATE ${table} SET ${quote(step.to)} = ${quote(step.from)} WHERE ${quote(step.to)} IS NULL AND ${quote(step.from)} IS NOT NULL` }];
             case 'tighten': return [];
-            case 'drop': return [{ sql: `UPDATE ${table} UNSET ${quote(step.field)} WHERE ${quote(step.field)} IS NOT NULL` }];
+            case 'drop': return [{ rql: `UPDATE ${table} UNSET ${quote(step.field)} WHERE ${quote(step.field)} IS NOT NULL` }];
         }
     }
     switch (step.kind) {
         case 'backfill':
             if (!catalog.has(step.field) && !collection.fields.some(field => field.name === step.field)) return `${step.field} does not exist.`;
-            return [{ sql: `UPDATE ${table} SET ${quote(step.field)} = $value WHERE ${quote(step.field)} IS NULL`, params: { $value: step.value } }];
+            return [{ rql: `UPDATE ${table} SET ${quote(step.field)} = $value WHERE ${quote(step.field)} IS NULL`, params: { $value: step.value } }];
         case 'rename':
-            return [{ sql: `UPDATE ${table} SET ${quote(step.to)} = ${quote(step.from)} WHERE ${quote(step.to)} IS NULL AND ${quote(step.from)} IS NOT NULL` }];
+            return [{ rql: `UPDATE ${table} SET ${quote(step.to)} = ${quote(step.from)} WHERE ${quote(step.to)} IS NULL AND ${quote(step.from)} IS NOT NULL` }];
         case 'tighten': {
             const field = collection.fields.find(entry => entry.name === step.field);
             if (!field) return `${step.field} is not declared.`;
-            return [{ sql: defineFieldSql(table, field, { overwrite: true }) }];
+            return [{ rql: defineFieldRql(table, field, { overwrite: true }) }];
         }
         case 'drop': {
             const existing = catalog.get(step.field);
@@ -422,9 +422,9 @@ function explicitStatements(collection: CollectionSpec, step: MigrationStep, cat
             // Relax the definition first, so removing values cannot violate it.
             const type = existing.element_type ? `array<${existing.element_type}>` : existing.type;
             return [
-                { sql: `DEFINE FIELD OVERWRITE ${quote(step.field)} ON ${table} TYPE ${type} NULLABLE${existing.flexible ? ' FLEXIBLE' : ''}` },
-                { sql: `UPDATE ${table} UNSET ${quote(step.field)} WHERE ${quote(step.field)} IS NOT NULL` },
-                { sql: `REMOVE FIELD ${quote(step.field)} ON ${table}` },
+                { rql: `DEFINE FIELD OVERWRITE ${quote(step.field)} ON ${table} TYPE ${type} NULLABLE${existing.flexible ? ' FLEXIBLE' : ''}` },
+                { rql: `UPDATE ${table} UNSET ${quote(step.field)} WHERE ${quote(step.field)} IS NOT NULL` },
+                { rql: `REMOVE FIELD ${quote(step.field)} ON ${table}` },
             ];
         }
     }
@@ -458,14 +458,14 @@ function hostStep(step: HostStep): PlannedStep {
  */
 function ledgerStatements(step: PlannedStep, engineVersion: string, now: number): Statement[] {
     const statements: Statement[] = [{
-        sql: 'INSERT INTO cms_migrations (id, kind, owner, resource, version, declaration_hash, sql, engine_version, applied_at) VALUES ($id, $kind, $owner, $resource, $version, $hash, $sql, $engine, $at)',
+        rql: 'INSERT INTO cms_migrations (id, kind, owner, resource, version, declaration_hash, rql, engine_version, applied_at) VALUES ($id, $kind, $owner, $resource, $version, $hash, $rql, $engine, $at)',
         params: {
             $id: step.kind === 'additive' ? `${step.id}:${now}` : step.id, $kind: step.kind, $owner: step.owner, $resource: step.resource, $version: step.version,
-            $hash: step.declarationHash, $sql: step.statements.map(statement => statement.sql).join(';\n'), $engine: engineVersion, $at: now,
+            $hash: step.declarationHash, $rql: step.statements.map(statement => statement.rql).join(';\n'), $engine: engineVersion, $at: now,
         },
     }];
     if (step.resource) statements.push({
-        sql: 'INSERT INTO cms_schema_state (resource, declaration_hash, updated_at) VALUES ($resource, $hash, $at) ON CONFLICT (resource) DO UPDATE SET declaration_hash = excluded.declaration_hash, updated_at = excluded.updated_at',
+        rql: 'INSERT INTO cms_schema_state (resource, declaration_hash, updated_at) VALUES ($resource, $hash, $at) ON CONFLICT (resource) DO UPDATE SET declaration_hash = excluded.declaration_hash, updated_at = excluded.updated_at',
         params: { $resource: step.resource, $hash: step.declarationHash, $at: now },
     });
     return statements;

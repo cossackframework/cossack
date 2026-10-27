@@ -11,7 +11,7 @@ tree from *field blocks* and the core layout blocks, attached to one or more tar
 shown in each target's editor as a box. A **repeater** field block holds rows of fields,
 nested without limit. Values are stored flat by field name, so queries, indexes, search,
 the API and themes see fields, never layout. Index flags on repeater children keep a
-derived array beside the document, so filters on rows seek through FastDB's array indexes.
+derived array beside the document, so filters on rows seek through RomeDB's array indexes.
 
 ## Decisions
 
@@ -59,7 +59,7 @@ derived array beside the document, so filters on rows seek through FastDB's arra
   result is what the target's resource declares, so a collection with groups is
   `extendCollection(definition, { fields: groups… })` and nothing downstream learns about
   groups. The declaration keeps `layout: { group, block }` so the editor can find each
-  field's block; it is stripped before FastDB.
+  field's block; it is stripped before RomeDB.
 - **A collection's own fields are its first group.** `CollectionDefinition.layout?: Block[]`
   holds the builder's tree; `fields` is compiled from it on save, and a definition with
   `fields` and no `layout` (plugins, modules, old rows) gets a layout of one field block
@@ -81,8 +81,8 @@ derived array beside the document, so filters on rows seek through FastDB's arra
   strings to the search text. Numbers index as `Float64` keys. Filters:
   `where: { 'team.links.kind': { contains: 'site' } }` (or `containsAny`, 1-50 values)
   rewrites to `array::contains(team__links__kind, $v)`; ranges and sorting on row fields
-  are not offered. When FastDB indexes array paths natively
-  ([the proposal](../../fastdb/plan-array-path-indexes.md)), the derived fields go and
+  are not offered. When RomeDB indexes array paths natively
+  ([the proposal](../../romedb/plan-array-path-indexes.md)), the derived fields go and
   the index points at the path.
 - **Targets without documents** get a `meta` object: `cms_terms.meta`, `cms_users.meta`
   (host step 10, `TEXT NOT NULL DEFAULT '{}'`) and `MenuItem.meta`. The same declarations
@@ -164,7 +164,7 @@ plain stacked fallback.
    `derivedPath`, `layoutOf(definition)`. Unit tests.
 2. Host: `cms_field_groups`, `meta` columns, `cms.fieldGroups`, merged resources, the
    repository's derived arrays, filters and visibility, meta on terms, users and menus.
-   FastDB tests.
+   RomeDB tests.
 3. Dashboard: the field group screens, the builder's tree, the entry editor's boxes and
    repeater rows, meta boxes on terms, users and menu items.
 4. API and theme access, the generated-app test, README and `agent-docs.json`.
@@ -193,8 +193,8 @@ for that abstraction to grow a meta hook. The host, API and `CmsUser.meta` alrea
 | Area | Delivered | Verified by |
 | --- | --- | --- |
 | Model (`packages/cms`) | `rows` kind (`ROW_ID`, `ROW_LIMITS`, `field.rows`, recursive `validateValue`, `withRowIds`, `rowUniqueProblem`, `rowsPlain`, `rowsSearchable`); `BlockDeclaration.field`, `FIELD_BLOCK_KINDS`, `FIELD_BLOCKS`, `FIELD_BLOCK_TYPES`, `core/tabs` and `core/tab`, `FIELD_GROUP_LAYOUT`, `validateBlocks(…, { fieldGroup: { scope } })`; `FieldGroup`, `fieldGroupProblems`, `fieldGroupDeclarations`, `fieldBlockOf`, `layoutOf`, `derivedFields`, `derivedName`, `derivedValues`, `DERIVED_NAME`, `fieldVisibility`, `clearHidden`, `hiddenKey`, `metaProblems`; `CollectionDefinition.layout`, `ResourceDeclaration.layout`; `MenuItem.meta`, `TermShape.meta`, `CmsUser.meta` | `field-groups-unit.test.ts`, `unit.test.ts`, `forms-unit.test.ts` |
-| Host | `cms_field_groups` and `meta` columns (step 10); `CmsFieldGroups`; `cms.fieldGroupsFor`, `saveFieldGroup`, `deleteFieldGroup` with schema planning; groups merged into collection resources with derived lists and the layout; `saveCollection` compiles `layout`; repository: rows storage and IDs, derived lists on write, dotted filters, visibility on write, derived fields hidden from readers; meta checks on terms, users and menu items | `field-groups.test.ts`, `collections.test.ts`, `schema.test.ts` (live FastDB) |
+| Host | `cms_field_groups` and `meta` columns (step 10); `CmsFieldGroups`; `cms.fieldGroupsFor`, `saveFieldGroup`, `deleteFieldGroup` with schema planning; groups merged into collection resources with derived lists and the layout; `saveCollection` compiles `layout`; repository: rows storage and IDs, derived lists on write, dotted filters, visibility on write, derived fields hidden from readers; meta checks on terms, users and menu items | `field-groups.test.ts`, `collections.test.ts`, `schema.test.ts` (live RomeDB) |
 | Dashboard (scaffold) | `/dashboard/field-groups` and `/dashboard/field-groups/<id>`; `FieldGroupEditor` (tree in field group mode, panel with conditions); the builder's layout tree in place of its field list; `FieldGroupView` (sections, columns, grids, tabs, headings, notes, repeater rows) in the entry editor, the term editor and the menu item's Fields tab; media inside rows; navigation entry | `generated-runtime-cms-fields.test.js` (HTTP and Chromium) |
 | API | Rows with `_id` flat on entries; `?filter[field]=` and `?filter[rows.field]=` on the content list; `meta` on terms, users and menu views | `generated-runtime-cms-fields.test.js`, `field-groups.test.ts` |
-| Docs | `cms-field-groups` guide in `agent-docs.json`; README | `fastdb-cms-guide-coverage.test.js` |
-| FastDB | Proposal for array path indexes in the sibling repo (`plan-array-path-indexes.md`) | — |
+| Docs | `cms-field-groups` guide in `agent-docs.json`; README | `romedb-cms-guide-coverage.test.js` |
+| RomeDB | Proposal for array path indexes in the sibling repo (`plan-array-path-indexes.md`) | — |

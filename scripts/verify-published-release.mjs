@@ -10,11 +10,11 @@ const execFileAsync = promisify(execFile);
 // is scripts/test-desktop-runtime.mjs. @cossackframework/test-utils is private.
 export const publishedPackageNames = [
   'renderer', 'core', 'node-adapter', 'auth', 'ui',
-  'framework', 'database', 'studio', 'scaffold', 'typescript-plugin', 'fastdb', 'cms',
+  'framework', 'database', 'studio', 'scaffold', 'typescript-plugin', 'romedb', 'cms',
 ].map(name => `@cossackframework/${name}`).concat('cossack');
 
 /** Packages that publish TypeScript source for the application bundler. */
-const sourcePackages = ['@cossackframework/auth', '@cossackframework/fastdb', '@cossackframework/cms'];
+const sourcePackages = ['@cossackframework/auth', '@cossackframework/romedb', '@cossackframework/cms'];
 
 /** Inspect the installed artifacts, never workspace package manifests or aliases. */
 export async function publishedImportPlan(projectDir) {

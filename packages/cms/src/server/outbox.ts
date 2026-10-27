@@ -4,7 +4,7 @@
  * (`cms.resource.after-commit` for resource events, `cms.form.submitted` for form
  * submissions), and records which plugins still need the event. Deliveries can repeat: consumers key on `eventId`.
  */
-import type { FastDB } from '@cossackframework/fastdb';
+import type { RomeDB } from '@cossackframework/romedb';
 import type { HookRegistry } from '@cossackframework/core/hooks';
 import type { ActionPoint } from '@cossackframework/core/hooks';
 import { afterCommit, formSubmitted, type ResourceEvent } from '../hooks';
@@ -29,7 +29,7 @@ export interface OutboxOptions {
 }
 
 export class Outbox {
-    readonly #db: FastDB;
+    readonly #db: RomeDB;
     readonly #hooks: HookRegistry;
     readonly #now: () => number;
     readonly #leaseMs: number;
@@ -37,7 +37,7 @@ export class Outbox {
     readonly #baseDelay: number;
     readonly #maxDelay: number;
 
-    constructor(db: FastDB, hooks: HookRegistry, options: OutboxOptions = {}) {
+    constructor(db: RomeDB, hooks: HookRegistry, options: OutboxOptions = {}) {
         this.#db = db;
         this.#hooks = hooks;
         this.#now = options.now ?? Date.now;
@@ -54,14 +54,14 @@ export class Outbox {
         const limit = Math.min(Math.max(options.limit ?? 20, 1), 100);
         const call = options.signal ? { signal: options.signal } : {};
         // Idle runs read only, so they do not race schema migrations for the database sequence.
-        const due = await this.#db.read([{ sql: 'SELECT 1 FROM cms_outbox WHERE delivered_at IS NULL AND available_at <= $now AND lease_until <= $now LIMIT 1', params: { $now: now } }], call);
+        const due = await this.#db.read([{ rql: 'SELECT 1 FROM cms_outbox WHERE delivered_at IS NULL AND available_at <= $now AND lease_until <= $now LIMIT 1', params: { $now: now } }], call);
         if (!due.results[0]!.rows.length) return { delivered: [], retrying: [], deadLettered: [] };
         await this.#db.write([{
-            sql: `UPDATE cms_outbox SET lease_token = $token, lease_until = $until, attempts = attempts + 1
+            rql: `UPDATE cms_outbox SET lease_token = $token, lease_until = $until, attempts = attempts + 1
                 WHERE id IN (SELECT id FROM cms_outbox WHERE delivered_at IS NULL AND available_at <= $now AND lease_until <= $now ORDER BY created_at, id LIMIT $limit)`,
             params: { $token: token, $until: now + this.#leaseMs, $now: now, $limit: limit },
         }], { ...call, kind: 'cms.outbox', retryConflicts: 5 });
-        const claimed = await this.#db.read([{ sql: 'SELECT id, payload, pending_plugins, attempts, topic FROM cms_outbox WHERE lease_token = $token ORDER BY created_at, id', params: { $token: token } }], call);
+        const claimed = await this.#db.read([{ rql: 'SELECT id, payload, pending_plugins, attempts, topic FROM cms_outbox WHERE lease_token = $token ORDER BY created_at, id', params: { $token: token } }], call);
         const delivered: string[] = [];
         const retrying: { id: string; plugins: readonly string[] }[] = [];
         const deadLettered: string[] = [];
@@ -91,16 +91,16 @@ export class Outbox {
 
     /** Events still waiting, oldest first. */
     async pending(options: { limit?: number } = {}): Promise<{ id: string; topic: string; attempts: number; availableAt: number; plugins: string[] | null }[]> {
-        const result = await this.#db.read([{ sql: 'SELECT id, topic, attempts, available_at, pending_plugins FROM cms_outbox WHERE delivered_at IS NULL ORDER BY created_at, id LIMIT $limit', params: { $limit: options.limit ?? 50 } }]);
+        const result = await this.#db.read([{ rql: 'SELECT id, topic, attempts, available_at, pending_plugins FROM cms_outbox WHERE delivered_at IS NULL ORDER BY created_at, id LIMIT $limit', params: { $limit: options.limit ?? 50 } }]);
         return result.results[0]!.rows.map(row => ({ id: row[0] as string, topic: row[1] as string, attempts: Number(row[2] as bigint), availableAt: Number(row[3] as bigint), plugins: row[4] ? JSON.parse(row[4] as string) : null }));
     }
 
     /** Delete delivered events older than `olderThanMs`. Dead letters stay until reviewed. */
     async prune(olderThanMs = 7 * 24 * 60 * 60 * 1000): Promise<number> {
-        const old = await this.#db.read([{ sql: 'SELECT 1 FROM cms_outbox WHERE delivered_at IS NOT NULL AND delivered_at <= $before AND pending_plugins IS NULL LIMIT 1', params: { $before: this.#now() - olderThanMs } }]);
+        const old = await this.#db.read([{ rql: 'SELECT 1 FROM cms_outbox WHERE delivered_at IS NOT NULL AND delivered_at <= $before AND pending_plugins IS NULL LIMIT 1', params: { $before: this.#now() - olderThanMs } }]);
         if (!old.results[0]!.rows.length) return 0;
         const result = await this.#db.write([{
-            sql: 'DELETE FROM cms_outbox WHERE id IN (SELECT id FROM cms_outbox WHERE delivered_at IS NOT NULL AND delivered_at <= $before AND pending_plugins IS NULL LIMIT 1000)',
+            rql: 'DELETE FROM cms_outbox WHERE id IN (SELECT id FROM cms_outbox WHERE delivered_at IS NOT NULL AND delivered_at <= $before AND pending_plugins IS NULL LIMIT 1000)',
             params: { $before: this.#now() - olderThanMs },
         }], { kind: 'cms.outbox', retryConflicts: 5 });
         return Number(result.results[0]!.affected);
@@ -108,7 +108,7 @@ export class Outbox {
 
     async #settle(id: string, token: string, values: { $done: number | null; $pending: string | null; $available: number }, call: { signal?: AbortSignal }): Promise<void> {
         await this.#db.write([{
-            sql: 'UPDATE cms_outbox SET delivered_at = $done, pending_plugins = $pending, available_at = $available, lease_token = NULL, lease_until = 0 WHERE id = $id AND lease_token = $token',
+            rql: 'UPDATE cms_outbox SET delivered_at = $done, pending_plugins = $pending, available_at = $available, lease_token = NULL, lease_until = 0 WHERE id = $id AND lease_token = $token',
             params: { ...values, $id: id, $token: token },
         }], { ...call, kind: 'cms.outbox', retryConflicts: 5 });
     }

@@ -2,7 +2,7 @@
   "name": "@cossackframework/cms",
   "version": "0.9.0",
   "type": "module",
-  "description": "Cossack CMS: resources, schema planning, repositories, auth and stores on FastDB",
+  "description": "Cossack CMS: resources, schema planning, repositories, auth and stores on RomeDB",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -21,13 +21,13 @@
   "scripts": {
     "dev": "pnpm --dir app run dev",
     "sync": "pnpm --dir app run sync",
-    "fastdb": "pnpm --dir app run fastdb",
+    "romedb": "pnpm --dir app run romedb",
     "test": "vitest"
   },
   "dependencies": {
     "@cossackframework/auth": "workspace:*",
     "@cossackframework/core": "workspace:*",
-    "@cossackframework/fastdb": "workspace:*",
+    "@cossackframework/romedb": "workspace:*",
     "@cossackframework/renderer": "workspace:*",
     "markdown-it": "15.0.2"
   },

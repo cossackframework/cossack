@@ -31,11 +31,11 @@ for (const [rel, entry] of rendered) {
   if (tracked(rel) || SKIPPED.has(rel)) continue;
   const target = path.join(root, rel);
   if (rel === '.env') {
-    // Created once, then owned by the developer: it holds the local FastDB token and setup code.
+    // Created once, then owned by the developer: it holds the local RomeDB token and setup code.
     if (await exists(target)) continue;
     const local = entry.content.toString('utf8')
-      .replace(/^FASTDB_URL=.*$/m, 'FASTDB_URL=http://127.0.0.1:4322')
-      .replace(/^FASTDB_TOKEN=.*$/m, 'FASTDB_TOKEN=written-by-pnpm-fastdb');
+      .replace(/^ROMEDB_URL=.*$/m, 'ROMEDB_URL=http://127.0.0.1:4322')
+      .replace(/^ROMEDB_TOKEN=.*$/m, 'ROMEDB_TOKEN=written-by-pnpm-romedb');
     await write(target, local);
     changed++;
     continue;

@@ -68,7 +68,7 @@ export interface Resource extends ResourceDeclaration {
     readonly owner: string;
     /** `owner/name`. */
     readonly id: string;
-    /** FastDB collection that stores the records. */
+    /** RomeDB collection that stores the records. */
     readonly storage: string;
     readonly access: { readonly [A in ResourceAction]: AccessRule };
     readonly ownership: boolean;

@@ -1,46 +1,46 @@
-import type { FastDB, WriteCallOptions } from './database';
+import type { RomeDB, WriteCallOptions } from './database';
 import { Float64, RecordId, type Value } from './values';
 
 type Bindable = string | number | null | bigint | boolean;
 
-export interface SqlStatement {
-    bind(...values: Bindable[]): SqlBound;
+export interface RqlStatement {
+    bind(...values: Bindable[]): RqlBound;
 }
 
-export interface SqlBound {
+export interface RqlBound {
     first<T>(): Promise<T | null>;
     all<T>(): Promise<{ results: T[] }>;
     run(): Promise<{ meta: { changes?: number } }>;
 }
 
 /** D1's `prepare().bind()` shape, as used by the portable SQL ledgers in `@cossackframework/core`. */
-export interface SqlDatabase {
-    prepare(sql: string): SqlStatement;
+export interface RqlDatabase {
+    prepare(sql: string): RqlStatement;
 }
 
-export interface SqlDatabaseOptions {
-    /** Pending-write label for reconciliation. Default `sql`. */
+export interface RqlDatabaseOptions {
+    /** Pending-write label for reconciliation. Default `rql`. */
     kind?: string;
     signal?: AbortSignal;
 }
 
 /**
- * A D1-shaped facade over relational FastDB tables. Each call is one request: SELECT and
+ * A D1-shaped facade over relational RomeDB tables. Each call is one request: SELECT and
  * WITH statements read a fresh snapshot, everything else is one atomic write whose
  * affected count is reported as `meta.changes`. Integer results that fit become numbers.
  */
-export function sqlDatabase(db: FastDB, options: SqlDatabaseOptions = {}): SqlDatabase {
+export function rqlDatabase(db: RomeDB, options: RqlDatabaseOptions = {}): RqlDatabase {
     return {
-        prepare(sql: string): SqlStatement {
+        prepare(sql: string): RqlStatement {
             const text = numberPlaceholders(sql);
             const reading = /^\s*(?:SELECT|WITH)\b/i.test(sql) && !/\bRETURNING\b/i.test(sql);
             return {
-                bind(...values: Bindable[]): SqlBound {
+                bind(...values: Bindable[]): RqlBound {
                     const params: { [key: string]: Value } = {};
                     values.forEach((value, index) => { params[`$p${index + 1}`] = value as Value; });
-                    const statement = values.length ? { sql: text, params } : { sql: text };
+                    const statement = values.length ? { rql: text, params } : { rql: text };
                     // A rolled-back write conflict re-runs as if the writes were serial.
-                    const call: WriteCallOptions = { kind: options.kind ?? 'sql', retryConflicts: 5, ...(options.signal ? { signal: options.signal } : {}) };
+                    const call: WriteCallOptions = { kind: options.kind ?? 'rql', retryConflicts: 5, ...(options.signal ? { signal: options.signal } : {}) };
                     const execute = () => reading ? db.read([statement], call) : db.write([statement], call);
                     const rows = async () => {
                         const result = (await execute()).results[0]!;

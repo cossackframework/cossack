@@ -1,8 +1,8 @@
-// `pnpm test:databases`: the live PostgreSQL, MySQL and FastDB suites, run
+// `pnpm test:databases`: the live PostgreSQL, MySQL and RomeDB suites, run
 // locally before a release (docs/testing.md).
 //
-// The FastDB client and CMS suites start `fastdb serve` themselves. They need a
-// FastDB 2.8.0+ executable: set COSSACK_TEST_FASTDB_BIN or put `fastdb` on PATH.
+// The RomeDB client and CMS suites start `romedb serve` themselves. They need a
+// RomeDB 0.2.9+ executable: set COSSACK_TEST_ROMEDB_BIN or put `romedb` on PATH.
 //
 // With COSSACK_TEST_POSTGRES_URL and COSSACK_TEST_MYSQL_URL both set, the
 // suites use those databases. Otherwise this script starts the pinned
@@ -45,8 +45,8 @@ const SUITES = [
     args: ['--filter', '@cossackframework/studio', 'run', 'test', '--watch=false', 'tests/live-introspection.test.ts'],
   },
   {
-    name: 'FastDB client tests',
-    args: ['--filter', '@cossackframework/fastdb', 'run', 'test', '--watch=false'],
+    name: 'RomeDB client tests',
+    args: ['--filter', '@cossackframework/romedb', 'run', 'test', '--watch=false'],
   },
   {
     name: 'CMS tests',

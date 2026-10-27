@@ -1,4 +1,4 @@
-// Field groups in a generated application against a local `fastdb serve`: a collection laid
+// Field groups in a generated application against a local `romedb serve`: a collection laid
 // out in the builder, a field group with a repeater attached to it, entries with rows through
 // the content API and its row filter, the boxes in the entry and term editors, and the
 // field group editor and repeater rows in the browser.
@@ -8,7 +8,7 @@ import path from 'node:path';
 import { chromium, expect as browserExpect } from '@playwright/test';
 import { cleanupRoots, productionServer, project, vite } from './fixtures/generated-app.js';
 import { browserless, contains } from './fixtures/cms-client.js';
-import { liveFastDBTests, startFastDBService } from '../../fastdb/src/testing.ts';
+import { liveRomeDBTests, startRomeDBService } from '../../romedb/src/testing.ts';
 
 afterEach(cleanupRoots);
 
@@ -106,14 +106,14 @@ async function nodeApp() {
   const root = await project('node', ['cms']);
   await vite(root, []);
   await vite(root, ['--ssr', 'src/index.ts', '--outDir', 'dist/server']);
-  const database = await startFastDBService();
+  const database = await startRomeDBService();
   const routeIds = JSON.parse(await fs.readFile(path.join(root, 'dist/client/cossack-routes.json'), 'utf8')).filePathToId;
-  const server = await productionServer(root, { APP_SECRET: 'generated-cms-test-secret-0123456789abcdef', FASTDB_URL: database.url, FASTDB_TOKEN: database.token,
-    CMS_SETUP_CODE: 'setup-code-for-tests', FASTDB_PENDING_DIR: path.join(root, '.cossack/fastdb-pending'), MEDIA_DIR: path.join(root, 'storage/media') });
+  const server = await productionServer(root, { APP_SECRET: 'generated-cms-test-secret-0123456789abcdef', ROMEDB_URL: database.url, ROMEDB_TOKEN: database.token,
+    CMS_SETUP_CODE: 'setup-code-for-tests', ROMEDB_PENDING_DIR: path.join(root, '.cossack/romedb-pending'), MEDIA_DIR: path.join(root, 'storage/media') });
   return { root, server, routeIds, close: async () => { await server.close(); await database.stop(); } };
 }
 
-describe.skipIf(!liveFastDBTests())('generated CMS field groups', () => {
+describe.skipIf(!liveRomeDBTests())('generated CMS field groups', () => {
   it('lays collections out, attaches groups, stores rows and filters on them on Node', async () => {
     const app = await nodeApp();
     try {

@@ -1,6 +1,6 @@
 /** Users, roles and password-reset tokens on relational host tables. Emails are normalized to lowercase. */
 import { createCredentialVerifier, createPasswordHasher, type CredentialVerifier, type PasswordHasher } from '@cossackframework/auth';
-import { ClientError, type FastDB, type Statement, type Value } from '@cossackframework/fastdb';
+import { ClientError, type RomeDB, type Statement, type Value } from '@cossackframework/romedb';
 import { CmsError } from '../errors';
 import { slugify } from '../fields';
 import { userPrincipal, type Principal } from '../permissions';
@@ -49,10 +49,10 @@ const sha256 = async (text: string) => [...new Uint8Array(await crypto.subtle.di
     .map(byte => byte.toString(16).padStart(2, '0')).join('');
 
 /** `($p0, $p1, …)` with its parameters, for a bounded `IN` list. */
-export function inList(prefix: string, values: readonly Value[]): { sql: string; params: { [key: string]: Value } } {
+export function inList(prefix: string, values: readonly Value[]): { rql: string; params: { [key: string]: Value } } {
     const params: { [key: string]: Value } = {};
     values.forEach((value, index) => { params[`$${prefix}${index}`] = value; });
-    return { sql: `(${values.map((_, index) => `$${prefix}${index}`).join(', ')})`, params };
+    return { rql: `(${values.map((_, index) => `$${prefix}${index}`).join(', ')})`, params };
 }
 
 /** A LIKE pattern matching `text` anywhere, with `%`, `_` and `\` escaped. Use with `ESCAPE '\\'`. */
@@ -61,13 +61,13 @@ export function containsPattern(text: string): string {
 }
 
 export class CmsUsers {
-    readonly #db: FastDB;
+    readonly #db: RomeDB;
     readonly #hasher: PasswordHasher;
     readonly #now: () => number;
     readonly #checkMeta: MetaCheck | undefined;
     readonly verifier: CredentialVerifier<CmsUser>;
 
-    constructor(db: FastDB, options: { hasher?: PasswordHasher; now?: () => number; checkMeta?: MetaCheck } = {}) {
+    constructor(db: RomeDB, options: { hasher?: PasswordHasher; now?: () => number; checkMeta?: MetaCheck } = {}) {
         this.#db = db;
         this.#hasher = options.hasher ?? createPasswordHasher();
         this.#now = options.now ?? Date.now;
@@ -75,7 +75,7 @@ export class CmsUsers {
         type Row = { id: string; hash: string | null; status: string };
         this.verifier = createCredentialVerifier<Row, CmsUser>({
             find: async email => {
-                const result = await this.#db.read([{ sql: 'SELECT id, password_hash, status FROM cms_users WHERE email = $email', params: { $email: normalizeEmail(email) } }]);
+                const result = await this.#db.read([{ rql: 'SELECT id, password_hash, status FROM cms_users WHERE email = $email', params: { $email: normalizeEmail(email) } }]);
                 const row = result.results[0]!.rows[0];
                 return row ? { id: row[0] as string, hash: row[1] as string | null, status: row[2] as string } : null;
             },
@@ -83,7 +83,7 @@ export class CmsUsers {
             user: async row => (await this.get(row.id))!,
             hasher: this.#hasher,
             replacePasswordHash: async (row, expected, replacement) => {
-                const result = await this.#db.write([{ sql: 'UPDATE cms_users SET password_hash = $next, updated_at = $now WHERE id = $id AND password_hash = $expected',
+                const result = await this.#db.write([{ rql: 'UPDATE cms_users SET password_hash = $next, updated_at = $now WHERE id = $id AND password_hash = $expected',
                     params: { $next: replacement, $now: this.#now(), $id: row.id, $expected: expected } }], WRITE);
                 return result.results[0]!.affected === 1n;
             },
@@ -100,7 +100,7 @@ export class CmsUsers {
         const hash = input.password === undefined ? null : await this.#hasher.hash(input.password);
         const now = this.#now();
         const statements: Statement[] = [{
-            sql: "INSERT INTO cms_users (id, email, name, password_hash, avatar, status, created_at, updated_at, meta) VALUES ($id, $email, $name, $hash, $avatar, 'active', $now, $now, $meta)",
+            rql: "INSERT INTO cms_users (id, email, name, password_hash, avatar, status, created_at, updated_at, meta) VALUES ($id, $email, $name, $hash, $avatar, 'active', $now, $now, $meta)",
             params: { $id: id, $email: email, $name: input.name.trim(), $hash: hash, $avatar: input.avatar ?? null, $now: now, $meta: JSON.stringify(meta) },
         }, ...roleStatements(id, input.roles ?? [])];
         try { await this.#db.write(statements, WRITE); }
@@ -127,8 +127,8 @@ export class CmsUsers {
         if (!wanted.length) return new Map();
         const list = inList('u', wanted);
         const result = await this.#db.read([
-            { sql: `SELECT id, email, name, avatar, status, created_at, last_sign_in_at, meta FROM cms_users WHERE id IN ${list.sql}`, params: list.params },
-            { sql: `SELECT ur.user_id, r.id, r.name, r.permissions FROM cms_user_roles ur JOIN cms_roles r ON r.id = ur.role_id WHERE ur.user_id IN ${list.sql} ORDER BY r.id`, params: list.params },
+            { rql: `SELECT id, email, name, avatar, status, created_at, last_sign_in_at, meta FROM cms_users WHERE id IN ${list.rql}`, params: list.params },
+            { rql: `SELECT ur.user_id, r.id, r.name, r.permissions FROM cms_user_roles ur JOIN cms_roles r ON r.id = ur.role_id WHERE ur.user_id IN ${list.rql} ORDER BY r.id`, params: list.params },
         ]);
         const roles = new Map<string, CmsUser['assignments'][number][]>();
         for (const [user, role, name, permissions] of result.results[1]!.rows) {
@@ -150,7 +150,7 @@ export class CmsUsers {
     }
 
     async findByEmail(email: string): Promise<CmsUser | null> {
-        const result = await this.#db.read([{ sql: 'SELECT id FROM cms_users WHERE email = $email', params: { $email: normalizeEmail(email) } }]);
+        const result = await this.#db.read([{ rql: 'SELECT id FROM cms_users WHERE email = $email', params: { $email: normalizeEmail(email) } }]);
         const id = result.results[0]!.rows[0]?.[0] as string | undefined;
         return id ? this.get(id) : null;
     }
@@ -171,8 +171,8 @@ export class CmsUsers {
         }
         const where = conditions.length ? ` WHERE ${conditions.join(' AND ')}` : '';
         const result = await this.#db.read([
-            { sql: `SELECT id FROM cms_users${where} ORDER BY created_at DESC, id DESC LIMIT $limit OFFSET $offset`, params: { ...params, $limit: limit, $offset: offset } },
-            conditions.length ? { sql: `SELECT count(*) FROM cms_users${where}`, params } : { sql: 'SELECT count(*) FROM cms_users' },
+            { rql: `SELECT id FROM cms_users${where} ORDER BY created_at DESC, id DESC LIMIT $limit OFFSET $offset`, params: { ...params, $limit: limit, $offset: offset } },
+            conditions.length ? { rql: `SELECT count(*) FROM cms_users${where}`, params } : { rql: 'SELECT count(*) FROM cms_users' },
         ]);
         const ids = result.results[0]!.rows.map(row => row[0] as string);
         const users = await this.getMany(ids);
@@ -187,7 +187,7 @@ export class CmsUsers {
         checkProfile(next);
         const meta = patch.meta === undefined ? current.meta : await this.#meta(patch.meta, current.meta);
         try {
-            const result = await this.#db.write([{ sql: 'UPDATE cms_users SET name = $name, email = $email, avatar = $avatar, meta = $meta, updated_at = $now WHERE id = $id',
+            const result = await this.#db.write([{ rql: 'UPDATE cms_users SET name = $name, email = $email, avatar = $avatar, meta = $meta, updated_at = $now WHERE id = $id',
                 params: { $name: next.name.trim(), $email: next.email, $avatar: next.avatar, $meta: JSON.stringify(meta), $now: this.#now(), $id: id } }], WRITE);
             return result.results[0]!.affected === 1n;
         } catch (error) { throw uniqueEmail(error); }
@@ -198,32 +198,32 @@ export class CmsUsers {
         if (!ID.test(id)) return false;
         const params = { $id: id };
         const result = await this.#db.write([
-            { sql: 'DELETE FROM cms_user_roles WHERE user_id = $id', params },
-            { sql: 'DELETE FROM cms_auth_sessions WHERE user_id = $id', params },
-            { sql: 'DELETE FROM cms_password_resets WHERE user_id = $id', params },
-            { sql: 'DELETE FROM cms_users WHERE id = $id', params },
+            { rql: 'DELETE FROM cms_user_roles WHERE user_id = $id', params },
+            { rql: 'DELETE FROM cms_auth_sessions WHERE user_id = $id', params },
+            { rql: 'DELETE FROM cms_password_resets WHERE user_id = $id', params },
+            { rql: 'DELETE FROM cms_users WHERE id = $id', params },
         ], WRITE);
         return result.results[3]!.affected === 1n;
     }
 
     /** Replace a user's roles in one atomic batch. */
     async setRoles(id: string, roles: readonly string[]): Promise<void> {
-        await this.#db.write([{ sql: 'DELETE FROM cms_user_roles WHERE user_id = $id', params: { $id: id } }, ...roleStatements(id, roles)], WRITE);
+        await this.#db.write([{ rql: 'DELETE FROM cms_user_roles WHERE user_id = $id', params: { $id: id } }, ...roleStatements(id, roles)], WRITE);
     }
 
     async setStatus(id: string, status: 'active' | 'disabled'): Promise<boolean> {
-        const result = await this.#db.write([{ sql: 'UPDATE cms_users SET status = $status, updated_at = $now WHERE id = $id', params: { $status: status, $now: this.#now(), $id: id } }], WRITE);
+        const result = await this.#db.write([{ rql: 'UPDATE cms_users SET status = $status, updated_at = $now WHERE id = $id', params: { $status: status, $now: this.#now(), $id: id } }], WRITE);
         return result.results[0]!.affected === 1n;
     }
 
     async setPassword(id: string, password: string): Promise<boolean> {
         checkPassword(password);
-        const result = await this.#db.write([{ sql: 'UPDATE cms_users SET password_hash = $hash, updated_at = $now WHERE id = $id', params: { $hash: await this.#hasher.hash(password), $now: this.#now(), $id: id } }], WRITE);
+        const result = await this.#db.write([{ rql: 'UPDATE cms_users SET password_hash = $hash, updated_at = $now WHERE id = $id', params: { $hash: await this.#hasher.hash(password), $now: this.#now(), $id: id } }], WRITE);
         return result.results[0]!.affected === 1n;
     }
 
     async count(): Promise<number> {
-        const result = await this.#db.read([{ sql: 'SELECT count(*) FROM cms_users' }]);
+        const result = await this.#db.read([{ rql: 'SELECT count(*) FROM cms_users' }]);
         return Number(result.results[0]!.rows[0]![0] as bigint);
     }
 
@@ -237,7 +237,7 @@ export class CmsUsers {
     async defineRole(role: { id: string; name: string; permissions: readonly string[] }): Promise<CmsRole> {
         const permissions = checkRole(role);
         await this.#db.write([{
-            sql: 'INSERT INTO cms_roles (id, name, permissions, created_at) VALUES ($id, $name, $permissions, $now) ON CONFLICT (id) DO UPDATE SET name = excluded.name, permissions = excluded.permissions',
+            rql: 'INSERT INTO cms_roles (id, name, permissions, created_at) VALUES ($id, $name, $permissions, $now) ON CONFLICT (id) DO UPDATE SET name = excluded.name, permissions = excluded.permissions',
             params: { $id: role.id, $name: role.name.trim(), $permissions: JSON.stringify(permissions), $now: this.#now() },
         }], WRITE);
         return (await this.role(role.id))!;
@@ -248,7 +248,7 @@ export class CmsUsers {
         const id = role.id ?? (slugify(role.name, 60) || crypto.randomUUID());
         const permissions = checkRole({ ...role, id });
         try {
-            await this.#db.write([{ sql: 'INSERT INTO cms_roles (id, name, permissions, created_at) VALUES ($id, $name, $permissions, $now)',
+            await this.#db.write([{ rql: 'INSERT INTO cms_roles (id, name, permissions, created_at) VALUES ($id, $name, $permissions, $now)',
                 params: { $id: id, $name: role.name.trim(), $permissions: JSON.stringify(permissions), $now: this.#now() } }], WRITE);
         } catch (error) {
             if (error instanceof ClientError && error.outcome === 'rolled-back' && /UNIQUE|PRIMARY|constraint/i.test(error.message)) throw new CmsError('CMS_CONFLICT', 'A role with this name already exists.', { fields: { name: 'is taken.' } });
@@ -262,7 +262,7 @@ export class CmsUsers {
         if (!current) return false;
         const permissions = checkRole({ id, name: patch.name ?? current.name, permissions: patch.permissions ?? current.permissions });
         try {
-            const result = await this.#db.write([{ sql: 'UPDATE cms_roles SET name = $name, permissions = $permissions WHERE id = $id',
+            const result = await this.#db.write([{ rql: 'UPDATE cms_roles SET name = $name, permissions = $permissions WHERE id = $id',
                 params: { $id: id, $name: (patch.name ?? current.name).trim(), $permissions: JSON.stringify(permissions) } }], WRITE);
             return result.results[0]!.affected === 1n;
         } catch (error) {
@@ -275,15 +275,15 @@ export class CmsUsers {
     async deleteRole(id: string): Promise<boolean> {
         if (id === 'admin') throw new CmsError('CMS_FORBIDDEN', 'The administrator role cannot be deleted.');
         const result = await this.#db.write([
-            { sql: 'DELETE FROM cms_user_roles WHERE role_id = $id', params: { $id: id } },
-            { sql: 'DELETE FROM cms_roles WHERE id = $id', params: { $id: id } },
+            { rql: 'DELETE FROM cms_user_roles WHERE role_id = $id', params: { $id: id } },
+            { rql: 'DELETE FROM cms_roles WHERE id = $id', params: { $id: id } },
         ], WRITE);
         return result.results[1]!.affected === 1n;
     }
 
     async role(id: string): Promise<CmsRole | null> {
         if (!ID.test(id)) return null;
-        const result = await this.#db.read([{ sql: 'SELECT id, name, permissions, created_at FROM cms_roles WHERE id = $id', params: { $id: id } }]);
+        const result = await this.#db.read([{ rql: 'SELECT id, name, permissions, created_at FROM cms_roles WHERE id = $id', params: { $id: id } }]);
         const row = result.results[0]!.rows[0];
         return row ? roleOf(row) : null;
     }
@@ -294,7 +294,7 @@ export class CmsUsers {
         let where = '';
         if (options.search?.trim()) { where = " WHERE lower(r.name) LIKE $q ESCAPE '\\'"; params.$q = containsPattern(options.search.trim().slice(0, 100)); }
         const result = await this.#db.read([{
-            sql: `SELECT r.id, r.name, r.permissions, r.created_at, (SELECT count(*) FROM cms_user_roles ur WHERE ur.role_id = r.id) FROM cms_roles r${where} ORDER BY r.created_at, r.id LIMIT $limit OFFSET $offset`,
+            rql: `SELECT r.id, r.name, r.permissions, r.created_at, (SELECT count(*) FROM cms_user_roles ur WHERE ur.role_id = r.id) FROM cms_roles r${where} ORDER BY r.created_at, r.id LIMIT $limit OFFSET $offset`,
             params,
         }]);
         return result.results[0]!.rows.map(row => ({ ...roleOf(row), userCount: Number(row[4] as bigint) }));
@@ -302,8 +302,8 @@ export class CmsUsers {
 
     async countRoles(options: { search?: string } = {}): Promise<number> {
         const result = await this.#db.read([options.search?.trim()
-            ? { sql: "SELECT count(*) FROM cms_roles WHERE lower(name) LIKE $q ESCAPE '\\'", params: { $q: containsPattern(options.search.trim().slice(0, 100)) } }
-            : { sql: 'SELECT count(*) FROM cms_roles' }]);
+            ? { rql: "SELECT count(*) FROM cms_roles WHERE lower(name) LIKE $q ESCAPE '\\'", params: { $q: containsPattern(options.search.trim().slice(0, 100)) } }
+            : { rql: 'SELECT count(*) FROM cms_roles' }]);
         return Number(result.results[0]!.rows[0]![0] as bigint);
     }
 
@@ -317,8 +317,8 @@ export class CmsUsers {
         const token = [...crypto.getRandomValues(new Uint8Array(32))].map(byte => byte.toString(16).padStart(2, '0')).join('');
         const now = this.#now();
         await this.#db.write([
-            { sql: 'DELETE FROM cms_password_resets WHERE user_id = $user', params: { $user: user.id } },
-            { sql: 'INSERT INTO cms_password_resets (id, user_id, created_at, expires_at) VALUES ($id, $user, $now, $expires)',
+            { rql: 'DELETE FROM cms_password_resets WHERE user_id = $user', params: { $user: user.id } },
+            { rql: 'INSERT INTO cms_password_resets (id, user_id, created_at, expires_at) VALUES ($id, $user, $now, $expires)',
                 params: { $id: await sha256(token), $user: user.id, $now: now, $expires: now + (options.ttlMs ?? 60 * 60_000) } },
         ], WRITE);
         return { token, user };
@@ -332,7 +332,7 @@ export class CmsUsers {
         if (typeof token !== 'string' || !TOKEN.test(token)) return false;
         checkPassword(password);
         const id = await sha256(token);
-        const found = await this.#db.read([{ sql: 'SELECT user_id FROM cms_password_resets WHERE id = $id AND expires_at > $now', params: { $id: id, $now: this.#now() } }]);
+        const found = await this.#db.read([{ rql: 'SELECT user_id FROM cms_password_resets WHERE id = $id AND expires_at > $now', params: { $id: id, $now: this.#now() } }]);
         const user = found.results[0]!.rows[0]?.[0] as string | undefined;
         if (!user) return false;
         const hash = await this.#hasher.hash(password);
@@ -340,17 +340,17 @@ export class CmsUsers {
         const params = { $id: id, $user: user, $now: this.#now() };
         // The password and sessions change only if this request still holds the token.
         const result = await this.#db.write([
-            { sql: `UPDATE cms_users SET password_hash = $hash, updated_at = $now WHERE id = $user AND ${guard}`, params: { ...params, $hash: hash } },
-            { sql: `DELETE FROM cms_auth_sessions WHERE user_id = $user AND ${guard}`, params },
-            { sql: 'DELETE FROM cms_password_resets WHERE id = $id AND user_id = $user AND expires_at > $now', params },
+            { rql: `UPDATE cms_users SET password_hash = $hash, updated_at = $now WHERE id = $user AND ${guard}`, params: { ...params, $hash: hash } },
+            { rql: `DELETE FROM cms_auth_sessions WHERE user_id = $user AND ${guard}`, params },
+            { rql: 'DELETE FROM cms_password_resets WHERE id = $id AND user_id = $user AND expires_at > $now', params },
         ], WRITE);
         return result.results[2]!.affected === 1n && result.results[0]!.affected === 1n;
     }
 
     async purgeExpiredResets(): Promise<number> {
-        const expired = await this.#db.read([{ sql: 'SELECT 1 FROM cms_password_resets WHERE expires_at <= $now LIMIT 1', params: { $now: this.#now() } }]);
+        const expired = await this.#db.read([{ rql: 'SELECT 1 FROM cms_password_resets WHERE expires_at <= $now LIMIT 1', params: { $now: this.#now() } }]);
         if (!expired.results[0]!.rows.length) return 0;
-        const result = await this.#db.write([{ sql: 'DELETE FROM cms_password_resets WHERE id IN (SELECT id FROM cms_password_resets WHERE expires_at <= $now LIMIT 500)', params: { $now: this.#now() } }], WRITE);
+        const result = await this.#db.write([{ rql: 'DELETE FROM cms_password_resets WHERE id IN (SELECT id FROM cms_password_resets WHERE expires_at <= $now LIMIT 500)', params: { $now: this.#now() } }], WRITE);
         return Number(result.results[0]!.affected);
     }
 }
@@ -363,7 +363,7 @@ function roleStatements(userId: string, roles: readonly string[]): Statement[] {
     return [...new Set(roles)].map(role => {
         if (!ID.test(role)) throw new CmsError('CMS_VALIDATION', `Invalid role ${role}.`);
         // Insert only roles that exist; the caller checks the outcome through get().
-        return { sql: 'INSERT INTO cms_user_roles (user_id, role_id) SELECT $user, id FROM cms_roles WHERE id = $role', params: { $user: userId, $role: role } as { [key: string]: Value } };
+        return { rql: 'INSERT INTO cms_user_roles (user_id, role_id) SELECT $user, id FROM cms_roles WHERE id = $role', params: { $user: userId, $role: role } as { [key: string]: Value } };
     });
 }
 

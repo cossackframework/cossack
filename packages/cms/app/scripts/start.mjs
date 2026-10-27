@@ -1,8 +1,8 @@
-// `pnpm dev`: sync the shell, make sure a FastDB answers at FASTDB_URL, then run the dev server.
+// `pnpm dev`: sync the shell, make sure a RomeDB answers at ROMEDB_URL, then run the dev server.
 //
-// When nothing listens at FASTDB_URL, `scripts/fastdb.sh` is started here as a child (first
-// start creates the database and writes FASTDB_TOKEN into .env), and stopped with the dev
-// server. A FastDB already running at that URL is used as it is.
+// When nothing listens at ROMEDB_URL, `scripts/romedb.sh` is started here as a child (first
+// start creates the database and writes ROMEDB_TOKEN into .env), and stopped with the dev
+// server. A RomeDB already running at that URL is used as it is.
 import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -17,22 +17,22 @@ process.on('SIGTERM', () => { stop(); process.exit(143); });
 
 await run('node', ['scripts/sync.mjs']);
 const env = await readEnv();
-const url = env.FASTDB_URL ?? 'http://127.0.0.1:4322';
+const url = env.ROMEDB_URL ?? 'http://127.0.0.1:4322';
 
-if (await answers(url)) console.log(`[cms-app] FastDB at ${url}.`);
+if (await answers(url)) console.log(`[cms-app] RomeDB at ${url}.`);
 else {
-    console.log(`[cms-app] nothing answers at ${url}; starting FastDB (scripts/fastdb.sh).`);
-    const fastdb = spawn('bash', ['scripts/fastdb.sh'], { cwd: root, stdio: 'inherit' });
-    children.push(fastdb);
-    fastdb.on('exit', code => { if (!exiting) { console.error(`[cms-app] FastDB stopped (exit ${code}).`); stop(); process.exit(code ?? 1); } });
+    console.log(`[cms-app] nothing answers at ${url}; starting RomeDB (scripts/romedb.sh).`);
+    const romedb = spawn('bash', ['scripts/romedb.sh'], { cwd: root, stdio: 'inherit' });
+    children.push(romedb);
+    romedb.on('exit', code => { if (!exiting) { console.error(`[cms-app] RomeDB stopped (exit ${code}).`); stop(); process.exit(code ?? 1); } });
     const deadline = Date.now() + 20_000;
     // Ready when it answers and the token it wrote is the one .env holds, so the dev server reads a working .env.
     while (Date.now() < deadline) {
-        const token = await fs.readFile(path.join(root, 'storage/fastdb/token'), 'utf8').then(text => text.trim(), () => '');
-        if (token && (await readEnv()).FASTDB_TOKEN === token && await answers(url)) break;
+        const token = await fs.readFile(path.join(root, 'storage/romedb/token'), 'utf8').then(text => text.trim(), () => '');
+        if (token && (await readEnv()).ROMEDB_TOKEN === token && await answers(url)) break;
         await new Promise(resolve => setTimeout(resolve, 200));
     }
-    if (!await answers(url)) { console.error(`[cms-app] FastDB did not come up at ${url}.`); stop(); process.exit(1); }
+    if (!await answers(url)) { console.error(`[cms-app] RomeDB did not come up at ${url}.`); stop(); process.exit(1); }
 }
 
 const dev = spawn(process.execPath, ['--env-file-if-exists=.env', 'scripts/dev.js'], { cwd: root, stdio: 'inherit' });

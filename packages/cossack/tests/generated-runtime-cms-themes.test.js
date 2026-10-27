@@ -9,7 +9,7 @@ import { chromium, expect as browserExpect } from '@playwright/test';
 import { cleanupRoots, cossack, productionServer, project, typecheck, vite } from './fixtures/generated-app.js';
 import { browserless, lacks, visible } from './fixtures/cms-client.js';
 import { writePortfolioTheme } from './fixtures/cms-portfolio-theme.js';
-import { liveFastDBTests, startFastDBService } from '../../fastdb/src/testing.ts';
+import { liveRomeDBTests, startRomeDBService } from '../../romedb/src/testing.ts';
 
 afterEach(cleanupRoots);
 
@@ -30,7 +30,7 @@ async function readTree(directory) {
   return files;
 }
 
-describe.skipIf(!liveFastDBTests())('CMS themes', () => {
+describe.skipIf(!liveRomeDBTests())('CMS themes', () => {
   it('serves a portfolio child theme, widgets and chosen templates, and edits blocks on the public page', async () => {
     const root = await project('node', ['cms']);
     await writePortfolioTheme(root);
@@ -48,9 +48,9 @@ describe.skipIf(!liveFastDBTests())('CMS themes', () => {
     const editorChunk = path.basename(editorChunks[0]);
     const routeIds = JSON.parse(await fs.readFile(path.join(root, 'dist/client/cossack-routes.json'), 'utf8')).filePathToId;
 
-    const database = await startFastDBService();
-    const server = await productionServer(root, { APP_SECRET: 'generated-cms-themes-secret-0123456789abcdef', FASTDB_URL: database.url, FASTDB_TOKEN: database.token,
-      CMS_SETUP_CODE: 'setup-code-for-tests', FASTDB_PENDING_DIR: path.join(root, '.cossack/fastdb-pending'), MEDIA_DIR: path.join(root, 'storage/media') });
+    const database = await startRomeDBService();
+    const server = await productionServer(root, { APP_SECRET: 'generated-cms-themes-secret-0123456789abcdef', ROMEDB_URL: database.url, ROMEDB_TOKEN: database.token,
+      CMS_SETUP_CODE: 'setup-code-for-tests', ROMEDB_PENDING_DIR: path.join(root, '.cossack/romedb-pending'), MEDIA_DIR: path.join(root, 'storage/media') });
     let browser;
     try {
       const web = browserless(server.origin, routeIds, () => server.diagnostics());

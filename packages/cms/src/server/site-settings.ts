@@ -2,7 +2,7 @@
  * Settings storage: one `cms_settings` row per key, validated against the declared groups.
  * Values are cached per isolate or process and the cache is dropped on every write here.
  */
-import type { FastDB, Statement } from '@cossackframework/fastdb';
+import type { RomeDB, Statement } from '@cossackframework/romedb';
 import { CmsError } from '../errors';
 import { validateValue } from '../fields';
 import { hasPermission, PERMISSIONS, principalId, type Principal } from '../permissions';
@@ -11,13 +11,13 @@ import type { SettingsGroup, SiteSettings } from '../settings';
 const WRITE = { kind: 'cms.settings', retryConflicts: 5 } as const;
 
 export class CmsSettings {
-    readonly #db: FastDB;
+    readonly #db: RomeDB;
     readonly #groups = new Map<string, SettingsGroup>();
     readonly #now: () => number;
     readonly #ttl: number;
     #cache: { at: number; values: Promise<SiteSettings> } | undefined;
 
-    constructor(db: FastDB, groups: readonly SettingsGroup[], options: { now?: () => number; ttlMs?: number } = {}) {
+    constructor(db: RomeDB, groups: readonly SettingsGroup[], options: { now?: () => number; ttlMs?: number } = {}) {
         this.#db = db;
         this.#now = options.now ?? Date.now;
         this.#ttl = options.ttlMs ?? 30_000;
@@ -64,7 +64,7 @@ export class CmsSettings {
             if (error) { errors[name] = error; continue; }
             if (value === undefined) continue;
             statements.push({
-                sql: 'INSERT INTO cms_settings (key, value, updated_at, updated_by) VALUES ($key, $value, $now, $by) ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by',
+                rql: 'INSERT INTO cms_settings (key, value, updated_at, updated_by) VALUES ($key, $value, $now, $by) ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by',
                 params: { $key: `${group.id}.${name}`, $value: JSON.stringify(value), $now: now, $by: principalId(context.principal) },
             });
         }
@@ -81,7 +81,7 @@ export class CmsSettings {
         const values: { [key: string]: unknown } = {};
         for (const group of this.#groups.values()) for (const [name, declaration] of Object.entries(group.fields)) values[`${group.id}.${name}`] = declaration.default ?? null;
         let rows: readonly (readonly unknown[])[] = [];
-        try { rows = (await this.#db.read([{ sql: 'SELECT key, value FROM cms_settings ORDER BY key LIMIT 1000' }])).results[0]!.rows; }
+        try { rows = (await this.#db.read([{ rql: 'SELECT key, value FROM cms_settings ORDER BY key LIMIT 1000' }])).results[0]!.rows; }
         catch (error) {
             // Before setup the table does not exist; the defaults apply.
             if (!/cms_settings|no such table|not found/i.test(String((error as Error).message))) throw error;

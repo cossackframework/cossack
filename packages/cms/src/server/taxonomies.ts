@@ -4,7 +4,7 @@
  * one UPDATE of that prefix, and a delete moves the children to the parent in the same
  * batch. Records hold term IDs in indexed arrays.
  */
-import { ClientError, type FastDB, type Statement, type Value } from '@cossackframework/fastdb';
+import { ClientError, type RomeDB, type Statement, type Value } from '@cossackframework/romedb';
 import { CmsError } from '../errors';
 import { slugify } from '../fields';
 import { hasPermission, PERMISSIONS, principalId, type Principal } from '../permissions';
@@ -44,23 +44,23 @@ const ICON = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const MAX_TERMS = 1000;
 
 export class CmsTaxonomies {
-    readonly #db: FastDB;
+    readonly #db: RomeDB;
     readonly #now: () => number;
     readonly #taxonomies: () => ReadonlyMap<string, TaxonomyDeclaration>;
     readonly #usage: (taxonomy: string) => readonly TermUsage[];
     readonly #canAssign: (principal: Principal, taxonomy: TaxonomyDeclaration) => boolean;
-    readonly #slugChanged: ((taxonomy: TaxonomyDeclaration, from: string, to: string, guard: { sql: string; params: { [key: string]: Value } }) => Statement[]) | undefined;
+    readonly #slugChanged: ((taxonomy: TaxonomyDeclaration, from: string, to: string, guard: { rql: string; params: { [key: string]: Value } }) => Statement[]) | undefined;
     readonly #beforeSave: ((draft: TermDraft, input: TermWriteInput) => Promise<TermDraft>) | undefined;
     readonly #checkMeta: ((taxonomy: string) => MetaCheck) | undefined;
 
-    constructor(db: FastDB, options: {
+    constructor(db: RomeDB, options: {
         /** Current declarations: built-in and those defined in the dashboard. */
         taxonomies: () => ReadonlyMap<string, TaxonomyDeclaration>;
         usage: (taxonomy: string) => readonly TermUsage[];
         /** Whether the principal may write records that use the taxonomy (to add tags while editing). */
         canAssign: (principal: Principal, taxonomy: TaxonomyDeclaration) => boolean;
         /** Statements to add when a term's slug changes, such as a redirect, run only when `guard` holds. */
-        slugChanged?: (taxonomy: TaxonomyDeclaration, from: string, to: string, guard: { sql: string; params: { [key: string]: Value } }) => Statement[];
+        slugChanged?: (taxonomy: TaxonomyDeclaration, from: string, to: string, guard: { rql: string; params: { [key: string]: Value } }) => Statement[];
         /** The `cms.term.before-save` filter: plugins adjust or refuse a term before it is written. */
         beforeSave?: (draft: TermDraft, input: TermWriteInput) => Promise<TermDraft>;
         /** The meta check for a taxonomy's field groups. */
@@ -96,14 +96,14 @@ export class CmsTaxonomies {
         const wanted = [...new Set(ids.filter(id => typeof id === 'string' && ID.test(id)))].slice(0, 200);
         if (!wanted.length) return new Map();
         const list = inList('t', wanted);
-        const result = await this.#db.read([{ sql: `SELECT ${COLUMNS} FROM cms_terms WHERE id IN ${list.sql}`, params: list.params }]);
+        const result = await this.#db.read([{ rql: `SELECT ${COLUMNS} FROM cms_terms WHERE id IN ${list.rql}`, params: list.params }]);
         return new Map(result.results[0]!.rows.map(row => { const term = termOf(row); return [term.id, term]; }));
     }
 
     async bySlug(taxonomy: string, slug: string): Promise<TermShape | null> {
         this.declaration(taxonomy);
         if (!SLUG.test(slug)) return null;
-        const result = await this.#db.read([{ sql: `SELECT ${COLUMNS} FROM cms_terms WHERE taxonomy = $taxonomy AND slug = $slug`, params: { $taxonomy: taxonomy, $slug: slug } }]);
+        const result = await this.#db.read([{ rql: `SELECT ${COLUMNS} FROM cms_terms WHERE taxonomy = $taxonomy AND slug = $slug`, params: { $taxonomy: taxonomy, $slug: slug } }]);
         const row = result.results[0]!.rows[0];
         return row ? termOf(row) : null;
     }
@@ -115,9 +115,9 @@ export class CmsTaxonomies {
         let where = 'taxonomy = $taxonomy';
         if (options.search?.trim()) { where += " AND (lower(name) LIKE $q ESCAPE '\\' OR slug LIKE $q ESCAPE '\\')"; params.$q = containsPattern(options.search.trim().slice(0, 100)); }
         const result = await this.#db.read([
-            { sql: `SELECT ${COLUMNS} FROM cms_terms WHERE ${where} ORDER BY lower(name), id LIMIT $limit OFFSET $offset`,
+            { rql: `SELECT ${COLUMNS} FROM cms_terms WHERE ${where} ORDER BY lower(name), id LIMIT $limit OFFSET $offset`,
                 params: { ...params, $limit: Math.min(Math.max(options.limit ?? 50, 1), 200), $offset: Math.max(options.offset ?? 0, 0) } },
-            { sql: `SELECT count(*) FROM cms_terms WHERE ${where}`, params },
+            { rql: `SELECT count(*) FROM cms_terms WHERE ${where}`, params },
         ]);
         return { items: result.results[0]!.rows.map(termOf), total: Number(result.results[1]!.rows[0]![0] as bigint) };
     }
@@ -125,7 +125,7 @@ export class CmsTaxonomies {
     /** Every term in tree order: each parent before its children, siblings by name. */
     async tree(taxonomy: string): Promise<TermShape[]> {
         this.declaration(taxonomy);
-        const result = await this.#db.read([{ sql: `SELECT ${COLUMNS} FROM cms_terms WHERE taxonomy = $taxonomy ORDER BY path LIMIT ${MAX_TERMS}`, params: { $taxonomy: taxonomy } }]);
+        const result = await this.#db.read([{ rql: `SELECT ${COLUMNS} FROM cms_terms WHERE taxonomy = $taxonomy ORDER BY path LIMIT ${MAX_TERMS}`, params: { $taxonomy: taxonomy } }]);
         const terms = result.results[0]!.rows.map(termOf);
         const children = new Map<string | null, TermShape[]>();
         const known = new Set(terms.map(term => term.id));
@@ -155,7 +155,7 @@ export class CmsTaxonomies {
     async subtree(id: string): Promise<string[]> {
         const term = await this.get(id);
         if (!term) return [];
-        const result = await this.#db.read([{ sql: `SELECT id FROM cms_terms WHERE taxonomy = $taxonomy AND path LIKE $prefix LIMIT ${MAX_TERMS}`, params: { $taxonomy: term.taxonomy, $prefix: `${term.path}%` } }]);
+        const result = await this.#db.read([{ rql: `SELECT id FROM cms_terms WHERE taxonomy = $taxonomy AND path LIKE $prefix LIMIT ${MAX_TERMS}`, params: { $taxonomy: term.taxonomy, $prefix: `${term.path}%` } }]);
         return result.results[0]!.rows.map(row => row[0] as string);
     }
 
@@ -165,7 +165,7 @@ export class CmsTaxonomies {
         const counts = new Map(ids.map(id => [id, 0]));
         const statements: { id: string; statement: Statement }[] = [];
         for (const id of ids) for (const use of usage) {
-            statements.push({ id, statement: { sql: `SELECT count(*) FROM ${use.storage} WHERE array::contains("${use.field}", $term)`, params: { $term: id } } });
+            statements.push({ id, statement: { rql: `SELECT count(*) FROM ${use.storage} WHERE array::contains("${use.field}", $term)`, params: { $term: id } } });
         }
         for (let offset = 0; offset < statements.length; offset += 30) {
             const chunk = statements.slice(offset, offset + 30);
@@ -233,11 +233,11 @@ export class CmsTaxonomies {
                 $parent: parent?.id ?? null, $parentPath: parent?.path ?? null,
             }));
         }
-        statements.push({ sql: `UPDATE cms_terms SET name = $name, slug = $slug, description = $description, parent_id = $parentId, icon = $icon, meta = $meta, updated_at = $now WHERE id = $id AND path = $path`,
+        statements.push({ rql: `UPDATE cms_terms SET name = $name, slug = $slug, description = $description, parent_id = $parentId, icon = $icon, meta = $meta, updated_at = $now WHERE id = $id AND path = $path`,
             params: { $name: name, $slug: slug, $description: description, $parentId: parentId, $icon: icon, $meta: JSON.stringify(draft.meta ?? {}), $now: now, $id: id, $path: path } });
         const own = statements.length - 1;
         if (slug !== term.slug && this.#slugChanged) {
-            statements.push(...this.#slugChanged(declaration, term.slug, slug, { sql: 'EXISTS (SELECT 1 FROM cms_terms WHERE id = $tId AND slug = $tSlug AND updated_at = $tNow)', params: { $tId: id, $tSlug: slug, $tNow: now } }));
+            statements.push(...this.#slugChanged(declaration, term.slug, slug, { rql: 'EXISTS (SELECT 1 FROM cms_terms WHERE id = $tId AND slug = $tSlug AND updated_at = $tNow)', params: { $tId: id, $tSlug: slug, $tNow: now } }));
         }
         const result = await this.#write(statements);
         if (result.results[own]!.affected !== 1n) throw new CmsError('CMS_CONFLICT', 'The term changed while it was saved. Reload and try again.');
@@ -274,7 +274,7 @@ export class CmsTaxonomies {
         const wanted = [...new Map(names.map(name => name.trim()).filter(Boolean).slice(0, 50).map(name => [slugify(name, 120) || name.toLowerCase(), name])).entries()];
         if (!wanted.length) return [];
         const list = inList('s', wanted.map(([slug]) => slug));
-        const existing = await this.#db.read([{ sql: `SELECT id, slug FROM cms_terms WHERE taxonomy = $taxonomy AND slug IN ${list.sql}`, params: { $taxonomy: taxonomy, ...list.params } }]);
+        const existing = await this.#db.read([{ rql: `SELECT id, slug FROM cms_terms WHERE taxonomy = $taxonomy AND slug IN ${list.rql}`, params: { $taxonomy: taxonomy, ...list.params } }]);
         const bySlug = new Map(existing.results[0]!.rows.map(row => [row[1] as string, row[0] as string]));
         const missing = wanted.filter(([slug]) => !bySlug.has(slug));
         if (missing.length) {
@@ -284,11 +284,11 @@ export class CmsTaxonomies {
                 const id = crypto.randomUUID();
                 bySlug.set(slug, id);
                 // A term another request created first wins; its ID is read back below.
-                return { sql: `INSERT INTO cms_terms (${COLUMNS}) VALUES ($id, $taxonomy, $name, $slug, '', NULL, $path, 0, $now, $now, '', '{}') ON CONFLICT (taxonomy, slug) DO NOTHING`,
+                return { rql: `INSERT INTO cms_terms (${COLUMNS}) VALUES ($id, $taxonomy, $name, $slug, '', NULL, $path, 0, $now, $now, '', '{}') ON CONFLICT (taxonomy, slug) DO NOTHING`,
                     params: { $id: id, $taxonomy: taxonomy, $name: checkName(name), $slug: SLUG.test(slug) ? slug : slugify(slug) || `term-${id.slice(0, 8)}`, $path: `/${id}/`, $now: now } };
             });
             await this.#write(statements);
-            const again = await this.#db.read([{ sql: `SELECT id, slug FROM cms_terms WHERE taxonomy = $taxonomy AND slug IN ${list.sql}`, params: { $taxonomy: taxonomy, ...list.params } }]);
+            const again = await this.#db.read([{ rql: `SELECT id, slug FROM cms_terms WHERE taxonomy = $taxonomy AND slug IN ${list.rql}`, params: { $taxonomy: taxonomy, ...list.params } }]);
             for (const row of again.results[0]!.rows) bySlug.set(row[1] as string, row[0] as string);
         }
         return wanted.map(([slug]) => bySlug.get(slug)!).filter(Boolean);
@@ -302,7 +302,7 @@ export class CmsTaxonomies {
         const unique = [...new Set(ids)];
         if (unique.some(id => !ID.test(id))) throw new CmsError('CMS_VALIDATION', `${field} holds an invalid term ID.`, { fields: { [field]: 'holds an invalid term ID.' } });
         const list = inList('t', unique);
-        const result = await this.#db.read([{ sql: `SELECT count(*) FROM cms_terms WHERE taxonomy = $taxonomy AND id IN ${list.sql}`, params: { $taxonomy: taxonomy, ...list.params } }]);
+        const result = await this.#db.read([{ rql: `SELECT count(*) FROM cms_terms WHERE taxonomy = $taxonomy AND id IN ${list.rql}`, params: { $taxonomy: taxonomy, ...list.params } }]);
         if (Number(result.results[0]!.rows[0]![0] as bigint) !== unique.length) throw new CmsError('CMS_VALIDATION', `${field} names a term that does not exist.`, { fields: { [field]: 'names a missing term.' } });
     }
 
@@ -358,9 +358,9 @@ export function freeSlug(base: string, taken: readonly string[]): string {
     for (let suffix = 2; ; suffix++) if (!used.has(`${base}-${suffix}`)) return `${base}-${suffix}`;
 }
 
-function bound(sql: string, params: { readonly [key: string]: Value }): Statement {
-    const used = Object.entries(params).filter(([name]) => new RegExp(`\\${name}(?![A-Za-z0-9_])`).test(sql));
-    return used.length ? { sql, params: Object.fromEntries(used) } : { sql };
+function bound(rql: string, params: { readonly [key: string]: Value }): Statement {
+    const used = Object.entries(params).filter(([name]) => new RegExp(`\\${name}(?![A-Za-z0-9_])`).test(rql));
+    return used.length ? { rql, params: Object.fromEntries(used) } : { rql };
 }
 
 function termOf(row: readonly Value[]): TermShape {

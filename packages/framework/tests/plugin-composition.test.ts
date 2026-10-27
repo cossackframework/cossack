@@ -160,11 +160,11 @@ describe('plugin translations, configuration and middleware', () => {
 });
 
 describe('plugin source stripping', () => {
-  it('treats FastDB and CMS server entries as server-only but keeps typed values client-safe', () => {
+  it('treats RomeDB and CMS server entries as server-only but keeps typed values client-safe', () => {
     const root = project({
-      'a.ts': "import { createFastDB } from '@cossackframework/fastdb'; export const x = createFastDB;",
-      'b.ts': "import { FastDBPendingWrites } from '@cossackframework/fastdb/cloudflare'; export { FastDBPendingWrites };",
-      'c.ts': "import { RecordId } from '@cossackframework/fastdb/values'; export { RecordId };",
+      'a.ts': "import { createRomeDB } from '@cossackframework/romedb'; export const x = createRomeDB;",
+      'b.ts': "import { RomeDBPendingWrites } from '@cossackframework/romedb/cloudflare'; export { RomeDBPendingWrites };",
+      'c.ts': "import { RecordId } from '@cossackframework/romedb/values'; export { RecordId };",
       'd.ts': "import { createResourceRepository } from '@cossackframework/cms/server'; export { createResourceRepository };",
       'e.ts': "import { defineResource } from '@cossackframework/cms'; export { defineResource };",
     });

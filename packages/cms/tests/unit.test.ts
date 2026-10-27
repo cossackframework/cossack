@@ -6,7 +6,7 @@ import {
 import { planSchema, type Catalog } from '../src/server/schema';
 
 const catalog = (tables: Catalog['tables'] = new Map(), ledger: Partial<Catalog['ledger']> = {}): Catalog => ({
-    sequence: 7, engineVersion: '2.8.0', tables,
+    sequence: 7, engineVersion: '0.2.9', tables,
     ledger: { host: new Set([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]), explicit: new Map(), hashes: new Map(), ...ledger },
 });
 
@@ -119,7 +119,7 @@ describe('schema planner on a synthetic catalog', () => {
     it('plans the same DDL for the same declaration and catalog', async () => {
         const [a, b] = await Promise.all([planSchema([tickets], catalog()), planSchema([tickets], catalog())]);
         expect(a.steps.map(step => step.statements)).toEqual(b.steps.map(step => step.statements));
-        expect(a.steps[0]!.statements.map(statement => statement.sql)).toEqual([
+        expect(a.steps[0]!.statements.map(statement => statement.rql)).toEqual([
             'CREATE TABLE r__app__tickets',
             'DEFINE FIELD "_rev" ON r__app__tickets TYPE integer REQUIRED CHECK("_rev" >= 1 AND "_rev" <= 9007199254740991)',
             'DEFINE FIELD "_op" ON r__app__tickets TYPE string REQUIRED CHECK(length("_op") <= 80)',
@@ -136,11 +136,11 @@ describe('schema planner on a synthetic catalog', () => {
 
     it('reports drift that needs an explicit step', async () => {
         const created = await planSchema([tickets], catalog());
-        const fields = created.steps[0]!.statements.filter(statement => statement.sql.startsWith('DEFINE FIELD')).map(statement => {
-            const [, name, type] = /DEFINE FIELD "([^"]+)" ON \S+ TYPE (\S+)/.exec(statement.sql)!;
-            const check = /CHECK\((.*)\)$/.exec(statement.sql)?.[1] ?? null;
-            return { path: [name!], type: type!, element_type: null, required: statement.sql.includes(' REQUIRED'), nullable: statement.sql.includes(' NULLABLE'),
-                has_default: statement.sql.includes(' DEFAULT'), default: statement.sql.includes(' DEFAULT') ? 'open' : null, check, flexible: false };
+        const fields = created.steps[0]!.statements.filter(statement => statement.rql.startsWith('DEFINE FIELD')).map(statement => {
+            const [, name, type] = /DEFINE FIELD "([^"]+)" ON \S+ TYPE (\S+)/.exec(statement.rql)!;
+            const check = /CHECK\((.*)\)$/.exec(statement.rql)?.[1] ?? null;
+            return { path: [name!], type: type!, element_type: null, required: statement.rql.includes(' REQUIRED'), nullable: statement.rql.includes(' NULLABLE'),
+                has_default: statement.rql.includes(' DEFAULT'), default: statement.rql.includes(' DEFAULT') ? 'open' : null, check, flexible: false };
         });
         const table = { name: 'r__app__tickets', model: 'document', strict: true, fields, indexes: [{ name: 'r__app__tickets___updated', kind: 'scalar', paths: [['_updatedAt']], unique: false }] };
         const hash = await declarationHash(tickets);

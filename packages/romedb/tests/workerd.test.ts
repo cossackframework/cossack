@@ -2,17 +2,17 @@ import { build } from 'esbuild';
 import { Miniflare } from 'miniflare';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { liveFastDBTests, startFastDBService, type FastDBTestService } from '../src/testing';
+import { liveRomeDBTests, startRomeDBService, type RomeDBTestService } from '../src/testing';
 
 /** Qualifies the Web API client and the Durable Object pending store inside workerd. */
-const live = liveFastDBTests() ? describe : describe.skip;
+const live = liveRomeDBTests() ? describe : describe.skip;
 
-live('FastDB on workerd', () => {
-    let service: FastDBTestService;
+live('RomeDB on workerd', () => {
+    let service: RomeDBTestService;
     let mf: Miniflare;
 
     beforeAll(async () => {
-        service = await startFastDBService();
+        service = await startRomeDBService();
         const bundle = await build({
             entryPoints: [fileURLToPath(new URL('./fixtures/worker.ts', import.meta.url))],
             bundle: true, format: 'esm', platform: 'neutral', target: 'es2022', write: false,
@@ -21,8 +21,8 @@ live('FastDB on workerd', () => {
             modules: true,
             script: bundle.outputFiles[0]!.text,
             compatibilityDate: '2026-07-01',
-            bindings: { FASTDB_URL: service.url, FASTDB_TOKEN: service.token },
-            durableObjects: { FASTDB_PENDING: 'FastDBPendingWrites' },
+            bindings: { ROMEDB_URL: service.url, ROMEDB_TOKEN: service.token },
+            durableObjects: { ROMEDB_PENDING: 'RomeDBPendingWrites' },
         });
     }, 30_000);
 
@@ -42,6 +42,6 @@ live('FastDB on workerd', () => {
             uncertain: true, pendingBefore: 1, n: '2', pendingAfter: 0,
         });
         expect((body.report as { confirmed: string[] }).confirmed).toHaveLength(1);
-        expect(body.engine).toMatch(/^2\./);
+        expect(body.engine).toMatch(/^0\./);
     });
 });

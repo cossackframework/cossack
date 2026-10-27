@@ -11,16 +11,16 @@ features and adds the WordPress-style content tools a site needs.
 
 - **One dashboard.** `cms` requires `auth` and `dashboard`. Their pages are shared
   with ORM applications; only the storage modules differ. With `cms`, auth stores
-  users, roles, sessions and reset tokens in FastDB. The `database` feature stays
+  users, roles, sessions and reset tokens in RomeDB. The `database` feature stays
   optional and unrelated to auth.
 - **Storage seam.** These modules are rendered per auth store, with one API:
   `src/auth.ts`, `src/services/users.ts`, `src/services/roles.ts`,
   `src/services/rbac.ts`, `src/lib/permissions.ts` and `src/dashboard/access.ts`
   (navigation and brand). ORM models, migrations and seeders are not rendered
-  for the FastDB store.
-- **No FastDB driver in `auth`.** The package already takes stores. The CMS
+  for the RomeDB store.
+- **No RomeDB driver in `auth`.** The package already takes stores. The CMS
   supplies the session store, the credential verifier, reset tokens and the
-  OAuth state store. OAuth sign-in on the FastDB store is a follow-up; the recipe
+  OAuth state store. OAuth sign-in on the RomeDB store is a follow-up; the recipe
   rejects `--auth-methods oauth` with `cms` until then.
 - **Routes.** Management lives under `/dashboard`; `/cms` is removed. First-run
   setup is `/auth/setup`. Plugins add pages under `src/pages/dashboard/`.
@@ -98,7 +98,7 @@ features and adds the WordPress-style content tools a site needs.
 ## Done when
 
 A generated Node application and the same application on Workers pass, against
-`fastdb serve`: setup, sign-in and sign-out through `/auth`, user, role and
+`romedb serve`: setup, sign-in and sign-out through `/auth`, user, role and
 session management, posts and pages with generated slugs, nested categories and
 tags with archives, media upload and serving, settings that change registration
 and the home page, and a plugin page under `/dashboard`.
@@ -109,7 +109,7 @@ and the home page, and a plugin page under `/dashboard`.
 | --- | --- | --- |
 | CMS package | Collections (`CollectionDefinition`, `collectionResource`, `saveCollection`, `deleteCollection`), schemaless resources, `{ where }` access rules, list filters, order, offset and counts, generated slugs, blocks (`CORE_BLOCKS`, plugin `blocks`), taxonomies (`CmsTaxonomies`, `saveTaxonomy`), settings (`CmsSettings`), media metadata and signature checks, users, roles and reset tokens, Markdown rendering, `DEFAULT_ROLES` | 57 tests: live suites for collections (schemaless tables, index changes, stale isolates, built-in extension, plugin blocks, deletes), content (slugs, private drafts, filters, nested pages without cycles, term moves and deletes, tags, settings, users, reset tokens, media), and unit tests |
 | Scaffold | `cms` requires `auth` and `dashboard`; the CMS application in `packages/cms/app` provides the storage modules that replace the database ones (see [cms-package-app.md](cms-package-app.md)); the shared layout reads `src/dashboard/access.ts`; CMS screens under `src/pages/dashboard/(cms)/`; setup at `/auth/setup`; the site under `src/pages/(site)/`; R2, S3 or local media | 5 recipe tests and the shared auth, dashboard and formatting suites |
-| Framework | Guard chains replace the response only with a `Response` (a guard may `return next()`); client builds strip unused CMS server and FastDB imports from components | Transport security and security plugin tests |
+| Framework | Guard chains replace the response only with a `Response` (a guard may `return next()`); client builds strip unused CMS server and RomeDB imports from components | Transport security and security plugin tests |
 | Generated app | The flow in [Done when](#done-when) on Node and Workers, and a browser check of the editor and the collection builder | `generated-runtime-cms.test.js`, `generated-runtime-cms-plugins.test.js` |
 
 Findings:
@@ -118,5 +118,5 @@ Findings:
   setup redirect lives in the auth guard, and nested pages redirect in the catch-all's middleware.
 - A root catch-all route's middleware also runs for routes registered after it, such as
   `/crpc`, so it acts only on page reads.
-- FastDB rejects a bound `LIMIT` on a `search::text` join with a datatype mismatch; the
-  repository inlines the validated limit. Requested FastDB change: accept the bound limit.
+- RomeDB rejects a bound `LIMIT` on a `search::text` join with a datatype mismatch; the
+  repository inlines the validated limit. Requested RomeDB change: accept the bound limit.

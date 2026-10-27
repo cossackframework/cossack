@@ -1,7 +1,7 @@
 import { contentModule, formsModule, type ResourceDeclaration } from '@cossackframework/cms';
 
 /**
- * Code-declared resources, stored in strict FastDB collections, such as an `app/leads`
+ * Code-declared resources, stored in strict RomeDB collections, such as an `app/leads`
  * resource with `defineResource`. Change a declaration, then apply the plan from
  * /dashboard/tools/schema. Content types made in the dashboard are collections instead:
  * Collections in the dashboard defines them and their fields.

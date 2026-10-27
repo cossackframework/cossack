@@ -1,6 +1,6 @@
 // src/auth.ts
 //
-// Authentication on the CMS. Users, roles, sessions and reset tokens live in FastDB host
+// Authentication on the CMS. Users, roles, sessions and reset tokens live in RomeDB host
 // tables; the auth library owns password hashing, credential verification, session expiry,
 // rotation and cookies. This module exports the same functions as the database variant, so
 // the auth and dashboard pages are shared between both.

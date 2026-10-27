@@ -19,10 +19,10 @@ const ID = /^[A-Za-z0-9_-]{1,80}$/;
 const PREFIX = 'pending:';
 
 /**
- * Durable Object that holds pending FastDB writes. Export it from the Worker entry and bind it,
- * for example as `FASTDB_PENDING`. Storage writes are durable before the response returns.
+ * Durable Object that holds pending RomeDB writes. Export it from the Worker entry and bind it,
+ * for example as `ROMEDB_PENDING`. Storage writes are durable before the response returns.
  */
-export class FastDBPendingWrites {
+export class RomeDBPendingWrites {
     readonly #storage: DurableObjectStorageLike;
 
     constructor(state: DurableObjectStateLike) {
@@ -68,7 +68,7 @@ export class FastDBPendingWrites {
 }
 
 /**
- * Pending write store backed by {@link FastDBPendingWrites}. Writes spread across `shards`
+ * Pending write store backed by {@link RomeDBPendingWrites}. Writes spread across `shards`
  * objects by request ID; `list` reads every shard.
  */
 export class DurableObjectPendingWriteStore implements PendingWriteStore {
@@ -79,7 +79,7 @@ export class DurableObjectPendingWriteStore implements PendingWriteStore {
 
     constructor(namespace: DurableObjectNamespaceLike, options: { name?: string; shards?: number } = {}) {
         this.#namespace = namespace;
-        this.#name = options.name ?? 'fastdb';
+        this.#name = options.name ?? 'romedb';
         this.#shards = options.shards ?? 4;
         if (!Number.isInteger(this.#shards) || this.#shards < 1 || this.#shards > 64) throw new RangeError('shards must be 1..64');
     }

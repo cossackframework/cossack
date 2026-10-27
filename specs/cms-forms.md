@@ -55,11 +55,11 @@ after the submission is committed.
   form checks its settings and rules against its inputs.
 - **Submissions are a resource per form, one table each.** `submissionResource(form,
   inputs)` builds `cms/form_<form id>` (the ID without hyphens), stored by the usual
-  `storageName` in its own FastDB collection `r__cms__form_<form id>`, never in a shared
+  `storageName` in its own RomeDB collection `r__cms__form_<form id>`, never in a shared
   submissions table. It sits in the host's `cms` namespace, so no plugin name can clash,
   and collection names starting with `form_` are refused. The host's migrate step
   creates the collection with its indexes and records the declaration hash, as it does
-  for collections; FastDB's auto-create on insert is only the safety net behind the
+  for collections; RomeDB's auto-create on insert is only the safety net behind the
   lazy hash check at submit time. Fields: one per input, typed from its `input.kind`
   (`choices` a list of strings, `number` a number, `boolean` a boolean, the rest text;
   text kinds searchable, up to 16), plus `status` (`new`, `read`, `spam`, `trash`,
@@ -190,7 +190,7 @@ is a block with `input.kind: 'file'`, a page break a container.
    blocks, `forms` collection, `submissionResource`, `validateSubmission`, merge tags,
    notification rules, hooks. Unit tests in `essentials-unit.test.ts` style.
 2. Host: registry and storage sync, `submitForm`, outbox topics, mail option,
-   notifications, webhooks, submissions management and export, maintenance. FastDB tests.
+   notifications, webhooks, submissions management and export, maintenance. RomeDB tests.
 3. Site: `core/form`, input renderers, CSS, routes, result rows, client script.
 4. Dashboard: navigation, form list and editor, submissions screen, CSV.
 5. Generated-app test, README and `agent-docs.json`.
@@ -217,11 +217,11 @@ is a block with `input.kind: 'file'`, a page break a container.
 | Area | Delivered | Verified by |
 | --- | --- | --- |
 | Model (`packages/cms`) | `BlockDeclaration.input`, `INPUT_KINDS`, `Block.when` (`blockConditionProblem`), `validateBlocks(…, { allowed, form })` with names from labels (`inputName`), distinct and unreserved names and conditions on the form's inputs; `field.blocks` `form: true`; `FORM_BLOCKS`, `FORM_EMBED_BLOCK`, `inputFields`; `formInputs`, `ruleMatches`, `conditionShows`, `formVisibility`, `visibleBlocks`, `formDataValues`, `validateSubmission`, `displayValue`; the `forms` collection and `formsModule` with `FORM_SETTINGS` checks; `submissionResource` (`cms/form_<id>`); `notificationProblems`, `MERGE_TAGS`, `renderMergeTags`, `escapeMarkdown`; six form extension points; `cms:submissions` | `forms-unit.test.ts` |
-| Host | `cms.forms` (`CmsForms`): per-form table sync and drop, `submit` (schedule, limit, sign-in, bot check, throttle, trap and fill time, validation hooks, once rules, one atomic batch), `closed`, `prefill`, notifications once per event, rule and address, `form.submitted` webhooks, `list`, `counts`, `inboxCounts`, `submission`, `setStatus`, `delete`, `setNote`, `csv`, `maintain`, post results; outbox topics; `CmsOptions.mail` and `mailFrom`; repository `insert` and time cursors; schemaless index rebuilds; host step 8 (`cms_form_sends`, `cms_form_mail`, `cms_form_results`); the `cms.forms.submit` reconciler | `forms.test.ts` against live FastDB; `schema.test.ts`, `unit.test.ts` |
+| Host | `cms.forms` (`CmsForms`): per-form table sync and drop, `submit` (schedule, limit, sign-in, bot check, throttle, trap and fill time, validation hooks, once rules, one atomic batch), `closed`, `prefill`, notifications once per event, rule and address, `form.submitted` webhooks, `list`, `counts`, `inboxCounts`, `submission`, `setStatus`, `delete`, `setNote`, `csv`, `maintain`, post results; outbox topics; `CmsOptions.mail` and `mailFrom`; repository `insert` and time cursors; schemaless index rebuilds; host step 8 (`cms_form_sends`, `cms_form_mail`, `cms_form_results`); the `cms.forms.submit` reconciler | `forms.test.ts` against live RomeDB; `schema.test.ts`, `unit.test.ts` |
 | Site (scaffold) | `core/form` and `form/*` renderers (`cms/form-view.ts`), `FormView` and `InputView` from `cms/site-forms.ts`, `cms/form.client.ts`, `blocks.css` rules, `POST`/`GET /api/cms/forms/<slug>`, the submissions API and CSV export, forms on entries, the home page, previews and widget areas | `generated-runtime-cms-forms.test.js` on Node and Workers, and in Chromium |
 | Dashboard (scaffold) | Forms navigation with the new count; `/dashboard/forms`; the submissions inbox and one submission; the entry editor's input picker, conditional logic control, notification list, slug line and submissions link; form icons | `generated-runtime-cms-forms.test.js` (HTTP and Chromium) |
 | Plugins | Form hooks in manifests and the plugin policy lint (`EXTENSION_POINT_EXPORTS`); input blocks from plugins | `forms-unit.test.ts`, `plugin-policy.test.js` |
-| Docs | `cms-forms` guide in `agent-docs.json`; README data contract | `fastdb-cms-guide-coverage.test.js` |
+| Docs | `cms-forms` guide in `agent-docs.json`; README data contract | `romedb-cms-guide-coverage.test.js` |
 
 Left for later: a multi-select dropdown, and a drag-and-drop form canvas beyond the block
 tree.

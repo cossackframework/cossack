@@ -17,7 +17,7 @@ describe('plugin policy', () => {
     expect(lint(`
       import { beforeWrite, hasPermission, type PluginContext } from '@cossackframework/cms';
       import type { CmsHost } from '@cossackframework/cms/server';
-      import { RecordId } from '@cossackframework/fastdb/values';
+      import { RecordId } from '@cossackframework/romedb/values';
       export function register(context: PluginContext) {
         context.hooks.addFilter(beforeWrite, draft => draft);
         context.commands.add('close', async (_input, { principal }) => {
@@ -31,12 +31,12 @@ describe('plugin policy', () => {
     `)).toEqual([]);
   });
 
-  it('rejects raw FastQL, the FastDB client and host internals', () => {
+  it('rejects raw RomeQL, the RomeDB client and host internals', () => {
     const diagnostics = lint(`
-      import { createFastDB } from '@cossackframework/fastdb';
+      import { createRomeDB } from '@cossackframework/romedb';
       import { createCMS } from '@cossackframework/cms/server';
       export async function register(context: any) {
-        await context.cms.db.read([{ sql: 'x' }]);
+        await context.cms.db.read([{ rql: 'x' }]);
         const query = 'SELECT * FROM r__cms__posts WHERE id = 1';
         const other = \`DELETE FROM cms_users WHERE id = \${context.id}\`;
       }
@@ -94,7 +94,7 @@ describe('plugin policy', () => {
   it('rejects host secrets', () => {
     expect(codes(`
       export function read(c: any, env: any) {
-        return [c.env.FASTDB_TOKEN, env.APP_SECRET, process.env.HOME, env['STRIPE_SECRET']];
+        return [c.env.ROMEDB_TOKEN, env.APP_SECRET, process.env.HOME, env['STRIPE_SECRET']];
       }
     `)).toEqual(['COSSACK_PLUGIN_SECRET', 'COSSACK_PLUGIN_SECRET', 'COSSACK_PLUGIN_SECRET', 'COSSACK_PLUGIN_SECRET']);
   });

@@ -1,11 +1,11 @@
 /**
- * Resource repositories. Reads compile to bounded parameterized FastQL with access
+ * Resource repositories. Reads compile to bounded parameterized RomeQL with access
  * conditions. Each mutation is one atomic batch: the record statement, then revision,
  * audit and outbox rows guarded by the operation ID the record statement wrote, so a
  * zero-row edit writes nothing else. IDs are allocated before dispatch and the exact
  * request is saved for recovery.
  */
-import { ClientError, Float64, RecordId, UncertainWriteError, Vector, type Statement, type Value } from '@cossackframework/fastdb';
+import { ClientError, Float64, RecordId, UncertainWriteError, Vector, type Statement, type Value } from '@cossackframework/romedb';
 import type { HookRegistry } from '@cossackframework/core/hooks';
 import { CmsError } from '../errors';
 import { slugify, validateValue, type FieldDeclaration } from '../fields';
@@ -30,10 +30,10 @@ const KEY = /^[A-Za-z0-9_-]{1,80}$/;
 /** Fields a restored revision does not change: where and whether the entry is published, and its translations. */
 const KEPT_ON_RESTORE = new Set(['status', 'publishedAt', 'parent', 'menuOrder', 'locale', 'translationGroup', 'commentsOpen']);
 
-/** FastDB rejects unused bindings: keep only the parameters a statement references. */
-export function bound(sql: string, params: { readonly [key: string]: Value }): Statement {
-    const used = Object.entries(params).filter(([name]) => new RegExp(`\\${name}(?![A-Za-z0-9_])`).test(sql));
-    return used.length ? { sql, params: Object.fromEntries(used) } : { sql };
+/** RomeDB rejects unused bindings: keep only the parameters a statement references. */
+export function bound(rql: string, params: { readonly [key: string]: Value }): Statement {
+    const used = Object.entries(params).filter(([name]) => new RegExp(`\\${name}(?![A-Za-z0-9_])`).test(rql));
+    return used.length ? { rql, params: Object.fromEntries(used) } : { rql };
 }
 const SCALAR = new Set(['string', 'enum', 'integer', 'number', 'boolean', 'datetime', 'reference', 'bigint']);
 const RANGED = new Set(['integer', 'number', 'datetime']);
@@ -56,8 +56,8 @@ export class ResourceRepository {
     async get(id: string, context: OperationContext): Promise<RecordShape | null> {
         const access = await this.#authorize('read', context.principal);
         if (typeof id !== 'string' || !KEY.test(id)) return null;
-        const { sql, params } = this.#conditions(access, context.principal, [`id = type::record('${this.resource.storage}', $key)`], { $key: id });
-        const result = await this.#host.db.read([{ sql: `SELECT * FROM ${this.resource.storage} WHERE ${sql} LIMIT 1`, params }], this.#readOptions(context));
+        const { rql, params } = this.#conditions(access, context.principal, [`id = type::record('${this.resource.storage}', $key)`], { $key: id });
+        const result = await this.#host.db.read([{ rql: `SELECT * FROM ${this.resource.storage} WHERE ${rql} LIMIT 1`, params }], this.#readOptions(context));
         const document = result.results[0]!.rows[0]?.[0] as Document | undefined;
         return document ? this.#public(document, context.principal) : null;
     }
@@ -69,8 +69,8 @@ export class ResourceRepository {
         if (!wanted.length) return new Map();
         const params: { [key: string]: Value } = {};
         const list = wanted.map((id, index) => { params[`$k${index}`] = id; return `type::record('${this.resource.storage}', $k${index})`; }).join(', ');
-        const { sql, params: bound } = this.#conditions(access, context.principal, [`id IN (${list})`], params);
-        const result = await this.#host.db.read([{ sql: `SELECT * FROM ${this.resource.storage} WHERE ${sql} LIMIT ${wanted.length}`, params: bound }], this.#readOptions(context));
+        const { rql, params: bound } = this.#conditions(access, context.principal, [`id IN (${list})`], params);
+        const result = await this.#host.db.read([{ rql: `SELECT * FROM ${this.resource.storage} WHERE ${rql} LIMIT ${wanted.length}`, params: bound }], this.#readOptions(context));
         return new Map(result.results[0]!.rows.map(row => { const record = this.#public(row[0] as Document, context.principal); return [record.id, record]; }));
     }
 
@@ -97,7 +97,7 @@ export class ResourceRepository {
         if (offset) params.$offset = offset;
         const where = this.#conditions(access, context.principal, conditions, params);
         const result = await this.#host.db.read([bound(
-            `SELECT * FROM ${this.resource.storage}${where.sql ? ` WHERE ${where.sql}` : ''} ORDER BY ${order} LIMIT $limit${offset ? ' OFFSET $offset' : ''}`,
+            `SELECT * FROM ${this.resource.storage}${where.rql ? ` WHERE ${where.rql}` : ''} ORDER BY ${order} LIMIT $limit${offset ? ' OFFSET $offset' : ''}`,
             where.params,
         )], this.#readOptions(context));
         const documents = result.results[0]!.rows.map(row => row[0] as Document);
@@ -120,7 +120,7 @@ export class ResourceRepository {
         const statements = filters.map(filter => {
             const params: { [key: string]: Value } = {};
             const where = this.#conditions(access, context.principal, this.#filters(filter, context.principal, params), params);
-            return bound(`SELECT count(*) FROM ${this.resource.storage}${where.sql ? ` WHERE ${where.sql}` : ''}`, where.params);
+            return bound(`SELECT count(*) FROM ${this.resource.storage}${where.rql ? ` WHERE ${where.rql}` : ''}`, where.params);
         });
         const result = await this.#host.db.read(statements, this.#readOptions(context));
         return result.results.map(entry => Number(entry.rows[0]![0] as bigint));
@@ -141,14 +141,14 @@ export class ResourceRepository {
         const params: { [key: string]: Value } = { $query: query, $limit: filtered ? Math.min(limit * 4, 400) : limit };
         let source = `search::text('${this.resource.storage}__text', $query, $limit)`;
         if (access !== 'allow' && access.owner && !access.where.length) {
-            const owned = await this.#host.db.read([{ sql: `SELECT id FROM ${this.resource.storage} WHERE "_owner" = $owner LIMIT 4097`, params: { $owner: principalId(context.principal) } }], this.#readOptions(context));
+            const owned = await this.#host.db.read([{ rql: `SELECT id FROM ${this.resource.storage} WHERE "_owner" = $owner LIMIT 4097`, params: { $owner: principalId(context.principal) } }], this.#readOptions(context));
             if (owned.results[0]!.rows.length > 4096) throw new CmsError('CMS_LIMIT', 'Search over more than 4096 owned records needs a separate collection per owner.');
             params.$allowed = owned.results[0]!.rows.map(row => row[0]!);
             source = `search::text('${this.resource.storage}__text', $query, $limit, $allowed)`;
         }
         const where = this.#conditions(access, context.principal, this.#filters(options, context.principal, params, 'd.'), params, 'd.');
         const result = await this.#host.db.read([bound(
-            `SELECT d FROM ${source} h JOIN ${this.resource.storage} d ON d.id = h.id${where.sql ? ` WHERE ${where.sql}` : ''} ORDER BY h.score DESC, h.id LIMIT ${limit}`,
+            `SELECT d FROM ${source} h JOIN ${this.resource.storage} d ON d.id = h.id${where.rql ? ` WHERE ${where.rql}` : ''} ORDER BY h.score DESC, h.id LIMIT ${limit}`,
             where.params,
         )], this.#readOptions(context));
         return result.results[0]!.rows.map(row => this.#public(row[0] as Document, context.principal));
@@ -158,7 +158,7 @@ export class ResourceRepository {
         const record = await this.get(id, context);
         if (!record) throw new CmsError('CMS_NOT_FOUND', 'Record not found.');
         const result = await this.#host.db.read([{
-            sql: 'SELECT revision, at, actor, data FROM cms_revisions WHERE resource = $resource AND record_id = $key ORDER BY revision DESC LIMIT $limit',
+            rql: 'SELECT revision, at, actor, data FROM cms_revisions WHERE resource = $resource AND record_id = $key ORDER BY revision DESC LIMIT $limit',
             params: { $resource: this.resource.id, $key: id, $limit: options.limit ?? 50 },
         }], this.#readOptions(context));
         return result.results[0]!.rows.map(([revision, at, actor, data]) => ({
@@ -172,7 +172,7 @@ export class ResourceRepository {
         if (!record) throw new CmsError('CMS_NOT_FOUND', 'Record not found.');
         if (!Number.isSafeInteger(revision) || revision < 1) return null;
         const result = await this.#host.db.read([{
-            sql: 'SELECT revision, at, actor, data FROM cms_revisions WHERE resource = $resource AND record_id = $key AND revision = $revision',
+            rql: 'SELECT revision, at, actor, data FROM cms_revisions WHERE resource = $resource AND record_id = $key AND revision = $revision',
             params: { $resource: this.resource.id, $key: id, $revision: revision },
         }], this.#readOptions(context));
         const row = result.results[0]!.rows[0];
@@ -222,7 +222,7 @@ export class ResourceRepository {
         const document: { [field: string]: Value } = { id: new RecordId(this.resource.storage, key), _rev: 1, _op: op, _createdAt: now, _updatedAt: now, _owner: owner };
         for (const [name, value] of Object.entries(draft)) if (value !== undefined) document[name] = this.#store(name, this.resource.fields[name]!, value);
         for (const [path, text] of this.#searchText(draft)) document[path] = text;
-        const statements: Statement[] = [{ sql: `INSERT INTO ${this.resource.storage} DOCUMENT $document`, params: { $document: document } }];
+        const statements: Statement[] = [{ rql: `INSERT INTO ${this.resource.storage} DOCUMENT $document`, params: { $document: document } }];
         const guard = `EXISTS (SELECT 1 FROM ${this.resource.storage} WHERE id = type::record('${this.resource.storage}', $key) AND "_op" = $op)`;
         statements.push(...this.#sideEffects(guard, op, key, 1, 'create', record, context.principal, now));
         await this.#write(statements, op, context, error => {
@@ -239,7 +239,7 @@ export class ResourceRepository {
      */
     async insert(input: { readonly [field: string]: unknown }, context: OperationContext & {
         readonly id: string; readonly op: string; readonly owner: string | null; readonly kind: string;
-        readonly attach?: (guard: { readonly sql: string; readonly params: { readonly [key: string]: Value } }) => readonly Statement[];
+        readonly attach?: (guard: { readonly rql: string; readonly params: { readonly [key: string]: Value } }) => readonly Statement[];
     }): Promise<RecordShape> {
         const access = await this.#authorize('create', context.principal);
         if (access !== 'allow') throw new CmsError(context.principal.kind === 'user' ? 'CMS_FORBIDDEN' : 'CMS_UNAUTHENTICATED', `Not allowed to create ${this.resource.id}.`);
@@ -251,8 +251,8 @@ export class ResourceRepository {
         const document: { [field: string]: Value } = { id: new RecordId(this.resource.storage, context.id), _rev: 1, _op: context.op, _createdAt: now, _updatedAt: now, _owner: owner };
         for (const [name, value] of Object.entries(draft)) if (value !== undefined) document[name] = this.#store(name, this.resource.fields[name]!, value);
         for (const [path, text] of this.#searchText(draft)) document[path] = text;
-        const guard = { sql: `EXISTS (SELECT 1 FROM ${this.resource.storage} WHERE id = type::record('${this.resource.storage}', $key) AND "_op" = $op)`, params: { $key: context.id, $op: context.op } };
-        const statements: Statement[] = [{ sql: `INSERT INTO ${this.resource.storage} DOCUMENT $document`, params: { $document: document } }, ...(context.attach?.(guard) ?? [])];
+        const guard = { rql: `EXISTS (SELECT 1 FROM ${this.resource.storage} WHERE id = type::record('${this.resource.storage}', $key) AND "_op" = $op)`, params: { $key: context.id, $op: context.op } };
+        const statements: Statement[] = [{ rql: `INSERT INTO ${this.resource.storage} DOCUMENT $document`, params: { $document: document } }, ...(context.attach?.(guard) ?? [])];
         await this.#write(statements, context.op, context, error => {
             if (error.code === 'FDB_CONSTRAINT') throw new CmsError('CMS_CONFLICT', 'A record with the same unique value already exists.', { cause: error });
         }, 0, context.kind);
@@ -284,14 +284,14 @@ export class ResourceRepository {
         }
         const condition = this.#conditions(access, context.principal, [`id = type::record('${this.resource.storage}', $key)`, '"_rev" = $expected'], params);
         const statements: Statement[] = [bound(
-            `UPDATE ${this.resource.storage} SET ${[...assignments, '"_rev" = "_rev" + 1', '"_op" = $op', '"_updatedAt" = $now'].join(', ')} WHERE ${condition.sql}`,
+            `UPDATE ${this.resource.storage} SET ${[...assignments, '"_rev" = "_rev" + 1', '"_op" = $op', '"_updatedAt" = $now'].join(', ')} WHERE ${condition.rql}`,
             condition.params,
         )];
         const guard = `EXISTS (SELECT 1 FROM ${this.resource.storage} WHERE id = type::record('${this.resource.storage}', $key) AND "_op" = $op)`;
         statements.push(...this.#sideEffects(guard, op, id, revision, 'update', record, context.principal, now, {}, previous));
         // A published entry whose URL changes keeps answering at the old one. The audit row,
         // written only when the change commits, guards these relational statements.
-        statements.push(...await this.#host.redirectStatements(this.resource, previous, record, { sql: 'EXISTS (SELECT 1 FROM cms_audit WHERE id = $rOp)', params: { $rOp: op } }, principalId(context.principal)));
+        statements.push(...await this.#host.redirectStatements(this.resource, previous, record, { rql: 'EXISTS (SELECT 1 FROM cms_audit WHERE id = $rOp)', params: { $rOp: op } }, principalId(context.principal)));
         const result = await this.#write(statements, op, context);
         if (result !== 1) throw new CmsError('CMS_CONFLICT', 'The record changed since it was read. Reload and try again.');
         return this.#redact(record, context.principal);
@@ -305,10 +305,10 @@ export class ResourceRepository {
         const op = crypto.randomUUID();
         const condition = this.#conditions(access, context.principal, [`id = type::record('${this.resource.storage}', $key)`, '"_rev" = $expected'], { $key: id, $expected: context.expectedRevision });
         // Guards run before the delete, against the same snapshot.
-        const guard = `EXISTS (SELECT 1 FROM ${this.resource.storage} WHERE ${condition.sql})`;
+        const guard = `EXISTS (SELECT 1 FROM ${this.resource.storage} WHERE ${condition.rql})`;
         const previous = this.resource.fields.status ? await this.#current(id, access, context) : null;
         const statements = this.#sideEffects(guard, op, id, context.expectedRevision, 'delete', null, context.principal, now, condition.params, previous);
-        statements.push(bound(`DELETE FROM ${this.resource.storage} WHERE ${condition.sql}`, condition.params));
+        statements.push(bound(`DELETE FROM ${this.resource.storage} WHERE ${condition.rql}`, condition.params));
         const deleted = await this.#write(statements, op, context, undefined, statements.length - 1);
         if (deleted !== 1) throw new CmsError('CMS_CONFLICT', 'The record changed or was deleted since it was read.');
     }
@@ -321,7 +321,7 @@ export class ResourceRepository {
     }
 
     /** Join conditions with the access scope: the principal's own records or those matching a rule's fields. */
-    #conditions(access: Access, principal: Principal, conditions: string[], params: { [key: string]: Value }, prefix = ''): { sql: string; params: { [key: string]: Value } } {
+    #conditions(access: Access, principal: Principal, conditions: string[], params: { [key: string]: Value }, prefix = ''): { rql: string; params: { [key: string]: Value } } {
         if (access !== 'allow') {
             const scope: string[] = [];
             params = { ...params };
@@ -338,10 +338,10 @@ export class ResourceRepository {
             });
             conditions = [...conditions, scope.length ? scope.join(' OR ') : '1 = 0'];
         }
-        return { sql: conditions.map(condition => conditions.length > 1 ? `(${condition})` : condition).join(' AND '), params };
+        return { rql: conditions.map(condition => conditions.length > 1 ? `(${condition})` : condition).join(' AND '), params };
     }
 
-    /** SQL conditions for a filter. Parameters are added to `params`. */
+    /** RomeQL conditions for a filter. Parameters are added to `params`. */
     #filters(filter: ListFilter, principal: Principal, params: { [key: string]: Value }, prefix = ''): string[] {
         const conditions: string[] = [];
         let index = Object.keys(params).filter(name => name.startsWith('$w')).length;
@@ -407,8 +407,8 @@ export class ResourceRepository {
     }
 
     async #current(id: string, access: Access, context: OperationContext): Promise<RecordShape | null> {
-        const { sql, params } = this.#conditions(access, context.principal, [`id = type::record('${this.resource.storage}', $key)`], { $key: id });
-        const result = await this.#host.db.read([{ sql: `SELECT * FROM ${this.resource.storage} WHERE ${sql} LIMIT 1`, params }], this.#readOptions(context));
+        const { rql, params } = this.#conditions(access, context.principal, [`id = type::record('${this.resource.storage}', $key)`], { $key: id });
+        const result = await this.#host.db.read([{ rql: `SELECT * FROM ${this.resource.storage} WHERE ${rql} LIMIT 1`, params }], this.#readOptions(context));
         const document = result.results[0]!.rows[0]?.[0] as Document | undefined;
         return document ? this.#shapeOf(document) : null;
     }
@@ -443,7 +443,7 @@ export class ResourceRepository {
                 const unique = [...new Set(files)];
                 if (unique.length > 100) throw new CmsError('CMS_VALIDATION', `${declaration.label ?? name} names too many files.`, { fields: { [name]: 'names too many files.' } });
                 const list = unique.map((_, index) => `$m${index}`).join(', ');
-                const found = await this.#host.db.read([{ sql: `SELECT count(*) FROM cms_files WHERE status = 'ready' AND id IN (${list})`, params: Object.fromEntries(unique.map((file, index) => [`$m${index}`, file])) }]);
+                const found = await this.#host.db.read([{ rql: `SELECT count(*) FROM cms_files WHERE status = 'ready' AND id IN (${list})`, params: Object.fromEntries(unique.map((file, index) => [`$m${index}`, file])) }]);
                 if (Number(found.results[0]!.rows[0]![0] as bigint) !== unique.length) throw new CmsError('CMS_VALIDATION', `${declaration.label ?? name} names a missing file.`, { fields: { [name]: 'names a missing file.' } });
             }
             if (declaration.kind === 'reference' && declaration.target === this.resource.id) {
@@ -452,7 +452,7 @@ export class ResourceRepository {
                 for (let depth = 0; current; depth++) {
                     if (current === id) throw new CmsError('CMS_VALIDATION', `${declaration.label ?? name} cannot be this record or one below it.`, { fields: { [name]: 'would make a cycle.' } });
                     if (depth >= 32) throw new CmsError('CMS_LIMIT', 'Records nest at most 32 levels deep.');
-                    const row: Value | undefined = (await this.#host.db.read([{ sql: `SELECT ${quote(name)} FROM ${this.resource.storage} WHERE id = type::record('${this.resource.storage}', $key)`, params: { $key: current } }])).results[0]!.rows[0]?.[0];
+                    const row: Value | undefined = (await this.#host.db.read([{ rql: `SELECT ${quote(name)} FROM ${this.resource.storage} WHERE id = type::record('${this.resource.storage}', $key)`, params: { $key: current } }])).results[0]!.rows[0]?.[0];
                     if (row === undefined) throw new CmsError('CMS_VALIDATION', `${declaration.label ?? name} names a missing record.`, { fields: { [name]: 'names a missing record.' } });
                     current = row instanceof RecordId ? String(row.key) : null;
                 }
@@ -480,7 +480,7 @@ export class ResourceRepository {
             if (!declaration.slugFrom || !declaration.unique || typeof value !== 'string' || !value) continue;
             const params: { [key: string]: Value } = { $slug: value, $prefix: `${value}-%`, ...(id ? { $key: id } : {}) };
             const result = await this.#host.db.read([{
-                sql: `SELECT ${quote(name)} FROM ${this.resource.storage} WHERE (${quote(name)} = $slug OR ${quote(name)} LIKE $prefix)${id ? ' AND record::id(id) != $key' : ''} LIMIT 1000`, params,
+                rql: `SELECT ${quote(name)} FROM ${this.resource.storage} WHERE (${quote(name)} = $slug OR ${quote(name)} LIKE $prefix)${id ? ' AND record::id(id) != $key' : ''} LIMIT 1000`, params,
             }], this.#readOptions(context));
             const taken = new Set(result.results[0]!.rows.map(row => row[0] as string));
             // Entries at the site root share one namespace with routes and other root collections.

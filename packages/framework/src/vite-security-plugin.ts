@@ -368,8 +368,8 @@ function isServerOnlyImportSource(source: string): boolean {
     source === '@cossackframework/framework/session' ||
     source === '@cossackframework/auth' ||
     source.startsWith('@cossackframework/auth/') ||
-    // FastDB clients and the CMS host: pages use them only inside @Server methods.
-    ((source === '@cossackframework/fastdb' || source.startsWith('@cossackframework/fastdb/')) && !CLIENT_SAFE_IMPORT_SOURCES.has(source)) ||
+    // RomeDB clients and the CMS host: pages use them only inside @Server methods.
+    ((source === '@cossackframework/romedb' || source.startsWith('@cossackframework/romedb/')) && !CLIENT_SAFE_IMPORT_SOURCES.has(source)) ||
     source === '@cossackframework/cms/server' ||
     source.startsWith('node:');
 }
@@ -920,14 +920,14 @@ function authClientStub(namedExports: string[]): string {
 const SERVER_ONLY_IMPORT_SOURCES = new Set([
   '@cossackframework/database',
   '@cossackframework/framework/session',
-  // FastDB credentials, pending writes and CMS repositories never reach the client.
-  '@cossackframework/fastdb',
+  // RomeDB credentials, pending writes and CMS repositories never reach the client.
+  '@cossackframework/romedb',
   '@cossackframework/cms/server',
 ]);
 
 /** Client-safe subpaths of otherwise server-only packages (typed values and transport codecs). */
 const CLIENT_SAFE_IMPORT_SOURCES = new Set([
-  '@cossackframework/fastdb/values',
+  '@cossackframework/romedb/values',
 ]);
 
 /**

@@ -1,7 +1,7 @@
 import { richTextProblem } from './richtext';
 
 /**
- * Field kinds of a resource declaration. Each kind maps to one FastDB field type and
+ * Field kinds of a resource declaration. Each kind maps to one RomeDB field type and
  * CHECK, validates write input, and maps stored values to a JSON-safe public value.
  */
 
@@ -206,7 +206,7 @@ export function fieldProblems(name: string, declaration: FieldDeclaration, depth
     return problems;
 }
 
-/** FastDB field type for a declaration. */
+/** RomeDB field type for a declaration. */
 export function storageType(declaration: FieldDeclaration, references: (target: string) => string): string {
     switch (declaration.kind) {
         case 'string': case 'text': case 'enum': return 'string';

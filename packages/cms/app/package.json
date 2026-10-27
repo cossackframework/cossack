@@ -9,7 +9,7 @@
   },
   "scripts": {
     "sync": "node scripts/sync.mjs",
-    "fastdb": "bash scripts/fastdb.sh",
+    "romedb": "bash scripts/romedb.sh",
     "dev": "node scripts/start.mjs",
     "build": "node scripts/sync.mjs && vite build && vite build --ssr src/index.ts --outDir dist/server",
     "start": "node --env-file-if-exists=.env dist/server/index.js",
@@ -37,7 +37,7 @@
     "@cossackframework/ui": "workspace:*",
     "@cossackframework/solar-icons": "0.7.1",
     "@cossackframework/cms": "workspace:*",
-    "@cossackframework/fastdb": "workspace:*",
+    "@cossackframework/romedb": "workspace:*",
     "@cossackframework/auth": "workspace:*",
     "@tiptap/core": "3.32.0",
     "@tiptap/pm": "3.32.0",

@@ -278,7 +278,7 @@ const AUTH_PATHS = new Set([
   'src/pages/auth/two-factor/index.ts',
   'src/passkeys.client.ts',
 ]);
-/** Auth storage on the ORM; the CMS store keeps users and sessions in FastDB instead. */
+/** Auth storage on the ORM; the CMS store keeps users and sessions in RomeDB instead. */
 const AUTH_ORM_PATHS = new Set([
   'src/lib/uuid.ts',
   'src/migrations/0001_create_users.ts',
@@ -499,9 +499,9 @@ function wranglerConfig(recipe, projectName) {
   const cms = recipe.resolvedFeatures.includes('cms');
   const sse = `,
   "durable_objects": {
-    "bindings": [{ "name": "COSSACK_SSE", "class_name": "SseDurableObject" }${cms ? ', { "name": "FASTDB_PENDING", "class_name": "FastDBPendingWrites" }' : ''}]
+    "bindings": [{ "name": "COSSACK_SSE", "class_name": "SseDurableObject" }${cms ? ', { "name": "ROMEDB_PENDING", "class_name": "RomeDBPendingWrites" }' : ''}]
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["SseDurableObject"] }${cms ? ', { "tag": "cms-v1", "new_sqlite_classes": ["FastDBPendingWrites"] }' : ''}]${cms ? `,
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["SseDurableObject"] }${cms ? ', { "tag": "cms-v1", "new_sqlite_classes": ["RomeDBPendingWrites"] }' : ''}]${cms ? `,
   // CMS media. Local development uses a local bucket; create the remote one with
   // pnpm exec wrangler r2 bucket create ${commentName}-media
   "r2_buckets": [{ "binding": "MEDIA", "bucket_name": ${json(`${projectName}-media`)} }],
@@ -556,7 +556,7 @@ function packageJson(recipe, projectName) {
   }
   if (recipe.resolvedFeatures.includes('cms')) {
     dependencies['@cossackframework/cms'] = `^${templateVersion}`;
-    dependencies['@cossackframework/fastdb'] = `^${templateVersion}`;
+    dependencies['@cossackframework/romedb'] = `^${templateVersion}`;
     dependencies['@cossackframework/auth'] = `^${templateVersion}`;
     // The rich text editor, loaded in the browser only.
     for (const name of TIPTAP_PACKAGES) dependencies[name] = dependencyVersion(name);
@@ -1574,7 +1574,7 @@ function nodeEnvironmentValues(recipe, projectName, example = false) {
   }
   if (recipe.resolvedFeatures.includes('turnstile')) values.push(['TURNSTILE_SITE_KEY', 'your-site-key'], ['TURNSTILE_SECRET_KEY', 'your-secret-key'], ['TURNSTILE_HOSTNAME', 'localhost']);
   if (recipe.resolvedFeatures.includes('cms')) {
-    values.push(...cmsEnvironmentValues(example), ['FASTDB_PENDING_DIR', '.cossack/fastdb-pending'], ['MEDIA_DIR', 'storage/media']);
+    values.push(...cmsEnvironmentValues(example), ['ROMEDB_PENDING_DIR', '.cossack/romedb-pending'], ['MEDIA_DIR', 'storage/media']);
     // Set S3_BUCKET to keep media in S3 or an S3-compatible service instead of MEDIA_DIR.
     for (const name of ['S3_BUCKET', 'S3_REGION', 'S3_ENDPOINT', 'S3_ACCESS_KEY_ID', 'S3_SECRET_ACCESS_KEY']) values.push([name, '']);
   }
@@ -1600,11 +1600,11 @@ function cloudflareEnvironmentValues(recipe, example = false) {
   return values;
 }
 
-/** FastDB connection and the first-run setup code. Locally, \`fastdb serve\` prints the URL and token file. */
+/** RomeDB connection and the first-run setup code. Locally, \`romedb serve\` prints the URL and token file. */
 function cmsEnvironmentValues(example) {
   return [
-    ['FASTDB_URL', example ? 'https://cloud.fastdb.org/v1/organizations/<organization>/databases/<database>' : 'http://127.0.0.1:4321'],
-    ['FASTDB_TOKEN', example ? 'your-fastdb-database-grant' : ''],
+    ['ROMEDB_URL', example ? 'https://cloud.romedb.com/v1/organizations/<organization>/databases/<database>' : 'http://127.0.0.1:4321'],
+    ['ROMEDB_TOKEN', example ? 'your-romedb-database-grant' : ''],
     ['CMS_SETUP_CODE', example ? 'choose-a-one-time-setup-code' : cmsSetupCode()],
   ];
 }
@@ -1788,7 +1788,7 @@ export async function renderRecipe(recipe, options = {}) {
     capability: 'base',
   });
   files.set('.gitignore', {
-    content: text('node_modules/\ndist/\nout/\n.wrangler/\n.env*\n.dev.vars*\n!.env.example\n!.dev.vars.example\n.cossack/routes.ts\n.cossack/config.d.ts\n.cossack/preview.json\n.cossack/preview-secrets.json\n.cossack/**/*.lock\n.cossack/fastdb-pending/\n' +
+    content: text('node_modules/\ndist/\nout/\n.wrangler/\n.env*\n.dev.vars*\n!.env.example\n!.dev.vars.example\n.cossack/routes.ts\n.cossack/config.d.ts\n.cossack/preview.json\n.cossack/preview-secrets.json\n.cossack/**/*.lock\n.cossack/romedb-pending/\n' +
       (recipe.resolvedFeatures.includes('cms') ? 'storage/media/\n' : '')),
     capability: 'base',
   });
@@ -1804,7 +1804,7 @@ export async function renderRecipe(recipe, options = {}) {
   }
   if (recipe.resolvedFeatures.includes('cms')) {
     // The CMS application in @cossackframework/cms owns these files, among them the auth and
-    // dashboard storage modules over FastDB that replace the database ones rendered above.
+    // dashboard storage modules over RomeDB that replace the database ones rendered above.
     for (const rel of await cmsAppFiles()) {
       const capability = capabilityFor(rel, recipe);
       if (capability) files.set(rel, { content: await fs.readFile(path.join(cmsAppDir, rel)), capability });
@@ -3142,7 +3142,7 @@ export async function addFeature(projectDir, feature, options = {}) {
   const manifest = await readManifest(root);
   const current = await inferRecipe(root, manifest);
   if (feature === 'cms' && current.resolvedFeatures.includes('auth') && authStore(current.resolvedFeatures) === 'database') {
-    throw new Error('This project keeps its users in the database feature. The cms feature keeps users, roles and sessions in FastDB, so add it to a new project: cossack create <name> --features cms.');
+    throw new Error('This project keeps its users in the database feature. The cms feature keeps users, roles and sessions in RomeDB, so add it to a new project: cossack create <name> --features cms.');
   }
   if (options.dryRun) options = { ...options, interactive: false };
   let previous = {};

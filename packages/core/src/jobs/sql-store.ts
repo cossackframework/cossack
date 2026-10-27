@@ -2,7 +2,7 @@ import type { JobClaim, JobClaimOptions, JobFailureCode, JobInspection, JobStore
 
 /**
  * Narrow structural SQL interface with D1's `prepare().bind()` shape. D1 bindings satisfy
- * it, and so does `sqlDatabase()` from `@cossackframework/fastdb`.
+ * it, and so does `rqlDatabase()` from `@cossackframework/romedb`.
  */
 export interface JobStateDatabase {
     prepare(sql: string): {

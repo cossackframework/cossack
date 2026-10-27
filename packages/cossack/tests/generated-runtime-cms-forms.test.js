@@ -1,4 +1,4 @@
-// Forms in a generated application against a local `fastdb serve`: a form built from input
+// Forms in a generated application against a local `romedb serve`: a form built from input
 // blocks and placed on a page with `core/form`, posted as HTML without JavaScript (errors and
 // typed values come back once after the redirect) and as JSON, with conditions, the spam trap,
 // the per-address throttle, the cross-site check and the submissions API.
@@ -8,7 +8,7 @@ import path from 'node:path';
 import { chromium, expect as browserExpect } from '@playwright/test';
 import { cleanupRoots, productionServer, project, vite } from './fixtures/generated-app.js';
 import { browserless, contains, lacks, visible } from './fixtures/cms-client.js';
-import { liveFastDBTests, startFastDBService } from '../../fastdb/src/testing.ts';
+import { liveRomeDBTests, startRomeDBService } from '../../romedb/src/testing.ts';
 
 afterEach(cleanupRoots);
 
@@ -157,14 +157,14 @@ async function nodeApp() {
   const root = await project('node', ['cms']);
   await vite(root, []);
   await vite(root, ['--ssr', 'src/index.ts', '--outDir', 'dist/server']);
-  const database = await startFastDBService();
+  const database = await startRomeDBService();
   const routeIds = JSON.parse(await fs.readFile(path.join(root, 'dist/client/cossack-routes.json'), 'utf8')).filePathToId;
-  const server = await productionServer(root, { APP_SECRET: 'generated-cms-test-secret-0123456789abcdef', FASTDB_URL: database.url, FASTDB_TOKEN: database.token,
-    CMS_SETUP_CODE: 'setup-code-for-tests', FASTDB_PENDING_DIR: path.join(root, '.cossack/fastdb-pending'), MEDIA_DIR: path.join(root, 'storage/media') });
+  const server = await productionServer(root, { APP_SECRET: 'generated-cms-test-secret-0123456789abcdef', ROMEDB_URL: database.url, ROMEDB_TOKEN: database.token,
+    CMS_SETUP_CODE: 'setup-code-for-tests', ROMEDB_PENDING_DIR: path.join(root, '.cossack/romedb-pending'), MEDIA_DIR: path.join(root, 'storage/media') });
   return { root, server, routeIds, close: async () => { await server.close(); await database.stop(); } };
 }
 
-describe.skipIf(!liveFastDBTests())('generated CMS forms', () => {
+describe.skipIf(!liveRomeDBTests())('generated CMS forms', () => {
   it('builds, places, posts and stores forms on Node', async () => {
     const app = await nodeApp();
     try {
@@ -174,12 +174,12 @@ describe.skipIf(!liveFastDBTests())('generated CMS forms', () => {
 
   it('posts and stores forms on Cloudflare Workers', async () => {
     const root = await project('cloudflare', ['cms']);
-    const database = await startFastDBService();
+    const database = await startRomeDBService();
     try {
       await vite(root, []);
       const configPath = path.join(root, 'dist/ssr/wrangler.json');
       await fs.writeFile(path.join(path.dirname(configPath), '.dev.vars'), [
-        'APP_SECRET=generated-cms-test-secret-0123456789abcdef', `FASTDB_URL=${database.url}`, `FASTDB_TOKEN=${database.token}`, 'CMS_SETUP_CODE=setup-code-for-tests',
+        'APP_SECRET=generated-cms-test-secret-0123456789abcdef', `ROMEDB_URL=${database.url}`, `ROMEDB_TOKEN=${database.token}`, 'CMS_SETUP_CODE=setup-code-for-tests',
       ].join('\n') + '\n');
       const routeIds = JSON.parse(await fs.readFile(path.join(root, 'dist/client/cossack-routes.json'), 'utf8')).filePathToId;
       const { createTestHarness } = await import('wrangler');

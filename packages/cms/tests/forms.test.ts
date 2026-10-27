@@ -4,7 +4,7 @@ import {
     ANONYMOUS, contentModule, createCMS, DEFAULT_ROLES, formsModule, formSubmitted, formValidate, isCmsError,
     type Block, type CmsHost, type FormSubmittedEvent, type Principal, type RecordShape,
 } from '../src/server/index';
-import { fastdbService, live } from './helpers';
+import { romedbService, live } from './helpers';
 
 const admin: Principal = { kind: 'user', id: 'admin-1', roles: ['admin'], permissions: ['*'] };
 const input = (id: string, type: string, data: { [key: string]: unknown }, extra: Partial<Block> = {}): Block => ({ id, type: `form/${type}`, data: { label: id, ...data }, ...extra });
@@ -18,7 +18,7 @@ const contactBody: Block[] = [
 ];
 
 describe.skipIf(!live)('forms', () => {
-    const service = fastdbService();
+    const service = romedbService();
     const sent: { to: string; from: string; subject: string; text: string; replyTo?: string }[] = [];
     let failFor: string | null = null;
     const events: FormSubmittedEvent[] = [];
@@ -59,7 +59,7 @@ describe.skipIf(!live)('forms', () => {
         const form = (await cms.forms.get('contact'))!;
         expect(form.resource.storage).toBe(`r__cms__form_${contact.id.replaceAll('-', '')}`);
         expect(form.ref.inputs.map(entry => entry.name)).toEqual(['name', 'email', 'topic', 'message', 'callMe', 'phone']);
-        const info = await cms.db.read([{ sql: 'INFO FOR DB' }]);
+        const info = await cms.db.read([{ rql: 'INFO FOR DB' }]);
         expect(((info.results[0]!.rows[0]![0] as { tables: { name: string }[] }).tables).map(table => table.name)).toContain(form.resource.storage);
         // Found by ID too; an unknown slug is no form.
         expect((await cms.forms.get(contact.id))?.ref.slug).toBe('contact');
@@ -195,7 +195,7 @@ describe.skipIf(!live)('forms', () => {
         expect(sent.slice(before).map(mail => [mail.to, mail.subject])).toEqual([['team@example.com', 'Ping g@example.com']]);
         const deliveries = await cms.webhooks.deliveries(hook.id);
         expect(deliveries.map(delivery => delivery.event)).toContain('form.submitted');
-        const payloads = await cms.db.read([{ sql: 'SELECT payload FROM cms_webhook_deliveries WHERE webhook_id = $id', params: { $id: hook.id } }]);
+        const payloads = await cms.db.read([{ rql: 'SELECT payload FROM cms_webhook_deliveries WHERE webhook_id = $id', params: { $id: hook.id } }]);
         expect(payloads.results[0]!.rows.map(row => JSON.parse(row[0] as string))).toContainEqual(expect.objectContaining({
             event: 'form.submitted', form: { id: ping.id, slug: 'ping', title: 'Ping' }, submission: expect.objectContaining({ id: submission.id, values: { email: 'g@example.com' }, stored: false }),
         }));
@@ -204,7 +204,7 @@ describe.skipIf(!live)('forms', () => {
         const latest = (await forms.get(contact.id, { principal: editor }))!;
         await forms.delete(contact.id, { principal: editor, expectedRevision: latest.rev });
         await cms.outbox.dispatch();
-        const info = await cms.db.read([{ sql: 'INFO FOR DB' }]);
+        const info = await cms.db.read([{ rql: 'INFO FOR DB' }]);
         expect(((info.results[0]!.rows[0]![0] as { tables: { name: string }[] }).tables).map(table => table.name)).not.toContain(contactForm.resource.storage);
         expect(await cms.forms.get('contact')).toBeNull();
     });
@@ -219,7 +219,7 @@ describe.skipIf(!live)('forms', () => {
         await cms.forms.setStatus(form, [kept[0]!.id], 'trash', editor);
         tick(31 * 24 * 60 * 60 * 1000);
         expect(await cms.forms.maintain()).toEqual({ emptied: 1 });
-        const sends = await cms.db.read([{ sql: 'SELECT count(*) FROM cms_form_sends' }]);
+        const sends = await cms.db.read([{ rql: 'SELECT count(*) FROM cms_form_sends' }]);
         expect(Number(sends.results[0]!.rows[0]![0] as bigint)).toBe(0);
     });
 });

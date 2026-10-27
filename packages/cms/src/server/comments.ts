@@ -2,7 +2,7 @@
  * Comments on entries, with moderation: pending, approved, spam and trash. The host checks
  * the entry and the Discussion settings before posting; this class keeps the rows.
  */
-import type { FastDB, Statement, Value } from '@cossackframework/fastdb';
+import type { RomeDB, Statement, Value } from '@cossackframework/romedb';
 import { CmsError } from '../errors';
 import { containsPattern, inList } from './users';
 import { checkComment, COMMENT_STATUSES, type CommentRow, type CommentShape, type CommentStatus } from '../comments';
@@ -21,17 +21,17 @@ const COLUMNS = 'id, resource, record_id, parent_id, user_id, author_name, autho
 const ID = /^[A-Za-z0-9_-]{1,80}$/;
 
 export class CmsComments {
-    readonly #db: FastDB;
+    readonly #db: RomeDB;
     readonly #now: () => number;
 
-    constructor(db: FastDB, options: { now?: () => number } = {}) {
+    constructor(db: RomeDB, options: { now?: () => number } = {}) {
         this.#db = db;
         this.#now = options.now ?? Date.now;
     }
 
     async get(id: string): Promise<CommentShape | null> {
         if (!ID.test(id)) return null;
-        const result = await this.#db.read([{ sql: `SELECT ${COLUMNS} FROM cms_comments WHERE id = $id`, params: { $id: id } }]);
+        const result = await this.#db.read([{ rql: `SELECT ${COLUMNS} FROM cms_comments WHERE id = $id`, params: { $id: id } }]);
         const row = result.results[0]!.rows[0];
         return row ? commentOf(row) : null;
     }
@@ -42,22 +42,22 @@ export class CmsComments {
         const limit = Math.min(Math.max(options.limit ?? 20, 1), 100);
         const offset = Math.min(Math.max(options.offset ?? 0, 0), 10_000);
         const result = await this.#db.read([
-            { sql: `SELECT ${COLUMNS} FROM cms_comments${where} ORDER BY created_at DESC, id DESC LIMIT ${limit} OFFSET ${offset}`, ...(Object.keys(params).length ? { params } : {}) },
-            { sql: `SELECT count(*) FROM cms_comments${where}`, ...(Object.keys(params).length ? { params } : {}) },
+            { rql: `SELECT ${COLUMNS} FROM cms_comments${where} ORDER BY created_at DESC, id DESC LIMIT ${limit} OFFSET ${offset}`, ...(Object.keys(params).length ? { params } : {}) },
+            { rql: `SELECT count(*) FROM cms_comments${where}`, ...(Object.keys(params).length ? { params } : {}) },
         ]);
         return { items: result.results[0]!.rows.map(commentOf), total: Number(result.results[1]!.rows[0]![0] as bigint) };
     }
 
     /** How many comments have each status. */
     async counts(): Promise<{ [K in CommentStatus]: number }> {
-        const result = await this.#db.read(COMMENT_STATUSES.map(status => ({ sql: 'SELECT count(*) FROM cms_comments WHERE status = $status', params: { $status: status } })));
+        const result = await this.#db.read(COMMENT_STATUSES.map(status => ({ rql: 'SELECT count(*) FROM cms_comments WHERE status = $status', params: { $status: status } })));
         return Object.fromEntries(COMMENT_STATUSES.map((status, index) => [status, Number(result.results[index]!.rows[0]![0] as bigint)])) as { [K in CommentStatus]: number };
     }
 
     /** An entry's comments with one status, oldest first, at most 500. */
     async forEntry(resource: string, recordId: string, status: CommentStatus = 'approved'): Promise<CommentShape[]> {
         const result = await this.#db.read([{
-            sql: `SELECT ${COLUMNS} FROM cms_comments WHERE resource = $resource AND record_id = $record AND status = $status ORDER BY created_at, id LIMIT 500`,
+            rql: `SELECT ${COLUMNS} FROM cms_comments WHERE resource = $resource AND record_id = $record AND status = $status ORDER BY created_at, id LIMIT 500`,
             params: { $resource: resource, $record: recordId, $status: status },
         }]);
         return result.results[0]!.rows.map(commentOf);
@@ -69,7 +69,7 @@ export class CmsComments {
         if (!ids.length) return new Map();
         const list = inList('r', ids);
         const result = await this.#db.read([{
-            sql: `SELECT record_id, count(*) FROM cms_comments WHERE resource = $resource AND status = 'approved' AND record_id IN ${list.sql} GROUP BY record_id`,
+            rql: `SELECT record_id, count(*) FROM cms_comments WHERE resource = $resource AND status = 'approved' AND record_id IN ${list.rql} GROUP BY record_id`,
             params: { $resource: resource, ...list.params },
         }]);
         return new Map(result.results[0]!.rows.map(([id, count]) => [id as string, Number(count as bigint)]));
@@ -78,13 +78,13 @@ export class CmsComments {
     /** Whether the email has an approved comment, for "approve returning commenters". */
     async hasApproved(email: string): Promise<boolean> {
         if (!email) return false;
-        const result = await this.#db.read([{ sql: "SELECT 1 FROM cms_comments WHERE author_email = $email AND status = 'approved' LIMIT 1", params: { $email: email.toLowerCase() } }]);
+        const result = await this.#db.read([{ rql: "SELECT 1 FROM cms_comments WHERE author_email = $email AND status = 'approved' LIMIT 1", params: { $email: email.toLowerCase() } }]);
         return result.results[0]!.rows.length > 0;
     }
 
     /** When the address last commented, for throttling. */
     async lastFrom(ipHash: string): Promise<number | null> {
-        const result = await this.#db.read([{ sql: 'SELECT created_at FROM cms_comments WHERE ip_hash = $ip ORDER BY created_at DESC LIMIT 1', params: { $ip: ipHash } }]);
+        const result = await this.#db.read([{ rql: 'SELECT created_at FROM cms_comments WHERE ip_hash = $ip ORDER BY created_at DESC LIMIT 1', params: { $ip: ipHash } }]);
         const row = result.results[0]!.rows[0];
         return row ? Number(row[0] as bigint) : null;
     }
@@ -93,7 +93,7 @@ export class CmsComments {
     insert(row: Omit<CommentRow, 'createdAt' | 'updatedAt'>): Statement {
         const now = this.#now();
         return {
-            sql: `INSERT INTO cms_comments (id, resource, record_id, parent_id, user_id, author_name, author_email, author_url, content, status, ip_hash, user_agent, created_at, updated_at)
+            rql: `INSERT INTO cms_comments (id, resource, record_id, parent_id, user_id, author_name, author_email, author_url, content, status, ip_hash, user_agent, created_at, updated_at)
                 VALUES ($id, $resource, $record, $parent, $user, $name, $email, $url, $content, $status, $ip, $agent, $now, $now)`,
             params: {
                 $id: row.id, $resource: row.resource, $record: row.recordId, $parent: row.parentId, $user: row.userId, $name: row.authorName, $email: row.authorEmail.toLowerCase(),
@@ -113,7 +113,7 @@ export class CmsComments {
         const wanted = [...new Set(ids.filter(id => ID.test(id)))].slice(0, 100);
         if (!wanted.length) return 0;
         const list = inList('c', wanted);
-        const result = await this.#db.write([{ sql: `UPDATE cms_comments SET status = $status, updated_at = $now WHERE id IN ${list.sql}`, params: { $status: status, $now: this.#now(), ...list.params } }], WRITE);
+        const result = await this.#db.write([{ rql: `UPDATE cms_comments SET status = $status, updated_at = $now WHERE id IN ${list.rql}`, params: { $status: status, $now: this.#now(), ...list.params } }], WRITE);
         return Number(result.results[0]!.affected);
     }
 
@@ -126,7 +126,7 @@ export class CmsComments {
             authorEmail: input.authorEmail ?? current.authorEmail, authorUrl: input.authorUrl ?? current.authorUrl,
         }, false);
         await this.#db.write([{
-            sql: 'UPDATE cms_comments SET content = $content, author_name = $name, author_email = $email, author_url = $url, updated_at = $now WHERE id = $id',
+            rql: 'UPDATE cms_comments SET content = $content, author_name = $name, author_email = $email, author_url = $url, updated_at = $now WHERE id = $id',
             params: { $content: next.content, $name: next.authorName, $email: next.authorEmail.toLowerCase(), $url: next.authorUrl, $now: this.#now(), $id: id },
         }], WRITE);
         return (await this.get(id))!;
@@ -138,15 +138,15 @@ export class CmsComments {
         if (!comments.length) return;
         const statements: Statement[] = [];
         for (const comment of comments) {
-            statements.push({ sql: 'UPDATE cms_comments SET parent_id = $parent WHERE parent_id = $id', params: { $parent: comment.parentId, $id: comment.id } });
-            statements.push({ sql: 'DELETE FROM cms_comments WHERE id = $id', params: { $id: comment.id } });
+            statements.push({ rql: 'UPDATE cms_comments SET parent_id = $parent WHERE parent_id = $id', params: { $parent: comment.parentId, $id: comment.id } });
+            statements.push({ rql: 'DELETE FROM cms_comments WHERE id = $id', params: { $id: comment.id } });
         }
         for (let index = 0; index < statements.length; index += 30) await this.#db.write(statements.slice(index, index + 30), WRITE);
     }
 
     /** Delete an entry's comments, after the entry is deleted. */
     async deleteForEntry(resource: string, recordId: string): Promise<void> {
-        await this.#db.write([{ sql: 'DELETE FROM cms_comments WHERE id IN (SELECT id FROM cms_comments WHERE resource = $resource AND record_id = $record LIMIT 1000)', params: { $resource: resource, $record: recordId } }], WRITE);
+        await this.#db.write([{ rql: 'DELETE FROM cms_comments WHERE id IN (SELECT id FROM cms_comments WHERE resource = $resource AND record_id = $record LIMIT 1000)', params: { $resource: resource, $record: recordId } }], WRITE);
     }
 }
 

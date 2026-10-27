@@ -4,7 +4,7 @@
  * menu location keeps its menu. Saving is one conditional write on the revision, so a stale
  * editor writes nothing. Blocks are checked like a blocks field before they are stored.
  */
-import { ClientError, type FastDB, type Statement } from '@cossackframework/fastdb';
+import { ClientError, type RomeDB, type Statement } from '@cossackframework/romedb';
 import type { Block } from '../blocks';
 import { CmsError } from '../errors';
 import { MENU_LOCATION } from '../menus';
@@ -28,13 +28,13 @@ export interface CmsAreasOptions {
 const WRITE = { kind: 'cms.areas' } as const;
 
 export class CmsAreas {
-    readonly #db: FastDB;
+    readonly #db: RomeDB;
     readonly #check: CmsAreasOptions['check'];
     readonly #now: () => number;
     readonly #ttl: number;
     #cache: { at: number; value: Promise<Map<string, AreaShape>> } | undefined;
 
-    constructor(db: FastDB, options: CmsAreasOptions) {
+    constructor(db: RomeDB, options: CmsAreasOptions) {
         this.#db = db;
         this.#check = options.check;
         this.#now = options.now ?? Date.now;
@@ -63,8 +63,8 @@ export class CmsAreas {
         const checked = await this.#check(blocks);
         const params = { $name: name, $blocks: JSON.stringify(checked), $now: this.#now(), $by: principalId(context.principal) };
         const statement: Statement = context.expectedRevision === 0
-            ? { sql: 'INSERT INTO cms_areas (name, blocks, revision, updated_at, updated_by) VALUES ($name, $blocks, 1, $now, $by) ON CONFLICT (name) DO NOTHING', params }
-            : { sql: 'UPDATE cms_areas SET blocks = $blocks, revision = revision + 1, updated_at = $now, updated_by = $by WHERE name = $name AND revision = $revision', params: { ...params, $revision: context.expectedRevision } };
+            ? { rql: 'INSERT INTO cms_areas (name, blocks, revision, updated_at, updated_by) VALUES ($name, $blocks, 1, $now, $by) ON CONFLICT (name) DO NOTHING', params }
+            : { rql: 'UPDATE cms_areas SET blocks = $blocks, revision = revision + 1, updated_at = $now, updated_by = $by WHERE name = $name AND revision = $revision', params: { ...params, $revision: context.expectedRevision } };
         try {
             const result = await this.#db.write([statement], WRITE);
             if (result.results[0]!.affected !== 1n) throw new CmsError('CMS_CONFLICT', 'These widgets changed since you opened them. Reload and try again.');
@@ -77,7 +77,7 @@ export class CmsAreas {
     async #read(): Promise<Map<string, AreaShape>> {
         let rows: readonly (readonly unknown[])[] = [];
         try {
-            rows = (await this.#db.read([{ sql: 'SELECT name, blocks, revision, updated_at FROM cms_areas ORDER BY name LIMIT 200' }])).results[0]!.rows;
+            rows = (await this.#db.read([{ rql: 'SELECT name, blocks, revision, updated_at FROM cms_areas ORDER BY name LIMIT 200' }])).results[0]!.rows;
         } catch (error) {
             // Before setup, or before the host step that adds the table.
             if (error instanceof ClientError && /cms_areas|no such table|not found/i.test(error.message)) return new Map();

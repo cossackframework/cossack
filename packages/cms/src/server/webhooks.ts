@@ -3,7 +3,7 @@
  * after-commit handler queues one delivery per matching webhook; `dispatch()` sends due
  * deliveries with an HMAC signature and retries failures with backoff.
  */
-import type { FastDB, Value } from '@cossackframework/fastdb';
+import type { RomeDB, Value } from '@cossackframework/romedb';
 import { CmsError } from '../errors';
 import { randomToken } from './tokens';
 import { WEBHOOK_EVENTS, webhookUrlProblem, type Webhook, type WebhookDelivery, type WebhookEvent, type WebhookInput, type WebhookPayload } from '../webhooks';
@@ -15,24 +15,24 @@ const COLUMNS = 'id, name, url, events, collections, secret, active, created_at,
 const DELIVERY_COLUMNS = 'id, webhook_id, event, status, attempts, response_status, error, created_at, delivered_at, next_attempt_at';
 
 export class CmsWebhooks {
-    readonly #db: FastDB;
+    readonly #db: RomeDB;
     readonly #now: () => number;
     readonly #fetch: typeof globalThis.fetch;
     #cache: { at: number; hooks: Promise<Webhook[]> } | undefined;
 
-    constructor(db: FastDB, options: { now?: () => number; fetch?: typeof globalThis.fetch } = {}) {
+    constructor(db: RomeDB, options: { now?: () => number; fetch?: typeof globalThis.fetch } = {}) {
         this.#db = db;
         this.#now = options.now ?? Date.now;
         this.#fetch = options.fetch ?? ((input, init) => globalThis.fetch(input, init));
     }
 
     async list(): Promise<Webhook[]> {
-        const result = await this.#db.read([{ sql: `SELECT ${COLUMNS} FROM cms_webhooks ORDER BY created_at, id LIMIT 100` }]);
+        const result = await this.#db.read([{ rql: `SELECT ${COLUMNS} FROM cms_webhooks ORDER BY created_at, id LIMIT 100` }]);
         return result.results[0]!.rows.map(webhookOf);
     }
 
     async get(id: string): Promise<Webhook | null> {
-        const result = await this.#db.read([{ sql: `SELECT ${COLUMNS} FROM cms_webhooks WHERE id = $id`, params: { $id: id } }]);
+        const result = await this.#db.read([{ rql: `SELECT ${COLUMNS} FROM cms_webhooks WHERE id = $id`, params: { $id: id } }]);
         const row = result.results[0]!.rows[0];
         return row ? webhookOf(row) : null;
     }
@@ -54,11 +54,11 @@ export class CmsWebhooks {
         const id = options.id ?? crypto.randomUUID();
         const params = { $id: id, $name: name, $url: url, $events: JSON.stringify(events), $collections: JSON.stringify(collections), $active: input.active === false ? 0 : 1, $now: now };
         if (options.id) {
-            const result = await this.#db.write([{ sql: 'UPDATE cms_webhooks SET name = $name, url = $url, events = $events, collections = $collections, active = $active, updated_at = $now WHERE id = $id', params }], WRITE);
+            const result = await this.#db.write([{ rql: 'UPDATE cms_webhooks SET name = $name, url = $url, events = $events, collections = $collections, active = $active, updated_at = $now WHERE id = $id', params }], WRITE);
             if (result.results[0]!.affected === 0n) throw new CmsError('CMS_NOT_FOUND', 'Webhook not found.');
         } else {
             await this.#db.write([{
-                sql: 'INSERT INTO cms_webhooks (id, name, url, events, collections, secret, active, created_at, updated_at, created_by) VALUES ($id, $name, $url, $events, $collections, $secret, $active, $now, $now, $by)',
+                rql: 'INSERT INTO cms_webhooks (id, name, url, events, collections, secret, active, created_at, updated_at, created_by) VALUES ($id, $name, $url, $events, $collections, $secret, $active, $now, $now, $by)',
                 params: { ...params, $secret: `whsec_${randomToken(24)}`, $by: options.by ?? null },
             }], WRITE);
         }
@@ -68,14 +68,14 @@ export class CmsWebhooks {
 
     async delete(id: string): Promise<void> {
         await this.#db.write([
-            { sql: 'DELETE FROM cms_webhook_deliveries WHERE webhook_id = $id', params: { $id: id } },
-            { sql: 'DELETE FROM cms_webhooks WHERE id = $id', params: { $id: id } },
+            { rql: 'DELETE FROM cms_webhook_deliveries WHERE webhook_id = $id', params: { $id: id } },
+            { rql: 'DELETE FROM cms_webhooks WHERE id = $id', params: { $id: id } },
         ], WRITE);
         this.#cache = undefined;
     }
 
     async deliveries(webhookId: string, limit = 20): Promise<WebhookDelivery[]> {
-        const result = await this.#db.read([{ sql: `SELECT ${DELIVERY_COLUMNS} FROM cms_webhook_deliveries WHERE webhook_id = $id ORDER BY created_at DESC, id LIMIT ${Math.min(Math.max(limit, 1), 100)}`, params: { $id: webhookId } }]);
+        const result = await this.#db.read([{ rql: `SELECT ${DELIVERY_COLUMNS} FROM cms_webhook_deliveries WHERE webhook_id = $id ORDER BY created_at DESC, id LIMIT ${Math.min(Math.max(limit, 1), 100)}`, params: { $id: webhookId } }]);
         return result.results[0]!.rows.map(deliveryOf);
     }
 
@@ -92,7 +92,7 @@ export class CmsWebhooks {
         const body = JSON.stringify(payload);
         // Repeated outbox deliveries of the same event queue nothing new.
         await this.#db.write(hooks.map(hook => ({
-            sql: `INSERT INTO cms_webhook_deliveries (id, webhook_id, event_id, event, payload, status, attempts, next_attempt_at, lease_until, created_at)
+            rql: `INSERT INTO cms_webhook_deliveries (id, webhook_id, event_id, event, payload, status, attempts, next_attempt_at, lease_until, created_at)
                 VALUES ($id, $hook, $key, $event, $payload, 'pending', 0, $now, 0, $now) ON CONFLICT (webhook_id, event_id) DO NOTHING`,
             params: { $id: crypto.randomUUID(), $hook: hook.id, $key: payload.eventId, $event: payload.event, $payload: body, $now: now },
         })), WRITE);
@@ -105,15 +105,15 @@ export class CmsWebhooks {
         const token = crypto.randomUUID();
         const limit = Math.min(Math.max(options.limit ?? 10, 1), 50);
         // Most runs find nothing due: read first, so idle runs write nothing.
-        const due = await this.#db.read([{ sql: "SELECT 1 FROM cms_webhook_deliveries WHERE status = 'pending' AND next_attempt_at <= $now AND lease_until <= $now LIMIT 1", params: { $now: now } }]);
+        const due = await this.#db.read([{ rql: "SELECT 1 FROM cms_webhook_deliveries WHERE status = 'pending' AND next_attempt_at <= $now AND lease_until <= $now LIMIT 1", params: { $now: now } }]);
         if (!due.results[0]!.rows.length) return { delivered: 0, failed: 0, retrying: 0 };
         await this.#db.write([{
-            sql: `UPDATE cms_webhook_deliveries SET lease_token = $token, lease_until = $until, attempts = attempts + 1
+            rql: `UPDATE cms_webhook_deliveries SET lease_token = $token, lease_until = $until, attempts = attempts + 1
                 WHERE id IN (SELECT id FROM cms_webhook_deliveries WHERE status = 'pending' AND next_attempt_at <= $now AND lease_until <= $now ORDER BY next_attempt_at, id LIMIT $limit)`,
             params: { $token: token, $until: now + 60_000, $now: now, $limit: limit },
         }], WRITE);
         const claimed = await this.#db.read([{
-            sql: `SELECT d.id, d.event, d.payload, d.attempts, w.url, w.secret, w.active FROM cms_webhook_deliveries d LEFT JOIN cms_webhooks w ON w.id = d.webhook_id
+            rql: `SELECT d.id, d.event, d.payload, d.attempts, w.url, w.secret, w.active FROM cms_webhook_deliveries d LEFT JOIN cms_webhooks w ON w.id = d.webhook_id
                 WHERE d.lease_token = $token ORDER BY d.next_attempt_at, d.id`,
             params: { $token: token },
         }]);
@@ -126,7 +126,7 @@ export class CmsWebhooks {
             const status = outcome.ok ? 'delivered' : final ? 'failed' : 'pending';
             report[outcome.ok ? 'delivered' : final ? 'failed' : 'retrying']++;
             await this.#db.write([{
-                sql: `UPDATE cms_webhook_deliveries SET status = $status, response_status = $response, error = $error, delivered_at = $done, next_attempt_at = $next,
+                rql: `UPDATE cms_webhook_deliveries SET status = $status, response_status = $response, error = $error, delivered_at = $done, next_attempt_at = $next,
                     lease_token = NULL, lease_until = 0 WHERE id = $id AND lease_token = $token`,
                 params: { $status: status, $response: outcome.status, $error: outcome.error, $done: outcome.ok ? this.#now() : null,
                     $next: final ? this.#now() : this.#now() + BACKOFF[Math.min(attempt - 1, BACKOFF.length - 1)]!, $id: id as string, $token: token },
@@ -146,15 +146,15 @@ export class CmsWebhooks {
 
     /** Queue a delivery again, such as after fixing the receiving end. */
     async redeliver(deliveryId: string): Promise<void> {
-        await this.#db.write([{ sql: "UPDATE cms_webhook_deliveries SET status = 'pending', next_attempt_at = $now, attempts = 0, lease_until = 0 WHERE id = $id", params: { $now: this.#now(), $id: deliveryId } }], WRITE);
+        await this.#db.write([{ rql: "UPDATE cms_webhook_deliveries SET status = 'pending', next_attempt_at = $now, attempts = 0, lease_until = 0 WHERE id = $id", params: { $now: this.#now(), $id: deliveryId } }], WRITE);
     }
 
     /** Delete settled deliveries older than `olderThanMs` (default 30 days). */
     async prune(olderThanMs = 30 * 24 * 60 * 60 * 1000): Promise<void> {
         const params = { $before: this.#now() - olderThanMs };
-        const old = await this.#db.read([{ sql: "SELECT 1 FROM cms_webhook_deliveries WHERE status != 'pending' AND created_at <= $before LIMIT 1", params }]);
+        const old = await this.#db.read([{ rql: "SELECT 1 FROM cms_webhook_deliveries WHERE status != 'pending' AND created_at <= $before LIMIT 1", params }]);
         if (!old.results[0]!.rows.length) return;
-        await this.#db.write([{ sql: "DELETE FROM cms_webhook_deliveries WHERE id IN (SELECT id FROM cms_webhook_deliveries WHERE status != 'pending' AND created_at <= $before LIMIT 500)", params: { $before: this.#now() - olderThanMs } }], WRITE);
+        await this.#db.write([{ rql: "DELETE FROM cms_webhook_deliveries WHERE id IN (SELECT id FROM cms_webhook_deliveries WHERE status != 'pending' AND created_at <= $before LIMIT 500)", params: { $before: this.#now() - olderThanMs } }], WRITE);
     }
 
     async #send(url: string, secret: string, event: string, delivery: string, body: string, signal?: AbortSignal): Promise<{ ok: boolean; status: number | null; error: string | null }> {

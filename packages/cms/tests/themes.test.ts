@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { ANONYMOUS, contentModule, createCMS, field, manifestProblems, type CmsHost, type PluginRegistrationLike, type Principal, type ThemeLoaders } from '../src/server/index';
-import { fastdbService, live } from './helpers';
+import { romedbService, live } from './helpers';
 
 const admin: Principal = { kind: 'user', id: 'admin-1', roles: ['admin'], permissions: ['*'] };
 const noop = () => null as never;
@@ -56,7 +56,7 @@ const plugins: PluginRegistrationLike[] = [
 ];
 
 describe.skipIf(!live)('themes: loaders', () => {
-    const service = fastdbService();
+    const service = romedbService();
     let cms: CmsHost;
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     afterAll(() => warn.mockRestore());

@@ -116,12 +116,12 @@ importers:
       '@cossackframework/core':
         specifier: workspace:*
         version: link:../core
-      '@cossackframework/fastdb':
-        specifier: workspace:*
-        version: link:../fastdb
       '@cossackframework/renderer':
         specifier: workspace:*
         version: link:../renderer
+      '@cossackframework/romedb':
+        specifier: workspace:*
+        version: link:../romedb
       markdown-it:
         specifier: 15.0.2
         version: 15.0.2
@@ -153,9 +153,6 @@ importers:
       '@cossackframework/core':
         specifier: workspace:*
         version: link:../../core
-      '@cossackframework/fastdb':
-        specifier: workspace:*
-        version: link:../../fastdb
       '@cossackframework/framework':
         specifier: workspace:*
         version: link:../../framework
@@ -165,6 +162,9 @@ importers:
       '@cossackframework/renderer':
         specifier: workspace:*
         version: link:../../renderer
+      '@cossackframework/romedb':
+        specifier: workspace:*
+        version: link:../../romedb
       '@cossackframework/solar-icons':
         specifier: 0.7.1
         version: 0.7.1
@@ -393,15 +393,6 @@ importers:
         specifier: ^4.1.11
         version: 4.1.11(@types/node@22.20.1)(happy-dom@20.11.1)(jsdom@29.1.1)(vite@8.1.4(@types/node@22.20.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.0)(tsx@4.23.0)(yaml@2.9.0))
 
-  packages/fastdb:
-    devDependencies:
-      '@types/node':
-        specifier: ^22.19.0
-        version: 22.20.1
-      vitest:
-        specifier: ^4.1.11
-        version: 4.1.11(@types/node@22.20.1)(happy-dom@20.11.1)(jsdom@29.1.1)(vite@8.1.4(@types/node@22.20.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.0)(tsx@4.23.0)(yaml@2.9.0))
-
   packages/framework:
     dependencies:
       '@aws-sdk/client-s3':
@@ -554,6 +545,15 @@ importers:
       vitest:
         specifier: ^4.1.11
         version: 4.1.11(@types/node@26.0.0)(happy-dom@20.11.1)(jsdom@29.1.1)(vite@8.1.4(@types/node@26.0.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.0)(tsx@4.23.0)(yaml@2.9.0))
+
+  packages/romedb:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.19.0
+        version: 22.20.1
+      vitest:
+        specifier: ^4.1.11
+        version: 4.1.11(@types/node@22.20.1)(happy-dom@20.11.1)(jsdom@29.1.1)(vite@8.1.4(@types/node@22.20.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.0)(tsx@4.23.0)(yaml@2.9.0))
 
   packages/scaffold:
     dependencies:

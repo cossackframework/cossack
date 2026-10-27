@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createHookRegistry } from '@cossackframework/core/hooks';
 import { afterCommit, beforeWrite, createCMS, defineResource, field, systemPrincipal, userPrincipal, type CmsHost, type ResourceEvent } from '../src/server/index';
-import { fastdbService, live } from './helpers';
+import { romedbService, live } from './helpers';
 
 const system = systemPrincipal('test');
 const alice = userPrincipal('alice', ['author'], ['app/notes:create']);
@@ -33,7 +33,7 @@ const notes = defineResource({
 });
 
 describe.skipIf(!live)('resource repositories', () => {
-    const service = fastdbService();
+    const service = romedbService();
     let cms: CmsHost;
     const events: ResourceEvent[] = [];
     const hooks = createHookRegistry();
@@ -50,11 +50,11 @@ describe.skipIf(!live)('resource repositories', () => {
         expect(report.failed).toBeUndefined();
     });
 
-    const count = async (sql: string) => Number((await cms.db.read([{ sql }])).results[0]!.rows[0]![0] as bigint);
+    const count = async (rql: string) => Number((await cms.db.read([{ rql }])).results[0]!.rows[0]![0] as bigint);
 
     it('creates, reads and maps typed values to JSON-safe public shapes', async () => {
         const created = await cms.resource('app/articles').create({
-            title: '  Hello  ', body: 'FastDB stores typed values', rating: 4.5, big: '9223372036854775807', tags: ['a', 'b'], meta: { nested: { n: 1, x: 1.5 } },
+            title: '  Hello  ', body: 'RomeDB stores typed values', rating: 4.5, big: '9223372036854775807', tags: ['a', 'b'], meta: { nested: { n: 1, x: 1.5 } },
         }, { principal: alice, id: 'hello' });
         expect(created).toMatchObject({ id: 'hello', rev: 1, title: 'Hello', status: 'draft', views: 0, owner: null });
         expect(created).not.toHaveProperty('internal');

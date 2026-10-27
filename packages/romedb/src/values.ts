@@ -1,6 +1,6 @@
 /**
- * FastDB typed values and the document-transfer-v1 wire codec, using Web APIs only.
- * Mirrors `@fastdb/node/client` 2.8.0 so the two stay interchangeable.
+ * RomeDB typed values and the document-transfer-v1 wire codec, using Web APIs only.
+ * Mirrors `@romedb/node/client` 0.2.9 so the two stay interchangeable.
  */
 
 const INT64_MIN = -(1n << 63n);
@@ -23,7 +23,7 @@ export class RecordId {
     readonly table: string;
     readonly key: string | bigint;
     constructor(table: string, key: string | bigint) {
-        if (typeof table !== 'string' || !table || table.includes('\0') || /^(?:__fastdb_|__turso_internal_|sqlite_)/i.test(table)) {
+        if (typeof table !== 'string' || !table || table.includes('\0') || /^(?:__romedb_|__turso_internal_|sqlite_)/i.test(table)) {
             throw new TypeError('RecordId requires a nonreserved logical table name');
         }
         if ((typeof key !== 'string' && typeof key !== 'bigint') || key === '') throw new TypeError('RecordId requires a nonempty string or bigint key');

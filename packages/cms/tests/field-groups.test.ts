@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { contentModule, createCMS, DEFAULT_ROLES, field, type Block, type CmsHost, type CollectionDefinition, type FieldGroup, type Principal } from '../src/server/index';
-import { fastdbService, live } from './helpers';
+import { romedbService, live } from './helpers';
 
 const admin: Principal = { kind: 'user', id: 'admin-1', roles: ['admin'], permissions: ['*'] };
 const editor: Principal = { kind: 'user', id: 'editor-1', roles: ['editor'], permissions: [...DEFAULT_ROLES[1].permissions] };
@@ -50,7 +50,7 @@ const extras: FieldGroup = {
 };
 
 describe.skipIf(!live)('field groups', () => {
-    const service = fastdbService();
+    const service = romedbService();
     let cms: CmsHost;
 
     beforeAll(async () => {
@@ -80,7 +80,7 @@ describe.skipIf(!live)('field groups', () => {
         expect(resource.fields.specs).toMatchObject({ kind: 'rows', max: 10 });
         expect(resource.fields.specs__name).toMatchObject({ kind: 'list', items: 'string', index: true, derived: ['specs', 'name'] });
         expect(resource.fields.specs__notes__tag).toMatchObject({ derived: ['specs', 'notes', 'tag'] });
-        const info = await cms.db.read([{ sql: 'INFO FOR TABLE r__cms__products' }]);
+        const info = await cms.db.read([{ rql: 'INFO FOR TABLE r__cms__products' }]);
         const table = info.results[0]!.rows[0]![0] as { indexes: { name: string; kind: string }[] };
         expect(table.indexes.map(index => `${index.name}:${index.kind}`)).toEqual(expect.arrayContaining(['r__cms__products__price:scalar', 'r__cms__products__specs__name:array', 'r__cms__products__specs__notes__tag:array', 'r__cms__products__text:fulltext']));
     });
@@ -106,20 +106,20 @@ describe.skipIf(!live)('field groups', () => {
         expect(rows[1]!.url).toBe('https://example.com');
         expect(rows[1]!.notes.map(note => note._id)).toEqual(['n1', expect.any(String)]);
 
-        const stored = await cms.db.read([{ sql: 'SELECT "specs__name", "specs__notes__tag", "_text_specs" FROM r__cms__products WHERE "sku" = $sku', params: { $sku: 'RS-1' } }]);
+        const stored = await cms.db.read([{ rql: 'SELECT "specs__name", "specs__notes__tag", "_text_specs" FROM r__cms__products WHERE "sku" = $sku', params: { $sku: 'RS-1' } }]);
         expect(stored.results[0]!.rows[0]).toEqual([['Weight', 'Site'], ['fun', 'web'], 'Weight\nlight as air\nSite\nofficial']);
 
         const found = await entries.list({ where: { 'specs.notes.tag': { contains: 'web' } } }, { principal: editor });
         expect(found.records.map(record => record.title)).toEqual(['Rocket skates']);
         expect((await entries.list({ where: { 'specs.name': { containsAny: ['Nope'] } } }, { principal: editor })).records).toEqual([]);
         await expect(entries.list({ where: { specs__name: { contains: 'Weight' } } }, { principal: editor })).rejects.toMatchObject({ message: 'Cannot filter on specs__name.' });
-        const plan = await cms.db.read([{ sql: 'EXPLAIN SELECT id FROM r__cms__products WHERE array::contains("specs__notes__tag", $tag)', params: { $tag: 'web' } }]);
+        const plan = await cms.db.read([{ rql: 'EXPLAIN SELECT id FROM r__cms__products WHERE array::contains("specs__notes__tag", $tag)', params: { $tag: 'web' } }]);
         expect(JSON.stringify(plan.results[0]!.rows, (_, value) => typeof value === 'bigint' ? Number(value) : value)).toMatch(/r__cms__products__specs__notes__tag/);
 
         // Changing the rows keeps the derived lists current; the unique SKU still holds.
         const updated = await entries.update(entry.id, { specs: [{ _id: 'site', name: 'Site', kind: 'text' }] }, { principal: editor, expectedRevision: entry.rev });
         expect((updated.specs as { _id: string }[]).map(row => row._id)).toEqual(['site']);
-        expect((await cms.db.read([{ sql: 'SELECT "specs__name", "specs__notes__tag" FROM r__cms__products WHERE "sku" = $sku', params: { $sku: 'RS-1' } }])).results[0]!.rows[0]).toEqual([['Site'], []]);
+        expect((await cms.db.read([{ rql: 'SELECT "specs__name", "specs__notes__tag" FROM r__cms__products WHERE "sku" = $sku', params: { $sku: 'RS-1' } }])).results[0]!.rows[0]).toEqual([['Site'], []]);
         await expect(entries.create({ title: 'Twin', price: 2, sku: 'RS-1' }, { principal: editor })).rejects.toMatchObject({ code: 'CMS_CONFLICT' });
     });
 
@@ -152,7 +152,7 @@ describe.skipIf(!live)('field groups', () => {
     it('drops a group: entries keep their values, the index goes, and the names free up', async () => {
         await cms.deleteFieldGroup('specs', admin);
         expect(cms.resourceById('cms/products').fields.specs).toBeUndefined();
-        const info = await cms.db.read([{ sql: 'INFO FOR TABLE r__cms__products' }]);
+        const info = await cms.db.read([{ rql: 'INFO FOR TABLE r__cms__products' }]);
         expect((info.results[0]!.rows[0]![0] as { indexes: { name: string }[] }).indexes.map(index => index.name)).not.toContain('r__cms__products__specs__name');
         const entries = cms.resource('cms/products');
         const skates = (await entries.list({ where: { sku: 'RS-1' } }, { principal: editor })).records[0]!;

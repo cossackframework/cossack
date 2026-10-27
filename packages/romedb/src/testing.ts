@@ -4,7 +4,7 @@ import { createServer } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 
-export interface FastDBTestService {
+export interface RomeDBTestService {
     readonly url: string;
     readonly token: string;
     readonly version: string;
@@ -12,33 +12,33 @@ export interface FastDBTestService {
 }
 
 /**
- * Locate a FastDB executable: `COSSACK_TEST_FASTDB_BIN`, then `fastdb` on PATH.
+ * Locate a RomeDB executable: `COSSACK_TEST_ROMEDB_BIN`, then `romedb` on PATH.
  * Returns undefined when neither exists, so live suites can skip.
  */
-export function findFastDBBinary(): string | undefined {
-    const configured = process.env.COSSACK_TEST_FASTDB_BIN;
+export function findRomeDBBinary(): string | undefined {
+    const configured = process.env.COSSACK_TEST_ROMEDB_BIN;
     if (configured) return configured;
-    const probe = spawnSync('fastdb', ['--version'], { encoding: 'utf8' });
-    return probe.status === 0 ? 'fastdb' : undefined;
+    const probe = spawnSync('romedb', ['--version'], { encoding: 'utf8' });
+    return probe.status === 0 ? 'romedb' : undefined;
 }
 
 /**
- * True when live FastDB suites should run: an executable exists, or
+ * True when live RomeDB suites should run: an executable exists, or
  * `COSSACK_TEST_REQUIRE_LIVE=1` demands them (they then fail instead of skipping).
  */
-export function liveFastDBTests(): boolean {
-    return findFastDBBinary() !== undefined || process.env.COSSACK_TEST_REQUIRE_LIVE === '1';
+export function liveRomeDBTests(): boolean {
+    return findRomeDBBinary() !== undefined || process.env.COSSACK_TEST_REQUIRE_LIVE === '1';
 }
 
-/** Start `fastdb serve` on a free loopback port with a new database in a temporary directory. */
-export async function startFastDBService(options: { binary?: string; timeoutMs?: number } = {}): Promise<FastDBTestService> {
-    const binary = options.binary ?? findFastDBBinary();
-    if (!binary) throw new Error('No FastDB executable: set COSSACK_TEST_FASTDB_BIN or put fastdb on PATH.');
-    const version = spawnSync(binary, ['--version'], { encoding: 'utf8' }).stdout.trim().replace(/^fastdb\s+/, '');
-    const directory = await mkdtemp(path.join(os.tmpdir(), 'cossack-fastdb-'));
+/** Start `romedb serve` on a free loopback port with a new database in a temporary directory. */
+export async function startRomeDBService(options: { binary?: string; timeoutMs?: number } = {}): Promise<RomeDBTestService> {
+    const binary = options.binary ?? findRomeDBBinary();
+    if (!binary) throw new Error('No RomeDB executable: set COSSACK_TEST_ROMEDB_BIN or put romedb on PATH.');
+    const version = spawnSync(binary, ['--version'], { encoding: 'utf8' }).stdout.trim().replace(/^romedb\s+/, '');
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'cossack-romedb-'));
     const port = await freePort();
     const tokenFile = path.join(directory, 'token');
-    const child = spawn(binary, ['serve', path.join(directory, 'test.fastdb'), '--create', '--port', String(port), '--token-file', tokenFile], { stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(binary, ['serve', path.join(directory, 'test.romedb'), '--create', '--port', String(port), '--token-file', tokenFile], { stdio: ['ignore', 'pipe', 'pipe'] });
     let output = '';
     child.stdout?.on('data', chunk => { output += chunk; });
     child.stderr?.on('data', chunk => { output += chunk; });
@@ -54,7 +54,7 @@ export async function startFastDBService(options: { binary?: string; timeoutMs?:
         await new Promise(resolve => setTimeout(resolve, 50));
     }
     await stop(child, directory);
-    throw new Error(`FastDB service did not start: ${output.slice(0, 2000)}`);
+    throw new Error(`RomeDB service did not start: ${output.slice(0, 2000)}`);
 }
 
 async function reachable(url: string, token: string): Promise<boolean> {

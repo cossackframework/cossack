@@ -1,10 +1,10 @@
 /**
  * The CMS host: resource registry, repositories, plugin hooks and commands, schema and
- * grant activation, outbox, users and stores, all over one FastDB binding.
+ * grant activation, outbox, users and stores, all over one RomeDB binding.
  */
 import { createHookRegistry, type ActionHandler, type ActionPoint, type FilterHandler, type FilterPoint, type HookRegistry } from '@cossackframework/core/hooks';
 import type { StorageProvider } from '@cossackframework/core/storage';
-import { ClientError, type FastDB, type Statement, type Value, type WorkLimits } from '@cossackframework/fastdb';
+import { ClientError, type RomeDB, type Statement, type Value, type WorkLimits } from '@cossackframework/romedb';
 import { blockId, blockMedia, blockProblems, validateBlocks, type Block, type BlockDeclaration } from '../blocks';
 import { blocksShapeProblem, type FieldDeclaration } from '../fields';
 import { collectionProblems, collectionResource, CORE_FIELDS, entryUrl, extendCollection, LOCALE, orderedFields, type CollectionDefinition } from '../collections';
@@ -64,7 +64,7 @@ export interface PluginRegistrationLike {
 export type { CmsModule };
 
 export interface CmsOptions {
-    readonly db: FastDB;
+    readonly db: RomeDB;
     /** Application resources; owner defaults to `app`. */
     readonly resources?: readonly ResourceDeclaration[];
     readonly modules?: readonly CmsModule[];
@@ -237,7 +237,7 @@ interface Activation {
 export const PLUGIN_ENABLED = 'plugin:enabled';
 
 export class CmsHost {
-    readonly db: FastDB;
+    readonly db: RomeDB;
     readonly hooks: HookRegistry;
     readonly users: CmsUsers;
     readonly outbox: Outbox;
@@ -369,7 +369,7 @@ export class CmsHost {
                 return resource !== undefined && (evaluateRule(resource.access.create, principal) !== 'deny' || evaluateRule(resource.access.update, principal) !== 'deny');
             }),
             // A term archive keeps answering at its old slug.
-            slugChanged: (taxonomy, from, to, guard) => taxonomy.path ? this.redirects.automatic(`/${taxonomy.path}/${from}`, `/${taxonomy.path}/${to}`, { guard: guard.sql, params: guard.params }) : [],
+            slugChanged: (taxonomy, from, to, guard) => taxonomy.path ? this.redirects.automatic(`/${taxonomy.path}/${from}`, `/${taxonomy.path}/${to}`, { guard: guard.rql, params: guard.params }) : [],
         });
         for (const resource of this.#static.values()) for (const [name, declaration] of Object.entries(resource.fields)) {
             if (declaration.taxonomy && !this.#builtinTaxonomies.has(declaration.taxonomy)) throw new Error(`${resource.id}.${name} uses taxonomy ${declaration.taxonomy}, which no module declares.`);
@@ -524,7 +524,7 @@ export class CmsHost {
         const resource = this.resourceById(`cms/${collection.name}`);
         await this.assertActive(resource);
         const result = await this.db.read([{
-            sql: `SELECT id, "slug", "parent", "locale", "seo", "_updatedAt", "_createdAt", "_owner" FROM ${resource.storage}${collection.publishable === false ? '' : ` WHERE "status" = 'published'`} ORDER BY "_createdAt", record::id(id) LIMIT ${limit} OFFSET ${offset}`,
+            rql: `SELECT id, "slug", "parent", "locale", "seo", "_updatedAt", "_createdAt", "_owner" FROM ${resource.storage}${collection.publishable === false ? '' : ` WHERE "status" = 'published'`} ORDER BY "_createdAt", record::id(id) LIMIT ${limit} OFFSET ${offset}`,
         }], { workLimits: this.readLimits });
         const records = result.results[0]!.rows.map(([id, slug, parent, locale, seo, updatedAt, createdAt, owner]) => Object.freeze({
             id: String((id as { key: unknown }).key), rev: 0, slug, parent: parent && typeof parent === 'object' && 'key' in parent ? String((parent as { key: unknown }).key) : null,
@@ -814,7 +814,7 @@ export class CmsHost {
         if (files.length > 100) throw new CmsError('CMS_VALIDATION', 'Widgets name too many files.');
         if (files.length) {
             const list = files.map((_, index) => `$m${index}`).join(', ');
-            const found = await this.db.read([{ sql: `SELECT count(*) FROM cms_files WHERE status = 'ready' AND id IN (${list})`, params: Object.fromEntries(files.map((file, index) => [`$m${index}`, file])) }]);
+            const found = await this.db.read([{ rql: `SELECT count(*) FROM cms_files WHERE status = 'ready' AND id IN (${list})`, params: Object.fromEntries(files.map((file, index) => [`$m${index}`, file])) }]);
             if (Number(found.results[0]!.rows[0]![0] as bigint) !== files.length) throw new CmsError('CMS_VALIDATION', 'Widgets name a missing file.');
         }
         return blocks;
@@ -854,7 +854,7 @@ export class CmsHost {
         const taken = [...reserved].filter(word => word === base || word.startsWith(`${base}-`));
         const others = [...this.#collections.values()].filter(other => other.name !== name && other.path === '' && other.slug !== false);
         const statements = others.map(other => ({
-            sql: `SELECT "slug" FROM ${this.resourceById(`cms/${other.name}`).storage} WHERE "slug" = $slug OR "slug" LIKE $prefix LIMIT 1000`,
+            rql: `SELECT "slug" FROM ${this.resourceById(`cms/${other.name}`).storage} WHERE "slug" = $slug OR "slug" LIKE $prefix LIMIT 1000`,
             params: { $slug: base, $prefix: `${base}-%` },
         }));
         if (statements.length) for (const result of (await this.db.read(statements)).results) for (const row of result.rows) taken.push(row[0] as string);
@@ -904,7 +904,7 @@ export class CmsHost {
         await this.settings.update('languages', { default: codes[0], others: codes.slice(1).join(',') }, { principal });
         for (const collection of this.#collections.values()) {
             const storage = this.resourceById(`cms/${collection.name}`).storage;
-            await this.db.write([{ sql: `UPDATE ${storage} SET "locale" = $locale WHERE "locale" IS NULL`, params: { $locale: codes[0]! } }],
+            await this.db.write([{ rql: `UPDATE ${storage} SET "locale" = $locale WHERE "locale" IS NULL`, params: { $locale: codes[0]! } }],
                 { kind: 'cms.languages', workLimits: { rowsRead: 1_000_000, rowMutations: 100_000, vmSteps: 10_000_000 } }).catch(error => {
                 // A collection whose table is not created yet has nothing to label.
                 if (!(error instanceof ClientError && /no such table|not found|does not exist/i.test(error.message))) throw error;
@@ -1043,7 +1043,7 @@ export class CmsHost {
         // The same resource `ready()` builds from the stored definition; its hash is what the migration records.
         const resource = this.#collectionResource(definition, this.#taxonomyLabels());
         const row: Statement = {
-            sql: 'INSERT INTO cms_collections (name, definition, updated_at, updated_by) VALUES ($name, $definition, $now, $by) ON CONFLICT (name) DO UPDATE SET definition = excluded.definition, updated_at = excluded.updated_at, updated_by = excluded.updated_by',
+            rql: 'INSERT INTO cms_collections (name, definition, updated_at, updated_by) VALUES ($name, $definition, $now, $by) ON CONFLICT (name) DO UPDATE SET definition = excluded.definition, updated_at = excluded.updated_at, updated_by = excluded.updated_by',
             params: { $name: definition.name, $definition: JSON.stringify(stored), $now: this.#now(), $by: principalId(principal) },
         };
         const resources = [...[...this.#resources.values()].filter(entry => entry.id !== resource.id), resource];
@@ -1065,14 +1065,14 @@ export class CmsHost {
      * Automatic redirects for an entry whose URL changes while it stays published, added to the
      * entry's write and guarded by it. Called by repositories.
      */
-    async redirectStatements(resource: Resource, before: RecordShape, after: RecordShape, guard: { sql: string; params: { [key: string]: Value } }, by: string | null): Promise<Statement[]> {
+    async redirectStatements(resource: Resource, before: RecordShape, after: RecordShape, guard: { rql: string; params: { [key: string]: Value } }, by: string | null): Promise<Statement[]> {
         const collection = resource.owner === 'cms' ? this.#collections.get(resource.name) : undefined;
         if (!collection || collection.path === null || collection.path === undefined || collection.slug === false) return [];
         const live = (record: RecordShape) => collection.publishable === false || record.status === 'published';
         if (!live(before) || !live(after) || (before.slug === after.slug && before.parent === after.parent && before.locale === after.locale)) return [];
         const from = (await this.entryUrls(collection, [before])).get(before.id);
         const to = (await this.entryUrls(collection, [after])).get(after.id);
-        return from && to && from !== to ? this.redirects.automatic(from, to, { guard: guard.sql, params: guard.params, by }) : [];
+        return from && to && from !== to ? this.redirects.automatic(from, to, { guard: guard.rql, params: guard.params, by }) : [];
     }
 
     /**
@@ -1115,12 +1115,12 @@ export class CmsHost {
         const referrers = this.resources.filter(resource => resource.id !== id && Object.values(resource.fields).some(field => field.kind === 'reference' && field.target === id));
         if (referrers.length) throw new CmsError('CMS_CONFLICT', `${referrers.map(resource => resource.label ?? resource.id).join(', ')} refer to this collection.`);
         const storage = this.resourceById(id).storage;
-        const info = await this.db.read([{ sql: 'INFO FOR DB' }]);
+        const info = await this.db.read([{ rql: 'INFO FOR DB' }]);
         const exists = ((info.results[0]!.rows[0]![0] as { tables?: { name: string }[] }).tables ?? []).some(table => table.name === storage);
         await this.db.write([
-            ...(exists ? [{ sql: `DROP TABLE ${storage}` }] : []),
-            { sql: 'DELETE FROM cms_collections WHERE name = $name', params: { $name: name } },
-            { sql: 'DELETE FROM cms_schema_state WHERE resource = $id', params: { $id: id } },
+            ...(exists ? [{ rql: `DROP TABLE ${storage}` }] : []),
+            { rql: 'DELETE FROM cms_collections WHERE name = $name', params: { $name: name } },
+            { rql: 'DELETE FROM cms_schema_state WHERE resource = $id', params: { $id: id } },
         ], { kind: 'cms.collections' });
         this.#activation = undefined;
         await this.ready({ force: true });
@@ -1139,11 +1139,11 @@ export class CmsHost {
         if (problems.length) throw new CmsError('CMS_VALIDATION', problems.join(' '));
         const current = this.#taxonomies.get(declaration.name);
         if (current?.hierarchical && !declaration.hierarchical) {
-            const nested = await this.db.read([{ sql: 'SELECT count(*) FROM cms_terms WHERE taxonomy = $taxonomy AND parent_id IS NOT NULL', params: { $taxonomy: declaration.name } }]);
+            const nested = await this.db.read([{ rql: 'SELECT count(*) FROM cms_terms WHERE taxonomy = $taxonomy AND parent_id IS NOT NULL', params: { $taxonomy: declaration.name } }]);
             if (Number(nested.results[0]!.rows[0]![0] as bigint)) throw new CmsError('CMS_CONFLICT', `Some ${declaration.label.toLowerCase()} have parents. Move them to the top level first.`);
         }
         await this.db.write([{
-            sql: 'INSERT INTO cms_taxonomies (name, definition, updated_at, updated_by) VALUES ($name, $definition, $now, $by) ON CONFLICT (name) DO UPDATE SET definition = excluded.definition, updated_at = excluded.updated_at, updated_by = excluded.updated_by',
+            rql: 'INSERT INTO cms_taxonomies (name, definition, updated_at, updated_by) VALUES ($name, $definition, $now, $by) ON CONFLICT (name) DO UPDATE SET definition = excluded.definition, updated_at = excluded.updated_at, updated_by = excluded.updated_by',
             params: { $name: declaration.name, $definition: JSON.stringify(declaration), $now: this.#now(), $by: principalId(principal) },
         }], { kind: 'cms.collections', retryConflicts: 5 });
         await this.ready({ force: true });
@@ -1161,8 +1161,8 @@ export class CmsHost {
         const users = this.collections().filter(collection => collection.taxonomies?.includes(name));
         if (users.length) throw new CmsError('CMS_CONFLICT', `${users.map(collection => collection.label).join(', ')} use this taxonomy.`);
         await this.db.write([
-            { sql: 'DELETE FROM cms_terms WHERE taxonomy = $name', params: { $name: name } },
-            { sql: 'DELETE FROM cms_taxonomies WHERE name = $name', params: { $name: name } },
+            { rql: 'DELETE FROM cms_terms WHERE taxonomy = $name', params: { $name: name } },
+            { rql: 'DELETE FROM cms_taxonomies WHERE name = $name', params: { $name: name } },
         ], { kind: 'cms.collections' });
         await this.ready({ force: true });
     }
@@ -1191,7 +1191,7 @@ export class CmsHost {
         const collection = resource.owner === 'cms' && this.#collections.has(resource.name);
         const recorded = async () => {
             if (!(options.fresh && collection)) return (await this.#state()).hashes.get(resource.id);
-            const result = await this.db.read([{ sql: 'SELECT declaration_hash FROM cms_schema_state WHERE resource = $id', params: { $id: resource.id } }]);
+            const result = await this.db.read([{ rql: 'SELECT declaration_hash FROM cms_schema_state WHERE resource = $id', params: { $id: resource.id } }]);
             return result.results[0]!.rows[0]?.[0] as string | undefined;
         };
         let current = this.#resources.get(resource.id) ?? resource;
@@ -1234,9 +1234,9 @@ export class CmsHost {
         if (plugin.problems.length) throw new CmsError('CMS_VALIDATION', `Plugin ${name} has an invalid manifest: ${plugin.problems.join(' ')}`);
         const now = this.#now();
         await this.db.write([
-            { sql: 'DELETE FROM cms_grants WHERE subject = $subject', params: { $subject: `plugin:${name}` } },
+            { rql: 'DELETE FROM cms_grants WHERE subject = $subject', params: { $subject: `plugin:${name}` } },
             ...[PLUGIN_ENABLED, ...plugin.requested].map((permission, index) => ({
-                sql: 'INSERT INTO cms_grants (id, subject, permission, revision, created_at) VALUES ($id, $subject, $permission, $revision, $now)',
+                rql: 'INSERT INTO cms_grants (id, subject, permission, revision, created_at) VALUES ($id, $subject, $permission, $revision, $now)',
                 params: { $id: `${name}:${index}:${now}`, $subject: `plugin:${name}`, $permission: permission, $revision: now, $now: now },
             })),
         ], { kind: 'cms.grants', retryConflicts: 5 });
@@ -1248,7 +1248,7 @@ export class CmsHost {
     /** Disable a plugin: its grants are removed; its hooks, commands and resources stop. Data stays. */
     async revokePlugin(name: string, principal: Principal): Promise<void> {
         if (!hasPermission(principal, PERMISSIONS.managePlugins)) throw new CmsError('CMS_FORBIDDEN', 'Not allowed to manage plugins.');
-        await this.db.write([{ sql: 'DELETE FROM cms_grants WHERE subject = $subject', params: { $subject: `plugin:${name}` } }], { kind: 'cms.grants', retryConflicts: 5 });
+        await this.db.write([{ rql: 'DELETE FROM cms_grants WHERE subject = $subject', params: { $subject: `plugin:${name}` } }], { kind: 'cms.grants', retryConflicts: 5 });
         this.#activation = undefined;
         await this.#refreshPlugins();
     }
@@ -1285,7 +1285,7 @@ export class CmsHost {
     /** True once every host table exists. Background work waits for it on a fresh database. */
     async installed(): Promise<boolean> {
         if (this.#installed) return true;
-        const result = await this.db.read([{ sql: 'INFO FOR DB' }]);
+        const result = await this.db.read([{ rql: 'INFO FOR DB' }]);
         const tables = new Set(((result.results[0]!.rows[0]![0] as { tables?: { name: string }[] }).tables ?? []).map(table => table.name));
         this.#installed = HOST_TABLES.every(name => tables.has(name));
         return this.#installed;
@@ -1395,8 +1395,8 @@ export class CmsHost {
         let taxonomies: readonly (readonly unknown[])[] = [];
         try {
             const result = await this.db.read([
-                { sql: 'SELECT name, definition FROM cms_collections ORDER BY name LIMIT 200' },
-                { sql: 'SELECT name, definition FROM cms_taxonomies ORDER BY name LIMIT 200' },
+                { rql: 'SELECT name, definition FROM cms_collections ORDER BY name LIMIT 200' },
+                { rql: 'SELECT name, definition FROM cms_taxonomies ORDER BY name LIMIT 200' },
             ]);
             collections = result.results[0]!.rows;
             taxonomies = result.results[1]!.rows;
@@ -1718,9 +1718,9 @@ export class CmsHost {
         const now = this.#now();
         if (!this.#activation || now - this.#activation.at > this.#activationTtl) {
             const state = this.db.read([
-                { sql: 'SELECT resource, declaration_hash FROM cms_schema_state ORDER BY resource LIMIT 1000' },
-                { sql: "SELECT subject, permission FROM cms_grants WHERE subject LIKE 'plugin:%' ORDER BY subject, permission LIMIT 1000" },
-                { sql: "SELECT version FROM cms_migrations WHERE kind = 'host' LIMIT 100" },
+                { rql: 'SELECT resource, declaration_hash FROM cms_schema_state ORDER BY resource LIMIT 1000' },
+                { rql: "SELECT subject, permission FROM cms_grants WHERE subject LIKE 'plugin:%' ORDER BY subject, permission LIMIT 1000" },
+                { rql: "SELECT version FROM cms_migrations WHERE kind = 'host' LIMIT 100" },
             ]).then(result => {
                 const grants = new Map<string, Set<string>>();
                 for (const [subject, permission] of result.results[1]!.rows) {

@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { StorageProvider } from '@cossackframework/core/storage';
 import { contentModule, createCMS, DEFAULT_ROLES, userPrincipal, type CmsHost, type Principal } from '../src/server/index';
-import { fastdbService, live } from './helpers';
+import { romedbService, live } from './helpers';
 
 const system: Principal = { kind: 'system', reason: 'test' };
 
@@ -17,7 +17,7 @@ function memoryStorage(): StorageProvider & { objects: Map<string, Uint8Array> }
 }
 
 describe.skipIf(!live)('content, taxonomies, settings, users and media', () => {
-    const service = fastdbService();
+    const service = romedbService();
     let cms: CmsHost;
     let editor: Principal;
     let author: Principal;
@@ -186,7 +186,7 @@ describe.skipIf(!live)('content, taxonomies, settings, users and media', () => {
         const users = cms.users;
         await users.create({ email: 'reset@example.com', name: 'Reset', password: 'first password' });
         const reset = (await users.createPasswordReset('reset@example.com'))!;
-        const stored = await cms.db.read([{ sql: 'SELECT id FROM cms_password_resets WHERE user_id = $user', params: { $user: reset.user.id } }]);
+        const stored = await cms.db.read([{ rql: 'SELECT id FROM cms_password_resets WHERE user_id = $user', params: { $user: reset.user.id } }]);
         expect(stored.results[0]!.rows[0]![0]).not.toBe(reset.token);
         const [first, second] = await Promise.all([users.resetPassword(reset.token, 'second password'), users.resetPassword(reset.token, 'third password')]);
         expect([first, second].filter(Boolean)).toHaveLength(1);

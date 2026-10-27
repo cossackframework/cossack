@@ -15,13 +15,13 @@ pnpm install            # once, at the repository root
 pnpm dev:cms            # at the root; or `pnpm dev` here. Syncs the shell, serves http://localhost:3000
 ```
 
-`pnpm sync` creates `.env` on the first run with `FASTDB_URL=http://127.0.0.1:4322`. When
-nothing answers there, `dev` starts a local FastDB itself (`scripts/fastdb.sh`: uses
-`$FASTDB_BIN`, `$COSSACK_TEST_FASTDB_BIN` or `fastdb` on `PATH`; the first start creates
-`storage/fastdb/app.fastdb` and writes `FASTDB_TOKEN` into `.env`) and stops it with the dev
-server; `pnpm fastdb` runs it on its own. Then open `/dashboard` and finish the setup with
+`pnpm sync` creates `.env` on the first run with `ROMEDB_URL=http://127.0.0.1:4322`. When
+nothing answers there, `dev` starts a local RomeDB itself (`scripts/romedb.sh`: uses
+`$ROMEDB_BIN`, `$COSSACK_TEST_ROMEDB_BIN` or `romedb` on `PATH`; the first start creates
+`storage/romedb/app.romedb` and writes `ROMEDB_TOKEN` into `.env`) and stops it with the dev
+server; `pnpm romedb` runs it on its own. Then open `/dashboard` and finish the setup with
 `CMS_SETUP_CODE` from `.env`. Change `PORT` in `.env` when 3000 is taken, and the port in
-`FASTDB_URL` when 4322 belongs to another app.
+`ROMEDB_URL` when 4322 belongs to another app.
 
 `pnpm typecheck` here is the type check for the CMS pages; the root `pnpm tsc --noEmit` does
 not cover them.

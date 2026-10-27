@@ -16,7 +16,7 @@ becomes a runnable Cossack application as well as a library, the way
   paths a generated project uses: `src/cms/`, `src/pages/dashboard/(cms)/`,
   `src/pages/(site)/`, `src/pages/auth/setup/`, `src/pages/api/cms/`,
   `src/pages/api/auth/`, `src/config/cms.ts`, `src/plugins/default-theme/`, and
-  the FastDB storage modules that replace the database ones (`src/auth.ts`,
+  the RomeDB storage modules that replace the database ones (`src/auth.ts`,
   `src/passkeys.client.ts`, `src/services/{users,roles,rbac}.ts`,
   `src/lib/permissions.ts`, `src/dashboard/access.ts`,
   `src/pages/dashboard/index.ts`). `template/cms-store` is gone. The library stays
@@ -41,8 +41,8 @@ becomes a runnable Cossack application as well as a library, the way
 - **Workspace member.** `packages/cms/app` is `@cossackframework/cms-app`,
   private, with `workspace:*` dependencies, so the dashboard runs against the
   workspace sources of every package. Root `pnpm dev:cms` starts it, and starts
-  a local FastDB first when nothing answers at `FASTDB_URL` in `.env`
-  (`scripts/fastdb.sh`, also `pnpm fastdb` on its own).
+  a local RomeDB first when nothing answers at `ROMEDB_URL` in `.env`
+  (`scripts/romedb.sh`, also `pnpm romedb` on its own).
 - **Publishing.** `@cossackframework/cms` ships `src`, `app` and
   `agent-docs.json`; `app/.gitignore` keeps rendered files, `node_modules` and
   local state out of the tarball. The scaffold resolves

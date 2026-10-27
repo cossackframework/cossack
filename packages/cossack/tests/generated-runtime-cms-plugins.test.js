@@ -7,7 +7,7 @@ import path from 'node:path';
 import { cleanupRoots, cossack, productionServer, project, trackRoot, typecheck, vite } from './fixtures/generated-app.js';
 import { packDesk, violations } from './fixtures/cms-plugin-package.js';
 import { browserless, contains, lacks } from './fixtures/cms-client.js';
-import { liveFastDBTests, startFastDBService } from '../../fastdb/src/testing.ts';
+import { liveRomeDBTests, startRomeDBService } from '../../romedb/src/testing.ts';
 
 afterEach(cleanupRoots);
 
@@ -16,9 +16,9 @@ const build = async root => {
   await vite(root, ['--ssr', 'src/index.ts', '--outDir', 'dist/server']);
 };
 
-describe.skipIf(!liveFastDBTests())('CMS plugin trust', () => {
+describe.skipIf(!liveRomeDBTests())('CMS plugin trust', () => {
   let service;
-  beforeAll(async () => { service = await startFastDBService(); }, 30_000);
+  beforeAll(async () => { service = await startRomeDBService(); }, 30_000);
   afterAll(async () => { await service?.stop(); });
 
   it('hosts a granted plugin, rejects policy violations at build time and keeps a failed migration inactive', async () => {
@@ -44,7 +44,7 @@ describe.skipIf(!liveFastDBTests())('CMS plugin trust', () => {
     await cossack(root, ['plugins', 'upgrade', 'support-desk', '--source', v1.tarball, '--force', '--json']);
     await build(root);
 
-    const environment = { APP_SECRET: 'cms-plugin-test-secret-0123456789abcdef', FASTDB_URL: service.url, FASTDB_TOKEN: service.token, CMS_SETUP_CODE: 'setup', FASTDB_PENDING_DIR: path.join(root, '.cossack/fastdb-pending') };
+    const environment = { APP_SECRET: 'cms-plugin-test-secret-0123456789abcdef', ROMEDB_URL: service.url, ROMEDB_TOKEN: service.token, CMS_SETUP_CODE: 'setup', ROMEDB_PENDING_DIR: path.join(root, '.cossack/romedb-pending') };
     const routeIds = async () => JSON.parse(await fs.readFile(path.join(root, 'dist/client/cossack-routes.json'), 'utf8')).filePathToId;
     const editor = 'dashboard/(cms)/content/[collection]/[id]/index.ts';
     const ticket = subject => ({ subject, status: 'open', body: '' });

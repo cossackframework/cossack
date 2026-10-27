@@ -11,7 +11,7 @@ afterEach(async () => { await Promise.all(directories.splice(0).map(directory =>
 const text = (files, rel) => files.get(rel)?.content.toString();
 
 describe('cms recipe', () => {
-  it('brings auth and the dashboard on FastDB without the ORM', () => {
+  it('brings auth and the dashboard on RomeDB without the ORM', () => {
     const recipe = resolveRecipe({ adapter: 'node', preset: 'minimal', features: ['cms'] });
     expect(recipe.resolvedFeatures).toEqual(['ui', 'auth', 'dashboard', 'cms']);
     expect(authStore(recipe.resolvedFeatures)).toBe('cms');

@@ -1,10 +1,10 @@
 /**
  * Files: bytes in Cossack object storage (R2 on Workers, S3 or a local directory on Node),
- * ownership and metadata in FastDB. Upload and delete are recoverable two-phase operations:
+ * ownership and metadata in RomeDB. Upload and delete are recoverable two-phase operations:
  * the metadata row records intent first, and `sweep()` finishes or cleans up interrupted work.
  */
 import type { StorageProvider } from '@cossackframework/core/storage';
-import type { FastDB, Value } from '@cossackframework/fastdb';
+import type { RomeDB, Value } from '@cossackframework/romedb';
 import { CmsError } from '../errors';
 import { imageSize, matchesSignature, MEDIA_FILTERS, MEDIA_TYPES, type MediaKind } from '../media';
 import { hasPermission, PERMISSIONS, principalId, type Principal } from '../permissions';
@@ -56,7 +56,7 @@ const WRITE = { kind: 'cms.files', retryConflicts: 5 } as const;
 const HEAD_BYTES = 1024 * 1024;
 
 export class FileService {
-    readonly #db: FastDB;
+    readonly #db: RomeDB;
     readonly #storage: StorageProvider;
     readonly #now: () => number;
     readonly #maxBytes: number;
@@ -65,7 +65,7 @@ export class FileService {
     readonly #images: ImageTransformer | undefined;
     #warned = false;
 
-    constructor(db: FastDB, storage: StorageProvider, options: FileServiceOptions = {}) {
+    constructor(db: RomeDB, storage: StorageProvider, options: FileServiceOptions = {}) {
         this.#db = db;
         this.#storage = storage;
         this.#now = options.now ?? Date.now;
@@ -92,7 +92,7 @@ export class FileService {
         const clean: ImageEdits | null = edits && (edits.crop || edits.focus) ? { ...(edits.crop ? { crop: edits.crop } : {}), ...(edits.focus ? { focus: edits.focus } : {}) } : null;
         const problems = clean ? imageEditsProblems(clean, file.width, file.height) : [];
         if (problems.length) throw new CmsError('CMS_VALIDATION', problems.join(' '));
-        await this.#db.write([{ sql: "UPDATE cms_files SET edits = $edits, updated_at = $now WHERE id = $id AND status = 'ready'",
+        await this.#db.write([{ rql: "UPDATE cms_files SET edits = $edits, updated_at = $now WHERE id = $id AND status = 'ready'",
             params: { $edits: clean ? JSON.stringify(clean) : null, $now: Math.max(this.#now(), file.updatedAt + 1), $id: id } }], WRITE);
         await this.#dropVariants(id);
         return (await this.get(id))!;
@@ -127,15 +127,15 @@ export class FileService {
             this.#warned = true;
             return null;
         }
-        await this.#db.write([{ sql: 'INSERT INTO cms_file_variants (key, file_id, created_at) VALUES ($key, $id, $now) ON CONFLICT (key) DO NOTHING', params: { $key: key, $id: id, $now: this.#now() } }], WRITE);
+        await this.#db.write([{ rql: 'INSERT INTO cms_file_variants (key, file_id, created_at) VALUES ($key, $id, $now) ON CONFLICT (key) DO NOTHING', params: { $key: key, $id: id, $now: this.#now() } }], WRITE);
         await this.#storage.put(key, streamOf(bytes), { size: bytes.byteLength, contentType });
         return { file, body: streamOf(bytes), contentType, size: bytes.byteLength };
     }
 
     async #dropVariants(id: string): Promise<void> {
-        const result = await this.#db.read([{ sql: 'SELECT key FROM cms_file_variants WHERE file_id = $id LIMIT 500', params: { $id: id } }]);
+        const result = await this.#db.read([{ rql: 'SELECT key FROM cms_file_variants WHERE file_id = $id LIMIT 500', params: { $id: id } }]);
         for (const [key] of result.results[0]!.rows) await this.#storage.delete(key as string).catch(() => undefined);
-        await this.#db.write([{ sql: 'DELETE FROM cms_file_variants WHERE file_id = $id', params: { $id: id } }], WRITE);
+        await this.#db.write([{ rql: 'DELETE FROM cms_file_variants WHERE file_id = $id', params: { $id: id } }], WRITE);
     }
 
     /**
@@ -165,19 +165,19 @@ export class FileService {
         const owner = context.principal.kind === 'user' ? context.principal.id : context.principal.kind === 'system' ? context.owner ?? null : null;
         const metadata = checkMetadata({ title: file.title ?? name.replace(/\.[^.]+$/, ''), alt: file.alt ?? '', caption: file.caption ?? '', description: file.description ?? '' });
         await this.#db.write([{
-            sql: `INSERT INTO cms_files (id, key, owner_id, name, content_type, size, status, title, alt, caption, description, width, height, created_at, updated_at)
+            rql: `INSERT INTO cms_files (id, key, owner_id, name, content_type, size, status, title, alt, caption, description, width, height, created_at, updated_at)
                 VALUES ($id, $key, $owner, $name, $type, $size, 'pending', $title, $alt, $caption, $description, $width, $height, $now, $now)`,
             params: { $id: id, $key: key, $owner: owner, $name: name, $type: contentType, $size: file.size, ...prefixed(metadata), $width: dimensions?.width ?? null, $height: dimensions?.height ?? null, $now: now },
         }], WRITE);
         await this.#storage.put(key, body, { size: file.size, contentType, ...(context.signal ? { signal: context.signal } : {}) });
-        const ready = await this.#db.write([{ sql: "UPDATE cms_files SET status = 'ready', updated_at = $now WHERE id = $id AND status = 'pending'", params: { $id: id, $now: this.#now() } }], WRITE);
+        const ready = await this.#db.write([{ rql: "UPDATE cms_files SET status = 'ready', updated_at = $now WHERE id = $id AND status = 'pending'", params: { $id: id, $now: this.#now() } }], WRITE);
         if (ready.results[0]!.affected !== 1n) throw new CmsError('CMS_CONFLICT', 'The upload was cancelled.');
         return (await this.get(id))!;
     }
 
     async get(id: string): Promise<CmsFile | null> {
         if (!ID.test(id)) return null;
-        const result = await this.#db.read([{ sql: `SELECT ${COLUMNS} FROM cms_files WHERE id = $id AND status = 'ready'`, params: { $id: id } }]);
+        const result = await this.#db.read([{ rql: `SELECT ${COLUMNS} FROM cms_files WHERE id = $id AND status = 'ready'`, params: { $id: id } }]);
         const row = result.results[0]!.rows[0];
         return row ? fileOf(row) : null;
     }
@@ -186,7 +186,7 @@ export class FileService {
         const wanted = [...new Set(ids.filter(id => typeof id === 'string' && ID.test(id)))].slice(0, 200);
         if (!wanted.length) return new Map();
         const params = Object.fromEntries(wanted.map((id, index) => [`$f${index}`, id]));
-        const result = await this.#db.read([{ sql: `SELECT ${COLUMNS} FROM cms_files WHERE status = 'ready' AND id IN (${wanted.map((_, index) => `$f${index}`).join(', ')})`, params }]);
+        const result = await this.#db.read([{ rql: `SELECT ${COLUMNS} FROM cms_files WHERE status = 'ready' AND id IN (${wanted.map((_, index) => `$f${index}`).join(', ')})`, params }]);
         return new Map(result.results[0]!.rows.map(row => { const file = fileOf(row); return [file.id, file]; }));
     }
 
@@ -206,9 +206,9 @@ export class FileService {
         if (options.owner) { conditions.push('owner_id = $owner'); params.$owner = options.owner; }
         const where = conditions.join(' AND ');
         const result = await this.#db.read([
-            { sql: `SELECT ${COLUMNS} FROM cms_files WHERE ${where} ORDER BY created_at DESC, id DESC LIMIT $limit OFFSET $offset`,
+            { rql: `SELECT ${COLUMNS} FROM cms_files WHERE ${where} ORDER BY created_at DESC, id DESC LIMIT $limit OFFSET $offset`,
                 params: { ...params, $limit: Math.min(Math.max(options.limit ?? 40, 1), 100), $offset: Math.min(Math.max(options.offset ?? 0, 0), 100_000) } },
-            Object.keys(params).length ? { sql: `SELECT count(*) FROM cms_files WHERE ${where}`, params } : { sql: `SELECT count(*) FROM cms_files WHERE ${where}` },
+            Object.keys(params).length ? { rql: `SELECT count(*) FROM cms_files WHERE ${where}`, params } : { rql: `SELECT count(*) FROM cms_files WHERE ${where}` },
         ]);
         return { items: result.results[0]!.rows.map(fileOf), total: Number(result.results[1]!.rows[0]![0] as bigint) };
     }
@@ -219,7 +219,7 @@ export class FileService {
         if (!file) throw new CmsError('CMS_NOT_FOUND', 'File not found.');
         this.#authorizeChange(file, context.principal, 'edit');
         const next = checkMetadata({ title: patch.title ?? file.title, alt: patch.alt ?? file.alt, caption: patch.caption ?? file.caption, description: patch.description ?? file.description });
-        await this.#db.write([{ sql: "UPDATE cms_files SET title = $title, alt = $alt, caption = $caption, description = $description, updated_at = $now WHERE id = $id AND status = 'ready'",
+        await this.#db.write([{ rql: "UPDATE cms_files SET title = $title, alt = $alt, caption = $caption, description = $description, updated_at = $now WHERE id = $id AND status = 'ready'",
             params: { ...prefixed(next), $now: this.#now(), $id: id } }], WRITE);
         return (await this.get(id))!;
     }
@@ -236,7 +236,7 @@ export class FileService {
         const file = await this.get(id);
         if (!file) throw new CmsError('CMS_NOT_FOUND', 'File not found.');
         this.#authorizeChange(file, context.principal, 'delete');
-        const marked = await this.#db.write([{ sql: "UPDATE cms_files SET status = 'deleting', updated_at = $now WHERE id = $id AND status = 'ready'", params: { $id: id, $now: this.#now() } }], WRITE);
+        const marked = await this.#db.write([{ rql: "UPDATE cms_files SET status = 'deleting', updated_at = $now WHERE id = $id AND status = 'ready'", params: { $id: id, $now: this.#now() } }], WRITE);
         if (marked.results[0]!.affected !== 1n) throw new CmsError('CMS_CONFLICT', 'The file is already being deleted.');
         await this.#finishDelete(id);
     }
@@ -245,12 +245,12 @@ export class FileService {
     async sweep(options: { limit?: number } = {}): Promise<{ removed: number }> {
         const before = this.#now() - this.#staleMs;
         const result = await this.#db.read([{
-            sql: "SELECT id FROM cms_files WHERE status IN ('pending', 'deleting') AND updated_at <= $before ORDER BY updated_at LIMIT $limit",
+            rql: "SELECT id FROM cms_files WHERE status IN ('pending', 'deleting') AND updated_at <= $before ORDER BY updated_at LIMIT $limit",
             params: { $before: before, $limit: options.limit ?? 50 },
         }]);
         let removed = 0;
         for (const [id] of result.results[0]!.rows) {
-            const claimed = await this.#db.write([{ sql: "UPDATE cms_files SET status = 'deleting', updated_at = $now WHERE id = $id AND status IN ('pending', 'deleting') AND updated_at <= $before",
+            const claimed = await this.#db.write([{ rql: "UPDATE cms_files SET status = 'deleting', updated_at = $now WHERE id = $id AND status IN ('pending', 'deleting') AND updated_at <= $before",
                 params: { $id: id!, $now: this.#now(), $before: before } }], WRITE);
             if (claimed.results[0]!.affected !== 1n) continue;
             await this.#finishDelete(id as string);
@@ -267,7 +267,7 @@ export class FileService {
     async #finishDelete(id: string): Promise<void> {
         await this.#dropVariants(id);
         await this.#storage.delete(`cms/files/${id}`);
-        await this.#db.write([{ sql: "DELETE FROM cms_files WHERE id = $id AND status = 'deleting'", params: { $id: id } }], WRITE);
+        await this.#db.write([{ rql: "DELETE FROM cms_files WHERE id = $id AND status = 'deleting'", params: { $id: id } }], WRITE);
     }
 }
 

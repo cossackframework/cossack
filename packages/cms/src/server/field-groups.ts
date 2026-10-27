@@ -4,7 +4,7 @@
  * into the targets' resources and plans the schema; this store keeps the rows and a per-isolate
  * cache the host drops on every write.
  */
-import { ClientError, type FastDB } from '@cossackframework/fastdb';
+import { ClientError, type RomeDB } from '@cossackframework/romedb';
 import { CmsError } from '../errors';
 import { sameTarget, type FieldGroup, type FieldGroupTarget } from '../field-groups';
 import { principalId, type Principal } from '../permissions';
@@ -13,11 +13,11 @@ const WRITE = { kind: 'cms.fieldGroups', retryConflicts: 5 } as const;
 const LIMIT = 200;
 
 export class CmsFieldGroups {
-    readonly #db: FastDB;
+    readonly #db: RomeDB;
     readonly #now: () => number;
     #cache: Promise<FieldGroup[]> | undefined;
 
-    constructor(db: FastDB, options: { now?: () => number } = {}) {
+    constructor(db: RomeDB, options: { now?: () => number } = {}) {
         this.#db = db;
         this.#now = options.now ?? Date.now;
     }
@@ -41,7 +41,7 @@ export class CmsFieldGroups {
     async put(group: FieldGroup, principal: Principal): Promise<void> {
         try {
             await this.#db.write([{
-                sql: 'INSERT INTO cms_field_groups (id, definition, sort, updated_at, updated_by) VALUES ($id, $definition, $sort, $now, $by) ON CONFLICT (id) DO UPDATE SET definition = excluded.definition, sort = excluded.sort, updated_at = excluded.updated_at, updated_by = excluded.updated_by',
+                rql: 'INSERT INTO cms_field_groups (id, definition, sort, updated_at, updated_by) VALUES ($id, $definition, $sort, $now, $by) ON CONFLICT (id) DO UPDATE SET definition = excluded.definition, sort = excluded.sort, updated_at = excluded.updated_at, updated_by = excluded.updated_by',
                 params: { $id: group.id, $definition: JSON.stringify(group), $sort: group.order ?? 0, $now: this.#now(), $by: principalId(principal) },
             }], WRITE);
         } finally {
@@ -51,7 +51,7 @@ export class CmsFieldGroups {
 
     async remove(id: string): Promise<boolean> {
         try {
-            const result = await this.#db.write([{ sql: 'DELETE FROM cms_field_groups WHERE id = $id', params: { $id: id } }], WRITE);
+            const result = await this.#db.write([{ rql: 'DELETE FROM cms_field_groups WHERE id = $id', params: { $id: id } }], WRITE);
             return result.results[0]!.affected === 1n;
         } finally {
             this.#cache = undefined;
@@ -66,7 +66,7 @@ export class CmsFieldGroups {
     async #read(): Promise<FieldGroup[]> {
         let rows: readonly (readonly unknown[])[] = [];
         try {
-            rows = (await this.#db.read([{ sql: `SELECT definition FROM cms_field_groups ORDER BY sort, id LIMIT ${LIMIT}` }])).results[0]!.rows;
+            rows = (await this.#db.read([{ rql: `SELECT definition FROM cms_field_groups ORDER BY sort, id LIMIT ${LIMIT}` }])).results[0]!.rows;
         } catch (error) {
             // Before setup the table does not exist; there are no groups.
             if (!(error instanceof ClientError) || !/cms_field_groups|no such table|not found/i.test(error.message)) throw new CmsError('CMS_UNAVAILABLE', 'Field groups could not be read.', { cause: error });

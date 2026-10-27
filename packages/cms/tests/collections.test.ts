@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { contentModule, createCMS, DEFAULT_ROLES, field, type CmsHost, type CollectionDefinition, type Principal } from '../src/server/index';
-import { fastdbService, live } from './helpers';
+import { romedbService, live } from './helpers';
 
 const admin: Principal = { kind: 'user', id: 'admin-1', roles: ['admin'], permissions: ['*'] };
 const editor: Principal = { kind: 'user', id: 'editor-1', roles: ['editor'], permissions: [...DEFAULT_ROLES[1].permissions] };
@@ -20,7 +20,7 @@ const products: CollectionDefinition = {
 };
 
 describe.skipIf(!live)('collections built in the dashboard', () => {
-    const service = fastdbService();
+    const service = romedbService();
     let cms: CmsHost;
     const plugin = { name: 'promo', version: '1.0.0', manifest: { schemaVersion: 1, name: 'promo', version: '1.0.0', blocks: [{ name: 'promo/banner', label: 'Banner', fields: { text: field.string({ required: true }) } }] } };
 
@@ -37,7 +37,7 @@ describe.skipIf(!live)('collections built in the dashboard', () => {
         const saved = await cms.saveCollection(products, admin);
         expect(saved).toMatchObject({ name: 'products', taxonomies: ['brands'] });
         expect(cms.collections().map(collection => collection.name)).toEqual(['pages', 'patterns', 'posts', 'products']);
-        const info = await cms.db.read([{ sql: 'INFO FOR TABLE r__cms__products' }]);
+        const info = await cms.db.read([{ rql: 'INFO FOR TABLE r__cms__products' }]);
         const table = info.results[0]!.rows[0]![0] as { strict: boolean; fields: { path: string[] }[]; indexes: { name: string; kind: string }[] };
         expect(table.strict).toBe(false);
         expect(table.fields.map(entry => entry.path[0])).toEqual(['_rev', '_op', '_createdAt', '_updatedAt', '_owner']);
@@ -71,7 +71,7 @@ describe.skipIf(!live)('collections built in the dashboard', () => {
             fields: { price: field.string({ label: 'Price text' }), sku: field.string({ max: 40, label: 'SKU' }), color: field.enum(['red', 'blue'], { default: 'red', label: 'Color' }) },
         };
         await cms.saveCollection(changed, admin);
-        const info = await cms.db.read([{ sql: 'INFO FOR TABLE r__cms__products' }]);
+        const info = await cms.db.read([{ rql: 'INFO FOR TABLE r__cms__products' }]);
         const indexes = (info.results[0]!.rows[0]![0] as { indexes: { name: string }[] }).indexes.map(index => index.name);
         expect(indexes).not.toContain('r__cms__products__u_sku');
         const after = (await entries.get(before.id, { principal: admin }))!;
@@ -101,7 +101,7 @@ describe.skipIf(!live)('collections built in the dashboard', () => {
         expect(Object.keys(extended.fields)).toEqual(expect.arrayContaining(['subtitle', 'content', 'featuredImage']));
         const post = await cms.resource('cms/posts').create({ title: 'With subtitle', subtitle: 'Below the title' }, { principal: admin });
         expect(post).toMatchObject({ subtitle: 'Below the title', slug: 'with-subtitle' });
-        const stored = await cms.db.read([{ sql: "SELECT definition FROM cms_collections WHERE name = 'posts'" }]);
+        const stored = await cms.db.read([{ rql: "SELECT definition FROM cms_collections WHERE name = 'posts'" }]);
         expect(Object.keys(JSON.parse(stored.results[0]!.rows[0]![0] as string).fields)).toEqual(['subtitle']);
     });
 
@@ -119,7 +119,7 @@ describe.skipIf(!live)('collections built in the dashboard', () => {
         // Posts were relabelled Articles above, so they sort first.
         expect(cms.collections().map(collection => collection.name)).toEqual(['posts', 'pages', 'patterns']);
         expect(() => cms.resource('cms/products')).toThrow(/Unknown resource/);
-        const tables = await cms.db.read([{ sql: 'INFO FOR DB' }]);
+        const tables = await cms.db.read([{ rql: 'INFO FOR DB' }]);
         expect((tables.results[0]!.rows[0]![0] as { tables: { name: string }[] }).tables.map(table => table.name)).not.toContain('r__cms__products');
         await cms.deleteTaxonomy('brands', admin);
         expect(cms.taxonomies.declarations.map(taxonomy => taxonomy.name)).toEqual(['categories', 'tags']);

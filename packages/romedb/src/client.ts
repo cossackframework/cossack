@@ -1,7 +1,7 @@
 /**
- * FastDB service-protocol client on Web APIs (fetch, crypto.randomUUID, AbortSignal).
+ * RomeDB service-protocol client on Web APIs (fetch, crypto.randomUUID, AbortSignal).
  * Runs on Cloudflare Workers, Node.js, Deno and browsers' server runtimes alike.
- * Behavior follows the FastDB service contract and `@fastdb/node/client` 2.8.0.
+ * Behavior follows the RomeDB service contract and `@romedb/node/client` 0.2.9.
  */
 import { decodeValue, encodeValue, plainObject, text, type Value } from './values';
 
@@ -16,7 +16,7 @@ const ID = /^[A-Za-z0-9_-]{1,80}$/;
 const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}';
 const encoder = new TextEncoder();
 
-export interface Statement { sql: string; params?: { [key: string]: Value } }
+export interface Statement { rql: string; params?: { [key: string]: Value } }
 export interface RequestOptions { signal?: AbortSignal; timeoutMs?: number }
 export interface WorkLimits { rowsRead?: number; rowMutations?: number; vmSteps?: number }
 export interface ReadOptions extends RequestOptions { afterSequence?: number; workLimits?: WorkLimits }
@@ -37,7 +37,7 @@ export interface DatabaseInfo {
     id: string;
     sequence: number;
     capabilities: Capabilities;
-    /** FastDB release of the engine, such as "2.8.0". */
+    /** RomeDB release of the engine, such as "0.2.9". */
     engineVersion?: string;
     [key: string]: unknown;
 }
@@ -290,8 +290,8 @@ export class RemoteDatabase implements Client {
             const queryPath = path === '/query' || path === '/read';
             const headers: { [key: string]: string } = { authorization: `Bearer ${credential}`, accept: 'application/json' };
             if (body !== undefined) headers['content-type'] = 'application/json';
-            if (this.#id !== undefined) headers['x-fastdb-database-id'] = prepared?.databaseId ?? this.#id;
-            if (queryVersion === CLOUD_QUERY_VERSION && queryPath) headers['x-fastdb-query-version'] = String(queryVersion);
+            if (this.#id !== undefined) headers['x-romedb-database-id'] = prepared?.databaseId ?? this.#id;
+            if (queryVersion === CLOUD_QUERY_VERSION && queryPath) headers['x-romedb-query-version'] = String(queryVersion);
             const response = await this.#fetch(this.#url + path, {
                 method: body === undefined ? 'GET' : 'POST',
                 headers,
@@ -306,7 +306,7 @@ export class RemoteDatabase implements Client {
                 throw new ClientError('FDB_PROTOCOL', 'Database URL redirected; redirects are never followed with a credential', writing ? 'unknown' : 'read-failed', { status, ...details });
             }
             retryAfterMs = parseRetryAfter(response.headers.get('retry-after'));
-            const replyVersion = response.headers.get('x-fastdb-query-version');
+            const replyVersion = response.headers.get('x-romedb-query-version');
             if (queryPath && replyVersion !== null && replyVersion !== '2' && replyVersion !== String(queryVersion)) {
                 await response.body?.cancel();
                 throw new ClientError('FDB_PROTOCOL', 'Unsupported database query response version', writing ? 'unknown' : 'read-failed', { status, ...details });
@@ -342,11 +342,11 @@ export class RemoteDatabase implements Client {
     }
 }
 
-/** Normalize a local service, Cloud or `fastdb://` URL to the canonical database URL. */
+/** Normalize a local service, Cloud or `romedb://` URL to the canonical database URL. */
 export function normalizeUrl(input: string): string {
     if (typeof input !== 'string' || input.length > 4096) throw new TypeError('url requires a bounded database URL');
-    // fastdb:// is an alias for https://; the same checks apply after the rewrite.
-    const url = new URL(input.startsWith('fastdb://') ? 'https://' + input.slice('fastdb://'.length) : input);
+    // romedb:// is an alias for https://; the same checks apply after the rewrite.
+    const url = new URL(input.startsWith('romedb://') ? 'https://' + input.slice('romedb://'.length) : input);
     const loopback = ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname);
     if (url.username || url.password || url.search || url.hash || (url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback))) {
         throw new TypeError('use HTTPS or loopback HTTP without URL credentials, query or fragment');
@@ -380,6 +380,7 @@ export function validatePrepared(prepared: unknown): SavedBody {
         if ((body.ifSequence as number) < (body.afterSequence as number)) throw new RangeError('invalid saved sequence condition');
     }
     if (!Array.isArray(body.statements) || body.statements.length < 1 || body.statements.length > 32) throw new TypeError('invalid saved statements');
+    // Saved bodies are wire JSON: each statement carries the protocol's `sql` field.
     for (const statement of body.statements) {
         if (!plainObject(statement) || Object.keys(statement).some(key => key !== 'sql' && key !== 'params') || typeof statement.sql !== 'string' || !statement.sql.trim() || (statement.params !== undefined && !plainObject(statement.params))) {
             throw new TypeError('invalid saved statement');
@@ -397,17 +398,17 @@ export function preparedRequestId(prepared: PreparedWrite): string {
 function encodeStatements(statements: Statement[], queryVersion: 2 | 3): unknown[] {
     if (!Array.isArray(statements) || statements.length < 1 || statements.length > 32) throw new RangeError('request requires 1..32 statements');
     return statements.map(statement => {
-        if (!plainObject(statement) || Object.keys(statement).some(key => key !== 'sql' && key !== 'params') || typeof statement.sql !== 'string' || !statement.sql.trim()) {
+        if (!plainObject(statement) || Object.keys(statement).some(key => key !== 'rql' && key !== 'params') || typeof statement.rql !== 'string' || !statement.rql.trim()) {
             throw new TypeError('statement requires SQL and optional params');
         }
-        if (statement.params === undefined) return { sql: text(statement.sql) };
+        if (statement.params === undefined) return { sql: text(statement.rql) };
         if (!plainObject(statement.params)) throw new TypeError('params require an object');
         const params: { [key: string]: unknown } = {};
         for (const [key, value] of Object.entries(statement.params)) {
             if (value === undefined) throw new TypeError(`parameter ${key} is undefined`);
             params[text(key)] = encodeValue(value, queryVersion === CLOUD_QUERY_VERSION);
         }
-        return { sql: text(statement.sql), params };
+        return { sql: text(statement.rql), params };
     });
 }
 

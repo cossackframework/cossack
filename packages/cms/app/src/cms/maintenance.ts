@@ -5,7 +5,7 @@ import type { CmsHost } from '@cossackframework/cms/server';
  * deliver outbox events and webhooks, prune delivered events, expired sessions, reset tokens,
  * preview links, sign-in challenges, old autosaves and form records, empty forms' old trash, and
  * finish interrupted uploads.
- * `warm` asks FastDB Cloud to start the database; request paths never warm, so run it from a schedule.
+ * `warm` asks RomeDB Cloud to start the database; request paths never warm, so run it from a schedule.
  */
 export async function runMaintenance(cms: CmsHost, options: { warm?: boolean } = {}): Promise<void> {
     if (options.warm) await cms.db.warm().catch(() => undefined);

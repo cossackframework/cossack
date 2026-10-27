@@ -31,15 +31,15 @@ export { objects, first, one, scalar, affected, DuplicateColumnError, Cardinalit
 
 // Request bindings, engine preflight and exact recovery
 export {
-    FastDB,
-    createFastDB,
+    RomeDB,
+    createRomeDB,
     compareVersions,
     REQUIRED_ENGINE_VERSION,
     EngineVersionError,
     UncertainWriteError,
-    type FastDBOptions,
-    type FastDBWorkLimits,
-    type FastDBRetryOptions,
+    type RomeDBOptions,
+    type RomeDBWorkLimits,
+    type RomeDBRetryOptions,
     type ReadCallOptions,
     type WriteCallOptions,
     type Reconciler,
@@ -55,4 +55,4 @@ export {
 } from './pending';
 
 // D1-shaped facade for portable SQL ledgers
-export { sqlDatabase, numberPlaceholders, type SqlDatabase, type SqlStatement, type SqlBound, type SqlDatabaseOptions } from './sql';
+export { rqlDatabase, numberPlaceholders, type RqlDatabase, type RqlStatement, type RqlBound, type RqlDatabaseOptions } from './rql';

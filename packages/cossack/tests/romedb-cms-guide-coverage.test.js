@@ -9,10 +9,10 @@ import { readPackageGuidance } from '../src/package-guidance.js';
 import { discoverExports } from '../src/export-discovery.js';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
-const packages = ['fastdb', 'cms'];
+const packages = ['romedb', 'cms'];
 const hono = createRequire(path.join(root, 'packages/framework/package.json')).resolve('hono');
 
-it('FastDB and CMS guide examples typecheck strictly against declared public entries', async () => {
+it('RomeDB and CMS guide examples typecheck strictly against declared public entries', async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-cms-guides-'));
   try {
     const paths = { hono: [path.join(hono, '../../types/index.d.ts')], 'hono/*': [path.join(hono, '../../types/*')] };
@@ -36,7 +36,7 @@ it('FastDB and CMS guide examples typecheck strictly against declared public ent
   } finally { await fs.rm(directory, { recursive: true, force: true }); }
 }, 60000);
 
-it('FastDB and CMS catalogs validate through production guidance discovery', async () => {
+it('RomeDB and CMS catalogs validate through production guidance discovery', async () => {
   for (const pkg of packages) {
     const directory = path.join(root, 'packages', pkg);
     const manifest = JSON.parse(await fs.readFile(path.join(directory, 'package.json'), 'utf8'));

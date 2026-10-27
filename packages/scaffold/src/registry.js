@@ -44,15 +44,15 @@ export const FEATURE_REGISTRY = {
   schedules: { requires: ['jobs'] },
   notifications: { requires: ['jobs'] },
   workflows: { requires: [] },
-  // FastDB CMS: content, media, taxonomies, settings and plugins in the shared dashboard.
-  // With cms, auth keeps users and sessions in FastDB, so it no longer needs database.
+  // RomeDB CMS: content, media, taxonomies, settings and plugins in the shared dashboard.
+  // With cms, auth keeps users and sessions in RomeDB, so it no longer needs database.
   cms: { requires: ['ui', 'auth', 'dashboard'] },
 };
 
 /** Features that cannot be selected together, with the reason. */
 export const FEATURE_CONFLICTS = [];
 
-/** Where auth keeps users, roles and sessions: the CMS (FastDB) or the ORM (`database`). */
+/** Where auth keeps users, roles and sessions: the CMS (RomeDB) or the ORM (`database`). */
 export function authStore(features) {
   return features.includes('cms') ? 'cms' : 'database';
 }
@@ -231,7 +231,7 @@ export function recipeCapabilityRequirements(recipe, target = 'web') {
   if (recipe.resolvedFeatures.includes('jobs')) add('jobs/cloudflare-queues', { cloudflareBindings: ['JOBS', 'JOB_STATE'] });
   if (recipe.resolvedFeatures.includes('schedules')) add('schedules/cloudflare-cron', { cloudflareBindings: ['JOBS', 'JOB_STATE'] });
   if (recipe.resolvedFeatures.includes('notifications')) add('notifications/cloudflare-email', { cloudflareBindings: ['EMAIL', 'JOB_STATE'] });
-  if (recipe.resolvedFeatures.includes('cms')) add('cms', { transports: ['http'], ...(recipe.adapter === 'cloudflare' ? { cloudflareBindings: ['FASTDB_PENDING', 'MEDIA'] } : { filesystem: true }) });
+  if (recipe.resolvedFeatures.includes('cms')) add('cms', { transports: ['http'], ...(recipe.adapter === 'cloudflare' ? { cloudflareBindings: ['ROMEDB_PENDING', 'MEDIA'] } : { filesystem: true }) });
   if (recipe.resolvedFeatures.includes('resource')) add('resource', { transports: ['http'] });
   if (recipe.resolvedFeatures.includes('mutation')) add('mutation', { transports: ['http'] });
   if (recipe.resolvedFeatures.includes('scoped-service')) add('scoped-service', { transports: ['http'] });

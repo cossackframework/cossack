@@ -5,7 +5,7 @@
  * receipt and its outbox event; notifications, webhooks and plugin actions run from the
  * outbox. Handling submissions needs `cms:submissions`.
  */
-import type { Statement, Value } from '@cossackframework/fastdb';
+import type { Statement, Value } from '@cossackframework/romedb';
 import type { FilterPoint } from '@cossackframework/core/hooks';
 import { CmsError } from '../errors';
 import { SLUG_PATTERN } from '../fields';
@@ -160,7 +160,7 @@ export class CmsForms {
         this.#resources.set(resource.id, resource);
         const hash = await declarationHash(resource);
         if (this.#synced.get(resource.id) === hash) return;
-        const state = await this.#host.db.read([{ sql: 'SELECT declaration_hash FROM cms_schema_state WHERE resource = $id', params: { $id: resource.id } }]);
+        const state = await this.#host.db.read([{ rql: 'SELECT declaration_hash FROM cms_schema_state WHERE resource = $id', params: { $id: resource.id } }]);
         if (state.results[0]!.rows[0]?.[0] !== hash) {
             const report = await migrate(this.#host.db, [resource], { now: () => this.#host.now(), only: [resource.id] });
             const blocked = report.blocked.filter(problem => problem.resource === resource.id);
@@ -175,11 +175,11 @@ export class CmsForms {
     async dropTable(formId: string): Promise<void> {
         const id = `cms/form_${formId.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
         const storage = `r__cms__${id.slice(4)}`;
-        const info = await this.#host.db.read([{ sql: 'INFO FOR DB' }]);
+        const info = await this.#host.db.read([{ rql: 'INFO FOR DB' }]);
         const exists = ((info.results[0]!.rows[0]![0] as { tables?: { name: string }[] }).tables ?? []).some(table => table.name === storage);
         await this.#host.db.write([
-            ...(exists ? [{ sql: `DROP TABLE ${storage}` }] : []),
-            { sql: 'DELETE FROM cms_schema_state WHERE resource = $id', params: { $id: id } },
+            ...(exists ? [{ rql: `DROP TABLE ${storage}` }] : []),
+            { rql: 'DELETE FROM cms_schema_state WHERE resource = $id', params: { $id: id } },
         ], { kind: 'cms.migration' });
         this.#resources.delete(id);
         this.#synced.delete(id);
@@ -230,7 +230,7 @@ export class CmsForms {
         const now = this.#host.now();
         const ipHash = context.ip ? await sha256Hex(`cms-form:${form.ref.id}:${context.ip}`) : null;
         if (ipHash) {
-            const last = await this.#host.db.read([{ sql: 'SELECT max(at) FROM cms_form_sends WHERE form_id = $form AND ip_hash = $ip AND at > $since', params: { $form: form.ref.id, $ip: ipHash, $since: now - THROTTLE_MS } }]);
+            const last = await this.#host.db.read([{ rql: 'SELECT max(at) FROM cms_form_sends WHERE form_id = $form AND ip_hash = $ip AND at > $since', params: { $form: form.ref.id, $ip: ipHash, $since: now - THROTTLE_MS } }]);
             if (last.results[0]!.rows[0]?.[0] !== null && last.results[0]!.rows[0]?.[0] !== undefined) throw new CmsError('CMS_LIMIT', 'You sent this form a moment ago. Wait a few seconds and try again.');
         }
         const spam = Boolean(context.trap) || (typeof context.startedAt === 'number' && Number.isFinite(context.startedAt) && now - context.startedAt < MIN_FILL_MS);
@@ -271,13 +271,13 @@ export class CmsForms {
             await this.#host.resource(form.resource.id).insert({ ...values, status, ...(Object.keys(meta).length ? { meta } : {}) }, {
                 principal: SYSTEM, id, op, owner: user, kind: 'cms.forms.submit', ...(context.signal ? { signal: context.signal } : {}),
                 attach: guard => [
-                    bound(`INSERT INTO cms_form_sends (id, form_id, ip_hash, at) SELECT $op, $form, $ip, $at WHERE ${guard.sql}`, { ...guard.params, ...sendParams }),
-                    ...(spam ? [] : [bound(`INSERT INTO cms_outbox (id, topic, payload, created_at, available_at, attempts, lease_until) SELECT $op, 'form.submitted', $payload, $at, $at, 0, 0 WHERE ${guard.sql}`, { ...guard.params, ...eventParams })]),
+                    bound(`INSERT INTO cms_form_sends (id, form_id, ip_hash, at) SELECT $op, $form, $ip, $at WHERE ${guard.rql}`, { ...guard.params, ...sendParams }),
+                    ...(spam ? [] : [bound(`INSERT INTO cms_outbox (id, topic, payload, created_at, available_at, attempts, lease_until) SELECT $op, 'form.submitted', $payload, $at, $at, 0, 0 WHERE ${guard.rql}`, { ...guard.params, ...eventParams })]),
                 ],
             });
         } else {
-            const statements: Statement[] = [{ sql: 'INSERT INTO cms_form_sends (id, form_id, ip_hash, at) VALUES ($op, $form, $ip, $at)', params: sendParams }];
-            if (!spam) statements.push({ sql: "INSERT INTO cms_outbox (id, topic, payload, created_at, available_at, attempts, lease_until) VALUES ($op, 'form.submitted', $payload, $at, $at, 0, 0)", params: eventParams });
+            const statements: Statement[] = [{ rql: 'INSERT INTO cms_form_sends (id, form_id, ip_hash, at) VALUES ($op, $form, $ip, $at)', params: sendParams }];
+            if (!spam) statements.push({ rql: "INSERT INTO cms_outbox (id, topic, payload, created_at, available_at, attempts, lease_until) VALUES ($op, 'form.submitted', $payload, $at, $at, 0, 0)", params: eventParams });
             await this.#host.db.write(statements, { requestId: op, kind: 'cms.forms.submit', ...(context.signal ? { signal: context.signal } : {}) });
             this.#host.outboxWritten();
         }
@@ -304,12 +304,12 @@ export class CmsForms {
     }
 
     async #kept(form: LoadedForm): Promise<number> {
-        const result = await this.#host.db.read([{ sql: `SELECT count(*) FROM ${form.resource.storage} WHERE status IN ('new', 'read')` }]);
+        const result = await this.#host.db.read([{ rql: `SELECT count(*) FROM ${form.resource.storage} WHERE status IN ('new', 'read')` }]);
         return Number(result.results[0]!.rows[0]![0] as bigint);
     }
 
     async #exists(form: LoadedForm, condition: string, value: Value): Promise<boolean> {
-        const result = await this.#host.db.read([{ sql: `SELECT 1 FROM ${form.resource.storage} WHERE ${condition} AND status != 'trash' LIMIT 1`, params: { $value: value } }]);
+        const result = await this.#host.db.read([{ rql: `SELECT 1 FROM ${form.resource.storage} WHERE ${condition} AND status != 'trash' LIMIT 1`, params: { $value: value } }]);
         return result.results[0]!.rows.length > 0;
     }
 
@@ -352,11 +352,11 @@ export class CmsForms {
             if (!email) continue;
             for (const to of emailAddresses(email.to.join(','))) {
                 const key = `${event.eventId}:${rule.id}:${to.toLowerCase()}`;
-                const sent = await this.#host.db.read([{ sql: 'SELECT 1 FROM cms_form_mail WHERE id = $id', params: { $id: key } }]);
+                const sent = await this.#host.db.read([{ rql: 'SELECT 1 FROM cms_form_mail WHERE id = $id', params: { $id: key } }]);
                 if (sent.results[0]!.rows.length) continue;
                 const reply = email.replyTo ? emailAddresses(email.replyTo)[0] : undefined;
                 await this.#mail.send({ to, from: this.#from, subject: email.subject.replace(/[\r\n]+/g, ' ').slice(0, 300), text: email.text, ...(reply ? { replyTo: reply } : {}) });
-                await this.#host.db.write([{ sql: 'INSERT INTO cms_form_mail (id, sent_at) VALUES ($id, $now) ON CONFLICT (id) DO NOTHING', params: { $id: key, $now: this.#host.now() } }], WRITE);
+                await this.#host.db.write([{ rql: 'INSERT INTO cms_form_mail (id, sent_at) VALUES ($id, $now) ON CONFLICT (id) DO NOTHING', params: { $id: key, $now: this.#host.now() } }], WRITE);
             }
         }
     }
@@ -406,8 +406,8 @@ export class CmsForms {
             const chunk = forms.slice(offset, offset + 15);
             try {
                 const result = await this.#host.db.read(chunk.flatMap(form => [
-                    { sql: `SELECT count(*) FROM ${form.resource.storage} WHERE status = 'new'` },
-                    { sql: `SELECT count(*) FROM ${form.resource.storage} WHERE status IN ('new', 'read')` },
+                    { rql: `SELECT count(*) FROM ${form.resource.storage} WHERE status = 'new'` },
+                    { rql: `SELECT count(*) FROM ${form.resource.storage} WHERE status IN ('new', 'read')` },
                 ]));
                 chunk.forEach((form, index) => counts.set(form.ref.id, { fresh: Number(result.results[index * 2]!.rows[0]![0] as bigint), kept: Number(result.results[index * 2 + 1]!.rows[0]![0] as bigint) }));
             } catch { for (const form of chunk) counts.set(form.ref.id, { fresh: 0, kept: 0 }); }
@@ -439,7 +439,7 @@ export class CmsForms {
         this.#authorize(principal);
         await this.#host.assertActive(form.resource, { fresh: true });
         const storage = form.resource.storage;
-        return this.#each(ids, (key, index) => ({ sql: `DELETE FROM ${storage} WHERE id = type::record('${storage}', $k${index})`, params: { [`$k${index}`]: key } }));
+        return this.#each(ids, (key, index) => ({ rql: `DELETE FROM ${storage} WHERE id = type::record('${storage}', $k${index})`, params: { [`$k${index}`]: key } }));
     }
 
     async #each(ids: readonly string[], statement: (key: string, index: number) => Statement): Promise<number> {
@@ -494,18 +494,18 @@ export class CmsForms {
     async maintain(): Promise<{ emptied: number }> {
         const now = this.#host.now();
         const old = await this.#host.db.read([
-            { sql: 'SELECT 1 FROM cms_form_sends WHERE at < $before LIMIT 1', params: { $before: now - DAY } },
-            { sql: 'SELECT 1 FROM cms_form_mail WHERE sent_at < $before LIMIT 1', params: { $before: now - 30 * DAY } },
-            { sql: 'SELECT 1 FROM cms_form_results WHERE expires_at < $now LIMIT 1', params: { $now: now } },
+            { rql: 'SELECT 1 FROM cms_form_sends WHERE at < $before LIMIT 1', params: { $before: now - DAY } },
+            { rql: 'SELECT 1 FROM cms_form_mail WHERE sent_at < $before LIMIT 1', params: { $before: now - 30 * DAY } },
+            { rql: 'SELECT 1 FROM cms_form_results WHERE expires_at < $now LIMIT 1', params: { $now: now } },
         ]);
         const statements: Statement[] = [];
-        if (old.results[0]!.rows.length) statements.push({ sql: 'DELETE FROM cms_form_sends WHERE at < $before', params: { $before: now - DAY } });
-        if (old.results[1]!.rows.length) statements.push({ sql: 'DELETE FROM cms_form_mail WHERE sent_at < $before', params: { $before: now - 30 * DAY } });
-        if (old.results[2]!.rows.length) statements.push({ sql: 'DELETE FROM cms_form_results WHERE expires_at < $now', params: { $now: now } });
+        if (old.results[0]!.rows.length) statements.push({ rql: 'DELETE FROM cms_form_sends WHERE at < $before', params: { $before: now - DAY } });
+        if (old.results[1]!.rows.length) statements.push({ rql: 'DELETE FROM cms_form_mail WHERE sent_at < $before', params: { $before: now - 30 * DAY } });
+        if (old.results[2]!.rows.length) statements.push({ rql: 'DELETE FROM cms_form_results WHERE expires_at < $now', params: { $now: now } });
         if (statements.length) await this.#host.db.write(statements, WRITE);
         let emptied = 0;
         for (const form of await this.all()) {
-            const trashed = await this.#host.db.read([{ sql: `SELECT record::id(id) FROM ${form.resource.storage} WHERE status = 'trash' AND "_updatedAt" < $before LIMIT 500`, params: { $before: now - 30 * DAY } }]);
+            const trashed = await this.#host.db.read([{ rql: `SELECT record::id(id) FROM ${form.resource.storage} WHERE status = 'trash' AND "_updatedAt" < $before LIMIT 500`, params: { $before: now - 30 * DAY } }]);
             const ids = trashed.results[0]!.rows.map(row => row[0] as string);
             if (ids.length) emptied += await this.delete(form, ids, SYSTEM);
         }
@@ -517,17 +517,17 @@ export class CmsForms {
     /** Keep what a form post returns to its page after the redirect, for ten minutes. Returns its key. */
     async saveResult(formId: string, data: unknown): Promise<string> {
         const id = crypto.randomUUID();
-        await this.#host.db.write([{ sql: 'INSERT INTO cms_form_results (id, form_id, data, expires_at) VALUES ($id, $form, $data, $expires)', params: { $id: id, $form: formId, $data: JSON.stringify(data), $expires: this.#host.now() + 10 * 60_000 } }], WRITE);
+        await this.#host.db.write([{ rql: 'INSERT INTO cms_form_results (id, form_id, data, expires_at) VALUES ($id, $form, $data, $expires)', params: { $id: id, $form: formId, $data: JSON.stringify(data), $expires: this.#host.now() + 10 * 60_000 } }], WRITE);
         return id;
     }
 
     /** The result kept under a key for a form, once: reading it deletes it. */
     async takeResult(formId: string, id: string): Promise<unknown> {
         if (!/^[0-9a-f-]{36}$/.test(id)) return null;
-        const result = await this.#host.db.read([{ sql: 'SELECT data FROM cms_form_results WHERE id = $id AND form_id = $form AND expires_at >= $now', params: { $id: id, $form: formId, $now: this.#host.now() } }]);
+        const result = await this.#host.db.read([{ rql: 'SELECT data FROM cms_form_results WHERE id = $id AND form_id = $form AND expires_at >= $now', params: { $id: id, $form: formId, $now: this.#host.now() } }]);
         const data = result.results[0]!.rows[0]?.[0];
         if (typeof data !== 'string') return null;
-        await this.#host.db.write([{ sql: 'DELETE FROM cms_form_results WHERE id = $id', params: { $id: id } }], WRITE);
+        await this.#host.db.write([{ rql: 'DELETE FROM cms_form_results WHERE id = $id', params: { $id: id } }], WRITE);
         try { return JSON.parse(data); } catch { return null; }
     }
 }

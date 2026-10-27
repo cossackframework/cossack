@@ -1,5 +1,5 @@
 /**
- * Auth integration: `@cossackframework/auth` primitives backed by CMS users and FastDB
+ * Auth integration: `@cossackframework/auth` primitives backed by CMS users and RomeDB
  * auth sessions. The request user is a CMS principal resolved from current storage.
  */
 import { createAuth, createSessionManager, type AuthKit, type AuthRealtimeProvider, type AuthSessionManager } from '@cossackframework/auth';

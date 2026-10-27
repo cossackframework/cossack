@@ -4,7 +4,7 @@ import { Float64, RecordId, Vector, fromBase64, plainObject, toBase64, type Valu
 export const TRANSPORT_VERSION = 1;
 
 /**
- * JSON-safe form of a FastDB value for SSR state, hydration, RPC and plugin boundaries.
+ * JSON-safe form of a RomeDB value for SSR state, hydration, RPC and plugin boundaries.
  * JSON scalars and arrays pass through; other values become `{ $fdb: 1, t, v }` objects, and
  * plain objects that contain a `$fdb` key are wrapped so they cannot be mistaken for a tag.
  */

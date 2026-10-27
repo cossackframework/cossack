@@ -4,7 +4,7 @@
  * to menus in `cms_menu_locations`. Resolved menus are cached per isolate and dropped on
  * every write made here.
  */
-import { ClientError, type FastDB, type Statement } from '@cossackframework/fastdb';
+import { ClientError, type RomeDB, type Statement } from '@cossackframework/romedb';
 import { CmsError } from '../errors';
 import { MENU_LIMITS, MENU_LOCATION, menuProblems, menuSize, normalizeMenu, type MenuItem, type MenuItemView, type MenuShape } from '../menus';
 import { hasPermission, PERMISSIONS, principalId, type Principal } from '../permissions';
@@ -34,7 +34,7 @@ const WRITE = { kind: 'cms.menus' } as const;
 const COLUMNS = 'id, name, items, revision, created_at, updated_at';
 
 export class CmsMenus {
-    readonly #db: FastDB;
+    readonly #db: RomeDB;
     readonly #resolve: CmsMenusOptions['resolve'];
     readonly #beforeSave: CmsMenusOptions['beforeSave'];
     readonly #checkMeta: CmsMenusOptions['checkMeta'];
@@ -42,7 +42,7 @@ export class CmsMenus {
     readonly #ttl: number;
     #cache = new Map<string, { at: number; value: Promise<MenuItemView[] | null> }>();
 
-    constructor(db: FastDB, options: CmsMenusOptions) {
+    constructor(db: RomeDB, options: CmsMenusOptions) {
         this.#db = db;
         this.#resolve = options.resolve;
         this.#beforeSave = options.beforeSave;
@@ -53,8 +53,8 @@ export class CmsMenus {
 
     async list(): Promise<MenuSummary[]> {
         const result = await this.#db.read([
-            { sql: `SELECT ${COLUMNS} FROM cms_menus ORDER BY lower(name), id LIMIT 200` },
-            { sql: 'SELECT location, menu_id FROM cms_menu_locations ORDER BY location LIMIT 200' },
+            { rql: `SELECT ${COLUMNS} FROM cms_menus ORDER BY lower(name), id LIMIT 200` },
+            { rql: 'SELECT location, menu_id FROM cms_menu_locations ORDER BY location LIMIT 200' },
         ]);
         const locations = new Map<string, string[]>();
         for (const [location, menu] of result.results[1]!.rows) locations.set(menu as string, [...(locations.get(menu as string) ?? []), location as string]);
@@ -84,7 +84,7 @@ export class CmsMenus {
 
     async get(id: string): Promise<MenuShape | null> {
         if (typeof id !== 'string' || !ID.test(id)) return null;
-        const result = await this.#db.read([{ sql: `SELECT ${COLUMNS} FROM cms_menus WHERE id = $id`, params: { $id: id } }]);
+        const result = await this.#db.read([{ rql: `SELECT ${COLUMNS} FROM cms_menus WHERE id = $id`, params: { $id: id } }]);
         const row = result.results[0]!.rows[0];
         return row ? menuOf(row) : null;
     }
@@ -95,7 +95,7 @@ export class CmsMenus {
         const items = await this.#filtered(await this.#withMeta(checkItems(input.items ?? []), []), { id: null, name, actor: actorOf(context.principal) });
         const id = crypto.randomUUID();
         const now = this.#now();
-        await this.#write([{ sql: `INSERT INTO cms_menus (${COLUMNS}, updated_by) VALUES ($id, $name, $items, 1, $now, $now, $by)`,
+        await this.#write([{ rql: `INSERT INTO cms_menus (${COLUMNS}, updated_by) VALUES ($id, $name, $items, 1, $now, $now, $by)`,
             params: { $id: id, $name: name, $items: JSON.stringify(items), $now: now, $by: principalId(context.principal) } }]);
         return (await this.get(id))!;
     }
@@ -108,7 +108,7 @@ export class CmsMenus {
         const name = input.name === undefined ? current.name : checkName(input.name);
         const items = input.items === undefined ? current.items : await this.#filtered(await this.#withMeta(checkItems(input.items), current.items), { id, name, actor: actorOf(context.principal) });
         const result = await this.#write([{
-            sql: 'UPDATE cms_menus SET name = $name, items = $items, revision = revision + 1, updated_at = $now, updated_by = $by WHERE id = $id AND revision = $revision',
+            rql: 'UPDATE cms_menus SET name = $name, items = $items, revision = revision + 1, updated_at = $now, updated_by = $by WHERE id = $id AND revision = $revision',
             params: { $name: name, $items: JSON.stringify(items), $now: this.#now(), $by: principalId(context.principal), $id: id, $revision: context.expectedRevision },
         }]);
         if (result.results[0]!.affected !== 1n) throw new CmsError('CMS_CONFLICT', 'This menu changed since you opened it. Reload it and try again.');
@@ -119,15 +119,15 @@ export class CmsMenus {
     async delete(id: string, context: { principal: Principal }): Promise<void> {
         authorize(context.principal);
         const result = await this.#write([
-            { sql: 'DELETE FROM cms_menu_locations WHERE menu_id = $id', params: { $id: id } },
-            { sql: 'DELETE FROM cms_menus WHERE id = $id', params: { $id: id } },
+            { rql: 'DELETE FROM cms_menu_locations WHERE menu_id = $id', params: { $id: id } },
+            { rql: 'DELETE FROM cms_menus WHERE id = $id', params: { $id: id } },
         ]);
         if (result.results[1]!.affected !== 1n) throw new CmsError('CMS_NOT_FOUND', 'Menu not found.');
     }
 
     /** Assigned menus by location. */
     async locations(): Promise<Map<string, string>> {
-        const result = await this.#db.read([{ sql: 'SELECT location, menu_id FROM cms_menu_locations ORDER BY location LIMIT 200' }]);
+        const result = await this.#db.read([{ rql: 'SELECT location, menu_id FROM cms_menu_locations ORDER BY location LIMIT 200' }]);
         return new Map(result.results[0]!.rows.map(([location, menu]) => [location as string, menu as string]));
     }
 
@@ -137,11 +137,11 @@ export class CmsMenus {
         const wanted = [...new Set(locations)];
         for (const location of wanted) if (!MENU_LOCATION.test(location) || !context.known.includes(location)) throw new CmsError('CMS_VALIDATION', `${location} is not a menu location of a theme.`);
         const now = this.#now();
-        const statements: Statement[] = [{ sql: `DELETE FROM cms_menu_locations WHERE menu_id = $id${wanted.length ? ` AND location NOT IN (${wanted.map((_, index) => `$l${index}`).join(', ')})` : ''}`,
+        const statements: Statement[] = [{ rql: `DELETE FROM cms_menu_locations WHERE menu_id = $id${wanted.length ? ` AND location NOT IN (${wanted.map((_, index) => `$l${index}`).join(', ')})` : ''}`,
             params: { $id: id, ...Object.fromEntries(wanted.map((location, index) => [`$l${index}`, location])) } }];
         for (const location of wanted) {
             // Only while the menu exists, so a deleted menu is never placed.
-            statements.push({ sql: 'INSERT INTO cms_menu_locations (location, menu_id, updated_at) SELECT $location, $id, $now WHERE EXISTS (SELECT 1 FROM cms_menus WHERE id = $id) ON CONFLICT (location) DO UPDATE SET menu_id = excluded.menu_id, updated_at = excluded.updated_at',
+            statements.push({ rql: 'INSERT INTO cms_menu_locations (location, menu_id, updated_at) SELECT $location, $id, $now WHERE EXISTS (SELECT 1 FROM cms_menus WHERE id = $id) ON CONFLICT (location) DO UPDATE SET menu_id = excluded.menu_id, updated_at = excluded.updated_at',
                 params: { $location: location, $id: id, $now: now } });
         }
         await this.#write(statements);
@@ -151,8 +151,8 @@ export class CmsMenus {
     async assign(location: string, id: string | null, context: { principal: Principal; known: readonly string[] }): Promise<void> {
         authorize(context.principal);
         if (!MENU_LOCATION.test(location) || !context.known.includes(location)) throw new CmsError('CMS_VALIDATION', `${location} is not a menu location of a theme.`);
-        if (id === null) { await this.#write([{ sql: 'DELETE FROM cms_menu_locations WHERE location = $location', params: { $location: location } }]); return; }
-        const result = await this.#write([{ sql: 'INSERT INTO cms_menu_locations (location, menu_id, updated_at) SELECT $location, $id, $now WHERE EXISTS (SELECT 1 FROM cms_menus WHERE id = $id) ON CONFLICT (location) DO UPDATE SET menu_id = excluded.menu_id, updated_at = excluded.updated_at',
+        if (id === null) { await this.#write([{ rql: 'DELETE FROM cms_menu_locations WHERE location = $location', params: { $location: location } }]); return; }
+        const result = await this.#write([{ rql: 'INSERT INTO cms_menu_locations (location, menu_id, updated_at) SELECT $location, $id, $now WHERE EXISTS (SELECT 1 FROM cms_menus WHERE id = $id) ON CONFLICT (location) DO UPDATE SET menu_id = excluded.menu_id, updated_at = excluded.updated_at',
             params: { $location: location, $id: id, $now: this.#now() } }]);
         if (result.results[0]!.affected !== 1n) throw new CmsError('CMS_NOT_FOUND', 'Menu not found.');
     }
@@ -183,7 +183,7 @@ export class CmsMenus {
     async #read(location: string, locale?: string): Promise<MenuItemView[] | null> {
         let row;
         try {
-            const result = await this.#db.read([{ sql: `SELECT m.items FROM cms_menu_locations l JOIN cms_menus m ON m.id = l.menu_id WHERE l.location = $location`, params: { $location: location } }]);
+            const result = await this.#db.read([{ rql: `SELECT m.items FROM cms_menu_locations l JOIN cms_menus m ON m.id = l.menu_id WHERE l.location = $location`, params: { $location: location } }]);
             row = result.results[0]!.rows[0];
         } catch (error) {
             // Before setup the tables do not exist.

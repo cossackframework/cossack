@@ -86,7 +86,7 @@ Updated 2026-10-16. See [Outcome](#outcome).
 
 ## Done when
 
-A generated Node application and the same application on Workers pass, against `fastdb serve`:
+A generated Node application and the same application on Workers pass, against `romedb serve`:
 a menu with nested entry, term and custom items is built by dragging in a browser and saved,
 assigned to the primary location and shown on the site; a stale menu save is refused; the
 active theme switches and its options apply; a post written in the rich text editor saves

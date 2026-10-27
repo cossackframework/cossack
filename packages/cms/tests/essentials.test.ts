@@ -5,7 +5,7 @@ import {
     ANONYMOUS, contentModule, createCMS, DEFAULT_ROLES, field, imageSrcset, posts, verifyWebhookSignature,
     type CmsHost, type CmsModule, type ImageTransformer, type Principal,
 } from '../src/server/index';
-import { fastdbService, live } from './helpers';
+import { romedbService, live } from './helpers';
 
 const admin: Principal = { kind: 'user', id: 'admin-1', roles: ['admin'], permissions: ['*'] };
 
@@ -29,7 +29,7 @@ function png(width: number, height: number): Uint8Array<ArrayBuffer> {
 }
 
 describe.skipIf(!live)('scheduling, previews, revisions, redirects, tokens, webhooks, comments, languages and sign-in', () => {
-    const service = fastdbService();
+    const service = romedbService();
     const storage = memoryStorage();
     const transforms: { width: number; height: number; format: string; rect: { x: number; y: number; width: number; height: number } }[] = [];
     const images: ImageTransformer = {
@@ -351,8 +351,8 @@ describe.skipIf(!live)('scheduling, previews, revisions, redirects, tokens, webh
         const extended: CmsModule = { ...contentModule, collections: contentModule.collections!.map(entry => entry.name === 'pages' ? { ...entry, fields: { ...entry.fields, summary2: field.string({ label: 'Teaser' }) } } : entry) };
         // As if the package was upgraded from before host step 5.
         await service.database().write([
-            { sql: "DELETE FROM cms_migrations WHERE id = 'cms#host-5'" },
-            ...['cms_comments', 'cms_user_security', 'cms_passkeys', 'cms_auth_challenges'].map(table => ({ sql: `DROP TABLE ${table}` })),
+            { rql: "DELETE FROM cms_migrations WHERE id = 'cms#host-5'" },
+            ...['cms_comments', 'cms_user_security', 'cms_passkeys', 'cms_auth_challenges'].map(table => ({ rql: `DROP TABLE ${table}` })),
         ]);
         const upgraded = createCMS({ db: service.database(), modules: [extended] });
         await upgraded.ready();

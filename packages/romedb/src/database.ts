@@ -15,34 +15,34 @@ import {
 } from './client';
 import type { PendingWrite, PendingWriteStore } from './pending';
 
-/** The FastDB engine release this package targets. Older engines are refused at preflight. */
-export const REQUIRED_ENGINE_VERSION = '2.8.0';
+/** The RomeDB engine release this package targets. Older engines are refused at preflight. */
+export const REQUIRED_ENGINE_VERSION = '0.2.9';
 
-export interface FastDBWorkLimits {
+export interface RomeDBWorkLimits {
     /** Default budget for each read batch. */
     read: WorkLimits;
     /** Default budget for each write batch. */
     write: WorkLimits;
 }
 
-export interface FastDBRetryOptions {
+export interface RomeDBRetryOptions {
     /** Attempts for one call, including the first. Default 3. */
     attempts?: number;
     /** Upper bound for one backpressure delay. Default 2000 ms. */
     maxDelayMs?: number;
 }
 
-export interface FastDBOptions {
+export interface RomeDBOptions {
     url: string;
     token: string;
     /** Writes are saved here before dispatch. Use a durable store in production. */
     pending: PendingWriteStore;
     /** Explicit default budgets. A call may lower or raise them within the service ceilings. */
-    workLimits?: Partial<FastDBWorkLimits>;
+    workLimits?: Partial<RomeDBWorkLimits>;
     /** Oldest acceptable engine release. Default {@link REQUIRED_ENGINE_VERSION}. */
     engineVersion?: string;
     timeoutMs?: number;
-    retry?: FastDBRetryOptions;
+    retry?: RomeDBRetryOptions;
     fetch?: typeof globalThis.fetch;
     now?: () => number;
     /** Waits between retries; injectable for tests. */
@@ -55,7 +55,7 @@ export interface FastDBOptions {
  * Decide whether an unconfirmed write committed, from current data.
  * Return `committed` or `absent`; anything else keeps the write pending.
  */
-export type Reconciler = (write: PendingWrite, db: FastDB) => Promise<'committed' | 'absent' | 'unknown'>;
+export type Reconciler = (write: PendingWrite, db: RomeDB) => Promise<'committed' | 'absent' | 'unknown'>;
 
 export interface ReadCallOptions extends RequestOptions {
     afterSequence?: number;
@@ -89,8 +89,8 @@ export class EngineVersionError extends Error {
     readonly required: string;
     constructor(engineVersion: string | undefined, required: string) {
         super(engineVersion === undefined
-            ? `The FastDB engine did not report its release; FastDB ${required} or later is required.`
-            : `FastDB engine ${engineVersion} is older than the required ${required}.`);
+            ? `The RomeDB engine did not report its release; RomeDB ${required} or later is required.`
+            : `RomeDB engine ${engineVersion} is older than the required ${required}.`);
         this.name = 'EngineVersionError';
         this.engineVersion = engineVersion;
         this.required = required;
@@ -111,7 +111,7 @@ export class UncertainWriteError extends Error {
     }
 }
 
-const DEFAULT_LIMITS: FastDBWorkLimits = {
+const DEFAULT_LIMITS: RomeDBWorkLimits = {
     read: { rowsRead: 50_000, vmSteps: 2_000_000 },
     write: { rowsRead: 50_000, rowMutations: 1_000, vmSteps: 2_000_000 },
 };
@@ -120,21 +120,21 @@ const DEFAULT_LIMITS: FastDBWorkLimits = {
  * One database binding per isolate or process. Calls are request-scoped through their
  * options: pass the request's AbortSignal and explicit budgets.
  */
-export class FastDB {
+export class RomeDB {
     readonly url: string;
     readonly pending: PendingWriteStore;
-    readonly #options: FastDBOptions;
-    readonly #limits: FastDBWorkLimits;
+    readonly #options: RomeDBOptions;
+    readonly #limits: RomeDBWorkLimits;
     readonly #required: string;
     readonly #attempts: number;
     readonly #maxDelay: number;
-    readonly #sleep: NonNullable<FastDBOptions['sleep']>;
+    readonly #sleep: NonNullable<RomeDBOptions['sleep']>;
     readonly #now: () => number;
     #client: Promise<RemoteDatabase> | undefined;
     #preflight: Promise<DatabaseInfo> | undefined;
 
-    constructor(options: FastDBOptions) {
-        if (!options.pending) throw new TypeError('FastDB requires a pending write store');
+    constructor(options: RomeDBOptions) {
+        if (!options.pending) throw new TypeError('RomeDB requires a pending write store');
         this.#options = options;
         this.url = options.url;
         this.pending = options.pending;
@@ -315,11 +315,11 @@ export class FastDB {
     }
 }
 
-export function createFastDB(options: FastDBOptions): FastDB {
-    return new FastDB(options);
+export function createRomeDB(options: RomeDBOptions): RomeDB {
+    return new RomeDB(options);
 }
 
-/** Compare dotted numeric releases such as `2.8.0`. */
+/** Compare dotted numeric releases such as `0.2.9`. */
 export function compareVersions(a: string, b: string): number {
     const pa = a.split('-')[0]!.split('.').map(Number);
     const pb = b.split('-')[0]!.split('.').map(Number);

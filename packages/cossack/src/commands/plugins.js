@@ -106,7 +106,7 @@ read as data and never executed; npm installs run with --ignore-scripts.
 
   list               Rendered plugins, and installed packages that declare
                      package.json#cossack.plugin but are not rendered yet.
-  check [name]       Policy lints: no raw FastQL, no undeclared network hosts,
+  check [name]       Policy lints: no raw RomeQL, no undeclared network hosts,
                      permissions, resources or hooks, no host secrets. Builds
                      with the cms feature run the same checks.
   upgrade <name>     Re-render from the recorded source, or from --source.

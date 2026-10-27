@@ -8,7 +8,7 @@
 !/scripts/
 /scripts/*
 !/scripts/sync.mjs
-!/scripts/fastdb.sh
+!/scripts/romedb.sh
 !/scripts/start.mjs
 !/src/
 /src/*

@@ -1,7 +1,7 @@
 /**
- * The cms feature: the FastDB CMS host, its dashboard screens under /dashboard, first-run
+ * The cms feature: the RomeDB CMS host, its dashboard screens under /dashboard, first-run
  * setup, the public site and its default theme (src/plugins/default-theme). It requires auth and
- * dashboard; the files the feature owns, including the FastDB storage modules that replace the
+ * dashboard; the files the feature owns, including the RomeDB storage modules that replace the
  * database ones, live in the @cossackframework/cms package under `app/` and are listed in its
  * `cossack-recipe.json`. This module renders the parts that depend on the runtime adapter and
  * patches entry files.
@@ -141,31 +141,31 @@ export function imageTransformer(_env: MediaBindings): ImageTransformer {
 }
 `,
     'src/cms/pending.ts': adapter === 'cloudflare'
-      ? `import { DurableObjectPendingWriteStore, type DurableObjectNamespaceLike } from '@cossackframework/fastdb/cloudflare';
-import type { PendingWriteStore } from '@cossackframework/fastdb';
+      ? `import { DurableObjectPendingWriteStore, type DurableObjectNamespaceLike } from '@cossackframework/romedb/cloudflare';
+import type { PendingWriteStore } from '@cossackframework/romedb';
 
 export interface PendingBindings {
-    /** Durable Object namespace for FastDBPendingWrites (exported from src/index.ts). */
-    FASTDB_PENDING?: DurableObjectNamespaceLike;
+    /** Durable Object namespace for RomeDBPendingWrites (exported from src/index.ts). */
+    ROMEDB_PENDING?: DurableObjectNamespaceLike;
 }
 
 /** Writes are saved in a Durable Object before dispatch, so an unconfirmed write survives the isolate. */
 export function pendingWrites(env: PendingBindings): PendingWriteStore {
-    if (!env.FASTDB_PENDING) throw new Error('Bind the FASTDB_PENDING Durable Object (class FastDBPendingWrites) in wrangler.jsonc.');
-    return new DurableObjectPendingWriteStore(env.FASTDB_PENDING);
+    if (!env.ROMEDB_PENDING) throw new Error('Bind the ROMEDB_PENDING Durable Object (class RomeDBPendingWrites) in wrangler.jsonc.');
+    return new DurableObjectPendingWriteStore(env.ROMEDB_PENDING);
 }
 `
-      : `import { FilePendingWriteStore } from '@cossackframework/fastdb/node';
-import type { PendingWriteStore } from '@cossackframework/fastdb';
+      : `import { FilePendingWriteStore } from '@cossackframework/romedb/node';
+import type { PendingWriteStore } from '@cossackframework/romedb';
 
 export interface PendingBindings {
-    /** Directory for unconfirmed writes. Default .cossack/fastdb-pending. */
-    FASTDB_PENDING_DIR?: string;
+    /** Directory for unconfirmed writes. Default .cossack/romedb-pending. */
+    ROMEDB_PENDING_DIR?: string;
 }
 
 /** Writes are saved as private files before dispatch, so an unconfirmed write survives a restart. */
 export function pendingWrites(env: PendingBindings): PendingWriteStore {
-    return new FilePendingWriteStore(env.FASTDB_PENDING_DIR ?? '.cossack/fastdb-pending');
+    return new FilePendingWriteStore(env.ROMEDB_PENDING_DIR ?? '.cossack/romedb-pending');
 }
 `,
   };
@@ -174,7 +174,7 @@ export function pendingWrites(env: PendingBindings): PendingWriteStore {
 /** Worker entry: export the pending-write Durable Object and run maintenance from cron. */
 export function patchCmsWorkerEntry(source, { schedules }) {
   let patched = source.replace("import { template } from './root';", "import { template } from './root';\nimport { cmsFor } from './cms/index';\nimport { runMaintenance } from './cms/maintenance';");
-  patched = patched.replace('export { SseDurableObject };', "export { SseDurableObject };\n// Unconfirmed FastDB writes (FASTDB_PENDING) survive isolate restarts here.\nexport { FastDBPendingWrites } from '@cossackframework/fastdb/cloudflare';");
+  patched = patched.replace('export { SseDurableObject };', "export { SseDurableObject };\n// Unconfirmed RomeDB writes (ROMEDB_PENDING) survive isolate restarts here.\nexport { RomeDBPendingWrites } from '@cossackframework/romedb/cloudflare';");
   const maintenance = 'ctx.waitUntil(runMaintenance(cmsFor(env as never), { warm: true }));';
   if (schedules) {
     return patched.replace(
@@ -197,7 +197,7 @@ export function patchCmsNodeEntry(source) {
   maintenance.unref();`);
 }
 
-/** Vite: plugin policy lints fail builds (raw FastQL, undeclared network, permissions or hooks). */
+/** Vite: plugin policy lints fail builds (raw RomeQL, undeclared network, permissions or hooks). */
 export function patchCmsViteConfig(source) {
   return source
     .replace("import { cossackSsg } from '@cossackframework/framework/vite-ssg-plugin';", "import { cossackSsg } from '@cossackframework/framework/vite-ssg-plugin';\nimport { cossackPluginPolicy } from 'cossack/plugin-policy';")

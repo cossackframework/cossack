@@ -3,12 +3,12 @@ import { Hono } from 'hono';
 import { createSessionManager } from '@cossackframework/auth';
 import type { StorageProvider } from '@cossackframework/core/storage';
 import { beforeWrite, createCMS, createCmsAuth, FileService, HOST_STEPS, systemPrincipal, userPrincipal, type CmsHost, type PluginContext } from '../src/server/index';
-import { fastdbService, live } from './helpers';
+import { romedbService, live } from './helpers';
 
 const context = {} as never;
 
-describe.skipIf(!live)('CMS stores on FastDB', () => {
-    const service = fastdbService();
+describe.skipIf(!live)('CMS stores on RomeDB', () => {
+    const service = romedbService();
     let cms: CmsHost;
 
     beforeAll(async () => {
@@ -136,7 +136,7 @@ describe.skipIf(!live)('CMS stores on FastDB', () => {
         const signedIn = (await cms.users.get(user.id))!.lastSignInAt;
         expect(signedIn).toBeGreaterThan(Date.now() - 60_000);
         const db = service.database();
-        await db.write([{ sql: 'UPDATE cms_users SET last_sign_in_at = NULL WHERE id = $id', params: { $id: user.id } }]);
+        await db.write([{ rql: 'UPDATE cms_users SET last_sign_in_at = NULL WHERE id = $id', params: { $id: user.id } }]);
         await db.write([HOST_STEPS.find(step => step.version === 6)!.statements[1]!]);
         expect((await cms.users.get(user.id))!.lastSignInAt).toBe(signedIn);
 
@@ -170,7 +170,7 @@ describe.skipIf(!live)('CMS stores on FastDB', () => {
         expect(await new Response((await files.open(file.id))!.body).text()).toBe('hello');
         await expect(files.upload({ name: 'x.exe', contentType: 'application/x-msdownload', size: 1, body: body() }, { principal })).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
         // An interrupted upload: the row exists as pending and the bytes may exist.
-        await cms.db.write([{ sql: "INSERT INTO cms_files (id, key, owner_id, name, content_type, size, status, created_at, updated_at) VALUES ('stuck', 'cms/files/stuck', NULL, 's', 'text/plain', 1, 'pending', 1000, 1000)" }]);
+        await cms.db.write([{ rql: "INSERT INTO cms_files (id, key, owner_id, name, content_type, size, status, created_at, updated_at) VALUES ('stuck', 'cms/files/stuck', NULL, 's', 'text/plain', 1, 'pending', 1000, 1000)" }]);
         objects.set('cms/files/stuck', new Uint8Array([1]));
         now = 2_000;
         expect(await files.sweep()).toEqual({ removed: 1 });

@@ -205,7 +205,7 @@ Findings:
 
 - On Workers every local request has one client address, so the comment throttle applies
   across visitors in tests.
-- FastDB rejects FastQL functions inside relational `UPDATE`/`DELETE` subqueries; redirect
+- RomeDB rejects RomeQL functions inside relational `UPDATE`/`DELETE` subqueries; redirect
   statements are guarded by the write's audit row instead.
 - WebAuthn needs a host name: browser tests use `localhost`, not `127.0.0.1`.
 - The Images binding's local mode supports only resizing and formats; the transformer

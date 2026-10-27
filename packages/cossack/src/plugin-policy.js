@@ -2,7 +2,7 @@
  * Policy lints for rendered plugins (`src/plugins/<name>/`). Plugins are trusted build-time
  * modules, so their source must stay within what their manifest declares:
  *
- * - COSSACK_PLUGIN_RAW_QUERY: no FastDB client, host internals or FastQL text. Data goes
+ * - COSSACK_PLUGIN_RAW_QUERY: no RomeDB client, host internals or RomeQL text. Data goes
  *   through `context.cms` repositories.
  * - COSSACK_PLUGIN_NETWORK: no global fetch, sockets or HTTP modules for other hosts; use
  *   `context.fetch` with a literal URL on a host in `permissions.network`.
@@ -23,8 +23,8 @@ export const EXTENSION_POINT_EXPORTS = Object.freeze({
 });
 /** Permissions the CMS host defines. */
 export const HOST_PERMISSIONS = Object.freeze(['cms:dashboard']);
-const SECRET = /^(?:FASTDB_TOKEN|FASTDB_URL|APP_SECRET|CMS_SETUP_CODE|OAUTH_SECRET)$|(?:_SECRET|_TOKEN|_PASSWORD|_KEY)$/;
-// Statement text in upper case, as FastQL is written; prose such as "Select a role from…" does not match.
+const SECRET = /^(?:ROMEDB_TOKEN|ROMEDB_URL|APP_SECRET|CMS_SETUP_CODE|OAUTH_SECRET)$|(?:_SECRET|_TOKEN|_PASSWORD|_KEY)$/;
+// Statement text in upper case, as RomeQL is written; prose such as "Select a role from…" does not match.
 const SQL = /^\s*(?:SELECT|INSERT|UPDATE|DELETE|UPSERT|CREATE|DEFINE|REMOVE|DROP|ALTER|RELATE|INFO|BEGIN|COMMIT|WITH)\s[\s\S]*\b(?:FROM|INTO|SET|TABLE|FIELD|INDEX|SCHEMA|FOR|WHERE|AS)\b/;
 const NETWORK_MODULES = new Set(['node:http', 'node:https', 'node:net', 'node:tls', 'node:dgram', 'http', 'https', 'net', 'tls', 'dgram', 'cloudflare:sockets', 'undici', 'ws']);
 const DB_METHODS = new Set(['read', 'write', 'prepareWrite', 'submit', 'recover', 'writeAtomic', 'warm']);
@@ -74,8 +74,8 @@ export function lintPlugin({ manifest, files, parse }) {
           if (typeof source !== 'string') break;
           const typeOnly = node.importKind === 'type' || node.exportKind === 'type' ||
             (node.type === 'ImportDeclaration' && node.specifiers?.length > 0 && node.specifiers.every(specifier => specifier.importKind === 'type'));
-          if (!typeOnly && (source === '@cossackframework/fastdb' || (source.startsWith('@cossackframework/fastdb/') && source !== '@cossackframework/fastdb/values'))) {
-            fail('COSSACK_PLUGIN_RAW_QUERY', `Plugins do not use the FastDB client (${source}). Use context.cms repositories.`, node);
+          if (!typeOnly && (source === '@cossackframework/romedb' || (source.startsWith('@cossackframework/romedb/') && source !== '@cossackframework/romedb/values'))) {
+            fail('COSSACK_PLUGIN_RAW_QUERY', `Plugins do not use the RomeDB client (${source}). Use context.cms repositories.`, node);
           }
           if (!typeOnly && source === '@cossackframework/cms/server') fail('COSSACK_PLUGIN_RAW_QUERY', 'Plugins do not import the CMS host. Use the context passed to register().', node);
           if (NETWORK_MODULES.has(source)) fail('COSSACK_PLUGIN_NETWORK', `Plugins do not open connections with ${source}. Use context.fetch with a granted host.`, node);
@@ -89,17 +89,17 @@ export function lintPlugin({ manifest, files, parse }) {
         }
         case 'ImportExpression': {
           const source = node.source?.value;
-          if (typeof source === 'string' && (source.startsWith('@cossackframework/fastdb') || source === '@cossackframework/cms/server')) fail('COSSACK_PLUGIN_RAW_QUERY', `Plugins do not load ${source}.`, node);
+          if (typeof source === 'string' && (source.startsWith('@cossackframework/romedb') || source === '@cossackframework/cms/server')) fail('COSSACK_PLUGIN_RAW_QUERY', `Plugins do not load ${source}.`, node);
           if (typeof source === 'string' && NETWORK_MODULES.has(source)) fail('COSSACK_PLUGIN_NETWORK', `Plugins do not open connections with ${source}.`, node);
           break;
         }
         case 'Literal': case 'StringLiteral': {
-          if (typeof node.value === 'string' && SQL.test(node.value) && !isImportSource(parent)) fail('COSSACK_PLUGIN_RAW_QUERY', 'This text looks like a FastQL statement. Plugins read and write through context.cms repositories.', node);
+          if (typeof node.value === 'string' && SQL.test(node.value) && !isImportSource(parent)) fail('COSSACK_PLUGIN_RAW_QUERY', 'This text looks like a RomeQL statement. Plugins read and write through context.cms repositories.', node);
           break;
         }
         case 'TemplateLiteral': {
           const text = node.quasis.map(quasi => quasi.value?.cooked ?? quasi.value?.raw ?? '').join('?');
-          if (SQL.test(text) && parent?.type !== 'TaggedTemplateExpression') fail('COSSACK_PLUGIN_RAW_QUERY', 'This template looks like a FastQL statement. Plugins read and write through context.cms repositories.', node);
+          if (SQL.test(text) && parent?.type !== 'TaggedTemplateExpression') fail('COSSACK_PLUGIN_RAW_QUERY', 'This template looks like a RomeQL statement. Plugins read and write through context.cms repositories.', node);
           break;
         }
         case 'MemberExpression': case 'StaticMemberExpression': {

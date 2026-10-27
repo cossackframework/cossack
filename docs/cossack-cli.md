@@ -450,14 +450,14 @@ cossack add <feature> [options]
 | `cms` | `ui`, `auth`, `dashboard` |
 
 Prerequisites are resolved transitively: `dashboard` also adds `ui` and
-`database` through `auth`. With `cms`, `auth` keeps users in FastDB and does not
+`database` through `auth`. With `cms`, `auth` keeps users in RomeDB and does not
 add `database`. Files you changed are reported as conflicts and are not
 overwritten unless you pass `--force`. Run `pnpm install` afterwards.
 
 #### `cossack add cms`
 
-Adds the FastDB CMS to the `auth` and `dashboard` pages: users, roles and
-sessions stored in FastDB, posts and pages written in a rich text editor that
+Adds the RomeDB CMS to the `auth` and `dashboard` pages: users, roles and
+sessions stored in RomeDB, posts and pages written in a rich text editor that
 saves JSON, collections you define in the dashboard (fields and blocks, each in
 its own document table), categories, tags and other taxonomies, a media library,
 site settings, themes, menus with drag and drop, plugins and the plugin policy
@@ -473,8 +473,8 @@ moderated under Comments (Turnstile when `TURNSTILE_SITE_KEY` and
 `TURNSTILE_SECRET_KEY` are set), patterns are reusable content, and Settings →
 Languages publishes translations under `/<code>/`. Staff can sign in with an
 authenticator app or a passkey, and General settings can require it. It needs a
-FastDB database: `fastdb serve` locally, or a FastDB Cloud database
-(`FASTDB_URL`, `FASTDB_TOKEN`). The first visit to `/auth/setup` applies the
+RomeDB database: `romedb serve` locally, or a RomeDB Cloud database
+(`ROMEDB_URL`, `ROMEDB_TOKEN`). The first visit to `/auth/setup` applies the
 schema and creates the administrator; it asks for `CMS_SETUP_CODE`. Media goes to
 R2 (`MEDIA` binding) on Workers, and to S3 (`S3_BUCKET`) or `MEDIA_DIR` on Node;
 images are resized with the Images binding (`IMAGES`) on Workers and `sharp` on
@@ -487,7 +487,7 @@ available with `cms` yet.
 
 ```bash
 cossack add cms
-fastdb serve app.fastdb --create   # prints the URL and the token file
+romedb serve app.romedb --create   # prints the URL and the token file
 ```
 
 #### `cossack add plugin`

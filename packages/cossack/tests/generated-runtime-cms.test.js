@@ -1,4 +1,4 @@
-// The cms feature in a generated application against a local `fastdb serve`: template and
+// The cms feature in a generated application against a local `romedb serve`: template and
 // type checks, setup through /auth/setup, the shared /dashboard with users and settings,
 // posts with rich text, terms and media, a collection built in the dashboard with blocks,
 // themes, menus, the content API, the public site and background outbox delivery. The same
@@ -9,7 +9,7 @@ import path from 'node:path';
 import { chromium, expect as browserExpect } from '@playwright/test';
 import { cleanupRoots, cossack, productionServer, project, typecheck, vite } from './fixtures/generated-app.js';
 import { browserless, contains, lacks, PNG, visible } from './fixtures/cms-client.js';
-import { liveFastDBTests, startFastDBService } from '../../fastdb/src/testing.ts';
+import { liveRomeDBTests, startRomeDBService } from '../../romedb/src/testing.ts';
 
 afterEach(cleanupRoots);
 
@@ -300,9 +300,9 @@ async function exercise(origin, routeIds, diagnostics) {
   expect((await web.request('/dashboard')).headers.get('location')).toBe('/auth/login');
 }
 
-describe.skipIf(!liveFastDBTests())('generated CMS application', () => {
+describe.skipIf(!liveRomeDBTests())('generated CMS application', () => {
   let service;
-  beforeAll(async () => { service = await startFastDBService(); }, 30_000);
+  beforeAll(async () => { service = await startRomeDBService(); }, 30_000);
   afterAll(async () => { await service?.stop(); });
 
   it('sets up, manages content and collections, and serves the site on Node', async () => {
@@ -321,13 +321,13 @@ describe.skipIf(!liveFastDBTests())('generated CMS application', () => {
       return text;
     };
     const client = await read(path.join(root, 'dist/client'));
-    for (const secret of ['INSERT INTO cms_', 'FASTDB_TOKEN', 'MarkdownIt', 'password_hash', 'S3Client']) expect(client).not.toContain(secret);
+    for (const secret of ['INSERT INTO cms_', 'ROMEDB_TOKEN', 'MarkdownIt', 'password_hash', 'S3Client']) expect(client).not.toContain(secret);
     // The editor ships to the browser only; the server gets the client-only stub.
     expect(client).toContain('ProseMirror-hideselection');
     expect(await read(path.join(root, 'dist/server'))).not.toContain('ProseMirror-hideselection');
     const routeIds = JSON.parse(await fs.readFile(path.join(root, 'dist/client/cossack-routes.json'), 'utf8')).filePathToId;
-    const environment = { APP_SECRET: 'generated-cms-test-secret-0123456789abcdef', FASTDB_URL: service.url, FASTDB_TOKEN: service.token, CMS_SETUP_CODE: 'setup-code-for-tests',
-      FASTDB_PENDING_DIR: path.join(root, '.cossack/fastdb-pending'), MEDIA_DIR: path.join(root, 'storage/media') };
+    const environment = { APP_SECRET: 'generated-cms-test-secret-0123456789abcdef', ROMEDB_URL: service.url, ROMEDB_TOKEN: service.token, CMS_SETUP_CODE: 'setup-code-for-tests',
+      ROMEDB_PENDING_DIR: path.join(root, '.cossack/romedb-pending'), MEDIA_DIR: path.join(root, 'storage/media') };
     const server = await productionServer(root, environment);
     try { await exercise(server.origin, routeIds, () => server.diagnostics()); }
     finally { await server.close(); }
@@ -337,9 +337,9 @@ describe.skipIf(!liveFastDBTests())('generated CMS application', () => {
     const root = await project('node', ['cms']);
     await vite(root, []);
     await vite(root, ['--ssr', 'src/index.ts', '--outDir', 'dist/server']);
-    const database = await startFastDBService();
-    const server = await productionServer(root, { APP_SECRET: 'generated-cms-test-secret-0123456789abcdef', FASTDB_URL: database.url, FASTDB_TOKEN: database.token,
-      CMS_SETUP_CODE: 'setup-code-for-tests', FASTDB_PENDING_DIR: path.join(root, '.cossack/fastdb-pending'), MEDIA_DIR: path.join(root, 'storage/media') });
+    const database = await startRomeDBService();
+    const server = await productionServer(root, { APP_SECRET: 'generated-cms-test-secret-0123456789abcdef', ROMEDB_URL: database.url, ROMEDB_TOKEN: database.token,
+      CMS_SETUP_CODE: 'setup-code-for-tests', ROMEDB_PENDING_DIR: path.join(root, '.cossack/romedb-pending'), MEDIA_DIR: path.join(root, 'storage/media') });
     let browser;
     try {
       const web = browserless(server.origin, JSON.parse(await fs.readFile(path.join(root, 'dist/client/cossack-routes.json'), 'utf8')).filePathToId);
@@ -455,15 +455,15 @@ describe.skipIf(!liveFastDBTests())('generated CMS application', () => {
   it('runs the same CMS on Cloudflare Workers with R2 media and Durable Object pending writes', async () => {
     const root = await project('cloudflare', ['cms']);
     // Each case gets its own database through a fresh service.
-    const database = await startFastDBService();
+    const database = await startRomeDBService();
     try {
       await vite(root, []);
       const configPath = path.join(root, 'dist/ssr/wrangler.json');
       const config = JSON.parse(await fs.readFile(configPath, 'utf8'));
-      expect(config.durable_objects.bindings).toContainEqual({ name: 'FASTDB_PENDING', class_name: 'FastDBPendingWrites' });
+      expect(config.durable_objects.bindings).toContainEqual({ name: 'ROMEDB_PENDING', class_name: 'RomeDBPendingWrites' });
       expect(config.r2_buckets).toContainEqual(expect.objectContaining({ binding: 'MEDIA' }));
       await fs.writeFile(path.join(path.dirname(configPath), '.dev.vars'), [
-        'APP_SECRET=generated-cms-test-secret-0123456789abcdef', `FASTDB_URL=${database.url}`, `FASTDB_TOKEN=${database.token}`, 'CMS_SETUP_CODE=setup-code-for-tests',
+        'APP_SECRET=generated-cms-test-secret-0123456789abcdef', `ROMEDB_URL=${database.url}`, `ROMEDB_TOKEN=${database.token}`, 'CMS_SETUP_CODE=setup-code-for-tests',
       ].join('\n') + '\n');
       const routeIds = JSON.parse(await fs.readFile(path.join(root, 'dist/client/cossack-routes.json'), 'utf8')).filePathToId;
       const { createTestHarness } = await import('wrangler');

@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { ANONYMOUS, contentModule, createCMS, DEFAULT_ROLES, type CmsHost, type MenuItem, type Principal, type RichTextDoc } from '../src/server/index';
-import { fastdbService, live } from './helpers';
+import { romedbService, live } from './helpers';
 
 const admin: Principal = { kind: 'user', id: 'admin-1', roles: ['admin'], permissions: ['*'] };
 const editor: Principal = { kind: 'user', id: 'editor-1', roles: ['editor'], permissions: [...DEFAULT_ROLES[1].permissions] };
@@ -19,7 +19,7 @@ const plugins = [
 ];
 
 describe.skipIf(!live)('themes, menus and rich text', () => {
-    const service = fastdbService();
+    const service = romedbService();
     let cms: CmsHost;
 
     beforeAll(async () => {

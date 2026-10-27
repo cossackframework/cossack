@@ -29,7 +29,7 @@ const packageDirectories = [
   'node-adapter',
   'desktop',
   'auth',
-  'fastdb',
+  'romedb',
   'cms',
   'ui',
   'framework',
