@@ -98,6 +98,7 @@ function operatorFragment<T extends object>(
     case "in": return expressions.in(property, operator.value as readonly unknown[]);
     case "not-in": return expressions.not(expressions.in(property, operator.value as readonly unknown[]));
     case "is-null": return expressions.isNull(property);
+    case "is-not-null": return expressions.not(expressions.isNull(property));
   }
 }
 

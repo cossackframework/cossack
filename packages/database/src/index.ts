@@ -64,10 +64,13 @@ export {
   In,
   NotIn,
   IsNull,
+  IsNotNull,
   type EntityShape,
   type FindOperator,
   type FindOptions,
   type FindWhere,
+  type ReadOptions,
+  type DeleteOptions,
 } from "./query/types.js";
 export { ExpressionBuilder } from "./query/expression.js";
 export { defineConfig, type ORMConfig, type ORMToolingContext } from "./config.js";

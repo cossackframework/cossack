@@ -10,7 +10,7 @@ export type FindWhere<T> = {
 };
 
 export interface FindOperator<T = unknown> {
-  readonly operator: "eq" | "ne" | "gt" | "gte" | "lt" | "lte" | "like" | "in" | "not-in" | "is-null";
+  readonly operator: "eq" | "ne" | "gt" | "gte" | "lt" | "lte" | "like" | "in" | "not-in" | "is-null" | "is-not-null";
   readonly value?: T | readonly T[];
 }
 
@@ -24,6 +24,20 @@ export interface FindOptions<T extends BaseEntity> {
   readonly skip?: number;
   readonly relations?: readonly (keyof EntityShape<T> & string)[];
   readonly with?: readonly (keyof EntityShape<T> & string)[];
+  /** Include soft-deleted rows (entities with a `@DeleteDateColumn`). */
+  readonly withDeleted?: boolean;
+}
+
+/** Options for reads that take a `where` instead of `FindOptions` (count, exists). */
+export interface ReadOptions {
+  /** Include soft-deleted rows (entities with a `@DeleteDateColumn`). */
+  readonly withDeleted?: boolean;
+}
+
+/** Options for `delete()`/`deleteAll()` on an entity with a `@DeleteDateColumn`. */
+export interface DeleteOptions {
+  /** Delete the rows for real instead of stamping the delete-date column. */
+  readonly force?: boolean;
 }
 
 export const Equal = <T>(value: T): FindOperator<T> => ({ operator: "eq", value });
@@ -35,4 +49,7 @@ export const LessThanOrEqual = <T>(value: T): FindOperator<T> => ({ operator: "l
 export const Like = (value: string): FindOperator<string> => ({ operator: "like", value });
 export const In = <T>(value: readonly T[]): FindOperator<T> => ({ operator: "in", value });
 export const NotIn = <T>(value: readonly T[]): FindOperator<T> => ({ operator: "not-in", value });
-export const IsNull = (): FindOperator => ({ operator: "is-null" });
+/** Matches NULL. Typed loosely so it fits any nullable column (`Date | string | null`, …). */
+export const IsNull = (): FindOperator<any> => ({ operator: "is-null" });
+/** Matches any non-NULL value. */
+export const IsNotNull = (): FindOperator<any> => ({ operator: "is-not-null" });
