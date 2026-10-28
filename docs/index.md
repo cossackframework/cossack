@@ -46,6 +46,14 @@ description: 'Documentation for getting started with Cossack and learning its fe
 - [Migrations](/docs/migrations.md)
 - [Seeders](/docs/seeders.md)
 
+## CMS
+
+- [CMS](/docs/cms/index.md)
+- [Plugins](/docs/cms/plugins.md)
+- [Plugin Manifest](/docs/cms/manifest.md)
+- [Hooks](/docs/cms/hooks.md)
+- [Themes](/docs/cms/themes.md)
+
 ## Session & State
 
 - [Session & Flash](/docs/session.md)

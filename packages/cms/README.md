@@ -111,4 +111,7 @@ Data contract:
 - After a package upgrade, new host tables and changed built-in collections apply on the
   next request; code-declared resources and plugins still migrate from Tools → Schema.
 
-See the guides with `cossack docs --package @cossackframework/cms`.
+See the guides with `cossack docs --package @cossackframework/cms`, and the developer docs
+in `docs/cms/`: [overview](../../docs/cms/index.md), [plugins](../../docs/cms/plugins.md),
+[manifest](../../docs/cms/manifest.md), [hooks](../../docs/cms/hooks.md) and
+[themes](../../docs/cms/themes.md).
