@@ -19,7 +19,8 @@ async function clientSources(directory) {
 }
 
 it('renders a packed plugin and serves its pages, translations, configuration and middleware', async () => {
-  const root = await project('node');
+  // The markdown feature lets the plugin's help.md route like an application Markdown page.
+  const root = await project('node', ['markdown']);
   const v1 = await packPlugin('1.0.0');
   const v2 = await packPlugin('1.1.0');
   trackRoot(v1.directory);
@@ -48,6 +49,8 @@ it('renders a packed plugin and serves its pages, translations, configuration an
   const client = await clientSources(path.join(root, 'dist/client'));
   expect(client).not.toContain(SERVER_MARKER);
   expect(client).not.toContain('Hello from plugin configuration');
+  // The plugin's loading skeleton ships to the browser for client navigation.
+  expect(client).toContain('Opening the desk...');
 
   const server = await productionServer(root);
   let browser;
@@ -60,6 +63,14 @@ it('renders a packed plugin and serves its pages, translations, configuration an
     expect(body).toContain('Hello from plugin configuration');
     expect(body).toContain('support-desk@1.0.0:Ticket desk');
     expect(body).toContain('Tickets: 0');
+    // The skeleton beside the page never replaces its server render: init() ran above.
+    expect(body).not.toContain('Opening the desk...');
+    // A Markdown page in the plugin renders like one in src/pages.
+    const help = await fetch(server.origin + '/support/help');
+    const helpBody = await help.text();
+    expect(help.status, helpBody).toBe(200);
+    expect(helpBody).toContain('How the desk works');
+    expect(helpBody).toContain('Open a ticket and a person answers.');
     // A page that fails answers through the application's error handling.
     expect((await fetch(server.origin + '/support/broken')).status).toBe(500);
 

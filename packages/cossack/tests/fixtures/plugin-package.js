@@ -10,8 +10,25 @@ export const SERVER_MARKER = 'support-desk-server-only-marker';
 
 function sources(version) {
   return {
-    // A plugin's pages are ordinary routes: a page whose failure the application's error handling takes.
-    // (A `pages/support/loading.ts` here left the plugin's configuration empty at runtime; see plan-cms-ux-improvements.md.)
+    // A plugin's pages are ordinary routes, with the same conventions as src/pages: a loading
+    // skeleton shown during client navigation, a Markdown page once the application has the
+    // markdown feature, and a page whose failure the application's error handling takes.
+    'pages/support/loading.ts': `import { Cossack, html } from '@cossackframework/core';
+
+export default class DeskSkeleton extends Cossack {
+  render() {
+    return html\`<p data-testid="skeleton">Opening the desk...</p>\`;
+  }
+}
+`,
+    'pages/support/help.md': `---
+title: Desk help
+---
+
+# How the desk works
+
+Open a ticket and a person answers.
+`,
     'pages/support/broken/index.ts': `import { Cossack, Page } from '@cossackframework/core';
 import { html } from '@cossackframework/renderer';
 
