@@ -25,7 +25,7 @@ derived array beside the document, so filters on rows seek through RomeDB's arra
   Storage type `array<object>`; `validateValue` and `publicValue` walk rows recursively.
   `json` fields keep their flat `fields` groups; they are not repeaters.
 - **Field blocks.** `BlockDeclaration` gains `field?: { kind: FieldType }`, as `input`
-  marks a form input. Core field blocks, category `field` (label "Fields"), one per
+  marks a form input. Core field blocks, category `field` (label "Entry fields"), one per
   builder type: `field/text`, `field/textarea`, `field/markdown`, `field/number`,
   `field/integer`, `field/boolean`, `field/date`, `field/choice`, `field/media`,
   `field/gallery`, `field/reference`, `field/list`, `field/blocks`, `field/json` and

@@ -156,7 +156,7 @@ describe.skipIf(!liveRomeDBTests())('generated CMS field groups', () => {
       await ready();
       await page.getByRole('button', { name: 'Add block', exact: true }).last().click();
       const picker = page.getByRole('dialog', { name: 'Blocks' });
-      await browserExpect(picker.getByRole('heading', { name: 'Fields' })).toBeVisible();
+      await browserExpect(picker.getByRole('heading', { name: 'Entry fields' })).toBeVisible();
       await browserExpect(picker.getByRole('heading', { name: 'Widgets' })).toHaveCount(0);
       await picker.getByLabel('Search blocks').fill('yes');
       await picker.getByRole('button', { name: 'Yes / no', exact: true }).click();

@@ -241,7 +241,7 @@ describe.skipIf(!liveRomeDBTests())('generated CMS forms', () => {
       const addBlock = async (search, name) => {
         await admin.getByRole('button', { name: 'Add block', exact: true }).last().click();
         const picker = admin.getByRole('dialog', { name: 'Blocks' });
-        await browserExpect(picker.getByRole('heading', { name: 'Fields' })).toBeVisible();
+        await browserExpect(picker.getByRole('heading', { name: 'Form inputs' })).toBeVisible();
         await picker.getByLabel('Search blocks').fill(search);
         await picker.getByRole('button', { name, exact: true }).click();
         await browserExpect(picker).toBeHidden();
@@ -285,7 +285,7 @@ describe.skipIf(!liveRomeDBTests())('generated CMS forms', () => {
       await admin.getByRole('button', { name: 'Add block' }).click();
       const picker = admin.getByRole('dialog', { name: 'Blocks' });
       await browserExpect(picker.getByRole('heading', { name: 'Widgets' })).toBeVisible();
-      await browserExpect(picker.getByRole('heading', { name: 'Fields' })).toHaveCount(0);
+      await browserExpect(picker.getByRole('heading', { name: 'Form inputs' })).toHaveCount(0);
       await browserExpect(picker.getByRole('button', { name: 'Form', exact: true })).toBeVisible();
       expect(errors).toEqual([]);
     } finally {

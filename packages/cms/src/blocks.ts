@@ -123,20 +123,20 @@ export interface Block {
     readonly children?: readonly Block[];
 }
 
-/** Groups of the block picker, in its order, as in WordPress. */
-export const BLOCK_CATEGORIES = Object.freeze([
+/** Groups of the block picker, in its order, as in WordPress. A `description` says where a family's blocks go and where their values live. */
+export const BLOCK_CATEGORIES: readonly { readonly id: 'text' | 'media' | 'design' | 'widgets' | 'embeds' | 'form' | 'field' | 'data'; readonly label: string; readonly description?: string }[] = Object.freeze([
     { id: 'text', label: 'Text' },
     { id: 'media', label: 'Media' },
     { id: 'design', label: 'Design' },
     { id: 'widgets', label: 'Widgets' },
     { id: 'embeds', label: 'Embeds' },
-    // Input blocks collect a form's values; field blocks declare a field group's fields. Each family is offered in its own
-    // place alone, under one label: both are the fields of what is being built.
-    { id: 'form', label: 'Fields' },
-    { id: 'field', label: 'Fields' },
+    // Two families that look alike: input blocks collect a form's values from visitors; field blocks declare the
+    // fields of a field group, stored on entries and edited in the dashboard. Each is offered in its own builder alone.
+    { id: 'form', label: 'Form inputs', description: 'Controls a visitor fills in on a form. Each value is stored with the form\'s submissions.' },
+    { id: 'field', label: 'Entry fields', description: 'Fields a field group adds to entries, terms, users or menu items. Editors fill them in the dashboard; values are stored on the entry.' },
     // Data blocks store values with the entry and draw nothing: metadata, custom fields, settings a theme reads.
-    { id: 'data', label: 'Data' },
-] as const);
+    { id: 'data', label: 'Data', description: 'Values stored with the entry for themes and the API. Nothing shows on the page.' },
+]);
 export type BlockCategory = (typeof BLOCK_CATEGORIES)[number]['id'];
 
 /** A block's category, `widgets` when it names none. */

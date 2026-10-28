@@ -30,11 +30,12 @@ describe('essentials helpers', () => {
         expect(richText.common).toBe(true);
         expect(CORE_BLOCKS.filter(block => block.common).map(block => block.name)).toEqual(['core/richtext', 'core/paragraph', 'core/heading', 'core/image', 'core/divider']);
         expect(FORM_BLOCKS.find(block => block.name === 'form/email')!.keywords).toContain('mail');
-        // Input and field blocks keep to their own places; both are listed as fields.
+        // Input and field blocks keep to their own places, each under a label of its own that says where its values live.
         expect(blockProblems({ name: 'acme/thing', label: 'Thing', keywords: ['a'], common: true, fields: {} })).toEqual([]);
         expect(blockProblems({ name: 'acme/thing', label: 'Thing', keywords: [''], common: 'yes' as never, fields: {} })).toEqual([expect.stringContaining('keywords'), expect.stringContaining('common is on or off')]);
         expect(blockProblems({ name: 'acme/thing', label: 'Thing', common: true, input: { kind: 'string' }, fields: { name: field.string(), label: field.string() } })).toEqual([expect.stringContaining('cannot be common')]);
-        expect(BLOCK_CATEGORIES.filter(category => category.label === 'Fields').map(category => category.id)).toEqual(['form', 'field']);
+        expect(BLOCK_CATEGORIES.filter(category => category.description).map(category => [category.id, category.label])).toEqual([['form', 'Form inputs'], ['field', 'Entry fields'], ['data', 'Data']]);
+        expect(new Set(BLOCK_CATEGORIES.map(category => category.label)).size).toBe(BLOCK_CATEGORIES.length);
         // A common block passes a field group's check; another non-field block does not.
         const types = new Map(CORE_BLOCKS.map(block => [block.name, block]));
         expect(validateBlocks([{ id: 'h', type: 'core/heading', data: { text: 'Section', level: 'h2' } }], types, { fieldGroup: true }).errors).toEqual({});

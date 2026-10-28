@@ -37,6 +37,7 @@ export default class BlocksPage extends Cossack {
             ${pageHeader(__('Blocks'), { description: __('Entries are built from these in their Content field; a collection can start every entry from a template of them. Plugins add block types. Data blocks store values without showing anything.') })}
             ${groups.map(group => html`<section class="space-y-3" aria-labelledby=${`blocks-${group.id}`}>
                 <h2 id=${`blocks-${group.id}`} class="text-sm font-semibold uppercase tracking-wide text-muted-foreground">${__(group.label)}</h2>
+                ${group.description ? html`<p class="text-sm text-muted-foreground">${__(group.description)}</p>` : null}
                 <ul class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">${group.blocks.map(block => html`<li>
                     ${component(Card, { class: 'h-full' }, component(CardBody, { class: 'space-y-2' }, html`
                         <div class="flex items-center justify-between gap-2">

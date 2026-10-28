@@ -24,7 +24,7 @@ after the submission is committed.
   depth unless `form` is set, which a blocks field sets with `form: true` (the forms
   collection's `body`). The block picker offers them there alone. Plugins ship input
   blocks like any block (`stripe/amount`), and they render through `ui.ts` as now.
-- **Core input blocks**, category `form` (label "Form fields", after `widgets`):
+- **Core input blocks**, category `form` (label "Form inputs", after `widgets`):
   `form/text`, `form/email`, `form/url`, `form/phone`, `form/textarea`, `form/number`,
   `form/date`, `form/select`, `form/radio`, `form/checkbox` (one boolean),
   `form/checkboxes` (multiple choice), `form/consent` (a required checkbox with its own
