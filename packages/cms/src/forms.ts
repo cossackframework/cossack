@@ -34,6 +34,16 @@ export function formInput(fields: { readonly [name: string]: FieldDeclaration },
             if (declaration.nullable) input[name] = null;
             continue;
         }
+        // A multiple field's values come one per line or comma.
+        if (declaration.multiple) {
+            const items = text.split(/[\n,]/).map(item => item.trim()).filter(Boolean);
+            if (declaration.kind === 'integer' || declaration.kind === 'number') {
+                const numbers = items.map(Number);
+                if (numbers.some(value => !Number.isFinite(value))) errors[name] = 'must list numbers.';
+                else input[name] = numbers;
+            } else input[name] = items;
+            continue;
+        }
         switch (declaration.kind) {
             case 'integer': {
                 const value = Number(text);
@@ -59,17 +69,6 @@ export function formInput(fields: { readonly [name: string]: FieldDeclaration },
                 catch { errors[name] = 'must be valid JSON.'; }
                 break;
             }
-            case 'list': {
-                const items = text.split(/[\n,]/).map(item => item.trim()).filter(Boolean);
-                if (declaration.items === 'string') input[name] = items;
-                else if (declaration.items === 'boolean') input[name] = items.map(item => item === 'true');
-                else {
-                    const numbers = items.map(Number);
-                    if (numbers.some(value => !Number.isFinite(value))) errors[name] = 'must list numbers.';
-                    else input[name] = numbers;
-                }
-                break;
-            }
             case 'vector': {
                 const values = text.split(/[\s,]+/).filter(Boolean).map(Number);
                 if (values.some(value => !Number.isFinite(value))) errors[name] = 'must list numbers.';
@@ -85,10 +84,10 @@ export function formInput(fields: { readonly [name: string]: FieldDeclaration },
 /** The text a form control shows for a record value. */
 export function formValue(declaration: FieldDeclaration, value: unknown): string {
     if (value === null || value === undefined) return '';
+    if (declaration.multiple && Array.isArray(value)) return value.map(item => formValue({ ...declaration, multiple: false }, item)).join(', ');
     switch (declaration.kind) {
         case 'datetime': return new Date(value as number).toISOString().slice(0, 16);
         case 'json': return JSON.stringify(value, null, 2);
-        case 'list': return (value as unknown[]).join(', ');
         case 'vector': return (value as number[]).join(' ');
         default: return String(value);
     }

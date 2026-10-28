@@ -399,17 +399,18 @@ export interface EntryReference {
 
 /**
  * A field's value on an entry view, by the field's kind: text, enums and slugs as strings,
- * numbers and datetimes (Unix milliseconds) as numbers, booleans, media as `MediaView` (a
- * list of media as `MediaView[]`), references as `EntryReference`, taxonomy terms as
- * `TermLink[]`, other lists as arrays, groups as objects, and in full views blocks, rich text
- * and Markdown as `RenderedBlock[]` (rich text and Markdown as one `core/richtext` block;
- * render with `helpers.block`). Absent and empty values are null.
+ * numbers and datetimes (Unix milliseconds) as numbers, booleans, media as `MediaView`,
+ * references as `EntryReference`, taxonomy terms as `TermLink[]`, groups as objects, and in
+ * full views blocks, rich text and Markdown as `RenderedBlock[]` (rich text and Markdown as
+ * one `core/richtext` block; render with `helpers.block`). A multiple field is the list of
+ * its kind's views; multiple rich text or Markdown is one `core/richtext` block per item.
+ * Absent and empty values are null.
  */
 export type FieldView =
     | string | number | boolean | null
     | readonly (string | number | boolean)[]
     | MediaView | readonly MediaView[]
-    | EntryReference
+    | EntryReference | readonly EntryReference[]
     | readonly TermLink[]
     | readonly RenderedBlock[]
     | { readonly [name: string]: unknown };

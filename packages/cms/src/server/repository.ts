@@ -12,7 +12,7 @@ import { slugify, validateValue, type FieldDeclaration } from '../fields';
 import { blockId, blockMedia, blocksPlain, flattenBlocks, validateBlocks, type Block } from '../blocks';
 import { fieldVisibility, indexedRowField, rowIndexPath, rowsPlain, rowsSearchable, rowUniqueProblem, withRowIds } from '../field-groups';
 import { normalizeRichText, richTextBlocks, richTextMedia, richTextPlain, withRichTextBlocks, type RichTextDoc } from '../richtext';
-import { searchTextPath } from './schema';
+import { searchedAsText, searchTextPath } from './schema';
 import { afterCommit, beforeWrite, type Draft, type ResourceEvent, type WriteActor } from '../hooks';
 import { hasPermission, principalId, ruleScope, type Principal, type RecordScope } from '../permissions';
 import type { FieldFilter, ListFilter, ListOptions, RecordPage, RecordShape, RevisionShape } from '../records';
@@ -371,14 +371,14 @@ export class ResourceRepository {
                 const error = validateValue(name, kind, value);
                 if (error) throw new CmsError('CMS_VALIDATION', `Filter ${name} ${error}`, { fields: { [name]: error } });
             };
-            if (declaration.kind === 'list') {
+            if (declaration.multiple) {
                 const values = condition !== null && typeof condition === 'object' && 'contains' in condition ? [condition.contains]
                     : condition !== null && typeof condition === 'object' && 'containsAny' in condition ? [...condition.containsAny] : undefined;
-                if (!values || !values.length || values.length > 50 || !declaration.index) throw new CmsError('CMS_VALIDATION', `Filter ${name} with contains or containsAny (1-50 values) on an indexed list.`);
-                const item: FieldDeclaration = { kind: declaration.items as FieldDeclaration['kind'] };
+                if (!values || !values.length || values.length > 50 || !declaration.index) throw new CmsError('CMS_VALIDATION', `Filter ${name} with contains or containsAny (1-50 values) on an indexed multiple field.`);
+                const item: FieldDeclaration = { ...declaration, multiple: false, required: false, nullable: false };
                 conditions.push(values.map(value => {
                     check(value, item);
-                    return `array::contains(${column}, ${parameter(declaration.items === 'number' ? new Float64(value as number) : value as Value)})`;
+                    return `array::contains(${column}, ${parameter(this.#store(name, item, value))})`;
                 }).join(' OR '));
                 continue;
             }
@@ -643,24 +643,27 @@ export class ResourceRepository {
 
     #store(name: string, declaration: FieldDeclaration, value: unknown): Value {
         if (value === null) return null;
+        // A multiple field stores its items as the kind stores one.
+        if (declaration.multiple) return (value as unknown[]).map(item => this.#store(name, { ...declaration, multiple: false }, item));
         switch (declaration.kind) {
             case 'bigint': return BigInt(value as string | bigint);
             case 'number': return new Float64(value as number);
             case 'reference': return new RecordId(this.#host.resourceById(declaration.target!).storage, value as string);
-            case 'list': return declaration.items === 'number' ? (value as number[]).map(item => new Float64(item)) : value as Value;
             case 'vector': return Vector.float32(value as number[]);
             case 'json': case 'blocks': case 'richtext': case 'rows': return storedJson(value);
             default: return value as Value;
         }
     }
 
-    /** Plain text of the draft's searchable rich text and blocks fields, at their search paths. */
+    /** Plain text of the draft's searchable rich text, blocks, rows and multiple fields, at their search paths. */
     #searchText(draft: Draft): [string, string | null][] {
+        const plain = (declaration: FieldDeclaration, value: unknown): string => declaration.multiple && Array.isArray(value) ? value.map(item => plain({ ...declaration, multiple: false }, item)).filter(Boolean).join('\n')
+            : declaration.kind === 'blocks' ? blocksPlain(value as Block[], this.#host.blockTypes, doc => richTextPlain(doc))
+            : declaration.kind === 'rows' ? rowsPlain(declaration, value)
+            : declaration.kind === 'richtext' ? richTextPlain(value as RichTextDoc) : typeof value === 'string' ? value : '';
         return Object.entries(this.resource.fields)
-            .filter(([name, declaration]) => (((declaration.kind === 'richtext' || declaration.kind === 'blocks') && declaration.search) || rowsSearchable(declaration)) && draft[name] !== undefined)
-            .map(([name, declaration]) => [searchTextPath(name), draft[name] === null ? null
-                : declaration.kind === 'blocks' ? blocksPlain(draft[name] as Block[], this.#host.blockTypes, doc => richTextPlain(doc))
-                : declaration.kind === 'rows' ? rowsPlain(declaration, draft[name]) : richTextPlain(draft[name] as RichTextDoc)]);
+            .filter(([name, declaration]) => searchedAsText(declaration) && draft[name] !== undefined)
+            .map(([name, declaration]) => [searchTextPath(name), draft[name] === null ? null : plain(declaration, draft[name])]);
     }
 
     #shapeOf(document: Document): RecordShape {
@@ -712,14 +715,13 @@ type Document = { [field: string]: Value };
 
 function publicValue(declaration: FieldDeclaration, value: Value): unknown {
     if (value === null) return null;
+    if (declaration.multiple) return Array.isArray(value) ? value.map(item => publicValue({ ...declaration, multiple: false }, item)) : [];
     switch (declaration.kind) {
         case 'integer': case 'datetime': return Number(value as bigint);
         case 'bigint': return String(value);
         case 'number': return value instanceof Float64 ? value.value : Number(value as bigint);
         case 'reference': return value instanceof RecordId ? String(value.key) : null;
         case 'json': case 'blocks': case 'richtext': case 'rows': return toJson(value);
-        case 'list': return (value as Value[]).map(item => declaration.items === 'number' ? (item instanceof Float64 ? item.value : Number(item as bigint))
-            : declaration.items === 'integer' ? Number(item as bigint) : item);
         case 'vector': {
             const bytes = (value as Vector).bytes;
             return [...new Float32Array(bytes.buffer, bytes.byteOffset, Math.floor(bytes.byteLength / 4))];

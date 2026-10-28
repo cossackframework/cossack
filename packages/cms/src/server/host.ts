@@ -6,7 +6,7 @@ import { createHookRegistry, type ActionHandler, type ActionPoint, type ActionRe
 import type { StorageProvider } from '@cossackframework/core/storage';
 import { ClientError, type RomeDB, type Statement, type Value, type WorkLimits } from '@cossackframework/romedb';
 import { blockId, blockMedia, blockProblems, validateBlocks, type Block, type BlockDeclaration } from '../blocks';
-import { blocksShapeProblem, type FieldDeclaration } from '../fields';
+import { blocksShapeProblem, normalizeFields, type FieldDeclaration } from '../fields';
 import { collectionProblems, collectionResource, contentBlocks, entryUrl, extendCollection, LOCALE, orderedFields, RESERVED_FIELDS, type CollectionDefinition } from '../collections';
 import { fieldGroupDeclarations, fieldGroupProblems, fieldVisibility, flattenGroupFields, groupsForTarget, metaProblems, withTarget, type FieldGroup, type FieldGroupTarget } from '../field-groups';
 import { CmsFieldGroups } from './field-groups';
@@ -1028,10 +1028,10 @@ export class CmsHost {
             ...(input.template !== undefined ? { template: input.template } : {}),
             ...(input.templateLock !== undefined ? { templateLock: input.templateLock } : {}),
             taxonomies: (input.taxonomies ?? []).filter(name => !(builtin.taxonomies ?? []).includes(name)),
-            fields: Object.fromEntries(Object.entries(input.fields ?? {}).filter(([name]) => !Object.hasOwn(builtin.fields, name))),
+            fields: normalizeFields(Object.fromEntries(Object.entries(input.fields ?? {}).filter(([name]) => !Object.hasOwn(builtin.fields, name)))),
             // The module's fields are not stored, so their place among the added ones is.
             fieldOrder: [...(input.fieldOrder ?? Object.keys(input.fields ?? {}))],
-        } : (({ fieldOrder, ...rest }) => ({ ...rest, fields: orderedFields(input.fields ?? {}, fieldOrder), builtin: false }))(input);
+        } : (({ fieldOrder, ...rest }) => ({ ...rest, fields: normalizeFields(orderedFields(input.fields ?? {}, fieldOrder)), builtin: false }))(input);
         const definition = builtin ? extendCollection(builtin, stored) : stored;
         const problems = collectionProblems(definition);
         if (!builtin && this.#static.has(`cms/${definition.name}`)) problems.push(`cms/${definition.name} is already a resource.`);

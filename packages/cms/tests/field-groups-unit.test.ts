@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-    CORE_BLOCKS, FIELD_BLOCKS, FIELD_BLOCK_TYPES, FIELD_BLOCK_KINDS, blockProblems, blockSupports, clearHidden, field, fieldBlockOf, fieldGroupDeclarations,
+    CORE_BLOCKS, FIELD_BLOCKS, FIELD_BLOCK_TYPES, FIELD_BLOCK_KINDS, blockProblems, blockSupports, clearHidden, field, fieldBlockDeclaration, fieldBlockOf, fieldGroupDeclarations, upgradeFieldBlocks,
     fieldGroupProblems, fieldProblems, fieldVisibility, groupsForTarget, hiddenKey, indexedRowField, indexedRowPaths, layoutOf, rowIndexPath, rowsPlain, rowUniqueProblem, storageType, targetOrder, validateBlocks, validateValue, withRowIds, withTarget,
     type Block, type BlockDeclaration, type FieldGroup,
 } from '../src/index';
@@ -100,10 +100,10 @@ describe('field groups', () => {
         expect(bad.problems).toEqual(expect.arrayContaining([
             'The ID must be 1-40 letters, digits, underscores or hyphens.', 'The title is required and at most 120 characters.', 'Target 2 is listed twice.', 'Target 3 is not a collection, taxonomy, users or menus.',
         ]));
-        const rows = fieldGroupProblems({ ...group, blocks: [fieldBlock('r', 'repeater', { name: 'r', label: 'R' }, { children: [fieldBlock('g', 'gallery', { name: 'g', label: 'G' })] })] }, types);
+        const rows = fieldGroupProblems({ ...group, blocks: [fieldBlock('r', 'repeater', { name: 'r', label: 'R' }, { children: [fieldBlock('g', 'media', { name: 'g', label: 'G', multiple: true })] })] }, types);
         expect(rows.problems).toEqual([]);
-        const indexed = fieldGroupProblems({ ...group, blocks: [fieldBlock('r', 'repeater', { name: 'r', label: 'R' }, { children: [fieldBlock('l', 'list', { name: 'l', label: 'L', index: true })] })] }, types);
-        expect(indexed.problems).toEqual(['field r.l: list row fields cannot be filterable.']);
+        const indexed = fieldGroupProblems({ ...group, blocks: [fieldBlock('r', 'repeater', { name: 'r', label: 'R' }, { children: [fieldBlock('l', 'text', { name: 'l', label: 'L', index: true, multiple: true })] })] }, types);
+        expect(indexed.problems).toEqual(['field r.l: multiple row fields cannot be filterable.']);
     });
 
     it('round-trips declarations through field blocks', () => {
@@ -114,7 +114,24 @@ describe('field groups', () => {
         const again = fieldGroupDeclarations(validateBlocks(layout, types, { fieldGroup: true }).blocks, types);
         expect(again).toEqual(fields);
         expect(fieldBlockOf('cover', field.media({ label: 'Cover' })).type).toBe('field/media');
-        expect(fieldBlockOf('tags', { ...field.list('string', { label: 'Tags' }), media: true }).type).toBe('field/gallery');
+        expect(fieldBlockOf('shots', field.gallery({ label: 'Shots' }))).toEqual({ id: 'shots', type: 'field/media', data: { name: 'shots', label: 'Shots', multiple: true } });
+    });
+
+    it('compiles a Multiple field block to a multiple declaration and back', () => {
+        const tags = fieldBlock('tags', 'text', { name: 'tags', label: 'Tags', multiple: true, max: 20, index: true, minItems: 1, maxItems: 5, addLabel: 'Add tag', defaultValue: 'new\n\nhot' });
+        const declaration = fieldBlockDeclaration(tags, types)!;
+        expect(declaration).toEqual({ kind: 'string', label: 'Tags', multiple: true, minItems: 1, maxItems: 5, addLabel: 'Add tag', max: 20, index: true, default: ['new', 'hot'] });
+        expect(fieldBlockOf('tags', declaration).data).toEqual({ name: 'tags', label: 'Tags', max: 20, index: true, multiple: true, minItems: 1, maxItems: 5, addLabel: 'Add tag', defaultValue: 'new\nhot' });
+        // A multiple number is a list of numbers, never null; a multiple choice checks each value; a boolean never multiplies.
+        expect(fieldBlockDeclaration(fieldBlock('n', 'integer', { name: 'n', label: 'N', multiple: true, defaultValue: '1\nx\n3' }), types)).toEqual({ kind: 'integer', label: 'N', multiple: true, default: [1, 3] });
+        expect(fieldBlockDeclaration(fieldBlock('c', 'choice', { name: 'c', label: 'C', multiple: true, choices: ['s', 'm'], defaultValue: 'm' }), types)).toEqual({ kind: 'enum', values: ['s', 'm'], label: 'C', multiple: true, default: ['m'] });
+        expect(fieldBlockDeclaration(fieldBlock('b', 'boolean', { name: 'b', label: 'B', multiple: true }), types)).toEqual({ kind: 'boolean', label: 'B', default: false });
+        expect(fieldProblems('tags', declaration)).toEqual([]);
+        expect(FIELD_BLOCKS.find(block => block.name === 'field/boolean')!.fields).not.toHaveProperty('multiple');
+        expect(FIELD_BLOCKS.find(block => block.name === 'field/media')!.fields).toHaveProperty('multiple');
+        // Field blocks of earlier builds read as today's.
+        expect(upgradeFieldBlocks([fieldBlock('r', 'repeater', { name: 'r' }, { children: [fieldBlock('l', 'list', { name: 'l' }), fieldBlock('g', 'gallery', { name: 'g' })] })])[0]!.children!.map(block => [block.type, block.data.multiple]))
+            .toEqual([['field/text', true], ['field/media', true]]);
     });
 });
 

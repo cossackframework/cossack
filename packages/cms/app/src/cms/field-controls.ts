@@ -5,9 +5,10 @@
  */
 import { component, html, type TemplateResult } from '@cossackframework/renderer';
 import { Button, Checkbox, CodeEditor, DropdownMenu, Icon, Input, NativeSelect, Textarea } from '@cossackframework/ui';
-import { hasBinding, mediaKind, withBinding } from '@cossackframework/cms';
+import { hasBinding, ITEM_LIMITS, mediaKind, withBinding } from '@cossackframework/cms';
 import type { BlockOption, EditorField } from './editor';
 import { icon } from './icons';
+import { iconButton } from './ui';
 
 /** A file as media controls preview it. */
 export interface MediaPreview { id: string; url: string; title: string; alt: string; contentType: string; width: number | null; height: number | null }
@@ -24,7 +25,7 @@ export interface BindingChoice { name: string; label: string }
 
 /** A list of binding choices from editor fields: the kinds whose values read as text. */
 export function bindingChoices(fields: readonly Pick<EditorField, 'name' | 'label' | 'kind' | 'media'>[]): BindingChoice[] {
-    return fields.filter(field => !field.media && ['string', 'text', 'integer', 'number', 'boolean', 'enum', 'datetime', 'list', 'reference'].includes(field.kind))
+    return fields.filter(field => !field.media && ['string', 'text', 'integer', 'number', 'boolean', 'enum', 'datetime', 'reference'].includes(field.kind))
         .map(field => ({ name: field.name, label: field.label }));
 }
 
@@ -40,6 +41,10 @@ export function fieldControl(field: EditorField, value: unknown, change: (value:
         '@input': (event: Event) => change((event.target as HTMLTextAreaElement).value) });
     // Text may show an entry field instead: the picker beside the control writes the binding.
     const bindable = (control: TemplateResult) => extra.bindings !== undefined ? bindingControl(control, value, change, id, extra.bindings) : control;
+    if (field.multiple && !field.media) {
+        if (field.kind === 'enum') return choicesControl(field, value, change, id);
+        return multipleControl(field, value, change, id, (item, itemChange, itemId) => fieldControl({ ...field, multiple: false }, item, itemChange, itemId, extra) ?? html``);
+    }
     switch (field.kind) {
         case 'boolean': return html`<label class="flex items-center gap-2 text-sm text-foreground cursor-pointer">
             ${component(Checkbox, { id, checked: value === true, '@change': (event: Event) => change((event.target as HTMLInputElement).checked) })} ${field.label}</label>`;
@@ -54,15 +59,50 @@ export function fieldControl(field: EditorField, value: unknown, change: (value:
         case 'json': return field.fields.length
             ? groupFields(field, value, change, id, (sub, subValue, subChange, subId) => fieldControl(sub, subValue, subChange, subId, extra) ?? html``)
             : textarea(6, 'font-mono text-xs');
-        case 'list': return field.media && extra.media ? mediaControl(value, change, field.label, true, extra.media) : textarea(4);
         // Markdown in a block is a short passage: a compact box that grows with its text, no tabs or toolbar.
         case 'text': return field.format === 'markdown'
             ? html`<div class="space-y-1">${bindable(textarea(3, 'field-sizing-content min-h-[4.5rem] max-h-[40vh]'))}<p class="text-xs text-muted-foreground">${__('Markdown: **bold**, _italic_, [link](https://…).')}</p></div>`
             : field.format === 'code' ? component(CodeEditor, { id, value: String(value ?? ''), language: extra.language ?? '', label: field.label, onChange: (next: string) => change(next) })
             : bindable(textarea(4));
         case 'blocks': case 'richtext': case 'vector': case 'bigint': return null;
-        default: return field.media && extra.media ? mediaControl(value, change, field.label, false, extra.media) : bindable(input('text'));
+        default: return field.media && extra.media ? mediaControl(value, change, field.label, field.multiple, extra.media) : bindable(input('text'));
     }
+}
+
+/** A multiple choice: one checkbox per choice, the ticked values kept in the choices' order. */
+export function choicesControl(field: EditorField, value: unknown, change: (value: unknown) => void, id: string): TemplateResult {
+    const chosen = Array.isArray(value) ? value.map(String) : [];
+    const toggle = (entry: string, on: boolean) => change(field.choices.map(choice => choice.value).filter(candidate => candidate === entry ? on : chosen.includes(candidate)));
+    return html`<div id=${id} class="space-y-1.5">${field.choices.map(choice => html`<label class="flex items-center gap-2 text-sm text-foreground cursor-pointer">
+        ${component(Checkbox, { checked: chosen.includes(choice.value), '@change': (event: Event) => toggle(choice.value, (event.target as HTMLInputElement).checked) })} ${choice.label}</label>`)}</div>`;
+}
+
+/** The value a new item of a multiple field starts with: nothing of its kind. */
+function emptyItem(field: EditorField): unknown {
+    return field.kind === 'richtext' ? null : '';
+}
+
+/**
+ * A multiple field: the kind's control once per item, each with Move up, Move down and
+ * Remove, and the Add button below, within the field's fewest and most items. `item`
+ * renders one value's control with its own id.
+ */
+export function multipleControl(field: EditorField, value: unknown, change: (value: unknown) => void, id: string,
+    item: (value: unknown, change: (value: unknown) => void, id: string, index: number) => TemplateResult): TemplateResult {
+    const items = Array.isArray(value) ? value : [];
+    const fewest = field.minItems ?? 0;
+    const most = field.maxItems ?? (field.kind === 'reference' ? ITEM_LIMITS.media : ITEM_LIMITS.max);
+    const set = (next: unknown[]) => change(next);
+    const label = (index: number) => `${field.label} ${index + 1}`;
+    return html`<div id=${id} class="space-y-2" data-cms-multiple=${field.name}>
+        ${items.map((entry, index) => html`<div class="flex items-start gap-1" data-cms-item>
+            <div class="min-w-0 flex-1">${item(entry, next => set(items.map((current, at) => at === index ? next : current)), `${id}-${index}`, index)}</div>
+            ${iconButton(`${id}-${index}-up`, 'arrow-up', `${__('Move up')} ${label(index)}`, () => set(moveItem(items, index, -1)), { disabled: index === 0 })}
+            ${iconButton(`${id}-${index}-down`, 'arrow-down', `${__('Move down')} ${label(index)}`, () => set(moveItem(items, index, 1)), { disabled: index === items.length - 1 })}
+            ${iconButton(`${id}-${index}-remove`, 'trash-bin-trash', `${__('Remove')} ${label(index)}`, () => set(items.filter((_, at) => at !== index)), { danger: true, disabled: items.length <= fewest })}
+        </div>`)}
+        ${component(Button, { type: 'button', variant: 'outline', size: 'sm', disabled: items.length >= most, '@click': () => set([...items, emptyItem(field)]) }, field.addLabel || __('Add new'))}
+    </div>`;
 }
 
 /**

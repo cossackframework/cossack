@@ -28,10 +28,15 @@ RomeDB array index on the path into the rows, so filters on rows seek through it
   marks a form input. Core field blocks, category `field` (label "Entry fields"), one per
   builder type: `field/text`, `field/textarea`, `field/markdown`, `field/number`,
   `field/integer`, `field/boolean`, `field/date`, `field/choice`, `field/media`,
-  `field/gallery`, `field/reference`, `field/list`, `field/blocks`, `field/json` and
-  `field/repeater`. Their data is the builder's draft: `label` (required), `name`
-  (follows the label through `fieldName`, as inputs follow theirs), `description`,
-  `required`, `unique`, `search`, `index`, `max`, `min`, `choices`, `defaultValue`,
+  `field/reference`, `field/blocks`, `field/json` and `field/repeater`. Their data is the
+  builder's draft: `label` (required), `name` (follows the label through `fieldName`, as
+  inputs follow theirs), `description`, `required`, `unique`, `search`, `index`, `max`,
+  `min`, `choices`, `defaultValue`, and on every kind but Yes/no, Blocks and Repeater
+  `multiple`, `minItems`, `maxItems` and `addLabel` (since 2026-10-29: a field with Multiple
+  on holds several values of its kind as one array, each checked with the kind's rules; it
+  replaced `field/list` and `field/gallery`, which stored groups read as Single line and
+  Image or file with Multiple on; a multiple choice is checkboxes, a multiple image the
+  gallery control, every other kind its control once per item with Add, Move and Remove),
   `target`, `blocks`, `width` (`full`, `half`, `third`, for the box's grid). A repeater
   is a container whose children are field blocks and layout blocks; it has `min`, `max`
   and `summary` (the child whose value titles a collapsed row). Field blocks go only in

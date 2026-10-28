@@ -3,9 +3,10 @@
  * layout blocks and attaches to collections, taxonomies, users or menu items; its field
  * blocks compile to field declarations, so storage, the API and themes see fields, never
  * layout. A repeater is a field block whose children are the fields of its rows, nested
- * without limit. Pure functions, shared by the dashboard and the host.
+ * without limit; a field block with Multiple on holds several values of its kind. Pure
+ * functions, shared by the dashboard and the host.
  */
-import { field, fieldProblems, FIELD_NAME, ROW_ID, ROW_LIMITS, validateValue, type FieldDeclaration, type FieldKind } from './fields';
+import { field, fieldProblems, FIELD_NAME, ITEM_LIMITS, ROW_ID, ROW_LIMITS, validateValue, type FieldDeclaration, type FieldKind } from './fields';
 import { FIELD_BLOCK_KINDS, flattenBlocks, validateBlocks, type Block, type BlockDeclaration, type FieldBlockKind } from './blocks';
 import { conditionShows, type FormValue, type FormValues } from './form-builder';
 
@@ -21,10 +22,8 @@ export const FIELD_BLOCK_TYPES: readonly { readonly kind: FieldBlockKind; readon
     { kind: 'boolean', label: 'Yes / no', icon: 'check-square', description: 'A checkbox.' },
     { kind: 'date', label: 'Date and time', icon: 'calendar', description: 'Stored in UTC.' },
     { kind: 'choice', label: 'Choice', icon: 'list', description: 'One of a fixed list.' },
-    { kind: 'media', label: 'Image or file', icon: 'gallery', description: 'One file from the media library.' },
-    { kind: 'gallery', label: 'Gallery', icon: 'gallery-wide', description: 'Several files from the media library.' },
+    { kind: 'media', label: 'Image or file', icon: 'gallery', description: 'A file from the media library; a gallery with Multiple on.' },
     { kind: 'reference', label: 'Reference', icon: 'link-round', description: 'An entry of another collection.' },
-    { kind: 'list', label: 'List', icon: 'list-check', description: 'Several lines of text.' },
     { kind: 'blocks', label: 'Blocks', icon: 'widget-4', description: 'Content built from blocks, such as headings, images and buttons.' },
     { kind: 'json', label: 'JSON', icon: 'code-square', description: 'Structured data for developers.' },
     { kind: 'repeater', label: 'Repeater', icon: 'layers-minimalistic', description: 'Rows of fields, added as needed. Rows can hold repeaters of their own.' },
@@ -39,16 +38,37 @@ const INDEX = field.boolean({ default: false, label: 'Filterable', description: 
 const SEARCH = field.boolean({ default: false, label: 'Searchable' });
 const DEFAULT = field.string({ max: 500, label: 'Default value' });
 const MAX_LENGTH = field.integer({ min: 1, max: 100_000, label: 'Maximum length' });
+/** Several values of the kind: a text with Multiple on is a list of texts, an image a gallery. */
+const MULTIPLE_SETTINGS: { readonly [name: string]: FieldDeclaration } = {
+    multiple: field.boolean({ default: false, label: 'Multiple', description: 'Several values, added one at a time.' }),
+    minItems: field.integer({ min: 0, max: ITEM_LIMITS.max, label: 'Fewest values' }),
+    maxItems: field.integer({ min: 1, max: ITEM_LIMITS.max, label: 'Most values' }),
+    addLabel: field.string({ max: 60, label: 'Add button', description: 'The button that adds a value; "Add new" when empty.' }),
+};
+/** Field kinds that are one value by nature. */
+const SINGLE_KINDS: ReadonlySet<FieldBlockKind> = new Set<FieldBlockKind>(['boolean', 'blocks', 'repeater']);
 
-/** The fields every field block has, then its own. */
-export function fieldBlockFields(own: { readonly [name: string]: FieldDeclaration } = {}): { [name: string]: FieldDeclaration } {
-    return { label: LABEL, name: NAME, description: HELP, required: REQUIRED, width: WIDTH, ...own };
+/** The fields every field block has, then its own, then the Multiple settings unless the kind is one value by nature. */
+export function fieldBlockFields(own: { readonly [name: string]: FieldDeclaration } = {}, options: { readonly multiple?: boolean } = {}): { [name: string]: FieldDeclaration } {
+    return { label: LABEL, name: NAME, description: HELP, required: REQUIRED, width: WIDTH, ...own, ...(options.multiple === false ? {} : MULTIPLE_SETTINGS) };
 }
 
 const declare = (kind: FieldBlockKind, own: { readonly [name: string]: FieldDeclaration } = {}, extra: Partial<BlockDeclaration> = {}): BlockDeclaration => {
     const type = FIELD_BLOCK_TYPES.find(entry => entry.kind === kind)!;
-    return { name: `field/${kind}`, label: type.label, icon: type.icon, category: 'field', description: type.description, field: { kind }, fields: fieldBlockFields(own), ...extra };
+    return { name: `field/${kind}`, label: type.label, icon: type.icon, category: 'field', description: type.description, field: { kind }, fields: fieldBlockFields(own, { multiple: !SINGLE_KINDS.has(kind) }), ...extra };
 };
+
+/** The field blocks of earlier builds: a List is a Single line with Multiple on, a Gallery an Image or file. */
+const LEGACY_FIELD_BLOCKS: { readonly [type: string]: string } = { 'field/list': 'field/text', 'field/gallery': 'field/media' };
+
+/** A stored block tree with the field blocks of earlier builds read as today's, at any depth. */
+export function upgradeFieldBlocks(blocks: readonly Block[]): Block[] {
+    return blocks.map(block => {
+        const type = LEGACY_FIELD_BLOCKS[block.type];
+        const next = type ? { ...block, type, data: { ...block.data, multiple: true } } : block;
+        return next.children ? { ...next, children: upgradeFieldBlocks(next.children) } : next;
+    });
+}
 
 /** Built-in field blocks, one per builder type. */
 export const FIELD_BLOCKS: readonly BlockDeclaration[] = Object.freeze([
@@ -59,12 +79,10 @@ export const FIELD_BLOCKS: readonly BlockDeclaration[] = Object.freeze([
     declare('integer', { min: field.integer({ label: 'Minimum' }), max: field.integer({ label: 'Maximum' }), index: INDEX, defaultValue: DEFAULT }),
     declare('boolean', { defaultValue: field.boolean({ default: false, label: 'Checked by default' }) }),
     declare('date', { index: INDEX }),
-    declare('choice', { choices: field.list('string', { label: 'Choices', description: 'One per line.' }), index: INDEX, defaultValue: DEFAULT }),
+    declare('choice', { choices: field.list('string', { label: 'Choices' }), index: INDEX, defaultValue: DEFAULT }),
     declare('media'),
-    declare('gallery'),
-    declare('reference', { target: field.string({ required: true, max: 40, pattern: '[a-z][a-z0-9_]*', label: 'Collection' }) }),
-    declare('list', { index: INDEX }),
-    declare('blocks', { blocks: field.list('string', { label: 'Allowed blocks', description: 'Block type names, one per line; empty allows all.' }) }),
+    declare('reference', { target: field.string({ required: true, max: 40, pattern: '[a-z][a-z0-9_]*', label: 'Collection' }), index: INDEX }),
+    declare('blocks', { blocks: field.list('string', { label: 'Allowed blocks', description: 'Block type names; empty allows all.' }) }),
     declare('json'),
     declare('repeater', {
         min: field.integer({ min: 0, max: ROW_LIMITS.max, label: 'Fewest rows' }),
@@ -85,33 +103,43 @@ export function fieldBlockDeclaration(block: Block, types: ReadonlyMap<string, B
     const number = (key: string) => typeof data[key] === 'number' && Number.isFinite(data[key]) ? data[key] as number : undefined;
     const flag = (key: string) => data[key] === true;
     const required = flag('required');
+    const multiple = flag('multiple') && !SINGLE_KINDS.has(kind);
     const common: Partial<FieldDeclaration> = {
         label: text('label') || text('name'),
         ...(text('description') ? { description: text('description') } : {}),
         ...(required ? { required: true } : {}),
+        ...(multiple ? {
+            multiple: true,
+            ...(number('minItems') !== undefined ? { minItems: number('minItems') } : {}),
+            ...(number('maxItems') !== undefined ? { maxItems: number('maxItems') } : {}),
+            ...(text('addLabel') ? { addLabel: text('addLabel') } : {}),
+        } : {}),
     };
     const max = number('max');
     const min = number('min');
     const bounds = { ...(max !== undefined ? { max } : {}), ...(min !== undefined ? { min } : {}) };
     const index = flag('index') ? { index: true } : {};
     const search = flag('search') ? { search: true } : {};
+    // A multiple field's default is one value per line; an empty line is no value.
     const defaultText = text('defaultValue');
+    const defaults = multiple ? defaultText.split('\n').map(line => line.trim()).filter(Boolean) : defaultText ? [defaultText] : [];
+    const fallback = <T extends string | number>(values: readonly T[]): { default?: T | readonly T[] } => !values.length ? {} : multiple ? { default: values } : { default: values[0]! };
+    // A single optional value may be null; a multiple one is an empty list.
+    const optional = multiple ? {} : { nullable: !required };
     switch (kind) {
-        case 'text': return field.string({ ...common, ...(max !== undefined ? { max } : {}), ...(flag('unique') ? { unique: true } : index), ...search, ...(defaultText ? { default: defaultText } : {}) });
+        case 'text': return field.string({ ...common, ...(max !== undefined ? { max } : {}), ...(flag('unique') && !multiple ? { unique: true } : index), ...search, ...fallback(defaults) });
         case 'textarea': return field.text({ ...common, ...(max !== undefined ? { max } : {}), ...search });
         case 'markdown': return field.text({ ...common, format: 'markdown', ...(max !== undefined ? { max } : {}), ...search });
-        case 'number': return field.number({ ...common, ...bounds, nullable: !required, ...index, ...(defaultText !== '' && Number.isFinite(Number(defaultText)) ? { default: Number(defaultText) } : {}) });
-        case 'integer': return field.integer({ ...common, ...bounds, nullable: !required, ...index, ...(defaultText !== '' && Number.isSafeInteger(Number(defaultText)) ? { default: Number(defaultText) } : {}) });
+        case 'number': return field.number({ ...common, ...bounds, ...optional, ...index, ...fallback(defaults.map(Number).filter(value => Number.isFinite(value))) });
+        case 'integer': return field.integer({ ...common, ...bounds, ...optional, ...index, ...fallback(defaults.map(Number).filter(value => Number.isSafeInteger(value))) });
         case 'boolean': return field.boolean({ ...common, default: data.defaultValue === true });
-        case 'date': return field.datetime({ ...common, nullable: !required, ...index });
+        case 'date': return field.datetime({ ...common, ...optional, ...index });
         case 'choice': {
             const values = (Array.isArray(data.choices) ? data.choices as unknown[] : []).map(value => String(value).trim()).filter(Boolean);
-            return field.enum(values, { ...common, nullable: !required, ...index, ...(defaultText && values.includes(defaultText) ? { default: defaultText } : {}) });
+            return field.enum(values, { ...common, ...optional, ...index, ...fallback(defaults.filter(value => values.includes(value))) });
         }
-        case 'media': return field.media({ ...common, nullable: !required });
-        case 'gallery': return { ...field.list('string', common), media: true };
-        case 'reference': return field.reference(`cms/${text('target')}`, { ...common, nullable: !required });
-        case 'list': return field.list('string', { ...common, ...index });
+        case 'media': return field.media({ ...common, ...optional });
+        case 'reference': return field.reference(`cms/${text('target')}`, { ...common, ...optional, ...index });
         case 'blocks': {
             const blocks = (Array.isArray(data.blocks) ? data.blocks as unknown[] : []).map(value => String(value).trim()).filter(Boolean);
             return field.blocks({ ...common, ...(blocks.length ? { blocks } : {}) });
@@ -157,7 +185,6 @@ export function fieldBlockKindOf(declaration: FieldDeclaration): FieldBlockKind 
         case 'datetime': return 'date';
         case 'enum': return 'choice';
         case 'reference': return 'reference';
-        case 'list': return declaration.media ? 'gallery' : 'list';
         case 'blocks': case 'richtext': return 'blocks';
         case 'rows': return 'repeater';
         default: return 'json';
@@ -170,15 +197,21 @@ export function fieldBlockOf(name: string, declaration: FieldDeclaration, id = n
     const data: { [key: string]: unknown } = { name, label: declaration.label ?? name };
     if (declaration.description) data.description = declaration.description;
     if (declaration.required) data.required = true;
-    if (declaration.max !== undefined && kind !== 'media' && kind !== 'gallery') data.max = declaration.max;
+    if (declaration.max !== undefined && kind !== 'media') data.max = declaration.max;
     if (declaration.min !== undefined) data.min = declaration.min;
     if (declaration.unique) data.unique = true;
-    if (declaration.index && kind !== 'reference' && kind !== 'media') data.index = true;
+    if (declaration.index && kind !== 'media') data.index = true;
+    if (declaration.multiple) {
+        data.multiple = true;
+        if (declaration.minItems !== undefined) data.minItems = declaration.minItems;
+        if (declaration.maxItems !== undefined) data.maxItems = declaration.maxItems;
+        if (declaration.addLabel) data.addLabel = declaration.addLabel;
+    }
     if (declaration.search) data.search = true;
     if (kind === 'choice') data.choices = [...(declaration.values ?? [])];
     if (kind === 'reference') data.target = declaration.target?.startsWith('cms/') ? declaration.target.slice(4) : declaration.target ?? '';
     if (kind === 'blocks' && declaration.blocks?.length) data.blocks = [...declaration.blocks];
-    if (declaration.default !== undefined && declaration.default !== null) data.defaultValue = kind === 'boolean' ? declaration.default === true : String(declaration.default);
+    if (declaration.default !== undefined && declaration.default !== null) data.defaultValue = kind === 'boolean' ? declaration.default === true : Array.isArray(declaration.default) ? declaration.default.map(String).join('\n') : String(declaration.default);
     const children = kind === 'repeater' ? Object.entries(declaration.fields ?? {}).map(([sub, nested]) => fieldBlockOf(sub, nested, `${id}-${sub}`)) : undefined;
     return { id, type: `field/${kind}`, data, ...(children ? { children } : {}) };
 }
@@ -268,7 +301,7 @@ export function fieldGroupProblems(group: FieldGroup, types: ReadonlyMap<string,
 function rowIndexProblems(name: string, declaration: FieldDeclaration): string[] {
     if (declaration.kind !== 'rows') return [];
     return Object.entries(declaration.fields ?? {}).flatMap(([sub, nested]) => [
-        ...((nested.index || nested.unique) && !INDEXABLE_ROW_KINDS.has(nested.kind) ? [`field ${name}.${sub}: ${nested.kind} row fields cannot be filterable.`] : []),
+        ...((nested.index || nested.unique) && (!INDEXABLE_ROW_KINDS.has(nested.kind) || nested.multiple) ? [`field ${name}.${sub}: ${nested.multiple ? 'multiple' : nested.kind} row fields cannot be filterable.`] : []),
         ...rowIndexProblems(`${name}.${sub}`, nested),
     ]);
 }
@@ -300,7 +333,7 @@ export function indexedRowPaths(fields: { readonly [name: string]: FieldDeclarat
         if (declaration.kind !== 'rows') return;
         for (const [sub, nested] of Object.entries(declaration.fields ?? {})) {
             const at = [...path, sub];
-            if ((nested.index || nested.unique) && INDEXABLE_ROW_KINDS.has(nested.kind)) paths.push(at);
+            if ((nested.index || nested.unique) && INDEXABLE_ROW_KINDS.has(nested.kind) && !nested.multiple) paths.push(at);
             visit(nested, at);
         }
     };
@@ -315,7 +348,7 @@ export function indexedRowField(fields: { readonly [name: string]: FieldDeclarat
         if (declaration?.kind !== 'rows' || !Object.hasOwn(declaration.fields ?? {}, name)) return null;
         declaration = declaration.fields![name];
     }
-    return path.length > 1 && declaration && (declaration.index || declaration.unique) && INDEXABLE_ROW_KINDS.has(declaration.kind) ? declaration : null;
+    return path.length > 1 && declaration && (declaration.index || declaration.unique) && INDEXABLE_ROW_KINDS.has(declaration.kind) && !declaration.multiple ? declaration : null;
 }
 
 /** The RomeDB array index path of a row field: `team.links.kind` steps into each row as `team.*.links.*.kind`. */
@@ -338,6 +371,7 @@ export function rowsPlain(declaration: FieldDeclaration, value: unknown): string
             const entry = (row as Row)[sub];
             if (nested.kind === 'rows') parts.push(rowsPlain(nested, entry));
             else if (nested.search && typeof entry === 'string' && entry.trim()) parts.push(entry.trim());
+            else if (nested.search && Array.isArray(entry)) parts.push(...entry.filter((item): item is string => typeof item === 'string' && !!item.trim()).map(item => item.trim()));
         }
     }
     return parts.filter(Boolean).join('\n');

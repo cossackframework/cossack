@@ -7,9 +7,15 @@ import { richTextProblem } from './richtext';
 
 export type FieldKind =
     | 'string' | 'text' | 'enum' | 'integer' | 'bigint' | 'number' | 'boolean'
-    | 'datetime' | 'reference' | 'json' | 'list' | 'vector' | 'blocks' | 'richtext' | 'rows';
+    | 'datetime' | 'reference' | 'json' | 'vector' | 'blocks' | 'richtext' | 'rows';
 
-export type ListItemKind = 'string' | 'integer' | 'number' | 'boolean';
+/** Kinds `field.list()` builds a multiple field of. */
+export type ListItemKind = 'string' | 'integer' | 'number';
+
+/** Kinds a field can hold several values of, as an array of the kind's values. */
+export const MULTIPLE_KINDS: ReadonlySet<FieldKind> = new Set<FieldKind>(['string', 'text', 'enum', 'integer', 'number', 'datetime', 'reference', 'json', 'richtext']);
+/** Items a multiple field holds at most, by default; media and references hold fewer. */
+export const ITEM_LIMITS = Object.freeze({ max: 1000, media: 200 });
 
 export interface FieldDeclaration {
     readonly kind: FieldKind;
@@ -17,14 +23,26 @@ export interface FieldDeclaration {
     readonly required?: boolean;
     /** A present field may hold null. */
     readonly nullable?: boolean;
-    /** Constant default for new records. */
-    readonly default?: string | number | boolean | null;
+    /** Constant default for new records; a multiple field's is a list of values. */
+    readonly default?: string | number | boolean | null | readonly (string | number | boolean)[];
     readonly label?: string;
     readonly description?: string;
-    /** string/text: maximum length in characters; rows: the most rows. */
+    /** string/text: maximum length in characters; rows: the most rows. On a multiple field, the rule of every item. */
     readonly max?: number;
-    /** string/text: minimum length; integer/number: minimum value; rows: the fewest rows. */
+    /** string/text: minimum length; integer/number: minimum value; rows: the fewest rows. On a multiple field, the rule of every item. */
     readonly min?: number;
+    /**
+     * The field holds several values of its kind, stored as an array, each checked with the
+     * kind's rules: a multiple string with `max: 80` holds strings of at most 80 characters.
+     * Required means at least one item. Not for booleans, blocks, rows, vectors or big integers.
+     */
+    readonly multiple?: boolean;
+    /** multiple: the fewest items. */
+    readonly minItems?: number;
+    /** multiple: the most items; 1000 by default, 200 for media and references. */
+    readonly maxItems?: number;
+    /** multiple: the editor's Add button text; "Add new" by default. */
+    readonly addLabel?: string;
     /** enum: allowed values. */
     readonly values?: readonly string[];
     /** enum: labels for values, by value. */
@@ -33,8 +51,6 @@ export interface FieldDeclaration {
     readonly pattern?: string;
     /** reference: target resource ID (`owner/name`). */
     readonly target?: string;
-    /** list: item kind. */
-    readonly items?: ListItemKind;
     /** vector: dimensions. */
     readonly dimensions?: number;
     /** Include in the resource's full-text index. */
@@ -47,9 +63,9 @@ export interface FieldDeclaration {
     readonly access?: { readonly read?: string; readonly write?: string };
     /** string: derive a URL slug from this field when the value is empty. Unique slugs get `-2`, `-3`, … */
     readonly slugFrom?: string;
-    /** list of strings: IDs of terms in this taxonomy, checked on write. */
+    /** multiple string: IDs of terms in this taxonomy, checked on write. */
     readonly taxonomy?: string;
-    /** string, or list of strings: IDs of ready media files, checked on write. */
+    /** string: the ID of a ready media file, checked on write; several when multiple. */
     readonly media?: boolean;
     /** blocks, richtext: the block types allowed; all when omitted. */
     readonly blocks?: readonly string[];
@@ -62,6 +78,26 @@ export interface FieldDeclaration {
     readonly format?: 'plain' | 'markdown' | 'code';
     /** json: a group of declared subfields; the value is an object of them, each optional. rows: the fields of each row. */
     readonly fields?: { readonly [name: string]: FieldDeclaration };
+}
+
+/**
+ * A declaration as stored before multiple fields: a `list` kind with `items` reads as a
+ * multiple field of that kind. Subfields and row fields follow. Other declarations are returned as they are.
+ */
+export function normalizeDeclaration(declaration: FieldDeclaration): FieldDeclaration {
+    const legacy = declaration as Omit<FieldDeclaration, 'kind'> & { kind: string; items?: string };
+    let next: FieldDeclaration = declaration;
+    if (legacy.kind === 'list') {
+        const { items, ...rest } = legacy;
+        next = { ...rest, kind: (items === 'integer' || items === 'number' ? items : 'string') as FieldKind, multiple: true };
+    }
+    if (next.fields) next = { ...next, fields: normalizeFields(next.fields) };
+    return next;
+}
+
+/** `normalizeDeclaration` over a set of fields. */
+export function normalizeFields(fields: { readonly [name: string]: FieldDeclaration }): { [name: string]: FieldDeclaration } {
+    return Object.fromEntries(Object.entries(fields).map(([name, declaration]) => [name, declaration && typeof declaration === 'object' ? normalizeDeclaration(declaration) : declaration]));
 }
 
 /** A row's identity: 1-40 letters, digits, `_` or `-`, distinct within its list. */
@@ -85,21 +121,24 @@ export const field = {
     reference: (target: string, options: Options = {}): FieldDeclaration => ({ kind: 'reference', target, ...options }),
     /** A JSON object. Values must be plain JSON. */
     json: (options: Omit<Options, 'default'> = {}): FieldDeclaration => ({ kind: 'json', ...options }),
-    list: (items: ListItemKind, options: Omit<Options, 'default'> = {}): FieldDeclaration => ({ kind: 'list', items, ...options }),
+    /** A multiple field of a scalar kind: an array of strings, integers or numbers. */
+    list: (items: ListItemKind, options: Options = {}): FieldDeclaration => ({ kind: items, multiple: true, ...options }),
     vector: (dimensions: number, options: Omit<Options, 'default'> = {}): FieldDeclaration => ({ kind: 'vector', dimensions, ...options }),
     /** A unique URL slug derived from another field when left empty. */
     slug: (from: string, options: Options = {}): FieldDeclaration => ({ kind: 'string', max: 200, pattern: SLUG_PATTERN, unique: true, slugFrom: from, ...options }),
     /** Term IDs of a taxonomy, such as `categories`. Indexed, so records can be listed by term. */
-    terms: (taxonomy: string, options: Omit<Options, 'default'> = {}): FieldDeclaration => ({ kind: 'list', items: 'string', taxonomy, index: true, ...options }),
-    /** A media file ID. */
+    terms: (taxonomy: string, options: Omit<Options, 'default'> = {}): FieldDeclaration => ({ kind: 'string', multiple: true, taxonomy, index: true, ...options }),
+    /** A media file ID; with `multiple`, several. */
     media: (options: Options = {}): FieldDeclaration => ({ kind: 'string', max: 80, media: true, nullable: true, ...options }),
+    /** Several media file IDs. */
+    gallery: (options: Options = {}): FieldDeclaration => ({ kind: 'string', max: 80, media: true, multiple: true, ...options }),
     /** An ordered list of content blocks, optionally limited to some block types. */
     blocks: (options: Omit<Options, 'default'> = {}): FieldDeclaration => ({ kind: 'blocks', ...options }),
     /** A rich text document (ProseMirror JSON) edited in the WYSIWYG editor; `blocks` limits the blocks it can embed. */
     richText: (options: Omit<Options, 'default'> = {}): FieldDeclaration => ({ kind: 'richtext', ...options }),
     /**
      * An object of declared subfields, such as an entry's SEO settings. Subfields are scalars,
-     * media or lists of strings; each is optional and validated like a field.
+     * media or multiple ones of those; each is optional and validated like a field.
      */
     group: (fields: { readonly [name: string]: FieldDeclaration }, options: Omit<Options, 'default' | 'fields'> = {}): FieldDeclaration => ({ kind: 'json', fields, nullable: true, ...options }),
     /**
@@ -110,9 +149,9 @@ export const field = {
 };
 
 /** Kinds a group's subfields can have. */
-const GROUP_KINDS = new Set<FieldKind>(['string', 'text', 'enum', 'integer', 'number', 'boolean', 'datetime', 'list']);
+const GROUP_KINDS = new Set<FieldKind>(['string', 'text', 'enum', 'integer', 'number', 'boolean', 'datetime']);
 /** Kinds a row's fields can have: anything a value in a document can be, but the big or special ones. */
-const ROW_KINDS = new Set<FieldKind>(['string', 'text', 'enum', 'integer', 'number', 'boolean', 'datetime', 'reference', 'json', 'list', 'rows']);
+const ROW_KINDS = new Set<FieldKind>(['string', 'text', 'enum', 'integer', 'number', 'boolean', 'datetime', 'reference', 'json', 'rows']);
 
 /** Lowercase letters and digits separated by single hyphens. */
 export const SLUG_PATTERN = '[a-z0-9]+(?:-[a-z0-9]+)*';
@@ -137,9 +176,15 @@ export function fieldProblems(name: string, declaration: FieldDeclaration, depth
     const problems: string[] = [];
     const at = `field ${name}`;
     if (!FIELD_NAME.test(name)) problems.push(`${at}: names start with a lowercase letter and use letters and digits only.`);
-    const kinds: FieldKind[] = ['string', 'text', 'enum', 'integer', 'bigint', 'number', 'boolean', 'datetime', 'reference', 'json', 'list', 'vector', 'blocks', 'richtext', 'rows'];
+    const kinds: FieldKind[] = ['string', 'text', 'enum', 'integer', 'bigint', 'number', 'boolean', 'datetime', 'reference', 'json', 'vector', 'blocks', 'richtext', 'rows'];
     if (!kinds.includes(declaration.kind)) return [...problems, `${at}: unknown kind ${String(declaration.kind)}.`];
     const { kind } = declaration;
+    const multiple = declaration.multiple === true;
+    if (declaration.multiple !== undefined && (typeof declaration.multiple !== 'boolean' || (multiple && !MULTIPLE_KINDS.has(kind)))) problems.push(`${at}: multiple is true or false and applies to strings, text, choices, numbers, times, references, JSON and rich text.`);
+    const mostItems = declaration.media || kind === 'reference' ? ITEM_LIMITS.media : ITEM_LIMITS.max;
+    if (declaration.maxItems !== undefined && (!multiple || !Number.isSafeInteger(declaration.maxItems) || declaration.maxItems < 1 || declaration.maxItems > mostItems)) problems.push(`${at}: maxItems applies to multiple fields and is 1-${mostItems}.`);
+    if (declaration.minItems !== undefined && (!multiple || !Number.isSafeInteger(declaration.minItems) || declaration.minItems < 0 || declaration.minItems > (declaration.maxItems ?? mostItems))) problems.push(`${at}: minItems applies to multiple fields and is 0 to maxItems.`);
+    if (declaration.addLabel !== undefined && (!multiple || typeof declaration.addLabel !== 'string' || declaration.addLabel.length > 60)) problems.push(`${at}: addLabel applies to multiple fields and is at most 60 characters.`);
     if (declaration.max !== undefined && (!Number.isSafeInteger(declaration.max) || declaration.max < 1)) problems.push(`${at}: max must be a positive integer.`);
     if (declaration.min !== undefined && !Number.isFinite(declaration.min)) problems.push(`${at}: min must be a finite number.`);
     if (kind === 'enum') {
@@ -148,7 +193,6 @@ export function fieldProblems(name: string, declaration: FieldDeclaration, depth
         }
     }
     if (kind === 'reference' && (typeof declaration.target !== 'string' || !/^[a-z][a-z0-9-]*\/[a-z][a-z0-9_]*$/.test(declaration.target))) problems.push(`${at}: reference target must be a resource ID such as cms/posts.`);
-    if (kind === 'list' && !['string', 'integer', 'number', 'boolean'].includes(declaration.items as string)) problems.push(`${at}: list items must be string, integer, number or boolean.`);
     if (kind === 'vector' && (!Number.isInteger(declaration.dimensions) || declaration.dimensions! < 1 || declaration.dimensions! > 4096)) problems.push(`${at}: vector dimensions must be 1..4096.`);
     if (declaration.pattern !== undefined) {
         if (kind !== 'string') problems.push(`${at}: pattern applies to string fields only.`);
@@ -156,15 +200,16 @@ export function fieldProblems(name: string, declaration: FieldDeclaration, depth
     }
     // Rows are searched through their fields' own `search` flags.
     if (declaration.search && !['string', 'text', 'richtext', 'blocks'].includes(kind)) problems.push(`${at}: only string, text, rich text and blocks fields can be searched.`);
-    if (declaration.unique && ['json', 'list', 'vector', 'text', 'blocks', 'richtext', 'rows'].includes(kind)) problems.push(`${at}: ${kind} fields cannot be indexed.`);
-    // A list of strings or integers can have an array index; other kinds cannot be indexed.
-    if (declaration.index && (['json', 'vector', 'text', 'blocks', 'richtext', 'rows'].includes(kind) || (kind === 'list' && !['string', 'integer'].includes(declaration.items as string)))) problems.push(`${at}: ${kind} fields cannot be indexed.`);
+    if (declaration.unique && ['json', 'vector', 'text', 'blocks', 'richtext', 'rows'].includes(kind)) problems.push(`${at}: ${kind} fields cannot be indexed.`);
+    else if (declaration.unique && multiple) problems.push(`${at}: multiple fields cannot be unique.`);
+    // A multiple field of a scalar kind has an array index on its path; the big kinds cannot be indexed.
+    if (declaration.index && ['json', 'vector', 'text', 'blocks', 'richtext', 'rows'].includes(kind)) problems.push(`${at}: ${kind} fields cannot be indexed.`);
     if (declaration.blocks !== undefined && ((kind !== 'blocks' && kind !== 'richtext') || !Array.isArray(declaration.blocks) || declaration.blocks.some(name => typeof name !== 'string' || !/^[a-z][a-z0-9-]*\/[a-z][a-z0-9-]*$/.test(name)))) problems.push(`${at}: blocks lists block type names and applies to blocks and rich text fields.`);
     if (declaration.form !== undefined && (kind !== 'blocks' || typeof declaration.form !== 'boolean')) problems.push(`${at}: form applies to blocks fields and is true or false.`);
     if (declaration.placement !== undefined && !['main', 'sidebar'].includes(declaration.placement)) problems.push(`${at}: placement is main or sidebar.`);
-    if (declaration.slugFrom !== undefined && (kind !== 'string' || typeof declaration.slugFrom !== 'string' || !FIELD_NAME.test(declaration.slugFrom))) problems.push(`${at}: slugFrom applies to string fields and names another field.`);
-    if (declaration.taxonomy !== undefined && (kind !== 'list' || declaration.items !== 'string' || !TAXONOMY_NAME.test(declaration.taxonomy))) problems.push(`${at}: taxonomy applies to lists of strings and names a taxonomy.`);
-    if (declaration.media !== undefined && (!(kind === 'string' || (kind === 'list' && declaration.items === 'string')) || typeof declaration.media !== 'boolean')) problems.push(`${at}: media applies to string fields and lists of strings.`);
+    if (declaration.slugFrom !== undefined && (kind !== 'string' || multiple || typeof declaration.slugFrom !== 'string' || !FIELD_NAME.test(declaration.slugFrom))) problems.push(`${at}: slugFrom applies to single string fields and names another field.`);
+    if (declaration.taxonomy !== undefined && (kind !== 'string' || !multiple || !TAXONOMY_NAME.test(declaration.taxonomy))) problems.push(`${at}: taxonomy applies to multiple string fields and names a taxonomy.`);
+    if (declaration.media !== undefined && (kind !== 'string' || typeof declaration.media !== 'boolean')) problems.push(`${at}: media applies to string fields.`);
     if (declaration.format !== undefined && (kind !== 'text' || !['plain', 'markdown', 'code'].includes(declaration.format))) problems.push(`${at}: format applies to text fields and is plain, markdown or code.`);
     if (kind === 'rows') {
         const entries = declaration.fields && typeof declaration.fields === 'object' ? Object.entries(declaration.fields) : [];
@@ -182,7 +227,7 @@ export function fieldProblems(name: string, declaration: FieldDeclaration, depth
         const entries = declaration.fields && typeof declaration.fields === 'object' ? Object.entries(declaration.fields) : [];
         if (kind !== 'json' || !entries.length || entries.length > 16) problems.push(`${at}: fields groups 1-16 subfields in a json field.`);
         for (const [sub, nested] of entries) {
-            if (!nested || !GROUP_KINDS.has(nested.kind) || (nested.kind === 'list' && nested.items !== 'string')) { problems.push(`${at}.${sub}: subfields are strings, text, choices, numbers, booleans, times or lists of strings.`); continue; }
+            if (!nested || !GROUP_KINDS.has(nested.kind)) { problems.push(`${at}.${sub}: subfields are strings, text, choices, numbers, booleans or times, single or multiple.`); continue; }
             if (nested.unique || nested.index || nested.search || nested.slugFrom || nested.taxonomy || nested.required || nested.fields) problems.push(`${at}.${sub}: subfields cannot be required, indexed, searched or derived.`);
             problems.push(...fieldProblems(sub, nested).map(problem => problem.replace(/^field /, `${at}.`)));
         }
@@ -198,8 +243,9 @@ export function fieldProblems(name: string, declaration: FieldDeclaration, depth
     return problems;
 }
 
-/** RomeDB field type for a declaration. */
+/** RomeDB field type for a declaration: a multiple field is an array of its kind's type. */
 export function storageType(declaration: FieldDeclaration, references: (target: string) => string): string {
+    if (declaration.multiple) return `array<${storageType({ ...declaration, multiple: false }, references)}>`;
     switch (declaration.kind) {
         case 'string': case 'text': case 'enum': return 'string';
         case 'integer': case 'bigint': case 'datetime': return 'integer';
@@ -207,7 +253,6 @@ export function storageType(declaration: FieldDeclaration, references: (target: 
         case 'boolean': return 'boolean';
         case 'reference': return `record<${references(declaration.target!)}>`;
         case 'json': return 'object';
-        case 'list': return `array<${declaration.items}>`;
         case 'vector': return `vector<${declaration.dimensions}>`;
         case 'blocks': case 'rows': return 'array<object>';
         case 'richtext': return 'object';
@@ -217,6 +262,8 @@ export function storageType(declaration: FieldDeclaration, references: (target: 
 /** Deterministic CHECK expression, or undefined. Strings are validated, never interpolated raw. */
 export function storageCheck(name: string, declaration: FieldDeclaration): string | undefined {
     const checks: string[] = [];
+    // The host checks a multiple field's items.
+    if (declaration.multiple) return undefined;
     if ((declaration.kind === 'string' || declaration.kind === 'text') && declaration.max !== undefined) checks.push(`length(${name}) <= ${declaration.max}`);
     if ((declaration.kind === 'string' || declaration.kind === 'text') && declaration.min !== undefined) checks.push(`length(${name}) >= ${Math.trunc(declaration.min)}`);
     if (declaration.kind === 'enum') checks.push(`${name} IN (${declaration.values!.map(value => `'${value}'`).join(', ')})`);
@@ -229,6 +276,18 @@ export function storageCheck(name: string, declaration: FieldDeclaration): strin
 /** Validate one input value. Returns an error message, or undefined when valid. */
 export function validateValue(name: string, declaration: FieldDeclaration, value: unknown): string | undefined {
     if (value === null) return declaration.nullable ? undefined : 'cannot be null.';
+    if (declaration.multiple) {
+        const most = declaration.maxItems ?? (declaration.media || declaration.kind === 'reference' ? ITEM_LIMITS.media : ITEM_LIMITS.max);
+        const fewest = declaration.minItems ?? (declaration.required ? 1 : 0);
+        if (!Array.isArray(value) || value.length > most) return `must be a list of at most ${most} ${most === 1 ? 'item' : 'items'}.`;
+        if (value.length < fewest) return `needs at least ${fewest} ${fewest === 1 ? 'item' : 'items'}.`;
+        const item: FieldDeclaration = { ...declaration, multiple: false, required: false, nullable: false, minItems: undefined, maxItems: undefined, default: undefined };
+        for (const [index, entry] of value.entries()) {
+            const error = validateValue(name, item, entry);
+            if (error) return `item ${index + 1} ${error}`;
+        }
+        return undefined;
+    }
     switch (declaration.kind) {
         case 'string': case 'text': {
             if (typeof value !== 'string') return 'must be text.';
@@ -273,11 +332,6 @@ export function validateValue(name: string, declaration: FieldDeclaration, value
                 if (error) return `${nested.label ?? key} ${error}`;
             }
             return undefined;
-        }
-        case 'list': {
-            if (!Array.isArray(value) || value.length > 10_000) return 'must be a list of at most 10000 items.';
-            const item: FieldDeclaration = { kind: declaration.items as FieldKind };
-            return value.some(entry => entry === null || validateValue(name, item, entry) !== undefined) ? `items must be ${declaration.items} values.` : undefined;
         }
         case 'vector': return Array.isArray(value) && value.length === declaration.dimensions && value.every(entry => typeof entry === 'number' && Number.isFinite(entry) && Number.isFinite(Math.fround(entry)))
             ? undefined : `must be ${declaration.dimensions} finite numbers.`;

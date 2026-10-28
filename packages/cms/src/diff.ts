@@ -91,7 +91,7 @@ export function comparableValue(declaration: FieldDeclaration, value: unknown): 
     if (declaration.kind === 'richtext') return richTextPlain(value as RichTextDoc);
     if (declaration.kind === 'boolean') return value ? 'Yes' : 'No';
     if (declaration.kind === 'datetime' && typeof value === 'number') return new Date(value).toISOString().replace('T', ' ').slice(0, 16) + ' UTC';
-    if (Array.isArray(value) && declaration.kind === 'list') return value.join('\n');
+    if (Array.isArray(value) && declaration.multiple) return value.map(item => comparableValue({ ...declaration, multiple: false }, item)).join('\n');
     if (typeof value === 'object') return JSON.stringify(value, null, 2);
     return String(value);
 }
@@ -103,7 +103,7 @@ export function compareRecords(fields: { readonly [name: string]: FieldDeclarati
         const from = comparableValue(declaration, before?.[name]);
         const to = comparableValue(declaration, after[name]);
         if (from === to) continue;
-        const text = ['string', 'text', 'richtext', 'list', 'json', 'blocks'].includes(declaration.kind);
+        const text = ['string', 'text', 'richtext', 'json', 'blocks'].includes(declaration.kind) || declaration.multiple === true;
         changes.push({
             name, label: declaration.label ?? name, kind: text ? 'text' : 'value', structured: declaration.kind === 'json', before: from, after: to,
             parts: text ? diffWords(from, to) : [...(from ? [{ kind: 'removed' as const, text: from }] : []), ...(to ? [{ kind: 'added' as const, text: to }] : [])],

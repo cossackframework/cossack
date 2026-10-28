@@ -10,7 +10,7 @@ import { applyEntryJson, contentField, editorView, entryJson, entryValues, field
 import { blockDefaults, controlValue, editorBlocks, editorInput, entryUrl, suggestedSlug, type EditorBlock, type EditorField, type EditorValues, type EditorView, type TermOption } from '../../../../../../cms/editor';
 import { RichTextField, richTextEditors } from '../../../../../../cms/rich-text-field';
 import { BlockTree } from '../../../../../../cms/block-tree';
-import { bindingChoices, fieldControl, groupFields, type BindingChoice } from '../../../../../../cms/field-controls';
+import { bindingChoices, choicesControl, fieldControl, groupFields, multipleControl, type BindingChoice } from '../../../../../../cms/field-controls';
 import { uploadFile } from '../../../../../../cms/media-chooser';
 import { FieldGroupView, plainBlocks, visibilityTypes, type RowPath } from '../../../../../../cms/field-group-view';
 import { box, CONTROL, linkButton, notice, shortDate, STATUS_LABELS, statusBadge } from '../../../../../../cms/ui';
@@ -855,10 +855,15 @@ export default class EntryEditor extends Cossack {
     private control(field: EditorField, value: unknown, change: (value: unknown) => void, target: MediaTarget, id: string): TemplateResult {
         // A pattern's starting layouts: the collections, one checkbox each.
         if (this.view?.route === 'patterns' && field.name === 'starter' && target.block === undefined) {
-            const chosen = String(value ?? '').split('\n').filter(Boolean);
+            const chosen = Array.isArray(value) ? value.map(String) : [];
             return html`<div id=${id} class="space-y-1.5">${this.collectionChoices.map(choice => html`<label class="flex items-center gap-2 text-sm text-foreground cursor-pointer">
                 ${component(Checkbox, { checked: chosen.includes(choice.name), '@change': (event: Event) => change((event.target as HTMLInputElement).checked
-                    ? [...new Set([...chosen, choice.name])].join('\n') : chosen.filter(name => name !== choice.name).join('\n')) })} ${choice.label}</label>`)}</div>`;
+                    ? [...new Set([...chosen, choice.name])] : chosen.filter(name => name !== choice.name)) })} ${choice.label}</label>`)}</div>`;
+        }
+        // A multiple field: this editor's control for the kind, once per item; a multiple choice is checkboxes and a gallery the media control.
+        if (field.multiple && !field.media) {
+            if (field.kind === 'enum') return choicesControl(field, value, change, id);
+            return multipleControl(field, value, change, id, (item, itemChange, itemId) => this.control({ ...field, multiple: false }, item, itemChange, target, itemId));
         }
         // A group of an entry (a form's settings): its subfields with this editor's controls, media and Markdown included.
         if (field.kind === 'json' && field.fields.length && target.block === undefined && !target.group) {
@@ -884,12 +889,10 @@ export default class EntryEditor extends Cossack {
                 id, blocks: [{ id: field.name, type: 'field/repeater', data: { name: field.name, label: field.label } }], options: this.view?.blocks ?? [], fields: [field], values: { [field.name]: value },
                 onChange: (_name: string, next: unknown) => change(next), hidden: new Set<string>(), control: (sub: EditorField, subValue: unknown, subChange: (value: unknown) => void, rows: RowPath, subId: string) => this.control(sub, subValue, subChange, { field: target.field, rows, key: sub.name }, subId),
             });
-            // Media files open this editor's picker, which knows where the chosen file goes.
-            case 'list': if (field.media) return this.mediaControl({ ...target, multiple: true }, value, field.label); break;
             case 'text': if (field.format === 'markdown' && target.block === undefined) return this.markdownControl(field, value, change, id); break;
             case 'blocks': return this.blocksControl(field);
-            // Rich text inside a block: the word processor alone, written in the tree.
-            case 'richtext': if (target.block !== undefined) return component(RichTextField, {
+            // Rich text inside a block, or one item of a multiple field: the word processor alone, with its own editor for the picker.
+            case 'richtext': if (target.block !== undefined || id !== field.name) return component(RichTextField, {
                 id, label: field.label, value: (value as RichTextDoc | null) ?? null, blocks: [], onChange: (doc: RichTextDoc) => change(doc),
                 onMedia: () => this.openPicker({ field: target.field, richText: true, editor: id }), onInsertBlock: () => undefined, onEditBlock: () => undefined,
             });
@@ -902,7 +905,8 @@ export default class EntryEditor extends Cossack {
                 onEditBlock: (block: EmbeddedBlock) => this.editRichBlock(field.name, block),
                 patternTitles: this.patternTitles,
             });
-            default: if (field.media && field.kind === 'string') return this.mediaControl(target, value, field.label);
+            // Media files open this editor's picker, which knows where the chosen file goes.
+            default: if (field.media && field.kind === 'string') return this.mediaControl({ ...target, multiple: field.multiple }, value, field.label);
         }
         return fieldControl(field, value, change, id, { options: this.references[field.name] ?? [], ...(target.block !== undefined && !field.media ? { bindings: this.bindings() } : {}),
             ...(target.dialog && this.blockDialog ? { language: String(this.blockDialog.values.language ?? '') } : {}) }) ?? html``;

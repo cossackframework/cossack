@@ -13,10 +13,8 @@ export const FIELD_TYPES = [
     { type: 'boolean', label: 'Yes / no', description: 'A checkbox.' },
     { type: 'date', label: 'Date and time', description: 'Stored in UTC.' },
     { type: 'choice', label: 'Choice', description: 'One of a fixed list.' },
-    { type: 'media', label: 'Image or file', description: 'One file from the media library.' },
-    { type: 'gallery', label: 'Gallery', description: 'Several files from the media library.' },
+    { type: 'media', label: 'Image or file', description: 'A file from the media library; a gallery with Multiple on.' },
     { type: 'reference', label: 'Reference', description: 'An entry of another collection.' },
-    { type: 'list', label: 'List', description: 'Several lines of text.' },
     { type: 'blocks', label: 'Blocks', description: 'Content built from blocks, such as headings, images and buttons.' },
     { type: 'json', label: 'JSON', description: 'Structured data for developers.' },
 ] as const;
@@ -45,7 +43,6 @@ export function typeOf(declaration: FieldDeclaration): FieldType {
         case 'datetime': return 'date';
         case 'enum': return 'choice';
         case 'reference': return 'reference';
-        case 'list': return declaration.media ? 'gallery' : 'list';
         case 'blocks': return 'blocks';
         default: return 'json';
     }

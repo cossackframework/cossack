@@ -29,7 +29,7 @@ export const GET = async (c: Context) => {
             if (!term) return c.json({ error: 'Term not found.', code: 'CMS_NOT_FOUND' }, 404);
             where[taxonomy] = { containsAny: (await cms.taxonomies.subtree(term.id)).slice(0, 50) };
         }
-        // `filter[price]=10`, `filter[specs.name]=Weight`: equality on a scalar field, membership on a list or an indexed row field.
+        // `filter[price]=10`, `filter[specs.name]=Weight`: equality on a scalar field, membership on a multiple field or an indexed row field.
         for (const [key, raw] of Object.entries(c.req.query())) {
             const name = /^filter\[([a-zA-Z0-9_.]{1,200})\]$/.exec(key)?.[1];
             if (!name || typeof raw !== 'string') continue;
@@ -37,9 +37,9 @@ export const GET = async (c: Context) => {
             const row = name.includes('.') ? indexedRowField(fields, name.split('.')) : null;
             const declaration = name.includes('.') ? row : fields[name];
             if (!declaration) return c.json({ error: `Cannot filter on ${name}.`, code: 'CMS_VALIDATION' }, 422);
-            const items = declaration.kind === 'list' ? declaration.items : declaration.kind;
-            const value = items === 'integer' || items === 'number' || (items === 'datetime' && row !== null) ? Number(raw) : items === 'boolean' ? raw === 'true' : raw;
-            where[name] = declaration.kind === 'list' || row ? { contains: value } : value;
+            const kind = declaration.kind;
+            const value = kind === 'integer' || kind === 'number' || (kind === 'datetime' && (row !== null || declaration.multiple)) ? Number(raw) : kind === 'boolean' ? raw === 'true' : raw;
+            where[name] = declaration.multiple || row ? { contains: value } : value;
         }
         const query = (c.req.query('q') ?? '').trim().slice(0, 200);
         const html = c.req.query('format') === 'html';

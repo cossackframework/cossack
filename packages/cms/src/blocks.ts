@@ -72,7 +72,7 @@ export interface BlockDeclaration {
 }
 
 /** The builder's field types, one field block each. */
-export const FIELD_BLOCK_KINDS = Object.freeze(['text', 'textarea', 'markdown', 'number', 'integer', 'boolean', 'date', 'choice', 'media', 'gallery', 'reference', 'list', 'blocks', 'json', 'repeater'] as const);
+export const FIELD_BLOCK_KINDS = Object.freeze(['text', 'textarea', 'markdown', 'number', 'integer', 'boolean', 'date', 'choice', 'media', 'reference', 'blocks', 'json', 'repeater'] as const);
 export type FieldBlockKind = (typeof FIELD_BLOCK_KINDS)[number];
 
 /** One test of a condition: an input's value against `value`. */
@@ -173,7 +173,7 @@ export function blockSupports(declaration: Pick<BlockDeclaration, 'category' | '
 export const BLOCK_NAME = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\/[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 const ICON_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 /** Field kinds a block can hold. Nesting is through `children`, not fields. */
-const BLOCK_FIELD_KINDS = new Set(['string', 'text', 'enum', 'integer', 'number', 'boolean', 'datetime', 'list', 'json', 'richtext']);
+const BLOCK_FIELD_KINDS = new Set(['string', 'text', 'enum', 'integer', 'number', 'boolean', 'datetime', 'json', 'richtext']);
 const LINK = '(?:https?://|/|mailto:|tel:|#)\\S*';
 
 const GAP = field.enum(['none', 'small', 'medium', 'large'], { default: 'medium', label: 'Gap' });
@@ -193,7 +193,7 @@ const core: BlockDeclaration[] = [
         link: field.string({ max: 2048, pattern: '(?:https?://|/)\\S*', label: 'Link' }),
     } },
     { name: 'core/gallery', keywords: ['images', 'photos'], label: 'Gallery', icon: 'gallery-wide', category: 'media', fields: {
-        images: { ...field.list('string', { label: 'Images' }), media: true },
+        images: field.gallery({ label: 'Images' }),
         columns: field.integer({ default: 3, min: 1, max: 6, label: 'Columns' }),
     } },
     { name: 'core/quote', keywords: ['blockquote', 'citation'], label: 'Quote', icon: 'chat-round-line', category: 'text', fields: {
@@ -201,7 +201,7 @@ const core: BlockDeclaration[] = [
         citation: field.string({ max: 200, label: 'Citation' }),
     } },
     { name: 'core/list', keywords: ['bullets', 'numbered', 'ul', 'ol'], label: 'List', icon: 'list', category: 'text', fields: {
-        items: field.list('string', { label: 'Items', description: 'One item per line.' }),
+        items: field.list('string', { label: 'Items' }),
         ordered: field.boolean({ default: false, label: 'Numbered' }),
     } },
     { name: 'core/code', keywords: ['snippet', 'pre', 'source'], label: 'Code', icon: 'code-square', category: 'text', fields: {
@@ -233,7 +233,7 @@ const core: BlockDeclaration[] = [
         layout: field.enum(['top', 'left', 'right'], { default: 'top', label: 'Image position', choices: { top: 'Above the text', left: 'Left of the text', right: 'Right of the text' } }),
     } },
     { name: 'core/carousel', keywords: ['slider', 'slideshow'], label: 'Carousel', icon: 'posts-carousel-horizontal', category: 'media', description: 'Images one at a time, with arrows and dots; swipe on touch screens.', fields: {
-        images: { ...field.list('string', { label: 'Images' }), media: true },
+        images: field.gallery({ label: 'Images' }),
         aspect: field.enum(['video', 'wide', 'square', 'auto'], { default: 'video', label: 'Shape', choices: { video: '16:9', wide: '21:9', square: 'Square', auto: 'As uploaded' } }),
         autoplay: field.boolean({ default: false, label: 'Play automatically' }),
         interval: field.integer({ default: 5, min: 2, max: 30, label: 'Seconds per image' }),
@@ -251,7 +251,7 @@ const core: BlockDeclaration[] = [
     } },
     // Data: stored with the entry, shown nowhere. Themes read `entry.content` and the API returns them.
     { name: 'core/meta', keywords: ['metadata', 'data', 'key value'], label: 'Custom fields', icon: 'database', category: 'data', description: 'Named values stored with the entry for themes and integrations; nothing shows on the page.', fields: {
-        fields: field.list('string', { label: 'Fields', description: 'One per line, as name: value.' }),
+        fields: field.list('string', { label: 'Fields', description: 'Each as name: value.' }),
     } },
     // Layout: containers that hold other blocks. They render as CSS grid and respond to the
     // width of the content they are in, so columns inside a column stack on their own.
@@ -619,7 +619,7 @@ export function blocksPlain(blocks: readonly Block[], types: ReadonlyMap<string,
             const value = block.data[name];
             const text = declaration.kind === 'richtext' ? (value && typeof value === 'object' ? plain(value as RichTextDoc) : '')
                 : (declaration.kind === 'string' || declaration.kind === 'text') && typeof value === 'string' && !declaration.media && !declaration.pattern ? value
-                : declaration.kind === 'list' && declaration.items === 'string' && !declaration.media && Array.isArray(value) ? value.join('\n') : '';
+                : declaration.kind === 'string' && declaration.multiple && !declaration.media && Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string').join('\n') : '';
             if (!text.trim()) continue;
             parts.push(text.trim());
             length += text.length;

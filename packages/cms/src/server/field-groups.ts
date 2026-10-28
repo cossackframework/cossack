@@ -6,7 +6,7 @@
  */
 import { ClientError, type RomeDB } from '@cossackframework/romedb';
 import { CmsError } from '../errors';
-import { groupsForTarget, type FieldGroup, type FieldGroupTarget } from '../field-groups';
+import { groupsForTarget, upgradeFieldBlocks, type FieldGroup, type FieldGroupTarget } from '../field-groups';
 import { principalId, type Principal } from '../permissions';
 
 const WRITE = { kind: 'cms.fieldGroups', retryConflicts: 5 } as const;
@@ -72,7 +72,10 @@ export class CmsFieldGroups {
             if (!(error instanceof ClientError) || !/cms_field_groups|no such table|not found/i.test(error.message)) throw new CmsError('CMS_UNAVAILABLE', 'Field groups could not be read.', { cause: error });
         }
         return rows.flatMap(([definition]) => {
-            try { return [Object.freeze(JSON.parse(definition as string) as FieldGroup)]; } catch { return []; }
+            try {
+                const group = JSON.parse(definition as string) as FieldGroup;
+                return [Object.freeze({ ...group, blocks: upgradeFieldBlocks(group.blocks ?? []) })];
+            } catch { return []; }
         });
     }
 }

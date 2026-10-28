@@ -117,7 +117,7 @@ export default function entry(entry: EntryView, helpers: ThemeHelpers): Template
 
 `entry.content` is the entry's whole content as one list of blocks: its blocks fields,
 the `content` feature first of all, and its rich text and Markdown fields, each of those
-one `core/richtext` block, in the collection's field order. A theme that lays a
+one `core/richtext` block (one per item of a multiple field), in the collection's field order. A theme that lays a
 collection's fields out itself takes them from `entry.fields` instead, where a blocks,
 rich text or Markdown field is a `RenderedBlock[]` of its own:
 
@@ -138,7 +138,7 @@ that export over the files, slot by slot.
 | View | What it carries |
 | --- | --- |
 | `SiteView` | `title`, `tagline`, `blog` (the posts page URL), `menus` by location (items with `label`, `url`, `newTab`, `children`, `className`, `attributes`, `meta`), `locale`, `languages` (the page in each language), `searchUrl`, `homeUrl`, `areas` (rendered blocks by widget area), and `template`, the entry's template name so a layout can leave out its frame, as the default theme does for `entry-blank`. |
-| `EntryView` | `id`, `title`, `url`, `collection`, `kind` (the singular label), `date`, `author`, `excerpt`, `content` (`RenderedBlock[]`), `image` (`MediaView`), `terms` by taxonomy, `fields` (every field by name as a typed `FieldView`), `details` (scalar fields as labelled text), `template`, `locale`, `comments` (`CommentsView`, or null) and `locked`. In lists, `content` is empty. A locked entry withholds its excerpt, content and fields. |
+| `EntryView` | `id`, `title`, `url`, `collection`, `kind` (the singular label), `date`, `author`, `excerpt`, `content` (`RenderedBlock[]`), `image` (`MediaView`), `terms` by taxonomy, `fields` (every field by name as a typed `FieldView`: a scalar, a `MediaView`, an `EntryReference`, `TermLink[]`, `RenderedBlock[]` for blocks, rich text and Markdown, or, for a multiple field, the list of its kind's views), `details` (scalar fields as labelled text), `template`, `locale`, `comments` (`CommentsView`, or null) and `locked`. In lists, `content` is empty. A locked entry withholds its excerpt, content and fields. |
 | `ArchiveView` | `kind` (`home`, `archive`, `term`, `search`), `collection`, `taxonomy`, `title`, `description`, `entries`, `paging` (`page`, `pages`, `base`) and `query`. |
 | `LockedView` | `entry`, `action` (where the password form posts) and `error` after a wrong password. |
 | `MediaView` | `url`, `alt`, `width`, `height`, `contentType`, `caption`, `srcset` and `wideSrcset` (16:9 variants around the focal point). |

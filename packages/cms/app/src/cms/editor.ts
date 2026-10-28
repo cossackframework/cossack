@@ -18,8 +18,11 @@ export interface EditorField {
     format: 'plain' | 'markdown' | 'code';
     /** enum values, with labels. */
     choices: { value: string; label: string }[];
-    /** list item kind. */
-    items: string;
+    /** Several values of the kind, as a list; `minItems` and `maxItems` bound it and `addLabel` names the Add button. */
+    multiple: boolean;
+    minItems: number | null;
+    maxItems: number | null;
+    addLabel: string;
     media: boolean;
     /** reference: the target resource, with selectable entries. */
     target: string;
@@ -130,13 +133,14 @@ export function editorFields(fields: { readonly [name: string]: FieldDeclaration
 }
 
 export function editorField(name: string, declaration: FieldDeclaration & { choices?: { readonly [value: string]: string } }): EditorField {
-    const sidebar = declaration.kind === 'boolean' || (declaration.media === true && declaration.kind === 'string') || declaration.kind === 'reference';
+    const sidebar = declaration.kind === 'boolean' || (declaration.media === true && declaration.kind === 'string' && !declaration.multiple) || declaration.kind === 'reference';
     return {
         name, label: declaration.label ?? name, kind: declaration.kind, required: declaration.required === true, nullable: declaration.nullable === true,
         description: declaration.description ?? '', placement: declaration.placement ?? (sidebar ? 'sidebar' : 'main'),
         format: declaration.format ?? 'plain',
         choices: (declaration.values ?? []).map(value => ({ value, label: declaration.choices?.[value] ?? value })),
-        items: declaration.items ?? '', media: declaration.media === true, target: declaration.target ?? '', blocks: [...(declaration.blocks ?? [])], form: declaration.form === true,
+        multiple: declaration.multiple === true, minItems: declaration.minItems ?? null, maxItems: declaration.maxItems ?? null, addLabel: declaration.addLabel ?? '',
+        media: declaration.media === true, target: declaration.target ?? '', blocks: [...(declaration.blocks ?? [])], form: declaration.form === true,
         min: declaration.min ?? null, max: declaration.max ?? null, defaultValue: declaration.default ?? null,
         fields: Object.entries(declaration.fields ?? {}).map(([sub, nested]) => editorField(sub, nested)),
     };
@@ -144,6 +148,8 @@ export function editorField(name: string, declaration: FieldDeclaration & { choi
 
 /** The value a control shows for a stored value. */
 export function controlValue(field: EditorField, value: unknown): unknown {
+    // A multiple field edits as a list of its kind's control values.
+    if (field.multiple) return (Array.isArray(value) ? value : []).map(item => controlValue({ ...field, multiple: false }, item));
     // Rows edit as a list of objects of their fields' control values, each with its id.
     if (field.kind === 'rows') {
         return (Array.isArray(value) ? value : []).map(row => {
@@ -158,7 +164,6 @@ export function controlValue(field: EditorField, value: unknown): unknown {
     }
     if (value === null || value === undefined) {
         if (field.kind === 'boolean') return false;
-        if (field.kind === 'list' && field.media) return [];
         if (field.kind === 'blocks') return [];
         if (field.kind === 'richtext') return null;
         return '';
@@ -166,7 +171,6 @@ export function controlValue(field: EditorField, value: unknown): unknown {
     switch (field.kind) {
         case 'datetime': return new Date(value as number).toISOString().slice(0, 16);
         case 'json': return JSON.stringify(value, null, 2);
-        case 'list': return field.media ? value : (value as unknown[]).join('\n');
         case 'integer': case 'number': return String(value);
         case 'blocks': case 'richtext': return value;
         default: return value;
@@ -179,7 +183,7 @@ function declarationOf(field: EditorField): FieldDeclaration {
         kind: field.kind, required: field.required, nullable: field.nullable,
         ...(field.min !== null ? { min: field.min } : {}), ...(field.max !== null ? { max: field.max } : {}),
         ...(field.choices.length ? { values: field.choices.map(choice => choice.value) } : {}),
-        ...(field.items ? { items: field.items as FieldDeclaration['items'] } : {}),
+        ...(field.multiple ? { multiple: true, ...(field.minItems !== null ? { minItems: field.minItems } : {}), ...(field.maxItems !== null ? { maxItems: field.maxItems } : {}) } : {}),
         ...(field.fields.length ? { fields: Object.fromEntries(field.fields.map(sub => [sub.name, declarationOf(sub)])) } : {}),
     };
 }
@@ -201,6 +205,16 @@ export function editorInput(fields: readonly EditorField[], values: EditorValues
 }
 
 function convert(field: EditorField, raw: unknown, blocks: readonly BlockOption[]): { value: unknown } | { error: string } {
+    // A multiple field's items convert as the kind does; blank ones are left out, and the server checks the count.
+    if (field.multiple) {
+        const items: unknown[] = [];
+        for (const [index, entry] of (Array.isArray(raw) ? raw : []).entries()) {
+            const converted = convert({ ...field, multiple: false, nullable: true }, entry, blocks);
+            if ('error' in converted) return { error: `${__('item')} ${index + 1} ${converted.error}` };
+            if (converted.value !== undefined && converted.value !== null && converted.value !== '') items.push(converted.value);
+        }
+        return { value: items };
+    }
     if (field.kind === 'rows') {
         // Each row keeps its id and the fields that were set; the server checks what is required.
         const rows: Record<string, unknown>[] = [];
@@ -235,7 +249,6 @@ function convert(field: EditorField, raw: unknown, blocks: readonly BlockOption[
         const converted = blocksInput(raw as EditorBlock[], new Map(blocks.map(block => [block.name, block])));
         return 'error' in converted ? converted : { value: converted.value };
     }
-    if (field.kind === 'list' && field.media) return { value: Array.isArray(raw) ? raw.filter(item => typeof item === 'string') : [] };
     const text = typeof raw === 'string' ? (field.kind === 'text' || field.kind === 'json' ? raw : raw.trim()) : raw === undefined || raw === null ? '' : String(raw);
     if (text === '') {
         if (field.nullable) return { value: null };
@@ -251,13 +264,6 @@ function convert(field: EditorField, raw: unknown, blocks: readonly BlockOption[
             return Number.isNaN(value) ? { error: 'must be a date and time.' } : { value };
         }
         case 'json': try { return { value: JSON.parse(text) }; } catch { return { error: 'must be valid JSON.' }; }
-        case 'list': {
-            const items = text.split(/\n|,/).map(item => item.trim()).filter(Boolean);
-            if (field.items === 'string') return { value: items };
-            if (field.items === 'boolean') return { value: items.map(item => item === 'true') };
-            const numbers = items.map(Number);
-            return numbers.some(value => !Number.isFinite(value)) ? { error: 'must list numbers.' } : { value: numbers };
-        }
         default: return { value: text };
     }
 }

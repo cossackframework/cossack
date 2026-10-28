@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
     commandInput, declarationHash, defineResource, evaluateRule, field, formInput, formValue, isPluginPoint, manifestProblems, permissionMatches, providedPoints,
-    requestedGrants, resolveResource, resourceProblems, storageCheck, storageName, userPrincipal, validateValue,
+    requestedGrants, resolveResource, resourceProblems, storageCheck, storageName, storageType, userPrincipal, validateValue, normalizeDeclaration, fieldProblems,
 } from '../src/index';
 import { planSchema, type Catalog } from '../src/server/schema';
 
@@ -22,11 +22,39 @@ describe('fields', () => {
         expect(validateValue('j', field.json(), { a: [1, 1.5, null, { b: 'x' }] })).toBeUndefined();
         expect(validateValue('j', field.json(), { a: 2 ** 60 })).toMatch(/JSON object/);
         expect(validateValue('l', field.list('integer'), [1, 2])).toBeUndefined();
-        expect(validateValue('l', field.list('integer'), [1, 'x'])).toMatch(/integer/);
+        expect(validateValue('l', field.list('integer'), [1, 'x'])).toMatch(/item 2 must be a safe integer/);
         expect(validateValue('v', field.vector(2), [1, 2])).toBeUndefined();
         expect(validateValue('v', field.vector(2), [1])).toMatch(/2 finite numbers/);
         expect(validateValue('x', field.string(), null)).toMatch(/null/);
         expect(validateValue('x', field.string({ nullable: true }), null)).toBeUndefined();
+    });
+
+    it('holds several values of a kind with the multiple flag', () => {
+        const tags = field.string({ multiple: true, max: 5, pattern: '[a-z]+', maxItems: 3, minItems: 1 });
+        expect(validateValue('tags', tags, ['one', 'two'])).toBeUndefined();
+        expect(validateValue('tags', tags, ['one', 'toolong'])).toMatch(/item 2 must be at most 5/);
+        expect(validateValue('tags', tags, ['one', 'Two'])).toMatch(/item 2 has an invalid format/);
+        expect(validateValue('tags', tags, [])).toMatch(/at least 1 item/);
+        expect(validateValue('tags', tags, ['a', 'b', 'c', 'd'])).toMatch(/at most 3 items/);
+        expect(validateValue('tags', tags, 'one')).toMatch(/must be a list/);
+        expect(validateValue('tags', field.string({ multiple: true, required: true }), [])).toMatch(/at least 1 item/);
+        expect(validateValue('tags', field.string({ multiple: true }), [null])).toMatch(/item 1 cannot be null/);
+        expect(validateValue('ref', field.reference('cms/posts', { multiple: true }), ['a', 'b'])).toBeUndefined();
+        expect(validateValue('sizes', field.enum(['s', 'm'], { multiple: true }), ['s', 'l'])).toMatch(/item 2 must be one of/);
+        expect(storageType(field.reference('cms/posts', { multiple: true }), target => `r__${target.replace('/', '__')}`)).toBe('array<record<r__cms__posts>>');
+        expect(storageType(field.richText({ multiple: true }), () => '')).toBe('array<object>');
+        expect(storageType(field.terms('tags'), () => '')).toBe('array<string>');
+        expect(storageCheck('"tags"', tags)).toBeUndefined();
+        expect(fieldProblems('b', field.boolean({ multiple: true }))).toEqual(['field b: multiple is true or false and applies to strings, text, choices, numbers, times, references, JSON and rich text.']);
+        expect(fieldProblems('t', field.string({ multiple: true, maxItems: 2000 }))).toEqual(['field t: maxItems applies to multiple fields and is 1-1000.']);
+        expect(fieldProblems('m', field.media({ multiple: true, maxItems: 500 }))).toEqual(['field m: maxItems applies to multiple fields and is 1-200.']);
+        expect(fieldProblems('t', field.string({ minItems: 1 }))).toEqual(['field t: minItems applies to multiple fields and is 0 to maxItems.']);
+        expect(fieldProblems('t', field.string({ multiple: true, unique: true }))).toEqual(['field t: multiple fields cannot be unique.']);
+        expect(fieldProblems('t', field.string({ multiple: true, index: true, default: ['a'] }))).toEqual([]);
+        expect(fieldProblems('t', field.string({ multiple: true, default: 'a' }))).toEqual(['field t: default must be a list of at most 1000 items.']);
+        expect(normalizeDeclaration({ kind: 'list', items: 'string', index: true, label: 'Tags' } as never)).toEqual({ kind: 'string', multiple: true, index: true, label: 'Tags' });
+        expect(normalizeDeclaration(field.rows({ old: { kind: 'list', items: 'number' } as never }))).toEqual(field.rows({ old: { kind: 'number', multiple: true } }));
+        expect(normalizeDeclaration(tags)).toBe(tags);
     });
 
     it('renders deterministic checks with quoted names', () => {

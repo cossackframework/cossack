@@ -412,6 +412,14 @@ export async function entryViews(cms: CmsHost, collection: CollectionDefinition,
         if (declaration.kind === 'vector' || declaration.kind === 'bigint') return undefined;
         if ((declaration.kind === 'richtext' || declaration.kind === 'blocks' || (declaration.kind === 'text' && declaration.format === 'markdown')) && !full) return undefined;
         if (value === undefined || value === null || value === '') return null;
+        // A multiple field is the list of its kind's views; its rich text and Markdown items are one block each.
+        if (declaration.multiple && !declaration.taxonomy && !declaration.media && Array.isArray(value)) {
+            const items = value.map((item, index) => fieldView(`${name}-${index + 1}`, { ...declaration, multiple: false }, item, locale, full, scope));
+            if (items.some(item => item === undefined)) return undefined;
+            return declaration.kind === 'richtext' || (declaration.kind === 'text' && declaration.format === 'markdown')
+                ? items.flatMap(item => (item as readonly RenderedBlock[] | null) ?? []).map(block => ({ ...block, field: name }))
+                : items.filter((item): item is Exclude<FieldView, null> => item !== null) as FieldView;
+        }
         if (declaration.taxonomy) return ((value as string[] | undefined) ?? []).map(id => terms.get(id)).filter((term): term is TermShape => !!term).map((term): TermLink => ({ name: term.name, url: termUrl(term, locale), icon: term.icon }));
         if (declaration.media && Array.isArray(value)) return value.map(id => mediaView(files.get(String(id)), resizes)).filter((view): view is MediaView => !!view);
         if (declaration.media) return mediaView(files.get(String(value)), resizes);
@@ -436,7 +444,7 @@ export async function entryViews(cms: CmsHost, collection: CollectionDefinition,
         // Each content field is rendered once, for `content` and for `fields`.
         const content = options.full && !locked ? contentFields.flatMap(([name]) => (typed[name] as readonly RenderedBlock[] | null | undefined) ?? []) : [];
         const details = options.full ? fields.filter(([name, declaration]) => !NOT_DETAILS.has(name) && !declaration.taxonomy && !declaration.media
-            && !['text', 'blocks', 'richtext', 'json', 'reference', 'vector', 'bigint'].includes(declaration.kind) && typed[name] !== null && typed[name] !== undefined && typed[name] !== '')
+            && !['text', 'blocks', 'richtext', 'json', 'reference', 'vector', 'bigint'].includes(declaration.kind) && typed[name] !== null && typed[name] !== undefined && typed[name] !== '' && !(Array.isArray(typed[name]) && !(typed[name] as unknown[]).length))
             .map(([name, declaration]) => ({ label: declaration.label ?? name, value: displayValue(declaration.kind, typed[name], settings) })) : [];
         views.push({
             id: record.id, title: recordTitle(record, 'title'), url: urls.get(record.id) ?? null, collection: collection.name, kind: collection.singular,

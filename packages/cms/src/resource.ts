@@ -132,7 +132,7 @@ export function resourceProblems(declaration: ResourceDeclaration): string[] {
         for (const name of index.fields ?? []) {
             const declared = declaration.fields[name];
             if (!declared && !(['_createdAt', '_updatedAt', '_owner'] as string[]).includes(name)) problems.push(`index ${index.name} names undeclared field ${name}.`);
-            else if (declared && ['json', 'list', 'vector', 'text'].includes(declared.kind)) problems.push(`index ${index.name} cannot include ${declared.kind} field ${name}.`);
+            else if (declared && (['json', 'vector', 'text'].includes(declared.kind) || declared.multiple)) problems.push(`index ${index.name} cannot include ${declared.multiple ? 'multiple' : declared.kind} field ${name}.`);
         }
     }
     for (const action of Object.keys(declaration.access ?? {})) {

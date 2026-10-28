@@ -1,9 +1,9 @@
 // Client-safe CMS declarations: resources, fields, permissions, extension points and records.
 export { defineResource, resolveResource, resourceProblems, storageName, permissionFor, declarationHash, canonicalJson, SYSTEM_FIELDS, RESOURCE_NAME, OWNER_NAME, ResourceDeclarationError,
     type ResourceDeclaration, type Resource, type ResourceAccess, type ResourceAction, type AccessRule, type IndexDeclaration, type MigrationStep } from './resource';
-export { field, fieldProblems, validateValue, storageType, storageCheck, slugify, FIELD_NAME, SLUG_PATTERN, TAXONOMY_NAME, ROW_ID, ROW_LIMITS, type FieldDeclaration, type FieldKind, type ListItemKind } from './fields';
+export { field, fieldProblems, validateValue, storageType, storageCheck, normalizeDeclaration, normalizeFields, slugify, FIELD_NAME, SLUG_PATTERN, TAXONOMY_NAME, ROW_ID, ROW_LIMITS, ITEM_LIMITS, MULTIPLE_KINDS, type FieldDeclaration, type FieldKind, type ListItemKind } from './fields';
 export {
-    FIELD_BLOCK_TYPES, FIELD_BLOCKS, FIELD_GROUP_ID, FIELD_GROUP_LIMITS, fieldBlockFields, fieldBlockDeclaration, rowsSearchable, metaProblems, flattenGroupFields, fieldGroupDeclarations, fieldBlockKindOf, fieldBlockOf, layoutOf, sameTarget, targetOrder, groupsForTarget, withTarget, fieldGroupProblems,
+    FIELD_BLOCK_TYPES, FIELD_BLOCKS, FIELD_GROUP_ID, FIELD_GROUP_LIMITS, fieldBlockFields, fieldBlockDeclaration, upgradeFieldBlocks, rowsSearchable, metaProblems, flattenGroupFields, fieldGroupDeclarations, fieldBlockKindOf, fieldBlockOf, layoutOf, sameTarget, targetOrder, groupsForTarget, withTarget, fieldGroupProblems,
     withRowIds, indexedRowPaths, indexedRowField, rowIndexPath, rowsPlain, rowUniqueProblem, conditionValues, hiddenKey, fieldVisibility, clearHidden,
     type FieldGroup, type FieldGroupTarget, type Row,
 } from './field-groups';

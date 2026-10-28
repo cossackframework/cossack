@@ -23,7 +23,11 @@ const GROUP = 'dashboard/(cms)/field-groups/[id]/index.ts';
 /** A Details group with two columns and a Sale tab, made for products, and a Specifications group with a repeater. */
 const DETAILS = [
   { id: 'cols', type: 'core/columns', data: {}, children: [
-    { id: 'c1', type: 'core/column', data: {}, children: [fieldBlock('sku', 'text', { name: 'sku', label: 'SKU', unique: true, max: 40 })] },
+    { id: 'c1', type: 'core/column', data: {}, children: [
+      fieldBlock('sku', 'text', { name: 'sku', label: 'SKU', unique: true, max: 40 }),
+      // A Multiple text: several values of the kind, each checked, indexed as an array.
+      fieldBlock('tags', 'text', { name: 'tags', label: 'Tags', multiple: true, max: 10, maxItems: 3, index: true, addLabel: 'Add tag' }),
+    ] },
     { id: 'c2', type: 'core/column', data: {}, children: [fieldBlock('price', 'number', { name: 'price', label: 'Price', min: 0, required: true, index: true })] },
   ] },
   { id: 'tabs', type: 'core/tabs', data: {}, children: [{ id: 'sale', type: 'core/tab', data: { label: 'Sale' }, children: [
@@ -81,13 +85,19 @@ async function fields(origin, routeIds, diagnostics) {
   const bad = await json('/api/cms/content/products', 'POST', { title: 'Bad', price: 1, onSale: true });
   expect(bad.status).toBe(422);
   expect(bad.body.fields).toEqual({ salePrice: 'is required.' });
+  const tooMany = await json('/api/cms/content/products', 'POST', { title: 'Tagged', price: 1, tags: ['a', 'b', 'c', 'd'] });
+  expect(tooMany.status).toBe(422);
+  expect(tooMany.body.fields).toEqual({ tags: 'must be a list of at most 3 items.' });
+  const tooLong = await json('/api/cms/content/products', 'POST', { title: 'Tagged', price: 1, tags: ['a', 'much too long'] });
+  expect(tooLong.body.fields).toEqual({ tags: 'item 2 must be at most 10 characters.' });
   const created = await json('/api/cms/content/products', 'POST', {
-    title: 'Rocket skates', status: 'published', sku: 'RS-1', price: 19.5, onSale: false, salePrice: 9,
+    title: 'Rocket skates', status: 'published', sku: 'RS-1', price: 19.5, onSale: false, salePrice: 9, tags: ['fast', 'red'],
     specs: [{ name: 'Weight', kind: 'text', url: 'gone' }, { _id: 'site', name: 'Site', kind: 'link', url: 'https://example.com' }],
   });
   expect(created.status, JSON.stringify(created.body)).toBe(201);
   const item = created.body.item;
   expect(item.salePrice).toBeNull();
+  expect(item.tags).toEqual(['fast', 'red']);
   expect(item.specs.map(row => [row._id, row.name, row.url ?? null])).toEqual([[expect.stringMatching(/^[A-Za-z0-9_-]+$/), 'Weight', null], ['site', 'Site', 'https://example.com']]);
   expect(item).not.toHaveProperty('specs__name');
   const other = await json('/api/cms/content/products', 'POST', { title: 'Plain board', status: 'published', sku: 'PB-1', price: 5, specs: [{ name: 'Length', kind: 'text' }] });
@@ -98,6 +108,8 @@ async function fields(origin, routeIds, diagnostics) {
   expect(weighed.items.map(entry => entry.title)).toEqual(['Rocket skates']);
   const cheap = await (await fetch(`${origin}/api/cms/content/products?filter[price]=5`)).json();
   expect(cheap.items.map(entry => entry.title)).toEqual(['Plain board']);
+  const red = await (await fetch(`${origin}/api/cms/content/products?filter[tags]=red`)).json();
+  expect(red.items.map(entry => entry.title)).toEqual(['Rocket skates']);
   const nope = await fetch(`${origin}/api/cms/content/products?filter[nope]=1`);
   expect(nope.status).toBe(422);
 
@@ -182,6 +194,15 @@ describe.skipIf(!liveRomeDBTests())('generated CMS field groups', () => {
       await page.getByLabel('On sale').check();
       await browserExpect(page.getByLabel('Sale price')).toBeVisible();
       await page.getByLabel('Sale price').fill('12');
+      // The Multiple text: one input per value, Add tag within the most values, Move up and Remove.
+      const tags = page.locator('[data-cms-multiple="tags"]');
+      await browserExpect(tags.locator('input')).toHaveCount(2);
+      await tags.getByRole('button', { name: 'Add tag' }).click();
+      await tags.locator('input').nth(2).fill('blue');
+      await browserExpect(tags.getByRole('button', { name: 'Add tag' })).toBeDisabled();
+      await tags.getByRole('button', { name: 'Move up Tags 3' }).click();
+      await tags.getByRole('button', { name: 'Remove Tags 1' }).click();
+      await browserExpect(tags.locator('input')).toHaveCount(2);
       const specs = page.getByRole('group', { name: 'Specifications' });
       await browserExpect(specs.getByRole('region', { name: 'Specifications 1' })).toContainText('Weight');
       await specs.getByRole('button', { name: 'Add specifications' }).click();
@@ -196,6 +217,7 @@ describe.skipIf(!liveRomeDBTests())('generated CMS field groups', () => {
       await browserExpect(page.getByText('Saved.').first()).toBeVisible();
       const saved = await (await web.request(`/api/cms/content/products/${item.id}`)).json();
       expect(saved.item.salePrice).toBe(12);
+      expect(saved.item.tags).toEqual(['blue', 'red']);
       expect(saved.item.specs.map(entry => [entry.name, entry.url ?? null])).toEqual([['Weight', null], ['Site', 'https://example.com'], ['Colour', 'https://example.com/colour']]);
       expect(saved.item.fragile).toBe(false);
       expect(errors).toEqual([]);

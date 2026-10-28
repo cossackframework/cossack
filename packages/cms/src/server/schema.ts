@@ -128,20 +128,20 @@ export function collectionSpec(resource: Resource, storageOf: (resourceId: strin
     // Schemaless collections type only the system fields; the host validates the rest.
     const declared = resource.schemaless ? [] : Object.entries(resource.fields).flatMap(([name, declaration]) => [
         spec(name, declaration, storageOf),
-        // A searchable rich text or blocks field keeps its plain text beside the document.
-        ...(((declaration.kind === 'richtext' || declaration.kind === 'blocks') && declaration.search) || rowsSearchable(declaration) ? [spec(searchTextPath(name), { kind: 'text', nullable: true }, storageOf)] : []),
+        // A searchable rich text, blocks or multiple field keeps its plain text beside the document.
+        ...(searchedAsText(declaration) ? [spec(searchTextPath(name), { kind: 'text', nullable: true }, storageOf)] : []),
     ]);
     const indexes: IndexSpec[] = [{ name: `${resource.storage}___updated`, kind: 'scalar', paths: ['_updatedAt'], unique: false }];
     if (resource.ownership) indexes.push({ name: `${resource.storage}___owner`, kind: 'scalar', paths: ['_owner'], unique: false });
     for (const [name, declaration] of Object.entries(resource.fields)) {
         if (declaration.unique) indexes.push({ name: `${resource.storage}__u_${name.toLowerCase()}`, kind: 'scalar', paths: [name], unique: true });
-        else if (declaration.index || declaration.kind === 'reference') indexes.push({ name: `${resource.storage}__${name.toLowerCase()}`, kind: declaration.kind === 'list' ? 'array' : 'scalar', paths: [name], unique: false });
+        else if (declaration.index || declaration.kind === 'reference') indexes.push({ name: `${resource.storage}__${name.toLowerCase()}`, kind: declaration.multiple ? 'array' : 'scalar', paths: [name], unique: false });
     }
     // A row field's index steps into every row of each rows field above it.
     for (const path of indexedRowPaths(resource.fields)) indexes.push({ name: `${resource.storage}__r_${path.join('__').toLowerCase()}`, kind: 'array', paths: [rowIndexPath(path)], unique: false });
     for (const index of resource.indexes) indexes.push({ name: `${resource.storage}__i_${index.name}`, kind: 'scalar', paths: [...index.fields], unique: index.unique === true });
     const searchable = Object.entries(resource.fields).filter(([, declaration]) => declaration.search || rowsSearchable(declaration))
-        .map(([name, declaration]) => declaration.kind === 'richtext' || declaration.kind === 'blocks' || declaration.kind === 'rows' ? searchTextPath(name) : name);
+        .map(([name, declaration]) => searchedAsText(declaration) ? searchTextPath(name) : name);
     if (searchable.length) indexes.push({ name: `${resource.storage}__text`, kind: 'fulltext', paths: searchable, unique: false });
     return { resource, name: resource.storage, fields: [...system, ...declared], indexes };
 }
@@ -165,6 +165,11 @@ function spec(name: string, declaration: FieldDeclaration, storageOf: (resourceI
 /** Where a searchable rich text or blocks field's plain text is stored, for the full-text index. */
 export function searchTextPath(field: string): string {
     return `_text_${field}`;
+}
+
+/** Whether a field is searched through its plain text beside the document: rich text, blocks, rows and multiple fields. */
+export function searchedAsText(declaration: FieldDeclaration): boolean {
+    return (declaration.search === true && (declaration.kind === 'richtext' || declaration.kind === 'blocks' || declaration.multiple === true)) || rowsSearchable(declaration);
 }
 
 /** `DEFINE FIELD` for a spec; `overwrite` replaces an existing definition. */
