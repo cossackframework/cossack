@@ -98,7 +98,8 @@ Data contract:
   collections with the plugin. Editors can choose an entry's template and edit its blocks on
   the public page.
 - A form is a `forms` entry whose `body` holds input blocks (`input: { kind }` in the
-  declaration), laid out with the containers and shown or hidden by a block's `when`. Its
+  declaration), laid out with the containers and shown or hidden by a block's `when`; a
+  `form/repeater` holds a row of inputs people fill in once per passenger or item. Its
   submissions are the resource `cms/form_<form id>`, stored in its own table and extended
   when inputs are added. A submission is one batch: the record, a receipt and its
   `form.submitted` outbox event, which sends the form's notifications and webhooks. Hooks:

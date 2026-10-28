@@ -88,7 +88,18 @@ export const FORM_BLOCKS: readonly BlockDeclaration[] = Object.freeze([
     { name: 'form/hidden', keywords: ['utm', 'tracking', 'source', 'secret'], label: 'Hidden', icon: 'eye-closed', category: 'form', description: 'A value visitors do not see, from the default or the page address.', input: { kind: 'string' }, fields: inputFields({
         defaultValue: field.string({ max: 500, label: 'Value' }),
     }) },
+    { name: 'form/repeater', keywords: ['rows', 'repeat', 'list', 'passengers', 'attendees', 'items', 'group'], label: 'Repeater', icon: 'layers-minimalistic', category: 'form', description: 'A set of fields people fill in once per row: passengers, attendees, items.', input: { kind: 'rows' }, children: {}, fields: inputFields({
+        rowLabel: field.string({ max: 60, label: 'Row name', description: 'What one row is, such as Passenger: rows are numbered with it.' }),
+        addLabel: field.string({ max: 80, default: 'Add another', label: 'Add button' }),
+        min: field.integer({ min: 0, max: 50, label: 'Fewest rows' }),
+        max: field.integer({ min: 1, max: 50, label: 'Most rows' }),
+    }) },
 ] satisfies BlockDeclaration[]);
+
+/** Rows a repeater takes at most, whatever its settings. */
+export const FORM_ROW_LIMIT = 50;
+/** The row id of a repeater's template row on a page, replaced by the page's script when a row is added. */
+export const TEMPLATE_ROW = '__row__';
 
 /** The type that places a form in content: `form` is the form's slug. */
 export const FORM_EMBED_BLOCK: BlockDeclaration = Object.freeze({
@@ -115,6 +126,10 @@ export interface FormField {
     /** For choice kinds. */
     readonly options: readonly ChoiceOption[];
     readonly data: { readonly [field: string]: unknown };
+    /** A repeater's inputs, those of each of its rows; empty for other kinds. */
+    readonly inputs: readonly FormField[];
+    /** The name of the repeater this input belongs to; null at the form's top level. */
+    readonly parent: string | null;
 }
 
 /** Choices of an input: `value|Label` or a label that is also the value, at most 100, distinct values. */
@@ -135,32 +150,62 @@ export function choiceOptions(lines: unknown): ChoiceOption[] {
     return options;
 }
 
-/** The inputs of a form in document order. Blocks of unknown types are left out. */
-export function formInputs(blocks: readonly Block[], types: ReadonlyMap<string, BlockDeclaration>): FormField[] {
+/**
+ * The inputs of a form in document order: those of its top level, a repeater among them
+ * carrying its rows' inputs as `inputs`. Blocks of unknown types are left out.
+ */
+export function formInputs(blocks: readonly Block[], types: ReadonlyMap<string, BlockDeclaration>, parent: string | null = null): FormField[] {
     const inputs: FormField[] = [];
-    for (const block of flattenBlocks(blocks)) {
-        const kind = types.get(block.type)?.input?.kind;
-        if (!kind || typeof block.data.name !== 'string') continue;
-        inputs.push(Object.freeze({
-            id: block.id, type: block.type, name: block.data.name, kind,
-            label: typeof block.data.label === 'string' && block.data.label ? block.data.label : block.data.name,
-            required: block.data.required === true,
-            options: kind === 'choice' || kind === 'choices' ? choiceOptions(block.data.options) : [],
-            data: block.data,
-        }));
-    }
+    const walk = (list: readonly Block[]) => {
+        for (const block of list) {
+            const kind = types.get(block.type)?.input?.kind;
+            if (kind && typeof block.data.name === 'string') {
+                inputs.push(Object.freeze({
+                    id: block.id, type: block.type, name: block.data.name, kind,
+                    label: typeof block.data.label === 'string' && block.data.label ? block.data.label : block.data.name,
+                    required: block.data.required === true,
+                    options: kind === 'choice' || kind === 'choices' ? choiceOptions(block.data.options) : [],
+                    data: block.data,
+                    // A repeater inside a repeater is not valid; its inputs are left out, as the form check refuses it.
+                    inputs: kind === 'rows' && parent === null ? formInputs(block.children ?? [], types, block.data.name) : [],
+                    parent,
+                }));
+                if (kind === 'rows') continue;
+            }
+            if (block.children) walk(block.children);
+        }
+    };
+    walk(blocks);
     return inputs;
+}
+
+/** Every input of a form, the repeaters' rows' inputs after their repeater, in document order. */
+export function flatFormInputs(inputs: readonly FormField[]): FormField[] {
+    return inputs.flatMap(input => [input, ...input.inputs]);
 }
 
 // --- Conditions ---------------------------------------------------------------------------
 
-/** A value of an input: text, a number, a yes or no, or the chosen values. */
-export type FormValue = string | number | boolean | readonly string[];
+/** A value of an input: text, a number, a yes or no, the chosen values, or a repeater's rows. */
+export type FormValue = string | number | boolean | readonly string[] | readonly FormRow[];
 export type FormValues = { readonly [name: string]: FormValue };
+/** One row of a repeater: its inputs' values under `_id`, which names the row in errors and in the page. */
+export type FormRow = { readonly _id: string; readonly [name: string]: FormValue };
+
+/** Whether a value is a repeater's rows. An empty list is blank either way. */
+export function isRows(value: unknown): value is readonly FormRow[] {
+    return Array.isArray(value) && value.length > 0 && value.every(entry => entry && typeof entry === 'object' && !Array.isArray(entry));
+}
+/** A row's values keyed by input name, without `_id`. */
+export function rowValues(row: FormRow): FormValues {
+    const { _id, ...values } = row;
+    return values;
+}
 
 const blank = (value: FormValue | null | undefined): boolean =>
     value === undefined || value === null || value === '' || value === false || (Array.isArray(value) && value.length === 0);
-const asText = (value: FormValue): string => typeof value === 'string' ? value : typeof value === 'number' ? String(value) : typeof value === 'boolean' ? String(value) : value.join(',');
+/** Text to compare: a repeater counts as its number of rows. */
+const asText = (value: FormValue): string => typeof value === 'string' ? value : typeof value === 'number' ? String(value) : typeof value === 'boolean' ? String(value) : isRows(value) ? String(value.length) : (value as readonly string[]).join(',');
 const same = (a: string, b: string) => a.trim().toLocaleLowerCase() === b.trim().toLocaleLowerCase();
 
 function compare(value: FormValue, expected: string): number | null {
@@ -173,9 +218,10 @@ function compare(value: FormValue, expected: string): number | null {
     return text < expected ? -1 : text > expected ? 1 : 0;
 }
 
-/** Whether one rule matches the values. */
+/** Whether one rule matches the values. A repeater's value is its number of rows. */
 export function ruleMatches(rule: ConditionRule, values: FormValues): boolean {
-    const value = values[rule.field];
+    const raw = values[rule.field];
+    const value: FormValue | undefined = isRows(raw) ? raw.length : raw;
     const expected = rule.value ?? '';
     switch (rule.op) {
         case 'empty': return blank(value);
@@ -224,7 +270,8 @@ export function formVisibility(blocks: readonly Block[], types: ReadonlyMap<stri
             for (const block of list) {
                 const off = inside || !conditionShows(block.when, current);
                 if (off) next.add(block.id);
-                walk(block.children ?? [], off);
+                // A repeater's rows have conditions of their own, settled per row with the row's values.
+                if (types.get(block.type)?.input?.kind !== 'rows') walk(block.children ?? [], off);
             }
         };
         walk(blocks, false);
@@ -248,8 +295,20 @@ export function visibleBlocks(blocks: readonly Block[], types: ReadonlyMap<strin
 
 // --- Submissions --------------------------------------------------------------------------
 
-/** What a form posts: text, or several texts for checkboxes. JSON may send numbers and booleans too. */
+/** What a form posts: text, or several texts for checkboxes, or rows of those for a repeater. JSON may send numbers and booleans too. */
 export type SubmittedValues = { readonly [name: string]: unknown };
+/** A posted value as form data carries it. */
+export type PostedValue = string | string[] | { [name: string]: string | string[] }[];
+
+/** The HTML name of an input: `name` at the top level, `repeater[row id][name]` in a row. Errors use the dotted key. */
+export function inputHtmlName(key: string): string {
+    const [head, ...rest] = key.split('.');
+    return `${head}${rest.map(part => `[${part}]`).join('')}`;
+}
+/** The dotted key of a posted field, from its HTML name. */
+export function inputKey(htmlName: string): string {
+    return htmlName.replace(/\[([^\]]*)\]/g, '.$1');
+}
 
 export interface SubmissionCheck {
     /** Values of the shown inputs that were filled in, typed by kind. */
@@ -260,15 +319,40 @@ export interface SubmissionCheck {
     readonly hidden: ReadonlySet<string>;
 }
 
-/** Read the inputs of a form from posted form data: every value of a checkboxes input, one of the others. */
-export function formDataValues(form: Pick<FormData, 'get' | 'getAll'>, inputs: readonly FormField[]): { [name: string]: string | string[] } {
-    const values: { [name: string]: string | string[] } = {};
+/**
+ * Read the inputs of a form from posted form data: every value of a checkboxes input, one of
+ * the others, and a repeater's rows from `repeater[row id][input]` names, in the order the
+ * rows appear, at most `FORM_ROW_LIMIT` of them.
+ */
+export function formDataValues(form: Pick<FormData, 'get' | 'getAll' | 'keys'>, inputs: readonly FormField[]): { [name: string]: PostedValue } {
+    const values: { [name: string]: PostedValue } = {};
+    const read = (input: FormField, htmlName: string): string | string[] | undefined => {
+        if (input.kind === 'choices') return form.getAll(htmlName).filter((entry): entry is string => typeof entry === 'string');
+        const value = form.get(htmlName);
+        return typeof value === 'string' ? value : undefined;
+    };
+    let keys: string[] | undefined;
     for (const input of inputs) {
-        if (input.kind === 'choices') values[input.name] = form.getAll(input.name).filter((entry): entry is string => typeof entry === 'string');
-        else {
-            const value = form.get(input.name);
-            if (typeof value === 'string') values[input.name] = value;
+        if (input.kind === 'rows') {
+            keys ??= [...form.keys()];
+            const ids: string[] = [];
+            const pattern = new RegExp(`^${input.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\[([A-Za-z0-9_-]{1,40})\\]\\[`);
+            for (const key of keys) {
+                const id = pattern.exec(key)?.[1];
+                if (id && !ids.includes(id)) ids.push(id);
+            }
+            values[input.name] = ids.slice(0, FORM_ROW_LIMIT).map(id => {
+                const row: { [name: string]: string | string[] } = { _id: id };
+                for (const child of input.inputs) {
+                    const value = read(child, `${input.name}[${id}][${child.name}]`);
+                    if (value !== undefined) row[child.name] = value;
+                }
+                return row;
+            });
+            continue;
         }
+        const value = read(input, input.name);
+        if (value !== undefined) values[input.name] = value;
     }
     return values;
 }
@@ -357,46 +441,118 @@ function valueProblem(input: FormField, value: FormValue): string | undefined {
     }
 }
 
+/** The posted rows of a repeater as objects, in order, at most `FORM_ROW_LIMIT`; anything else is no rows. */
+function postedRows(raw: unknown): { [name: string]: unknown }[] {
+    return (Array.isArray(raw) ? raw : []).filter((row): row is { [name: string]: unknown } => !!row && typeof row === 'object' && !Array.isArray(row)).slice(0, FORM_ROW_LIMIT);
+}
+
+/** What a repeater calls one row, lowercase, for its messages. */
+function rowName(input: FormField, count: number): string {
+    const label = typeof input.data.rowLabel === 'string' && input.data.rowLabel.trim() ? input.data.rowLabel.trim() : '';
+    if (!label) return count === 1 ? 'row' : 'rows';
+    return count === 1 ? label : `${label} rows`;
+}
+
 /**
  * Check a submission against a form: read each value as its input's kind, apply the
- * conditions, and check the shown inputs. Hidden inputs are neither required nor kept.
+ * conditions, and check the shown inputs. Hidden inputs are neither required nor kept. A
+ * repeater's rows are checked the same way, each with its own values over the form's: its
+ * errors are keyed `repeater.<row id>.<input>`, its hidden blocks `<row id>:<block id>`.
  */
 export function validateSubmission(blocks: readonly Block[], types: ReadonlyMap<string, BlockDeclaration>, raw: SubmittedValues): SubmissionCheck {
-    const inputs = formInputs(blocks, types);
+    const errors: { [name: string]: string } = {};
+    const hidden = new Set<string>();
+    const values = checkLevel(blocks, formInputs(blocks, types), types, raw, {}, { key: '', id: '' }, errors, hidden);
+    return { values: Object.freeze(values), errors: Object.freeze(errors), hidden };
+}
+
+/** One level of a submission: the form's top level, or one row of a repeater with the form's values as `outer`. */
+function checkLevel(blocks: readonly Block[], inputs: readonly FormField[], types: ReadonlyMap<string, BlockDeclaration>, raw: SubmittedValues, outer: FormValues,
+    prefix: { readonly key: string; readonly id: string }, errors: { [name: string]: string }, hidden: Set<string>): { [name: string]: FormValue } {
     const read: { [name: string]: FormValue } = {};
     const unreadable: { [name: string]: string } = {};
     for (const input of inputs) {
+        if (input.kind === 'rows') {
+            const entry = raw[input.name];
+            if (entry !== undefined && entry !== null && entry !== '' && !Array.isArray(entry)) unreadable[input.name] = 'Send the rows as a list.';
+            else if (postedRows(entry).length) read[input.name] = postedRows(entry).map(row => ({ _id: '' }));
+            continue;
+        }
         const { value, error } = readValue(input, raw[input.name]);
         if (error) unreadable[input.name] = error;
         else if (value !== null) read[input.name] = value;
     }
-    const { hidden } = formVisibility(blocks, types, read);
+    const { hidden: off } = formVisibility(blocks, types, { ...outer, ...read });
+    for (const id of off) hidden.add(prefix.id ? `${prefix.id}:${id}` : id);
     const values: { [name: string]: FormValue } = {};
-    const errors: { [name: string]: string } = {};
     for (const input of inputs) {
-        if (hidden.has(input.id)) continue;
-        if (unreadable[input.name]) { errors[input.name] = unreadable[input.name]!; continue; }
+        if (off.has(input.id)) continue;
+        const key = `${prefix.key}${input.name}`;
+        if (unreadable[input.name]) { errors[key] = unreadable[input.name]!; continue; }
+        if (input.kind === 'rows') {
+            const children = (blocks.length ? flattenBlocks(blocks).find(entry => entry.id === input.id) : undefined)?.children ?? [];
+            // A row nobody filled in, such as the empty one a form starts with, is not a row: it is neither checked nor kept, though its conditions still settle on the page.
+            const posted = postedRows(raw[input.name]);
+            const filled = (row: { [name: string]: unknown }) => input.inputs.some(child => !blank(readValue(child, row[child.name]).value));
+            const count = posted.filter(filled).length;
+            const most = Math.min(numberData(input.data.max) ?? FORM_ROW_LIMIT, FORM_ROW_LIMIT);
+            const fewest = Math.max(numberData(input.data.min) ?? 0, input.required ? 1 : 0);
+            if (count > most) errors[key] = `Add at most ${most} ${rowName(input, most)}.`;
+            else if (count < fewest) errors[key] = `Add at least ${fewest} ${rowName(input, fewest)}.`;
+            const ids = new Set<string>();
+            const rows: FormRow[] = [];
+            posted.forEach((row, index) => {
+                const id = typeof row._id === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(row._id) && !ids.has(row._id) ? row._id : `r${index + 1}`;
+                ids.add(id);
+                if (filled(row)) {
+                    rows.push(Object.freeze({ _id: id, ...checkLevel(children, input.inputs, types, row, { ...outer, ...read }, { key: `${key}.${id}.`, id }, errors, hidden) }));
+                    return;
+                }
+                const own: { [name: string]: FormValue } = {};
+                for (const child of input.inputs) { const { value } = readValue(child, row[child.name]); if (value !== null) own[child.name] = value; }
+                for (const off of formVisibility(children, types, { ...outer, ...read, ...own }).hidden) hidden.add(`${id}:${off}`);
+            });
+            values[input.name] = rows;
+            continue;
+        }
         const value = read[input.name];
         if (blank(value)) {
-            if (input.required) errors[input.name] = input.kind === 'boolean' ? 'Tick this box to continue.' : input.kind === 'choices' ? 'Choose at least one option.' : 'This field is required.';
+            if (input.required) errors[key] = input.kind === 'boolean' ? 'Tick this box to continue.' : input.kind === 'choices' ? 'Choose at least one option.' : 'This field is required.';
             // An unticked box is a no.
             if (input.kind === 'boolean') values[input.name] = false;
             continue;
         }
         const problem = valueProblem(input, value!);
-        if (problem) errors[input.name] = problem;
+        if (problem) errors[key] = problem;
         else values[input.name] = value!;
     }
-    return { values: Object.freeze(values), errors: Object.freeze(errors), hidden };
+    return values;
 }
 
-/** How a value reads in emails, lists and exports: choice labels, Yes or No, values joined by commas. */
-export function displayValue(input: Pick<FormField, 'kind' | 'options'>, value: FormValue | null | undefined): string {
+/**
+ * How a value reads in emails, lists and exports: choice labels, Yes or No, values joined by
+ * commas, and a repeater as its number of rows ("Passenger × 3"); `displayRows` has the rows.
+ */
+export function displayValue(input: Pick<FormField, 'kind' | 'options'> & { readonly data?: FormField['data'] }, value: FormValue | null | undefined): string {
     if (value === undefined || value === null) return '';
     if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+    if (input.kind === 'rows') {
+        const count = Array.isArray(value) ? value.length : 0;
+        const label = typeof input.data?.rowLabel === 'string' && input.data.rowLabel.trim() ? input.data.rowLabel.trim() : '';
+        return label ? `${label} × ${count}` : `${count} ${count === 1 ? 'row' : 'rows'}`;
+    }
     const label = (entry: string) => input.options.find(option => option.value === entry)?.label ?? entry;
-    if (Array.isArray(value)) return value.map(label).join(', ');
+    if (isRows(value)) return `${value.length} ${value.length === 1 ? 'row' : 'rows'}`;
+    if (Array.isArray(value)) return (value as readonly string[]).map(label).join(', ');
     return input.kind === 'choice' ? label(String(value)) : String(value);
+}
+
+/** A repeater's rows as lines of text, one per row: `Label: value, Label: value`, inputs without a value left out. */
+export function displayRows(input: Pick<FormField, 'inputs'>, value: FormValue | null | undefined): string[] {
+    if (!isRows(value)) return [];
+    return value.map(row => input.inputs
+        .filter(child => !blank(row[child.name]) || row[child.name] === false)
+        .map(child => `${child.label}: ${displayValue(child, row[child.name])}`).join(', '));
 }
 
 // --- The forms collection -----------------------------------------------------------------
@@ -509,6 +665,11 @@ export const SUBMISSION_PREFIX = 'form_';
 function inputField(input: FormField): FieldDeclaration {
     const label = input.label.slice(0, 200);
     switch (input.kind) {
+        case 'rows': {
+            // Rows are not searched or indexed: submissions are found by their top-level inputs.
+            const fields = Object.fromEntries(input.inputs.filter(child => child.kind !== 'rows').map(child => { const { search, ...declaration } = inputField(child); return [child.name, declaration]; }));
+            return field.rows(fields, { nullable: true, max: FORM_ROW_LIMIT, label });
+        }
         case 'text': return field.text({ nullable: true, max: 50_000, search: true, label });
         case 'number': return field.number({ nullable: true, label });
         case 'boolean': return field.boolean({ nullable: true, label });
@@ -697,7 +858,9 @@ export function renderMergeTags(template: string, context: MergeContext, options
     return template.replace(TAG, (whole, name: string, argument?: string) => {
         switch (argument ? `${name}:${argument}` : name) {
             case 'all_fields': return context.inputs.filter(input => !blank(context.values[input.name]) || context.values[input.name] === false)
-                .map(input => `${escape(input.label)}: ${escape(displayValue(input, context.values[input.name]))}`).join('\n');
+                .map(input => input.kind === 'rows'
+                    ? `${escape(input.label)}:\n${displayRows(input, context.values[input.name]).map((line, index) => `${index + 1}. ${escape(line)}`).join('\n')}`
+                    : `${escape(input.label)}: ${escape(displayValue(input, context.values[input.name]))}`).join('\n');
             case 'form:title': return context.form.title;
             case 'submission:id': return context.submission?.id ?? '';
             case 'submission:url': return context.submission?.url ?? '';
@@ -708,7 +871,10 @@ export function renderMergeTags(template: string, context: MergeContext, options
             case 'site:url': return context.site.url;
             case 'admin_email': return context.site.adminEmail;
         }
-        if (name === 'field' && argument && inputs.has(argument)) return escape(displayValue(inputs.get(argument)!, context.values[argument]));
+        if (name === 'field' && argument && inputs.has(argument)) {
+            const input = inputs.get(argument)!;
+            return input.kind === 'rows' ? displayRows(input, context.values[argument]).map((line, index) => `${index + 1}. ${escape(line)}`).join('\n') : escape(displayValue(input, context.values[argument]));
+        }
         return whole;
     });
 }

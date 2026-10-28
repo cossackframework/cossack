@@ -1,12 +1,13 @@
 import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackframework/core';
 import { Badge, Button, Card, CardBody, Textarea, toast } from '@cossackframework/ui';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
-import { displayValue, formatSiteDate, isCmsError, PERMISSIONS, type SubmissionShape, type SubmissionStatus } from '@cossackframework/cms';
+import { displayValue, formatSiteDate, isCmsError, isRows, PERMISSIONS, type SubmissionShape, type SubmissionStatus } from '@cossackframework/cms';
 import type { LoadedForm } from '@cossackframework/cms/server';
 import { requireAny } from '../../../../../../../cms/guards';
 import { notice, pageHeader } from '../../../../../../../cms/ui';
 
-interface Answer { label: string; value: string }
+/** An answer; a repeater's rows as a table, one column per input of a row. */
+interface Answer { label: string; value: string; rows?: { columns: string[]; cells: string[][] } }
 interface View {
     id: string;
     status: SubmissionStatus;
@@ -72,7 +73,12 @@ export default class SubmissionPage extends Cossack {
         ];
         return {
             id: submission.id, status: submission.status, note: submission.note, details,
-            answers: form.ref.inputs.map(input => ({ label: input.label, value: displayValue(input, submission.values[input.name]) })),
+            answers: form.ref.inputs.map(input => {
+                const value = submission.values[input.name];
+                const answer: Answer = { label: input.label, value: displayValue(input, value) };
+                if (input.kind === 'rows' && isRows(value)) answer.rows = { columns: input.inputs.map(child => child.label), cells: value.map(row => input.inputs.map(child => displayValue(child, row[child.name]))) };
+                return answer;
+            }),
         };
     }
 
@@ -117,7 +123,10 @@ export default class SubmissionPage extends Cossack {
     private list(entries: readonly Answer[]): TemplateResult {
         return html`<dl class="divide-y divide-border">${entries.map(entry => html`<div class="grid gap-1 px-4 py-3 sm:grid-cols-3">
             <dt class="text-sm font-medium text-muted-foreground">${entry.label}</dt>
-            <dd class="whitespace-pre-wrap break-words text-sm text-foreground sm:col-span-2">${entry.value || html`<span class="text-muted-foreground">—</span>`}</dd>
+            <dd class="whitespace-pre-wrap break-words text-sm text-foreground sm:col-span-2">${entry.rows ? html`<span>${entry.value}</span>
+                <div class="mt-2 overflow-x-auto"><table class="w-full text-left text-xs"><thead><tr>${entry.rows.columns.map(column => html`<th class="border-b border-border px-2 py-1 font-medium text-muted-foreground">${column}</th>`)}</tr></thead>
+                <tbody>${entry.rows.cells.map(cells => html`<tr>${cells.map(cell => html`<td class="border-b border-border px-2 py-1 align-top">${cell || html`<span class="text-muted-foreground">—</span>`}</td>`)}</tr>`)}</tbody></table></div>`
+                : entry.value || html`<span class="text-muted-foreground">—</span>`}</dd>
         </div>`)}</dl>`;
     }
 

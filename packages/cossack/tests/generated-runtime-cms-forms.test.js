@@ -46,6 +46,29 @@ async function contactPage(origin, routeIds, diagnostics) {
   return { web, form: created.item };
 }
 
+/** A booking: an email and up to three passengers, each a name, a special-meal box and, when ticked, the meal. */
+const BOOKING = [
+  input('e', 'email', { name: 'email', label: 'Email', required: true }),
+  input('r', 'repeater', { name: 'pax', label: 'Passengers', rowLabel: 'Passenger', min: 1, max: 3 }, { children: [
+    input('n', 'text', { name: 'name', label: 'Name', required: true }),
+    input('sm', 'checkbox', { name: 'special', label: 'Special meal' }),
+    input('ml', 'text', { name: 'meal', label: 'Meal', required: true }, { when: { rules: [{ field: 'special', op: 'is', value: 'true' }] } }),
+  ] }),
+];
+
+/** Publish the booking form and place it on a page at /book. */
+async function bookingPage(web) {
+  const json = async (pathname, body) => {
+    const response = await web.request(pathname, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    const answer = await response.json();
+    expect(response.status, JSON.stringify(answer)).toBeLessThan(300);
+    return answer;
+  };
+  const created = await json('/api/cms/content/forms', { title: 'Booking', status: 'published', body: BOOKING, settings: { message: 'Booked for {field:email}: {field:pax}' } });
+  await json('/api/cms/content/pages', { title: 'Book', status: 'published', content: [{ id: 'f1', type: 'core/form', data: { form: 'booking' } }] });
+  return created.item;
+}
+
 const INBOX = 'dashboard/(cms)/forms/[id]/submissions/index.ts';
 
 async function forms(origin, routeIds, diagnostics) {
@@ -149,6 +172,48 @@ async function forms(origin, routeIds, diagnostics) {
   const editor = await web.page(`/dashboard/content/forms/${form.id}`);
   contains(editor, 'Place the form on a page with the Form block and this slug.');
   contains(editor, `/dashboard/forms/${form.id}/submissions`);
+
+  // A repeater: the page starts with one row and a hidden, disabled template row the script copies.
+  const booking = await bookingPage(web);
+  const book = await (await fetch(`${origin}/book`)).text();
+  expect(book).toMatch(/name="?pax\[r1\]\[name\]"?/);
+  expect(book).toMatch(/data-cms-when="?r1:ml"?[^>]*data-hidden/);
+  expect(book).toMatch(/data-cms-row-template[^>]*>/);
+  expect(book).toMatch(/<fieldset disabled[^>]*>[\s\S]*name="?pax\[__row__\]\[name\]"?/);
+  expect(book).toMatch(/name="?_add"? value="?pax"?/);
+  const described = await (await fetch(`${origin}/api/cms/forms/booking`)).json();
+  expect(described.inputs[1]).toMatchObject({ name: 'pax', kind: 'rows', inputs: [{ name: 'name', kind: 'string' }, { name: 'special', kind: 'boolean' }, { name: 'meal', kind: 'string' }] });
+  const post = (fields, ip, headers = {}) => web.request('/api/cms/forms/booking', { method: 'POST', headers: { 'x-forwarded-for': ip, 'cf-connecting-ip': ip, ...headers }, body: new URLSearchParams({ _page: '/book', _started: started, ...fields }) });
+  // Without the script, Add posts the form back and it returns with one more row, nothing checked.
+  const added = await post({ 'pax[r1][name]': 'Ada', _add: 'pax' }, '198.51.100.11');
+  expect(added.status).toBe(303);
+  const twoRows = await (await fetch(origin + added.headers.get('location'))).text();
+  expect(twoRows).toMatch(/name="?pax\[r1\]\[name\]"? [^>]*value="?Ada"?/);
+  expect(twoRows.match(/data-cms-row="?r[a-z0-9]+"?/g)).toHaveLength(2);
+  lacks(visible(twoRows), 'This field is required.');
+  // A post with errors: the meal is required where the box is ticked; the error sits in the row.
+  const wrongRows = await post({ 'pax[a][name]': 'Ada', 'pax[a][special]': 'on', 'pax[b][name]': 'Bob', email: 'ada@example.com' }, '198.51.100.12');
+  const withErrors = await (await fetch(origin + wrongRows.headers.get('location'))).text();
+  // The renderer marks the text with a comment.
+  expect(withErrors).toMatch(/data-cms-server-error="?pax\.a\.meal"?[^>]*>(?:<!--[^>]*-->)?This field is required\./);
+  expect(withErrors).toMatch(/name="?pax\[b\]\[name\]"? [^>]*value="?Bob"?/);
+  // JSON rows: ids are given, unticked boxes are no, the confirmation lists the rows.
+  const sentRows = await web.request('/api/cms/forms/booking', { method: 'POST', headers: { 'x-forwarded-for': '198.51.100.14', 'cf-connecting-ip': '198.51.100.14', accept: 'application/json', 'content-type': 'application/json' },
+    body: JSON.stringify({ _started: started, email: 'ada@example.com', pax: [{ name: 'Ada', special: true, meal: 'Vegan' }, { name: 'Bob' }] }) });
+  expect(sentRows.status).toBe(201);
+  expect((await sentRows.json()).confirmation.html).toContain('Name: Ada, Special meal: Yes, Meal: Vegan');
+  const tooMany = await web.request('/api/cms/forms/booking', { method: 'POST', headers: { 'x-forwarded-for': '198.51.100.15', 'cf-connecting-ip': '198.51.100.15', accept: 'application/json', 'content-type': 'application/json' },
+    body: JSON.stringify({ _started: started, email: 'ada@example.com', pax: [{ name: 'A' }, { name: 'B' }, { name: 'C' }, { name: 'D' }] }) });
+  expect((await tooMany.json()).fields).toEqual({ pax: 'Add at most 3 Passenger rows.' });
+  const bookings = await (await web.request('/api/cms/forms/booking/submissions')).json();
+  expect(bookings.items.map(item => item.values)).toEqual([{ email: 'ada@example.com', pax: [{ _id: 'r1', name: 'Ada', special: true, meal: 'Vegan' }, { _id: 'r2', name: 'Bob', special: false }] }]);
+  // The inbox counts the rows; the submission shows them as a table; the export has them in one cell.
+  contains(await web.page(`/dashboard/forms/${booking.id}/submissions`), 'Passenger × 2');
+  const bookingDetail = await web.page(`/dashboard/forms/${booking.id}/submissions/${bookings.items[0].id}`);
+  contains(bookingDetail, 'Vegan');
+  contains(bookingDetail, '<th');
+  const bookingCsv = new TextDecoder().decode(new Uint8Array(await (await web.request('/api/cms/forms/booking/submissions/export')).arrayBuffer()));
+  expect(bookingCsv).toContain('"Name: Ada, Special meal: Yes, Meal: Vegan\nName: Bob, Special meal: No"');
   return { web };
 }
 
@@ -231,6 +296,44 @@ describe.skipIf(!liveRomeDBTests())('generated CMS forms', () => {
       expect(errors).toEqual([]);
       const inbox = await (await web.request('/api/cms/forms/contact/submissions')).json();
       expect(inbox.items.map(item => item.values)).toEqual([{ name: 'Ada', email: 'ada@example.com', topic: 'support', message: 'Please call.', callMe: true, phone: '+1 555 0100', source: 'site' }]);
+
+      // A repeater in the browser: Add copies a row, conditions settle per row, Remove drops one, the limit disables Add.
+      await bookingPage(web);
+      await page.goto(`${origin}/book`);
+      await page.waitForFunction(() => window.__cossackReady === true);
+      const booking = page.getByRole('form', { name: 'Booking' });
+      const rows = booking.locator('[data-cms-rows] > [data-cms-row]');
+      await browserExpect(rows).toHaveCount(1);
+      await browserExpect(rows.nth(0).getByRole('textbox', { name: 'Meal' })).toBeHidden();
+      await booking.getByRole('button', { name: 'Add another' }).click();
+      await browserExpect(rows).toHaveCount(2);
+      expect(await rows.nth(1).innerHTML()).toMatch(/Passenger\s*(?:<!--[^>]*-->)?\s*<span[^>]*>2<\/span>/);
+      await browserExpect(rows.nth(1).getByLabel('Name')).toBeFocused();
+      await rows.nth(0).getByLabel('Name').fill('Ada');
+      await rows.nth(0).getByLabel('Special meal').check();
+      await browserExpect(rows.nth(0).getByRole('textbox', { name: 'Meal' })).toBeVisible();
+      await browserExpect(rows.nth(1).getByRole('textbox', { name: 'Meal' })).toBeHidden();
+      await rows.nth(0).getByRole('textbox', { name: 'Meal' }).fill('Vegan');
+      await rows.nth(1).getByLabel('Name').fill('Bob');
+      await booking.getByRole('button', { name: 'Add another' }).click();
+      await browserExpect(rows).toHaveCount(3);
+      await browserExpect(booking.getByRole('button', { name: 'Add another' })).toBeDisabled();
+      await rows.nth(2).getByRole('button', { name: 'Remove' }).click();
+      await browserExpect(rows).toHaveCount(2);
+      await browserExpect(booking.getByRole('button', { name: 'Add another' })).toBeEnabled();
+      // Sending without the email shows the check; a row's own check sits in its row.
+      await booking.getByRole('button', { name: 'Submit' }).click();
+      await browserExpect(page.locator('#form-booking-email-error')).toHaveText('This field is required.');
+      await rows.nth(1).getByLabel('Special meal').check();
+      await booking.getByRole('button', { name: 'Submit' }).click();
+      await browserExpect(rows.nth(1).locator('[data-cms-error]').last()).toHaveText('This field is required.');
+      await rows.nth(1).getByLabel('Special meal').uncheck();
+      await booking.getByLabel('Email').fill('ada@example.com');
+      await page.waitForTimeout(2_100);
+      await booking.getByRole('button', { name: 'Submit' }).click();
+      await browserExpect(page.getByRole('status').filter({ hasText: 'Booked for ada@example.com' })).toBeVisible();
+      const bookings = await (await web.request('/api/cms/forms/booking/submissions')).json();
+      expect(bookings.items.map(item => item.values.pax.map(row => [row.name, row.special, row.meal]))).toEqual([[['Ada', true, 'Vegan'], ['Bob', false, undefined]]]);
 
       // In the dashboard: a new form from input blocks, a field shown on a checkbox, and an email.
       const context = await browser.newContext();

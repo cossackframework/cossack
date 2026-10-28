@@ -255,6 +255,8 @@ export interface RenderedBlock {
     readonly shown?: boolean;
     /** An input block in a form: its name, value and error. */
     readonly input?: InputView;
+    /** `form/repeater`: its rows, each with the row's blocks rendered, and the blocks of a new row. */
+    readonly repeater?: RepeaterView;
     /** `core/form`: the form it places; absent when the form is gone. */
     readonly form?: FormView;
     /** Rich text fields rendered: HTML runs and embedded blocks, for `helpers.content`. */
@@ -274,7 +276,10 @@ export interface RenderedBlock {
 
 /** An input block's state in a rendered form. */
 export interface InputView {
+    /** The control's HTML name: the input's name, or `repeater[row id][name]` in a repeater's row. */
     readonly name: string;
+    /** The input's key in errors and values: its name, or `repeater.<row id>.<name>` in a row. */
+    readonly key: string;
     readonly kind: InputKind;
     /** The control's HTML id, unique on the page. */
     readonly id: string;
@@ -310,6 +315,22 @@ export interface FormView {
     readonly turnstileSiteKey: string | null;
     /** Input kinds by block type, for the browser's checks. */
     readonly kinds: { readonly [type: string]: InputKind };
+}
+
+/**
+ * A repeater in a rendered form. Each row's blocks carry ids `<row id>:<block id>` and inputs
+ * named `repeater[row id][name]`; `template` is a row with the id `__row__`, which the page's
+ * script copies for a new row, its inputs disabled until then.
+ */
+export interface RepeaterView {
+    readonly rows: readonly { readonly id: string; readonly blocks: readonly RenderedBlock[] }[];
+    readonly template: readonly RenderedBlock[];
+    readonly min: number;
+    readonly max: number;
+    readonly addLabel: string;
+    readonly rowLabel: string;
+    /** The repeater's own message: too few or too many rows. */
+    readonly error: string;
 }
 
 /** A run of escaped HTML from the body, or a block embedded in it. */

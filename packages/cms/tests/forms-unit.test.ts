@@ -3,7 +3,8 @@ import { createHookRegistry } from '@cossackframework/core/hooks';
 import {
     beforeWrite, blockConditionProblem, field, inputFields, manifestProblems, requestedGrants, blockProblems, choiceOptions, collectionProblems, collectionResource, CORE_BLOCKS, displayValue, emailAddresses, FORM_BLOCKS, FORM_EMBED_BLOCK, formDataValues, formInputs,
     forms, formSettings, formsModule, formVisibility, inputName, notificationProblems, renderMergeTags, resolveResource, ruleMatches, submissionOf, submissionResource, submissionResourceName, validateBlocks,
-    validateSubmission, visibleBlocks, type Block, type BlockDeclaration,
+    displayRows, flatFormInputs, inputHtmlName, inputKey, FORM_ROW_LIMIT,
+    validateSubmission, visibleBlocks, type Block, type BlockDeclaration, type FormRow,
 } from '../src/index';
 
 const types: ReadonlyMap<string, BlockDeclaration> = new Map([...CORE_BLOCKS, ...FORM_BLOCKS].map(block => [block.name, block]));
@@ -31,7 +32,7 @@ describe('form blocks', () => {
         for (const block of [...FORM_BLOCKS, FORM_EMBED_BLOCK]) expect(blockProblems(block)).toEqual([]);
         expect(FORM_BLOCKS.every(block => block.input && block.category === 'form')).toBe(true);
         expect(blockProblems({ name: 'acme/rating', label: 'Rating', input: { kind: 'stars' as never }, fields: {} })).toEqual([
-            'block acme/rating: input.kind is one of string, text, email, url, phone, number, boolean, date, choice, choices.',
+            'block acme/rating: input.kind is one of string, text, email, url, phone, number, boolean, date, choice, choices, rows.',
             'block acme/rating: an input block declares string fields name and label.',
         ]);
         // Inputs and conditions belong to forms.
@@ -164,6 +165,110 @@ describe('submissions', () => {
         expect(resource.access).toEqual({ read: { permission: 'cms:submissions' }, create: 'none', update: { permission: 'cms:submissions' }, delete: { permission: 'cms:submissions' } });
         const submission = submissionOf(id, { id: 's1', rev: 1, createdAt: 5, updatedAt: 6, owner: null, name: 'Ada', removed: 'x', status: 'new', meta: { ip: '1.2.3.4' } }, inputs);
         expect(submission).toEqual({ id: 's1', form: id, status: 'new', values: { name: 'Ada' }, note: '', meta: { ip: '1.2.3.4' }, user: null, createdAt: 5, updatedAt: 6 });
+    });
+});
+
+describe('repeaters', () => {
+    /** A booking: a contact email, passengers (name, seat, a meal shown when "special meal" is ticked), and a note shown for 3 passengers or more. */
+    const booking: Block[] = [
+        input('e', 'email', { name: 'email', label: 'Email', required: true }),
+        input('r', 'repeater', { name: 'pax', label: 'Passengers', rowLabel: 'Passenger', min: 1, max: 4 }, { children: [
+            { id: 'cols', type: 'core/columns', data: {}, children: [
+                { id: 'col', type: 'core/column', data: {}, children: [input('n', 'text', { name: 'name', label: 'Name', required: true })] },
+                { id: 'col2', type: 'core/column', data: {}, children: [input('s', 'select', { name: 'seat', label: 'Seat', options: ['aisle', 'window'] })] },
+            ] },
+            input('sm', 'checkbox', { name: 'special', label: 'Special meal' }),
+            input('ml', 'text', { name: 'meal', label: 'Meal', required: true }, { when: { rules: [{ field: 'special', op: 'is', value: 'true' }] } }),
+            input('vip', 'text', { name: 'lounge', label: 'Lounge' }, { when: { rules: [{ field: 'email', op: 'contains', value: '@vip.example' }] } }),
+        ] }),
+        input('g', 'textarea', { name: 'groupNote', label: 'Group note' }, { when: { rules: [{ field: 'pax', op: 'gt', value: '2' }] } }),
+    ];
+    const checkedBooking = () => {
+        const result = validateBlocks(booking, types, { form: true });
+        expect(result.errors).toEqual({});
+        return result.blocks;
+    };
+
+    it('is an input that holds the inputs of a row, one level deep, with names scoped to it', () => {
+        const blocks = checkedBooking();
+        const inputs = formInputs(blocks, types);
+        expect(inputs.map(entry => [entry.name, entry.kind, entry.parent])).toEqual([['email', 'email', null], ['pax', 'rows', null], ['groupNote', 'text', null]]);
+        expect(inputs[1]!.inputs.map(entry => [entry.name, entry.kind, entry.parent])).toEqual([['name', 'string', 'pax'], ['seat', 'choice', 'pax'], ['special', 'boolean', 'pax'], ['meal', 'string', 'pax'], ['lounge', 'string', 'pax']]);
+        expect(flatFormInputs(inputs).map(entry => entry.name)).toEqual(['email', 'pax', 'name', 'seat', 'special', 'meal', 'lounge', 'groupNote']);
+        expect(blocks[1]!.data).toMatchObject({ addLabel: 'Add another', rowLabel: 'Passenger', min: 1, max: 4 });
+        // A row may reuse a top-level name; a repeater cannot hold a repeater; a top-level block cannot show on a row's input.
+        const wrong = validateBlocks([
+            input('e', 'email', { name: 'email' }),
+            input('r', 'repeater', { name: 'pax' }, { children: [
+                input('e2', 'email', { name: 'email' }), input('e3', 'text', { name: 'email' }),
+                input('r2', 'repeater', { name: 'more' }, { children: [input('x', 'text', { name: 'x' })] }),
+                input('y', 'text', { name: 'y' }, { when: { rules: [{ field: 'nope', op: 'empty' }] } }),
+            ] }),
+            input('t', 'text', { name: 'top' }, { when: { rules: [{ field: 'email', op: 'notEmpty' }, { field: 'name', op: 'empty' }] } }),
+        ], types, { form: true });
+        expect(wrong.errors).toEqual({ 'e3.name': 'is used by another field.', r2: 'A repeater cannot hold another repeater.', y: 'shows on nope, which is not a field in reach.', t: 'shows on name, which is not a field of this form.' });
+        expect(inputHtmlName('pax.r1.name')).toBe('pax[r1][name]');
+        expect(inputKey('pax[r1][name]')).toBe('pax.r1.name');
+        expect(inputKey('email')).toBe('email');
+    });
+
+    it('reads rows from form data and JSON, checks each row with its own conditions, and keeps the form\'s conditions', () => {
+        const blocks = checkedBooking();
+        const inputs = formInputs(blocks, types);
+        const data = new FormData();
+        data.append('email', 'ada@example.com');
+        data.append('pax[b][name]', 'Bob'); data.append('pax[b][seat]', 'window');
+        data.append('pax[a][name]', 'Ada'); data.append('pax[a][special]', 'on'); data.append('pax[a][meal]', 'Vegan');
+        data.append('pax[zz][seat]', 'aisle');
+        expect(formDataValues(data, inputs)).toEqual({ email: 'ada@example.com', pax: [
+            { _id: 'b', name: 'Bob', seat: 'window' }, { _id: 'a', name: 'Ada', special: 'on', meal: 'Vegan' }, { _id: 'zz', seat: 'aisle' },
+        ] });
+        const check = validateSubmission(blocks, types, formDataValues(data, inputs));
+        // The third row lacks its name; the meal is required only where "special meal" is ticked; the lounge needs a VIP address.
+        expect(check.errors).toEqual({ 'pax.zz.name': 'This field is required.' });
+        expect(check.values).toEqual({ email: 'ada@example.com', pax: [
+            { _id: 'b', name: 'Bob', seat: 'window', special: false }, { _id: 'a', name: 'Ada', special: true, meal: 'Vegan' }, { _id: 'zz', seat: 'aisle', special: false },
+        ] });
+        expect([...check.hidden]).toEqual(['b:ml', 'b:vip', 'a:vip', 'zz:ml', 'zz:vip']);
+        // One passenger hides the group note, so it is neither kept nor required.
+        const one = validateSubmission(blocks, types, { email: 'a@b.co', pax: [{ name: 'Solo' }], groupNote: 'dropped' });
+        expect(one.hidden.has('g')).toBe(true);
+        expect(one.values).toEqual({ email: 'a@b.co', pax: [{ _id: 'r1', name: 'Solo', special: false }] });
+        // JSON rows without ids get numbered ones; a VIP address shows the lounge and three passengers show the note.
+        const json = validateSubmission(blocks, types, { email: 'ada@vip.example', groupNote: 'Together', pax: [{ name: 'A', lounge: 'yes' }, { name: 'B' }, { name: 'C', _id: 'c' }] });
+        expect(json.errors).toEqual({});
+        expect(json.values).toEqual({ email: 'ada@vip.example', groupNote: 'Together', pax: [{ _id: 'r1', name: 'A', special: false, lounge: 'yes' }, { _id: 'r2', name: 'B', special: false }, { _id: 'c', name: 'C', special: false }] });
+        expect(json.hidden.has('g')).toBe(false);
+        // Too few, too many, not a list.
+        expect(validateSubmission(blocks, types, { email: 'a@b.co' }).errors).toEqual({ pax: 'Add at least 1 Passenger.' });
+        expect(validateSubmission(blocks, types, { email: 'a@b.co', pax: Array.from({ length: 5 }, () => ({ name: 'x' })) }).errors).toEqual({ pax: 'Add at most 4 Passenger rows.' });
+        expect(validateSubmission(blocks, types, { email: 'a@b.co', pax: 'nope' }).errors).toEqual({ pax: 'Send the rows as a list.' });
+        // Rows nobody filled in are dropped before the count: an empty form's starting row is not a passenger.
+        expect(validateSubmission(blocks, types, { email: 'a@b.co', pax: [{ _id: 'x', name: '', special: '' }] }).errors).toEqual({ pax: 'Add at least 1 Passenger.' });
+        const blankRow = validateSubmission(blocks, types, { email: 'a@b.co', pax: [{ _id: 'x', name: '' }, { _id: 'y', name: 'Yan' }] });
+        expect(blankRow.values.pax).toEqual([{ _id: 'y', name: 'Yan', special: false }]);
+        // The blank row's conditions still settle, so the page hides its meal until the box is ticked.
+        expect([...blankRow.hidden]).toEqual(['g', 'x:ml', 'x:vip', 'y:ml', 'y:vip']);
+        expect(FORM_ROW_LIMIT).toBe(50);
+    });
+
+    it('shows, stores and merges rows', () => {
+        const blocks = checkedBooking();
+        const inputs = formInputs(blocks, types);
+        const pax = inputs[1]!;
+        const rows: FormRow[] = [{ _id: 'a', name: 'Ada', seat: 'window', special: true, meal: 'Vegan' }, { _id: 'b', name: 'Bob', special: false }];
+        expect(displayValue(pax, rows)).toBe('Passenger × 2');
+        expect(displayValue({ kind: 'rows', options: [] }, [])).toBe('0 rows');
+        expect(displayRows(pax, rows)).toEqual(['Name: Ada, Seat: window, Special meal: Yes, Meal: Vegan', 'Name: Bob, Special meal: No']);
+        expect(ruleMatches({ field: 'pax', op: 'is', value: '2' }, { pax: rows })).toBe(true);
+        const resource = resolveResource(submissionResource({ id: '8f14e45f-ceea-467a-9575-1f2b3c4d5e6f', title: 'Booking' }, inputs), 'cms');
+        expect(resource.fields.pax).toMatchObject({ kind: 'rows', nullable: true, max: 50, label: 'Passengers' });
+        expect(Object.fromEntries(Object.entries(resource.fields.pax!.fields!).map(([name, declaration]) => [name, [declaration.kind, declaration.search ?? false]]))).toEqual({
+            name: ['string', false], seat: ['string', false], special: ['boolean', false], meal: ['string', false], lounge: ['string', false],
+        });
+        const context = { form: { id: 'f', title: 'Booking' }, inputs, values: { email: 'ada@example.com', pax: rows }, site: { title: 'Site', url: 'https://s.example', adminEmail: 'admin@s.example' } };
+        expect(renderMergeTags('{all_fields}', context)).toBe('Email: ada@example.com\nPassengers:\n1. Name: Ada, Seat: window, Special meal: Yes, Meal: Vegan\n2. Name: Bob, Special meal: No');
+        expect(renderMergeTags('{field:pax}', context)).toBe('1. Name: Ada, Seat: window, Special meal: Yes, Meal: Vegan\n2. Name: Bob, Special meal: No');
     });
 });
 

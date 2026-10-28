@@ -11,7 +11,7 @@ import { CmsError } from '../errors';
 import { SLUG_PATTERN } from '../fields';
 import type { Block } from '../blocks';
 import {
-    conditionShows, displayValue, emailAddresses, escapeMarkdown, formInputs, formSettings, notificationRules, renderMergeTags, submissionOf, submissionResource,
+    conditionShows, displayRows, displayValue, emailAddresses, escapeMarkdown, formInputs, formSettings, notificationRules, renderMergeTags, submissionOf, submissionResource,
     SUBMISSION_STATUSES, validateSubmission, type FormSettings, type FormValues, type MergeContext, type NotificationRule, type SubmissionMeta, type SubmissionShape,
     type SubmissionStatus, type SubmittedValues,
 } from '../form-builder';
@@ -478,7 +478,9 @@ export class CmsForms {
             let rows = '';
             for (const item of page.items) {
                 rows += csvRow([
-                    new Date(item.createdAt).toISOString(), item.status, ...inputs.map(input => displayValue(input, item.values[input.name])),
+                    new Date(item.createdAt).toISOString(), item.status,
+                    // A repeater is one cell: its rows as lines.
+                    ...inputs.map(input => input.kind === 'rows' ? displayRows(input, item.values[input.name]).join('\n') : displayValue(input, item.values[input.name])),
                     item.meta.ip ?? '', item.meta.page ?? '', item.meta.userAgent ?? '', item.user ?? '', item.note, item.id,
                 ]);
             }

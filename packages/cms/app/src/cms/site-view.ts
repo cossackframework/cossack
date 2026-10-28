@@ -265,7 +265,7 @@ export function coreBlock(block: RenderedBlock, helpers: ThemeHelpers): Template
         }
         case 'core/form': return formBlock(block, helpers);
         default: {
-            if (block.type.startsWith('form/')) return inputBlock(block);
+            if (block.type.startsWith('form/')) return inputBlock(block, helpers);
             const plugin = plugins.find(entry => block.type.startsWith(`${entry.name}/`));
             const blocks = (plugin?.ui as { blocks?: Record<string, unknown> } | null | undefined)?.blocks;
             const view = blocks?.[block.type.slice(block.type.indexOf('/') + 1)] ?? blocks?.[block.type];

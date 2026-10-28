@@ -18,7 +18,7 @@ after the submission is committed.
 
 - **Inputs are blocks.** A `BlockDeclaration` gains `input?: { kind: InputKind }`.
   `InputKind` is `string`, `text`, `email`, `url`, `phone`, `number`, `boolean`, `date`,
-  `choice`, `choices`. A block with `input` collects one value named by its `name` data
+  `choice`, `choices`, `rows`. A block with `input` collects one value named by its `name` data
   field; the host validates and stores it under that name. Input blocks go only inside a
   form: `validateBlocks` takes `{ allowed, form }` and rejects an input block at any
   depth unless `form` is set, which a blocks field sets with `form: true` (the forms
@@ -36,6 +36,24 @@ after the submission is committed.
   `step`; choice kinds take `options` (one per line, `value|Label` or just the label).
   Several choices from a list is `form/checkboxes`; a multi-select can come later. Submit
   is not a block: the form's settings hold the button label and it renders last.
+- **A repeater is an input that holds inputs.** `form/repeater` (kind `rows`, `children: {}`)
+  takes `rowLabel`, `addLabel`, `min` and `max` (at most `FORM_ROW_LIMIT`, 50) and holds
+  input and layout blocks, never another repeater. `formInputs()` lists the form's top
+  level, a repeater carrying its rows' inputs as `inputs` (`parent` names the repeater on
+  each); `flatFormInputs()` flattens them. Names are distinct within a scope, so a row may
+  reuse a top-level name. A row's value is `FormRow` (`_id` plus its inputs' values); the
+  repeater's value is `FormRow[]`, stored as a `field.rows` of the children's declarations,
+  not searched or indexed. Posted as `repeater[row id][input]` (`formDataValues` reads the
+  rows in the order they appear) or as an array of objects in JSON (ids are minted when
+  missing). `validateSubmission` checks each row like the form, with the row's values over
+  the form's: errors are keyed `repeater.<row id>.<input>`, hidden blocks `<row id>:<block
+  id>`, a row nobody filled in is dropped before the fewest-rows check, and a condition on
+  a repeater compares its number of rows. The site renders a `<fieldset>` of rows with
+  Remove buttons, an Add button and a hidden, disabled template row (`TEMPLATE_ROW`,
+  `__row__`) the script copies under a fresh id; without the script, Add and Remove post
+  the form back (`_add`, `_remove`) and it returns as typed (`FormResult.kind: 'edit'`).
+  The inbox shows "Passenger × 3", the submission page a table, the CSV one cell with a
+  line per row, `{all_fields}` and `{field:name}` numbered lines (`displayRows`).
 - **Conditions are a block attribute.** `Block.when?: { action?: 'show' | 'hide';
   match?: 'all' | 'any'; rules: { field, op, value? }[] }`, validated by core beside
   `layout` and `style`, allowed only in a form, naming only the form's inputs. Operators: `is`, `isNot`, `contains`, `empty`, `notEmpty`, `gt`, `lt`,

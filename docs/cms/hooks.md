@@ -85,7 +85,9 @@ run after commit from the outbox and can be delivered more than once, so use the
 | `cms.form.notification` (`formNotification`) | filter | 2 s | Value: the `FormEmail` (`to`, `subject`, `text`, `replyTo`) about to go out, or null to not send it. Input: `form`, `submission`, `rule`. |
 | `cms.form.submitted` (`formSubmitted`) | action, outbox | 10 s | `FormSubmittedEvent`: `eventId`, `topic: 'form.submitted'`, `form`, `submission`, `actor`, `at`, `stored` (false when the form keeps no submissions), `origin`. |
 
-`form` is a `FormRef`: `id`, `slug`, `title` and its `inputs`.
+`form` is a `FormRef`: `id`, `slug`, `title` and its `inputs`, a repeater among them
+carrying its rows' inputs as `inputs`. A repeater's value in `FormValues` is a list of
+rows, each `{ _id, ...values }`; its errors are keyed `repeater.<row id>.<input>`.
 
 ### Terms, comments and menus
 

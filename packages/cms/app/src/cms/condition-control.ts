@@ -17,22 +17,38 @@ const OPERATORS: readonly { value: ConditionOperator; label: string }[] = [
 ];
 const NO_VALUE = new Set<ConditionOperator>(['empty', 'notEmpty']);
 
-/** The inputs of an editor's form tree, in order, named as the server will name them. */
+/**
+ * The inputs a condition on block `except` can test, in order, named as the server will name
+ * them: in a form, the inputs of the form's top level, and for a block inside a repeater, the
+ * repeater's rows' inputs first. In a field group, every field.
+ */
 export function conditionFields(blocks: readonly EditorBlock[], options: readonly BlockOption[], except?: string): ConditionField[] {
-    const inputs = new Set(options.filter(option => option.input || option.field).map(option => option.name));
-    const fields: ConditionField[] = [];
-    const walk = (list: readonly EditorBlock[]) => {
+    const types = new Map(options.map(option => [option.name, option]));
+    const input = (block: EditorBlock) => { const option = types.get(block.type); return !!option && (option.input || !!option.field); };
+    const repeater = (block: EditorBlock) => { const option = types.get(block.type); return !!option?.input && !!option.children; };
+    const named = (block: EditorBlock): ConditionField => {
+        const label = typeof block.data.label === 'string' ? block.data.label : '';
+        const name = typeof block.data.name === 'string' && block.data.name.trim() ? block.data.name.trim() : inputName(label);
+        return { name, label: label || name };
+    };
+    const top: ConditionField[] = [];
+    const inside = new Map<string, ConditionField[]>();
+    let scope: string | null = null;
+    const walk = (list: readonly EditorBlock[], within: string | null) => {
         for (const block of list) {
-            if (inputs.has(block.type) && block.id !== except) {
-                const label = typeof block.data.label === 'string' ? block.data.label : '';
-                const name = typeof block.data.name === 'string' && block.data.name.trim() ? block.data.name.trim() : inputName(label);
-                if (!fields.some(field => field.name === name)) fields.push({ name, label: label || name });
+            if (block.id === except) scope = within;
+            if (input(block) && block.id !== except) {
+                const into = within ? inside.get(within)! : top;
+                const field = named(block);
+                if (!into.some(entry => entry.name === field.name)) into.push(field);
             }
-            if (block.children) walk(block.children);
+            if (repeater(block) && !within) { inside.set(block.id, []); walk(block.children ?? [], block.id); }
+            else if (block.children) walk(block.children, within);
         }
     };
-    walk(blocks);
-    return fields;
+    walk(blocks, null);
+    const own = scope ? inside.get(scope) ?? [] : [];
+    return [...own, ...top.filter(field => !own.some(entry => entry.name === field.name))];
 }
 
 /**

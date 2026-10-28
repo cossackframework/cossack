@@ -54,11 +54,42 @@ export function formBlock(block: RenderedBlock, helpers: ThemeHelpers): Template
 const text = (block: RenderedBlock, name: string): string => typeof block.data[name] === 'string' ? block.data[name] as string : '';
 const number = (block: RenderedBlock, name: string): number | undefined => typeof block.data[name] === 'number' ? block.data[name] as number : undefined;
 
+const BUTTON = 'rounded-md border border-input bg-background px-3 py-1.5 text-sm font-medium text-foreground cursor-pointer hover:bg-muted disabled:cursor-default disabled:opacity-50';
+
+/**
+ * A repeater: its rows, each a bordered group of the row's blocks with a Remove button, an
+ * Add button, and a hidden template row with its inputs disabled, which the page's script
+ * copies. Without the script, Add and Remove post the form back and it returns with the
+ * rows changed; the server validates nothing for those posts.
+ */
+function repeaterBlock(block: RenderedBlock, helpers: ThemeHelpers | undefined, parts: { label: TemplateResult; help: TemplateResult | null; errors: TemplateResult }): TemplateResult {
+    const input = block.input!;
+    const view = block.repeater!;
+    const name = input.name;
+    const renderRow = (child: RenderedBlock) => helpers ? helpers.block(child) : inputBlock(child);
+    const row = (entry: { readonly id: string; readonly blocks: readonly RenderedBlock[] }, index: number, template = false) => html`<div data-cms-row=${entry.id} class="cms-repeater-row space-y-3 rounded-md border border-border p-3" ?hidden=${template} ?data-cms-row-template=${template}>
+        <div class="flex items-center justify-between gap-2">
+            <p class="text-sm font-medium text-foreground">${view.rowLabel || text(block, 'label') || name} <span data-cms-row-index>${index}</span></p>
+            <button type="submit" name="_remove" value=${`${name}.${entry.id}`} formnovalidate data-cms-row-remove ?disabled=${template} class=${BUTTON}>${__('Remove')}</button>
+        </div>
+        ${template ? html`<fieldset disabled class="contents">${entry.blocks.map(renderRow)}</fieldset>` : entry.blocks.map(renderRow)}
+    </div>`;
+    return html`<fieldset class="cms-field cms-repeater space-y-3" data-input=${input.key} data-cms-repeater=${name} data-min=${String(view.min)} data-max=${String(view.max)}>
+        <legend class=${LABEL}>${parts.label}</legend>${parts.help}
+        <div data-cms-rows class="space-y-3">${view.rows.map((entry, index) => row(entry, index + 1))}</div>
+        ${row({ id: '__row__', blocks: view.template }, 0, true)}
+        <div><button type="submit" name="_add" value=${name} formnovalidate data-cms-row-add ?disabled=${view.rows.length >= view.max} class=${BUTTON}>${view.addLabel}</button></div>
+        ${parts.errors}
+    </fieldset>`;
+}
+
 /**
  * An input block in a form: its label, control, help and error. The server's error shows in
  * `data-cms-server-error`; the browser's checks write theirs into the empty `data-cms-error`.
+ * Both carry the input's key: its name, or `repeater.<row id>.<name>` in a row. A repeater's
+ * rows render through `helpers.block`, so a theme's input renderers apply inside them.
  */
-export function inputBlock(block: RenderedBlock): TemplateResult | null {
+export function inputBlock(block: RenderedBlock, helpers?: ThemeHelpers): TemplateResult | null {
     const input = block.input;
     if (!input) return null;
     const required = block.data.required === true;
@@ -71,10 +102,11 @@ export function inputBlock(block: RenderedBlock): TemplateResult | null {
     const chosen = Array.isArray(value) ? value as readonly string[] : typeof value === 'string' ? [value] : [];
     const mark = required ? html`<span aria-hidden="true" class="text-destructive"> *</span>` : null;
     const helpText = help ? html`<p id=${`${input.id}-help`} class=${HELP}>${help}</p>` : null;
-    const errors = html`${input.error ? html`<p class=${ERROR} data-cms-server-error=${input.name}>${input.error}</p>` : null}<p id=${`${input.id}-error`} class=${ERROR} data-cms-error=${input.name}></p>`;
-    const field = (control: TemplateResult) => html`<div class="cms-field space-y-1" data-input=${input.name}>
+    const errors = html`${input.error ? html`<p class=${ERROR} data-cms-server-error=${input.key}>${input.error}</p>` : null}<p id=${`${input.id}-error`} class=${ERROR} data-cms-error=${input.key}></p>`;
+    if (block.repeater) return repeaterBlock(block, helpers, { label: html`${label}${mark}`, help: helpText, errors });
+    const field = (control: TemplateResult) => html`<div class="cms-field space-y-1" data-input=${input.key}>
         <label for=${input.id} class=${LABEL}>${label}${mark}</label>${control}${helpText}${errors}</div>`;
-    const group = (controls: TemplateResult, inline: boolean) => html`<fieldset class="cms-field space-y-1" data-input=${input.name} aria-describedby=${described}>
+    const group = (controls: TemplateResult, inline: boolean) => html`<fieldset class="cms-field space-y-1" data-input=${input.key} aria-describedby=${described}>
         <legend class=${LABEL}>${label}${mark}</legend>
         <div class=${inline ? 'flex flex-wrap gap-x-4 gap-y-1' : 'space-y-1'}>${controls}</div>${helpText}${errors}</fieldset>`;
     const choice = (type: 'radio' | 'checkbox', inline: boolean) => group(html`${input.options.map((option, index) => html`<label class="flex items-center gap-2 text-sm text-foreground">
@@ -92,7 +124,7 @@ export function inputBlock(block: RenderedBlock): TemplateResult | null {
         case 'form/checkboxes': return choice('checkbox', block.data.inline === true);
         case 'form/checkbox': case 'form/consent': {
             const caption = block.type === 'form/consent' ? html`<span class="[&_p]:my-0 [&_a]:text-primary [&_a]:underline">${unsafeHTML(block.html.text ?? '')}</span>` : html`<span>${text(block, 'text') || label}</span>`;
-            return html`<div class="cms-field space-y-1" data-input=${input.name}>
+            return html`<div class="cms-field space-y-1" data-input=${input.key}>
                 ${block.type === 'form/checkbox' && text(block, 'text') ? html`<p class=${LABEL}>${label}${mark}</p>` : null}
                 <label for=${input.id} class="flex items-start gap-2 text-sm text-foreground">
                     <input type="checkbox" id=${input.id} name=${input.name} value="on" ?checked=${value === true} ?required=${required} aria-describedby=${described} aria-invalid=${ifDefined(invalid)} class="mt-0.5 size-4 accent-primary">

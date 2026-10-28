@@ -17,7 +17,7 @@ import { BLOCK_LIMITS, BREAKPOINTS, INPUT_NAME, STYLE_PROPERTIES, TEXT_ALIGNMENT
  * What a form input collects, which decides how its value is checked and stored: text of a
  * kind, a number, a yes or no, a `YYYY-MM-DD` date, one of the block's options or several.
  */
-export const INPUT_KINDS = Object.freeze(['string', 'text', 'email', 'url', 'phone', 'number', 'boolean', 'date', 'choice', 'choices'] as const);
+export const INPUT_KINDS = Object.freeze(['string', 'text', 'email', 'url', 'phone', 'number', 'boolean', 'date', 'choice', 'choices', 'rows'] as const);
 export type InputKind = (typeof INPUT_KINDS)[number];
 
 /** A form holds at most this many inputs. */
@@ -317,7 +317,8 @@ export function blockProblems(declaration: BlockDeclaration, owner?: string): st
     if (input !== undefined) {
         if (!input || typeof input !== 'object' || !(INPUT_KINDS as readonly string[]).includes(input.kind)) problems.push(`${at}: input.kind is one of ${INPUT_KINDS.join(', ')}.`);
         if (declaration.fields?.name?.kind !== 'string' || declaration.fields?.label?.kind !== 'string') problems.push(`${at}: an input block declares string fields name and label.`);
-        if (declaration.children !== undefined) problems.push(`${at}: an input block cannot hold blocks.`);
+        if (declaration.children !== undefined && input.kind !== 'rows') problems.push(`${at}: an input block cannot hold blocks.`);
+        if (input.kind === 'rows' && declaration.children === undefined) problems.push(`${at}: a rows input holds the inputs of a row; declare children.`);
     }
     if (declaration?.parent !== undefined && (!Array.isArray(declaration.parent) || !declaration.parent.length || !declaration.parent.every(name => typeof name === 'string' && BLOCK_NAME.test(name)))) {
         problems.push(`${at}: parent lists block names.`);
@@ -476,26 +477,48 @@ function fieldGroupTreeErrors(blocks: readonly Block[], types: ReadonlyMap<strin
 /** Field names every record keeps for itself; a target's own fields come through `scope`. */
 export const RESERVED_FIELD_NAMES: ReadonlySet<string> = new Set(['id', 'rev', 'owner', 'createdAt', 'updatedAt', 'meta', '_id']);
 
-/** A form's own rules: at most 48 inputs, distinct names that are not reserved, conditions on its inputs. */
+/**
+ * A form's own rules: at most 48 inputs, names distinct within their scope (the form, or one
+ * repeater's rows) and not reserved, repeaters one level deep, conditions on inputs in reach:
+ * the form's for a block of the form, a row's own and then the form's for a block in a repeater.
+ */
 function formTreeErrors(blocks: readonly Block[], types: ReadonlyMap<string, BlockDeclaration>): { [path: string]: string } {
     const errors: { [path: string]: string } = {};
     const all = flattenBlocks(blocks);
     const inputs = all.filter(block => types.get(block.type)?.input);
     if (inputs.length > FORM_INPUT_LIMIT) errors[inputs[FORM_INPUT_LIMIT]!.id] = `A form holds at most ${FORM_INPUT_LIMIT} fields.`;
-    const named = new Map<string, Block>();
-    for (const block of inputs) {
-        const name = block.data.name as string;
-        if (RESERVED_INPUT_NAMES.has(name)) errors[`${block.id}.name`] = 'is reserved for the submission.';
-        else if (named.has(name)) errors[`${block.id}.name`] = 'is used by another field.';
-        else named.set(name, block);
-    }
-    for (const block of all) {
-        for (const rule of block.when?.rules ?? []) {
-            const target = named.get(rule.field);
-            if (!target) errors[block.id] = `shows on ${rule.field}, which is not a field of this form.`;
-            else if (target === block) errors[block.id] = 'cannot show on its own value.';
+    const repeater = (block: Block) => types.get(block.type)?.input?.kind === 'rows';
+    const scopes = new Map<string, Map<string, Block>>();
+    const names = (list: readonly Block[], into: Map<string, Block>, inside: boolean) => {
+        for (const block of list) {
+            if (types.get(block.type)?.input) {
+                const name = block.data.name as string;
+                if (RESERVED_INPUT_NAMES.has(name)) errors[`${block.id}.name`] = 'is reserved for the submission.';
+                else if (into.has(name)) errors[`${block.id}.name`] = 'is used by another field.';
+                else into.set(name, block);
+            }
+            if (repeater(block)) {
+                if (inside) { errors[block.id] = 'A repeater cannot hold another repeater.'; continue; }
+                const own = new Map<string, Block>();
+                names(block.children ?? [], own, true);
+                scopes.set(block.id, own);
+            } else if (block.children) names(block.children, into, inside);
         }
-    }
+    };
+    const top = new Map<string, Block>();
+    names(blocks, top, false);
+    const check = (list: readonly Block[], own: ReadonlyMap<string, Block> | null) => {
+        for (const block of list) {
+            for (const rule of block.when?.rules ?? []) {
+                const target = own?.get(rule.field) ?? top.get(rule.field);
+                if (!target) errors[block.id] = `shows on ${rule.field}, which is not a field ${own ? 'in reach' : 'of this form'}.`;
+                else if (target === block) errors[block.id] = 'cannot show on its own value.';
+            }
+            if (repeater(block)) check(block.children ?? [], scopes.get(block.id) ?? new Map());
+            else if (block.children) check(block.children, own);
+        }
+    };
+    check(blocks, null);
     return errors;
 }
 
