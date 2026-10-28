@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-    CORE_BLOCKS, FIELD_BLOCKS, FIELD_BLOCK_TYPES, FIELD_BLOCK_KINDS, blockProblems, blockSupports, clearHidden, derivedFields, derivedValues, field, fieldBlockOf, fieldGroupDeclarations,
-    fieldGroupProblems, fieldProblems, fieldVisibility, groupsForTarget, hiddenKey, layoutOf, rowsPlain, rowUniqueProblem, storageType, targetOrder, validateBlocks, validateValue, withRowIds, withTarget,
+    CORE_BLOCKS, FIELD_BLOCKS, FIELD_BLOCK_TYPES, FIELD_BLOCK_KINDS, blockProblems, blockSupports, clearHidden, field, fieldBlockOf, fieldGroupDeclarations,
+    fieldGroupProblems, fieldProblems, fieldVisibility, groupsForTarget, hiddenKey, indexedRowField, indexedRowPaths, layoutOf, rowIndexPath, rowsPlain, rowUniqueProblem, storageType, targetOrder, validateBlocks, validateValue, withRowIds, withTarget,
     type Block, type BlockDeclaration, type FieldGroup,
 } from '../src/index';
 
@@ -68,14 +68,14 @@ describe('field blocks', () => {
         const { blocks: checked, errors } = validateBlocks(blocks, types, { fieldGroup: { scope: ['title'] } });
         expect(checked[0]!.data.name).toBe('releaseDate');
         expect(checked[1]!.data.name).toBe('releaseDate2');
-        // Names are distinct across the group, rows included, so derived names and conditions stay unambiguous.
+        // Names are distinct across the group, rows included, so row filter paths and conditions stay unambiguous.
         expect(checked[2]!.children![0]!.data.name).toBe('releaseDate3');
         expect(errors).toEqual({ bad: 'shows on missing, which is not a field in reach.', 'own.name': 'is used by the target itself.', self: 'cannot show on its own value.' });
     });
 });
 
 describe('field groups', () => {
-    it('compiles blocks to declarations, repeaters to rows and indexed row fields to derived lists', () => {
+    it('compiles blocks to declarations, repeaters to rows and indexed row fields to array index paths', () => {
         const { problems, fields } = fieldGroupProblems(group, types);
         expect(problems).toEqual([]);
         expect(Object.keys(fields)).toEqual(['sku', 'brand', 'price', 'onSale', 'salePrice', 'specs']);
@@ -87,8 +87,12 @@ describe('field groups', () => {
         expect(Object.keys(fields.specs!.fields!)).toEqual(['name', 'kind', 'url', 'notes']);
         expect(fields.specs!.fields!.notes!.kind).toBe('rows');
         expect(storageType(fields.specs!, () => '')).toBe('array<object>');
-        expect(Object.keys(derivedFields(fields))).toEqual(['specs__name', 'specs__notes__tag']);
-        expect(derivedFields(fields).specs__name).toMatchObject({ kind: 'list', items: 'string', index: true, derived: ['specs', 'name'] });
+        expect(indexedRowPaths(fields)).toEqual([['specs', 'name'], ['specs', 'notes', 'tag']]);
+        expect(indexedRowPaths(fields).map(rowIndexPath)).toEqual(['specs.*.name', 'specs.*.notes.*.tag']);
+        expect(indexedRowField(fields, ['specs', 'notes', 'tag'])).toMatchObject({ kind: 'string', index: true });
+        expect(indexedRowField(fields, ['specs', 'notes', 'text'])).toBeNull();
+        expect(indexedRowField(fields, ['specs'])).toBeNull();
+        expect(indexedRowField(fields, ['price', 'name'])).toBeNull();
     });
 
     it('rejects bad groups and indexes on row fields that cannot be lists', () => {
@@ -158,13 +162,11 @@ describe('rows', () => {
         expect(validateValue('specs', specs, [{ _id: 'r1', name: 'a', qty: null, notes: [{ _id: 'n1', text: 'hi' }] }])).toBeUndefined();
     });
 
-    it('fills in row ids, derives index values and search text, and checks uniqueness within the entry', () => {
+    it('fills in row ids, derives search text, and checks uniqueness within the entry', () => {
         let count = 0;
         const value = withRowIds(specs, [{ name: 'a', notes: [{ text: 'first' }, { _id: 'keep', text: 'second' }] }, { _id: 'r2', name: 'b' }], () => `id${++count}`) as { _id: string; notes?: { _id: string }[] }[];
         expect(value.map(row => row._id)).toEqual(['id1', 'r2']);
         expect(value[0]!.notes!.map(row => row._id)).toEqual(['id2', 'keep']);
-        expect(derivedValues([{ name: 'a', notes: [{ tag: 'x' }, { tag: 'y' }] }, { name: 'b', notes: [{ tag: 'x' }] }], ['specs', 'notes', 'tag'])).toEqual(['x', 'y']);
-        expect(derivedValues([{ name: 'a' }, { name: 'a' }, { name: 'b' }], ['specs', 'name'])).toEqual(['a', 'b']);
         expect(rowsPlain(specs, [{ name: 'a', notes: [{ text: 'first note' }] }, { name: 'b', notes: [{ text: ' ' }] }])).toBe('first note');
         const unique = field.rows({ code: field.string({ unique: true }), inner: field.rows({ code: field.string({ unique: true }) }) });
         expect(rowUniqueProblem('specs', unique, [{ code: 'a' }, { code: 'a' }])).toBe('specs: code must be different in every row.');

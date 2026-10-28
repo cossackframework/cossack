@@ -62,12 +62,6 @@ export interface FieldDeclaration {
     readonly format?: 'plain' | 'markdown' | 'code';
     /** json: a group of declared subfields; the value is an object of them, each optional. rows: the fields of each row. */
     readonly fields?: { readonly [name: string]: FieldDeclaration };
-    /**
-     * The field is kept by the host from a path into a rows field: the distinct values at
-     * `derived` across every row, as a list, so filters on rows seek through an array index.
-     * Never written by clients and never returned.
-     */
-    readonly derived?: readonly string[];
 }
 
 /** A row's identity: 1-40 letters, digits, `_` or `-`, distinct within its list. */
@@ -134,8 +128,6 @@ export function slugify(text: string, max = 200): string {
 }
 
 export const FIELD_NAME = /^[a-z][a-zA-Z0-9]{0,62}$/;
-/** A derived field's name: the row path's names joined by `__`. */
-export const DERIVED_NAME = /^[a-z][a-zA-Z0-9]{0,62}(?:__[a-z][a-zA-Z0-9]{0,62})+$/;
 export const TAXONOMY_NAME = /^[a-z][a-zA-Z0-9]{0,40}$/;
 const ENUM_VALUE = /^[A-Za-z0-9_.-]{1,64}$/;
 const MAX_SAFE = Number.MAX_SAFE_INTEGER;
@@ -144,7 +136,7 @@ const MAX_SAFE = Number.MAX_SAFE_INTEGER;
 export function fieldProblems(name: string, declaration: FieldDeclaration, depth = 0): string[] {
     const problems: string[] = [];
     const at = `field ${name}`;
-    if (!(declaration?.derived ? DERIVED_NAME : FIELD_NAME).test(name)) problems.push(`${at}: names start with a lowercase letter and use letters and digits only.`);
+    if (!FIELD_NAME.test(name)) problems.push(`${at}: names start with a lowercase letter and use letters and digits only.`);
     const kinds: FieldKind[] = ['string', 'text', 'enum', 'integer', 'bigint', 'number', 'boolean', 'datetime', 'reference', 'json', 'list', 'vector', 'blocks', 'richtext', 'rows'];
     if (!kinds.includes(declaration.kind)) return [...problems, `${at}: unknown kind ${String(declaration.kind)}.`];
     const { kind } = declaration;
@@ -167,7 +159,6 @@ export function fieldProblems(name: string, declaration: FieldDeclaration, depth
     if (declaration.unique && ['json', 'list', 'vector', 'text', 'blocks', 'richtext', 'rows'].includes(kind)) problems.push(`${at}: ${kind} fields cannot be indexed.`);
     // A list of strings or integers can have an array index; other kinds cannot be indexed.
     if (declaration.index && (['json', 'vector', 'text', 'blocks', 'richtext', 'rows'].includes(kind) || (kind === 'list' && !['string', 'integer'].includes(declaration.items as string)))) problems.push(`${at}: ${kind} fields cannot be indexed.`);
-    if (declaration.derived !== undefined && (kind !== 'list' || !Array.isArray(declaration.derived) || declaration.derived.length < 2 || declaration.derived.some(part => !FIELD_NAME.test(part)))) problems.push(`${at}: derived names a path of two or more fields and applies to lists.`);
     if (declaration.blocks !== undefined && ((kind !== 'blocks' && kind !== 'richtext') || !Array.isArray(declaration.blocks) || declaration.blocks.some(name => typeof name !== 'string' || !/^[a-z][a-z0-9-]*\/[a-z][a-z0-9-]*$/.test(name)))) problems.push(`${at}: blocks lists block type names and applies to blocks and rich text fields.`);
     if (declaration.form !== undefined && (kind !== 'blocks' || typeof declaration.form !== 'boolean')) problems.push(`${at}: form applies to blocks fields and is true or false.`);
     if (declaration.placement !== undefined && !['main', 'sidebar'].includes(declaration.placement)) problems.push(`${at}: placement is main or sidebar.`);
@@ -183,8 +174,8 @@ export function fieldProblems(name: string, declaration: FieldDeclaration, depth
         if (declaration.min !== undefined && (!Number.isSafeInteger(declaration.min) || declaration.min < 0)) problems.push(`${at}: min rows must be a whole number.`);
         for (const [sub, nested] of entries) {
             if (!nested || !ROW_KINDS.has(nested.kind)) { problems.push(`${at}.${sub}: row fields cannot be blocks, rich text, vectors or big integers.`); continue; }
-            // Indexes and search on a row field are derived by the host; uniqueness is within the entry.
-            if (nested.slugFrom || nested.derived) problems.push(`${at}.${sub}: row fields cannot be derived.`);
+            // An index on a row field is an array index on its path; uniqueness is within the entry.
+            if (nested.slugFrom) problems.push(`${at}.${sub}: row fields cannot be derived.`);
             problems.push(...fieldProblems(sub, nested, depth + 1).map(problem => problem.replace(/^field /, `${at}.`)));
         }
     } else if (declaration.fields !== undefined) {

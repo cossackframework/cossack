@@ -108,7 +108,7 @@ export function resourceProblems(declaration: ResourceDeclaration): string[] {
     if (!declaration.fields || typeof declaration.fields !== 'object') return [...problems, 'fields are required.'];
     const names = Object.keys(declaration.fields);
     if (!names.length) problems.push('declare at least one field.');
-    // Field groups and their derived lists add up on a collection.
+    // Field groups add up on a collection.
     const limit = declaration.schemaless ? 160 : 24;
     if (names.length > limit) problems.push(`declare at most ${limit} fields per resource.`);
     const lower = new Set<string>();

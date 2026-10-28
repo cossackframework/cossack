@@ -1,5 +1,5 @@
 import type { Context } from 'hono';
-import type { FieldFilter } from '@cossackframework/cms';
+import { indexedRowField, type FieldFilter } from '@cossackframework/cms';
 import { apiEntries, apiError, apiHeaders, writeAllowed, writeBody } from '../../../../../cms/content-api';
 
 /**
@@ -33,11 +33,13 @@ export const GET = async (c: Context) => {
         for (const [key, raw] of Object.entries(c.req.query())) {
             const name = /^filter\[([a-zA-Z0-9_.]{1,200})\]$/.exec(key)?.[1];
             if (!name || typeof raw !== 'string') continue;
-            const declaration = cms.resourceById(`cms/${collection.name}`).fields[name.includes('.') ? name.split('.').join('__') : name];
+            const fields = cms.resourceById(`cms/${collection.name}`).fields;
+            const row = name.includes('.') ? indexedRowField(fields, name.split('.')) : null;
+            const declaration = name.includes('.') ? row : fields[name];
             if (!declaration) return c.json({ error: `Cannot filter on ${name}.`, code: 'CMS_VALIDATION' }, 422);
             const items = declaration.kind === 'list' ? declaration.items : declaration.kind;
-            const value = items === 'integer' || items === 'number' ? Number(raw) : items === 'boolean' ? raw === 'true' : raw;
-            where[name] = declaration.kind === 'list' ? { contains: value } : value;
+            const value = items === 'integer' || items === 'number' || (items === 'datetime' && row !== null) ? Number(raw) : items === 'boolean' ? raw === 'true' : raw;
+            where[name] = declaration.kind === 'list' || row ? { contains: value } : value;
         }
         const query = (c.req.query('q') ?? '').trim().slice(0, 200);
         const html = c.req.query('format') === 'html';

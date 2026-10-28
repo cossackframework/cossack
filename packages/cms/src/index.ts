@@ -1,10 +1,10 @@
 // Client-safe CMS declarations: resources, fields, permissions, extension points and records.
 export { defineResource, resolveResource, resourceProblems, storageName, permissionFor, declarationHash, canonicalJson, SYSTEM_FIELDS, RESOURCE_NAME, OWNER_NAME, ResourceDeclarationError,
     type ResourceDeclaration, type Resource, type ResourceAccess, type ResourceAction, type AccessRule, type IndexDeclaration, type MigrationStep } from './resource';
-export { field, fieldProblems, validateValue, storageType, storageCheck, slugify, FIELD_NAME, SLUG_PATTERN, TAXONOMY_NAME, ROW_ID, ROW_LIMITS, DERIVED_NAME, type FieldDeclaration, type FieldKind, type ListItemKind } from './fields';
+export { field, fieldProblems, validateValue, storageType, storageCheck, slugify, FIELD_NAME, SLUG_PATTERN, TAXONOMY_NAME, ROW_ID, ROW_LIMITS, type FieldDeclaration, type FieldKind, type ListItemKind } from './fields';
 export {
     FIELD_BLOCK_TYPES, FIELD_BLOCKS, FIELD_GROUP_ID, FIELD_GROUP_LIMITS, fieldBlockFields, fieldBlockDeclaration, rowsSearchable, metaProblems, flattenGroupFields, fieldGroupDeclarations, fieldBlockKindOf, fieldBlockOf, layoutOf, sameTarget, targetOrder, groupsForTarget, withTarget, fieldGroupProblems,
-    withRowIds, derivedName, derivedFields, derivedValues, rowsPlain, rowUniqueProblem, conditionValues, hiddenKey, fieldVisibility, clearHidden,
+    withRowIds, indexedRowPaths, indexedRowField, rowIndexPath, rowsPlain, rowUniqueProblem, conditionValues, hiddenKey, fieldVisibility, clearHidden,
     type FieldGroup, type FieldGroupTarget, type Row,
 } from './field-groups';
 export { ANONYMOUS, PERMISSIONS, DEFAULT_ROLES, systemPrincipal, userPrincipal, hasPermission, permissionMatches, evaluateRule, ruleScope, principalId, type Principal, type RecordScope } from './permissions';

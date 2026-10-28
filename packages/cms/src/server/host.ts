@@ -8,7 +8,7 @@ import { ClientError, type RomeDB, type Statement, type Value, type WorkLimits }
 import { blockId, blockMedia, blockProblems, validateBlocks, type Block, type BlockDeclaration } from '../blocks';
 import { blocksShapeProblem, type FieldDeclaration } from '../fields';
 import { collectionProblems, collectionResource, contentBlocks, entryUrl, extendCollection, LOCALE, orderedFields, RESERVED_FIELDS, type CollectionDefinition } from '../collections';
-import { derivedFields, fieldGroupDeclarations, fieldGroupProblems, fieldVisibility, flattenGroupFields, groupsForTarget, metaProblems, withTarget, type FieldGroup, type FieldGroupTarget } from '../field-groups';
+import { fieldGroupDeclarations, fieldGroupProblems, fieldVisibility, flattenGroupFields, groupsForTarget, metaProblems, withTarget, type FieldGroup, type FieldGroupTarget } from '../field-groups';
 import { CmsFieldGroups } from './field-groups';
 import { CmsError } from '../errors';
 import type { CmsModule } from '../module';
@@ -1381,16 +1381,16 @@ export class CmsHost {
 
     /**
      * A collection's resource: its declared fields, then its groups' (a group field named as a
-     * core field or a feature is left out), then the lists derived from rows for filtering, with
-     * the groups' layout. Saving and reloading build it the same way, so the declaration hash a
-     * migration records is the one `ready()` checks writes against.
+     * core field or a feature is left out), with the groups' layout. Saving and reloading
+     * build it the same way, so the declaration hash a migration records is the one `ready()`
+     * checks writes against.
      */
     #collectionResource(definition: CollectionDefinition, labels: { [name: string]: string }): Resource {
         const groups = this.#groupFields({ kind: 'collection', name: definition.name });
         const taken = new Set([...RESERVED_FIELDS, ...(definition.taxonomies ?? []), ...Object.keys(definition.fields)]);
         const fields = { ...definition.fields, ...Object.fromEntries(Object.entries(groups.fields).filter(([name]) => !taken.has(name))) };
         const layout = groups.layout;
-        return resolveResource({ ...collectionResource({ ...definition, fields: { ...fields, ...derivedFields(fields) } }, labels), ...(layout.length ? { layout } : {}) }, 'cms');
+        return resolveResource({ ...collectionResource({ ...definition, fields }, labels), ...(layout.length ? { layout } : {}) }, 'cms');
     }
 
     #taxonomyLabels(): { [name: string]: string } {

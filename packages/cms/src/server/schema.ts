@@ -4,8 +4,8 @@
  * drops are explicit versioned steps. Each step is one atomic batch sent with
  * `ifSequence` from the planning read, recorded in the relational migration ledger.
  */
-import { rowsSearchable } from '../field-groups';
-import { ClientError, encodeValue, type RomeDB, type Statement, type Value } from '@cossackframework/romedb';
+import { indexedRowPaths, rowIndexPath, rowsSearchable } from '../field-groups';
+import { ClientError, compareVersions, encodeValue, type RomeDB, type Statement, type Value } from '@cossackframework/romedb';
 import { storageCheck, storageType, type FieldDeclaration } from '../fields';
 import { declarationHash, SYSTEM_FIELDS, type MigrationStep, type Resource } from '../resource';
 import { HOST_STEPS, HOST_TABLES, type HostStep } from './host-schema';
@@ -110,6 +110,8 @@ export interface MigrationReport {
 }
 
 const MAX_STEP_STATEMENTS = 28;
+/** The first RomeDB release that indexes paths into arrays of objects, as `team.*.kind`. */
+export const ROW_INDEX_ENGINE_VERSION = '0.2.11';
 const quote = (name: string) => `"${name}"`;
 const literal = (value: string | number | boolean | null): string =>
     value === null ? 'NULL' : typeof value === 'string' ? `'${value.replaceAll("'", "''")}'` : String(value);
@@ -135,6 +137,8 @@ export function collectionSpec(resource: Resource, storageOf: (resourceId: strin
         if (declaration.unique) indexes.push({ name: `${resource.storage}__u_${name.toLowerCase()}`, kind: 'scalar', paths: [name], unique: true });
         else if (declaration.index || declaration.kind === 'reference') indexes.push({ name: `${resource.storage}__${name.toLowerCase()}`, kind: declaration.kind === 'list' ? 'array' : 'scalar', paths: [name], unique: false });
     }
+    // A row field's index steps into every row of each rows field above it.
+    for (const path of indexedRowPaths(resource.fields)) indexes.push({ name: `${resource.storage}__r_${path.join('__').toLowerCase()}`, kind: 'array', paths: [rowIndexPath(path)], unique: false });
     for (const index of resource.indexes) indexes.push({ name: `${resource.storage}__i_${index.name}`, kind: 'scalar', paths: [...index.fields], unique: index.unique === true });
     const searchable = Object.entries(resource.fields).filter(([, declaration]) => declaration.search || rowsSearchable(declaration))
         .map(([name, declaration]) => declaration.kind === 'richtext' || declaration.kind === 'blocks' || declaration.kind === 'rows' ? searchTextPath(name) : name);
@@ -175,11 +179,16 @@ export function defineFieldRql(collection: string, field: FieldSpec, options: { 
 }
 
 export function indexRql(collection: string, index: IndexSpec): string {
-    const paths = index.paths.map(quote).join(', ');
+    const paths = index.paths.map(indexPath).join(', ');
     if (index.kind === 'fulltext') return `CREATE SEARCH INDEX ${index.name} ON ${collection}(${paths}) USING FULLTEXT`;
     // One entry per element, so `array::contains(field, $value)` seeks.
     if (index.kind === 'array') return `CREATE SEARCH INDEX ${index.name} ON ${collection}(${paths}) USING ARRAY`;
     return `CREATE ${index.unique ? 'UNIQUE ' : ''}INDEX ${index.name} ON ${collection} (${paths})`;
+}
+
+/** An index path with each field quoted: `team.*.kind` becomes `"team".*."kind"`. */
+function indexPath(path: string): string {
+    return path.split('.').map(part => part === '*' ? part : quote(part)).join('.');
 }
 
 /** Read the catalog in one snapshot sequence. Retries when a write lands between the reads. */
@@ -252,6 +261,10 @@ export async function planSchema(resources: readonly Resource[], catalog: Catalo
         const table = catalog.tables.get(collection.name);
         const applied = catalog.ledger.explicit.get(resource.id) ?? new Set<number>();
         const resourceSteps: PlannedStep[] = [];
+        if (collection.indexes.some(index => index.paths.some(path => path.includes('.*.'))) && compareVersions(catalog.engineVersion, ROW_INDEX_ENGINE_VERSION) < 0) {
+            blocked.push({ resource: resource.id, message: `Filterable repeater fields need RomeDB ${ROW_INDEX_ENGINE_VERSION} or later; the database runs ${catalog.engineVersion}.` });
+            continue;
+        }
         if (table && table.model !== 'document') {
             blocked.push({ resource: resource.id, message: `${collection.name} exists as a ${table.model} table.` });
             continue;

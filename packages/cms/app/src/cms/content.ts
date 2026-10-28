@@ -23,9 +23,7 @@ export async function termOptions(cms: CmsHost, taxonomy: string): Promise<TermO
 export async function editorView(cms: CmsHost, route: string): Promise<EditorView> {
     const { resource, collection } = routeResource(cms, route);
     const taxonomyFields = Object.entries(resource.fields).filter(([, field]) => field.taxonomy).map(([name, field]) => ({ name, taxonomy: field.taxonomy! }));
-    // Derived lists are the host's; they are not edited.
-    const derived = Object.entries(resource.fields).filter(([, field]) => field.derived).map(([name]) => name);
-    const special = [...(collection ? [...CORE_FIELDS, ...taxonomyFields.map(entry => entry.name)] : [resource.titleField ?? '', ...taxonomyFields.map(entry => entry.name)]), ...derived];
+    const special = collection ? [...CORE_FIELDS, ...taxonomyFields.map(entry => entry.name)] : [resource.titleField ?? '', ...taxonomyFields.map(entry => entry.name)];
     const taxonomies: EditorTaxonomy[] = [];
     for (const { taxonomy } of taxonomyFields) {
         const declaration = cms.taxonomies.declaration(taxonomy);
