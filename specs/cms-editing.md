@@ -24,7 +24,7 @@ and plugins get hooks on terms, comments, menus and the lists.
 - **Data blocks.** The `data` category: a block stores values (`core/meta`, custom fields as
   `name: value` lines) and the site renders nothing for it. Data blocks have no Style tab,
   show "Data only" in the tree and are left out of excerpts and search text. Themes read them
-  from `entry.blocks`; the API returns them with the content.
+  from `entry.content`; the API returns them with the content.
 - **Patterns are blocks.** A synced pattern is a `core/pattern` block in the content (or in
   rich text); the site expands it one level, with prefixed block IDs. An unsynced pattern is a
   copy of its blocks. Patterns are offered beside the top-level inserter.
@@ -83,8 +83,9 @@ Findings:
 - `dark:` utilities need `@custom-variant dark (&:where(.dark, .dark *))` in the app's
   stylesheet; the UI theme sets `.dark` on `<html>`, and Tailwind's default `dark:` follows
   the system preference instead.
-- A collection with several blocks fields renders all of them into `entry.blocks`, in
-  declared order; `entry.fields` keeps them apart for themes that place them differently.
+- A collection with several blocks fields, or rich text and Markdown fields, renders all of
+  them into `entry.content` in declared order, a rich text or Markdown field as one
+  `core/richtext` block; `entry.fields` keeps them apart for themes that place them differently.
 
 ## UX follow-ups (2026-10-27)
 

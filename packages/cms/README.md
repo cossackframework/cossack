@@ -74,7 +74,8 @@ Data contract:
   and adds site-level CSS, and `blockStyleAttributes` renders a styled block's wrapper with
   classes and custom properties, so a palette change recolours stored content.
 - An entry's content is blocks: the `content` feature, on for posts and pages, and the
-  `core/richtext` block is the word processor among them. A collection's `template` is the
+  `core/richtext` block is the word processor among them. Themes get one `entry.content`
+  list: every blocks field, and each rich text or Markdown field as one rich text block. A collection's `template` is the
   blocks every new entry's content starts with (`templateLock` keeps them, or their order too); blocks
   of the `data` category store values and render nothing. Rich text is validated against an
   allow-list of nodes, marks and attributes on every write and rendered to escaped HTML; the

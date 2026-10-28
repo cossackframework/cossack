@@ -249,7 +249,7 @@ const core: BlockDeclaration[] = [
         showImage: field.boolean({ default: true, label: 'Show the featured image' }),
         showDate: field.boolean({ default: true, label: 'Show the date' }),
     } },
-    // Data: stored with the entry, shown nowhere. Themes read `entry.blocks` and the API returns them.
+    // Data: stored with the entry, shown nowhere. Themes read `entry.content` and the API returns them.
     { name: 'core/meta', keywords: ['metadata', 'data', 'key value'], label: 'Custom fields', icon: 'database', category: 'data', description: 'Named values stored with the entry for themes and integrations; nothing shows on the page.', fields: {
         fields: field.list('string', { label: 'Fields', description: 'One per line, as name: value.' }),
     } },

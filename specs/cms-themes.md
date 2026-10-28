@@ -66,14 +66,17 @@ pure functions over view data and never read the database. Every item below keep
   entry); `?edit` or its button enters edit mode. The editor is `site-editor.client.ts`,
   imported only on entering edit mode: a static import would land in every visitor's
   bundle. Visitors get no extra markup or script, and editors' pages are `private, no-store`.
-- **Marking blocks.** `helpers.block` and `helpers.content` wrap each block in edit mode with
-  a `display: contents` marker carrying the block id. Themes never learn about editing; a
-  theme that renders blocks through the helpers is editable. Core block renderers go
-  through `helpers.block`, so they are covered.
+- **One content list.** `entry.content` is every blocks field of the entry, and each rich
+  text or Markdown field as one `core/richtext` block carrying `field`, in field order;
+  `helpers.block(entry.content)` renders it. `entry.fields` keeps the fields apart.
+- **Marking blocks.** `helpers.block` wraps each block in edit mode with a `display:
+  contents` marker carrying the block id, or the field's name for a field's rich text.
+  Themes never learn about editing; a theme that renders blocks through the helper is
+  editable. Core block renderers go through `helpers.block`, so they are covered.
 - **Editing.** Click a block to edit its fields in place (rich text through the dashboard's
-  TipTap setup, other fields in a popover). A rich text body is one ProseMirror document
-  that `helpers.content` splits into HTML runs and embedded blocks, so the editor opens the
-  body as one document and the site re-splits it on save, rather than editing run by run.
+  TipTap setup, other fields in a popover). A rich text field is one ProseMirror document
+  that the site splits into HTML runs and embedded blocks, so the editor opens the field
+  as one document and the site re-splits it on save, rather than editing run by run.
   The blocks field is a true array: drag or use the keyboard to reorder; it is a splice,
   reusing the menu editor's drag and move code. Title, slug, terms and custom fields open
   in a side panel reusing dashboard forms.

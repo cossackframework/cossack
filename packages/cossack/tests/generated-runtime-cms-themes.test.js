@@ -94,8 +94,8 @@ describe.skipIf(!liveRomeDBTests())('CMS themes', () => {
       // The starter post from setup is listed too.
       expect(await visitor.page('/wide-page')).toMatch(/<ul data-latest>(?:<li>[^<]*<\/li>)*<li>Hello from the blog<\/li>(?:<li>[^<]*<\/li>)*<\/ul>/);
 
-      const project = async (title, client, sections) => {
-        const saved = await web.action(EDITOR, 'save', [{ title, slug: '', status: 'draft', publishedAt: '', client, year: '2026', sections }, 'publish', 0],
+      const project = async (title, client, sections, summary = null) => {
+        const saved = await web.action(EDITOR, 'save', [{ title, slug: '', status: 'draft', publishedAt: '', client, year: '2026', sections, summary }, 'publish', 0],
           { params: { collection: 'projects', id: 'new' }, state: { route: 'projects', id: 'new' } });
         expect(saved.id, JSON.stringify(saved.errors ?? saved.error)).toMatch(/^[0-9a-f-]{36}$/);
         return saved.id;
@@ -103,7 +103,7 @@ describe.skipIf(!liveRomeDBTests())('CMS themes', () => {
       const rocket = await project('Rocket', 'ACME', [
         { id: 's1', type: 'core/paragraph', data: { text: 'First section' } },
         { id: 's2', type: 'core/quote', data: { text: 'Second section', citation: '' } },
-      ]);
+      ], { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'A ' }, { type: 'text', text: 'bold', marks: [{ type: 'bold' }] }, { type: 'text', text: ' summary' }] }] });
       await project('Skates', 'Road Runner', []);
 
       // Visitors see the child theme's template over the parent's layout, its typed fields, the
@@ -118,6 +118,10 @@ describe.skipIf(!liveRomeDBTests())('CMS themes', () => {
       expect(html).toMatch(/<p data-client>ACME<\/p>/);
       expect(html).toMatch(/<p data-year>2026<\/p>/);
       expect(html).toMatch(/<ul data-related><li><a href="?\/projects\/skates"?>Skates<\/a><\/li><\/ul>/);
+      // `entry.content` is one list in field order: the sections' blocks, then the summary as a rich text block.
+      const contentHtml = html.slice(html.indexOf('data-sections'), html.indexOf('<aside'));
+      expect(contentHtml).toMatch(/cms-prose[^>]*><p>A <strong>bold<\/strong> summary<\/p>/);
+      expect(contentHtml.indexOf('Second section')).toBeLessThan(contentHtml.indexOf('bold</strong> summary'));
       expect(html).toMatch(/<meta name="?theme-color"? content="?#123456/);
       const head = html.slice(html.indexOf('<head'), html.indexOf('</head>'));
       const stylesheet = /<link rel="?stylesheet"? href="?([^"\s>]*portfolio[^"\s>]*)/.exec(head)?.[1];
@@ -210,6 +214,8 @@ describe.skipIf(!liveRomeDBTests())('CMS themes', () => {
       expect(scripts.some(url => url.endsWith(editorChunk))).toBe(true);
       const sections = tab.locator('[data-sections]');
       await browserExpect(sections.locator('[data-cms-edit="block"]')).toHaveCount(2);
+      // The summary is a field's rich text: marked as one document for the Text panel, not as a block.
+      await browserExpect(sections.locator('[data-cms-edit="body"][data-field="summary"]')).toHaveCount(1);
 
       // Reorder with the keyboard in the Blocks panel: the page follows.
       await bar.getByRole('button', { name: 'Blocks', exact: true }).click();

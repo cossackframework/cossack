@@ -21,6 +21,7 @@ const files = {
         client: { kind: 'string', max: 120, label: 'Client' },
         year: { kind: 'integer', label: 'Year' },
         sections: { kind: 'blocks', label: 'Sections' },
+        summary: { kind: 'richtext', label: 'Summary' },
       },
     }],
   }, null, 2),
@@ -42,6 +43,7 @@ export const loaders: ThemeLoaders = {
   'templates/entry-projects.ts': `import { html, type TemplateResult } from '@cossackframework/renderer';
 import type { EntryView, ThemeHelpers } from '@cossackframework/cms';
 
+/** The content is one list: the sections, then the summary as a rich text block, in field order. */
 export default function project(entry: EntryView, helpers: ThemeHelpers): TemplateResult {
     const related = (helpers.data.page.related as { title: string; url: string }[] | undefined) ?? [];
     return html\`<article class="portfolio-project" data-template="entry-projects">
@@ -49,7 +51,7 @@ export default function project(entry: EntryView, helpers: ThemeHelpers): Templa
         <h1>\${entry.title}</h1>
         <p data-client>\${String(entry.fields.client ?? '')}</p>
         <p data-year>\${String(entry.fields.year ?? '')}</p>
-        <div data-sections>\${entry.blocks.map(block => helpers.block(block))}</div>
+        <div data-sections>\${helpers.block(entry.content)}</div>
         <aside><h2>Related projects</h2><ul data-related>\${related.map(item => html\`<li><a href=\${item.url}>\${item.title}</a></li>\`)}</ul></aside>
     </article>\`;
 }
@@ -59,7 +61,7 @@ import type { EntryView, ThemeHelpers } from '@cossackframework/cms';
 
 export default function wide(entry: EntryView, helpers: ThemeHelpers): TemplateResult {
     const latest = (helpers.data.page.latest as string[] | undefined) ?? [];
-    return html\`<article data-template="entry-wide"><h1>\${entry.title}</h1>\${helpers.content(entry.body)}
+    return html\`<article data-template="entry-wide"><h1>\${entry.title}</h1>\${helpers.block(entry.content)}
         <ul data-latest>\${latest.map(title => html\`<li>\${title}</li>\`)}</ul></article>\`;
 }
 `,

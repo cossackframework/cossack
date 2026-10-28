@@ -15,8 +15,7 @@ export default function entry(entry: EntryView, helpers: ThemeHelpers): Template
             ${entry.date || entry.author ? html`<p class="text-sm text-muted-foreground">${entry.date}${entry.author ? html` · ${entry.author}` : null}</p>` : null}
         </header>
         ${entry.image ? html`<figure>${image(entry.image, 'aspect-video w-full rounded-xl object-cover', '(min-width: 1024px) 1024px, 100vw', true)}${entry.image.caption ? html`<figcaption class="mt-2 text-sm text-muted-foreground">${entry.image.caption}</figcaption>` : null}</figure>` : null}
-        ${entry.body.length ? helpers.content(entry.body) : null}
-        ${entry.blocks.length ? html`<div>${entry.blocks.map(block => helpers.block(block))}</div>` : null}
+        ${entry.content.length ? html`<div>${helpers.block(entry.content)}</div>` : null}
         ${entry.terms.some(group => group.terms.length) ? html`<footer class="space-y-1 border-t border-border pt-4 text-sm text-muted-foreground">
             ${entry.terms.filter(group => group.terms.length).map(group => html`<p>${group.label}: ${group.terms.map((term, index) => html`${index ? ', ' : ''}${term.url
                 ? html`<a href=${term.url} class="text-primary hover:underline">${term.name}</a>` : term.name}`)}</p>`)}

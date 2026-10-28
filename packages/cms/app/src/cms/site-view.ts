@@ -35,8 +35,9 @@ export interface ThemeRenderState {
     readonly presets?: Required<ThemePresets>;
     readonly data?: { readonly layout?: ThemeData; readonly page?: ThemeData };
     /**
-     * The page is in edit mode: blocks and the body are wrapped in `display: contents` markers
-     * carrying their IDs, which the site editor finds. Themes never see it; visitors never get it.
+     * The page is in edit mode: blocks are wrapped in `display: contents` markers carrying their
+     * IDs (a field's rich text, the field's name), which the site editor finds. Themes never see
+     * it; visitors never get it.
      */
     readonly editing?: boolean;
 }
@@ -56,13 +57,16 @@ export function themeHelpers(theme: SiteTheme, state: ThemeRenderState, isActive
             if (!path.startsWith('/')) return false;
             return path === '/' ? isActive('/', true) : isActive(path, true) || isActive(`${path}/`, false);
         },
-        block: block => state.editing ? html`<div data-cms-edit="block" data-block-id=${block.id} style="display: contents">${render(block)}</div>` : render(block),
-        content: parts => {
-            const body = html`${parts.map(part => part.kind === 'html' ? html`<div class=${PROSE}>${unsafeHTML(part.html)}</div>` : render(part.block))}`;
-            // The body is one document, edited as a whole.
-            return state.editing ? html`<div data-cms-edit="body" style="display: contents">${body}</div>` : body;
+        block: input => {
+            const list: readonly RenderedBlock[] = Array.isArray(input) ? input as readonly RenderedBlock[] : [input as RenderedBlock];
+            return html`${list.map(block => state.editing ? marked(block) : render(block))}`;
         },
+        content: parts => html`${parts.map(part => part.kind === 'html' ? html`<div class=${PROSE}>${unsafeHTML(part.html)}</div>` : render(part.block))}`,
     };
+    // In edit mode a block carries its ID; a field's rich text is one document, edited as a whole in the field's panel.
+    const marked = (block: RenderedBlock) => block.field
+        ? html`<div data-cms-edit="body" data-field=${block.field} style="display: contents">${render(block)}</div>`
+        : html`<div data-cms-edit="block" data-block-id=${block.id} style="display: contents">${render(block)}</div>`;
     const render = (block: RenderedBlock) => {
         // Data blocks hold values for themes and the API; nothing shows for them.
         if (block.dataOnly) return null;
@@ -295,7 +299,7 @@ export const fallbackTheme: SiteTheme = {
             ${site.languages.length > 1 ? html`<nav aria-label=${__('Language')}>${site.languages.map(language => html`<a href=${language.url} hreflang=${language.code}>${language.label}</a> `)}</nav>` : null}</header>
         <main>${content}</main>
     </div>`,
-    entry: (entry: EntryView, helpers) => html`<article><h1>${entry.title}</h1><p>${entry.date}</p>${helpers.content(entry.body)}${entry.blocks.map(block => helpers.block(block))}
+    entry: (entry: EntryView, helpers) => html`<article><h1>${entry.title}</h1><p>${entry.date}</p>${helpers.block(entry.content)}
         ${entry.comments ? html`<section id="comments"><h2>${__('Comments')}</h2>${entry.comments.items.map(item => html`<div id=${`comment-${item.id}`}><strong>${item.author}</strong> ${item.date}${unsafeHTML(item.html)}</div>`)}
             ${entry.comments.form && !entry.comments.form.requireSignIn ? html`<form method="post" action=${entry.comments.form.action}><input type="hidden" name="collection" value=${entry.comments.form.collection}>
                 <input type="hidden" name="entry" value=${entry.comments.form.entry}><textarea name="content" required aria-label=${__('Comment')}></textarea>

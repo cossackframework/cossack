@@ -265,6 +265,11 @@ export interface RenderedBlock {
     readonly dataOnly?: boolean;
     /** The rendered blocks a container holds. */
     readonly children?: readonly RenderedBlock[];
+    /**
+     * Rendered from one of the entry's fields (rich text or Markdown as a `core/richtext`
+     * block), not stored among its blocks: the field's name. The site editor opens that field.
+     */
+    readonly field?: string;
 }
 
 /** An input block's state in a rendered form. */
@@ -375,9 +380,9 @@ export interface EntryReference {
  * A field's value on an entry view, by the field's kind: text, enums and slugs as strings,
  * numbers and datetimes (Unix milliseconds) as numbers, booleans, media as `MediaView` (a
  * list of media as `MediaView[]`), references as `EntryReference`, taxonomy terms as
- * `TermLink[]`, other lists as arrays, groups as objects, and in full views rich text and
- * Markdown as `BodyPart[]` (render with `helpers.content`) and blocks as `RenderedBlock[]`.
- * Absent and empty values are null.
+ * `TermLink[]`, other lists as arrays, groups as objects, and in full views blocks, rich text
+ * and Markdown as `RenderedBlock[]` (rich text and Markdown as one `core/richtext` block;
+ * render with `helpers.block`). Absent and empty values are null.
  */
 export type FieldView =
     | string | number | boolean | null
@@ -385,7 +390,6 @@ export type FieldView =
     | MediaView | readonly MediaView[]
     | EntryReference
     | readonly TermLink[]
-    | readonly BodyPart[]
     | readonly RenderedBlock[]
     | { readonly [name: string]: unknown };
 
@@ -401,10 +405,13 @@ export interface EntryView {
     readonly date: string;
     readonly author: string;
     readonly excerpt: string;
-    /** The rendered body, empty in lists. */
-    readonly body: readonly BodyPart[];
-    /** Blocks of the entry's blocks field, empty in lists. */
-    readonly blocks: readonly RenderedBlock[];
+    /**
+     * The entry's content as rendered blocks, empty in lists: its blocks fields (the `content`
+     * feature first of all) and its rich text and Markdown fields, each of those one
+     * `core/richtext` block, in the collection's field order. Render it with
+     * `helpers.block(entry.content)`; `fields` has each field's blocks apart.
+     */
+    readonly content: readonly RenderedBlock[];
     readonly image: MediaView | null;
     readonly terms: readonly { readonly label: string; readonly terms: readonly TermLink[] }[];
     /**
@@ -420,7 +427,7 @@ export interface EntryView {
     readonly locale: string;
     /** Comments, when the collection takes them and the view is full; else null. */
     readonly comments: CommentsView | null;
-    /** Password protected and not unlocked by this visitor: the excerpt, body and blocks are withheld. */
+    /** Password protected and not unlocked by this visitor: the excerpt, content and fields are withheld. */
     readonly locked: boolean;
 }
 
@@ -492,10 +499,10 @@ export interface ThemeHelpers {
     readonly data: { readonly layout: ThemeData; readonly page: ThemeData };
     /** The URL of a file in the theme's `assets/`, such as `asset('assets/theme.css')`; empty when it has none. */
     asset(path: string): string;
-    /** A body: HTML runs and embedded blocks. */
+    /** Rich text inside a block (`block.content.<field>`): HTML runs and embedded blocks. For block renderers; entry content is blocks. */
     content(parts: readonly BodyPart[]): TemplateResult;
-    /** A block through the theme's renderer, a plugin's component or the core one. */
-    block(block: RenderedBlock): TemplateResult | null;
+    /** A block, or a list of them, through the theme's renderer, a plugin's component or the core one. */
+    block(block: RenderedBlock | readonly RenderedBlock[]): TemplateResult | null;
     /** Whether a URL is the current page or one of its ancestors. */
     isActive(url: string): boolean;
 }

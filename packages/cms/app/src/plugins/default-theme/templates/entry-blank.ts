@@ -8,7 +8,6 @@ import type { EntryView, ThemeHelpers } from '@cossackframework/cms';
 
 export default function entryBlank(entry: EntryView, helpers: ThemeHelpers): TemplateResult {
     return html`<article class="cms-blank" data-template="entry-blank">
-        ${entry.body.length ? helpers.content(entry.body) : null}
-        ${entry.blocks.map(block => helpers.block(block))}
+        ${helpers.block(entry.content)}
     </article>`;
 }

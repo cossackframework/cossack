@@ -110,10 +110,19 @@ export default function entry(entry: EntryView, helpers: ThemeHelpers): Template
     <h1>${entry.title}</h1>
     ${entry.date ? html`<p>${entry.date}${entry.author ? html` · ${entry.author}` : null}</p>` : null}
     ${entry.image ? html`<img src=${entry.image.url} srcset=${entry.image.srcset} alt=${entry.image.alt}>` : null}
-    ${entry.body.length ? helpers.content(entry.body) : null}
-    ${entry.blocks.map(block => helpers.block(block))}
+    ${helpers.block(entry.content)}
   </article>`;
 }
+```
+
+`entry.content` is the entry's whole content as one list of blocks: its blocks fields,
+the `content` feature first of all, and its rich text and Markdown fields, each of those
+one `core/richtext` block, in the collection's field order. A theme that lays a
+collection's fields out itself takes them from `entry.fields` instead, where a blocks,
+rich text or Markdown field is a `RenderedBlock[]` of its own:
+
+```ts
+${helpers.block((entry.fields.sections as readonly RenderedBlock[] | null) ?? [])}
 ```
 
 Templates use `html` from `@cossackframework/renderer` and `__()` for their own strings.
@@ -129,11 +138,11 @@ that export over the files, slot by slot.
 | View | What it carries |
 | --- | --- |
 | `SiteView` | `title`, `tagline`, `blog` (the posts page URL), `menus` by location (items with `label`, `url`, `newTab`, `children`, `className`, `attributes`, `meta`), `locale`, `languages` (the page in each language), `searchUrl`, `homeUrl`, `areas` (rendered blocks by widget area), and `template`, the entry's template name so a layout can leave out its frame, as the default theme does for `entry-blank`. |
-| `EntryView` | `id`, `title`, `url`, `collection`, `kind` (the singular label), `date`, `author`, `excerpt`, `body` (rendered rich text as `BodyPart[]`), `blocks` (`RenderedBlock[]`), `image` (`MediaView`), `terms` by taxonomy, `fields` (every field by name as a typed `FieldView`), `details` (scalar fields as labelled text), `template`, `locale`, `comments` (`CommentsView`, or null) and `locked`. In lists, `body` and `blocks` are empty. A locked entry withholds its excerpt, body, blocks and fields. |
+| `EntryView` | `id`, `title`, `url`, `collection`, `kind` (the singular label), `date`, `author`, `excerpt`, `content` (`RenderedBlock[]`), `image` (`MediaView`), `terms` by taxonomy, `fields` (every field by name as a typed `FieldView`), `details` (scalar fields as labelled text), `template`, `locale`, `comments` (`CommentsView`, or null) and `locked`. In lists, `content` is empty. A locked entry withholds its excerpt, content and fields. |
 | `ArchiveView` | `kind` (`home`, `archive`, `term`, `search`), `collection`, `taxonomy`, `title`, `description`, `entries`, `paging` (`page`, `pages`, `base`) and `query`. |
 | `LockedView` | `entry`, `action` (where the password form posts) and `error` after a wrong password. |
 | `MediaView` | `url`, `alt`, `width`, `height`, `contentType`, `caption`, `srcset` and `wideSrcset` (16:9 variants around the focal point). |
-| `RenderedBlock` | `id`, `type`, `data`, `html` (Markdown fields rendered), `media` by file ID, `children`, `layout`, `style`. |
+| `RenderedBlock` | `id`, `type`, `data`, `html` (Markdown fields rendered), `media` by file ID, `content` (rich text fields as `BodyPart[]`), `children`, `layout`, `style`, and `field` on a block that stands for one of the entry's rich text or Markdown fields. |
 
 ## Helpers
 
@@ -145,14 +154,13 @@ Every template receives `helpers`:
 | `presets` | The resolved presets; `presetStyle(helpers.presets)` from `@cossackframework/cms` renders them as CSS custom properties for the content root. |
 | `data.layout`, `data.page` | What the theme's loaders returned for the layout and for the page. Empty when there is no loader, or it failed. |
 | `asset(path)` | The URL of a file in the theme's `assets/`, such as `helpers.asset('assets/theme.css')`. Empty when the theme has none. |
-| `content(parts)` | Renders a body: HTML runs and the blocks embedded in them. |
-| `block(block)` | Renders one block through the theme's own renderer, a plugin's component or the core one. |
+| `block(blocks)` | Renders a block, or a list of blocks, through the theme's own renderer, a plugin's component or the core one. |
+| `content(parts)` | For block renderers: renders a block's rich text field (`block.content.<field>`), HTML runs and the blocks embedded in them. |
 | `isActive(url)` | Whether a URL is the current page or one of its ancestors, for menu styling. |
 
-Render blocks through `helpers.block` and bodies through `helpers.content`. Besides the
-core renderers and plugin blocks, that is what makes an entry editable on the public page
-for signed-in editors: the helpers mark each block in edit mode, and a theme never learns
-about editing. A theme can replace core block renderers with a `blocks` map in its
+Render content through `helpers.block`. Besides the core renderers and plugin blocks, that
+is what makes an entry editable on the public page for signed-in editors: the helper marks
+each block in edit mode, and a theme never learns about editing. A theme can replace core block renderers with a `blocks` map in its
 `ui.ts` `theme` export, keyed by block type.
 
 ## Stylesheets and the head

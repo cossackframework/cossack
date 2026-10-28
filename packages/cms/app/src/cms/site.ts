@@ -4,7 +4,7 @@
  * from `init()` and hand the views to the theme's templates.
  */
 import {
-    ANONYMOUS, blockDocuments, blockIsData, blocksPlain, editedSize, resolveBlockBindings, flattenBlocks, escapeHtml, formatSiteDate, imageSrcset, imageUrl, isCmsError, languageName, mediaUrl, recordTitle, resolvePresets, richTextBlocks, richTextExcerpt, richTextParts, richTextPlain, systemPrincipal, templateCandidates, transformable,
+    ANONYMOUS, blockDocuments, blockIsData, blocksPlain, editedSize, resolveBlockBindings, flattenBlocks, escapeHtml, formatSiteDate, imageSrcset, imageUrl, isCmsError, languageName, mediaUrl, recordTitle, resolvePresets, richTextBlocks, richTextParts, richTextPlain, systemPrincipal, templateCandidates, transformable,
     type Block,
     type Principal, type TemplatePage, type ThemeData, type ThemePresets,
     type ArchiveView, type BodyPart, type CollectionDefinition, type CommentShape, type CommentView, type CommentsView, type EntryReference, type EntryView, type FieldDeclaration, type FieldFilter,
@@ -112,8 +112,7 @@ async function areaViews(cms: CmsHost, names: readonly string[], forms?: FormReq
  */
 async function withLatest(cms: CmsHost, blocks: readonly RenderedBlock[], locale?: string): Promise<void> {
     const found: RenderedBlock[] = [];
-    const walk = (list: readonly RenderedBlock[]) => { for (const block of list) { if (block.type === 'core/latest-entries') found.push(block); if (block.children) walk(block.children); } };
-    walk(blocks);
+    walkBlocks(blocks, block => { if (block.type === 'core/latest-entries') found.push(block); });
     const languages = found.length ? await cms.languages() : null;
     for (const block of found) {
         const name = typeof block.data.collection === 'string' ? block.data.collection : '';
@@ -136,9 +135,18 @@ async function withLatest(cms: CmsHost, blocks: readonly RenderedBlock[], locale
     }
 }
 
+/** Visit these blocks, their children and the blocks embedded in their rich text, depth first. */
+function walkBlocks(blocks: readonly RenderedBlock[], visit: (block: RenderedBlock) => void): void {
+    for (const block of blocks) {
+        visit(block);
+        if (block.children) walkBlocks(block.children, visit);
+        for (const parts of Object.values(block.content ?? {})) walkBlocks(parts.flatMap(part => part.kind === 'block' ? [part.block] : []), visit);
+    }
+}
+
 /**
  * Rich text as body parts: HTML runs and rendered blocks, synced patterns expanded one level.
- * Shared by entries' bodies and the rich text inside blocks.
+ * For the rich text inside blocks, the entry's rich text fields among them.
  */
 function bodyRenderer(cms: CmsHost, files: ReadonlyMap<string, CmsFile>, patterns: ReadonlyMap<string, Block[]>): (doc: RichTextDoc, scope?: Readonly<Record<string, unknown>>, depth?: number) => BodyPart[] {
     const resizes = cms.files?.resizes ?? false;
@@ -162,8 +170,7 @@ function bodyRenderer(cms: CmsHost, files: ReadonlyMap<string, CmsFile>, pattern
 async function withForms(cms: CmsHost, blocks: readonly RenderedBlock[], request: FormRequest | undefined): Promise<void> {
     if (!request) return;
     const found: RenderedBlock[] = [];
-    const walk = (list: readonly RenderedBlock[]) => { for (const block of list) { if (block.type === 'core/form') found.push(block); if (block.children) walk(block.children); } };
-    walk(blocks);
+    walkBlocks(blocks, block => { if (block.type === 'core/form') found.push(block); });
     for (const block of found) {
         const slug = typeof block.data.form === 'string' ? block.data.form : '';
         try {
@@ -323,7 +330,16 @@ async function referencedRecords(cms: CmsHost, fields: readonly (readonly [strin
     return found;
 }
 
-/** Views of entries: bodies rendered with their blocks, patterns and media, authors, URLs, term links, typed fields and comments. */
+/** A rich text or Markdown field: part of the entry's content, rendered as one `core/richtext` block. */
+function isTextField(declaration: FieldDeclaration): boolean {
+    return declaration.kind === 'richtext' || (declaration.kind === 'text' && declaration.format === 'markdown');
+}
+
+/** A rich text or Markdown field as a block of the entry's content: `field` names it, so the site editor opens the field. */
+function textBlock(field: string, parts: readonly BodyPart[]): RenderedBlock {
+    return { id: `field-${field}`.slice(0, 40), type: 'core/richtext', data: {}, html: {}, media: {}, content: { text: parts }, field };
+}
+
 /** Whether an entry has a password visitors must type. */
 export function isProtected(record: RecordShape): boolean {
     return typeof record.password === 'string' && record.password.length > 0;
@@ -338,27 +354,36 @@ export async function unlockToken(record: RecordShape): Promise<string> {
     return [...bytes].map(byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
+/** Views of entries: content rendered with its blocks, patterns and media, authors, URLs, term links, typed fields and comments. */
 export async function entryViews(cms: CmsHost, collection: CollectionDefinition, records: readonly RecordShape[], options: EntryViewOptions = {}): Promise<EntryView[]> {
     const resource = cms.resourceById(`cms/${collection.name}`);
     const settings = await cms.settings.all();
     const languages = await cms.languages();
     const resizes = cms.files?.resizes ?? false;
     const fields = Object.entries(resource.fields);
-    const body = fields.find(([name, declaration]) => name === 'body' && (declaration.kind === 'richtext' || declaration.kind === 'text'))
-        ?? fields.find(([, declaration]) => declaration.kind === 'richtext' || (declaration.kind === 'text' && declaration.format === 'markdown'));
-    // The content and any other blocks fields render into `entry.blocks`, in declared order; `entry.fields` keeps them apart.
-    const blocksFields = fields.filter(([, declaration]) => declaration.kind === 'blocks' && !declaration.form);
-    const blocksField = blocksFields[0];
+    // The entry's content is its blocks fields and its rich text and Markdown fields, rendered into `entry.content` in declared order; `entry.fields` keeps them apart.
+    const contentFields = fields.filter(([, declaration]) => (declaration.kind === 'blocks' && !declaration.form) || isTextField(declaration));
+    const blocksFields = contentFields.filter(([, declaration]) => declaration.kind === 'blocks');
     const imageField = fields.find(([, declaration]) => declaration.kind === 'string' && declaration.media);
     const excerptField = fields.find(([name, declaration]) => name === 'excerpt' && declaration.kind === 'text');
     const docs = options.full ? records.flatMap(record => [
         ...fields.filter(([, declaration]) => declaration.kind === 'richtext').map(([name]) => record[name]).filter((value): value is RichTextDoc => !!value && typeof value === 'object'),
-        // Entries saved with a rich text body before content became blocks still render it.
-        ...(!body && record.body && typeof record.body === 'object' && (record.body as RichTextDoc).type === 'doc' ? [record.body as RichTextDoc] : []),
         ...fields.filter(([, declaration]) => declaration.kind === 'blocks').flatMap(([name]) => Array.isArray(record[name]) ? blockDocuments(record[name] as Block[], cms.blockTypes) : []),
     ]) : [];
     const stored = (record: RecordShape) => blocksFields.flatMap(([name]) => Array.isArray(record[name]) ? record[name] as Block[] : []);
     const patterns = await usedPatterns(cms, docs, options.full ? records.flatMap(stored) : []);
+    /** The content's plain text for an excerpt: every content field in order, 4,000 characters at most. */
+    const contentPlain = (record: RecordShape): string => {
+        let text = '';
+        for (const [name, declaration] of contentFields) {
+            const value = record[name];
+            if (text.length >= 4000) break;
+            if (declaration.kind === 'blocks' && Array.isArray(value)) text += ` ${blocksPlain(value as Block[], cms.blockTypes, doc => richTextPlain(doc), 4000 - text.length)}`;
+            else if (declaration.kind === 'richtext' && value && typeof value === 'object') text += ` ${richTextPlain(value as RichTextDoc)}`;
+            else if (declaration.kind === 'text' && typeof value === 'string') text += ` ${value}`;
+        }
+        return text.trim().slice(0, 4000);
+    };
     const mediaIds = new Set<string>();
     for (const record of records) for (const [name, declaration] of fields) {
         const value = record[name];
@@ -391,34 +416,25 @@ export async function entryViews(cms: CmsHost, collection: CollectionDefinition,
         if (declaration.media && Array.isArray(value)) return value.map(id => mediaView(files.get(String(id)), resizes)).filter((view): view is MediaView => !!view);
         if (declaration.media) return mediaView(files.get(String(value)), resizes);
         if (declaration.kind === 'reference') return references.get(`${declaration.target}:${String(value)}`) ?? null;
-        if (declaration.kind === 'richtext') return typeof value === 'object' ? parts(value as RichTextDoc, scope) : null;
-        if (declaration.kind === 'text' && declaration.format === 'markdown') return [{ kind: 'html', html: renderMarkdown(String(value)) }];
-        if (declaration.kind === 'blocks') return Array.isArray(value) ? (value as RenderedBlock[]).map(block => render(block, scope)) : [];
+        if (declaration.kind === 'richtext') return typeof value === 'object' ? [textBlock(name, parts(value as RichTextDoc, scope))] : null;
+        if (declaration.kind === 'text' && declaration.format === 'markdown') return [textBlock(name, [{ kind: 'html', html: renderMarkdown(String(value)) }])];
+        if (declaration.kind === 'blocks') return Array.isArray(value) ? (expandPatterns(value as Block[], patterns) as RenderedBlock[]).map(block => render(block, scope)) : [];
         return value as FieldView;
     };
     const views: EntryView[] = [];
     for (const record of records) {
-        const value = body ? record[body[0]] : null;
-        const richText = body?.[1].kind === 'richtext' ? value as RichTextDoc | null : null;
-        const markdown = body?.[1].kind === 'text' && typeof value === 'string' ? value : '';
         const locale = typeof record.locale === 'string' ? record.locale : languages.default;
-        const legacy = !body && record.body && typeof record.body === 'object' && (record.body as RichTextDoc).type === 'doc' ? record.body as RichTextDoc : null;
-        let bodyParts: BodyPart[] = [];
-        if (options.full && (richText ?? legacy)) bodyParts = parts((richText ?? legacy)!, record);
-        else if (options.full && markdown) bodyParts = [{ kind: 'html', html: renderMarkdown(markdown) }];
-        const content = stored(record);
         // A protected entry a visitor has not unlocked shows its title alone.
         const locked = isProtected(record) && !options.unlocked?.has(record.id);
-        const blocks = options.full && !locked ? (expandPatterns(content, patterns) as RenderedBlock[]).map(block => render(block, record)) : [];
-        if (locked) bodyParts = [];
         const typed: Record<string, FieldView> = {};
         for (const [name, declaration] of fields) {
             // A locked entry shows nothing of its fields; the password itself is never a field of the view.
             if (NOT_FIELDS.has(name) || name === 'password' || locked) continue;
-            // The body and the content are rendered once, for `body` and `blocks` and their fields.
-            const view = body && name === body[0] && options.full ? bodyParts : blocksField && name === blocksField[0] && options.full && blocksFields.length === 1 ? blocks : fieldView(name, declaration, record[name], locale, options.full === true, record);
+            const view = fieldView(name, declaration, record[name], locale, options.full === true, record);
             if (view !== undefined) typed[name] = view;
         }
+        // Each content field is rendered once, for `content` and for `fields`.
+        const content = options.full && !locked ? contentFields.flatMap(([name]) => (typed[name] as readonly RenderedBlock[] | null | undefined) ?? []) : [];
         const details = options.full ? fields.filter(([name, declaration]) => !NOT_DETAILS.has(name) && !declaration.taxonomy && !declaration.media
             && !['text', 'blocks', 'richtext', 'json', 'reference', 'vector', 'bigint'].includes(declaration.kind) && typed[name] !== null && typed[name] !== undefined && typed[name] !== '')
             .map(([name, declaration]) => ({ label: declaration.label ?? name, value: displayValue(declaration.kind, typed[name], settings) })) : [];
@@ -426,10 +442,8 @@ export async function entryViews(cms: CmsHost, collection: CollectionDefinition,
             id: record.id, title: recordTitle(record, 'title'), url: urls.get(record.id) ?? null, collection: collection.name, kind: collection.singular,
             date: typeof record.publishedAt === 'number' ? formatSiteDate(record.publishedAt, settings) : '',
             author: record.owner && collection.name === 'posts' ? owners.get(record.owner)?.name ?? '' : '',
-            excerpt: locked ? '' : excerptField && record.excerpt ? String(record.excerpt) : richText ? richTextExcerpt(richText, 40) : legacy ? richTextExcerpt(legacy, 40)
-                : content.length ? excerptOf(blocksPlain(content, cms.blockTypes, doc => richTextPlain(doc), 4000), 40) : excerptOf(markdown, 40),
-            body: bodyParts,
-            blocks,
+            excerpt: locked ? '' : excerptField && record.excerpt ? String(record.excerpt) : excerptOf(contentPlain(record), 40),
+            content,
             image: imageField ? mediaView(files.get(String(record[imageField[0]] ?? '')), resizes) : null,
             terms: taxonomyFields.map(([name, declaration]) => ({
                 label: cms.taxonomies.declaration(declaration.taxonomy!).label,
@@ -443,9 +457,8 @@ export async function entryViews(cms: CmsHost, collection: CollectionDefinition,
             locked,
         });
         if (options.full) {
-            const all = [...blocks, ...bodyParts.flatMap(part => part.kind === 'block' ? [part.block] : [])];
-            await withForms(cms, all, options.forms);
-            await withLatest(cms, all, locale);
+            await withForms(cms, content, options.forms);
+            await withLatest(cms, content, locale);
         }
     }
     return views;
