@@ -73,7 +73,7 @@ export const FIELD_BLOCKS: readonly BlockDeclaration[] = Object.freeze([
     }, { children: {} }),
 ]);
 
-/** Kinds a row field can have an index on: scalar values the derived list can hold. */
+/** Kinds a row field can have an index on: scalar values an array index can hold. */
 const INDEXABLE_ROW_KINDS = new Set<FieldKind>(['string', 'enum', 'integer', 'number', 'boolean', 'datetime', 'reference']);
 
 /** The declaration one field block describes. Its repeater children are the rows' fields. */
@@ -264,7 +264,7 @@ export function fieldGroupProblems(group: FieldGroup, types: ReadonlyMap<string,
     return { problems, blocks: checked.blocks, fields };
 }
 
-/** A row field with an index must hold a scalar the derived list can carry. */
+/** A row field with an index must hold a scalar an array index can hold. */
 function rowIndexProblems(name: string, declaration: FieldDeclaration): string[] {
     if (declaration.kind !== 'rows') return [];
     return Object.entries(declaration.fields ?? {}).flatMap(([sub, nested]) => [
@@ -293,46 +293,34 @@ export function withRowIds(declaration: FieldDeclaration, value: unknown, next: 
     });
 }
 
-/** The name the host keeps a row path's values under: `team.links.kind` → `team__links__kind`. */
-export function derivedName(path: readonly string[]): string {
-    return path.join('__');
-}
-
-/**
- * The derived list fields of a declaration set: one per indexed or unique row field at any
- * depth, holding the distinct values at that path across every row.
- */
-export function derivedFields(fields: { readonly [name: string]: FieldDeclaration }): { [name: string]: FieldDeclaration } {
-    const derived: { [name: string]: FieldDeclaration } = {};
+/** Paths of the indexed or unique row fields at any depth, as field names from the top-level rows field. */
+export function indexedRowPaths(fields: { readonly [name: string]: FieldDeclaration }): string[][] {
+    const paths: string[][] = [];
     const visit = (declaration: FieldDeclaration, path: readonly string[]) => {
         if (declaration.kind !== 'rows') return;
         for (const [sub, nested] of Object.entries(declaration.fields ?? {})) {
             const at = [...path, sub];
-            if ((nested.index || nested.unique) && INDEXABLE_ROW_KINDS.has(nested.kind)) {
-                const items = nested.kind === 'integer' || nested.kind === 'datetime' ? 'integer' : nested.kind === 'number' ? 'number' : nested.kind === 'boolean' ? 'boolean' : 'string';
-                derived[derivedName(at)] = { kind: 'list', items, index: true, derived: at, label: `${declaration.label ?? path[path.length - 1]} › ${nested.label ?? sub}` };
-            }
+            if ((nested.index || nested.unique) && INDEXABLE_ROW_KINDS.has(nested.kind)) paths.push(at);
             visit(nested, at);
         }
     };
     for (const [name, declaration] of Object.entries(fields)) visit(declaration, [name]);
-    return derived;
+    return paths;
 }
 
-/** The distinct values at a path into rows, in first-seen order. */
-export function derivedValues(value: unknown, path: readonly string[]): (string | number | boolean)[] {
-    const seen = new Set<string>();
-    const values: (string | number | boolean)[] = [];
-    const walk = (current: unknown, depth: number) => {
-        if (depth === path.length) {
-            if ((typeof current === 'string' || typeof current === 'number' || typeof current === 'boolean') && !seen.has(`${typeof current}:${current}`)) { seen.add(`${typeof current}:${current}`); values.push(current); }
-            return;
-        }
-        if (Array.isArray(current)) { for (const row of current) walk(row, depth); return; }
-        if (current && typeof current === 'object') walk((current as Row)[path[depth]!], depth + 1);
-    };
-    walk(value, 1);
-    return values;
+/** The indexed or unique row field a path such as `['team', 'links', 'kind']` names, or null. */
+export function indexedRowField(fields: { readonly [name: string]: FieldDeclaration }, path: readonly string[]): FieldDeclaration | null {
+    let declaration = fields[path[0]!];
+    for (const name of path.slice(1)) {
+        if (declaration?.kind !== 'rows' || !Object.hasOwn(declaration.fields ?? {}, name)) return null;
+        declaration = declaration.fields![name];
+    }
+    return path.length > 1 && declaration && (declaration.index || declaration.unique) && INDEXABLE_ROW_KINDS.has(declaration.kind) ? declaration : null;
+}
+
+/** The RomeDB array index path of a row field: `team.links.kind` steps into each row as `team.*.links.*.kind`. */
+export function rowIndexPath(path: readonly string[]): string {
+    return path.join('.*.');
 }
 
 /** Whether a rows field has a searchable field at any depth, so its text is kept beside the document. */

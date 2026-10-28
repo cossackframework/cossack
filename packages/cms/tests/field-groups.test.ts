@@ -99,17 +99,17 @@ describe.skipIf(!live)('field groups', () => {
 
         const withSpecs = cms.resourceById('cms/products');
         expect(withSpecs.fields.specs).toMatchObject({ kind: 'rows', max: 10 });
-        expect(withSpecs.fields.specs__name).toMatchObject({ kind: 'list', items: 'string', index: true, derived: ['specs', 'name'] });
-        expect(withSpecs.fields.specs__notes__tag).toMatchObject({ derived: ['specs', 'notes', 'tag'] });
+        expect(withSpecs.fields).not.toHaveProperty('specs__name');
         const info = await cms.db.read([{ rql: 'INFO FOR TABLE r__cms__products' }]);
-        const table = info.results[0]!.rows[0]![0] as { indexes: { name: string; kind: string }[] };
-        expect(table.indexes.map(index => `${index.name}:${index.kind}`)).toEqual(expect.arrayContaining(['r__cms__products__price:scalar', 'r__cms__products__specs__name:array', 'r__cms__products__specs__notes__tag:array', 'r__cms__products__text:fulltext']));
+        const table = info.results[0]!.rows[0]![0] as { indexes: { name: string; kind: string; path?: string[] }[] };
+        expect(table.indexes.map(index => `${index.name}:${index.kind}`)).toEqual(expect.arrayContaining(['r__cms__products__price:scalar', 'r__cms__products__r_specs__name:array', 'r__cms__products__r_specs__notes__tag:array', 'r__cms__products__text:fulltext']));
+        expect(table.indexes.find(index => index.name === 'r__cms__products__r_specs__notes__tag')!.path).toEqual(['specs', '*', 'notes', '*', 'tag']);
     });
 
-    it('stores rows with ids, keeps derived lists and search text, clears hidden fields and filters on row fields', async () => {
+    it('stores rows with ids and search text, clears hidden fields and filters on row fields', async () => {
         const entries = cms.resource('cms/products');
         await expect(entries.create({ title: 'Bad', price: 1, specs: [{ kind: 'text' }] }, { principal: editor })).rejects.toMatchObject({ fields: { specs: 'row 1: Name is required.' } });
-        await expect(entries.create({ title: 'Bad', price: 1, specs__name: ['x'] }, { principal: editor })).rejects.toMatchObject({ fields: { specs__name: 'is kept by the host.' } });
+        await expect(entries.create({ title: 'Bad', price: 1, specs__name: ['x'] }, { principal: editor })).rejects.toMatchObject({ fields: { specs__name: 'is not a field of this resource.' } });
         // The sale price is required only while the product is on sale.
         await expect(entries.create({ title: 'Bad', price: 1, onSale: true }, { principal: editor })).rejects.toMatchObject({ fields: { salePrice: 'is required.' } });
         const entry = await entries.create({
@@ -127,20 +127,24 @@ describe.skipIf(!live)('field groups', () => {
         expect(rows[1]!.url).toBe('https://example.com');
         expect(rows[1]!.notes.map(note => note._id)).toEqual(['n1', expect.any(String)]);
 
-        const stored = await cms.db.read([{ rql: 'SELECT "specs__name", "specs__notes__tag", "_text_specs" FROM r__cms__products WHERE "sku" = $sku', params: { $sku: 'RS-1' } }]);
-        expect(stored.results[0]!.rows[0]).toEqual([['Weight', 'Site'], ['fun', 'web'], 'Weight\nlight as air\nSite\nofficial']);
+        const stored = await cms.db.read([{ rql: 'SELECT "_text_specs" FROM r__cms__products WHERE "sku" = $sku', params: { $sku: 'RS-1' } }]);
+        expect(stored.results[0]!.rows[0]).toEqual(['Weight\nlight as air\nSite\nofficial']);
 
         const found = await entries.list({ where: { 'specs.notes.tag': { contains: 'web' } } }, { principal: editor });
         expect(found.records.map(record => record.title)).toEqual(['Rocket skates']);
         expect((await entries.list({ where: { 'specs.name': { containsAny: ['Nope'] } } }, { principal: editor })).records).toEqual([]);
         await expect(entries.list({ where: { specs__name: { contains: 'Weight' } } }, { principal: editor })).rejects.toMatchObject({ message: 'Cannot filter on specs__name.' });
-        const plan = await cms.db.read([{ rql: 'EXPLAIN SELECT id FROM r__cms__products WHERE array::contains("specs__notes__tag", $tag)', params: { $tag: 'web' } }]);
-        expect(JSON.stringify(plan.results[0]!.rows, (_, value) => typeof value === 'bigint' ? Number(value) : value)).toMatch(/r__cms__products__specs__notes__tag/);
+        await expect(entries.list({ where: { 'specs.notes.text': { contains: 'official' } } }, { principal: editor })).rejects.toMatchObject({ message: 'Cannot filter on specs.notes.text.' });
+        await expect(entries.list({ where: { 'specs.name': 'Weight' } }, { principal: editor })).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
+        const plan = await cms.db.read([{ rql: 'EXPLAIN SELECT id FROM r__cms__products WHERE array::contains("specs".*."notes".*."tag", $tag)', params: { $tag: 'web' } }]);
+        expect(JSON.stringify(plan.results[0]!.rows, (_, value) => typeof value === 'bigint' ? Number(value) : value)).toMatch(/r__cms__products__r_specs__notes__tag/);
 
-        // Changing the rows keeps the derived lists current; the unique SKU still holds.
+        // Changing the rows changes what the filters find; the unique SKU still holds.
         const updated = await entries.update(entry.id, { specs: [{ _id: 'site', name: 'Site', kind: 'text' }] }, { principal: editor, expectedRevision: entry.rev });
         expect((updated.specs as { _id: string }[]).map(row => row._id)).toEqual(['site']);
-        expect((await cms.db.read([{ rql: 'SELECT "specs__name", "specs__notes__tag" FROM r__cms__products WHERE "sku" = $sku', params: { $sku: 'RS-1' } }])).results[0]!.rows[0]).toEqual([['Site'], []]);
+        expect((await entries.list({ where: { 'specs.name': { contains: 'Weight' } } }, { principal: editor })).records).toEqual([]);
+        expect((await entries.list({ where: { 'specs.notes.tag': { contains: 'web' } } }, { principal: editor })).records).toEqual([]);
+        expect((await entries.list({ where: { 'specs.name': { contains: 'Site' } } }, { principal: editor })).records.map(record => record.title)).toEqual(['Rocket skates']);
         await expect(entries.create({ title: 'Twin', price: 2, sku: 'RS-1' }, { principal: editor })).rejects.toMatchObject({ code: 'CMS_CONFLICT' });
     });
 
@@ -174,7 +178,7 @@ describe.skipIf(!live)('field groups', () => {
         await cms.deleteFieldGroup('specs', admin);
         expect(cms.resourceById('cms/products').fields.specs).toBeUndefined();
         const info = await cms.db.read([{ rql: 'INFO FOR TABLE r__cms__products' }]);
-        expect((info.results[0]!.rows[0]![0] as { indexes: { name: string }[] }).indexes.map(index => index.name)).not.toContain('r__cms__products__specs__name');
+        expect((info.results[0]!.rows[0]![0] as { indexes: { name: string }[] }).indexes.map(index => index.name)).not.toContain('r__cms__products__r_specs__name');
         const entries = cms.resource('cms/products');
         const skates = (await entries.list({ where: { sku: 'RS-1' } }, { principal: editor })).records[0]!;
         expect(skates).not.toHaveProperty('specs');

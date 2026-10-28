@@ -10,7 +10,7 @@ import type { HookRegistry } from '@cossackframework/core/hooks';
 import { CmsError } from '../errors';
 import { slugify, validateValue, type FieldDeclaration } from '../fields';
 import { blockId, blockMedia, blocksPlain, flattenBlocks, validateBlocks, type Block } from '../blocks';
-import { derivedName, derivedValues, fieldVisibility, rowsPlain, rowsSearchable, rowUniqueProblem, withRowIds } from '../field-groups';
+import { fieldVisibility, indexedRowField, rowIndexPath, rowsPlain, rowsSearchable, rowUniqueProblem, withRowIds } from '../field-groups';
 import { normalizeRichText, richTextBlocks, richTextMedia, richTextPlain, withRichTextBlocks, type RichTextDoc } from '../richtext';
 import { searchTextPath } from './schema';
 import { afterCommit, beforeWrite, type Draft, type ResourceEvent, type WriteActor } from '../hooks';
@@ -244,7 +244,7 @@ export class ResourceRepository {
         const access = await this.#authorize('create', context.principal);
         if (access !== 'allow') throw new CmsError(context.principal.kind === 'user' ? 'CMS_FORBIDDEN' : 'CMS_UNAUTHENTICATED', `Not allowed to create ${this.resource.id}.`);
         checkKey(context.id);
-        const draft = this.#withDerived(this.#validate('create', input, null, context.principal));
+        const draft = this.#validate('create', input, null, context.principal);
         const now = this.#host.now();
         const owner = this.resource.ownership ? context.owner : null;
         const record = this.#shape(context.id, 1, now, now, owner, draft);
@@ -347,10 +347,25 @@ export class ResourceRepository {
         let index = Object.keys(params).filter(name => name.startsWith('$w')).length;
         const parameter = (value: Value) => { const name = `$w${index++}`; params[name] = value; return name; };
         for (const [given, condition] of Object.entries(filter.where ?? {})) {
-            // A row field, as `specs.name`, filters through the list the host keeps for it.
-            const name = given.includes('.') ? derivedName(given.split('.')) : given;
+            // A row field, as `specs.name`, filters through the array index on its path into the rows.
+            if (given.includes('.')) {
+                const path = given.split('.');
+                const row = indexedRowField(this.resource.fields, path);
+                if (!row || !this.#canRead(path[0]!, principal)) throw new CmsError('CMS_VALIDATION', `Cannot filter on ${given}.`);
+                const values = condition !== null && typeof condition === 'object' && 'contains' in condition ? [condition.contains]
+                    : condition !== null && typeof condition === 'object' && 'containsAny' in condition ? [...condition.containsAny] : undefined;
+                if (!values || !values.length || values.length > 50) throw new CmsError('CMS_VALIDATION', `Filter ${given} with contains or containsAny (1-50 values).`);
+                const column = prefix + rowIndexPath(path).split('.').map(part => part === '*' ? part : quote(part)).join('.');
+                conditions.push(values.map(value => {
+                    const error = validateValue(given, row, value);
+                    if (error) throw new CmsError('CMS_VALIDATION', `Filter ${given} ${error}`, { fields: { [given]: error } });
+                    return `array::contains(${column}, ${parameter(storedJson(value))})`;
+                }).join(' OR '));
+                continue;
+            }
+            const name = given;
             const declaration = this.resource.fields[name];
-            if (!declaration || (declaration.derived && !given.includes('.')) || !this.#canRead(declaration.derived ? declaration.derived[0]! : name, principal)) throw new CmsError('CMS_VALIDATION', `Cannot filter on ${given}.`);
+            if (!declaration || !this.#canRead(name, principal)) throw new CmsError('CMS_VALIDATION', `Cannot filter on ${given}.`);
             const column = `${prefix}${quote(name)}`;
             const check = (value: unknown, kind: FieldDeclaration = declaration) => {
                 const error = validateValue(name, kind, value);
@@ -426,7 +441,7 @@ export class ResourceRepository {
         const final = filtered === draft ? draft : this.#validate(action, filtered, previous, context.principal);
         await this.#checkReferences(final, id);
         await this.#checkTemplate(final, previous);
-        return this.#withDerived(await this.#uniqueSlugs(final, id, context));
+        return this.#uniqueSlugs(final, id, context);
     }
 
     /** Terms, media and parent records named by the draft must exist; a record cannot be its own ancestor. */
@@ -506,7 +521,6 @@ export class ResourceRepository {
             const declaration = this.resource.fields[name];
             if (!declaration) { errors[name] = 'is not a field of this resource.'; continue; }
             if (value === undefined) continue;
-            if (declaration.derived) { errors[name] = 'is kept by the host.'; continue; }
             if (value === null && hiddenBefore.has(name)) { draft[name] = null; continue; }
             // An empty slug is derived from its source field below.
             if (declaration.slugFrom && (value === '' || value === null)) { generate.add(name); continue; }
@@ -549,7 +563,7 @@ export class ResourceRepository {
         const hidden = this.#hiddenFields(previous, draft);
         if (action === 'create') {
             for (const [name, declaration] of Object.entries(this.resource.fields)) {
-                if (draft[name] === undefined && declaration.default !== undefined && !declaration.derived) draft[name] = declaration.default;
+                if (draft[name] === undefined && declaration.default !== undefined) draft[name] = declaration.default;
                 if (declaration.required && draft[name] === undefined && !errors[name] && !hidden.has(name)) errors[name] = 'is required.';
             }
         } else if (previous) {
@@ -560,17 +574,6 @@ export class ResourceRepository {
         if (Object.keys(errors).length) throw new CmsError('CMS_VALIDATION', 'Some fields are invalid.', { fields: errors });
         for (const name of hidden) draft[name] = action === 'create' ? undefined : null;
         return Object.freeze(draft);
-    }
-
-    /** The draft with the derived lists that follow the rows it changes. */
-    #withDerived(draft: Draft): Draft {
-        const next: { [field: string]: unknown } = { ...draft };
-        for (const [name, declaration] of Object.entries(this.resource.fields)) {
-            if (!declaration.derived) continue;
-            const root = declaration.derived[0]!;
-            if (draft[root] !== undefined) next[name] = draft[root] === null ? [] : derivedValues(draft[root], declaration.derived);
-        }
-        return Object.freeze(next);
     }
 
     /**
@@ -697,7 +700,7 @@ export class ResourceRepository {
 
     /** Remove fields the principal may not read. */
     #redact(record: RecordShape, principal: Principal): RecordShape {
-        const hidden = Object.keys(this.resource.fields).filter(name => this.resource.fields[name]!.derived || !this.#canRead(name, principal));
+        const hidden = Object.keys(this.resource.fields).filter(name => !this.#canRead(name, principal));
         if (!hidden.length) return record;
         const copy: { [field: string]: unknown } = { ...record };
         for (const name of hidden) delete copy[name];

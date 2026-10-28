@@ -48,8 +48,8 @@ Data contract:
   blocks: field blocks laid out with the core layout blocks, attached to collections,
   taxonomies, users and menu items. They compile to field declarations, so values are
   stored flat by name; a `rows` field is a repeater (rows with an
-  `_id`, nested without limit) whose indexed row fields keep a derived list beside the
-  document for `array::contains` seeks. Conditions on fields clear what they hide on write.
+  `_id`, nested without limit) whose indexed row fields get an array index on their path
+  into the rows (`specs.*.name`, RomeDB 0.2.11) for `array::contains` seeks. Conditions on fields clear what they hide on write.
 - Each mutation is one atomic batch: record, revision, audit and outbox rows, guarded by
   the operation ID, so a stale edit writes nothing.
 - Terms store their ancestors' IDs as a path, so a subtree is a prefix match and a move is

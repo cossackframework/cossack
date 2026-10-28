@@ -93,7 +93,7 @@ async function fields(origin, routeIds, diagnostics) {
   const other = await json('/api/cms/content/products', 'POST', { title: 'Plain board', status: 'published', sku: 'PB-1', price: 5, specs: [{ name: 'Length', kind: 'text' }] });
   expect(other.status).toBe(201);
 
-  // The list filters on a row field through the derived index, and on scalars.
+  // The list filters on a row field through the array index on its path, and on scalars.
   const weighed = await (await fetch(`${origin}/api/cms/content/products?filter[specs.name]=Weight`)).json();
   expect(weighed.items.map(entry => entry.title)).toEqual(['Rocket skates']);
   const cheap = await (await fetch(`${origin}/api/cms/content/products?filter[price]=5`)).json();

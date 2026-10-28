@@ -167,6 +167,19 @@ describe('schema planner on a synthetic catalog', () => {
         const drift = await planSchema([widened], catalog(new Map([[table.name, table]]), { hashes: new Map([['app/tickets', hash]]) }));
         expect(drift.blocked).toEqual([expect.objectContaining({ field: 'subject', message: expect.stringContaining('check') })]);
     });
+
+    it('indexes filterable row fields on their path into the rows, from RomeDB 0.2.11', async () => {
+        const team = resolveResource({ name: 'teams', fields: { members: field.rows({ role: field.string({ index: true }), order: field.rows({ kind: field.string({ unique: true }), note: field.string() }) }) } });
+        const older = await planSchema([team], catalog());
+        expect(older.steps).toEqual([]);
+        expect(older.blocked).toEqual([{ resource: 'app/teams', message: 'Filterable repeater fields need RomeDB 0.2.11 or later; the database runs 0.2.9.' }]);
+        const current = await planSchema([team], { ...catalog(), engineVersion: '0.2.11' });
+        expect(current.blocked).toEqual([]);
+        expect(current.steps.flatMap(step => step.statements.map(statement => statement.rql)).filter(rql => rql.includes('USING ARRAY'))).toEqual([
+            'CREATE SEARCH INDEX r__app__teams__r_members__role ON r__app__teams("members".*."role") USING ARRAY',
+            'CREATE SEARCH INDEX r__app__teams__r_members__order__kind ON r__app__teams("members".*."order".*."kind") USING ARRAY',
+        ]);
+    });
 });
 
 describe('content helpers', () => {

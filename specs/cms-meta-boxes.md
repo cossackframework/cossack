@@ -10,8 +10,8 @@ This spec adds **field groups**: a group of typed fields with a layout, built in
 tree from *field blocks* and the core layout blocks, attached to one or more targets, and
 shown in each target's editor as a box. A **repeater** field block holds rows of fields,
 nested without limit. Values are stored flat by field name, so queries, indexes, search,
-the API and themes see fields, never layout. Index flags on repeater children keep a
-derived array beside the document, so filters on rows seek through RomeDB's array indexes.
+the API and themes see fields, never layout. Index flags on repeater children create a
+RomeDB array index on the path into the rows, so filters on rows seek through it.
 
 ## Decisions
 
@@ -75,17 +75,19 @@ derived array beside the document, so filters on rows seek through RomeDB's arra
   names and clears their values, as `formVisibility` does; the server applies it on write
   so a hidden required field is not required and a hidden value is not stored.
 - **Indexed repeater children.** A child with `index` or `unique` in a repeater compiles
-  to a derived field: for the path `team.links.kind` the entry document carries
-  `team__links__kind: string[]`, the distinct values across all rows at any depth, with a
-  `USING ARRAY` index. The declaration gets `derived: ['team', 'links', 'kind']` and the
-  repository maintains it on every write, next to the search text it already derives.
-  `unique` inside a repeater means unique within the entry. A child with `search` adds its
-  strings to the search text. Numbers index as `Float64` keys. Filters:
+  to a `USING ARRAY` index on its path into the rows: for `team.links.kind` the index is
+  `r__…__r_team__links__kind` on `"team".*."links".*."kind"`, which holds the distinct
+  values across all rows at any depth. `unique` inside a repeater means unique within the
+  entry. A child with `search` adds its strings to the search text. Numbers are stored and
+  matched as the rows store them: whole numbers as integers, others as `Float64`. Filters:
   `where: { 'team.links.kind': { contains: 'site' } }` (or `containsAny`, 1-50 values)
-  rewrites to `array::contains(team__links__kind, $v)`; ranges and sorting on row fields
-  are not offered. When RomeDB indexes array paths natively
-  ([the proposal](../../romedb/plan-array-path-indexes.md)), the derived fields go and
-  the index points at the path.
+  rewrites to `array::contains("team".*."links".*."kind", $v)`; ranges and sorting on row
+  fields are not offered. Path indexes need RomeDB 0.2.11 or later; on an older engine the
+  schema planner blocks a collection that has them
+  ([the RomeDB plan](../../fastdb/plan-array-path-indexes.md)).
+  Until 2026-10-28 the host kept a derived list (`team__links__kind`) beside the
+  document instead; collections created then keep those fields and indexes, which the
+  planner reports as no longer declared.
 - **Targets without documents** get a `meta` object: `cms_terms.meta`, `cms_users.meta`
   (host step 10, `TEXT NOT NULL DEFAULT '{}'`) and `MenuItem.meta`. The same declarations
   validate it (`validateMeta(groups, values)`), the same `fieldVisibility` applies, and
@@ -106,9 +108,8 @@ derived array beside the document, so filters on rows seek through RomeDB's arra
   values in old documents (schemaless), a changed kind is reported by the planner as now.
   Groups are loaded with collections and taxonomies in `ready()`; `resourceById` sees the
   merged fields.
-- **Repository.** `#derived(draft)` computes the derived arrays beside `#searchText`;
-  `#filters` accepts dotted names that resolve to a derived field; `#shapeOf` returns
-  rows with `_id`s and never the derived fields. `fieldVisibility` runs in `#prepare`
+- **Repository.** `#filters` accepts dotted names that name an indexed row field
+  (`indexedRowField`) and filters on its `*` path; `#shapeOf` returns rows with `_id`s. `fieldVisibility` runs in `#prepare`
   before validation, with the stored record as the base for patches.
 - **Terms, users, menus.** `taxonomies.create/update`, `users.create/update` and
   `menus.create/update` accept `meta`, validate it against the target's groups and store
@@ -163,9 +164,9 @@ plain stacked fallback.
 
 1. Model: `rows` kind, `field` on declarations, `FIELD_BLOCK_TYPES` and the field blocks,
    `core/tabs`, `fieldGroupDeclarations`, `fieldGroupProblems`, `fieldVisibility`,
-   `derivedPath`, `layoutOf(definition)`. Unit tests.
+   `indexedRowPaths`, `layoutOf(definition)`. Unit tests.
 2. Host: `cms_field_groups`, `meta` columns, `cms.fieldGroups`, merged resources, the
-   repository's derived arrays, filters and visibility, meta on terms, users and menus.
+   repository's row filters and visibility, meta on terms, users and menus.
    RomeDB tests.
 3. Dashboard: the field group screens, the builder's tree, the entry editor's boxes and
    repeater rows, meta boxes on terms, users and menu items.
@@ -181,7 +182,7 @@ plain stacked fallback.
 - A field shown only when `status` is `published`, and a row field shown only when the
   row's `kind` is `link`, hide and clear as the values change, in the editor and on write.
 - `where: { 'specs.name': { contains: 'Weight' } }` on products returns the entry and
-  `EXPLAIN` shows the array index seek on the derived field.
+  `EXPLAIN` shows the array index seek on the `specs.*.name` path index.
 - A user's profile shows a "Social" group; saving it stores `meta` and the user API
   returns it.
 - Removing a field block from a group keeps old entries readable and drops its index.
@@ -194,9 +195,9 @@ for that abstraction to grow a meta hook. The host, API and `CmsUser.meta` alrea
 
 | Area | Delivered | Verified by |
 | --- | --- | --- |
-| Model (`packages/cms`) | `rows` kind (`ROW_ID`, `ROW_LIMITS`, `field.rows`, recursive `validateValue`, `withRowIds`, `rowUniqueProblem`, `rowsPlain`, `rowsSearchable`); `BlockDeclaration.field`, `FIELD_BLOCK_KINDS`, `FIELD_BLOCKS`, `FIELD_BLOCK_TYPES`, `core/tabs` and `core/tab`, `FIELD_GROUP_LAYOUT`, `validateBlocks(…, { fieldGroup: { scope } })`; `FieldGroup`, `fieldGroupProblems`, `fieldGroupDeclarations`, `fieldBlockOf`, `layoutOf`, `derivedFields`, `derivedName`, `derivedValues`, `DERIVED_NAME`, `fieldVisibility`, `clearHidden`, `hiddenKey`, `metaProblems`; `CollectionDefinition.layout`, `ResourceDeclaration.layout`; `MenuItem.meta`, `TermShape.meta`, `CmsUser.meta` | `field-groups-unit.test.ts`, `unit.test.ts`, `forms-unit.test.ts` |
-| Host | `cms_field_groups` and `meta` columns (step 10); `CmsFieldGroups`; `cms.fieldGroupsFor`, `saveFieldGroup`, `deleteFieldGroup` with schema planning; groups merged into collection resources with derived lists and the layout; `saveCollection` compiles `layout`; repository: rows storage and IDs, derived lists on write, dotted filters, visibility on write, derived fields hidden from readers; meta checks on terms, users and menu items | `field-groups.test.ts`, `collections.test.ts`, `schema.test.ts` (live RomeDB) |
+| Model (`packages/cms`) | `rows` kind (`ROW_ID`, `ROW_LIMITS`, `field.rows`, recursive `validateValue`, `withRowIds`, `rowUniqueProblem`, `rowsPlain`, `rowsSearchable`); `BlockDeclaration.field`, `FIELD_BLOCK_KINDS`, `FIELD_BLOCKS`, `FIELD_BLOCK_TYPES`, `core/tabs` and `core/tab`, `FIELD_GROUP_LAYOUT`, `validateBlocks(…, { fieldGroup: { scope } })`; `FieldGroup`, `fieldGroupProblems`, `fieldGroupDeclarations`, `fieldBlockOf`, `layoutOf`, `indexedRowPaths`, `indexedRowField`, `rowIndexPath` (derived lists until 2026-10-28), `fieldVisibility`, `clearHidden`, `hiddenKey`, `metaProblems`; `CollectionDefinition.layout`, `ResourceDeclaration.layout`; `MenuItem.meta`, `TermShape.meta`, `CmsUser.meta` | `field-groups-unit.test.ts`, `unit.test.ts`, `forms-unit.test.ts` |
+| Host | `cms_field_groups` and `meta` columns (step 10); `CmsFieldGroups`; `cms.fieldGroupsFor`, `saveFieldGroup`, `deleteFieldGroup` with schema planning; groups merged into collection resources with the layout; `saveCollection` compiles `layout`; `*` path indexes for row fields (RomeDB 0.2.11); repository: rows storage and IDs, dotted filters on path indexes, visibility on write; meta checks on terms, users and menu items | `field-groups.test.ts`, `collections.test.ts`, `schema.test.ts` (live RomeDB) |
 | Dashboard (scaffold) | `/dashboard/field-groups` and `/dashboard/field-groups/<id>`; `FieldGroupEditor` (tree in field group mode, panel with conditions); the builder's layout tree in place of its field list; `FieldGroupView` (sections, columns, grids, tabs, headings, notes, repeater rows) in the entry editor, the term editor and the menu item's Fields tab; media inside rows; navigation entry | `generated-runtime-cms-fields.test.js` (HTTP and Chromium) |
 | API | Rows with `_id` flat on entries; `?filter[field]=` and `?filter[rows.field]=` on the content list; `meta` on terms, users and menu views | `generated-runtime-cms-fields.test.js`, `field-groups.test.ts` |
 | Docs | `cms-field-groups` guide in `agent-docs.json`; README | `romedb-cms-guide-coverage.test.js` |
-| RomeDB | Proposal for array path indexes in the sibling repo (`plan-array-path-indexes.md`) | — |
+| RomeDB | Array path indexes (`team.*.role`, romedb/romedb#43); the CMS dropped its derived lists for them on 2026-10-28 | `unit.test.ts`, `field-groups.test.ts` against a 0.2.11 build |
