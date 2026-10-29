@@ -265,11 +265,12 @@ export const step = (t: Tokenizer, str: string, j: number): number => {
       t.state = State.BeforeAttrName;
       return j + 1;
     case State.AttrValueUnquoted:
-      if (isSpace(ch) || ch === '>') {
+      // A `/>` straight after a binding closes the tag: the binding is the whole value.
+      if (isSpace(ch) || ch === '>' || (ch === '/' && j === 0 && str[1] === '>')) {
         t.state = State.BeforeAttrName;
         return j;
       }
-      // `/` is part of an unquoted value.
+      // Otherwise `/` is part of an unquoted value, as in HTML.
       return ch === '/' ? j + 1 : nameEnd(str, j, false);
     case State.EndTag:
     case State.BogusComment:

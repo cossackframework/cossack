@@ -1645,10 +1645,13 @@ async function readEnvironment(projectDir, adapter) {
   }
 }
 
-function applyTheme(content, theme) {
-  if (theme === 'default') return content;
+/** The application stylesheet: the chosen theme after the base theme, and the CMS block styles when the cms feature is on. */
+function applyStyles(content, recipe) {
   const marker = '@import "@cossackframework/ui/theme/theme.css";';
-  return content.replace(marker, `${marker}\n@import "@cossackframework/ui/theme/themes/${theme}.css";`);
+  const imports = [marker];
+  if (recipe.config.theme !== 'default') imports.push(`@import "@cossackframework/ui/theme/themes/${recipe.config.theme}.css";`);
+  if (recipe.resolvedFeatures.includes('cms')) imports.push('@import "./cms/blocks.css";');
+  return content.replace(marker, imports.join('\n'));
 }
 
 export async function renderRecipe(recipe, options = {}) {
@@ -1667,7 +1670,7 @@ export async function renderRecipe(recipe, options = {}) {
     const capability = capabilityFor(rel, recipe);
     if (!capability) continue;
     let content = await fs.readFile(path.join(templateDir, rel));
-    if (rel === 'src/style.css') content = text(applyTheme(content.toString('utf8'), recipe.config.theme));
+    if (rel === 'src/style.css') content = text(applyStyles(content.toString('utf8'), recipe));
     if (rel === 'vite.config.ts' && recipe.resolvedFeatures.includes('markdown')) {
       content = text(content.toString('utf8')
         .replace(

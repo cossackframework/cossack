@@ -545,6 +545,15 @@ describe('composition', () => {
       .toContain('@cossackframework/ui/theme/themes/green.css');
   });
 
+  it('imports the CMS block styles only with the cms feature', async () => {
+    const plain = await renderRecipe(resolveRecipe({ preset: 'minimal', features: ['ui'] }));
+    expect(plain.get('src/style.css').content.toString()).not.toContain('./cms/blocks.css');
+    expect(plain.has('src/cms/blocks.css')).toBe(false);
+    const cms = await renderRecipe(resolveRecipe({ adapter: 'node', preset: 'minimal', features: ['cms'] }));
+    expect(cms.get('src/style.css').content.toString()).toContain('@import "./cms/blocks.css";');
+    expect(cms.has('src/cms/blocks.css')).toBe(true);
+  });
+
   it('supports credentials, OAuth, or both authentication methods', async () => {
     const credentials = await renderRecipe(resolveRecipe({
       preset: 'auth',

@@ -66,7 +66,7 @@ describe('transport security boundary', () => {
 
     it('runs the action after a guard that returns next()', async () => {
         // `return next()` resolves to Hono's Context; it must not replace the response.
-        const guard = vi.fn((_c: any, next: () => Promise<unknown>) => next());
+        const guard = vi.fn((_c: any, next: () => Promise<void>) => next());
         const { app, action } = appFor({ ...ctx, getMiddlewares: () => [guard] });
         const response = await app.request('/crpc', { method: 'POST', headers: { origin: 'http://localhost' }, body: JSON.stringify(rpc) });
         expect(response.status).toBe(200);
