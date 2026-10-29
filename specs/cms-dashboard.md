@@ -55,7 +55,7 @@ features and adds the WordPress-style content tools a site needs.
   is one migration step that records the declaration hash and the definition
   row together, adding or dropping only indexes (unique, search, term arrays).
   A stale isolate that sees a newer hash reloads definitions instead of failing.
-- **Blocks.** A `blocks` field holds an ordered list of `{ id, type, data }`.
+- **Blocks.** A `blocks` field holds an ordered list of `{ _id, type, data }`.
   Block types declare fields like collections do. Built-in types: rich text,
   paragraph, heading, image, gallery, carousel, quote, list, code, button, card,
   embed, divider, latest entries, the layout containers and custom fields (data).

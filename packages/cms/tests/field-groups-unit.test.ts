@@ -6,16 +6,16 @@ import {
 } from '../src/index';
 
 const types: ReadonlyMap<string, BlockDeclaration> = new Map([...CORE_BLOCKS, ...FIELD_BLOCKS].map(block => [block.name, block]));
-const fieldBlock = (id: string, kind: string, data: { [key: string]: unknown }, extra: Partial<Block> = {}): Block => ({ id, type: `field/${kind}`, data: { label: id, ...data }, ...extra });
+const fieldBlock = (id: string, kind: string, data: { [key: string]: unknown }, extra: Partial<Block> = {}): Block => ({ _id: id, type: `field/${kind}`, data: { label: id, ...data }, ...extra });
 
 /** A product's fields: two columns, a pricing tab, and a specifications repeater with nested notes. */
 const product: Block[] = [
-    { id: 'cols', type: 'core/columns', data: {}, children: [
-        { id: 'c1', type: 'core/column', data: {}, children: [fieldBlock('sku', 'text', { name: 'sku', label: 'SKU', unique: true, max: 40 })] },
-        { id: 'c2', type: 'core/column', data: {}, children: [fieldBlock('brand', 'reference', { name: 'brand', label: 'Brand', target: 'brands' })] },
+    { _id: 'cols', type: 'core/columns', data: {}, children: [
+        { _id: 'c1', type: 'core/column', data: {}, children: [fieldBlock('sku', 'text', { name: 'sku', label: 'SKU', unique: true, max: 40 })] },
+        { _id: 'c2', type: 'core/column', data: {}, children: [fieldBlock('brand', 'reference', { name: 'brand', label: 'Brand', target: 'brands' })] },
     ] },
-    { id: 'tabs', type: 'core/tabs', data: {}, children: [
-        { id: 'pricing', type: 'core/tab', data: { label: 'Pricing' }, children: [
+    { _id: 'tabs', type: 'core/tabs', data: {}, children: [
+        { _id: 'pricing', type: 'core/tab', data: { label: 'Pricing' }, children: [
             fieldBlock('price', 'number', { name: 'price', label: 'Price', min: 0, index: true, required: true }),
             fieldBlock('sale', 'boolean', { name: 'onSale', label: 'On sale' }),
             fieldBlock('salePrice', 'number', { name: 'salePrice', label: 'Sale price', min: 0 }, { when: { rules: [{ field: 'onSale', op: 'is', value: 'true' }] } }),
@@ -48,8 +48,8 @@ describe('field blocks', () => {
     it('goes only in a field group, with layout blocks alone beside it', () => {
         expect(validateBlocks([fieldBlock('a', 'text', { name: 'a' })], types).errors).toEqual({ a: 'field/text goes only in a field group.' });
         // Common blocks (an image, a heading) go anywhere; other content blocks stay out of field groups.
-        expect(validateBlocks([{ id: 'img', type: 'core/image', data: { image: 'x' } }], types, { fieldGroup: true }).errors).toEqual({});
-        const { errors } = validateBlocks([{ id: 'q', type: 'core/quote', data: { text: 'Said' } }], types, { fieldGroup: true });
+        expect(validateBlocks([{ _id: 'img', type: 'core/image', data: { image: 'x' } }], types, { fieldGroup: true }).errors).toEqual({});
+        const { errors } = validateBlocks([{ _id: 'q', type: 'core/quote', data: { text: 'Said' } }], types, { fieldGroup: true });
         expect(errors).toEqual({ q: 'core/quote does not go in a field group.' });
     });
 
@@ -109,12 +109,12 @@ describe('field groups', () => {
     it('round-trips declarations through field blocks', () => {
         const { fields } = fieldGroupProblems(group, types);
         const layout = layoutOf(fields, ['specs', 'sku']);
-        expect(layout.map(block => block.id)).toEqual(['specs', 'sku', 'brand', 'price', 'onSale', 'salePrice']);
+        expect(layout.map(block => block._id)).toEqual(['specs', 'sku', 'brand', 'price', 'onSale', 'salePrice']);
         expect(layout[0]!.children!.map(block => block.type)).toEqual(['field/text', 'field/choice', 'field/text', 'field/repeater']);
         const again = fieldGroupDeclarations(validateBlocks(layout, types, { fieldGroup: true }).blocks, types);
         expect(again).toEqual(fields);
         expect(fieldBlockOf('cover', field.media({ label: 'Cover' })).type).toBe('field/media');
-        expect(fieldBlockOf('shots', field.gallery({ label: 'Shots' }))).toEqual({ id: 'shots', type: 'field/media', data: { name: 'shots', label: 'Shots', multiple: true } });
+        expect(fieldBlockOf('shots', field.gallery({ label: 'Shots' }))).toEqual({ _id: 'shots', type: 'field/media', data: { name: 'shots', label: 'Shots', multiple: true } });
     });
 
     it('compiles a Multiple field block to a multiple declaration and back', () => {

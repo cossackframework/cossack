@@ -18,6 +18,8 @@ export interface CodeEditorOptions {
     label: string;
     /** Compare the value with this text: a read-only unified diff. */
     original: string | null;
+    /** JSON: the schema to lint and complete against. */
+    schema: object | null;
     onChange(value: string): void;
 }
 
@@ -69,6 +71,7 @@ const theme = EditorView.theme({
 export function mountCodeEditor(parent: HTMLElement, options: CodeEditorOptions): CodeEditorHandle {
     const language = new Compartment();
     const editable = new Compartment();
+    const schemaSupport = new Compartment();
     let held = options.value;
     const extensions: Extension[] = [
         lineNumbers(), highlightSpecialChars(), history(), drawSelection(), indentOnInput(), bracketMatching(), foldGutter(), highlightActiveLine(),
@@ -80,6 +83,7 @@ export function mountCodeEditor(parent: HTMLElement, options: CodeEditorOptions)
         EditorView.contentAttributes.of({ 'aria-label': options.label }),
         ...(options.placeholder ? [placeholderOf(options.placeholder)] : []),
         ...(options.original !== null ? [unifiedMergeView({ original: options.original, mergeControls: false, highlightChanges: true, gutter: true })] : []),
+        schemaSupport.of([]),
         EditorView.updateListener.of(update => {
             if (!update.docChanged) return;
             const value = update.state.doc.toString();
@@ -94,6 +98,12 @@ export function mountCodeEditor(parent: HTMLElement, options: CodeEditorOptions)
         if (view.dom.isConnected) view.dispatch({ effects: language.reconfigure(support ?? []) });
     };
     void apply(options.language);
+    // The schema's linting, completion and hover help load with the first JSON document that has one.
+    if (options.schema && ['json', 'jsonc', 'json5'].includes(options.language.trim().toLowerCase())) {
+        void import('codemirror-json-schema').then(({ jsonSchema }) => {
+            if (view.dom.isConnected) view.dispatch({ effects: schemaSupport.reconfigure(jsonSchema(options.schema as Parameters<typeof jsonSchema>[0])) });
+        }).catch(error => console.warn('[ui] the JSON schema support could not load', error));
+    }
     return {
         setValue(value) {
             if (value === held) return;

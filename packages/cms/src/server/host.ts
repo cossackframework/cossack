@@ -17,7 +17,7 @@ import { assembleSiteTheme, entryTemplateChoices, layerPresets, siteThemeProblem
 import type { MenuItem, MenuItemView } from '../menus';
 import { recordTitle } from '../forms';
 import type { RecordShape } from '../records';
-import { taxonomyProblems, type TaxonomyDeclaration } from '../taxonomy';
+import { taxonomyProblems, type TaxonomyDeclaration, type TermShape } from '../taxonomy';
 import { isPluginPoint, manifestProblems, providedPoints, requestedGrants, type CmsPluginManifest, type PluginCommand, type SlotLink } from '../manifest';
 import { ANONYMOUS, evaluateRule, hasPermission, PERMISSIONS, principalId, systemPrincipal, userPrincipal, type Principal } from '../permissions';
 import { AVATAR_TYPES, mediaUrl } from '../media';
@@ -25,7 +25,8 @@ import { canonicalJson, declarationHash, resolveResource, type Resource, type Re
 import { Outbox, type OutboxOptions } from './outbox';
 import { ResourceRepository, type FieldFilter, type ListOptions, type OperationContext } from './repository';
 import { migrate, planSchema, readCatalog, type MigrationReport, type SchemaPlan } from './schema';
-import { FileService, type FileServiceOptions } from './files';
+import { FileService, type CmsFile, type FileServiceOptions } from './files';
+import { renameStoredDefinitions, renameStoredRecords } from './block-ids';
 import { HOST_STEPS, HOST_TABLES } from './host-schema';
 import { CmsSettings } from './site-settings';
 import { createAuthSessionStore, createJobStore, createNotificationStore, createOAuthStateStore, createSessionStore } from './stores';
@@ -527,25 +528,36 @@ export class CmsHost {
 
     /**
      * Published, indexable entries of a collection on the site for its XML sitemap, oldest
-     * first, `limit` (at most 1,000) from `offset`: their URLs and last changes.
+     * first, `limit` (at most 1,000) from `offset`: their URLs, last changes and featured images.
      */
-    async sitemapEntries(name: string, options: { offset?: number; limit?: number } = {}): Promise<{ url: string; updatedAt: number }[]> {
+    async sitemapEntries(name: string, options: { offset?: number; limit?: number } = {}): Promise<{ url: string; updatedAt: number; image?: string }[]> {
         const collection = this.collection(name);
-        if (collection.path === null || collection.path === undefined || collection.slug === false || (collection.publishable === false && collection.visibility !== 'public')) return [];
+        if (collection.path === null || collection.path === undefined || collection.slug === false || collection.sitemap === false || (collection.publishable === false && collection.visibility !== 'public')) return [];
         const limit = Math.min(Math.max(options.limit ?? 1000, 1), 1000);
         const offset = Math.min(Math.max(options.offset ?? 0, 0), 1_000_000);
         const resource = this.resourceById(`cms/${collection.name}`);
         await this.assertActive(resource);
+        const taxonomy = collection.permalink === 'category' ? collection.taxonomies?.[0] : undefined;
+        const image = resource.fields.featuredImage?.media ? 'featuredImage' : undefined;
         const result = await this.db.read([{
-            rql: `SELECT id, "slug", "parent", "locale", "seo", "_updatedAt", "_createdAt", "_owner" FROM ${resource.storage}${collection.publishable === false ? '' : ` WHERE "status" = 'published'`} ORDER BY "_createdAt", record::id(id) LIMIT ${limit} OFFSET ${offset}`,
+            rql: `SELECT id, "slug", "parent", "locale", "seo", "_updatedAt", "_createdAt", "_owner", ${taxonomy ? `"${taxonomy}"` : 'NULL'}, ${image ? `"${image}"` : 'NULL'} FROM ${resource.storage}${collection.publishable === false ? '' : ` WHERE "status" = 'published'`} ORDER BY "_createdAt", record::id(id) LIMIT ${limit} OFFSET ${offset}`,
         }], { workLimits: this.readLimits });
-        const records = result.results[0]!.rows.map(([id, slug, parent, locale, seo, updatedAt, createdAt, owner]) => Object.freeze({
+        const records = result.results[0]!.rows.map(([id, slug, parent, locale, seo, updatedAt, createdAt, owner, terms, picture]) => Object.freeze({
             id: String((id as { key: unknown }).key), rev: 0, slug, parent: parent && typeof parent === 'object' && 'key' in parent ? String((parent as { key: unknown }).key) : null,
             locale, seo, status: 'published', updatedAt: Number(updatedAt as bigint), createdAt: Number(createdAt as bigint), owner: (owner as string | null) ?? null,
+            ...(taxonomy ? { [taxonomy]: Array.isArray(terms) ? terms : [] } : {}),
+            ...(image ? { [image]: typeof picture === 'string' ? picture : null } : {}),
         }) as RecordShape);
         const indexable = records.filter(record => !(record.seo && typeof record.seo === 'object' && (record.seo as { noindex?: unknown }).noindex === true));
         const urls = await this.entryUrls(collection, indexable);
-        return indexable.flatMap(record => urls.get(record.id) ? [{ url: urls.get(record.id)!, updatedAt: record.updatedAt }] : []);
+        // Featured images, as image sitemap entries.
+        const files = image && this.files ? await this.files.getMany(indexable.map(record => record[image]).filter((id): id is string => typeof id === 'string')) : new Map<string, CmsFile>();
+        return indexable.flatMap(record => {
+            const url = urls.get(record.id);
+            if (!url) return [];
+            const file = image ? files.get(String(record[image] ?? '')) : undefined;
+            return [{ url, updatedAt: record.updatedAt, ...(file && file.contentType.startsWith('image/') ? { image: mediaUrl(file) } : {}) }];
+        });
     }
 
     /** A shareable link to preview an entry the principal may edit. */
@@ -972,7 +984,7 @@ export class CmsHost {
 
     /**
      * Public URLs of a collection's entries: the collection's path and, for nested
-     * collections, the slugs of their ancestors, read in one request per level.
+     * collections, the slugs of their ancestors, fetched through the parent link in one request.
      */
     async entryUrls(collection: CollectionDefinition, records: readonly RecordShape[], context: OperationContext = { principal: ANONYMOUS }): Promise<Map<string, string | null>> {
         const urls = new Map<string, string | null>();
@@ -983,13 +995,14 @@ export class CmsHost {
         const known = new Map(records.map(record => [record.id, record]));
         const languages = await this.languages();
         if (collection.hierarchical) {
-            let missing = [...new Set(records.map(record => record.parent as string | null).filter((id): id is string => !!id && !known.has(id)))];
-            for (let depth = 0; missing.length && depth < 8; depth++) {
-                const found = await this.resource(`cms/${collection.name}`).getMany(missing, context);
-                for (const record of found.values()) known.set(record.id, record);
-                missing = [...new Set([...found.values()].map(record => record.parent as string | null).filter((id): id is string => !!id && !known.has(id)))];
-            }
+            // Every ancestor chain in one request, through the parent link's record projections.
+            const roots = records.filter(record => typeof record.parent === 'string' && record.parent && !known.has(record.parent)).map(record => record.id);
+            const chains = await this.resource(`cms/${collection.name}`).ancestors(roots, 'parent', context);
+            for (const chain of chains.values()) for (const ancestor of chain) known.set(ancestor.id, ancestor);
         }
+        // Category permalinks: the slug of each entry's first term, read in one request.
+        const taxonomy = collection.permalink === 'category' ? collection.taxonomies?.[0] : undefined;
+        const terms = taxonomy ? await this.taxonomies.getMany([...new Set(records.map(record => this.#firstTerm(record, taxonomy)).filter((id): id is string => !!id))]) : new Map<string, TermShape>();
         for (const record of records) {
             const slugs: string[] = [];
             let current: RecordShape | undefined = record;
@@ -1000,10 +1013,18 @@ export class CmsHost {
                 current = parent ? known.get(parent) : undefined;
                 if (parent && !current) { slugs.length = 0; break; }
             }
+            const term = taxonomy ? terms.get(this.#firstTerm(record, taxonomy) ?? '') : undefined;
+            if (term && slugs.length) slugs.unshift(term.slug);
             const url = entryUrl(collection.path, slugs);
             urls.set(record.id, url ? `${this.localePrefix(record.locale, languages)}${url}` : null);
         }
         return urls;
+    }
+
+    /** The first term of a record's taxonomy field, which category permalinks use. */
+    #firstTerm(record: RecordShape, taxonomy: string): string | null {
+        const value = record[taxonomy];
+        return Array.isArray(value) && typeof value[0] === 'string' ? value[0] : null;
     }
 
     /**
@@ -1023,6 +1044,8 @@ export class CmsHost {
         const stored: CollectionDefinition = builtin ? {
             name: input.name, label: input.label, singular: input.singular, ...(input.description !== undefined ? { description: input.description } : {}),
             ...(input.icon !== undefined ? { icon: input.icon } : {}), ...(input.path !== undefined ? { path: input.path } : {}),
+            ...(input.permalink !== undefined ? { permalink: input.permalink } : {}),
+            ...(input.sitemap !== undefined ? { sitemap: input.sitemap } : {}),
             ...(input.comments !== undefined ? { comments: input.comments } : {}),
             ...(input.features !== undefined ? { features: input.features } : {}),
             ...(input.template !== undefined ? { template: input.template } : {}),
@@ -1097,7 +1120,9 @@ export class CmsHost {
         const collection = resource.owner === 'cms' ? this.#collections.get(resource.name) : undefined;
         if (!collection || collection.path === null || collection.path === undefined || collection.slug === false) return [];
         const live = (record: RecordShape) => collection.publishable === false || record.status === 'published';
-        if (!live(before) || !live(after) || (before.slug === after.slug && before.parent === after.parent && before.locale === after.locale)) return [];
+        const taxonomy = collection.permalink === 'category' ? collection.taxonomies?.[0] : undefined;
+        const sameTerm = !taxonomy || this.#firstTerm(before, taxonomy) === this.#firstTerm(after, taxonomy);
+        if (!live(before) || !live(after) || (before.slug === after.slug && before.parent === after.parent && before.locale === after.locale && sameTerm)) return [];
         const from = (await this.entryUrls(collection, [before])).get(before.id);
         const to = (await this.entryUrls(collection, [after])).get(after.id);
         return from && to && from !== to ? this.redirects.automatic(from, to, { guard: guard.rql, params: guard.params, by }) : [];
@@ -1209,7 +1234,21 @@ export class CmsHost {
     async migrate(options: { signal?: AbortSignal } = {}): Promise<MigrationReport> {
         const report = await migrate(this.db, this.resources, { ...options, now: this.#now });
         this.#activation = undefined;
+        await this.#afterHostSteps(report);
         return report;
+    }
+
+    /**
+     * Data rewrites that follow a host step, on every path that applies steps: Tools → Schema,
+     * setup and the automatic upgrade. Host step 12 renamed block IDs to `_id`: rewrite what the
+     * database stored before it, once. The rewrite is idempotent, so a retry after a failure is safe.
+     */
+    async #afterHostSteps(report: MigrationReport): Promise<void> {
+        if (!report.applied.some(step => step.id === 'cms#host-12')) return;
+        await renameStoredDefinitions(this.db);
+        // A collection whose stored template had `id` was invalid until now: load it, so its records are rewritten too.
+        await this.#loadDefinitions();
+        await renameStoredRecords(this.db, this.resources);
     }
 
     /**
@@ -1412,9 +1451,10 @@ export class CmsHost {
             if (resource && state.hashes.get(resource.id) !== await declarationHash(resource)) stale.push(resource.id);
         }
         if (!hostPending && !stale.length) return;
-        this.#upgrading ??= migrate(this.db, this.resources, { now: this.#now, only: stale }).then(report => {
+        this.#upgrading ??= migrate(this.db, this.resources, { now: this.#now, only: stale }).then(async report => {
             if (report.failed) console.error(`[cms] could not upgrade the schema: ${report.failed.message}`);
-        }, error => console.error('[cms] could not upgrade the schema', error)).finally(() => {
+            await this.#afterHostSteps(report);
+        }).catch(error => console.error('[cms] could not upgrade the schema', error)).finally(() => {
             this.#upgrading = undefined;
             this.#activation = undefined;
             this.#installed = false;
@@ -1516,7 +1556,7 @@ export class CmsHost {
         const merged = { ...previous, ...(meta as { [field: string]: unknown } | undefined) };
         const { errors, values } = metaProblems(fields, merged, () => blockId());
         const { hidden, values: cleared } = fieldVisibility(layout, this.#blocks, values);
-        const names = new Map(flattenGroupFields(layout).map(block => [block.id, block.data.name as string]));
+        const names = new Map(flattenGroupFields(layout).map(block => [block._id, block.data.name as string]));
         for (const key of hidden) { const name = key.includes('/') ? undefined : names.get(key); if (name) { delete errors[name]; delete cleared[name]; } }
         if (Object.keys(errors).length) throw new CmsError('CMS_VALIDATION', Object.entries(errors).map(([name, error]) => `${fields[name]?.label ?? name} ${error}`).join(' '), { fields: errors });
         return cleared;

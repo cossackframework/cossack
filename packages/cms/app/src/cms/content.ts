@@ -318,14 +318,84 @@ export function fieldErrors(error: unknown): Record<string, string> {
     return isCmsError(error) && error.fields ? { ...error.fields } : {};
 }
 
-/** Fields the API answers but no one writes: the JSON tab shows them and ignores edits to them. */
-const READ_ONLY_JSON = new Set(['id', 'rev', 'createdAt', 'updatedAt', 'createdBy', 'updatedBy', 'url', 'html']);
+/**
+ * The writable part of an entry in the API's shape: its declared fields. The rest (id, rev,
+ * owner, the dates, url, anything a plugin adds to the answer) is read-only, so the JSON tab
+ * shows it and ignores edits to it.
+ */
+export function writableEntryFields(fields: { readonly [name: string]: unknown }, declared: { readonly [name: string]: unknown }): Record<string, unknown> {
+    return Object.fromEntries(Object.entries(fields).filter(([name]) => Object.hasOwn(declared, name)));
+}
 
 /** An entry as the content API answers it, as indented JSON for the editor's JSON tab. */
 export async function entryJson(cms: CmsHost, route: string, record: RecordShape): Promise<string> {
     const { collection } = routeResource(cms, route);
     const url = collection ? (await cms.entryUrls(collection, [record])).get(record.id) ?? null : null;
     return JSON.stringify({ ...record, ...(collection ? { url } : {}) }, null, 2);
+}
+
+export interface ImportReport {
+    created: number;
+    updated: number;
+    failed: { index: number; id: string | null; error: string; fields?: Record<string, string> }[];
+}
+
+/** The most entries one import takes. */
+export const IMPORT_LIMIT = 1000;
+
+/** The entries an export or an upload holds: a list, or an export's `{ items }` document. */
+export function importItems(parsed: unknown): Record<string, unknown>[] | string {
+    const list = Array.isArray(parsed) ? parsed : parsed && typeof parsed === 'object' && Array.isArray((parsed as { items?: unknown }).items) ? (parsed as { items: unknown[] }).items : null;
+    if (!list) return 'Send a list of entries, or an export with its items.';
+    if (list.length > IMPORT_LIMIT) return `Import at most ${IMPORT_LIMIT} entries at a time.`;
+    if (!list.every(item => item && typeof item === 'object' && !Array.isArray(item))) return 'Every entry is a JSON object.';
+    return list as Record<string, unknown>[];
+}
+
+/**
+ * Import entries in the API's shape, as an export wrote them: an entry whose `id` exists is
+ * updated, else one with the same slug; the rest are created, keeping their IDs so references
+ * between them hold. Each entry is written with the same checks as a save, and a failure
+ * leaves the others untouched. Media and terms are referenced by ID and must exist.
+ */
+export async function importEntries(cms: CmsHost, route: string, items: readonly Record<string, unknown>[], principal: Principal): Promise<ImportReport> {
+    const { resource } = routeResource(cms, route);
+    const repository = cms.resource(resource.id);
+    const report: ImportReport = { created: 0, updated: 0, failed: [] };
+    for (const [index, item] of items.entries()) {
+        const id = typeof item.id === 'string' && /^[A-Za-z0-9_-]{1,80}$/.test(item.id) ? item.id : null;
+        const fields = writableEntryFields(item, resource.fields);
+        try {
+            let existing = id ? await repository.get(id, { principal }) : null;
+            if (!existing && resource.fields.slug && typeof fields.slug === 'string' && fields.slug) {
+                existing = (await repository.list({ where: { slug: fields.slug }, limit: 1 }, { principal })).records[0] ?? null;
+            }
+            if (existing) {
+                await repository.update(existing.id, fields, { principal, expectedRevision: existing.rev });
+                report.updated++;
+            } else {
+                await repository.create(fields, { principal, ...(id ? { id } : {}) });
+                report.created++;
+            }
+        } catch (error) {
+            if (!isCmsError(error)) throw error;
+            report.failed.push({ index, id, error: error.message, ...(error.fields ? { fields: { ...error.fields } } : {}) });
+        }
+    }
+    return report;
+}
+
+/** Every entry the principal may read, in the API's shape, in pages of 100, for an export. */
+export async function* exportEntries(cms: CmsHost, route: string, principal: Principal): AsyncGenerator<Record<string, unknown>[]> {
+    const { resource, collection } = routeResource(cms, route);
+    const repository = cms.resource(resource.id);
+    for (let offset = 0; offset <= 10_000; offset += 100) {
+        const page = await repository.list({ order: { field: 'createdAt', direction: 'asc' }, limit: 100, offset }, { principal });
+        if (!page.records.length) return;
+        const urls = collection ? await cms.entryUrls(collection, page.records) : new Map<string, string | null>();
+        yield page.records.map(record => ({ ...record, ...(collection ? { url: urls.get(record.id) ?? null } : {}) }));
+        if (page.records.length < 100) return;
+    }
 }
 
 /**
@@ -337,7 +407,7 @@ export async function applyEntryJson(cms: CmsHost, route: string, id: string, te
     let parsed: unknown;
     try { parsed = JSON.parse(text); } catch (error) { throw new CmsError('CMS_VALIDATION', `The JSON is not valid: ${(error as Error).message}`); }
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new CmsError('CMS_VALIDATION', 'The JSON must be an object of the entry\'s fields.');
-    const fields = Object.fromEntries(Object.entries(parsed as Record<string, unknown>).filter(([name]) => !READ_ONLY_JSON.has(name)));
     const { resource } = routeResource(cms, route);
+    const fields = writableEntryFields(parsed as Record<string, unknown>, resource.fields);
     return cms.resource(resource.id).update(id, fields, { principal, expectedRevision: revision });
 }

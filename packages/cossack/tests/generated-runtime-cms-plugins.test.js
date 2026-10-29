@@ -74,15 +74,15 @@ describe.skipIf(!liveRomeDBTests())('CMS plugin trust', () => {
       contains(await web.page('/dashboard/support'), 'Open tickets: 2');
 
       // The plugin's block type: added to pages through a field group made for them, rendered by its ui.ts.
-      expect((await web.action('dashboard/(cms)/field-groups/new/index.ts', 'create', ['Sections', 'pages']))._cossack_redirect).toBe('/dashboard/field-groups/sections?created=1');
+      expect((await web.action('dashboard/(cms)/field-groups/[id]/index.ts', 'save', [{ id: '', title: 'Sections', description: '', placement: 'main', order: '' }, [{ kind: 'collection', name: 'pages', order: 0 }], []], { state: { fresh: true }, params: { id: 'new' } }))._cossack_redirect).toBe('/dashboard/field-groups/sections?created=1');
       const group = await web.action('dashboard/(cms)/field-groups/[id]/index.ts', 'save', [
         { id: 'sections', title: 'Sections', description: '', placement: 'main', order: '' }, [{ kind: 'collection', name: 'pages', order: 0 }],
-        [{ id: 'sections', type: 'field/blocks', data: { name: 'sections', label: 'Sections' } }],
+        [{ _id: 'sections', type: 'field/blocks', data: { name: 'sections', label: 'Sections' } }],
       ], { params: { id: 'sections' } });
       expect(group.error).toBe('');
       // Setup seeds a Contact page already, so this one has its own name.
       await web.action(editor, 'save', [{ title: 'Help desk', slug: '', status: 'draft', publishedAt: '', content: [], excerpt: '', showInMenu: true, featuredImage: '', parent: '', menuOrder: '0',
-        sections: [{ id: 'c1', type: 'support-desk/contact', data: { email: 'help@example.com' } }] }, 'publish', 0], { params: { collection: 'pages', id: 'new' }, state: { route: 'pages', id: 'new' } });
+        sections: [{ _id: 'c1', type: 'support-desk/contact', data: { email: 'help@example.com' } }] }, 'publish', 0], { params: { collection: 'pages', id: 'new' }, state: { route: 'pages', id: 'new' } });
       contains(await web.page('/help-desk'), 'Write to help@example.com');
 
       // The plugin command runs in the application as the signed-in user.

@@ -8,7 +8,7 @@
 import { ClientError, Float64, RecordId, UncertainWriteError, Vector, type Statement, type Value } from '@cossackframework/romedb';
 import type { HookRegistry } from '@cossackframework/core/hooks';
 import { CmsError } from '../errors';
-import { slugify, validateValue, type FieldDeclaration } from '../fields';
+import { FIELD_NAME, slugify, validateValue, type FieldDeclaration } from '../fields';
 import { blockId, blockMedia, blocksPlain, flattenBlocks, validateBlocks, type Block } from '../blocks';
 import { fieldVisibility, indexedRowField, rowIndexPath, rowsPlain, rowsSearchable, rowUniqueProblem, withRowIds } from '../field-groups';
 import { normalizeRichText, richTextBlocks, richTextMedia, richTextPlain, withRichTextBlocks, type RichTextDoc } from '../richtext';
@@ -18,7 +18,7 @@ import { hasPermission, principalId, ruleScope, type Principal, type RecordScope
 import type { FieldFilter, ListFilter, ListOptions, RecordPage, RecordShape, RevisionShape } from '../records';
 
 export type { FieldFilter, ListFilter, ListOptions };
-import type { Resource, ResourceAction } from '../resource';
+import type { AccessRule, Resource, ResourceAction } from '../resource';
 import type { CmsHost } from './host';
 
 export interface OperationContext {
@@ -56,8 +56,7 @@ export class ResourceRepository {
     async get(id: string, context: OperationContext): Promise<RecordShape | null> {
         const access = await this.#authorize('read', context.principal);
         if (typeof id !== 'string' || !KEY.test(id)) return null;
-        const { rql, params } = this.#conditions(access, context.principal, [`id = type::record('${this.resource.storage}', $key)`], { $key: id });
-        const result = await this.#host.db.read([{ rql: `SELECT * FROM ${this.resource.storage} WHERE ${rql} LIMIT 1`, params }], this.#readOptions(context));
+        const result = await this.#host.db.read([this.#one(id, access, context.principal)], this.#readOptions(context));
         const document = result.results[0]!.rows[0]?.[0] as Document | undefined;
         return document ? this.#public(document, context.principal) : null;
     }
@@ -200,10 +199,52 @@ export class ResourceRepository {
 
     /** Whether the principal may update the record: its rule allows, or the record is in the rule's scope. */
     canUpdate(record: RecordShape, principal: Principal): boolean {
-        const scope = ruleScope(this.resource.access.update, principal);
+        return this.#inScope(this.resource.access.update, record, principal);
+    }
+
+    /** Whether the principal may read this record: the read rule, evaluated on the record itself. */
+    canRead(record: RecordShape, principal: Principal): boolean {
+        return this.#inScope(this.resource.access.read, record, principal);
+    }
+
+    #inScope(rule: AccessRule, record: RecordShape, principal: Principal): boolean {
+        const scope = ruleScope(rule, principal);
         if (scope === 'allow' || scope === 'deny') return scope === 'allow';
         if (scope.owner && principal.kind === 'user' && record.owner === principal.id) return true;
         return scope.where.some(rule => Object.entries(rule).every(([name, value]) => record[name] === value));
+    }
+
+    /**
+     * The records a record-link field leads to, level by level, in one request: RomeQL's
+     * record projections (`parent.*`, `parent.*.parent.*`, …) fetch each record's chain up to
+     * `depth` links deep. Each chain is nearest first and stops at the first link that is
+     * missing or that the principal may not read.
+     */
+    async ancestors(ids: readonly string[], field: string, context: OperationContext, depth = 8): Promise<Map<string, RecordShape[]>> {
+        await this.#authorize('read', context.principal);
+        const declaration = this.resource.fields[field];
+        if (!declaration || declaration.kind !== 'reference' || !FIELD_NAME.test(field)) throw new CmsError('CMS_VALIDATION', `${field} is not a reference field.`);
+        const wanted = [...new Set(ids.filter(id => typeof id === 'string' && KEY.test(id)))].slice(0, 200);
+        const chains = new Map<string, RecordShape[]>();
+        if (!wanted.length) return chains;
+        const params: { [key: string]: Value } = {};
+        const list = wanted.map((id, index) => { params[`$k${index}`] = id; return `type::record('${this.resource.storage}', $k${index})`; }).join(', ');
+        const levels = Array.from({ length: Math.min(Math.max(depth, 1), 8) }, (_, index) => Array.from({ length: index + 1 }, () => `${field}.*`).join('.'));
+        const result = await this.#host.db.read([{
+            rql: `SELECT id, ${levels.map((path, index) => `${path} AS l${index}`).join(', ')} FROM ${this.resource.storage} WHERE id IN (${list}) LIMIT ${wanted.length}`, params,
+        }], this.#readOptions(context));
+        for (const row of result.results[0]!.rows) {
+            const chain: RecordShape[] = [];
+            for (let index = 1; index < row.length; index++) {
+                const document = row[index];
+                if (!document || typeof document !== 'object' || document instanceof RecordId || !(document as Document).id) break;
+                const record = this.#public(document as Document, context.principal);
+                if (!this.canRead(record, context.principal)) break;
+                chain.push(record);
+            }
+            chains.set(String((row[0] as RecordId).key), chain);
+        }
+        return chains;
     }
 
     async create(input: { readonly [field: string]: unknown }, context: OperationContext & { readonly id?: string }): Promise<RecordShape> {
@@ -321,6 +362,12 @@ export class ResourceRepository {
     }
 
     /** Join conditions with the access scope: the principal's own records or those matching a rule's fields. */
+    /** One record by key, as a RomeQL record source (`FROM type::record(...)`: an ID lookup), under the principal's read conditions. */
+    #one(id: string, access: Access, principal: Principal): Statement {
+        const { rql, params } = this.#conditions(access, principal, [], { $key: id });
+        return { rql: `SELECT * FROM type::record('${this.resource.storage}', $key)${rql ? ` WHERE ${rql}` : ''} LIMIT 1`, params };
+    }
+
     #conditions(access: Access, principal: Principal, conditions: string[], params: { [key: string]: Value }, prefix = ''): { rql: string; params: { [key: string]: Value } } {
         if (access !== 'allow') {
             const scope: string[] = [];
@@ -422,8 +469,7 @@ export class ResourceRepository {
     }
 
     async #current(id: string, access: Access, context: OperationContext): Promise<RecordShape | null> {
-        const { rql, params } = this.#conditions(access, context.principal, [`id = type::record('${this.resource.storage}', $key)`], { $key: id });
-        const result = await this.#host.db.read([{ rql: `SELECT * FROM ${this.resource.storage} WHERE ${rql} LIMIT 1`, params }], this.#readOptions(context));
+        const result = await this.#host.db.read([this.#one(id, access, context.principal)], this.#readOptions(context));
         const document = result.results[0]!.rows[0]?.[0] as Document | undefined;
         return document ? this.#shapeOf(document) : null;
     }
@@ -467,7 +513,7 @@ export class ResourceRepository {
                 for (let depth = 0; current; depth++) {
                     if (current === id) throw new CmsError('CMS_VALIDATION', `${declaration.label ?? name} cannot be this record or one below it.`, { fields: { [name]: 'would make a cycle.' } });
                     if (depth >= 32) throw new CmsError('CMS_LIMIT', 'Records nest at most 32 levels deep.');
-                    const row: Value | undefined = (await this.#host.db.read([{ rql: `SELECT ${quote(name)} FROM ${this.resource.storage} WHERE id = type::record('${this.resource.storage}', $key)`, params: { $key: current } }])).results[0]!.rows[0]?.[0];
+                    const row: Value | undefined = (await this.#host.db.read([{ rql: `SELECT ${quote(name)} FROM type::record('${this.resource.storage}', $key)`, params: { $key: current } }])).results[0]!.rows[0]?.[0];
                     if (row === undefined) throw new CmsError('CMS_VALIDATION', `${declaration.label ?? name} names a missing record.`, { fields: { [name]: 'names a missing record.' } });
                     current = row instanceof RecordId ? String(row.key) : null;
                 }
@@ -585,7 +631,7 @@ export class ResourceRepository {
         if (!layout?.length) return new Set();
         const values: { [field: string]: unknown } = { ...(previous ? this.#fieldsOf(previous) : {}), ...draft };
         const { hidden, values: cleared } = fieldVisibility(layout, this.#host.blockTypes, values);
-        const names = new Map(flattenBlocks(layout).map(block => [block.id, typeof block.data.name === 'string' ? block.data.name : '']));
+        const names = new Map(flattenBlocks(layout).map(block => [block._id, typeof block.data.name === 'string' ? block.data.name : '']));
         const top = new Set<string>();
         for (const key of hidden) {
             if (key.includes('/')) continue;

@@ -81,11 +81,11 @@ export async function formView(cms: CmsHost, form: LoadedForm, request: FormRequ
     // Conditions see the values a submission would keep; a repeater's rows have theirs under `<row id>:<block id>`.
     const check = validateSubmission(form.blocks, types, values);
     const hidden = new Set([...formVisibility(form.blocks, types, check.values).hidden, ...check.hidden]);
-    const inputs = new Map(form.ref.inputs.map(input => [input.id, input]));
+    const inputs = new Map(form.ref.inputs.map(input => [input._id, input]));
     /** A block with its input's state. In a repeater's row, ids and names are the row's. */
     const withState = (block: RenderedBlock, row: { readonly id: string; readonly repeater: FormField; readonly values: FormValues } | null): RenderedBlock => {
-        const input = row ? row.repeater.inputs.find(child => child.id === block.id) : inputs.get(block.id);
-        const id = row ? `${row.id}:${block.id}` : block.id;
+        const input = row ? row.repeater.inputs.find(child => child._id === block._id) : inputs.get(block._id);
+        const id = row ? `${row.id}:${block._id}` : block._id;
         const key = row && input ? `${row.repeater.name}.${row.id}.${input.name}` : input?.name ?? '';
         const name = row && input ? `${row.repeater.name}[${row.id}][${input.name}]` : input?.name ?? '';
         const value = row ? row.values[input?.name ?? ''] : values[input?.name ?? ''];
@@ -101,7 +101,7 @@ export async function formView(cms: CmsHost, form: LoadedForm, request: FormRequ
             };
         };
         const state: RenderedBlock = {
-            ...block, id,
+            ...block, _id: id,
             ...(block.when ? { shown: !hidden.has(id) } : {}),
             ...(input ? { input: { name, key, kind: input.kind, id: `form-${slug}-${key.replaceAll('.', '-')}`, value: value ?? null, error: errors[key] ?? '', options: input.options, ...(input.multiple ? { items: items() } : {}) } } : {}),
             ...(block.children ? { children: block.children.map(child => withState(child, row)) } : {}),

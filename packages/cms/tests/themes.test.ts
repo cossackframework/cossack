@@ -186,13 +186,13 @@ describe.skipIf(!live)('themes: loaders', () => {
         expect(areas.filter(area => area.active).map(area => area.name)).toEqual(['footer', 'sidebar']);
         const known = areas.map(area => area.name);
         expect(await cms.areas.get('sidebar')).toMatchObject({ blocks: [], revision: 0 });
-        const blocks = [{ id: 'hello', type: 'core/paragraph', data: { text: 'Hello **there**' } }, { id: 'rule', type: 'core/divider', data: {} }];
+        const blocks = [{ _id: 'hello', type: 'core/paragraph', data: { text: 'Hello **there**' } }, { _id: 'rule', type: 'core/divider', data: {} }];
         const saved = await cms.areas.save('sidebar', blocks, { principal: admin, expectedRevision: 0, known });
-        expect(saved).toMatchObject({ name: 'sidebar', revision: 1, blocks: [{ id: 'hello', type: 'core/paragraph' }, { id: 'rule', type: 'core/divider' }] });
+        expect(saved).toMatchObject({ name: 'sidebar', revision: 1, blocks: [{ _id: 'hello', type: 'core/paragraph' }, { _id: 'rule', type: 'core/divider' }] });
         await expect(cms.areas.save('sidebar', [], { principal: admin, expectedRevision: 0, known })).rejects.toMatchObject({ code: 'CMS_CONFLICT' });
         expect((await cms.areas.save('sidebar', blocks.slice(1), { principal: admin, expectedRevision: 1, known })).revision).toBe(2);
         await expect(cms.areas.save('header', [], { principal: admin, expectedRevision: 0, known })).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
-        await expect(cms.areas.save('footer', [{ id: 'x', type: 'core/nope', data: {} }], { principal: admin, expectedRevision: 0, known })).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
+        await expect(cms.areas.save('footer', [{ _id: 'x', type: 'core/nope', data: {} }], { principal: admin, expectedRevision: 0, known })).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
         await expect(cms.areas.save('footer', [{ id: 'x' }], { principal: admin, expectedRevision: 0, known })).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
         const editor: Principal = { kind: 'user', id: 'editor-1', roles: ['editor'], permissions: ['cms:dashboard', 'cms/*'] };
         await expect(cms.areas.save('footer', [], { principal: editor, expectedRevision: 0, known })).rejects.toMatchObject({ code: 'CMS_FORBIDDEN' });
@@ -201,34 +201,34 @@ describe.skipIf(!live)('themes: loaders', () => {
 
     it('saves layout blocks with their children', async () => {
         const known = (await cms.areaLocations()).map(area => area.name);
-        const blocks = [{ id: 'cols', type: 'core/columns', data: { gap: 'small' }, children: [
-            { id: 'left', type: 'core/column', data: { span: 4 }, children: [{ id: 'h', type: 'core/heading', data: { text: 'Left' } }] },
-            { id: 'right', type: 'core/column', data: {}, layout: { hide: ['sm'] }, children: [] },
+        const blocks = [{ _id: 'cols', type: 'core/columns', data: { gap: 'small' }, children: [
+            { _id: 'left', type: 'core/column', data: { span: 4 }, children: [{ _id: 'h', type: 'core/heading', data: { text: 'Left' } }] },
+            { _id: 'right', type: 'core/column', data: {}, layout: { hide: ['sm'] }, children: [] },
         ] }];
         const saved = await cms.areas.save('footer', blocks, { principal: admin, expectedRevision: 0, known });
-        const expected = [{ id: 'cols', type: 'core/columns', data: { gap: 'small', stack: 'mobile' }, children: [
-            { id: 'left', type: 'core/column', data: { span: 4, verticalAlign: 'top' }, children: [{ id: 'h', type: 'core/heading', data: { text: 'Left', level: 'h2' } }] },
-            { id: 'right', type: 'core/column', data: { verticalAlign: 'top' }, layout: { hide: ['sm'] }, children: [] },
+        const expected = [{ _id: 'cols', type: 'core/columns', data: { gap: 'small', stack: 'mobile' }, children: [
+            { _id: 'left', type: 'core/column', data: { span: 4, verticalAlign: 'top' }, children: [{ _id: 'h', type: 'core/heading', data: { text: 'Left', level: 'h2' } }] },
+            { _id: 'right', type: 'core/column', data: { verticalAlign: 'top' }, layout: { hide: ['sm'] }, children: [] },
         ] }];
         expect(saved.blocks).toEqual(expected);
         expect((await cms.areas.get('footer'))?.blocks).toEqual(expected);
-        await expect(cms.areas.save('footer', [{ id: 'c', type: 'core/column', data: {} }], { principal: admin, expectedRevision: 1, known }))
+        await expect(cms.areas.save('footer', [{ _id: 'c', type: 'core/column', data: {} }], { principal: admin, expectedRevision: 1, known }))
             .rejects.toMatchObject({ code: 'CMS_VALIDATION', message: 'c: core/column goes inside core/columns.' });
     });
 
     it('saves a block\'s style and keeps what its type supports', async () => {
         const known = (await cms.areaLocations()).map(area => area.name);
         const blocks = [
-            { id: 'p', type: 'core/paragraph', data: { text: 'Styled' }, style: { background: 'brand', align: 'center' }, layout: { anchor: 'intro', className: 'hero' } },
-            { id: 'd', type: 'core/divider', data: {}, style: { background: 'brand', padding: 'large' } },
+            { _id: 'p', type: 'core/paragraph', data: { text: 'Styled' }, style: { background: 'brand', align: 'center' }, layout: { anchor: 'intro', className: 'hero' } },
+            { _id: 'd', type: 'core/divider', data: {}, style: { background: 'brand', padding: 'large' } },
         ];
-        await expect(cms.areas.save('sidebar', [{ id: 'p', type: 'core/paragraph', data: { text: 'x' }, style: { background: 'Brand' } }], { principal: admin, expectedRevision: 2, known }))
+        await expect(cms.areas.save('sidebar', [{ _id: 'p', type: 'core/paragraph', data: { text: 'x' }, style: { background: 'Brand' } }], { principal: admin, expectedRevision: 2, known }))
             .rejects.toMatchObject({ code: 'CMS_VALIDATION' });
         const saved = await cms.areas.save('sidebar', blocks.slice(0, 1), { principal: admin, expectedRevision: 2, known });
-        expect(saved.blocks).toEqual([{ id: 'p', type: 'core/paragraph', data: { text: 'Styled' }, style: { background: 'brand', align: 'center' }, layout: { anchor: 'intro', className: 'hero' } }]);
+        expect(saved.blocks).toEqual([{ _id: 'p', type: 'core/paragraph', data: { text: 'Styled' }, style: { background: 'brand', align: 'center' }, layout: { anchor: 'intro', className: 'hero' } }]);
         // A design block supports colour and spacing; an unsupported property is dropped, not refused (the unit tests cover the drop).
-        const divider = await cms.areas.save('sidebar', [{ id: 'd', type: 'core/divider', data: {}, style: { ...blocks[1]!.style, fontSize: 'large' } }], { principal: admin, expectedRevision: 3, known });
-        expect(divider.blocks[0]).toEqual({ id: 'd', type: 'core/divider', data: { orientation: 'horizontal', thickness: 'thin', width: 'full' }, style: { background: 'brand', padding: 'large' } });
+        const divider = await cms.areas.save('sidebar', [{ _id: 'd', type: 'core/divider', data: {}, style: { ...blocks[1]!.style, fontSize: 'large' } }], { principal: admin, expectedRevision: 3, known });
+        expect(divider.blocks[0]).toEqual({ _id: 'd', type: 'core/divider', data: { orientation: 'horizontal', thickness: 'thin', width: 'full' }, style: { background: 'brand', padding: 'large' } });
         const settings = await cms.settings.update('appearance', { presets: { 'folio-dark': { colors: { brand: '#0a0' }, custom: [{ slug: 'mine', name: 'Mine', value: '#123' }] } }, customCss: '.hero { color: red }' }, { principal: admin });
         expect(settings['appearance.presets']).toEqual({ 'folio-dark': { colors: { brand: '#0a0' }, custom: [{ slug: 'mine', name: 'Mine', value: '#123' }] } });
         expect(settings['appearance.customCss']).toBe('.hero { color: red }');

@@ -66,7 +66,7 @@ export function themeHelpers(theme: SiteTheme, state: ThemeRenderState, isActive
     // In edit mode a block carries its ID; a field's rich text is one document, edited as a whole in the field's panel.
     const marked = (block: RenderedBlock) => block.field
         ? html`<div data-cms-edit="body" data-field=${block.field} style="display: contents">${render(block)}</div>`
-        : html`<div data-cms-edit="block" data-block-id=${block.id} style="display: contents">${render(block)}</div>`;
+        : html`<div data-cms-edit="block" data-block-id=${block._id} style="display: contents">${render(block)}</div>`;
     const render = (block: RenderedBlock) => {
         // Data blocks hold values for themes and the API; nothing shows for them.
         if (block.dataOnly) return null;
@@ -81,7 +81,7 @@ export function themeHelpers(theme: SiteTheme, state: ThemeRenderState, isActive
         const hide = block.layout?.hide ?? [];
         const sized = hide.length ? html`<div data-hide=${hide.join(' ')} style="display: contents">${styled}</div>` : styled;
         // In a form, a block with a condition shows or hides as the form's values change.
-        return block.when ? html`<div data-cms-when=${block.id} ?data-hidden=${block.shown === false} style="display: contents">${sized}</div>` : sized;
+        return block.when ? html`<div data-cms-when=${block._id} ?data-hidden=${block.shown === false} style="display: contents">${sized}</div>` : sized;
     };
     return helpers;
 }
@@ -100,11 +100,20 @@ function columnSpan(block: RenderedBlock): number {
     return Math.min(Math.max(Number(block.data.span) || 12, 1), 12);
 }
 
-/** An image with its resized variants, for blocks; `sizes` is how wide it shows. */
+/**
+ * An image with its resized variants, for blocks; `sizes` is how wide it shows. Its width and
+ * height keep the page from shifting as it loads, and its blurred placeholder shows until then.
+ */
 export function image(media: MediaView | undefined, className = '', sizes = '(min-width: 768px) 768px, 100vw'): TemplateResult | null {
     if (!media) return null;
     return html`<img src=${media.url} srcset=${ifDefined(media.srcset || undefined)} sizes=${ifDefined(media.srcset ? sizes : undefined)} alt=${media.alt}
-        width=${media.width ?? ''} height=${media.height ?? ''} loading="lazy" decoding="async" class=${className}>`;
+        width=${media.width ?? ''} height=${media.height ?? ''} loading="lazy" decoding="async" class=${className}
+        style=${ifDefined(media.placeholder ? `background-image:url(${media.placeholder});background-size:cover;background-repeat:no-repeat` : undefined)}>`;
+}
+
+/** A media element's `preload`, from the block's choice. */
+function preloadOf(value: string): 'metadata' | 'auto' | 'none' {
+    return value === 'auto' || value === 'none' ? value : 'metadata';
 }
 
 /** YouTube and Vimeo URLs as their privacy-respecting embed URLs. */
@@ -210,6 +219,26 @@ export function coreBlock(block: RenderedBlock, helpers: ThemeHelpers): Template
                 <iframe src=${src} title=${text('caption') || 'Video'} class="h-full w-full" loading="lazy" allow="encrypted-media; picture-in-picture" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe></div>
                 ${text('caption') ? html`<figcaption class="mt-2 text-center text-sm text-muted-foreground">${text('caption')}</figcaption>` : null}</figure>` : null;
         }
+        case 'core/video': {
+            const media = block.media[text('video')];
+            if (!media) return null;
+            const poster = block.media[text('poster')];
+            const captions = block.media[text('captions')];
+            const autoplay = block.data.autoplay === true;
+            return html`<figure class="my-6"><video src=${media.url} class="w-full rounded-lg bg-black" poster=${ifDefined(poster?.url)} preload=${preloadOf(text('preload'))}
+                    ?controls=${block.data.controls !== false} ?autoplay=${autoplay} ?loop=${block.data.loop === true} ?muted=${autoplay || block.data.muted === true} ?playsinline=${autoplay}
+                    width=${ifDefined(media.width ?? undefined)} height=${ifDefined(media.height ?? undefined)}>
+                    ${captions ? html`<track kind="captions" src=${captions.url} default>` : null}
+                    <a href=${media.url}>${text('caption') || media.caption || 'Download the video'}</a></video>
+                ${text('caption') || media.caption ? html`<figcaption class="mt-2 text-center text-sm text-muted-foreground">${text('caption') || media.caption}</figcaption>` : null}</figure>`;
+        }
+        case 'core/audio': {
+            const media = block.media[text('audio')];
+            if (!media) return null;
+            return html`<figure class="my-6"><audio src=${media.url} class="w-full" controls preload=${preloadOf(text('preload'))} ?autoplay=${block.data.autoplay === true} ?loop=${block.data.loop === true}>
+                    <a href=${media.url}>${text('caption') || media.caption || 'Download the audio'}</a></audio>
+                ${text('caption') || media.caption ? html`<figcaption class="mt-2 text-center text-sm text-muted-foreground">${text('caption') || media.caption}</figcaption>` : null}</figure>`;
+        }
         case 'core/richtext': return helpers.content(block.content?.text ?? []);
         case 'core/divider': {
             const vertical = text('orientation') === 'vertical';
@@ -240,7 +269,7 @@ export function coreBlock(block: RenderedBlock, helpers: ThemeHelpers): Template
             const captions = block.data.captions !== false;
             return html`<div class="cms-carousel my-6" data-aspect=${text('aspect') || 'video'} data-autoplay=${block.data.autoplay === true ? 'true' : 'false'} data-interval=${String(Math.min(Math.max(Number(block.data.interval) || 5, 2), 30))}
                 role="region" aria-roledescription="carousel" aria-label=${__('Image carousel')} ref=${enhanceCarousel}>
-                <div class="cms-carousel-track" tabindex="0">${ids.map((id, index) => html`<figure class="cms-carousel-slide" id=${`${block.id}-slide-${index + 1}`} aria-roledescription="slide" aria-label=${`${index + 1} / ${ids.length}`}>
+                <div class="cms-carousel-track" tabindex="0">${ids.map((id, index) => html`<figure class="cms-carousel-slide" id=${`${block._id}-slide-${index + 1}`} aria-roledescription="slide" aria-label=${`${index + 1} / ${ids.length}`}>
                     ${image(block.media[id], 'cms-carousel-image', '(min-width: 1024px) 1024px, 100vw')}
                     ${captions && block.media[id]?.caption ? html`<figcaption class="cms-carousel-caption">${block.media[id]!.caption}</figcaption>` : null}
                 </figure>`)}</div>

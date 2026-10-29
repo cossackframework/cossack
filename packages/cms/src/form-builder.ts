@@ -131,8 +131,8 @@ export interface ChoiceOption {
 
 /** A form input, read from its block. */
 export interface FormField {
-    /** The block's ID. */
-    readonly id: string;
+    /** The input block's `_id`. */
+    readonly _id: string;
     readonly type: string;
     readonly name: string;
     readonly label: string;
@@ -178,7 +178,7 @@ export function formInputs(blocks: readonly Block[], types: ReadonlyMap<string, 
             const kind = types.get(block.type)?.input?.kind;
             if (kind && typeof block.data.name === 'string') {
                 inputs.push(Object.freeze({
-                    id: block.id, type: block.type, name: block.data.name, kind,
+                    _id: block._id, type: block.type, name: block.data.name, kind,
                     label: typeof block.data.label === 'string' && block.data.label ? block.data.label : block.data.name,
                     required: block.data.required === true,
                     multiple: block.data.multiple === true && MULTIPLE_INPUT_KINDS.includes(kind),
@@ -279,7 +279,7 @@ export function conditionShows(when: BlockCondition | undefined, values: FormVal
  * follow. Settles after a few rounds; a cycle stops at the last round.
  */
 export function formVisibility(blocks: readonly Block[], types: ReadonlyMap<string, BlockDeclaration>, values: FormValues): { hidden: ReadonlySet<string>; values: FormValues } {
-    const inputs = new Map(formInputs(blocks, types).map(input => [input.id, input.name]));
+    const inputs = new Map(formInputs(blocks, types).map(input => [input._id, input.name]));
     let current: FormValues = values;
     let hidden = new Set<string>();
     for (let round = 0; round <= inputs.size; round++) {
@@ -287,7 +287,7 @@ export function formVisibility(blocks: readonly Block[], types: ReadonlyMap<stri
         const walk = (list: readonly Block[], inside: boolean) => {
             for (const block of list) {
                 const off = inside || !conditionShows(block.when, current);
-                if (off) next.add(block.id);
+                if (off) next.add(block._id);
                 // A repeater's rows have conditions of their own, settled per row with the row's values.
                 if (types.get(block.type)?.input?.kind !== 'rows') walk(block.children ?? [], off);
             }
@@ -307,7 +307,7 @@ export function formVisibility(blocks: readonly Block[], types: ReadonlyMap<stri
 /** The form's blocks without those its conditions hide. */
 export function visibleBlocks(blocks: readonly Block[], types: ReadonlyMap<string, BlockDeclaration>, values: FormValues): Block[] {
     const { hidden } = formVisibility(blocks, types, values);
-    const keep = (list: readonly Block[]): Block[] => list.filter(block => !hidden.has(block.id)).map(block => block.children ? { ...block, children: keep(block.children) } : block);
+    const keep = (list: readonly Block[]): Block[] => list.filter(block => !hidden.has(block._id)).map(block => block.children ? { ...block, children: keep(block.children) } : block);
     return keep(blocks);
 }
 
@@ -515,11 +515,11 @@ function checkLevel(blocks: readonly Block[], inputs: readonly FormField[], type
     for (const id of off) hidden.add(prefix.id ? `${prefix.id}:${id}` : id);
     const values: { [name: string]: FormValue } = {};
     for (const input of inputs) {
-        if (off.has(input.id)) continue;
+        if (off.has(input._id)) continue;
         const key = `${prefix.key}${input.name}`;
         if (unreadable[input.name]) { errors[key] = unreadable[input.name]!; continue; }
         if (input.kind === 'rows') {
-            const children = (blocks.length ? flattenBlocks(blocks).find(entry => entry.id === input.id) : undefined)?.children ?? [];
+            const children = (blocks.length ? flattenBlocks(blocks).find(entry => entry._id === input._id) : undefined)?.children ?? [];
             // A row nobody filled in, such as the empty one a form starts with, is not a row: it is neither checked nor kept, though its conditions still settle on the page.
             const posted = postedRows(raw[input.name]);
             const filled = (row: { [name: string]: unknown }) => input.inputs.some(child => !blank(readValue(child, row[child.name]).value));

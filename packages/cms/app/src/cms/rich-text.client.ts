@@ -60,19 +60,19 @@ function cmsBlock(options: RichTextOptions) {
         selectable: true,
         draggable: true,
         addAttributes() {
-            return { id: { default: null }, type: { default: null }, data: { default: {} } };
+            return { _id: { default: null }, type: { default: null }, data: { default: {} } };
         },
         parseHTML() {
             return [{
                 tag: 'div[data-cms-block]',
                 getAttrs: element => {
-                    try { return { id: element.getAttribute('data-id'), type: element.getAttribute('data-type'), data: JSON.parse(element.getAttribute('data-data') ?? '{}') }; }
+                    try { return { _id: element.getAttribute('data-id'), type: element.getAttribute('data-type'), data: JSON.parse(element.getAttribute('data-data') ?? '{}') }; }
                     catch { return false; }
                 },
             }];
         },
         renderHTML({ node }) {
-            return ['div', { 'data-cms-block': '', 'data-id': node.attrs.id, 'data-type': node.attrs.type, 'data-data': JSON.stringify(node.attrs.data ?? {}) }];
+            return ['div', { 'data-cms-block': '', 'data-id': node.attrs._id, 'data-type': node.attrs.type, 'data-data': JSON.stringify(node.attrs.data ?? {}) }];
         },
         addNodeView() {
             return ({ node: initial, editor, getPos }) => {
@@ -131,7 +131,7 @@ function cmsBlock(options: RichTextOptions) {
 }
 
 function blockOf(node: { attrs: Record<string, unknown> }): EmbeddedBlock {
-    return { id: String(node.attrs.id), type: String(node.attrs.type), data: (node.attrs.data ?? {}) as EmbeddedBlock['data'] };
+    return { _id: String(node.attrs._id), type: String(node.attrs.type), data: (node.attrs.data ?? {}) as EmbeddedBlock['data'] };
 }
 
 /** Images keep their media ID; pasted images from other sites are dropped unless they are https. */
@@ -182,7 +182,7 @@ export function mountRichText(element: HTMLElement, options: RichTextOptions): R
         let found: { position: number; size: number } | null = null;
         editor.state.doc.descendants((node, position) => {
             if (found) return false;
-            if (node.type.name === 'cmsBlock' && node.attrs.id === id) found = { position, size: node.nodeSize };
+            if (node.type.name === 'cmsBlock' && node.attrs._id === id) found = { position, size: node.nodeSize };
             return !found;
         });
         return found;
@@ -236,7 +236,7 @@ export function mountRichText(element: HTMLElement, options: RichTextOptions): R
             // Blocks sit between top-level nodes: after the one holding the cursor.
             const { $from } = editor.state.selection;
             const position = $from.depth ? $from.after(1) : $from.pos;
-            chain().insertContentAt(position, { type: 'cmsBlock', attrs: { id: block.id, type: block.type, data: block.data } }).run();
+            chain().insertContentAt(position, { type: 'cmsBlock', attrs: { _id: block._id, type: block.type, data: block.data } }).run();
         },
         updateBlock(id, data) {
             const found = find(id);

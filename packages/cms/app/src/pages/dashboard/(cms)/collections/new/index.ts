@@ -14,7 +14,7 @@ export default class NewCollectionPage extends Cossack {
     @State() error = '';
 
     head(): HeadValue {
-        return { title: __('Add new collection') };
+        return { title: __('New collection') };
     }
 
     @Client()
@@ -45,7 +45,7 @@ export default class NewCollectionPage extends Cossack {
 
     render() {
         return html`<div class="space-y-6">
-            ${pageHeader(__('Add new collection'), {
+            ${pageHeader(__('New collection'), {
                 description: __('A content type with its own list, editor and site URLs. Choose its features and attach field groups next.'),
                 actions: html`<a href="/dashboard/collections" class="text-sm text-muted-foreground hover:text-foreground">← ${__('Collections')}</a>`,
             })}

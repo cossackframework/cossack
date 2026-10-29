@@ -73,7 +73,7 @@ export class SiteEditor extends Cossack {
         if (event.key !== 'Escape') return;
         if (this.form) {
             // Escape in a nested block's form selects its container.
-            const parent = this.places().find(place => place.block.id === this.form!.id)?.parent ?? null;
+            const parent = this.places().find(place => place.block._id === this.form!.id)?.parent ?? null;
             if (parent) this.edit(parent); else this.form = null;
         } else if (this.embedded) this.embedded = null;
         else if (this.panel) this.panel = null;
@@ -235,12 +235,12 @@ export class SiteEditor extends Cossack {
         const block = newBlock(type, this.props.draft.view.blocks, blockId);
         if (!option || !block) return;
         this.setBlocks(insertBlock(this.blocks(), parent, block), `${option.label} ${__('added.')}`);
-        this.selectWhenShown(block.id);
+        this.selectWhenShown(block._id);
     }
 
     /** Where a block sits after a move, for the announcement. */
     private position(blocks: readonly DraftBlock[], id: string): string {
-        const place = placeBlocks(blocks).find(entry => entry.block.id === id);
+        const place = placeBlocks(blocks).find(entry => entry.block._id === id);
         if (!place) return '';
         const siblings = place.parent ? findBlock(blocks, place.parent)?.children ?? [] : blocks;
         const container = place.parent ? findBlock(blocks, place.parent) : undefined;
@@ -254,7 +254,7 @@ export class SiteEditor extends Cossack {
         const next = shiftBlock(blocks, id, move, declarationsOf(this.props.draft.view.blocks));
         if (!block || next === blocks) return;
         this.setBlocks([...next], `${this.label(block)}: ${this.position(next, id)}`);
-        requestAnimationFrame(() => this.handles.get(block.id)?.focus());
+        requestAnimationFrame(() => this.handles.get(block._id)?.focus());
     }
 
     @Client()
@@ -299,7 +299,7 @@ export class SiteEditor extends Cossack {
         (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
         const top = this.list.getBoundingClientRect().top;
         const places = this.places();
-        const rects = places.map(place => this.rows.get(place.block.id)?.getBoundingClientRect());
+        const rects = places.map(place => this.rows.get(place.block._id)?.getBoundingClientRect());
         this.pointer = { id: event.pointerId, x: event.clientX, y: event.clientY, tops: rects.map(rect => (rect?.top ?? 0) - top), bottoms: rects.map(rect => (rect?.bottom ?? 0) - top) };
         this.drag = { from: index, to: index, y: 0, depth: places[index]?.depth ?? 0, moved: false };
     }
@@ -333,8 +333,8 @@ export class SiteEditor extends Cossack {
         const block = this.places()[drag.from]?.block;
         if (!block) return;
         const next = reorderBlocks(blocks, drag.from, drag.to, drag.depth, declarationsOf(this.props.draft.view.blocks));
-        if (placeBlocks(next).every((place, position) => place.block.id === blocks[position]?.id && place.depth === this.places()[position]?.depth)) return;
-        this.setBlocks(next, `${this.label(block)}: ${this.position(next, block.id)}`);
+        if (placeBlocks(next).every((place, position) => place.block._id === blocks[position]?._id && place.depth === this.places()[position]?.depth)) return;
+        this.setBlocks(next, `${this.label(block)}: ${this.position(next, block._id)}`);
     }
 
     @Client()
@@ -374,16 +374,16 @@ export class SiteEditor extends Cossack {
         const editor = richTextEditors.get(BODY_EDITOR);
         if (!option || !editor) return;
         const values = blockDefaults(option);
-        const block: EmbeddedBlock = { id: blockId(), type, data: editorInput(option.fields, values).input };
+        const block: EmbeddedBlock = { _id: blockId(), type, data: editorInput(option.fields, values).input };
         editor.insertBlock(block);
-        if (option.fields.length) this.embedded = { id: block.id, type, values, errors: {} };
+        if (option.fields.length) this.embedded = { id: block._id, type, values, errors: {} };
     }
 
     @Client()
     private editEmbedded(block: EmbeddedBlock) {
         const option = this.option(block.type);
         if (!option) return;
-        this.embedded = { id: block.id, type: block.type, errors: {}, values: Object.fromEntries(option.fields.map(field => [field.name, controlValue(field, block.data[field.name] ?? field.defaultValue)])) };
+        this.embedded = { id: block._id, type: block.type, errors: {}, values: Object.fromEntries(option.fields.map(field => [field.name, controlValue(field, block.data[field.name] ?? field.defaultValue)])) };
     }
 
     @Client()
@@ -444,7 +444,7 @@ export class SiteEditor extends Cossack {
         const block = form ? findBlock(this.blocks(), form.id) : undefined;
         const option = block ? this.option(block.type) : undefined;
         if (!form || !block || !option) return null;
-        const place = this.places().find(entry => entry.block.id === block.id)!;
+        const place = this.places().find(entry => entry.block._id === block._id)!;
         const siblings = place.parent ? findBlock(this.blocks(), place.parent)?.children ?? [] : this.blocks();
         const hide = block.layout?.hide ?? [];
         const style = form.docked ? '' : `top: ${form.top}px; left: ${form.left}px; width: min(28rem, calc(100vw - 1rem)); max-height: min(32rem, calc(100vh - ${form.top}px - 5rem))`;
@@ -454,11 +454,11 @@ export class SiteEditor extends Cossack {
                 <div class="flex items-center justify-between gap-2">
                     <h2 class="text-sm font-semibold uppercase tracking-wide text-muted-foreground">${option.label}</h2>
                     <span class="flex flex-wrap gap-1">
-                        ${this.iconButton('↑', __('Move up'), () => this.shift(block.id, 'up'), place.index === 0)}
-                        ${this.iconButton('↓', __('Move down'), () => this.shift(block.id, 'down'), place.index === siblings.length - 1)}
-                        ${this.iconButton('←', __('Move out of the container'), () => this.shift(block.id, 'out'), !place.parent)}
-                        ${this.iconButton('→', __('Move into the block above'), () => this.shift(block.id, 'in'), !this.canGoIn(block.id))}
-                        ${this.iconButton(trash(), `${__('Remove')} ${option.label}`, () => this.remove(block.id))}
+                        ${this.iconButton('↑', __('Move up'), () => this.shift(block._id, 'up'), place.index === 0)}
+                        ${this.iconButton('↓', __('Move down'), () => this.shift(block._id, 'down'), place.index === siblings.length - 1)}
+                        ${this.iconButton('←', __('Move out of the container'), () => this.shift(block._id, 'out'), !place.parent)}
+                        ${this.iconButton('→', __('Move into the block above'), () => this.shift(block._id, 'in'), !this.canGoIn(block._id))}
+                        ${this.iconButton(trash(), `${__('Remove')} ${option.label}`, () => this.remove(block._id))}
                     </span>
                 </div>
                 <div class="flex flex-wrap items-center gap-1 text-xs text-muted-foreground" role="group" aria-label=${__('Hide on')}>
@@ -468,17 +468,17 @@ export class SiteEditor extends Cossack {
                         const device = __(BREAKPOINT_DEVICES[breakpoint].label);
                         return html`<button type="button" aria-pressed=${hidden ? 'true' : 'false'} data-hide-toggle=${breakpoint} aria-label=${`${__('Hide on')} ${device}`} title=${hidden ? `${__('Hidden on')} ${device}` : `${__('Hide on')} ${device}`}
                             class=${`inline-flex h-7 w-7 items-center justify-center rounded border cursor-pointer [&_svg]:size-4 ${hidden ? 'border-destructive/40 bg-destructive/10 text-destructive' : 'border-border bg-background hover:bg-muted'}`}
-                            @click=${() => this.toggleHide(block.id, breakpoint)}>${component(Icon, { entry: icon(BREAKPOINT_DEVICES[breakpoint].icon), size: 16 })}</button>`;
+                            @click=${() => this.toggleHide(block._id, breakpoint)}>${component(Icon, { entry: icon(BREAKPOINT_DEVICES[breakpoint].icon), size: 16 })}</button>`;
                     })}
                 </div>
-                ${blockTabs(form.tab, tab => this.showFormTab(tab), `site-block-${block.id}`)}
-                ${form.tab === 'style' ? styleControls(form.style, option.supports, this.props.draft.view.presets, `site-block-${block.id}-style`, style => this.setFormStyle(style))
+                ${blockTabs(form.tab, tab => this.showFormTab(tab), `site-block-${block._id}`)}
+                ${form.tab === 'style' ? styleControls(form.style, option.supports, this.props.draft.view.presets, `site-block-${block._id}-style`, style => this.setFormStyle(style))
                 : option.fields.length ? html`
-                    ${option.fields.filter(field => field.kind === 'richtext').map(field => html`<div class="space-y-1"><label class="block text-sm font-medium text-foreground" for=${`site-block-${block.id}-${field.name}`}>${field.label}</label>
-                        ${component(RichTextField, { id: `site-block-${block.id}-${field.name}`, label: field.label, value: (form.values[field.name] as RichTextDoc | null) ?? null, blocks: [],
-                            onChange: (doc: RichTextDoc) => this.setFormValue(field.name, doc), onMedia: () => this.openChooser({ kind: 'richtext', editor: `site-block-${block.id}-${field.name}` }, false),
+                    ${option.fields.filter(field => field.kind === 'richtext').map(field => html`<div class="space-y-1"><label class="block text-sm font-medium text-foreground" for=${`site-block-${block._id}-${field.name}`}>${field.label}</label>
+                        ${component(RichTextField, { id: `site-block-${block._id}-${field.name}`, label: field.label, value: (form.values[field.name] as RichTextDoc | null) ?? null, blocks: [],
+                            onChange: (doc: RichTextDoc) => this.setFormValue(field.name, doc), onMedia: () => this.openChooser({ kind: 'richtext', editor: `site-block-${block._id}-${field.name}` }, false),
                             onInsertBlock: () => undefined, onEditBlock: () => undefined })}</div>`)}
-                    ${blockFields({ ...option, fields: option.fields.filter(field => field.kind !== 'richtext') }, form.values, (name, value) => this.setFormValue(name, value), `site-block-${block.id}`, name => this.media({ kind: 'block', field: name }), form.errors)}`
+                    ${blockFields({ ...option, fields: option.fields.filter(field => field.kind !== 'richtext') }, form.values, (name, value) => this.setFormValue(name, value), `site-block-${block._id}`, name => this.media({ kind: 'block', field: name }), form.errors)}`
                     : html`<p class="text-sm text-muted-foreground">${__('This block has no settings.')}</p>`}
                 <div class="flex justify-end gap-2">
                     ${component(Button, { type: 'button', variant: 'outline', size: 'sm', '@click': () => { this.form = null; } }, __('Cancel'))}
@@ -511,15 +511,15 @@ export class SiteEditor extends Cossack {
                     const option = this.option(block.type);
                     const hide = block.layout?.hide ?? [];
                     const offered = option?.children ? offeredIn(options, option) : [];
-                    return html`<li class=${`transition-opacity ${drag?.moved && index >= drag.from && index < drag.from + placeBlocks([places[drag.from]!.block]).length ? 'opacity-40' : ''}`} data-site-block=${block.id} data-depth=${place.depth}
-                        style=${`padding-left: ${place.depth * 1.25}rem`} ref=${(element: Element) => { if (element) this.rows.set(block.id, element as HTMLElement); else this.rows.delete(block.id); }}>
+                    return html`<li class=${`transition-opacity ${drag?.moved && index >= drag.from && index < drag.from + placeBlocks([places[drag.from]!.block]).length ? 'opacity-40' : ''}`} data-site-block=${block._id} data-depth=${place.depth}
+                        style=${`padding-left: ${place.depth * 1.25}rem`} ref=${(element: Element) => { if (element) this.rows.set(block._id, element as HTMLElement); else this.rows.delete(block._id); }}>
                         <div class="flex items-center gap-2 rounded-md border border-border bg-card px-2 py-1.5">
                             <button type="button" class="flex h-8 w-6 shrink-0 cursor-grab touch-none items-center justify-center rounded border-none bg-transparent text-muted-foreground hover:bg-muted active:cursor-grabbing"
                                 aria-label=${`${__('Move')} ${this.label(block)}. ${__('Drag, or use the arrow keys.')}`} aria-describedby="site-blocks-help" data-handle
-                                ref=${(element: Element) => { if (element) this.handles.set(block.id, element as HTMLElement); else this.handles.delete(block.id); }}
+                                ref=${(element: Element) => { if (element) this.handles.set(block._id, element as HTMLElement); else this.handles.delete(block._id); }}
                                 @pointerdown=${(event: PointerEvent) => this.startDrag(event, index)} @pointermove=${(event: PointerEvent) => this.moveDrag(event)}
                                 @pointerup=${(event: PointerEvent) => this.endDrag(event)} @pointercancel=${() => this.cancelDrag()} @lostpointercapture=${() => this.cancelDrag()}
-                                @keydown=${(event: KeyboardEvent) => this.handleKey(event, block.id)}>
+                                @keydown=${(event: KeyboardEvent) => this.handleKey(event, block._id)}>
                                 <svg aria-hidden="true" viewBox="0 0 10 16" class="h-4 w-2.5 fill-current"><circle cx="2" cy="2" r="1.5"/><circle cx="8" cy="2" r="1.5"/><circle cx="2" cy="8" r="1.5"/><circle cx="8" cy="8" r="1.5"/><circle cx="2" cy="14" r="1.5"/><circle cx="8" cy="14" r="1.5"/></svg>
                             </button>
                             <span class="min-w-0 flex-1">
@@ -527,11 +527,11 @@ export class SiteEditor extends Cossack {
                                 <span class="block truncate text-sm">${this.summary(block)}</span>
                             </span>
                             ${offered.length && (option?.children?.max === null || (block.children ?? []).length < (option?.children?.max ?? 0))
-                                ? component(BlockInserter, { id: `site-editor-add-${block.id}`, blocks: offered, compact: true, onPick: (type: string) => this.add(type, block.id) }) : null}
-                            ${option?.fields.length ? this.iconButton(__('Edit'), `${__('Edit')} ${this.label(block)}`, () => this.edit(block.id)) : null}
-                            ${this.iconButton(trash(), `${__('Remove')} ${this.label(block)}`, () => this.remove(block.id))}
+                                ? component(BlockInserter, { id: `site-editor-add-${block._id}`, blocks: offered, compact: true, onPick: (type: string) => this.add(type, block._id) }) : null}
+                            ${option?.fields.length ? this.iconButton(__('Edit'), `${__('Edit')} ${this.label(block)}`, () => this.edit(block._id)) : null}
+                            ${this.iconButton(trash(), `${__('Remove')} ${this.label(block)}`, () => this.remove(block._id))}
                         </div>
-                        ${this.form?.docked && this.form.id === block.id ? html`<div class="mt-1.5">${this.formCard()}</div>` : null}
+                        ${this.form?.docked && this.form.id === block._id ? html`<div class="mt-1.5">${this.formCard()}</div>` : null}
                     </li>`;
                 })}
             </ol>` : html`<p class="rounded-md border border-dashed border-border p-4 text-center text-sm text-muted-foreground">${__('No blocks yet.')}</p>`}

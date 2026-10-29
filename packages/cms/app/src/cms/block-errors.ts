@@ -31,7 +31,7 @@ export function blockName(block: EditorBlock, options: readonly BlockOption[]): 
 export function describeBlockError(message: string, blocks: readonly EditorBlock[], options: readonly BlockOption[]): string {
     const target = blockErrorTarget(message);
     if (!target) return message;
-    const block = placeBlocks(blocks).find(place => place.block.id === target.id)?.block;
+    const block = placeBlocks(blocks).find(place => place.block._id === target.id)?.block;
     if (!block) return message;
     const option = options.find(entry => entry.name === block.type);
     const field = target.field ? option?.fields.find(entry => entry.name === target.field)?.label ?? target.field : '';
@@ -45,8 +45,8 @@ export function blockErrorPath(message: string | undefined, blocks: readonly Edi
     if (!target) return path;
     const visit = (list: readonly EditorBlock[], ancestors: readonly string[]): boolean => {
         for (const block of list) {
-            if (block.id === target.id) { for (const id of [...ancestors, block.id]) path.add(id); return true; }
-            if (block.children && visit(block.children, [...ancestors, block.id])) return true;
+            if (block._id === target.id) { for (const id of [...ancestors, block._id]) path.add(id); return true; }
+            if (block.children && visit(block.children, [...ancestors, block._id])) return true;
         }
         return false;
     };

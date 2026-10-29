@@ -148,7 +148,7 @@ export default class SubmissionsPage extends Cossack {
                 </form>
             </div>
             <div class="flex items-center gap-2">
-                ${component(NativeSelect, { size: 'sm', 'aria-label': __('Bulk actions'), '@change': (event: Event) => { this.bulk = (event.target as HTMLSelectElement).value; } }, html`
+                ${component(NativeSelect, { size: 'sm', inline: true, 'aria-label': __('Bulk actions'), '@change': (event: Event) => { this.bulk = (event.target as HTMLSelectElement).value; } }, html`
                     <option value="" ?selected=${!this.bulk}>${__('Bulk actions')}</option>
                     ${BULK[this.status].map(([value, label]) => html`<option value=${value}>${__(label)}</option>`)}`)}
                 ${component(Button, { type: 'button', size: 'sm', variant: 'outline', disabled: !this.bulk || !this.selected.length, '@click': () => this.applyBulk() }, __('Apply'))}

@@ -73,7 +73,7 @@ describe.skipIf(!liveRomeDBTests())('CMS themes', () => {
         { params: { collection: 'pages', id: 'new' }, state: { route: 'pages', id: 'new' } });
       expect(wide.id).toMatch(/^[0-9a-f-]{36}$/);
       // The blank canvas leaves out the frame: no header or footer around the content.
-      const landing = await web.action(EDITOR, 'save', [{ title: 'Landing', slug: '', status: 'published', publishedAt: '', template: 'entry-blank', content: [{ id: 'h', type: 'core/heading', data: { text: 'Big launch', level: 'h2' } }] }, 'publish', 0],
+      const landing = await web.action(EDITOR, 'save', [{ title: 'Landing', slug: '', status: 'published', publishedAt: '', template: 'entry-blank', content: [{ _id: 'h', type: 'core/heading', data: { text: 'Big launch', level: 'h2' } }] }, 'publish', 0],
         { params: { collection: 'pages', id: 'new' }, state: { route: 'pages', id: 'new' } });
       expect(landing.id, JSON.stringify(landing.errors ?? landing.error)).toMatch(/^[0-9a-f-]{36}$/);
       const blank = await visitor.page('/landing');
@@ -101,8 +101,8 @@ describe.skipIf(!liveRomeDBTests())('CMS themes', () => {
         return saved.id;
       };
       const rocket = await project('Rocket', 'ACME', [
-        { id: 's1', type: 'core/paragraph', data: { text: 'First section' } },
-        { id: 's2', type: 'core/quote', data: { text: 'Second section', citation: '' } },
+        { _id: 's1', type: 'core/paragraph', data: { text: 'First section' } },
+        { _id: 's2', type: 'core/quote', data: { text: 'Second section', citation: '' } },
       ], { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'A ' }, { type: 'text', text: 'bold', marks: [{ type: 'bold' }] }, { type: 'text', text: ' summary' }] }] });
       await project('Skates', 'Road Runner', []);
 
@@ -141,9 +141,9 @@ describe.skipIf(!liveRomeDBTests())('CMS themes', () => {
       // Layout blocks: columns with a span and a column hidden on phones, rendered as a grid
       // that responds to the content root's width. The hidden column stays in the HTML.
       // The left column and the right paragraph carry styles: preset slugs of the parent theme's palette.
-      await project('Layout', 'Wile E.', [{ id: 'cols', type: 'core/columns', data: { gap: 'small', stack: 'mobile' }, children: [
-        { id: 'left', type: 'core/column', data: { span: '4', verticalAlign: 'top' }, style: { background: 'secondary', padding: 'large' }, layout: { anchor: 'aside' }, children: [{ id: 'lh', type: 'core/heading', data: { text: 'Left heading', level: 'h3' } }] },
-        { id: 'right', type: 'core/column', data: { span: '', verticalAlign: 'top' }, layout: { hide: ['sm'] }, children: [{ id: 'rp', type: 'core/paragraph', data: { text: 'Right column' }, style: { text: 'primary', align: 'center' }, layout: { className: 'lead' } }] },
+      await project('Layout', 'Wile E.', [{ _id: 'cols', type: 'core/columns', data: { gap: 'small', stack: 'mobile' }, children: [
+        { _id: 'left', type: 'core/column', data: { span: '4', verticalAlign: 'top' }, style: { background: 'secondary', padding: 'large' }, layout: { anchor: 'aside' }, children: [{ _id: 'lh', type: 'core/heading', data: { text: 'Left heading', level: 'h3' } }] },
+        { _id: 'right', type: 'core/column', data: { span: '', verticalAlign: 'top' }, layout: { hide: ['sm'] }, children: [{ _id: 'rp', type: 'core/paragraph', data: { text: 'Right column' }, style: { text: 'primary', align: 'center' }, layout: { className: 'lead' } }] },
       ] }]);
       const layoutHtml = visible(await visitor.page('/projects/layout'));
       expect(layoutHtml).toMatch(/class="?cms-content"?/);
@@ -185,7 +185,7 @@ describe.skipIf(!liveRomeDBTests())('CMS themes', () => {
       const footer = loaded.areas.find(area => area.name === 'footer');
       expect(footer).toMatchObject({ active: true, revision: 0, blocks: [] });
       const saved = await web.action(widgets, 'save', ['footer'], { state: { ...loaded, areas: loaded.areas.map(area => area.name === 'footer'
-        ? { ...area, changed: true, blocks: [{ id: 'w1', type: 'core/paragraph', data: { text: 'Footer **note**' } }] } : area) } });
+        ? { ...area, changed: true, blocks: [{ _id: 'w1', type: 'core/paragraph', data: { text: 'Footer **note**' } }] } : area) } });
       expect(saved.error).toBe('');
       expect(await visitor.page('/projects/rocket')).toContain('<strong>note</strong>');
       // The Widgets screen lists the block in its tree, with an inserter.

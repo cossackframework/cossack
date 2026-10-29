@@ -113,7 +113,7 @@ export class BlockTree extends Cossack {
 
     /** Containers are collapsed until opened; a new one, one a block just went into, or one holding the block an error names, is open. */
     private isCollapsed(block: EditorBlock, option: BlockOption | undefined): boolean {
-        return !!option?.children && (this.collapsed[block.id] ?? true) && !this.errorPath.has(block.id);
+        return !!option?.children && (this.collapsed[block._id] ?? true) && !this.errorPath.has(block._id);
     }
 
     /** The block the error names and its containers; computed per render. */
@@ -135,7 +135,7 @@ export class BlockTree extends Cossack {
     private add(parent: string | null, type: string) {
         const block = newBlock(type, this.props.options, blockId);
         if (!block) return;
-        this.collapsed = { ...this.collapsed, [block.id]: false };
+        this.collapsed = { ...this.collapsed, [block._id]: false };
         this.props.onChange(insertBlock(this.props.blocks, parent, block));
     }
 
@@ -176,7 +176,7 @@ export class BlockTree extends Cossack {
 
     @Client()
     private collapseAll(collapsed: boolean) {
-        this.collapsed = Object.fromEntries(this.containers().map(block => [block.id, collapsed]));
+        this.collapsed = Object.fromEntries(this.containers().map(block => [block._id, collapsed]));
     }
 
     /** The blocks that can hold others, so can collapse. */
@@ -191,7 +191,7 @@ export class BlockTree extends Cossack {
         if (event.button !== 0 || this.props.lock === 'all') return;
         event.preventDefault();
         (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
-        const depth = placeBlocks(this.props.blocks).find(place => place.block.id === id)?.depth ?? 0;
+        const depth = placeBlocks(this.props.blocks).find(place => place.block._id === id)?.depth ?? 0;
         this.pointer = { id: event.pointerId, x: event.clientX, y: event.clientY, depth };
         this.drag = { id, blocks: this.props.blocks, depth, moved: false };
     }
@@ -203,21 +203,21 @@ export class BlockTree extends Cossack {
         if (!pointer || !drag || event.pointerId !== pointer.id) return;
         if (!drag.moved && Math.abs(event.clientY - pointer.y) < 4 && Math.abs(event.clientX - pointer.x) < 12) return;
         const original = placeBlocks(this.props.blocks);
-        const from = original.findIndex(place => place.block.id === drag.id);
-        const moving = new Set(placeBlocks([original[from]!.block]).map(place => place.block.id));
+        const from = original.findIndex(place => place.block._id === drag.id);
+        const moving = new Set(placeBlocks([original[from]!.block]).map(place => place.block._id));
         // The rows that stay, in the order they show now; the one under the pointer decides the drop.
-        const rest = placeBlocks(drag.blocks).filter(place => !moving.has(place.block.id));
+        const rest = placeBlocks(drag.blocks).filter(place => !moving.has(place.block._id));
         const depth = Math.min(Math.max(pointer.depth + Math.round((event.clientX - pointer.x) / 24), 0), 3);
         let to: number | null = null;
         for (const [index, place] of rest.entries()) {
-            const rect = this.headers.get(place.block.id)?.getBoundingClientRect();
+            const rect = this.headers.get(place.block._id)?.getBoundingClientRect();
             if (!rect || event.clientY < rect.top || event.clientY > rect.bottom) continue;
             to = event.clientY < rect.top + rect.height / 2 ? index : index + 1;
             break;
         }
         if (to === null) { if (!drag.moved) this.drag = { ...drag, moved: true }; return; }
         const next = reorderBlocks(this.props.blocks, from, to, depth, declarationsOf(this.props.options));
-        const shape = (blocks: readonly EditorBlock[]) => placeBlocks(blocks).map(place => `${place.block.id}:${place.depth}`).join(' ');
+        const shape = (blocks: readonly EditorBlock[]) => placeBlocks(blocks).map(place => `${place.block._id}:${place.depth}`).join(' ');
         if (shape(next) !== shape(drag.blocks) || !drag.moved) this.drag = { ...drag, blocks: next, depth, moved: true };
     }
 
@@ -259,11 +259,11 @@ export class BlockTree extends Cossack {
             if (SHORT_KINDS.has(field.kind) && last && SHORT_KINDS.has(last[0]!.kind)) last.push(field); else runs.push([field]);
         }
         const control = (field: EditorField) => {
-            const id = `${this.props.id}-${block.id}-${field.name}`;
-            const fieldError = this.props.error?.includes(`${block.id}.${field.name}`) ? this.props.error : '';
+            const id = `${this.props.id}-${block._id}-${field.name}`;
+            const fieldError = this.props.error?.includes(`${block._id}.${field.name}`) ? this.props.error : '';
             return html`<div class="min-w-0 space-y-1">
                 ${field.kind === 'boolean' || field.kind === 'richtext' ? null : html`<label for=${id} class="block text-xs font-medium text-foreground">${field.label}${field.required ? ' *' : ''}</label>`}
-                ${this.props.control(field, block.data[field.name], value => this.setValue(block.id, field.name, value), block, id)}
+                ${this.props.control(field, block.data[field.name], value => this.setValue(block._id, field.name, value), block, id)}
                 ${field.description ? html`<p class="text-xs text-muted-foreground">${field.description}</p>` : null}
                 ${fieldError ? html`<p role="alert" class="text-xs text-destructive">${fieldError}</p>` : null}
             </div>`;
@@ -276,31 +276,31 @@ export class BlockTree extends Cossack {
         const option = this.option(block.type);
         const label = option?.label ?? block.type;
         const hide = block.layout?.hide ?? [];
-        const ghost = this.drag?.moved && this.drag.id === block.id;
+        const ghost = this.drag?.moved && this.drag.id === block._id;
         const collapsed = this.isCollapsed(block, option);
         const held = collapsed ? placeBlocks(block.children ?? []).length : 0;
         const above = siblings[index - 1];
         const locked = this.props.lock === 'all';
-        const canGoIn = !ghost && !locked && !!above && !!this.option(above.type)?.children && shiftBlock(this.props.blocks, block.id, 'in', declarationsOf(this.props.options)) !== this.props.blocks;
+        const canGoIn = !ghost && !locked && !!above && !!this.option(above.type)?.children && shiftBlock(this.props.blocks, block._id, 'in', declarationsOf(this.props.options)) !== this.props.blocks;
         // The message names this block (or one of its fields): shown here in words, and the block flashes.
         const target = blockErrorTarget(this.props.error);
-        const error = target?.id === block.id ? describeBlockError(this.props.error!, this.props.blocks, this.props.options) : '';
+        const error = target?.id === block._id ? describeBlockError(this.props.error!, this.props.blocks, this.props.options) : '';
         const summary = option?.field ? (typeof block.data.description === 'string' ? block.data.description : '') : blockSummary(block, this.props.previews);
-        const prefix = `${this.props.id}-${block.id}`;
+        const prefix = `${this.props.id}-${block._id}`;
         // Rich text is written in place, whichever way the block's other settings are edited; its
         // toolbar names it, so it has no label of its own above the block's header.
         const inlineFields = option?.fields.filter(field => field.kind === 'richtext') ?? [];
         const data = option?.category === 'data';
-        return html`<section class=${`rounded-lg border bg-card ${ghost ? 'border-dashed border-primary bg-primary/5 opacity-50' : error ? 'cms-block-error border-destructive' : data ? 'border-dashed border-border' : 'border-border'}`} aria-label=${`${label} ${index + 1}`} data-block-tree-item=${block.id}>
-            <header class="flex flex-wrap items-center gap-1.5 border-b border-border px-2 py-1.5" ref=${(element: Element) => { if (element) this.headers.set(block.id, element as HTMLElement); else this.headers.delete(block.id); }}>
+        return html`<section class=${`rounded-lg border bg-card ${ghost ? 'border-dashed border-primary bg-primary/5 opacity-50' : error ? 'cms-block-error border-destructive' : data ? 'border-dashed border-border' : 'border-border'}`} aria-label=${`${label} ${index + 1}`} data-block-tree-item=${block._id}>
+            <header class="flex flex-wrap items-center gap-1.5 border-b border-border px-2 py-1.5" ref=${(element: Element) => { if (element) this.headers.set(block._id, element as HTMLElement); else this.headers.delete(block._id); }}>
                 <button type="button" class=${`flex h-7 w-5 shrink-0 touch-none items-center justify-center rounded border-none bg-transparent text-muted-foreground ${locked ? 'cursor-default opacity-40' : 'cursor-grab hover:bg-muted active:cursor-grabbing'}`} data-handle
                     aria-label=${locked ? `${label}. ${__('The template keeps this order.')}` : `${__('Move')} ${label}. ${__('Drag, or use the arrow keys.')}`} ?disabled=${locked}
-                    ref=${(element: Element) => { if (element) this.handles.set(block.id, element as HTMLElement); else this.handles.delete(block.id); }}
-                    @pointerdown=${(event: PointerEvent) => this.startDrag(event, block.id)} @pointermove=${(event: PointerEvent) => this.moveDrag(event)}
+                    ref=${(element: Element) => { if (element) this.handles.set(block._id, element as HTMLElement); else this.handles.delete(block._id); }}
+                    @pointerdown=${(event: PointerEvent) => this.startDrag(event, block._id)} @pointermove=${(event: PointerEvent) => this.moveDrag(event)}
                     @pointerup=${(event: PointerEvent) => this.endDrag(event)} @pointercancel=${() => this.cancelDrag()} @lostpointercapture=${() => this.cancelDrag()}
-                    @keydown=${(event: KeyboardEvent) => this.handleKey(event, block.id)}>${GRIP}</button>
+                    @keydown=${(event: KeyboardEvent) => this.handleKey(event, block._id)}>${GRIP}</button>
                 ${option?.children ? html`<button type="button" class="inline-flex h-7 w-6 shrink-0 items-center justify-center rounded border-none bg-transparent text-muted-foreground hover:bg-muted cursor-pointer [&_svg]:size-4"
-                    aria-expanded=${collapsed ? 'false' : 'true'} aria-label=${`${collapsed ? __('Expand') : __('Collapse')} ${label}`} @click=${() => this.toggleCollapsed(block.id)}>
+                    aria-expanded=${collapsed ? 'false' : 'true'} aria-label=${`${collapsed ? __('Expand') : __('Collapse')} ${label}`} @click=${() => this.toggleCollapsed(block._id)}>
                     ${component(Icon, { entry: icon(collapsed ? 'alt-arrow-right' : 'alt-arrow-down'), size: 16 })}</button>` : null}
                 <span class=${`inline-flex shrink-0 [&_svg]:size-4 ${blockIconColor(option?.category)}`}>${component(Icon, { entry: blockIcon(option?.icon), size: 16 })}</span>
                 <span class="min-w-0 flex-1 truncate text-sm">
@@ -316,16 +316,16 @@ export class BlockTree extends Cossack {
                         ${BREAKPOINTS.map(breakpoint => {
                             const hidden = hide.includes(breakpoint);
                             const device = __(BREAKPOINT_DEVICES[breakpoint].label);
-                            return iconButton(`${prefix}-hide-${breakpoint}`, BREAKPOINT_DEVICES[breakpoint].icon, hidden ? `${__('Hidden on')} ${device}` : `${__('Hide on')} ${device}`, () => this.toggleHide(block.id, breakpoint),
+                            return iconButton(`${prefix}-hide-${breakpoint}`, BREAKPOINT_DEVICES[breakpoint].icon, hidden ? `${__('Hidden on')} ${device}` : `${__('Hide on')} ${device}`, () => this.toggleHide(block._id, breakpoint),
                                 { pressed: hidden, class: hidden ? 'border-destructive/40 bg-destructive/10 text-destructive hover:text-destructive' : '' });
                         })}
                     </span>`}
-                    ${iconButton(`${prefix}-up`, 'arrow-up', `${__('Move up')} ${label}`, () => this.shift(block.id, 'up'), { disabled: locked || index === 0 })}
-                    ${iconButton(`${prefix}-down`, 'arrow-down', `${__('Move down')} ${label}`, () => this.shift(block.id, 'down'), { disabled: locked || index === siblings.length - 1 })}
-                    ${iconButton(`${prefix}-out`, 'arrow-left', `${__('Move out')} ${label}`, () => this.shift(block.id, 'out'), { disabled: locked || !parent })}
-                    ${iconButton(`${prefix}-in`, 'arrow-right', `${__('Move in')} ${label}`, () => this.shift(block.id, 'in', above?.id), { disabled: !canGoIn })}
-                    ${option && this.props.onEdit && (option.fields.length > inlineFields.length || this.props.form || this.props.fieldGroup) ? iconButton(`${prefix}-edit`, 'pen', `${__('Edit')} ${label}`, () => this.props.onEdit!(block.id)) : null}
-                    ${this.props.lock ? null : iconButton(`${prefix}-remove`, 'trash-bin-trash', `${__('Remove')} ${label}`, () => { this.pendingRemove = block.id; }, { danger: true })}
+                    ${iconButton(`${prefix}-up`, 'arrow-up', `${__('Move up')} ${label}`, () => this.shift(block._id, 'up'), { disabled: locked || index === 0 })}
+                    ${iconButton(`${prefix}-down`, 'arrow-down', `${__('Move down')} ${label}`, () => this.shift(block._id, 'down'), { disabled: locked || index === siblings.length - 1 })}
+                    ${iconButton(`${prefix}-out`, 'arrow-left', `${__('Move out')} ${label}`, () => this.shift(block._id, 'out'), { disabled: locked || !parent })}
+                    ${iconButton(`${prefix}-in`, 'arrow-right', `${__('Move in')} ${label}`, () => this.shift(block._id, 'in', above?._id), { disabled: !canGoIn })}
+                    ${option && this.props.onEdit && (option.fields.length > inlineFields.length || this.props.form || this.props.fieldGroup) ? iconButton(`${prefix}-edit`, 'pen', `${__('Edit')} ${label}`, () => this.props.onEdit!(block._id)) : null}
+                    ${this.props.lock ? null : iconButton(`${prefix}-remove`, 'trash-bin-trash', `${__('Remove')} ${label}`, () => { this.pendingRemove = block._id; }, { danger: true })}
                 </span>
             </header>
             ${collapsed || (option && !inlineFields.length && !option.children && !error) ? null : html`<div class="space-y-3 p-3">
@@ -341,11 +341,11 @@ export class BlockTree extends Cossack {
         const container = parent ? this.option(parent.type) ?? null : null;
         const offered = offeredIn(this.props.options, container, this.props.allowed, this.props.form === true, this.props.fieldGroup === true);
         const full = container?.children?.max !== null && container?.children?.max !== undefined && blocks.length >= container.children.max;
-        return html`<div class=${depth ? 'space-y-3 border-l-2 pl-3' : 'space-y-3'} style=${depth ? levelBorder(depth) : ''} data-block-tree-list=${parent?.id ?? ''}>
+        return html`<div class=${depth ? 'space-y-3 border-l-2 pl-3' : 'space-y-3'} style=${depth ? levelBorder(depth) : ''} data-block-tree-list=${parent?._id ?? ''}>
             ${blocks.length ? blocks.map((block, index) => this.section(block, index, blocks, parent, depth))
                 : html`<p class="rounded-md border border-dashed border-border p-3 text-center text-sm text-muted-foreground">${parent ? __('Empty. Add a block below.') : __('No blocks yet. Add the first one below.')}</p>`}
             ${offered.length && !full && !this.props.lock ? html`<div class="flex flex-wrap items-center gap-2">
-                ${component(BlockInserter, { id: `${this.props.id}-add-${parent?.id ?? 'top'}`, blocks: offered, compact: depth > 0, onPick: (type: string) => this.add(parent?.id ?? null, type) })}
+                ${component(BlockInserter, { id: `${this.props.id}-add-${parent?._id ?? 'top'}`, blocks: offered, compact: depth > 0, onPick: (type: string) => this.add(parent?._id ?? null, type) })}
                 ${!parent && this.props.onPatterns ? html`<button type="button" class="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-background px-3 text-sm font-medium text-foreground hover:bg-muted cursor-pointer [&_svg]:size-4"
                     @click=${() => this.props.onPatterns!()}>${component(Icon, { entry: icon('widget-add'), size: 16 })}${__('Patterns')}</button>` : null}
             </div>` : null}
@@ -357,8 +357,8 @@ export class BlockTree extends Cossack {
         if (typeof window !== 'undefined') this.revealError();
         const places = placeBlocks(this.props.blocks);
         const containers = this.containers();
-        const allCollapsed = containers.every(block => this.collapsed[block.id] ?? true);
-        const pending = this.pendingRemove ? places.find(place => place.block.id === this.pendingRemove) : undefined;
+        const allCollapsed = containers.every(block => this.collapsed[block._id] ?? true);
+        const pending = this.pendingRemove ? places.find(place => place.block._id === this.pendingRemove) : undefined;
         const pendingLabel = pending ? this.option(pending.block.type)?.label ?? pending.block.type : '';
         const held = pending ? placeBlocks([pending.block]).length - 1 : 0;
         return html`<div class="space-y-2">

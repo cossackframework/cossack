@@ -35,7 +35,7 @@ export default class CollectionsPage extends Cossack {
         return html`<div class="space-y-6">
             ${pageHeader(__('Collections'), {
                 description: __('Content types and their fields. Each collection has its own list, editor and site URLs.'),
-                titleActions: linkButton(__('Add new collection'), '/dashboard/collections/new', 'primary', { size: 'sm' }),
+                titleActions: linkButton(__('New collection'), '/dashboard/collections/new', 'primary', { size: 'sm' }),
             })}
             ${component(Card, {}, component(CardBody, { class: 'p-0' }, html`
                 <div class="overflow-x-auto">
@@ -63,7 +63,7 @@ export default class CollectionsPage extends Cossack {
                             <td class=${`${td} text-right text-muted-foreground`}>${row.entries}</td>
                             <td class=${`${td} text-right text-muted-foreground`}>${row.fields}</td>
                             <td class=${`${td} text-muted-foreground`}>${row.taxonomies.join(', ') || '—'}</td>
-                            <td class=${`${td} text-muted-foreground`}>${row.path === null ? __('not on the site') : html`<code class="text-xs">/${row.path}</code>`}</td>
+                            <td class=${`${td} text-muted-foreground`}>${row.path === null ? component(Badge, { variant: 'outline' }, __('Disabled')) : html`<code class="text-xs">/${row.path}</code>`}</td>
                         </tr>`)}</tbody>
                     </table>
                 </div>`))}

@@ -5,7 +5,7 @@ import { romedbService, live } from './helpers';
 const admin: Principal = { kind: 'user', id: 'admin-1', roles: ['admin'], permissions: ['*'] };
 const editor: Principal = { kind: 'user', id: 'editor-1', roles: ['editor'], permissions: [...DEFAULT_ROLES[1].permissions] };
 
-const fieldBlock = (id: string, kind: string, data: { [key: string]: unknown }, extra: Partial<Block> = {}): Block => ({ id, type: `field/${kind}`, data: { label: id, ...data }, ...extra });
+const fieldBlock = (id: string, kind: string, data: { [key: string]: unknown }, extra: Partial<Block> = {}): Block => ({ _id: id, type: `field/${kind}`, data: { label: id, ...data }, ...extra });
 
 /** Products, with content and a featured image; its fields come from groups. */
 const products: CollectionDefinition = { name: 'products', label: 'Products', singular: 'Product', icon: 'box', path: 'shop', features: { content: true, featuredImage: true }, fields: {} };
@@ -14,11 +14,11 @@ const products: CollectionDefinition = { name: 'products', label: 'Products', si
 const details: FieldGroup = {
     id: 'details', title: 'Details', targets: [],
     blocks: [
-        { id: 'cols', type: 'core/columns', data: {}, children: [
-            { id: 'c1', type: 'core/column', data: {}, children: [fieldBlock('sku', 'text', { name: 'sku', label: 'SKU', unique: true, max: 40 })] },
-            { id: 'c2', type: 'core/column', data: {}, children: [fieldBlock('price', 'number', { name: 'price', label: 'Price', min: 0, required: true, index: true })] },
+        { _id: 'cols', type: 'core/columns', data: {}, children: [
+            { _id: 'c1', type: 'core/column', data: {}, children: [fieldBlock('sku', 'text', { name: 'sku', label: 'SKU', unique: true, max: 40 })] },
+            { _id: 'c2', type: 'core/column', data: {}, children: [fieldBlock('price', 'number', { name: 'price', label: 'Price', min: 0, required: true, index: true })] },
         ] },
-        { id: 'tabs', type: 'core/tabs', data: {}, children: [{ id: 'sale', type: 'core/tab', data: { label: 'Sale' }, children: [
+        { _id: 'tabs', type: 'core/tabs', data: {}, children: [{ _id: 'sale', type: 'core/tab', data: { label: 'Sale' }, children: [
             fieldBlock('onSale', 'boolean', { name: 'onSale', label: 'On sale' }),
             fieldBlock('salePrice', 'number', { name: 'salePrice', label: 'Sale price', min: 0, required: true }, { when: { rules: [{ field: 'onSale', op: 'is', value: 'true' }] } }),
         ] }] },
@@ -29,7 +29,7 @@ const details: FieldGroup = {
 const specs: FieldGroup = {
     id: 'specs', title: 'Specifications', placement: 'main', targets: [{ kind: 'collection', name: 'products' }],
     blocks: [
-        { id: 'h', type: 'core/heading', data: { text: 'Specifications' } },
+        { _id: 'h', type: 'core/heading', data: { text: 'Specifications' } },
         fieldBlock('specs', 'repeater', { name: 'specs', label: 'Specifications', max: 10, summary: 'name' }, { children: [
             fieldBlock('name', 'text', { name: 'name', label: 'Name', required: true, index: true, search: true }),
             fieldBlock('kind', 'choice', { name: 'kind', label: 'Kind', choices: ['text', 'link'] }),
@@ -77,7 +77,7 @@ describe.skipIf(!live)('field groups', () => {
         const resource = cms.resourceById('cms/products');
         expect(Object.keys(resource.fields)).toEqual(expect.arrayContaining(['sku', 'price', 'onSale', 'salePrice']));
         expect(resource.fields.price).toMatchObject({ kind: 'number', required: true, min: 0, index: true });
-        expect(resource.layout?.map(block => block.id)).toEqual(['cols', 'tabs']);
+        expect(resource.layout?.map(block => block._id)).toEqual(['cols', 'tabs']);
         // The migration records the resource with the group's fields, so entries are written straight away.
         const first = await cms.resource('cms/products').create({ title: 'First', price: 1, sku: 'FIRST' }, { principal: editor });
         expect(first).toMatchObject({ price: 1, sku: 'FIRST' });
@@ -192,7 +192,7 @@ describe.skipIf(!live)('field groups', () => {
             name: 'events', label: 'Events', singular: 'Event', icon: 'calendar', path: 'events', slug: true, publishable: true, taxonomies: [], builtin: false,
             fields: { content: field.blocks({ search: true, label: 'Content' }), venue: field.string({ label: 'Venue' }) }, fieldOrder: ['content', 'venue'],
             layout: [fieldBlock('content', 'blocks', { name: 'content', label: 'Content' }), fieldBlock('venue', 'text', { name: 'venue', label: 'Venue', max: 80 })],
-            template: [{ id: 'text', type: 'core/richtext', data: {} }],
+            template: [{ _id: 'text', type: 'core/richtext', data: {} }],
         };
         await cms.db.write([{ rql: 'INSERT INTO cms_collections (name, definition, updated_at, updated_by) VALUES ($name, $definition, $now, $by)', params: { $name: 'events', $definition: JSON.stringify(legacy), $now: Date.now(), $by: 'test' } }], { kind: 'test' });
         const other = createCMS({ db: service.database(), modules: [contentModule] });

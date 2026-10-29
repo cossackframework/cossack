@@ -4,13 +4,13 @@
  * from `init()` and hand the views to the theme's templates.
  */
 import {
-    ANONYMOUS, blockDocuments, blockIsData, blocksPlain, editedSize, resolveBlockBindings, flattenBlocks, escapeHtml, formatSiteDate, imageSrcset, imageUrl, isCmsError, languageName, mediaUrl, recordTitle, resolvePresets, richTextBlocks, richTextParts, richTextPlain, systemPrincipal, templateCandidates, transformable,
+    ANONYMOUS, blockDocuments, blockIsData, blocksPlain, editedSize, resolveBlockBindings, flattenBlocks, escapeHtml, formatSiteDate, formInputs, formSettings, imageSrcset, imageUrl, isCmsError, languageName, mediaUrl, notificationRules, recordTitle, resolvePresets, richTextBlocks, richTextParts, richTextPlain, systemPrincipal, templateCandidates, transformable,
     type Block,
     type Principal, type TemplatePage, type ThemeData, type ThemePresets,
     type ArchiveView, type BodyPart, type CollectionDefinition, type CommentShape, type CommentView, type CommentsView, type EntryReference, type EntryView, type FieldDeclaration, type FieldFilter,
     type FieldView, type LanguageLink, type MediaView, type MenuItemView, type RecordShape, type RenderedBlock, type RichTextDoc, type SiteSettings, type SiteView, type TermLink, type TermShape,
 } from '@cossackframework/cms';
-import { excerptOf, renderMarkdown, type CmsFile, type CmsHost, type SiteLanguages } from '@cossackframework/cms/server';
+import { excerptOf, renderMarkdown, type CmsFile, type CmsHost, type LoadedForm, type SiteLanguages } from '@cossackframework/cms/server';
 import type { FormView } from '@cossackframework/cms';
 import { formView, type FormRequest } from './site-forms';
 
@@ -100,7 +100,7 @@ async function areaViews(cms: CmsHost, names: readonly string[], forms?: FormReq
     for (const list of expanded.values()) for (const block of list) blockMediaIds(cms, block as { type: string; data: Record<string, unknown> }, ids);
     const files = cms.files && ids.size ? await cms.files.getMany([...ids]) : new Map<string, CmsFile>();
     const richText = bodyRenderer(cms, files, patterns);
-    const areas = Object.fromEntries([...expanded].map(([name, list]) => [name, list.map(block => renderedBlock(cms, block as { id: string; type: string; data: Record<string, unknown> }, files, richText))]));
+    const areas = Object.fromEntries([...expanded].map(([name, list]) => [name, list.map(block => renderedBlock(cms, block as { _id: string; type: string; data: Record<string, unknown> }, files, richText))]));
     await withForms(cms, Object.values(areas).flat(), forms);
     await withLatest(cms, Object.values(areas).flat());
     return areas;
@@ -209,6 +209,7 @@ export function mediaView(file: CmsFile | undefined, resizes: boolean): MediaVie
     return {
         url, alt: file.alt, width: size?.width ?? file.width, height: size?.height ?? file.height, contentType: file.contentType, caption: file.caption,
         srcset: variants ? imageSrcset(source) : '', wideSrcset: variants ? imageSrcset(source, { aspect: 16 / 9 }) : '',
+        placeholder: file.placeholder,
     };
 }
 
@@ -217,7 +218,7 @@ export function mediaView(file: CmsFile | undefined, resizes: boolean): MediaVie
  * its media resolved and its children rendered. With a `scope` (the entry's record), text
  * fields bound to entry fields (`{{ $.price }}`) show the entry's values.
  */
-function renderedBlock(cms: CmsHost, block: { id: string; type: string; data: Record<string, unknown>; layout?: RenderedBlock['layout']; style?: RenderedBlock['style']; when?: RenderedBlock['when']; children?: readonly unknown[] },
+function renderedBlock(cms: CmsHost, block: { _id: string; type: string; data: Record<string, unknown>; layout?: RenderedBlock['layout']; style?: RenderedBlock['style']; when?: RenderedBlock['when']; children?: readonly unknown[] },
     files: ReadonlyMap<string, CmsFile>, richText?: (doc: RichTextDoc) => BodyPart[], scope?: Readonly<Record<string, unknown>>): RenderedBlock {
     const html: Record<string, string> = {};
     const media: Record<string, MediaView> = {};
@@ -236,7 +237,7 @@ function renderedBlock(cms: CmsHost, block: { id: string; type: string; data: Re
         }
     }
     const children = Array.isArray(block.children) ? (block.children as RenderedBlock[]).map(child => renderedBlock(cms, child, files, richText, scope)) : undefined;
-    return { id: block.id, type: block.type, data, html, media, ...(Object.keys(content).length ? { content } : {}), ...(type && blockIsData(type) ? { dataOnly: true } : {}),
+    return { _id: block._id, type: block.type, data, html, media, ...(Object.keys(content).length ? { content } : {}), ...(type && blockIsData(type) ? { dataOnly: true } : {}),
         ...(block.layout ? { layout: block.layout } : {}), ...(block.style ? { style: block.style } : {}), ...(block.when ? { when: block.when } : {}), ...(children ? { children } : {}) };
 }
 
@@ -275,14 +276,14 @@ function expandPatterns(blocks: readonly Block[], patterns: ReadonlyMap<string, 
     return blocks.flatMap(block => {
         if (block.type === 'core/pattern') {
             const id = String(block.data.pattern ?? '');
-            return (patterns.get(id) ?? []).filter(inner => inner.type !== 'core/pattern').map(inner => prefixIds(inner, `${block.id}-`));
+            return (patterns.get(id) ?? []).filter(inner => inner.type !== 'core/pattern').map(inner => prefixIds(inner, `${block._id}-`));
         }
         return [block.children ? { ...block, children: expandPatterns(block.children, patterns) } : block];
     });
 }
 
 function prefixIds(block: Block, prefix: string): Block {
-    return { ...block, id: `${prefix}${block.id}`.slice(0, 40), ...(block.children ? { children: block.children.map(child => prefixIds(child, prefix)) } : {}) };
+    return { ...block, _id: `${prefix}${block._id}`.slice(0, 40), ...(block.children ? { children: block.children.map(child => prefixIds(child, prefix)) } : {}) };
 }
 
 /** The `?comment=` result of posting a comment, as the comment view's notice or error. */
@@ -337,7 +338,7 @@ function isTextField(declaration: FieldDeclaration): boolean {
 
 /** A rich text or Markdown field as a block of the entry's content: `field` names it, so the site editor opens the field. */
 function textBlock(field: string, parts: readonly BodyPart[]): RenderedBlock {
-    return { id: `field-${field}`.slice(0, 40), type: 'core/richtext', data: {}, html: {}, media: {}, content: { text: parts }, field };
+    return { _id: `field-${field}`.slice(0, 40), type: 'core/richtext', data: {}, html: {}, media: {}, content: { text: parts }, field };
 }
 
 /** Whether an entry has a password visitors must type. */
@@ -568,7 +569,8 @@ export async function resolvePath(cms: CmsHost, segments: readonly string[]): Pr
         if (path === collection.path) return { kind: 'archive', collection, locale };
         if (!path.startsWith(`${collection.path}/`)) continue;
         const slugs = path.slice(collection.path.length + 1).split('/');
-        if (!collection.hierarchical && slugs.length > 1) return { kind: 'none', locale };
+        // Category permalinks take /<path>/<category>/<slug>; the entry then answers at its own address only.
+        if (!collection.hierarchical && slugs.length > (collection.permalink === 'category' ? 2 : 1)) return { kind: 'none', locale };
         const found = await bySlug(cms, collection, slugs.at(-1)!);
         return found ? canonical(cms, collection, found, segments) : { kind: 'none', locale };
     }
@@ -581,7 +583,7 @@ export async function resolvePath(cms: CmsHost, segments: readonly string[]): Pr
     // Collections at the site root share one namespace: nested ones (pages) first, then the others by name.
     const roots = cms.collections().filter(collection => collection.path === '').sort((a, b) => Number(!a.hierarchical) - Number(!b.hierarchical) || a.name.localeCompare(b.name));
     for (const root of roots) {
-        if (!root.hierarchical && rest.length > 1) continue;
+        if (!root.hierarchical && rest.length > (root.permalink === 'category' ? 2 : 1)) continue;
         const found = await bySlug(cms, root, rest.at(-1)!);
         if (found) return canonical(cms, root, found, segments);
     }
@@ -699,4 +701,25 @@ declare module 'hono' {
         /** What the site path names, set by the catch-all route's middleware. */
         'cms.site': Resolved | { kind: 'unavailable' };
     }
+}
+
+/**
+ * A form as its preview shows it: the `core/form` block with the form attached, built from
+ * the record given (the saved form, or it with an editor's unsaved changes) whatever its
+ * status. The saved form's submissions table is used as is: nothing is migrated for a draft.
+ */
+export async function formPreviewBlock(cms: CmsHost, saved: LoadedForm, record: RecordShape, request: FormRequest): Promise<RenderedBlock> {
+    const blocks = Array.isArray(record.body) ? record.body as Block[] : [];
+    const title = typeof record.title === 'string' ? record.title : '';
+    const form: LoadedForm = Object.freeze({
+        ...saved, record, blocks, settings: formSettings(record.settings), enabled: record.enabled !== false, published: true,
+        ref: Object.freeze({ id: record.id, slug: typeof record.slug === 'string' ? record.slug : record.id, title, inputs: formInputs(blocks, cms.blockTypes) }),
+        rules: Object.freeze(notificationRules(record.notifications).filter(rule => rule.enabled !== false)),
+    });
+    const ids = new Set<string>();
+    for (const entry of blocks) blockMediaIds(cms, entry, ids);
+    const files = cms.files && ids.size ? await cms.files.getMany([...ids]) : new Map<string, CmsFile>();
+    const block: RenderedBlock & { form?: FormView } = { _id: 'preview', type: 'core/form', data: { form: form.ref.slug }, html: {}, media: {} };
+    block.form = await formView(cms, form, request, entry => renderedBlock(cms, entry, files));
+    return block;
 }

@@ -14,29 +14,30 @@ import { liveRomeDBTests, startRomeDBService } from '../../romedb/src/testing.ts
 afterEach(cleanupRoots);
 
 const SETUP = { code: 'setup-code-for-tests', siteTitle: 'Fields', name: 'Ada', email: 'ada@example.com', password: 'long password' };
-const fieldBlock = (id, kind, data, extra = {}) => ({ id, type: `field/${kind}`, data: { label: id, ...data }, ...extra });
+const fieldBlock = (id, kind, data, extra = {}) => ({ _id: id, type: `field/${kind}`, data: { label: id, ...data }, ...extra });
 
 const BUILDER = 'dashboard/(cms)/collections/[name]/index.ts';
-const GROUPS = 'dashboard/(cms)/field-groups/new/index.ts';
+/** A new group is made on the group editor itself: `save` with an empty ID and the fresh state. */
+const newGroup = (web, title, collection) => web.action(GROUP, 'save', [{ id: '', title, description: '', placement: 'main', order: '' }, collection ? [{ kind: 'collection', name: collection, order: 0 }] : [], []], { state: { fresh: true }, params: { id: 'new' } });
 const GROUP = 'dashboard/(cms)/field-groups/[id]/index.ts';
 
 /** A Details group with two columns and a Sale tab, made for products, and a Specifications group with a repeater. */
 const DETAILS = [
-  { id: 'cols', type: 'core/columns', data: {}, children: [
-    { id: 'c1', type: 'core/column', data: {}, children: [
+  { _id: 'cols', type: 'core/columns', data: {}, children: [
+    { _id: 'c1', type: 'core/column', data: {}, children: [
       fieldBlock('sku', 'text', { name: 'sku', label: 'SKU', unique: true, max: 40 }),
       // A Multiple text: several values of the kind, each checked, indexed as an array.
       fieldBlock('tags', 'text', { name: 'tags', label: 'Tags', multiple: true, max: 10, maxItems: 3, index: true, addLabel: 'Add tag' }),
     ] },
-    { id: 'c2', type: 'core/column', data: {}, children: [fieldBlock('price', 'number', { name: 'price', label: 'Price', min: 0, required: true, index: true })] },
+    { _id: 'c2', type: 'core/column', data: {}, children: [fieldBlock('price', 'number', { name: 'price', label: 'Price', min: 0, required: true, index: true })] },
   ] },
-  { id: 'tabs', type: 'core/tabs', data: {}, children: [{ id: 'sale', type: 'core/tab', data: { label: 'Sale' }, children: [
+  { _id: 'tabs', type: 'core/tabs', data: {}, children: [{ _id: 'sale', type: 'core/tab', data: { label: 'Sale' }, children: [
     fieldBlock('onSale', 'boolean', { name: 'onSale', label: 'On sale' }),
     fieldBlock('salePrice', 'number', { name: 'salePrice', label: 'Sale price', min: 0, required: true }, { when: { rules: [{ field: 'onSale', op: 'is', value: 'true' }] } }),
   ] }] },
 ];
 const SPECS = [
-  { id: 'h', type: 'core/heading', data: { text: 'Specifications' } },
+  { _id: 'h', type: 'core/heading', data: { text: 'Specifications' } },
   fieldBlock('specs', 'repeater', { name: 'specs', label: 'Specifications', max: 10, summary: 'name' }, { children: [
     fieldBlock('name', 'text', { name: 'name', label: 'Name', required: true, index: true, search: true, width: 'half' }),
     fieldBlock('kind', 'choice', { name: 'kind', label: 'Kind', choices: ['text', 'link'], width: 'half' }),
@@ -52,12 +53,12 @@ async function shop(origin, routeIds, diagnostics) {
   const created = await web.action('dashboard/(cms)/collections/new/index.ts', 'create', ['Products', 'Product', 'box']);
   expect(created._cossack_redirect).toBe('/dashboard/collections/products?created=1');
   // A group made from the collection manager is attached to the collection when it is created.
-  const details = await web.action(GROUPS, 'create', ['Details', 'products']);
+  const details = await newGroup(web, 'Details', 'products');
   expect(details._cossack_redirect).toBe('/dashboard/field-groups/details?created=1');
   const laid = await web.action(GROUP, 'save', [{ id: 'details', title: 'Details', description: '', placement: 'main', order: '' }, [{ kind: 'collection', name: 'products', order: 0 }], DETAILS], { params: { id: 'details' } });
   expect(laid.error).toBe('');
-  expect(laid.blocks.map(block => block.id)).toEqual(['cols', 'tabs']);
-  const group = await web.action(GROUPS, 'create', ['Specifications']);
+  expect(laid.blocks.map(block => block._id)).toEqual(['cols', 'tabs']);
+  const group = await newGroup(web, 'Specifications');
   expect(group._cossack_redirect).toBe('/dashboard/field-groups/specifications?created=1');
   const saved = await web.action(GROUP, 'save', [{ id: 'specifications', title: 'Specifications', description: 'What the product is made of.', placement: 'main', order: '' }, [{ kind: 'collection', name: 'products' }, { kind: 'taxonomy', name: 'categories' }], SPECS], { params: { id: 'specifications' } });
   expect(saved.error).toBe('');

@@ -71,7 +71,7 @@ async function exercise(origin, routeIds, diagnostics) {
   // A post with a generated slug, a category, typed tags and a featured image.
   const editor = 'dashboard/(cms)/content/[collection]/[id]/index.ts';
   const created = await web.action(editor, 'save', [{
-    title: 'Hello, World!', slug: '', excerpt: '', content: [{ id: 'rt', type: 'core/richtext', data: { text: doc(paragraph(text('First '), text('post', ['bold']), text(' about a zeppelin <script>alert(1)</script>'))) } }], status: 'draft', publishedAt: '',
+    title: 'Hello, World!', slug: '', excerpt: '', content: [{ _id: 'rt', type: 'core/richtext', data: { text: doc(paragraph(text('First '), text('post', ['bold']), text(' about a zeppelin <script>alert(1)</script>'))) } }], status: 'draft', publishedAt: '',
     sticky: false, featuredImage: image.id, categories: [news.id], tags: ['Intro', 'Weather'],
   }, 'publish', 0], { params: { collection: 'posts', id: 'new' }, state: { route: 'posts', id: 'new' } });
   // The editor keeps the new entry in place: its ID and the message come back with the state.
@@ -97,7 +97,7 @@ async function exercise(origin, routeIds, diagnostics) {
   contains(list, 'Hello, World!');
   expect(/Published\s*<span[^>]*>\(1\)/.test(list), 'one published post in the status tabs').toBe(true);
   // A draft saved from the editor shows in the Drafts tab.
-  await web.action(editor, 'save', [{ title: 'Quick idea', slug: '', status: 'draft', publishedAt: '', content: [{ id: 'q1', type: 'core/paragraph', data: { text: 'Line one' } }] }, 'draft', 0],
+  await web.action(editor, 'save', [{ title: 'Quick idea', slug: '', status: 'draft', publishedAt: '', content: [{ _id: 'q1', type: 'core/paragraph', data: { text: 'Line one' } }] }, 'draft', 0],
     { params: { collection: 'posts', id: 'new' }, state: { route: 'posts', id: 'new' } });
   contains(await web.page('/dashboard/content/posts?status=draft'), 'Quick idea');
 
@@ -105,8 +105,9 @@ async function exercise(origin, routeIds, diagnostics) {
   const collections = 'dashboard/(cms)/collections/new/index.ts';
   expect((await web.action(collections, 'create', ['Products', 'Product', 'box']))._cossack_redirect).toBe('/dashboard/collections/products?created=1');
   // Its fields are a group made from the collection manager, laid out as field blocks; content is a feature.
-  const field = (name, label, kind, extra = {}) => ({ id: name, type: `field/${kind}`, data: { name, label, ...extra } });
-  expect((await web.action('dashboard/(cms)/field-groups/new/index.ts', 'create', ['Product details', 'products']))._cossack_redirect).toBe('/dashboard/field-groups/product-details?created=1');
+  const field = (name, label, kind, extra = {}) => ({ _id: name, type: `field/${kind}`, data: { name, label, ...extra } });
+  // A new group is made on the group editor itself, in one step: its ID comes from the title.
+  expect((await web.action('dashboard/(cms)/field-groups/[id]/index.ts', 'save', [{ id: '', title: 'Product details', description: '', placement: 'main', order: '' }, [{ kind: 'collection', name: 'products', order: 0 }], []], { state: { fresh: true }, params: { id: 'new' } }))._cossack_redirect).toBe('/dashboard/field-groups/product-details?created=1');
   const group = await web.action('dashboard/(cms)/field-groups/[id]/index.ts', 'save', [
     { id: 'product-details', title: 'Product details', description: '', placement: 'main', order: '' }, [{ kind: 'collection', name: 'products', order: 0 }],
     [field('price', 'Price', 'number', { required: true, min: 0 }), field('sku', 'SKU', 'text', { unique: true })],
@@ -121,16 +122,16 @@ async function exercise(origin, routeIds, diagnostics) {
   contains(await web.page('/dashboard'), 'href="/dashboard/content/products"');
   const product = await web.action(editor, 'save', [{
     title: 'Rocket skates', slug: '', status: 'draft', publishedAt: '', price: '19.5', sku: 'RS-1', tags: ['Intro'],
-    content: [{ id: 'b1', type: 'core/heading', data: { text: 'Fast wheels', level: 'h2' } }, { id: 'b2', type: 'core/paragraph', data: { text: 'Very **fast**' } },
-      { id: 'b3', type: 'core/image', data: { image: image.id, caption: 'A pixel', link: '' } }, { id: 'b4', type: 'core/button', data: { label: 'Buy', url: 'javascript:alert(1)', style: 'primary' } }],
+    content: [{ _id: 'b1', type: 'core/heading', data: { text: 'Fast wheels', level: 'h2' } }, { _id: 'b2', type: 'core/paragraph', data: { text: 'Very **fast**' } },
+      { _id: 'b3', type: 'core/image', data: { image: image.id, caption: 'A pixel', link: '' } }, { _id: 'b4', type: 'core/button', data: { label: 'Buy', url: 'javascript:alert(1)', style: 'primary' } }],
   }, 'publish', 0], { params: { collection: 'products', id: 'new' }, state: { route: 'products', id: 'new' } });
   // A button that links to script is refused.
   expect(product.errors.content).toContain('b4.url');
   // A field of the entry reaches the page through a binding in a block's text; the theme lists no fields on its own.
   const saved = await web.action(editor, 'save', [{
     title: 'Rocket skates', slug: '', status: 'draft', publishedAt: '', price: '19.5', sku: 'RS-1', tags: ['Intro'],
-    content: [{ id: 'b1', type: 'core/heading', data: { text: 'Fast wheels', level: 'h2' } }, { id: 'b2', type: 'core/paragraph', data: { text: 'Very **fast**' } },
-      { id: 'b3', type: 'core/image', data: { image: image.id, caption: 'A pixel', link: '' } }, { id: 'b5', type: 'core/paragraph', data: { text: 'Price: **{{ $.price }}**' } }],
+    content: [{ _id: 'b1', type: 'core/heading', data: { text: 'Fast wheels', level: 'h2' } }, { _id: 'b2', type: 'core/paragraph', data: { text: 'Very **fast**' } },
+      { _id: 'b3', type: 'core/image', data: { image: image.id, caption: 'A pixel', link: '' } }, { _id: 'b5', type: 'core/paragraph', data: { text: 'Price: **{{ $.price }}**' } }],
   }, 'publish', 0], { params: { collection: 'products', id: 'new' }, state: { route: 'products', id: 'new' } });
   expect(saved.id).toMatch(/^[0-9a-f-]{36}$/);
   const productPage = await web.page('/shop/rocket-skates');
@@ -180,10 +181,10 @@ async function exercise(origin, routeIds, diagnostics) {
   const takeover = await manager.action('dashboard/users/[id]/index.ts', 'applyPasswordChange', ['taken over!'], { params: { id: adaId }, state: { userDetail: { id: adaId, name: 'Ada', email: 'ada@example.com', avatar: null, createdAt: new Date().toISOString(), roles: [] } } }).catch(error => error);
   expect(String(takeover?.message ?? JSON.stringify(takeover))).toContain('Only an administrator');
 
-  const home = await web.action(editor, 'save', [{ title: 'Home', slug: '', status: 'draft', publishedAt: '', content: [{ id: 'rt', type: 'core/richtext', data: { text: doc(paragraph(text('Welcome home'))) } }], excerpt: '', featuredImage: '', parent: '', menuOrder: '0' }, 'publish', 0],
+  const home = await web.action(editor, 'save', [{ title: 'Home', slug: '', status: 'draft', publishedAt: '', content: [{ _id: 'rt', type: 'core/richtext', data: { text: doc(paragraph(text('Welcome home'))) } }], excerpt: '', featuredImage: '', parent: '', menuOrder: '0' }, 'publish', 0],
     { params: { collection: 'pages', id: 'new' }, state: { route: 'pages', id: 'new' } });
   const homeId = home.id;
-  const team = await web.action(editor, 'save', [{ title: 'Team', slug: '', status: 'draft', publishedAt: '', content: [{ id: 'rt', type: 'core/richtext', data: { text: doc(paragraph(text('Our team'))) } }], excerpt: '', featuredImage: '', parent: homeId, menuOrder: '1' }, 'publish', 0],
+  const team = await web.action(editor, 'save', [{ title: 'Team', slug: '', status: 'draft', publishedAt: '', content: [{ _id: 'rt', type: 'core/richtext', data: { text: doc(paragraph(text('Our team'))) } }], excerpt: '', featuredImage: '', parent: homeId, menuOrder: '1' }, 'publish', 0],
     { params: { collection: 'pages', id: 'new' }, state: { route: 'pages', id: 'new' } });
   const teamId = team.id;
   contains(await visitor.page('/home/team'), 'Our team');
@@ -332,7 +333,8 @@ describe.skipIf(!liveRomeDBTests())('generated CMS application', () => {
       return text;
     };
     const client = await read(path.join(root, 'dist/client'));
-    for (const secret of ['INSERT INTO cms_', 'ROMEDB_TOKEN', 'MarkdownIt', 'password_hash', 'S3Client']) expect(client).not.toContain(secret);
+    // markdown-it is no longer a server-only marker: the JSON Schema editor (codemirror-json-schema) renders its hover help with it in the browser.
+    for (const secret of ['INSERT INTO cms_', 'ROMEDB_TOKEN', 'password_hash', 'S3Client']) expect(client).not.toContain(secret);
     // The editor ships to the browser only; the server gets the client-only stub.
     expect(client).toContain('ProseMirror-hideselection');
     expect(await read(path.join(root, 'dist/server'))).not.toContain('ProseMirror-hideselection');

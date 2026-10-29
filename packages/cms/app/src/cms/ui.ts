@@ -5,7 +5,7 @@ import { Badge, Icon, Tooltip } from '@cossackframework/ui';
 import { icon } from './icons';
 
 /**
- * The heading of a screen. `titleActions` sit beside the title, as WordPress puts "Add new"
+ * The heading of a screen. `titleActions` sit beside the title, as WordPress puts "Add New"
  * next to "Posts"; `actions` go to the right.
  */
 export function pageHeader(title: string, options: { description?: string; actions?: TemplateResult | null; titleActions?: TemplateResult | null } = {}): TemplateResult {
@@ -43,7 +43,8 @@ export function linkButton(label: string, href: string, variant: keyof typeof BU
 
 /** A count beside a label, such as a tab's items. */
 export function countBadge(count: number): TemplateResult {
-    return html`<span class="ml-1.5 inline-flex align-middle">${component(Badge, { variant: 'secondary' }, String(count))}</span>`;
+    // A count stands out in the primary colour; an empty tab stays quiet.
+    return html`<span class="ml-1.5 inline-flex align-middle">${component(Badge, { variant: count ? 'default' : 'secondary' }, String(count))}</span>`;
 }
 
 /** Labels of entry statuses. */
@@ -177,4 +178,21 @@ export function artwork(kind: 'logo' | 'cover', url: string | null, name: string
         style=${`background: linear-gradient(135deg, hsl(${tone} 70% 58%), hsl(${(tone + 45) % 360} 65% 38%))`}>
         <span class="rounded-lg bg-white/15 px-4 py-2 text-lg font-semibold text-white backdrop-blur-sm">${label}</span>
     </div>`;
+}
+
+/** The tab the address names (`?tab=`), when it is one of `values`; the first value otherwise. */
+export function tabFromQuery<T extends string>(query: string | undefined, values: readonly T[]): T {
+    return values.find(value => value === query) ?? values[0]!;
+}
+
+/**
+ * Keep the open tab in the address so a reload or a shared link opens it; the first (default)
+ * tab drops the parameter. Client only: replaces the history entry.
+ */
+export function rememberTab(value: string, values: readonly string[], name = 'tab'): void {
+    if (typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    if (value === values[0]) url.searchParams.delete(name);
+    else url.searchParams.set(name, value);
+    window.history.replaceState(window.history.state, '', url);
 }

@@ -15,7 +15,7 @@ const ERROR = 'text-xs text-destructive empty:hidden';
 
 /** What the browser's checks need: the blocks without their rendered parts. */
 function plainBlocks(blocks: readonly RenderedBlock[]): Block[] {
-    return blocks.map(block => ({ id: block.id, type: block.type, data: block.data, ...(block.when ? { when: block.when } : {}), ...(block.children ? { children: plainBlocks(block.children) } : {}) }));
+    return blocks.map(block => ({ _id: block._id, type: block.type, data: block.data, ...(block.when ? { when: block.when } : {}), ...(block.children ? { children: plainBlocks(block.children) } : {}) }));
 }
 
 /** Load the browser's part once a form is on the page. Server rendering skips it. */

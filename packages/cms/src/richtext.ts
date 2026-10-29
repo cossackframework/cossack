@@ -27,7 +27,7 @@ export interface RichTextDoc {
 
 /** A block embedded in a document: a top-level `cmsBlock` node's attributes. */
 export interface EmbeddedBlock {
-    readonly id: string;
+    readonly _id: string;
     readonly type: string;
     readonly data: { readonly [field: string]: unknown };
     readonly layout?: { readonly hide?: readonly ('sm' | 'md' | 'lg')[]; readonly anchor?: string; readonly className?: string };
@@ -75,7 +75,7 @@ const NODE_ATTRIBUTES: { readonly [type: string]: { readonly [name: string]: Att
     codeBlock: { language: value => typeof value === 'string' && LANGUAGE.test(value) ? value : INVALID },
     image: { src: value => safeImageUrl(value) ? value : INVALID, alt: text(500), title: text(300), mediaId: value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,80}$/.test(value) ? value : INVALID },
     cmsBlock: {
-        id: value => typeof value === 'string' && BLOCK_ID.test(value) ? value : INVALID,
+        _id: value => typeof value === 'string' && BLOCK_ID.test(value) ? value : INVALID,
         type: value => typeof value === 'string' && BLOCK_TYPE.test(value) ? value : INVALID,
         data: value => isPlainObject(value) ? value : INVALID,
         layout: value => blockLayoutProblem(value) ? INVALID : value,
@@ -83,7 +83,7 @@ const NODE_ATTRIBUTES: { readonly [type: string]: { readonly [name: string]: Att
         children: value => Array.isArray(value) && !blocksShapeProblem(value) ? value : INVALID,
     },
 };
-const REQUIRED_ATTRIBUTES: { readonly [type: string]: readonly string[] } = { heading: ['level'], image: ['src'], cmsBlock: ['id', 'type', 'data'] };
+const REQUIRED_ATTRIBUTES: { readonly [type: string]: readonly string[] } = { heading: ['level'], image: ['src'], cmsBlock: ['_id', 'type', 'data'] };
 const MARK_ATTRIBUTES: { readonly [type: string]: { readonly [name: string]: AttributeCheck } } = {
     link: { href: value => safeLinkUrl(value) ? value : INVALID, target: value => value === '_blank' ? value : INVALID },
 };
@@ -249,7 +249,7 @@ export function richTextExcerpt(doc: RichTextDoc | null | undefined, words = 55)
 /** The blocks a document embeds, in order. */
 export function richTextBlocks(doc: RichTextDoc | null | undefined): EmbeddedBlock[] {
     return (doc?.content ?? []).filter(node => node.type === 'cmsBlock' && node.attrs).map(node => ({
-        id: node.attrs!.id as string, type: node.attrs!.type as string, data: (node.attrs!.data ?? {}) as EmbeddedBlock['data'],
+        _id: node.attrs!._id as string, type: node.attrs!.type as string, data: (node.attrs!.data ?? {}) as EmbeddedBlock['data'],
         ...(node.attrs!.layout ? { layout: node.attrs!.layout as EmbeddedBlock['layout'] } : {}),
         ...(node.attrs!.style ? { style: node.attrs!.style as EmbeddedBlock['style'] } : {}),
         ...(node.attrs!.children ? { children: node.attrs!.children as EmbeddedBlock['children'] } : {}),
@@ -271,12 +271,12 @@ export function richTextMedia(doc: RichTextDoc | null | undefined): string[] {
 
 /** Replace the embedded blocks, in order, with checked ones: their data with defaults applied. */
 export function withRichTextBlocks(doc: RichTextDoc, blocks: readonly EmbeddedBlock[]): RichTextDoc {
-    const byId = new Map(blocks.map(block => [block.id, block]));
+    const byId = new Map(blocks.map(block => [block._id, block]));
     return Object.freeze({
         type: 'doc',
         content: Object.freeze(doc.content.map(node => {
-            const block = node.type === 'cmsBlock' ? byId.get(node.attrs?.id as string) : undefined;
-            return block ? Object.freeze({ type: 'cmsBlock', attrs: Object.freeze({ id: block.id, type: block.type, data: block.data, ...(block.layout ? { layout: block.layout } : {}), ...(block.style ? { style: block.style } : {}), ...(block.children ? { children: block.children } : {}) }) }) : node;
+            const block = node.type === 'cmsBlock' ? byId.get(node.attrs?._id as string) : undefined;
+            return block ? Object.freeze({ type: 'cmsBlock', attrs: Object.freeze({ _id: block._id, type: block.type, data: block.data, ...(block.layout ? { layout: block.layout } : {}), ...(block.style ? { style: block.style } : {}), ...(block.children ? { children: block.children } : {}) }) }) : node;
         })),
     });
 }

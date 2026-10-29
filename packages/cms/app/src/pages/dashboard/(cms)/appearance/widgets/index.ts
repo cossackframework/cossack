@@ -179,7 +179,7 @@ export default class WidgetsPage extends Cossack {
         if (field.kind !== 'richtext') return null;
         return component(RichTextField, {
             id, label: field.label, value: (value as RichTextDoc | null) ?? null, blocks: [], onChange: (doc: RichTextDoc) => change(doc),
-            onMedia: () => this.openRichMedia(area, block.id, field.name, id), onInsertBlock: () => undefined, onEditBlock: () => undefined,
+            onMedia: () => this.openRichMedia(area, block._id, field.name, id), onInsertBlock: () => undefined, onEditBlock: () => undefined,
         });
     }
 

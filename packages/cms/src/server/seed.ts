@@ -13,7 +13,7 @@ export interface SeedReport {
     readonly seeded: boolean;
 }
 
-const input = (id: string, kind: string, data: { [key: string]: unknown }): Block => ({ id, type: `form/${kind}`, data });
+const input = (id: string, kind: string, data: { [key: string]: unknown }): Block => ({ _id: id, type: `form/${kind}`, data });
 
 /** Create the starter content when the site has no posts, pages or forms. */
 export async function seedStarterContent(cms: CmsHost, context: { principal: Principal }): Promise<SeedReport> {
@@ -38,15 +38,15 @@ export async function seedStarterContent(cms: CmsHost, context: { principal: Pri
     await cms.resource('cms/pages').create({
         title: 'Contact', slug: 'contact', status: 'published',
         content: [
-            { id: 'intro', type: 'core/richtext', data: { text: richTextFromPlain('Have a question? Send us a message and we will get back to you.') } },
-            { id: 'form', type: 'core/form', data: { form: String(form.slug) } },
+            { _id: 'intro', type: 'core/richtext', data: { text: richTextFromPlain('Have a question? Send us a message and we will get back to you.') } },
+            { _id: 'form', type: 'core/form', data: { form: String(form.slug) } },
         ],
     }, { principal });
 
     await cms.resource('cms/posts').create({
         title: 'Hello World!', slug: 'hello-world', status: 'published', categories: [category.id],
         excerpt: 'Welcome to your new site. This is your first post: edit or delete it, then start writing.',
-        content: [{ id: 'intro', type: 'core/richtext', data: { text: richTextFromPlain('Welcome to your new site. This is your first post. Edit or delete it, then start writing!') } }],
+        content: [{ _id: 'intro', type: 'core/richtext', data: { text: richTextFromPlain('Welcome to your new site. This is your first post. Edit or delete it, then start writing!') } }],
     }, { principal });
     return { seeded: true };
 }

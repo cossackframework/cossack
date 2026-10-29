@@ -47,16 +47,16 @@ describe.skipIf(!live)('collections built in the dashboard', () => {
         const entries = cms.resource('cms/products');
         const entry = await entries.create({
             title: 'Rocket skates', price: 19.5, sku: 'RS-1', brands: [brand], status: 'published',
-            content: [{ id: 'intro', type: 'core/heading', data: { text: 'Fast' } }, { id: 'buy', type: 'core/button', data: { label: 'Buy', url: '/shop/rocket-skates' } }],
+            content: [{ _id: 'intro', type: 'core/heading', data: { text: 'Fast' } }, { _id: 'buy', type: 'core/button', data: { label: 'Buy', url: '/shop/rocket-skates' } }],
         }, { principal: editor });
         expect(entry).toMatchObject({ slug: 'rocket-skates', price: 19.5, publishedAt: expect.any(Number) });
         expect(entry.content).toEqual([
-            { id: 'intro', type: 'core/heading', data: { text: 'Fast', level: 'h2' } },
-            { id: 'buy', type: 'core/button', data: { label: 'Buy', url: '/shop/rocket-skates', style: 'primary' } },
+            { _id: 'intro', type: 'core/heading', data: { text: 'Fast', level: 'h2' } },
+            { _id: 'buy', type: 'core/button', data: { label: 'Buy', url: '/shop/rocket-skates', style: 'primary' } },
         ]);
-        await expect(entries.create({ title: 'Bad', price: 1, content: [{ id: 'x', type: 'core/image', data: {} }] }, { principal: editor }))
+        await expect(entries.create({ title: 'Bad', price: 1, content: [{ _id: 'x', type: 'core/image', data: {} }] }, { principal: editor }))
             .rejects.toMatchObject({ fields: { content: expect.stringContaining('not an available block') } });
-        await expect(entries.create({ title: 'Bad', price: 1, content: [{ id: 'x', type: 'core/button', data: { label: 'Go', url: 'javascript:alert(1)' } }] }, { principal: editor }))
+        await expect(entries.create({ title: 'Bad', price: 1, content: [{ _id: 'x', type: 'core/button', data: { label: 'Go', url: 'javascript:alert(1)' } }] }, { principal: editor }))
             .rejects.toMatchObject({ fields: { content: expect.stringContaining('x.url') } });
         await expect(entries.create({ title: 'Clash', price: 1, sku: 'RS-1' }, { principal: editor })).rejects.toMatchObject({ code: 'CMS_CONFLICT' });
         expect((await entries.list({ where: { brands: { contains: brand } } }, { principal: { kind: 'anonymous' } })).records.map(record => record.title)).toEqual(['Rocket skates']);

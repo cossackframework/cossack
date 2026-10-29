@@ -80,7 +80,7 @@ Updated 2026-10-16. See [Outcome](#outcome).
   italic, underline, strike, code, links) and attributes. Link URLs are `http(s)`, `mailto`,
   `tel`, relative or fragments; images are media files or `https` URLs. The host validates every
   write and the HTML renderer escapes all text and attributes. Top-level `cmsBlock` nodes embed
-  blocks (`{ id, type, data }`), validated like a blocks field and rendered by the theme.
+  blocks (`{ _id, type, data }`), validated like a blocks field and rendered by the theme.
 - **Search.** A searchable rich text field also stores its plain text in `_text_<field>`, which
   the full-text index covers instead of the JSON.
 - **Content API.** `GET /api/cms/content/<collection>` and `/api/cms/content/<collection>/<id or

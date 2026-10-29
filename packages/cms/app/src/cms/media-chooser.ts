@@ -16,7 +16,12 @@ export interface MediaChooserState {
     multiple: boolean;
     search: string;
     items: MediaPreview[];
+    /** The file input's accept list; media files by default. */
+    accept?: string;
 }
+
+/** Images, video and audio: what a media field takes. The library's own uploader takes any file. */
+export const MEDIA_ACCEPT = 'image/*,video/*,audio/*';
 
 export const closedChooser = (): MediaChooserState => ({ open: false, field: '', multiple: false, search: '', items: [] });
 
@@ -39,7 +44,7 @@ export function mediaChooser(state: MediaChooserState, handlers: MediaChooserHan
                 <input type="search" class=${`${CONTROL} max-w-xs`} placeholder=${__('Search media')} aria-label=${__('Search media')} .value=${state.search}
                     @change=${(event: Event) => handlers.search((event.target as HTMLInputElement).value)}>
                 <label class="inline-flex cursor-pointer items-center rounded-md border border-border px-3 py-2 text-sm text-foreground hover:bg-muted">
-                    ${__('Upload files')}<input type="file" multiple class="sr-only" @change=${(event: Event) => handlers.upload(event)}>
+                    ${__('Upload files')}<input type="file" multiple accept=${state.accept || MEDIA_ACCEPT} class="sr-only" @change=${(event: Event) => handlers.upload(event)}>
                 </label>
             </div>
             <ul class="grid max-h-[60vh] grid-cols-2 gap-3 overflow-y-auto sm:grid-cols-4">

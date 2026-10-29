@@ -90,7 +90,7 @@ export default class TermsPage extends Cossack {
             ${this.error ? notice(this.error, 'error') : null}
             <div class="grid gap-6 lg:grid-cols-[22rem_minmax(0,1fr)]">
                 ${component(Card, {}, component(CardBody, {}, html`
-                    <h2 class="mb-4 text-base font-semibold text-foreground">${__('Add new')} ${this.taxonomy.singular.toLowerCase()}</h2>
+                    <h2 class="mb-4 text-base font-semibold text-foreground">${__('New')} ${this.taxonomy.singular.toLowerCase()}</h2>
                     <form class="space-y-4" @submit=${(event: Event) => this.submit(event)}>
                         ${component(Field, { label: __('Name'), for: 'term-name', error: this.errors.name, hint: __('The name is how it appears on your site.'),
                             control: attributes => component(Input, { ...attributes, '.value': this.draft.name, '@input': (event: Event) => this.setDraft('name', (event.target as HTMLInputElement).value) }) })}
@@ -103,7 +103,7 @@ export default class TermsPage extends Cossack {
                         ${component(Field, { label: __('Description'), for: 'term-description', error: this.errors.description,
                             control: attributes => component(Textarea, { ...attributes, rows: 3, '.value': this.draft.description, '@input': (event: Event) => this.setDraft('description', (event.target as HTMLTextAreaElement).value) }) })}
                         ${iconSelect('term-icon', this.draft.icon, value => this.setDraft('icon', value), this.errors.icon)}
-                        ${component(Button, { type: 'submit', disabled: !this.draft.name.trim() }, `${__('Add new')} ${this.taxonomy.singular.toLowerCase()}`)}
+                        ${component(Button, { type: 'submit', disabled: !this.draft.name.trim() }, `${__('New')} ${this.taxonomy.singular.toLowerCase()}`)}
                     </form>`))}
                 <div class="space-y-3">
                     <form method="get" action=${base} class="flex justify-end gap-2" role="search">

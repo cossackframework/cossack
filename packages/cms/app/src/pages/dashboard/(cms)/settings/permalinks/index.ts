@@ -19,6 +19,9 @@ export default class PermalinksPage extends Cossack {
     @State() groups: { id: string; label: string }[] = [];
     @State() postsAtRoot = false;
     @State() postsBase = 'posts';
+    /** The first category's slug before the post name, as /%category%/%postname%/ in WordPress. */
+    @State() withCategory = false;
+    @State() categoryBase = 'category';
     @State() taxonomies: Base[] = [];
     @State() origin = '';
     @State() errors: Record<string, string> = {};
@@ -41,6 +44,8 @@ export default class PermalinksPage extends Cossack {
         const posts = cms.collections().find(collection => collection.name === 'posts');
         this.postsAtRoot = posts?.path === '';
         this.postsBase = posts?.path || 'posts';
+        this.withCategory = posts?.permalink === 'category';
+        this.categoryBase = posts?.taxonomies?.[0] ? cms.taxonomies.declarations.find(taxonomy => taxonomy.name === posts.taxonomies![0])?.path || 'category' : 'category';
         this.taxonomies = cms.taxonomies.declarations.filter(taxonomy => taxonomy.path).map(taxonomy => ({ name: taxonomy.name, label: taxonomy.label, singular: taxonomy.singular, path: taxonomy.path! }));
     }
 
@@ -52,12 +57,12 @@ export default class PermalinksPage extends Cossack {
     @Client()
     async submit(event: Event) {
         event.preventDefault();
-        await this.save(this.postsAtRoot, this.postsBase, this.taxonomies.map(taxonomy => ({ name: taxonomy.name, path: taxonomy.path })));
+        await this.save(this.postsAtRoot, this.postsBase, this.taxonomies.map(taxonomy => ({ name: taxonomy.name, path: taxonomy.path })), this.withCategory);
         if (this.error) toast.error(this.error); else toast.success(__('Permalink structure updated.'));
     }
 
     @Server()
-    async save(postsAtRoot: boolean, postsBase: string, bases: { name: string; path: string }[]) {
+    async save(postsAtRoot: boolean, postsBase: string, bases: { name: string; path: string }[], withCategory = false) {
         const cms = this.c.get('cms');
         const principal = this.c.get('principal');
         this.error = '';
@@ -69,7 +74,8 @@ export default class PermalinksPage extends Cossack {
         try {
             const posts = cms.collection('posts');
             const path = postsAtRoot ? '' : base;
-            if (posts.path !== path) await cms.saveCollection({ ...posts, path }, principal);
+            const permalink = withCategory && posts.taxonomies?.length ? 'category' as const : 'slug' as const;
+            if (posts.path !== path || (posts.permalink ?? 'slug') !== permalink) await cms.saveCollection({ ...posts, path, permalink }, principal);
             for (const entry of bases) {
                 const taxonomy = cms.taxonomies.declaration(entry.name);
                 if (taxonomy.path !== entry.path.trim()) await cms.saveTaxonomy({ ...taxonomy, path: entry.path.trim() }, principal);
@@ -85,6 +91,7 @@ export default class PermalinksPage extends Cossack {
             <input type="radio" name="posts-structure" class="mt-1" .checked=${this.postsAtRoot === atRoot} @change=${() => { this.postsAtRoot = atRoot; }}>
             <span><span class="block text-sm font-medium text-foreground">${label}</span><code class="text-xs text-muted-foreground">${example}</code></span>
         </label>`;
+        const sample = (base: string) => `${this.origin}${base}${this.withCategory ? '/sample-category' : ''}/sample-post`;
         return html`<div class="max-w-3xl space-y-6">
             ${pageHeader(__('Permalink settings'), { description: __('Choose how the addresses of posts and archives look. Pages always use their own and their parents’ slugs. Old addresses keep working: they redirect to the new ones.') })}
             <nav aria-label=${__('Settings')} class="flex flex-wrap gap-1 border-b border-border">
@@ -95,8 +102,13 @@ export default class PermalinksPage extends Cossack {
             ${component(Card, {}, component(CardBody, {}, html`<form class="space-y-6" @submit=${(event: Event) => this.submit(event)}>
                 <fieldset class="space-y-3">
                     <legend class="mb-2 text-base font-semibold text-foreground">${__('Post permalinks')}</legend>
-                    ${option(true, __('Post name'), `${this.origin}/sample-post`)}
-                    ${option(false, __('Under a base'), `${this.origin}/${this.postsBase.trim() || 'posts'}/sample-post`)}
+                    ${option(true, __('Post name'), sample(''))}
+                    ${option(false, __('Under a base'), sample(`/${this.postsBase.trim() || 'posts'}`))}
+                    <label class="flex cursor-pointer items-start gap-3 text-sm text-foreground">
+                        <input type="checkbox" class="mt-1" .checked=${this.withCategory} @change=${(event: Event) => { this.withCategory = (event.target as HTMLInputElement).checked; }}>
+                        <span><span class="block font-medium">${__('Category before the post name')}</span>
+                            <span class="text-xs text-muted-foreground">${__('The slug of the post’s first category, as WordPress’s %category% does. Posts without a category keep the plain address; moving a post to another category redirects its old address.')}</span></span>
+                    </label>
                     ${this.postsAtRoot ? html`<p class="text-xs text-muted-foreground">${__('Post slugs stay unique across pages and the site’s own routes. Choose a posts page under Settings → Reading to list the latest posts.')}</p>`
                         : html`<div class="space-y-1"><label for="posts-base" class="block text-sm font-medium text-foreground">${__('Posts base')}</label>
                             <input id="posts-base" class=${CONTROL} .value=${this.postsBase} @input=${(event: Event) => { this.postsBase = (event.target as HTMLInputElement).value; }}>

@@ -74,7 +74,7 @@ export default class FormsPage extends Cossack {
         return html`<div class="space-y-6">
             ${pageHeader(__('Forms'), {
                 description: __('Build forms from blocks. Place one on a page with the Form block and its slug.'),
-                actions: this.canCreate ? linkButton(__('Add new form'), '/dashboard/content/forms/new') : null,
+                actions: this.canCreate ? linkButton(__('New form'), '/dashboard/content/forms/new') : null,
             })}
             ${component(Card, {}, component(CardBody, { class: 'p-0' }, html`<div class="overflow-x-auto"><table class="w-full text-sm">
                 <thead><tr class="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">

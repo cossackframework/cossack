@@ -26,6 +26,8 @@ export interface CmsFile {
     readonly height: number | null;
     /** Crop and focal point, for images. */
     readonly edits: ImageEdits | null;
+    /** A blurred stand-in of the image as a `data:` URL, a few hundred bytes, shown while it loads; null for other files. */
+    readonly placeholder: string | null;
     readonly createdAt: number;
     readonly updatedAt: number;
 }
@@ -62,7 +64,9 @@ export interface FileMetadata {
 }
 
 const ID = /^[A-Za-z0-9_-]{1,80}$/;
-const COLUMNS = 'id, name, content_type, size, owner_id, title, alt, caption, description, width, height, created_at, updated_at, edits';
+const COLUMNS = 'id, name, content_type, size, owner_id, title, alt, caption, description, width, height, created_at, updated_at, edits, placeholder';
+/** The width of the placeholder the transformer makes; the browser blurs it up to the image's size. */
+const PLACEHOLDER_WIDTH = 16;
 const WRITE = { kind: 'cms.files', retryConflicts: 5 } as const;
 /** Enough bytes to check a signature and read image dimensions behind typical metadata. */
 const HEAD_BYTES = 1024 * 1024;
@@ -115,7 +119,32 @@ export class FileService {
         await this.#db.write([{ rql: "UPDATE cms_files SET edits = $edits, updated_at = $now WHERE id = $id AND status = 'ready'",
             params: { $edits: clean ? JSON.stringify(clean) : null, $now: Math.max(this.#now(), file.updatedAt + 1), $id: id } }], WRITE);
         await this.#dropVariants(id);
-        return (await this.get(id))!;
+        // The placeholder shows the crop.
+        return this.#placeholder((await this.get(id))!);
+    }
+
+    /**
+     * Make the image's placeholder: the cropped image at 16 pixels wide as WebP, kept on the
+     * row as a `data:` URL. Files that are not images, and transformers that fail, leave none.
+     */
+    async #placeholder(file: CmsFile): Promise<CmsFile> {
+        if (!this.#images || !transformable(file.contentType) || !file.width || !file.height) return file;
+        const rect = variantRect(file)!;
+        const width = Math.min(PLACEHOLDER_WIDTH, rect.width);
+        const height = Math.max(1, Math.round(width * rect.height / rect.width));
+        const original = await this.#storage.get(`cms/files/${file.id}`);
+        if (!original) return file;
+        let placeholder: string;
+        try {
+            const bytes = await this.#images.transform(original.body, { rect, source: { width: file.width, height: file.height }, width, height, format: 'webp', quality: 40 });
+            placeholder = `data:image/webp;base64,${base64(bytes)}`;
+        } catch (error) {
+            if (!this.#warned) console.warn('[cms] could not make image placeholders.', error);
+            this.#warned = true;
+            return file;
+        }
+        await this.#db.write([{ rql: "UPDATE cms_files SET placeholder = $placeholder WHERE id = $id AND status = 'ready'", params: { $placeholder: placeholder, $id: file.id } }], WRITE);
+        return { ...file, placeholder };
     }
 
     /**
@@ -182,7 +211,7 @@ export class FileService {
             if (!(error instanceof CmsError)) await this.#abandon(id).catch(() => undefined);
             throw error;
         }
-        return this.#ready(id, size, imageSize(contentType, head));
+        return this.#placeholder(await this.#ready(id, size, imageSize(contentType, head)));
     }
 
     /**
@@ -230,7 +259,7 @@ export class FileService {
             size = clean.byteLength;
             await this.#storage.put(pending.key, streamOf(clean), { size, contentType: pending.contentType });
         } else await body.cancel().catch(() => undefined);
-        return this.#ready(id, size, imageSize(pending.contentType, head));
+        return this.#placeholder(await this.#ready(id, size, imageSize(pending.contentType, head)));
     }
 
     /** Check the upload and record intent; the row is pending until the bytes are in. */
@@ -440,8 +469,15 @@ function fileOf(row: readonly Value[]): CmsFile {
         title: row[5] as string, alt: row[6] as string, caption: row[7] as string, description: row[8] as string,
         width: row[9] === null ? null : Number(row[9] as bigint), height: row[10] === null ? null : Number(row[10] as bigint),
         edits: row[13] ? parseEdits(row[13] as string) : null,
+        placeholder: typeof row[14] === 'string' && row[14] ? row[14] : null,
         createdAt: Number(row[11] as bigint), updatedAt: Number(row[12] as bigint),
     });
+}
+
+function base64(bytes: Uint8Array): string {
+    let binary = '';
+    for (const byte of bytes) binary += String.fromCharCode(byte);
+    return btoa(binary);
 }
 
 function parseEdits(text: string): ImageEdits | null {

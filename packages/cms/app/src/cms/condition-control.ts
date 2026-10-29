@@ -36,13 +36,13 @@ export function conditionFields(blocks: readonly EditorBlock[], options: readonl
     let scope: string | null = null;
     const walk = (list: readonly EditorBlock[], within: string | null) => {
         for (const block of list) {
-            if (block.id === except) scope = within;
-            if (input(block) && block.id !== except) {
+            if (block._id === except) scope = within;
+            if (input(block) && block._id !== except) {
                 const into = within ? inside.get(within)! : top;
                 const field = named(block);
                 if (!into.some(entry => entry.name === field.name)) into.push(field);
             }
-            if (repeater(block) && !within) { inside.set(block.id, []); walk(block.children ?? [], block.id); }
+            if (repeater(block) && !within) { inside.set(block._id, []); walk(block.children ?? [], block._id); }
             else if (block.children) walk(block.children, within);
         }
     };

@@ -7,7 +7,7 @@ import {
 import { romedbService, live } from './helpers';
 
 const admin: Principal = { kind: 'user', id: 'admin-1', roles: ['admin'], permissions: ['*'] };
-const input = (id: string, type: string, data: { [key: string]: unknown }, extra: Partial<Block> = {}): Block => ({ id, type: `form/${type}`, data: { label: id, ...data }, ...extra });
+const input = (id: string, type: string, data: { [key: string]: unknown }, extra: Partial<Block> = {}): Block => ({ _id: id, type: `form/${type}`, data: { label: id, ...data }, ...extra });
 const contactBody: Block[] = [
     input('n', 'text', { name: 'name', label: 'Your name', required: true }),
     input('e', 'email', { name: 'email', label: 'Email', required: true }),
@@ -130,6 +130,13 @@ describe.skipIf(!live)('forms', () => {
         expect(await cms.forms.setStatus(form, [inbox.items[1]!.id], 'read', editor)).toBe(0);
         const noted = await cms.forms.setNote(form, inbox.items[0]!.id, 'Called back', editor);
         expect(noted.note).toBe('Called back');
+        // Editing answers: checked as a post is, by the form's inputs; left-out inputs are cleared.
+        const invalid = await cms.forms.setValues(form, inbox.items[0]!.id, { name: 'Cy', email: 'not-an-email', message: 'One' }, editor).catch(error => error);
+        expect(invalid).toMatchObject({ code: 'CMS_VALIDATION', fields: { email: expect.any(String) } });
+        const edited = await cms.forms.setValues(form, inbox.items[0]!.id, { name: 'Cy', email: 'cy@example.com', topic: 'sales', message: 'One corrected' }, editor);
+        expect(edited.values).toEqual({ name: 'Cy', email: 'cy@example.com', topic: 'sales', message: 'One corrected', callMe: false });
+        expect(edited.note).toBe('Called back');
+        expect((await cms.forms.submission(form, inbox.items[0]!.id, editor))?.values.phone).toBeUndefined();
         const spam = (await cms.forms.list(form, { status: 'spam' }, editor)).items.map(item => item.id);
         expect(await cms.forms.delete(form, spam, editor)).toBe(2);
         expect(await cms.forms.counts(form, editor)).toEqual({ new: 1, read: 1, spam: 0, trash: 0 });
@@ -137,7 +144,7 @@ describe.skipIf(!live)('forms', () => {
         for await (const chunk of cms.forms.csv(form, {}, editor)) csv += chunk;
         const lines = csv.trim().split('\r\n');
         expect(lines[0]).toBe('Submitted at,Status,Your name,Email,Topic,Message,Call me,Phone,IP address,Page,Browser,User,Note,ID');
-        expect(lines[1]).toContain(",new,Cy,cy@example.com,,One,Yes,'+1 555 0100,198.51.100.1,/contact,Test,,Called back,");
+        expect(lines[1]).toContain(',new,Cy,cy@example.com,Sales,One corrected,No,,198.51.100.1,/contact,Test,,Called back,');
         expect(lines[2]).toContain(',read,Ada,ada@example.com,Support,Help *me*,No,,203.0.113.7');
         expect(lines).toHaveLength(3);
         expect((await cms.forms.inboxCounts([form], editor)).get(contact.id)).toEqual({ fresh: 1, kept: 2 });

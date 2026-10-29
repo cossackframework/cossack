@@ -86,6 +86,14 @@ export interface CollectionDefinition {
      * Null or absent keeps them off the site.
      */
     readonly path?: string | null;
+    /**
+     * What comes between the path and the slug: nothing (the default), or `category` for the
+     * slug of the entry's first term in the collection's first taxonomy, as WordPress's
+     * `/%category%/%postname%/` does. An entry without a term is at the plain address.
+     */
+    readonly permalink?: 'slug' | 'category';
+    /** Entries on the site are listed in the XML sitemap. Default true. */
+    readonly sitemap?: boolean;
     /** Unpublishable collections: readable by anyone (`public`) or by permission (`private`, the default). */
     readonly visibility?: 'public' | 'private';
     /** Visitors can comment on published entries; each entry can close its comments. Default false. */
@@ -152,7 +160,11 @@ export function collectionProblems(definition: CollectionDefinition): string[] {
     if (definition.icon !== undefined && (typeof definition.icon !== 'string' || !ICON.test(definition.icon))) problems.push('The icon must be a Solar icon name.');
     if (definition.path !== undefined && definition.path !== null && definition.path !== '' && (typeof definition.path !== 'string' || !PATH.test(definition.path) || definition.path.length > 100)) problems.push('The URL path uses lowercase letters, digits, hyphens and slashes.');
     if (definition.visibility !== undefined && !['public', 'private'].includes(definition.visibility)) problems.push('Visibility is public or private.');
+    if (definition.permalink !== undefined && !['slug', 'category'].includes(definition.permalink)) problems.push('The permalink structure is slug or category.');
+    if (definition.permalink === 'category' && !(definition.taxonomies ?? []).length) problems.push('Category permalinks need a taxonomy.');
+    if (definition.permalink === 'category' && definition.hierarchical) problems.push('Category permalinks do not apply to nested collections.');
     if (definition.comments !== undefined && typeof definition.comments !== 'boolean') problems.push('Comments are on or off.');
+    if (definition.sitemap !== undefined && typeof definition.sitemap !== 'boolean') problems.push('The sitemap listing is on or off.');
     if (definition.managed !== undefined && typeof definition.managed !== 'boolean') problems.push('Managed is on or off.');
     const taxonomies = definition.taxonomies ?? [];
     if (!Array.isArray(taxonomies) || taxonomies.length > 8 || taxonomies.some(name => typeof name !== 'string' || !TAXONOMY_NAME.test(name)) || new Set(taxonomies).size !== taxonomies.length) problems.push('Choose at most 8 distinct taxonomies.');
@@ -260,6 +272,8 @@ export function extendCollection(builtin: CollectionDefinition, stored: Partial<
         ...(stored.description !== undefined ? { description: stored.description } : {}),
         ...(stored.icon !== undefined ? { icon: stored.icon } : {}),
         ...(stored.path !== undefined ? { path: builtin.path === '' ? '' : stored.path } : {}),
+        ...(stored.permalink !== undefined ? { permalink: stored.permalink } : {}),
+        ...(stored.sitemap !== undefined ? { sitemap: stored.sitemap } : {}),
         ...(stored.comments !== undefined ? { comments: stored.comments } : {}),
         ...(stored.template !== undefined ? { template: stored.template } : {}),
         ...(stored.templateLock !== undefined ? { templateLock: stored.templateLock } : {}),
@@ -286,7 +300,7 @@ export const posts: CollectionDefinition = {
     fields: {
         sticky: field.boolean({ default: false, placement: 'sidebar', label: 'Stick to the top of the blog' }),
     },
-    template: [{ id: 'text', type: 'core/richtext', data: {} }],
+    template: [{ _id: 'text', type: 'core/richtext', data: {} }],
 };
 
 /** Built-in pages: nested; a page's URL is its ancestors' slugs. */
@@ -300,7 +314,7 @@ export const pages: CollectionDefinition = {
     path: '',
     features: { content: true, excerpt: true, featuredImage: true, password: true },
     fields: {},
-    template: [{ id: 'text', type: 'core/richtext', data: {} }],
+    template: [{ _id: 'text', type: 'core/richtext', data: {} }],
 };
 
 /**

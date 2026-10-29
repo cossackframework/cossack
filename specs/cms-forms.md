@@ -1,5 +1,11 @@
 # Forms: a block-based form builder with per-form submission tables
 
+Editors preview a form at `/preview/forms/<id>` (the Form block alone on the site's layout,
+with the editor's unsaved changes, without migrating the draft's table), and can edit a
+submission's answers on its page: `forms.setValues` checks them as a post is, by the form's
+inputs and conditions, without the form's limits or a plugin's validation, and clears the
+inputs left out.
+
 Builds on `specs/cms-essentials.md` (collections, comments, webhooks, outbox) and
 `specs/cms-layout.md` (nested blocks). Status: implemented on branch `cms-foundation`, 2026-10-21. See [Outcome](#outcome).
 

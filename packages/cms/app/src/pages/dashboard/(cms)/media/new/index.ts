@@ -1,6 +1,6 @@
 import { Cossack, Page } from '@cossackframework/core';
 
-/** "Add new" opens the library with its uploader. */
+/** "New" opens the library with its uploader. */
 @Page({ transport: 'http' })
 export default class AddMedia extends Cossack {
     async get() {

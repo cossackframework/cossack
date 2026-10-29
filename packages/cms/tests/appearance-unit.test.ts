@@ -19,7 +19,7 @@ describe('rich text', () => {
             { type: 'bulletList', content: [{ type: 'listItem', content: [paragraph(text('one'))] }] },
             { type: 'codeBlock', attrs: { language: 'ts' }, content: [text('let a = 1;')] },
             { type: 'image', attrs: { src: '/media/abc/a.png', alt: 'A', mediaId: 'abc', width: 10 } },
-            { type: 'cmsBlock', attrs: { id: 'b1', type: 'core/button', data: { label: 'Go', url: '/go' } } },
+            { type: 'cmsBlock', attrs: { _id: 'b1', type: 'core/button', data: { label: 'Go', url: '/go' } } },
         ));
         expect('doc' in checked).toBe(true);
         const clean = (checked as { doc: RichTextDoc }).doc;
@@ -27,7 +27,7 @@ describe('rich text', () => {
         expect(clean.content[1]!.content![2]!.marks).toEqual([{ type: 'link', attrs: { href: 'https://example.com', target: '_blank' } }]);
         expect(clean.content[4]!.attrs).toEqual({ src: '/media/abc/a.png', alt: 'A', mediaId: 'abc' });
         expect(richTextMedia(clean)).toEqual(['abc']);
-        expect(richTextBlocks(clean)).toEqual([{ id: 'b1', type: 'core/button', data: { label: 'Go', url: '/go' } }]);
+        expect(richTextBlocks(clean)).toEqual([{ _id: 'b1', type: 'core/button', data: { label: 'Go', url: '/go' } }]);
         expect(validateValue('body', field.richText(), clean)).toBeUndefined();
     });
 
@@ -39,7 +39,7 @@ describe('rich text', () => {
         expect(error(doc(paragraph(text('x', [{ type: 'link', attrs: { href: '//evil.example' } }]))))).toMatch(/href is not valid/);
         expect(error(doc({ type: 'image', attrs: { src: 'http://example.com/a.png' } }))).toMatch(/src is not valid/);
         expect(error(doc({ type: 'image', attrs: { src: 'data:image/png;base64,AAAA' } }))).toMatch(/src is not valid/);
-        expect(error(doc({ type: 'blockquote', content: [{ type: 'cmsBlock', attrs: { id: 'a', type: 'core/divider', data: {} } }] }))).toMatch(/cmsBlock is not allowed here/);
+        expect(error(doc({ type: 'blockquote', content: [{ type: 'cmsBlock', attrs: { _id: 'a', type: 'core/divider', data: {} } }] }))).toMatch(/cmsBlock is not allowed here/);
         expect(error(doc(paragraph(text('x', [{ type: 'bold' }, { type: 'bold' }]))))).toMatch(/repeats bold/);
         expect(error(doc({ type: 'codeBlock', content: [text('x', [{ type: 'bold' }])] }))).toMatch(/plain text/);
         expect(error(doc({ type: 'bulletList', content: [] }))).toMatch(/must not be empty/);
@@ -54,13 +54,13 @@ describe('rich text', () => {
     it('renders escaped HTML, plain text and parts split at blocks', () => {
         const value = doc(
             paragraph(text('<script>alert("x")</script> & '), text('bold', [{ type: 'bold' }, { type: 'link', attrs: { href: '/a"b' } }])),
-            { type: 'cmsBlock', attrs: { id: 'b1', type: 'core/divider', data: {} } },
+            { type: 'cmsBlock', attrs: { _id: 'b1', type: 'core/divider', data: {} } },
             { type: 'orderedList', attrs: { start: 3 }, content: [{ type: 'listItem', content: [paragraph(text('three'))] }] },
             { type: 'image', attrs: { src: '/media/gone/a.png', alt: 'Gone', mediaId: 'gone' } },
             { type: 'image', attrs: { src: '/media/old/a.png', alt: 'Kept "it"', mediaId: 'kept' } },
         );
         const media = (id: string) => id === 'kept' ? { url: '/media/kept/new.png', width: 4, height: 3 } : null;
-        expect(richTextHtml(value, { media, block: block => `<hr data-block="${block.id}">` })).toBe(
+        expect(richTextHtml(value, { media, block: block => `<hr data-block="${block._id}">` })).toBe(
             '<p>&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt; &amp; <a href="/a&quot;b"><strong>bold</strong></a></p><hr data-block="b1"><ol start="3"><li><p>three</p></li></ol>'
             + '<img src="/media/kept/new.png" alt="Kept &quot;it&quot;" width="4" height="3" loading="lazy" decoding="async">');
         const parts = richTextParts(value, { media });

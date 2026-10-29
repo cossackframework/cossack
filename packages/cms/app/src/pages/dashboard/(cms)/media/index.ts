@@ -110,7 +110,7 @@ export default class MediaLibrary extends Cossack {
     render() {
         const totalPages = Math.max(1, Math.ceil(this.total / PAGE_SIZE));
         return html`<div class="space-y-6">
-            ${pageHeader(__('Files'), { titleActions: component(Button, { type: 'button', size: 'sm', '@click': () => { this.showUploader = !this.showUploader; } }, __('Add new file')) })}
+            ${pageHeader(__('Files'), { titleActions: component(Button, { type: 'button', size: 'sm', '@click': () => { this.showUploader = !this.showUploader; } }, __('New file')) })}
             ${this.configured ? null : notice(__('File storage is not configured. Bind an R2 bucket as MEDIA, or set S3_BUCKET or MEDIA_DIR.'), 'error')}
             ${this.message ? notice(this.message, 'success') : null}
             ${this.errors.map(error => notice(error, 'error'))}

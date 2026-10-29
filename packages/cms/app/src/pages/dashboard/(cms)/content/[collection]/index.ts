@@ -2,7 +2,7 @@ import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackfr
 import { Avatar, Card, CardBody, Button, Checkbox, HoverCard, Icon, NativeSelect, Input, Pagination, AlertDialog, Tooltip, toast } from '@cossackframework/ui';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
 import { evaluateRule, isCmsError, languageName, mediaUrl, recordTitle, type EntryAction, type EntryColumn, type FieldFilter, type ListFilter, type RecordShape } from '@cossackframework/cms';
-import { duplicateEntry, listExtras, routeResource, runEntryCommand, termOptions } from '../../../../../cms/content';
+import { duplicateEntry, importEntries, importItems, listExtras, routeResource, runEntryCommand, termOptions, type ImportReport } from '../../../../../cms/content';
 import type { TermOption } from '../../../../../cms/editor';
 import { icon } from '../../../../../cms/icons';
 import { linkButton, notice, pageHeader, shortDate, statusBadge } from '../../../../../cms/ui';
@@ -44,6 +44,9 @@ export default class EntriesPage extends Cossack {
     @State() singular = '';
     @State() publishable = false;
     @State() canCreate = false;
+    /** The last import's outcome, until the next load. */
+    @State() imported: ImportReport | null = null;
+    @State() importing = false;
     @State() status = 'all';
     @State() search = '';
     @State() term = '';
@@ -180,6 +183,36 @@ export default class EntriesPage extends Cossack {
         } catch (error) {
             this.error = isCmsError(error) ? error.message : __('The entries could not be loaded.');
         }
+    }
+
+    /** Import a JSON export or list of entries chosen in the file input. */
+    @Client()
+    async pickImport(event: Event) {
+        const input = event.target as HTMLInputElement;
+        const file = input.files?.[0];
+        input.value = '';
+        if (!file) return;
+        this.importing = true;
+        try { await this.importJson(await file.text()); }
+        finally { this.importing = false; }
+        if (this.error) toast.error(this.error);
+        else if (this.imported) toast[this.imported.failed.length ? 'error' : 'success'](`${this.imported.created} ${__('created')}, ${this.imported.updated} ${__('updated')}${this.imported.failed.length ? `, ${this.imported.failed.length} ${__('failed')}` : ''}.`);
+    }
+
+    @Server()
+    async importJson(text: string) {
+        this.message = '';
+        this.error = '';
+        this.imported = null;
+        let parsed: unknown;
+        try { parsed = JSON.parse(text); } catch { this.error = __('The file is not valid JSON.'); return; }
+        const items = importItems(parsed);
+        if (typeof items === 'string') { this.error = __(items); return; }
+        try {
+            this.imported = await importEntries(this.c.get('cms'), this.route, items, this.c.get('principal'));
+            this.message = `${__('Imported')}: ${this.imported.created} ${__('created')}, ${this.imported.updated} ${__('updated')}.`;
+        } catch (error) { this.error = isCmsError(error) ? error.message : __('The entries could not be imported.'); return; }
+        await this.load();
     }
 
     @Server()
@@ -413,9 +446,19 @@ export default class EntriesPage extends Cossack {
         const th = 'px-3 py-2 font-medium';
         const td = 'px-3 py-2';
         return html`<div class="space-y-6">
-            ${pageHeader(this.label, { titleActions: this.canCreate ? linkButton(`${__('Add new')} ${this.singular.toLowerCase()}`, `${base}/new`, 'primary', { size: 'sm' }) : null })}
+            ${pageHeader(this.label, {
+                titleActions: this.canCreate ? linkButton(`${__('New')} ${this.singular.toLowerCase()}`, `${base}/new`, 'primary', { size: 'sm' }) : null,
+                actions: html`${linkButton(__('Export JSON'), `/api/cms/export/${this.route}`, 'outline', { size: 'sm' })}
+                    ${this.canCreate ? html`<label class=${`inline-flex cursor-pointer items-center rounded-md border border-border px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted ${this.importing ? 'opacity-50' : ''}`}>
+                        ${this.importing ? __('Importing…') : __('Import JSON')}<input type="file" accept="application/json,.json" class="sr-only" ?disabled=${this.importing} @change=${(event: Event) => this.pickImport(event)}>
+                    </label>` : null}`,
+            })}
             ${this.message ? notice(this.message, 'success') : null}
             ${this.error ? notice(this.error, 'error') : null}
+            ${this.imported?.failed.length ? html`<div role="alert" class="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
+                <p class="font-medium">${this.imported.failed.length} ${this.imported.failed.length === 1 ? __('entry was not imported.') : __('entries were not imported.')}</p>
+                <ul class="mt-1 space-y-0.5 text-xs">${this.imported.failed.slice(0, 50).map(row => html`<li>#${row.index + 1}${row.id ? html` <code>${row.id}</code>` : null}: ${row.error}${row.fields ? ` ${Object.entries(row.fields).map(([name, message]) => `${name} ${message}`).join('; ')}` : ''}</li>`)}</ul>
+            </div>` : null}
             <div class="space-y-3">
                 <nav aria-label=${__('Filter by status')} class="flex flex-wrap gap-x-3 gap-y-1 text-sm">
                     ${this.counts.map((tab, index) => html`${index ? html`<span class="text-muted-foreground" aria-hidden="true">|</span>` : null}

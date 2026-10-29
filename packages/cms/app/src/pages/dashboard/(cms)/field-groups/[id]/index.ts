@@ -2,6 +2,7 @@ import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackfr
 import { AlertDialog, Button, Card, CardBody, CardHeader, Checkbox, Field, Input, NativeSelect, Textarea, toast } from '@cossackframework/ui';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
 import { CORE_FIELDS, isCmsError, PERMISSIONS, type Block, type FieldGroup, type FieldGroupTarget } from '@cossackframework/cms';
+import { collectionName } from '../../../../../cms/builder';
 import { blockOptions } from '../../../../../cms/content';
 import { blocksInput, editorBlocks, type BlockOption, type EditorBlock } from '../../../../../cms/editor';
 import { FieldGroupEditor } from '../../../../../cms/field-group-editor';
@@ -13,9 +14,9 @@ interface Draft { id: string; title: string; description: string; placement: 'ma
 interface TargetChoice { kind: FieldGroupTarget['kind']; name: string; label: string }
 
 /**
- * Edit a field group: its title, where its box shows, the targets it is attached to, and
- * its fields laid out in the block tree. Saving plans the targets' indexes; entries keep
- * values of fields that are removed.
+ * Edit a field group, or make one at `/new`: its title, where its box shows, the targets it
+ * is attached to, and its fields laid out in the block tree, all in one step. Saving plans
+ * the targets' indexes; entries keep values of fields that are removed.
  */
 @Page({ transport: 'http', middlewares: [requireAny(PERMISSIONS.manageCollections)] })
 export default class FieldGroupPage extends Cossack {
@@ -28,19 +29,28 @@ export default class FieldGroupPage extends Cossack {
     @State() error = '';
     @State() confirmDelete = false;
 
+    /** True until the group is saved for the first time. */
+    @State() fresh = false;
+
     head(): HeadValue {
-        return { title: this.draft ? `${this.draft.title} — ${__('Field group')}` : __('Field group') };
+        return { title: this.fresh ? __('New field group') : this.draft ? `${this.draft.title} — ${__('Field group')}` : __('Field group') };
     }
 
     async init() {
-        await this.load(this.c.req.param('id') ?? '');
-        if (this.c.req.query('created') === '1') this.message = __('Field group created. Add its fields and choose where it shows, then save.');
+        await this.load(this.c.req.param('id') ?? 'new');
+        if (this.c.req.query('created') === '1') this.message = __('Field group created.');
     }
 
     @Server()
     async load(id: string) {
         const cms = this.c.get('cms');
-        const group = await cms.fieldGroups.get(id);
+        this.fresh = id === 'new';
+        // A new group starts empty, attached to the collection the collection manager came from.
+        const collection = this.fresh ? this.c.req.query('collection') ?? '' : '';
+        const group = this.fresh
+            ? { id: '', title: '', description: '', placement: 'main' as const, order: undefined, blocks: [] as Block[],
+                targets: collection && cms.collections().some(entry => entry.name === collection && !entry.managed) ? [{ kind: 'collection' as const, name: collection }] : [] }
+            : await cms.fieldGroups.get(id);
         if (!group) { this.error = __('This field group does not exist.'); this.c.status(404); return; }
         this.draft = { id: group.id, title: group.title, description: group.description ?? '', placement: group.placement ?? 'main', order: group.order === undefined ? '' : String(group.order) };
         this.targets = [...group.targets];
@@ -76,7 +86,7 @@ export default class FieldGroupPage extends Cossack {
     async submit() {
         if (!this.draft) return;
         await this.save(this.draft, this.targets, this.blocks);
-        if (this.error) toast.error(this.error); else toast.success(__('Field group saved.'));
+        if (this.error) toast.error(this.error); else if (!this.fresh) toast.success(__('Field group saved.'));
     }
 
     @Server()
@@ -87,12 +97,16 @@ export default class FieldGroupPage extends Cossack {
         const converted = blocksInput(blocks, new Map(options.map(option => [option.name, option])));
         if ('error' in converted) { this.error = `${__('Fields')}: ${converted.error}`; return; }
         const order = draft.order.trim() === '' ? undefined : Number(draft.order);
+        // A new group's ID comes from its title.
+        const id = draft.id || collectionName(draft.title).replaceAll('_', '-');
+        if (!id) { this.error = __('Give the field group a title.'); return; }
         const group: FieldGroup = {
-            id: draft.id, title: draft.title, description: draft.description.trim(), placement: draft.placement,
+            id, title: draft.title.trim(), description: draft.description.trim(), placement: draft.placement,
             ...(order !== undefined && Number.isSafeInteger(order) ? { order } : {}), targets, blocks: converted.value as Block[],
         };
         try {
             const saved = await this.c.get('cms').saveFieldGroup(group, this.c.get('principal'));
+            if (this.fresh) return this.redirect(`/dashboard/field-groups/${saved.id}?created=1`);
             await this.load(saved.id);
             this.message = __('Field group saved.');
         } catch (error) {
@@ -123,10 +137,10 @@ export default class FieldGroupPage extends Cossack {
         // Conditions may test what every target has: an entry's core fields are the common ground.
         const scope = CORE_FIELDS.map(name => ({ name, label: name }));
         return html`<div class="space-y-6">
-            ${pageHeader(draft.title, {
-                description: `${__('Field group')} ${draft.id}`,
+            ${pageHeader(this.fresh ? __('New field group') : draft.title, {
+                description: this.fresh ? __('A box of fields for editors. Lay its fields out and choose where it shows.') : `${__('Field group')} ${draft.id}`,
                 actions: html`<a href="/dashboard/field-groups" class="text-sm text-muted-foreground hover:text-foreground">← ${__('Field groups')}</a>
-                    ${component(Button, { type: 'button', '@click': () => this.submit() }, __('Save field group'))}`,
+                    ${component(Button, { type: 'button', disabled: this.fresh && !collectionName(draft.title), '@click': () => this.submit() }, this.fresh ? __('Create field group') : __('Save field group'))}`,
             })}
             ${this.message ? notice(this.message, 'success') : null}
             ${this.error ? notice(describeBlockError(this.error, this.blocks, this.options), 'error') : null}
@@ -139,7 +153,8 @@ export default class FieldGroupPage extends Cossack {
                 <aside class="space-y-6">
                     ${component(Card, {}, component(CardBody, { class: 'space-y-4' }, html`
                         <h2 class="text-base font-semibold text-foreground">${__('Settings')}</h2>
-                        ${component(Field, { label: __('Title'), for: 'group-title', control: attributes => component(Input, { ...attributes, '.value': draft.title, '@input': (event: Event) => this.setDraft('title', (event.target as HTMLInputElement).value) }) })}
+                        ${component(Field, { label: __('Title'), for: 'group-title', ...(this.fresh ? { hint: draft.title ? `${__('Stored as')} ${collectionName(draft.title).replaceAll('_', '-') || '…'}` : __('Such as Product details.') } : {}),
+                            control: attributes => component(Input, { ...attributes, '.value': draft.title, '@input': (event: Event) => this.setDraft('title', (event.target as HTMLInputElement).value) }) })}
                         ${component(Field, { label: __('Description'), for: 'group-description', hint: __('Shown under the box\'s title.'),
                             control: attributes => component(Textarea, { ...attributes, rows: 2, '.value': draft.description, '@input': (event: Event) => this.setDraft('description', (event.target as HTMLTextAreaElement).value) }) })}
                         ${component(Field, { label: __('Placement'), for: 'group-placement', hint: __('In entry editors; terms, users and menu items have one column.'),
@@ -153,7 +168,7 @@ export default class FieldGroupPage extends Cossack {
                         <h2 class="text-base font-semibold text-foreground">${__('Shown on')}</h2>
                         ${this.choices.map(choice => this.check(choice))}
                     `))}
-                    ${component(Card, {}, component(CardBody, { class: 'space-y-3' }, html`
+                    ${this.fresh ? null : component(Card, {}, component(CardBody, { class: 'space-y-3' }, html`
                         <h2 class="text-base font-semibold text-destructive">${__('Delete field group')}</h2>
                         <p class="text-sm text-muted-foreground">${__('The box disappears from its editors. Values already stored stay in their entries until those are saved without them.')}</p>
                         ${component(Button, { type: 'button', variant: 'destructive', size: 'sm', '@click': () => { this.confirmDelete = true; } }, __('Delete field group'))}

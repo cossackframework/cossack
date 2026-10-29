@@ -46,7 +46,7 @@ async function save(web, collection, values, id = 'new', rev = 0) {
   return result;
 }
 
-const richText = (...content) => [{ id: 'rt', type: 'core/richtext', data: { text: doc(...content) } }];
+const richText = (...content) => [{ _id: 'rt', type: 'core/richtext', data: { text: doc(...content) } }];
 const post = (title, extra = {}) => ({ title, slug: '', excerpt: '', content: richText(paragraph(`${title} body`)), status: 'published', publishedAt: '', sticky: false, featuredImage: '', categories: [], tags: [], ...extra });
 
 async function essentials(origin, routeIds, diagnostics, { runtime }) {
@@ -253,10 +253,10 @@ async function essentials(origin, routeIds, diagnostics, { runtime }) {
   expect(comments.items.map(item => item.content)).toEqual(['Great read!']);
 
   // Synced patterns render their current content wherever they are used.
-  const patternId = await save(web, 'patterns', { title: 'Call to action', content: [{ id: 'cta', type: 'core/paragraph', data: { text: 'Subscribe to our newsletter' } }], synced: true, starter: '' });
-  await save(web, 'posts', post('With a pattern', { content: [...richText(paragraph('Intro')), { id: 'p1', type: 'core/pattern', data: { pattern: patternId } }] }));
+  const patternId = await save(web, 'patterns', { title: 'Call to action', content: [{ _id: 'cta', type: 'core/paragraph', data: { text: 'Subscribe to our newsletter' } }], synced: true, starter: '' });
+  await save(web, 'posts', post('With a pattern', { content: [...richText(paragraph('Intro')), { _id: 'p1', type: 'core/pattern', data: { pattern: patternId } }] }));
   contains(visible(await visitor.page('/posts/with-a-pattern')), 'Subscribe to our newsletter');
-  await save(web, 'patterns', { title: 'Call to action', content: [{ id: 'cta', type: 'core/paragraph', data: { text: 'Follow us everywhere' } }], synced: true, starter: '' }, patternId, 1);
+  await save(web, 'patterns', { title: 'Call to action', content: [{ _id: 'cta', type: 'core/paragraph', data: { text: 'Follow us everywhere' } }], synced: true, starter: '' }, patternId, 1);
   const updatedPattern = visible(await visitor.page('/posts/with-a-pattern'));
   contains(updatedPattern, 'Follow us everywhere');
   lacks(updatedPattern, 'Subscribe to our newsletter');

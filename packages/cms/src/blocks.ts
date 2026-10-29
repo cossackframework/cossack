@@ -111,8 +111,8 @@ export interface BlockStyle {
 }
 
 export interface Block {
-    /** Stable within its field: 1-40 letters, digits, `_` or `-`; distinct across the whole tree. */
-    readonly id: string;
+    /** Stable within its field: 1-40 letters, digits, `_` or `-`; distinct across the whole tree. A system field, so `_id`. */
+    readonly _id: string;
     readonly type: string;
     readonly data: { readonly [field: string]: unknown };
     readonly layout?: BlockLayout;
@@ -216,6 +216,24 @@ const core: BlockDeclaration[] = [
     { name: 'core/embed', keywords: ['youtube', 'vimeo', 'video'], label: 'Video embed', icon: 'play-circle', category: 'embeds', description: 'A YouTube or Vimeo video.', fields: {
         url: field.string({ required: true, max: 2048, pattern: 'https://(?:www\\.)?(?:youtube\\.com/watch\\?v=|youtu\\.be/|vimeo\\.com/)\\S+', label: 'Video URL' }),
         caption: field.string({ max: 300, label: 'Caption' }),
+    } },
+    { name: 'core/video', keywords: ['movie', 'film', 'mp4', 'player'], label: 'Video', icon: 'video-frame', category: 'media', description: 'A video file from the library, with the browser\'s player.', fields: {
+        video: field.media({ required: true, nullable: false, label: 'Video', description: 'An MP4 or WebM file from the library.' }),
+        poster: field.media({ label: 'Poster', description: 'The image shown before the video plays.' }),
+        caption: field.string({ max: 300, label: 'Caption' }),
+        captions: field.media({ label: 'Captions', description: 'A WebVTT (.vtt) file of subtitles.' }),
+        autoplay: field.boolean({ default: false, label: 'Autoplay', description: 'Starts muted, as browsers require.' }),
+        loop: field.boolean({ default: false, label: 'Loop' }),
+        muted: field.boolean({ default: false, label: 'Muted' }),
+        controls: field.boolean({ default: true, label: 'Show controls' }),
+        preload: field.enum(['metadata', 'auto', 'none'], { default: 'metadata', label: 'Preload', choices: { metadata: 'Only the first frame', auto: 'The whole video', none: 'Nothing until played' } }),
+    } },
+    { name: 'core/audio', keywords: ['sound', 'music', 'podcast', 'mp3', 'player'], label: 'Audio', icon: 'music-note', category: 'media', description: 'An audio file from the library, with the browser\'s player.', fields: {
+        audio: field.media({ required: true, nullable: false, label: 'Audio', description: 'An MP3, OGG or WAV file from the library.' }),
+        caption: field.string({ max: 300, label: 'Caption' }),
+        autoplay: field.boolean({ default: false, label: 'Autoplay' }),
+        loop: field.boolean({ default: false, label: 'Loop' }),
+        preload: field.enum(['metadata', 'auto', 'none'], { default: 'metadata', label: 'Preload', choices: { metadata: 'The length only', auto: 'The whole file', none: 'Nothing until played' } }),
     } },
     { name: 'core/divider', keywords: ['separator', 'hr', 'line', 'rule'], common: true, label: 'Divider', icon: 'minus-square', category: 'design', description: 'A line between sections, with text in the middle if you like.', fields: {
         orientation: field.enum(['horizontal', 'vertical'], { default: 'horizontal', label: 'Orientation', choices: { horizontal: 'Horizontal', vertical: 'Vertical' } }),
@@ -376,12 +394,12 @@ export function validateBlocks(value: readonly Block[], types: ReadonlyMap<strin
         const blocks: Block[] = [];
         for (const block of list) {
             const type = types.get(block.type);
-            if (!type || (parent === null && allowed && allowed.length && !allowed.includes(block.type))) { errors[block.id] = `${block.type} is not an available block.`; continue; }
-            if (!blockAllowedIn(types, block.type, parent)) { errors[block.id] = parent ? `${block.type} cannot go inside ${parent}.` : `${block.type} goes inside ${type.parent?.join(' or ')}.`; continue; }
-            if (type.input && !form) { errors[block.id] = `${block.type} goes only in a form.`; continue; }
-            if (type.field && !fieldGroup) { errors[block.id] = `${block.type} goes only in a field group.`; continue; }
-            if (fieldGroup && !type.field && !type.common && !FIELD_GROUP_LAYOUT.has(block.type)) { errors[block.id] = `${block.type} does not go in a field group.`; continue; }
-            if (block.when !== undefined && !conditional) { errors[block.id] = 'conditions apply only in forms and field groups.'; continue; }
+            if (!type || (parent === null && allowed && allowed.length && !allowed.includes(block.type))) { errors[block._id] = `${block.type} is not an available block.`; continue; }
+            if (!blockAllowedIn(types, block.type, parent)) { errors[block._id] = parent ? `${block.type} cannot go inside ${parent}.` : `${block.type} goes inside ${type.parent?.join(' or ')}.`; continue; }
+            if (type.input && !form) { errors[block._id] = `${block.type} goes only in a form.`; continue; }
+            if (type.field && !fieldGroup) { errors[block._id] = `${block.type} goes only in a field group.`; continue; }
+            if (fieldGroup && !type.field && !type.common && !FIELD_GROUP_LAYOUT.has(block.type)) { errors[block._id] = `${block.type} does not go in a field group.`; continue; }
+            if (block.when !== undefined && !conditional) { errors[block._id] = 'conditions apply only in forms and field groups.'; continue; }
             let source = block.data;
             if (named(block) && (typeof source.name !== 'string' || !source.name.trim())) {
                 const name = uniqueInputName(inputName(typeof source.label === 'string' ? source.label : ''), taken);
@@ -393,21 +411,21 @@ export function validateBlocks(value: readonly Block[], types: ReadonlyMap<strin
                 const entry = source[name];
                 if (entry === undefined || entry === '' || entry === null) {
                     if (declaration.default !== undefined) data[name] = declaration.default;
-                    else if (declaration.required) errors[`${block.id}.${name}`] = 'is required.';
+                    else if (declaration.required) errors[`${block._id}.${name}`] = 'is required.';
                     continue;
                 }
                 const error = validateValue(name, declaration, entry);
-                if (error) errors[`${block.id}.${name}`] = error;
+                if (error) errors[`${block._id}.${name}`] = error;
                 else data[name] = entry;
             }
             const children = block.children ?? [];
-            if (children.length && !type.children) { errors[block.id] = `${block.type} does not hold blocks.`; continue; }
-            if (type.children?.max !== undefined && children.length > type.children.max) { errors[block.id] = `holds at most ${type.children.max} blocks.`; continue; }
+            if (children.length && !type.children) { errors[block._id] = `${block.type} does not hold blocks.`; continue; }
+            if (type.children?.max !== undefined && children.length > type.children.max) { errors[block._id] = `holds at most ${type.children.max} blocks.`; continue; }
             const layout = blockLayoutOf(block);
             const style = blockStyleOf(block, blockSupports(type));
             const when = block.when ? blockConditionOf(block.when) : undefined;
             blocks.push(Object.freeze({
-                id: block.id, type: block.type, data: Object.freeze(data),
+                _id: block._id, type: block.type, data: Object.freeze(data),
                 ...(layout ? { layout } : {}),
                 ...(style ? { style } : {}),
                 ...(when ? { when } : {}),
@@ -435,14 +453,14 @@ export const FIELD_GROUP_LIMIT = 96;
 function fieldGroupTreeErrors(blocks: readonly Block[], types: ReadonlyMap<string, BlockDeclaration>, scope: readonly string[]): { [path: string]: string } {
     const errors: { [path: string]: string } = {};
     const fields = flattenBlocks(blocks).filter(block => types.get(block.type)?.field);
-    if (fields.length > FIELD_GROUP_LIMIT) errors[fields[FIELD_GROUP_LIMIT]!.id] = `A field group holds at most ${FIELD_GROUP_LIMIT} fields.`;
+    if (fields.length > FIELD_GROUP_LIMIT) errors[fields[FIELD_GROUP_LIMIT]!._id] = `A field group holds at most ${FIELD_GROUP_LIMIT} fields.`;
     // A row's field sits inside its row, so only a top-level field can take a name the target has.
-    const inRows = new Set(fields.filter(block => types.get(block.type)?.field?.kind === 'repeater').flatMap(block => flattenBlocks(block.children ?? []).map(child => child.id)));
+    const inRows = new Set(fields.filter(block => types.get(block.type)?.field?.kind === 'repeater').flatMap(block => flattenBlocks(block.children ?? []).map(child => child._id)));
     const named = new Map<string, Block>();
     for (const block of fields) {
         const name = block.data.name as string;
-        if (RESERVED_FIELD_NAMES.has(name) || (scope.includes(name) && !inRows.has(block.id))) errors[`${block.id}.name`] = 'is used by the target itself.';
-        else if (named.has(name)) errors[`${block.id}.name`] = 'is used by another field.';
+        if (RESERVED_FIELD_NAMES.has(name) || (scope.includes(name) && !inRows.has(block._id))) errors[`${block._id}.name`] = 'is used by the target itself.';
+        else if (named.has(name)) errors[`${block._id}.name`] = 'is used by another field.';
         else named.set(name, block);
     }
     // The names in reach of a row level: the outer levels' and its own, whatever the order.
@@ -460,8 +478,8 @@ function fieldGroupTreeErrors(blocks: readonly Block[], types: ReadonlyMap<strin
             for (const block of items) {
                 const type = types.get(block.type);
                 for (const rule of block.when?.rules ?? []) {
-                    if (!here.has(rule.field)) errors[block.id] = `shows on ${rule.field}, which is not a field in reach.`;
-                    else if (named.get(rule.field) === block) errors[block.id] = 'cannot show on its own value.';
+                    if (!here.has(rule.field)) errors[block._id] = `shows on ${rule.field}, which is not a field in reach.`;
+                    else if (named.get(rule.field) === block) errors[block._id] = 'cannot show on its own value.';
                 }
                 if (!block.children) continue;
                 if (type?.field) visit(block.children, here);
@@ -486,22 +504,22 @@ function formTreeErrors(blocks: readonly Block[], types: ReadonlyMap<string, Blo
     const errors: { [path: string]: string } = {};
     const all = flattenBlocks(blocks);
     const inputs = all.filter(block => types.get(block.type)?.input);
-    if (inputs.length > FORM_INPUT_LIMIT) errors[inputs[FORM_INPUT_LIMIT]!.id] = `A form holds at most ${FORM_INPUT_LIMIT} fields.`;
+    if (inputs.length > FORM_INPUT_LIMIT) errors[inputs[FORM_INPUT_LIMIT]!._id] = `A form holds at most ${FORM_INPUT_LIMIT} fields.`;
     const repeater = (block: Block) => types.get(block.type)?.input?.kind === 'rows';
     const scopes = new Map<string, Map<string, Block>>();
     const names = (list: readonly Block[], into: Map<string, Block>, inside: boolean) => {
         for (const block of list) {
             if (types.get(block.type)?.input) {
                 const name = block.data.name as string;
-                if (RESERVED_INPUT_NAMES.has(name)) errors[`${block.id}.name`] = 'is reserved for the submission.';
-                else if (into.has(name)) errors[`${block.id}.name`] = 'is used by another field.';
+                if (RESERVED_INPUT_NAMES.has(name)) errors[`${block._id}.name`] = 'is reserved for the submission.';
+                else if (into.has(name)) errors[`${block._id}.name`] = 'is used by another field.';
                 else into.set(name, block);
             }
             if (repeater(block)) {
-                if (inside) { errors[block.id] = 'A repeater cannot hold another repeater.'; continue; }
+                if (inside) { errors[block._id] = 'A repeater cannot hold another repeater.'; continue; }
                 const own = new Map<string, Block>();
                 names(block.children ?? [], own, true);
-                scopes.set(block.id, own);
+                scopes.set(block._id, own);
             } else if (block.children) names(block.children, into, inside);
         }
     };
@@ -511,10 +529,10 @@ function formTreeErrors(blocks: readonly Block[], types: ReadonlyMap<string, Blo
         for (const block of list) {
             for (const rule of block.when?.rules ?? []) {
                 const target = own?.get(rule.field) ?? top.get(rule.field);
-                if (!target) errors[block.id] = `shows on ${rule.field}, which is not a field ${own ? 'in reach' : 'of this form'}.`;
-                else if (target === block) errors[block.id] = 'cannot show on its own value.';
+                if (!target) errors[block._id] = `shows on ${rule.field}, which is not a field ${own ? 'in reach' : 'of this form'}.`;
+                else if (target === block) errors[block._id] = 'cannot show on its own value.';
             }
-            if (repeater(block)) check(block.children ?? [], scopes.get(block.id) ?? new Map());
+            if (repeater(block)) check(block.children ?? [], scopes.get(block._id) ?? new Map());
             else if (block.children) check(block.children, own);
         }
     };
@@ -658,22 +676,22 @@ export function flattenBlocks<T extends Block>(blocks: readonly T[]): T[] {
 
 /** The blocks of a tree in document order, with their depth, parent and index. */
 export function placeBlocks<T extends Block>(blocks: readonly T[], parent: string | null = null, depth = 0): BlockPlace<T>[] {
-    return blocks.flatMap((block, index) => [{ block, depth, parent, index }, ...placeBlocks((block.children ?? []) as readonly T[], block.id, depth + 1)]);
+    return blocks.flatMap((block, index) => [{ block, depth, parent, index }, ...placeBlocks((block.children ?? []) as readonly T[], block._id, depth + 1)]);
 }
 
 /** The block with an ID anywhere in the tree. */
 export function findBlock<T extends Block>(blocks: readonly T[], id: string): T | undefined {
-    return flattenBlocks(blocks).find(block => block.id === id);
+    return flattenBlocks(blocks).find(block => block._id === id);
 }
 
 /** The tree with one block replaced by what `change` returns for it. */
 export function updateBlock<T extends Block>(blocks: readonly T[], id: string, change: (block: T) => T): T[] {
-    return blocks.map(block => block.id === id ? change(block) : block.children ? { ...block, children: updateBlock(block.children as readonly T[], id, change) } : block);
+    return blocks.map(block => block._id === id ? change(block) : block.children ? { ...block, children: updateBlock(block.children as readonly T[], id, change) } : block);
 }
 
 /** The tree without one block and what it held. */
 export function removeBlock<T extends Block>(blocks: readonly T[], id: string): T[] {
-    return blocks.filter(block => block.id !== id).map(block => block.children ? { ...block, children: removeBlock(block.children as readonly T[], id) } : block);
+    return blocks.filter(block => block._id !== id).map(block => block.children ? { ...block, children: removeBlock(block.children as readonly T[], id) } : block);
 }
 
 /** The tree with a block inserted under `parent` (null for the top level) at `index`, or last. */
@@ -683,7 +701,7 @@ export function insertBlock<T extends Block>(blocks: readonly T[], parent: strin
         return [...list.slice(0, position), block, ...list.slice(position)];
     };
     if (parent === null) return at(blocks);
-    return blocks.map(entry => entry.id === parent ? { ...entry, children: at((entry.children ?? []) as readonly T[]) }
+    return blocks.map(entry => entry._id === parent ? { ...entry, children: at((entry.children ?? []) as readonly T[]) }
         : entry.children ? { ...entry, children: insertBlock(entry.children as readonly T[], parent, block, index) } : entry);
 }
 
@@ -706,7 +724,7 @@ export type BlockMove = 'up' | 'down' | 'in' | 'out';
  */
 export function shiftBlock<T extends Block>(blocks: readonly T[], id: string, move: BlockMove, types: ReadonlyMap<string, BlockDeclaration>): readonly T[] {
     const places = placeBlocks(blocks);
-    const place = places.find(entry => entry.block.id === id);
+    const place = places.find(entry => entry.block._id === id);
     if (!place) return blocks;
     const siblings = place.parent === null ? blocks : (findBlock(blocks, place.parent)?.children ?? []) as readonly T[];
     let next: T[] | undefined;
@@ -715,12 +733,12 @@ export function shiftBlock<T extends Block>(blocks: readonly T[], id: string, mo
         case 'down': if (place.index < siblings.length - 1) next = moveBlock(blocks, id, place.parent, place.index + 1); break;
         case 'in': {
             const above = siblings[place.index - 1];
-            if (above && types.get(above.type)?.children) next = moveBlock(blocks, id, above.id, (above.children ?? []).length);
+            if (above && types.get(above.type)?.children) next = moveBlock(blocks, id, above._id, (above.children ?? []).length);
             break;
         }
         case 'out': {
             if (place.parent === null) break;
-            const container = places.find(entry => entry.block.id === place.parent)!;
+            const container = places.find(entry => entry.block._id === place.parent)!;
             next = moveBlock(blocks, id, container.parent, container.index + 1);
             break;
         }
@@ -732,7 +750,7 @@ export function shiftBlock<T extends Block>(blocks: readonly T[], id: string, mo
 export function blockTreeProblem(blocks: readonly Block[], types: ReadonlyMap<string, BlockDeclaration>): string | undefined {
     const places = placeBlocks(blocks);
     if (places.length > BLOCK_LIMITS.count) return `At most ${BLOCK_LIMITS.count} blocks.`;
-    const typeOf = new Map(places.map(place => [place.block.id, place.block.type]));
+    const typeOf = new Map(places.map(place => [place.block._id, place.block.type]));
     for (const { block, parent: parentId, depth } of places) {
         if (depth >= BLOCK_LIMITS.depth) return `Blocks nest at most ${BLOCK_LIMITS.depth} deep.`;
         const type = types.get(block.type);

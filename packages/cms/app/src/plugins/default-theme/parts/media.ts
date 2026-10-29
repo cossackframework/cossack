@@ -9,5 +9,6 @@ export function image(media: MediaView | null, className: string, sizes = '(min-
     const srcset = fill ? media.wideSrcset : media.srcset;
     // A 16:9 frame: its size, so the page does not shift while the image loads.
     const height = fill && media.width ? Math.round(media.width * 9 / 16) : media.height;
-    return html`<img src=${media.url} srcset=${ifDefined(srcset || undefined)} sizes=${ifDefined(srcset ? sizes : undefined)} alt=${media.alt} width=${media.width ?? ''} height=${height ?? ''} loading="lazy" decoding="async" class=${className}>`;
+    return html`<img src=${media.url} srcset=${ifDefined(srcset || undefined)} sizes=${ifDefined(srcset ? sizes : undefined)} alt=${media.alt} width=${media.width ?? ''} height=${height ?? ''} loading="lazy" decoding="async" class=${className}
+        style=${ifDefined(media.placeholder ? `background-image:url(${media.placeholder});background-size:cover;background-repeat:no-repeat` : undefined)}>`;
 }

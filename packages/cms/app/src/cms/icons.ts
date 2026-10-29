@@ -19,7 +19,6 @@ import { ClipboardListIcon } from '@cossackframework/solar-icons/clipboard-list/
 import { GraphIcon } from '@cossackframework/solar-icons/graph/line';
 import { MedalRibbonIcon } from '@cossackframework/solar-icons/medal-ribbon/line';
 import { VideoLibraryIcon } from '@cossackframework/solar-icons/video-library/line';
-import { MusicNoteIcon } from '@cossackframework/solar-icons/music-note/line';
 import { BookIcon } from '@cossackframework/solar-icons/book/line';
 import { TicketIcon } from '@cossackframework/solar-icons/ticket/line';
 import { UserIdIcon } from '@cossackframework/solar-icons/user-id/line';
@@ -44,6 +43,8 @@ import { ListIcon } from '@cossackframework/solar-icons/list/line';
 import { CodeSquareIcon } from '@cossackframework/solar-icons/code-square/line';
 import { CursorSquareIcon } from '@cossackframework/solar-icons/cursor-square/line';
 import { PlayCircleIcon } from '@cossackframework/solar-icons/play-circle/line';
+import { VideoFrameIcon } from '@cossackframework/solar-icons/video-frame/line';
+import { MusicNoteIcon } from '@cossackframework/solar-icons/music-note/line';
 import { MinusSquareIcon } from '@cossackframework/solar-icons/minus-square/line';
 import { LayersIcon } from '@cossackframework/solar-icons/layers/line';
 import { WidgetIcon } from '@cossackframework/solar-icons/widget/line';
@@ -164,6 +165,7 @@ export const ICONS: Readonly<Record<string, IconEntry>> = Object.freeze({
     'code-square': { line: CodeSquareIcon },
     'cursor-square': { line: CursorSquareIcon },
     'play-circle': { line: PlayCircleIcon },
+    'video-frame': { line: VideoFrameIcon },
     'minus-square': { line: MinusSquareIcon },
     'layers': { line: LayersIcon },
     'widget': { line: WidgetIcon },

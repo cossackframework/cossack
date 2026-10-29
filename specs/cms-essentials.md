@@ -24,6 +24,24 @@ and stronger sign-in.
   the next request, as saving a collection does. Code-declared resources and plugins still
   migrate from Tools → Schema.
 
+### RomeQL
+
+- **Blocks carry `_id`.** The block's ID is a system field like `_rev` and `_owner`: stored
+  trees, rich text `cmsBlock` nodes, the content API and themes all use `_id`. Host step 12
+  rewrites every tree a database stored before it (`server/block-ids.ts`), once, on every path
+  that applies host steps: Tools → Schema, setup and the automatic upgrade. Definitions first,
+  then the collections are reloaded, so a collection whose stored template was invalid until
+  the rewrite has its records rewritten too.
+- **Record sources.** A single record reads as `SELECT * FROM type::record('<table>', $key)
+  WHERE <access conditions>`, an ID lookup, not a scan with `WHERE id = …`.
+- **Record projections.** Nested pages resolve their ancestors in one request through the
+  parent link (`parent.*`, `parent.*.parent.*`, … to 8 levels, `repository.ancestors`); each
+  fetched ancestor is checked against the principal's read rule, so an unpublished ancestor
+  still hides the URL from visitors.
+- **Write-or-replace rows** (settings, areas, field groups, roles, autosaves, menu locations)
+  use `INSERT … ON CONFLICT DO UPDATE`; `UPSERT` is for collections, where the repository's
+  guarded `INSERT … DOCUMENT` carries exact write recovery and stays.
+
 ### Scheduling and previews
 
 - **Scheduling.** Saving `published` with a future publication time stores `scheduled`;
@@ -53,6 +71,15 @@ and stronger sign-in.
   without asking, so a dev server reload or an accidental refresh loses nothing
   (`generated-runtime-cms-autosave.test.js` covers the whole cycle in Chromium).
 
+### Permalinks
+
+- **Structure.** A collection's `permalink` is `slug` (the default) or `category`: the slug of
+  the entry's first term in the collection's first taxonomy between the path and the slug, as
+  WordPress's `/%category%/%postname%/` (Settings → Permalinks, "Category before the post
+  name"). Entries without a term keep the plain address; `/<path>/<category>/<slug>` resolves
+  by the slug and redirects to the canonical address when the category differs. Moving an
+  entry to another first category redirects its old address like a slug change does.
+
 ### Redirects
 
 - **Table.** `cms_redirects`: an exact source path or a prefix (`/old/*` → `/new/*`), a
@@ -73,9 +100,11 @@ and stronger sign-in.
 - **Head.** Title (SEO title, or the entry title, separator, site title), description,
   Open Graph and Twitter cards, canonical link (absolute: `APP_URL` or the request origin),
   robots `noindex` for the entry or the whole site.
-- **Sitemaps.** `/sitemap.xml` indexes `/sitemap-<collection>-<n>.xml` (1,000 URLs, published,
-  indexable, with `lastmod`) and `/sitemap-<taxonomy>.xml`. Off when search engines are
-  discouraged.
+- **Sitemaps.** `/sitemap.xml` indexes `/sitemaps/site.xml` (the app's own routes without
+  parameters, from `.cossack/routes.ts`), `/sitemaps/<collection>-<n>.xml` (1,000 URLs,
+  published, indexable, with `lastmod` and the featured image as an image sitemap entry) and
+  `/sitemaps/terms-<taxonomy>.xml`. A collection's `sitemap: false` (the collection manager's
+  "List entries in the XML sitemap") leaves it out. Off when search engines are discouraged.
 - **robots.txt.** Disallows `/dashboard/`, `/api/`, `/auth/` and `/preview/`, names the sitemap,
   appends the SEO settings' extra rules; `Disallow: /` when discouraged.
 - **Structured data.** JSON-LD: `WebSite` with a `SearchAction` on the home page, `BlogPosting`
@@ -94,6 +123,13 @@ and stronger sign-in.
   focal point is the gravity of `fit=cover`. `cms_files` gains the columns.
 - **Markup.** `MediaView` carries `srcset`, `sizes`, width and height; the default theme, core
   image and gallery blocks and rich-text images use them.
+- **Placeholders.** An upload, and every change of the crop, makes a 16-pixel-wide WebP of
+  the image through the transformer, kept on `cms_files.placeholder` as a `data:` URL
+  (`MediaView.placeholder`). Image markup paints it as the `<img>` background, with the
+  width and height, so the page neither shifts nor shows a blank while the image loads.
+- **Video and audio.** `core/video` and `core/audio` place a library file in the browser's
+  player (poster, captions track, autoplay muted, loop, preload); the editor plays the chosen
+  file in place of an image preview, and media pickers offer image, video and audio files.
 
 ### API tokens and webhooks
 

@@ -35,7 +35,7 @@ export default class FieldGroupsPage extends Cossack {
         return html`<div class="space-y-6">
             ${pageHeader(__('Field groups'), {
                 description: __('Boxes of fields shown in editors: lay typed fields out with columns, tabs and headings, then attach the box to collections, taxonomies, users or menu items.'),
-                titleActions: linkButton(__('Add new field group'), '/dashboard/field-groups/new', 'primary', { size: 'sm' }),
+                titleActions: linkButton(__('New field group'), '/dashboard/field-groups/new', 'primary', { size: 'sm' }),
             })}
             ${component(Card, {}, component(CardBody, { class: 'p-0' }, html`
                 <div class="overflow-x-auto">

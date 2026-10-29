@@ -213,7 +213,7 @@ export function fieldBlockOf(name: string, declaration: FieldDeclaration, id = n
     if (kind === 'blocks' && declaration.blocks?.length) data.blocks = [...declaration.blocks];
     if (declaration.default !== undefined && declaration.default !== null) data.defaultValue = kind === 'boolean' ? declaration.default === true : Array.isArray(declaration.default) ? declaration.default.map(String).join('\n') : String(declaration.default);
     const children = kind === 'repeater' ? Object.entries(declaration.fields ?? {}).map(([sub, nested]) => fieldBlockOf(sub, nested, `${id}-${sub}`)) : undefined;
-    return { id, type: `field/${kind}`, data, ...(children ? { children } : {}) };
+    return { _id: id, type: `field/${kind}`, data, ...(children ? { children } : {}) };
 }
 
 /** A layout for declared fields: one field block each, in order. */
@@ -448,7 +448,7 @@ export function fieldVisibility(blocks: readonly Block[], types: ReadonlyMap<str
             for (const block of list) {
                 const type = types.get(block.type);
                 const off = inside || !conditionShows(block.when, visible);
-                if (off) next.add(hiddenKey(rowPath, block.id));
+                if (off) next.add(hiddenKey(rowPath, block._id));
                 if (!block.children) continue;
                 const name = type?.field && typeof block.data.name === 'string' ? block.data.name : '';
                 if (type?.field?.kind === 'repeater' && name) {
@@ -476,7 +476,7 @@ export function clearHidden(blocks: readonly Block[], types: ReadonlyMap<string,
         for (const block of list) {
             const type = types.get(block.type);
             const name = type?.field && typeof block.data.name === 'string' ? block.data.name : '';
-            if (hidden.has(hiddenKey(rowPath, block.id))) { if (name) delete own[name]; continue; }
+            if (hidden.has(hiddenKey(rowPath, block._id))) { if (name) delete own[name]; continue; }
             if (!block.children) continue;
             if (type?.field?.kind === 'repeater' && name) {
                 if (Array.isArray(own[name])) own[name] = (own[name] as unknown[]).map(row => {

@@ -465,6 +465,24 @@ export class CmsForms {
     }
 
     /**
+     * Replace a submission's answers, for whoever handles it: the values are checked as a post
+     * is, by the form's inputs and conditions; the form's limits, bot checks and a plugin's
+     * validation do not apply. Inputs the values leave out are cleared.
+     */
+    async setValues(form: LoadedForm, id: string, raw: SubmittedValues, principal: Principal): Promise<SubmissionShape> {
+        this.#authorize(principal);
+        const repository = this.#repository(form);
+        const record = await repository.get(id, { principal });
+        if (!record) throw new CmsError('CMS_NOT_FOUND', 'The submission is gone.');
+        const check = validateSubmission(form.blocks, this.#host.blockTypes, raw);
+        if (Object.keys(check.errors).length) throw new CmsError('CMS_VALIDATION', 'Check the fields marked below.', { fields: { ...check.errors } });
+        const input: { [name: string]: unknown } = {};
+        for (const field of form.ref.inputs) input[field.name] = check.values[field.name] ?? null;
+        const updated = await repository.update(id, input, { principal, expectedRevision: record.rev });
+        return submissionOf(form.ref.id, updated, form.ref.inputs);
+    }
+
+    /**
      * Submissions as CSV, newest first, in pages: the time, the status, one column per input
      * with its label, then the details. Cells that spreadsheets would run as formulas are quoted.
      */

@@ -25,7 +25,7 @@ export async function navigation(c: Context): Promise<DashboardModule[]> {
         if (!create && !can(`cms/${collection.name}:update`) && !can(`cms/${collection.name}:read`)) continue;
         const base = `/dashboard/content/${collection.name}`;
         const children: DashboardModuleLink[] = [{ label: `All ${collection.label.toLowerCase()}`, href: base }];
-        if (create) children.push({ label: 'Add new', href: `${base}/new` });
+        if (create) children.push({ label: 'New', href: `${base}/new` });
         if (can(PERMISSIONS.manageTerms)) {
             for (const name of collection.taxonomies ?? []) {
                 const taxonomy = cms.taxonomies.declarations.find(entry => entry.name === name);
@@ -37,14 +37,14 @@ export async function navigation(c: Context): Promise<DashboardModule[]> {
     if (can(PERMISSIONS.upload) || can(PERMISSIONS.manageMedia)) {
         // Media follows posts, as in WordPress.
         content.splice(Math.min(1, content.length), 0, { id: 'media', label: 'Files', href: '/dashboard/media', icon: icon('folder-with-files'), authorization: 'authenticated',
-            children: [{ label: 'Library', href: '/dashboard/media' }, { label: 'Add new', href: '/dashboard/media/new' }] });
+            children: [{ label: 'Library', href: '/dashboard/media' }, { label: 'New', href: '/dashboard/media/new' }] });
     }
     for (const resource of cms.readable(principal)) {
         if (resource.owner === 'cms') continue;
         const create = evaluateRule(resource.access.create, principal) !== 'deny';
         const base = `/dashboard/content/${resource.owner}.${resource.name}`;
         content.push({ id: `resource-${resource.owner}-${resource.name}`, label: resource.label ?? resource.id, href: base, icon: icon('widget-4'), authorization: 'authenticated',
-            children: [{ label: 'All entries', href: base }, ...(create ? [{ label: 'Add new', href: `${base}/new` }] : [])] });
+            children: [{ label: 'All entries', href: base }, ...(create ? [{ label: 'New', href: `${base}/new` }] : [])] });
     }
     // Comments follow the content they belong to; the label shows how many wait for moderation.
     if (can(PERMISSIONS.moderateComments) && cms.collections().some(collection => collection.comments)) {
@@ -58,7 +58,7 @@ export async function navigation(c: Context): Promise<DashboardModule[]> {
             const fresh = can(PERMISSIONS.manageSubmissions)
                 ? await cms.forms.all().then(forms => cms.forms.inboxCounts(forms, principal)).then(counts => [...counts.values()].reduce((sum, count) => sum + count.fresh, 0)).catch(() => 0) : 0;
             content.push({ id: 'forms', label: fresh ? `Forms (${fresh})` : 'Forms', href: '/dashboard/forms', icon: icon('checklist-minimalistic'), authorization: 'authenticated',
-                children: [{ label: 'All forms', href: '/dashboard/forms' }, ...(create ? [{ label: 'Add new', href: '/dashboard/content/forms/new' }] : [])] });
+                children: [{ label: 'All forms', href: '/dashboard/forms' }, ...(create ? [{ label: 'New', href: '/dashboard/content/forms/new' }] : [])] });
         }
     }
     // Host slot: active plugins add navigation links.

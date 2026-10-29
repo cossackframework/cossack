@@ -11,7 +11,7 @@ import {
 import { AppPasswords } from '../../../../dashboard/app-passwords';
 import { avatarField } from '../../../../dashboard/avatar-field';
 import { sessionTable } from '../../../../dashboard/session-list';
-import { countBadge } from '../../../../cms/ui';
+import { countBadge, rememberTab, tabFromQuery } from '../../../../cms/ui';
 
 @Page({ transport: 'http', middlewares: [guard.requireRole('admin')] })
 export default class EditUserPage extends Cossack {
@@ -83,8 +83,7 @@ export default class EditUserPage extends Cossack {
             this.sessions = await sessionsOf(this.c, id);
             this.tokensAvailable = apiTokensAvailable;
             if (this.tokensAvailable) this.tokens = await listApiTokens(id);
-            const tab = this.c.req.query('tab');
-            if (tab === 'sessions' || (tab === 'passwords' && this.tokensAvailable)) this.tab = tab;
+            this.tab = tabFromQuery(this.c.req.query('tab'), ['profile', 'sessions', ...(this.tokensAvailable ? ['passwords'] : [])]);
         }
     }
 
@@ -139,11 +138,7 @@ export default class EditUserPage extends Cossack {
     @Client()
     showTab(value: string) {
         this.tab = value;
-        // Keep the tab in the address so a reload or a shared link opens it.
-        const url = new URL(window.location.href);
-        if (value === 'profile') url.searchParams.delete('tab');
-        else url.searchParams.set('tab', value);
-        window.history.replaceState(window.history.state, '', url);
+        rememberTab(value, ['profile', 'sessions', 'passwords']);
     }
 
     /** For someone who lost their phone or security key: they sign in with the password alone again. */

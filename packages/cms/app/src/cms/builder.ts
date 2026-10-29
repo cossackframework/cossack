@@ -64,6 +64,8 @@ export interface CollectionDraft {
     visibility: 'public' | 'private';
     /** Visitors can comment on entries. */
     comments: boolean;
+    /** Entries are listed in the XML sitemap. */
+    sitemap: boolean;
     taxonomies: string[];
     builtin: boolean;
     /** The standard fields: blocks content, an excerpt and a featured image. */
@@ -82,7 +84,7 @@ export function collectionDraft(definition: CollectionDefinition): CollectionDra
     return {
         name: definition.name, label: definition.label, singular: definition.singular, description: definition.description ?? '', icon: definition.icon ?? 'document-text',
         path: definition.path ?? '', public: definition.path !== null && definition.path !== undefined, slug: definition.slug !== false, publishable: definition.publishable !== false,
-        hierarchical: definition.hierarchical === true, visibility: definition.visibility ?? 'private', comments: definition.comments === true, taxonomies: [...(definition.taxonomies ?? [])], builtin: definition.builtin === true,
+        hierarchical: definition.hierarchical === true, visibility: definition.visibility ?? 'private', comments: definition.comments === true, sitemap: definition.sitemap !== false, taxonomies: [...(definition.taxonomies ?? [])], builtin: definition.builtin === true,
         content: Boolean(definition.features?.content), excerpt: definition.features?.excerpt === true, featuredImage: definition.features?.featuredImage === true, password: definition.features?.password === true, revisions: definition.features?.revisions !== false,
         templateLock: definition.templateLock ?? '',
     };
@@ -93,7 +95,7 @@ export function definitionOf(draft: CollectionDraft, template: readonly Block[] 
     return {
         name: draft.name, label: draft.label.trim(), singular: draft.singular.trim(), ...(draft.description.trim() ? { description: draft.description.trim() } : {}),
         icon: draft.icon, path: draft.public ? draft.path.trim().replace(/^\/+|\/+$/g, '') : null,
-        slug: draft.slug, publishable: draft.publishable, hierarchical: draft.hierarchical, ...(draft.publishable ? {} : { visibility: draft.visibility }), comments: draft.comments,
+        slug: draft.slug, publishable: draft.publishable, hierarchical: draft.hierarchical, ...(draft.publishable ? {} : { visibility: draft.visibility }), comments: draft.comments, sitemap: draft.sitemap,
         taxonomies: [...draft.taxonomies],
         features: { content: draft.content, excerpt: draft.excerpt, featuredImage: draft.featuredImage, password: draft.password === true, revisions: draft.revisions },
         fields: {},

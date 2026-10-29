@@ -38,8 +38,8 @@ describe('essentials helpers', () => {
         expect(new Set(BLOCK_CATEGORIES.map(category => category.label)).size).toBe(BLOCK_CATEGORIES.length);
         // A common block passes a field group's check; another non-field block does not.
         const types = new Map(CORE_BLOCKS.map(block => [block.name, block]));
-        expect(validateBlocks([{ id: 'h', type: 'core/heading', data: { text: 'Section', level: 'h2' } }], types, { fieldGroup: true }).errors).toEqual({});
-        expect(Object.keys(validateBlocks([{ id: 'q', type: 'core/quote', data: { text: 'No' } }], types, { fieldGroup: true }).errors)).toEqual(['q']);
+        expect(validateBlocks([{ _id: 'h', type: 'core/heading', data: { text: 'Section', level: 'h2' } }], types, { fieldGroup: true }).errors).toEqual({});
+        expect(Object.keys(validateBlocks([{ _id: 'q', type: 'core/quote', data: { text: 'No' } }], types, { fieldGroup: true }).errors)).toEqual(['q']);
     });
 
     it('adds a password field for a protected collection', () => {
@@ -79,8 +79,8 @@ describe('essentials helpers', () => {
         expect(contentBlocks({ blocks: [1] } as never)).toBeNull();
         expect(collectionProblems({ ...base, fields: { content: field.blocks() } })).toContain('content is a feature; turn it on instead of declaring it.');
         expect(collectionProblems({ ...base, features: { sticky: true } as never })).toContain('Features are content, excerpt, featuredImage, revisions, password, each on or off.');
-        expect(collectionProblems({ ...base, template: [{ id: 'a', type: 'core/richtext', data: {} }] })).toContain('The content template needs the content feature.');
-        expect(collectionProblems({ ...base, features: { content: true }, template: [{ id: 'a', type: 'core/richtext', data: {} }] })).toEqual([]);
+        expect(collectionProblems({ ...base, template: [{ _id: 'a', type: 'core/richtext', data: {} }] })).toContain('The content template needs the content feature.');
+        expect(collectionProblems({ ...base, features: { content: true }, template: [{ _id: 'a', type: 'core/richtext', data: {} }] })).toEqual([]);
         // A built-in collection's features stay on; stored ones add to them.
         expect(extendCollection(posts, { features: { excerpt: false, revisions: false } }).features).toEqual({ content: true, excerpt: true, featuredImage: true, password: true, revisions: false });
     });
@@ -101,57 +101,57 @@ describe('essentials helpers', () => {
         expect(blockProblems({ name: 'acme/box', label: 'Box', fields: {}, children: { allowed: ['core/paragraph'], max: 3 }, parent: ['core/group'] })).toEqual([]);
         expect(blockProblems({ name: 'acme/box', label: 'Box', fields: {}, children: { max: 0 } })).toEqual(['block acme/box: children.max is 1 to 200.']);
         expect(blockProblems({ name: 'acme/box', label: 'Box', fields: {}, parent: [] })).toEqual(['block acme/box: parent lists block names.']);
-        const columns: Block = { id: 'cols', type: 'core/columns', data: {}, children: [
-            { id: 'a', type: 'core/column', data: { span: 4 }, children: [{ id: 'h', type: 'core/heading', data: { text: 'Left' } }] },
-            { id: 'b', type: 'core/column', data: {}, layout: { hide: ['sm', 'sm'] }, children: [] },
+        const columns: Block = { _id: 'cols', type: 'core/columns', data: {}, children: [
+            { _id: 'a', type: 'core/column', data: { span: 4 }, children: [{ _id: 'h', type: 'core/heading', data: { text: 'Left' } }] },
+            { _id: 'b', type: 'core/column', data: {}, layout: { hide: ['sm', 'sm'] }, children: [] },
         ] };
         const checked = validateBlocks([columns], types);
         expect(checked.errors).toEqual({});
-        expect(checked.blocks[0]).toEqual({ id: 'cols', type: 'core/columns', data: { gap: 'medium', stack: 'mobile' }, children: [
-            { id: 'a', type: 'core/column', data: { span: 4, verticalAlign: 'top' }, children: [{ id: 'h', type: 'core/heading', data: { text: 'Left', level: 'h2' } }] },
-            { id: 'b', type: 'core/column', data: { verticalAlign: 'top' }, layout: { hide: ['sm'] }, children: [] },
+        expect(checked.blocks[0]).toEqual({ _id: 'cols', type: 'core/columns', data: { gap: 'medium', stack: 'mobile' }, children: [
+            { _id: 'a', type: 'core/column', data: { span: 4, verticalAlign: 'top' }, children: [{ _id: 'h', type: 'core/heading', data: { text: 'Left', level: 'h2' } }] },
+            { _id: 'b', type: 'core/column', data: { verticalAlign: 'top' }, layout: { hide: ['sm'] }, children: [] },
         ] });
         // A column goes only inside columns, columns hold only columns, a leaf holds nothing.
-        expect(validateBlocks([{ id: 'c', type: 'core/column', data: {} }], types).errors).toEqual({ c: 'core/column goes inside core/columns.' });
-        expect(validateBlocks([{ id: 'cols', type: 'core/columns', data: {}, children: [{ id: 'p', type: 'core/paragraph', data: { text: 'x' } }] }], types).errors).toEqual({ p: 'core/paragraph cannot go inside core/columns.' });
-        expect(validateBlocks([{ id: 'p', type: 'core/paragraph', data: { text: 'x' }, children: [{ id: 'q', type: 'core/divider', data: {} }] }], types).errors).toEqual({ p: 'core/paragraph does not hold blocks.' });
-        expect(validateBlocks([{ id: 'cols', type: 'core/columns', data: {}, children: Array.from({ length: 7 }, (_, index) => ({ id: `c${index}`, type: 'core/column', data: {} })) }], types).errors).toEqual({ cols: 'holds at most 6 blocks.' });
+        expect(validateBlocks([{ _id: 'c', type: 'core/column', data: {} }], types).errors).toEqual({ c: 'core/column goes inside core/columns.' });
+        expect(validateBlocks([{ _id: 'cols', type: 'core/columns', data: {}, children: [{ _id: 'p', type: 'core/paragraph', data: { text: 'x' } }] }], types).errors).toEqual({ p: 'core/paragraph cannot go inside core/columns.' });
+        expect(validateBlocks([{ _id: 'p', type: 'core/paragraph', data: { text: 'x' }, children: [{ _id: 'q', type: 'core/divider', data: {} }] }], types).errors).toEqual({ p: 'core/paragraph does not hold blocks.' });
+        expect(validateBlocks([{ _id: 'cols', type: 'core/columns', data: {}, children: Array.from({ length: 7 }, (_, index) => ({ _id: `c${index}`, type: 'core/column', data: {} })) }], types).errors).toEqual({ cols: 'holds at most 6 blocks.' });
         // A field's allowed list applies at the top level; the containers' rules below it.
-        expect(validateBlocks([{ id: 'g', type: 'core/group', data: {}, children: [{ id: 'q', type: 'core/quote', data: { text: 'q' } }] }], types, { allowed: ['core/group'] }).errors).toEqual({});
-        expect(validateBlocks([{ id: 'q', type: 'core/quote', data: { text: 'q' } }], types, { allowed: ['core/group'] }).errors).toEqual({ q: 'core/quote is not an available block.' });
+        expect(validateBlocks([{ _id: 'g', type: 'core/group', data: {}, children: [{ _id: 'q', type: 'core/quote', data: { text: 'q' } }] }], types, { allowed: ['core/group'] }).errors).toEqual({});
+        expect(validateBlocks([{ _id: 'q', type: 'core/quote', data: { text: 'q' } }], types, { allowed: ['core/group'] }).errors).toEqual({ q: 'core/quote is not an available block.' });
         // The shape: distinct IDs across the tree, the depth and count limits, the layout.
-        expect(blocksShapeProblem([{ id: 'a', type: 'core/group', data: {}, children: [{ id: 'a', type: 'core/divider', data: {} }] }])).toBe('blocks need distinct IDs.');
-        const deep = (depth: number): Block => depth ? { id: `d${depth}`, type: 'core/group', data: {}, children: [deep(depth - 1)] } : { id: 'leaf', type: 'core/divider', data: {} };
+        expect(blocksShapeProblem([{ _id: 'a', type: 'core/group', data: {}, children: [{ _id: 'a', type: 'core/divider', data: {} }] }])).toBe('blocks need distinct IDs.');
+        const deep = (depth: number): Block => depth ? { _id: `d${depth}`, type: 'core/group', data: {}, children: [deep(depth - 1)] } : { _id: 'leaf', type: 'core/divider', data: {} };
         expect(blocksShapeProblem([deep(3)])).toBeUndefined();
         expect(blocksShapeProblem([deep(4)])).toBe('blocks nest at most 4 deep.');
-        expect(blocksShapeProblem([{ id: 'a', type: 'core/divider', data: {}, layout: { hide: ['xl'] } }])).toBe('block layout.hide lists sm, md, lg.');
-        expect(blocksShapeProblem([{ id: 'a', type: 'core/group', data: {}, children: 'no' }])).toBe('block children must be a list of blocks.');
-        expect(blockMedia([{ id: 'g', type: 'core/group', data: {}, children: [{ id: 'i', type: 'core/image', data: { image: 'file-1' } }] }], types)).toEqual(['file-1']);
+        expect(blocksShapeProblem([{ _id: 'a', type: 'core/divider', data: {}, layout: { hide: ['xl'] } }])).toBe('block layout.hide lists sm, md, lg.');
+        expect(blocksShapeProblem([{ _id: 'a', type: 'core/group', data: {}, children: 'no' }])).toBe('block children must be a list of blocks.');
+        expect(blockMedia([{ _id: 'g', type: 'core/group', data: {}, children: [{ _id: 'i', type: 'core/image', data: { image: 'file-1' } }] }], types)).toEqual(['file-1']);
         // The tree helpers editors use.
-        const tree: Block[] = [columns, { id: 'p', type: 'core/paragraph', data: { text: 'After' } }];
-        expect(flattenBlocks(tree).map(block => block.id)).toEqual(['cols', 'a', 'h', 'b', 'p']);
-        expect(placeBlocks(tree).map(place => [place.block.id, place.depth, place.parent, place.index])).toEqual([['cols', 0, null, 0], ['a', 1, 'cols', 0], ['h', 2, 'a', 0], ['b', 1, 'cols', 1], ['p', 0, null, 1]]);
+        const tree: Block[] = [columns, { _id: 'p', type: 'core/paragraph', data: { text: 'After' } }];
+        expect(flattenBlocks(tree).map(block => block._id)).toEqual(['cols', 'a', 'h', 'b', 'p']);
+        expect(placeBlocks(tree).map(place => [place.block._id, place.depth, place.parent, place.index])).toEqual([['cols', 0, null, 0], ['a', 1, 'cols', 0], ['h', 2, 'a', 0], ['b', 1, 'cols', 1], ['p', 0, null, 1]]);
         expect(findBlock(tree, 'h')?.data).toEqual({ text: 'Left' });
-        expect(findBlock(moveBlock(tree, 'p', 'b', 0), 'b')?.children?.map(block => block.id)).toEqual(['p']);
+        expect(findBlock(moveBlock(tree, 'p', 'b', 0), 'b')?.children?.map(block => block._id)).toEqual(['p']);
         expect(moveBlock(tree, 'cols', 'a', 0)).toEqual(tree);
-        expect(flattenBlocks(removeBlock(tree, 'a')).map(block => block.id)).toEqual(['cols', 'b', 'p']);
-        expect(flattenBlocks(insertBlock(tree, 'b', { id: 'n', type: 'core/divider', data: {} })).map(block => block.id)).toEqual(['cols', 'a', 'h', 'b', 'n', 'p']);
+        expect(flattenBlocks(removeBlock(tree, 'a')).map(block => block._id)).toEqual(['cols', 'b', 'p']);
+        expect(flattenBlocks(insertBlock(tree, 'b', { _id: 'n', type: 'core/divider', data: {} })).map(block => block._id)).toEqual(['cols', 'a', 'h', 'b', 'n', 'p']);
         // Moves: in goes under the sibling above when the types allow it, out follows the container.
         expect(shiftBlock(tree, 'p', 'in', types)).toBe(tree);
-        const grouped: Block[] = [{ id: 'g', type: 'core/group', data: {}, children: [] }, { id: 'p', type: 'core/paragraph', data: { text: 'x' } }];
+        const grouped: Block[] = [{ _id: 'g', type: 'core/group', data: {}, children: [] }, { _id: 'p', type: 'core/paragraph', data: { text: 'x' } }];
         const inside = shiftBlock(grouped, 'p', 'in', types);
-        expect(placeBlocks(inside).map(place => [place.block.id, place.parent])).toEqual([['g', null], ['p', 'g']]);
+        expect(placeBlocks(inside).map(place => [place.block._id, place.parent])).toEqual([['g', null], ['p', 'g']]);
         expect(placeBlocks(shiftBlock(inside, 'p', 'out', types)).map(place => place.parent)).toEqual([null, null]);
         expect(shiftBlock(tree, 'h', 'up', types)).toBe(tree);
-        expect(flattenBlocks(shiftBlock(tree, 'b', 'up', types)).map(block => block.id)).toEqual(['cols', 'b', 'a', 'h', 'p']);
-        expect(blockTreeProblem([{ id: 'c', type: 'core/column', data: {} }], types)).toBe('Column goes inside Columns.');
+        expect(flattenBlocks(shiftBlock(tree, 'b', 'up', types)).map(block => block._id)).toEqual(['cols', 'b', 'a', 'h', 'p']);
+        expect(blockTreeProblem([{ _id: 'c', type: 'core/column', data: {} }], types)).toBe('Column goes inside Columns.');
         expect(blockTreeProblem(tree, types)).toBeUndefined();
         expect(blockAllowedIn(types, 'core/column', 'core/columns')).toBe(true);
         expect(blockAllowedIn(types, 'core/group', 'core/columns')).toBe(false);
         // A body embeds a container with its children.
-        const doc = normalizeRichText({ type: 'doc', content: [{ type: 'cmsBlock', attrs: { id: 'cols', type: 'core/columns', data: {}, children: columns.children, layout: { hide: ['lg'] } } }] });
-        expect(richTextBlocks(doc)[0]).toMatchObject({ id: 'cols', layout: { hide: ['lg'] }, children: [{ id: 'a' }, { id: 'b' }] });
-        expect(() => normalizeRichText({ type: 'doc', content: [{ type: 'cmsBlock', attrs: { id: 'x', type: 'core/group', data: {}, children: 'no' } }] })).toThrow();
+        const doc = normalizeRichText({ type: 'doc', content: [{ type: 'cmsBlock', attrs: { _id: 'cols', type: 'core/columns', data: {}, children: columns.children, layout: { hide: ['lg'] } } }] });
+        expect(richTextBlocks(doc)[0]).toMatchObject({ _id: 'cols', layout: { hide: ['lg'] }, children: [{ _id: 'a' }, { _id: 'b' }] });
+        expect(() => normalizeRichText({ type: 'doc', content: [{ type: 'cmsBlock', attrs: { _id: 'x', type: 'core/group', data: {}, children: 'no' } }] })).toThrow();
     });
 
     it('styles blocks from theme presets', () => {
@@ -165,20 +165,20 @@ describe('essentials helpers', () => {
         expect(blockProblems({ name: 'acme/box', label: 'Box', fields: {}, supports: { border: true } as never })).toEqual(['block acme/box: supports has no border; it takes color, spacing, typography.']);
         expect(blockProblems({ name: 'acme/box', label: 'Box', fields: {}, supports: { color: ['shadow'] } as never })).toEqual(['block acme/box: supports.color is true, false or some of background, text.']);
         // The shape: slugs per property, an alignment, the anchor and class names.
-        expect(blocksShapeProblem([{ id: 'a', type: 'core/divider', data: {}, style: { background: 'Brand' } }])).toBe('block style.background is a preset slug.');
-        expect(blocksShapeProblem([{ id: 'a', type: 'core/divider', data: {}, style: { align: 'justify' } }])).toBe('block style.align is left, center, right.');
-        expect(blocksShapeProblem([{ id: 'a', type: 'core/divider', data: {}, style: { shadow: 'x' } }])).toBe('block style has no shadow; it takes background, text, padding, margin, fontSize, align.');
-        expect(blocksShapeProblem([{ id: 'a', type: 'core/divider', data: {}, layout: { anchor: '1st' } }])).toContain('block layout.anchor is an HTML id');
-        expect(blocksShapeProblem([{ id: 'a', type: 'core/divider', data: {}, layout: { className: 'ok bad!' } }])).toContain('block layout.className lists class names');
-        expect(blocksShapeProblem([{ id: 'a', type: 'core/divider', data: {}, style: { padding: 'large', align: 'center' }, layout: { anchor: 'top', className: 'hero  wide' } }])).toBeUndefined();
+        expect(blocksShapeProblem([{ _id: 'a', type: 'core/divider', data: {}, style: { background: 'Brand' } }])).toBe('block style.background is a preset slug.');
+        expect(blocksShapeProblem([{ _id: 'a', type: 'core/divider', data: {}, style: { align: 'justify' } }])).toBe('block style.align is left, center, right.');
+        expect(blocksShapeProblem([{ _id: 'a', type: 'core/divider', data: {}, style: { shadow: 'x' } }])).toBe('block style has no shadow; it takes background, text, padding, margin, fontSize, align.');
+        expect(blocksShapeProblem([{ _id: 'a', type: 'core/divider', data: {}, layout: { anchor: '1st' } }])).toContain('block layout.anchor is an HTML id');
+        expect(blocksShapeProblem([{ _id: 'a', type: 'core/divider', data: {}, layout: { className: 'ok bad!' } }])).toContain('block layout.className lists class names');
+        expect(blocksShapeProblem([{ _id: 'a', type: 'core/divider', data: {}, style: { padding: 'large', align: 'center' }, layout: { anchor: 'top', className: 'hero  wide' } }])).toBeUndefined();
         // Validation keeps the properties the type supports and drops the rest; empty extras go.
         const checked = validateBlocks([
-            { id: 'p', type: 'core/paragraph', data: { text: 'Hi' }, style: { background: 'brand', align: 'center', padding: '' }, layout: { hide: [], anchor: ' intro ', className: ' a  b ' } },
-            { id: 'i', type: 'core/image', data: { image: 'f1' }, style: { background: 'brand', padding: 'large' }, layout: { anchor: '' } },
+            { _id: 'p', type: 'core/paragraph', data: { text: 'Hi' }, style: { background: 'brand', align: 'center', padding: '' }, layout: { hide: [], anchor: ' intro ', className: ' a  b ' } },
+            { _id: 'i', type: 'core/image', data: { image: 'f1' }, style: { background: 'brand', padding: 'large' }, layout: { anchor: '' } },
         ], types);
         expect(checked.errors).toEqual({});
-        expect(checked.blocks[0]).toEqual({ id: 'p', type: 'core/paragraph', data: { text: 'Hi' }, style: { background: 'brand', align: 'center' }, layout: { anchor: 'intro', className: 'a b' } });
-        expect(checked.blocks[1]).toEqual({ id: 'i', type: 'core/image', data: { image: 'f1' }, style: { padding: 'large' } });
+        expect(checked.blocks[0]).toEqual({ _id: 'p', type: 'core/paragraph', data: { text: 'Hi' }, style: { background: 'brand', align: 'center' }, layout: { anchor: 'intro', className: 'a b' } });
+        expect(checked.blocks[1]).toEqual({ _id: 'i', type: 'core/image', data: { image: 'f1' }, style: { padding: 'large' } });
         // The wrapper's attributes: classes per property, the variables inline, the anchor and class names.
         expect(blockStyleAttributes({ style: { background: 'brand', text: 'light', padding: 'large', margin: 'none', fontSize: 'x-large', align: 'center' }, layout: { anchor: 'intro', className: 'hero' } })).toEqual({
             className: 'cms-block cms-bg-brand cms-text-light cms-p-large cms-m-none cms-size-x-large cms-align-center hero', id: 'intro',
@@ -212,9 +212,9 @@ describe('essentials helpers', () => {
         expect(customCssProblem('.a { width: expression(1) }')).toBe('Additional CSS cannot run scripts.');
         expect(customCssProblem('</style><script>')).toBe('Additional CSS cannot contain HTML tags.');
         // A body's embedded block carries its style.
-        const doc = normalizeRichText({ type: 'doc', content: [{ type: 'cmsBlock', attrs: { id: 'q', type: 'core/quote', data: { text: 'q' }, style: { background: 'brand' } } }] });
-        expect(richTextBlocks(doc)[0]).toMatchObject({ id: 'q', style: { background: 'brand' } });
-        expect(() => normalizeRichText({ type: 'doc', content: [{ type: 'cmsBlock', attrs: { id: 'q', type: 'core/quote', data: { text: 'q' }, style: { background: 'Bad' } } }] })).toThrow();
+        const doc = normalizeRichText({ type: 'doc', content: [{ type: 'cmsBlock', attrs: { _id: 'q', type: 'core/quote', data: { text: 'q' }, style: { background: 'brand' } } }] });
+        expect(richTextBlocks(doc)[0]).toMatchObject({ _id: 'q', style: { background: 'brand' } });
+        expect(() => normalizeRichText({ type: 'doc', content: [{ type: 'cmsBlock', attrs: { _id: 'q', type: 'core/quote', data: { text: 'q' }, style: { background: 'Bad' } } }] })).toThrow();
     });
 
     it('checks redirects and webhook URLs', () => {

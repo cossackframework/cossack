@@ -79,7 +79,7 @@ export class FieldGroupView extends Cossack {
     private list(blocks: readonly EditorBlock[]): TemplateResult {
         return html`<div class="grid grid-cols-6 gap-4">${blocks.map(block => {
             const option = this.option(block.type);
-            if (this.props.hidden.has(hiddenKey((this.props.rows ?? []).map(row => ({ name: row.field, id: row.id })), block.id))) return null;
+            if (this.props.hidden.has(hiddenKey((this.props.rows ?? []).map(row => ({ name: row.field, id: row.id })), block._id))) return null;
             const width = option?.field ? WIDTHS[String(block.data.width ?? 'full')] ?? WIDTHS.full : 'col-span-6';
             return html`<div class=${width}>${option?.field ? this.fieldBlock(block, option) : this.layoutBlock(block, option)}</div>`;
         })}</div>`;
@@ -97,12 +97,12 @@ export class FieldGroupView extends Cossack {
                 return html`<div class=${`grid gap-4 sm:grid-cols-${columns}`}>${children.map(child => html`<div>${this.list([child])}</div>`)}</div>`;
             }
             case 'core/tabs': {
-                const active = Math.min(this.tabs[block.id] ?? 0, Math.max(children.length - 1, 0));
-                const prefix = `${this.props.id}-${block.id}`;
+                const active = Math.min(this.tabs[block._id] ?? 0, Math.max(children.length - 1, 0));
+                const prefix = `${this.props.id}-${block._id}`;
                 return html`<div class="space-y-3">
                     <div role="tablist" class="flex flex-wrap border-b border-border">${children.map((tab, index) => html`<button type="button" role="tab" id=${`${prefix}-tab-${index}`} aria-selected=${active === index ? 'true' : 'false'} aria-controls=${`${prefix}-panel-${index}`}
                         class=${`-mb-px inline-flex items-center gap-1.5 border-b-2 bg-transparent px-3 py-1.5 text-sm font-medium cursor-pointer [&_svg]:size-4 ${active === index ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
-                        @click=${() => this.showTab(block.id, index)}>${typeof tab.data.icon === 'string' && tab.data.icon ? component(Icon, { entry: icon(tab.data.icon), size: 16 }) : null}${String(tab.data.label ?? '')}</button>`)}</div>
+                        @click=${() => this.showTab(block._id, index)}>${typeof tab.data.icon === 'string' && tab.data.icon ? component(Icon, { entry: icon(tab.data.icon), size: 16 }) : null}${String(tab.data.label ?? '')}</button>`)}</div>
                     ${children.map((tab, index) => active === index ? html`<div role="tabpanel" id=${`${prefix}-panel-${index}`} aria-labelledby=${`${prefix}-tab-${index}`}>${this.list(tab.children ?? [])}</div>` : null)}
                 </div>`;
             }
@@ -144,7 +144,7 @@ export class FieldGroupView extends Cossack {
             [next[index], next[to]] = [next[to]!, next[index]!];
             set(next);
         };
-        const prefix = `${this.props.id}-${block.id}`;
+        const prefix = `${this.props.id}-${block._id}`;
         return html`<fieldset class="space-y-2 rounded-lg border border-border p-3" aria-describedby=${`${prefix}-count`}>
             <legend class="px-1 text-sm font-medium text-foreground">${field.label}${field.required ? html`<span class="text-destructive"> *</span>` : null}</legend>
             ${field.description ? html`<p class="text-xs text-muted-foreground">${field.description}</p>` : null}

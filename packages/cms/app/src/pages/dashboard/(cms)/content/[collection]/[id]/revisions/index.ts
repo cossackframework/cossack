@@ -11,8 +11,9 @@ interface RevisionOption { revision: number; at: number; actor: string }
 const UNCOMPARED = new Set(['translationGroup']);
 
 /**
- * Compare two revisions of an entry field by field, with the words added and removed, and
- * restore an older one. Restoring keeps the entry's status, publication time, URL and language.
+ * Compare two revisions of an entry field by field: text and JSON in a code editor's diff, with
+ * the words added and removed beneath prose, and restore an older one. Restoring keeps the
+ * entry's status, publication time, URL and language.
  */
 @Page({ transport: 'http' })
 export default class RevisionsPage extends Cossack {
@@ -85,8 +86,10 @@ export default class RevisionsPage extends Cossack {
             : kind === 'removed' ? html`<del class="rounded-sm bg-destructive/10 text-destructive">${text}</del>` : html`<span>${text}</span>`;
         return html`<section class="space-y-2" data-field=${change.name}>
             <h3 class="text-sm font-semibold text-foreground">${change.label}</h3>
-            ${change.structured ? component(CodeEditor, { id: `diff-${change.name}`, value: change.after, original: change.before, language: 'json', label: `${change.label} ${__('changes')}`, class: 'rounded-md border border-border bg-background' })
-                : change.kind === 'text' ? html`<div class="whitespace-pre-wrap break-words rounded-md border border-border bg-background p-3 text-sm leading-6 text-foreground">${change.parts.map(entry => part(entry.kind, entry.text))}</div>`
+            ${change.structured || change.kind === 'text' ? html`
+                ${component(CodeEditor, { id: `diff-${change.name}`, value: change.after, original: change.before, language: change.structured ? 'json' : 'markdown', label: `${change.label} ${__('changes')}`, class: 'rounded-md border border-border bg-background' })}
+                ${change.kind === 'text' && !change.structured ? html`<details class="text-sm"><summary class="cursor-pointer text-xs text-muted-foreground">${__('Words changed')}</summary>
+                    <div class="mt-2 whitespace-pre-wrap break-words rounded-md border border-border bg-background p-3 leading-6 text-foreground">${change.parts.map(entry => part(entry.kind, entry.text))}</div></details>` : null}`
                 : html`<div class="grid gap-2 text-sm sm:grid-cols-2">
                     <div class="rounded-md border border-border bg-destructive/5 p-3"><span class="block text-xs text-muted-foreground">${__('Before')}</span><span class="whitespace-pre-wrap break-words">${change.before || '—'}</span></div>
                     <div class="rounded-md border border-border bg-emerald-500/5 p-3"><span class="block text-xs text-muted-foreground">${__('After')}</span><span class="whitespace-pre-wrap break-words">${change.after || '—'}</span></div>

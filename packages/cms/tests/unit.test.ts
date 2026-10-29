@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
     commandInput, declarationHash, defineResource, evaluateRule, field, formInput, formValue, isPluginPoint, manifestProblems, permissionMatches, providedPoints,
-    requestedGrants, resolveResource, resourceProblems, storageCheck, storageName, storageType, userPrincipal, validateValue, normalizeDeclaration, fieldProblems,
+    requestedGrants, resolveResource, resourceProblems, storageCheck, storageName, storageType, userPrincipal, validateValue, normalizeDeclaration, fieldProblems, recordSchema,
 } from '../src/index';
 import { planSchema, type Catalog } from '../src/server/schema';
+import { renameBlockIds } from '../src/server/block-ids';
 
 const catalog = (tables: Catalog['tables'] = new Map(), ledger: Partial<Catalog['ledger']> = {}): Catalog => ({
     sequence: 7, engineVersion: '0.2.9', tables,
-    ledger: { host: new Set([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]), explicit: new Map(), hashes: new Map(), ...ledger },
+    ledger: { host: new Set([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]), explicit: new Map(), hashes: new Map(), ...ledger },
 });
 
 describe('fields', () => {
@@ -55,6 +56,37 @@ describe('fields', () => {
         expect(normalizeDeclaration({ kind: 'list', items: 'string', index: true, label: 'Tags' } as never)).toEqual({ kind: 'string', multiple: true, index: true, label: 'Tags' });
         expect(normalizeDeclaration(field.rows({ old: { kind: 'list', items: 'number' } as never }))).toEqual(field.rows({ old: { kind: 'number', multiple: true } }));
         expect(normalizeDeclaration(tags)).toBe(tags);
+    });
+
+    it('renames stored block ids to _id, rich text embeds included, and leaves renamed trees alone', () => {
+        const old = [{ id: 'a', type: 'core/columns', data: {}, children: [{ id: 'b', type: 'core/paragraph', data: { text: 'Hi' } }] }, { _id: 'c', type: 'core/divider', data: {} }];
+        const doc = { type: 'doc', content: [{ type: 'cmsBlock', attrs: { id: 'e', type: 'core/button', data: { label: 'Go' } } }, { type: 'paragraph', content: [{ type: 'text', text: 'x' }] }] };
+        const renamed = renameBlockIds({ content: old, body: doc, other: { id: 'not-a-block', name: 'x' }, list: [1, 'two'] });
+        expect(renamed.changed).toBe(true);
+        expect(renamed.value).toEqual({
+            content: [{ _id: 'a', type: 'core/columns', data: {}, children: [{ _id: 'b', type: 'core/paragraph', data: { text: 'Hi' } }] }, { _id: 'c', type: 'core/divider', data: {} }],
+            body: { type: 'doc', content: [{ type: 'cmsBlock', attrs: { _id: 'e', type: 'core/button', data: { label: 'Go' } } }, { type: 'paragraph', content: [{ type: 'text', text: 'x' }] }] },
+            other: { id: 'not-a-block', name: 'x' }, list: [1, 'two'],
+        });
+        const again = renameBlockIds(renamed.value);
+        expect(again.changed).toBe(false);
+        expect(again.value).toBe(renamed.value);
+    });
+
+    it('describes records as JSON Schema', () => {
+        const schema = recordSchema({ id: 'cms/posts', label: 'Posts', fields: {
+            title: field.string({ required: true, max: 200 }), status: field.enum(['draft', 'published'], { default: 'draft' }), tags: field.string({ multiple: true, maxItems: 5 }),
+            body: field.blocks(), seo: field.json({ fields: { title: field.string({ nullable: true }) } }), publishedAt: field.datetime({ nullable: true }),
+        } });
+        expect(schema).toMatchObject({ title: 'Posts', type: 'object', required: ['title'], additionalProperties: false });
+        const properties = schema.properties as Record<string, Record<string, unknown>>;
+        expect(properties.id).toEqual({ type: 'string', readOnly: true });
+        expect(properties.title).toEqual({ type: 'string', maxLength: 200 });
+        expect(properties.status).toEqual({ type: 'string', enum: ['draft', 'published'], default: 'draft' });
+        expect(properties.tags).toEqual({ type: 'array', items: { type: 'string', maxLength: 255 }, maxItems: 5 });
+        expect(properties.body).toEqual({ type: 'array', items: { $ref: '#/$defs/block' } });
+        expect(properties.seo).toEqual({ type: 'object', properties: { title: { anyOf: [{ type: 'string', maxLength: 255 }, { type: 'null' }] } } });
+        expect(properties.publishedAt).toEqual({ anyOf: [{ type: 'integer', description: 'Milliseconds since 1970-01-01T00:00:00Z.' }, { type: 'null' }] });
     });
 
     it('renders deterministic checks with quoted names', () => {

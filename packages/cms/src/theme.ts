@@ -227,6 +227,8 @@ export interface MediaView {
     readonly srcset: string;
     /** `srcset` variants in a 16:9 shape around the focal point, for cards and headers. */
     readonly wideSrcset: string;
+    /** A blurred stand-in as a `data:` URL, shown while the image loads; null for other files. */
+    readonly placeholder: string | null;
 }
 
 export interface TermLink {
@@ -238,7 +240,7 @@ export interface TermLink {
 
 /** A block with its Markdown fields rendered and its media resolved. */
 export interface RenderedBlock {
-    readonly id: string;
+    readonly _id: string;
     readonly type: string;
     readonly data: { readonly [field: string]: unknown };
     /** Markdown fields rendered to escaped HTML. */

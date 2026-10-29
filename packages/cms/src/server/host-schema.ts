@@ -193,4 +193,16 @@ export const HOST_STEPS: readonly HostStep[] = [{
         { rql: "ALTER TABLE cms_terms ADD COLUMN meta TEXT NOT NULL DEFAULT '{}'" },
         { rql: "ALTER TABLE cms_users ADD COLUMN meta TEXT NOT NULL DEFAULT '{}'" },
     ],
+}, {
+    version: 11,
+    description: 'Blurred placeholders of images',
+    statements: [
+        // A tiny WebP of the image as a data: URL, shown while the image loads.
+        { rql: 'ALTER TABLE cms_files ADD COLUMN placeholder TEXT' },
+    ],
+}, {
+    version: 12,
+    description: 'Block IDs are _id',
+    // No DDL: the host rewrites every stored block tree from `id` to `_id` when this step applies (see block-ids.ts).
+    statements: [{ rql: 'SELECT 1' }],
 }];

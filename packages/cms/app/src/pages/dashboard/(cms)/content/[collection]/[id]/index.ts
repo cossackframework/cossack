@@ -1,7 +1,7 @@
 import { Cossack, Page, State, ClientState, Server, Client, OnWindow, PreventNavigation, type HeadValue } from '@cossackframework/core';
 import { Button, Checkbox, Input, Modal, NativeSelect, Textarea, toast, CodeEditor } from '@cossackframework/ui';
 import { html, component, unsafeHTML, type TemplateResult } from '@cossackframework/renderer';
-import { blockId, evaluateRule, fieldVisibility, findBlock, flattenBlocks, flattenGroupFields, formatBytes, isCmsError, languageName, mediaKind, recordTitle, richTextBlocks, updateBlock, type Block, type BlockCondition, type EmbeddedBlock, type MediaKind, type RecordShape, type RichTextDoc } from '@cossackframework/cms';
+import { blockId, evaluateRule, fieldVisibility, findBlock, flattenBlocks, flattenGroupFields, formatBytes, isCmsError, languageName, mediaKind, recordSchema, recordTitle, richTextBlocks, updateBlock, type Block, type BlockCondition, type EmbeddedBlock, type JsonSchema, type MediaKind, type RecordShape, type RichTextDoc } from '@cossackframework/cms';
 import { blockPanel } from '../../../../../../cms/block-panel';
 import { describeBlockError } from '../../../../../../cms/block-errors';
 import { styleValues, withStyle, type BlockTab, type StyleValues } from '../../../../../../cms/style-controls';
@@ -11,9 +11,9 @@ import { blockDefaults, controlValue, editorBlocks, editorInput, entryUrl, sugge
 import { RichTextField, richTextEditors } from '../../../../../../cms/rich-text-field';
 import { BlockTree } from '../../../../../../cms/block-tree';
 import { bindingChoices, choicesControl, fieldControl, groupFields, multipleControl, type BindingChoice } from '../../../../../../cms/field-controls';
-import { uploadFile } from '../../../../../../cms/media-chooser';
+import { MEDIA_ACCEPT, uploadFile } from '../../../../../../cms/media-chooser';
 import { FieldGroupView, plainBlocks, visibilityTypes, type RowPath } from '../../../../../../cms/field-group-view';
-import { box, CONTROL, linkButton, notice, shortDate, STATUS_LABELS, statusBadge } from '../../../../../../cms/ui';
+import { box, CONTROL, linkButton, notice, rememberTab, shortDate, STATUS_LABELS, statusBadge, tabFromQuery } from '../../../../../../cms/ui';
 import { conditionControl, conditionFields } from '../../../../../../cms/condition-control';
 import { notificationRulesControl } from '../../../../../../cms/notification-rules';
 import { siteOrigin } from '../../../../../../cms/seo';
@@ -28,6 +28,10 @@ interface BlockDialog { field: string; id: string; type: string; values: Record<
 
 /** A translation of the entry, or a language it has none in yet. */
 interface TranslationLink { code: string; label: string; id: string | null; title: string; status: string }
+/** The editor's views: the fields, a form's settings, or the entry as JSON in the API's shape. */
+type EditorTab = 'edit' | 'settings' | 'json';
+/** The fields of a form that live on its Settings tab. */
+const FORM_SETTINGS_FIELDS = new Set(['settings', 'notifications']);
 
 /**
  * The entry editor for every collection and resource. A new entry is `/new`. The title drives
@@ -57,8 +61,10 @@ export default class EntryEditor extends Cossack {
     @State() previews: Record<string, MediaPreview> = {};
     @State() tabs: Record<string, 'write' | 'preview'> = {};
     /** The editor's view: the fields, or the entry as JSON in the API's shape. */
-    @State() mode: 'edit' | 'json' = 'edit';
+    @State() mode: EditorTab = 'edit';
     @State() json = '';
+    /** The entry's JSON Schema, for the JSON tab's completion and linting. */
+    @State() schema: JsonSchema | null = null;
     @State() jsonDirty = false;
     @State() rendered: Record<string, string> = {};
     @State() picker: { open: boolean; target: MediaTarget | null; search: string; kind: string; items: (MediaPreview & { size: string; name: string })[] } = { open: false, target: null, search: '', kind: '', items: [] };
@@ -94,7 +100,7 @@ export default class EntryEditor extends Cossack {
     private autosaving = false;
 
     head(): HeadValue {
-        const title = this.view ? (this.id === 'new' ? `${__('Add new')} ${this.view.singular.toLowerCase()}` : `${__('Edit')} ${this.view.singular.toLowerCase()}`) : __('Editor');
+        const title = this.view ? (this.id === 'new' ? `${__('New')} ${this.view.singular.toLowerCase()}` : `${__('Edit')} ${this.view.singular.toLowerCase()}`) : __('Editor');
         return { title };
     }
 
@@ -110,6 +116,7 @@ export default class EntryEditor extends Cossack {
             if (this.id !== 'new' && !record) { this.error = __('This entry does not exist or you cannot edit it.'); this.c.status(404); return; }
             if (!record && evaluateRule(resource.access.create, principal) === 'deny') { this.error = __('You cannot create entries here.'); this.c.status(403); return; }
             this.view = view;
+            this.schema = recordSchema(resource);
             this.values = await entryValues(cms, view, record);
             // A new entry starts from the collection's content template.
             const content = contentField(view);
@@ -136,7 +143,7 @@ export default class EntryEditor extends Cossack {
                 this.meta = { createdAt: record.createdAt, updatedAt: record.updatedAt, author: owner?.name ?? '', url: collection ? (await cms.entryUrls(collection, [record])).get(record.id) ?? null : null };
                 if (this.meta.url && view.publishable && record.status !== 'published') this.meta = { ...this.meta, url: null };
                 await this.loadRevisions(record.id);
-                if (view.path !== null) this.previewLinks = await cms.previews.count(resource.id, record.id).catch(() => 0);
+                if (view.path !== null || view.route === 'forms') this.previewLinks = await cms.previews.count(resource.id, record.id).catch(() => 0);
             }
             const settings = await cms.settings.all();
             this.seo = { origin: siteOrigin(this.c), siteTitle: settings['general.siteTitle'], separator: ({ dash: '–', pipe: '|', hyphen: '-', dot: '·', slash: '/', colon: ':' } as Record<string, string>)[settings['seo.titleSeparator']] ?? '–' };
@@ -154,6 +161,8 @@ export default class EntryEditor extends Cossack {
             if (collection?.name === 'patterns') this.collectionChoices = cms.collections().filter(entry => entry.name !== 'patterns').map(entry => ({ name: entry.name, label: entry.label }));
             await this.loadPatternTitles();
             this.message = this.c.req.query('saved') === '1' ? __('Saved.') : '';
+            this.mode = tabFromQuery(this.c.req.query('tab'), this.editorTabs());
+            if (this.mode === 'json' && record) this.json = await entryJson(cms, this.route, record);
         } catch (error) {
             this.error = isCmsError(error) ? error.message : __('The editor could not be loaded.');
             if (isCmsError(error, 'CMS_NOT_FOUND')) this.c.status(404);
@@ -446,7 +455,7 @@ export default class EntryEditor extends Cossack {
         const content = await this.patternContent(id);
         if (!field || !content) return;
         this.patternTitles = { ...this.patternTitles, [id]: choice.title };
-        const added: EditorBlock[] = choice.synced && !copy ? [{ id: blockId(), type: 'core/pattern', data: { pattern: id } }] : editorBlocks(content as EditorBlock[], view.blocks);
+        const added: EditorBlock[] = choice.synced && !copy ? [{ _id: blockId(), type: 'core/pattern', data: { pattern: id } }] : editorBlocks(content as EditorBlock[], view.blocks);
         this.set(field, picker.starter ? added : [...this.blocks(field), ...added]);
     }
 
@@ -587,18 +596,18 @@ export default class EntryEditor extends Cossack {
         const editor = richTextEditors.get(`field-${field}`);
         if (!option || !editor) return;
         const values = blockDefaults(option);
-        const block: EmbeddedBlock = { id: blockId(), type, data: editorInput(option.fields, values).input };
+        const block: EmbeddedBlock = { _id: blockId(), type, data: editorInput(option.fields, values).input };
         editor.insertBlock(block);
-        if (option.fields.length) this.blockDialog = { field, id: block.id, type, values, errors: {}, embedded: true, tab: 'general', style: styleValues({}) };
+        if (option.fields.length) this.blockDialog = { field, id: block._id, type, values, errors: {}, embedded: true, tab: 'general', style: styleValues({}) };
     }
 
     @Client()
     editRichBlock(field: string, block: EmbeddedBlock) {
         const empty = { tab: 'general' as const, style: styleValues({}) };
-        if (block.type === 'core/pattern') { this.blockDialog = { field, id: block.id, type: block.type, values: { pattern: block.data.pattern }, errors: {}, embedded: true, ...empty }; return; }
+        if (block.type === 'core/pattern') { this.blockDialog = { field, id: block._id, type: block.type, values: { pattern: block.data.pattern }, errors: {}, embedded: true, ...empty }; return; }
         const option = this.view?.blocks.find(entry => entry.name === block.type);
         if (!option) { toast.error(__('This block type is no longer available.')); return; }
-        this.blockDialog = { field, id: block.id, type: block.type, errors: {}, embedded: true, ...empty,
+        this.blockDialog = { field, id: block._id, type: block.type, errors: {}, embedded: true, ...empty,
             values: Object.fromEntries(option.fields.map(entry => [entry.name, controlValue(entry, block.data[entry.name] ?? entry.defaultValue)])) };
     }
 
@@ -670,7 +679,7 @@ export default class EntryEditor extends Cossack {
         const content = await this.patternContent(String(dialog.values.pattern ?? ''));
         if (!content) return;
         const copy = editorBlocks(content as EditorBlock[], this.view.blocks);
-        const replace = (blocks: EditorBlock[]): EditorBlock[] => blocks.flatMap(block => block.id === dialog.id ? copy : [block.children ? { ...block, children: replace(block.children) } : block]);
+        const replace = (blocks: EditorBlock[]): EditorBlock[] => blocks.flatMap(block => block._id === dialog.id ? copy : [block.children ? { ...block, children: replace(block.children) } : block]);
         this.set(dialog.field, replace(this.blocks(dialog.field)));
     }
 
@@ -787,10 +796,16 @@ export default class EntryEditor extends Cossack {
         }
     }
 
+    /** The tabs this entry has: a form adds Settings; JSON needs a saved entry. */
+    private editorTabs(): EditorTab[] {
+        return ['edit', ...(this.view?.route === 'forms' ? ['settings' as const] : []), ...(this.id !== 'new' ? ['json' as const] : [])];
+    }
+
     @Client()
-    async showMode(mode: 'edit' | 'json') {
+    async showMode(mode: EditorTab) {
         if (mode === this.mode) return;
         this.mode = mode;
+        rememberTab(mode, this.editorTabs());
         if (mode === 'json' && !this.jsonDirty) await this.loadJson();
     }
 
@@ -806,7 +821,8 @@ export default class EntryEditor extends Cossack {
     private jsonPanel(): TemplateResult {
         return html`<div class="space-y-3" role="tabpanel" id="entry-json" aria-labelledby="entry-tab-json">
             <p class="text-sm text-muted-foreground">${__('The entry as the content API answers it. Fields such as id, rev and url are read-only; everything else is saved as a PATCH would be, with the same checks.')}</p>
-            ${component(CodeEditor, { id: 'field-json', value: this.json, language: 'json', label: __('Entry JSON'), class: 'min-h-[24rem] rounded-md border border-input bg-background shadow-xs focus-within:border-ring focus-within:ring-ring/50 focus-within:ring-[3px]',
+            ${Object.keys(this.errors).length ? html`<ul role="alert" class="space-y-1 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">${Object.entries(this.errors).map(([name, message]) => html`<li><code class="text-xs">${name}</code> ${this.describe(message)}</li>`)}</ul>` : null}
+            ${component(CodeEditor, { id: 'field-json', value: this.json, language: 'json', label: __('Entry JSON'), ...(this.schema ? { schema: this.schema } : {}), class: 'min-h-[24rem] rounded-md border border-input bg-background shadow-xs focus-within:border-ring focus-within:ring-ring/50 focus-within:ring-[3px]',
                 onChange: (value: string) => { this.json = value; this.jsonDirty = true; this.dirty = true; } })}
             <div class="flex items-center gap-2">
                 ${component(Button, { type: 'button', size: 'sm', disabled: this.saving || !this.jsonDirty, '@click': () => this.submitJson() }, __('Apply JSON'))}
@@ -842,6 +858,8 @@ export default class EntryEditor extends Cossack {
                 return html`<figure class="group relative overflow-hidden rounded-md border border-border bg-muted">
                     ${file && mediaKind(file.contentType) === 'image'
                         ? html`<img src=${file.url} alt=${file.alt} class="aspect-video w-full object-cover" loading="lazy">`
+                        : file && mediaKind(file.contentType) === 'video' ? html`<video src=${file.url} class="aspect-video w-full bg-black" controls preload="metadata"></video>`
+                        : file && mediaKind(file.contentType) === 'audio' ? html`<div class="space-y-1 p-3"><p class="truncate text-xs text-muted-foreground">${file.title || file.alt}</p><audio src=${file.url} class="w-full" controls preload="metadata"></audio></div>`
                         : html`<p class="p-3 text-xs text-muted-foreground">${file?.title ?? id}</p>`}
                     <button type="button" class="absolute right-1 top-1 rounded bg-background/90 px-2 py-0.5 text-xs text-destructive border border-border cursor-pointer"
                         @click=${() => remove(id)} aria-label=${`${__('Remove')} ${file?.title ?? ''}`}>${__('Remove')}</button>
@@ -886,7 +904,7 @@ export default class EntryEditor extends Cossack {
         switch (field.kind) {
             // Rows outside a layout (a plugin resource's): the group view renders them with this editor's controls.
             case 'rows': return component(FieldGroupView, {
-                id, blocks: [{ id: field.name, type: 'field/repeater', data: { name: field.name, label: field.label } }], options: this.view?.blocks ?? [], fields: [field], values: { [field.name]: value },
+                id, blocks: [{ _id: field.name, type: 'field/repeater', data: { name: field.name, label: field.label } }], options: this.view?.blocks ?? [], fields: [field], values: { [field.name]: value },
                 onChange: (_name: string, next: unknown) => change(next), hidden: new Set<string>(), control: (sub: EditorField, subValue: unknown, subChange: (value: unknown) => void, rows: RowPath, subId: string) => this.control(sub, subValue, subChange, { field: target.field, rows, key: sub.name }, subId),
             });
             case 'text': if (field.format === 'markdown' && target.block === undefined) return this.markdownControl(field, value, change, id); break;
@@ -966,7 +984,7 @@ export default class EntryEditor extends Cossack {
                 // Patterns go into the content; not into forms, and not into patterns.
                 ...(field.form || this.view?.route === 'patterns' ? {} : { onPatterns: () => this.openPatterns(field.name) }),
                 onChange: (blocks: EditorBlock[]) => this.set(field.name, blocks),
-                control: (entry: EditorField, value: unknown, change: (value: unknown) => void, block: EditorBlock, id: string) => this.control(entry, value, change, { field: field.name, block: block.id, key: entry.name }, id),
+                control: (entry: EditorField, value: unknown, change: (value: unknown) => void, block: EditorBlock, id: string) => this.control(entry, value, change, { field: field.name, block: block._id, key: entry.name }, id),
             })}
             ${this.errorFor(field.name)}
         </div>`;
@@ -1010,7 +1028,7 @@ export default class EntryEditor extends Cossack {
                 <p class="text-xs text-muted-foreground">${future && (status === 'published' || status === 'scheduled') ? __('Goes live at this time.') : __('Leave empty to publish immediately.')}</p>
                 ${this.errorFor('publishedAt')}
             </div>` : null}
-            ${!isNew && view.path !== null ? html`<div class="space-y-2 border-t border-border pt-3">
+            ${!isNew && (view.path !== null || view.route === 'forms') ? html`<div class="space-y-2 border-t border-border pt-3">
                 <div class="flex flex-wrap items-center gap-2">
                     ${component(Button, { type: 'button', variant: 'outline', size: 'sm', '@click': () => this.openPreview() }, __('Preview'))}
                     ${status !== 'published' ? component(Button, { type: 'button', variant: 'ghost', size: 'sm', '@click': () => this.createPreviewLink() }, __('Get preview link')) : null}
@@ -1111,7 +1129,7 @@ export default class EntryEditor extends Cossack {
                     : html`<p class="text-xs text-muted-foreground">${__('None yet.')}</p>`}
             </div>
             ${this.canManageTerms ? html`<details class="text-sm">
-                <summary class="cursor-pointer text-primary">+ ${__('Add new')} ${taxonomy.singular.toLowerCase()}</summary>
+                <summary class="cursor-pointer text-primary">+ ${__('New')} ${taxonomy.singular.toLowerCase()}</summary>
                 <div class="mt-2 space-y-2">
                     <input class=${CONTROL} aria-label=${`${__('New')} ${taxonomy.singular.toLowerCase()}`} .value=${draft.name}
                         @input=${(event: Event) => { this.termDrafts = { ...this.termDrafts, [taxonomy.name]: { ...draft, name: (event.target as HTMLInputElement).value } }; }}>
@@ -1119,7 +1137,7 @@ export default class EntryEditor extends Cossack {
                         <option value="">— ${__('Parent')} —</option>
                         ${taxonomy.terms.map(term => html`<option value=${term.id} ?selected=${draft.parent === term.id}>${'— '.repeat(term.depth)}${term.name}</option>`)}
                     </select>
-                    ${component(Button, { type: 'button', size: 'sm', variant: 'outline', disabled: !draft.name.trim(), '@click': () => this.addTerm(taxonomy.name, draft.name, draft.parent) }, `${__('Add new')} ${taxonomy.singular.toLowerCase()}`)}
+                    ${component(Button, { type: 'button', size: 'sm', variant: 'outline', disabled: !draft.name.trim(), '@click': () => this.addTerm(taxonomy.name, draft.name, draft.parent) }, `${__('New')} ${taxonomy.singular.toLowerCase()}`)}
                 </div>
             </details>` : null}
             ${this.errorFor(taxonomy.name)}`);
@@ -1140,7 +1158,7 @@ export default class EntryEditor extends Cossack {
                         ${[['', __('All media')], ['image', __('Images')], ['video', __('Video')], ['audio', __('Audio')], ['document', __('Documents')]].map(([value, label]) => html`<option value=${value} ?selected=${this.picker.kind === value}>${label}</option>`)}
                     </select>
                     <label class="inline-flex cursor-pointer items-center rounded-md border border-border px-3 py-2 text-sm text-foreground hover:bg-muted">
-                        ${__('Upload files')}<input type="file" multiple class="sr-only" @change=${(event: Event) => this.uploadInPicker(event)}>
+                        ${__('Upload files')}<input type="file" multiple accept=${this.picker.kind === 'image' ? 'image/*' : MEDIA_ACCEPT} class="sr-only" @change=${(event: Event) => this.uploadInPicker(event)}>
                     </label>
                 </div>
                 <ul class="grid max-h-[60vh] grid-cols-2 gap-3 overflow-y-auto sm:grid-cols-4">
@@ -1237,8 +1255,13 @@ export default class EntryEditor extends Cossack {
         // Fields the groups place; the rest keep their declared place.
         const groupBlocks = view.groups.flatMap(group => group.blocks);
         const laidOut = new Set(flattenGroupFields(plainBlocks(groupBlocks)).map(block => String(block.data.name ?? '')));
-        const main = view.fields.filter(field => field.placement === 'main' && !laidOut.has(field.name));
+        // A form's settings and notifications have their own tab.
+        const onSettingsTab = (field: EditorField) => view.route === 'forms' && FORM_SETTINGS_FIELDS.has(field.name);
+        const main = view.fields.filter(field => field.placement === 'main' && !laidOut.has(field.name) && !onSettingsTab(field));
         const sidebar = view.fields.filter(field => field.placement === 'sidebar' && !laidOut.has(field.name));
+        const settingsFields = view.fields.filter(onSettingsTab);
+        const tabs = this.editorTabs();
+        const tabLabels: Record<EditorTab, string> = { edit: view.route === 'forms' ? __('Form') : __('Edit'), settings: __('Settings'), json: 'JSON' };
         const hidden = fieldVisibility(plainBlocks(groupBlocks), visibilityTypes(view.blocks), this.values).hidden;
         const groupView = (id: string, blocks: EditorBlock[]) => component(FieldGroupView, {
             id, blocks, options: view.blocks, fields: view.fields, values: this.values, hidden, errors: this.errors,
@@ -1254,8 +1277,8 @@ export default class EntryEditor extends Cossack {
         return html`<div class="space-y-6">
             <div class="flex flex-wrap items-center justify-between gap-3">
                 <div class="flex items-center gap-3">
-                    <h1 class="text-2xl font-bold text-foreground">${this.id === 'new' ? `${__('Add new')} ${view.singular.toLowerCase()}` : `${__('Edit')} ${view.singular.toLowerCase()}`}</h1>
-                    ${this.id === 'new' ? null : linkButton(__('Add new'), `${base}/new`, 'outline')}
+                    <h1 class="text-2xl font-bold text-foreground">${this.id === 'new' ? `${__('New')} ${view.singular.toLowerCase()}` : `${__('Edit')} ${view.singular.toLowerCase()}`}</h1>
+                    ${this.id === 'new' ? null : linkButton(__('New'), `${base}/new`, 'outline')}
                 </div>
                 <div class="flex items-center gap-3 text-sm">
                     ${this.meta.url ? html`<a href=${this.meta.url} class="text-primary hover:underline" target="_blank" rel="noopener">${__('View')} ${view.singular.toLowerCase()} ↗</a>` : null}
@@ -1263,21 +1286,23 @@ export default class EntryEditor extends Cossack {
                     <a href=${form ? '/dashboard/forms' : base} class="text-muted-foreground hover:text-foreground">← ${__('All')} ${view.label.toLowerCase()}</a>
                 </div>
             </div>
-            ${this.id !== 'new' ? html`<div role="tablist" aria-label=${__('Editor view')} class="flex gap-1 border-b border-border">
-                ${(['edit', 'json'] as const).map(mode => html`<button type="button" role="tab" id=${`entry-tab-${mode}`} aria-selected=${this.mode === mode ? 'true' : 'false'} aria-controls=${mode === 'json' ? 'entry-json' : 'entry-fields'}
+            ${tabs.length > 1 ? html`<div role="tablist" aria-label=${__('Editor view')} class="flex gap-1 border-b border-border">
+                ${tabs.map(mode => html`<button type="button" role="tab" id=${`entry-tab-${mode}`} aria-selected=${this.mode === mode ? 'true' : 'false'} aria-controls=${mode === 'edit' ? 'entry-fields' : `entry-${mode}`}
                     class=${`-mb-px border-b-2 px-3 py-2 text-sm font-medium bg-transparent cursor-pointer ${this.mode === mode ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
-                    @click=${() => this.showMode(mode)}>${mode === 'json' ? 'JSON' : __('Edit')}</button>`)}
+                    @click=${() => this.showMode(mode)}>${tabLabels[mode]}</button>`)}
             </div>` : null}
             ${this.message ? notice(this.message, 'success') : null}
             ${this.error ? notice(this.describe(this.error), 'error') : null}
-            ${this.mode === 'json' ? this.jsonPanel() : null}
             ${this.autosaveOffer ? html`<div role="status" class="flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-foreground">
                 <span>${this.id === 'new' ? __('You have unsaved work from') : __('There is an autosave of this entry that is newer than the version below, from')} ${shortDate(this.autosaveOffer.at)}.</span>
                 <span class="flex gap-2">${component(Button, { type: 'button', size: 'sm', '@click': () => this.restore() }, __('Restore the autosave'))}
                     ${component(Button, { type: 'button', size: 'sm', variant: 'ghost', '@click': () => this.dismissAutosave() }, __('Dismiss'))}</span>
             </div>` : null}
-            <div id="entry-fields" role="tabpanel" aria-labelledby="entry-tab-edit" class=${`grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem] ${this.mode === 'json' ? 'hidden' : ''}`}>
-                <div class="min-w-0 space-y-5">
+            <div class=${`grid gap-6 ${this.mode === 'json' ? '' : 'lg:grid-cols-[minmax(0,1fr)_20rem]'}`}>
+                <div class="min-w-0">
+                ${this.mode === 'settings' ? html`<div id="entry-settings" role="tabpanel" aria-labelledby="entry-tab-settings" class="space-y-5">${settingsFields.map(field => this.fieldRow(field))}</div>` : null}
+                ${this.mode === 'json' ? this.jsonPanel() : null}
+                <div id="entry-fields" role="tabpanel" aria-labelledby="entry-tab-edit" class=${`space-y-5 ${this.mode === 'edit' ? '' : 'hidden'}`}>
                     ${titleField ? html`<div class="space-y-1">
                         <label for="field-title" class="sr-only">${__('Title')}</label>
                         <input id="field-title" class=${`w-full rounded-lg border bg-background px-4 py-3 text-xl font-semibold text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring ${this.errors[titleField] ? 'border-destructive' : 'border-input'}`}
@@ -1300,7 +1325,8 @@ export default class EntryEditor extends Cossack {
                     ${view.groups.filter(group => group.placement === 'main').map(groupBox)}
                     ${view.path !== null && this.values.seo !== undefined ? this.seoBox() : null}
                 </div>
-                <aside class="space-y-4">
+                </div>
+                <aside class=${`space-y-4 ${this.mode === 'json' ? 'hidden' : ''}`}>
                     ${this.publishBox(view)}
                     ${view.hierarchical ? box(__('Attributes'), html`
                         <div class="space-y-1">

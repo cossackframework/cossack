@@ -14,6 +14,8 @@ export type CodeEditorProps = {
     readOnly?: boolean;
     /** Show the value as a unified diff against this text, read-only. */
     original?: string;
+    /** JSON only: a JSON Schema the document is linted against, with completion and hover help from it. */
+    schema?: object;
     /** Classes of the frame; the default gives a bordered box with a minimum height. */
     class?: string;
     onChange?(value: string): void;
@@ -56,7 +58,7 @@ export class CodeEditor extends Cossack {
             this.language = this.props.language ?? "";
             this.handle = mountCodeEditor(this.surface, {
                 value: this.props.value ?? "", language: this.language, readOnly: this.props.readOnly === true || this.props.original !== undefined,
-                placeholder: this.props.placeholder ?? "", label: this.props.label ?? "Code", original: this.props.original ?? null,
+                placeholder: this.props.placeholder ?? "", label: this.props.label ?? "Code", original: this.props.original ?? null, schema: this.props.schema ?? null,
                 onChange: value => this.props.onChange?.(value),
             });
             this.ready = true;

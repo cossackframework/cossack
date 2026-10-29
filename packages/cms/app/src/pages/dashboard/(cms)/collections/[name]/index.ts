@@ -376,6 +376,7 @@ export default class CollectionBuilder extends Cossack {
                         ${control('description', __('Description'))}
                         ${iconSelect('collection-icon', draft.icon, value => this.setDraft('icon', value), undefined, { hint: __('Shown in the dashboard menu.'), allowEmpty: false })}
                         ${this.check(__('Show entries on the site'), draft.public, checked => this.setDraft('public', checked), { disabled: draft.builtin && draft.name === 'pages' })}
+                        ${draft.public ? this.check(__('List entries in the XML sitemap'), draft.sitemap, checked => this.setDraft('sitemap', checked), { hint: __('Published entries not marked noindex, with their featured images.') }) : null}
                         ${draft.public && !(draft.builtin && draft.name === 'pages') ? control('path', __('URL path'), draft.path.trim()
                             ? `${__('Entries at')} /${draft.path.trim()}/${draft.slug ? 'slug' : 'id'}`
                             : `${__('Entries at the site root')}: /${draft.slug ? 'slug' : 'id'}. ${__('Slugs stay unique across pages and other root collections.')}`) : null}

@@ -15,13 +15,13 @@ afterEach(cleanupRoots);
 const SETUP = { code: 'setup-code-for-tests', siteTitle: 'Forms', name: 'Ada', email: 'ada@example.com', password: 'long password' };
 const doc = (...content) => ({ type: 'doc', content });
 const paragraph = value => ({ type: 'paragraph', content: [{ type: 'text', text: value }] });
-const input = (id, type, data, extra = {}) => ({ id, type: `form/${type}`, data: { label: id, ...data }, ...extra });
+const input = (id, type, data, extra = {}) => ({ _id: id, type: `form/${type}`, data: { label: id, ...data }, ...extra });
 
 /** A contact form: two columns of name and email, a topic, a message, and a phone number shown when "call me" is ticked. */
 const CONTACT = [
-  { id: 'row', type: 'core/columns', data: {}, children: [
-    { id: 'c1', type: 'core/column', data: {}, children: [input('n', 'text', { name: 'name', label: 'Your name', required: true })] },
-    { id: 'c2', type: 'core/column', data: {}, children: [input('e', 'email', { name: 'email', label: 'Email', required: true })] },
+  { _id: 'row', type: 'core/columns', data: {}, children: [
+    { _id: 'c1', type: 'core/column', data: {}, children: [input('n', 'text', { name: 'name', label: 'Your name', required: true })] },
+    { _id: 'c2', type: 'core/column', data: {}, children: [input('e', 'email', { name: 'email', label: 'Email', required: true })] },
   ] },
   input('t', 'select', { name: 'topic', label: 'Topic', options: ['sales|Sales', 'support|Support'] }),
   input('m', 'textarea', { name: 'message', label: 'Message', required: true }),
@@ -42,7 +42,7 @@ async function contactPage(origin, routeIds, diagnostics) {
   };
   const created = await json('/api/cms/content/forms', 'POST', { title: 'Contact', status: 'published', body: CONTACT, settings: { message: 'Thanks, **{field:name}**!' } });
   expect(created.item.slug).toBe('contact');
-  await json('/api/cms/content/pages', 'POST', { title: 'Write to us', status: 'published', content: [{ id: 'rt', type: 'core/richtext', data: { text: doc(paragraph('We answer within a day.')) } }, { id: 'f1', type: 'core/form', data: { form: 'contact' } }] });
+  await json('/api/cms/content/pages', 'POST', { title: 'Write to us', status: 'published', content: [{ _id: 'rt', type: 'core/richtext', data: { text: doc(paragraph('We answer within a day.')) } }, { _id: 'f1', type: 'core/form', data: { form: 'contact' } }] });
   return { web, form: created.item };
 }
 
@@ -66,7 +66,7 @@ async function bookingPage(web) {
     return answer;
   };
   const created = await json('/api/cms/content/forms', { title: 'Booking', status: 'published', body: BOOKING, settings: { message: 'Booked for {field:email}: {field:pax}' } });
-  await json('/api/cms/content/pages', { title: 'Book', status: 'published', content: [{ id: 'f1', type: 'core/form', data: { form: 'booking' } }] });
+  await json('/api/cms/content/pages', { title: 'Book', status: 'published', content: [{ _id: 'f1', type: 'core/form', data: { form: 'booking' } }] });
   return created.item;
 }
 
@@ -403,11 +403,13 @@ describe.skipIf(!liveRomeDBTests())('generated CMS forms', () => {
         await panel.getByLabel('Value', { exact: true }).fill('true');
       });
       await browserExpect(admin.getByRole('region', { name: 'Text 3' }).getByText('Shown if…')).toBeVisible();
+      // Notifications and the form's settings have their own tab; the publish box stays beside it.
+      await admin.getByRole('tab', { name: 'Settings' }).click();
       await admin.getByRole('button', { name: 'Add notification' }).click();
       // Forms publish like other content: a draft is nowhere on the site.
       await admin.getByLabel('Status', { exact: true }).selectOption('published');
       await admin.getByRole('button', { name: 'Publish', exact: true }).click();
-      await admin.waitForURL(/\/dashboard\/content\/forms\/[0-9a-f-]{36}$/);
+      await admin.waitForURL(/\/dashboard\/content\/forms\/[0-9a-f-]{36}\?tab=settings$/);
       const built = await (await fetch(`${origin}/api/cms/forms/newsletter`)).json();
       expect(built.inputs.map(entry => [entry.name, entry.kind])).toEqual([['yourEmail', 'email'], ['tellUsMore', 'boolean'], ['interests', 'string']]);
       expect(built.blocks[2].when).toEqual({ rules: [{ field: 'tellUsMore', op: 'is', value: 'true' }] });

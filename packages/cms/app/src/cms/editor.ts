@@ -83,7 +83,7 @@ export interface EditorGroup {
 
 /** A block as editors hold it: its data as control values, nested blocks under a container. */
 export interface EditorBlock {
-    id: string;
+    _id: string;
     type: string;
     data: Record<string, unknown>;
     layout?: { hide?: Breakpoint[]; anchor?: string; className?: string };
@@ -283,7 +283,7 @@ export function blocksInput(raw: readonly EditorBlock[], types: ReadonlyMap<stri
         const children = Array.isArray(block.children) ? blocksInput(block.children, types) : undefined;
         if (children && 'error' in children) return children;
         const when = conditionInput(block.when);
-        converted.push({ id: block.id, type: block.type, data, ...(layout ? { layout } : {}), ...(Object.keys(style).length ? { style } : {}), ...(when ? { when } : {}), ...(children ? { children: children.value } : {}) });
+        converted.push({ _id: block._id, type: block.type, data, ...(layout ? { layout } : {}), ...(Object.keys(style).length ? { style } : {}), ...(when ? { when } : {}), ...(children ? { children: children.value } : {}) });
     }
     return { value: converted };
 }
@@ -314,7 +314,7 @@ export function blockDefaults(block: BlockOption): Record<string, unknown> {
 export function newBlock(type: string, options: readonly BlockOption[], id: () => string): EditorBlock | null {
     const option = options.find(entry => entry.name === type);
     if (!option) return null;
-    const block: EditorBlock = { id: id(), type, data: blockDefaults(option), ...(option.children ? { children: [] } : {}) };
+    const block: EditorBlock = { _id: id(), type, data: blockDefaults(option), ...(option.children ? { children: [] } : {}) };
     if (type === 'core/columns') block.children = [1, 2].flatMap(() => newBlock('core/column', options, id) ?? []);
     return block;
 }

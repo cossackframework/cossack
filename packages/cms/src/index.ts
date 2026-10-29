@@ -52,6 +52,7 @@ export {
     type CommentView, type CommentsView, type CommentFormView, type LanguageLink, type FormView, type InputView,
 } from './theme';
 export { diffWords, compareRecords, comparableValue, type DiffPart, type FieldChange } from './diff';
+export { recordSchema, fieldSchema, type JsonSchema } from './schema-json';
 export { REDIRECT_STATUSES, REDIRECT_PATH, redirectPath, redirectProblems, type Redirect, type RedirectInput, type RedirectStatus } from './redirects';
 export { WEBHOOK_EVENTS, webhookUrlProblem, type Webhook, type WebhookDelivery, type WebhookEvent, type WebhookInput, type WebhookPayload } from './webhooks';
 export { COMMENT_STATUSES, checkComment, type CommentShape, type CommentRow, type CommentStatus } from './comments';

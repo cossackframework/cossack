@@ -7,12 +7,12 @@ import type { EditorBlock } from './editor';
 
 /** The tree as menu rows with depths, so blocks move with the menu editor's drag code. */
 export function blockRows(blocks: readonly EditorBlock[]): MenuRow[] {
-    return placeBlocks(blocks).map(place => ({ id: place.block.id, kind: 'link', label: '', depth: place.depth }) as MenuRow);
+    return placeBlocks(blocks).map(place => ({ id: place.block._id, kind: 'link', label: '', depth: place.depth }) as MenuRow);
 }
 
 /** The tree the rows describe: each row's block under the nearest shallower row above it. */
 export function nestRows(rows: readonly MenuRow[], blocks: readonly EditorBlock[]): EditorBlock[] {
-    const index = new Map(placeBlocks(blocks).map(place => [place.block.id, place.block]));
+    const index = new Map(placeBlocks(blocks).map(place => [place.block._id, place.block]));
     const top: EditorBlock[] = [];
     const stack: { block: EditorBlock; depth: number }[] = [];
     for (const row of rows) {
@@ -25,7 +25,7 @@ export function nestRows(rows: readonly MenuRow[], blocks: readonly EditorBlock[
     // Leaves have no children list; a container keeps an empty one.
     const tidy = (list: EditorBlock[]): EditorBlock[] => list.map(block => {
         const children = tidy(block.children ?? []);
-        return children.length || index.get(block.id)?.children ? { ...block, children } : (({ children: _, ...rest }) => rest)(block);
+        return children.length || index.get(block._id)?.children ? { ...block, children } : (({ children: _, ...rest }) => rest)(block);
     });
     return tidy(top);
 }

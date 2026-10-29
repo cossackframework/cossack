@@ -161,6 +161,19 @@ describe.skipIf(!live)('scheduling, previews, revisions, redirects, tokens, webh
         clock += 1000;
         await cms.saveCollection({ ...cms.collection('posts'), path: 'posts' }, admin);
 
+        // Category permalinks: the first category's slug before the post name; a change of category redirects.
+        const [sports, culture] = (await Promise.all([cms.taxonomies.create('categories', { name: 'Sports' }, { principal: editor }), cms.taxonomies.create('categories', { name: 'Culture' }, { principal: editor })])).map(term => term.id);
+        await expect(cms.saveCollection({ ...cms.collection('pages'), permalink: 'category' }, admin)).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
+        await cms.saveCollection({ ...cms.collection('posts'), permalink: 'category' }, admin);
+        const filed = await repository.update(post.id, { categories: [sports!] }, { principal: editor, expectedRevision: (await repository.get(post.id, { principal: editor }))!.rev });
+        expect((await cms.entryUrls(cms.collection('posts'), [filed])).get(post.id)).toBe('/posts/sports/moving-post');
+        expect(await cms.redirects.match('/posts/moving-post')).toMatchObject({ location: '/posts/sports/moving-post' });
+        await repository.update(post.id, { categories: [culture!, sports!] }, { principal: editor, expectedRevision: filed.rev });
+        expect(await cms.redirects.match('/posts/sports/moving-post')).toMatchObject({ location: '/posts/culture/moving-post' });
+        expect((await cms.sitemapEntries('posts')).map(entry => entry.url)).toContain('/posts/culture/moving-post');
+        clock += 1000;
+        await cms.saveCollection({ ...cms.collection('posts'), permalink: 'slug' }, admin);
+
         const [news] = await cms.taxonomies.ensure('tags', ['Old news'], { principal: editor });
         await cms.taxonomies.update(news!, { slug: 'news' }, { principal: editor });
         expect(await cms.redirects.match('/tag/old-news')).toMatchObject({ location: '/tag/news' });
@@ -331,14 +344,20 @@ describe.skipIf(!live)('scheduling, previews, revisions, redirects, tokens, webh
         const bytes = png(3000, 2000);
         const file = await cms.files!.upload({ name: 'photo.png', contentType: 'image/png', size: bytes.length, body: new Response(bytes).body! }, { principal: editor });
         expect(imageSrcset({ ...file, version: file.updatedAt }).split(', ').map(entry => entry.split(' ')[1])).toEqual(['320w', '640w', '960w', '1280w', '1920w', '2560w']);
+        // The upload made a blurred placeholder: the image 16 pixels wide, as WebP.
+        expect(file.placeholder).toBe(`data:image/webp;base64,${btoa('webp:16x11')}`);
+        expect(transforms).toEqual([{ width: 16, height: 11, format: 'webp', rect: { x: 0, y: 0, width: 3000, height: 2000 } }]);
         const variant = await cms.files!.variant(file.id, { width: 700, accept: 'image/avif,image/webp,*/*' });
         expect(variant).toMatchObject({ contentType: 'image/avif' });
         expect(new TextDecoder().decode(new Uint8Array(await new Response(variant!.body).arrayBuffer()))).toBe('avif:960x640');
         await cms.files!.variant(file.id, { width: 700, accept: 'image/avif' });
-        expect(transforms).toHaveLength(1);
+        expect(transforms).toHaveLength(2);
         await expect(cms.files!.setEdits(file.id, { crop: { x: 2900, y: 0, width: 200, height: 100 } }, { principal: editor })).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
         const cropped = await cms.files!.setEdits(file.id, { crop: { x: 1000, y: 0, width: 2000, height: 2000 }, focus: { x: 1, y: 0.5 } }, { principal: editor });
         expect(cropped.edits).toEqual({ crop: { x: 1000, y: 0, width: 2000, height: 2000 }, focus: { x: 1, y: 0.5 } });
+        // The placeholder follows the crop.
+        expect(cropped.placeholder).toBe(`data:image/webp;base64,${btoa('webp:16x16')}`);
+        expect(transforms.at(-1)).toEqual({ width: 16, height: 16, format: 'webp', rect: { x: 1000, y: 0, width: 2000, height: 2000 } });
         expect([...storage.objects.keys()].filter(key => key.startsWith('cms/variants/'))).toEqual([]);
         await cms.files!.variant(file.id, { width: 640, height: 360, accept: 'image/jpeg' });
         expect(transforms.at(-1)).toEqual({ width: 640, height: 360, format: 'png', rect: { x: 1000, y: 438, width: 2000, height: 1125 } });

@@ -38,7 +38,7 @@ export function blocksShapeProblem(value: unknown): string | undefined {
         if (depth >= BLOCK_LIMITS.depth) return `blocks nest at most ${BLOCK_LIMITS.depth} deep.`;
         for (const block of list) {
             if (!block || typeof block !== 'object' || Array.isArray(block)) return 'must contain blocks.';
-            const { id, type, data, layout, style, when, children } = block as { id?: unknown; type?: unknown; data?: unknown; layout?: unknown; style?: unknown; when?: unknown; children?: unknown };
+            const { _id: id, type, data, layout, style, when, children } = block as { _id?: unknown; type?: unknown; data?: unknown; layout?: unknown; style?: unknown; when?: unknown; children?: unknown };
             if (typeof id !== 'string' || !BLOCK_ID.test(id) || ids.has(id)) return 'blocks need distinct IDs.';
             ids.add(id);
             if (ids.size > BLOCK_LIMITS.count) return `must be a list of at most ${BLOCK_LIMITS.count} blocks.`;

@@ -8,13 +8,13 @@ import {
 } from '../src/index';
 
 const types: ReadonlyMap<string, BlockDeclaration> = new Map([...CORE_BLOCKS, ...FORM_BLOCKS].map(block => [block.name, block]));
-const input = (id: string, type: string, data: { [key: string]: unknown }, extra: Partial<Block> = {}): Block => ({ id, type: `form/${type}`, data: { label: id, ...data }, ...extra });
+const input = (id: string, type: string, data: { [key: string]: unknown }, extra: Partial<Block> = {}): Block => ({ _id: id, type: `form/${type}`, data: { label: id, ...data }, ...extra });
 
 /** A contact form: name, email, a topic, a message, and a phone number shown when "call me" is ticked. */
 const contact: Block[] = [
-    { id: 'row', type: 'core/columns', data: {}, children: [
-        { id: 'c1', type: 'core/column', data: {}, children: [input('n', 'text', { name: 'name', label: 'Your name', required: true })] },
-        { id: 'c2', type: 'core/column', data: {}, children: [input('e', 'email', { name: 'email', label: 'Email', required: true })] },
+    { _id: 'row', type: 'core/columns', data: {}, children: [
+        { _id: 'c1', type: 'core/column', data: {}, children: [input('n', 'text', { name: 'name', label: 'Your name', required: true })] },
+        { _id: 'c2', type: 'core/column', data: {}, children: [input('e', 'email', { name: 'email', label: 'Email', required: true })] },
     ] },
     input('t', 'select', { name: 'topic', label: 'Topic', options: ['sales|Sales', 'support|Support'], required: true }),
     input('m', 'textarea', { name: 'message', label: 'Message', required: true, maxLength: 20 }),
@@ -37,7 +37,7 @@ describe('form blocks', () => {
         ]);
         // Inputs and conditions belong to forms.
         expect(validateBlocks([input('n', 'text', { name: 'name' })], types).errors).toEqual({ n: 'form/text goes only in a form.' });
-        expect(validateBlocks([{ id: 'p', type: 'core/paragraph', data: { text: 'x' }, when: { rules: [{ field: 'a', op: 'empty' }] } }], types).errors).toEqual({ p: 'conditions apply only in forms and field groups.' });
+        expect(validateBlocks([{ _id: 'p', type: 'core/paragraph', data: { text: 'x' }, when: { rules: [{ field: 'a', op: 'empty' }] } }], types).errors).toEqual({ p: 'conditions apply only in forms and field groups.' });
     });
 
     it('names inputs from labels and checks the form as a whole', () => {
@@ -56,7 +56,7 @@ describe('form blocks', () => {
         expect(inputName('')).toBe('field');
         const wrong = validateBlocks([
             input('a', 'text', { name: 'email' }), input('b', 'email', { name: 'email' }), input('c', 'text', { name: 'status' }),
-            { id: 'p', type: 'core/paragraph', data: { text: 'x' }, when: { rules: [{ field: 'missing', op: 'empty' }] } },
+            { _id: 'p', type: 'core/paragraph', data: { text: 'x' }, when: { rules: [{ field: 'missing', op: 'empty' }] } },
             input('d', 'text', { name: 'self' }, { when: { rules: [{ field: 'self', op: 'notEmpty' }] } }),
         ], types, { form: true });
         expect(wrong.errors).toEqual({ 'b.name': 'is used by another field.', 'c.name': 'is reserved for the submission.', p: 'shows on missing, which is not a field of this form.', d: 'cannot show on its own value.' });
@@ -89,7 +89,7 @@ describe('conditions', () => {
     it('hides blocks, their children and what depends on them', () => {
         const blocks: Block[] = [
             input('a', 'checkbox', { name: 'more' }),
-            { id: 'g', type: 'core/group', data: {}, when: { rules: [{ field: 'more', op: 'is', value: 'true' }] }, children: [input('b', 'text', { name: 'details' })] },
+            { _id: 'g', type: 'core/group', data: {}, when: { rules: [{ field: 'more', op: 'is', value: 'true' }] }, children: [input('b', 'text', { name: 'details' })] },
             input('c', 'text', { name: 'why' }, { when: { rules: [{ field: 'details', op: 'notEmpty' }] } }),
             input('d', 'text', { name: 'other' }, { when: { action: 'hide', match: 'any', rules: [{ field: 'more', op: 'is', value: 'true' }, { field: 'why', op: 'notEmpty' }] } }),
         ];
@@ -99,7 +99,7 @@ describe('conditions', () => {
         expect(off.values).toEqual({ more: false });
         const on = formVisibility(blocks, types, { more: true, details: 'x' });
         expect([...on.hidden]).toEqual(['d']);
-        expect(visibleBlocks(blocks, types, { more: true }).map(block => block.id)).toEqual(['a', 'g']);
+        expect(visibleBlocks(blocks, types, { more: true }).map(block => block._id)).toEqual(['a', 'g']);
     });
 });
 
@@ -173,9 +173,9 @@ describe('repeaters', () => {
     const booking: Block[] = [
         input('e', 'email', { name: 'email', label: 'Email', required: true }),
         input('r', 'repeater', { name: 'pax', label: 'Passengers', rowLabel: 'Passenger', min: 1, max: 4 }, { children: [
-            { id: 'cols', type: 'core/columns', data: {}, children: [
-                { id: 'col', type: 'core/column', data: {}, children: [input('n', 'text', { name: 'name', label: 'Name', required: true })] },
-                { id: 'col2', type: 'core/column', data: {}, children: [input('s', 'select', { name: 'seat', label: 'Seat', options: ['aisle', 'window'] })] },
+            { _id: 'cols', type: 'core/columns', data: {}, children: [
+                { _id: 'col', type: 'core/column', data: {}, children: [input('n', 'text', { name: 'name', label: 'Name', required: true })] },
+                { _id: 'col2', type: 'core/column', data: {}, children: [input('s', 'select', { name: 'seat', label: 'Seat', options: ['aisle', 'window'] })] },
             ] },
             input('sm', 'checkbox', { name: 'special', label: 'Special meal' }),
             input('ml', 'text', { name: 'meal', label: 'Meal', required: true }, { when: { rules: [{ field: 'special', op: 'is', value: 'true' }] } }),
@@ -403,7 +403,7 @@ describe('plugins and forms', () => {
         expect(manifestProblems({ ...manifest, hooks: [{ point: 'cms.form.sent', version: 1 }] })).toEqual(['hooks: cms.form.sent is not a CMS extension point.']);
         // A plugin's input block is checked like the built-in ones.
         const types = new Map([...FORM_BLOCKS, manifest.blocks[0] as BlockDeclaration].map(block => [block.name, block]));
-        const blocks = validateBlocks([{ id: 'r', type: 'acme/rating', data: { label: 'How did we do?' } }], types, { form: true }).blocks;
+        const blocks = validateBlocks([{ _id: 'r', type: 'acme/rating', data: { label: 'How did we do?' } }], types, { form: true }).blocks;
         expect(formInputs(blocks, types).map(input => [input.name, input.kind])).toEqual([['howDidWeDo', 'number']]);
     });
 });
