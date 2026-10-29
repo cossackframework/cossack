@@ -1,7 +1,8 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
 import { pathToFileURL } from 'node:url';
-import { clientOptimizedDependencies, isInstalledPackage } from '../src/vite-dependency-optimization';
+import { fileURLToPath } from 'node:url';
+import { clientOptimizedDependencies, isInstalledPackage, linkedDependencies } from '../src/vite-dependency-optimization';
 import { cossackPages } from '../src/vite-plugin';
 
 const installed = pathToFileURL('/app/node_modules/.pnpm/@cossackframework+framework@0.9.0/node_modules/@cossackframework/framework/dist/esm/vite-plugin.js').href;
@@ -27,8 +28,29 @@ describe('client dependency pre-bundling', () => {
         expect(clientOptimizedDependencies(linked)).not.toContain('@cossackframework/framework/client/devtools');
     });
 
+    const configure = (userConfig: object, command: 'serve' | 'build') =>
+        (cossackPages().config as (config: object, env: object) => any)(userConfig, { command, mode: command === 'serve' ? 'development' : 'production' });
+    const packageRoot = fileURLToPath(new URL('..', import.meta.url));
+
     it('configures the client environment from the plugin location', () => {
-        const config = (cossackPages().config as () => any)();
+        const config = configure({}, 'build');
         expect(config.environments.client.optimizeDeps.include).toEqual(clientOptimizedDependencies(new URL('../src/vite-plugin.ts', import.meta.url).href));
+        expect(config.environments.client.optimizeDeps.force).toBeUndefined();
+    });
+
+    it('tells linked packages from installed ones by their real path', () => {
+        // In this workspace core is a linked package of the framework; vitest is installed.
+        expect(linkedDependencies(packageRoot, ['@cossackframework/core/devtools', 'vitest', 'not-a-package'])).toEqual(['@cossackframework/core']);
+    });
+
+    // Vite's pre-bundle cache does not follow a linked package's sources: without this, a
+    // changed export is missing in the browser until node_modules/.vite is deleted.
+    it('re-bundles linked packages on every dev start', () => {
+        const config = configure({ root: packageRoot }, 'serve');
+        expect(config.environments.client.optimizeDeps.force).toBe(true);
+        expect(config.environments.ssr.optimizeDeps.force).toBeUndefined();
+        const ssr = configure({ root: packageRoot, environments: { ssr: { optimizeDeps: { include: ['@cossackframework/core'] } } } }, 'serve');
+        expect(ssr.environments.ssr.optimizeDeps.force).toBe(true);
+        expect(configure({ root: packageRoot }, 'build').environments.client.optimizeDeps.force).toBeUndefined();
     });
 });

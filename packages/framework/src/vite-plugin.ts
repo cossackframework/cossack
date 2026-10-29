@@ -12,7 +12,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { installDevelopmentTraceBridge, TRACE_BRIDGE_MODULE } from './vite-development-traces.js';
 import { installPublicReloadPrivacy } from './vite-public-diagnostics.js';
 import { checkTemplatesForBuild, formatTemplateDiagnostic, startDevelopmentTemplateChecks } from './vite-template-diagnostics.js';
-import { clientOptimizedDependencies } from './vite-dependency-optimization.js';
+import { clientOptimizedDependencies, linkedDependencies } from './vite-dependency-optimization.js';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { resolve, dirname, relative } from 'path';
 import { generateRoutes, ROUTES_MODULE_ID, ROUTES_SOURCE_PATH, ROUTE_GLOB_EXCLUDES } from './route-codegen.js';
@@ -206,7 +206,15 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
     // UI and Solar Icons must also stay in the SSR graph: Solar Icons 0.7.2
     // exposes some runtime entry points as TypeScript, which recent Node
     // versions refuse to strip when Vite externalizes the transitive import.
-    config() {
+    config(userConfig, env) {
+      const include = clientOptimizedDependencies(import.meta.url);
+      // A pre-bundled linked package is rebuilt on every dev start: Vite's cache
+      // does not follow its sources, so the browser would keep an old copy of it.
+      const root = userConfig.root ? resolve(userConfig.root) : process.cwd();
+      const force = (listed: readonly string[] | undefined) =>
+        env.command === 'serve' && linkedDependencies(root, listed ?? []).length > 0 ? { force: true } : {};
+      const client = [...include, ...(userConfig.environments?.client?.optimizeDeps?.include ?? []), ...(userConfig.optimizeDeps?.include ?? [])];
+      const ssr = [...(userConfig.environments?.ssr?.optimizeDeps?.include ?? []), ...(userConfig.ssr?.optimizeDeps?.include ?? [])];
       return {
         ssr: {
           noExternal: [
@@ -221,10 +229,12 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
               // The framework client app stays in Vite's graph for its
               // virtual modules and HMR when linked; see the helper for why
               // an installed framework also lists its devtools entry.
-              include: clientOptimizedDependencies(import.meta.url),
+              include,
+              ...force(client),
             },
           },
           ssr: {
+            optimizeDeps: force(ssr),
             resolve: {
               noExternal: [
                 '@cossackframework/framework',
