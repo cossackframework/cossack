@@ -27,7 +27,7 @@ export const GET = async (c: Context) => {
 
 /** Inputs as the API describes them, a repeater with its rows' inputs. */
 function describeInputs(inputs: readonly FormField[]): unknown[] {
-    return inputs.map(input => ({ name: input.name, label: input.label, kind: input.kind, type: input.type, required: input.required, options: input.options, ...(input.kind === 'rows' ? { inputs: describeInputs(input.inputs) } : {}) }));
+    return inputs.map(input => ({ name: input.name, label: input.label, kind: input.kind, type: input.type, required: input.required, options: input.options, ...(input.multiple ? { multiple: true } : {}), ...(input.kind === 'rows' ? { inputs: describeInputs(input.inputs) } : {}) }));
 }
 
 /** What the sender typed, kept for the form to show again: text and choices as posted, a repeater's rows the same way, within limits. */
@@ -43,6 +43,27 @@ function postedValues(inputs: readonly FormField[], values: SubmittedValues): Re
         else if (Array.isArray(entry)) typed[input.name] = entry.filter((item): item is string => typeof item === 'string').slice(0, 100);
     }
     return typed;
+}
+
+/**
+ * Add to or remove from a list the page named: `repeater`, `repeater.<row id>`, `tags`,
+ * `tags.<position>`, or the same inside a row (`repeater.<row id>.tags.<position>`).
+ */
+function editList(inputs: readonly FormField[], holder: { [name: string]: unknown }, path: readonly string[], add: boolean): void {
+    const [name, ...rest] = path;
+    const input = inputs.find(entry => entry.name === name);
+    if (!input || !name) return;
+    if (input.kind === 'rows') {
+        const rows = Array.isArray(holder[name]) ? holder[name] as { [name: string]: unknown }[] : [];
+        if (rest.length > 1) { const row = rows.find(entry => entry._id === rest[0]); if (row) editList(input.inputs, row, rest.slice(1), add); return; }
+        const max = typeof input.data.max === 'number' ? input.data.max : 50;
+        holder[name] = add ? (rows.length < max ? [...rows, { _id: `r${Date.now().toString(36)}` }] : rows) : rows.filter(row => row._id !== rest[0]);
+        return;
+    }
+    if (!input.multiple) return;
+    const items = Array.isArray(holder[name]) ? (holder[name] as unknown[]).map(String) : typeof holder[name] === 'string' ? [holder[name] as string] : [];
+    const max = typeof input.data.maxItems === 'number' ? input.data.maxItems : 50;
+    holder[name] = add ? (items.length < max ? [...items, ''] : items) : items.filter((_, index) => String(index + 1) !== rest[0]);
 }
 
 /** A path on this site to go back to: the form's page, or the home page. */
@@ -81,16 +102,10 @@ export const POST = async (c: Context) => {
     } catch { return c.json({ error: 'Send the form as form data or JSON.', code: 'CMS_VALIDATION' }, 400); }
     const page = samePath(meta.page ?? (() => { try { return new URL(c.req.header('referer') ?? '').pathname; } catch { return undefined; } })());
     const back = (key: string) => c.redirect(`${page}?form=${encodeURIComponent(form.ref.slug)}&result=${key}#form-${form.ref.slug}`, 303);
-    // Without the page's script, a repeater's Add and Remove buttons post the form back: it returns as typed with the rows changed, nothing checked.
+    // Without the page's script, the Add and Remove buttons of a repeater or a multiple input post the form back: it returns as typed with the rows or items changed, nothing checked.
     if (!json && (meta.add || meta.remove)) {
         const typed = postedValues(form.ref.inputs, values);
-        const [name, rowId] = (meta.add ?? meta.remove ?? '').split('.');
-        const repeater = form.ref.inputs.find(input => input.kind === 'rows' && input.name === name);
-        if (repeater) {
-            const rows = Array.isArray(typed[name]) ? typed[name] as { [name: string]: string | string[] }[] : [];
-            const max = typeof repeater.data.max === 'number' ? repeater.data.max : 50;
-            typed[name] = meta.add ? (rows.length < max ? [...rows, { _id: `r${Date.now().toString(36)}` }] : rows) : rows.filter(row => row._id !== rowId);
-        }
+        editList(form.ref.inputs, typed, (meta.add ?? meta.remove ?? '').split('.'), Boolean(meta.add));
         const result: FormResult = { kind: 'edit', html: '', values: typed };
         return back(await cms.forms.saveResult(form.ref.id, result));
     }

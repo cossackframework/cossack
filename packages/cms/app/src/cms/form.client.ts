@@ -29,15 +29,22 @@ export function enhanceForm(form: HTMLFormElement): void {
     const done = form.querySelector<HTMLElement>('[data-cms-form-done]');
     const fields = form.querySelector<HTMLElement>('[data-cms-form-fields]');
     const submit = form.querySelector<HTMLButtonElement>('[data-cms-form-submit]');
-    // A repeater's template row is not part of the form: its boxes and controls stay out of every check.
-    const live = <T extends Element>(selector: string) => [...form.querySelectorAll<T>(selector)].filter(element => !element.closest('[data-cms-row-template]'));
-    const controls = (key: string) => live<HTMLInputElement>('input, select, textarea').filter(control => control.name === inputHtmlName(key));
+    // A repeater's template row and a multiple input's template item are not part of the form: their boxes and controls stay out of every check.
+    const live = <T extends Element>(selector: string) => [...form.querySelectorAll<T>(selector)].filter(element => !element.closest('[data-cms-row-template], [data-cms-item-template]'));
+    /** The item an error key names: `tags.2` is the second control named tags. Input names never end in a number. */
+    const itemOf = (key: string) => /^(.*)\.(\d+)$/.exec(key);
+    const controls = (key: string) => {
+        const item = itemOf(key);
+        const name = inputHtmlName(item ? item[1]! : key);
+        const all = live<HTMLInputElement>('input, select, textarea').filter(control => control.name === name);
+        return item ? all.slice(Number(item[2]) - 1, Number(item[2])) : all;
+    };
     /** The keys of every input on the page now, rows included, in page order. */
     const keys = () => live<HTMLElement>('[data-cms-error]').map(element => element.dataset.cmsError ?? '').filter(Boolean);
 
     const show = (errors: { readonly [name: string]: string }, server = false) => {
         for (const key of keys()) {
-            const message = sent || server || touched.has(key) ? errors[key] ?? '' : '';
+            const message = sent || server || touched.has(key) || touched.has(itemOf(key)?.[1] ?? key) ? errors[key] ?? '' : '';
             const box = live<HTMLElement>('[data-cms-error]').find(element => element.dataset.cmsError === key);
             if (box) box.textContent = message;
             const fromServer = live<HTMLElement>('[data-cms-server-error]').some(element => element.dataset.cmsServerError === key && !element.hidden);
@@ -86,12 +93,58 @@ export function enhanceForm(form: HTMLFormElement): void {
         const add = repeater.querySelector<HTMLButtonElement>('[data-cms-row-add]');
         if (add) add.disabled = rows.length >= max;
     };
+    // Multiple inputs: items are numbered by position, so ids, error keys and Remove values follow every add or remove.
+    const settleItems = (group: HTMLElement) => {
+        const items = [...group.querySelectorAll<HTMLElement>('[data-cms-items] > [data-cms-item]')];
+        const key = group.dataset.cmsMultiple ?? '';
+        const base = group.dataset.id ?? '';
+        const min = Number(group.dataset.min) || 0;
+        const max = Number(group.dataset.max) || 50;
+        const renumber = (element: Element | null, attribute: string, index: number) => {
+            const value = element?.getAttribute(attribute);
+            if (value) element!.setAttribute(attribute, value.replace(/\d+$/, String(index)));
+        };
+        items.forEach((item, position) => {
+            const index = position + 1;
+            const control = item.querySelector<HTMLElement>('input, select, textarea');
+            if (control) { control.id = `${base}-${index}`; renumber(control, 'aria-label', index); control.setAttribute('aria-describedby', `${base}-${index}-error`); }
+            const box = item.querySelector<HTMLElement>('[data-cms-error]');
+            if (box) { box.dataset.cmsError = `${key}.${index}`; box.id = `${base}-${index}-error`; }
+            const server = item.querySelector<HTMLElement>('[data-cms-server-error]');
+            if (server) server.dataset.cmsServerError = `${key}.${index}`;
+            const remove = item.querySelector<HTMLButtonElement>('[data-cms-item-remove]');
+            if (remove) { remove.value = `${key}.${index}`; remove.disabled = items.length <= min; renumber(remove, 'aria-label', index); }
+        });
+        const add = group.querySelector<HTMLButtonElement>('[data-cms-item-add]');
+        if (add) add.disabled = items.length >= max;
+    };
     form.addEventListener('click', event => {
         const target = event.target as Element | null;
-        const add = target?.closest<HTMLButtonElement>('[data-cms-row-add]');
-        const remove = target?.closest<HTMLButtonElement>('[data-cms-row-remove]');
+        const add = target?.closest<HTMLButtonElement>('[data-cms-row-add], [data-cms-item-add]');
+        const remove = target?.closest<HTMLButtonElement>('[data-cms-row-remove], [data-cms-item-remove]');
         if (!add && !remove) return;
         event.preventDefault();
+        const group = (add ?? remove)!.closest<HTMLElement>('[data-cms-multiple]');
+        if (group && (add ?? remove)!.hasAttribute(add ? 'data-cms-item-add' : 'data-cms-item-remove')) {
+            if (remove) remove.closest('[data-cms-item]')?.remove();
+            else {
+                const template = group.querySelector<HTMLElement>(':scope > [data-cms-item-template]');
+                const list = group.querySelector<HTMLElement>('[data-cms-items]');
+                if (!template || !list || list.querySelectorAll(':scope > [data-cms-item]').length >= (Number(group.dataset.max) || 50)) return;
+                const holder = document.createElement('div');
+                holder.innerHTML = template.outerHTML;
+                const item = holder.firstElementChild as HTMLElement | null;
+                if (!item) return;
+                item.removeAttribute('hidden');
+                item.removeAttribute('data-cms-item-template');
+                for (const element of item.querySelectorAll('[disabled]')) element.removeAttribute('disabled');
+                list.append(item);
+                item.querySelector<HTMLElement>('input, select, textarea')?.focus();
+            }
+            settleItems(group);
+            apply();
+            return;
+        }
         const repeater = (add ?? remove)!.closest<HTMLElement>('[data-cms-repeater]');
         if (!repeater) return;
         if (remove) {
@@ -109,12 +162,14 @@ export function enhanceForm(form: HTMLFormElement): void {
             row.removeAttribute('data-cms-row-template');
             for (const element of row.querySelectorAll('[disabled]')) element.removeAttribute('disabled');
             list.append(row);
+            for (const group of row.querySelectorAll<HTMLElement>('[data-cms-multiple]')) settleItems(group);
             row.querySelector<HTMLElement>('input:not([type=hidden]), select, textarea')?.focus();
         }
         settle(repeater);
         apply();
     });
     for (const repeater of form.querySelectorAll<HTMLElement>('[data-cms-repeater]')) settle(repeater);
+    for (const group of form.querySelectorAll<HTMLElement>('[data-cms-multiple]')) settleItems(group);
     form.addEventListener('submit', event => {
         event.preventDefault();
         if (busy) return;

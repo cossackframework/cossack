@@ -46,9 +46,10 @@ async function contactPage(origin, routeIds, diagnostics) {
   return { web, form: created.item };
 }
 
-/** A booking: an email and up to three passengers, each a name, a special-meal box and, when ticked, the meal. */
+/** A booking: an email, guest names (a multiple input), and up to three passengers, each a name, a special-meal box and, when ticked, the meal. */
 const BOOKING = [
   input('e', 'email', { name: 'email', label: 'Email', required: true }),
+  input('gn', 'text', { name: 'guests', label: 'Guest names', multiple: true, maxItems: 3, minLength: 2, maxLength: 10, addLabel: 'Add guest' }),
   input('r', 'repeater', { name: 'pax', label: 'Passengers', rowLabel: 'Passenger', min: 1, max: 3 }, { children: [
     input('n', 'text', { name: 'name', label: 'Name', required: true }),
     input('sm', 'checkbox', { name: 'special', label: 'Special meal' }),
@@ -182,7 +183,12 @@ async function forms(origin, routeIds, diagnostics) {
   expect(book).toMatch(/<fieldset disabled[^>]*>[\s\S]*name="?pax\[__row__\]\[name\]"?/);
   expect(book).toMatch(/name="?_add"? value="?pax"?/);
   const described = await (await fetch(`${origin}/api/cms/forms/booking`)).json();
-  expect(described.inputs[1]).toMatchObject({ name: 'pax', kind: 'rows', inputs: [{ name: 'name', kind: 'string' }, { name: 'special', kind: 'boolean' }, { name: 'meal', kind: 'string' }] });
+  expect(described.inputs[1]).toMatchObject({ name: 'guests', kind: 'string', multiple: true });
+  expect(described.inputs[2]).toMatchObject({ name: 'pax', kind: 'rows', inputs: [{ name: 'name', kind: 'string' }, { name: 'special', kind: 'boolean' }, { name: 'meal', kind: 'string' }] });
+  // A multiple input: one control per value, a hidden template item with its control disabled, and Add and Remove that work without the script.
+  expect(book).toMatch(/data-cms-multiple="?guests"?/);
+  expect(book).toMatch(/<fieldset disabled[^>]*>[\s\S]*?name="?guests"?[^>]*aria-label="?Guest names 0"?/);
+  expect(book).toMatch(/name="?_add"? value="?guests"?/);
   const post = (fields, ip, headers = {}) => web.request('/api/cms/forms/booking', { method: 'POST', headers: { 'x-forwarded-for': ip, 'cf-connecting-ip': ip, ...headers }, body: new URLSearchParams({ _page: '/book', _started: started, ...fields }) });
   // Without the script, Add posts the form back and it returns with one more row, nothing checked.
   const added = await post({ 'pax[r1][name]': 'Ada', _add: 'pax' }, '198.51.100.11');
@@ -191,6 +197,15 @@ async function forms(origin, routeIds, diagnostics) {
   expect(twoRows).toMatch(/name="?pax\[r1\]\[name\]"? [^>]*value="?Ada"?/);
   expect(twoRows.match(/data-cms-row="?r[a-z0-9]+"?/g)).toHaveLength(2);
   lacks(visible(twoRows), 'This field is required.');
+  const addedItem = await post({ guests: 'Ann', _add: 'guests' }, '198.51.100.16');
+  const twoItems = await (await fetch(origin + addedItem.headers.get('location'))).text();
+  expect(twoItems).toMatch(/name="?guests"? [^>]*value="?Ann"?/);
+  expect(twoItems.match(/data-cms-error="?guests\.[0-9]+"?/g)).toHaveLength(3);
+  // An item that fails its check is marked where it sits.
+  const longItem = await web.request('/api/cms/forms/booking', { method: 'POST', headers: { 'x-forwarded-for': '198.51.100.17', 'cf-connecting-ip': '198.51.100.17' },
+    body: new URLSearchParams([['_page', '/book'], ['_started', started], ['email', 'ada@example.com'], ['pax[a][name]', 'Ada'], ['guests', 'Ann'], ['guests', 'A very long guest name']]) });
+  const withLong = await (await fetch(origin + longItem.headers.get('location'))).text();
+  expect(withLong).toMatch(/data-cms-server-error="?guests\.2"?[^>]*>(?:<!--[^>]*-->)?Use at most 10 characters\./);
   // A post with errors: the meal is required where the box is ticked; the error sits in the row.
   const wrongRows = await post({ 'pax[a][name]': 'Ada', 'pax[a][special]': 'on', 'pax[b][name]': 'Bob', email: 'ada@example.com' }, '198.51.100.12');
   const withErrors = await (await fetch(origin + wrongRows.headers.get('location'))).text();
@@ -199,14 +214,14 @@ async function forms(origin, routeIds, diagnostics) {
   expect(withErrors).toMatch(/name="?pax\[b\]\[name\]"? [^>]*value="?Bob"?/);
   // JSON rows: ids are given, unticked boxes are no, the confirmation lists the rows.
   const sentRows = await web.request('/api/cms/forms/booking', { method: 'POST', headers: { 'x-forwarded-for': '198.51.100.14', 'cf-connecting-ip': '198.51.100.14', accept: 'application/json', 'content-type': 'application/json' },
-    body: JSON.stringify({ _started: started, email: 'ada@example.com', pax: [{ name: 'Ada', special: true, meal: 'Vegan' }, { name: 'Bob' }] }) });
+    body: JSON.stringify({ _started: started, email: 'ada@example.com', guests: ['Ann', 'Bea'], pax: [{ name: 'Ada', special: true, meal: 'Vegan' }, { name: 'Bob' }] }) });
   expect(sentRows.status).toBe(201);
   expect((await sentRows.json()).confirmation.html).toContain('Name: Ada, Special meal: Yes, Meal: Vegan');
   const tooMany = await web.request('/api/cms/forms/booking', { method: 'POST', headers: { 'x-forwarded-for': '198.51.100.15', 'cf-connecting-ip': '198.51.100.15', accept: 'application/json', 'content-type': 'application/json' },
     body: JSON.stringify({ _started: started, email: 'ada@example.com', pax: [{ name: 'A' }, { name: 'B' }, { name: 'C' }, { name: 'D' }] }) });
   expect((await tooMany.json()).fields).toEqual({ pax: 'Add at most 3 Passenger rows.' });
   const bookings = await (await web.request('/api/cms/forms/booking/submissions')).json();
-  expect(bookings.items.map(item => item.values)).toEqual([{ email: 'ada@example.com', pax: [{ _id: 'r1', name: 'Ada', special: true, meal: 'Vegan' }, { _id: 'r2', name: 'Bob', special: false }] }]);
+  expect(bookings.items.map(item => item.values)).toEqual([{ email: 'ada@example.com', guests: ['Ann', 'Bea'], pax: [{ _id: 'r1', name: 'Ada', special: true, meal: 'Vegan' }, { _id: 'r2', name: 'Bob', special: false }] }]);
   // The inbox counts the rows; the submission shows them as a table; the export has them in one cell.
   contains(await web.page(`/dashboard/forms/${booking.id}/submissions`), 'Passenger × 2');
   const bookingDetail = await web.page(`/dashboard/forms/${booking.id}/submissions/${bookings.items[0].id}`);
@@ -214,6 +229,8 @@ async function forms(origin, routeIds, diagnostics) {
   contains(bookingDetail, '<th');
   const bookingCsv = new TextDecoder().decode(new Uint8Array(await (await web.request('/api/cms/forms/booking/submissions/export')).arrayBuffer()));
   expect(bookingCsv).toContain('"Name: Ada, Special meal: Yes, Meal: Vegan\nName: Bob, Special meal: No"');
+  expect(bookingCsv).toContain('"Ann, Bea"');
+  contains(bookingDetail, 'Ann\nBea');
   return { web };
 }
 
@@ -321,6 +338,19 @@ describe.skipIf(!liveRomeDBTests())('generated CMS forms', () => {
       await rows.nth(2).getByRole('button', { name: 'Remove' }).click();
       await browserExpect(rows).toHaveCount(2);
       await browserExpect(booking.getByRole('button', { name: 'Add another' })).toBeEnabled();
+      // A multiple input in the browser: a value too short is marked where it sits, Add copies a control, Remove drops one and the rest renumber.
+      const guests = booking.locator('[data-cms-multiple="guests"] [data-cms-items] > [data-cms-item]');
+      await browserExpect(guests).toHaveCount(1);
+      await booking.getByRole('textbox', { name: 'Guest names 1', exact: true }).fill('Z');
+      await booking.getByRole('button', { name: 'Add guest' }).click();
+      await browserExpect(guests).toHaveCount(2);
+      await browserExpect(booking.getByRole('textbox', { name: 'Guest names 2', exact: true })).toBeFocused();
+      await browserExpect(page.locator('#form-booking-guests-1-error')).toHaveText('Use at least 2 characters.');
+      await booking.getByRole('textbox', { name: 'Guest names 2', exact: true }).fill('Bea');
+      await booking.getByRole('button', { name: 'Remove Guest names 1' }).click();
+      await browserExpect(guests).toHaveCount(1);
+      await browserExpect(booking.getByRole('textbox', { name: 'Guest names 1', exact: true })).toHaveValue('Bea');
+      await browserExpect(page.locator('#form-booking-guests-1-error')).toHaveText('');
       // Sending without the email shows the check; a row's own check sits in its row.
       await booking.getByRole('button', { name: 'Submit' }).click();
       await browserExpect(page.locator('#form-booking-email-error')).toHaveText('This field is required.');
@@ -334,6 +364,7 @@ describe.skipIf(!liveRomeDBTests())('generated CMS forms', () => {
       await browserExpect(page.getByRole('status').filter({ hasText: 'Booked for ada@example.com' })).toBeVisible();
       const bookings = await (await web.request('/api/cms/forms/booking/submissions')).json();
       expect(bookings.items.map(item => item.values.pax.map(row => [row.name, row.special, row.meal]))).toEqual([[['Ada', true, 'Vegan'], ['Bob', false, undefined]]]);
+      expect(bookings.items[0].values.guests).toEqual(['Bea']);
 
       // In the dashboard: a new form from input blocks, a field shown on a checkbox, and an email.
       const context = await browser.newContext();

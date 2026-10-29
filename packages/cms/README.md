@@ -103,7 +103,8 @@ Data contract:
   the public page.
 - A form is a `forms` entry whose `body` holds input blocks (`input: { kind }` in the
   declaration), laid out with the containers and shown or hidden by a block's `when`; a
-  `form/repeater` holds a row of inputs people fill in once per passenger or item. Its
+  `form/repeater` holds a row of inputs people fill in once per passenger or item, and a
+  text, number or date input with `multiple` on takes several values, added one at a time. Its
   submissions are the resource `cms/form_<form id>`, stored in its own table and extended
   when inputs are added. A submission is one batch: the record, a receipt and its
   `form.submitted` outbox event, which sends the form's notifications and webhooks. Hooks:

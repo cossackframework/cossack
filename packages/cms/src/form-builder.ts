@@ -22,6 +22,17 @@ const PLACEHOLDER = field.string({ max: 200, label: 'Placeholder' });
 const OPTIONS = field.list('string', { label: 'Choices', description: 'One per line. Write value|Label to store a value other than the label.' });
 const INLINE = field.boolean({ default: false, label: 'Show choices in a row' });
 const DATE = '\\d{4}-\\d{2}-\\d{2}';
+/** Items a multiple input takes at most, whatever its settings. */
+export const FORM_ITEM_LIMIT = 50;
+/** The input kinds that take `multiple`: one control per value, added one at a time. */
+export const MULTIPLE_INPUT_KINDS: readonly InputKind[] = Object.freeze(['string', 'text', 'email', 'url', 'phone', 'number', 'date']);
+/** The settings of an input that can take several values; the same four a field block has. */
+const MULTIPLE_SETTINGS: { readonly [name: string]: FieldDeclaration } = {
+    multiple: field.boolean({ default: false, label: 'Multiple', description: 'Several values, added one at a time.' }),
+    minItems: field.integer({ min: 0, max: FORM_ITEM_LIMIT, label: 'Fewest values' }),
+    maxItems: field.integer({ min: 1, max: FORM_ITEM_LIMIT, label: 'Most values' }),
+    addLabel: field.string({ max: 80, default: 'Add another', label: 'Add button' }),
+};
 
 /** The fields every input block has, then its own. Plugins build their input blocks with it. */
 export function inputFields(own: { readonly [name: string]: FieldDeclaration } = {}): { [name: string]: FieldDeclaration } {
@@ -30,7 +41,7 @@ export function inputFields(own: { readonly [name: string]: FieldDeclaration } =
 
 const textInput = (name: string, label: string, icon: string, kind: InputKind, description: string, keywords: readonly string[]): BlockDeclaration => ({
     name, label, icon, category: 'form', description, input: { kind }, keywords,
-    fields: inputFields({ placeholder: PLACEHOLDER, defaultValue: field.string({ max: 500, label: 'Default value' }) }),
+    fields: inputFields({ placeholder: PLACEHOLDER, defaultValue: field.string({ max: 500, label: 'Default value' }), ...MULTIPLE_SETTINGS }),
 });
 
 /** Built-in input blocks. A submit button is not a block: the form's settings label it. */
@@ -41,6 +52,7 @@ export const FORM_BLOCKS: readonly BlockDeclaration[] = Object.freeze([
         minLength: field.integer({ min: 0, max: 10_000, label: 'Minimum length' }),
         maxLength: field.integer({ default: 255, min: 1, max: 10_000, label: 'Maximum length' }),
         pattern: field.string({ max: 200, label: 'Pattern', description: 'A regular expression the whole value must match.' }),
+        ...MULTIPLE_SETTINGS,
     }) },
     textInput('form/email', 'Email', 'letter', 'email', 'An email address.', ['mail', 'address', 'contact']),
     textInput('form/url', 'Website', 'link', 'url', 'A web address.', ['url', 'link', 'homepage']),
@@ -51,6 +63,7 @@ export const FORM_BLOCKS: readonly BlockDeclaration[] = Object.freeze([
         rows: field.integer({ default: 5, min: 2, max: 20, label: 'Rows' }),
         minLength: field.integer({ min: 0, max: 50_000, label: 'Minimum length' }),
         maxLength: field.integer({ default: 5000, min: 1, max: 50_000, label: 'Maximum length' }),
+        ...MULTIPLE_SETTINGS,
     }) },
     { name: 'form/number', keywords: ['numeric', 'quantity', 'amount'], label: 'Number', icon: 'calculator', category: 'form', description: 'A number, within limits.', input: { kind: 'number' }, fields: inputFields({
         placeholder: PLACEHOLDER,
@@ -58,11 +71,13 @@ export const FORM_BLOCKS: readonly BlockDeclaration[] = Object.freeze([
         min: field.number({ nullable: true, label: 'Minimum' }),
         max: field.number({ nullable: true, label: 'Maximum' }),
         step: field.number({ nullable: true, min: 0, label: 'Step', description: 'Values go up in steps of this size from the minimum. Empty for any value; 1 for whole numbers.' }),
+        ...MULTIPLE_SETTINGS,
     }) },
     { name: 'form/date', keywords: ['calendar', 'day'], label: 'Date', icon: 'calendar', category: 'form', description: 'A day of the calendar.', input: { kind: 'date' }, fields: inputFields({
         defaultValue: field.string({ max: 10, pattern: DATE, label: 'Default value' }),
         min: field.string({ max: 10, pattern: DATE, label: 'Earliest' }),
         max: field.string({ max: 10, pattern: DATE, label: 'Latest' }),
+        ...MULTIPLE_SETTINGS,
     }) },
     { name: 'form/select', keywords: ['select', 'list', 'choice', 'option'], label: 'Dropdown', icon: 'list-down', category: 'form', description: 'One choice from a list.', input: { kind: 'choice' }, fields: inputFields({
         options: OPTIONS,
@@ -123,6 +138,8 @@ export interface FormField {
     readonly label: string;
     readonly kind: InputKind;
     readonly required: boolean;
+    /** Several values of the kind, each its own control; `minItems`, `maxItems` and `addLabel` in `data`. */
+    readonly multiple: boolean;
     /** For choice kinds. */
     readonly options: readonly ChoiceOption[];
     readonly data: { readonly [field: string]: unknown };
@@ -164,6 +181,7 @@ export function formInputs(blocks: readonly Block[], types: ReadonlyMap<string, 
                     id: block.id, type: block.type, name: block.data.name, kind,
                     label: typeof block.data.label === 'string' && block.data.label ? block.data.label : block.data.name,
                     required: block.data.required === true,
+                    multiple: block.data.multiple === true && MULTIPLE_INPUT_KINDS.includes(kind),
                     options: kind === 'choice' || kind === 'choices' ? choiceOptions(block.data.options) : [],
                     data: block.data,
                     // A repeater inside a repeater is not valid; its inputs are left out, as the form check refuses it.
@@ -186,8 +204,8 @@ export function flatFormInputs(inputs: readonly FormField[]): FormField[] {
 
 // --- Conditions ---------------------------------------------------------------------------
 
-/** A value of an input: text, a number, a yes or no, the chosen values, or a repeater's rows. */
-export type FormValue = string | number | boolean | readonly string[] | readonly FormRow[];
+/** A value of an input: text, a number, a yes or no, the chosen values or a multiple input's items, or a repeater's rows. */
+export type FormValue = string | number | boolean | readonly string[] | readonly number[] | readonly FormRow[];
 export type FormValues = { readonly [name: string]: FormValue };
 /** One row of a repeater: its inputs' values under `_id`, which names the row in errors and in the page. */
 export type FormRow = { readonly _id: string; readonly [name: string]: FormValue };
@@ -205,7 +223,7 @@ export function rowValues(row: FormRow): FormValues {
 const blank = (value: FormValue | null | undefined): boolean =>
     value === undefined || value === null || value === '' || value === false || (Array.isArray(value) && value.length === 0);
 /** Text to compare: a repeater counts as its number of rows. */
-const asText = (value: FormValue): string => typeof value === 'string' ? value : typeof value === 'number' ? String(value) : typeof value === 'boolean' ? String(value) : isRows(value) ? String(value.length) : (value as readonly string[]).join(',');
+const asText = (value: FormValue): string => typeof value === 'string' ? value : typeof value === 'number' ? String(value) : typeof value === 'boolean' ? String(value) : isRows(value) ? String(value.length) : (value as readonly (string | number)[]).join(',');
 const same = (a: string, b: string) => a.trim().toLocaleLowerCase() === b.trim().toLocaleLowerCase();
 
 function compare(value: FormValue, expected: string): number | null {
@@ -320,14 +338,14 @@ export interface SubmissionCheck {
 }
 
 /**
- * Read the inputs of a form from posted form data: every value of a checkboxes input, one of
- * the others, and a repeater's rows from `repeater[row id][input]` names, in the order the
- * rows appear, at most `FORM_ROW_LIMIT` of them.
+ * Read the inputs of a form from posted form data: every value of a checkboxes or multiple
+ * input, one of the others, and a repeater's rows from `repeater[row id][input]` names, in
+ * the order the rows appear, at most `FORM_ROW_LIMIT` of them.
  */
 export function formDataValues(form: Pick<FormData, 'get' | 'getAll' | 'keys'>, inputs: readonly FormField[]): { [name: string]: PostedValue } {
     const values: { [name: string]: PostedValue } = {};
     const read = (input: FormField, htmlName: string): string | string[] | undefined => {
-        if (input.kind === 'choices') return form.getAll(htmlName).filter((entry): entry is string => typeof entry === 'string');
+        if (input.kind === 'choices' || input.multiple) return form.getAll(htmlName).filter((entry): entry is string => typeof entry === 'string');
         const value = form.get(htmlName);
         return typeof value === 'string' ? value : undefined;
     };
@@ -382,6 +400,12 @@ function readValue(input: FormField, raw: unknown): { value: FormValue | null; e
             return { value: text || null };
         }
     }
+}
+
+/** The posted items of a multiple input, each read as the kind, in posted order, at most `FORM_ITEM_LIMIT`; a scalar is one item. */
+function readItems(input: FormField, raw: unknown): { value: FormValue | null; error?: string }[] {
+    const list = Array.isArray(raw) ? raw : raw === undefined || raw === null || raw === '' ? [] : [raw];
+    return list.slice(0, FORM_ITEM_LIMIT).map(item => readValue(input, item));
 }
 
 const numberData = (value: unknown): number | undefined => typeof value === 'number' && Number.isFinite(value) ? value : undefined;
@@ -478,6 +502,11 @@ function checkLevel(blocks: readonly Block[], inputs: readonly FormField[], type
             else if (postedRows(entry).length) read[input.name] = postedRows(entry).map(row => ({ _id: '' }));
             continue;
         }
+        if (input.multiple) {
+            const items = readItems(input, raw[input.name]).flatMap(item => item.value === null ? [] : [item.value]);
+            if (items.length) read[input.name] = items as string[] | number[];
+            continue;
+        }
         const { value, error } = readValue(input, raw[input.name]);
         if (error) unreadable[input.name] = error;
         else if (value !== null) read[input.name] = value;
@@ -515,6 +544,27 @@ function checkLevel(blocks: readonly Block[], inputs: readonly FormField[], type
             values[input.name] = rows;
             continue;
         }
+        if (input.multiple) {
+            // Each item is checked as the kind; a blank item, such as the empty control a form starts with, is dropped. Errors name the item's position as posted.
+            const items = readItems(input, raw[input.name]);
+            const kept: (string | number)[] = [];
+            let count = 0;
+            items.forEach((item, index) => {
+                if (item.error) { errors[`${key}.${index + 1}`] = item.error; count++; return; }
+                if (item.value === null) return;
+                count++;
+                const problem = valueProblem(input, item.value);
+                if (problem) errors[`${key}.${index + 1}`] = problem;
+                else kept.push(item.value as string | number);
+            });
+            const most = Math.min(numberData(input.data.maxItems) ?? FORM_ITEM_LIMIT, FORM_ITEM_LIMIT);
+            const fewest = Math.max(numberData(input.data.minItems) ?? 0, input.required ? 1 : 0);
+            if (count > most) errors[key] = `Add at most ${most} ${most === 1 ? 'value' : 'values'}.`;
+            else if (count === 0 && fewest === 1) errors[key] = 'This field is required.';
+            else if (count < fewest) errors[key] = `Add at least ${fewest} values.`;
+            if (kept.length) values[input.name] = kept as string[] | number[];
+            continue;
+        }
         const value = read[input.name];
         if (blank(value)) {
             if (input.required) errors[key] = input.kind === 'boolean' ? 'Tick this box to continue.' : input.kind === 'choices' ? 'Choose at least one option.' : 'This field is required.';
@@ -541,9 +591,9 @@ export function displayValue(input: Pick<FormField, 'kind' | 'options'> & { read
         const label = typeof input.data?.rowLabel === 'string' && input.data.rowLabel.trim() ? input.data.rowLabel.trim() : '';
         return label ? `${label} × ${count}` : `${count} ${count === 1 ? 'row' : 'rows'}`;
     }
-    const label = (entry: string) => input.options.find(option => option.value === entry)?.label ?? entry;
+    const label = (entry: string | number) => input.options.find(option => option.value === entry)?.label ?? String(entry);
     if (isRows(value)) return `${value.length} ${value.length === 1 ? 'row' : 'rows'}`;
-    if (Array.isArray(value)) return (value as readonly string[]).map(label).join(', ');
+    if (Array.isArray(value)) return (value as readonly (string | number)[]).map(label).join(', ');
     return input.kind === 'choice' ? label(String(value)) : String(value);
 }
 
@@ -663,6 +713,14 @@ export function submissionResourceName(formId: string): string {
 export const SUBMISSION_PREFIX = 'form_';
 
 function inputField(input: FormField): FieldDeclaration {
+    const declaration = singleInputField(input);
+    if (!input.multiple) return declaration;
+    // A multiple input is a list of the kind's values: never null, empty when nothing was entered.
+    const { nullable, ...rest } = declaration;
+    return { ...rest, multiple: true };
+}
+
+function singleInputField(input: FormField): FieldDeclaration {
     const label = input.label.slice(0, 200);
     switch (input.kind) {
         case 'rows': {

@@ -287,6 +287,17 @@ export interface InputView {
     readonly value: FormValue | null;
     readonly error: string;
     readonly options: readonly ChoiceOption[];
+    /** A multiple input: its items as controls, one per value, with the Add and Remove buttons' bounds. */
+    readonly items?: ItemsView;
+}
+
+/** The controls of a multiple input: one per posted value, or the fewest it needs. Errors are by position. */
+export interface ItemsView {
+    readonly values: readonly string[];
+    readonly errors: readonly string[];
+    readonly min: number;
+    readonly max: number;
+    readonly addLabel: string;
 }
 
 /**

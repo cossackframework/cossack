@@ -87,7 +87,9 @@ run after commit from the outbox and can be delivered more than once, so use the
 
 `form` is a `FormRef`: `id`, `slug`, `title` and its `inputs`, a repeater among them
 carrying its rows' inputs as `inputs`. A repeater's value in `FormValues` is a list of
-rows, each `{ _id, ...values }`; its errors are keyed `repeater.<row id>.<input>`.
+rows, each `{ _id, ...values }`; its errors are keyed `repeater.<row id>.<input>`. An
+input with `multiple` on holds a list of its kind's values (strings, or numbers for a
+Number input); its item errors are keyed `<input>.<position>`.
 
 ### Terms, comments and menus
 

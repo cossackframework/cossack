@@ -36,6 +36,20 @@ after the submission is committed.
   `step`; choice kinds take `options` (one per line, `value|Label` or just the label).
   Several choices from a list is `form/checkboxes`; a multi-select can come later. Submit
   is not a block: the form's settings hold the button label and it renders last.
+- **A text-like input can take several values** (since 2026-10-29). `form/text`, `form/email`,
+  `form/url`, `form/phone`, `form/textarea`, `form/number` and `form/date` have the settings
+  `multiple`, `minItems`, `maxItems` (at most `FORM_ITEM_LIMIT`, 50) and `addLabel`, the same
+  four a field block has (`MULTIPLE_INPUT_KINDS`, `FormField.multiple`). Items post under the
+  input's name, repeated, as a checkboxes input does, so names, keys and a repeater's scoping
+  do not change; JSON takes a list, or one scalar as one item. `validateSubmission` reads each
+  item as the kind, drops blank items, keys item errors `<input>.<position>` (1-based, as
+  posted) and the count errors on the input's key; `required` means at least one item; a
+  condition compares the items joined by commas. The value is a list of the kind's values,
+  stored as the kind's declaration with `multiple: true`. The site renders one control per
+  item in a `<fieldset>` with Remove buttons, an Add button and a hidden template item
+  (`data-cms-multiple`), with or without the script (`_add=<key>`, `_remove=<key>.<position>`);
+  the script renumbers items after a change. Lists and exports join the items with commas; the
+  submission page shows one per line.
 - **A repeater is an input that holds inputs.** `form/repeater` (kind `rows`, `children: {}`)
   takes `rowLabel`, `addLabel`, `min` and `max` (at most `FORM_ROW_LIMIT`, 50) and holds
   input and layout blocks, never another repeater. `formInputs()` lists the form's top

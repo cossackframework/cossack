@@ -75,7 +75,8 @@ export default class SubmissionPage extends Cossack {
             id: submission.id, status: submission.status, note: submission.note, details,
             answers: form.ref.inputs.map(input => {
                 const value = submission.values[input.name];
-                const answer: Answer = { label: input.label, value: displayValue(input, value) };
+                // A multiple input's values read one per line.
+                const answer: Answer = { label: input.label, value: input.multiple && Array.isArray(value) ? (value as readonly (string | number)[]).map(String).join('\n') : displayValue(input, value) };
                 if (input.kind === 'rows' && isRows(value)) answer.rows = { columns: input.inputs.map(child => child.label), cells: value.map(row => input.inputs.map(child => displayValue(child, row[child.name]))) };
                 return answer;
             }),

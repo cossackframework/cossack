@@ -6,7 +6,7 @@
  */
 import { component, html, ifDefined, unsafeHTML, type TemplateResult } from '@cossackframework/renderer';
 import { Turnstile } from '@cossackframework/ui';
-import type { Block, FormView, RenderedBlock, ThemeHelpers } from '@cossackframework/cms';
+import type { Block, FormView, InputView, RenderedBlock, ThemeHelpers } from '@cossackframework/cms';
 
 export const FORM_INPUT = 'w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring aria-[invalid=true]:border-destructive';
 const LABEL = 'block text-sm font-medium text-foreground';
@@ -83,6 +83,50 @@ function repeaterBlock(block: RenderedBlock, helpers: ThemeHelpers | undefined, 
     </fieldset>`;
 }
 
+/** The control of a text-like kind: a textarea for paragraph text, an input typed by the kind otherwise. */
+function textControl(block: RenderedBlock, input: InputView, state: { readonly id: string; readonly value: string; readonly invalid: string | undefined; readonly described: string; readonly label?: string; readonly required: boolean }): TemplateResult {
+    if (block.type === 'form/textarea') return html`<textarea id=${state.id} name=${input.name} rows=${number(block, 'rows') ?? 5} placeholder=${ifDefined(text(block, 'placeholder') || undefined)}
+        minlength=${ifDefined(number(block, 'minLength'))} maxlength=${ifDefined(number(block, 'maxLength'))} ?required=${state.required} aria-label=${ifDefined(state.label)}
+        aria-describedby=${state.described} aria-invalid=${ifDefined(state.invalid)} class=${FORM_INPUT} .value=${state.value}></textarea>`;
+    const type = input.kind === 'email' ? 'email' : input.kind === 'url' ? 'url' : input.kind === 'phone' ? 'tel' : input.kind === 'number' ? 'number' : input.kind === 'date' ? 'date' : 'text';
+    const autocomplete = input.kind === 'email' ? 'email' : input.kind === 'phone' ? 'tel' : input.kind === 'url' ? 'url' : undefined;
+    return html`<input id=${state.id} name=${input.name} type=${type} value=${state.value} placeholder=${ifDefined(text(block, 'placeholder') || undefined)}
+        minlength=${ifDefined(number(block, 'minLength'))} maxlength=${ifDefined(number(block, 'maxLength'))} pattern=${ifDefined(text(block, 'pattern') || undefined)}
+        min=${ifDefined(number(block, 'min') ?? (text(block, 'min') || undefined))} max=${ifDefined(number(block, 'max') ?? (text(block, 'max') || undefined))}
+        step=${ifDefined(number(block, 'step') ?? (input.kind === 'number' ? 'any' : undefined))}
+        autocomplete=${ifDefined(autocomplete)} ?required=${state.required} aria-label=${ifDefined(state.label)} aria-describedby=${state.described} aria-invalid=${ifDefined(state.invalid)} class=${FORM_INPUT}>`;
+}
+
+/**
+ * A multiple input: one control per item, each with a Remove button and its own error, an
+ * Add button, and a hidden template item with its control disabled, which the page's script
+ * copies. Items are numbered by position; the script renumbers them after a change. Without
+ * the script, Add and Remove post the form back and it returns with the items changed.
+ */
+function multipleField(block: RenderedBlock, input: InputView, parts: { label: TemplateResult; help: TemplateResult | null; errors: TemplateResult }): TemplateResult {
+    const items = input.items!;
+    const label = text(block, 'label') || input.name;
+    const item = (value: string, index: number, error: string, template = false) => {
+        const key = `${input.key}.${index}`;
+        const id = `${input.id}-${index}`;
+        const control = textControl(block, input, { id, value, invalid: error ? 'true' : undefined, described: `${id}-error`, label: `${label} ${index}`, required: false });
+        return html`<div data-cms-item class="cms-item flex items-start gap-2" ?hidden=${template} ?data-cms-item-template=${template}>
+            <div class="min-w-0 flex-1 space-y-1">
+                ${template ? html`<fieldset disabled class="contents">${control}</fieldset>` : control}
+                ${error ? html`<p class=${ERROR} data-cms-server-error=${key}>${error}</p>` : null}<p id=${`${id}-error`} class=${ERROR} data-cms-error=${key}></p>
+            </div>
+            <button type="submit" name="_remove" value=${key} formnovalidate data-cms-item-remove ?disabled=${template || items.values.length <= items.min} aria-label=${`${__('Remove')} ${label} ${index}`} class=${BUTTON}>${__('Remove')}</button>
+        </div>`;
+    };
+    return html`<fieldset class="cms-field cms-multiple space-y-2" data-input=${input.key} data-cms-multiple=${input.key} data-id=${input.id} data-min=${String(items.min)} data-max=${String(items.max)}>
+        <legend class=${LABEL}>${parts.label}</legend>${parts.help}
+        <div data-cms-items class="space-y-2">${items.values.map((value, index) => item(value, index + 1, items.errors[index] ?? ''))}</div>
+        ${item('', 0, '', true)}
+        <div><button type="submit" name="_add" value=${input.key} formnovalidate data-cms-item-add ?disabled=${items.values.length >= items.max} class=${BUTTON}>${items.addLabel}</button></div>
+        ${parts.errors}
+    </fieldset>`;
+}
+
 /**
  * An input block in a form: its label, control, help and error. The server's error shows in
  * `data-cms-server-error`; the browser's checks write theirs into the empty `data-cms-error`.
@@ -104,6 +148,7 @@ export function inputBlock(block: RenderedBlock, helpers?: ThemeHelpers): Templa
     const helpText = help ? html`<p id=${`${input.id}-help`} class=${HELP}>${help}</p>` : null;
     const errors = html`${input.error ? html`<p class=${ERROR} data-cms-server-error=${input.key}>${input.error}</p>` : null}<p id=${`${input.id}-error`} class=${ERROR} data-cms-error=${input.key}></p>`;
     if (block.repeater) return repeaterBlock(block, helpers, { label: html`${label}${mark}`, help: helpText, errors });
+    if (input.items) return multipleField(block, input, { label: html`${label}${mark}`, help: helpText, errors });
     const field = (control: TemplateResult) => html`<div class="cms-field space-y-1" data-input=${input.key}>
         <label for=${input.id} class=${LABEL}>${label}${mark}</label>${control}${helpText}${errors}</div>`;
     const group = (controls: TemplateResult, inline: boolean) => html`<fieldset class="cms-field space-y-1" data-input=${input.key} aria-describedby=${described}>
@@ -114,9 +159,7 @@ export function inputBlock(block: RenderedBlock, helpers?: ThemeHelpers): Templa
         ${option.label}</label>`)}`, inline);
     switch (block.type) {
         case 'form/hidden': return html`<input type="hidden" name=${input.name} value=${current}>`;
-        case 'form/textarea': return field(html`<textarea id=${input.id} name=${input.name} rows=${number(block, 'rows') ?? 5} placeholder=${ifDefined(text(block, 'placeholder') || undefined)}
-            minlength=${ifDefined(number(block, 'minLength'))} maxlength=${ifDefined(number(block, 'maxLength'))} ?required=${required}
-            aria-describedby=${described} aria-invalid=${ifDefined(invalid)} class=${FORM_INPUT} .value=${current}></textarea>`);
+        case 'form/textarea': return field(textControl(block, input, { id: input.id, value: current, invalid, described, required }));
         case 'form/select': return field(html`<select id=${input.id} name=${input.name} ?required=${required} aria-describedby=${described} aria-invalid=${ifDefined(invalid)} class=${FORM_INPUT}>
             <option value="" ?selected=${!current}>${text(block, 'placeholder') || __('Choose…')}</option>
             ${input.options.map(option => html`<option value=${option.value} ?selected=${option.value === current}>${option.label}</option>`)}</select>`);
@@ -130,14 +173,6 @@ export function inputBlock(block: RenderedBlock, helpers?: ThemeHelpers): Templa
                     <input type="checkbox" id=${input.id} name=${input.name} value="on" ?checked=${value === true} ?required=${required} aria-describedby=${described} aria-invalid=${ifDefined(invalid)} class="mt-0.5 size-4 accent-primary">
                     ${caption}${block.type === 'form/consent' || !text(block, 'text') ? mark : null}</label>${helpText}${errors}</div>`;
         }
-        default: {
-            const type = input.kind === 'email' ? 'email' : input.kind === 'url' ? 'url' : input.kind === 'phone' ? 'tel' : input.kind === 'number' ? 'number' : input.kind === 'date' ? 'date' : 'text';
-            const autocomplete = input.kind === 'email' ? 'email' : input.kind === 'phone' ? 'tel' : input.kind === 'url' ? 'url' : undefined;
-            return field(html`<input id=${input.id} name=${input.name} type=${type} value=${current} placeholder=${ifDefined(text(block, 'placeholder') || undefined)}
-                minlength=${ifDefined(number(block, 'minLength'))} maxlength=${ifDefined(number(block, 'maxLength'))} pattern=${ifDefined(text(block, 'pattern') || undefined)}
-                min=${ifDefined(number(block, 'min') ?? (text(block, 'min') || undefined))} max=${ifDefined(number(block, 'max') ?? (text(block, 'max') || undefined))}
-                step=${ifDefined(number(block, 'step') ?? (input.kind === 'number' ? 'any' : undefined))}
-                autocomplete=${ifDefined(autocomplete)} ?required=${required} aria-describedby=${described} aria-invalid=${ifDefined(invalid)} class=${FORM_INPUT}>`);
-        }
+        default: return field(textControl(block, input, { id: input.id, value: current, invalid, described, required }));
     }
 }

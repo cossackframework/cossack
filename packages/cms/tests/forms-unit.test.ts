@@ -3,7 +3,7 @@ import { createHookRegistry } from '@cossackframework/core/hooks';
 import {
     beforeWrite, blockConditionProblem, field, inputFields, manifestProblems, requestedGrants, blockProblems, choiceOptions, collectionProblems, collectionResource, CORE_BLOCKS, displayValue, emailAddresses, FORM_BLOCKS, FORM_EMBED_BLOCK, formDataValues, formInputs,
     forms, formSettings, formsModule, formVisibility, inputName, notificationProblems, renderMergeTags, resolveResource, ruleMatches, submissionOf, submissionResource, submissionResourceName, validateBlocks,
-    displayRows, flatFormInputs, inputHtmlName, inputKey, FORM_ROW_LIMIT,
+    displayRows, flatFormInputs, inputHtmlName, inputKey, FORM_ROW_LIMIT, FORM_ITEM_LIMIT, MULTIPLE_INPUT_KINDS,
     validateSubmission, visibleBlocks, type Block, type BlockDeclaration, type FormRow,
 } from '../src/index';
 
@@ -269,6 +269,79 @@ describe('repeaters', () => {
         const context = { form: { id: 'f', title: 'Booking' }, inputs, values: { email: 'ada@example.com', pax: rows }, site: { title: 'Site', url: 'https://s.example', adminEmail: 'admin@s.example' } };
         expect(renderMergeTags('{all_fields}', context)).toBe('Email: ada@example.com\nPassengers:\n1. Name: Ada, Seat: window, Special meal: Yes, Meal: Vegan\n2. Name: Bob, Special meal: No');
         expect(renderMergeTags('{field:pax}', context)).toBe('1. Name: Ada, Seat: window, Special meal: Yes, Meal: Vegan\n2. Name: Bob, Special meal: No');
+    });
+});
+
+describe('multiple inputs', () => {
+    /** A guest list: an email, guest names (at most 3, 10 characters each), ages, and a note shown when a guest is called Zed. */
+    const guests: Block[] = [
+        input('e', 'email', { name: 'email', label: 'Email', required: true }),
+        input('g', 'text', { name: 'guests', label: 'Guest names', multiple: true, minItems: 1, maxItems: 3, maxLength: 10, addLabel: 'Add guest' }),
+        input('a', 'number', { name: 'ages', label: 'Ages', multiple: true, min: 0, step: 1 }),
+        input('n', 'textarea', { name: 'remark', label: 'Remark' }, { when: { rules: [{ field: 'guests', op: 'contains', value: 'Zed' }] } }),
+        input('r', 'repeater', { name: 'pax', label: 'Passengers', max: 2 }, { children: [input('t', 'text', { name: 'tags', label: 'Tags', multiple: true, maxItems: 2 })] }),
+    ];
+    const checkedGuests = () => {
+        const result = validateBlocks(guests, types, { form: true });
+        expect(result.errors).toEqual({});
+        return result.blocks;
+    };
+
+    it('is a setting of the text-like inputs, read onto the field', () => {
+        const withSetting = FORM_BLOCKS.filter(block => block.fields.multiple).map(block => block.name);
+        expect(withSetting).toEqual(['form/text', 'form/email', 'form/url', 'form/phone', 'form/textarea', 'form/number', 'form/date']);
+        expect(MULTIPLE_INPUT_KINDS).toEqual(['string', 'text', 'email', 'url', 'phone', 'number', 'date']);
+        for (const block of FORM_BLOCKS.filter(block => block.fields.multiple)) expect(Object.keys(block.fields)).toEqual(expect.arrayContaining(['multiple', 'minItems', 'maxItems', 'addLabel']));
+        expect(FORM_BLOCKS.find(block => block.name === 'form/repeater')!.fields.maxItems).toBeUndefined();
+        const inputs = formInputs(checkedGuests(), types);
+        expect(inputs.map(entry => [entry.name, entry.multiple])).toEqual([['email', false], ['guests', true], ['ages', true], ['remark', false], ['pax', false]]);
+        expect(inputs[4]!.inputs[0]).toMatchObject({ name: 'tags', multiple: true, parent: 'pax' });
+        // The setting means nothing on a kind that does not take it.
+        expect(formInputs([input('s', 'select', { name: 'topic', options: ['a'], multiple: true })], types)[0]!.multiple).toBe(false);
+        expect(FORM_ITEM_LIMIT).toBe(50);
+    });
+
+    it('reads every posted value, checks each as the kind, and drops blank items', () => {
+        const blocks = checkedGuests();
+        const inputs = formInputs(blocks, types);
+        const data = new FormData();
+        data.append('email', 'ada@example.com');
+        data.append('guests', 'Ann'); data.append('guests', ''); data.append('guests', 'A name too long');
+        data.append('ages', '30'); data.append('ages', 'x');
+        data.append('pax[r1][tags]', 'vip'); data.append('pax[r1][tags]', 'late');
+        expect(formDataValues(data, inputs)).toEqual({ email: 'ada@example.com', guests: ['Ann', '', 'A name too long'], ages: ['30', 'x'], pax: [{ _id: 'r1', tags: ['vip', 'late'] }] });
+        const check = validateSubmission(blocks, types, formDataValues(data, inputs));
+        // Errors name the item's position as posted; the blank item is dropped and does not count.
+        expect(check.errors).toEqual({ 'guests.3': 'Use at most 10 characters.', 'ages.2': 'Enter a number.' });
+        expect(check.values).toEqual({ email: 'ada@example.com', guests: ['Ann'], ages: [30], pax: [{ _id: 'r1', tags: ['vip', 'late'] }] });
+        // JSON: a list, or one scalar as one item; the condition reads the items joined.
+        const json = validateSubmission(blocks, types, { email: 'a@b.co', guests: 'Zed', ages: [1, 2.5], remark: 'Zed is here' });
+        expect(json.errors).toEqual({ 'ages.2': 'Enter a whole number.' });
+        expect(json.values).toEqual({ email: 'a@b.co', guests: ['Zed'], ages: [1], remark: 'Zed is here', pax: [] });
+        expect(json.hidden.has('n')).toBe(false);
+        expect(validateSubmission(blocks, types, { email: 'a@b.co', guests: ['Ann'] }).hidden.has('n')).toBe(true);
+        // Too few, too many, required.
+        expect(validateSubmission(blocks, types, { email: 'a@b.co' }).errors).toEqual({ guests: 'This field is required.' });
+        expect(validateSubmission(blocks, types, { email: 'a@b.co', guests: [''] }).errors).toEqual({ guests: 'This field is required.' });
+        expect(validateSubmission(blocks, types, { email: 'a@b.co', guests: ['A', 'B', 'C', 'D'] }).errors).toEqual({ guests: 'Add at most 3 values.' });
+        expect(validateSubmission(blocks, types, { email: 'a@b.co', guests: ['A'], pax: [{ tags: ['a', 'b', 'c'] }] }).errors).toEqual({ 'pax.r1.tags': 'Add at most 2 values.' });
+        const fewest = validateBlocks([input('g', 'text', { name: 'g', multiple: true, minItems: 2 })], types, { form: true }).blocks;
+        expect(validateSubmission(fewest, types, { g: ['one'] }).errors).toEqual({ g: 'Add at least 2 values.' });
+        expect(validateSubmission(fewest, types, {}).errors).toEqual({ g: 'Add at least 2 values.' });
+    });
+
+    it('stores a list of the kind, and shows and merges the items', () => {
+        const inputs = formInputs(checkedGuests(), types);
+        const resource = resolveResource(submissionResource({ id: '8f14e45f-ceea-467a-9575-1f2b3c4d5e6f', title: 'Guests' }, inputs), 'cms');
+        expect(resource.fields.guests).toMatchObject({ kind: 'string', multiple: true, search: true, label: 'Guest names' });
+        expect(resource.fields.guests!.nullable).toBeUndefined();
+        expect(resource.fields.ages).toMatchObject({ kind: 'number', multiple: true });
+        expect(resource.fields.pax!.fields!.tags).toMatchObject({ kind: 'string', multiple: true });
+        expect(displayValue(inputs[1]!, ['Ann', 'Bea'])).toBe('Ann, Bea');
+        expect(displayValue(inputs[2]!, [30, 41])).toBe('30, 41');
+        const context = { form: { id: 'f', title: 'Guests' }, inputs, values: { email: 'ada@example.com', guests: ['Ann', 'Bea'], ages: [30] }, site: { title: 'Site', url: 'https://s.example', adminEmail: 'admin@s.example' } };
+        expect(renderMergeTags('{all_fields}', context)).toBe('Email: ada@example.com\nGuest names: Ann, Bea\nAges: 30');
+        expect(renderMergeTags('{field:guests}', context)).toBe('Ann, Bea');
     });
 });
 

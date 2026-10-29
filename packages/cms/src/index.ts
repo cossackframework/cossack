@@ -16,7 +16,7 @@ export type { RecordShape, RecordPage, RevisionShape, FieldFilter, ListFilter, L
 export { contentModule, categories, tags, patterns } from './modules/content';
 export { formsModule } from './modules/forms';
 export {
-    FORM_BLOCKS, FORM_EMBED_BLOCK, FORM_SETTINGS, FORM_ROW_LIMIT, TEMPLATE_ROW, SUBMISSION_STATUSES, SUBMISSION_META, SUBMISSION_PREFIX, NOTIFICATION_LIMIT, MERGE_TAGS,
+    FORM_BLOCKS, FORM_EMBED_BLOCK, FORM_SETTINGS, FORM_ROW_LIMIT, FORM_ITEM_LIMIT, MULTIPLE_INPUT_KINDS, TEMPLATE_ROW, SUBMISSION_STATUSES, SUBMISSION_META, SUBMISSION_PREFIX, NOTIFICATION_LIMIT, MERGE_TAGS,
     forms, inputFields, choiceOptions, formInputs, flatFormInputs, isRows, rowValues, inputHtmlName, inputKey, ruleMatches, conditionShows, formVisibility, visibleBlocks, formDataValues, validateSubmission, displayValue, displayRows,
     formSettings, submissionResourceName, submissionResource, submissionOf, notificationRules, notificationProblems, renderMergeTags, escapeMarkdown, emailAddresses,
     type ChoiceOption, type FormField, type FormValue, type FormValues, type FormRow, type PostedValue, type SubmittedValues, type SubmissionCheck, type FormSettings, type SubmissionStatus,
@@ -48,7 +48,7 @@ export {
     themeProblems, siteThemeProblems, assembleSiteTheme, layerSiteThemes, entryTemplate, archiveTemplate, entryTemplateChoices, templateCandidates, pickTemplate, SPECIFIC_TEMPLATE,
     PRESET_KINDS, DEFAULT_PRESETS, presetProblems, layerPresets, resolvePresets, presetOverridesProblem, presetStyle, blockStyleAttributes, customCssProblem,
     type Preset, type PresetKind, type ThemePresets, type PresetOverrides,
-    type ThemeManifest, type SiteTheme, type ThemeSource, type EntryTemplate, type ArchiveTemplate, type TemplatePage, type ThemeData, type FieldView, type EntryReference, type ThemeHelpers, type SiteView, type EntryView, type ArchiveView, type RenderedBlock, type RepeaterView, type BodyPart, type MediaView, type TermLink, type Paging,
+    type ThemeManifest, type SiteTheme, type ThemeSource, type EntryTemplate, type ArchiveTemplate, type TemplatePage, type ThemeData, type FieldView, type EntryReference, type ThemeHelpers, type SiteView, type EntryView, type ArchiveView, type RenderedBlock, type RepeaterView, type ItemsView, type BodyPart, type MediaView, type TermLink, type Paging,
     type CommentView, type CommentsView, type CommentFormView, type LanguageLink, type FormView, type InputView,
 } from './theme';
 export { diffWords, compareRecords, comparableValue, type DiffPart, type FieldChange } from './diff';

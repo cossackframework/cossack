@@ -5,7 +5,7 @@
  */
 import {
     escapeHtml, flatFormInputs, formVisibility, isRows, rowValues, TEMPLATE_ROW, validateSubmission,
-    type Block, type FormField, type FormRow, type FormValue, type FormValues, type FormView, type InputKind, type PostedValue, type Principal, type RenderedBlock, type RepeaterView,
+    type Block, type FormField, type FormRow, type FormValue, type FormValues, type FormView, type InputKind, type ItemsView, type PostedValue, type Principal, type RenderedBlock, type RepeaterView,
 } from '@cossackframework/cms';
 import { renderMarkdown, type CmsHost, type LoadedForm } from '@cossackframework/cms/server';
 
@@ -41,6 +41,7 @@ export function typedValues(inputs: readonly FormField[], raw: { readonly [name:
                 .map((row, index): FormRow => ({ ...typedValues(input.inputs, row), _id: typeof row._id === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(row._id) ? row._id : `r${index + 1}` }));
         }
         else if (input.kind === 'boolean') values[input.name] = entry === true || entry === 'on' || entry === 'true';
+        else if (input.multiple) values[input.name] = (Array.isArray(entry) ? entry : [entry]).map(item => typeof item === 'number' ? item : String(item ?? '')) as string[] | number[];
         else if (input.kind === 'choices') values[input.name] = Array.isArray(entry) ? entry.filter((item): item is string => typeof item === 'string') : [String(entry)];
         else values[input.name] = Array.isArray(entry) ? String(entry[0] ?? '') : typeof entry === 'number' ? entry : String(entry);
     }
@@ -88,10 +89,21 @@ export async function formView(cms: CmsHost, form: LoadedForm, request: FormRequ
         const key = row && input ? `${row.repeater.name}.${row.id}.${input.name}` : input?.name ?? '';
         const name = row && input ? `${row.repeater.name}[${row.id}][${input.name}]` : input?.name ?? '';
         const value = row ? row.values[input?.name ?? ''] : values[input?.name ?? ''];
+        const items = (): ItemsView => {
+            // A multiple input: its posted items in their positions, blanks included so the errors line up, or the fewest controls it needs (one, so the visitor sees what it asks).
+            const posted = Array.isArray(value) ? (value as readonly (string | number)[]).map(String) : value !== undefined && value !== null && value !== '' ? [String(value)] : [];
+            const min = typeof input!.data.minItems === 'number' ? input!.data.minItems : 0;
+            const list = posted.length ? posted : Array.from({ length: Math.max(min, 1) }, () => '');
+            return {
+                values: list, errors: list.map((_, index) => errors[`${key}.${index + 1}`] ?? ''),
+                min, max: typeof input!.data.maxItems === 'number' ? input!.data.maxItems : 50,
+                addLabel: typeof input!.data.addLabel === 'string' && input!.data.addLabel ? input!.data.addLabel : 'Add another',
+            };
+        };
         const state: RenderedBlock = {
             ...block, id,
             ...(block.when ? { shown: !hidden.has(id) } : {}),
-            ...(input ? { input: { name, key, kind: input.kind, id: `form-${slug}-${key.replaceAll('.', '-')}`, value: value ?? null, error: errors[key] ?? '', options: input.options } } : {}),
+            ...(input ? { input: { name, key, kind: input.kind, id: `form-${slug}-${key.replaceAll('.', '-')}`, value: value ?? null, error: errors[key] ?? '', options: input.options, ...(input.multiple ? { items: items() } : {}) } } : {}),
             ...(block.children ? { children: block.children.map(child => withState(child, row)) } : {}),
         };
         if (!input || input.kind !== 'rows' || row) return state;
