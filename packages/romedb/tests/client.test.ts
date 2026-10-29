@@ -126,6 +126,17 @@ describe('protocol client', () => {
         await expect(db.writeAtomic([{ rql: 'SELECT 1' }])).rejects.toMatchObject({ outcome: 'unknown' });
     });
 
+    it('keeps the socket error as the cause of a transport failure', async () => {
+        const refused = Object.assign(new TypeError('fetch failed'), { cause: Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:4321'), { code: 'ECONNREFUSED' }) });
+        const { calls, fetch } = server(() => { if (calls.length === 1) return json(DETAILS); throw refused; });
+        const db = await connect({ url: LOCAL, token: 't', fetch });
+        const error = await db.read([{ rql: 'SELECT 1' }]).catch((caught: unknown) => caught) as ClientError;
+        expect(error).toBeInstanceOf(ClientError);
+        expect(error).toMatchObject({ code: 'FDB_TRANSPORT', outcome: 'read-failed' });
+        expect(error.status).toBeUndefined();
+        expect(error.cause).toBe(refused);
+    });
+
     it('cancels before dispatch without sending', async () => {
         const { calls, fetch } = server(() => json(DETAILS));
         const db = await connect({ url: LOCAL, token: 't', fetch });

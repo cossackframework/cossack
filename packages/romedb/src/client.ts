@@ -62,8 +62,10 @@ export class ClientError extends Error {
     readonly sequence?: number;
     /** Server backpressure hint from `retry-after`, in milliseconds. */
     readonly retryAfterMs?: number;
-    constructor(code: string, message: string, outcome: Outcome, details: { request?: PreparedWrite; status?: number; sequence?: number; retryAfterMs?: number } = {}) {
-        super(message);
+    /** For `FDB_TRANSPORT` and `FDB_PROTOCOL`: the fetch or parse error underneath (`ECONNREFUSED`, `ECONNRESET`, ...). */
+    declare readonly cause?: unknown;
+    constructor(code: string, message: string, outcome: Outcome, details: { request?: PreparedWrite; status?: number; sequence?: number; retryAfterMs?: number; cause?: unknown } = {}) {
+        super(message, details.cause === undefined ? undefined : { cause: details.cause });
         this.name = 'ClientError';
         this.code = code;
         this.outcome = outcome;
@@ -332,6 +334,7 @@ export class RemoteDatabase implements Client {
             throw new ClientError(code, writing ? 'Write was not confirmed; recover the saved request' : 'Database request failed', writing ? 'unknown' : 'read-failed', {
                 ...(status === undefined ? {} : { status }),
                 ...details,
+                cause: error,
             });
         } finally {
             clearTimeout(timer);
