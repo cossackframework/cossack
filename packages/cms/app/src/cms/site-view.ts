@@ -75,7 +75,7 @@ export function themeHelpers(theme: SiteTheme, state: ThemeRenderState, isActive
         // A column's wrapper takes its grid placement, as cms/blocks.css places `.cms-column-box`.
         const attributes = blockStyleAttributes(block);
         const column = block.type === 'core/column';
-        const styled = attributes ? html`<div class=${column ? `${attributes.className} cms-column-box` : attributes.className} id=${ifDefined(attributes.id || undefined)}
+        const styled = attributes ? html`<div class=${column ? `${attributes.className} cms-column-box` : attributes.className} id=${ifDefined(attributes.id || undefined)} data-nosnippet=${ifDefined(attributes.nosnippet ? '' : undefined)}
             style=${ifDefined([attributes.style, column ? `--cms-span: ${columnSpan(block)}` : ''].filter(Boolean).join('; ') || undefined)}>${rendered}</div>` : rendered;
         // A hidden block stays in the HTML; the stylesheet drops it at those container widths.
         const hide = block.layout?.hide ?? [];
@@ -278,6 +278,23 @@ export function coreBlock(block: RenderedBlock, helpers: ThemeHelpers): Template
                     <div class="cms-carousel-dots" role="tablist">${ids.map((_, index) => html`<button type="button" role="tab" aria-label=${`${__('Image')} ${index + 1}`} aria-selected=${index === 0 ? 'true' : 'false'} data-index=${String(index)}></button>`)}</div>` : null}
             </div>`;
         }
+        case 'core/answer': return html`<aside class="cms-answer my-6 rounded-lg border border-border bg-muted/40 p-4" aria-label=${text('label') || __('Quick answer')}>
+            ${text('label') ? html`<p class="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">${text('label')}</p>` : null}
+            <div class=${`${PROSE} text-lg [&_p]:my-2`}>${unsafeHTML(block.html.text ?? '')}</div></aside>`;
+        case 'core/faq': return html`<section class="cms-faq my-8 divide-y divide-border border-y border-border">${children.map(child => helpers.block(child))}</section>`;
+        case 'core/faq-item': return html`<details class="cms-faq-item group py-3" open>
+            <summary class="cursor-pointer list-none text-lg font-semibold text-foreground"><h3 class="inline">${text('question')}</h3></summary>
+            <div class=${`${PROSE} mt-2 [&_p]:my-2`}>${unsafeHTML(block.html.answer ?? '')}</div></details>`;
+        case 'core/steps': return html`<ol class="cms-steps my-8 space-y-6 border-l-2 border-border pl-6">${children.map((child, index) => html`<li class="relative" data-step=${String(index + 1)}>
+            <span class="absolute -left-[2.1rem] flex size-7 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground" aria-hidden="true">${index + 1}</span>${helpers.block(child)}</li>`)}</ol>`;
+        case 'core/step': return html`<div class="cms-step"><h3 class="text-lg font-semibold text-foreground">${text('title')}</h3>${block.html.text ? html`<div class=${`${PROSE} [&_p]:my-2`}>${unsafeHTML(block.html.text)}</div>` : null}</div>`;
+        case 'core/claim': {
+            const source = text('sourceUrl') ? html`<a href=${safeLink(text('sourceUrl'))} rel="noopener" class="text-primary hover:underline">${text('sourceName')}</a>` : text('sourceName');
+            return html`<figure class="cms-claim my-6 rounded-lg border-l-4 border-primary bg-muted/40 p-4">
+                <blockquote class=${text('kind') === 'quote' ? 'text-lg italic text-foreground' : 'text-2xl font-semibold text-foreground'}>${text('text')}</blockquote>
+                <figcaption class="mt-2 text-sm text-muted-foreground">${__('Source')}: <cite class="not-italic">${source}</cite>${text('date') ? html`, ${text('date')}` : null}</figcaption></figure>`;
+        }
+        case 'core/definition': return html`<dl class="cms-definition my-6 rounded-lg border border-border p-4"><dt class="text-lg font-semibold text-foreground">${text('term')}</dt><dd class=${`${PROSE} mt-1 [&_p]:my-1`}>${unsafeHTML(block.html.definition ?? '')}</dd></dl>`;
         case 'core/latest-entries': return latestEntries(block);
         case 'core/meta': return null;
         // Layout blocks: CSS grid from cms/blocks.css, responding to the content root's width.

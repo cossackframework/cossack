@@ -33,7 +33,7 @@ export { formInput, formValue, recordTitle, isSameOriginPost, type FormInput, ty
 export { manifestProblems, validateManifest, requestedGrants, commandInput, isPluginPoint, pointOwner, providedPoints, ManifestError, HOST_SLOTS, type CmsPluginManifest, type ProvidedPoint, type PluginCommand, type CommandOption, type SlotLink, type HostSlot } from './manifest';
 export { MEDIA_TYPES, AVATAR_TYPES, ARCHIVE_TYPES, SVG_TYPE, MEDIA_FILTERS, MEDIA_FILTER_EXCLUDES, mediaKind, mediaUrl, formatBytes, matchesSignature, imageSize, declaredType, sanitizeSvg, type MediaKind } from './media';
 export { taxonomyProblems, type TaxonomyDeclaration, type TermShape } from './taxonomy';
-export { general, media, appearance, writing, reading, discussion, seo, languages, DATE_FORMATS, TIME_FORMATS, TITLE_SEPARATORS, formatSiteDate, validTimeZone, type SettingsGroup, type SettingDeclaration, type SettingSource, type SiteSettings } from './settings';
+export { general, media, appearance, writing, reading, discussion, seo, crawlers, indexnow, languages, DATE_FORMATS, TIME_FORMATS, TITLE_SEPARATORS, formatSiteDate, validTimeZone, type SettingsGroup, type SettingDeclaration, type SettingSource, type SiteSettings } from './settings';
 export type { CmsModule, ModuleContext } from './module';
 export {
     MENU_LIMITS, MENU_LOCATION, MENU_ATTRIBUTE, menuProblems, normalizeMenu, menuSize, menuItemId, flattenMenu, buildMenu, subtreeEnd, dropDepths, moveRows, shiftRows, allowedMoves,
@@ -48,10 +48,19 @@ export {
     themeProblems, siteThemeProblems, assembleSiteTheme, layerSiteThemes, entryTemplate, archiveTemplate, entryTemplateChoices, templateCandidates, pickTemplate, SPECIFIC_TEMPLATE,
     PRESET_KINDS, DEFAULT_PRESETS, presetProblems, layerPresets, resolvePresets, presetOverridesProblem, presetStyle, blockStyleAttributes, customCssProblem,
     type Preset, type PresetKind, type ThemePresets, type PresetOverrides,
-    type ThemeManifest, type SiteTheme, type ThemeSource, type EntryTemplate, type ArchiveTemplate, type TemplatePage, type ThemeData, type FieldView, type EntryReference, type ThemeHelpers, type SiteView, type EntryView, type ArchiveView, type RenderedBlock, type RepeaterView, type ItemsView, type BodyPart, type MediaView, type TermLink, type Paging,
+    type ThemeManifest, type SiteTheme, type ThemeSource, type EntryTemplate, type ArchiveTemplate, type TemplatePage, type ThemeData, type FieldView, type EntryReference, type ThemeHelpers, type SiteView, type EntryView, type ArchiveView, type AuthorView, type RenderedBlock, type RepeaterView, type ItemsView, type BodyPart, type MediaView, type TermLink, type Paging,
     type CommentView, type CommentsView, type CommentFormView, type LanguageLink, type FormView, type InputView,
 } from './theme';
 export { diffWords, compareRecords, comparableValue, type DiffPart, type FieldChange } from './diff';
+export {
+    SCHEMA_TYPES, SCHEMA_TYPE_LABELS, SCHEMA_PROPERTIES, ARTICLE_TYPES, SEO_TEMPLATE_VARIABLES, SEO_TEMPLATE_DEFAULTS, AUTHOR_FIELDS,
+    collectionSeoProblems, renderSeoTemplate, robotsDirectives, authorUrl, urlList, schemaGraph, schemaProperties,
+    CRAWLER_GROUPS, blockedCrawlerGroups, robotsTxtLines, crawlerOf, type CrawlerGroup, type CrawlerSettings,
+    type SchemaType, type SchemaProperty, type CollectionSchema, type CollectionRobots, type CollectionSeoTemplates, type SeoTemplateVariable, type ImagePreview, type RobotsOptions,
+    type SchemaImage, type SchemaSite, type SchemaAuthor, type SchemaBreadcrumb, type SchemaPage,
+} from './seo';
+export { richTextMarkdown, blocksMarkdown, entryMarkdown, type EntryMarkdownInput } from './to-markdown';
+export { entryChecks, analyzeContent, type Check, type CheckStatus, type CheckInput } from './checks';
 export { recordSchema, fieldSchema, type JsonSchema } from './schema-json';
 export { REDIRECT_STATUSES, REDIRECT_PATH, redirectPath, redirectProblems, type Redirect, type RedirectInput, type RedirectStatus } from './redirects';
 export { WEBHOOK_EVENTS, webhookUrlProblem, type Webhook, type WebhookDelivery, type WebhookEvent, type WebhookInput, type WebhookPayload } from './webhooks';

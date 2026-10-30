@@ -3,7 +3,7 @@ import { FIELD_BLOCKS } from '../field-groups';
 import { pages, patterns, posts } from '../collections';
 import { beforeWrite } from '../hooks';
 import type { CmsModule } from '../module';
-import { discussion, languages, reading, seo, writing } from '../settings';
+import { crawlers, discussion, indexnow, languages, reading, seo, writing } from '../settings';
 import type { TaxonomyDeclaration } from '../taxonomy';
 
 export { CONTENT_STATUSES, pages, patterns, posts, type ContentStatus } from '../collections';
@@ -25,7 +25,7 @@ export const contentModule: CmsModule = {
     collections: [posts, pages, patterns],
     taxonomies: [categories, tags],
     blocks: [...CORE_BLOCKS, ...FIELD_BLOCKS],
-    settings: [writing, reading, discussion, seo, languages],
+    settings: [writing, reading, discussion, seo, crawlers, indexnow, languages],
     register({ hooks, settings, taxonomies, collection, now }) {
         hooks.addFilter(beforeWrite, async (draft, { input }) => {
             if (!input.resource.startsWith('cms/')) return draft;

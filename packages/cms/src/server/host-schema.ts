@@ -21,7 +21,7 @@ export const HOST_TABLES = [
     'cms_password_resets', 'cms_sessions', 'cms_session_values', 'cms_grants', 'cms_audit', 'cms_revisions', 'cms_outbox', 'cms_files',
     'cms_terms', 'cms_settings', 'cms_collections', 'cms_taxonomies', 'cms_field_groups', 'cms_menus', 'cms_menu_locations',
     'cms_preview_tokens', 'cms_autosaves', 'cms_file_variants', 'cms_redirects', 'cms_api_tokens', 'cms_webhooks', 'cms_webhook_deliveries',
-    'cms_comments', 'cms_user_security', 'cms_passkeys', 'cms_auth_challenges', 'cms_areas', 'cms_form_sends', 'cms_form_mail', 'cms_form_results',
+    'cms_comments', 'cms_user_security', 'cms_passkeys', 'cms_auth_challenges', 'cms_areas', 'cms_form_sends', 'cms_form_mail', 'cms_form_results', 'cms_crawler_visits', 'cms_not_found',
     'cossack_jobs', 'cossack_notifications',
 ] as const;
 
@@ -205,4 +205,22 @@ export const HOST_STEPS: readonly HostStep[] = [{
     description: 'Block IDs are _id',
     // No DDL: the host rewrites every stored block tree from `id` to `_id` when this step applies (see block-ids.ts).
     statements: [{ rql: 'SELECT 1' }],
+}, {
+    version: 13,
+    description: 'Authors have a slug for their pages',
+    statements: [
+        // Filled from the name the first time the user is read for the site or saved; unique by suffix.
+        { rql: 'ALTER TABLE cms_users ADD COLUMN slug TEXT' },
+        { rql: 'CREATE INDEX cms_users_slug ON cms_users (slug)' },
+    ],
+}, {
+    version: 14,
+    description: 'Count crawler visits and missing pages',
+    statements: [
+        // One row per day, crawler and page kind; only known crawlers are counted.
+        { rql: 'CREATE TABLE cms_crawler_visits (day TEXT NOT NULL, agent TEXT NOT NULL, grp TEXT NOT NULL, kind TEXT NOT NULL, count INTEGER NOT NULL, PRIMARY KEY (day, agent, kind))' },
+        // Paths that answered 404, for Tools → Health and redirects.
+        { rql: "CREATE TABLE cms_not_found (path TEXT PRIMARY KEY, hits INTEGER NOT NULL, first_at INTEGER NOT NULL, last_hit_at INTEGER NOT NULL, referrer TEXT NOT NULL DEFAULT '')" },
+        { rql: 'CREATE INDEX cms_not_found_hits ON cms_not_found (hits, last_hit_at)' },
+    ],
 }];

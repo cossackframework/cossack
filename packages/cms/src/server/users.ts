@@ -21,8 +21,10 @@ export interface CmsUser {
     readonly createdAt: number;
     /** When the user last started a session, or null when never. */
     readonly lastSignInAt: number | null;
-    /** Values of the field groups attached to users. */
+    /** Values of the field groups attached to users, and the author profile (`AUTHOR_FIELDS`). */
     readonly meta: { readonly [field: string]: unknown };
+    /** The author page's slug, such as `ada-lovelace`; null until the user is saved or `withSlugs` runs. */
+    readonly slug: string | null;
 }
 
 export interface CmsRole {
@@ -43,6 +45,7 @@ const EMAIL = /^[^\s@]{1,64}@[^\s@]{1,190}$/;
 const ID = /^[A-Za-z0-9_-]{1,80}$/;
 const PERMISSION = /^(?:\*|[a-z][a-z0-9:/._*-]{0,127})$/;
 const TOKEN = /^[A-Za-z0-9_-]{32,128}$/;
+const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const WRITE = { kind: 'cms.users', retryConflicts: 5 } as const;
 
 const sha256 = async (text: string) => [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)))]
@@ -99,9 +102,10 @@ export class CmsUsers {
         if (!ID.test(id)) throw new CmsError('CMS_VALIDATION', 'Invalid user ID.');
         const hash = input.password === undefined ? null : await this.#hasher.hash(input.password);
         const now = this.#now();
+        const slug = await this.#freeSlug(input.name, id);
         const statements: Statement[] = [{
-            rql: "INSERT INTO cms_users (id, email, name, password_hash, avatar, status, created_at, updated_at, meta) VALUES ($id, $email, $name, $hash, $avatar, 'active', $now, $now, $meta)",
-            params: { $id: id, $email: email, $name: input.name.trim(), $hash: hash, $avatar: input.avatar ?? null, $now: now, $meta: JSON.stringify(meta) },
+            rql: "INSERT INTO cms_users (id, email, name, password_hash, avatar, status, created_at, updated_at, meta, slug) VALUES ($id, $email, $name, $hash, $avatar, 'active', $now, $now, $meta, $slug)",
+            params: { $id: id, $email: email, $name: input.name.trim(), $hash: hash, $avatar: input.avatar ?? null, $now: now, $meta: JSON.stringify(meta), $slug: slug },
         }, ...roleStatements(id, input.roles ?? [])];
         try { await this.#db.write(statements, WRITE); }
         catch (error) { throw uniqueEmail(error); }
@@ -127,7 +131,7 @@ export class CmsUsers {
         if (!wanted.length) return new Map();
         const list = inList('u', wanted);
         const result = await this.#db.read([
-            { rql: `SELECT id, email, name, avatar, status, created_at, last_sign_in_at, meta FROM cms_users WHERE id IN ${list.rql}`, params: list.params },
+            { rql: `SELECT id, email, name, avatar, status, created_at, last_sign_in_at, meta, slug FROM cms_users WHERE id IN ${list.rql}`, params: list.params },
             { rql: `SELECT ur.user_id, r.id, r.name, r.permissions FROM cms_user_roles ur JOIN cms_roles r ON r.id = ur.role_id WHERE ur.user_id IN ${list.rql} ORDER BY r.id`, params: list.params },
         ]);
         const roles = new Map<string, CmsUser['assignments'][number][]>();
@@ -141,7 +145,7 @@ export class CmsUsers {
             const assignments = roles.get(row[0] as string) ?? [];
             users.set(row[0] as string, Object.freeze({
                 id: row[0] as string, email: row[1] as string, name: row[2] as string, avatar: row[3] as string | null,
-                status: row[4] as CmsUser['status'], createdAt: Number(row[5] as bigint), lastSignInAt: row[6] === null ? null : Number(row[6] as bigint), meta: parseMeta(row[7]),
+                status: row[4] as CmsUser['status'], createdAt: Number(row[5] as bigint), lastSignInAt: row[6] === null ? null : Number(row[6] as bigint), meta: parseMeta(row[7]), slug: (row[8] as string | null) ?? null,
                 roles: Object.freeze(assignments.map(role => role.id)), assignments: Object.freeze(assignments),
                 permissions: Object.freeze([...new Set(assignments.flatMap(role => role.permissions))].sort()),
             }));
@@ -179,18 +183,62 @@ export class CmsUsers {
         return { items: ids.map(id => users.get(id)).filter((user): user is CmsUser => user !== undefined), total: Number(result.results[1]!.rows[0]![0] as bigint) };
     }
 
-    /** Change name, email or avatar. */
-    async update(id: string, patch: { name?: string; email?: string; avatar?: string | null; meta?: unknown }): Promise<boolean> {
+    /** Change name, email, avatar, profile meta or the author slug. */
+    async update(id: string, patch: { name?: string; email?: string; avatar?: string | null; meta?: unknown; slug?: string }): Promise<boolean> {
         const current = await this.get(id);
         if (!current) return false;
         const next = { name: patch.name ?? current.name, email: patch.email === undefined ? current.email : normalizeEmail(patch.email), avatar: patch.avatar === undefined ? current.avatar : patch.avatar || null };
         checkProfile(next);
         const meta = patch.meta === undefined ? current.meta : await this.#meta(patch.meta, current.meta);
+        // A slug is chosen once, from the name, and kept: author URLs stay stable through renames. A given slug is checked and made unique.
+        const slug = patch.slug !== undefined ? await this.#freeSlug(patch.slug, id) : current.slug ?? await this.#freeSlug(next.name, id);
         try {
-            const result = await this.#db.write([{ rql: 'UPDATE cms_users SET name = $name, email = $email, avatar = $avatar, meta = $meta, updated_at = $now WHERE id = $id',
-                params: { $name: next.name.trim(), $email: next.email, $avatar: next.avatar, $meta: JSON.stringify(meta), $now: this.#now(), $id: id } }], WRITE);
+            const result = await this.#db.write([{ rql: 'UPDATE cms_users SET name = $name, email = $email, avatar = $avatar, meta = $meta, slug = $slug, updated_at = $now WHERE id = $id',
+                params: { $name: next.name.trim(), $email: next.email, $avatar: next.avatar, $meta: JSON.stringify(meta), $slug: slug, $now: this.#now(), $id: id } }], WRITE);
             return result.results[0]!.affected === 1n;
         } catch (error) { throw uniqueEmail(error); }
+    }
+
+    /** The user with this author slug, or null. */
+    async bySlug(slug: string): Promise<CmsUser | null> {
+        if (!SLUG.test(slug)) return null;
+        const result = await this.#db.read([{ rql: 'SELECT id FROM cms_users WHERE slug = $slug LIMIT 1', params: { $slug: slug } }]);
+        const id = result.results[0]!.rows[0]?.[0] as string | undefined;
+        return id ? this.get(id) : null;
+    }
+
+    /**
+     * These users with slugs: users from before author pages get one from their name, written
+     * once. For the site's pages, which link authors; dashboards read `slug` as is.
+     */
+    async withSlugs(users: ReadonlyMap<string, CmsUser>): Promise<Map<string, CmsUser>> {
+        const result = new Map(users);
+        for (const [id, user] of users) {
+            if (user.slug) continue;
+            const slug = await this.#freeSlug(user.name, id);
+            await this.#db.write([{ rql: 'UPDATE cms_users SET slug = $slug WHERE id = $id AND slug IS NULL', params: { $slug: slug, $id: id } }], WRITE).catch(() => undefined);
+            result.set(id, Object.freeze({ ...user, slug }));
+        }
+        return result;
+    }
+
+    /** Users who own entries, for author sitemaps and lists: those with a slug, oldest first. */
+    async authors(options: { limit?: number; offset?: number } = {}): Promise<CmsUser[]> {
+        const limit = Math.min(Math.max(options.limit ?? 200, 1), 1000);
+        const result = await this.#db.read([{ rql: 'SELECT id FROM cms_users WHERE slug IS NOT NULL AND status = $active ORDER BY created_at, id LIMIT $limit OFFSET $offset', params: { $active: 'active', $limit: limit, $offset: Math.max(options.offset ?? 0, 0) } }]);
+        const ids = result.results[0]!.rows.map(row => row[0] as string);
+        const users = await this.getMany(ids);
+        return ids.map(id => users.get(id)).filter((user): user is CmsUser => user !== undefined);
+    }
+
+    /** A slug from the text, made unique among users other than `id` by a numeric suffix. */
+    async #freeSlug(text: string, id: string): Promise<string> {
+        const base = slugify(String(text ?? ''), 60) || 'author';
+        const result = await this.#db.read([{ rql: "SELECT slug FROM cms_users WHERE id <> $id AND (slug = $slug OR slug LIKE $prefix ESCAPE '\\') LIMIT 1000", params: { $id: id, $slug: base, $prefix: `${base.replace(/[\\%_]/g, character => `\\${character}`)}-%` } }]);
+        const taken = new Set(result.results[0]!.rows.map(row => row[0] as string));
+        if (!taken.has(base)) return base;
+        for (let n = 2; n < 10_000; n++) if (!taken.has(`${base}-${n}`)) return `${base}-${n}`;
+        return `${base}-${crypto.randomUUID().slice(0, 8)}`;
     }
 
     /** Remove a user with their roles, sessions and reset tokens in one batch. Their records keep their owner ID. */

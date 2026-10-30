@@ -5,6 +5,7 @@
  */
 import { html, type TemplateResult } from '@cossackframework/renderer';
 import type { EditorBlock, EditorValues, EditorView } from './editor';
+import type { SeoView } from './seo-head';
 import type { MediaPreview } from './field-controls';
 import type { MediaChooserState } from './media-chooser';
 
@@ -61,9 +62,29 @@ export type SiteEditorProps = {
 };
 
 /** The bar an editor sees on an entry they can edit, outside edit mode. */
-export function editBar(editable: SiteEditable, start: () => void): TemplateResult {
+export function editBar(editable: SiteEditable, start: () => void, seo?: SeoView): TemplateResult {
     return html`<div role="region" aria-label=${__('Editing')} class="fixed bottom-4 left-1/2 z-40 flex -translate-x-1/2 items-center gap-2 rounded-full border border-border bg-background/95 px-2 py-1.5 text-sm shadow-lg backdrop-blur">
         <button type="button" class="rounded-full border-none bg-primary px-4 py-1.5 text-sm font-medium text-primary-foreground cursor-pointer" @click=${start}>${__('Edit this page')}</button>
         <a href=${editable.dashboard} class="rounded-full px-3 py-1.5 text-sm text-muted-foreground no-underline hover:text-foreground">${__('Open in the dashboard')}</a>
+        ${seo?.title ? seoInspector(seo) : null}
     </div>`;
+}
+
+/** What engines see on this page: the resolved title, description, robots, canonical and the structured data types. For editors only. */
+function seoInspector(seo: SeoView): TemplateResult {
+    let types: string[] = [];
+    try { types = ((JSON.parse(seo.jsonLd) as { '@graph'?: { '@type'?: string }[] })['@graph'] ?? []).map(node => node['@type'] ?? '').filter(Boolean); } catch { /* no graph */ }
+    const row = (label: string, value: string) => value ? html`<div class="grid grid-cols-[6rem_minmax(0,1fr)] gap-2"><dt class="text-muted-foreground">${label}</dt><dd class="min-w-0 break-words text-foreground">${value}</dd></div>` : null;
+    return html`<details class="relative">
+        <summary class="cursor-pointer list-none rounded-full px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground">${__('SEO')}</summary>
+        <dl class="absolute bottom-full left-1/2 mb-2 w-[min(28rem,90vw)] -translate-x-1/2 space-y-1.5 rounded-lg border border-border bg-background p-3 text-xs shadow-lg">
+            ${row(__('Title'), seo.title)}
+            ${row(__('Description'), seo.description || `(${__('none')})`)}
+            ${row(__('Robots'), seo.robots || `(${__('index, follow')})`)}
+            ${row(__('Canonical'), seo.canonical)}
+            ${row(__('Image'), seo.image || `(${__('none')})`)}
+            ${row(__('Schema'), types.join(', ') || `(${__('none')})`)}
+            ${seo.markdownUrl ? html`<div class="pt-1"><a href=${seo.markdownUrl} class="text-primary hover:underline">${__('View as Markdown')}</a></div>` : null}
+        </dl>
+    </details>`;
 }

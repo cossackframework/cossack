@@ -37,6 +37,9 @@ export default class RedirectsPage extends Cossack {
         this.kind = kind === 'auto' || kind === 'manual' ? kind : '';
         const page = Number(this.c.req.query('page'));
         this.page = Number.isSafeInteger(page) && page > 0 ? page : 1;
+        // Tools → Health links a missing path here to redirect it.
+        const source = (this.c.req.query('source') ?? '').slice(0, 500);
+        if (source.startsWith('/')) this.form = { ...EMPTY, source };
         await this.load();
     }
 
@@ -69,6 +72,7 @@ export default class RedirectsPage extends Cossack {
             const { redirects } = this.c.get('cms');
             const input = { source: form.source, target: form.target, status: Number(form.status) as RedirectStatus, note: form.note };
             await redirects.save(input, { ...(form.id ? { id: form.id } : {}), by: principalId(this.c.get('principal')) });
+            await this.c.get('cms').traffic.forgetNotFound(form.source.trim());
             this.form = { ...EMPTY };
             await this.load();
         } catch (error) {

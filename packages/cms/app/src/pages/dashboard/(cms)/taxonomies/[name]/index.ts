@@ -8,7 +8,7 @@ import { notice, pageHeader } from '../../../../../cms/ui';
 /** Rename a taxonomy, change its URL, or delete it with its terms. */
 @Page({ transport: 'http', middlewares: [requireAny(PERMISSIONS.manageCollections)] })
 export default class EditTaxonomy extends Cossack {
-    @State() draft = { name: '', label: '', singular: '', description: '', path: '', hierarchical: false, builtin: false };
+    @State() draft = { name: '', label: '', singular: '', description: '', path: '', hierarchical: false, noindex: false, builtin: false };
     @State() error = '';
 
     head(): HeadValue {
@@ -18,7 +18,7 @@ export default class EditTaxonomy extends Cossack {
     async init() {
         try {
             const taxonomy = this.c.get('cms').taxonomies.declaration(this.c.req.param('name') ?? '');
-            this.draft = { name: taxonomy.name, label: taxonomy.label, singular: taxonomy.singular, description: taxonomy.description ?? '', path: taxonomy.path ?? '', hierarchical: taxonomy.hierarchical, builtin: taxonomy.builtin === true };
+            this.draft = { name: taxonomy.name, label: taxonomy.label, singular: taxonomy.singular, description: taxonomy.description ?? '', path: taxonomy.path ?? '', hierarchical: taxonomy.hierarchical, noindex: taxonomy.noindex === true, builtin: taxonomy.builtin === true };
         } catch { this.error = __('This taxonomy does not exist.'); this.c.status(404); }
     }
 
@@ -40,7 +40,7 @@ export default class EditTaxonomy extends Cossack {
         try {
             const cms = this.c.get('cms');
             await cms.saveTaxonomy({ name: draft.name, label: draft.label, singular: draft.singular, hierarchical: draft.hierarchical,
-                path: draft.path.trim() || null, ...(draft.description.trim() ? { description: draft.description.trim() } : {}) }, this.c.get('principal'));
+                path: draft.path.trim() || null, noindex: draft.noindex, ...(draft.description.trim() ? { description: draft.description.trim() } : {}) }, this.c.get('principal'));
         } catch (error) {
             this.error = isCmsError(error) ? error.message : __('The taxonomy could not be saved.');
         }
@@ -72,6 +72,10 @@ export default class EditTaxonomy extends Cossack {
                     ${component(Checkbox, { checked: this.draft.hierarchical, disabled: this.draft.builtin, '@change': (event: Event) => this.setDraft('hierarchical', (event.target as HTMLInputElement).checked) })}
                     ${__('Terms can be nested')}
                 </label>
+                ${this.draft.path.trim() ? html`<label class="flex items-center gap-2 text-sm text-foreground cursor-pointer">
+                    ${component(Checkbox, { checked: this.draft.noindex, '@change': (event: Event) => this.setDraft('noindex', (event.target as HTMLInputElement).checked) })}
+                    ${__('Hide term archives from search engines')}
+                </label>` : null}
                 <div class="flex items-center justify-between">
                     ${this.draft.builtin ? html`<span></span>` : html`<button type="button" class="text-sm text-destructive hover:underline bg-transparent border-none p-0 cursor-pointer" @click=${() => this.remove()}>${__('Delete taxonomy and its terms')}</button>`}
                     ${component(Button, { type: 'submit' }, __('Save'))}

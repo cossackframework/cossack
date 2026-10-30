@@ -15,12 +15,12 @@ export type BlockTab = 'general' | 'style';
 /** What the Style tab edits: the block's `style` and the layout extras. */
 export interface StyleValues {
     style: BlockStyle;
-    layout: { anchor?: string; className?: string };
+    layout: { anchor?: string; className?: string; nosnippet?: boolean };
 }
 
 /** The style values of a block as editors hold it. */
 export function styleValues(block: Pick<EditorBlock, 'style' | 'layout'>): StyleValues {
-    return { style: { ...block.style }, layout: { anchor: block.layout?.anchor ?? '', className: block.layout?.className ?? '' } };
+    return { style: { ...block.style }, layout: { anchor: block.layout?.anchor ?? '', className: block.layout?.className ?? '', nosnippet: block.layout?.nosnippet === true } };
 }
 
 /** A block with the Style tab's values applied, its hide list kept. */
@@ -28,8 +28,8 @@ export function withStyle<T extends Pick<EditorBlock, 'style' | 'layout'>>(block
     const style = Object.fromEntries(Object.entries(values.style).filter(([, value]) => typeof value === 'string' && value)) as BlockStyle;
     const anchor = values.layout.anchor?.trim() ?? '';
     const className = values.layout.className?.trim() ?? '';
-    const { anchor: _anchor, className: _className, ...rest } = block.layout ?? {};
-    return { ...block, style, layout: { ...rest, ...(anchor ? { anchor } : {}), ...(className ? { className } : {}) } };
+    const { anchor: _anchor, className: _className, nosnippet: _nosnippet, ...rest } = block.layout ?? {};
+    return { ...block, style, layout: { ...rest, ...(anchor ? { anchor } : {}), ...(className ? { className } : {}), ...(values.layout.nosnippet ? { nosnippet: true } : {}) } };
 }
 
 const ALIGN_ICONS: Record<(typeof TEXT_ALIGNMENTS)[number], string> = { left: 'align-left', center: 'align-horizontal-center', right: 'align-right' };
@@ -85,6 +85,10 @@ export function styleControls(values: StyleValues, supports: readonly StylePrope
                     ${component(Input, { id: `${idPrefix}-class`, type: 'text', maxlength: 200, '.value': values.layout.className ?? '', '@input': (event: Event) => setLayout('className', (event.target as HTMLInputElement).value) })}
                     <p class="text-xs text-muted-foreground">${__('Separated by spaces, for the theme\'s stylesheet.')}</p>
                 </div>
+                <label class="flex items-center gap-2 text-xs text-foreground cursor-pointer sm:col-span-2">
+                    <input type="checkbox" .checked=${values.layout.nosnippet === true} @change=${(event: Event) => change({ ...values, layout: { ...values.layout, nosnippet: (event.target as HTMLInputElement).checked } })}>
+                    ${__('Keep out of snippets and AI answers (data-nosnippet)')}
+                </label>
             </div>
         </details>
     </div>`;

@@ -232,7 +232,7 @@ export async function entryInput(cms: CmsHost, route: string, values: EditorValu
     const fields = [...view.fields];
     const titleField = view.titleField;
     if (titleField && resource.fields[titleField]) fields.push(editorField(titleField, resource.fields[titleField]!));
-    for (const name of ['slug', 'publishedAt', 'parent', 'menuOrder', 'seo', 'locale', 'commentsOpen', 'template']) {
+    for (const name of ['slug', 'publishedAt', 'parent', 'menuOrder', 'seo', 'summary', 'locale', 'commentsOpen', 'template']) {
         if (resource.fields[name] && (name !== 'slug' || view.slug) && (name !== 'publishedAt' || view.publishable)) fields.push(editorField(name, resource.fields[name]!));
     }
     const { input, errors } = editorInput(fields, values, view.blocks);

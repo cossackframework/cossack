@@ -3,13 +3,16 @@ import { isTransportPath } from '@cossackframework/core/transport-routes';
 import { getCookie } from 'hono/cookie';
 import { component, html } from '@cossackframework/renderer';
 import { isCmsError, isSameOriginPost, type ArchiveView, type EntryView, type ThemeData } from '@cossackframework/cms';
-import { archive, commentResult, entryViews, homeView, isProtected, languageLinks, pageNumber, redirectFor, resolvePath, searchEntries, termArchive, themeData, themeState, unlockCookie, unlockToken, type Resolved, type ThemeState } from '../../../cms/site';
+import { archive, authorArchive, authorView, commentResult, entryViews, homeView, isProtected, languageLinks, localePrefix, pageNumber, redirectFor, resolvePath, searchEntries, termArchive, themeData, themeState, unlockCookie, unlockToken, type Resolved, type ThemeState } from '../../../cms/site';
 import { archiveTemplate, entryTemplate, siteContent, siteTheme, themeHelpers, unavailable } from '../../../cms/site-view';
-import { entrySeo, homeSeo, listSeo } from '../../../cms/seo';
+import { authorSeo, entrySeo, homeSeo, listSeo } from '../../../cms/seo';
 import { emptySeo, seoHead, type SeoView } from '../../../cms/seo-head';
 import { editBar, type SiteDraft, type SiteEditable } from '../../../cms/site-editor';
 import { draftEntry, draftMedia, editableRecord, saveDraft, siteDraft, siteEditable } from '../../../cms/site-editing';
 import { fieldErrors } from '../../../cms/content';
+import { entryAsMarkdown, wantsMarkdown } from '../../../cms/machine';
+import { trackCrawler, trackNotFound } from '../../../cms/traffic';
+import { siteOrigin } from '../../../cms/seo';
 import type { EditorValues } from '../../../cms/editor';
 import type { MediaPreview } from '../../../cms/field-controls';
 import type { MediaChooserState } from '../../../cms/media-chooser';
@@ -41,6 +44,20 @@ const resolveSitePath = defineServerMiddleware(async (c, next) => {
         }
     } catch (error) { if (!isCmsError(error, 'CMS_UNAVAILABLE')) throw error; resolved = { kind: 'unavailable' }; }
     if (resolved.kind === 'redirect') return post ? c.text('Not found', 404) : c.redirect(resolved.url, resolved.status ?? 301);
+    // Agents asking for Markdown get the entry as a document; the HTML varies on Accept.
+    if (resolved.kind === 'entry' && !post) {
+        c.header('vary', 'Accept');
+        if (wantsMarkdown(c.req.raw) && await cms.settings.get('seo.markdown')) {
+            if (isProtected(resolved.record)) return c.text('This entry is password protected.', 403);
+            trackCrawler(c, 'markdown');
+            const url = (await cms.entryUrls(resolved.collection, [resolved.record])).get(resolved.record.id) ?? c.req.path;
+            return c.body(await entryAsMarkdown(cms, resolved.collection, resolved.record, url, siteOrigin(c)), 200, { 'content-type': 'text/markdown; charset=utf-8', 'cache-control': 'public, max-age=300', 'x-robots-tag': 'noindex' });
+        }
+    }
+    if (!post) {
+        if (resolved.kind === 'none') trackNotFound(c);
+        if (resolved.kind !== 'unavailable') trackCrawler(c, resolved.kind === 'none' || resolved.kind === 'gone' ? 'not-found' : resolved.kind === 'entry' || resolved.kind === 'archive' || resolved.kind === 'home' || resolved.kind === 'term' || resolved.kind === 'author' || resolved.kind === 'search' ? resolved.kind : 'other');
+    }
     c.set('cms.site', resolved);
     await next();
 });
@@ -104,18 +121,19 @@ export default class SitePath extends Cossack {
                 } else {
                     this.kind = 'home';
                     this.view = { ...this.view, kind: 'home', ...home.view };
-                    this.seo = await homeSeo(cms, this.c, { url: base, locale: resolved.locale, links, searchUrl: `${base}/search` });
+                    this.seo = await homeSeo(cms, this.c, { url: base, locale: resolved.locale, links, page });
                 }
             } else if (resolved.kind === 'search') {
                 const query = (this.c.req.query('q') ?? '').trim().slice(0, 200);
                 this.kind = 'list';
                 this.view = { ...this.view, kind: 'search', collection: null, query, title: query ? `${__('Results for')} “${query}”` : __('Search'), entries: query ? await searchEntries(cms, query, resolved.locale) : [] };
-                this.seo = await listSeo(cms, this.c, { title: this.view.title, description: '', url: base, locale: resolved.locale, links, noindex: true });
+                this.seo = await listSeo(cms, this.c, { kind: 'search', title: this.view.title, description: '', url: base, locale: resolved.locale, links, noindex: true });
             } else if (resolved.kind === 'entry' && resolved.collection.name === 'pages' && resolved.record.id === settings['reading.pageForPosts']) {
                 // Settings → Reading's posts page lists the latest posts under its own title.
                 this.kind = 'list';
                 this.view = { ...this.view, title: String(resolved.record.title ?? ''), collection: 'posts', ...await archive(cms, cms.collection('posts'), page, { base, locale: resolved.locale }) };
-                this.seo = await listSeo(cms, this.c, { title: this.view.title, description: '', url: base, locale: resolved.locale, links });
+                const posts = cms.collection('posts');
+                this.seo = await listSeo(cms, this.c, { kind: 'archive', collection: posts, title: this.view.title, description: '', url: base, locale: resolved.locale, links, page, noindex: posts.robots?.archiveNoindex, nofollow: posts.robots?.nofollow });
             } else if (resolved.kind === 'entry') {
                 this.kind = 'entry';
                 // Editors read their protected entries; visitors unlock them with the password, which a cookie remembers.
@@ -129,12 +147,17 @@ export default class SitePath extends Cossack {
             } else if (resolved.kind === 'archive') {
                 this.kind = 'list';
                 this.view = { ...this.view, title: resolved.collection.label, description: resolved.collection.description ?? '', collection: resolved.collection.name, ...await archive(cms, resolved.collection, page, { base, locale: resolved.locale }) };
-                this.seo = await listSeo(cms, this.c, { title: this.view.title, description: this.view.description, url: base, locale: resolved.locale, links });
+                this.seo = await listSeo(cms, this.c, { kind: 'archive', collection: resolved.collection, title: this.view.title, description: this.view.description, url: base, locale: resolved.locale, links, page, noindex: resolved.collection.robots?.archiveNoindex, nofollow: resolved.collection.robots?.nofollow });
             } else if (resolved.kind === 'term') {
                 const taxonomy = cms.taxonomies.declaration(resolved.term.taxonomy);
                 this.kind = 'list';
                 this.view = { ...this.view, kind: 'term', title: `${taxonomy.singular}: ${resolved.term.name}`, description: resolved.term.description, ...await termArchive(cms, resolved.term, page, base, resolved.locale) };
-                this.seo = await listSeo(cms, this.c, { title: this.view.title, description: this.view.description, url: base, locale: resolved.locale, links });
+                this.seo = await listSeo(cms, this.c, { kind: 'term', term: resolved.term, taxonomy: taxonomy.label, title: this.view.title, description: this.view.description, url: base, locale: resolved.locale, links, page, noindex: taxonomy.noindex });
+            } else if (resolved.kind === 'author') {
+                const author = authorView(resolved.user, localePrefix(await cms.languages(), resolved.locale));
+                this.kind = 'list';
+                this.view = { ...this.view, kind: 'author', author, taxonomy: null, title: author.name, description: author.bio, ...await authorArchive(cms, resolved.user, page, base, resolved.locale) };
+                this.seo = await authorSeo(cms, this.c, { user: resolved.user, url: base, locale: resolved.locale, links, page });
             }
             const principal = this.c.get('principal');
             if (resolved.kind === 'entry' && this.kind === 'entry' && principal.kind === 'user') {
@@ -313,7 +336,7 @@ export default class SitePath extends Cossack {
 
     private editor() {
         const draft = this.draft;
-        if (!draft) return this.editable ? editBar(this.editable, () => this.edit()) : null;
+        if (!draft) return this.editable ? editBar(this.editable, () => this.edit(), this.seo) : null;
         return html`<div ref=${(element: Element) => this.loadEditor(element)}>${this.editorReady && SiteEditor ? component(SiteEditor, {
             draft, saving: this.saving,
             onChange: (values: EditorValues, preview: boolean) => this.changeDraft(values, preview),

@@ -148,14 +148,24 @@ async function essentials(origin, routeIds, diagnostics, { runtime }) {
   contains(await web.page('/dashboard/tools/redirects'), '/posts/moving-day');
 
   // SEO: the entry's SEO box drives its head, structured data, sitemap and robots.txt.
-  const seoId = await save(web, 'posts', post('Search friendly', { seo: { title: 'A better title', description: 'For search results', image: null, canonical: '', noindex: false } }));
+  const seoId = await save(web, 'posts', post('Search friendly', { summary: 'The short answer, up front.', seo: { title: 'A better title', description: 'For search results', image: null, canonical: '', noindex: false } }));
   const seoPage = await (await fetch(`${origin}/posts/search-friendly`)).text();
   expect(seoPage).toMatch(/<title[^>]*>A better title – Essentials<\/title>/);
   expect(seoPage).toMatch(/<meta name="?description"? content="?For search results/);
   expect(seoPage).toMatch(/<link rel="?canonical"? href="?https?:\/\/[^/"\s]+\/posts\/search-friendly/);
   expect(seoPage).toMatch(/<meta property="?og:type"? content="?article/);
+  expect(seoPage).toMatch(/<meta property="?og:title"? content="?A better title/);
+  expect(seoPage).toMatch(/<meta name="?robots"? content="?max-image-preview:large/);
   const jsonLd = JSON.parse(/<script type="?application\/ld\+json"?[^>]*>([^<]+)<\/script>/.exec(seoPage)[1]);
-  expect(jsonLd).toMatchObject({ '@type': 'BlogPosting', headline: 'Search friendly', author: { name: 'Ada' } });
+  const node = type => jsonLd['@graph'].find(entry => entry['@type'] === type);
+  expect(node('BlogPosting')).toMatchObject({ headline: 'A better title', abstract: 'The short answer, up front.', author: { '@id': expect.stringContaining('/author/ada#person') }, publisher: { '@id': expect.stringContaining('#organization') } });
+  expect(seoPage).toContain('The short answer, up front.');
+  expect(node('Person')).toMatchObject({ name: 'Ada', url: expect.stringContaining('/author/ada') });
+  expect(node('WebSite')).not.toHaveProperty('potentialAction');
+  // Author pages list the author's posts.
+  const authorPage = await (await fetch(`${origin}/author/ada`)).text();
+  expect(authorPage).toContain('Search friendly');
+  expect(JSON.parse(/<script type="?application\/ld\+json"?[^>]*>([^<]+)<\/script>/.exec(authorPage)[1])['@graph'].some(entry => entry['@type'] === 'ProfilePage')).toBe(true);
   await save(web, 'posts', post('Hidden one', { seo: { title: '', description: '', image: null, canonical: '', noindex: true } }));
   expect(await (await fetch(`${origin}/posts/hidden-one`)).text()).toMatch(/<meta name="?robots"? content="?noindex/);
   const index = await (await fetch(`${origin}/sitemap.xml`)).text();
@@ -168,6 +178,38 @@ async function essentials(origin, routeIds, diagnostics, { runtime }) {
   const robots = await (await fetch(`${origin}/robots.txt`)).text();
   expect(robots).toContain('Disallow: /dashboard/');
   expect(robots).toMatch(/Sitemap: https?:\/\/[^/\s]+\/sitemap\.xml/);
+  expect(robots).not.toContain('GPTBot');
+  // Settings → Crawlers blocks AI training crawlers as a group.
+  expect((await web.action('dashboard/(cms)/settings/[group]/index.ts', 'save', [{ allowAiTraining: false, contentSignals: true }], { params: { group: 'crawlers' } })).error).toBe('');
+  const blocked = await (await fetch(`${origin}/robots.txt`)).text();
+  expect(blocked).toMatch(/User-agent: GPTBot\n(?:User-agent: [^\n]+\n)*Disallow: \//);
+  expect(blocked).toContain('Content-Signal: search=yes, ai-input=yes, ai-train=no');
+  expect(blocked).not.toContain('User-agent: OAI-SearchBot');
+  // The site for assistants: llms.txt lists the entries, and an entry answers as Markdown when asked.
+  const llms = await (await fetch(`${origin}/llms.txt`)).text();
+  expect(llms).toMatch(/^# Essentials\n/);
+  // The Workers run serves under the APP_URL of its wrangler vars, so the origin is not the one fetched.
+  expect(llms).toMatch(/- \[Search friendly\]\(https?:\/\/[^/\s)]+\/posts\/search-friendly\)/);
+  expect(llms).toContain(': For search results');
+  expect(llms).not.toContain('hidden-one');
+  const markdown = await fetch(`${origin}/posts/search-friendly`, { headers: { accept: 'text/markdown' } });
+  expect(markdown.headers.get('content-type')).toContain('text/markdown');
+  const markdownText = await markdown.text();
+  expect(markdownText).toMatch(/^---\ntitle: "Search friendly"\nurl: "[^"]+\/posts\/search-friendly"/);
+  expect(markdownText).toContain('author: "Ada"');
+  expect(markdownText).toContain('description: "For search results"');
+  expect(markdownText).toContain('Search friendly body');
+  expect((await fetch(`${origin}/posts/search-friendly?format=md`)).headers.get('content-type')).toContain('text/markdown');
+  expect(seoPage).toMatch(/<link rel="?alternate"? type="?text\/markdown"?/);
+  expect((await fetch(`${origin}/posts/search-friendly`)).headers.get('vary')).toContain('Accept');
+  // Tools: Health reads crawler visits and missing pages, Links finds orphans, the SEO editor lists entries.
+  await fetch(`${origin}/posts/search-friendly`, { headers: { 'user-agent': 'Mozilla/5.0 (compatible; GPTBot/1.2; +https://openai.com/gptbot)' } });
+  await fetch(`${origin}/nowhere-to-be-found`);
+  const healthHtml = await web.page('/dashboard/tools/health');
+  contains(healthHtml, 'GPTBot');
+  contains(healthHtml, '/nowhere-to-be-found');
+  contains(await web.page('/dashboard/tools/links'), 'Orphaned entries');
+  contains(await web.page('/dashboard/tools/seo?collection=posts'), 'For search results');
   void seoId;
 
   // Images: variants in the browser's best format, cropped around the focal point.

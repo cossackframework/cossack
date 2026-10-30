@@ -82,6 +82,9 @@ export async function navigation(c: Context): Promise<DashboardModule[]> {
     admin.push(...registry.filter(module => module.placement !== 'account'));
     const tools: DashboardModuleLink[] = [
         ...(can(PERMISSIONS.manageRedirects) ? [{ label: 'Redirects', href: '/dashboard/tools/redirects' }] : []),
+        ...(can(PERMISSIONS.manageRedirects) || can(PERMISSIONS.manageCollections) ? [{ label: 'Links', href: '/dashboard/tools/links' }] : []),
+        ...(can(PERMISSIONS.manageSettings) || can(PERMISSIONS.manageRedirects) ? [{ label: 'Health', href: '/dashboard/tools/health' }] : []),
+        ...(can(PERMISSIONS.manageSettings) ? [{ label: 'SEO editor', href: '/dashboard/tools/seo' }] : []),
         ...(can(PERMISSIONS.manageWebhooks) ? [{ label: 'Webhooks', href: '/dashboard/tools/webhooks' }] : []),
         ...(can(PERMISSIONS.manageSchema) ? [{ label: 'Schema', href: '/dashboard/tools/schema' }] : []),
     ];
@@ -89,7 +92,10 @@ export async function navigation(c: Context): Promise<DashboardModule[]> {
     if (can(PERMISSIONS.manageSettings)) admin.push({ id: 'site-settings', label: 'Settings', href: '/dashboard/settings/general', icon: icon('settings'), authorization: { permission: PERMISSIONS.manageSettings },
         children: [...cms.settings.groups.filter(group => (group.permission ?? PERMISSIONS.manageSettings) === PERMISSIONS.manageSettings).map(group => ({ label: group.label, href: `/dashboard/settings/${group.id}` })),
             { label: 'Permalinks', href: '/dashboard/settings/permalinks' }] });
-    return [...content, ...admin, ...registry.filter(module => module.placement === 'account')];
+    const account = registry.filter(module => module.placement === 'account');
+    // The author profile follows the profile settings in the account menu.
+    account.splice(Math.min(1, account.length), 0, { id: 'public-profile', label: 'Public profile', href: '/dashboard/profile/public', icon: icon('user-id'), authorization: 'authenticated', placement: 'account' });
+    return [...content, ...admin, ...account];
 }
 
 /** The site title from General settings, shown in the dashboard's sidebar and footer. */

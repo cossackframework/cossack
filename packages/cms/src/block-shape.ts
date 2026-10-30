@@ -70,10 +70,11 @@ export function blocksShapeProblem(value: unknown): string | undefined {
     return undefined;
 }
 
-/** The shape of a block's `layout`: `hide` lists breakpoints; `anchor` is an HTML id; `className` lists class names. */
+/** The shape of a block's `layout`: `hide` lists breakpoints; `anchor` is an HTML id; `className` lists class names; `nosnippet` keeps it out of snippets. */
 export function blockLayoutProblem(value: unknown): string | undefined {
     if (!value || typeof value !== 'object' || Array.isArray(value) || Object.getPrototypeOf(value) !== Object.prototype) return 'block layout must be an object.';
-    const { hide, anchor, className } = value as { hide?: unknown; anchor?: unknown; className?: unknown };
+    const { hide, anchor, className, nosnippet } = value as { hide?: unknown; anchor?: unknown; className?: unknown; nosnippet?: unknown };
+    if (nosnippet !== undefined && typeof nosnippet !== 'boolean') return 'block layout.nosnippet is on or off.';
     if (hide !== undefined && (!Array.isArray(hide) || !hide.every(entry => (BREAKPOINTS as readonly string[]).includes(entry as string)))) return `block layout.hide lists ${BREAKPOINTS.join(', ')}.`;
     if (anchor !== undefined && anchor !== '' && (typeof anchor !== 'string' || !ANCHOR.test(anchor))) return 'block layout.anchor is an HTML id: a letter, then up to 59 letters, digits, _ or -.';
     if (className !== undefined && className !== '' && (typeof className !== 'string' || className.length > 200 || !className.trim().split(/\s+/).every(name => CLASS_NAME.test(name)))) return 'block layout.className lists class names, at most 200 characters.';

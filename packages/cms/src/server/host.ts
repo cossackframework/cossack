@@ -9,6 +9,7 @@ import { blockId, blockMedia, blockProblems, validateBlocks, type Block, type Bl
 import { blocksShapeProblem, normalizeFields, type FieldDeclaration } from '../fields';
 import { collectionProblems, collectionResource, contentBlocks, entryUrl, extendCollection, LOCALE, orderedFields, RESERVED_FIELDS, type CollectionDefinition } from '../collections';
 import { fieldGroupDeclarations, fieldGroupProblems, fieldVisibility, flattenGroupFields, groupsForTarget, metaProblems, withTarget, type FieldGroup, type FieldGroupTarget } from '../field-groups';
+import { AUTHOR_FIELDS, collectionSeoProblems } from '../seo';
 import { CmsFieldGroups } from './field-groups';
 import { CmsError } from '../errors';
 import type { CmsModule } from '../module';
@@ -39,6 +40,8 @@ import { CmsAutosaves, type Autosave } from './autosaves';
 import { CmsRedirects } from './redirects';
 import { CmsApiTokens, type ApiTokenScope } from './api-tokens';
 import { CmsWebhooks } from './webhooks';
+import { CmsIndexNow } from './indexnow';
+import { CmsTraffic } from './traffic';
 import type { WebhookEvent } from '../webhooks';
 import { afterCommit, commentBeforeSave, formSubmitted, menuBeforeSave, termBeforeSave, type FormSubmittedEvent, type ResourceEvent, type WriteActor } from '../hooks';
 import { CmsForms, type CmsMail } from './forms';
@@ -79,6 +82,8 @@ export interface CmsOptions {
     readonly outbox?: OutboxOptions;
     /** Network access for plugins, checked against granted hosts. Default `globalThis.fetch`. */
     readonly fetch?: typeof globalThis.fetch;
+    /** The site's public origin, such as `https://example.com` (`APP_URL`), for IndexNow pings. */
+    readonly siteUrl?: string | (() => string | undefined);
     /** Object storage for media: R2 on Workers, S3 or a local directory on Node. Without it, `files` is null. */
     readonly storage?: StorageProvider;
     readonly files?: FileServiceOptions;
@@ -267,6 +272,8 @@ export class CmsHost {
     readonly redirects: CmsRedirects;
     readonly apiTokens: CmsApiTokens;
     readonly webhooks: CmsWebhooks;
+    readonly indexnow: CmsIndexNow;
+    readonly traffic: CmsTraffic;
     readonly comments: CmsComments;
     /** Forms' submissions: taking them, notifications, and handling them in the dashboard. */
     readonly forms: CmsForms;
@@ -312,7 +319,7 @@ export class CmsHost {
         this.hooks = options.hooks ?? createHookRegistry();
         this.#now = options.now ?? Date.now;
         this.#activationTtl = options.activationTtlMs ?? 30_000;
-        this.#reservedPaths = new Set(options.reservedPaths ?? ['api', 'auth', 'dashboard', 'feed', 'media', 'preview', 'search']);
+        this.#reservedPaths = new Set(options.reservedPaths ?? ['api', 'auth', 'dashboard', 'feed', 'media', 'preview', 'search', 'author', 'indexnow', 'sitemaps']);
         this.#fetch = options.fetch ?? ((input, init) => globalThis.fetch(input, init));
         this.#loaderTimeout = options.themeLoaderTimeoutMs ?? 1500;
         this.#dataLimit = options.themeDataLimit ?? 65_536;
@@ -351,6 +358,7 @@ export class CmsHost {
         this.fieldGroups = new CmsFieldGroups(this.db, { now: this.#now });
         this.users = new CmsUsers(this.db, { now: this.#now, checkMeta: (meta, previous) => this.#checkMeta({ kind: 'users' }, meta, previous) });
         this.redirects = new CmsRedirects(this.db, { now: this.#now });
+        this.traffic = new CmsTraffic(this.db, { now: this.#now });
         this.apiTokens = new CmsApiTokens(this.db, { now: this.#now });
         this.webhooks = new CmsWebhooks(this.db, { now: this.#now, fetch: this.#fetch });
         this.comments = new CmsComments(this.db, { now: this.#now });
@@ -358,6 +366,8 @@ export class CmsHost {
         this.security = new CmsSecurity(this.db, { now: this.#now });
         // Entry events become webhook deliveries; the outbox retries this until they are queued.
         this.hooks.addAction(afterCommit, event => this.#queueWebhooks(event), { plugin: 'cms' });
+        // Published, changed and unpublished entries are pinged to IndexNow; a failed ping retries with the outbox.
+        this.hooks.addAction(afterCommit, event => this.#pingIndexNow(event), { plugin: 'cms' });
         // A saved form brings its submissions table up to date; a deleted one takes its table along.
         this.hooks.addAction(afterCommit, async event => {
             if (event.resource !== 'cms/forms') return;
@@ -396,6 +406,7 @@ export class CmsHost {
             this.#themes.set(theme.name, theme);
         }
         this.settings = new CmsSettings(this.db, groups, { now: this.#now });
+        this.indexnow = new CmsIndexNow(this.settings, { now: this.#now, fetch: this.#fetch, siteUrl: typeof options.siteUrl === 'function' ? options.siteUrl : () => options.siteUrl as string | undefined });
         this.menus = new CmsMenus(this.db, { now: this.#now, checkMeta: (meta, previous) => this.#checkMeta({ kind: 'menus' }, meta, previous), resolve: (items, locale) => this.#resolveMenu(items, locale), beforeSave: (items, input) => this.hooks.applyFilters(menuBeforeSave, items, input) });
         this.areas = new CmsAreas(this.db, { now: this.#now, check: blocks => this.#checkBlocks(blocks) });
         this.previews = new CmsPreviews(this.db, { now: this.#now });
@@ -530,9 +541,9 @@ export class CmsHost {
      * Published, indexable entries of a collection on the site for its XML sitemap, oldest
      * first, `limit` (at most 1,000) from `offset`: their URLs, last changes and featured images.
      */
-    async sitemapEntries(name: string, options: { offset?: number; limit?: number } = {}): Promise<{ url: string; updatedAt: number; image?: string }[]> {
+    async sitemapEntries(name: string, options: { offset?: number; limit?: number } = {}): Promise<{ id: string; url: string; title: string; locale: string | null; translationGroup: string | null; publishedAt: number | null; updatedAt: number; image?: string }[]> {
         const collection = this.collection(name);
-        if (collection.path === null || collection.path === undefined || collection.slug === false || collection.sitemap === false || (collection.publishable === false && collection.visibility !== 'public')) return [];
+        if (collection.path === null || collection.path === undefined || collection.slug === false || collection.sitemap === false || collection.robots?.noindex || (collection.publishable === false && collection.visibility !== 'public')) return [];
         const limit = Math.min(Math.max(options.limit ?? 1000, 1), 1000);
         const offset = Math.min(Math.max(options.offset ?? 0, 0), 1_000_000);
         const resource = this.resourceById(`cms/${collection.name}`);
@@ -540,11 +551,11 @@ export class CmsHost {
         const taxonomy = collection.permalink === 'category' ? collection.taxonomies?.[0] : undefined;
         const image = resource.fields.featuredImage?.media ? 'featuredImage' : undefined;
         const result = await this.db.read([{
-            rql: `SELECT id, "slug", "parent", "locale", "seo", "_updatedAt", "_createdAt", "_owner", ${taxonomy ? `"${taxonomy}"` : 'NULL'}, ${image ? `"${image}"` : 'NULL'} FROM ${resource.storage}${collection.publishable === false ? '' : ` WHERE "status" = 'published'`} ORDER BY "_createdAt", record::id(id) LIMIT ${limit} OFFSET ${offset}`,
+            rql: `SELECT id, "slug", "parent", "locale", "seo", "_updatedAt", "_createdAt", "_owner", ${taxonomy ? `"${taxonomy}"` : 'NULL'}, ${image ? `"${image}"` : 'NULL'}, "title", "translationGroup", ${collection.publishable === false ? 'NULL' : '"publishedAt"'} FROM ${resource.storage}${collection.publishable === false ? '' : ` WHERE "status" = 'published'`} ORDER BY "_createdAt", record::id(id) LIMIT ${limit} OFFSET ${offset}`,
         }], { workLimits: this.readLimits });
-        const records = result.results[0]!.rows.map(([id, slug, parent, locale, seo, updatedAt, createdAt, owner, terms, picture]) => Object.freeze({
+        const records = result.results[0]!.rows.map(([id, slug, parent, locale, seo, updatedAt, createdAt, owner, terms, picture, title, translationGroup, publishedAt]) => Object.freeze({
             id: String((id as { key: unknown }).key), rev: 0, slug, parent: parent && typeof parent === 'object' && 'key' in parent ? String((parent as { key: unknown }).key) : null,
-            locale, seo, status: 'published', updatedAt: Number(updatedAt as bigint), createdAt: Number(createdAt as bigint), owner: (owner as string | null) ?? null,
+            locale, seo, title, translationGroup, publishedAt: publishedAt === null || publishedAt === undefined ? null : Number(publishedAt as bigint), status: 'published', updatedAt: Number(updatedAt as bigint), createdAt: Number(createdAt as bigint), owner: (owner as string | null) ?? null,
             ...(taxonomy ? { [taxonomy]: Array.isArray(terms) ? terms : [] } : {}),
             ...(image ? { [image]: typeof picture === 'string' ? picture : null } : {}),
         }) as RecordShape);
@@ -556,7 +567,7 @@ export class CmsHost {
             const url = urls.get(record.id);
             if (!url) return [];
             const file = image ? files.get(String(record[image] ?? '')) : undefined;
-            return [{ url, updatedAt: record.updatedAt, ...(file && file.contentType.startsWith('image/') ? { image: mediaUrl(file) } : {}) }];
+            return [{ id: record.id, url, title: String(record.title ?? ''), locale: typeof record.locale === 'string' ? record.locale : null, translationGroup: typeof record.translationGroup === 'string' ? record.translationGroup : null, publishedAt: record.publishedAt as number | null, updatedAt: record.updatedAt, ...(file && file.contentType.startsWith('image/') ? { image: mediaUrl(file) } : {}) }];
         });
     }
 
@@ -691,6 +702,14 @@ export class CmsHost {
             form: { id: event.form.id, slug: event.form.slug, title: event.form.title },
             submission: { id: submission.id, status: submission.status, values: submission.values, meta: submission.meta, user: submission.user, createdAt: submission.createdAt, stored: event.stored },
         });
+    }
+
+    async #pingIndexNow(event: ResourceEvent): Promise<void> {
+        const collection = event.resource.startsWith('cms/') ? this.#collections.get(event.resource.slice(4)) : undefined;
+        if (!collection || !(await this.settings.get('indexnow.enabled'))) return;
+        if (!CmsIndexNow.concerns(event, collection)) return;
+        const url = (await this.entryUrls(collection, [event.record!])).get(event.record!.id);
+        if (url) await this.indexnow.submit([url]);
     }
 
     async #queueWebhooks(event: ResourceEvent): Promise<void> {
@@ -1046,6 +1065,9 @@ export class CmsHost {
             ...(input.icon !== undefined ? { icon: input.icon } : {}), ...(input.path !== undefined ? { path: input.path } : {}),
             ...(input.permalink !== undefined ? { permalink: input.permalink } : {}),
             ...(input.sitemap !== undefined ? { sitemap: input.sitemap } : {}),
+            ...(input.schema !== undefined ? { schema: input.schema } : {}),
+            ...(input.robots !== undefined ? { robots: input.robots } : {}),
+            ...(input.seoTemplates !== undefined ? { seoTemplates: input.seoTemplates } : {}),
             ...(input.comments !== undefined ? { comments: input.comments } : {}),
             ...(input.features !== undefined ? { features: input.features } : {}),
             ...(input.template !== undefined ? { template: input.template } : {}),
@@ -1058,6 +1080,8 @@ export class CmsHost {
         const definition = builtin ? extendCollection(builtin, stored) : stored;
         const problems = collectionProblems(definition);
         if (!builtin && this.#static.has(`cms/${definition.name}`)) problems.push(`cms/${definition.name} is already a resource.`);
+        // Structured data maps name fields of the collection: its own, the features' and its groups'.
+        if (!problems.length && definition.schema?.map) problems.push(...collectionSeoProblems({ schema: definition.schema, fields: Object.keys(this.#collectionResource(definition, this.#taxonomyLabels()).fields) }));
         for (const taxonomy of definition.taxonomies ?? []) if (!this.#taxonomies.has(taxonomy)) problems.push(`Taxonomy ${taxonomy} does not exist.`);
         for (const [name, declaration] of Object.entries(definition.fields)) {
             if (declaration.kind === 'reference' && declaration.target !== `cms/${definition.name}` && !this.#resources.has(declaration.target!)) problems.push(`Field ${name} refers to ${declaration.target}, which does not exist.`);
@@ -1186,8 +1210,9 @@ export class CmsHost {
         this.#authorizeBuilder(principal);
         await this.ready({ force: true });
         const builtin = this.#builtinTaxonomies.get(input.name);
-        const declaration: TaxonomyDeclaration = builtin ? { ...builtin, label: input.label, singular: input.singular, path: input.path ?? null, ...(input.description !== undefined ? { description: input.description } : {}) }
-            : { name: input.name, label: input.label, singular: input.singular, hierarchical: input.hierarchical, path: input.path ?? null, ...(input.description !== undefined ? { description: input.description } : {}) };
+        const extras = { ...(input.description !== undefined ? { description: input.description } : {}), ...(input.noindex !== undefined ? { noindex: input.noindex } : {}) };
+        const declaration: TaxonomyDeclaration = builtin ? { ...builtin, label: input.label, singular: input.singular, path: input.path ?? null, ...extras }
+            : { name: input.name, label: input.label, singular: input.singular, hierarchical: input.hierarchical, path: input.path ?? null, ...extras };
         const problems = taxonomyProblems(declaration);
         // Collections store a taxonomy's terms in a field of the same name.
         if (!builtin && (RESERVED_FIELDS.includes(declaration.name) || [...this.#collections.values()].some(collection => Object.hasOwn(collection.fields, declaration.name)))) problems.push(`${declaration.name} is already a field name.`);
@@ -1551,7 +1576,9 @@ export class CmsHost {
      * fields the input leaves out kept from `previous`.
      */
     async #checkMeta(target: FieldGroupTarget, meta: unknown, previous: { readonly [field: string]: unknown } | null): Promise<{ readonly [field: string]: unknown }> {
-        const { fields, layout } = this.#groupFields(target);
+        const { fields: groupFields, layout } = this.#groupFields(target);
+        // Users carry their public author profile besides their groups' fields.
+        const fields = target.kind === 'users' ? { ...AUTHOR_FIELDS, ...groupFields } : groupFields;
         if (meta !== undefined && (meta === null || typeof meta !== 'object' || Array.isArray(meta))) throw new CmsError('CMS_VALIDATION', 'Meta must be an object of fields.', { fields: { meta: 'must be an object of fields.' } });
         const merged = { ...previous, ...(meta as { [field: string]: unknown } | undefined) };
         const { errors, values } = metaProblems(fields, merged, () => blockId());
@@ -1575,7 +1602,7 @@ export class CmsHost {
                 return [...RESERVED_FIELDS, ...(definition?.taxonomies ?? []), ...Object.keys(definition?.fields ?? {})];
             }
             case 'taxonomy': return ['name', 'slug', 'description', 'parent', 'icon', 'path', 'depth', 'taxonomy'];
-            case 'users': return ['email', 'name', 'avatar', 'status', 'roles', 'password'];
+            case 'users': return ['email', 'name', 'avatar', 'status', 'roles', 'password', 'slug', ...Object.keys(AUTHOR_FIELDS)];
             case 'menus': return ['label', 'kind', 'url', 'collection', 'entry', 'taxonomy', 'term', 'newTab', 'className', 'attributes', 'children'];
         }
     }
@@ -1643,7 +1670,7 @@ export class CmsHost {
         const taxonomies = new Map(this.#builtinTaxonomies);
         for (const [name, stored] of storedTaxonomies) {
             const builtin = this.#builtinTaxonomies.get(name);
-            const next = builtin ? { ...builtin, label: stored.label ?? builtin.label, singular: stored.singular ?? builtin.singular, path: stored.path === undefined ? builtin.path : stored.path, ...(stored.description !== undefined ? { description: stored.description } : {}) } : { ...stored, builtin: false };
+            const next = builtin ? { ...builtin, label: stored.label ?? builtin.label, singular: stored.singular ?? builtin.singular, path: stored.path === undefined ? builtin.path : stored.path, ...(stored.description !== undefined ? { description: stored.description } : {}), ...(stored.noindex !== undefined ? { noindex: stored.noindex } : {}) } : { ...stored, builtin: false };
             if (!taxonomyProblems(next).length) taxonomies.set(name, Object.freeze(next));
         }
         const collections = new Map<string, CollectionDefinition>();

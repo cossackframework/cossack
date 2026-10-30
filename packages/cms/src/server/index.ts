@@ -24,6 +24,8 @@ export { CmsAutosaves, type Autosave } from './autosaves';
 export { CmsRedirects } from './redirects';
 export { CmsApiTokens, API_TOKEN_LIMIT, type ApiToken, type ApiTokenScope } from './api-tokens';
 export { CmsWebhooks, verifyWebhookSignature } from './webhooks';
+export { CmsIndexNow, INDEXNOW_ENDPOINT, INDEXNOW_KEY, type IndexNowOptions } from './indexnow';
+export { CmsTraffic, type CrawlerVisits, type NotFoundRow, type VisitKind } from './traffic';
 export { CmsComments, type CommentListOptions } from './comments';
 export { CmsForms, type CmsMail, type LoadedForm, type SubmitContext, type SubmitResult, type SubmissionList } from './forms';
 export { sha256Hex, randomToken, base64Url, timingSafeEqual } from './tokens';

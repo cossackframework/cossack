@@ -11,6 +11,8 @@ export interface TaxonomyDeclaration {
     /** Public URL base of term archives, such as `category`; null or absent keeps them off the site. */
     readonly path?: string | null;
     readonly description?: string;
+    /** Term archives are kept out of search engines. */
+    readonly noindex?: boolean;
     /** Shipped with a module; administrators cannot delete it. */
     readonly builtin?: boolean;
 }
@@ -25,6 +27,7 @@ export function taxonomyProblems(taxonomy: TaxonomyDeclaration): string[] {
     if (typeof taxonomy?.hierarchical !== 'boolean') problems.push('Choose whether terms nest.');
     if (taxonomy.path !== undefined && taxonomy.path !== null && (typeof taxonomy.path !== 'string' || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(taxonomy.path))) problems.push('The URL path uses lowercase letters, digits and hyphens.');
     if (taxonomy.description !== undefined && (typeof taxonomy.description !== 'string' || taxonomy.description.length > 500)) problems.push('The description can be at most 500 characters.');
+    if (taxonomy.noindex !== undefined && typeof taxonomy.noindex !== 'boolean') problems.push('Noindex is on or off.');
     return problems;
 }
 

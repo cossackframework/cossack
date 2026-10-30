@@ -1,7 +1,7 @@
 import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackframework/core';
 import { AlertDialog, Badge, Button, Card, CardBody, CardHeader, Checkbox, Field, Input, NativeSelect, Textarea, toast } from '@cossackframework/ui';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
-import { bindingPaths, findBlock, flattenBlocks, flattenGroupFields, hasPermission, isCmsError, PERMISSIONS, RESERVED_FIELDS, updateBlock, type Block, type RichTextDoc, type ThemePresets } from '@cossackframework/cms';
+import { bindingPaths, findBlock, flattenBlocks, flattenGroupFields, hasPermission, isCmsError, PERMISSIONS, RESERVED_FIELDS, SCHEMA_PROPERTIES, SCHEMA_TYPE_LABELS, SCHEMA_TYPES, SEO_TEMPLATE_VARIABLES, updateBlock, type Block, type RichTextDoc, type SchemaType, type ThemePresets } from '@cossackframework/cms';
 import { collectionDraft, definitionOf, type CollectionDraft } from '../../../../../cms/builder';
 import { blockPanel } from '../../../../../cms/block-panel';
 import { BlockTree } from '../../../../../cms/block-tree';
@@ -47,6 +47,8 @@ export default class CollectionBuilder extends Cossack {
     @State() taxonomies: { name: string; label: string }[] = [];
     @State() blocks: { name: string; label: string }[] = [];
     @State() targets: { name: string; label: string }[] = [];
+    /** Fields structured data can map to: the collection's own and its groups', with labels. */
+    @State() fieldNames: { name: string; label: string }[] = [];
     @State() message = '';
     @State() error = '';
     @State() confirmDelete = false;
@@ -86,6 +88,9 @@ export default class CollectionBuilder extends Cossack {
         this.taxonomies = cms.taxonomies.declarations.map(taxonomy => ({ name: taxonomy.name, label: taxonomy.label }));
         this.blocks = (await cms.blocks()).map(block => ({ name: block.name, label: block.label }));
         this.targets = cms.collections().map(collection => ({ name: collection.name, label: collection.label }));
+        const resource = cms.resourceById(`cms/${name}`);
+        this.fieldNames = Object.entries(resource.fields).filter(([field, declaration]) => !['slug', 'status', 'parent', 'menuOrder', 'seo', 'locale', 'translationGroup', 'commentsOpen', 'template', 'password', 'content'].includes(field) && !['blocks', 'richtext', 'json', 'vector', 'bigint'].includes(declaration.kind))
+            .map(([field, declaration]) => ({ name: field, label: declaration.label ?? field }));
         // The template is built from the same blocks as entries, patterns, form inputs and field blocks aside.
         const options = await blockOptions(cms);
         this.options = options.filter(option => option.name !== 'core/pattern' && !option.input && !option.field);
@@ -327,6 +332,44 @@ export default class CollectionBuilder extends Cossack {
                 </div>`)}`);
     }
 
+    @Client()
+    mapProperty(property: string, name: string) {
+        if (!this.draft) return;
+        const map = { ...this.draft.schemaMap };
+        if (name) map[property] = name; else delete map[property];
+        this.setDraft('schemaMap', map);
+    }
+
+    /** Structured data, robots and title templates of entries on the site. */
+    private searchCard(draft: CollectionDraft): TemplateResult {
+        const properties = SCHEMA_PROPERTIES[draft.schemaType];
+        const variables = Object.entries(SEO_TEMPLATE_VARIABLES).map(([name]) => `%${name}%`).join(', ');
+        const text = (key: 'seoTitle' | 'seoDescription' | 'archiveTitle', label: string, placeholder: string) => component(Field, { label, for: `collection-${key}`, hint: `${__('Empty uses Settings → SEO.')} ${__('Variables')}: ${variables}`,
+            control: attributes => component(Input, { ...attributes, placeholder, '.value': draft[key], '@input': (event: Event) => this.setDraft(key, (event.target as HTMLInputElement).value) }) });
+        return component(Card, {}, html`
+            ${component(CardHeader, {}, html`<h2 class="text-base font-semibold text-foreground">${__('Search engines')}</h2>
+                <p class="text-sm text-muted-foreground">${__('How entries appear to search and answer engines: their structured data, robots directives and title templates.')}</p>`)}
+            ${component(CardBody, { class: 'space-y-5' }, html`
+                ${component(Field, { label: __('Structured data type'), for: 'collection-schema', hint: __('The schema.org type of each entry\'s JSON-LD. Articles name their author and publisher; other types take properties from the fields below.'),
+                    control: attributes => component(NativeSelect, { ...attributes, '@change': (event: Event) => this.setDraft('schemaType', (event.target as HTMLSelectElement).value as SchemaType) }, html`
+                        ${SCHEMA_TYPES.map(type => html`<option value=${type} ?selected=${type === draft.schemaType}>${__(SCHEMA_TYPE_LABELS[type])}</option>`)}`) })}
+                ${properties.length ? html`<div class="grid gap-x-6 gap-y-3 md:grid-cols-2">
+                    ${properties.map(property => component(Field, { label: __(property.label), for: `collection-schema-${property.name}`, hint: __(property.hint), control: attributes => component(NativeSelect, { ...attributes, '@change': (event: Event) => this.mapProperty(property.name, (event.target as HTMLSelectElement).value) }, html`
+                        <option value="" ?selected=${!draft.schemaMap[property.name]}>—</option>
+                        ${this.fieldNames.map(field => html`<option value=${field.name} ?selected=${draft.schemaMap[property.name] === field.name}>${field.label} (${field.name})</option>`)}`) }))}
+                </div>` : null}
+                <div class="grid gap-x-8 gap-y-3 md:grid-cols-2 border-t border-border pt-4">
+                    ${this.check(__('Hide entries from search engines'), draft.noindex, checked => this.setDraft('noindex', checked), { hint: __('noindex on every entry; they leave the sitemap too.') })}
+                    ${this.check(__('Do not follow links on entries'), draft.nofollow, checked => this.setDraft('nofollow', checked), { hint: __('nofollow: engines do not pass on the entries\' links.') })}
+                    ${draft.path.trim() ? this.check(__('Hide the archive from search engines'), draft.archiveNoindex, checked => this.setDraft('archiveNoindex', checked), { hint: __('noindex on the archive and its pages; entries stay indexed.') }) : null}
+                </div>
+                <div class="grid gap-4 border-t border-border pt-4">
+                    ${text('seoTitle', __('Entry title template'), '%title% %sep% %site%')}
+                    ${text('seoDescription', __('Entry description template'), '%excerpt%')}
+                    ${draft.path.trim() ? text('archiveTitle', __('Archive title template'), '%title% %sep% %site%') : null}
+                </div>`)}`);
+    }
+
     render() {
         const draft = this.draft;
         if (!draft) return notice(this.error || __('This collection does not exist.'), 'error');
@@ -366,6 +409,7 @@ export default class CollectionBuilder extends Cossack {
                         </div>`)}
                     `)}
                     ${this.groupsCard(draft)}
+                    ${draft.public ? this.searchCard(draft) : null}
                     ${draft.content ? this.templateCard(draft) : null}
                 </div>
                 <aside class="space-y-6">

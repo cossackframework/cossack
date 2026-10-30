@@ -40,7 +40,7 @@ export function cmsFor(env: CmsBindings): CmsHost {
         const images = imageTransformer(env);
         const mail = env.EMAIL;
         current = { key, cms: createCMS({
-            db, modules, resources, plugins, ...(storage ? { storage } : {}), ...(images ? { images } : {}),
+            db, modules, resources, plugins, ...(storage ? { storage } : {}), ...(images ? { images } : {}), siteUrl: () => env.APP_URL,
             ...(mail ? { mail: { send: message => mail.send(message) }, mailFrom: env.MAIL_FROM || 'no-reply@example.com' } : {}),
         }) };
     }

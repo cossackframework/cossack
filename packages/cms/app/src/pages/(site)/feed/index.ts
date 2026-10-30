@@ -2,6 +2,7 @@ import { Cossack, Page } from '@cossackframework/core';
 import { ANONYMOUS, blocksPlain, entryUrl, isCmsError, recordTitle, richTextExcerpt, richTextHtml, richTextPlain, type Block, type RichTextDoc } from '@cossackframework/cms';
 import { renderMarkdown, excerptOf } from '@cossackframework/cms/server';
 import { blocksHtml } from '../../../cms/content';
+import { trackCrawler } from '../../../cms/traffic';
 
 const escape = (text: string) => text.replace(/[<>&'"]/g, character => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' })[character]!);
 
@@ -13,6 +14,7 @@ export default class Feed extends Cossack {
         const origin = new URL(this.c.req.url).origin;
         try {
             const settings = await cms.settings.all();
+            trackCrawler(this.c, 'feed');
             const collection = cms.collection('posts');
             const posts = cms.resource('cms/posts');
             const page = await posts.list({ where: { status: 'published' }, order: { field: 'publishedAt', direction: 'desc' }, limit: settings['reading.feedItems'] }, { principal: ANONYMOUS });
@@ -24,7 +26,7 @@ export default class Feed extends Cossack {
                 const doc = !blocks.length && record.body && typeof record.body === 'object' ? record.body as RichTextDoc : null;
                 const markdown = typeof record.body === 'string' ? record.body : '';
                 const full = blocks.length ? blocksHtml(cms, blocks, files) : doc ? richTextHtml(doc, { block: () => '' }) : renderMarkdown(markdown);
-                const summary = String(record.excerpt || (blocks.length ? excerptOf(blocksPlain(blocks, cms.blockTypes, entry => richTextPlain(entry), 4000), 55) : doc ? richTextExcerpt(doc, 55) : excerptOf(markdown, 55)));
+                const summary = String(record.excerpt || record.summary || (blocks.length ? excerptOf(blocksPlain(blocks, cms.blockTypes, entry => richTextPlain(entry), 4000), 55) : doc ? richTextExcerpt(doc, 55) : excerptOf(markdown, 55)));
                 const description = settings['reading.feedContent'] === 'full' ? full : escape(summary);
                 return `<item><title>${escape(recordTitle(record, 'title'))}</title><link>${escape(link)}</link><guid isPermaLink="true">${escape(link)}</guid>`
                     + `<pubDate>${new Date(Number(record.publishedAt)).toUTCString()}</pubDate><description>${settings['reading.feedContent'] === 'full' ? `<![CDATA[${description.replaceAll(']]>', ']]]]><![CDATA[>')}]]>` : description}</description></item>`;

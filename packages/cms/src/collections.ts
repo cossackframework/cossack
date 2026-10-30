@@ -6,6 +6,7 @@
 import { blocksShapeProblem, type Block } from './blocks';
 import { FIELD_NAME, field, fieldProblems, TAXONOMY_NAME, type FieldDeclaration } from './fields';
 import { RESOURCE_NAME, type AccessRule, type ResourceDeclaration } from './resource';
+import { collectionSeoProblems, type CollectionRobots, type CollectionSchema, type CollectionSeoTemplates } from './seo';
 
 /**
  * Entry states of a publishable collection. Pending entries wait for review; scheduled ones are
@@ -32,6 +33,17 @@ export const SEO_FIELDS = Object.freeze({
     image: field.media({ label: 'Social image' }),
     canonical: field.string({ max: 2000, pattern: '(?:https?://[^\\s]+|/[^\\s]*)?', label: 'Canonical URL' }),
     noindex: field.boolean({ label: 'Hide from search engines' }),
+    /** Engines may not quote the page in results and AI answers. */
+    nosnippet: field.boolean({ label: 'No snippets' }),
+    /** Characters engines may quote; empty for no limit. */
+    maxSnippet: field.integer({ min: 0, max: 100_000, label: 'Snippet length' }),
+    /** Bing keeps no cached copy, which also keeps the page out of Copilot's training. */
+    noarchive: field.boolean({ label: 'No cached copy' }),
+    /** Shared links carry these instead of the SEO title and description when set. */
+    socialTitle: field.string({ max: 200, label: 'Social title' }),
+    socialDescription: field.text({ max: 500, label: 'Social description' }),
+    /** One of the site's most important entries: listed first for assistants, and expected to have links from elsewhere. */
+    cornerstone: field.boolean({ label: 'Cornerstone content' }),
 });
 
 /**
@@ -94,6 +106,12 @@ export interface CollectionDefinition {
     readonly permalink?: 'slug' | 'category';
     /** Entries on the site are listed in the XML sitemap. Default true. */
     readonly sitemap?: boolean;
+    /** The structured data of entries on the site: their schema.org type and which fields fill it. Default `WebPage`. */
+    readonly schema?: CollectionSchema;
+    /** Robots directives of entries and the archive. Default: all indexed and followed. */
+    readonly robots?: CollectionRobots;
+    /** Title and description templates of entries and the archive; Settings → SEO's apply otherwise. */
+    readonly seoTemplates?: CollectionSeoTemplates;
     /** Unpublishable collections: readable by anyone (`public`) or by permission (`private`, the default). */
     readonly visibility?: 'public' | 'private';
     /** Visitors can comment on published entries; each entry can close its comments. Default false. */
@@ -136,7 +154,7 @@ export interface CollectionDefinition {
 }
 
 /** Field names the host derives from a definition. */
-export const CORE_FIELDS = Object.freeze(['title', 'slug', 'status', 'publishedAt', 'parent', 'menuOrder', 'seo', 'locale', 'translationGroup', 'commentsOpen', 'template']);
+export const CORE_FIELDS = Object.freeze(['title', 'slug', 'status', 'publishedAt', 'parent', 'menuOrder', 'seo', 'summary', 'locale', 'translationGroup', 'commentsOpen', 'template']);
 /** Field names no declared field or group field may take: the core fields and the features'. */
 export const RESERVED_FIELDS = Object.freeze([...CORE_FIELDS, ...FEATURE_FIELDS]);
 const FEATURES = Object.freeze(['content', 'excerpt', 'featuredImage', 'revisions', 'password'] as const);
@@ -166,6 +184,7 @@ export function collectionProblems(definition: CollectionDefinition): string[] {
     if (definition.comments !== undefined && typeof definition.comments !== 'boolean') problems.push('Comments are on or off.');
     if (definition.sitemap !== undefined && typeof definition.sitemap !== 'boolean') problems.push('The sitemap listing is on or off.');
     if (definition.managed !== undefined && typeof definition.managed !== 'boolean') problems.push('Managed is on or off.');
+    problems.push(...collectionSeoProblems({ schema: definition.schema, robots: definition.robots, seoTemplates: definition.seoTemplates }));
     const taxonomies = definition.taxonomies ?? [];
     if (!Array.isArray(taxonomies) || taxonomies.length > 8 || taxonomies.some(name => typeof name !== 'string' || !TAXONOMY_NAME.test(name)) || new Set(taxonomies).size !== taxonomies.length) problems.push('Choose at most 8 distinct taxonomies.');
     const fields = Object.entries(definition.fields ?? {});
@@ -214,6 +233,8 @@ export function collectionResource(definition: CollectionDefinition, labels: { r
             menuOrder: field.integer({ default: 0, min: -1000, max: 1000, label: 'Order' }),
         } : {}),
         seo: field.group(SEO_FIELDS, { label: 'SEO' }),
+        // The answer up front: two or three sentences themes show first, the meta description falls back to, and assistants quote.
+        ...(typeof definition.path === 'string' ? { summary: field.text({ max: 600, label: 'Summary', description: 'Two or three sentences that answer what the entry is about.' }) } : {}),
         // The entry's language, and the group its translations share; see Settings → Languages.
         locale: field.string({ max: 16, nullable: true, index: true, pattern: LOCALE.source.slice(1, -1), label: 'Language' }),
         translationGroup: field.string({ max: 80, nullable: true, index: true, pattern: '[A-Za-z0-9_-]{1,80}', label: 'Translations' }),
@@ -274,6 +295,9 @@ export function extendCollection(builtin: CollectionDefinition, stored: Partial<
         ...(stored.path !== undefined ? { path: builtin.path === '' ? '' : stored.path } : {}),
         ...(stored.permalink !== undefined ? { permalink: stored.permalink } : {}),
         ...(stored.sitemap !== undefined ? { sitemap: stored.sitemap } : {}),
+        ...(stored.schema !== undefined ? { schema: stored.schema } : {}),
+        ...(stored.robots !== undefined ? { robots: stored.robots } : {}),
+        ...(stored.seoTemplates !== undefined ? { seoTemplates: stored.seoTemplates } : {}),
         ...(stored.comments !== undefined ? { comments: stored.comments } : {}),
         ...(stored.template !== undefined ? { template: stored.template } : {}),
         ...(stored.templateLock !== undefined ? { templateLock: stored.templateLock } : {}),
@@ -296,6 +320,7 @@ export const posts: CollectionDefinition = {
     taxonomies: ['categories', 'tags'],
     path: 'posts',
     comments: true,
+    schema: { type: 'BlogPosting' },
     features: { content: true, excerpt: true, featuredImage: true, password: true },
     fields: {
         sticky: field.boolean({ default: false, placement: 'sidebar', label: 'Stick to the top of the blog' }),
@@ -312,6 +337,7 @@ export const pages: CollectionDefinition = {
     builtin: true,
     hierarchical: true,
     path: '',
+    schema: { type: 'WebPage' },
     features: { content: true, excerpt: true, featuredImage: true, password: true },
     fields: {},
     template: [{ _id: 'text', type: 'core/richtext', data: {} }],

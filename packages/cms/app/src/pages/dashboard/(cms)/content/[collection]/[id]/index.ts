@@ -1,7 +1,7 @@
 import { Cossack, Page, State, ClientState, Server, Client, OnWindow, PreventNavigation, type HeadValue } from '@cossackframework/core';
 import { Button, Checkbox, Input, Modal, NativeSelect, Textarea, toast, CodeEditor } from '@cossackframework/ui';
 import { html, component, unsafeHTML, type TemplateResult } from '@cossackframework/renderer';
-import { blockId, evaluateRule, fieldVisibility, findBlock, flattenBlocks, flattenGroupFields, formatBytes, isCmsError, languageName, mediaKind, recordSchema, recordTitle, richTextBlocks, updateBlock, type Block, type BlockCondition, type EmbeddedBlock, type JsonSchema, type MediaKind, type RecordShape, type RichTextDoc } from '@cossackframework/cms';
+import { ARTICLE_TYPES, blockId, CORE_BLOCKS, entryChecks, evaluateRule, fieldVisibility, findBlock, flattenBlocks, flattenGroupFields, formatBytes, isCmsError, languageName, mediaKind, recordSchema, recordTitle, renderSeoTemplate, richTextBlocks, TITLE_SEPARATORS, updateBlock, type Block, type BlockCondition, type Check, type EmbeddedBlock, type JsonSchema, type MediaKind, type RecordShape, type RichTextDoc } from '@cossackframework/cms';
 import { blockPanel } from '../../../../../../cms/block-panel';
 import { describeBlockError } from '../../../../../../cms/block-errors';
 import { styleValues, withStyle, type BlockTab, type StyleValues } from '../../../../../../cms/style-controls';
@@ -79,7 +79,11 @@ export default class EntryEditor extends Cossack {
     @State() templates: string[] = [];
     @State() languages: { multilingual: boolean; options: { code: string; label: string }[] } = { multilingual: false, options: [] };
     @State() translations: TranslationLink[] = [];
-    @State() seo = { origin: '', siteTitle: '', separator: '–' };
+    /** What the search preview needs: the site, the separator and the templates that apply to this collection. */
+    @State() seo = { origin: '', siteTitle: '', tagline: '', separator: '–', titleTemplate: '%title% %sep% %site%', descriptionTemplate: '%excerpt%', collection: '', article: false, summary: false };
+    /** Entries of the site related to this one's title, to link to. */
+    @State() linkSuggestions: { title: string; url: string; collection: string }[] = [];
+    @ClientState() checksOpen = false;
     @State() previewLink = '';
     @State() previewLinks = 0;
     /** A newer autosave than the saved entry, offered for restore. */
@@ -146,7 +150,12 @@ export default class EntryEditor extends Cossack {
                 if (view.path !== null || view.route === 'forms') this.previewLinks = await cms.previews.count(resource.id, record.id).catch(() => 0);
             }
             const settings = await cms.settings.all();
-            this.seo = { origin: siteOrigin(this.c), siteTitle: settings['general.siteTitle'], separator: ({ dash: '–', pipe: '|', hyphen: '-', dot: '·', slash: '/', colon: ':' } as Record<string, string>)[settings['seo.titleSeparator']] ?? '–' };
+            this.seo = {
+                origin: siteOrigin(this.c), siteTitle: settings['general.siteTitle'], tagline: settings['general.tagline'], separator: TITLE_SEPARATORS[settings['seo.titleSeparator']] ?? '–', collection: collection?.label ?? '',
+                titleTemplate: collection?.seoTemplates?.title || settings['seo.entryTitle'], descriptionTemplate: collection?.seoTemplates?.description || settings['seo.entryDescription'],
+                article: ARTICLE_TYPES.has(collection?.schema?.type ?? 'WebPage'), summary: Boolean(resource.fields.summary),
+            };
+            if (collection && typeof collection.path === 'string' && record) await this.loadLinkSuggestions(String(record.title ?? ''), record.id);
             const languages = await cms.languages();
             this.languages = { multilingual: languages.multilingual, options: languages.all.map(code => ({ code, label: languageName(code) })) };
             if (collection && languages.multilingual) {
@@ -298,6 +307,26 @@ export default class EntryEditor extends Cossack {
         this.autosaveOffer = null;
         this.message = __('Your unsaved changes were kept through the reload. Save to keep them.');
         void this.refreshPreviews(this.values);
+    }
+
+    /** Published entries of the site whose text matches the title: candidates for internal links, this entry left out. */
+    @Server()
+    async loadLinkSuggestions(title: string, exclude: string) {
+        const cms = this.c.get('cms');
+        const query = title.replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/).filter(word => word.length > 2).slice(0, 8).join(' ');
+        if (!query) { this.linkSuggestions = []; return; }
+        const found: { title: string; url: string; collection: string }[] = [];
+        for (const collection of cms.collections()) {
+            if (typeof collection.path !== 'string' || found.length >= 8) continue;
+            const resource = cms.resourceById(`cms/${collection.name}`);
+            if (!Object.values(resource.fields).some(field => field.search)) continue;
+            try {
+                const records = (await cms.resource(resource.id).search(query, { limit: 6, ...(collection.publishable === false ? {} : { where: { status: 'published' } }) }, { principal: this.c.get('principal') })).filter(record => record.id !== exclude);
+                const urls = await cms.entryUrls(collection, records);
+                for (const record of records) if (urls.get(record.id)) found.push({ title: recordTitle(record, 'title'), url: urls.get(record.id)!, collection: collection.singular });
+            } catch (error) { if (!isCmsError(error)) throw error; }
+        }
+        this.linkSuggestions = found.slice(0, 8);
     }
 
     /** Previews of the media the recovered values name. */
@@ -1053,11 +1082,27 @@ export default class EntryEditor extends Cossack {
             </div>`, { id: 'publish-box' });
     }
 
+    /** The editorial checks over the current values; plugin blocks are read by their text fields. */
+    private checks(): Check[] {
+        const seo = (this.values.seo as Record<string, unknown> | undefined) ?? {};
+        const blocks = Object.entries(this.values).flatMap(([name, value]) => this.view?.fields.find(field => field.name === name)?.kind === 'blocks' && Array.isArray(value) ? value as Block[] : []);
+        let host = '';
+        try { host = new URL(this.seo.origin).host; } catch { /* no origin yet */ }
+        return entryChecks({ title: String(this.values.title ?? ''), seoTitle: String(seo.title ?? ''), description: String(seo.description ?? ''), summary: String(this.values.summary ?? ''), blocks, types: new Map(CORE_BLOCKS.map(block => [block.name, block])), host, article: this.seo.article });
+    }
+
+    @Client()
+    async copyLink(url: string) {
+        try { await navigator.clipboard.writeText(`${this.seo.origin}${url}`); toast.success(__('Link copied.')); }
+        catch { toast.error(__('The link could not be copied.')); }
+    }
+
     /** Search title, description and image, with a preview of the search result. */
     private seoBox(): TemplateResult {
         const seo = (this.values.seo as Record<string, unknown> | undefined) ?? {};
-        const title = String(seo.title ?? '') || String(this.values.title ?? '');
-        const description = String(seo.description ?? '');
+        const variables = { title: String(seo.title ?? '') || String(this.values.title ?? ''), sep: this.seo.separator, site: this.seo.siteTitle, tagline: this.seo.tagline, excerpt: String(seo.description ?? '') || String(this.values.excerpt ?? ''), author: this.meta.author, collection: this.seo.collection };
+        const title = renderSeoTemplate(this.seo.titleTemplate, variables);
+        const description = String(seo.description ?? '') || renderSeoTemplate(this.seo.descriptionTemplate, variables);
         const url = `${this.seo.origin}${this.meta.url ?? (this.view?.path !== null ? entryUrl(this.view?.path, [String(this.values.slug ?? '') || 'slug']) ?? '' : '')}`;
         const counter = (text: string, ideal: number) => html`<span class=${`text-xs ${[...text].length > ideal ? 'text-amber-600' : 'text-muted-foreground'}`}>${[...text].length} / ${ideal}</span>`;
         const text = (key: string, label: string, ideal: number, multiline = false) => html`<div class="space-y-1">
@@ -1065,23 +1110,67 @@ export default class EntryEditor extends Cossack {
             ${multiline ? component(Textarea, { id: `seo-${key}`, rows: 3, '.value': String(seo[key] ?? ''), '@input': (event: Event) => this.setGroup('seo', key, (event.target as HTMLTextAreaElement).value) })
                 : component(Input, { id: `seo-${key}`, '.value': String(seo[key] ?? ''), '@input': (event: Event) => this.setGroup('seo', key, (event.target as HTMLInputElement).value) })}
         </div>`;
+        const checks = this.checks();
+        const tone = (status: Check['status']) => status === 'ok' ? 'bg-emerald-500' : status === 'warn' ? 'bg-amber-500' : 'bg-sky-500';
+        const warnings = checks.filter(check => check.status === 'warn').length;
         return html`<section aria-labelledby="seo-title-heading" class="space-y-4 rounded-lg border border-border bg-card p-4">
             <h2 id="seo-title-heading" class="text-sm font-semibold text-foreground">${__('Search and sharing')}</h2>
+            ${this.seo.summary ? html`<div class="space-y-1">
+                <div class="flex items-center justify-between"><label for="field-summary" class="block text-sm font-medium text-foreground">${__('Summary')}</label>${counter(String(this.values.summary ?? ''), 300)}</div>
+                ${component(Textarea, { id: 'field-summary', rows: 3, '.value': String(this.values.summary ?? ''), '@input': (event: Event) => this.set('summary', (event.target as HTMLTextAreaElement).value) })}
+                <p class="text-xs text-muted-foreground">${__('Two or three sentences that answer what this is about. Shown first by the theme, quoted by answer engines, and the meta description when there is none.')}</p>
+                ${this.errorFor('summary')}
+            </div>` : null}
+            <details class="rounded-md border border-border" ?open=${this.checksOpen} @toggle=${(event: Event) => { this.checksOpen = (event.target as HTMLDetailsElement).open; }}>
+                <summary class="flex cursor-pointer items-center gap-2 px-3 py-2 text-sm text-foreground">
+                    <span class=${`inline-block size-2.5 rounded-full ${warnings ? 'bg-amber-500' : 'bg-emerald-500'}`} aria-hidden="true"></span>
+                    ${__('Readiness for search and answer engines')}${warnings ? html` <span class="text-muted-foreground">(${warnings} ${warnings === 1 ? __('warning') : __('warnings')})</span>` : null}</summary>
+                <ul class="space-y-1.5 border-t border-border px-3 py-2 text-sm">${checks.map(check => html`<li class="flex items-start gap-2"><span class=${`mt-1.5 inline-block size-2 shrink-0 rounded-full ${tone(check.status)}`} aria-hidden="true"></span><span class="text-muted-foreground">${__(check.message)}</span></li>`)}</ul>
+            </details>
             <div class="rounded-md border border-border bg-background p-3" aria-label=${__('Search result preview')}>
                 <p class="truncate text-xs text-emerald-700 dark:text-emerald-400">${url}</p>
-                <p class="truncate text-base text-blue-700 dark:text-blue-400">${title || __('Add a title')} ${this.seo.separator} ${this.seo.siteTitle}</p>
-                <p class="line-clamp-2 text-sm text-muted-foreground">${description || String(this.values.excerpt ?? '') || __('Search engines show a part of the content when there is no description.')}</p>
+                <p class="truncate text-base text-blue-700 dark:text-blue-400">${title || __('Add a title')}</p>
+                <p class="line-clamp-2 text-sm text-muted-foreground">${description || __('Search engines show a part of the content when there is no description.')}</p>
             </div>
             ${text('title', __('SEO title'), 60)}
             ${text('description', __('Meta description'), 155, true)}
-            <div class="space-y-1"><span class="block text-sm font-medium text-foreground">${__('Social image')}</span>
-                ${this.mediaControl({ field: 'seo', key: 'image', group: true }, seo.image ?? null, __('Image'))}
-                <p class="text-xs text-muted-foreground">${__('Shown when the entry is shared. Defaults to the featured image.')}</p></div>
+            <details class="space-y-3 text-sm">
+                <summary class="cursor-pointer text-muted-foreground">${__('Sharing on social networks')}</summary>
+                <div class="rounded-md border border-border bg-background p-3" aria-label=${__('Shared link preview')}>
+                    <p class="text-xs uppercase text-muted-foreground">${new URL(this.seo.origin || 'http://localhost').host}</p>
+                    <p class="truncate font-semibold text-foreground">${String(seo.socialTitle ?? '') || String(seo.title ?? '') || String(this.values.title ?? '') || __('Add a title')}</p>
+                    <p class="line-clamp-2 text-muted-foreground">${String(seo.socialDescription ?? '') || description}</p>
+                </div>
+                ${text('socialTitle', __('Social title'), 70)}
+                ${text('socialDescription', __('Social description'), 200, true)}
+                <div class="space-y-1"><span class="block text-sm font-medium text-foreground">${__('Social image')}</span>
+                    ${this.mediaControl({ field: 'seo', key: 'image', group: true }, seo.image ?? null, __('Image'))}
+                    <p class="text-xs text-muted-foreground">${__('Shown when the entry is shared. Defaults to the featured image. 1200 × 630 pixels suits every network.')}</p></div>
+            </details>
             <div class="space-y-1"><label for="seo-canonical" class="block text-sm font-medium text-foreground">${__('Canonical URL')}</label>
                 ${component(Input, { id: 'seo-canonical', placeholder: url, '.value': String(seo.canonical ?? ''), '@input': (event: Event) => this.setGroup('seo', 'canonical', (event.target as HTMLInputElement).value) })}
                 <p class="text-xs text-muted-foreground">${__('Only when this content first appeared at another address.')}</p></div>
             <label class="flex items-center gap-2 text-sm text-foreground cursor-pointer">
                 ${component(Checkbox, { checked: seo.noindex === true, '@change': (event: Event) => this.setGroup('seo', 'noindex', (event.target as HTMLInputElement).checked) })} ${__('Hide from search engines')}</label>
+            <label class="flex items-center gap-2 text-sm text-foreground cursor-pointer">
+                ${component(Checkbox, { checked: seo.cornerstone === true, '@change': (event: Event) => this.setGroup('seo', 'cornerstone', (event.target as HTMLInputElement).checked) })} ${__('Cornerstone content: one of the site\'s most important entries')}</label>
+            ${this.linkSuggestions.length ? html`<div class="space-y-1">
+                <p class="text-sm font-medium text-foreground">${__('Related entries to link to')}</p>
+                <ul class="space-y-1 text-sm">${this.linkSuggestions.map(entry => html`<li class="flex items-center justify-between gap-2">
+                    <a href=${entry.url} target="_blank" rel="noopener" class="truncate text-primary hover:underline" title=${entry.title}>${entry.title}</a>
+                    <button type="button" class="shrink-0 text-xs text-muted-foreground hover:text-foreground bg-transparent border-none p-0 cursor-pointer" @click=${() => this.copyLink(entry.url)}>${__('Copy link')}</button></li>`)}</ul>
+                <p class="text-xs text-muted-foreground">${__('Internal links help engines find and rank related entries.')}</p>
+            </div>` : null}
+            <details class="space-y-3 text-sm">
+                <summary class="cursor-pointer text-muted-foreground">${__('Snippets and AI answers')}</summary>
+                <label class="flex items-center gap-2 text-sm text-foreground cursor-pointer">
+                    ${component(Checkbox, { checked: seo.nosnippet === true, '@change': (event: Event) => this.setGroup('seo', 'nosnippet', (event.target as HTMLInputElement).checked) })} ${__('No snippets: engines show the title only and do not quote the page in AI answers')}</label>
+                ${seo.nosnippet === true ? null : html`<div class="space-y-1"><label for="seo-maxSnippet" class="block text-sm font-medium text-foreground">${__('Longest quote, in characters')}</label>
+                    ${component(Input, { id: 'seo-maxSnippet', type: 'number', min: 0, size: 'sm', placeholder: __('No limit'), '.value': seo.maxSnippet === undefined || seo.maxSnippet === null ? '' : String(seo.maxSnippet), '@input': (event: Event) => { const value = (event.target as HTMLInputElement).value; this.setGroup('seo', 'maxSnippet', value === '' ? null : Number(value)); } })}
+                    <p class="text-xs text-muted-foreground">${__('max-snippet: how much of the text results and AI Overviews may quote.')}</p></div>`}
+                <label class="flex items-center gap-2 text-sm text-foreground cursor-pointer">
+                    ${component(Checkbox, { checked: seo.noarchive === true, '@change': (event: Event) => this.setGroup('seo', 'noarchive', (event.target as HTMLInputElement).checked) })} ${__('No cached copy (Bing: also keeps the page out of Copilot training)')}</label>
+            </details>
             ${this.errorFor('seo')}
         </section>`;
     }

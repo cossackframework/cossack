@@ -4,13 +4,13 @@
  * from `init()` and hand the views to the theme's templates.
  */
 import {
-    ANONYMOUS, blockDocuments, blockIsData, blocksPlain, editedSize, resolveBlockBindings, flattenBlocks, escapeHtml, formatSiteDate, formInputs, formSettings, imageSrcset, imageUrl, isCmsError, languageName, mediaUrl, notificationRules, recordTitle, resolvePresets, richTextBlocks, richTextParts, richTextPlain, systemPrincipal, templateCandidates, transformable,
-    type Block,
+    ANONYMOUS, ARTICLE_TYPES, authorUrl, blockDocuments, blockIsData, blocksPlain, editedSize, resolveBlockBindings, flattenBlocks, escapeHtml, formatSiteDate, formInputs, formSettings, imageSrcset, imageUrl, isCmsError, languageName, mediaUrl, notificationRules, recordTitle, resolvePresets, richTextBlocks, richTextParts, richTextPlain, systemPrincipal, templateCandidates, transformable, urlList,
+    type AuthorView, type Block,
     type Principal, type TemplatePage, type ThemeData, type ThemePresets,
     type ArchiveView, type BodyPart, type CollectionDefinition, type CommentShape, type CommentView, type CommentsView, type EntryReference, type EntryView, type FieldDeclaration, type FieldFilter,
     type FieldView, type LanguageLink, type MediaView, type MenuItemView, type RecordShape, type RenderedBlock, type RichTextDoc, type SiteSettings, type SiteView, type TermLink, type TermShape,
 } from '@cossackframework/cms';
-import { excerptOf, renderMarkdown, type CmsFile, type CmsHost, type LoadedForm, type SiteLanguages } from '@cossackframework/cms/server';
+import { excerptOf, renderMarkdown, type CmsFile, type CmsHost, type CmsUser, type LoadedForm, type SiteLanguages } from '@cossackframework/cms/server';
 import type { FormView } from '@cossackframework/cms';
 import { formView, type FormRequest } from './site-forms';
 
@@ -307,7 +307,7 @@ export interface EntryViewOptions {
 }
 
 /** Fields a details list leaves out: core fields themes show on their own, and internal ones. */
-const NOT_DETAILS = new Set(['title', 'slug', 'status', 'publishedAt', 'parent', 'menuOrder', 'excerpt', 'sticky', 'seo', 'locale', 'translationGroup', 'commentsOpen', 'template']);
+const NOT_DETAILS = new Set(['title', 'slug', 'status', 'publishedAt', 'parent', 'menuOrder', 'excerpt', 'summary', 'sticky', 'seo', 'locale', 'translationGroup', 'commentsOpen', 'template']);
 /** Fields entry views leave out: search settings have their own head tags; translations their own links. */
 const NOT_FIELDS = new Set(['seo', 'translationGroup']);
 
@@ -396,7 +396,10 @@ export async function entryViews(cms: CmsHost, collection: CollectionDefinition,
     for (const doc of docs) docMediaIds(cms, doc, mediaIds);
     if (options.full) for (const list of patterns.values()) for (const block of list as RenderedBlock[]) blockMediaIds(cms, block, mediaIds);
     const files = cms.files ? await cms.files.getMany([...mediaIds]) : new Map<string, CmsFile>();
-    const owners = await cms.users.getMany(records.map(record => record.owner).filter((owner): owner is string => !!owner));
+    // Articles name their author; with author pages on, the name links to the author's page, so the owners need slugs.
+    const articles = ARTICLE_TYPES.has(collection.schema?.type ?? 'WebPage');
+    const found = articles ? await cms.users.getMany(records.map(record => record.owner).filter((owner): owner is string => !!owner)) : new Map<string, CmsUser>();
+    const owners = articles && settings['seo.authorPages'] ? await cms.users.withSlugs(found) : found;
     const references = await referencedRecords(cms, fields, records);
     const taxonomyFields = fields.filter(([, declaration]) => declaration.taxonomy);
     const terms = await cms.taxonomies.getMany(records.flatMap(record => taxonomyFields.flatMap(([name]) => (record[name] as string[] | undefined) ?? [])));
@@ -450,8 +453,11 @@ export async function entryViews(cms: CmsHost, collection: CollectionDefinition,
         views.push({
             id: record.id, title: recordTitle(record, 'title'), url: urls.get(record.id) ?? null, collection: collection.name, kind: collection.singular,
             date: typeof record.publishedAt === 'number' ? formatSiteDate(record.publishedAt, settings) : '',
-            author: record.owner && collection.name === 'posts' ? owners.get(record.owner)?.name ?? '' : '',
-            excerpt: locked ? '' : excerptField && record.excerpt ? String(record.excerpt) : excerptOf(contentPlain(record), 40),
+            updated: collection.publishable === false ? '' : formatSiteDate(record.updatedAt, settings),
+            author: record.owner && articles ? owners.get(record.owner)?.name ?? '' : '',
+            authorUrl: record.owner && articles && settings['seo.authorPages'] ? authorUrl(owners.get(record.owner)?.slug, localePrefix(languages, locale)) : null,
+            excerpt: locked ? '' : excerptField && record.excerpt ? String(record.excerpt) : typeof record.summary === 'string' && record.summary ? excerptOf(record.summary, 40) : excerptOf(contentPlain(record), 40),
+            summary: locked || typeof record.summary !== 'string' ? '' : record.summary,
             content,
             image: imageField ? mediaView(files.get(String(record[imageField[0]] ?? '')), resizes) : null,
             terms: taxonomyFields.map(([name, declaration]) => ({
@@ -545,6 +551,7 @@ export type Resolved =
     | { kind: 'term'; term: TermShape; ancestors: TermShape[]; locale: string }
     | { kind: 'home'; locale: string }
     | { kind: 'search'; locale: string }
+    | { kind: 'author'; user: CmsUser; locale: string }
     | { kind: 'redirect'; url: string; status?: 301 | 302 | 307 | 308 }
     | { kind: 'gone' }
     | { kind: 'none'; locale: string };
@@ -573,6 +580,11 @@ export async function resolvePath(cms: CmsHost, segments: readonly string[]): Pr
         if (!collection.hierarchical && slugs.length > (collection.permalink === 'category' ? 2 : 1)) return { kind: 'none', locale };
         const found = await bySlug(cms, collection, slugs.at(-1)!);
         return found ? canonical(cms, collection, found, segments) : { kind: 'none', locale };
+    }
+    // Author pages at /author/<slug>, when Settings → SEO turns them on.
+    if (rest.length === 2 && rest[0] === 'author' && await cms.settings.get('seo.authorPages')) {
+        const user = await cms.users.bySlug(rest[1]!);
+        return user && user.status === 'active' ? { kind: 'author', user, locale } : { kind: 'none', locale };
     }
     for (const taxonomy of cms.taxonomies.declarations) {
         if (!taxonomy.path || rest[0] !== taxonomy.path || rest.length < 2) continue;
@@ -626,6 +638,52 @@ export async function termArchive(cms: CmsHost, term: TermShape, page: number, b
     return { ...await archive(cms, collection, page, { where: { [usage[0]!.field]: { containsAny: subtree } }, base, ...(locale ? { locale } : {}) }), collection: collection.name, taxonomy: term.taxonomy };
 }
 
+/** An author as their page shows them, from their profile meta. */
+export function authorView(user: CmsUser, prefix = ''): AuthorView {
+    const meta = user.meta;
+    return {
+        name: user.name, slug: user.slug ?? '', url: authorUrl(user.slug, prefix) ?? '#', avatar: user.avatar,
+        bio: typeof meta.bio === 'string' ? meta.bio : '', jobTitle: typeof meta.jobTitle === 'string' ? meta.jobTitle : '',
+        website: typeof meta.website === 'string' && /^https?:\/\//.test(meta.website) ? meta.website : null, profiles: urlList(meta.profiles),
+    };
+}
+
+/** The collections an author page lists: article collections on the site. */
+export function authorCollections(cms: CmsHost): CollectionDefinition[] {
+    return cms.collections().filter(collection => typeof collection.path === 'string' && collection.publishable !== false && ARTICLE_TYPES.has(collection.schema?.type ?? 'WebPage'));
+}
+
+/** An author's published articles across the site's article collections, newest first, in one language. */
+export async function authorArchive(cms: CmsHost, user: CmsUser, page: number, base: string, locale?: string): Promise<Pick<ArchiveView, 'entries' | 'paging' | 'collection'>> {
+    const perPage = await cms.settings.get('reading.postsPerPage');
+    const languages = await cms.languages();
+    const collections = authorCollections(cms);
+    const where = { status: 'published', ...localeWhere(languages, locale ?? languages.default) };
+    const wanted = Math.min(page * perPage, 10_000);
+    const found: { collection: CollectionDefinition; record: RecordShape }[] = [];
+    let total = 0;
+    for (const collection of collections) {
+        const repository = cms.resource(`cms/${collection.name}`);
+        try {
+            const [list, count] = await Promise.all([
+                repository.list({ where, owner: user.id, order: { field: 'publishedAt', direction: 'desc' }, limit: Math.min(wanted, 100) }, visitor),
+                repository.count({ where, owner: user.id }, visitor),
+            ]);
+            total += count;
+            found.push(...list.records.map(record => ({ collection, record })));
+        } catch (error) { if (!isCmsError(error)) throw error; }
+    }
+    found.sort((a, b) => Number(b.record.publishedAt ?? 0) - Number(a.record.publishedAt ?? 0));
+    const slice = found.slice((page - 1) * perPage, page * perPage);
+    const entries: EntryView[] = [];
+    for (const collection of collections) {
+        const records = slice.filter(entry => entry.collection === collection).map(entry => entry.record);
+        if (records.length) entries.push(...await entryViews(cms, collection, records));
+    }
+    entries.sort((a, b) => slice.findIndex(entry => entry.record.id === a.id) - slice.findIndex(entry => entry.record.id === b.id));
+    return { entries, paging: { page, pages: Math.max(1, Math.ceil(total / perPage)), base }, collection: collections.length === 1 ? collections[0]!.name : null };
+}
+
 /** Published entries of every collection on the site that match the query, in one language. */
 export async function searchEntries(cms: CmsHost, query: string, locale?: string): Promise<EntryView[]> {
     const languages = await cms.languages();
@@ -668,6 +726,8 @@ export async function languageLinks(cms: CmsHost, resolved: Resolved | { kind: '
     } else if (resolved.kind === 'term') {
         const taxonomy = cms.taxonomies.declaration(resolved.term.taxonomy);
         if (taxonomy.path) for (const code of languages.all) urls.set(code, `${localePrefix(languages, code)}/${taxonomy.path}/${resolved.term.slug}`);
+    } else if (resolved.kind === 'author') {
+        for (const code of languages.all) { const url = authorUrl(resolved.user.slug, localePrefix(languages, code)); if (url) urls.set(code, url); }
     }
     return languages.all.map(code => ({ code, label: languageName(code), url: urls.get(code) ?? home(code), current: code === current }));
 }

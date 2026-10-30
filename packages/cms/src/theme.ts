@@ -180,7 +180,7 @@ export function presetStyle(presets: ThemePresets | undefined): string {
 }
 
 /** What a styled block's wrapper carries: classes per property, the `id`, and inline properties through the presets' variables. Null for an unstyled block. */
-export function blockStyleAttributes(block: { readonly style?: BlockStyle; readonly layout?: BlockLayout }): { className: string; style: string; id: string } | null {
+export function blockStyleAttributes(block: { readonly style?: BlockStyle; readonly layout?: BlockLayout }): { className: string; style: string; id: string; nosnippet: boolean } | null {
     const classes: string[] = [];
     const rules: string[] = [];
     const slug = (property: StyleProperty) => {
@@ -201,8 +201,9 @@ export function blockStyleAttributes(block: { readonly style?: BlockStyle; reado
     if (align && (TEXT_ALIGNMENTS as readonly string[]).includes(align)) { classes.push(`cms-align-${align}`); rules.push(`text-align: ${align}`); }
     const extra = (block.layout?.className ?? '').trim().split(/\s+/).filter(name => /^-?[_A-Za-z][\w-]*$/.test(name));
     const id = /^[A-Za-z][\w-]{0,59}$/.test(block.layout?.anchor ?? '') ? block.layout!.anchor! : '';
-    if (!classes.length && !extra.length && !id) return null;
-    return { className: ['cms-block', ...classes, ...extra].join(' '), style: rules.join('; '), id };
+    const nosnippet = block.layout?.nosnippet === true;
+    if (!classes.length && !extra.length && !id && !nosnippet) return null;
+    return { className: ['cms-block', ...classes, ...extra].join(' '), style: rules.join('; '), id, nosnippet };
 }
 
 /** Why a site's Additional CSS is refused: it may not load other resources or run scripts. Undefined when fine. */
@@ -438,8 +439,15 @@ export interface EntryView {
     readonly kind: string;
     /** The publication date in the site's format; empty for unpublishable collections. */
     readonly date: string;
+    /** The author's name, for article collections; empty otherwise. */
     readonly author: string;
+    /** The author's page, such as `/author/ada`; null when author pages are off or the entry has no author. */
+    readonly authorUrl: string | null;
+    /** When the entry was last changed, in the site's format; empty for unpublishable collections. */
+    readonly updated: string;
     readonly excerpt: string;
+    /** The answer up front, from the entry's summary field; empty when none. Themes show it before the content. */
+    readonly summary: string;
     /**
      * The entry's content as rendered blocks, empty in lists: its blocks fields (the `content`
      * feature first of all) and its rich text and Markdown fields, each of those one
@@ -482,9 +490,25 @@ export interface Paging {
     readonly base: string;
 }
 
+/** An author as their page shows them. */
+export interface AuthorView {
+    readonly name: string;
+    readonly slug: string;
+    /** The author page. */
+    readonly url: string;
+    readonly avatar: string | null;
+    readonly bio: string;
+    readonly jobTitle: string;
+    readonly website: string | null;
+    /** Profiles elsewhere. */
+    readonly profiles: readonly string[];
+}
+
 export interface ArchiveView {
-    /** `home` is the latest posts on the front page. */
-    readonly kind: 'home' | 'archive' | 'term' | 'search';
+    /** `home` is the latest posts on the front page; `author` an author's entries. */
+    readonly kind: 'home' | 'archive' | 'term' | 'search' | 'author';
+    /** author: who is shown. */
+    readonly author?: AuthorView;
     /** The collection listed, such as `posts`; null for a search across collections. */
     readonly collection: string | null;
     /** term: the taxonomy, such as `category`. */
@@ -578,7 +602,7 @@ export interface SiteTheme {
 /** Template files that fill the theme's named slots; every other file is a specific template. */
 const TEMPLATE_FILES: { readonly [stem: string]: keyof SiteTheme } = { layout: 'layout', entry: 'entry', archive: 'archive', home: 'home', search: 'search', 'not-found': 'notFound', head: 'head', password: 'password' };
 /** Names a specific template can have. */
-export const SPECIFIC_TEMPLATE = /^(?:entry-[a-z][a-z0-9_-]*|archive-[a-z][a-z0-9_-]*|term(?:-[a-z][a-z0-9_-]*)?)$/;
+export const SPECIFIC_TEMPLATE = /^(?:entry-[a-z][a-z0-9_-]*|archive-[a-z][a-z0-9_-]*|term(?:-[a-z][a-z0-9_-]*)?|author)$/;
 
 /** The parts of a plugin registration a theme is assembled from. */
 export interface ThemeSource {
@@ -645,7 +669,7 @@ export function siteThemeProblems(theme: unknown): string[] {
     if (value.templates !== undefined) {
         if (typeof value.templates !== 'object' || value.templates === null) problems.push('theme.templates must map template names to functions.');
         else for (const [name, template] of Object.entries(value.templates)) {
-            if (!SPECIFIC_TEMPLATE.test(name)) problems.push(`theme.templates.${name}: name it entry-<collection>, archive-<collection>, term or term-<taxonomy>.`);
+            if (!SPECIFIC_TEMPLATE.test(name)) problems.push(`theme.templates.${name}: name it entry-<collection>, archive-<collection>, term, term-<taxonomy> or author.`);
             else if (typeof template !== 'function') problems.push(`theme.templates.${name} must be a function.`);
         }
     }
@@ -672,6 +696,7 @@ export function templateCandidates(page: TemplatePage): string[] {
     if (page.kind === 'home') return ['home', ...archive];
     if (page.kind === 'search') return ['search', 'archive'];
     if (page.kind === 'term') return [...(page.taxonomy ? [`term-${page.taxonomy}`] : []), 'term', ...archive];
+    if (page.kind === 'author') return ['author', ...archive];
     return archive;
 }
 

@@ -3,6 +3,7 @@
  * host stores one row per key and validates writes against these declarations.
  */
 import { field, type FieldDeclaration } from './fields';
+import { SEO_TEMPLATE_DEFAULTS } from './seo';
 
 /** Choices filled in by the host when a form renders, such as the list of roles. */
 /** Where a setting's choices come from; `media` lists the library's images by their URL. */
@@ -121,8 +122,48 @@ export const seo: SettingsGroup = {
     label: 'SEO',
     fields: {
         titleSeparator: { ...field.enum(Object.keys(TITLE_SEPARATORS), { default: 'dash', label: 'Title separator', description: 'Between an entry\'s title and the site title.' }), choices: TITLE_SEPARATORS },
+        homeTitle: field.string({ max: 300, default: SEO_TEMPLATE_DEFAULTS.home, label: 'Home page title', description: 'Variables: %site%, %tagline%, %sep%.' }),
+        entryTitle: field.string({ max: 300, default: SEO_TEMPLATE_DEFAULTS.entry, label: 'Entry title', description: 'For entries without their own SEO title. Variables: %title%, %site%, %sep%, %tagline%, %author%, %collection%, %date%. A collection can set its own.' }),
+        entryDescription: field.string({ max: 300, default: SEO_TEMPLATE_DEFAULTS.description, label: 'Entry description', description: 'For entries without their own meta description. Variables: %excerpt%, %title%, %site%, %author%, %date%.' }),
+        archiveTitle: field.string({ max: 300, default: SEO_TEMPLATE_DEFAULTS.archive, label: 'Archive title', description: 'Collection archives. Variables: %title%, %site%, %sep%, %page%.' }),
+        termTitle: field.string({ max: 300, default: SEO_TEMPLATE_DEFAULTS.term, label: 'Term archive title', description: 'Category and tag archives. Variables: %term%, %taxonomy%, %site%, %sep%, %page%.' }),
+        authorTitle: field.string({ max: 300, default: SEO_TEMPLATE_DEFAULTS.author, label: 'Author page title', description: 'Variables: %author%, %site%, %sep%, %page%.' }),
         defaultImage: field.string({ max: 2000, default: '', pattern: '(?:https?://[^\\s]+|/[^\\s]*)?', label: 'Default social image', description: 'Shown when a shared entry has no image: a URL from the media library or another site.' }),
+        twitter: field.string({ max: 60, default: '', pattern: '(?:@?[A-Za-z0-9_]{1,50})?', label: 'X (Twitter) account', description: 'The site\'s handle, for cards of shared links.' }),
+        representation: { ...field.enum(['organization', 'person'], { default: 'organization', label: 'The site represents', description: 'Who publishes the site, in structured data: an organization or a person.' }), choices: { organization: 'An organization', person: 'A person' } },
+        publisherName: field.string({ max: 200, default: '', label: 'Organization or person name', description: 'The site title when empty.' }),
+        logo: { ...field.string({ max: 2000, default: '', pattern: '(?:https?://[^\\s]+|/[^\\s]*)?', label: 'Logo', description: 'A square image of at least 112 pixels from the library; shown next to the site in search results and AI answers.' }), source: 'media' },
+        sameAs: field.text({ max: 3000, default: '', label: 'Profiles', description: 'The publisher\'s profiles elsewhere, one URL per line: social accounts, Wikipedia, Wikidata, Crunchbase. They tell engines which entity the site is.' }),
+        authorPages: field.boolean({ default: true, label: 'Author pages', description: 'Each author has a page at /author/<name> listing their entries, which their articles link to as the author.' }),
+        maxImagePreview: { ...field.enum(['none', 'standard', 'large'], { default: 'large', label: 'Image previews in results', description: 'How large an image engines may show for the site\'s pages. Large is what Discover and AI answers use.' }), choices: { none: 'None', standard: 'Standard', large: 'Large' } },
+        llmsTxt: field.boolean({ default: true, label: 'Serve /llms.txt', description: 'A plain-text map of the site for AI assistants: the site, its collections and their latest entries with summaries. No engine has committed to reading it; it costs nothing.' }),
+        llmsTxtNotes: field.text({ max: 5000, default: '', label: 'Additional llms.txt sections', description: 'Markdown appended to the generated file: an About section, links to documentation, what to cite.' }),
+        markdown: field.boolean({ default: true, label: 'Serve entries as Markdown', description: 'A request with Accept: text/markdown, or ?format=md, gets the entry as Markdown with front matter, the way agents read pages.' }),
         robotsTxt: field.text({ max: 5000, default: '', label: 'Additional robots.txt rules', description: 'Appended to the generated robots.txt.' }),
+    },
+};
+
+/** Which crawlers robots.txt lets in, by what they do with the pages. */
+export const crawlers: SettingsGroup = {
+    id: 'crawlers',
+    label: 'Crawlers',
+    description: 'Crawlers by purpose. robots.txt asks; it does not enforce. Fetchers acting for a person (ChatGPT-User, Claude-User, Perplexity-User) ignore it, as browsers do.',
+    fields: {
+        allowSearch: field.boolean({ default: true, label: 'Search engines', description: 'Googlebot, Bingbot, Applebot, DuckDuckBot, Yandex, Baidu. Their indexes also feed AI Overviews, AI Mode and Copilot.' }),
+        allowAiSearch: field.boolean({ default: true, label: 'AI search and answers', description: 'OAI-SearchBot (ChatGPT search), Claude-SearchBot, PerplexityBot. They cite the pages they index.' }),
+        allowAiTraining: field.boolean({ default: true, label: 'AI training', description: 'GPTBot, ClaudeBot, Google-Extended, CCBot, Applebot-Extended, Bytespider, meta-externalagent, Amazonbot. Blocking keeps the site out of future models; Google-Extended also stops Gemini grounding.' }),
+        contentSignals: field.boolean({ default: false, label: 'Add a Content-Signal line', description: 'States the same preferences in Cloudflare\'s Content-Signal format (search, ai-input, ai-train). Google and Bing ignore it; Cloudflare reads it.' }),
+    },
+};
+
+/** IndexNow: pings Bing, Yandex, Naver and Seznam when entries change. */
+export const indexnow: SettingsGroup = {
+    id: 'indexnow',
+    label: 'IndexNow',
+    description: 'Tells Bing, Yandex, Naver and Seznam at once when a page is published, changed or removed, so their results and Copilot answers refresh within minutes. Google does not take part. Needs APP_URL.',
+    fields: {
+        enabled: field.boolean({ default: false, label: 'Ping IndexNow when entries change' }),
+        key: field.string({ max: 128, default: '', pattern: '(?:[A-Za-z0-9-]{8,128})?', label: 'Key', description: 'Made for you when pings are on; served at /indexnow/<key>.txt. Paste your own to keep one you already registered.' }),
     },
 };
 
@@ -175,8 +216,30 @@ export interface SiteSettings {
     'discussion.notifyHeld': boolean;
     'discussion.notifyAuthor': boolean;
     'seo.titleSeparator': keyof typeof TITLE_SEPARATORS;
+    'seo.homeTitle': string;
+    'seo.entryTitle': string;
+    'seo.entryDescription': string;
+    'seo.archiveTitle': string;
+    'seo.termTitle': string;
+    'seo.authorTitle': string;
     'seo.defaultImage': string;
+    'seo.twitter': string;
+    'seo.representation': 'organization' | 'person';
+    'seo.publisherName': string;
+    'seo.logo': string;
+    'seo.sameAs': string;
+    'seo.authorPages': boolean;
+    'seo.maxImagePreview': 'none' | 'standard' | 'large';
+    'seo.llmsTxt': boolean;
+    'seo.llmsTxtNotes': string;
+    'seo.markdown': boolean;
     'seo.robotsTxt': string;
+    'crawlers.allowSearch': boolean;
+    'crawlers.allowAiSearch': boolean;
+    'crawlers.allowAiTraining': boolean;
+    'crawlers.contentSignals': boolean;
+    'indexnow.enabled': boolean;
+    'indexnow.key': string;
     'languages.default': string;
     'languages.others': string;
     readonly [key: string]: unknown;

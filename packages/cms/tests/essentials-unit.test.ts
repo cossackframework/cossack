@@ -181,7 +181,7 @@ describe('essentials helpers', () => {
         expect(checked.blocks[1]).toEqual({ _id: 'i', type: 'core/image', data: { image: 'f1' }, style: { padding: 'large' } });
         // The wrapper's attributes: classes per property, the variables inline, the anchor and class names.
         expect(blockStyleAttributes({ style: { background: 'brand', text: 'light', padding: 'large', margin: 'none', fontSize: 'x-large', align: 'center' }, layout: { anchor: 'intro', className: 'hero' } })).toEqual({
-            className: 'cms-block cms-bg-brand cms-text-light cms-p-large cms-m-none cms-size-x-large cms-align-center hero', id: 'intro',
+            className: 'cms-block cms-bg-brand cms-text-light cms-p-large cms-m-none cms-size-x-large cms-align-center hero', id: 'intro', nosnippet: false,
             style: 'background-color: var(--cms-color-brand); color: var(--cms-color-light); padding: var(--cms-space-large); margin-block: var(--cms-space-none); font-size: var(--cms-size-x-large); text-align: center',
         });
         expect(blockStyleAttributes({ style: {}, layout: { hide: ['sm'] } })).toBeNull();

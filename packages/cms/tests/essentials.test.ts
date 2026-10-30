@@ -50,7 +50,7 @@ describe.skipIf(!live)('scheduling, previews, revisions, redirects, tokens, webh
 
     beforeAll(async () => {
         cms = createCMS({
-            db: service.database(), modules: [contentModule], storage, images, now: () => clock,
+            db: service.database(), modules: [contentModule], storage, images, now: () => clock, siteUrl: 'https://essentials.example',
             fetch: async (input, init) => {
                 sent.push({ url: String(input), headers: new Headers(init?.headers), body: String(init?.body) });
                 return new Response('ok', { status: answer });
@@ -336,8 +336,112 @@ describe.skipIf(!live)('scheduling, previews, revisions, redirects, tokens, webh
         await expect(repository.create({ title: 'SEO', seo: { title: 'x', unknown: 1 } }, { principal: editor })).rejects.toMatchObject({ fields: { seo: expect.stringContaining('unknown') } });
         await expect(repository.create({ title: 'SEO', seo: { image: 'missing-file' } }, { principal: editor })).rejects.toMatchObject({ fields: { seo: 'names a missing file.' } });
         await expect(repository.create({ title: 'SEO', seo: { canonical: 'javascript:alert(1)' } }, { principal: editor })).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
-        const post = await repository.create({ title: 'SEO', seo: { title: 'Better title', description: 'Summary', noindex: true, canonical: '/elsewhere' } }, { principal: editor });
-        expect(post.seo).toEqual({ title: 'Better title', description: 'Summary', noindex: true, canonical: '/elsewhere' });
+        const post = await repository.create({ title: 'SEO', seo: { title: 'Better title', description: 'Summary', noindex: true, canonical: '/elsewhere', nosnippet: false, maxSnippet: 160 } }, { principal: editor });
+        expect(post.seo).toEqual({ title: 'Better title', description: 'Summary', noindex: true, canonical: '/elsewhere', nosnippet: false, maxSnippet: 160 });
+        await expect(repository.create({ title: 'SEO', seo: { maxSnippet: -5 } }, { principal: editor })).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
+        // Site collections carry a summary; it is a core field, so groups cannot take the name.
+        expect((await repository.create({ title: 'Summed', summary: 'In short.' }, { principal: editor })).summary).toBe('In short.');
+        await expect(repository.create({ title: 'Summed', summary: 'x'.repeat(601) }, { principal: editor })).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
+        expect(cms.resourceById('cms/patterns').fields.summary).toBeUndefined();
+
+        // Collections choose their structured data type, robots directives and title templates; built-in ones keep them across upgrades.
+        await expect(cms.saveCollection({ ...cms.collection('posts'), schema: { type: 'Product', map: { price: 'nope' } } }, admin)).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
+        await cms.saveCollection({ ...cms.collection('posts'), schema: { type: 'NewsArticle' }, robots: { archiveNoindex: true }, seoTemplates: { title: '%title% %sep% %site% News' } }, admin);
+        expect(cms.collection('posts')).toMatchObject({ schema: { type: 'NewsArticle' }, robots: { archiveNoindex: true }, seoTemplates: { title: '%title% %sep% %site% News' }, builtin: true });
+        await cms.saveCollection({ ...cms.collection('posts'), robots: { noindex: true } }, admin);
+        expect(await cms.sitemapEntries('posts')).toEqual([]);
+        await cms.saveCollection({ ...cms.collection('posts'), schema: { type: 'BlogPosting' }, robots: {}, seoTemplates: {} }, admin);
+        await cms.saveTaxonomy({ ...cms.taxonomies.declaration('tags'), noindex: true }, admin);
+        expect(cms.taxonomies.declaration('tags').noindex).toBe(true);
+    });
+
+    it('pings IndexNow for published entries and retries failures', async () => {
+        const repository = cms.resource('cms/posts');
+        await cms.outbox.dispatch({ limit: 100 });
+        sent.length = 0;
+        // Off by default: nothing is sent and there is no key.
+        const quiet = await repository.create({ title: 'Quiet', status: 'published' }, { principal: editor });
+        await cms.outbox.dispatch({ limit: 100 });
+        expect(sent.filter(call => call.url.includes('indexnow'))).toHaveLength(0);
+        expect(await cms.indexnow.key()).toBeNull();
+        await cms.settings.update('indexnow', { enabled: true }, { principal: admin });
+        const key = await cms.indexnow.key();
+        expect(key).toMatch(/^[a-f0-9]{32}$/);
+        expect(await cms.settings.get('indexnow.key')).toBe(key);
+        // A draft pings nothing; publishing it pings its URL with the key file's location.
+        const draft = await repository.create({ title: 'Ping me' }, { principal: editor });
+        await cms.outbox.dispatch({ limit: 100 });
+        expect(sent.filter(call => call.url.includes('indexnow'))).toHaveLength(0);
+        await repository.update(draft.id, { status: 'published' }, { principal: editor, expectedRevision: draft.rev });
+        await cms.outbox.dispatch({ limit: 100 });
+        const ping = sent.find(call => call.url === 'https://api.indexnow.org/indexnow');
+        expect(ping).toBeDefined();
+        expect(JSON.parse(ping!.body)).toEqual({ host: 'essentials.example', key, keyLocation: `https://essentials.example/indexnow/${key}.txt`, urlList: ['https://essentials.example/posts/ping-me'] });
+        expect(ping!.headers.get('content-type')).toContain('application/json');
+        // A server error is retried by the outbox; a client error is not.
+        sent.length = 0;
+        answer = 503;
+        await repository.update(quiet.id, { title: 'Quiet, changed' }, { principal: editor, expectedRevision: quiet.rev });
+        expect((await cms.outbox.dispatch({ limit: 100 })).retrying).toHaveLength(1);
+        answer = 200;
+        clock += 61_000;
+        expect((await cms.outbox.dispatch({ limit: 100 })).delivered).toHaveLength(1);
+        expect(sent.filter(call => call.url.includes('indexnow'))).toHaveLength(2);
+        expect(cms.indexnow.recent[0]).toMatchObject({ status: 200, urls: ['https://essentials.example/posts/quiet'] });
+        await cms.settings.update('indexnow', { enabled: false }, { principal: admin });
+        // Sitemap entries carry what the news and hreflang sitemaps need.
+        expect((await cms.sitemapEntries('posts')).find(entry => entry.url === '/posts/ping-me')).toMatchObject({ id: draft.id, title: 'Ping me', translationGroup: null, publishedAt: expect.any(Number) });
+    });
+
+    it('counts crawler visits and missing pages', async () => {
+        const chrome = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36';
+        expect(await cms.traffic.recordVisit(chrome, 'entry')).toBe(false);
+        expect(await cms.traffic.recordVisit('Mozilla/5.0 (compatible; GPTBot/1.2)', 'entry')).toBe(true);
+        await cms.traffic.recordVisit('Mozilla/5.0 (compatible; GPTBot/1.2)', 'entry');
+        await cms.traffic.recordVisit('OAI-SearchBot/1.0', 'llms');
+        clock += 86_400_000;
+        await cms.traffic.recordVisit('Mozilla/5.0 (compatible; GPTBot/1.2)', 'sitemap');
+        const visits = await cms.traffic.visits(14);
+        expect(visits.map(visit => [visit.agent, visit.group, visit.total])).toEqual([['GPTBot', 'aiTraining', 3], ['OAI-SearchBot', 'aiSearch', 1]]);
+        expect(visits[0]!.byKind).toEqual({ entry: 2, sitemap: 1 });
+        expect(visits[0]!.lastDay).toBe(new Date(clock).toISOString().slice(0, 10));
+        // Missing pages: counted by path, probes for other software skipped, forgotten once redirected.
+        expect(await cms.traffic.recordNotFound('/old-page?utm=1', 'https://referrer.example/list')).toBe(true);
+        await cms.traffic.recordNotFound('/old-page/', null);
+        expect(await cms.traffic.recordNotFound('/wp-login.php')).toBe(false);
+        expect(await cms.traffic.recordNotFound('/assets/app.js')).toBe(false);
+        expect(await cms.traffic.notFound()).toEqual([expect.objectContaining({ path: '/old-page', hits: 2, referrer: 'https://referrer.example/list' })]);
+        await cms.traffic.forgetNotFound('/old-page');
+        expect(await cms.traffic.notFound()).toEqual([]);
+        await cms.traffic.prune();
+    });
+
+    it('gives authors slugs and a public profile', async () => {
+        const ada = await cms.users.create({ email: 'ada@example.com', name: 'Ada Lovelace', roles: ['author'] });
+        expect(ada.slug).toBe('ada-lovelace');
+        const twin = await cms.users.create({ email: 'ada2@example.com', name: 'Ada Lovelace', roles: ['author'] });
+        expect(twin.slug).toBe('ada-lovelace-2');
+        expect((await cms.users.bySlug('ada-lovelace'))?.id).toBe(ada.id);
+        expect(await cms.users.bySlug('Ada Lovelace')).toBeNull();
+        // Renaming keeps the slug; a slug given is checked and made unique.
+        await cms.users.update(ada.id, { name: 'Augusta Ada King' });
+        expect((await cms.users.get(ada.id))?.slug).toBe('ada-lovelace');
+        await cms.users.update(twin.id, { slug: 'ada-lovelace' });
+        expect((await cms.users.get(twin.id))?.slug).toBe('ada-lovelace-2');
+        await cms.users.update(twin.id, { slug: 'countess' });
+        expect((await cms.users.get(twin.id))?.slug).toBe('countess');
+        // The profile is validated like a field group's meta; unknown keys are refused.
+        await expect(cms.users.update(ada.id, { meta: { bio: 'x'.repeat(1001) } })).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
+        await expect(cms.users.update(ada.id, { meta: { website: 'javascript:alert(1)' } })).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
+        await expect(cms.users.update(ada.id, { meta: { favouriteColour: 'blue' } })).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
+        await cms.users.update(ada.id, { meta: { bio: 'First programmer.', jobTitle: 'Analyst', website: 'https://ada.example', profiles: 'https://x.com/ada\nnot a url' } });
+        expect((await cms.users.get(ada.id))?.meta).toMatchObject({ bio: 'First programmer.', jobTitle: 'Analyst', website: 'https://ada.example' });
+        // Users from before author pages get a slug the first time the site needs one.
+        await cms.db.write([{ rql: 'UPDATE cms_users SET slug = NULL WHERE id = $id', params: { $id: ada.id } }], { kind: 'cms.users' });
+        expect((await cms.users.get(ada.id))?.slug).toBeNull();
+        const withSlugs = await cms.users.withSlugs(await cms.users.getMany([ada.id]));
+        expect(withSlugs.get(ada.id)?.slug).toBe('augusta-ada-king');
+        expect((await cms.users.authors()).map(user => user.slug)).toEqual(expect.arrayContaining(['augusta-ada-king', 'countess']));
     });
 
     it('crops images and keeps their variants', async () => {

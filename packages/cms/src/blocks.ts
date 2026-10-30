@@ -98,6 +98,8 @@ export interface BlockLayout {
     readonly anchor?: string;
     /** Extra class names on the block's wrapper, for the theme's stylesheet. */
     readonly className?: string;
+    /** Search and answer engines may not quote the block (`data-nosnippet` on its wrapper). */
+    readonly nosnippet?: boolean;
 }
 
 /** A block's style: slugs of the theme's presets, and a text alignment. Rendered as classes and custom properties. */
@@ -241,6 +243,34 @@ const core: BlockDeclaration[] = [
         width: field.enum(['full', 'wide', 'narrow'], { default: 'full', label: 'Length', choices: { full: 'Full width', wide: 'Three quarters', narrow: 'A quarter' } }),
         color: field.string({ max: 60, pattern: '(?:#[0-9a-fA-F]{3,8}|[a-z][a-z0-9-]*(?:\\([^)]*\\))?)?', label: 'Colour', description: 'A palette slug or a CSS colour; empty uses the border colour.' }),
         text: field.string({ max: 80, label: 'Text', description: 'Shown in the middle of the line.' }),
+    } },
+    // Answer-shaped content: what search and answer engines quote. Plain HTML; no retired rich-result schema.
+    { name: 'core/answer', keywords: ['tldr', 'key takeaway', 'summary', 'answer', 'aeo'], label: 'Quick answer', icon: 'lightbulb-bolt', category: 'text', description: 'The direct answer, set apart at the top: two or three sentences engines can quote.', fields: {
+        text: field.text({ required: true, max: 2000, format: 'markdown', label: 'Answer' }),
+        label: field.string({ max: 60, label: 'Label', description: 'Such as Quick answer or Key takeaways. Empty for none.' }),
+    } },
+    { name: 'core/faq', keywords: ['questions', 'answers', 'q&a', 'accordion'], label: 'Questions and answers', icon: 'question-circle', category: 'text', description: 'Questions readers ask, each with its answer. Optionally as FAQPage structured data.', fields: {
+        schema: field.boolean({ default: false, label: 'Add FAQPage structured data', description: 'Valid schema.org markup. Google no longer shows FAQ rich results for it.' }),
+    }, children: { allowed: ['core/faq-item'], max: 50 } },
+    { name: 'core/faq-item', label: 'Question', icon: 'question-circle', category: 'text', parent: ['core/faq'], fields: {
+        question: field.string({ required: true, max: 300, label: 'Question' }),
+        answer: field.text({ required: true, max: 5000, format: 'markdown', label: 'Answer' }),
+    } },
+    { name: 'core/steps', keywords: ['how to', 'instructions', 'procedure', 'tutorial'], label: 'Steps', icon: 'list-check', category: 'text', description: 'Numbered steps with a title and text each.', fields: {}, children: { allowed: ['core/step'], max: 50 } },
+    { name: 'core/step', label: 'Step', icon: 'list-check', category: 'text', parent: ['core/steps'], fields: {
+        title: field.string({ required: true, max: 200, label: 'Title' }),
+        text: field.text({ max: 5000, format: 'markdown', label: 'Text' }),
+    } },
+    { name: 'core/claim', keywords: ['statistic', 'fact', 'source', 'citation', 'quote', 'geo'], label: 'Claim with source', icon: 'chart-square', category: 'text', description: 'A statistic or quotation with a linked source: the content generative answers cite.', fields: {
+        text: field.text({ required: true, max: 1000, label: 'Statistic or quote' }),
+        kind: field.enum(['statistic', 'quote'], { default: 'statistic', label: 'Kind', choices: { statistic: 'Statistic', quote: 'Quotation' } }),
+        sourceName: field.string({ required: true, max: 200, label: 'Source', description: 'Who published it: a study, an organization, a person.' }),
+        sourceUrl: field.string({ max: 2048, pattern: '(?:https?://\\S*)?', label: 'Source URL' }),
+        date: field.string({ max: 40, label: 'Date', description: 'When it was published, such as 2026 or March 2026.' }),
+    } },
+    { name: 'core/definition', keywords: ['glossary', 'term', 'meaning', 'what is'], label: 'Definition', icon: 'book-bookmark', category: 'text', description: 'A term and what it means, in one or two sentences.', fields: {
+        term: field.string({ required: true, max: 200, label: 'Term' }),
+        definition: field.text({ required: true, max: 2000, format: 'markdown', label: 'Definition' }),
     } },
     { name: 'core/card', keywords: ['box', 'tile'], label: 'Card', icon: 'card', category: 'design', description: 'An image with a title, text and a link, in a box.', fields: {
         image: field.media({ label: 'Image' }),
@@ -577,7 +607,7 @@ function blockLayoutOf(block: Block): BlockLayout | undefined {
     const className = block.layout?.className?.trim().split(/\s+/).filter(Boolean).join(' ');
     const layout = {
         ...(hide?.length ? { hide: Object.freeze([...BREAKPOINTS].filter(breakpoint => hide.includes(breakpoint))) } : {}),
-        ...(anchor ? { anchor } : {}), ...(className ? { className } : {}),
+        ...(anchor ? { anchor } : {}), ...(className ? { className } : {}), ...(block.layout?.nosnippet === true ? { nosnippet: true } : {}),
     };
     return Object.keys(layout).length ? Object.freeze(layout) : undefined;
 }

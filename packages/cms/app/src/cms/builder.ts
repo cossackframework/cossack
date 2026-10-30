@@ -2,7 +2,7 @@
  * The collection builder's model: field types as the picker offers them, names from labels,
  * and the definition a draft describes. Client-safe.
  */
-import type { Block, CollectionDefinition, FieldDeclaration } from '@cossackframework/cms';
+import type { Block, CollectionDefinition, FieldDeclaration, SchemaType } from '@cossackframework/cms';
 
 export const FIELD_TYPES = [
     { type: 'text', label: 'Single line', description: 'One line of text, such as a subtitle or SKU.' },
@@ -78,6 +78,17 @@ export interface CollectionDraft {
     revisions: boolean;
     /** How far entries may change the content template: free, keep its blocks, or keep their order too. */
     templateLock: '' | 'insert' | 'all';
+    /** Structured data: the schema.org type of entries and which fields fill its properties. */
+    schemaType: SchemaType;
+    schemaMap: Record<string, string>;
+    /** Robots: entries and the archive kept out of search engines, links on entries not followed. */
+    noindex: boolean;
+    nofollow: boolean;
+    archiveNoindex: boolean;
+    /** Title and description templates; empty uses Settings → SEO. */
+    seoTitle: string;
+    seoDescription: string;
+    archiveTitle: string;
 }
 
 export function collectionDraft(definition: CollectionDefinition): CollectionDraft {
@@ -87,11 +98,15 @@ export function collectionDraft(definition: CollectionDefinition): CollectionDra
         hierarchical: definition.hierarchical === true, visibility: definition.visibility ?? 'private', comments: definition.comments === true, sitemap: definition.sitemap !== false, taxonomies: [...(definition.taxonomies ?? [])], builtin: definition.builtin === true,
         content: Boolean(definition.features?.content), excerpt: definition.features?.excerpt === true, featuredImage: definition.features?.featuredImage === true, password: definition.features?.password === true, revisions: definition.features?.revisions !== false,
         templateLock: definition.templateLock ?? '',
+        schemaType: definition.schema?.type ?? 'WebPage', schemaMap: { ...(definition.schema?.map ?? {}) },
+        noindex: definition.robots?.noindex === true, nofollow: definition.robots?.nofollow === true, archiveNoindex: definition.robots?.archiveNoindex === true,
+        seoTitle: definition.seoTemplates?.title ?? '', seoDescription: definition.seoTemplates?.description ?? '', archiveTitle: definition.seoTemplates?.archiveTitle ?? '',
     };
 }
 
 /** The definition a draft and its content template describe. Fields live in the groups attached to the collection. */
 export function definitionOf(draft: CollectionDraft, template: readonly Block[] = []): CollectionDefinition {
+    const map = Object.fromEntries(Object.entries(draft.schemaMap).filter(([, name]) => name));
     return {
         name: draft.name, label: draft.label.trim(), singular: draft.singular.trim(), ...(draft.description.trim() ? { description: draft.description.trim() } : {}),
         icon: draft.icon, path: draft.public ? draft.path.trim().replace(/^\/+|\/+$/g, '') : null,
@@ -100,5 +115,8 @@ export function definitionOf(draft: CollectionDraft, template: readonly Block[] 
         features: { content: draft.content, excerpt: draft.excerpt, featuredImage: draft.featuredImage, password: draft.password === true, revisions: draft.revisions },
         fields: {},
         template: draft.content ? [...template] : [], ...(draft.content && draft.templateLock && template.length ? { templateLock: draft.templateLock } : {}),
+        schema: { type: draft.schemaType, ...(Object.keys(map).length ? { map } : {}) },
+        robots: { noindex: draft.noindex, nofollow: draft.nofollow, archiveNoindex: draft.archiveNoindex },
+        seoTemplates: { title: draft.seoTitle.trim(), description: draft.seoDescription.trim(), archiveTitle: draft.archiveTitle.trim() },
     };
 }

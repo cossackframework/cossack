@@ -39,7 +39,7 @@ export default class HomePage extends Cossack {
             }
             this.view = { ...this.view, ...home.view };
             this.data = await themeData(cms, this.theme, this.view, this.view, this.c.get('principal'), languages.default);
-            this.seo = await homeSeo(cms, this.c, { url: '/', locale: languages.default, links, searchUrl: '/search' });
+            this.seo = await homeSeo(cms, this.c, { url: '/', locale: languages.default, links, page: pageNumber(this.c.req.query('page')) });
         } catch (error) {
             // Before setup, or while a migration is pending, content is unavailable.
             if (!isCmsError(error, 'CMS_UNAVAILABLE')) throw error;

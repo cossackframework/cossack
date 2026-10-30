@@ -86,7 +86,7 @@ export interface EditorBlock {
     _id: string;
     type: string;
     data: Record<string, unknown>;
-    layout?: { hide?: Breakpoint[]; anchor?: string; className?: string };
+    layout?: { hide?: Breakpoint[]; anchor?: string; className?: string; nosnippet?: boolean };
     style?: BlockStyle;
     /** In a form: when the block shows. */
     when?: BlockCondition;
