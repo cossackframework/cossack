@@ -145,7 +145,7 @@ describe.skipIf(!live)('content, taxonomies, settings, users and media', () => {
 
     it('renames stored block IDs on the automatic upgrade, collections stored with id included', async () => {
         const admin: Principal = { kind: 'user', id: 'admin-1', roles: ['admin'], permissions: ['*'] };
-        await cms.saveCollection({ name: 'notes', label: 'Notes', singular: 'Note', icon: 'notebook', path: 'notes', features: { content: true }, template: [{ _id: 'lead', type: 'core/paragraph', data: { text: 'Lead' } }] }, admin);
+        await cms.saveCollection({ name: 'notes', label: 'Notes', singular: 'Note', icon: 'notebook', path: 'notes', fields: {}, features: { content: true }, template: [{ _id: 'lead', type: 'core/paragraph', data: { text: 'Lead' } }] }, admin);
         expect((await cms.migrate()).failed).toBeUndefined();
         const note = await cms.resource('cms/notes').create({ title: 'Old note', content: [{ _id: 'a', type: 'core/paragraph', data: { text: 'A' } }] }, { principal: editor });
         const { storage: table } = cms.resourceById('cms/notes');

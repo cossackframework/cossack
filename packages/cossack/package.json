@@ -34,14 +34,14 @@
     "prompts": "^2.4.2",
     "tsx": "^4.23.0",
     "typescript-api": "npm:typescript@6.0.3",
-    "vite": "^8.1.4",
+    "vite": "^8.3.5",
     "zod": "^4.6.5"
   },
   "devDependencies": {
     "@jridgewell/trace-mapping": "0.3.31",
     "@modelcontextprotocol/client": "^2.3.0",
     "@playwright/test": "^1.61.1",
-    "vitest": "^4.1.11",
+    "vitest": "^4.1.12",
     "yaml": "^2.9.0"
   },
   "engines": {

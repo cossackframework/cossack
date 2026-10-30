@@ -61,7 +61,7 @@
       "@types/node": "^22.0.0",
       "@types/pg": "^8.15.5",
       "@types/ws": "^8.18.0",
-      "electron": "^43.7.0",
+      "electron": "^43.8.4",
       "hono": "^4.13.7",
       "mysql2": "^3.14.3",
       "pg": "^8.16.3",
@@ -82,8 +82,8 @@
       "unified": "^11.0.5",
       "uqr": "0.1.3",
       "vfile-matter": "^5.0.1",
-      "vite": "^8.1.4",
-      "vitest": "^4.1.11",
+      "vite": "^8.3.5",
+      "vitest": "^4.1.12",
       "wrangler": "^4.115.0",
       "ws": "^8.18.0"
     }
@@ -103,7 +103,7 @@
     "esbuild": "^0.28.1",
     "prettier": "^3.9.10",
     "uqr": "0.1.3",
-    "vitest": "^4.1.11"
+    "vitest": "^4.1.12"
   },
   "publishConfig": {
     "access": "public"

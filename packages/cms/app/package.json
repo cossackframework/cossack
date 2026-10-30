@@ -23,8 +23,8 @@
     "tailwindcss": "^4.3.3",
     "tsx": "^4.23.0",
     "typescript": "^7.0.2",
-    "vite": "^8.1.4",
-    "vitest": "^4.1.11",
+    "vite": "^8.3.5",
+    "vitest": "^4.1.12",
     "@types/ws": "^8.18.0",
     "@cossackframework/scaffold": "workspace:*"
   },

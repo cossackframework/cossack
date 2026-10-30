@@ -37,7 +37,7 @@
   "devDependencies": {
     "@types/node": "^22.19.0",
     "hono": "^4.13.7",
-    "vitest": "^4.1.11",
+    "vitest": "^4.1.12",
     "@types/markdown-it": "^14.2.0"
   },
   "exports": {
