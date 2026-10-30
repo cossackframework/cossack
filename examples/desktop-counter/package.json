@@ -22,14 +22,14 @@
     "@cossackframework/core": "workspace:*",
     "@cossackframework/desktop": "workspace:*",
     "@cossackframework/framework": "workspace:*",
+    "@cossackframework/node-adapter": "workspace:*",
     "@cossackframework/renderer": "workspace:*",
     "@cossackframework/ui": "workspace:*",
-    "@cossackframework/node-adapter": "workspace:*",
     "@hono/node-server": "^2.0.5",
     "@tailwindcss/vite": "^4.3.3",
     "hono": "^4.13.7",
     "tailwindcss": "^4.3.3",
-    "vite": "^8.3.5",
+    "vite": "^8.1.6",
     "ws": "^8.18.0"
   },
   "devDependencies": {

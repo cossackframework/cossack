@@ -82,6 +82,8 @@ export async function verifyPublishedRelease(projectDir) {
     '@cossackframework/framework/workflows', '@cossackframework/framework/client',
     '@cossackframework/framework/client/app', '@cossackframework/framework/ssg-renderer',
     '@cossackframework/framework/locale',
+    // The plugin registry is a virtual module the application's Vite build fills in.
+    '@cossackframework/framework/plugins',
   ]);
   const runtimeImports = [], deferredImports = [];
   for (const entry of plan.exports) {

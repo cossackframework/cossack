@@ -28,6 +28,20 @@ export function clientOptimizedDependencies(frameworkModuleUrl: string): string[
     return include;
 }
 
+/**
+ * Server-side dependencies that must be pre-bundled whatever imports them. Vite's dependency
+ * scan crawls source files, never node_modules, so a CommonJS package reached only through an
+ * installed framework package is found at run time. The Cloudflare plugin evaluates the Worker
+ * entry before that discovery can rebundle, and a bare `require` then stops the dev server
+ * ("require is not defined" in the runner Worker). `css-tree` (the renderer's scoped styles)
+ * reaches `source-map-js`, which is CommonJS.
+ */
+export function ssrOptimizedDependencies(): string[] {
+    // The nested form: css-tree is the renderer's dependency, not the application's, so an
+    // application under pnpm's strict layout cannot resolve it from its root.
+    return ['@cossackframework/renderer > css-tree/parser', '@cossackframework/renderer > css-tree/generator', '@cossackframework/renderer > css-tree/walker'];
+}
+
 /** Vite pre-bundles a bare import only when its real path is inside node_modules. */
 export function isInstalledPackage(moduleUrl: string): boolean {
     return fileURLToPath(moduleUrl).split(/[\\/]/).includes('node_modules');

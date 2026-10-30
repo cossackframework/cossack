@@ -49,6 +49,8 @@ describe('client dependency pre-bundling', () => {
         const config = configure({ root: packageRoot }, 'serve');
         expect(config.environments.client.optimizeDeps.force).toBe(true);
         expect(config.environments.ssr.optimizeDeps.force).toBeUndefined();
+        // css-tree reaches CommonJS source-map-js; an installed renderer is never scanned, so it is listed up front.
+        expect(config.environments.ssr.optimizeDeps.include).toEqual(['@cossackframework/renderer > css-tree/parser', '@cossackframework/renderer > css-tree/generator', '@cossackframework/renderer > css-tree/walker']);
         const ssr = configure({ root: packageRoot, environments: { ssr: { optimizeDeps: { include: ['@cossackframework/core'] } } } }, 'serve');
         expect(ssr.environments.ssr.optimizeDeps.force).toBe(true);
         expect(configure({ root: packageRoot }, 'build').environments.client.optimizeDeps.force).toBeUndefined();

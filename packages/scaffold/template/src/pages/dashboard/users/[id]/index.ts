@@ -11,7 +11,7 @@ import {
 import { AppPasswords } from '../../../../dashboard/app-passwords';
 import { avatarField } from '../../../../dashboard/avatar-field';
 import { sessionTable } from '../../../../dashboard/session-list';
-import { countBadge, rememberTab, tabFromQuery } from '../../../../cms/ui';
+import { countBadge, rememberTab, tabFromQuery } from '../../../../dashboard/tabs';
 
 @Page({ transport: 'http', middlewares: [guard.requireRole('admin')] })
 export default class EditUserPage extends Cossack {

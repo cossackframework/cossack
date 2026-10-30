@@ -12,7 +12,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { installDevelopmentTraceBridge, TRACE_BRIDGE_MODULE } from './vite-development-traces.js';
 import { installPublicReloadPrivacy } from './vite-public-diagnostics.js';
 import { checkTemplatesForBuild, formatTemplateDiagnostic, startDevelopmentTemplateChecks } from './vite-template-diagnostics.js';
-import { clientOptimizedDependencies, linkedDependencies } from './vite-dependency-optimization.js';
+import { clientOptimizedDependencies, linkedDependencies, ssrOptimizedDependencies } from './vite-dependency-optimization.js';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { resolve, dirname, relative } from 'path';
 import { generateRoutes, ROUTES_MODULE_ID, ROUTES_SOURCE_PATH, ROUTE_GLOB_EXCLUDES } from './route-codegen.js';
@@ -214,7 +214,7 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
       const force = (listed: readonly string[] | undefined) =>
         env.command === 'serve' && linkedDependencies(root, listed ?? []).length > 0 ? { force: true } : {};
       const client = [...include, ...(userConfig.environments?.client?.optimizeDeps?.include ?? []), ...(userConfig.optimizeDeps?.include ?? [])];
-      const ssr = [...(userConfig.environments?.ssr?.optimizeDeps?.include ?? []), ...(userConfig.ssr?.optimizeDeps?.include ?? [])];
+      const ssr = [...ssrOptimizedDependencies(), ...(userConfig.environments?.ssr?.optimizeDeps?.include ?? []), ...(userConfig.ssr?.optimizeDeps?.include ?? [])];
       return {
         ssr: {
           noExternal: [
@@ -234,7 +234,8 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
             },
           },
           ssr: {
-            optimizeDeps: force(ssr),
+            // CommonJS reached through installed packages is pre-bundled up front; see the helper.
+            optimizeDeps: { include: ssrOptimizedDependencies(), ...force(ssr) },
             resolve: {
               noExternal: [
                 '@cossackframework/framework',
