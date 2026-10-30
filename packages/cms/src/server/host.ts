@@ -634,9 +634,14 @@ export class CmsHost {
         return { principal: userPrincipal(user.id, user.roles, user.permissions), scope: verified.scope, userId: user.id };
     }
 
-    /** Whether visitors can comment on the entry: its collection takes comments, it is open, and not too old. */
+    /** Whether the site has discussions at all (Settings → Discussion → Allow discussions). Off hides every comment; stored ones are kept. */
+    discussions(settings: SiteSettings): boolean {
+        return settings['discussion.enabled'] !== false;
+    }
+
+    /** Whether visitors can comment on the entry: discussions are on, its collection takes comments, it is open, and not too old. */
     commentsOpen(collection: CollectionDefinition, record: RecordShape, settings: SiteSettings): boolean {
-        if (!collection.comments || record.commentsOpen === false) return false;
+        if (!this.discussions(settings) || !collection.comments || record.commentsOpen === false) return false;
         const days = settings['discussion.closeAfterDays'];
         const since = typeof record.publishedAt === 'number' ? record.publishedAt : record.createdAt;
         return !days || this.#now() - since < days * 24 * 60 * 60 * 1000;
@@ -655,6 +660,7 @@ export class CmsHost {
         const record = await this.resource(resource).get(input.entry, { principal: ANONYMOUS });
         if (!record || (collection.publishable !== false && record.status !== 'published')) throw new CmsError('CMS_NOT_FOUND', 'This entry does not take comments.');
         const settings = await this.settings.all();
+        if (!this.discussions(settings)) throw new CmsError('CMS_FORBIDDEN', 'Discussions are turned off on this site.');
         if (!this.commentsOpen(collection, record, settings)) throw new CmsError('CMS_FORBIDDEN', 'Comments are closed.');
         const user = context.principal.kind === 'user' ? await this.users.get(context.principal.id) : null;
         if (settings['discussion.requireSignIn'] && !user) throw new CmsError('CMS_UNAUTHENTICATED', 'Sign in to comment.');

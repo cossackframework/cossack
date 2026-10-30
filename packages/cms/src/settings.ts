@@ -23,6 +23,8 @@ export interface SettingsGroup {
     readonly fields: { readonly [name: string]: SettingDeclaration };
     /** Permission needed to change the group. Default `cms:settings`; Appearance groups use `cms:appearance`. */
     readonly permission?: string;
+    /** Shown as a subpage of this group, such as Crawlers under SEO; keys keep the group's own ID. */
+    readonly parent?: string;
 }
 
 export const DATE_FORMATS = Object.freeze({ long: 'October 16, 2026', medium: 'Oct 16, 2026', iso: '2026-10-16', us: '10/16/2026', eu: '16/10/2026' });
@@ -45,6 +47,7 @@ export const general: SettingsGroup = {
         requireTwoFactor: field.boolean({ default: false, label: 'Require two-step sign-in for everyone who can use the dashboard', description: 'They add an authenticator app or a passkey before they can continue.' }),
         favicon: { ...field.string({ max: 2000, default: '', pattern: '(?:https?://[^\\s]+|/[^\\s]*)?', label: 'Site icon', description: 'Shown in browser tabs and bookmarks: an SVG or a square PNG from the library.' }), source: 'media' },
         appIcon: { ...field.string({ max: 2000, default: '', pattern: '(?:https?://[^\\s]+|/[^\\s]*)?', label: 'App icon', description: 'For home screens and the web app manifest: a square PNG of at least 512 pixels from the library; it is resized as needed.' }), source: 'media' },
+        logo: { ...field.string({ max: 2000, default: '', pattern: '(?:https?://[^\\s]+|/[^\\s]*)?', label: 'Logo', description: 'The site\'s logo in any shape, shown in the site header, on sign-in pages and in the dashboard. Search results use the square SEO logo.' }), source: 'media' },
     },
 };
 
@@ -63,8 +66,8 @@ export const appearance: SettingsGroup = {
     permission: 'cms:appearance',
     fields: {
         theme: field.string({ max: 64, default: '', pattern: '(?:[a-z][a-z0-9]*(?:-[a-z0-9]+)*)?', label: 'Theme' }),
-        /** The site's colour changes and additions, by theme: `{ [theme]: { colors: { [slug]: value }, custom: Preset[] } }`. Checked by `presetOverridesProblem` on write. */
-        presets: field.json({ label: 'Colours' }),
+        /** The site's color changes and additions, by theme: `{ [theme]: { colors: { [slug]: value }, custom: Preset[] } }`. Checked by `presetOverridesProblem` on write. */
+        presets: field.json({ label: 'Colors' }),
         /** Site-wide CSS added under Customize; `customCssProblem` keeps it to styling. */
         customCss: field.text({ max: 20_000, default: '', label: 'Additional CSS' }),
     },
@@ -98,6 +101,7 @@ export const discussion: SettingsGroup = {
     id: 'discussion',
     label: 'Discussion',
     fields: {
+        enabled: field.boolean({ default: true, label: 'Allow discussions', description: 'Off hides comments and their forms everywhere and refuses new ones. Stored comments are kept and can still be moderated.' }),
         defaultOpen: field.boolean({ default: true, label: 'Allow people to submit comments on new entries' }),
         requireNameEmail: field.boolean({ default: true, label: 'Comment authors must fill out their name and email' }),
         requireSignIn: field.boolean({ default: false, label: 'Users must be signed in to comment' }),
@@ -147,6 +151,7 @@ export const seo: SettingsGroup = {
 export const crawlers: SettingsGroup = {
     id: 'crawlers',
     label: 'Crawlers',
+    parent: 'seo',
     description: 'Crawlers by purpose. robots.txt asks; it does not enforce. Fetchers acting for a person (ChatGPT-User, Claude-User, Perplexity-User) ignore it, as browsers do.',
     fields: {
         allowSearch: field.boolean({ default: true, label: 'Search engines', description: 'Googlebot, Bingbot, Applebot, DuckDuckBot, Yandex, Baidu. Their indexes also feed AI Overviews, AI Mode and Copilot.' }),
@@ -160,6 +165,7 @@ export const crawlers: SettingsGroup = {
 export const indexnow: SettingsGroup = {
     id: 'indexnow',
     label: 'IndexNow',
+    parent: 'seo',
     description: 'Tells Bing, Yandex, Naver and Seznam at once when a page is published, changed or removed, so their results and Copilot answers refresh within minutes. Google does not take part. Needs APP_URL.',
     fields: {
         enabled: field.boolean({ default: false, label: 'Ping IndexNow when entries change' }),
@@ -191,6 +197,7 @@ export interface SiteSettings {
     'general.requireTwoFactor': boolean;
     'general.favicon': string;
     'general.appIcon': string;
+    'general.logo': string;
     'media.maxUploadMb': number;
     'appearance.theme': string;
     'appearance.presets': { readonly [theme: string]: { readonly colors?: { readonly [slug: string]: string }; readonly custom?: readonly { slug: string; name: string; value: string }[] } } | null;
@@ -204,6 +211,7 @@ export interface SiteSettings {
     'reading.feedItems': number;
     'reading.feedContent': 'excerpt' | 'full';
     'reading.discourageSearchEngines': boolean;
+    'discussion.enabled': boolean;
     'discussion.defaultOpen': boolean;
     'discussion.requireNameEmail': boolean;
     'discussion.requireSignIn': boolean;

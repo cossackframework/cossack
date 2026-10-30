@@ -33,7 +33,7 @@
 .cms-column[data-valign="bottom"] { justify-content: flex-end; }
 .cms-column > :first-child { margin-top: 0; }
 
-/* A styled block's wrapper: `blockStyleAttributes` sets its colours, spacing, size and alignment inline through the presets' variables. */
+/* A styled block's wrapper: `blockStyleAttributes` sets its colors, spacing, size and alignment inline through the presets' variables. */
 .cms-block { min-width: 0; }
 .cms-block > :first-child { margin-top: 0; }
 .cms-block > :last-child { margin-bottom: 0; }
@@ -84,7 +84,7 @@ html[data-cms-device="phone"] .cms-content { max-width: 24rem; margin-inline: au
 .cms-form-trap { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
 
 /*
- * Dividers (core/divider): a line of a thickness and length, a palette colour or a CSS colour,
+ * Dividers (core/divider): a line of a thickness and length, a palette color or a CSS color,
  * with text in the middle if asked; or a vertical line between things in a row.
  */
 .cms-divider { --cms-divider-size: 1px; border: 0; margin-block: 2rem; margin-inline: auto; }

@@ -50,7 +50,7 @@ src/plugins/my-theme/
     "locations": { "primary": "Primary menu", "footer": "Footer menu" },
     "areas": { "footer": "Footer widgets" },
     "options": {
-      "accent": { "kind": "enum", "values": ["blue", "rose"], "default": "blue", "label": "Accent colour", "choices": { "blue": "Blue", "rose": "Rose" } },
+      "accent": { "kind": "enum", "values": ["blue", "rose"], "default": "blue", "label": "Accent color", "choices": { "blue": "Blue", "rose": "Rose" } },
       "showSearch": { "kind": "boolean", "default": true, "label": "Show a search box" }
     },
     "presets": {
@@ -66,7 +66,7 @@ src/plugins/my-theme/
 | `locations` | Up to 8 menu locations, `name: label`. Administrators assign menus to them; templates read `site.menus[location]`. |
 | `areas` | Up to 8 widget areas, `name: label`. Their blocks are edited under Appearance → Widgets and arrive as `site.areas[area]`. |
 | `options` | Up to 16 settings shown under Appearance → Customize, of kind `string`, `text`, `enum` (`values`, `choices` for labels), `boolean`, `integer` or `number`, with `default`, `label`, `description` and the usual limits. Stored as settings `<plugin>.<option>`; templates read them as `helpers.options.<option>`, defaults applied. |
-| `presets` | The palette, font sizes and spacing steps blocks pick from: `colors` (up to 24), `fontSizes` (8) and `spacing` (8), each `{ slug, name, value }`. Missing kinds get defaults; the site adjusts colours under Customize. |
+| `presets` | The palette, font sizes and spacing steps blocks pick from: `colors` (up to 24), `fontSizes` (8) and `spacing` (8), each `{ slug, name, value }`. Missing kinds get defaults; the site adjusts colors under Customize. |
 | `extends` | A parent theme's plugin name. See [Child themes](#child-themes). |
 
 A manifest with a `theme` field and nothing that needs a grant (no resources, hooks,
@@ -157,6 +157,7 @@ Every template receives `helpers`:
 | `block(blocks)` | Renders a block, or a list of blocks, through the theme's own renderer, a plugin's component or the core one. |
 | `content(parts)` | For block renderers: renders a block's rich text field (`block.content.<field>`), HTML runs and the blocks embedded in them. |
 | `isActive(url)` | Whether a URL is the current page or one of its ancestors, for menu styling. |
+| `logo(site, { class })` | The site's logo from Settings → General as an image with the site title as its alternative text; null when none is set. `site.logo` holds its URL. See [Settings](/docs/cms/settings.md#site-icon-app-icon-and-logo). |
 
 Render content through `helpers.block`. Besides the core renderers and plugin blocks, that
 is what makes an entry editable on the public page for signed-in editors: the helper marks

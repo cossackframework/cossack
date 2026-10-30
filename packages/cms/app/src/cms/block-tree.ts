@@ -77,7 +77,7 @@ export function blockSummary(block: EditorBlock, previews: Record<string, MediaP
     return text ? text.replace(/[*_#>`]/g, '').slice(0, 120) : '';
 }
 
-/** The border colour of a nested list: deeper levels are stronger. */
+/** The border color of a nested list: deeper levels are stronger. */
 export function levelBorder(depth: number): string {
     return `border-color: color-mix(in oklab, var(--primary) ${Math.min(15 + depth * 20, 95)}%, var(--border))`;
 }
@@ -137,6 +137,16 @@ export class BlockTree extends Cossack {
         if (!block) return;
         this.collapsed = { ...this.collapsed, [block._id]: false };
         this.props.onChange(insertBlock(this.props.blocks, parent, block));
+        // A new block opens in the panel at once when it has settings there, as its Edit button would.
+        const option = this.props.options.find(entry => entry.name === type);
+        if (option && this.props.onEdit && (option.fields.some(field => field.kind !== 'richtext') || this.props.form || this.props.fieldGroup)) {
+            const edit = this.props.onEdit;
+            requestAnimationFrame(() => {
+                edit(block._id);
+                // Once the sheet is open, the cursor goes to the block's first field.
+                setTimeout(() => document.querySelector<HTMLElement>(':is(dialog[open], [role="dialog"]) [role="tabpanel"] :is(input:not([type="hidden"]):not([type="checkbox"]), textarea, select, [contenteditable="true"])')?.focus(), 150);
+            });
+        }
     }
 
     @Client()

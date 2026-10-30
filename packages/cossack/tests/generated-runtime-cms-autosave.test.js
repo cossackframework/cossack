@@ -64,6 +64,11 @@ describe.skipIf(!liveRomeDBTests())('generated CMS autosave', () => {
       await picker.getByRole('button', { name: 'Heading', exact: true }).click();
       await browserExpect(picker).toBeHidden();
       await browserExpect(page.getByRole('region', { name: 'Heading 2' })).toBeVisible();
+      // A new block opens its panel at once; closing it returns to the text.
+      const headingPanel = page.getByRole('dialog', { name: 'Heading' });
+      await browserExpect(headingPanel).toBeVisible();
+      await page.keyboard.press('Escape');
+      await browserExpect(headingPanel).toBeHidden();
       await surface.click();
       await page.keyboard.press('End');
 

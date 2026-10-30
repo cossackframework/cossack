@@ -115,7 +115,7 @@ async function exercise(origin, routeIds, diagnostics) {
   expect(group.error).toBe('');
   const builder = await web.action('dashboard/(cms)/collections/[name]/index.ts', 'save', [
     { name: 'products', label: 'Products', singular: 'Product', description: 'Things we sell.', icon: 'box', path: 'shop', public: true, slug: true, publishable: true,
-      hierarchical: false, visibility: 'private', comments: false, taxonomies: ['tags'], builtin: false, content: true, excerpt: false, featuredImage: false, revisions: true, templateLock: '' },
+      hierarchical: false, visibility: 'private', comments: false, taxonomies: ['tags'], builtin: false, content: true, excerpt: false, featuredImage: false, revisions: true, templateLock: '', sitemap: true, password: false, schemaType: 'WebPage', schemaMap: {}, noindex: false, nofollow: false, archiveNoindex: false, seoTitle: '', seoDescription: '', archiveTitle: '' },
     ['product-details'], [],
   ], { params: { name: 'products' } });
   expect(builder.error).toBe('');
@@ -140,7 +140,8 @@ async function exercise(origin, routeIds, diagnostics) {
   contains(productPage, 'Price: <strong>19.5</strong>');
   // The SKU is in the page's state for editing, but the theme prints no field list of its own.
   lacks(productPage, '>SKU</dt>');
-  lacks(productPage, '<dl');
+  // The editor's bar has an SEO list of its own; the page above it has none.
+  lacks(productPage.split('Edit this page')[0], '<dl');
   contains(productPage, 'A pixel');
   contains(await web.page('/shop'), 'Rocket skates');
   contains(await web.page('/tag/intro'), 'Hello, World!');
@@ -457,7 +458,7 @@ describe.skipIf(!liveRomeDBTests())('generated CMS application', () => {
       await picker.getByLabel('Search blocks').fill('text');
       await picker.getByRole('button', { name: 'Single line', exact: true }).click();
       const venue = page.getByRole('region', { name: 'Single line 1' });
-      await venue.getByRole('button', { name: 'Edit Single line' }).click();
+      // A new block opens its panel at once.
       const panel = page.getByRole('dialog', { name: 'Single line' });
       await panel.getByLabel('Label *').fill('Venue');
       await panel.getByRole('button', { name: 'Done' }).click();

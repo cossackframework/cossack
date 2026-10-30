@@ -433,7 +433,7 @@ describe.skipIf(!live)('scheduling, previews, revisions, redirects, tokens, webh
         // The profile is validated like a field group's meta; unknown keys are refused.
         await expect(cms.users.update(ada.id, { meta: { bio: 'x'.repeat(1001) } })).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
         await expect(cms.users.update(ada.id, { meta: { website: 'javascript:alert(1)' } })).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
-        await expect(cms.users.update(ada.id, { meta: { favouriteColour: 'blue' } })).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
+        await expect(cms.users.update(ada.id, { meta: { favouriteColor: 'blue' } })).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
         await cms.users.update(ada.id, { meta: { bio: 'First programmer.', jobTitle: 'Analyst', website: 'https://ada.example', profiles: 'https://x.com/ada\nnot a url' } });
         expect((await cms.users.get(ada.id))?.meta).toMatchObject({ bio: 'First programmer.', jobTitle: 'Analyst', website: 'https://ada.example' });
         // Users from before author pages get a slug the first time the site needs one.

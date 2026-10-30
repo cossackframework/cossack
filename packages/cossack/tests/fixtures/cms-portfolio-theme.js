@@ -21,7 +21,7 @@ const files = {
         client: { kind: 'string', max: 120, label: 'Client' },
         year: { kind: 'integer', label: 'Year' },
         sections: { kind: 'blocks', label: 'Sections' },
-        summary: { kind: 'richtext', label: 'Summary' },
+        overview: { kind: 'richtext', label: 'Overview' },
       },
     }],
   }, null, 2),
@@ -43,7 +43,7 @@ export const loaders: ThemeLoaders = {
   'templates/entry-projects.ts': `import { html, type TemplateResult } from '@cossackframework/renderer';
 import type { EntryView, ThemeHelpers } from '@cossackframework/cms';
 
-/** The content is one list: the sections, then the summary as a rich text block, in field order. */
+/** The content is one list: the sections, then the overview as a rich text block, in field order. */
 export default function project(entry: EntryView, helpers: ThemeHelpers): TemplateResult {
     const related = (helpers.data.page.related as { title: string; url: string }[] | undefined) ?? [];
     return html\`<article class="portfolio-project" data-template="entry-projects">

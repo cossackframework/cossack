@@ -142,7 +142,7 @@ const positions = {
     'bottom-right': 'bottom-0 right-0', 'bottom-left': 'bottom-0 left-0',
     'bottom-center': 'bottom-0 left-1/2 -translate-x-1/2',
 };
-// A toast looks like an inline status message: a tinted, bordered card in the page's text colour,
+// A toast looks like an inline status message: a tinted, bordered card in the page's text color,
 // with the tone carried by its border, background and icon.
 const styles: Record<ToastVariant, string> = {
     default: 'border-border bg-card', success: 'border-success/40 bg-success/10',

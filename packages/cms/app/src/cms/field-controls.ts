@@ -61,7 +61,7 @@ export function fieldControl(field: EditorField, value: unknown, change: (value:
             : textarea(6, 'font-mono text-xs');
         // Markdown in a block is a short passage: a compact box that grows with its text, no tabs or toolbar.
         case 'text': return field.format === 'markdown'
-            ? html`<div class="space-y-1">${bindable(textarea(3, 'field-sizing-content min-h-[4.5rem] max-h-[40vh]'))}<p class="text-xs text-muted-foreground">${__('Markdown: **bold**, _italic_, [link](https://…).')}</p></div>`
+            ? html`<div class="space-y-1">${bindable(textarea(3, 'field-sizing-content min-h-[4.5rem] max-h-[40vh]'))}<p class="text-xs text-muted-foreground">${__('Markdown: **bold**, _italic_, [link](https://…). Blocks: {{ block core/button label="Buy" url="/cart" /}}.')}</p></div>`
             : field.format === 'code' ? component(CodeEditor, { id, value: String(value ?? ''), language: extra.language ?? '', label: field.label, onChange: (next: string) => change(next) })
             : bindable(textarea(4));
         case 'blocks': case 'richtext': case 'vector': case 'bigint': return null;

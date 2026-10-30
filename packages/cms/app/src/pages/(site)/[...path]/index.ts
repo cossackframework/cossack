@@ -3,7 +3,7 @@ import { isTransportPath } from '@cossackframework/core/transport-routes';
 import { getCookie } from 'hono/cookie';
 import { component, html } from '@cossackframework/renderer';
 import { isCmsError, isSameOriginPost, type ArchiveView, type EntryView, type ThemeData } from '@cossackframework/cms';
-import { archive, authorArchive, authorView, commentResult, entryViews, homeView, isProtected, languageLinks, localePrefix, pageNumber, redirectFor, resolvePath, searchEntries, termArchive, themeData, themeState, unlockCookie, unlockToken, type Resolved, type ThemeState } from '../../../cms/site';
+import { archive, authorArchive, authorView, bindingScopes, commentResult, entryViews, homeView, isProtected, languageLinks, localePrefix, pageNumber, redirectFor, resolvePath, searchEntries, termArchive, themeData, themeState, unlockCookie, unlockToken, resolvedOptions, type Resolved, type ThemeState } from '../../../cms/site';
 import { archiveTemplate, entryTemplate, siteContent, siteTheme, themeHelpers, unavailable } from '../../../cms/site-view';
 import { authorSeo, entrySeo, homeSeo, listSeo } from '../../../cms/seo';
 import { emptySeo, seoHead, type SeoView } from '../../../cms/seo-head';
@@ -108,10 +108,13 @@ export default class SitePath extends Cossack {
             }
             const settings = await cms.settings.all();
             const links = await languageLinks(cms, resolved);
+            const usage = { user: false };
             const viewOptions = {
                 comment: commentResult(this.c.req.query('comment')), user: this.user ? { name: this.user.name } : null,
-                forms: { query: this.c.req.query(), principal: this.c.get('principal'), url: base },
+                forms: { query: this.c.req.query(), principal: this.c.get('principal'), url: base }, usage,
             };
+            // Templates read the theme's options with their bindings resolved, as the layout does.
+            this.theme = { ...this.theme, options: resolvedOptions(this.theme.options, bindingScopes(settings, { entry: resolved.kind === 'entry' ? resolved.record : null, user: viewOptions.user })) };
             if (resolved.kind === 'home') {
                 const home = await homeView(cms, resolved.locale, page, viewOptions);
                 if (home.page && home.record) {
@@ -166,6 +169,8 @@ export default class SitePath extends Cossack {
                 if (this.editable) this.c.header('cache-control', 'private, no-store');
                 if (this.editable && this.c.req.query('edit') !== undefined) await this.startEditing();
             }
+            // A binding to the signed-in user makes the page theirs alone.
+            if (usage.user && viewOptions.user) this.c.header('cache-control', 'private, no-store');
             if (this.kind === 'entry' && this.entry) this.data = await themeData(cms, this.theme, { kind: 'entry', collection: this.entry.collection, template: this.entry.template }, this.entry, principal, resolved.locale);
             else if (this.kind === 'home' || this.kind === 'list') this.data = await themeData(cms, this.theme, this.view, this.view, principal, resolved.locale);
         } catch (error) {

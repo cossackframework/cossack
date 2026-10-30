@@ -11,6 +11,8 @@ import { richTextBlocks, richTextMedia, type RichTextDoc } from './richtext';
 
 export { blocksShapeProblem, blockLayoutProblem, blockStyleProblem, blockConditionProblem, BLOCK_LIMITS, BREAKPOINTS, STYLE_PROPERTIES, TEXT_ALIGNMENTS, PRESET_SLUG, INPUT_NAME, CONDITION_OPERATORS, CONDITION_LIMIT,
     type Breakpoint, type StyleProperty, type ConditionOperator } from './block-shape';
+import { bindingProblem } from './bindings';
+import { hasBlockReference, parseBlockText, textBlocks } from './block-references';
 import { BLOCK_LIMITS, BREAKPOINTS, INPUT_NAME, STYLE_PROPERTIES, TEXT_ALIGNMENTS, type Breakpoint, type ConditionOperator, type StyleProperty } from './block-shape';
 
 /**
@@ -59,6 +61,10 @@ export interface BlockDeclaration {
     readonly parent?: readonly string[];
     /** The Style tab's controls; the category decides when absent. See `blockSupports`. */
     readonly supports?: BlockSupports;
+    /** The block can be referenced inside text: `{{ block <name> … }}` (see `parseBlockText`). */
+    readonly inline?: boolean;
+    /** The text field a reference's body fills, such as `label` for a button: `{{ block core/button }}Buy{{ /block }}`. Containers take their body as children instead. */
+    readonly body?: string;
     /**
      * The block is a form input: it collects one value under its `name` data field, labelled by
      * its `label`. Input blocks go only in a form's blocks field.
@@ -156,8 +162,8 @@ type SupportKind = keyof typeof SUPPORT_KINDS;
 
 /**
  * The style properties a block type offers: its `supports` over the category's defaults.
- * Text blocks get colour, spacing and typography; media blocks spacing alone; the rest
- * colour and spacing.
+ * Text blocks get color, spacing and typography; media blocks spacing alone; the rest
+ * color and spacing.
  */
 export function blockSupports(declaration: Pick<BlockDeclaration, 'category' | 'supports'>): readonly StyleProperty[] {
     const category = blockCategory(declaration);
@@ -184,21 +190,21 @@ const GAP = field.enum(['none', 'small', 'medium', 'large'], { default: 'medium'
 const core: BlockDeclaration[] = [
     // The word processor block: formatted text with headings, lists, links and images, as the body of a WordPress post.
     { name: 'core/richtext', keywords: ['wysiwyg', 'editor', 'word processor', 'text'], common: true, label: 'Rich text', icon: 'text-selection', category: 'text', description: 'Formatted text with headings, lists, links and images.', fields: { text: field.richText({ label: 'Text' }) } },
-    { name: 'core/paragraph', keywords: ['text', 'markdown'], common: true, label: 'Paragraph', icon: 'paragraph-spacing', category: 'text', fields: { text: field.text({ required: true, max: 20_000, format: 'markdown', label: 'Text' }) } },
-    { name: 'core/heading', keywords: ['title', 'h2', 'h3', 'subtitle'], common: true, label: 'Heading', icon: 'text-bold', category: 'text', fields: {
+    { name: 'core/paragraph', inline: true, body: 'text',  keywords: ['text', 'markdown'], common: true, label: 'Paragraph', icon: 'paragraph-spacing', category: 'text', fields: { text: field.text({ required: true, max: 20_000, format: 'markdown', label: 'Text' }) } },
+    { name: 'core/heading', inline: true, body: 'text',  keywords: ['title', 'h2', 'h3', 'subtitle'], common: true, label: 'Heading', icon: 'text-bold', category: 'text', fields: {
         text: field.string({ required: true, max: 200, label: 'Text' }),
         level: field.enum(['h2', 'h3', 'h4'], { default: 'h2', label: 'Level' }),
     } },
-    { name: 'core/image', keywords: ['picture', 'photo', 'figure'], common: true, label: 'Image', icon: 'gallery', category: 'media', fields: {
+    { name: 'core/image', inline: true,  keywords: ['picture', 'photo', 'figure'], common: true, label: 'Image', icon: 'gallery', category: 'media', fields: {
         image: field.media({ required: true, nullable: false, label: 'Image' }),
         caption: field.string({ max: 300, label: 'Caption' }),
         link: field.string({ max: 2048, pattern: '(?:https?://|/)\\S*', label: 'Link' }),
     } },
-    { name: 'core/gallery', keywords: ['images', 'photos'], label: 'Gallery', icon: 'gallery-wide', category: 'media', fields: {
+    { name: 'core/gallery', inline: true,  keywords: ['images', 'photos'], label: 'Gallery', icon: 'gallery-wide', category: 'media', fields: {
         images: field.gallery({ label: 'Images' }),
         columns: field.integer({ default: 3, min: 1, max: 6, label: 'Columns' }),
     } },
-    { name: 'core/quote', keywords: ['blockquote', 'citation'], label: 'Quote', icon: 'chat-round-line', category: 'text', fields: {
+    { name: 'core/quote', inline: true, body: 'text',  keywords: ['blockquote', 'citation'], label: 'Quote', icon: 'chat-round-line', category: 'text', fields: {
         text: field.text({ required: true, max: 2000, label: 'Quote' }),
         citation: field.string({ max: 200, label: 'Citation' }),
     } },
@@ -210,16 +216,16 @@ const core: BlockDeclaration[] = [
         code: field.text({ required: true, max: 20_000, format: 'code', label: 'Code' }),
         language: field.string({ max: 40, pattern: '[a-z0-9+#-]*', label: 'Language', description: 'Such as html, css, js, ts, json, python or bash.' }),
     } },
-    { name: 'core/button', keywords: ['link', 'cta', 'call to action'], label: 'Button', icon: 'cursor-square', category: 'design', fields: {
+    { name: 'core/button', inline: true, body: 'label',  keywords: ['link', 'cta', 'call to action'], label: 'Button', icon: 'cursor-square', category: 'design', fields: {
         label: field.string({ required: true, max: 80, label: 'Label' }),
         url: field.string({ required: true, max: 2048, pattern: '(?:https?://|/|mailto:)\\S*', label: 'URL' }),
         style: field.enum(['primary', 'outline'], { default: 'primary', label: 'Style' }),
     } },
-    { name: 'core/embed', keywords: ['youtube', 'vimeo', 'video'], label: 'Video embed', icon: 'play-circle', category: 'embeds', description: 'A YouTube or Vimeo video.', fields: {
+    { name: 'core/embed', inline: true,  keywords: ['youtube', 'vimeo', 'video'], label: 'Video embed', icon: 'play-circle', category: 'embeds', description: 'A YouTube or Vimeo video.', fields: {
         url: field.string({ required: true, max: 2048, pattern: 'https://(?:www\\.)?(?:youtube\\.com/watch\\?v=|youtu\\.be/|vimeo\\.com/)\\S+', label: 'Video URL' }),
         caption: field.string({ max: 300, label: 'Caption' }),
     } },
-    { name: 'core/video', keywords: ['movie', 'film', 'mp4', 'player'], label: 'Video', icon: 'video-frame', category: 'media', description: 'A video file from the library, with the browser\'s player.', fields: {
+    { name: 'core/video', inline: true,  keywords: ['movie', 'film', 'mp4', 'player'], label: 'Video', icon: 'video-frame', category: 'media', description: 'A video file from the library, with the browser\'s player.', fields: {
         video: field.media({ required: true, nullable: false, label: 'Video', description: 'An MP4 or WebM file from the library.' }),
         poster: field.media({ label: 'Poster', description: 'The image shown before the video plays.' }),
         caption: field.string({ max: 300, label: 'Caption' }),
@@ -230,22 +236,22 @@ const core: BlockDeclaration[] = [
         controls: field.boolean({ default: true, label: 'Show controls' }),
         preload: field.enum(['metadata', 'auto', 'none'], { default: 'metadata', label: 'Preload', choices: { metadata: 'Only the first frame', auto: 'The whole video', none: 'Nothing until played' } }),
     } },
-    { name: 'core/audio', keywords: ['sound', 'music', 'podcast', 'mp3', 'player'], label: 'Audio', icon: 'music-note', category: 'media', description: 'An audio file from the library, with the browser\'s player.', fields: {
+    { name: 'core/audio', inline: true,  keywords: ['sound', 'music', 'podcast', 'mp3', 'player'], label: 'Audio', icon: 'music-note', category: 'media', description: 'An audio file from the library, with the browser\'s player.', fields: {
         audio: field.media({ required: true, nullable: false, label: 'Audio', description: 'An MP3, OGG or WAV file from the library.' }),
         caption: field.string({ max: 300, label: 'Caption' }),
         autoplay: field.boolean({ default: false, label: 'Autoplay' }),
         loop: field.boolean({ default: false, label: 'Loop' }),
         preload: field.enum(['metadata', 'auto', 'none'], { default: 'metadata', label: 'Preload', choices: { metadata: 'The length only', auto: 'The whole file', none: 'Nothing until played' } }),
     } },
-    { name: 'core/divider', keywords: ['separator', 'hr', 'line', 'rule'], common: true, label: 'Divider', icon: 'minus-square', category: 'design', description: 'A line between sections, with text in the middle if you like.', fields: {
+    { name: 'core/divider', inline: true,  keywords: ['separator', 'hr', 'line', 'rule'], common: true, label: 'Divider', icon: 'minus-square', category: 'design', description: 'A line between sections, with text in the middle if you like.', fields: {
         orientation: field.enum(['horizontal', 'vertical'], { default: 'horizontal', label: 'Orientation', choices: { horizontal: 'Horizontal', vertical: 'Vertical' } }),
         thickness: field.enum(['thin', 'medium', 'thick'], { default: 'thin', label: 'Thickness' }),
         width: field.enum(['full', 'wide', 'narrow'], { default: 'full', label: 'Length', choices: { full: 'Full width', wide: 'Three quarters', narrow: 'A quarter' } }),
-        color: field.string({ max: 60, pattern: '(?:#[0-9a-fA-F]{3,8}|[a-z][a-z0-9-]*(?:\\([^)]*\\))?)?', label: 'Colour', description: 'A palette slug or a CSS colour; empty uses the border colour.' }),
+        color: field.string({ max: 60, pattern: '(?:#[0-9a-fA-F]{3,8}|[a-z][a-z0-9-]*(?:\\([^)]*\\))?)?', label: 'Color', description: 'A palette slug or a CSS color; empty uses the border color.' }),
         text: field.string({ max: 80, label: 'Text', description: 'Shown in the middle of the line.' }),
     } },
     // Answer-shaped content: what search and answer engines quote. Plain HTML; no retired rich-result schema.
-    { name: 'core/answer', keywords: ['tldr', 'key takeaway', 'summary', 'answer', 'aeo'], label: 'Quick answer', icon: 'lightbulb-bolt', category: 'text', description: 'The direct answer, set apart at the top: two or three sentences engines can quote.', fields: {
+    { name: 'core/answer', inline: true, body: 'text',  keywords: ['tldr', 'key takeaway', 'summary', 'answer', 'aeo'], label: 'Quick answer', icon: 'lightbulb-bolt', category: 'text', description: 'The direct answer, set apart at the top: two or three sentences engines can quote.', fields: {
         text: field.text({ required: true, max: 2000, format: 'markdown', label: 'Answer' }),
         label: field.string({ max: 60, label: 'Label', description: 'Such as Quick answer or Key takeaways. Empty for none.' }),
     } },
@@ -272,7 +278,7 @@ const core: BlockDeclaration[] = [
         term: field.string({ required: true, max: 200, label: 'Term' }),
         definition: field.text({ required: true, max: 2000, format: 'markdown', label: 'Definition' }),
     } },
-    { name: 'core/card', keywords: ['box', 'tile'], label: 'Card', icon: 'card', category: 'design', description: 'An image with a title, text and a link, in a box.', fields: {
+    { name: 'core/card', inline: true,  keywords: ['box', 'tile'], label: 'Card', icon: 'card', category: 'design', description: 'An image with a title, text and a link, in a box.', fields: {
         image: field.media({ label: 'Image' }),
         title: field.string({ max: 200, label: 'Title' }),
         text: field.text({ max: 5000, format: 'markdown', label: 'Text' }),
@@ -287,7 +293,7 @@ const core: BlockDeclaration[] = [
         interval: field.integer({ default: 5, min: 2, max: 30, label: 'Seconds per image' }),
         captions: field.boolean({ default: true, label: 'Show captions' }),
     } },
-    { name: 'core/latest-entries', keywords: ['posts', 'recent', 'query', 'loop'], label: 'Latest entries', icon: 'list-arrow-down', category: 'widgets', description: 'The newest published entries of a collection, kept up to date.', fields: {
+    { name: 'core/latest-entries', inline: true,  keywords: ['posts', 'recent', 'query', 'loop'], label: 'Latest entries', icon: 'list-arrow-down', category: 'widgets', description: 'The newest published entries of a collection, kept up to date.', fields: {
         collection: field.string({ required: true, max: 40, pattern: '[a-z][a-z0-9_]*', default: 'posts', label: 'Collection' }),
         count: field.integer({ default: 5, min: 1, max: 24, label: 'How many' }),
         term: field.string({ max: 80, pattern: '[A-Za-z0-9_-]*', label: 'Only with the term', description: 'A category, tag or other term; empty shows every entry.' }),
@@ -303,18 +309,18 @@ const core: BlockDeclaration[] = [
     } },
     // Layout: containers that hold other blocks. They render as CSS grid and respond to the
     // width of the content they are in, so columns inside a column stack on their own.
-    { name: 'core/group', keywords: ['container', 'section', 'stack'], label: 'Group', icon: 'layers', category: 'design', description: 'A stack of blocks with one width.', fields: {
+    { name: 'core/group', inline: true,  keywords: ['container', 'section', 'stack'], label: 'Group', icon: 'layers', category: 'design', description: 'A stack of blocks with one width.', fields: {
         align: field.enum(['full', 'wide', 'center', 'left', 'right'], { default: 'full', label: 'Width', choices: { full: 'Full width', wide: 'Wide', center: 'Narrow, centered', left: 'Narrow, left', right: 'Narrow, right' } }),
     }, children: {} },
-    { name: 'core/columns', keywords: ['row', 'side by side', 'layout'], label: 'Columns', icon: 'widget-2', category: 'design', description: 'Blocks side by side; they stack on small screens.', fields: {
+    { name: 'core/columns', inline: true,  keywords: ['row', 'side by side', 'layout'], label: 'Columns', icon: 'widget-2', category: 'design', description: 'Blocks side by side; they stack on small screens.', fields: {
         gap: GAP,
         stack: field.enum(['mobile', 'tablet', 'never'], { default: 'mobile', label: 'Stack', choices: { mobile: 'On phones', tablet: 'On phones and tablets', never: 'Never' } }),
     }, children: { allowed: ['core/column'], max: 6 } },
-    { name: 'core/column', label: 'Column', icon: 'widget', category: 'design', parent: ['core/columns'], fields: {
+    { name: 'core/column', inline: true,  label: 'Column', icon: 'widget', category: 'design', parent: ['core/columns'], fields: {
         span: field.integer({ min: 1, max: 12, label: 'Width', description: 'Out of 12; empty shares the space equally.' }),
         verticalAlign: field.enum(['top', 'center', 'bottom'], { default: 'top', label: 'Vertical alignment' }),
     }, children: {} },
-    { name: 'core/grid', keywords: ['cells', 'layout'], label: 'Grid', icon: 'widget-3', category: 'design', description: 'Blocks in equal cells.', fields: {
+    { name: 'core/grid', inline: true,  keywords: ['cells', 'layout'], label: 'Grid', icon: 'widget-3', category: 'design', description: 'Blocks in equal cells.', fields: {
         columns: field.integer({ default: 3, min: 1, max: 6, label: 'Columns' }),
         columnsMd: field.integer({ default: 2, min: 1, max: 6, label: 'Columns on tablets' }),
         columnsSm: field.integer({ default: 1, min: 1, max: 6, label: 'Columns on phones' }),
@@ -352,6 +358,12 @@ export function blockProblems(declaration: BlockDeclaration, owner?: string): st
     for (const [name, entry] of fields) {
         if (!BLOCK_FIELD_KINDS.has(entry.kind)) problems.push(`${at}: field ${name} cannot be ${entry.kind}.`);
         if (entry.unique || entry.index || entry.search || entry.slugFrom || entry.taxonomy) problems.push(`${at}: field ${name} cannot be indexed, searched or derived.`);
+    }
+    if (declaration?.inline !== undefined && typeof declaration.inline !== 'boolean') problems.push(`${at}: inline is true or false.`);
+    if (declaration?.body !== undefined) {
+        const target = typeof declaration.body === 'string' ? declaration.fields?.[declaration.body] : undefined;
+        if (!target || (target.kind !== 'string' && target.kind !== 'text') || target.media) problems.push(`${at}: body names one of its string or text fields.`);
+        if (declaration.children !== undefined) problems.push(`${at}: a container takes its body as children; it declares no body field.`);
     }
     const children = declaration?.children;
     if (children !== undefined) {
@@ -404,6 +416,8 @@ export interface ValidateBlocksOptions {
      * the target a condition may test besides the group's own.
      */
     readonly fieldGroup?: boolean | { readonly scope?: readonly string[] };
+    /** The blocks were written inside text as references: references inside them are not parsed again. */
+    readonly inText?: boolean;
 }
 
 /**
@@ -444,7 +458,7 @@ export function validateBlocks(value: readonly Block[], types: ReadonlyMap<strin
                     else if (declaration.required) errors[`${block._id}.${name}`] = 'is required.';
                     continue;
                 }
-                const error = validateValue(name, declaration, entry);
+                const error = validateValue(name, declaration, entry) ?? textProblem(declaration, entry, types, `${block._id}-`, options.inText === true);
                 if (error) errors[`${block._id}.${name}`] = error;
                 else data[name] = entry;
             }
@@ -468,6 +482,22 @@ export function validateBlocks(value: readonly Block[], types: ReadonlyMap<strin
     if (form) Object.assign(errors, formTreeErrors(blocks, types));
     if (fieldGroup) Object.assign(errors, fieldGroupTreeErrors(blocks, types, typeof options.fieldGroup === 'object' ? options.fieldGroup.scope ?? [] : []));
     return { blocks, errors };
+}
+
+/**
+ * Why a text value is refused although its declaration takes it: a binding to an unknown scope,
+ * or, in Markdown, a block reference that is not a valid block (see `parseBlockText`).
+ */
+function textProblem(declaration: FieldDeclaration, value: unknown, types: ReadonlyMap<string, BlockDeclaration>, prefix: string, inText: boolean): string | undefined {
+    if (typeof value !== 'string' || (declaration.kind !== 'string' && declaration.kind !== 'text') || declaration.media) return undefined;
+    const binding = bindingProblem(value);
+    if (binding) return binding;
+    if (inText || declaration.kind !== 'text' || declaration.format !== 'markdown' || !hasBlockReference(value)) return undefined;
+    const parsed = parseBlockText(value, types, prefix);
+    if (parsed.problems.length) return parsed.problems[0];
+    const { errors } = validateBlocks(textBlocks(parsed), types, { inText: true });
+    const [path, message] = Object.entries(errors)[0] ?? [];
+    return path ? `a block reference is invalid: ${path.split('.').slice(1).join('.') || 'block'} ${message}` : undefined;
 }
 
 /** Core blocks a field group lays its fields out with. They render as dashboard UI there. */

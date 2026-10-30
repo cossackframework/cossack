@@ -34,7 +34,7 @@ and plugins get hooks on terms, comments, menus and the lists.
   names a block (`block <id>.<field>`) is shown with the block's label and the field's
   (`cms/block-errors.ts`), and the tree opens to that block, flashes it and scrolls to it.
   The tree shows a summary, the rich text in place, and
-  icon buttons with tooltips; removing a block asks first. Block icons are coloured by
+  icon buttons with tooltips; removing a block asks first. Block icons are colored by
   category. Widgets, the builder and forms use the same panel; the tree has no inline
   mode, so a form's conditional logic is in the panel too. Only containers collapse, and
   they start collapsed with a count of what they hold; a new container, or one a block is
@@ -50,7 +50,7 @@ and plugins get hooks on terms, comments, menus and the lists.
   (scroll-snapping track; `carousel.client.ts` adds arrows, dots, keys and autoplay), Latest
   entries (collection, count, term, order, list/grid/titles; resolved on the server like
   forms, as list views), Custom fields (data); the Divider gains orientation, thickness,
-  length, colour (palette slug or CSS) and centred text.
+  length, color (palette slug or CSS) and centred text.
 - **Entry lists.** "Add new" sits beside the title; the filter row sits under the status
   tabs with a Filter icon button; checkboxes with bulk actions (publish, unpublish, trash,
   restore, delete, plus plugins'); Title and Date sort through `?sort=&dir=`; a featured
@@ -76,7 +76,7 @@ and plugins get hooks on terms, comments, menus and the lists.
 | Area | Delivered | Verified by |
 | --- | --- | --- |
 | CMS package | `content` on posts, pages and patterns; `template`/`templateLock`; the `data` category, `blockIsData`; `core/richtext`, `core/card`, `core/carousel`, `core/latest-entries`, `core/meta`, the divider's options; rich text in block fields (`blockMedia`, `blockDocuments`, `blocksPlain`, `cloneBlocks`); searchable blocks fields; term `icon`; menu `className`/`attributes`; `author`; the six new extension points; `listRecent` sessions | `essentials-unit.test.ts`, `unit.test.ts`, `schema.test.ts`; live: `appearance.test.ts` (content blocks, search, template checks), `themes.test.ts`, `essentials.test.ts`, `collections.test.ts`, `content.test.ts` |
-| Scaffold | Entries list (selection, bulk, sort, thumbnails, duplicate, plugin actions and columns); dashboard cards; `block-panel.ts`, `block-tree.ts` (panel mode, confirmations, lock, patterns button), `block-inserter.ts` colours; `carousel.client.ts`, `blocks.css`; site rendering of rich text in blocks, data blocks, pattern expansion and latest entries; builder template card; term icons and auto slugs; menu editor tabs; media usage; plugin and theme cards; `dark` custom variant in `style.css` | Recipe tests; `generated-runtime-cms*.test.js` |
+| Scaffold | Entries list (selection, bulk, sort, thumbnails, duplicate, plugin actions and columns); dashboard cards; `block-panel.ts`, `block-tree.ts` (panel mode, confirmations, lock, patterns button), `block-inserter.ts` colors; `carousel.client.ts`, `blocks.css`; site rendering of rich text in blocks, data blocks, pattern expansion and latest entries; builder template card; term icons and auto slugs; menu editor tabs; media usage; plugin and theme cards; `dark` custom variant in `style.css` | Recipe tests; `generated-runtime-cms*.test.js` |
 
 Findings:
 

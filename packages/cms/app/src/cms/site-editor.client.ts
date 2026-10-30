@@ -60,7 +60,10 @@ export class SiteEditor extends Cossack {
     private readonly onDocumentClick = (event: MouseEvent) => {
         const target = event.target as Element | null;
         if (!target || this.root?.contains(target) || target.closest('[role="dialog"]')) return;
-        const marker = target.closest('[data-cms-edit]');
+        // The nearest block of this page: blocks rendered from elsewhere, such as a form's inputs, are
+        // marked too, so clicking one selects the block that shows them (the Form block).
+        let marker = target.closest('[data-cms-edit]');
+        while (marker && marker.getAttribute('data-cms-edit') === 'block' && !findBlock(this.blocks(), marker.getAttribute('data-block-id') ?? '')) marker = marker.parentElement?.closest('[data-cms-edit]') ?? null;
         if (!marker) return;
         // Links and buttons inside blocks do not navigate while editing.
         event.preventDefault();

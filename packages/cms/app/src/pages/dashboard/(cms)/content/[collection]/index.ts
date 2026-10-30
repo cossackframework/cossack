@@ -1,13 +1,29 @@
 import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackframework/core';
+import { bulkBar } from '../../../../../dashboard/bulk';
 import { Avatar, Card, CardBody, Button, Checkbox, HoverCard, Icon, NativeSelect, Input, Pagination, AlertDialog, Tooltip, toast } from '@cossackframework/ui';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
-import { evaluateRule, isCmsError, languageName, mediaUrl, recordTitle, type EntryAction, type EntryColumn, type FieldFilter, type ListFilter, type RecordShape } from '@cossackframework/cms';
+import { ENTRY_ACTION_IDS, evaluateRule, isCmsError, languageName, mediaUrl, recordTitle, type BuiltinEntryAction, type EntryAction, type EntryColumn, type FieldFilter, type ListFilter, type RecordShape } from '@cossackframework/cms';
 import { duplicateEntry, importEntries, importItems, listExtras, routeResource, runEntryCommand, termOptions, type ImportReport } from '../../../../../cms/content';
 import type { TermOption } from '../../../../../cms/editor';
 import { icon } from '../../../../../cms/icons';
-import { linkButton, notice, pageHeader, shortDate, statusBadge } from '../../../../../cms/ui';
+import { iconButton, linkButton, notice, pageHeader, shortDate, statusBadge } from '../../../../../cms/ui';
 
 const PAGE_SIZE = 20;
+
+/** Icons of the built-in quick actions. */
+const ACTION_ICONS: Record<BuiltinEntryAction, string> = { edit: 'pen', duplicate: 'copy', trash: 'trash-bin-trash', delete: 'trash-bin-trash', view: 'eye', restore: 'restart', 'delete-permanently': 'close-circle' };
+
+/** The list's own quick actions for an entry, before plugins change them: links for Edit and View, the rest run by the list. */
+function builtinActions(record: RecordShape, options: { base: string; url: string | null; canCreate: boolean; publishable: boolean }): EntryAction[] {
+    const action = (id: BuiltinEntryAction, label: string, extra: Partial<EntryAction> = {}): EntryAction => ({ id, label, icon: ACTION_ICONS[id], ...extra });
+    if (record.status === 'trash') return [action('restore', __('Restore')), action('delete-permanently', __('Delete permanently'), { danger: true })];
+    return [
+        action('edit', __('Edit'), { href: `${options.base}/${record.id}` }),
+        ...(options.canCreate ? [action('duplicate', __('Duplicate'))] : []),
+        options.publishable ? action('trash', __('Trash'), { danger: true }) : action('delete', __('Delete'), { danger: true }),
+        ...(options.url ? [action('view', __('View'), { href: options.url })] : []),
+    ];
+}
 
 interface Row {
     id: string;
@@ -24,7 +40,7 @@ interface Row {
     dateLabel: string;
     /** The entry's featured image, when the collection has one. */
     image: { url: string; alt: string; caption: string } | null;
-    /** Actions plugins add under the row. */
+    /** The quick actions under the row: the built-in ones as plugins left them, and theirs. */
     actions: EntryAction[];
 }
 
@@ -160,7 +176,9 @@ export default class EntriesPage extends Cossack {
             const terms = await cms.taxonomies.getMany(termIds);
             const urls = collection ? await cms.entryUrls(collection, records) : new Map<string, string | null>();
             const images = imageField && cms.files ? await cms.files.getMany(records.map(record => record[imageField]).filter((id): id is string => typeof id === 'string' && !!id)) : new Map();
-            const extras = await listExtras(cms, resource.id, records, principal);
+            const visible = (record: RecordShape) => (record.status === 'published' && typeof record.publishedAt === 'number') || !this.publishable ? urls.get(record.id) ?? null : null;
+            const base = `/dashboard/content/${this.route}`;
+            const extras = await listExtras(cms, resource.id, records, principal, record => builtinActions(record, { base, url: visible(record), canCreate: this.canCreate, publishable: this.publishable }));
             this.columns = extras.columns;
             this.pluginBulk = extras.bulk;
             this.rows = records.map(record => {
@@ -170,7 +188,7 @@ export default class EntriesPage extends Cossack {
                 const image = imageField ? images.get(record[imageField] as string) : undefined;
                 return {
                     id: record.id, rev: record.rev, title: recordTitle(record, resource.titleField), slug: typeof record.slug === 'string' ? record.slug : '', status: String(record.status ?? ''),
-                    url: (published || !this.publishable) ? urls.get(record.id) ?? null : null,
+                    url: visible(record),
                     author: owner?.name ?? '—', avatar: owner?.avatar ?? null, locale: typeof record.locale === 'string' ? record.locale : '',
                     terms: this.taxonomy ? ((record[this.taxonomy.name] as string[] | undefined) ?? []).map(id => terms.get(id)?.name).filter((name): name is string => !!name) : [],
                     date: shortDate(published || scheduled ? record.publishedAt : record.updatedAt),
@@ -269,7 +287,7 @@ export default class EntriesPage extends Cossack {
             const record = await cms.resource(resource.id).get(id, { principal });
             if (!record) throw new Error('missing');
             // The action is read again from the plugins, so the client cannot name a command of its own.
-            const action = (await listExtras(cms, resource.id, [record], principal)).actions[id]?.[index];
+            const action = (await listExtras(cms, resource.id, [record], principal)).actions[id]?.filter(entry => entry.command)[index];
             if (!action?.command) throw new Error('missing');
             await runEntryCommand(cms, action, { resource: resource.id, id }, principal, this.c.req.raw.signal);
             this.message = `${action.label}: ${__('done.')}`;
@@ -358,7 +376,7 @@ export default class EntriesPage extends Cossack {
     @Client()
     async pickAction(row: Row, action: EntryAction) {
         if (action.confirm) { this.pendingAction = { row, action }; return; }
-        await this.runAction(row.id, row.actions.indexOf(action));
+        await this.runAction(row.id, row.actions.filter(entry => entry.command).indexOf(action));
     }
 
     private href(changes: Record<string, string | number>) {
@@ -408,34 +426,32 @@ export default class EntriesPage extends Cossack {
 
     /** The bulk action select and its Apply button, above and below the table. */
     private bulkBar(position: 'top' | 'bottom'): TemplateResult {
-        const choices = this.bulkChoices();
-        return html`<div class="flex flex-wrap items-center gap-2">
-            <div class="w-44">${component(NativeSelect, { id: `bulk-${position}`, size: 'sm', 'aria-label': __('Bulk actions'), '@change': (event: Event) => { this.bulk = (event.target as HTMLSelectElement).value; } }, html`
-                <option value="" ?selected=${!this.bulk}>${__('Bulk actions')}</option>
-                ${choices.map(choice => html`<option value=${choice.key} ?selected=${this.bulk === choice.key}>${choice.label}</option>`)}`)}</div>
-            ${component(Button, { type: 'button', size: 'sm', variant: 'outline', disabled: !this.bulk || !this.selected.length, '@click': () => this.submitBulk() }, __('Apply'))}
-            ${this.selected.length ? html`<span class="text-xs text-muted-foreground">${this.selected.length} ${__('selected')}</span>` : null}
-        </div>`;
+        return bulkBar({ id: `bulk-${position}`, choices: this.bulkChoices(), value: this.bulk, count: this.selected.length, choose: key => { this.bulk = key as BulkKey; }, apply: () => this.submitBulk() });
     }
 
-    private quickActions(row: Row, base: string): TemplateResult {
-        const action = 'text-xs text-primary hover:underline bg-transparent border-none p-0 cursor-pointer';
-        const separator = html`<span aria-hidden="true" class="text-muted-foreground">|</span>`;
-        const items: TemplateResult[] = row.status === 'trash' ? [
-            html`<button type="button" class=${action} @click=${() => this.moveTo(row.id, row.rev, 'draft')}>${__('Restore')}</button>`,
-            html`<button type="button" class=${`${action} text-destructive`} @click=${() => { this.pendingDelete = row; }}>${__('Delete permanently')}</button>`,
-        ] : [
-            html`<a href=${`${base}/${row.id}`} class="text-primary hover:underline">${__('Edit')}</a>`,
-            ...(this.canCreate ? [html`<button type="button" class=${action} @click=${() => this.duplicate(row.id)}>${__('Duplicate')}</button>`] : []),
-            this.publishable ? html`<button type="button" class=${`${action} text-destructive`} @click=${() => this.moveTo(row.id, row.rev, 'trash')}>${__('Trash')}</button>`
-                : html`<button type="button" class=${`${action} text-destructive`} @click=${() => { this.pendingDelete = row; }}>${__('Delete')}</button>`,
-            ...(row.url ? [html`<a href=${row.url} class="text-primary hover:underline">${__('View')}</a>`] : []),
-        ];
-        for (const entry of row.actions) {
-            items.push(entry.href ? html`<a href=${entry.href} class=${`hover:underline ${entry.danger ? 'text-destructive' : 'text-primary'}`}>${entry.label}</a>`
-                : html`<button type="button" class=${`${action} ${entry.danger ? 'text-destructive' : ''}`} @click=${() => this.pickAction(row, entry)}>${entry.label}</button>`);
-        }
-        return html`<div class="mt-1 flex flex-wrap items-center gap-2 text-xs opacity-80 group-hover:opacity-100">${items.flatMap((item, index) => index ? [separator, item] : [item])}</div>`;
+    /** Runs a built-in quick action; Edit and View are links. */
+    @Client()
+    runBuiltin(row: Row, id: string) {
+        if (id === 'duplicate') void this.duplicate(row.id);
+        else if (id === 'trash') void this.moveTo(row.id, row.rev, 'trash');
+        else if (id === 'restore') void this.moveTo(row.id, row.rev, 'draft');
+        else if (id === 'delete' || id === 'delete-permanently') this.pendingDelete = row;
+    }
+
+    /** The row's quick actions as icons with their labels as tooltips; plugins change them through `cms.dashboard.entry-actions`. */
+    private quickActions(row: Row): TemplateResult {
+        const tone = (entry: EntryAction) => entry.danger ? 'hover:border-destructive/40 hover:bg-destructive/10 hover:text-destructive' : 'hover:bg-muted hover:text-foreground';
+        const items = row.actions.map((entry, index) => {
+            const id = `row-${row.id}-action-${index}`;
+            if (entry.href) {
+                return component(Tooltip, { id: `${id}-tip`, label: entry.label }, html`<a href=${entry.href} aria-label=${entry.label} aria-describedby=${`${id}-tip`} data-action=${entry.id ?? ''}
+                    class=${`inline-flex h-7 w-7 items-center justify-center rounded border border-border bg-background text-muted-foreground no-underline [&_svg]:size-4 ${tone(entry)}`}>${component(Icon, { entry: icon(entry.icon, 'widget-4'), size: 16 })}</a>`);
+            }
+            const builtin = !entry.command && (ENTRY_ACTION_IDS as readonly string[]).includes(entry.id ?? '');
+            if (!builtin && !entry.command) return null;
+            return iconButton(id, entry.icon ?? 'widget-4', entry.label, () => builtin ? this.runBuiltin(row, entry.id!) : this.pickAction(row, entry), { danger: entry.danger === true });
+        }).filter(item => item !== null);
+        return html`<div class="mt-1 flex flex-wrap items-center gap-1 opacity-80 group-hover:opacity-100 focus-within:opacity-100" data-quick-actions>${items}</div>`;
     }
 
     render() {
@@ -500,7 +516,7 @@ export default class EntriesPage extends Cossack {
                                     <div class="min-w-0">
                                         <a href=${`${base}/${row.id}`} class="font-medium text-foreground hover:text-primary no-underline">${row.title}</a>
                                         ${row.status && row.status !== 'published' && ['all', 'mine'].includes(this.status) ? html` <span class="text-muted-foreground">— ${statusBadge(row.status)}</span>` : null}
-                                        ${this.quickActions(row, base)}
+                                        ${this.quickActions(row)}
                                     </div>
                                 </div>
                             </td>

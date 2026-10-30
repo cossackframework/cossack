@@ -41,12 +41,15 @@ export default class CommentsPage extends Cossack {
     @State() replyText = '';
     @State() editing: { id: string; content: string; authorName: string; authorEmail: string; authorUrl: string } | null = null;
     @State() error = '';
+    /** Settings → Discussion → Allow discussions; off hides comments on the site, and they can still be moderated here. */
+    @State() discussions = true;
 
     head(): HeadValue {
         return { title: __('Comments') };
     }
 
     async init() {
+        this.discussions = await this.c.get('cms').settings.get('discussion.enabled');
         const status = this.c.req.query('status') as CommentStatus | undefined;
         this.status = status && COMMENT_STATUSES.includes(status) ? status : 'all';
         this.search = (this.c.req.query('q') ?? '').slice(0, 100);
@@ -197,6 +200,7 @@ export default class CommentsPage extends Cossack {
         const totalPages = Math.max(1, Math.ceil(this.total / PAGE_SIZE));
         return html`<div class="space-y-6">
             ${pageHeader(this.entryFilter.title ? `${__('Comments on')} “${this.entryFilter.title}”` : __('Comments'))}
+            ${this.discussions ? null : notice(__('Discussions are turned off: the site shows no comments and takes no new ones. Turn them on under Settings → Discussion.'))}
             ${this.error ? notice(this.error, 'error') : null}
             <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                 <nav aria-label=${__('Filter by status')} class="flex flex-wrap gap-x-3 gap-y-1 text-sm">${tabs.map(([key, label], index) => html`${index ? html`<span class="text-muted-foreground" aria-hidden="true">|</span>` : null}

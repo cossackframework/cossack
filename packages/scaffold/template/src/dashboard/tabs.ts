@@ -2,10 +2,10 @@
 import { component, html, type TemplateResult } from '@cossackframework/renderer';
 import { Badge } from '@cossackframework/ui';
 
-/** A count beside a label, such as a tab's items. */
+/** A count beside a label, such as a tab's items; nothing when there are none, so an empty tab stays quiet. */
 export function countBadge(count: number): TemplateResult {
-    // A count stands out in the primary colour; an empty tab stays quiet.
-    return html`<span class="ml-1.5 inline-flex align-middle">${component(Badge, { variant: count ? 'default' : 'secondary' }, String(count))}</span>`;
+    if (!count) return html``;
+    return html`<span class="ml-1.5 inline-flex align-middle">${component(Badge, { variant: 'default' }, String(count))}</span>`;
 }
 
 /** The tab the address names (`?tab=`), when it is one of `values`; the first value otherwise. */

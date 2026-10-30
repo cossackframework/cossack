@@ -74,9 +74,9 @@ Data contract:
 - A block's `style` holds slugs of the theme's presets (`background`, `text`, `padding`,
   `margin`, `fontSize`) and an `align`; `layout` adds an `anchor` and `className`. A type's
   `supports` narrows what its Style tab offers over its category's defaults. Themes declare
-  `presets` (colours, font sizes, spacing) in their manifest, Customize adjusts the palette
+  `presets` (colors, font sizes, spacing) in their manifest, Customize adjusts the palette
   and adds site-level CSS, and `blockStyleAttributes` renders a styled block's wrapper with
-  classes and custom properties, so a palette change recolours stored content.
+  classes and custom properties, so a palette change recolors stored content.
 - An entry's content is blocks: the `content` feature, on for posts and pages, and the
   `core/richtext` block is the word processor among them. Themes get one `entry.content`
   list: every blocks field, and each rich text or Markdown field as one rich text block. A collection's `template` is the
@@ -86,8 +86,9 @@ Data contract:
   plain text of searchable rich text and blocks fields feeds the full-text index.
 - Extension points besides the resource and form hooks: `cms.term.before-save`,
   `cms.comment.before-save` and `cms.menu.before-save` adjust or refuse writes;
-  `cms.dashboard.entry-actions`, `entry-columns` and `bulk-actions` add links, plugin
-  commands and columns to the dashboard's entry lists.
+  `cms.dashboard.entry-actions` (version 2: the built-in quick actions, which handlers add
+  to, remove or reorder), `entry-columns` and `bulk-actions` add links, plugin commands and
+  columns to the dashboard's entry lists.
 - A menu is one JSON tree saved with a revision check. Entries and terms are stored by ID and
   resolved when the site renders.
 - A plugin runs only when its resources are migrated and an administrator grants what its
@@ -120,5 +121,5 @@ Data contract:
 
 See the guides with `cossack docs --package @cossackframework/cms`, and the developer docs
 in `docs/cms/`: [overview](../../docs/cms/index.md), [plugins](../../docs/cms/plugins.md),
-[manifest](../../docs/cms/manifest.md), [hooks](../../docs/cms/hooks.md) and
-[themes](../../docs/cms/themes.md).
+[manifest](../../docs/cms/manifest.md), [hooks](../../docs/cms/hooks.md),
+[themes](../../docs/cms/themes.md) and [settings](../../docs/cms/settings.md).

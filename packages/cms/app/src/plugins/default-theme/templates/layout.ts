@@ -12,7 +12,7 @@ import { desktopMenu, languageSwitcher, link, mobileMenu, searchBox } from '../p
 import { accentStyle, typographyCss, width } from '../parts/options';
 
 export default function layout(site: SiteView, content: TemplateResult, helpers: ThemeHelpers): TemplateResult {
-    // A blank canvas: the page's content alone, with the theme's colours and type but no header or footer.
+    // A blank canvas: the page's content alone, with the theme's colors and type but no header or footer.
     if (site.template === 'entry-blank') return html`<div class="min-h-screen bg-background text-foreground" style=${`${accentStyle(helpers)} ${presetStyle(helpers.presets)}`} data-theme="default-theme" data-frame="blank">
         <style data-theme-typography>${typographyCss(helpers)}</style>
         <main id="content">${content}</main>
@@ -29,7 +29,7 @@ export default function layout(site: SiteView, content: TemplateResult, helpers:
         <header class="border-b border-border">
             <div class=${`${frame} flex flex-wrap items-center justify-between gap-x-8 gap-y-2 py-5`}>
                 <a href=${site.homeUrl} class="no-underline">
-                    <span class="block text-xl font-bold text-foreground">${site.title}</span>
+                    ${helpers.logo(site, { class: 'block h-10 w-auto max-w-[12rem]' }) ?? html`<span class="block text-xl font-bold text-foreground">${site.title}</span>`}
                     ${site.tagline ? html`<span class="block text-sm text-muted-foreground">${site.tagline}</span>` : null}
                 </a>
                 <div class="flex flex-1 flex-wrap items-center justify-end gap-x-6 gap-y-2">

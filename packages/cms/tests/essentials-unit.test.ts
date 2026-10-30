@@ -189,7 +189,7 @@ describe('essentials helpers', () => {
         // Presets: the manifest's checks, the defaults, layering, the site's overrides, the variables.
         expect(presetProblems({ colors: [{ slug: 'brand', name: 'Brand', value: '#0f172a' }, { slug: 'glow', name: 'Glow', value: 'oklch(0.7 0.1 200)' }], spacing: [{ slug: 'tight', name: 'Tight', value: 'clamp(0.5rem, 2vw, 1rem)' }] })).toEqual([]);
         expect(presetProblems({ colors: [{ slug: 'Brand', name: 'Brand', value: '#fff' }] })).toEqual(['colors: slugs are lowercase letters, digits and hyphens.']);
-        expect(presetProblems({ colors: [{ slug: 'brand', name: 'Brand', value: 'url(x)' }, { slug: 'brand', name: 'Again', value: '#fff' }] })).toEqual(['colors.brand needs a CSS colour.', 'colors.brand is listed twice.']);
+        expect(presetProblems({ colors: [{ slug: 'brand', name: 'Brand', value: 'url(x)' }, { slug: 'brand', name: 'Again', value: '#fff' }] })).toEqual(['colors.brand needs a CSS color.', 'colors.brand is listed twice.']);
         expect(presetProblems({ shadows: [] })).toEqual(['shadows is not a preset kind; use colors, fontSizes, spacing.']);
         expect(presetProblems({ fontSizes: [{ slug: 'big', name: 'Big', value: '2rem; color: red' }] })).toEqual(['fontSizes.big needs a CSS length.']);
         expect(themeProblems({ label: 'T', presets: { colors: [{ slug: 'x', name: '', value: '#fff' }] } })).toEqual(['theme.presets: colors.x needs a name of at most 40 characters.']);
@@ -201,8 +201,8 @@ describe('essentials helpers', () => {
         expect(resolved.fontSizes).toEqual(DEFAULT_PRESETS.fontSizes);
         expect(resolved.spacing.map(preset => preset.slug)).toEqual(['none', 'small', 'medium', 'large', 'x-large']);
         expect(presetOverridesProblem({ colors: { brand: '#0a0' } })).toBeUndefined();
-        expect(presetOverridesProblem({ colors: { brand: 'url(x)' } })).toBe('brand needs a CSS colour.');
-        expect(presetOverridesProblem({ custom: [{ slug: 'ok', name: 'Ok', value: 'nope!' }] })).toBe('ok needs a CSS colour.');
+        expect(presetOverridesProblem({ colors: { brand: 'url(x)' } })).toBe('brand needs a CSS color.');
+        expect(presetOverridesProblem({ custom: [{ slug: 'ok', name: 'Ok', value: 'nope!' }] })).toBe('ok needs a CSS color.');
         expect(presetOverridesProblem([])).toBe('Preset overrides are an object.');
         expect(presetStyle({ colors: [{ slug: 'brand', name: 'Brand', value: ' #0a0 ' }], spacing: [{ slug: 'none', name: 'None', value: '0' }] })).toBe('--cms-color-brand: #0a0; --cms-space-none: 0;');
         // Additional CSS may style, not load or run.

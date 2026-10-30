@@ -10,7 +10,7 @@
   "cover": "assets/cover.svg",
   "theme": {
     "label": "Cossack Default",
-    "description": "A clean, readable theme: a header menu with dropdowns, a footer menu, search and an accent colour.",
+    "description": "A clean, readable theme: a header menu with dropdowns, a footer menu, search and an accent color.",
     "locations": {
       "primary": "Primary menu",
       "footer": "Footer menu"
@@ -64,7 +64,7 @@
           "amber"
         ],
         "default": "neutral",
-        "label": "Accent colour",
+        "label": "Accent color",
         "choices": {
           "neutral": "Neutral",
           "blue": "Blue",

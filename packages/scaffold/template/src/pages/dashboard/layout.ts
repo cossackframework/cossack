@@ -7,7 +7,8 @@ import { SunIcon as sunIconSvg } from '@cossackframework/solar-icons/sun/line';
 import { MoonIcon as moonIconSvg } from '@cossackframework/solar-icons/moon/line';
 import { AltArrowRightIcon as chevronIconSvg } from '@cossackframework/solar-icons/alt-arrow-right/line';
 import { Logout3Icon as logoutIconSvg } from '@cossackframework/solar-icons/logout-3/line';
-import { navigation, siteName } from '../../dashboard/access';
+import { navigation } from '../../dashboard/access';
+import { siteLogo, siteName } from '../../brand';
 import type { DashboardModule } from '../../dashboard/types';
 import { logout } from '../../auth';
 import { requireDashboardUser } from '../../middlewares/auth';
@@ -31,6 +32,7 @@ const logoutIcon = { line: logoutIconSvg };
 @Page({ transport: 'http', middlewares: [requireDashboardUser] })
 export default class DashboardLayout extends Cossack {
     appName = server$(() => siteName(), { initial: 'My App' });
+    appLogo = server$(() => siteLogo(), { initial: '/logo.svg' });
     /** Sidebar collapsed state. Seeded from the cookie at SSR (via this.c) and
      *  re-read client-side in onMount; persists across client navigations. */
     @State() sidebarCollapsed = false;
@@ -134,11 +136,11 @@ export default class DashboardLayout extends Cossack {
                     title: this.appName,
                     // The brand opens the site itself, as WordPress's admin bar does; Dashboard is the first navigation item.
                     brand: html`<a href="/" class="flex items-center gap-2 no-underline group-[.is-collapsed]:hidden" aria-label=${__('View site')} title=${__('View site')}>
-                        ${Image({ src: '/logo.svg', alt: '', width: 24, height: 24, loading: 'eager', class: 'size-6 shrink-0' })}
+                        ${Image({ src: this.appLogo, alt: '', width: 24, height: 24, loading: 'eager', class: 'h-6 w-auto max-w-24 shrink-0 object-contain' })}
                         <span class="text-sm font-semibold text-foreground truncate">${this.appName}</span>
                     </a>
                     <a href="/" class="hidden group-[.is-collapsed]:flex items-center justify-center" aria-label=${__('View site')} title=${__('View site')}>
-                        ${Image({ src: '/logo.svg', alt: '', width: 24, height: 24, loading: 'eager', class: 'size-6' })}
+                        ${Image({ src: this.appLogo, alt: '', width: 24, height: 24, loading: 'eager', class: 'size-6 object-contain' })}
                     </a>`,
                     width: '248px',
                     collapsible: 'icon',

@@ -546,7 +546,7 @@ describe.skipIf(!liveRomeDBTests())('generated CMS essentials', () => {
       await picker.getByLabel('Search blocks').fill('text');
       await picker.getByRole('button', { name: 'Single line', exact: true }).click();
       const subtitle = page.getByRole('region', { name: 'Single line 1' });
-      await subtitle.getByRole('button', { name: 'Edit Single line' }).click();
+      // A new block opens its panel at once.
       const panel = page.getByRole('dialog', { name: 'Single line' });
       await panel.getByLabel('Label *').fill('Subtitle');
       await panel.getByRole('button', { name: 'Done' }).click();

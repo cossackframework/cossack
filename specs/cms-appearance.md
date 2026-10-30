@@ -46,7 +46,7 @@ Updated 2026-10-16. See [Outcome](#outcome).
   in the build, so activating one is a settings write, not a deployment. A missing or invalid
   theme falls back to the first valid one, then to minimal built-in templates.
 - **Default theme.** `cossack add cms` renders `src/plugins/default-theme/` as application
-  source, like the dashboard: edit it or copy it to start a theme. Its options (accent colour,
+  source, like the dashboard: edit it or copy it to start a theme. Its options (accent color,
   content width, footer text, search box) are a settings group named after the plugin and
   shown under Appearance → Customize.
 - **Theme contract.** `@cossackframework/cms` exports `SiteTheme`: `layout`, `home`, `entry`,

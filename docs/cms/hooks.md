@@ -103,13 +103,69 @@ Number input); its item errors are keyed `<input>.<position>`.
 
 | Point | Kind | Deadline | Value and input |
 | --- | --- | --- | --- |
-| `cms.dashboard.entry-actions` (`entryActions`) | filter | 1 s | Value: the `EntryAction[]` under one entry in a list. Input: `resource`, `actor`, `record`. |
+| `cms.dashboard.entry-actions` (`entryActions`), version 2 | filter | 1 s | Value: the quick actions under one entry in a list, the built-in ones included. Add, remove or reorder them. Input: `resource`, `actor`, `record`. |
 | `cms.dashboard.entry-columns` (`entryColumns`) | filter | 2 s | Value: `EntryColumn[]` (`id`, `label`, `values` by record ID) after the built-in columns. Input: `resource`, `actor`, `records`. |
 | `cms.dashboard.bulk-actions` (`bulkActions`) | filter | 1 s | Value: the `EntryAction[]` offered for the selected entries. Input: `resource`, `actor`. |
 
-An `EntryAction` is `{ label, href }` for a link or
-`{ label, command: { plugin, name }, danger?, confirm? }` to run a plugin command with
-`{ resource, id }` or `{ resource, ids }` as its input.
+An `EntryAction` is one of:
+
+- `{ label, href }`: a link.
+- `{ label, command: { plugin, name }, confirm? }`: runs a plugin command with
+  `{ resource, id }` or `{ resource, ids }` as its input. `confirm` asks first.
+- `{ id, label }` with `id` in `ENTRY_ACTION_IDS`: a built-in action that the list runs itself.
+
+Every action may also have:
+
+- `id`: a name, so that other plugins can find the action.
+- `icon`: a Solar icon name, such as `pen` or `copy`.
+- `danger`: shows the action in the destructive color.
+
+Quick actions show as icon buttons. The label is the tooltip and the accessible name. An
+action without a known icon gets a generic one. Bulk actions show as menu entries and
+ignore `icon`.
+
+### Quick actions
+
+The value of `cms.dashboard.entry-actions` starts with the list's own actions. Each has an
+`id` from `ENTRY_ACTION_IDS`:
+
+| `id` | Shown | Does |
+| --- | --- | --- |
+| `edit` | Always, except in the trash | Links to the entry editor. |
+| `duplicate` | When you may create entries | Copies the entry as a draft. |
+| `trash` | Publishable collections | Moves the entry to the trash. |
+| `delete` | Other resources | Deletes the entry, after a confirmation. |
+| `view` | When the entry has a public page | Links to the page. |
+| `restore` | In the trash | Restores the entry as a draft. |
+| `delete-permanently` | In the trash | Deletes the entry, after a confirmation. |
+
+Return a new list to change the actions. To add an action, append it. To remove one, filter
+it out by `id`. To move one, change its place in the list:
+
+```ts
+import { entryActions } from '@cossackframework/cms';
+
+export function register(context: PluginContext) {
+  context.hooks.addFilter(entryActions, (actions, { resource, record }) => {
+    if (resource !== 'cms/posts') return actions;
+    const kept = actions.filter(action => action.id !== 'duplicate');
+    const view = kept.find(action => action.id === 'view');
+    return [
+      ...(view ? [view] : []),
+      ...kept.filter(action => action !== view),
+      { id: 'support-desk.ticket', label: 'Open a ticket', icon: 'ticket', href: `/dashboard/support-desk/new?entry=${record.id}` },
+    ];
+  });
+}
+```
+
+The manifest lists the point with its version: `"hooks": [{ "point":
+"cms.dashboard.entry-actions", "version": 2 }]`. Version 1 started from an empty list, so
+handlers written for it are refused.
+
+When a handler fails, the list keeps the built-in actions. A command action runs only if
+the plugins return it again when the list runs it. A client cannot name a command of its
+own.
 
 ## Points a plugin provides
 

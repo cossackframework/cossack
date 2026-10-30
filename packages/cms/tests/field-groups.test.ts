@@ -46,7 +46,7 @@ const specs: FieldGroup = {
 const extras: FieldGroup = {
     id: 'extras', title: 'Extras', placement: 'sidebar', targets: [{ kind: 'collection', name: 'posts' }, { kind: 'taxonomy', name: 'categories' }, { kind: 'users' }, { kind: 'menus' }],
     blocks: [
-        fieldBlock('color', 'choice', { name: 'color', label: 'Colour', choices: ['red', 'blue'] }),
+        fieldBlock('color', 'choice', { name: 'color', label: 'Color', choices: ['red', 'blue'] }),
         fieldBlock('badge', 'text', { name: 'badge', label: 'Badge', max: 20 }, { when: { rules: [{ field: 'color', op: 'is', value: 'red' }] } }),
         fieldBlock('links', 'repeater', { name: 'links', label: 'Links' }, { children: [fieldBlock('href', 'text', { name: 'href', label: 'URL', required: true })] }),
     ],

@@ -94,8 +94,8 @@ describe.skipIf(!liveRomeDBTests())('CMS themes', () => {
       // The starter post from setup is listed too.
       expect(await visitor.page('/wide-page')).toMatch(/<ul data-latest>(?:<li>[^<]*<\/li>)*<li>Hello from the blog<\/li>(?:<li>[^<]*<\/li>)*<\/ul>/);
 
-      const project = async (title, client, sections, summary = null) => {
-        const saved = await web.action(EDITOR, 'save', [{ title, slug: '', status: 'draft', publishedAt: '', client, year: '2026', sections, summary }, 'publish', 0],
+      const project = async (title, client, sections, overview = null) => {
+        const saved = await web.action(EDITOR, 'save', [{ title, slug: '', status: 'draft', publishedAt: '', client, year: '2026', sections, overview }, 'publish', 0],
           { params: { collection: 'projects', id: 'new' }, state: { route: 'projects', id: 'new' } });
         expect(saved.id, JSON.stringify(saved.errors ?? saved.error)).toMatch(/^[0-9a-f-]{36}$/);
         return saved.id;
@@ -118,7 +118,7 @@ describe.skipIf(!liveRomeDBTests())('CMS themes', () => {
       expect(html).toMatch(/<p data-client>ACME<\/p>/);
       expect(html).toMatch(/<p data-year>2026<\/p>/);
       expect(html).toMatch(/<ul data-related><li><a href="?\/projects\/skates"?>Skates<\/a><\/li><\/ul>/);
-      // `entry.content` is one list in field order: the sections' blocks, then the summary as a rich text block.
+      // `entry.content` is one list in field order: the sections' blocks, then the overview as a rich text block.
       const contentHtml = html.slice(html.indexOf('data-sections'), html.indexOf('<aside'));
       expect(contentHtml).toMatch(/cms-prose[^>]*><p>A <strong>bold<\/strong> summary<\/p>/);
       expect(contentHtml.indexOf('Second section')).toBeLessThan(contentHtml.indexOf('bold</strong> summary'));
@@ -129,7 +129,7 @@ describe.skipIf(!liveRomeDBTests())('CMS themes', () => {
       const css = await fetch(server.origin + stylesheet);
       expect(css.status).toBe(200);
       expect(css.headers.get('content-type')).toContain('text/css');
-      // Minified: the theme's rule, with its colour.
+      // Minified: the theme's rule, with its color.
       expect(await css.text()).toMatch(/\.portfolio-project\{border-top:4px solid #123456;?\}/);
       for (const text of ['data-cms-edit', 'Edit this page', editorChunk]) lacks(html, text);
       // An editor's page loads the same scripts as a visitor's; the editor is not among them.
@@ -164,17 +164,17 @@ describe.skipIf(!liveRomeDBTests())('CMS themes', () => {
       expect(appCssText).toContain('@container');
       expect(appCssText).toContain('.cms-columns');
 
-      // Customize changes a palette colour and adds Additional CSS: the page recolours without a resave.
+      // Customize changes a palette color and adds Additional CSS: the page recolors without a resave.
       const customize = 'dashboard/(cms)/appearance/customize/index.ts';
       const refusedCss = await web.action(customize, 'save', [{}, [{ slug: 'primary', value: '#0a0a0a' }], [], '@import url(evil.css);'], { state: { theme: { name: 'portfolio', label: 'Portfolio' } } });
       expect(refusedCss.error).toBe('Additional CSS cannot use @import.');
       const customized = await web.action(customize, 'save', [{}, [{ slug: 'primary', value: '#0a0a0a' }], [{ slug: 'custom-1', name: 'Mine', value: '#123456' }], '.lead { letter-spacing: 0.05em }'], { state: { theme: { name: 'portfolio', label: 'Portfolio' } } });
       expect(customized.error).toBe('');
-      const recoloured = visible(await visitor.page('/projects/layout'));
-      expect(recoloured).toMatch(/--cms-color-primary: ?#0a0a0a/);
-      expect(recoloured).toMatch(/--cms-color-custom-1: ?#123456/);
+      const recolored = visible(await visitor.page('/projects/layout'));
+      expect(recolored).toMatch(/--cms-color-primary: ?#0a0a0a/);
+      expect(recolored).toMatch(/--cms-color-custom-1: ?#123456/);
       // Production HTML is minified, the inline CSS with it.
-      expect(recoloured).toMatch(/<style data-cms-custom-css[^>]*>[^<]*\.lead\s*\{\s*letter-spacing:\s*0?\.05em;?\s*\}[^<]*<\/style>/);
+      expect(recolored).toMatch(/<style data-cms-custom-css[^>]*>[^<]*\.lead\s*\{\s*letter-spacing:\s*0?\.05em;?\s*\}[^<]*<\/style>/);
       const customizePage = visible(await web.page('/dashboard/appearance/customize'));
       expect(customizePage).toContain('Additional CSS');
       expect(customizePage).toMatch(/data-color="?custom-1/);
@@ -214,8 +214,8 @@ describe.skipIf(!liveRomeDBTests())('CMS themes', () => {
       expect(scripts.some(url => url.endsWith(editorChunk))).toBe(true);
       const sections = tab.locator('[data-sections]');
       await browserExpect(sections.locator('[data-cms-edit="block"]')).toHaveCount(2);
-      // The summary is a field's rich text: marked as one document for the Text panel, not as a block.
-      await browserExpect(sections.locator('[data-cms-edit="body"][data-field="summary"]')).toHaveCount(1);
+      // The overview is a field's rich text: marked as one document for the Text panel, not as a block.
+      await browserExpect(sections.locator('[data-cms-edit="body"][data-field="overview"]')).toHaveCount(1);
 
       // Reorder with the keyboard in the Blocks panel: the page follows.
       await bar.getByRole('button', { name: 'Blocks', exact: true }).click();

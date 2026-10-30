@@ -1,7 +1,7 @@
-/** The theme's options as classes and styles: accent colour, content width and typography. */
+/** The theme's options as classes and styles: accent color, content width and typography. */
 import type { ThemeHelpers } from '@cossackframework/cms';
 
-/** Accent colours as the UI kit's primary tokens, light and dark. */
+/** Accent colors as the UI kit's primary tokens, light and dark. */
 const ACCENTS: Record<string, [string, string] | undefined> = {
     blue: ['oklch(0.546 0.245 262.881)', 'oklch(0.985 0 0)'],
     emerald: ['oklch(0.596 0.145 163.225)', 'oklch(0.985 0 0)'],

@@ -138,7 +138,8 @@ export default class EntryEditor extends Cossack {
                 this.references = { ...this.references, [field.name]: page.records.map(entry => ({ id: entry.id, title: recordTitle(entry, target.titleField) })) };
             }
             const collection = resource.owner === 'cms' ? cms.collection(resource.name) : null;
-            this.comments = Boolean(collection?.comments);
+            // Off under Settings → Discussion: the entry's switch hides with the comments.
+            this.comments = Boolean(collection?.comments) && await cms.settings.get('discussion.enabled');
             if (resource.fields.template) this.templates = await cms.entryTemplates();
             if (record) {
                 this.rev = record.rev;
@@ -519,26 +520,26 @@ export default class EntryEditor extends Cossack {
         this.set(taxonomy, ((this.values[taxonomy] as string[] | undefined) ?? []).filter(entry => entry !== name));
     }
 
+    /** Tabs and previews are kept by the editor's ID, so a block's Markdown in the panel previews its own text, not an entry field's. */
     @Client()
-    async showTab(field: string, tab: 'write' | 'preview') {
-        this.tabs = { ...this.tabs, [field]: tab };
-        if (tab === 'preview') await this.preview(field, String(this.values[field] ?? ''));
+    async showTab(id: string, tab: 'write' | 'preview', text: string) {
+        this.tabs = { ...this.tabs, [id]: tab };
+        if (tab === 'preview') await this.preview(id, text);
     }
 
     @Server()
-    async preview(field: string, text: string) {
-        this.rendered = { ...this.rendered, [field]: renderMarkdown(text.slice(0, 200_000)) };
+    async preview(id: string, text: string) {
+        this.rendered = { ...this.rendered, [id]: renderMarkdown(text.slice(0, 200_000)) };
     }
 
-    /** Wrap the selection of a Markdown field in `before` and `after`. */
+    /** Wrap the selection of the Markdown editor `id` (its text is `text`) in `before` and `after`. */
     @Client()
-    format(field: string, before: string, after = '', placeholder = '') {
-        const element = document.getElementById(`field-${field}`) as HTMLTextAreaElement | null;
-        const text = String(this.values[field] ?? '');
+    format(id: string, text: string, change: (value: string) => void, before: string, after = '', placeholder = '') {
+        const element = document.getElementById(id) as HTMLTextAreaElement | null;
         const start = element?.selectionStart ?? text.length;
         const end = element?.selectionEnd ?? text.length;
         const selected = text.slice(start, end) || placeholder;
-        this.set(field, `${text.slice(0, start)}${before}${selected}${after}${text.slice(end)}`);
+        change(`${text.slice(0, start)}${before}${selected}${after}${text.slice(end)}`);
         requestAnimationFrame(() => { element?.focus(); element?.setSelectionRange(start + before.length, start + before.length + selected.length); });
     }
 
@@ -589,12 +590,13 @@ export default class EntryEditor extends Cossack {
         } else if (target.rows?.length && target.key) {
             const current = this.rowValue(target.field, target.rows, target.key);
             this.setRowValue(target.field, target.rows, target.key, target.multiple ? [...new Set([...(Array.isArray(current) ? current as string[] : []), file.id])] : file.id);
+        } else if (target.insert) {
+            const markdown = mediaKind(file.contentType) === 'image' ? `![${file.alt || file.title}](${file.url})` : `[${file.title}](${file.url})`;
+            if (target.dialog && target.key && this.blockDialog) this.format(target.editor ?? '', String(this.blockDialog.values[target.key] ?? ''), value => this.setDialogValue(target.key!, value), `${markdown}\n`);
+            else this.format(target.editor ?? `field-${target.field}`, String(this.values[target.field] ?? ''), value => this.set(target.field, value), `${markdown}\n`);
         } else if (target.dialog && target.key && this.blockDialog) {
             const current = this.blockDialog.values[target.key];
             this.setDialogValue(target.key, target.multiple ? [...new Set([...(Array.isArray(current) ? current as string[] : []), file.id])] : file.id);
-        } else if (target.insert) {
-            const markdown = mediaKind(file.contentType) === 'image' ? `![${file.alt || file.title}](${file.url})` : `[${file.title}](${file.url})`;
-            this.format(target.field, `${markdown}\n`);
         } else if (target.block !== undefined && target.key) {
             const current = findBlock(this.blocks(target.field), target.block)?.data[target.key];
             this.setBlock(target.field, target.block, target.key, target.multiple ? [...new Set([...(Array.isArray(current) ? current : []), file.id])] : file.id);
@@ -936,7 +938,7 @@ export default class EntryEditor extends Cossack {
                 id, blocks: [{ _id: field.name, type: 'field/repeater', data: { name: field.name, label: field.label } }], options: this.view?.blocks ?? [], fields: [field], values: { [field.name]: value },
                 onChange: (_name: string, next: unknown) => change(next), hidden: new Set<string>(), control: (sub: EditorField, subValue: unknown, subChange: (value: unknown) => void, rows: RowPath, subId: string) => this.control(sub, subValue, subChange, { field: target.field, rows, key: sub.name }, subId),
             });
-            case 'text': if (field.format === 'markdown' && target.block === undefined) return this.markdownControl(field, value, change, id); break;
+            case 'text': if (field.format === 'markdown' && target.block === undefined) return this.markdownControl(field, value, change, id, target); break;
             case 'blocks': return this.blocksControl(field);
             // Rich text inside a block, or one item of a multiple field: the word processor alone, with its own editor for the picker.
             case 'richtext': if (target.block !== undefined || id !== field.name) return component(RichTextField, {
@@ -973,8 +975,10 @@ export default class EntryEditor extends Cossack {
         return bindingChoices([...own, ...grouped]);
     }
 
-    private markdownControl(field: EditorField, value: unknown, change: (value: unknown) => void, id: string): TemplateResult {
-        const tab = this.tabs[field.name] ?? 'write';
+    private markdownControl(field: EditorField, value: unknown, change: (value: unknown) => void, id: string, target: MediaTarget): TemplateResult {
+        const tab = this.tabs[id] ?? 'write';
+        const text = String(value ?? '');
+        const wrap = (before: string, after: string, placeholder: string) => this.format(id, text, next => change(next), before, after, placeholder);
         const tool = (label: string, title: string, run: () => void) => html`<button type="button" title=${title} aria-label=${title}
             class="rounded px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground border-none bg-transparent cursor-pointer" @click=${run}>${label}</button>`;
         return html`<div class="rounded-lg border border-border bg-card">
@@ -982,25 +986,25 @@ export default class EntryEditor extends Cossack {
                 <div role="tablist" aria-label=${`${field.label} ${__('editor')}`} class="flex gap-1">
                     ${(['write', 'preview'] as const).map(entry => html`<button type="button" role="tab" aria-selected=${tab === entry ? 'true' : 'false'}
                         class=${`rounded px-3 py-1 text-xs font-medium border-none cursor-pointer ${tab === entry ? 'bg-muted text-foreground' : 'bg-transparent text-muted-foreground hover:text-foreground'}`}
-                        @click=${() => this.showTab(field.name, entry)}>${entry === 'write' ? __('Write') : __('Preview')}</button>`)}
+                        @click=${() => this.showTab(id, entry, text)}>${entry === 'write' ? __('Write') : __('Preview')}</button>`)}
                 </div>
                 ${tab === 'write' ? html`<div class="flex flex-wrap items-center gap-0.5" role="toolbar" aria-label=${__('Formatting')}>
-                    ${tool('B', __('Bold'), () => this.format(field.name, '**', '**', __('bold text')))}
-                    ${tool('I', __('Italic'), () => this.format(field.name, '_', '_', __('italic text')))}
-                    ${tool('H2', __('Heading'), () => this.format(field.name, '\n## ', '\n', __('Heading')))}
-                    ${tool('“ ”', __('Quote'), () => this.format(field.name, '\n> ', '\n', __('Quote')))}
-                    ${tool('• List', __('Bulleted list'), () => this.format(field.name, '\n- ', '\n', __('Item')))}
-                    ${tool('</>', __('Code'), () => this.format(field.name, '`', '`', 'code'))}
-                    ${tool(__('Link'), __('Link'), () => this.format(field.name, '[', '](https://)', __('link text')))}
-                    ${tool(__('Add media'), __('Add media'), () => this.openPicker({ field: field.name, insert: true }))}
+                    ${tool('B', __('Bold'), () => wrap('**', '**', __('bold text')))}
+                    ${tool('I', __('Italic'), () => wrap('_', '_', __('italic text')))}
+                    ${tool('H2', __('Heading'), () => wrap('\n## ', '\n', __('Heading')))}
+                    ${tool('“ ”', __('Quote'), () => wrap('\n> ', '\n', __('Quote')))}
+                    ${tool('• List', __('Bulleted list'), () => wrap('\n- ', '\n', __('Item')))}
+                    ${tool('</>', __('Code'), () => wrap('`', '`', 'code'))}
+                    ${tool(__('Link'), __('Link'), () => wrap('[', '](https://)', __('link text')))}
+                    ${tool(__('Add media'), __('Add media'), () => this.openPicker({ ...target, insert: true, editor: id }))}
                 </div>` : null}
             </div>
             ${tab === 'write'
                 ? html`<textarea id=${id} class="block min-h-[22rem] w-full resize-y rounded-b-lg border-0 bg-transparent p-4 font-mono text-sm leading-6 text-foreground focus:outline-none"
                     .value=${String(value ?? '')} @input=${(event: Event) => change((event.target as HTMLTextAreaElement).value)}
                     aria-describedby=${`${id}-hint`}></textarea>
-                    <p id=${`${id}-hint`} class="border-t border-border px-4 py-2 text-xs text-muted-foreground">${__('Markdown: **bold**, _italic_, ## headings, - lists, [links](https://example.com).')}</p>`
-                : html`<div class="cms-prose min-h-[22rem] p-4">${this.rendered[field.name] ? unsafeHTML(this.rendered[field.name]!) : html`<p class="text-muted-foreground">${__('Nothing to preview.')}</p>`}</div>`}
+                    <p id=${`${id}-hint`} class="border-t border-border px-4 py-2 text-xs text-muted-foreground">${__('Markdown: **bold**, _italic_, ## headings, - lists, [links](https://example.com). Blocks: {{ block core/button label="Buy" url="/cart" /}}; values: {{ $.price }}, {{ $site.title }}.')}</p>`
+                : html`<div class="cms-prose min-h-[22rem] p-4">${this.rendered[id] ? unsafeHTML(this.rendered[id]!) : html`<p class="text-muted-foreground">${__('Nothing to preview.')}</p>`}</div>`}
         </div>`;
     }
 

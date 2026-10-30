@@ -12,6 +12,7 @@
     "src/plugins/default-theme/"
   ],
   "replaces": [
+    "src/brand.ts",
     "src/auth.ts",
     "src/passkeys.client.ts",
     "src/services/users.ts",
@@ -19,6 +20,7 @@
     "src/services/rbac.ts",
     "src/lib/permissions.ts",
     "src/dashboard/access.ts",
+    "src/dashboard/user-sections.ts",
     "src/pages/dashboard/index.ts"
   ],
   "rendered": [

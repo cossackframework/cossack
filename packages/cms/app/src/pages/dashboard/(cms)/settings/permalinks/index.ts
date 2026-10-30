@@ -3,6 +3,7 @@ import { Button, Card, CardBody, toast } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { isCmsError, PERMISSIONS } from '@cossackframework/cms';
 import { requireAny } from '../../../../../cms/guards';
+import { settingsFrame, settingsLinks, type SettingsLink } from '../../../../../cms/settings-nav';
 import { CONTROL, notice, pageHeader } from '../../../../../cms/ui';
 
 interface Base { name: string; label: string; singular: string; path: string }
@@ -16,7 +17,7 @@ const SEGMENT = /^[a-z0-9]+(?:-[a-z0-9]+)*(?:\/[a-z0-9]+(?:-[a-z0-9]+)*)*$/;
  */
 @Page({ transport: 'http', middlewares: [requireAny(PERMISSIONS.manageSettings)] })
 export default class PermalinksPage extends Cossack {
-    @State() groups: { id: string; label: string }[] = [];
+    @State() links: SettingsLink[] = [];
     @State() postsAtRoot = false;
     @State() postsBase = 'posts';
     /** The first category's slug before the post name, as /%category%/%postname%/ in WordPress. */
@@ -34,7 +35,7 @@ export default class PermalinksPage extends Cossack {
     async init() {
         const cms = this.c.get('cms');
         this.origin = new URL(this.c.req.url).origin;
-        this.groups = cms.settings.groups.filter(group => (group.permission ?? PERMISSIONS.manageSettings) === PERMISSIONS.manageSettings).map(group => ({ id: group.id, label: group.label }));
+        this.links = settingsLinks(cms);
         this.load();
     }
 
@@ -92,12 +93,8 @@ export default class PermalinksPage extends Cossack {
             <span><span class="block text-sm font-medium text-foreground">${label}</span><code class="text-xs text-muted-foreground">${example}</code></span>
         </label>`;
         const sample = (base: string) => `${this.origin}${base}${this.withCategory ? '/sample-category' : ''}/sample-post`;
-        return html`<div class="max-w-3xl space-y-6">
+        return settingsFrame(this.links, 'permalinks', html`<div class="space-y-6">
             ${pageHeader(__('Permalink settings'), { description: __('Choose how the addresses of posts and archives look. Pages always use their own and their parents’ slugs. Old addresses keep working: they redirect to the new ones.') })}
-            <nav aria-label=${__('Settings')} class="flex flex-wrap gap-1 border-b border-border">
-                ${this.groups.map(group => html`<a href=${`/dashboard/settings/${group.id}`} class="-mb-px border-b-2 border-transparent px-3 py-2 text-sm text-muted-foreground no-underline hover:text-foreground">${group.label}</a>`)}
-                <a href="/dashboard/settings/permalinks" aria-current="page" class="-mb-px border-b-2 border-primary px-3 py-2 text-sm font-medium text-foreground no-underline">${__('Permalinks')}</a>
-            </nav>
             ${this.error ? notice(this.error, 'error') : null}
             ${component(Card, {}, component(CardBody, {}, html`<form class="space-y-6" @submit=${(event: Event) => this.submit(event)}>
                 <fieldset class="space-y-3">
@@ -125,6 +122,6 @@ export default class PermalinksPage extends Cossack {
                 </fieldset>` : null}
                 <div>${component(Button, { type: 'submit' }, __('Save changes'))}</div>
             </form>`))}
-        </div>`;
+        </div>`);
     }
 }

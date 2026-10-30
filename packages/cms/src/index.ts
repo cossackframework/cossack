@@ -9,9 +9,9 @@ export {
 } from './field-groups';
 export { ANONYMOUS, PERMISSIONS, DEFAULT_ROLES, systemPrincipal, userPrincipal, hasPermission, permissionMatches, evaluateRule, ruleScope, principalId, type Principal, type RecordScope } from './permissions';
 export { CmsError, isCmsError, type CmsErrorCode } from './errors';
-export { beforeWrite, afterCommit, formValidate, formBeforeSubmit, formPrefill, formConfirmation, formNotification, formSubmitted, termBeforeSave, commentBeforeSave, menuBeforeSave, entryActions, entryColumns, bulkActions, EXTENSION_POINTS,
+export { beforeWrite, afterCommit, formValidate, formBeforeSubmit, formPrefill, formConfirmation, formNotification, formSubmitted, termBeforeSave, commentBeforeSave, menuBeforeSave, entryActions, entryColumns, bulkActions, ENTRY_ACTION_IDS, EXTENSION_POINTS,
     type BeforeWriteInput, type Draft, type ResourceEvent, type WriteActor, type FormRef, type SubmissionContext, type FormErrors, type FormConfirmation, type FormEmail, type FormSubmittedEvent,
-    type TermDraft, type TermWriteInput, type CommentDraft, type CommentWriteInput, type MenuWriteInput, type EntryAction, type EntryColumn, type EntryListInput } from './hooks';
+    type TermDraft, type TermWriteInput, type CommentDraft, type CommentWriteInput, type MenuWriteInput, type EntryAction, type BuiltinEntryAction, type EntryColumn, type EntryListInput } from './hooks';
 export type { RecordShape, RecordPage, RevisionShape, FieldFilter, ListFilter, ListOptions } from './records';
 export { contentModule, categories, tags, patterns } from './modules/content';
 export { formsModule } from './modules/forms';
@@ -28,7 +28,8 @@ export { CORE_BLOCKS, BLOCK_CATEGORIES, BLOCK_NAME, BLOCK_LIMITS, FIELD_BLOCK_KI
     flattenBlocks, placeBlocks, findBlock, updateBlock, removeBlock, insertBlock, moveBlock, shiftBlock, blockTreeProblem,
     type Block, type BlockCategory, type BlockDeclaration, type BlockLayout, type BlockStyle, type BlockSupports, type BlockMove, type BlockPlace, type Breakpoint, type StyleProperty,
     type BlockCondition, type ConditionRule, type ConditionOperator, type InputKind, type FieldBlockKind, type ValidateBlocksOptions } from './blocks';
-export { hasBinding, bindingPaths, bindingValue, bindingText, resolveBindings, resolveBlockBindings, withBinding } from './bindings';
+export { hasBinding, bindingPaths, bindingRefs, bindingValue, bindingText, bindingProblem, usesUserBinding, resolveBindings, resolveBlockBindings, withBinding, BINDING_SCOPES, type BindingScope, type BindingScopes } from './bindings';
+export { parseBlockText, hasBlockReference, textBlocks, PATTERN_REFERENCE, type TextPart, type ParsedText } from './block-references';
 export { formInput, formValue, recordTitle, isSameOriginPost, type FormInput, type SubmittedForm } from './forms';
 export { manifestProblems, validateManifest, requestedGrants, commandInput, isPluginPoint, pointOwner, providedPoints, ManifestError, HOST_SLOTS, type CmsPluginManifest, type ProvidedPoint, type PluginCommand, type CommandOption, type SlotLink, type HostSlot } from './manifest';
 export { MEDIA_TYPES, AVATAR_TYPES, ARCHIVE_TYPES, SVG_TYPE, MEDIA_FILTERS, MEDIA_FILTER_EXCLUDES, mediaKind, mediaUrl, formatBytes, matchesSignature, imageSize, declaredType, sanitizeSvg, type MediaKind } from './media';

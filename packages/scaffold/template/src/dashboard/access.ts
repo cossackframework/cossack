@@ -14,7 +14,4 @@ export async function navigation(c: Context): Promise<DashboardModule[]> {
     });
 }
 
-/** The name in the dashboard's sidebar and footer. */
-export async function siteName(): Promise<string> {
-    return config('app.name');
-}
+export { siteName } from '../brand';

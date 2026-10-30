@@ -44,7 +44,7 @@ const SPECS = [
     fieldBlock('url', 'text', { name: 'url', label: 'URL' }, { when: { rules: [{ field: 'kind', op: 'is', value: 'link' }] } }),
   ] }),
 ];
-const DRAFT = { name: 'products', label: 'Products', singular: 'Product', description: '', icon: 'box', path: 'shop', public: true, slug: true, publishable: true, hierarchical: false, visibility: 'private', comments: false, taxonomies: ['categories'], builtin: false, content: true, excerpt: false, featuredImage: true, revisions: true, templateLock: '' };
+const DRAFT = { name: 'products', label: 'Products', singular: 'Product', description: '', icon: 'box', path: 'shop', public: true, slug: true, publishable: true, hierarchical: false, visibility: 'private', comments: false, taxonomies: ['categories'], builtin: false, content: true, excerpt: false, featuredImage: true, revisions: true, templateLock: '', sitemap: true, password: false, schemaType: 'WebPage', schemaMap: {}, noindex: false, nofollow: false, archiveNoindex: false, seoTitle: '', seoDescription: '', archiveTitle: '' };
 
 /** Set the site up, create the collection, make its Details group from it and attach Specifications in order. */
 async function shop(origin, routeIds, diagnostics) {
@@ -175,7 +175,7 @@ describe.skipIf(!liveRomeDBTests())('generated CMS field groups', () => {
       await picker.getByRole('button', { name: 'Yes / no', exact: true }).click();
       await browserExpect(picker).toBeHidden();
       const added = page.getByRole('region', { name: 'Yes / no 3' });
-      await added.getByRole('button', { name: 'Edit Yes / no' }).click();
+      // A new block opens its panel at once.
       const panel = page.getByRole('dialog', { name: 'Yes / no' });
       await panel.getByLabel('Label *').fill('Fragile');
       await panel.getByLabel('Conditional logic').check();
@@ -208,18 +208,18 @@ describe.skipIf(!liveRomeDBTests())('generated CMS field groups', () => {
       await browserExpect(specs.getByRole('region', { name: 'Specifications 1' })).toContainText('Weight');
       await specs.getByRole('button', { name: 'Add specifications' }).click();
       const row = specs.getByRole('region', { name: 'Specifications 3' });
-      await row.getByLabel('Name *').fill('Colour');
+      await row.getByLabel('Name *').fill('Color');
       await browserExpect(row.getByLabel('URL')).toBeHidden();
       await row.getByLabel('Kind').selectOption('link');
       await browserExpect(row.getByLabel('URL')).toBeVisible();
-      await row.getByLabel('URL').fill('https://example.com/colour');
-      await browserExpect(row).toContainText('Colour');
+      await row.getByLabel('URL').fill('https://example.com/color');
+      await browserExpect(row).toContainText('Color');
       await page.getByRole('button', { name: 'Update', exact: true }).click();
       await browserExpect(page.getByText('Saved.').first()).toBeVisible();
       const saved = await (await web.request(`/api/cms/content/products/${item.id}`)).json();
       expect(saved.item.salePrice).toBe(12);
       expect(saved.item.tags).toEqual(['blue', 'red']);
-      expect(saved.item.specs.map(entry => [entry.name, entry.url ?? null])).toEqual([['Weight', null], ['Site', 'https://example.com'], ['Colour', 'https://example.com/colour']]);
+      expect(saved.item.specs.map(entry => [entry.name, entry.url ?? null])).toEqual([['Weight', null], ['Site', 'https://example.com'], ['Color', 'https://example.com/color']]);
       expect(saved.item.fragile).toBe(false);
       expect(errors).toEqual([]);
     } finally {

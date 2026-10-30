@@ -52,6 +52,7 @@ export function themeHelpers(theme: SiteTheme, state: ThemeRenderState, isActive
         presets: state.presets ?? resolvePresets(undefined),
         data: { layout: state.data?.layout ?? {}, page: state.data?.page ?? {} },
         asset: path => assets[path] ?? '',
+        logo: (site, options = {}) => site.logo ? html`<img src=${site.logo} alt=${site.title} class=${`cms-site-logo object-contain ${options.class ?? 'h-10 w-auto'}`}>` : null,
         isActive: url => {
             const path = url.replace(/[?#].*$/, '').replace(/(.)\/$/, '$1');
             if (!path.startsWith('/')) return false;
@@ -128,7 +129,7 @@ function safeLink(url: unknown): string {
     return typeof url === 'string' && /^(?:https?:\/\/|\/|mailto:|tel:|#)/.test(url) ? url : '#';
 }
 
-/** A divider's colour: a palette slug as its variable, else the CSS colour given, else the border colour. */
+/** A divider's color: a palette slug as its variable, else the CSS color given, else the border color. */
 function dividerColor(value: string): string {
     if (!value) return 'var(--border)';
     return /^[a-z][a-z0-9-]*$/.test(value) && !/^(?:red|blue|green|black|white|gray|grey|transparent|currentcolor)$/.test(value) ? `var(--cms-color-${value}, ${value})` : value;
@@ -184,7 +185,8 @@ export function coreBlock(block: RenderedBlock, helpers: ThemeHelpers): Template
     const text = (name: string) => typeof block.data[name] === 'string' ? block.data[name] as string : '';
     const children = block.children ?? [];
     switch (block.type) {
-        case 'core/paragraph': return html`<div class=${PROSE}>${unsafeHTML(block.html.text ?? '')}</div>`;
+        // Text with block references renders its runs and blocks; the HTML alone otherwise.
+        case 'core/paragraph': return block.content?.text ? helpers.content(block.content.text) : html`<div class=${PROSE}>${unsafeHTML(block.html.text ?? '')}</div>`;
         case 'core/heading': {
             const level = text('level') || 'h2';
             return level === 'h3' ? html`<h3 class="mt-6 text-xl font-semibold text-foreground">${text('text')}</h3>`
@@ -280,7 +282,7 @@ export function coreBlock(block: RenderedBlock, helpers: ThemeHelpers): Template
         }
         case 'core/answer': return html`<aside class="cms-answer my-6 rounded-lg border border-border bg-muted/40 p-4" aria-label=${text('label') || __('Quick answer')}>
             ${text('label') ? html`<p class="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">${text('label')}</p>` : null}
-            <div class=${`${PROSE} text-lg [&_p]:my-2`}>${unsafeHTML(block.html.text ?? '')}</div></aside>`;
+            <div class=${`${PROSE} text-lg [&_p]:my-2`}>${block.content?.text ? helpers.content(block.content.text) : unsafeHTML(block.html.text ?? '')}</div></aside>`;
         case 'core/faq': return html`<section class="cms-faq my-8 divide-y divide-border border-y border-border">${children.map(child => helpers.block(child))}</section>`;
         case 'core/faq-item': return html`<details class="cms-faq-item group py-3" open>
             <summary class="cursor-pointer list-none text-lg font-semibold text-foreground"><h3 class="inline">${text('question')}</h3></summary>

@@ -1,6 +1,6 @@
 /**
  * A block's Style tab, shared by the entry editor, Appearance → Widgets and the editor on the
- * public site: colours as swatches of the theme's palette, spacing and font size from its
+ * public site: colors as swatches of the theme's palette, spacing and font size from its
  * presets, text alignment, and under Advanced the block's HTML anchor and class names.
  * Values are preset slugs; `blockStyleAttributes` renders them. Client-safe.
  */
@@ -70,7 +70,7 @@ export function styleControls(values: StyleValues, supports: readonly StylePrope
     return html`<div class="space-y-3" data-style-controls>
         ${!supports.length ? html`<p class="text-sm text-muted-foreground">${__('This block has no style settings.')}</p>` : null}
         ${has('background') ? colors('background', __('Background')) : null}
-        ${has('text') ? colors('text', __('Text colour')) : null}
+        ${has('text') ? colors('text', __('Text color')) : null}
         ${short.length ? html`<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">${short}</div>` : null}
         <details class="rounded-md border border-border">
             <summary class="cursor-pointer px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground">${__('Advanced')}</summary>
@@ -97,7 +97,7 @@ export function styleControls(values: StyleValues, supports: readonly StylePrope
 /** A row of swatches: none, then the palette. The chosen one is ringed. */
 function colorControl(id: string, label: string, colors: readonly Preset[], value: string, set: (value: string) => void): TemplateResult {
     const swatch = (slug: string, name: string, color: string | null) => html`<button type="button" role="radio" aria-checked=${value === slug ? 'true' : 'false'} title=${name} aria-label=${name}
-        class=${`h-7 w-7 rounded-full border cursor-pointer ${value === slug ? 'border-primary ring-2 ring-primary ring-offset-2 ring-offset-background' : 'border-border hover:border-foreground'}`}
+        class=${`h-7 w-7 rounded-md border cursor-pointer ${value === slug ? 'border-primary ring-2 ring-primary ring-offset-2 ring-offset-background' : 'border-border hover:border-foreground'}`}
         style=${color ? `background: ${color}` : 'background: linear-gradient(135deg, transparent 45%, var(--destructive) 45%, var(--destructive) 55%, transparent 55%)'}
         @click=${() => set(slug)}></button>`;
     return html`<div class="space-y-1">
@@ -105,7 +105,7 @@ function colorControl(id: string, label: string, colors: readonly Preset[], valu
         ${colors.length ? html`<div role="radiogroup" aria-labelledby=${id} class="flex flex-wrap items-center gap-1.5">
             ${swatch('', __('None'), null)}
             ${colors.map(preset => swatch(preset.slug, preset.name, preset.value))}
-        </div>` : html`<p class="text-xs text-muted-foreground">${__('The theme has no colours. Add some under Appearance → Customize.')}</p>`}
+        </div>` : html`<p class="text-xs text-muted-foreground">${__('The theme has no colors. Add some under Appearance → Customize.')}</p>`}
     </div>`;
 }
 

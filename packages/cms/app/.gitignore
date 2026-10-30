@@ -13,6 +13,7 @@
 !/src/
 /src/*
 !/src/auth.ts
+!/src/brand.ts
 !/src/passkeys.client.ts
 !/src/cms/
 # Rendered per runtime adapter by the recipe.
@@ -24,6 +25,7 @@
 !/src/dashboard/
 /src/dashboard/*
 !/src/dashboard/access.ts
+!/src/dashboard/user-sections.ts
 !/src/lib/
 /src/lib/*
 !/src/lib/permissions.ts

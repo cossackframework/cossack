@@ -13,8 +13,10 @@ async function renderedControls(file, state) {
   const component = (name, props) => { controls.push({ name, props }); return ''; };
   const html = () => '';
   const names = ['Card','CardBody','CardHeader','Avatar','Button','Badge','Input','NativeSelect','Pagination','Icon','AlertDialog','Field','Textarea'];
-  const page = new Function('html','component','__','searchIcon','editIcon','deleteIcon','PAGE_SIZE', ...names, code + '\nreturn page;')(
-    html,component,value=>value,{},{},{},20,...names,
+  // The dashboard's shared bulk helpers render nothing here; only the page's own controls are counted.
+  const bulk = { bulkBar: () => '', selectAllBox: () => '', selectBox: () => '' };
+  const page = new Function('html','component','__','searchIcon','editIcon','deleteIcon','PAGE_SIZE', ...names, ...Object.keys(bulk), code + '\nreturn page;')(
+    html,component,value=>value,{},{},{},20,...names,...Object.values(bulk),
   );
   Object.assign(page,state); page.render();
   return controls;
@@ -32,7 +34,7 @@ it('generated contact button uses a boolean loading count and becomes usable aft
 
 it('generated dashboard role change submits its native GET form through a typed listener', async () => {
   const controls=await renderedControls('src/pages/dashboard/users/index.ts', {
-    users:[],allRoles:[],total:0,page:1,error:'',appliedSearch:'',appliedRoleName:'',pendingDelete:null,
+    users:[],allRoles:[],total:0,page:1,error:'',appliedSearch:'',appliedRoleName:'',pendingDelete:null,canAssignRoles:false,selectable:[],selected:[],bulk:'',pendingBulk:null,message:'',bulkChoices:()=>[],
     pageHref:()=>'',user:{id:'admin'},
   });
   const props=controls.find(control=>control.name==='NativeSelect').props;

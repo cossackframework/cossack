@@ -23,6 +23,10 @@ puts a default theme in `src/plugins/default-theme/` for you to edit or copy. Se
   defines points of its own.
 - [Themes](/docs/cms/themes.md): templates, helpers, loaders, options, presets, child
   themes and widget areas.
+- [Settings](/docs/cms/settings.md): reading and writing settings, declaring groups and
+  subpages, discussions, and the site logo.
+- [Block references](/docs/cms/block-references.md): blocks and bindings inside text, such
+  as `{{ block core/button … /}}` and `{{ $site.title }}`.
 
 The package `README.md` and `cossack docs --package @cossackframework/cms` cover the data
 contract (resources, repositories, collections, blocks) in more depth.

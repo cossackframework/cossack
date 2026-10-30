@@ -4,7 +4,7 @@
  * from `init()` and hand the views to the theme's templates.
  */
 import {
-    ANONYMOUS, ARTICLE_TYPES, authorUrl, blockDocuments, blockIsData, blocksPlain, editedSize, resolveBlockBindings, flattenBlocks, escapeHtml, formatSiteDate, formInputs, formSettings, imageSrcset, imageUrl, isCmsError, languageName, mediaUrl, notificationRules, recordTitle, resolvePresets, richTextBlocks, richTextParts, richTextPlain, systemPrincipal, templateCandidates, transformable, urlList,
+    ANONYMOUS, ARTICLE_TYPES, authorUrl, blockDocuments, blockIsData, blocksPlain, editedSize, hasBlockReference, parseBlockText, PATTERN_REFERENCE, resolveBindings, resolveBlockBindings, textBlocks, usesUserBinding, type BindingScopes, type ParsedText, flattenBlocks, escapeHtml, formatSiteDate, formInputs, formSettings, imageSrcset, imageUrl, isCmsError, languageName, mediaUrl, notificationRules, recordTitle, resolvePresets, richTextBlocks, richTextParts, richTextPlain, systemPrincipal, templateCandidates, transformable, urlList,
     type AuthorView, type Block,
     type Principal, type TemplatePage, type ThemeData, type ThemePresets,
     type ArchiveView, type BodyPart, type CollectionDefinition, type CommentShape, type CommentView, type CommentsView, type EntryReference, type EntryView, type FieldDeclaration, type FieldFilter,
@@ -19,7 +19,7 @@ export interface ThemeState {
     name: string | null;
     parent?: string | null;
     options: Record<string, unknown>;
-    /** The presets blocks pick from, the site's colour changes applied. */
+    /** The presets blocks pick from, the site's color changes applied. */
     presets?: Required<ThemePresets>;
     /** The site's Additional CSS, already checked. */
     customCss?: string;
@@ -28,6 +28,43 @@ export interface ThemeState {
 const visitor = { principal: ANONYMOUS };
 /** Patterns are private; the site reads them to render the entries that use them. */
 const renderer = { principal: systemPrincipal('site') };
+
+/** Texts with block references, parsed once per isolate: saving checks them, so serving a page parses each text once. */
+const PARSED = new Map<string, ParsedText>();
+
+function parsedText(cms: CmsHost, text: string): ParsedText {
+    let parsed = PARSED.get(text);
+    if (!parsed) {
+        parsed = parseBlockText(text, cms.blockTypes);
+        if (PARSED.size >= 500) PARSED.delete(PARSED.keys().next().value!);
+        PARSED.set(text, parsed);
+    }
+    return parsed;
+}
+
+/** The blocks a block's Markdown fields reference, for collecting their media and patterns. */
+function referencedBlocks(cms: CmsHost, block: { type: string; data: Record<string, unknown> }): Block[] {
+    const found: Block[] = [];
+    for (const [key, declaration] of Object.entries(cms.blockTypes.get(block.type)?.fields ?? {})) {
+        const value = block.data[key];
+        if (declaration.kind === 'text' && declaration.format === 'markdown' && hasBlockReference(value)) found.push(...flattenBlocks(textBlocks(parsedText(cms, value))));
+    }
+    return found;
+}
+
+/** What bindings read on a page: the entry (when there is one), the site's public settings and the signed-in user. */
+export function bindingScopes(settings: SiteSettings, options: { entry?: Readonly<Record<string, unknown>> | null; user?: { readonly name: string } | null } = {}): BindingScopes {
+    return {
+        entry: options.entry ?? null,
+        site: { title: settings['general.siteTitle'], tagline: settings['general.tagline'], logo: settings['general.logo'], icon: settings['general.favicon'] },
+        user: options.user ?? null,
+    };
+}
+
+/** Theme options with their bindings resolved, so a footer text can say `© {{ $site.title }}`. */
+export function resolvedOptions(options: Readonly<Record<string, unknown>>, scopes: BindingScopes): Record<string, unknown> {
+    return Object.fromEntries(Object.entries(options).map(([name, value]) => [name, typeof value === 'string' ? resolveBindings(value, scopes) : value]));
+}
 
 export async function themeState(cms: CmsHost): Promise<ThemeState> {
     const name = await cms.activeTheme();
@@ -64,7 +101,7 @@ function localeWhere(languages: SiteLanguages, locale: string): { [field: string
 }
 
 /** The layout's data: site title, tagline, the menus of the active theme's locations and the language links. */
-export async function siteView(cms: CmsHost, theme: ThemeState, options: { locale?: string; languages?: readonly LanguageLink[]; forms?: FormRequest; template?: string | null } = {}): Promise<SiteView & { noindex: boolean }> {
+export async function siteView(cms: CmsHost, theme: ThemeState, options: { locale?: string; languages?: readonly LanguageLink[]; forms?: FormRequest; template?: string | null; entry?: RecordShape | null; user?: { name: string } | null; usage?: { user: boolean } } = {}): Promise<SiteView & { noindex: boolean }> {
     const settings = await cms.settings.all();
     const languages = await cms.languages();
     const locale = options.locale ?? languages.default;
@@ -80,15 +117,15 @@ export async function siteView(cms: CmsHost, theme: ThemeState, options: { local
     let blog: string | null = null;
     try { blog = await cms.archiveUrl(cms.collection('posts'), locale); } catch { /* no posts */ }
     return {
-        title: settings['general.siteTitle'], tagline: settings['general.tagline'], blog, menus, noindex: settings['reading.discourageSearchEngines'],
+        title: settings['general.siteTitle'], tagline: settings['general.tagline'], logo: settings['general.logo'] || null, blog, menus, noindex: settings['reading.discourageSearchEngines'],
         locale, languages: options.languages ?? [], searchUrl: `${localePrefix(languages, locale)}/search`, homeUrl: localePrefix(languages, locale) || '/',
-        areas: await areaViews(cms, info?.areas.map(area => area.name) ?? [], options.forms),
+        areas: await areaViews(cms, info?.areas.map(area => area.name) ?? [], options.forms, bindingScopes(settings, options), options.usage),
         template: options.template ?? null,
     };
 }
 
 /** The blocks of the theme's widget areas, rendered; blocks of inactive plugins are left out. */
-async function areaViews(cms: CmsHost, names: readonly string[], forms?: FormRequest): Promise<Record<string, RenderedBlock[]>> {
+async function areaViews(cms: CmsHost, names: readonly string[], forms?: FormRequest, scopes?: BindingScopes, usage?: { user: boolean }): Promise<Record<string, RenderedBlock[]>> {
     if (!names.length) return {};
     const saved = await cms.areas.all().catch(() => new Map<string, { blocks: readonly { id: string; type: string; data: Record<string, unknown> }[] }>());
     const available = new Set((await cms.blocks()).map(block => block.name));
@@ -100,7 +137,8 @@ async function areaViews(cms: CmsHost, names: readonly string[], forms?: FormReq
     for (const list of expanded.values()) for (const block of list) blockMediaIds(cms, block as { type: string; data: Record<string, unknown> }, ids);
     const files = cms.files && ids.size ? await cms.files.getMany([...ids]) : new Map<string, CmsFile>();
     const richText = bodyRenderer(cms, files, patterns);
-    const areas = Object.fromEntries([...expanded].map(([name, list]) => [name, list.map(block => renderedBlock(cms, block as { _id: string; type: string; data: Record<string, unknown> }, files, richText))]));
+    // Widgets bind like entry blocks: on an entry's page `$` is that entry, and `$site` and `$user` are there everywhere.
+    const areas = Object.fromEntries([...expanded].map(([name, list]) => [name, list.map(block => renderedBlock(cms, block as { _id: string; type: string; data: Record<string, unknown> }, files, doc => richText(doc, scopes), scopes, { patterns, usage }))]));
     await withForms(cms, Object.values(areas).flat(), forms);
     await withLatest(cms, Object.values(areas).flat());
     return areas;
@@ -148,20 +186,20 @@ function walkBlocks(blocks: readonly RenderedBlock[], visit: (block: RenderedBlo
  * Rich text as body parts: HTML runs and rendered blocks, synced patterns expanded one level.
  * For the rich text inside blocks, the entry's rich text fields among them.
  */
-function bodyRenderer(cms: CmsHost, files: ReadonlyMap<string, CmsFile>, patterns: ReadonlyMap<string, Block[]>): (doc: RichTextDoc, scope?: Readonly<Record<string, unknown>>, depth?: number) => BodyPart[] {
+function bodyRenderer(cms: CmsHost, files: ReadonlyMap<string, CmsFile>, patterns: ReadonlyMap<string, Block[]>, usage?: { user: boolean }): (doc: RichTextDoc, scope?: BindingScopes, depth?: number) => BodyPart[] {
     const resizes = cms.files?.resizes ?? false;
     const media = (id: string) => {
         const view = mediaView(files.get(id), resizes);
         return view ? { url: view.url, width: view.width, height: view.height, srcset: view.srcset } : null;
     };
-    const parts = (doc: RichTextDoc, scope?: Readonly<Record<string, unknown>>, depth = 0): BodyPart[] => richTextParts(doc, { media }).flatMap((part): BodyPart[] => {
+    const parts = (doc: RichTextDoc, scope?: BindingScopes, depth = 0): BodyPart[] => richTextParts(doc, { media }).flatMap((part): BodyPart[] => {
         if (part.kind === 'html') return [part];
         const inner = depth === 0 ? (doc: RichTextDoc) => parts(doc, scope, 1) : undefined;
         if (part.block.type === 'core/pattern') {
             // A pattern embedded in rich text: its blocks in its place, once.
-            return depth === 0 ? expandPatterns([part.block as Block], patterns).map(block => ({ kind: 'block' as const, block: renderedBlock(cms, block, files, inner, scope) })) : [];
+            return depth === 0 ? expandPatterns([part.block as Block], patterns).map(block => ({ kind: 'block' as const, block: renderedBlock(cms, block, files, inner, scope, { patterns, usage }) })) : [];
         }
-        return [{ kind: 'block' as const, block: renderedBlock(cms, part.block as RenderedBlock, files, inner, scope) }];
+        return [{ kind: 'block' as const, block: renderedBlock(cms, part.block as RenderedBlock, files, inner, scope, { patterns, usage }) }];
     });
     return parts;
 }
@@ -215,11 +253,12 @@ export function mediaView(file: CmsFile | undefined, resizes: boolean): MediaVie
 
 /**
  * A block with its Markdown rendered, its rich text as parts (through `richText`, when given),
- * its media resolved and its children rendered. With a `scope` (the entry's record), text
- * fields bound to entry fields (`{{ $.price }}`) show the entry's values.
+ * its media resolved and its children rendered. With `scopes`, text fields show what their
+ * bindings read (`{{ $.price }}`, `{{ $site.title }}`). Markdown with block references renders
+ * as `content.<field>`: its text runs and the referenced blocks, synced patterns expanded.
  */
 function renderedBlock(cms: CmsHost, block: { _id: string; type: string; data: Record<string, unknown>; layout?: RenderedBlock['layout']; style?: RenderedBlock['style']; when?: RenderedBlock['when']; children?: readonly unknown[] },
-    files: ReadonlyMap<string, CmsFile>, richText?: (doc: RichTextDoc) => BodyPart[], scope?: Readonly<Record<string, unknown>>): RenderedBlock {
+    files: ReadonlyMap<string, CmsFile>, richText?: (doc: RichTextDoc) => BodyPart[], scope?: BindingScopes, refs: { patterns?: ReadonlyMap<string, Block[]>; usage?: { user: boolean }; depth?: number } = {}): RenderedBlock {
     const html: Record<string, string> = {};
     const media: Record<string, MediaView> = {};
     const content: Record<string, BodyPart[]> = {};
@@ -227,16 +266,34 @@ function renderedBlock(cms: CmsHost, block: { _id: string; type: string; data: R
     const type = cms.blockTypes.get(block.type);
     const bound = Object.entries(type?.fields ?? {}).filter(([, declaration]) => (declaration.kind === 'string' && !declaration.media) || declaration.kind === 'text').map(([key]) => key);
     const data = scope && bound.length ? resolveBlockBindings(block.data, bound, scope) : block.data;
+    if (scope?.user && refs.usage && bound.some(key => usesUserBinding(block.data[key]))) refs.usage.user = true;
     for (const [key, declaration] of Object.entries(type?.fields ?? {})) {
         const entry = data[key];
-        if (declaration.kind === 'text' && declaration.format === 'markdown' && typeof entry === 'string') html[key] = renderMarkdown(entry);
+        const raw = block.data[key];
+        if (declaration.kind === 'text' && declaration.format === 'markdown' && hasBlockReference(raw) && (refs.depth ?? 0) === 0) {
+            // References are parsed from the text as written, then each run's bindings resolve: a value with quotes cannot break a tag.
+            const parsed = parsedText(cms, raw);
+            if (scope?.user && refs.usage && usesUserBinding(raw)) refs.usage.user = true;
+            const resolve = (text: string) => scope ? resolveBindings(text, scope) : text;
+            const inner = { ...refs, depth: 1 };
+            content[key] = parsed.parts.flatMap((part): BodyPart[] => {
+                if (part.kind === 'text') return part.text.trim() ? [{ kind: 'html', html: renderMarkdown(resolve(part.text)) }] : [];
+                const child = { ...part.block, _id: `${block._id}-${part.block._id}`.slice(0, 40) };
+                if (child.type === PATTERN_REFERENCE) {
+                    const blocks = refs.patterns?.get(String(child.data.pattern ?? '')) ?? [];
+                    return blocks.filter(entry => entry.type !== PATTERN_REFERENCE).map(entry => ({ kind: 'block' as const, block: renderedBlock(cms, prefixIds(entry, `${child._id}-`), files, richText, scope, inner) }));
+                }
+                return [{ kind: 'block', block: renderedBlock(cms, child, files, richText, scope, inner) }];
+            });
+            html[key] = parsed.parts.map(part => part.kind === 'text' ? renderMarkdown(resolve(part.text)) : '').join('');
+        } else if (declaration.kind === 'text' && declaration.format === 'markdown' && typeof entry === 'string') html[key] = renderMarkdown(entry);
         if (declaration.kind === 'richtext' && entry && typeof entry === 'object') content[key] = richText ? richText(entry as RichTextDoc) : richTextParts(entry as RichTextDoc).filter(part => part.kind === 'html');
         for (const id of declaration.media ? (Array.isArray(entry) ? entry : [entry]) : []) {
             const view = mediaView(files.get(id as string), resizes);
             if (view) media[id as string] = view;
         }
     }
-    const children = Array.isArray(block.children) ? (block.children as RenderedBlock[]).map(child => renderedBlock(cms, child, files, richText, scope)) : undefined;
+    const children = Array.isArray(block.children) ? (block.children as RenderedBlock[]).map(child => renderedBlock(cms, child, files, richText, scope, refs)) : undefined;
     return { _id: block._id, type: block.type, data, html, media, ...(Object.keys(content).length ? { content } : {}), ...(type && blockIsData(type) ? { dataOnly: true } : {}),
         ...(block.layout ? { layout: block.layout } : {}), ...(block.style ? { style: block.style } : {}), ...(block.when ? { when: block.when } : {}), ...(children ? { children } : {}) };
 }
@@ -249,6 +306,7 @@ function blockMediaIds(cms: CmsHost, block: { type: string; data: Record<string,
         if (declaration.kind === 'richtext' && entry && typeof entry === 'object') docMediaIds(cms, entry as RichTextDoc, into);
     }
     for (const child of Array.isArray(block.children) ? block.children as RenderedBlock[] : []) blockMediaIds(cms, child, into);
+    for (const referenced of referencedBlocks(cms, block)) if (referenced.type !== PATTERN_REFERENCE) blockMediaIds(cms, referenced, into);
 }
 
 function docMediaIds(cms: CmsHost, doc: RichTextDoc, into: Set<string>): void {
@@ -260,11 +318,17 @@ function docMediaIds(cms: CmsHost, doc: RichTextDoc, into: Set<string>): void {
 
 /** Synced patterns the blocks and documents use, by ID: their blocks. Patterns inside patterns are not expanded. */
 async function usedPatterns(cms: CmsHost, docs: readonly RichTextDoc[], blocks: readonly Block[] = []): Promise<Map<string, Block[]>> {
-    const ids = [...new Set([...docs.flatMap(doc => richTextBlocks(doc)), ...flattenBlocks(blocks)].filter(block => block.type === 'core/pattern').map(block => String(block.data.pattern ?? '')))].filter(Boolean);
-    if (!ids.length) return new Map();
+    const all = [...docs.flatMap(doc => richTextBlocks(doc)), ...flattenBlocks(blocks)];
+    const ids = [...new Set(all.filter(block => block.type === 'core/pattern').map(block => String(block.data.pattern ?? '')))].filter(Boolean);
+    // `{{ pattern hero /}}` in text names a pattern by its slug.
+    const slugs = [...new Set(all.flatMap(block => referencedBlocks(cms, block as { type: string; data: Record<string, unknown> })).filter(block => block.type === PATTERN_REFERENCE).map(block => String(block.data.pattern ?? '')))].filter(Boolean).slice(0, 50);
+    if (!ids.length && !slugs.length) return new Map();
     try {
-        const patterns = await cms.resource('cms/patterns').getMany(ids, renderer);
-        return new Map([...patterns].flatMap(([id, record]) => Array.isArray(record.content) ? [[id, record.content as Block[]]] : []));
+        const repository = cms.resource('cms/patterns');
+        const patterns = ids.length ? await repository.getMany(ids, renderer) : new Map<string, RecordShape>();
+        const named = slugs.length ? (await repository.list({ where: { slug: { in: slugs } }, limit: 50 }, renderer)).records : [];
+        return new Map([...[...patterns].flatMap(([id, record]) => Array.isArray(record.content) ? [[id, record.content as Block[]] as const] : []),
+            ...named.flatMap(record => Array.isArray(record.content) && typeof record.slug === 'string' ? [[record.slug, record.content as Block[]] as const] : [])]);
     } catch (error) {
         if (isCmsError(error)) return new Map();
         throw error;
@@ -300,6 +364,8 @@ export interface EntryViewOptions {
     comment?: Pick<CommentsView, 'notice' | 'error'>;
     /** The signed-in user, who comments without a name and email. */
     user?: { name: string } | null;
+    /** Set when a binding reads the signed-in user, so the page is not cached for everyone. */
+    usage?: { user: boolean };
     /** IDs of protected entries this visitor unlocked, whose content shows. */
     unlocked?: ReadonlySet<string>;
     /** The request, for the forms the entry places; without it they render nothing. */
@@ -409,8 +475,11 @@ export async function entryViews(cms: CmsHost, collection: CollectionDefinition,
         return taxonomy.path ? `${localePrefix(languages, locale)}/${taxonomy.path}/${term.slug}` : null;
     };
     // Blocks bind to the entry's own fields (`{{ $.price }}`), so each record renders with itself as the scope.
-    const parts = bodyRenderer(cms, files, patterns);
-    const render = (block: RenderedBlock, scope: RecordShape) => renderedBlock(cms, block, files, doc => parts(doc, scope), scope);
+    const parts = bodyRenderer(cms, files, patterns, options.usage);
+    const render = (block: RenderedBlock, record: RecordShape) => {
+        const scopes = bindingScopes(settings, { entry: record, user: options.user ?? null });
+        return renderedBlock(cms, block, files, doc => parts(doc, scopes), scopes, { patterns, ...(options.usage ? { usage: options.usage } : {}) });
+    };
     /** A field's typed value; undefined leaves it out (rich text, Markdown and blocks in lists, vectors). */
     const fieldView = (name: string, declaration: FieldDeclaration, value: unknown, locale: string, full: boolean, scope: RecordShape): FieldView | undefined => {
         if (declaration.kind === 'vector' || declaration.kind === 'bigint') return undefined;
@@ -428,8 +497,12 @@ export async function entryViews(cms: CmsHost, collection: CollectionDefinition,
         if (declaration.media && Array.isArray(value)) return value.map(id => mediaView(files.get(String(id)), resizes)).filter((view): view is MediaView => !!view);
         if (declaration.media) return mediaView(files.get(String(value)), resizes);
         if (declaration.kind === 'reference') return references.get(`${declaration.target}:${String(value)}`) ?? null;
-        if (declaration.kind === 'richtext') return typeof value === 'object' ? [textBlock(name, parts(value as RichTextDoc, scope))] : null;
-        if (declaration.kind === 'text' && declaration.format === 'markdown') return [textBlock(name, [{ kind: 'html', html: renderMarkdown(String(value)) }])];
+        if (declaration.kind === 'richtext') return typeof value === 'object' ? [textBlock(name, parts(value as RichTextDoc, bindingScopes(settings, { entry: scope, user: options.user ?? null })))] : null;
+        if (declaration.kind === 'text' && declaration.format === 'markdown') {
+            // Block references render through a paragraph of the text, which parses them.
+            if (hasBlockReference(value)) return [textBlock(name, render({ _id: name, type: 'core/paragraph', data: { text: value }, html: {}, media: {} }, scope).content?.text ?? [])];
+            return [textBlock(name, [{ kind: 'html', html: renderMarkdown(String(value)) }])];
+        }
         if (declaration.kind === 'blocks') return Array.isArray(value) ? (expandPatterns(value as Block[], patterns) as RenderedBlock[]).map(block => render(block, scope)) : [];
         return value as FieldView;
     };
@@ -468,7 +541,7 @@ export async function entryViews(cms: CmsHost, collection: CollectionDefinition,
             details,
             template: typeof record.template === 'string' && record.template ? record.template : null,
             locale,
-            comments: options.full && collection.comments && !locked ? await commentsView(cms, collection, record, urls.get(record.id) ?? '/', settings, options) : null,
+            comments: options.full && collection.comments && !locked && cms.discussions(settings) ? await commentsView(cms, collection, record, urls.get(record.id) ?? '/', settings, options) : null,
             locked,
         });
         if (options.full) {

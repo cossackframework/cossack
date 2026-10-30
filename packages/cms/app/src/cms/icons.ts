@@ -250,7 +250,7 @@ export function blockIcon(name: string | undefined): IconEntry {
 }
 
 /**
- * The colour of a block's icon by its category, so block types tell apart at a glance: text
+ * The color of a block's icon by its category, so block types tell apart at a glance: text
  * blue, media violet, design amber, widgets emerald, embeds sky, form fields rose, data slate.
  */
 export const BLOCK_CATEGORY_COLORS: Readonly<Record<string, string>> = Object.freeze({

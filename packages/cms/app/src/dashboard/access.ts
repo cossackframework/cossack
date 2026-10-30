@@ -90,7 +90,7 @@ export async function navigation(c: Context): Promise<DashboardModule[]> {
     ];
     if (tools.length) admin.push({ id: 'tools', label: 'Tools', href: tools[0]!.href, icon: icon('tuning-2'), authorization: 'authenticated', children: tools });
     if (can(PERMISSIONS.manageSettings)) admin.push({ id: 'site-settings', label: 'Settings', href: '/dashboard/settings/general', icon: icon('settings'), authorization: { permission: PERMISSIONS.manageSettings },
-        children: [...cms.settings.groups.filter(group => (group.permission ?? PERMISSIONS.manageSettings) === PERMISSIONS.manageSettings).map(group => ({ label: group.label, href: `/dashboard/settings/${group.id}` })),
+        children: [...cms.settings.groups.filter(group => (group.permission ?? PERMISSIONS.manageSettings) === PERMISSIONS.manageSettings && !group.parent).map(group => ({ label: group.label, href: `/dashboard/settings/${group.id}` })),
             { label: 'Permalinks', href: '/dashboard/settings/permalinks' }] });
     const account = registry.filter(module => module.placement === 'account');
     // The author profile follows the profile settings in the account menu.
@@ -98,8 +98,4 @@ export async function navigation(c: Context): Promise<DashboardModule[]> {
     return [...content, ...admin, ...account];
 }
 
-/** The site title from General settings, shown in the dashboard's sidebar and footer. */
-export async function siteName(): Promise<string> {
-    try { return await currentCms().settings.get('general.siteTitle'); }
-    catch { return config('app.name'); }
-}
+export { siteName } from '../brand';

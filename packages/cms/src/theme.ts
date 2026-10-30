@@ -14,11 +14,11 @@ import { PRESET_SLUG, STYLE_PROPERTIES, TEXT_ALIGNMENTS, type StyleProperty } fr
 import type { BlockCondition, BlockLayout, BlockStyle, InputKind } from './blocks';
 import type { ChoiceOption, FormValue } from './form-builder';
 
-/** A named value blocks pick by slug: a colour, a font size or a spacing step. */
+/** A named value blocks pick by slug: a color, a font size or a spacing step. */
 export interface Preset {
     readonly slug: string;
     readonly name: string;
-    /** A CSS colour, or a CSS length for sizes and spacing. */
+    /** A CSS color, or a CSS length for sizes and spacing. */
     readonly value: string;
 }
 
@@ -47,7 +47,7 @@ export interface ThemeManifest {
     readonly extends?: string;
     /** Widget areas: block lists edited under Appearance → Widgets, such as `{ "sidebar": "Sidebar" }`. */
     readonly areas?: { readonly [name: string]: string };
-    /** The palette, font sizes and spacing steps blocks pick from; the site adjusts colours under Customize. */
+    /** The palette, font sizes and spacing steps blocks pick from; the site adjusts colors under Customize. */
     readonly presets?: ThemePresets;
 }
 
@@ -85,13 +85,13 @@ export function themeProblems(theme: unknown): string[] {
 }
 
 
-/** A CSS colour: hex, a named colour, or a colour function without nested parentheses. */
+/** A CSS color: hex, a named color, or a color function without nested parentheses. */
 const COLOR_VALUE = /^(?:#[0-9a-f]{3,8}|[a-z]{3,30}|(?:rgb|rgba|hsl|hsla|hwb|lab|lch|oklab|oklch|color)\([^()]{1,60}\))$/i;
 /** A CSS length, or `clamp()`, `min()`, `max()` and `calc()` of lengths. */
 const LENGTH_VALUE = /^(?:-?\d*\.?\d+(?:px|rem|em|%|vw|vh|ch|cqi|cqw)?|(?:clamp|min|max|calc)\([-+*/\d.\s,%a-z]{1,60}\))$/i;
 const PRESET_LIMITS: Readonly<Record<PresetKind, number>> = { colors: 24, fontSizes: 8, spacing: 8 };
 
-/** Problems with presets, as a manifest declares them or as the site's custom colours; empty when valid. */
+/** Problems with presets, as a manifest declares them or as the site's custom colors; empty when valid. */
 export function presetProblems(presets: unknown): string[] {
     if (!presets || typeof presets !== 'object' || Array.isArray(presets)) return ['presets is an object of colors, fontSizes and spacing.'];
     const problems: string[] = [];
@@ -106,7 +106,7 @@ export function presetProblems(presets: unknown): string[] {
             if (slugs.has(entry.slug)) problems.push(`${at} is listed twice.`);
             slugs.add(entry.slug);
             if (typeof entry.name !== 'string' || !entry.name.trim() || entry.name.length > 40) problems.push(`${at} needs a name of at most 40 characters.`);
-            if (typeof entry.value !== 'string' || !(kind === 'colors' ? COLOR_VALUE : LENGTH_VALUE).test(entry.value.trim())) problems.push(`${at} needs a CSS ${kind === 'colors' ? 'colour' : 'length'}.`);
+            if (typeof entry.value !== 'string' || !(kind === 'colors' ? COLOR_VALUE : LENGTH_VALUE).test(entry.value.trim())) problems.push(`${at} needs a CSS ${kind === 'colors' ? 'color' : 'length'}.`);
         }
     }
     return problems;
@@ -140,7 +140,7 @@ export function layerPresets(base: ThemePresets | undefined, top: ThemePresets |
     return result;
 }
 
-/** The site's changes to the active theme's palette: new values by slug, and colours it added. */
+/** The site's changes to the active theme's palette: new values by slug, and colors it added. */
 export interface PresetOverrides {
     readonly colors?: { readonly [slug: string]: string };
     readonly custom?: readonly Preset[];
@@ -151,9 +151,9 @@ export function presetOverridesProblem(value: unknown): string | undefined {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return 'Preset overrides are an object.';
     const { colors, custom } = value as PresetOverrides;
     if (colors !== undefined) {
-        if (!colors || typeof colors !== 'object' || Array.isArray(colors)) return 'colors maps slugs to colours.';
+        if (!colors || typeof colors !== 'object' || Array.isArray(colors)) return 'colors maps slugs to colors.';
         for (const [slug, color] of Object.entries(colors)) {
-            if (!PRESET_SLUG.test(slug) || typeof color !== 'string' || !COLOR_VALUE.test(color.trim())) return `${slug} needs a CSS colour.`;
+            if (!PRESET_SLUG.test(slug) || typeof color !== 'string' || !COLOR_VALUE.test(color.trim())) return `${slug} needs a CSS color.`;
         }
     }
     if (custom !== undefined) {
@@ -163,7 +163,7 @@ export function presetOverridesProblem(value: unknown): string | undefined {
     return undefined;
 }
 
-/** The presets blocks pick from: the theme's over the defaults, with the site's colour changes and additions. */
+/** The presets blocks pick from: the theme's over the defaults, with the site's color changes and additions. */
 export function resolvePresets(theme: ThemePresets | undefined, overrides?: PresetOverrides | null): Required<ThemePresets> {
     const layered = layerPresets(DEFAULT_PRESETS, theme);
     const colors = (layered.colors ?? []).map(preset => overrides?.colors?.[preset.slug] ? { ...preset, value: overrides.colors[preset.slug]! } : preset);
@@ -524,6 +524,8 @@ export interface ArchiveView {
 export interface SiteView {
     readonly title: string;
     readonly tagline: string;
+    /** The logo's URL from Settings → General, or null; `helpers.logo(site)` renders it. */
+    readonly logo: string | null;
     /** The blog's URL, when posts are on the site. */
     readonly blog: string | null;
     /** Resolved menus by location; an unassigned primary location lists top-level pages. */
@@ -564,6 +566,8 @@ export interface ThemeHelpers {
     block(block: RenderedBlock | readonly RenderedBlock[]): TemplateResult | null;
     /** Whether a URL is the current page or one of its ancestors. */
     isActive(url: string): boolean;
+    /** The site's logo as an image named after the site, or null when none is set; `class` sizes it (default `h-10 w-auto`). */
+    logo(site: SiteView, options?: { readonly class?: string }): TemplateResult | null;
 }
 
 /** An entry template, from `templates/entry.ts` or `templates/entry-<collection>.ts`. */

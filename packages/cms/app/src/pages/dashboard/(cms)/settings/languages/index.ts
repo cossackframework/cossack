@@ -3,6 +3,7 @@ import { Button, Card, CardBody, Checkbox, NativeSelect, toast } from '@cossackf
 import { html, component } from '@cossackframework/renderer';
 import { isCmsError, languageName, LOCALE, PERMISSIONS } from '@cossackframework/cms';
 import { requireAny } from '../../../../../cms/guards';
+import { settingsFrame, settingsLinks, type SettingsLink } from '../../../../../cms/settings-nav';
 import { CONTROL, notice, pageHeader } from '../../../../../cms/ui';
 
 /** Languages offered by name; any other code can be added. */
@@ -15,7 +16,7 @@ const COMMON = ['ar', 'bg', 'bn', 'cs', 'da', 'de', 'el', 'en', 'es', 'fa', 'fi'
  */
 @Page({ transport: 'http', middlewares: [requireAny(PERMISSIONS.manageSettings)] })
 export default class LanguagesPage extends Cossack {
-    @State() groups: { id: string; label: string }[] = [];
+    @State() links: SettingsLink[] = [];
     @State() main = 'en';
     @State() others: string[] = [];
     @State() options: { code: string; label: string }[] = [];
@@ -30,7 +31,7 @@ export default class LanguagesPage extends Cossack {
     async init() {
         const cms = this.c.get('cms');
         this.origin = new URL(this.c.req.url).origin;
-        this.groups = cms.settings.groups.filter(group => (group.permission ?? PERMISSIONS.manageSettings) === PERMISSIONS.manageSettings).map(group => ({ id: group.id, label: group.label }));
+        this.links = settingsLinks(cms);
         await this.load();
     }
 
@@ -74,13 +75,8 @@ export default class LanguagesPage extends Cossack {
     }
 
     render() {
-        return html`<div class="max-w-3xl space-y-6">
+        return settingsFrame(this.links, 'languages', html`<div class="space-y-6">
             ${pageHeader(__('Language settings'), { description: __('Publish entries in several languages. Each entry has one language; the editor links its translations.') })}
-            <nav aria-label=${__('Settings')} class="flex flex-wrap gap-1 border-b border-border">
-                ${this.groups.map(group => html`<a href=${`/dashboard/settings/${group.id}`} aria-current=${group.id === 'languages' ? 'page' : 'false'}
-                    class=${`-mb-px border-b-2 px-3 py-2 text-sm no-underline ${group.id === 'languages' ? 'border-primary font-medium text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>${group.label}</a>`)}
-                <a href="/dashboard/settings/permalinks" class="-mb-px border-b-2 border-transparent px-3 py-2 text-sm text-muted-foreground no-underline hover:text-foreground">${__('Permalinks')}</a>
-            </nav>
             ${this.error ? notice(this.error, 'error') : null}
             ${component(Card, {}, component(CardBody, {}, html`<form class="space-y-6" @submit=${(event: Event) => this.submit(event)}>
                 <div class="space-y-1">
@@ -105,6 +101,6 @@ export default class LanguagesPage extends Cossack {
                 <p class="text-xs text-muted-foreground">${__('Entries written before you add languages take the default language. Terms, menu labels and settings are shared by all languages.')}</p>
                 <div>${component(Button, { type: 'submit' }, __('Save changes'))}</div>
             </form>`))}
-        </div>`;
+        </div>`);
     }
 }

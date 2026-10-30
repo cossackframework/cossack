@@ -379,6 +379,11 @@ describe.skipIf(!liveRomeDBTests())('generated CMS forms', () => {
         await picker.getByLabel('Search blocks').fill(search);
         await picker.getByRole('button', { name, exact: true }).click();
         await browserExpect(picker).toBeHidden();
+        // A new block opens its panel at once; the steps below open it again by its Edit button.
+        const opened = admin.getByRole('dialog', { name });
+        await browserExpect(opened).toBeVisible();
+        await admin.keyboard.press('Escape');
+        await browserExpect(opened).toBeHidden();
       };
       // A block's settings, conditional logic included, are in its panel.
       const editBlock = async (region, type, fill) => {

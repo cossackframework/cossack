@@ -281,7 +281,8 @@ export async function duplicateEntry(cms: CmsHost, route: string, id: string, pr
     if (!source) throw new CmsError('CMS_NOT_FOUND', 'The entry does not exist.');
     const input: Record<string, unknown> = {};
     for (const name of Object.keys(resource.fields)) {
-        if (NOT_COPIED.has(name) || source[name] === undefined) continue;
+        // Empty fields stay unset: the repository refuses null where a field has no value.
+        if (NOT_COPIED.has(name) || source[name] === undefined || source[name] === null) continue;
         input[name] = source[name];
     }
     const titleField = resource.titleField ?? 'title';
@@ -295,12 +296,18 @@ function writeActor(principal: Principal): WriteActor {
 }
 
 /** What plugins add to an entries list: actions under each row, extra columns and bulk actions. */
-export async function listExtras(cms: CmsHost, resource: string, records: readonly RecordShape[], principal: Principal): Promise<{ actions: Record<string, EntryAction[]>; columns: EntryColumn[]; bulk: EntryAction[] }> {
+/**
+ * Plugins' additions to an entries list. Each record's quick actions start from `builtin`
+ * (the list's own, named by `id`), which plugins may add to, remove from or reorder; a failing
+ * filter leaves the built-in ones.
+ */
+export async function listExtras(cms: CmsHost, resource: string, records: readonly RecordShape[], principal: Principal, builtin: (record: RecordShape) => EntryAction[] = () => []): Promise<{ actions: Record<string, EntryAction[]>; columns: EntryColumn[]; bulk: EntryAction[] }> {
     const actor = writeActor(principal);
     const actions: Record<string, EntryAction[]> = {};
     for (const record of records) {
-        const added = await cms.hooks.applyFilters(entryActions, [], { resource, record, actor }).catch(() => []);
-        if (added.length) actions[record.id] = [...added];
+        const own = builtin(record);
+        const result = await cms.hooks.applyFilters(entryActions, own, { resource, record, actor }).catch(() => own);
+        actions[record.id] = Array.isArray(result) ? result.filter(action => action && typeof action.label === 'string') : own;
     }
     const columns = await cms.hooks.applyFilters(entryColumns, [], { resource, records, actor }).catch(() => []);
     const bulk = await cms.hooks.applyFilters(bulkActions, [], { resource, actor }).catch(() => []);

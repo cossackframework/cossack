@@ -1,13 +1,13 @@
 import { Cossack, Page, State, type HeadContext, type HeadTag, type HeadValue } from '@cossackframework/core';
 import { html } from '@cossackframework/renderer';
-import type { SiteView, ThemeData } from '@cossackframework/cms';
-import { languageLinks, siteView, themeData, themeState, type ThemeState } from '../../cms/site';
+import { usesUserBinding, type SiteView, type ThemeData } from '@cossackframework/cms';
+import { bindingScopes, languageLinks, resolvedOptions, siteView, themeData, themeState, type ThemeState } from '../../cms/site';
 import { siteTheme, themeHelpers } from '../../cms/site-view';
 
 /** The public site's frame, drawn by the active theme's layout, in the page's language. */
 @Page({ transport: 'http' })
 export default class SiteLayout extends Cossack {
-    @State() site: SiteView & { noindex: boolean } = { title: '', tagline: '', blog: null, menus: {}, noindex: false, locale: 'en', languages: [], searchUrl: '/search', homeUrl: '/', areas: {}, template: null };
+    @State() site: SiteView & { noindex: boolean } = { title: '', tagline: '', logo: null, blog: null, menus: {}, noindex: false, locale: 'en', languages: [], searchUrl: '/search', homeUrl: '/', areas: {}, template: null };
     @State() theme: ThemeState = { name: null, options: {} };
     /** What the theme's `layout` loader returned. */
     @State() data: ThemeData = {};
@@ -60,7 +60,13 @@ export default class SiteLayout extends Cossack {
             const resolved = this.c.get('cms.site');
             const page = resolved && 'locale' in resolved ? resolved : { kind: this.c.req.path === '/' ? 'home' as const : 'search' as const, locale: languages.default };
             const template = resolved?.kind === 'entry' && typeof resolved.record.template === 'string' && resolved.record.template ? resolved.record.template : null;
-            this.site = await siteView(cms, this.theme, { locale: page.locale, languages: await languageLinks(cms, page), template, forms: { query: this.c.req.query(), principal: this.c.get('principal'), url: this.c.req.path } });
+            // Widgets and theme options bind like blocks: `$` is the entry shown, `$site` and `$user` are there on every page.
+            const entry = resolved?.kind === 'entry' ? resolved.record : null;
+            const user = this.user ? { name: this.user.name } : null;
+            const usage = { user: Object.values(this.theme.options).some(value => usesUserBinding(value)) };
+            this.theme = { ...this.theme, options: resolvedOptions(this.theme.options, bindingScopes(settings, { entry, user })) };
+            this.site = await siteView(cms, this.theme, { locale: page.locale, languages: await languageLinks(cms, page), template, entry, user, usage, forms: { query: this.c.req.query(), principal: this.c.get('principal'), url: this.c.req.path } });
+            if (usage.user && user) this.c.header('cache-control', 'private, no-store');
             this.data = await themeData(cms, this.theme, 'layout', this.site, this.c.get('principal'), page.locale);
         } catch { this.site = { ...this.site, title: config('app.name') }; }
     }

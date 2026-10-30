@@ -1,5 +1,5 @@
-import { Cossack, Page, State, type HeadValue } from '@cossackframework/core';
-import { Badge, Card, CardBody, Icon } from '@cossackframework/ui';
+import { Client, ClientState, Cossack, Page, State, type HeadValue } from '@cossackframework/core';
+import { Badge, Card, CardBody, Icon, Input } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { BLOCK_CATEGORIES, blockCategory, blockSupports, PERMISSIONS, type BlockCategory } from '@cossackframework/cms';
 import { FIELD_TYPES, typeOf } from '../../../../cms/builder';
@@ -7,14 +7,16 @@ import { requireAny } from '../../../../cms/guards';
 import { blockIcon, blockIconColor } from '../../../../cms/icons';
 import { pageHeader } from '../../../../cms/ui';
 
-const STYLE_LABELS = { background: 'background', text: 'text colour', padding: 'padding', margin: 'margin', fontSize: 'font size', align: 'alignment' } as const;
+const STYLE_LABELS = { background: 'background', text: 'text color', padding: 'padding', margin: 'margin', fontSize: 'font size', align: 'alignment' } as const;
 
-interface BlockRow { name: string; label: string; description: string; icon: string; category: BlockCategory; plugin: string; fields: { name: string; label: string; type: string; required: boolean }[]; holds: string; parent: string; style: string }
+interface BlockRow { name: string; label: string; description: string; keywords: string[]; icon: string; category: BlockCategory; plugin: string; fields: { name: string; label: string; type: string; required: boolean }[]; holds: string; parent: string; style: string }
 
 /** The block types available to blocks fields, by category: built-in ones and those of active plugins. */
 @Page({ transport: 'http', middlewares: [requireAny(PERMISSIONS.manageCollections)] })
 export default class BlocksPage extends Cossack {
     @State() blocks: BlockRow[] = [];
+    /** Filters the list as you type: label, name, keywords, description and category. */
+    @ClientState() search = '';
 
     head(): HeadValue {
         return { title: 'Blocks' };
@@ -22,7 +24,7 @@ export default class BlocksPage extends Cossack {
 
     async init() {
         this.blocks = (await this.c.get('cms').blocks()).map(block => ({
-            name: block.name, label: block.label, description: block.description ?? '', icon: block.icon ?? '', category: blockCategory(block), plugin: block.plugin ?? '',
+            name: block.name, label: block.label, description: block.description ?? '', keywords: [...(block.keywords ?? [])], icon: block.icon ?? '', category: blockCategory(block), plugin: block.plugin ?? '',
             fields: Object.entries(block.fields).map(([name, declaration]) => ({ name, label: declaration.label ?? name, required: declaration.required === true,
                 type: FIELD_TYPES.find(option => option.type === typeOf(declaration))?.label ?? declaration.kind })),
             holds: block.children ? (block.children.allowed?.length ? block.children.allowed.join(', ') : __('any block')) + (block.children.max ? ` (${__('at most')} ${block.children.max})` : '') : '',
@@ -31,10 +33,24 @@ export default class BlocksPage extends Cossack {
         }));
     }
 
+    @Client()
+    setSearch(value: string) {
+        this.search = value;
+    }
+
+    private matches(block: BlockRow, category: string): boolean {
+        const words = this.search.trim().toLowerCase().split(/\s+/).filter(Boolean);
+        const text = [block.label, block.name, block.description, category, block.plugin, ...block.keywords].join(' ').toLowerCase();
+        return words.every(word => text.includes(word));
+    }
+
     render() {
-        const groups = BLOCK_CATEGORIES.map(category => ({ ...category, blocks: this.blocks.filter(block => block.category === category.id) })).filter(group => group.blocks.length);
+        const groups = BLOCK_CATEGORIES.map(category => ({ ...category, blocks: this.blocks.filter(block => block.category === category.id && this.matches(block, category.label)) })).filter(group => group.blocks.length);
         return html`<div class="space-y-8">
             ${pageHeader(__('Blocks'), { description: __('Entries are built from these in their Content field; a collection can start every entry from a template of them. Plugins add block types. Data blocks store values without showing anything.') })}
+            <div class="max-w-sm">${component(Input, { type: 'search', id: 'blocks-search', placeholder: __('Search blocks'), 'aria-label': __('Search blocks'), '.value': this.search,
+                '@input': (event: Event) => this.setSearch((event.target as HTMLInputElement).value) })}</div>
+            ${groups.length ? null : html`<p role="status" class="text-sm text-muted-foreground">${__('No blocks match your search.')}</p>`}
             ${groups.map(group => html`<section class="space-y-3" aria-labelledby=${`blocks-${group.id}`}>
                 <h2 id=${`blocks-${group.id}`} class="text-sm font-semibold uppercase tracking-wide text-muted-foreground">${__(group.label)}</h2>
                 ${group.description ? html`<p class="text-sm text-muted-foreground">${__(group.description)}</p>` : null}

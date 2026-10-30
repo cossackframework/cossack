@@ -226,7 +226,7 @@ describe.skipIf(!live)('themes: loaders', () => {
             .rejects.toMatchObject({ code: 'CMS_VALIDATION' });
         const saved = await cms.areas.save('sidebar', blocks.slice(0, 1), { principal: admin, expectedRevision: 2, known });
         expect(saved.blocks).toEqual([{ _id: 'p', type: 'core/paragraph', data: { text: 'Styled' }, style: { background: 'brand', align: 'center' }, layout: { anchor: 'intro', className: 'hero' } }]);
-        // A design block supports colour and spacing; an unsupported property is dropped, not refused (the unit tests cover the drop).
+        // A design block supports color and spacing; an unsupported property is dropped, not refused (the unit tests cover the drop).
         const divider = await cms.areas.save('sidebar', [{ _id: 'd', type: 'core/divider', data: {}, style: { ...blocks[1]!.style, fontSize: 'large' } }], { principal: admin, expectedRevision: 3, known });
         expect(divider.blocks[0]).toEqual({ _id: 'd', type: 'core/divider', data: { orientation: 'horizontal', thickness: 'thin', width: 'full' }, style: { background: 'brand', padding: 'large' } });
         const settings = await cms.settings.update('appearance', { presets: { 'folio-dark': { colors: { brand: '#0a0' }, custom: [{ slug: 'mine', name: 'Mine', value: '#123' }] } }, customCss: '.hero { color: red }' }, { principal: admin });

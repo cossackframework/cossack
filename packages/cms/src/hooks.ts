@@ -177,14 +177,23 @@ export const menuBeforeSave = defineFilter<readonly MenuItem[], MenuWriteInput>(
 
 // --- Dashboard lists -----------------------------------------------------------------------
 
-/** An action in an entry's row or the bulk actions menu: a link, or a plugin command to run. */
+/** The quick actions entries lists build in, by `EntryAction.id`; the list runs them itself. */
+export const ENTRY_ACTION_IDS = Object.freeze(['edit', 'duplicate', 'trash', 'delete', 'view', 'restore', 'delete-permanently'] as const);
+export type BuiltinEntryAction = (typeof ENTRY_ACTION_IDS)[number];
+
+/** An action in an entry's row or the bulk actions menu: a built-in one, a link, or a plugin command to run. */
 export interface EntryAction {
+    /** A built-in action's name (`ENTRY_ACTION_IDS`), or any name a plugin gives its own so other plugins can find it. */
+    readonly id?: string;
+    /** Spoken name, and the tooltip of its icon. */
     readonly label: string;
+    /** A Solar icon name, such as `pen` or `copy`. Quick actions show as icons; without one, a generic icon. Bulk actions ignore it. */
+    readonly icon?: string;
     /** Where the action goes. */
     readonly href?: string;
     /** The plugin command to run instead, with `{ resource, id }` or `{ resource, ids }` as its input. */
     readonly command?: { readonly plugin: string; readonly name: string };
-    /** Shown in the destructive colour. */
+    /** Shown in the destructive color. */
     readonly danger?: boolean;
     /** A question to confirm before running. */
     readonly confirm?: string;
@@ -202,8 +211,11 @@ export interface EntryListInput {
     readonly actor: WriteActor;
 }
 
-/** The quick actions under an entry in its list: add yours to the built-in ones. */
-export const entryActions = defineFilter<readonly EntryAction[], EntryListInput & { readonly record: RecordShape }>('cms.dashboard.entry-actions', { version: 1, timeoutMs: 1_000 });
+/**
+ * The quick actions under an entry in its list, the built-in ones included (named by `id`, in
+ * `ENTRY_ACTION_IDS`): add yours, remove or reorder them. Version 2: version 1 passed an empty list.
+ */
+export const entryActions = defineFilter<readonly EntryAction[], EntryListInput & { readonly record: RecordShape }>('cms.dashboard.entry-actions', { version: 2, timeoutMs: 1_000 });
 /** Columns of an entries list after the built-in ones, with values for the records shown. */
 export const entryColumns = defineFilter<readonly EntryColumn[], EntryListInput & { readonly records: readonly RecordShape[] }>('cms.dashboard.entry-columns', { version: 1, timeoutMs: 2_000 });
 /** Actions offered for the selected entries of a list, after the built-in ones. */

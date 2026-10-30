@@ -1,7 +1,7 @@
 /**
  * The avatar control of the profile and user screens: a preview with Upload and Remove when
  * the auth store keeps files (the CMS keeps them in its media library), otherwise an image URL
- * with a live preview.
+ * with a live preview. Clicking the picture opens the file dialog too.
  */
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
 import { Avatar, Button, Field, Input } from '@cossackframework/ui';
@@ -34,7 +34,8 @@ export function avatarField(options: AvatarFieldOptions): TemplateResult {
     return html`<div class="space-y-2">
         <span class="block text-sm font-medium text-foreground">${__('Avatar')}</span>
         <div class="flex items-center gap-4">
-            ${preview}
+            <label for=${options.id} title=${options.value ? __('Change picture') : __('Upload picture')}
+                class=${`shrink-0 rounded-full transition-opacity hover:opacity-80 ${options.uploading ? 'pointer-events-none opacity-60' : 'cursor-pointer'}`}>${preview}</label>
             <div class="space-y-2">
                 <div class="flex flex-wrap items-center gap-2">
                     <label class=${`inline-flex cursor-pointer items-center rounded-md border border-border px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted focus-within:ring-2 focus-within:ring-ring ${options.uploading ? 'pointer-events-none opacity-60' : ''}`}>

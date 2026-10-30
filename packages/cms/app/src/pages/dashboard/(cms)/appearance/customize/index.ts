@@ -1,17 +1,17 @@
 import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackframework/core';
-import { Button, Card, CardBody, Input, Textarea, toast } from '@cossackframework/ui';
+import { Button, Card, CardBody, CodeEditor, ColorPicker, Input, toast } from '@cossackframework/ui';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
 import { customCssProblem, isCmsError, PERMISSIONS, presetOverridesProblem, resolvePresets, slugify, type Preset } from '@cossackframework/cms';
 import { requireAny } from '../../../../../cms/guards';
 import { settingControl, settingInput, settingRows, type SettingRow, type SettingValues } from '../../../../../cms/settings-form';
 import { linkButton, notice, pageHeader } from '../../../../../cms/ui';
 
-/** A palette colour as the screen edits it: the theme's value, and the site's when changed. */
+/** A palette color as the screen edits it: the theme's value, and the site's when changed. */
 interface ColorRow { slug: string; name: string; value: string; themeValue: string }
 
 /**
- * The active theme's options, such as its accent colour; its palette, which blocks' Style tabs
- * pick from, with the site's own colours; and the site's Additional CSS. Options save as
+ * The active theme's options, such as its accent color; its palette, which blocks' Style tabs
+ * pick from, with the site's own colors; and the site's Additional CSS. Options save as
  * settings named after the theme; the palette changes and the CSS as Appearance settings.
  */
 @Page({ transport: 'http', middlewares: [requireAny(PERMISSIONS.manageAppearance)] })
@@ -59,7 +59,7 @@ export default class CustomizePage extends Cossack {
         this.custom = this.custom.map((color, at) => at === index ? { ...color, ...patch } : color);
     }
 
-    /** A new custom colour: its slug comes from its name once, so blocks using it keep it when it is renamed. */
+    /** A new custom color: its slug comes from its name once, so blocks using it keep it when it is renamed. */
     @Client()
     addCustom() {
         const taken = new Set([...this.colors, ...this.custom].map(color => color.slug));
@@ -87,7 +87,7 @@ export default class CustomizePage extends Cossack {
         const cms = this.c.get('cms');
         const theme = cms.themes().find(entry => entry.name === this.theme.name);
         if (!theme) { this.error = __('No theme is active.'); return; }
-        // The palette: only values that differ from the theme's are kept, so a theme update reaches untouched colours.
+        // The palette: only values that differ from the theme's are kept, so a theme update reaches untouched colors.
         const themeColors = resolvePresets(theme.presets).colors;
         const changed = Object.fromEntries(colors.filter(color => {
             const original = themeColors.find(entry => entry.slug === color.slug);
@@ -99,7 +99,7 @@ export default class CustomizePage extends Cossack {
         });
         const overrides = { ...(Object.keys(changed).length ? { colors: changed } : {}), ...(added.length ? { custom: added } : {}) };
         const presetProblem = presetOverridesProblem(overrides);
-        if (presetProblem) { this.errors = { colors: presetProblem }; this.error = __('Some colours are invalid.'); return; }
+        if (presetProblem) { this.errors = { colors: presetProblem }; this.error = __('Some colors are invalid.'); return; }
         const cssProblem = customCss === undefined ? undefined : customCssProblem(customCss);
         if (cssProblem) { this.errors = { customCss: cssProblem }; this.error = cssProblem; return; }
         if (theme.options) {
@@ -122,12 +122,9 @@ export default class CustomizePage extends Cossack {
     }
 
     private colorRow(color: Preset & { themeValue?: string }, change: (patch: Partial<Preset>) => void, remove?: () => void): TemplateResult {
-        const hex = /^#[0-9a-f]{6}$/i.test(color.value) ? color.value : '#000000';
         const changed = color.themeValue !== undefined && color.value !== color.themeValue;
         return html`<li class="flex flex-wrap items-center gap-2" data-color=${color.slug}>
-            <span class="h-8 w-8 shrink-0 rounded-full border border-border" style=${`background: ${color.value}`} aria-hidden="true"></span>
-            <input type="color" class="h-8 w-10 shrink-0 cursor-pointer rounded border border-border bg-background p-0.5" .value=${hex} aria-label=${`${color.name} ${__('picker')}`}
-                @input=${(event: Event) => change({ value: (event.target as HTMLInputElement).value })}>
+            ${component(ColorPicker, { value: color.value, label: `${color.name} ${__('picker')}`, onChange: (value: string) => change({ value }) })}
             ${remove ? component(Input, { type: 'text', class: 'w-36', maxlength: 40, '.value': color.name, 'aria-label': __('Name'), '@input': (event: Event) => change({ name: (event.target as HTMLInputElement).value }) })
                 : html`<span class="w-36 text-sm font-medium text-foreground">${color.name}</span>`}
             ${component(Input, { type: 'text', class: 'w-48 font-mono text-xs', maxlength: 80, '.value': color.value, 'aria-label': `${color.name} ${__('value')}`, '@input': (event: Event) => change({ value: (event.target as HTMLInputElement).value }) })}
@@ -139,23 +136,23 @@ export default class CustomizePage extends Cossack {
     private colorsSection(): TemplateResult {
         return html`<section class="space-y-3" aria-labelledby="customize-colors">
             <div>
-                <h2 id="customize-colors" class="text-sm font-semibold text-foreground">${__('Colours')}</h2>
-                <p class="text-xs text-muted-foreground">${__('The palette blocks pick from on their Style tab. Change a theme colour, or add your own; blocks keep their choice when a value changes.')}</p>
+                <h2 id="customize-colors" class="text-sm font-semibold text-foreground">${__('Colors')}</h2>
+                <p class="text-xs text-muted-foreground">${__('The palette blocks pick from on their Style tab. Change a theme color, or add your own; blocks keep their choice when a value changes.')}</p>
             </div>
             ${this.colors.length || this.custom.length ? html`<ul class="space-y-2">
                 ${this.colors.map(color => this.colorRow(color, patch => this.setColor(color.slug, patch.value ?? color.value)))}
                 ${this.custom.map((color, index) => this.colorRow(color, patch => this.setCustom(index, patch), () => this.removeCustom(index)))}
             </ul>` : html`<p class="text-sm text-muted-foreground">${__('The theme has no palette yet.')}</p>`}
             ${this.errors.colors ? html`<p role="alert" class="text-xs text-destructive">${this.errors.colors}</p>` : null}
-            ${this.custom.length < 12 ? component(Button, { type: 'button', variant: 'outline', size: 'sm', '@click': () => this.addCustom() }, __('Add colour')) : null}
+            ${this.custom.length < 12 ? component(Button, { type: 'button', variant: 'outline', size: 'sm', '@click': () => this.addCustom() }, __('Add color')) : null}
         </section>`;
     }
 
     private cssSection(): TemplateResult {
         return html`<section class="space-y-2" aria-labelledby="customize-css">
-            <label for="customize-custom-css" id="customize-css" class="block text-sm font-semibold text-foreground">${__('Additional CSS')}</label>
+            <h2 id="customize-css" class="text-sm font-semibold text-foreground">${__('Additional CSS')}</h2>
             <p class="text-xs text-muted-foreground">${__('Added to every page of the site after the theme\'s styles. It cannot load other files or run scripts.')}</p>
-            ${component(Textarea, { id: 'customize-custom-css', rows: 8, class: 'font-mono text-xs', maxlength: 20_000, '.value': this.customCss, '@input': (event: Event) => { this.customCss = (event.target as HTMLTextAreaElement).value; } })}
+            ${component(CodeEditor, { id: 'customize-custom-css', value: this.customCss, language: 'css', label: __('Additional CSS'), class: 'min-h-[12rem] rounded-md border border-input bg-background shadow-xs focus-within:border-ring focus-within:ring-ring/50 focus-within:ring-[3px]', onChange: (value: string) => { this.customCss = value; } })}
             ${this.errors.customCss ? html`<p role="alert" class="text-xs text-destructive">${this.errors.customCss}</p>` : null}
         </section>`;
     }
@@ -164,7 +161,7 @@ export default class CustomizePage extends Cossack {
         if (!this.theme.name) return html`<div class="space-y-4">${pageHeader(__('Customize'))}${notice(__('No theme is active. Activate one under Appearance → Themes.'))}</div>`;
         return html`<div class="max-w-3xl space-y-6">
             ${pageHeader(`${__('Customize')} ${this.theme.label}`, {
-                description: __('Options, colours and CSS of the active theme. Site title and tagline are General settings; menus have their own screen.'),
+                description: __('Options, colors and CSS of the active theme. Site title and tagline are General settings; menus have their own screen.'),
                 actions: html`${linkButton(__('Menus'), '/dashboard/appearance/menus', 'outline')}<a href="/" target="_blank" rel="noopener" class="text-sm text-primary hover:underline">${__('View site')} ↗</a>`,
             })}
             ${this.error ? notice(this.error, 'error') : null}

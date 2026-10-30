@@ -1,19 +1,21 @@
 import { Cossack, Page, State, Server, Client } from '@cossackframework/core';
-import { Card, CardBody, CardHeader, Avatar, Button, Badge, Input, NativeSelect, Pagination, Icon, AlertDialog } from '@cossackframework/ui';
+import { Card, CardBody, CardHeader, Avatar, Button, Badge, Input, NativeSelect, Pagination, Icon, AlertDialog, toast } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { PenNewRoundIcon as editIconSvg } from '@cossackframework/solar-icons/pen-new-round/line';
 import { TrashBinMinimalisticIcon as deleteIconSvg } from '@cossackframework/solar-icons/trash-bin-minimalistic/line';
 import { MagnifierIcon as searchIconSvg } from '@cossackframework/solar-icons/magnifier/line';
-import { canManageUser, guard } from '../../../services/rbac';
+import { canAssignRoles, canManageUser, guard } from '../../../services/rbac';
 import type { PublicUser } from '../../../auth';
 import {
     getUser,
     listUsers,
     deleteUser,
+    syncUserRoles,
     type UserSummary,
     type ListUsersResult,
 } from '../../../services/users';
 import { listRoles, type RoleDetail } from '../../../services/roles';
+import { bulkBar, selectAllBox, selectBox, type BulkChoice } from '../../../dashboard/bulk';
 
 const editIcon = { line: editIconSvg };
 const deleteIcon = { line: deleteIconSvg };
@@ -36,6 +38,15 @@ export default class UsersPage extends Cossack {
     @State() roleId = '';
     /** User pending deletion confirmation (null = dialog closed). */
     @State() pendingDelete: UserSummary | null = null;
+    /** Role managers set roles in bulk; others only delete accounts they may manage. */
+    @State() canAssignRoles = false;
+    /** Rows that can be selected: not your own account, and only accounts you may manage. */
+    @State() selectable: string[] = [];
+    @State() selected: string[] = [];
+    @State() bulk = '';
+    /** A bulk action waiting for confirmation. */
+    @State() pendingBulk: BulkChoice | null = null;
+    @State() message = '';
 
     @Server()
     async init() {
@@ -49,6 +60,7 @@ export default class UsersPage extends Cossack {
 
         const roles = await listRoles();
         this.allRoles = roles;
+        this.canAssignRoles = canAssignRoles(this.user as PublicUser | undefined);
         // Resolve role name → id (the URL carries the human-readable name).
         if (this.appliedRoleName) {
             const match = roles.find((r) => r.name === this.appliedRoleName);
@@ -72,6 +84,60 @@ export default class UsersPage extends Cossack {
     private applyResult(result: ListUsersResult) {
         this.users = result.items;
         this.total = result.total;
+        const actor = this.user as PublicUser | undefined;
+        this.selectable = result.items.filter(u => u.id !== actor?.id && canManageUser(actor, u)).map(u => u.id);
+        this.selected = this.selected.filter(id => this.selectable.includes(id));
+    }
+
+    /** Delete, or (for role managers) `role:<id>` to give the selected users that role alone. */
+    private bulkChoices(): BulkChoice[] {
+        return [
+            { key: 'delete', label: __('Delete'), confirm: __('The selected accounts and their sessions will be deleted. This cannot be undone.') },
+            ...(this.canAssignRoles ? this.allRoles.map(role => ({ key: `role:${role.id}`, label: `${__('Change role to')} ${role.name}` })) : []),
+        ];
+    }
+
+    @Client()
+    async submitBulk() {
+        const choice = this.bulkChoices().find(entry => entry.key === this.bulk);
+        if (!choice || !this.selected.length) return;
+        if (choice.confirm) { this.pendingBulk = choice; return; }
+        await this.runBulk(choice.key);
+    }
+
+    @Client()
+    async runBulk(key: string) {
+        this.pendingBulk = null;
+        await this.applyBulk(this.selected, key);
+        if (this.error) toast.error(this.error); else if (this.message) toast.success(this.message);
+    }
+
+    /**
+     * Apply a bulk action account by account. Your own account and accounts you may not manage
+     * are skipped, so an administrator always remains: the one acting.
+     */
+    @Server()
+    async applyBulk(ids: string[], key: string) {
+        this.error = '';
+        this.message = '';
+        const actor = this.user as PublicUser | undefined;
+        const roleId = key.startsWith('role:') ? key.slice('role:'.length) : '';
+        if (key !== 'delete' && !roleId) return;
+        if (roleId && (!canAssignRoles(actor) || !(await listRoles()).some(role => role.id === roleId))) { this.error = __('Only an administrator can change roles.'); return; }
+        let done = 0, skipped = 0;
+        for (const id of [...new Set(ids)].slice(0, 100)) {
+            const target = await getUser(id);
+            if (!target || id === actor?.id || !canManageUser(actor, target)) { skipped++; continue; }
+            if (roleId) await syncUserRoles(id, [roleId]); else await deleteUser(id);
+            done++;
+        }
+        this.selected = [];
+        this.bulk = '';
+        const result = await this.query();
+        const maxPage = Math.max(1, Math.ceil(result.total / PAGE_SIZE));
+        if (this.page > maxPage) { this.page = maxPage; this.applyResult(await this.query()); } else this.applyResult(result);
+        this.message = `${done} ${done === 1 ? __('user updated.') : __('users updated.')}${skipped ? ` ${skipped} ${__('skipped.')}` : ''}`;
+        if (!done && skipped) this.error = __('None of the selected accounts can be changed by you.');
     }
 
     /** Re-run the query (used after mutations). */
@@ -160,15 +226,15 @@ export default class UsersPage extends Cossack {
 
         return html`
             <div class="space-y-6">
-                <div class="flex items-center justify-between gap-4">
-                    <div>
+                <div>
+                    <div class="flex flex-wrap items-center gap-3">
                         <h1 class="text-2xl font-bold text-foreground">${__('Users')}</h1>
-                        <p class="mt-1 text-sm text-muted-foreground">${__('Manage user accounts.')}</p>
+                        <a href="/dashboard/users/new"
+                           class="inline-flex items-center justify-center rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90 transition-opacity">
+                            ${__('New user')}
+                        </a>
                     </div>
-                    <a href="/dashboard/users/new"
-                       class="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 transition-opacity">
-                        ${__('New user')}
-                    </a>
+                    <p class="mt-1 text-sm text-muted-foreground">${__('Manage user accounts.')}</p>
                 </div>
 
                 ${this.error ? html`<div class="text-sm text-destructive">${this.error}</div>` : null}
@@ -205,10 +271,13 @@ export default class UsersPage extends Cossack {
                         </div>
                     `)}
                     ${component(CardBody, {}, html`
+                        ${this.selectable.length ? html`<div class="mb-3">${bulkBar({ id: 'users-bulk', choices: this.bulkChoices(), value: this.bulk, count: this.selected.length,
+                            choose: key => { this.bulk = key; }, apply: () => this.submitBulk() })}</div>` : null}
                         <div class="overflow-x-auto">
                             <table class="w-full">
                                 <thead>
                                     <tr class="text-left text-xs uppercase tracking-wide text-muted-foreground">
+                                        <th class="w-10 py-2 pr-3">${selectAllBox(this.selectable, this.selected, ids => { this.selected = ids; })}</th>
                                         <th class="py-2 pr-4 font-medium">${__('User')}</th>
                                         <th class="py-2 pr-4 font-medium">${__('Roles')}</th>
                                         <th class="py-2 pr-4 font-medium">${__('Last signed in')}</th>
@@ -218,7 +287,8 @@ export default class UsersPage extends Cossack {
                                 </thead>
                                 <tbody>
                                     ${this.users.map((u) => html`
-                                        <tr class="border-t border-border">
+                                        <tr class=${`border-t border-border ${this.selected.includes(u.id) ? 'bg-primary/5' : ''}`} data-user=${u.id}>
+                                            <td class="py-3 pr-3">${this.selectable.includes(u.id) ? selectBox(u.id, u.name || u.email, this.selected, ids => { this.selected = ids; }) : null}</td>
                                             <td class="py-3 pr-4">
                                                 <a href="/dashboard/users/${u.id}" class="flex items-center gap-3 hover:underline">
                                                     ${component(Avatar, { src: u.avatar ?? undefined, alt: u.name, size: 32 })}
@@ -287,6 +357,19 @@ export default class UsersPage extends Cossack {
                         </div>
                     `)}
                 `)}
+
+                ${component(AlertDialog, {
+                    id: 'bulk-users-dialog',
+                    open: this.pendingBulk !== null,
+                    // Closed dialogs still need their labels.
+                    title: this.pendingBulk ? `${this.pendingBulk.label} ${this.selected.length} ${this.selected.length === 1 ? __('user') : __('users')}?` : __('Apply'),
+                    description: this.pendingBulk?.confirm ?? '',
+                    cancelLabel: __('Cancel'),
+                    actionLabel: this.pendingBulk?.label || __('Apply'),
+                    actionVariant: this.pendingBulk?.key === 'delete' ? 'destructive' : 'primary',
+                    onAction: () => { if (this.pendingBulk) void this.runBulk(this.pendingBulk.key); },
+                    onOpenChange: () => { this.pendingBulk = null; },
+                })}
 
                 ${component(AlertDialog, {
                     id: 'delete-user-dialog',
