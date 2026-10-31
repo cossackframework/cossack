@@ -65,6 +65,6 @@ export function saveDraft(cms: CmsHost, draft: Pick<SiteDraft, 'collection' | 'i
 }
 
 /** Files for the media chooser of a signed-in editor. */
-export function draftMedia(cms: CmsHost, search: string, principal: Principal) {
-    return principal.kind === 'user' ? findMedia(cms, search) : Promise.resolve([]);
+export function draftMedia(cms: CmsHost, search: string, principal: Principal, kind = '') {
+    return principal.kind === 'user' ? findMedia(cms, search, kind) : Promise.resolve([]);
 }

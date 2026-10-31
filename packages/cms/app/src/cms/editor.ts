@@ -3,7 +3,7 @@
  * conversion from form values to typed record input. Client-safe; the server converts and
  * validates again before writing.
  */
-import { fieldPlacement, slugify, validateValue, type BlockCategory, type BlockCondition, type BlockStyle, type Breakpoint, type FieldDeclaration, type FieldKind, type StyleProperty, type ThemePresets } from '@cossackframework/cms';
+import { fieldPlacement, slugify, validateValue, type BlockCategory, type BlockCondition, type BlockStyle, type Breakpoint, type FieldDeclaration, type FieldKind, type ChoiceSource, type StyleProperty, type ThemePresets } from '@cossackframework/cms';
 import { conditionInput } from './condition-control';
 
 /** One field as the editor shows it. */
@@ -16,6 +16,8 @@ export interface EditorField {
     description: string;
     placement: 'main' | 'sidebar';
     format: 'plain' | 'markdown' | 'code';
+    /** code: the code editor's language, unless the block names one. */
+    language: string;
     /** enum values, with labels. */
     choices: { value: string; label: string }[];
     /** Several values of the kind, as a list; `minItems` and `maxItems` bound it and `addLabel` names the Add button. */
@@ -24,6 +26,10 @@ export interface EditorField {
     maxItems: number | null;
     addLabel: string;
     media: boolean;
+    /** media: the kinds of file the chooser lists first; images when the field names none. */
+    kinds: string[];
+    /** string: where its choices come from (forms, collections, terms); empty for free text. */
+    choicesFrom: ChoiceSource | '';
     /** reference: the target resource, with selectable entries. */
     target: string;
     /** blocks: the block types allowed, or all. */
@@ -128,11 +134,15 @@ export interface EditorView {
     groups: EditorGroup[];
     /** The editor's arrangement: the main column's tabs (the first is the Edit tab) and the sidebar every tab shares; see `resolveEditorLayout`. */
     layout: { tabs: EditorLayoutTab[]; sidebar: EditorBlock[] };
-    /** Every collection, for blocks that name one, such as Latest entries. */
+    /** Every collection, for a pattern's starting layouts. */
     collections: { name: string; label: string }[];
-    /** Every term with its taxonomy, for blocks that pick one. */
-    termChoices: { id: string; name: string; taxonomy: string; depth: number }[];
+    /** The site's forms, collections and terms, for fields that choose one (`choicesFrom`). */
+    sources: SourceChoices;
 }
+
+/** A choice of a field with `choicesFrom`: the stored value and what the list shows. */
+export interface SourceChoice { value: string; label: string }
+export type SourceChoices = Record<ChoiceSource, SourceChoice[]>;
 
 /** Values the form controls hold: strings, booleans and lists. */
 export type EditorValues = Record<string, unknown>;
@@ -146,10 +156,10 @@ export function editorField(name: string, declaration: FieldDeclaration & { choi
     return {
         name, label: declaration.label ?? name, kind: declaration.kind, required: declaration.required === true, nullable: declaration.nullable === true,
         description: declaration.description ?? '', placement: fieldPlacement(declaration),
-        format: declaration.format ?? 'plain',
+        format: declaration.format ?? 'plain', language: declaration.language ?? '',
         choices: (declaration.values ?? []).map(value => ({ value, label: declaration.choices?.[value] ?? value })),
         multiple: declaration.multiple === true, minItems: declaration.minItems ?? null, maxItems: declaration.maxItems ?? null, addLabel: declaration.addLabel ?? '',
-        media: declaration.media === true, target: declaration.target ?? '', blocks: [...(declaration.blocks ?? [])], form: declaration.form === true,
+        media: declaration.media === true, kinds: [...(declaration.kinds ?? [])], choicesFrom: declaration.choicesFrom ?? '', target: declaration.target ?? '', blocks: [...(declaration.blocks ?? [])], form: declaration.form === true,
         min: declaration.min ?? null, max: declaration.max ?? null, defaultValue: declaration.default ?? null,
         fields: Object.entries(declaration.fields ?? {}).map(([sub, nested]) => editorField(sub, nested)),
     };

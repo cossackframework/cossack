@@ -278,7 +278,7 @@ export default class SitePath extends Cossack {
         const cms = this.c.get('cms');
         const draft = this.draft;
         if (!draft || !await editableRecord(cms, draft.collection, draft.id, this.c.get('principal'))) return;
-        this.draft = { ...draft, chooser: { ...draft.chooser, search, items: await draftMedia(cms, search, this.c.get('principal')) } };
+        this.draft = { ...draft, chooser: { ...draft.chooser, search, items: await draftMedia(cms, search, this.c.get('principal'), draft.chooser.kind) } };
     }
 
     @Client()

@@ -11,7 +11,7 @@ import { blockDefaults, controlValue, editorBlocks, editorInput, entryUrl, sugge
 import { RichTextField, richTextEditors } from '../../../../../../cms/rich-text-field';
 import { BlockTree } from '../../../../../../cms/block-tree';
 import { bindingChoices, choicesControl, fieldControl, groupFields, multipleControl, type BindingChoice } from '../../../../../../cms/field-controls';
-import { MEDIA_ACCEPT, uploadFile } from '../../../../../../cms/media-chooser';
+import { chooserKind, MEDIA_ACCEPT, MEDIA_KIND_CHOICES, uploadFile } from '../../../../../../cms/media-chooser';
 import { FieldGroupView, plainBlocks, visibilityTypes, type RowPath } from '../../../../../../cms/field-group-view';
 import { box, CONTROL, countBadge, linkButton, notice, rememberTab, shortDate, STATUS_LABELS, statusBadge, tabFromQuery } from '../../../../../../cms/ui';
 import { editorLayoutView } from '../../../../../../cms/editor-layout-view';
@@ -22,6 +22,7 @@ import { notificationRulesControl } from '../../../../../../cms/notification-rul
 import { siteOrigin } from '../../../../../../cms/seo';
 
 type MediaTarget = { field: string; block?: string; key?: string; multiple?: boolean; insert?: boolean; richText?: boolean; dialog?: boolean; group?: boolean; /** The rich text editor to insert into, when it is not the field's own. */ editor?: string;
+    /** The kind of file the library opens on: the field's first declared kind; images when absent. */ fileKind?: string;
     /** The rows the value sits in, from the top down: `key` is then a field of the innermost row. */ rows?: RowPath };
 /** Field block kinds whose values read as text, as editor field kinds, for the binding picker. */
 const BINDABLE_FIELD_BLOCKS: Record<string, EditorField['kind']> = { text: 'string', textarea: 'text', markdown: 'text', number: 'number', integer: 'integer', boolean: 'boolean', choice: 'enum', date: 'datetime' };
@@ -557,7 +558,7 @@ export default class EntryEditor extends Cossack {
 
     @Client()
     async openPicker(target: MediaTarget) {
-        this.picker = { ...this.picker, open: true, target, kind: target.insert || target.field ? this.picker.kind : '' };
+        this.picker = { ...this.picker, open: true, target, kind: target.fileKind ?? 'image' };
         await this.findMedia(this.picker.search, this.picker.kind);
     }
 
@@ -945,16 +946,6 @@ export default class EntryEditor extends Cossack {
         if (this.view?.route === 'forms' && field.name === 'notifications' && target.block === undefined) {
             return notificationRulesControl(String(value ?? ''), conditionFields(this.blocks('body'), this.view.blocks), id, change);
         }
-        // Blocks that name a collection or a term, such as Latest entries, choose from the site's.
-        if (target.block !== undefined && field.name === 'collection' && this.view?.collections.length) {
-            return component(NativeSelect, { id, '@change': (event: Event) => change((event.target as HTMLSelectElement).value) }, html`
-                ${this.view.collections.map(entry => html`<option value=${entry.name} ?selected=${entry.name === value}>${entry.label}</option>`)}`);
-        }
-        if (target.block !== undefined && field.name === 'term' && this.view?.termChoices.length) {
-            return component(NativeSelect, { id, '@change': (event: Event) => change((event.target as HTMLSelectElement).value) }, html`
-                <option value="" ?selected=${!value}>${__('Every entry')}</option>
-                ${this.view.termChoices.map(term => html`<option value=${term.id} ?selected=${term.id === value}>${term.taxonomy}: ${'— '.repeat(term.depth)}${term.name}</option>`)}`);
-        }
         switch (field.kind) {
             // Rows outside a layout (a plugin resource's): the group view renders them with this editor's controls.
             case 'rows': return component(FieldGroupView, {
@@ -981,9 +972,9 @@ export default class EntryEditor extends Cossack {
                 patternTitles: this.patternTitles,
             });
             // Media files open this editor's picker, which knows where the chosen file goes.
-            default: if (field.media && field.kind === 'string') return this.mediaControl({ ...target, multiple: field.multiple }, value, field.label);
+            default: if (field.media && field.kind === 'string') return this.mediaControl({ ...target, multiple: field.multiple, fileKind: chooserKind(field) }, value, field.label);
         }
-        return fieldControl(field, value, change, id, { options: this.references[field.name] ?? [], ...(target.block !== undefined && !field.media ? { bindings: this.bindings() } : {}),
+        return fieldControl(field, value, change, id, { options: this.references[field.name] ?? [], ...(this.view ? { sources: this.view.sources } : {}), ...(target.block !== undefined && !field.media ? { bindings: this.bindings() } : {}),
             ...(target.dialog && this.blockDialog ? { language: String(this.blockDialog.values.language ?? '') } : {}) }) ?? html``;
     }
 
@@ -1280,7 +1271,7 @@ export default class EntryEditor extends Cossack {
                     <input type="search" class=${`${CONTROL} max-w-xs`} placeholder=${__('Search media')} aria-label=${__('Search media')} .value=${this.picker.search}
                         @change=${(event: Event) => this.findMedia((event.target as HTMLInputElement).value, this.picker.kind)}>
                     <select class=${`${CONTROL} max-w-[10rem]`} aria-label=${__('Media type')} @change=${(event: Event) => this.findMedia(this.picker.search, (event.target as HTMLSelectElement).value)}>
-                        ${[['', __('All media')], ['image', __('Images')], ['video', __('Video')], ['audio', __('Audio')], ['document', __('Documents')]].map(([value, label]) => html`<option value=${value} ?selected=${this.picker.kind === value}>${label}</option>`)}
+                        ${MEDIA_KIND_CHOICES.map(choice => html`<option value=${choice.value} ?selected=${this.picker.kind === choice.value}>${__(choice.label)}</option>`)}
                     </select>
                     <label class="inline-flex cursor-pointer items-center rounded-md border border-border px-3 py-2 text-sm text-foreground hover:bg-muted">
                         ${__('Upload files')}<input type="file" multiple accept=${this.picker.kind === 'image' ? 'image/*' : MEDIA_ACCEPT} class="sr-only" @change=${(event: Event) => this.uploadInPicker(event)}>

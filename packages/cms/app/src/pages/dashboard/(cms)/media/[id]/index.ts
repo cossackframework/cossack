@@ -298,7 +298,7 @@ export default class MediaDetails extends Cossack {
             </div>
             ${component(AlertDialog, {
                 id: 'delete-media-dialog', open: this.confirmDelete, title: __('Delete this file?'),
-                description: this.usage.length ? `${this.usage.length} ${this.usage.length === 1 ? __('entry uses this file and will show nothing in its place.') : __('entries use this file and will show nothing in its place.')} ${__('This cannot be undone.')}` : __('This cannot be undone.'),
+                description: this.usage.length ? `${this.usage.length} ${this.usage.length === 1 ? __('place uses this file and will show nothing in its place.') : __('places use this file and will show nothing in their place.')} ${__('This cannot be undone.')}` : __('This cannot be undone.'),
                 cancelLabel: __('Cancel'), actionLabel: __('Delete'), actionVariant: 'destructive',
                 onAction: () => { this.confirmDelete = false; void this.deleteFile(); }, onOpenChange: () => { this.confirmDelete = false; },
             })}

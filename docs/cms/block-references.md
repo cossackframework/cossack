@@ -24,7 +24,7 @@ values inside text. Both use `{{ }}`:
 
 | Place | Bindings | Block references |
 | --- | --- | --- |
-| Text fields of blocks (string and text) | Yes | Markdown fields only, such as Paragraph |
+| Text fields of blocks (string and text, not code) | Yes | Markdown fields only, such as Paragraph |
 | An entry's Markdown fields | Yes | Yes |
 | Widgets (Appearance → Widgets) | Yes | Yes, in their Markdown fields |
 | Theme options (Appearance → Customize) | Yes | No |

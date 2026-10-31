@@ -212,6 +212,8 @@ export function coreBlock(block: RenderedBlock, helpers: ThemeHelpers): Template
             return block.data.ordered === true ? html`<ol class="my-4 list-decimal space-y-1 pl-6">${items.map(item => html`<li>${item}</li>`)}</ol>`
                 : html`<ul class="my-4 list-disc space-y-1 pl-6">${items.map(item => html`<li>${item}</li>`)}</ul>`;
         }
+        // Saved only by people allowed to post HTML (`cms:html`), so it renders as written.
+        case 'core/html': return html`${unsafeHTML(text('html'))}`;
         case 'core/code': return html`<pre class="my-4 overflow-x-auto rounded-md bg-muted p-4 text-sm"><code data-language=${text('language')}>${text('code')}</code></pre>`;
         case 'core/button': return html`<p class="my-6"><a href=${safeLink(text('url'))}
             class=${`inline-flex items-center rounded-md px-5 py-2.5 text-sm font-medium no-underline ${text('style') === 'outline' ? 'border border-border text-foreground hover:bg-muted' : 'bg-primary text-primary-foreground hover:opacity-90'}`}>${text('label')}</a></p>`;

@@ -4,9 +4,9 @@
  * Remove buttons; the screen opens its own media chooser.
  */
 import { component, html, type TemplateResult } from '@cossackframework/renderer';
-import { Button, Checkbox, CodeEditor, DropdownMenu, Icon, Input, NativeSelect, Textarea } from '@cossackframework/ui';
+import { Button, Checkbox, CodeEditor, Combobox, DropdownMenu, Icon, Input, NativeSelect, Textarea } from '@cossackframework/ui';
 import { hasBinding, ITEM_LIMITS, mediaKind, withBinding } from '@cossackframework/cms';
-import type { BlockOption, EditorField } from './editor';
+import type { BlockOption, EditorField, SourceChoices } from './editor';
 import { icon } from './icons';
 import { iconButton } from './ui';
 
@@ -34,7 +34,8 @@ export function bindingChoices(fields: readonly Pick<EditorField, 'name' | 'labe
  * `options` lists a reference field's choices.
  */
 export function fieldControl(field: EditorField, value: unknown, change: (value: unknown) => void, id: string,
-    extra: { media?: MediaHooks; options?: readonly { id: string; title: string }[]; /** Entry fields the text may bind to; a picker button offers them. */ bindings?: readonly BindingChoice[]; /** The language of a code field, from the block's `language` field. */ language?: string } = {}): TemplateResult | null {
+    extra: { media?: MediaHooks; options?: readonly { id: string; title: string }[]; /** Entry fields the text may bind to; a picker button offers them. */ bindings?: readonly BindingChoice[]; /** The language of a code field, from the block's `language` field. */ language?: string;
+        /** What fields with `choicesFrom` choose from; without it they are text. */ sources?: SourceChoices } = {}): TemplateResult | null {
     const input = (type: 'text' | 'number' | 'datetime-local') => component(Input, { id, type, '.value': String(value ?? ''), step: field.kind === 'integer' ? 1 : 'any',
         ...(field.kind === 'string' && field.max ? { maxlength: field.max } : {}), '@input': (event: Event) => change((event.target as HTMLInputElement).value) });
     const textarea = (rows: number, className = '') => component(Textarea, { id, rows, ...(className ? { class: className } : {}), '.value': String(value ?? ''),
@@ -45,6 +46,7 @@ export function fieldControl(field: EditorField, value: unknown, change: (value:
         if (field.kind === 'enum') return choicesControl(field, value, change, id);
         return multipleControl(field, value, change, id, (item, itemChange, itemId) => fieldControl({ ...field, multiple: false }, item, itemChange, itemId, extra) ?? html``);
     }
+    if (field.choicesFrom && extra.sources && field.kind === 'string') return sourceControl(field, value, change, id, extra.sources);
     switch (field.kind) {
         case 'boolean': return html`<label class="flex items-center gap-2 text-sm text-foreground cursor-pointer">
             ${component(Checkbox, { id, checked: value === true, '@change': (event: Event) => change((event.target as HTMLInputElement).checked) })} ${field.label}</label>`;
@@ -62,11 +64,27 @@ export function fieldControl(field: EditorField, value: unknown, change: (value:
         // Markdown in a block is a short passage: a compact box that grows with its text, no tabs or toolbar.
         case 'text': return field.format === 'markdown'
             ? html`<div class="space-y-1">${bindable(textarea(3, 'field-sizing-content min-h-[4.5rem] max-h-[40vh]'))}<p class="text-xs text-muted-foreground">${__('Markdown: **bold**, _italic_, [link](https://…). Blocks: {{ block core/button label="Buy" url="/cart" /}}.')}</p></div>`
-            : field.format === 'code' ? component(CodeEditor, { id, value: String(value ?? ''), language: extra.language ?? '', label: field.label, onChange: (next: string) => change(next) })
+            : field.format === 'code' ? component(CodeEditor, { id, value: String(value ?? ''), language: extra.language || field.language, label: field.label, onChange: (next: string) => change(next) })
             : bindable(textarea(4));
         case 'blocks': case 'richtext': case 'vector': case 'bigint': return null;
         default: return field.media && extra.media ? mediaControl(value, change, field.label, field.multiple, extra.media) : bindable(input('text'));
     }
+}
+
+/**
+ * A field that names one of the site's forms, collections or terms: a searchable list. A value
+ * that is no longer there stays, marked, so saving does not drop it unseen; Clear empties an optional one.
+ */
+export function sourceControl(field: EditorField, value: unknown, change: (value: unknown) => void, id: string, sources: SourceChoices): TemplateResult {
+    const current = typeof value === 'string' ? value : '';
+    const choices = sources[field.choicesFrom as keyof SourceChoices] ?? [];
+    const options = current && !choices.some(choice => choice.value === current) ? [{ value: current, label: `${current} (${__('not found')})` }, ...choices] : choices;
+    const placeholder = field.choicesFrom === 'forms' ? __('Search forms…') : field.choicesFrom === 'collections' ? __('Search collections…') : __('Search terms…');
+    return html`<div class="flex items-start gap-1.5">
+        <div class="min-w-0 flex-1">${component(Combobox, { id, options, value: current, placeholder, emptyLabel: __('Nothing matches.'), required: field.required,
+            onValueChange: (next: string) => change(next) })}</div>
+        ${!field.required && current ? iconButton(`${id}-clear`, 'close-circle', `${__('Clear')} ${field.label}`, () => change('')) : null}
+    </div>`;
 }
 
 /** A multiple choice: one checkbox per choice, the ticked values kept in the choices' order. */
@@ -169,12 +187,12 @@ export function groupFields(field: EditorField, value: unknown, change: (value: 
 
 /** A block's fields as a form: one labelled control each. `errors` are keyed by field name. */
 export function blockFields(option: BlockOption, values: Record<string, unknown>, change: (name: string, value: unknown) => void, idPrefix: string,
-    media: (name: string) => MediaHooks, errors: Record<string, string> = {}, bindings: readonly BindingChoice[] = []): TemplateResult {
+    media: (name: string) => MediaHooks, errors: Record<string, string> = {}, bindings: readonly BindingChoice[] = [], sources?: SourceChoices): TemplateResult {
     return html`${option.fields.map(entry => {
         const id = `${idPrefix}-${entry.name}`;
         return html`<div class="space-y-1">
             ${entry.kind === 'boolean' ? null : html`<label for=${id} class="block text-sm font-medium text-foreground">${entry.label}${entry.required ? ' *' : ''}</label>`}
-            ${fieldControl(entry, values[entry.name], value => change(entry.name, value), id, { media: media(entry.name), bindings, language: String(values.language ?? '') })}
+            ${fieldControl(entry, values[entry.name], value => change(entry.name, value), id, { media: media(entry.name), bindings, language: String(values.language ?? ''), ...(sources ? { sources } : {}) })}
             ${entry.description ? html`<p class="text-xs text-muted-foreground">${entry.description}</p>` : null}
             ${errors[entry.name] ? html`<p role="alert" class="text-xs text-destructive">${entry.label} ${errors[entry.name]}</p>` : null}
         </div>`;

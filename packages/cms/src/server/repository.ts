@@ -9,12 +9,12 @@ import { ClientError, Float64, RecordId, UncertainWriteError, Vector, type State
 import type { HookRegistry } from '@cossackframework/core/hooks';
 import { CmsError } from '../errors';
 import { FIELD_NAME, slugify, validateValue, type FieldDeclaration } from '../fields';
-import { blockId, blockMedia, blocksPlain, flattenBlocks, validateBlocks, type Block } from '../blocks';
+import { blockId, blockMedia, blocksPlain, flattenBlocks, htmlBlocksChanged, validateBlocks, type Block } from '../blocks';
 import { fieldVisibility, indexedRowField, rowIndexPath, rowsPlain, rowsSearchable, rowUniqueProblem, withRowIds } from '../field-groups';
 import { normalizeRichText, richTextBlocks, richTextMedia, richTextPlain, withRichTextBlocks, type RichTextDoc } from '../richtext';
 import { searchedAsText, searchTextPath } from './schema';
 import { afterCommit, beforeWrite, type Draft, type ResourceEvent, type WriteActor } from '../hooks';
-import { hasPermission, principalId, ruleScope, type Principal, type RecordScope } from '../permissions';
+import { hasPermission, PERMISSIONS, principalId, ruleScope, type Principal, type RecordScope } from '../permissions';
 import type { FieldFilter, ListFilter, ListOptions, RecordPage, RecordShape, RevisionShape } from '../records';
 
 export type { FieldFilter, ListFilter, ListOptions };
@@ -573,6 +573,10 @@ export class ResourceRepository {
             if (declaration.access?.write && !hasPermission(principal, declaration.access.write)) { errors[name] = 'cannot be changed by you.'; continue; }
             const error = validateValue(name, declaration, value);
             if (error) { errors[name] = error; continue; }
+            if ((declaration.kind === 'blocks' || declaration.kind === 'richtext') && !hasPermission(principal, PERMISSIONS.unfilteredHtml) && htmlBlocksChanged(value, previous?.[name])) {
+                errors[name] = 'has a Custom HTML block, which only people allowed to post HTML can add or change.';
+                continue;
+            }
             if (declaration.kind === 'blocks') {
                 // Each block's data is checked against its type's fields; defaults fill gaps.
                 const checked = validateBlocks(value as Block[], this.#host.blockTypes, { ...(declaration.blocks ? { allowed: declaration.blocks } : {}), form: declaration.form === true });

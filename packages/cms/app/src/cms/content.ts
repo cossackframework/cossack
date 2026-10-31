@@ -5,7 +5,7 @@
 import { blockCategory, blockMedia, blockSupports, bulkActions, cloneBlocks, editorBoxes, fieldGroupDeclarations, type FieldGroupTarget, CmsError, CORE_FIELDS, entryActions, entryColumns, flattenBlocks, isCmsError, mediaUrl, principalId, recordTitle, resolveEditorLayout, richTextHtml, richTextMedia, type Block, type BlockDeclaration, type CollectionDefinition, type EntryAction, type EntryColumn, type MediaKind, type Principal, type RecordShape, type Resource, type RichTextDoc, type WriteActor } from '@cossackframework/cms';
 import { renderMarkdown, type CmsHost } from '@cossackframework/cms/server';
 import { activePresets } from './site';
-import { controlValue, editorBlocks, editorField, editorFields, editorInput, type BlockOption, type EditorBlock, type EditorField, type EditorGroup, type EditorTaxonomy, type EditorValues, type EditorView, type TermOption } from './editor';
+import { controlValue, editorBlocks, editorField, editorFields, editorInput, type BlockOption, type EditorBlock, type EditorField, type EditorGroup, type EditorTaxonomy, type EditorValues, type EditorView, type SourceChoice, type SourceChoices, type TermOption } from './editor';
 
 /** A collection by name (`posts`), or a plugin or application resource as `<owner>.<name>`. */
 export function routeResource(cms: CmsHost, route: string): { resource: Resource; collection: CollectionDefinition | null } {
@@ -13,6 +13,21 @@ export function routeResource(cms: CmsHost, route: string): { resource: Resource
     if (owner === 'cms' && route.includes('.')) throw new CmsError('CMS_NOT_FOUND', 'Unknown content type.');
     const resource = cms.resourceById(`${owner}/${name}`);
     return { resource, collection: owner === 'cms' ? cms.collection(name!) : null };
+}
+
+/** What fields with `choicesFrom` choose from: the site's forms by title, its collections and its terms by taxonomy, 200 of each at most. */
+export async function sourceChoices(cms: CmsHost): Promise<SourceChoices> {
+    const terms: SourceChoice[] = [];
+    for (const declaration of cms.taxonomies.declarations) {
+        if (terms.length >= 200) break;
+        terms.push(...(await cms.taxonomies.tree(declaration.name)).slice(0, 200 - terms.length).map(term => ({ value: term.id, label: `${declaration.label}: ${'— '.repeat(term.depth)}${term.name}` })));
+    }
+    const forms = await cms.forms.all().catch(() => []);
+    return {
+        forms: forms.map(form => ({ value: String(form.record.slug ?? ''), label: `${recordTitle(form.record, 'title')} (${String(form.record.slug ?? '')})` })).filter(choice => choice.value),
+        collections: cms.collections().filter(entry => entry.publishable !== false && !entry.managed).map(entry => ({ value: entry.name, label: entry.label })),
+        terms,
+    };
 }
 
 /** Terms of a taxonomy in tree order, for checklists and selects. */
@@ -36,8 +51,6 @@ export async function editorView(cms: CmsHost, route: string): Promise<EditorVie
     // The editor's boxes, placed by the collection's layout (or the default), with what active plugins add.
     const boxes = editorBoxes({ collection: collection ?? { path: null }, fields: resource.fields, groups, taxonomies: taxonomies.map(taxonomy => ({ name: taxonomy.name, label: taxonomy.label })), special });
     const resolved = resolveEditorLayout(collection?.editor, boxes, collection ? cms.editorLayoutAdditions(collection.name) : []);
-    const termChoices: EditorView['termChoices'] = [];
-    for (const declaration of cms.taxonomies.declarations) termChoices.push(...(await cms.taxonomies.tree(declaration.name)).slice(0, 200).map(term => ({ id: term.id, name: term.name, taxonomy: declaration.label, depth: term.depth })));
     return {
         resource: resource.id, route, label: resource.label ?? resource.id, singular: collection?.singular ?? 'Entry',
         titleField, titleRequired: Boolean(titleField && resource.fields[titleField]?.required),
@@ -47,7 +60,7 @@ export async function editorView(cms: CmsHost, route: string): Promise<EditorVie
         taxonomies, blocks, presets: await activePresets(cms),
         template: editorBlocks(cloneBlocks(collection?.template ?? []) as EditorBlock[], blocks), ...(collection?.templateLock ? { templateLock: collection.templateLock } : {}),
         collections: cms.collections().filter(entry => entry.publishable !== false && !entry.managed).map(entry => ({ name: entry.name, label: entry.label })),
-        termChoices,
+        sources: await sourceChoices(cms),
         groups: groups.map(group => ({
             id: group.id, title: group.title, description: group.description ?? '', placement: group.placement ?? 'main', blocks: editorBlocks(cloneBlocks(group.blocks) as EditorBlock[], blocks),
         })),

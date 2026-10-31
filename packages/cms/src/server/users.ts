@@ -153,6 +153,19 @@ export class CmsUsers {
         return users;
     }
 
+    /** Users whose avatar is this media file or whose profile fields name it, newest first, 50 at most. */
+    async usingFile(fileId: string): Promise<CmsUser[]> {
+        if (!ID.test(fileId)) return [];
+        const escaped = fileId.replace(/[\\%_]/g, character => `\\${character}`);
+        const result = await this.#db.read([{
+            rql: "SELECT id FROM cms_users WHERE avatar LIKE $avatar ESCAPE '\\' OR meta LIKE $meta ESCAPE '\\' ORDER BY created_at DESC LIMIT 50",
+            params: { $avatar: `/media/${escaped}/%`, $meta: `%"${escaped}"%` },
+        }]);
+        const ids = result.results[0]!.rows.map(row => row[0] as string);
+        const users = await this.getMany(ids);
+        return ids.map(id => users.get(id)).filter((user): user is CmsUser => user !== undefined);
+    }
+
     async findByEmail(email: string): Promise<CmsUser | null> {
         const result = await this.#db.read([{ rql: 'SELECT id FROM cms_users WHERE email = $email', params: { $email: normalizeEmail(email) } }]);
         const id = result.results[0]!.rows[0]?.[0] as string | undefined;

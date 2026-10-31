@@ -120,7 +120,7 @@ export const TEMPLATE_ROW = '__row__';
 /** The type that places a form in content: `form` is the form's slug. */
 export const FORM_EMBED_BLOCK: BlockDeclaration = Object.freeze({
     name: 'core/form', label: 'Form', icon: 'checklist-minimalistic', category: 'widgets', description: 'One of the site\'s forms.',
-    fields: { form: field.string({ required: true, max: 200, pattern: '[a-z0-9]+(?:-[a-z0-9]+)*', label: 'Form', description: 'The form\'s slug.' }) },
+    fields: { form: field.string({ required: true, max: 200, pattern: '[a-z0-9]+(?:-[a-z0-9]+)*', choicesFrom: 'forms', label: 'Form', description: 'The form to show.' }) },
 });
 
 // --- Inputs of a form ---------------------------------------------------------------------

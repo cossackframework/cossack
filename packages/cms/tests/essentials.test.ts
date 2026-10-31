@@ -444,6 +444,34 @@ describe.skipIf(!live)('scheduling, previews, revisions, redirects, tokens, webh
         expect((await cms.users.authors()).map(user => user.slug)).toEqual(expect.arrayContaining(['augusta-ada-king', 'countess']));
     });
 
+    it('keeps Custom HTML blocks to people allowed to post HTML', async () => {
+        const posts = cms.resource('cms/posts');
+        const html = (text: string) => [{ _id: 'raw', type: 'core/html', data: { html: text } }, { _id: 'p', type: 'core/paragraph', data: { text: 'Hi' } }];
+        await expect(posts.create({ title: 'Sneaky', content: html('<script>alert(1)</script>') }, { principal: editor }))
+            .rejects.toMatchObject({ code: 'CMS_VALIDATION', fields: { content: expect.stringContaining('Custom HTML') } });
+        const post = await posts.create({ title: 'Embed', content: html('<iframe src="https://maps.example"></iframe>') }, { principal: admin });
+        // Others keep it as it is and change the rest; changing or copying the HTML is refused, removing it is not.
+        const kept = await posts.update(post.id, { title: 'Embed and text', content: post.content }, { principal: editor, expectedRevision: post.rev });
+        await expect(posts.update(post.id, { content: html('<script>alert(1)</script>') }, { principal: editor, expectedRevision: kept.rev })).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
+        await expect(posts.update(post.id, { content: [...(kept.content as unknown[]), { _id: 'copy', type: 'core/html', data: { html: '<iframe src="https://maps.example"></iframe>' } }] }, { principal: editor, expectedRevision: kept.rev }))
+            .rejects.toMatchObject({ code: 'CMS_VALIDATION' });
+        expect((await posts.update(post.id, { content: [{ _id: 'p', type: 'core/paragraph', data: { text: 'Hi' } }] }, { principal: editor, expectedRevision: kept.rev })).content).toHaveLength(1);
+        // Widgets take the same rule.
+        const designer: Principal = { kind: 'user', id: 'designer-1', roles: [], permissions: ['cms:appearance'] };
+        const known = ['html-test'];
+        await expect(cms.areas.save('html-test', html('<b>x</b>'), { principal: designer, expectedRevision: 0, known })).rejects.toMatchObject({ code: 'CMS_FORBIDDEN' });
+        expect((await cms.areas.save('html-test', html('<b>x</b>'), { principal: admin, expectedRevision: 0, known })).revision).toBe(1);
+        expect((await cms.areas.save('html-test', html('<b>x</b>').slice(0, 1), { principal: designer, expectedRevision: 1, known })).revision).toBe(2);
+    });
+
+    it('finds users whose profile picture or fields name a file', async () => {
+        const file = 'file-avatar-1';
+        const pictured = await cms.users.create({ email: 'pictured@example.com', name: 'Pictured', avatar: `/media/${file}/me.png` });
+        await cms.users.create({ email: 'elsewhere@example.com', name: 'Elsewhere', avatar: `/media/${file}x/me.png` });
+        expect((await cms.users.usingFile(file)).map(user => user.id)).toEqual([pictured.id]);
+        expect(await cms.users.usingFile('a%')).toEqual([]);
+    });
+
     it('crops images and keeps their variants', async () => {
         const bytes = png(3000, 2000);
         const file = await cms.files!.upload({ name: 'photo.png', contentType: 'image/png', size: bytes.length, body: new Response(bytes).body! }, { principal: editor });

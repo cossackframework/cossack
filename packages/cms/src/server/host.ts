@@ -5,7 +5,7 @@
 import { createHookRegistry, type ActionHandler, type ActionPoint, type ActionReport, type ExtensionPoint, type FilterHandler, type FilterPoint, type HookRegistry, type InvokeOptions } from '@cossackframework/core/hooks';
 import type { StorageProvider } from '@cossackframework/core/storage';
 import { ClientError, type RomeDB, type Statement, type Value, type WorkLimits } from '@cossackframework/romedb';
-import { blockId, blockMedia, blockProblems, validateBlocks, type Block, type BlockDeclaration } from '../blocks';
+import { blockId, blockMedia, blockProblems, htmlBlocksChanged, validateBlocks, type Block, type BlockDeclaration } from '../blocks';
 import { blocksShapeProblem, normalizeFields, type FieldDeclaration } from '../fields';
 import { collectionProblems, collectionResource, contentBlocks, entryUrl, extendCollection, LOCALE, orderedFields, RESERVED_FIELDS, type CollectionDefinition } from '../collections';
 import type { EditorLayoutAddition } from '../editor-layout';
@@ -1098,6 +1098,7 @@ export class CmsHost {
             const allowed = contentBlocks(definition.features?.content) ?? [];
             const { errors } = validateBlocks(definition.template, this.#blocks, allowed.length ? { allowed } : {});
             problems.push(...Object.entries(errors).map(([path, message]) => `Template block ${path}: ${message}`));
+            if (!hasPermission(principal, PERMISSIONS.unfilteredHtml) && htmlBlocksChanged(definition.template, before?.template)) problems.push('The template has a Custom HTML block, which only people allowed to post HTML can add or change.');
         }
         // The attached groups: each checked against the collection's fields and the other attached groups.
         const target: FieldGroupTarget = { kind: 'collection', name: definition.name };

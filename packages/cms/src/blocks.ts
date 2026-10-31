@@ -216,6 +216,9 @@ const core: BlockDeclaration[] = [
         code: field.text({ required: true, max: 20_000, format: 'code', label: 'Code' }),
         language: field.string({ max: 40, pattern: '[a-z0-9+#-]*', label: 'Language', description: 'Such as html, css, js, ts, json, python or bash.' }),
     } },
+    { name: 'core/html', keywords: ['code', 'embed', 'iframe', 'script', 'widget'], label: 'Custom HTML', icon: 'code-square', category: 'embeds', description: 'HTML of your own, shown on the page as it is. Only people allowed to post HTML can add or change it.', fields: {
+        html: field.text({ required: true, max: 100_000, format: 'code', language: 'html', label: 'HTML' }),
+    } },
     { name: 'core/button', inline: true, body: 'label',  keywords: ['link', 'cta', 'call to action'], label: 'Button', icon: 'cursor-square', category: 'design', fields: {
         label: field.string({ required: true, max: 80, label: 'Label' }),
         url: field.string({ required: true, max: 2048, pattern: '(?:https?://|/|mailto:)\\S*', label: 'URL' }),
@@ -226,10 +229,10 @@ const core: BlockDeclaration[] = [
         caption: field.string({ max: 300, label: 'Caption' }),
     } },
     { name: 'core/video', inline: true,  keywords: ['movie', 'film', 'mp4', 'player'], label: 'Video', icon: 'video-frame', category: 'media', description: 'A video file from the library, with the browser\'s player.', fields: {
-        video: field.media({ required: true, nullable: false, label: 'Video', description: 'An MP4 or WebM file from the library.' }),
+        video: field.media({ required: true, nullable: false, kinds: ['video'], label: 'Video', description: 'An MP4 or WebM file from the library.' }),
         poster: field.media({ label: 'Poster', description: 'The image shown before the video plays.' }),
         caption: field.string({ max: 300, label: 'Caption' }),
-        captions: field.media({ label: 'Captions', description: 'A WebVTT (.vtt) file of subtitles.' }),
+        captions: field.media({ kinds: ['document'], label: 'Captions', description: 'A WebVTT (.vtt) file of subtitles.' }),
         autoplay: field.boolean({ default: false, label: 'Autoplay', description: 'Starts muted, as browsers require.' }),
         loop: field.boolean({ default: false, label: 'Loop' }),
         muted: field.boolean({ default: false, label: 'Muted' }),
@@ -237,7 +240,7 @@ const core: BlockDeclaration[] = [
         preload: field.enum(['metadata', 'auto', 'none'], { default: 'metadata', label: 'Preload', choices: { metadata: 'Only the first frame', auto: 'The whole video', none: 'Nothing until played' } }),
     } },
     { name: 'core/audio', inline: true,  keywords: ['sound', 'music', 'podcast', 'mp3', 'player'], label: 'Audio', icon: 'music-note', category: 'media', description: 'An audio file from the library, with the browser\'s player.', fields: {
-        audio: field.media({ required: true, nullable: false, label: 'Audio', description: 'An MP3, OGG or WAV file from the library.' }),
+        audio: field.media({ required: true, nullable: false, kinds: ['audio'], label: 'Audio', description: 'An MP3, OGG or WAV file from the library.' }),
         caption: field.string({ max: 300, label: 'Caption' }),
         autoplay: field.boolean({ default: false, label: 'Autoplay' }),
         loop: field.boolean({ default: false, label: 'Loop' }),
@@ -294,9 +297,9 @@ const core: BlockDeclaration[] = [
         captions: field.boolean({ default: true, label: 'Show captions' }),
     } },
     { name: 'core/latest-entries', inline: true,  keywords: ['posts', 'recent', 'query', 'loop'], label: 'Latest entries', icon: 'list-arrow-down', category: 'widgets', description: 'The newest published entries of a collection, kept up to date.', fields: {
-        collection: field.string({ required: true, max: 40, pattern: '[a-z][a-z0-9_]*', default: 'posts', label: 'Collection' }),
+        collection: field.string({ required: true, max: 40, pattern: '[a-z][a-z0-9_]*', default: 'posts', choicesFrom: 'collections', label: 'Collection' }),
         count: field.integer({ default: 5, min: 1, max: 24, label: 'How many' }),
-        term: field.string({ max: 80, pattern: '[A-Za-z0-9_-]*', label: 'Only with the term', description: 'A category, tag or other term; empty shows every entry.' }),
+        term: field.string({ max: 80, pattern: '[A-Za-z0-9_-]*', choicesFrom: 'terms', label: 'Only with the term', description: 'A category, tag or other term; empty shows every entry.' }),
         order: field.enum(['newest', 'oldest', 'title'], { default: 'newest', label: 'Order', choices: { newest: 'Newest first', oldest: 'Oldest first', title: 'By title' } }),
         layout: field.enum(['list', 'grid', 'titles'], { default: 'list', label: 'Layout', choices: { list: 'List with excerpts', grid: 'Grid of cards', titles: 'Titles only' } }),
         columns: field.integer({ default: 3, min: 1, max: 4, label: 'Columns', description: 'For the grid.' }),
@@ -822,4 +825,35 @@ export function blockTreeProblem(blocks: readonly Block[], types: ReadonlyMap<st
         if (type.children?.max !== undefined && children.length > type.children.max) return `${type.label} holds at most ${type.children.max} blocks.`;
     }
     return undefined;
+}
+
+/** The block whose HTML renders as it is; adding or changing one needs `PERMISSIONS.unfilteredHtml`. */
+export const HTML_BLOCK = 'core/html';
+
+/**
+ * The HTML of each Custom HTML block in a value, by block ID: blocks and their children, rich
+ * text's embedded blocks, and rich text inside blocks. The walk is shape-blind, so every place
+ * a block can sit is covered.
+ */
+export function htmlBlocks(value: unknown): Map<string, string> {
+    const found = new Map<string, string>();
+    const walk = (node: unknown, depth: number): void => {
+        if (!node || typeof node !== 'object' || depth > 64) return;
+        if (Array.isArray(node)) { for (const item of node) walk(item, depth + 1); return; }
+        const object = node as Record<string, unknown>;
+        if (object.type === HTML_BLOCK && object.data && typeof object.data === 'object') {
+            const data = object.data as Record<string, unknown>;
+            found.set(typeof object._id === 'string' ? object._id : `#${found.size}`, typeof data.html === 'string' ? data.html : '');
+        }
+        for (const child of Object.values(object)) walk(child, depth + 1);
+    };
+    walk(value, 0);
+    return found;
+}
+
+/** Whether a new value adds a Custom HTML block or changes one's HTML; removing one is no change. */
+export function htmlBlocksChanged(next: unknown, previous: unknown): boolean {
+    const before = htmlBlocks(previous);
+    for (const [id, html] of htmlBlocks(next)) if (before.get(id) !== html) return true;
+    return false;
 }

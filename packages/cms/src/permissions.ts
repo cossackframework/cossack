@@ -46,6 +46,8 @@ export const PERMISSIONS = Object.freeze({
     manageWebhooks: 'cms:webhooks',
     /** Read, sort, export and delete form submissions. Forms themselves are `cms/forms:*`. */
     manageSubmissions: 'cms:submissions',
+    /** Add and change Custom HTML blocks, whose HTML runs as it is on the site. Grant only to people trusted like administrators. */
+    unfilteredHtml: 'cms:html',
 });
 
 /** Roles setup creates. Administrators can change them, except the administrator role itself. */

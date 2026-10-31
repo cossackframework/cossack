@@ -14,7 +14,7 @@ import { BREAKPOINT_DEVICES, declarationsOf, offeredIn } from './block-tree';
 import { icon } from './icons';
 import { blockFields, fieldControl, type MediaHooks, type MediaPreview } from './field-controls';
 import { blockTabs, styleControls, styleValues, withStyle, type BlockTab, type StyleValues } from './style-controls';
-import { mediaChooser, uploadMedia, withFile } from './media-chooser';
+import { chooserKind, mediaChooser, uploadMedia, withFile } from './media-chooser';
 import { RichTextField, richTextEditors } from './rich-text-field';
 import { BlockInserter } from './block-inserter';
 import { reorderBlocks, type DraftBlock, type SiteEditorProps } from './site-editor';
@@ -411,7 +411,21 @@ export class SiteEditor extends Cossack {
     @Client()
     private openChooser(target: ChooserTarget, multiple: boolean) {
         this.chooserTarget = target;
-        this.props.onChooser({ ...this.props.draft.chooser, open: true, field: 'field' in target ? target.field : '', multiple });
+        this.props.onChooser({ ...this.props.draft.chooser, open: true, field: 'field' in target ? target.field : '', multiple, kind: this.fileKind(target) });
+        this.props.onSearchMedia(this.props.draft.chooser.search);
+    }
+
+    /** The kind of file a target's field asks for first: its declared kinds, images otherwise. */
+    private fileKind(target: ChooserTarget): string {
+        if (target.kind === 'richtext') return 'image';
+        const type = target.kind === 'entry' ? null : target.kind === 'embedded' ? this.embedded?.type : this.form ? findBlock(this.blocks(), this.form.id)?.type : undefined;
+        const fields = target.kind === 'entry' ? this.props.draft.view.fields : type ? this.option(type)?.fields ?? [] : [];
+        return chooserKind(fields.find(field => field.name === target.field));
+    }
+
+    @Client()
+    private filterMedia(kind: string) {
+        this.props.onChooser({ ...this.props.draft.chooser, kind });
         this.props.onSearchMedia(this.props.draft.chooser.search);
     }
 
@@ -481,7 +495,7 @@ export class SiteEditor extends Cossack {
                         ${component(RichTextField, { id: `site-block-${block._id}-${field.name}`, label: field.label, value: (form.values[field.name] as RichTextDoc | null) ?? null, blocks: [],
                             onChange: (doc: RichTextDoc) => this.setFormValue(field.name, doc), onMedia: () => this.openChooser({ kind: 'richtext', editor: `site-block-${block._id}-${field.name}` }, false),
                             onInsertBlock: () => undefined, onEditBlock: () => undefined })}</div>`)}
-                    ${blockFields({ ...option, fields: option.fields.filter(field => field.kind !== 'richtext') }, form.values, (name, value) => this.setFormValue(name, value), `site-block-${block._id}`, name => this.media({ kind: 'block', field: name }), form.errors)}`
+                    ${blockFields({ ...option, fields: option.fields.filter(field => field.kind !== 'richtext') }, form.values, (name, value) => this.setFormValue(name, value), `site-block-${block._id}`, name => this.media({ kind: 'block', field: name }), form.errors, [], this.props.draft.view.sources)}`
                     : html`<p class="text-sm text-muted-foreground">${__('This block has no settings.')}</p>`}
                 <div class="flex justify-end gap-2">
                     ${component(Button, { type: 'button', variant: 'outline', size: 'sm', '@click': () => { this.form = null; } }, __('Cancel'))}
@@ -568,7 +582,7 @@ export class SiteEditor extends Cossack {
                     @change=${(event: Event) => this.setValue(taxonomy.name, (event.target as HTMLInputElement).value.split(',').map(name => name.trim()).filter(Boolean))}>`, taxonomy.name);
             })}
             ${fields.map(field => row(`site-entry-${field.name}`, field.label, fieldControl(field, this.values[field.name], value => this.setValue(field.name, value), `site-entry-${field.name}`,
-                { media: this.media({ kind: 'entry', field: field.name }), options: references[field.name] ?? [] }), field.name, field.kind === 'boolean'))}
+                { media: this.media({ kind: 'entry', field: field.name }), options: references[field.name] ?? [], sources: this.props.draft.view.sources }), field.name, field.kind === 'boolean'))}
             ${component(Button, { type: 'button', variant: 'outline', size: 'sm', '@click': () => this.props.onChange(this.values, true) }, __('Show changes'))}
         </div>`;
     }
@@ -589,7 +603,7 @@ export class SiteEditor extends Cossack {
             })}
             ${form && option ? html`<form class="space-y-3 rounded-md border border-border bg-card p-3" @submit=${(event: Event) => this.applyEmbedded(event)}>
                 <h3 class="text-sm font-semibold">${option.label}</h3>
-                ${blockFields(option, form.values, (name, value) => this.setEmbeddedValue(name, value), `site-embedded-${form.id}`, name => this.media({ kind: 'embedded', field: name }), form.errors)}
+                ${blockFields(option, form.values, (name, value) => this.setEmbeddedValue(name, value), `site-embedded-${form.id}`, name => this.media({ kind: 'embedded', field: name }), form.errors, [], this.props.draft.view.sources)}
                 <div class="flex justify-end gap-2">
                     ${component(Button, { type: 'button', variant: 'outline', size: 'sm', '@click': () => { this.embedded = null; } }, __('Cancel'))}
                     ${component(Button, { type: 'submit', size: 'sm' }, __('Apply'))}
@@ -647,7 +661,7 @@ export class SiteEditor extends Cossack {
             ${this.sidePanel()}
             ${this.bar()}
             ${mediaChooser(this.props.draft.chooser, {
-                search: text => this.props.onSearchMedia(text), choose: file => this.choose(file), upload: event => this.upload(event),
+                search: text => this.props.onSearchMedia(text), filter: kind => this.filterMedia(kind), choose: file => this.choose(file), upload: event => this.upload(event),
                 close: () => this.props.onChooser({ ...this.props.draft.chooser, open: false }),
             })}
         </div>`;

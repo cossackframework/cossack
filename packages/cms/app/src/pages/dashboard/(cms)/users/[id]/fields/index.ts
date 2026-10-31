@@ -101,13 +101,19 @@ export default class UserFields extends Cossack {
     @Server()
     async searchMedia(search: string) {
         if (!hasPermission(this.c.get('principal'), PERMISSIONS.manageUsers)) return;
-        this.chooser = { ...this.chooser, search, items: await findMedia(this.c.get('cms'), search) };
+        this.chooser = { ...this.chooser, search, items: await findMedia(this.c.get('cms'), search, this.chooser.kind) };
+    }
+
+    @Client()
+    async filterMedia(kind: string) {
+        this.chooser = { ...this.chooser, kind };
+        await this.searchMedia(this.chooser.search);
     }
 
     @Client()
     async openChooser(target: MetaTarget) {
         this.target = target;
-        this.chooser = { ...this.chooser, open: true, field: target.key, multiple: target.multiple };
+        this.chooser = { ...this.chooser, open: true, field: target.key, multiple: target.multiple, kind: 'image' };
         await this.searchMedia(this.chooser.search);
     }
 
@@ -187,7 +193,7 @@ export default class UserFields extends Cossack {
                 ${this.groupBoxes()}
                 ${this.fieldGroups.groups.length ? html`<div>${component(Button, { type: 'submit' }, __('Save fields'))}</div>` : null}
             </form>
-            ${mediaChooser(this.chooser, { search: text => this.searchMedia(text), choose: file => this.chooseFile(file), upload: event => this.uploadFile(event), close: () => { this.chooser = { ...this.chooser, open: false }; } })}
+            ${mediaChooser(this.chooser, { search: text => this.searchMedia(text), filter: kind => this.filterMedia(kind), choose: file => this.chooseFile(file), upload: event => this.uploadFile(event), close: () => { this.chooser = { ...this.chooser, open: false }; } })}
         </div>`;
     }
 }

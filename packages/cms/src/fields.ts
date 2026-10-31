@@ -67,6 +67,10 @@ export interface FieldDeclaration {
     readonly taxonomy?: string;
     /** string: the ID of a ready media file, checked on write; several when multiple. */
     readonly media?: boolean;
+    /** media: the kinds of file the chooser lists first, such as `['image']`; images when omitted. Every kind stays a click away. */
+    readonly kinds?: readonly FieldMediaKind[];
+    /** string: the editor offers a choice of the site's forms (the value is a slug), collections (a name) or terms (an ID). */
+    readonly choicesFrom?: ChoiceSource;
     /** blocks, richtext: the block types allowed; all when omitted. */
     readonly blocks?: readonly string[];
     /** blocks: the field holds a form, so input blocks and conditions are allowed in it. */
@@ -76,6 +80,8 @@ export interface FieldDeclaration {
     /** text: how the dashboard edits and the site renders the value. */
     /** text: `markdown` for a short passage with formatting, `code` for source edited in a code editor. */
     readonly format?: 'plain' | 'markdown' | 'code';
+    /** text with format code: the code editor's language, such as `html`; a block's own `language` field wins. */
+    readonly language?: string;
     /** json: a group of declared subfields; the value is an object of them, each optional. rows: the fields of each row. */
     readonly fields?: { readonly [name: string]: FieldDeclaration };
 }
@@ -168,6 +174,12 @@ export function slugify(text: string, max = 200): string {
 
 export const FIELD_NAME = /^[a-z][a-zA-Z0-9]{0,62}$/;
 export const TAXONOMY_NAME = /^[a-z][a-zA-Z0-9]{0,40}$/;
+/** The kinds of media file a field may ask for, as the library filters them. */
+export const FIELD_MEDIA_KINDS = Object.freeze(['image', 'video', 'audio', 'document', 'archive'] as const);
+export type FieldMediaKind = typeof FIELD_MEDIA_KINDS[number];
+/** What a string field's choice can come from. */
+export const CHOICE_SOURCES = Object.freeze(['forms', 'collections', 'terms'] as const);
+export type ChoiceSource = typeof CHOICE_SOURCES[number];
 const ENUM_VALUE = /^[A-Za-z0-9_.-]{1,64}$/;
 const MAX_SAFE = Number.MAX_SAFE_INTEGER;
 
@@ -210,7 +222,10 @@ export function fieldProblems(name: string, declaration: FieldDeclaration, depth
     if (declaration.slugFrom !== undefined && (kind !== 'string' || multiple || typeof declaration.slugFrom !== 'string' || !FIELD_NAME.test(declaration.slugFrom))) problems.push(`${at}: slugFrom applies to single string fields and names another field.`);
     if (declaration.taxonomy !== undefined && (kind !== 'string' || !multiple || !TAXONOMY_NAME.test(declaration.taxonomy))) problems.push(`${at}: taxonomy applies to multiple string fields and names a taxonomy.`);
     if (declaration.media !== undefined && (kind !== 'string' || typeof declaration.media !== 'boolean')) problems.push(`${at}: media applies to string fields.`);
+    if (declaration.kinds !== undefined && (!declaration.media || !Array.isArray(declaration.kinds) || !declaration.kinds.length || declaration.kinds.some(entry => !(FIELD_MEDIA_KINDS as readonly string[]).includes(entry)))) problems.push(`${at}: kinds applies to media fields and lists ${FIELD_MEDIA_KINDS.join(', ')}.`);
+    if (declaration.choicesFrom !== undefined && (kind !== 'string' || declaration.media || !(CHOICE_SOURCES as readonly string[]).includes(declaration.choicesFrom))) problems.push(`${at}: choicesFrom applies to string fields and is ${CHOICE_SOURCES.join(', ')}.`);
     if (declaration.format !== undefined && (kind !== 'text' || !['plain', 'markdown', 'code'].includes(declaration.format))) problems.push(`${at}: format applies to text fields and is plain, markdown or code.`);
+    if (declaration.language !== undefined && (declaration.format !== 'code' || typeof declaration.language !== 'string' || !/^[a-z0-9+#-]{1,40}$/.test(declaration.language))) problems.push(`${at}: language applies to code fields and names a language, such as html.`);
     if (kind === 'rows') {
         const entries = declaration.fields && typeof declaration.fields === 'object' ? Object.entries(declaration.fields) : [];
         if (!entries.length || entries.length > 48) problems.push(`${at}: rows hold 1-48 fields.`);

@@ -1,9 +1,9 @@
 /**
- * Where a media file is used: entries whose fields, rich text or blocks reference it, and the
- * themes' widget areas. Collections are document tables without an index on file IDs, so the
+ * Where a media file is used: entries whose fields, rich text or blocks reference it, the
+ * themes' widget areas, and users whose profile picture or fields it is. Collections are document tables without an index on file IDs, so the
  * newest entries of each are read and checked here; very large sites see the newest matches.
  */
-import { blockMedia, richTextMedia, type Block, type FieldDeclaration, type Principal, type RichTextDoc } from '@cossackframework/cms';
+import { blockMedia, hasPermission, PERMISSIONS, richTextMedia, type Block, type FieldDeclaration, type Principal, type RichTextDoc } from '@cossackframework/cms';
 import type { CmsHost } from '@cossackframework/cms/server';
 import { recordTitle } from '@cossackframework/cms';
 
@@ -45,6 +45,13 @@ export async function mediaUsage(cms: CmsHost, id: string, principal: Principal)
     }
     for (const [name, area] of await cms.areas.all().catch(() => new Map())) {
         if (blocksUse(area.blocks as Block[], id, cms.blockTypes)) found.push({ title: name, href: '/dashboard/appearance/widgets', kind: __('Widget area'), status: '' });
+    }
+    // Profile pictures and user fields, for people who manage users.
+    if (hasPermission(principal, PERMISSIONS.manageUsers)) {
+        for (const user of await cms.users.usingFile(id).catch(() => [])) {
+            const avatar = user.avatar?.startsWith(`/media/${id}/`) === true;
+            found.push({ title: user.name || user.email, href: `/dashboard/users/${user.id}`, kind: avatar ? __('Profile picture') : __('User'), status: '' });
+        }
     }
     return found;
 }

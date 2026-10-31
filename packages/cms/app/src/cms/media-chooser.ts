@@ -15,18 +15,33 @@ export interface MediaChooserState {
     field: string;
     multiple: boolean;
     search: string;
+    /** The kind of file listed (`image`, `video`, …), empty for every kind; a field's first kind when it opens. */
+    kind: string;
     items: MediaPreview[];
     /** The file input's accept list; media files by default. */
     accept?: string;
 }
 
+/** The kinds of file the chooser can list, in its menu's order. */
+export const MEDIA_KIND_CHOICES: readonly { value: string; label: string }[] = [
+    { value: '', label: 'All files' }, { value: 'image', label: 'Images' }, { value: 'video', label: 'Video' }, { value: 'audio', label: 'Audio' },
+    { value: 'document', label: 'Documents' }, { value: 'archive', label: 'Archives' },
+];
+
+/** The kind a chooser opens on for a field: the first it declares, images when it declares none. */
+export function chooserKind(field: { readonly kinds: readonly string[] } | null | undefined): string {
+    return field?.kinds[0] ?? 'image';
+}
+
 /** Images, video and audio: what a media field takes. The library's own uploader takes any file. */
 export const MEDIA_ACCEPT = 'image/*,video/*,audio/*';
 
-export const closedChooser = (): MediaChooserState => ({ open: false, field: '', multiple: false, search: '', items: [] });
+export const closedChooser = (): MediaChooserState => ({ open: false, field: '', multiple: false, search: '', kind: 'image', items: [] });
 
 export interface MediaChooserHandlers {
     search(text: string): void;
+    /** List another kind of file; the screen sets `kind` and searches again. */
+    filter(kind: string): void;
     choose(file: MediaPreview): void;
     /** Upload files from the file input; the chooser lists them afterwards. */
     upload(event: Event): void;
@@ -43,6 +58,9 @@ export function mediaChooser(state: MediaChooserState, handlers: MediaChooserHan
             <div class="flex flex-wrap items-center gap-2">
                 <input type="search" class=${`${CONTROL} max-w-xs`} placeholder=${__('Search media')} aria-label=${__('Search media')} .value=${state.search}
                     @change=${(event: Event) => handlers.search((event.target as HTMLInputElement).value)}>
+                <select class=${`${CONTROL} max-w-[10rem]`} aria-label=${__('Media type')} @change=${(event: Event) => handlers.filter((event.target as HTMLSelectElement).value)}>
+                    ${MEDIA_KIND_CHOICES.map(choice => html`<option value=${choice.value} ?selected=${choice.value === state.kind}>${__(choice.label)}</option>`)}
+                </select>
                 <label class="inline-flex cursor-pointer items-center rounded-md border border-border px-3 py-2 text-sm text-foreground hover:bg-muted">
                     ${__('Upload files')}<input type="file" multiple accept=${state.accept || MEDIA_ACCEPT} class="sr-only" @change=${(event: Event) => handlers.upload(event)}>
                 </label>

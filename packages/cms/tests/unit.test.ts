@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
     commandInput, declarationHash, defineResource, evaluateRule, field, formInput, formValue, isPluginPoint, manifestProblems, permissionMatches, providedPoints,
     requestedGrants, resolveResource, resourceProblems, storageCheck, storageName, storageType, userPrincipal, validateValue, normalizeDeclaration, fieldProblems, recordSchema,
+    htmlBlocks, htmlBlocksChanged,
 } from '../src/index';
 import { planSchema, type Catalog } from '../src/server/schema';
 import { renameBlockIds } from '../src/server/block-ids';
@@ -49,6 +50,13 @@ describe('fields', () => {
         expect(fieldProblems('b', field.boolean({ multiple: true }))).toEqual(['field b: multiple is true or false and applies to strings, text, choices, numbers, times, references, JSON and rich text.']);
         expect(fieldProblems('t', field.string({ multiple: true, maxItems: 2000 }))).toEqual(['field t: maxItems applies to multiple fields and is 1-1000.']);
         expect(fieldProblems('m', field.media({ multiple: true, maxItems: 500 }))).toEqual(['field m: maxItems applies to multiple fields and is 1-200.']);
+        expect(fieldProblems('v', field.media({ kinds: ['video'] }))).toEqual([]);
+        expect(fieldProblems('v', field.media({ kinds: ['movie' as never] }))).toEqual([expect.stringMatching(/^field v: kinds applies to media fields/)]);
+        expect(fieldProblems('v', field.string({ kinds: ['image'] }))).toEqual([expect.stringMatching(/^field v: kinds applies to media fields/)]);
+        expect(fieldProblems('f', field.string({ choicesFrom: 'forms' }))).toEqual([]);
+        expect(fieldProblems('f', field.integer({ choicesFrom: 'forms' }))).toEqual([expect.stringMatching(/^field f: choicesFrom applies to string fields/)]);
+        expect(fieldProblems('c', field.text({ format: 'code', language: 'html' }))).toEqual([]);
+        expect(fieldProblems('c', field.text({ language: 'html' }))).toEqual([expect.stringMatching(/^field c: language applies to code fields/)]);
         expect(fieldProblems('t', field.string({ minItems: 1 }))).toEqual(['field t: minItems applies to multiple fields and is 0 to maxItems.']);
         expect(fieldProblems('t', field.string({ multiple: true, unique: true }))).toEqual(['field t: multiple fields cannot be unique.']);
         expect(fieldProblems('t', field.string({ multiple: true, index: true, default: ['a'] }))).toEqual([]);
@@ -93,6 +101,22 @@ describe('fields', () => {
         expect(storageCheck('"title"', field.string({ max: 10, min: 2 }))).toBe('length("title") <= 10 AND length("title") >= 2');
         expect(storageCheck('"s"', field.enum(['a', 'b']))).toBe(`"s" IN ('a', 'b')`);
         expect(storageCheck('"n"', field.integer({ min: 0, max: 9 }))).toBe('"n" >= 0 AND "n" <= 9');
+    });
+});
+
+describe('Custom HTML blocks', () => {
+    it('finds them in blocks, children and rich text, and tells added or changed HTML from kept', () => {
+        const embedded = { type: 'doc', content: [{ type: 'cmsBlock', attrs: { _id: 'e', type: 'core/html', data: { html: '<i>e</i>' } } }] };
+        const blocks = [
+            { _id: 'g', type: 'core/group', data: {}, children: [{ _id: 'a', type: 'core/html', data: { html: '<b>a</b>' } }] },
+            { _id: 'r', type: 'core/richtext', data: { text: embedded } },
+        ];
+        expect([...htmlBlocks(blocks)]).toEqual([['a', '<b>a</b>'], ['e', '<i>e</i>']]);
+        expect(htmlBlocksChanged(blocks, blocks)).toBe(false);
+        expect(htmlBlocksChanged([blocks[1]], blocks)).toBe(false);
+        expect(htmlBlocksChanged(blocks, [blocks[0]])).toBe(true);
+        expect(htmlBlocksChanged([{ _id: 'a', type: 'core/html', data: { html: '<b>A</b>' } }], blocks)).toBe(true);
+        expect(htmlBlocksChanged(embedded, null)).toBe(true);
     });
 });
 

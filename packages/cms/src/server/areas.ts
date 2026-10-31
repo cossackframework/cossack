@@ -5,7 +5,7 @@
  * editor writes nothing. Blocks are checked like a blocks field before they are stored.
  */
 import { ClientError, type RomeDB, type Statement } from '@cossackframework/romedb';
-import type { Block } from '../blocks';
+import { htmlBlocksChanged, type Block } from '../blocks';
 import { CmsError } from '../errors';
 import { MENU_LOCATION } from '../menus';
 import { hasPermission, PERMISSIONS, principalId, type Principal } from '../permissions';
@@ -61,6 +61,9 @@ export class CmsAreas {
         if (!hasPermission(context.principal, PERMISSIONS.manageAppearance)) throw new CmsError(context.principal.kind === 'anonymous' ? 'CMS_UNAUTHENTICATED' : 'CMS_FORBIDDEN', 'Not allowed to manage widgets.');
         if (typeof name !== 'string' || !MENU_LOCATION.test(name) || !context.known.includes(name)) throw new CmsError('CMS_VALIDATION', `${String(name)} is not a widget area of a theme.`);
         const checked = await this.#check(blocks);
+        if (!hasPermission(context.principal, PERMISSIONS.unfilteredHtml) && htmlBlocksChanged(checked, (await this.get(name)).blocks)) {
+            throw new CmsError('CMS_FORBIDDEN', 'Only people allowed to post HTML can add or change Custom HTML blocks.');
+        }
         const params = { $name: name, $blocks: JSON.stringify(checked), $now: this.#now(), $by: principalId(context.principal) };
         const statement: Statement = context.expectedRevision === 0
             ? { rql: 'INSERT INTO cms_areas (name, blocks, revision, updated_at, updated_by) VALUES ($name, $blocks, 1, $now, $by) ON CONFLICT (name) DO NOTHING', params }

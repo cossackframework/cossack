@@ -1,7 +1,7 @@
 // Client-safe CMS declarations: resources, fields, permissions, extension points and records.
 export { defineResource, resolveResource, resourceProblems, storageName, permissionFor, declarationHash, canonicalJson, SYSTEM_FIELDS, RESOURCE_NAME, OWNER_NAME, ResourceDeclarationError,
     type ResourceDeclaration, type Resource, type ResourceAccess, type ResourceAction, type AccessRule, type IndexDeclaration, type MigrationStep } from './resource';
-export { field, fieldProblems, validateValue, storageType, storageCheck, normalizeDeclaration, normalizeFields, slugify, FIELD_NAME, SLUG_PATTERN, TAXONOMY_NAME, ROW_ID, ROW_LIMITS, ITEM_LIMITS, MULTIPLE_KINDS, type FieldDeclaration, type FieldKind, type ListItemKind } from './fields';
+export { field, fieldProblems, validateValue, storageType, storageCheck, normalizeDeclaration, normalizeFields, slugify, FIELD_NAME, SLUG_PATTERN, TAXONOMY_NAME, ROW_ID, ROW_LIMITS, ITEM_LIMITS, MULTIPLE_KINDS, FIELD_MEDIA_KINDS, CHOICE_SOURCES, type FieldMediaKind, type ChoiceSource, type FieldDeclaration, type FieldKind, type ListItemKind } from './fields';
 export {
     FIELD_BLOCK_TYPES, FIELD_BLOCKS, FIELD_GROUP_ID, FIELD_GROUP_LIMITS, fieldBlockFields, fieldBlockDeclaration, upgradeFieldBlocks, rowsSearchable, metaProblems, flattenGroupFields, fieldGroupDeclarations, fieldBlockKindOf, fieldBlockOf, layoutOf, sameTarget, targetOrder, groupsForTarget, withTarget, fieldGroupProblems,
     withRowIds, indexedRowPaths, indexedRowField, rowIndexPath, rowsPlain, rowUniqueProblem, conditionValues, hiddenKey, fieldVisibility, clearHidden,
@@ -30,7 +30,7 @@ export {
 export { CONTENT_STATUSES, CORE_FIELDS, ENTRY_TEMPLATE, FEATURE_FIELDS, RESERVED_FIELDS, LOCALE, SEO_FIELDS, collectionProblems, collectionResource, contentBlocks, entryUrl, extendCollection, languageName, orderedFields, posts, pages, type CollectionDefinition, type CollectionFeatures, type ContentStatus } from './collections';
 export { CORE_BLOCKS, BLOCK_CATEGORIES, BLOCK_NAME, BLOCK_LIMITS, FIELD_BLOCK_KINDS, FIELD_GROUP_LAYOUT, FIELD_GROUP_LIMIT, RESERVED_FIELD_NAMES, BREAKPOINTS, STYLE_PROPERTIES, TEXT_ALIGNMENTS, PRESET_SLUG, INPUT_KINDS, INPUT_NAME, CONDITION_OPERATORS, CONDITION_LIMIT, FORM_INPUT_LIMIT, RESERVED_INPUT_NAMES,
     blockCategory, blockIsData, blockProblems, blocksShapeProblem, blockLayoutProblem, blockStyleProblem, blockConditionProblem, blockSupports, blockAllowedIn, validateBlocks, blockMedia, blockDocuments, blocksPlain, cloneBlocks, blockId, inputName,
-    flattenBlocks, placeBlocks, findBlock, updateBlock, removeBlock, insertBlock, moveBlock, shiftBlock, blockTreeProblem,
+    flattenBlocks, placeBlocks, findBlock, HTML_BLOCK, htmlBlocks, htmlBlocksChanged, updateBlock, removeBlock, insertBlock, moveBlock, shiftBlock, blockTreeProblem,
     type Block, type BlockCategory, type BlockDeclaration, type BlockLayout, type BlockStyle, type BlockSupports, type BlockMove, type BlockPlace, type Breakpoint, type StyleProperty,
     type BlockCondition, type ConditionRule, type ConditionOperator, type InputKind, type FieldBlockKind, type ValidateBlocksOptions } from './blocks';
 export { hasBinding, bindingPaths, bindingRefs, bindingValue, bindingText, bindingProblem, usesUserBinding, resolveBindings, resolveBlockBindings, withBinding, BINDING_SCOPES, type BindingScope, type BindingScopes } from './bindings';

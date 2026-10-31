@@ -269,7 +269,8 @@ function renderedBlock(cms: CmsHost, block: { _id: string; type: string; data: R
     const content: Record<string, BodyPart[]> = {};
     const resizes = cms.files?.resizes ?? false;
     const type = cms.blockTypes.get(block.type);
-    const bound = Object.entries(type?.fields ?? {}).filter(([, declaration]) => (declaration.kind === 'string' && !declaration.media) || declaration.kind === 'text').map(([key]) => key);
+    // Code keeps its text: a value put into a Custom HTML block's HTML would run as markup.
+    const bound = Object.entries(type?.fields ?? {}).filter(([, declaration]) => (declaration.kind === 'string' && !declaration.media) || (declaration.kind === 'text' && declaration.format !== 'code')).map(([key]) => key);
     const data = scope && bound.length ? resolveBlockBindings(block.data, bound, scope) : block.data;
     if (scope?.user && refs.usage && bound.some(key => usesUserBinding(block.data[key]))) refs.usage.user = true;
     for (const [key, declaration] of Object.entries(type?.fields ?? {})) {

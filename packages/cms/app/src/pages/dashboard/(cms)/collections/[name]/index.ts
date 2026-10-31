@@ -5,14 +5,14 @@ import { bindingPaths, findBlock, flattenBlocks, flattenGroupFields, hasPermissi
 import { collectionDraft, definitionOf, type CollectionDraft } from '../../../../../cms/builder';
 import { blockPanel } from '../../../../../cms/block-panel';
 import { BlockTree } from '../../../../../cms/block-tree';
-import { blockFilePreviews, blockOptions, findMedia, optionsOf } from '../../../../../cms/content';
+import { blockFilePreviews, blockOptions, findMedia, optionsOf, sourceChoices } from '../../../../../cms/content';
 import { EditorLayoutEditor, type EditorLayoutDraft } from '../../../../../cms/editor-layout-editor';
 import { CORE_FIELDS, editorBoxes, editorLayoutTypes, resolveEditorLayout, type EditorBox, type EditorLayout, type EditorLayoutAddition } from '@cossackframework/cms';
-import { blocksInput, controlValue, editorBlocks, editorInput, type BlockOption, type EditorBlock, type EditorField } from '../../../../../cms/editor';
+import { blocksInput, controlValue, editorBlocks, editorInput, type BlockOption, type EditorBlock, type EditorField, type SourceChoices } from '../../../../../cms/editor';
 import { bindingChoices, blockFields, moveItem, type BindingChoice, type MediaHooks, type MediaPreview } from '../../../../../cms/field-controls';
 import { requireAny } from '../../../../../cms/guards';
 import { iconSelect } from '../../../../../cms/term-icons';
-import { closedChooser, mediaChooser, uploadMedia, withFile, type MediaChooserState } from '../../../../../cms/media-chooser';
+import { chooserKind, closedChooser, mediaChooser, uploadMedia, withFile, type MediaChooserState } from '../../../../../cms/media-chooser';
 import { RichTextField, richTextEditors } from '../../../../../cms/rich-text-field';
 import { activePresets } from '../../../../../cms/site';
 import { styleValues, withStyle, type BlockTab, type StyleValues } from '../../../../../cms/style-controls';
@@ -63,6 +63,8 @@ export default class CollectionBuilder extends Cossack {
     @State() options: BlockOption[] = [];
     @State() previews: Record<string, MediaPreview> = {};
     @State() presets: Required<ThemePresets> = { colors: [], fontSizes: [], spacing: [] };
+    /** What template blocks' form, collection and term fields choose from. */
+    @State() sources: SourceChoices = { forms: [], collections: [], terms: [] };
     @State() dialog: BlockDialog | null = null;
     @State() chooser: MediaChooserState = closedChooser();
     @State() tab: (typeof TABS)[number] = 'general';
@@ -114,6 +116,7 @@ export default class CollectionBuilder extends Cossack {
         this.template = editorBlocks((definition.template ?? []) as EditorBlock[], options);
         this.previews = await blockFilePreviews(cms, this.template);
         this.presets = await activePresets(cms);
+        this.sources = await sourceChoices(cms);
         // The editor's boxes and their arrangement; the layout's block types offer the boxes as the Box block's choices.
         this.boxes = editorBoxes({ collection: definition, fields: resource.fields, groups: attached, taxonomies: this.taxonomies.filter(taxonomy => (definition.taxonomies ?? []).includes(taxonomy.name)), special: CORE_FIELDS });
         this.additions = cms.editorLayoutAdditions(name);
@@ -274,12 +277,18 @@ export default class CollectionBuilder extends Cossack {
     @Server()
     async searchMedia(search: string) {
         if (!hasPermission(this.c.get('principal'), PERMISSIONS.manageCollections)) return;
-        this.chooser = { ...this.chooser, search, items: await findMedia(this.c.get('cms'), search) };
+        this.chooser = { ...this.chooser, search, items: await findMedia(this.c.get('cms'), search, this.chooser.kind) };
     }
 
     @Client()
-    async openChooser(field: string, multiple: boolean) {
-        this.chooser = { ...this.chooser, open: true, field, multiple };
+    async openChooser(field: string, multiple: boolean, kind = 'image') {
+        this.chooser = { ...this.chooser, open: true, field, multiple, kind };
+        await this.searchMedia(this.chooser.search);
+    }
+
+    @Client()
+    async filterMedia(kind: string) {
+        this.chooser = { ...this.chooser, kind };
         await this.searchMedia(this.chooser.search);
     }
 
@@ -316,7 +325,7 @@ export default class CollectionBuilder extends Cossack {
         const dialog = this.dialog;
         const block = dialog ? findBlock(this.template, dialog.id) : undefined;
         const option = this.options.find(entry => entry.name === block?.type) ?? null;
-        const media = (field: string): MediaHooks => ({ previews: this.previews, choose: multiple => this.openChooser(field, multiple) });
+        const media = (field: string): MediaHooks => ({ previews: this.previews, choose: multiple => this.openChooser(field, multiple, chooserKind(option?.fields.find(entry => entry.name === field))) });
         const fields = option ? { ...option, fields: option.fields.filter(field => field.kind !== 'richtext') } : null;
         const unresolved = this.unresolvedBindings();
         return html`${component(Card, {}, html`
@@ -338,10 +347,10 @@ export default class CollectionBuilder extends Cossack {
             id: 'template-block', open: Boolean(dialog && option), option, tab: dialog?.tab ?? 'general', style: dialog?.style ?? styleValues({}), presets: this.presets,
             onTab: tab => { if (this.dialog) this.dialog = { ...this.dialog, tab }; }, onStyle: style => this.setDialogStyle(style),
             onClose: () => { this.dialog = null; },
-            general: dialog && fields ? (fields.fields.length ? blockFields(fields, dialog.values, (name, value) => this.setDialogValue(name, value), `template-${dialog.id}`, media, dialog.errors, this.bindings())
+            general: dialog && fields ? (fields.fields.length ? blockFields(fields, dialog.values, (name, value) => this.setDialogValue(name, value), `template-${dialog.id}`, media, dialog.errors, this.bindings(), this.sources)
                 : html`<p class="text-sm text-muted-foreground">${__('This block has no settings.')}</p>`) : html``,
         })}
-        ${mediaChooser(this.chooser, { search: text => this.searchMedia(text), choose: file => this.chooseFile(file), upload: event => this.uploadFile(event), close: () => { this.chooser = { ...this.chooser, open: false }; } })}`;
+        ${mediaChooser(this.chooser, { search: text => this.searchMedia(text), filter: kind => this.filterMedia(kind), choose: file => this.chooseFile(file), upload: event => this.uploadFile(event), close: () => { this.chooser = { ...this.chooser, open: false }; } })}`;
     }
 
     private check(label: string, checked: boolean, change: (checked: boolean) => void, options: { disabled?: boolean; hint?: string } = {}): TemplateResult {

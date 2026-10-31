@@ -4,13 +4,13 @@ import { component, html, type TemplateResult } from '@cossackframework/renderer
 import { findBlock, hasPermission, isCmsError, PERMISSIONS, updateBlock, type RichTextDoc, type ThemePresets } from '@cossackframework/cms';
 import { requireAny } from '../../../../../cms/guards';
 import { notice, pageHeader } from '../../../../../cms/ui';
-import { blockFilePreviews, blockOptions, findMedia } from '../../../../../cms/content';
-import { blocksInput, controlValue, editorBlocks, editorInput, type BlockOption, type EditorBlock, type EditorField } from '../../../../../cms/editor';
+import { blockFilePreviews, blockOptions, findMedia, sourceChoices } from '../../../../../cms/content';
+import { blocksInput, controlValue, editorBlocks, editorInput, type BlockOption, type EditorBlock, type EditorField, type SourceChoices } from '../../../../../cms/editor';
 import { RichTextField, richTextEditors } from '../../../../../cms/rich-text-field';
 import { blockFields, type MediaHooks, type MediaPreview } from '../../../../../cms/field-controls';
 import { BlockTree } from '../../../../../cms/block-tree';
 import { blockPanel } from '../../../../../cms/block-panel';
-import { closedChooser, mediaChooser, uploadMedia, withFile, type MediaChooserState } from '../../../../../cms/media-chooser';
+import { chooserKind, closedChooser, mediaChooser, uploadMedia, withFile, type MediaChooserState } from '../../../../../cms/media-chooser';
 import { activePresets } from '../../../../../cms/site';
 import { styleValues, withStyle, type BlockTab, type StyleValues } from '../../../../../cms/style-controls';
 
@@ -29,6 +29,8 @@ export default class WidgetsPage extends Cossack {
     @State() options: BlockOption[] = [];
     @State() previews: Record<string, MediaPreview> = {};
     @State() presets: Required<ThemePresets> = { colors: [], fontSizes: [], spacing: [] };
+    /** What widgets' form, collection and term fields choose from. */
+    @State() sources: SourceChoices = { forms: [], collections: [], terms: [] };
     @State() dialog: BlockDialog | null = null;
     @State() chooser: MediaChooserState = closedChooser();
     @State() error = '';
@@ -47,6 +49,7 @@ export default class WidgetsPage extends Cossack {
         const saved = await cms.areas.all();
         // Synced patterns belong in entries; widgets hold their own blocks.
         this.options = (await blockOptions(cms)).filter(option => option.name !== 'core/pattern');
+        this.sources = await sourceChoices(cms);
         this.areas = (await cms.areaLocations()).map(area => {
             const stored = saved.get(area.name);
             return { ...area, revision: stored?.revision ?? 0, blocks: editorBlocks((stored?.blocks ?? []) as EditorBlock[], this.options), changed: false };
@@ -127,12 +130,18 @@ export default class WidgetsPage extends Cossack {
     @Server()
     async searchMedia(search: string) {
         if (!hasPermission(this.c.get('principal'), PERMISSIONS.manageAppearance)) return;
-        this.chooser = { ...this.chooser, search, items: await findMedia(this.c.get('cms'), search) };
+        this.chooser = { ...this.chooser, search, items: await findMedia(this.c.get('cms'), search, this.chooser.kind) };
     }
 
     @Client()
-    async openChooser(field: string, multiple: boolean) {
-        this.chooser = { ...this.chooser, open: true, field, multiple };
+    async openChooser(field: string, multiple: boolean, kind = 'image') {
+        this.chooser = { ...this.chooser, open: true, field, multiple, kind };
+        await this.searchMedia(this.chooser.search);
+    }
+
+    @Client()
+    async filterMedia(kind: string) {
+        this.chooser = { ...this.chooser, kind };
         await this.searchMedia(this.chooser.search);
     }
 
@@ -194,12 +203,12 @@ export default class WidgetsPage extends Cossack {
         const dialog = this.dialog;
         const block = dialog ? findBlock(this.blocksOf(dialog.area), dialog.id) : undefined;
         const option = this.options.find(entry => entry.name === block?.type) ?? null;
-        const media = (field: string): MediaHooks => ({ previews: this.previews, choose: multiple => this.openChooser(field, multiple) });
+        const media = (field: string): MediaHooks => ({ previews: this.previews, choose: multiple => this.openChooser(field, multiple, chooserKind(option?.fields.find(entry => entry.name === field))) });
         const fields = option ? { ...option, fields: option.fields.filter(field => field.kind !== 'richtext') } : null;
         return blockPanel({
             id: 'widget-block', open: Boolean(dialog && option), option, tab: dialog?.tab ?? 'general', style: dialog?.style ?? styleValues({}), presets: this.presets,
             onTab: tab => this.showTab(tab), onStyle: style => this.setStyle(style), onClose: () => { this.dialog = null; },
-            general: dialog && fields ? (fields.fields.length ? blockFields(fields, dialog.values, (name, value) => this.setValue(name, value), `widget-${dialog.area}-${dialog.id}`, media, dialog.errors)
+            general: dialog && fields ? (fields.fields.length ? blockFields(fields, dialog.values, (name, value) => this.setValue(name, value), `widget-${dialog.area}-${dialog.id}`, media, dialog.errors, [], this.sources)
                 : html`<p class="text-sm text-muted-foreground">${__('This block has no settings.')}</p>`) : html``,
         });
     }
@@ -212,7 +221,7 @@ export default class WidgetsPage extends Cossack {
                 : notice(__('The active theme has no widget areas.'))}
             ${this.dialogModal()}
             ${mediaChooser(this.chooser, {
-                search: text => this.searchMedia(text), choose: file => this.choose(file), upload: event => this.upload(event),
+                search: text => this.searchMedia(text), filter: kind => this.filterMedia(kind), choose: file => this.choose(file), upload: event => this.upload(event),
                 close: () => { this.chooser = { ...this.chooser, open: false }; },
             })}
         </div>`;

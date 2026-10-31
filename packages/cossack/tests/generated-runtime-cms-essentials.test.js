@@ -484,7 +484,7 @@ describe.skipIf(!liveRomeDBTests())('generated CMS essentials', () => {
       await browserExpect(page.locator('#field-title')).toBeFocused();
       expect(page.url()).toBe(origin + '/dashboard/content/posts/new');
       // The block inserter groups blocks by category and searches them.
-      await page.getByRole('button', { name: 'Add block' }).click();
+      await page.locator('#field-content-add-top').click();
       const blocks = page.getByRole('dialog', { name: 'Blocks' });
       await browserExpect(blocks.getByRole('heading', { name: 'Media' })).toBeVisible();
       await blocks.getByLabel('Search blocks').fill('divid');
@@ -492,7 +492,7 @@ describe.skipIf(!liveRomeDBTests())('generated CMS essentials', () => {
       await blocks.getByRole('button', { name: 'Divider' }).click();
       await browserExpect(blocks).toBeHidden();
       // The block joins the content tree after the Rich text block the post starts with.
-      await browserExpect(page.locator('[data-block-tree-item]').filter({ hasText: 'Divider' })).toBeVisible();
+      await browserExpect(page.getByRole('region', { name: 'Divider' })).toBeVisible();
 
       // With two languages the posts list has a language column, and the sidebar still
       // reaches it from other screens without a reload.
