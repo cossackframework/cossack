@@ -24,6 +24,8 @@ export interface RichTextHandle {
     linkAt(): { href: string; newTab: boolean } | null;
     insertImage(image: { src: string; alt: string; mediaId?: string }): void;
     insertLink(text: string, href: string): void;
+    /** Plain text at the cursor, such as a `{{ $.price }}` binding. */
+    insertText(text: string): void;
     insertBlock(block: EmbeddedBlock): void;
     updateBlock(id: string, data: EmbeddedBlock['data']): void;
     /** Insert a document's content after the top-level node holding the cursor, such as a pattern's copy. */
@@ -231,6 +233,9 @@ export function mountRichText(element: HTMLElement, options: RichTextOptions): R
         insertLink(text, href) {
             if (!safeLinkUrl(href)) return;
             chain().insertContent({ type: 'text', text, marks: [{ type: 'link', attrs: { href } }] }).run();
+        },
+        insertText(text) {
+            chain().insertContent({ type: 'text', text }).run();
         },
         insertBlock(block) {
             // Blocks sit between top-level nodes: after the one holding the cursor.

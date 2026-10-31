@@ -45,14 +45,20 @@ export interface SlotLink {
     readonly permission?: string;
 }
 
+/** A plugin's maker as its manifest names them. */
+export interface PluginAuthor {
+    readonly name: string;
+    readonly url?: string;
+    readonly email?: string;
+}
+
 export interface CmsPluginManifest {
     readonly schemaVersion: 1;
     readonly name: string;
     readonly version: string;
     readonly description?: string;
-    /** Who made the plugin, shown on its card: a name, with a website. */
-    readonly author?: string;
-    readonly authorUrl?: string;
+    /** Who made the plugin, shown on its card: a name, with a website and an email address. */
+    readonly author?: PluginAuthor;
     readonly compatibility?: { readonly [pkg: string]: string };
     readonly dependencies?: { readonly [pkg: string]: string };
     readonly resources?: readonly ResourceDeclaration[];
@@ -234,8 +240,7 @@ export function manifestProblems(manifest: unknown): string[] {
         }
     }
     if (value.theme !== undefined) problems.push(...themeProblems(value.theme));
-    if (value.author !== undefined && (typeof value.author !== 'string' || !value.author.trim() || value.author.length > 120)) problems.push('author is a name of at most 120 characters.');
-    if (value.authorUrl !== undefined && (typeof value.authorUrl !== 'string' || !/^https?:\/\/[^\s]{1,300}$/.test(value.authorUrl))) problems.push('authorUrl is a web address starting with https://.');
+    if (value.author !== undefined) problems.push(...authorProblems(value.author));
     for (const key of ['logo', 'cover'] as const) {
         if (value[key] !== undefined && (typeof value[key] !== 'string' || !ARTWORK.test(value[key]))) problems.push(`${key} must name a PNG, JPEG, WebP, GIF, AVIF or SVG file in assets/, such as assets/${key}.png.`);
     }
@@ -296,4 +301,17 @@ export function commandInput(command: PluginCommand, input: { readonly [name: st
         else problems.push(`--${name} must be text.`);
     }
     return { values, problems };
+}
+
+const AUTHOR_KEYS = new Set(['name', 'url', 'email']);
+
+function authorProblems(author: unknown): string[] {
+    if (!author || typeof author !== 'object' || Array.isArray(author)) return ['author is an object: { "name": "Acme", "url": "https://acme.example", "email": "hello@acme.example" }.'];
+    const { name, url, email } = author as Record<string, unknown>;
+    const problems: string[] = [];
+    for (const key of Object.keys(author)) if (!AUTHOR_KEYS.has(key)) problems.push(`author.${key} is not an author field (name, url, email).`);
+    if (typeof name !== 'string' || !name.trim() || name.length > 120) problems.push('author.name is a name of at most 120 characters.');
+    if (url !== undefined && (typeof url !== 'string' || !/^https?:\/\/[^\s]{1,300}$/.test(url))) problems.push('author.url is a web address starting with https://.');
+    if (email !== undefined && (typeof email !== 'string' || email.length > 191 || !/^[^\s@<>()[\]\\,;:"]+@[^\s@<>()[\]\\,;:"]+\.[^\s@<>()[\]\\,;:"]+$/.test(email))) problems.push('author.email is an email address, such as hello@acme.example.');
+    return problems;
 }

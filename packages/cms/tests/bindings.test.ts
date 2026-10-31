@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bindingPaths, bindingProblem, bindingRefs, bindingText, bindingValue, hasBinding, resolveBindings, resolveBlockBindings, usesUserBinding, withBinding } from '../src/index';
+import { bindingPaths, bindingProblem, bindingRefs, bindingText, bindingValue, hasBinding, resolveBindings, resolveBlockBindings, richTextHtml, usesUserBinding, withBinding, type RichTextDoc } from '../src/index';
 
 const entry = { title: 'Rocket skates', price: 19.5, onSale: true, tags: ['fast', 'wheels'], specs: [{ name: 'Weight', value: '1.2 kg' }], image: 'file-1' };
 const scope = { entry };
@@ -67,5 +67,15 @@ describe('block bindings', () => {
         expect(withBinding('', 'price')).toBe('{{ $.price }}');
         expect(withBinding('Price:', 'price')).toBe('Price: {{ $.price }}');
         expect(withBinding('Price: ', 'price')).toBe('Price: {{ $.price }}');
+    });
+
+    it('resolves bindings in rich text runs before escaping, apart from code', () => {
+        const doc: RichTextDoc = { type: 'doc', content: [
+            { type: 'paragraph', content: [{ type: 'text', text: 'Only {{ $.price }} for ' }, { type: 'text', text: '{{ $.title }}', marks: [{ type: 'bold' }] }, { type: 'text', text: ' {{ $.title }}', marks: [{ type: 'code' }] }] },
+            { type: 'codeBlock', content: [{ type: 'text', text: '{{ $.price }}' }] },
+        ] };
+        const text = (value: string) => resolveBindings(value, { entry: { ...entry, title: '<Rocket>' } });
+        expect(richTextHtml(doc, { text })).toBe('<p>Only 19.5 for <strong>&lt;Rocket&gt;</strong><code> {{ $.title }}</code></p><pre><code>{{ $.price }}</code></pre>');
+        expect(richTextHtml(doc)).toContain('Only {{ $.price }} for');
     });
 });

@@ -19,8 +19,7 @@ A field the host does not know is a problem, so a typo in a field name fails lou
   "name": "support-desk",
   "version": "1.0.0",
   "description": "Support tickets",
-  "author": "Acme",
-  "authorUrl": "https://acme.example",
+  "author": { "name": "Acme", "url": "https://acme.example", "email": "hello@acme.example" },
   "compatibility": { "@cossackframework/cms": ">=0.9.0" },
   "resources": [{ "name": "tickets", "titleField": "subject", "ownership": true, "fields": { "...": "..." } }],
   "blocks": [{ "name": "support-desk/contact", "label": "Support contact", "fields": { "...": "..." } }],
@@ -39,7 +38,7 @@ A field the host does not know is a problem, so a typo in a field name fails lou
 | `name` | 1 to 64 lowercase letters, digits and single hyphens. Not `cms`, `cossack`, `core`, `framework` or `app`. It is the directory under `src/plugins/`, the owner of the plugin's resources (`<name>/<resource>`), the prefix of its blocks (`<name>/<block>`), its permissions (`<name>:<permission>`), its extension points (`<name>.<point>`) and its translation and configuration namespace (`<name>::`). |
 | `version` | A semantic version. Must equal the package version. |
 | `description` | At most 500 characters, shown on the plugin's card. |
-| `author`, `authorUrl` | A name of at most 120 characters and an `http(s)://` address, shown on the card. |
+| `author` | `{ name, url?, email? }`: a name of at most 120 characters, an `http(s)://` address and an email address, shown on the card. |
 | `logo`, `cover` | A PNG, JPEG, WebP, GIF, AVIF or SVG file in `assets/`, such as `assets/logo.png`. Defaults: `assets/logo.*` (square) and `assets/cover.*` (4:3). |
 | `source` | The source directory inside the package. Default `plugin`. |
 | `package` | Written by `cossack add plugin` into the rendered `plugin.json`: the npm package the plugin came from. Not set by hand. |

@@ -28,7 +28,7 @@ values inside text. Both use `{{ }}`:
 | An entry's Markdown fields | Yes | Yes |
 | Widgets (Appearance → Widgets) | Yes | Yes, in their Markdown fields |
 | Theme options (Appearance → Customize) | Yes | No |
-| Rich text | No | Embed blocks with the editor's block button |
+| Rich text | Yes, except in code | Embed blocks with the editor's block button |
 
 ## Tags
 

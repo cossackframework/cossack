@@ -192,7 +192,12 @@ function bodyRenderer(cms: CmsHost, files: ReadonlyMap<string, CmsFile>, pattern
         const view = mediaView(files.get(id), resizes);
         return view ? { url: view.url, width: view.width, height: view.height, srcset: view.srcset } : null;
     };
-    const parts = (doc: RichTextDoc, scope?: BindingScopes, depth = 0): BodyPart[] => richTextParts(doc, { media }).flatMap((part): BodyPart[] => {
+    // Bindings resolve in each text run, as in a block's text fields; a run that names the user makes the page per user.
+    const text = (scope: BindingScopes) => (value: string) => {
+        if (scope.user && usage && usesUserBinding(value)) usage.user = true;
+        return resolveBindings(value, scope);
+    };
+    const parts = (doc: RichTextDoc, scope?: BindingScopes, depth = 0): BodyPart[] => richTextParts(doc, { media, ...(scope ? { text: text(scope) } : {}) }).flatMap((part): BodyPart[] => {
         if (part.kind === 'html') return [part];
         const inner = depth === 0 ? (doc: RichTextDoc) => parts(doc, scope, 1) : undefined;
         if (part.block.type === 'core/pattern') {
@@ -439,7 +444,10 @@ export async function entryViews(cms: CmsHost, collection: CollectionDefinition,
     ]) : [];
     const stored = (record: RecordShape) => blocksFields.flatMap(([name]) => Array.isArray(record[name]) ? record[name] as Block[] : []);
     const patterns = await usedPatterns(cms, docs, options.full ? records.flatMap(stored) : []);
-    /** The content's plain text for an excerpt: every content field in order, 4,000 characters at most. */
+    /**
+     * The content's plain text for an excerpt: every content field in order, 4,000 characters at most.
+     * Bindings resolve against the entry alone: excerpts and descriptions are the same for every visitor.
+     */
     const contentPlain = (record: RecordShape): string => {
         let text = '';
         for (const [name, declaration] of contentFields) {
@@ -449,7 +457,7 @@ export async function entryViews(cms: CmsHost, collection: CollectionDefinition,
             else if (declaration.kind === 'richtext' && value && typeof value === 'object') text += ` ${richTextPlain(value as RichTextDoc)}`;
             else if (declaration.kind === 'text' && typeof value === 'string') text += ` ${value}`;
         }
-        return text.trim().slice(0, 4000);
+        return resolveBindings(text.trim(), bindingScopes(settings, { entry: record, user: null })).slice(0, 4000);
     };
     const mediaIds = new Set<string>();
     for (const record of records) for (const [name, declaration] of fields) {

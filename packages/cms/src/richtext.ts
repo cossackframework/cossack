@@ -294,6 +294,8 @@ export interface RichTextRenderOptions {
     readonly media?: (id: string) => RichTextMediaInfo | null | undefined;
     /** HTML for an embedded block in `richTextHtml`; omitted when absent. */
     readonly block?: (block: EmbeddedBlock) => string;
+    /** Rewrites each text run before it is escaped, such as resolving `{{ $.price }}` bindings. Inline code and code blocks keep their text. */
+    readonly text?: (text: string) => string;
 }
 
 /** A run of HTML, or an embedded block for the theme to render. */
@@ -334,7 +336,8 @@ function nodeHtml(node: RichTextNode, options: RichTextRenderOptions): string {
     const alignment = typeof node.attrs?.textAlign === 'string' && ALIGNMENTS.has(node.attrs.textAlign) && node.attrs.textAlign !== 'left' ? ` style="text-align: ${node.attrs.textAlign}"` : '';
     switch (node.type) {
         case 'text': {
-            let html = escapeHtml(node.text ?? '');
+            const code = node.marks?.some(mark => mark.type === 'code');
+            let html = escapeHtml(options.text && !code ? options.text(node.text ?? '') : node.text ?? '');
             const marks = [...(node.marks ?? [])].sort((a, b) => MARK_ORDER.indexOf(b.type) - MARK_ORDER.indexOf(a.type));
             for (const mark of marks) {
                 if (mark.type === 'link') {

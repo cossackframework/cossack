@@ -16,6 +16,7 @@ import {
 } from '../../../services/users';
 import { listRoles, type RoleDetail } from '../../../services/roles';
 import { bulkBar, selectAllBox, selectBox, type BulkChoice } from '../../../dashboard/bulk';
+import { timeAgo } from '../../../dashboard/time-ago';
 
 const editIcon = { line: editIconSvg };
 const deleteIcon = { line: deleteIconSvg };
@@ -47,9 +48,12 @@ export default class UsersPage extends Cossack {
     /** A bulk action waiting for confirmation. */
     @State() pendingBulk: BulkChoice | null = null;
     @State() message = '';
+    /** When the page was rendered, for "Last signed in" as time ago. */
+    @State() now = 0;
 
     @Server()
     async init() {
+        this.now = Date.now();
         // Drive initial state from the URL so search + role filter are
         // bookmarkable/shareable. The search form is a native GET; the "View
         // Users" button on the roles page links here as ?role=<role_name>.
@@ -307,7 +311,7 @@ export default class UsersPage extends Cossack {
                                             </td>
                                             <td class="py-3 pr-4 text-sm text-muted-foreground">
                                                 ${u.lastSignedInAt
-                                                    ? html`<time datetime=${u.lastSignedInAt}>${this.formatDateTime(u.lastSignedInAt)}</time>`
+                                                    ? html`<time datetime=${u.lastSignedInAt} title=${this.formatDateTime(u.lastSignedInAt)}>${timeAgo(u.lastSignedInAt, this.now)}</time>`
                                                     : __('Never')}
                                             </td>
                                             <td class="py-3 pr-4 text-sm text-muted-foreground">${this.formatDate(u.createdAt)}</td>

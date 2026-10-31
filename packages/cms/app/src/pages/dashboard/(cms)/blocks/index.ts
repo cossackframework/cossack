@@ -1,6 +1,7 @@
 import { Client, ClientState, Cossack, Page, State, type HeadValue } from '@cossackframework/core';
 import { Badge, Card, CardBody, Icon, Input } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
+import { MagnifierIcon } from '@cossackframework/solar-icons/magnifier/line';
 import { BLOCK_CATEGORIES, blockCategory, blockSupports, PERMISSIONS, type BlockCategory } from '@cossackframework/cms';
 import { FIELD_TYPES, typeOf } from '../../../../cms/builder';
 import { requireAny } from '../../../../cms/guards';
@@ -33,6 +34,10 @@ export default class BlocksPage extends Cossack {
         }));
     }
 
+    onMount() {
+        document.getElementById('blocks-search')?.focus();
+    }
+
     @Client()
     setSearch(value: string) {
         this.search = value;
@@ -48,8 +53,10 @@ export default class BlocksPage extends Cossack {
         const groups = BLOCK_CATEGORIES.map(category => ({ ...category, blocks: this.blocks.filter(block => block.category === category.id && this.matches(block, category.label)) })).filter(group => group.blocks.length);
         return html`<div class="space-y-8">
             ${pageHeader(__('Blocks'), { description: __('Entries are built from these in their Content field; a collection can start every entry from a template of them. Plugins add block types. Data blocks store values without showing anything.') })}
-            <div class="max-w-sm">${component(Input, { type: 'search', id: 'blocks-search', placeholder: __('Search blocks'), 'aria-label': __('Search blocks'), '.value': this.search,
-                '@input': (event: Event) => this.setSearch((event.target as HTMLInputElement).value) })}</div>
+            <div class="relative max-w-sm">
+                <span class="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground [&_svg]:size-4">${component(Icon, { entry: { line: MagnifierIcon }, size: 16 })}</span>
+                ${component(Input, { type: 'search', id: 'blocks-search', placeholder: __('Search blocks'), 'aria-label': __('Search blocks'), '.value': this.search, class: 'pl-8',
+                    '@input': (event: Event) => this.setSearch((event.target as HTMLInputElement).value) })}</div>
             ${groups.length ? null : html`<p role="status" class="text-sm text-muted-foreground">${__('No blocks match your search.')}</p>`}
             ${groups.map(group => html`<section class="space-y-3" aria-labelledby=${`blocks-${group.id}`}>
                 <h2 id=${`blocks-${group.id}`} class="text-sm font-semibold uppercase tracking-wide text-muted-foreground">${__(group.label)}</h2>

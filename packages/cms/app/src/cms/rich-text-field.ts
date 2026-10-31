@@ -4,9 +4,12 @@
  */
 import { Client, ClientState, Component, Cossack } from '@cossackframework/core';
 import { component, html, type TemplateResult } from '@cossackframework/renderer';
+import { DropdownMenu, Icon } from '@cossackframework/ui';
 import type { EmbeddedBlock, RichTextDoc } from '@cossackframework/cms';
 import type { RichTextCommand, RichTextHandle } from './rich-text.client';
 import { BlockInserter, type BlockInserterProps } from './block-inserter';
+import type { BindingChoice } from './field-controls';
+import { icon } from './icons';
 import { PROSE } from './site-view';
 
 export type RichTextFieldProps = {
@@ -27,6 +30,8 @@ export type RichTextFieldProps = {
     onPatterns?(): void;
     /** Titles of synced patterns by ID, shown on their blocks. */
     patternTitles?: Record<string, string>;
+    /** Entry fields the text may show (`{{ $.price }}`); a toolbar menu inserts one at the cursor. */
+    bindings?: readonly BindingChoice[];
 };
 
 /** Mounted editors by field ID, for the page's media picker and block forms. */
@@ -105,6 +110,12 @@ export class RichTextField extends Cossack {
     }
 
     @Client()
+    private bind(name: string) {
+        this.handle?.insertText(`{{ $.${name} }}`);
+        this.handle?.focus();
+    }
+
+    @Client()
     private openLink() {
         const current = this.handle?.linkAt();
         this.linkUrl = current?.href ?? '';
@@ -150,6 +161,12 @@ export class RichTextField extends Cossack {
                 ${separator}
                 ${this.tool(__('Add media'), __('Add media'), () => this.props.onMedia())}
                 ${this.props.onPatterns ? this.tool(__('Patterns'), __('Insert a pattern'), () => this.props.onPatterns?.()) : null}
+                ${this.props.bindings?.length ? component(DropdownMenu, { id: `${this.props.id}-bind`, side: 'bottom', align: 'end', 'aria-label': __('Show a field of the entry'), title: __('Show a field of the entry'),
+                    disabled: !this.ready, class: 'inline-flex h-7 w-8 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground [&_svg]:size-4',
+                    trigger: component(Icon, { entry: icon('database'), size: 16 }) }, html`
+                    <p class="px-2 py-1.5 text-xs text-muted-foreground">${__('Show the value of')}</p>
+                    ${this.props.bindings.map(choice => html`<button type="button" role="menuitem" tabindex="-1" class="flex w-full items-center justify-between gap-3 rounded-sm px-2 py-1.5 text-left text-sm text-foreground hover:bg-muted cursor-pointer border-none bg-transparent"
+                        @click=${() => this.bind(choice.name)}><span class="truncate">${choice.label}</span><code class="shrink-0 text-xs text-muted-foreground">{{ $.${choice.name} }}</code></button>`)}`) : null}
                 ${this.props.blocks.length ? component(BlockInserter, { id: `${this.props.id}-blocks`, blocks: this.props.blocks, disabled: !this.ready, compact: true,
                     onPick: (name: string) => this.props.onInsertBlock(name) }) : null}
             </div>

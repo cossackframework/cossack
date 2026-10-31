@@ -7,14 +7,20 @@ import { richTextBlocks, safeImageUrl, safeLinkUrl, type RichTextDoc, type RichT
 
 const escapeText = (text: string) => text.replace(/([\\`*_{}[\]<>])/g, '\\$1');
 
-function inlineMarkdown(nodes: readonly RichTextNode[] = []): string {
+/** What the conversion reads besides the document: file URLs by media ID, and a rewrite of each text run (bindings). */
+interface MarkdownContext {
+    readonly media: (id: string) => string | null;
+    readonly text: (text: string) => string;
+}
+
+function inlineMarkdown(nodes: readonly RichTextNode[] = [], context: MarkdownContext): string {
     return nodes.map(node => {
         if (node.type === 'hardBreak') return '  \n';
         if (node.type !== 'text') return '';
         let text = node.text ?? '';
         const marks = node.marks ?? [];
         if (marks.some(mark => mark.type === 'code')) return `\`${text.replace(/`/g, '\\`')}\``;
-        text = escapeText(text);
+        text = escapeText(context.text(text));
         if (marks.some(mark => mark.type === 'bold')) text = `**${text}**`;
         if (marks.some(mark => mark.type === 'italic')) text = `*${text}*`;
         if (marks.some(mark => mark.type === 'strike')) text = `~~${text}~~`;
@@ -24,27 +30,27 @@ function inlineMarkdown(nodes: readonly RichTextNode[] = []): string {
     }).join('');
 }
 
-function listMarkdown(node: RichTextNode, ordered: boolean, depth: number, media: (id: string) => string | null): string {
+function listMarkdown(node: RichTextNode, ordered: boolean, depth: number, context: MarkdownContext): string {
     const start = ordered && Number.isSafeInteger(node.attrs?.start) ? node.attrs!.start as number : 1;
     return (node.content ?? []).map((item, index) => {
         const marker = ordered ? `${start + index}. ` : '- ';
-        const body = (item.content ?? []).map(child => nodeMarkdown(child, depth + 1, media)).filter(Boolean);
+        const body = (item.content ?? []).map(child => nodeMarkdown(child, depth + 1, context)).filter(Boolean);
         const [first = '', ...rest] = body;
         const indent = ' '.repeat(marker.length);
         return `${'  '.repeat(depth)}${marker}${first.replace(/\n/g, `\n${indent}`)}${rest.map(part => `\n\n${part.split('\n').map(line => `${indent}${line}`).join('\n')}`).join('')}`;
     }).join('\n');
 }
 
-function nodeMarkdown(node: RichTextNode, depth: number, media: (id: string) => string | null): string {
+function nodeMarkdown(node: RichTextNode, depth: number, context: MarkdownContext): string {
     switch (node.type) {
-        case 'paragraph': return inlineMarkdown(node.content);
+        case 'paragraph': return inlineMarkdown(node.content, context);
         case 'heading': {
             const level = Number.isInteger(node.attrs?.level) ? Math.min(Math.max(node.attrs!.level as number, 1), 6) : 2;
-            return `${'#'.repeat(level)} ${inlineMarkdown(node.content)}`;
+            return `${'#'.repeat(level)} ${inlineMarkdown(node.content, context)}`;
         }
-        case 'blockquote': return (node.content ?? []).map(child => nodeMarkdown(child, depth, media)).filter(Boolean).join('\n\n').split('\n').map(line => `> ${line}`).join('\n');
-        case 'bulletList': return listMarkdown(node, false, depth, media);
-        case 'orderedList': return listMarkdown(node, true, depth, media);
+        case 'blockquote': return (node.content ?? []).map(child => nodeMarkdown(child, depth, context)).filter(Boolean).join('\n\n').split('\n').map(line => `> ${line}`).join('\n');
+        case 'bulletList': return listMarkdown(node, false, depth, context);
+        case 'orderedList': return listMarkdown(node, true, depth, context);
         case 'codeBlock': {
             const language = typeof node.attrs?.language === 'string' ? node.attrs.language.replace(/[^a-z0-9+#-]/gi, '') : '';
             return `\`\`\`${language}\n${(node.content ?? []).map(child => child.text ?? '').join('')}\n\`\`\``;
@@ -52,7 +58,7 @@ function nodeMarkdown(node: RichTextNode, depth: number, media: (id: string) => 
         case 'horizontalRule': return '---';
         case 'image': {
             const mediaId = typeof node.attrs?.mediaId === 'string' ? node.attrs.mediaId : null;
-            const src = (mediaId ? media(mediaId) : null) ?? node.attrs?.src;
+            const src = (mediaId ? context.media(mediaId) : null) ?? node.attrs?.src;
             if (!safeImageUrl(src)) return '';
             return `![${escapeText(typeof node.attrs?.alt === 'string' ? node.attrs.alt : '')}](${String(src)})`;
         }
@@ -60,34 +66,44 @@ function nodeMarkdown(node: RichTextNode, depth: number, media: (id: string) => 
     }
 }
 
+/** What the Markdown conversions take: file URLs by media ID, and `text`, which rewrites text before it is written, such as resolving bindings. Code keeps its text. */
+export interface MarkdownOptions {
+    readonly media?: (id: string) => string | null;
+    readonly text?: (text: string) => string;
+}
+
 /** A rich text document as Markdown; embedded blocks render through `block`. */
-export function richTextMarkdown(doc: RichTextDoc | null | undefined, options: { media?: (id: string) => string | null; block?: (block: Block) => string } = {}): string {
+export function richTextMarkdown(doc: RichTextDoc | null | undefined, options: MarkdownOptions & { block?: (block: Block) => string } = {}): string {
     if (!doc || !Array.isArray(doc.content)) return '';
-    const media = options.media ?? (() => null);
-    return doc.content.map(node => node.type === 'cmsBlock' ? options.block?.(richTextBlocks({ type: 'doc', content: [node] })[0]!) ?? '' : nodeMarkdown(node, 0, media)).filter(Boolean).join('\n\n');
+    const context: MarkdownContext = { media: options.media ?? (() => null), text: options.text ?? (text => text) };
+    return doc.content.map(node => node.type === 'cmsBlock' ? options.block?.(richTextBlocks({ type: 'doc', content: [node] })[0]!) ?? '' : nodeMarkdown(node, 0, context)).filter(Boolean).join('\n\n');
 }
 
 /**
  * Blocks as Markdown: the core text and media blocks by shape, other blocks by their text
  * fields (as `blocksPlain` reads them). Data blocks and forms render nothing.
  */
-export function blocksMarkdown(blocks: readonly Block[], types: ReadonlyMap<string, BlockDeclaration>, options: { media?: (id: string) => string | null; mediaAlt?: (id: string) => string } = {}): string {
+export function blocksMarkdown(blocks: readonly Block[], types: ReadonlyMap<string, BlockDeclaration>, options: MarkdownOptions & { mediaAlt?: (id: string) => string } = {}): string {
     const media = options.media ?? (() => null);
     const alt = options.mediaAlt ?? (() => '');
+    const resolve = options.text ?? (text => text);
+    const rich = { media, ...(options.text ? { text: options.text } : {}) };
     const parts: string[] = [];
     const render = (block: Block): string => {
         const type = types.get(block.type);
         if (!type || blockIsData(type) || type.input) return '';
         const data = block.data;
-        const text = (name: string) => typeof data[name] === 'string' ? data[name] as string : '';
+        // Text fields resolve as on the page; code and media IDs stay as written.
+        const raw = (name: string) => typeof data[name] === 'string' ? data[name] as string : '';
+        const text = (name: string) => resolve(raw(name));
         switch (block.type) {
-            case 'core/richtext': return data.text && typeof data.text === 'object' ? richTextMarkdown(data.text as RichTextDoc, { media, block: render }) : '';
+            case 'core/richtext': return data.text && typeof data.text === 'object' ? richTextMarkdown(data.text as RichTextDoc, { ...rich, block: render }) : '';
             case 'core/paragraph': return text('text');
             case 'core/heading': return `${'#'.repeat(Number(String(data.level ?? 'h2').slice(1)) || 2)} ${text('text')}`;
             case 'core/quote': return `${text('text').split('\n').map(line => `> ${line}`).join('\n')}${text('citation') ? `\n>\n> — ${text('citation')}` : ''}`;
-            case 'core/list': return (Array.isArray(data.items) ? data.items as string[] : []).map((item, index) => `${data.ordered ? `${index + 1}. ` : '- '}${item}`).join('\n');
-            case 'core/code': return `\`\`\`${text('language')}\n${text('code')}\n\`\`\``;
-            case 'core/image': { const url = media(text('image')); return url ? `![${escapeText(alt(text('image')) || text('caption'))}](${url})${text('caption') ? `\n\n*${text('caption')}*` : ''}` : ''; }
+            case 'core/list': return (Array.isArray(data.items) ? data.items as string[] : []).map((item, index) => `${data.ordered ? `${index + 1}. ` : '- '}${resolve(String(item))}`).join('\n');
+            case 'core/code': return `\`\`\`${raw('language')}\n${raw('code')}\n\`\`\``;
+            case 'core/image': { const url = media(raw('image')); return url ? `![${escapeText(alt(raw('image')) || text('caption'))}](${url})${text('caption') ? `\n\n*${text('caption')}*` : ''}` : ''; }
             case 'core/gallery': return (Array.isArray(data.images) ? data.images as string[] : []).map(id => { const url = media(id); return url ? `![${escapeText(alt(id))}](${url})` : ''; }).filter(Boolean).join('\n\n');
             case 'core/button': return `[${text('label')}](${text('url')})`;
             case 'core/answer': return `${text('label') ? `**${text('label')}** ` : ''}${text('text')}`;
@@ -100,8 +116,8 @@ export function blocksMarkdown(blocks: readonly Block[], types: ReadonlyMap<stri
             default: {
                 const fields = Object.entries(type.fields).flatMap(([name, declaration]) => {
                     const value = data[name];
-                    if (declaration.kind === 'richtext' && value && typeof value === 'object') return [richTextMarkdown(value as RichTextDoc, { media, block: render })];
-                    if ((declaration.kind === 'string' || declaration.kind === 'text') && typeof value === 'string' && !declaration.media && !declaration.pattern) return [value];
+                    if (declaration.kind === 'richtext' && value && typeof value === 'object') return [richTextMarkdown(value as RichTextDoc, { ...rich, block: render })];
+                    if ((declaration.kind === 'string' || declaration.kind === 'text') && typeof value === 'string' && !declaration.media && !declaration.pattern) return [resolve(value)];
                     return [];
                 });
                 return fields.filter(part => part.trim()).join('\n\n');

@@ -303,6 +303,7 @@ const DASHBOARD_CORE_PATHS = new Set([
   'src/dashboard/avatar-field.ts',
   'src/dashboard/bulk.ts',
   'src/dashboard/tabs.ts',
+  'src/dashboard/time-ago.ts',
   'src/dashboard/session-list.ts',
   'src/pages/dashboard/index.ts',
   'src/pages/dashboard/layout.ts',

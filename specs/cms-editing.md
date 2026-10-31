@@ -64,7 +64,7 @@ and plugins get hooks on terms, comments, menus and the lists.
 - **Terms** have an `icon` (host schema step 9); the dashboard generates slugs from names
   until they are edited. **Menu items** take `className` and `attributes` (an Advanced tab;
   `href`, `class`, `target`, `style` and event handlers cannot be set), show their kind's
-  icon and use icon buttons. **Plugins and themes** name an `author` and `authorUrl`.
+  icon and use icon buttons. **Plugins and themes** name an `author`: `{ name, url?, email? }`.
 - **Dashboard home.** A Waiting for review card (entries pending, across collections), the
   newest published entries of every collection, and Recent sign-ins (active sessions, newest
   first) for user managers. The brand links to the site; the theme toggle shows the current

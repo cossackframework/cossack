@@ -2,9 +2,9 @@
  * The site as machines read it: `/llms.txt` (the site, its collections and latest entries
  * with summaries) and entries as Markdown for `Accept: text/markdown`. Server-only.
  */
-import { ANONYMOUS, ARTICLE_TYPES, blocksMarkdown, entryMarkdown, mediaUrl, recordTitle, richTextMarkdown, type CollectionDefinition, type RecordShape, type RichTextDoc, type Block } from '@cossackframework/cms';
+import { ANONYMOUS, ARTICLE_TYPES, blocksMarkdown, entryMarkdown, mediaUrl, recordTitle, resolveBindings, richTextMarkdown, type CollectionDefinition, type RecordShape, type RichTextDoc, type Block } from '@cossackframework/cms';
 import { excerptOf, type CmsFile, type CmsHost } from '@cossackframework/cms/server';
-import { isProtected } from './site';
+import { bindingScopes, isProtected } from './site';
 
 const PER_COLLECTION = 50;
 
@@ -83,13 +83,16 @@ export async function entryAsMarkdown(cms: CmsHost, collection: CollectionDefini
     const files = cms.files && ids.size ? await cms.files.getMany([...ids].slice(0, 500)).catch(() => new Map<string, CmsFile>()) : new Map<string, CmsFile>();
     const media = (id: string) => { const file = files.get(id); return file ? `${origin}${mediaUrl(file)}` : null; };
     const mediaAlt = (id: string) => files.get(id)?.alt ?? '';
+    // Bindings read the entry, as on its page; never the user, as agents fetch anonymously.
+    const scopes = bindingScopes(settings, { entry: record, user: null });
+    const text = (value: string) => resolveBindings(value, scopes);
     const parts: string[] = [];
     for (const [name, declaration] of fields) {
         const value = record[name];
         if (name === 'password' || value === undefined || value === null) continue;
-        if (declaration.kind === 'blocks' && !declaration.form) parts.push(blocksMarkdown(blocksOf(value), cms.blockTypes, { media, mediaAlt }));
-        else if (declaration.kind === 'richtext' && typeof value === 'object') parts.push(richTextMarkdown(value as RichTextDoc, { media }));
-        else if (declaration.kind === 'text' && declaration.format === 'markdown' && typeof value === 'string') parts.push(value);
+        if (declaration.kind === 'blocks' && !declaration.form) parts.push(blocksMarkdown(blocksOf(value), cms.blockTypes, { media, mediaAlt, text }));
+        else if (declaration.kind === 'richtext' && typeof value === 'object') parts.push(richTextMarkdown(value as RichTextDoc, { media, text }));
+        else if (declaration.kind === 'text' && declaration.format === 'markdown' && typeof value === 'string') parts.push(text(value));
     }
     const image = resource.fields.featuredImage?.media && typeof record.featuredImage === 'string' ? media(record.featuredImage) : null;
     const owner = record.owner && ARTICLE_TYPES.has(collection.schema?.type ?? 'WebPage') ? (await cms.users.getMany([record.owner])).get(record.owner) : undefined;

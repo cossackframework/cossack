@@ -236,12 +236,20 @@ describe('generated auth security', () => {
   it.each([
     ['login', 'login', { email: 'valid@example.test', password: 'valid-password' }, 'loginUser', 'Could not sign in. Try again.'],
     ['register', 'register', { name: '', email: 'valid@example.test', password: 'valid-password' }, 'registerUser', 'Could not create the account. Try again or sign in.'],
-    ['reset-password', 'doReset', { token: 'token', password: 'valid-password' }, 'resetPassword', 'Could not reset the password. Request a new reset link.'],
+    ['reset-password', 'doReset', { token: 'token', password: 'valid-password', confirm: 'valid-password' }, 'resetPassword', 'Could not reset the password. Request a new reset link.'],
   ])('redacts storage failures in the actual generated %s method', async (name, method, submitted, helper, message) => {
     const { files } = await generatedAuth();
     const page = generatedFormPage(files, name, { [helper]: vi.fn().mockRejectedValue(new Error('PRIVATE_DATABASE')) });
     await page[method](submitted);
     expect(page.error).toBe(message); expect(page.c.header).not.toHaveBeenCalled(); expect(page.redirect).not.toHaveBeenCalled();
+  });
+
+  it('refuses a reset whose confirmation differs before touching credentials', async () => {
+    const { files } = await generatedAuth();
+    const resetPassword = vi.fn();
+    const page = generatedFormPage(files, 'reset-password', { resetPassword });
+    await page.doReset({ token: 'token', password: 'valid-password', confirm: 'valid-passwort' });
+    expect(page.error).toBe('The passwords do not match'); expect(resetPassword).not.toHaveBeenCalled(); expect(page.redirect).not.toHaveBeenCalled();
   });
 
   it('only preserves the known duplicate account error and does not copy arbitrary visible errors', async () => {

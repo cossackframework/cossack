@@ -5,7 +5,7 @@ import { isCmsError, PERMISSIONS } from '@cossackframework/cms';
 import { requireAny } from '../../../../cms/guards';
 import { artwork, authorLine, linkButton, notice, pageHeader } from '../../../../cms/ui';
 
-interface ThemeRow { name: string; label: string; description: string; version: string; author: string; authorUrl: string; locations: string[]; parent: string; options: boolean; problems: string[]; active: boolean; logo: string | null; cover: string | null }
+interface ThemeRow { name: string; label: string; description: string; version: string; author: { name: string; url: string; email: string } | null; locations: string[]; parent: string; options: boolean; problems: string[]; active: boolean; logo: string | null; cover: string | null }
 
 /** Themes, WordPress style: every theme plugin as a card, the active one first. */
 @Page({ transport: 'http', middlewares: [requireAny(PERMISSIONS.manageAppearance)] })
@@ -27,7 +27,7 @@ export default class ThemesPage extends Cossack {
         const active = await cms.activeTheme();
         const labels = new Map(cms.themes().map(theme => [theme.name, theme.label]));
         this.themes = cms.themes().map(theme => ({
-            name: theme.name, label: theme.label, description: theme.description, version: theme.version, author: theme.author, authorUrl: theme.authorUrl, locations: theme.locations.map(location => location.label),
+            name: theme.name, label: theme.label, description: theme.description, version: theme.version, author: theme.author, locations: theme.locations.map(location => location.label),
             parent: theme.parent ? labels.get(theme.parent) ?? theme.parent : '',
             options: Boolean(theme.options), problems: [...theme.problems], active: theme.name === active, logo: theme.logo, cover: theme.cover,
         })).sort((a, b) => Number(b.active) - Number(a.active));
@@ -64,7 +64,7 @@ export default class ThemesPage extends Cossack {
                             <div class="min-w-0">
                                 <h2 class="truncate text-base font-semibold text-foreground">${theme.label}</h2>
                                 <p class="text-xs text-muted-foreground">${theme.name} · ${__('version')} ${theme.version}</p>
-                                ${authorLine(theme.author, theme.authorUrl)}
+                                ${authorLine(theme.author)}
                             </div>
                         </div>
                         ${theme.active ? component(Badge, { variant: 'success' }, __('Active')) : theme.problems.length ? component(Badge, { variant: 'destructive' }, __('Broken')) : null}

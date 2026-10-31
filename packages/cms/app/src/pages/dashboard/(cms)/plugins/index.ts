@@ -9,8 +9,7 @@ interface PluginRow {
     name: string;
     version: string;
     description: string;
-    author: string;
-    authorUrl: string;
+    author: { name: string; url: string; email: string } | null;
     logo: string | null;
     cover: string | null;
     themeOnly: boolean;
@@ -41,7 +40,7 @@ export default class PluginsPage extends Cossack {
     async init() {
         const status = await this.c.get('cms').status();
         this.plugins = status.plugins.map(plugin => ({
-            name: plugin.name, version: plugin.version, description: plugin.description, author: plugin.author, authorUrl: plugin.authorUrl, logo: plugin.logo, cover: plugin.cover, themeOnly: plugin.themeOnly,
+            name: plugin.name, version: plugin.version, description: plugin.description, author: plugin.author, logo: plugin.logo, cover: plugin.cover, themeOnly: plugin.themeOnly,
             active: plugin.active, reason: plugin.reason ?? '', missing: [...plugin.missing],
         }));
         this.message = flashed<string>('cms.message') ?? '';
@@ -88,7 +87,7 @@ export default class PluginsPage extends Cossack {
     private shown(plugin: PluginRow): boolean {
         if (this.filter === 'themes' ? !plugin.themeOnly : this.filter === 'active' ? plugin.themeOnly || !plugin.active : this.filter === 'inactive' ? plugin.themeOnly || plugin.active : false) return false;
         const words = this.search.trim().toLowerCase().split(/\s+/).filter(Boolean);
-        const text = [plugin.name, plugin.description, plugin.author].join(' ').toLowerCase();
+        const text = [plugin.name, plugin.description, plugin.author?.name ?? ''].join(' ').toLowerCase();
         return words.every(word => text.includes(word));
     }
 
@@ -126,7 +125,7 @@ export default class PluginsPage extends Cossack {
                             <div class="min-w-0">
                                 <p class="truncate font-semibold text-foreground">${plugin.name}</p>
                                 <p class="text-xs text-muted-foreground">${__('version')} ${plugin.version}</p>
-                                ${authorLine(plugin.author, plugin.authorUrl)}
+                                ${authorLine(plugin.author)}
                             </div>
                         </div></td>
                         <td class="px-3 py-3 text-muted-foreground">

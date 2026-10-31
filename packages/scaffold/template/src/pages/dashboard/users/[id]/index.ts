@@ -1,5 +1,5 @@
 import { ClientVisibleError, Cossack, Page, State, ClientState, Validate, Client, Server, Store, storeRules } from '@cossackframework/core';
-import { Card, CardBody, CardHeader, Field, Input, PasswordInput, Button, Checkbox, Form, Tabs, toast } from '@cossackframework/ui';
+import { Alert, Card, CardBody, CardHeader, Field, Input, PasswordInput, Button, Checkbox, Form, Tabs, toast } from '@cossackframework/ui';
 import { html, component, bind } from '@cossackframework/renderer';
 import { canAssignRoles, canManageUser, canManageAccess, guard } from '../../../../services/rbac';
 import { getUser, updateUser, syncUserRoles, changeUserPassword, type UserDetail } from '../../../../services/users';
@@ -46,7 +46,12 @@ export default class EditUserPage extends Cossack {
     @State() currentPassword = '';
 
     @State() saved = '';
+    @State() confirmPassword = '';
+    /** The Change password card's outcome, shown above its form; `passwordFailed` makes it an error. */
     @State() passwordMessage = '';
+    @State() passwordFailed = false;
+    /** Messages under the new password fields, by field: `password` or `confirm`. */
+    @State() passwordErrors: Record<string, string> = {};
     @State() error = '';
     /** The user's second factors: an authenticator app and how many passkeys. */
     @State() security: { available: boolean; totp: boolean; passkeys: number } = { available: false, totp: false, passkeys: 0 };
@@ -195,20 +200,19 @@ export default class EditUserPage extends Cossack {
     async handleChangePassword(event: Event) {
         event.preventDefault();
         this.passwordMessage = '';
-        if (this.newPassword.length < 8) {
-            this.passwordMessage = __('Password must be at least 8 characters.');
-            toast.warning(this.passwordMessage);
-            return;
-        }
+        this.passwordErrors = {};
+        if (this.newPassword.length < 8) { this.passwordErrors = { password: __('Password must be at least 8 characters.') }; return; }
+        if (this.confirmPassword !== this.newPassword) { this.passwordErrors = { confirm: __('The passwords do not match.') }; return; }
         try {
-            await this.applyPasswordChange(this.newPassword, this.currentPassword);
+            await this.applyPasswordChange(this.newPassword, this.currentPassword, this.confirmPassword);
             this.newPassword = '';
+            this.confirmPassword = '';
             this.currentPassword = '';
+            this.passwordFailed = false;
             this.passwordMessage = __('Password updated.');
-            toast.success(this.passwordMessage);
         } catch (e: any) {
+            this.passwordFailed = true;
             this.passwordMessage = e?.message || __('Could not change password');
-            toast.error(this.passwordMessage);
         }
     }
 
@@ -269,8 +273,9 @@ export default class EditUserPage extends Cossack {
 
     /** Changing your own password asks for the current one, so an open session alone cannot take the account. */
     @Server()
-    async applyPasswordChange(password: string, current: string) {
+    async applyPasswordChange(password: string, current: string, confirm: string) {
         const id = await this.editable();
+        if (password !== confirm) throw new ClientVisibleError(__('The passwords do not match.'));
         if (id === this.user?.id) {
             const target = await getUser(id);
             if (!target || !current || !(await loginUser(target.email, current))) throw new ClientVisibleError(__('The current password is incorrect.'));
@@ -347,6 +352,7 @@ export default class EditUserPage extends Cossack {
                         submit: (e: Event) => this.handleChangePassword(e),
                     }, html`
                         <div class="flex flex-col space-y-4">
+                            ${this.passwordMessage ? component(Alert, { variant: this.passwordFailed ? 'destructive' : 'success', announcement: 'polite' }, this.passwordMessage) : null}
                             ${own ? component(Field, { label: __('Current password'), for: 'current-password',
                                 control: attributes => component(PasswordInput, {
                                     ...attributes,
@@ -355,10 +361,19 @@ export default class EditUserPage extends Cossack {
                                     onValueChange: (v: string) => this.currentPassword = v,
                                 }) }) : null}
                             ${component(Field, { label: __('New password'), for: 'new-password', hint: own ? __('You will sign in with it from now on.') : __('Leave the user a way back in — they\'ll need the new password to sign in.'),
+                                error: this.passwordErrors.password,
                                 control: attributes => component(PasswordInput, {
                                     ...attributes,
+                                    autocomplete: 'new-password',
                                     value: this.newPassword,
                                     onValueChange: (v: string) => this.newPassword = v,
+                                }) })}
+                            ${component(Field, { label: __('Confirm new password'), for: 'confirm-password', error: this.passwordErrors.confirm,
+                                control: attributes => component(PasswordInput, {
+                                    ...attributes,
+                                    autocomplete: 'new-password',
+                                    value: this.confirmPassword,
+                                    onValueChange: (v: string) => this.confirmPassword = v,
                                 }) })}
                             <div>
                                 ${component(Button, { type: 'submit', variant: 'outline' }, __('Update password'))}

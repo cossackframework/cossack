@@ -179,7 +179,7 @@ async function exercise(origin, routeIds, diagnostics) {
   const adaId = /href="\/dashboard\/users\/([0-9a-f-]{36})"/.exec(await web.page('/dashboard/users?search=ada%40example.com'))?.[1];
   expect(adaId).toBeTruthy();
   contains(await manager.page(`/dashboard/users/${adaId}`), 'Only an administrator can change this account.');
-  const takeover = await manager.action('dashboard/users/[id]/index.ts', 'applyPasswordChange', ['taken over!'], { params: { id: adaId }, state: { userDetail: { id: adaId, name: 'Ada', email: 'ada@example.com', avatar: null, createdAt: new Date().toISOString(), roles: [] } } }).catch(error => error);
+  const takeover = await manager.action('dashboard/users/[id]/index.ts', 'applyPasswordChange', ['taken over!', '', 'taken over!'], { params: { id: adaId }, state: { userDetail: { id: adaId, name: 'Ada', email: 'ada@example.com', avatar: null, createdAt: new Date().toISOString(), roles: [] } } }).catch(error => error);
   expect(String(takeover?.message ?? JSON.stringify(takeover))).toContain('Only an administrator');
 
   const home = await web.action(editor, 'save', [{ title: 'Home', slug: '', status: 'draft', publishedAt: '', content: [{ _id: 'rt', type: 'core/richtext', data: { text: doc(paragraph(text('Welcome home'))) } }], excerpt: '', featuredImage: '', parent: '', menuOrder: '0' }, 'publish', 0],

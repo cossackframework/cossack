@@ -204,6 +204,11 @@ function preloadPageModules(urls: readonly string[]): void {
  */
 const inFlightPages = new SharedPageRequests<CachedPage>();
 
+/** A same-origin URL that answers without page state (Markdown, a feed, a static file): the browser loads it as a document. */
+class NotAPageError extends Error {
+  constructor(readonly url: string) { super(`Not a page: ${url}`); }
+}
+
 async function fetchPage(url: string, signal?: AbortSignal, trace: NavigationTrace = event => emitNavigationDiagnostic(null, event)) {
   signal?.throwIfAborted();
   const key = pageCacheKey(url);
@@ -248,6 +253,7 @@ async function fetchPage(url: string, signal?: AbortSignal, trace: NavigationTra
       return data;
     }
 
+    if (response.ok) throw new NotAPageError(response.url || new URL(key, window.location.href).href);
     throw new Error('Failed to load page state');
   }, signal);
 }
@@ -996,6 +1002,10 @@ export async function createClientApp({
       if (navigationType === 'traverse' && !navigationCommitted && !restorationAttempted) {
         await moveHistory(committedHistory, committedUrl);
         if (seq !== navigationSequence) return settle({ outcome: 'superseded', url });
+      }
+      if (error instanceof NotAPageError) {
+        window.location.assign(error.url);
+        return settle({ outcome: 'failed', url, error });
       }
       console.error('Navigation failed:', error);
       // Give the app a chance to handle the failure (show an error UI, retry,

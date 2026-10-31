@@ -27,7 +27,7 @@ type MediaTarget = { field: string; block?: string; key?: string; multiple?: boo
 const BINDABLE_FIELD_BLOCKS: Record<string, EditorField['kind']> = { text: 'string', textarea: 'text', markdown: 'text', number: 'number', integer: 'integer', boolean: 'boolean', choice: 'enum', date: 'datetime' };
 
 /** A block being edited in the side panel: one of a blocks field's tree, or one embedded in a rich text field. */
-interface BlockDialog { field: string; id: string; type: string; values: Record<string, unknown>; errors: Record<string, string>; embedded: boolean; tab: BlockTab; style: StyleValues; /** In a form: when the block shows. */ when?: BlockCondition }
+interface BlockDialog { field: string; id: string; type: string; values: Record<string, unknown>; errors: Record<string, string>; embedded: boolean; tab: BlockTab; style: StyleValues; /** In a form: when the block shows. */ when?: BlockCondition; /** An embedded block's rich text editor, when it is not the field's own (rich text inside a block). */ editor?: string }
 
 /** A translation of the entry, or a language it has none in yet. */
 interface TranslationLink { code: string; label: string; id: string | null; title: string; status: string }
@@ -621,19 +621,19 @@ export default class EntryEditor extends Cossack {
     // --- Blocks in rich text ---------------------------------------------------
 
     @Client()
-    insertRichBlock(field: string, type: string) {
+    insertRichBlock(field: string, type: string, editorId?: string) {
         const option = this.view?.blocks.find(block => block.name === type);
-        const editor = richTextEditors.get(`field-${field}`);
+        const editor = richTextEditors.get(editorId ?? `field-${field}`);
         if (!option || !editor) return;
         const values = blockDefaults(option);
         const block: EmbeddedBlock = { _id: blockId(), type, data: editorInput(option.fields, values).input };
         editor.insertBlock(block);
-        if (option.fields.length) this.blockDialog = { field, id: block._id, type, values, errors: {}, embedded: true, tab: 'general', style: styleValues({}) };
+        if (option.fields.length) this.blockDialog = { field, id: block._id, type, values, errors: {}, embedded: true, tab: 'general', style: styleValues({}), ...(editorId ? { editor: editorId } : {}) };
     }
 
     @Client()
-    editRichBlock(field: string, block: EmbeddedBlock) {
-        const empty = { tab: 'general' as const, style: styleValues({}) };
+    editRichBlock(field: string, block: EmbeddedBlock, editorId?: string) {
+        const empty = { tab: 'general' as const, style: styleValues({}), ...(editorId ? { editor: editorId } : {}) };
         if (block.type === 'core/pattern') { this.blockDialog = { field, id: block._id, type: block.type, values: { pattern: block.data.pattern }, errors: {}, embedded: true, ...empty }; return; }
         const option = this.view?.blocks.find(entry => entry.name === block.type);
         if (!option) { toast.error(__('This block type is no longer available.')); return; }
@@ -687,7 +687,7 @@ export default class EntryEditor extends Cossack {
         if (dialog.embedded) {
             const { input, errors } = editorInput(option.fields, dialog.values);
             this.blockDialog = { ...dialog, errors: { ...dialog.errors, ...errors } };
-            richTextEditors.get(`field-${dialog.field}`)?.updateBlock(dialog.id, input);
+            richTextEditors.get(dialog.editor ?? `field-${dialog.field}`)?.updateBlock(dialog.id, input);
             return;
         }
         const fields = option.fields.filter(entry => entry.kind !== 'richtext');
@@ -963,14 +963,17 @@ export default class EntryEditor extends Cossack {
             });
             case 'text': if (field.format === 'markdown' && target.block === undefined) return this.markdownControl(field, value, change, id, target); break;
             case 'blocks': return this.blocksControl(field);
-            // Rich text inside a block, or one item of a multiple field: the word processor alone, with its own editor for the picker.
+            // Rich text inside a block, or one item of a multiple field: its own editor for the picker and its blocks; inside the
+            // side panel (a block embedded in rich text) it takes no blocks, as the panel cannot open a second one.
             case 'richtext': if (target.block !== undefined || id !== field.name) return component(RichTextField, {
-                id, label: field.label, value: (value as RichTextDoc | null) ?? null, blocks: [], onChange: (doc: RichTextDoc) => change(doc),
-                onMedia: () => this.openPicker({ field: target.field, richText: true, editor: id }), onInsertBlock: () => undefined, onEditBlock: () => undefined,
+                id, label: field.label, value: (value as RichTextDoc | null) ?? null, blocks: target.dialog ? [] : this.richTextBlocks(field), onChange: (doc: RichTextDoc) => change(doc),
+                onMedia: () => this.openPicker({ field: target.field, richText: true, editor: id }),
+                onInsertBlock: (type: string) => this.insertRichBlock(target.field, type, id), onEditBlock: (block: EmbeddedBlock) => this.editRichBlock(target.field, block, id),
+                bindings: this.bindings(), patternTitles: this.patternTitles,
             });
             return component(RichTextField, {
                 id, label: field.label, value: (value as RichTextDoc | null) ?? null,
-                blocks: (this.view?.blocks ?? []).filter(block => block.name !== 'core/pattern' && !block.input && block.category !== 'data' && (!field.blocks.length || field.blocks.includes(block.name))),
+                blocks: this.richTextBlocks(field), bindings: this.bindings(),
                 onChange: (doc: RichTextDoc) => change(doc),
                 onMedia: () => this.openPicker({ field: field.name, richText: true }),
                 onInsertBlock: (type: string) => this.insertRichBlock(field.name, type),
@@ -982,6 +985,11 @@ export default class EntryEditor extends Cossack {
         }
         return fieldControl(field, value, change, id, { options: this.references[field.name] ?? [], ...(target.block !== undefined && !field.media ? { bindings: this.bindings() } : {}),
             ...(target.dialog && this.blockDialog ? { language: String(this.blockDialog.values.language ?? '') } : {}) }) ?? html``;
+    }
+
+    /** The block types a rich text field can embed. */
+    private richTextBlocks(field: EditorField) {
+        return (this.view?.blocks ?? []).filter(block => block.name !== 'core/pattern' && !block.input && block.category !== 'data' && (!field.blocks.length || field.blocks.includes(block.name)));
     }
 
     /** The entry's fields a block's text may show (`{{ $.price }}`): the collection's and its field groups', apart from blocks and rich text. */

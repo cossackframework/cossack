@@ -127,9 +127,8 @@ export interface ThemeInfo {
     readonly version: string;
     readonly label: string;
     readonly description: string;
-    /** From the plugin's manifest; empty when it names none. */
-    readonly author: string;
-    readonly authorUrl: string;
+    /** From the plugin's manifest; null when it names none. */
+    readonly author: PluginAuthorView | null;
     readonly locations: readonly { readonly name: string; readonly label: string }[];
     /** Its widget areas, its parent's first. */
     readonly areas: readonly { readonly name: string; readonly label: string }[];
@@ -215,9 +214,8 @@ export interface PluginStatus {
     readonly name: string;
     readonly version: string;
     readonly description: string;
-    /** From the manifest; empty when it names none. */
-    readonly author: string;
-    readonly authorUrl: string;
+    /** From the manifest; null when it names none. */
+    readonly author: PluginAuthorView | null;
     /** Image URLs from the plugin's assets, or null for the default artwork. */
     readonly logo: string | null;
     readonly cover: string | null;
@@ -2010,8 +2008,13 @@ function isThemeOnly(manifest: CmsPluginManifest): boolean {
 }
 
 /** The plugin's logo and cover: the manifest's files, else `assets/logo.*` and `assets/cover.*`. */
-function authorOf(plugin: HostedPlugin): { author: string; authorUrl: string } {
-    return { author: typeof plugin.manifest.author === 'string' ? plugin.manifest.author.trim() : '', authorUrl: typeof plugin.manifest.authorUrl === 'string' ? plugin.manifest.authorUrl : '' };
+/** A plugin's maker, with empty strings for what the manifest leaves out. */
+export interface PluginAuthorView { readonly name: string; readonly url: string; readonly email: string }
+
+function authorOf(plugin: HostedPlugin): { author: PluginAuthorView | null } {
+    const author = plugin.manifest.author;
+    if (!author || typeof author !== 'object' || typeof author.name !== 'string') return { author: null };
+    return { author: { name: author.name.trim(), url: typeof author.url === 'string' ? author.url : '', email: typeof author.email === 'string' ? author.email : '' } };
 }
 
 function artwork(plugin: HostedPlugin): { logo: string | null; cover: string | null } {

@@ -172,6 +172,13 @@ describe('crawlers, robots.txt and Markdown output', () => {
         expect(blocksMarkdown(blocks, types, { media: id => id === 'f1' ? 'https://e.com/f1.jpg' : null, mediaAlt: () => 'Alt' })).toBe([
             '### Steps', 'First *one*.', '1. x\n2. y', '> Said\n>\n> — Ada', '![Alt](https://e.com/f1.jpg)\n\n*Cap*', 'Inside', 'Rich',
         ].join('\n\n'));
+        // Bindings resolve in text and rich text before escaping; code keeps them.
+        const bound: Block[] = [
+            { _id: 'a', type: 'core/heading', data: { text: 'Only {{ $.price }}', level: 'h2' } },
+            { _id: 'b', type: 'core/code', data: { code: '{{ $.price }}', language: '' } },
+            { _id: 'c', type: 'core/richtext', data: { text: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: '{{ $.price }} *now*' }] }] } } },
+        ];
+        expect(blocksMarkdown(bound, types, { text: value => value.replace(/\{\{ \$\.price \}\}/g, '19.5') })).toBe(['## Only 19.5', '```\n{{ $.price }}\n```', '19.5 \\*now\\*'].join('\n\n'));
         const document = entryMarkdown({ title: 'Hello', url: 'https://e.com/posts/hello', site: 'E', description: 'A "quoted" summary', author: 'Ada', published: '2026-10-01T00:00:00.000Z', updated: '2026-10-02T00:00:00.000Z', terms: [{ label: 'Categories', terms: ['News'] }, { label: 'Tags', terms: [] }], body: 'Body.' });
         expect(document).toBe('---\ntitle: "Hello"\nurl: "https://e.com/posts/hello"\nsite: "E"\ndescription: "A \\"quoted\\" summary"\nauthor: "Ada"\npublished: 2026-10-01T00:00:00.000Z\nupdated: 2026-10-02T00:00:00.000Z\ncategories: ["News"]\n---\n\n# Hello\n\nA "quoted" summary\n\nBody.\n');
     });

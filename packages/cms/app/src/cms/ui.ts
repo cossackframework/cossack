@@ -120,7 +120,7 @@ export class MetaBox extends Cossack {
         const heading = this.props.id ?? '';
         const panel = heading ? `${heading}-panel` : '';
         return html`<section class="cs-meta-box rounded-lg border border-border bg-card" aria-labelledby=${ifDefined(heading || undefined)}>
-            <h2 id=${ifDefined(heading || undefined)} class=${`flex items-center gap-2 px-4 py-2.5 text-sm font-semibold text-foreground ${open ? 'border-b border-border' : ''}`}>
+            <h2 id=${ifDefined(heading || undefined)} class=${`flex items-center gap-2 bg-muted/50 px-4 py-2.5 text-sm font-semibold text-foreground ${open ? 'rounded-t-lg border-b border-border' : 'rounded-lg'}`}>
                 <button type="button" class="flex min-w-0 flex-1 items-center gap-2 border-none bg-transparent p-0 text-left text-sm font-semibold text-foreground cursor-pointer"
                     aria-expanded=${open ? 'true' : 'false'} aria-controls=${ifDefined(panel || undefined)} aria-label=${`${open ? __('Collapse') : __('Expand')} ${this.props.title}`} @click=${() => this.toggle()}>
                     <span class=${`inline-flex shrink-0 text-muted-foreground transition-transform duration-200 motion-reduce:transition-none [&_svg]:size-4 ${open ? 'rotate-90' : ''}`} aria-hidden="true">${component(Icon, { entry: icon('alt-arrow-right'), size: 16 })}</span>
@@ -144,11 +144,12 @@ export function box(title: string, body: TemplateResult | TemplateResult[] | nul
  * Who made a plugin or theme: the author's name, and their website as a link showing its
  * address, so both are read without hovering. Nothing when the manifest names no author.
  */
-export function authorLine(author: string, url: string | null | undefined): TemplateResult | null {
-    if (!author && !url) return null;
+/** "By Acme · acme.example · Email" under a plugin or theme, from its manifest's author. */
+export function authorLine(author: { name: string; url: string; email: string } | null | undefined): TemplateResult | null {
+    if (!author) return null;
     let host = '';
-    try { host = url ? new URL(url).host.replace(/^www\./, '') : ''; } catch { host = url ?? ''; }
-    return html`<p class="text-xs text-muted-foreground">${author ? html`${__('By')} <span class="text-foreground">${author}</span>` : null}${url ? html`${author ? ' · ' : ''}<a href=${url} target="_blank" rel="noopener noreferrer" class="text-primary hover:underline">${host}</a>` : null}</p>`;
+    try { host = author.url ? new URL(author.url).host.replace(/^www\./, '') : ''; } catch { host = author.url; }
+    return html`<p class="text-xs text-muted-foreground">${__('By')} <span class="text-foreground">${author.name}</span>${author.url ? html` · <a href=${author.url} target="_blank" rel="noopener noreferrer" class="text-primary hover:underline">${host}</a>` : null}${author.email ? html` · <a href=${`mailto:${author.email}`} class="text-primary hover:underline">${__('Email')}</a>` : null}</p>`;
 }
 
 /** A stable hue from a name, for generated artwork. */

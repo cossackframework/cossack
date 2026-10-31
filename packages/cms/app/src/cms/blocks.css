@@ -136,3 +136,6 @@ hr.cms-divider { height: var(--cms-divider-size); background: var(--cms-divider-
     50% { box-shadow: 0 0 0 4px color-mix(in oklab, var(--destructive) 45%, transparent); }
 }
 @media (prefers-reduced-motion: reduce) { .cms-block-error { animation: none; } }
+
+/* A font size preset sits on the block's wrapper; a heading or quote block's own text takes it, not its default size. */
+[class*="cms-size-"] > :is(h1, h2, h3, h4, h5, h6), [class*="cms-size-"] > blockquote > p, [class*="cms-size-"] > figure > blockquote { font-size: inherit; }

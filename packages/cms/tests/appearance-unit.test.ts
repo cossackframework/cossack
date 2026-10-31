@@ -141,6 +141,10 @@ describe('themes', () => {
         expect(themeProblems({ label: '', locations: { Primary: 'x' } })).toEqual([expect.stringMatching(/label/), expect.stringMatching(/lowercase/)]);
         expect(manifestProblems({ ...manifest({ label: 'Paper' }), logo: 'assets/logo.svg', cover: 'assets/cover.webp' })).toEqual([]);
         expect(manifestProblems({ ...manifest({ label: 'Paper' }), logo: '../secret.png', cover: 'assets/cover.html' })).toEqual([expect.stringMatching(/^logo must name/), expect.stringMatching(/^cover must name/)]);
+        expect(manifestProblems({ ...manifest({ label: 'Paper' }), author: { name: 'Acme', url: 'https://acme.example', email: 'hello@acme.example' } })).toEqual([]);
+        expect(manifestProblems({ ...manifest({ label: 'Paper' }), author: 'Acme' } as never)).toEqual([expect.stringMatching(/^author is an object/)]);
+        expect(manifestProblems({ ...manifest({ label: 'Paper' }), author: { name: '', url: 'ftp://x', email: 'nope', site: 'x' } } as never))
+            .toEqual([expect.stringMatching(/^author\.site is not/), expect.stringMatching(/^author\.name/), expect.stringMatching(/^author\.url/), expect.stringMatching(/^author\.email/)]);
         expect(themeProblems({ label: 'X', options: { logo: { kind: 'string', media: true } } })).toEqual([expect.stringMatching(/cannot be indexed/)]);
         expect(themeProblems({ label: 'X', options: { data: { kind: 'json' } } })).toEqual([expect.stringMatching(/must be a string/)]);
     });

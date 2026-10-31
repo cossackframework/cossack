@@ -369,6 +369,20 @@ describe('navigation completion behavior', () => {
         expect(await navigate('/missing')).toMatchObject({ outcome: 'failed' }); expect(window.location.pathname).toBe('/start');
     });
 
+    it('hands a same-origin response without page state to the browser instead of reloading the current page', async () => {
+        vi.stubGlobal('fetch', vi.fn(async () => new Response('# Notes', { headers: { 'content-type': 'text/markdown' } })));
+        const errors: Event[] = [];
+        const record = (event: Event) => errors.push(event);
+        document.addEventListener('cossack:navigation-error', record);
+        const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const result = await navigate('/notes?format=md');
+        document.removeEventListener('cossack:navigation-error', record);
+        expect(result).toMatchObject({ outcome: 'failed', error: expect.objectContaining({ message: expect.stringContaining('Not a page') }) });
+        expect(errors).toHaveLength(0);
+        expect(logged.mock.calls.filter(call => call[0] === 'Navigation failed:')).toHaveLength(0);
+        expect(window.location.pathname).toBe('/start');
+    });
+
     it('returns the full URL through the public callback and pushes it to history', async () => {
         vi.stubGlobal('fetch', vi.fn(async () => documentResponse('fast')));
         expect(await Cossack._onNavigate!('/fast?sort=name#row')).toEqual({ outcome: 'completed', url: '/fast?sort=name#row' });

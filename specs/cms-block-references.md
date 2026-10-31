@@ -37,7 +37,9 @@ text, Markdown fields and theme options. This replaces WordPress shortcodes. The
   as strings. Parsing once per isolate costs the same per request, and saving still finds
   every error.
 - **Rich text has no inline chip node.** Rich text already embeds blocks as top-level
-  `cmsBlock` nodes, so the text syntax is for Markdown and plain fields.
+  `cmsBlock` nodes, so block tags are for Markdown and plain fields. Bindings resolve in
+  rich text's text runs (`RichTextRenderOptions.text`), apart from inline code and code
+  blocks; a binding split by formatting stays as written. The toolbar's field menu inserts one.
 - **Theme options resolve bindings but not block references.** Templates print options as
   text, and block references there would need a render helper.
 - **The editor shows the syntax in its hints but has no autocomplete after `{{`.** The field

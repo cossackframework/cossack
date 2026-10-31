@@ -12,7 +12,7 @@ export { archiveTemplate, entryTemplate };
 export type { ArchiveView, EntryView, MediaView, Paging, RenderedBlock, SiteView } from '@cossackframework/cms';
 
 /** Prose styles for rendered bodies. */
-export const PROSE = 'cms-prose max-w-none text-foreground leading-7 [&_a]:text-primary [&_a]:underline [&_h1]:mt-8 [&_h1]:text-3xl [&_h1]:font-bold [&_h2]:mt-8 [&_h2]:text-2xl [&_h2]:font-semibold [&_h3]:mt-6 [&_h3]:text-xl [&_h3]:font-semibold [&_h4]:mt-4 [&_h4]:font-semibold [&_p]:my-4 [&_ul]:my-4 [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:my-4 [&_ol]:list-decimal [&_ol]:pl-6 [&_li_p]:my-1 [&_blockquote]:my-6 [&_blockquote]:border-l-4 [&_blockquote]:border-border [&_blockquote]:pl-4 [&_blockquote]:italic [&_pre]:my-4 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-muted [&_pre]:p-4 [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_img]:my-6 [&_img]:h-auto [&_img]:max-w-full [&_img]:rounded-lg [&_hr]:my-8 [&_table]:my-4 [&_th]:border [&_th]:border-border [&_th]:px-2 [&_td]:border [&_td]:border-border [&_td]:px-2';
+export const PROSE = 'cms-prose max-w-none leading-7 [&_a]:text-primary [&_a]:underline [&_h1]:mt-8 [&_h1]:text-3xl [&_h1]:font-bold [&_h2]:mt-8 [&_h2]:text-2xl [&_h2]:font-semibold [&_h3]:mt-6 [&_h3]:text-xl [&_h3]:font-semibold [&_h4]:mt-4 [&_h4]:font-semibold [&_p]:my-4 [&_ul]:my-4 [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:my-4 [&_ol]:list-decimal [&_ol]:pl-6 [&_li_p]:my-1 [&_blockquote]:my-6 [&_blockquote]:border-l-4 [&_blockquote]:border-border [&_blockquote]:pl-4 [&_blockquote]:italic [&_pre]:my-4 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-muted [&_pre]:p-4 [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_img]:my-6 [&_img]:h-auto [&_img]:max-w-full [&_img]:rounded-lg [&_hr]:my-8 [&_table]:my-4 [&_th]:border [&_th]:border-border [&_th]:px-2 [&_td]:border [&_td]:border-border [&_td]:px-2';
 
 /**
  * A plugin's theme (its `templates/` files and `ui.ts` `theme` export), layered over its
@@ -156,7 +156,7 @@ function latestEntries(block: RenderedBlock): TemplateResult {
             ${entries.map(entry => html`<article class="flex min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-card">
                 ${showImage && entry.image ? html`<a href=${entry.url ?? '#'} class="block">${image(entry.image, 'aspect-[4/3] w-full object-cover', `(min-width: 1024px) ${Math.round(1024 / columns)}px, 100vw`)}</a>` : null}
                 <div class="space-y-1.5 p-4">
-                    <h3 class="text-base font-semibold"><a href=${entry.url ?? '#'} class="text-foreground no-underline hover:text-primary">${entry.title}</a></h3>
+                    <h3 class="text-base font-semibold"><a href=${entry.url ?? '#'} class="no-underline hover:text-primary">${entry.title}</a></h3>
                     ${showDate && entry.date ? html`<time class="block text-xs text-muted-foreground">${entry.date}</time>` : null}
                     ${entry.excerpt ? html`<p class="text-sm text-muted-foreground">${entry.excerpt}</p>` : null}
                 </div>
@@ -165,7 +165,7 @@ function latestEntries(block: RenderedBlock): TemplateResult {
     return html`<div class="my-6 space-y-6">${entries.map(entry => html`<article class="grid gap-4 sm:grid-cols-[8rem_minmax(0,1fr)]">
         ${showImage && entry.image ? html`<a href=${entry.url ?? '#'} class="block overflow-hidden rounded-md">${image(entry.image, 'aspect-[4/3] w-full object-cover', '(min-width: 640px) 8rem, 100vw')}</a>` : showImage ? html`<span class="hidden sm:block"></span>` : null}
         <div class=${showImage ? 'space-y-1' : 'space-y-1 sm:col-span-2'}>
-            <h3 class="text-lg font-semibold"><a href=${entry.url ?? '#'} class="text-foreground no-underline hover:text-primary">${entry.title}</a></h3>
+            <h3 class="text-lg font-semibold"><a href=${entry.url ?? '#'} class="no-underline hover:text-primary">${entry.title}</a></h3>
             ${showDate && entry.date ? html`<time class="block text-xs text-muted-foreground">${entry.date}${entry.author ? ` · ${entry.author}` : ''}</time>` : null}
             ${entry.excerpt ? html`<p class="text-sm leading-6 text-muted-foreground">${entry.excerpt}</p>` : null}
         </div>
@@ -189,9 +189,9 @@ export function coreBlock(block: RenderedBlock, helpers: ThemeHelpers): Template
         case 'core/paragraph': return block.content?.text ? helpers.content(block.content.text) : html`<div class=${PROSE}>${unsafeHTML(block.html.text ?? '')}</div>`;
         case 'core/heading': {
             const level = text('level') || 'h2';
-            return level === 'h3' ? html`<h3 class="mt-6 text-xl font-semibold text-foreground">${text('text')}</h3>`
-                : level === 'h4' ? html`<h4 class="mt-4 text-lg font-semibold text-foreground">${text('text')}</h4>`
-                : html`<h2 class="mt-8 text-2xl font-semibold text-foreground">${text('text')}</h2>`;
+            return level === 'h3' ? html`<h3 class="mt-6 text-xl font-semibold">${text('text')}</h3>`
+                : level === 'h4' ? html`<h4 class="mt-4 text-lg font-semibold">${text('text')}</h4>`
+                : html`<h2 class="mt-8 text-2xl font-semibold">${text('text')}</h2>`;
         }
         case 'core/image': {
             const media = block.media[text('image')];
@@ -206,7 +206,7 @@ export function coreBlock(block: RenderedBlock, helpers: ThemeHelpers): Template
                 ${ids.map(id => image(block.media[id], 'aspect-square w-full rounded-md object-cover', `(min-width: 768px) ${Math.round(768 / columns)}px, ${Math.round(100 / columns)}vw`))}</div>`;
         }
         case 'core/quote': return html`<blockquote class="my-6 border-l-4 border-primary pl-4">
-            <p class="text-lg italic text-foreground">${text('text')}</p>${text('citation') ? html`<cite class="mt-2 block text-sm not-italic text-muted-foreground">— ${text('citation')}</cite>` : null}</blockquote>`;
+            <p class="text-lg italic">${text('text')}</p>${text('citation') ? html`<cite class="mt-2 block text-sm not-italic text-muted-foreground">— ${text('citation')}</cite>` : null}</blockquote>`;
         case 'core/list': {
             const items = Array.isArray(block.data.items) ? block.data.items as string[] : [];
             return block.data.ordered === true ? html`<ol class="my-4 list-decimal space-y-1 pl-6">${items.map(item => html`<li>${item}</li>`)}</ol>`
@@ -259,7 +259,7 @@ export function coreBlock(block: RenderedBlock, helpers: ThemeHelpers): Template
             return html`<div class="cms-card" data-layout=${media ? text('layout') || 'top' : 'none'}>
                 ${framed}
                 <div class="cms-card-body">
-                    ${title ? html`<h3 class="text-lg font-semibold text-foreground">${url && !text('linkLabel') ? html`<a href=${safeLink(url)} class="no-underline hover:text-primary">${title}</a>` : title}</h3>` : null}
+                    ${title ? html`<h3 class="text-lg font-semibold">${url && !text('linkLabel') ? html`<a href=${safeLink(url)} class="no-underline hover:text-primary">${title}</a>` : title}</h3>` : null}
                     ${block.html.text ? html`<div class=${`${PROSE} text-sm [&_p]:my-2`}>${unsafeHTML(block.html.text)}</div>` : null}
                     ${url && text('linkLabel') ? html`<p class="mt-3"><a href=${safeLink(url)} class="text-sm font-medium text-primary hover:underline">${text('linkLabel')} →</a></p>` : null}
                 </div>
@@ -285,18 +285,18 @@ export function coreBlock(block: RenderedBlock, helpers: ThemeHelpers): Template
             <div class=${`${PROSE} text-lg [&_p]:my-2`}>${block.content?.text ? helpers.content(block.content.text) : unsafeHTML(block.html.text ?? '')}</div></aside>`;
         case 'core/faq': return html`<section class="cms-faq my-8 divide-y divide-border border-y border-border">${children.map(child => helpers.block(child))}</section>`;
         case 'core/faq-item': return html`<details class="cms-faq-item group py-3" open>
-            <summary class="cursor-pointer list-none text-lg font-semibold text-foreground"><h3 class="inline">${text('question')}</h3></summary>
+            <summary class="cursor-pointer list-none text-lg font-semibold"><h3 class="inline">${text('question')}</h3></summary>
             <div class=${`${PROSE} mt-2 [&_p]:my-2`}>${unsafeHTML(block.html.answer ?? '')}</div></details>`;
         case 'core/steps': return html`<ol class="cms-steps my-8 space-y-6 border-l-2 border-border pl-6">${children.map((child, index) => html`<li class="relative" data-step=${String(index + 1)}>
             <span class="absolute -left-[2.1rem] flex size-7 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground" aria-hidden="true">${index + 1}</span>${helpers.block(child)}</li>`)}</ol>`;
-        case 'core/step': return html`<div class="cms-step"><h3 class="text-lg font-semibold text-foreground">${text('title')}</h3>${block.html.text ? html`<div class=${`${PROSE} [&_p]:my-2`}>${unsafeHTML(block.html.text)}</div>` : null}</div>`;
+        case 'core/step': return html`<div class="cms-step"><h3 class="text-lg font-semibold">${text('title')}</h3>${block.html.text ? html`<div class=${`${PROSE} [&_p]:my-2`}>${unsafeHTML(block.html.text)}</div>` : null}</div>`;
         case 'core/claim': {
             const source = text('sourceUrl') ? html`<a href=${safeLink(text('sourceUrl'))} rel="noopener" class="text-primary hover:underline">${text('sourceName')}</a>` : text('sourceName');
             return html`<figure class="cms-claim my-6 rounded-lg border-l-4 border-primary bg-muted/40 p-4">
-                <blockquote class=${text('kind') === 'quote' ? 'text-lg italic text-foreground' : 'text-2xl font-semibold text-foreground'}>${text('text')}</blockquote>
+                <blockquote class=${text('kind') === 'quote' ? 'text-lg italic' : 'text-2xl font-semibold'}>${text('text')}</blockquote>
                 <figcaption class="mt-2 text-sm text-muted-foreground">${__('Source')}: <cite class="not-italic">${source}</cite>${text('date') ? html`, ${text('date')}` : null}</figcaption></figure>`;
         }
-        case 'core/definition': return html`<dl class="cms-definition my-6 rounded-lg border border-border p-4"><dt class="text-lg font-semibold text-foreground">${text('term')}</dt><dd class=${`${PROSE} mt-1 [&_p]:my-1`}>${unsafeHTML(block.html.definition ?? '')}</dd></dl>`;
+        case 'core/definition': return html`<dl class="cms-definition my-6 rounded-lg border border-border p-4"><dt class="text-lg font-semibold">${text('term')}</dt><dd class=${`${PROSE} mt-1 [&_p]:my-1`}>${unsafeHTML(block.html.definition ?? '')}</dd></dl>`;
         case 'core/latest-entries': return latestEntries(block);
         case 'core/meta': return null;
         // Layout blocks: CSS grid from cms/blocks.css, responding to the content root's width.

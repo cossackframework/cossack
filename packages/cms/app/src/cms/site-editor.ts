@@ -84,7 +84,7 @@ function seoInspector(seo: SeoView): TemplateResult {
             ${row(__('Canonical'), seo.canonical)}
             ${row(__('Image'), seo.image || `(${__('none')})`)}
             ${row(__('Schema'), types.join(', ') || `(${__('none')})`)}
-            ${seo.markdownUrl ? html`<div class="pt-1"><a href=${seo.markdownUrl} class="text-primary hover:underline">${__('View as Markdown')}</a></div>` : null}
+            ${seo.markdownUrl ? html`<div class="pt-1"><a href=${seo.markdownUrl} target="_blank" rel="noopener" class="text-primary hover:underline">${__('View as Markdown')}</a></div>` : null}
         </dl>
     </details>`;
 }

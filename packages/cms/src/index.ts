@@ -36,7 +36,7 @@ export { CORE_BLOCKS, BLOCK_CATEGORIES, BLOCK_NAME, BLOCK_LIMITS, FIELD_BLOCK_KI
 export { hasBinding, bindingPaths, bindingRefs, bindingValue, bindingText, bindingProblem, usesUserBinding, resolveBindings, resolveBlockBindings, withBinding, BINDING_SCOPES, type BindingScope, type BindingScopes } from './bindings';
 export { parseBlockText, hasBlockReference, textBlocks, PATTERN_REFERENCE, type TextPart, type ParsedText } from './block-references';
 export { formInput, formValue, recordTitle, isSameOriginPost, type FormInput, type SubmittedForm } from './forms';
-export { manifestProblems, validateManifest, requestedGrants, commandInput, isPluginPoint, pointOwner, providedPoints, ManifestError, HOST_SLOTS, type CmsPluginManifest, type ProvidedPoint, type PluginCommand, type CommandOption, type SlotLink, type HostSlot } from './manifest';
+export { manifestProblems, validateManifest, requestedGrants, commandInput, isPluginPoint, pointOwner, providedPoints, ManifestError, HOST_SLOTS, type CmsPluginManifest, type PluginAuthor, type ProvidedPoint, type PluginCommand, type CommandOption, type SlotLink, type HostSlot } from './manifest';
 export { MEDIA_TYPES, AVATAR_TYPES, ARCHIVE_TYPES, SVG_TYPE, MEDIA_FILTERS, MEDIA_FILTER_EXCLUDES, mediaKind, mediaUrl, formatBytes, matchesSignature, imageSize, declaredType, sanitizeSvg, type MediaKind } from './media';
 export { taxonomyProblems, type TaxonomyDeclaration, type TermShape } from './taxonomy';
 export { general, media, appearance, writing, reading, discussion, seo, crawlers, indexnow, languages, DATE_FORMATS, TIME_FORMATS, TITLE_SEPARATORS, formatSiteDate, validTimeZone, type SettingsGroup, type SettingDeclaration, type SettingSource, type SiteSettings } from './settings';
@@ -65,7 +65,7 @@ export {
     type SchemaType, type SchemaProperty, type CollectionSchema, type CollectionRobots, type CollectionSeoTemplates, type SeoTemplateVariable, type ImagePreview, type RobotsOptions,
     type SchemaImage, type SchemaSite, type SchemaAuthor, type SchemaBreadcrumb, type SchemaPage,
 } from './seo';
-export { richTextMarkdown, blocksMarkdown, entryMarkdown, type EntryMarkdownInput } from './to-markdown';
+export { richTextMarkdown, blocksMarkdown, entryMarkdown, type EntryMarkdownInput, type MarkdownOptions } from './to-markdown';
 export { entryChecks, analyzeContent, type Check, type CheckStatus, type CheckInput } from './checks';
 export { recordSchema, fieldSchema, type JsonSchema } from './schema-json';
 export { REDIRECT_STATUSES, REDIRECT_PATH, redirectPath, redirectProblems, type Redirect, type RedirectInput, type RedirectStatus } from './redirects';
