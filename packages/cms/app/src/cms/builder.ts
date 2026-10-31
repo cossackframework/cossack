@@ -1,3 +1,4 @@
+import type { EditorLayout } from '@cossackframework/cms';
 /**
  * The collection builder's model: field types as the picker offers them, names from labels,
  * and the definition a draft describes. Client-safe.
@@ -105,7 +106,7 @@ export function collectionDraft(definition: CollectionDefinition): CollectionDra
 }
 
 /** The definition a draft and its content template describe. Fields live in the groups attached to the collection. */
-export function definitionOf(draft: CollectionDraft, template: readonly Block[] = []): CollectionDefinition {
+export function definitionOf(draft: CollectionDraft, template: readonly Block[] = [], editor?: EditorLayout): CollectionDefinition {
     const map = Object.fromEntries(Object.entries(draft.schemaMap).filter(([, name]) => name));
     return {
         name: draft.name, label: draft.label.trim(), singular: draft.singular.trim(), ...(draft.description.trim() ? { description: draft.description.trim() } : {}),
@@ -118,5 +119,6 @@ export function definitionOf(draft: CollectionDraft, template: readonly Block[] 
         schema: { type: draft.schemaType, ...(Object.keys(map).length ? { map } : {}) },
         robots: { noindex: draft.noindex, nofollow: draft.nofollow, archiveNoindex: draft.archiveNoindex },
         seoTemplates: { title: draft.seoTitle.trim(), description: draft.seoDescription.trim(), archiveTitle: draft.archiveTitle.trim() },
+        ...(editor ? { editor } : {}),
     };
 }

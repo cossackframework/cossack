@@ -72,8 +72,29 @@ async function shop(origin, routeIds, diagnostics) {
   expect(built.groups.map(entry => entry.id)).toEqual(['specifications', 'details']);
   const reordered = await web.action(BUILDER, 'save', [DRAFT, ['details', 'specifications'], []], { params: { name: 'products' } });
   expect(reordered.groups.map(entry => entry.id)).toEqual(['details', 'specifications']);
+  // Without a stored layout the manager shows the default: one Edit tab with the main boxes, and the sidebar's.
+  expect(reordered.layoutStored).toBe(false);
+  expect(reordered.layout.tabs.map(tab => tab._id)).toEqual(['edit']);
+  expect(reordered.layout.tabs[0].children.map(block => block.data.box)).toEqual(['field:content', 'group:details', 'group:specifications', 'seo']);
+  expect(reordered.boxes.map(box => box.id)).toContain('taxonomy:categories');
+  // An editor layout: the Details group moves to a Pricing tab; boxes the layout does not name follow on the Edit tab and in the sidebar.
+  const laidOut = await web.action(BUILDER, 'save', [DRAFT, ['details', 'specifications'], [], LAYOUT], { params: { name: 'products' } });
+  expect(laidOut.error).toBe('');
+  expect(laidOut.layoutStored).toBe(true);
+  expect(laidOut.layout.tabs.map(tab => [tab._id, tab.data.label])).toEqual([['edit', 'Product'], ['pricing', 'Pricing']]);
+  expect(laidOut.layout.tabs[0].children.map(block => block.data.box)).toEqual(['field:content', 'group:specifications', 'seo']);
+  expect(laidOut.layout.tabs[1].children.map(block => block.data.box)).toEqual(['group:details']);
   return web;
 }
+
+/** The product editor's layout: the content on the Product tab, the Details group on a Pricing tab. */
+const LAYOUT = {
+  tabs: [
+    { _id: 'edit', type: 'editor/tab', data: { label: 'Product', icon: '' }, children: [{ _id: 'content', type: 'editor/box', data: { box: 'field:content' } }] },
+    { _id: 'pricing', type: 'editor/tab', data: { label: 'Pricing', icon: 'tag' }, children: [{ _id: 'details', type: 'editor/box', data: { box: 'group:details' } }] },
+  ],
+  sidebar: [],
+};
 
 async function fields(origin, routeIds, diagnostics) {
   const web = await shop(origin, routeIds, diagnostics);
@@ -119,6 +140,10 @@ async function fields(origin, routeIds, diagnostics) {
   contains(editor, 'Specifications');
   contains(editor, 'What the product is made of.');
   contains(editor, 'Sale price');
+  // The layout's tabs: Product and Pricing, then JSON; every tab's boxes are in the page.
+  contains(editor, 'entry-tab-pricing');
+  contains(editor, 'entry-tab-json');
+  contains(editor, 'id=entry-pricing');
   const terms = await (await web.request('/api/cms/content/products')).json();
   expect(terms.total).toBe(2);
   const list = await web.page('/dashboard/field-groups');
@@ -127,6 +152,10 @@ async function fields(origin, routeIds, diagnostics) {
   const manager = await web.page('/dashboard/collections/products');
   contains(manager, 'data-group=details');
   contains(manager, 'Content template');
+  // Search engines is a tab of its own.
+  expect(manager).not.toContain('Structured data type');
+  contains(manager, 'collection-tab-seo');
+  contains(await web.page('/dashboard/collections/products?tab=seo'), 'Structured data type');
   return { web, item };
 }
 
@@ -187,9 +216,95 @@ describe.skipIf(!liveRomeDBTests())('generated CMS field groups', () => {
       await page.getByRole('button', { name: 'Save field group' }).click();
       await browserExpect(page.getByText('Field group saved.').first()).toBeVisible();
 
-      // The product editor: the Sale tab, the condition on the sale price, and a new repeater row.
+      // The collection manager's tabs keep the open one in the address.
+      await page.goto(`${origin}/dashboard/collections/products`);
+      await ready();
+      await page.getByRole('tab', { name: 'Search engines' }).click();
+      await browserExpect(page.getByLabel('Structured data type')).toBeVisible();
+      expect(new URL(page.url()).searchParams.get('tab')).toBe('seo');
+
+      // The Editor tab: the tabs and the sidebar in one tree; a new Inventory tab, its ID from its label, saved with the collection.
+      await page.getByRole('tab', { name: 'Editor', exact: true }).click();
+      await browserExpect(page.getByRole('tab', { name: 'Editor', exact: true })).toHaveAttribute('aria-selected', 'true');
+      expect(new URL(page.url()).searchParams.get('tab')).toBe('editor');
+      await browserExpect(page.locator('[data-box="group:details"]')).toContainText('Pricing');
+      // Tabs go at the top level, whose inserter follows the sidebar row.
+      await page.getByRole('button', { name: 'Add block', exact: true }).last().click();
+      const layoutPicker = page.getByRole('dialog', { name: 'Blocks' });
+      await layoutPicker.getByRole('button', { name: 'Tab', exact: true }).click();
+      const tabPanel = page.getByRole('dialog', { name: 'Tab' });
+      await tabPanel.getByLabel('Label *').fill('Inventory');
+      await browserExpect(tabPanel.getByLabel('ID', { exact: true })).toHaveValue('inventory');
+      await tabPanel.getByRole('button', { name: 'Done' }).click();
+      await browserExpect(tabPanel).toBeHidden();
+      // Drag the Specifications meta box from the Product tab into the sidebar, then into Inventory: a meta box's row shows its label.
+      const drag = async (handle, target) => {
+        const from = await handle.boundingBox();
+        const x = from.x + from.width / 2;
+        await page.mouse.move(x, from.y + from.height / 2);
+        await page.mouse.down();
+        await page.mouse.move(x, from.y + from.height / 2 + 8, { steps: 2 });
+        const to = await target.boundingBox();
+        await page.mouse.move(x, to.y + to.height * 0.75, { steps: 10 });
+        await page.mouse.up();
+      };
+      // The whole tree in view for the drags; the edge scrolling is checked after them.
+      await page.setViewportSize({ width: 1280, height: 1800 });
+      const productTab = page.getByRole('region', { name: 'Tab 1' });
+      const specsRow = productTab.getByRole('region', { name: 'Meta box 2', exact: true });
+      await browserExpect(specsRow).toContainText('Specifications');
+      const sidebarRow = page.getByRole('region', { name: /^Sidebar \d+$/ });
+      await drag(specsRow.locator('[data-handle]'), sidebarRow.locator('header').first());
+      await browserExpect(page.locator('[data-box="group:specifications"]')).toContainText('Sidebar');
+      await browserExpect(sidebarRow.getByRole('region', { name: 'Meta box 1', exact: true })).toContainText('Specifications');
+      const inventoryTab = page.getByRole('region', { name: 'Tab 3' });
+      await drag(sidebarRow.getByRole('region', { name: 'Meta box 1', exact: true }).locator('[data-handle]'), inventoryTab.locator('header').first());
+      await browserExpect(page.locator('[data-box="group:specifications"]')).toContainText('Inventory');
+      await browserExpect(inventoryTab.getByRole('region', { name: 'Meta box 1', exact: true })).toContainText('Specifications');
+      // Near the window's bottom a drag scrolls the page; Escape cancels it, and the layout stays.
+      await page.setViewportSize({ width: 1280, height: 720 });
+      await page.evaluate(() => window.scrollTo(0, 0));
+      const contentHandle = productTab.getByRole('region', { name: 'Meta box 1', exact: true }).locator('[data-handle]');
+      const start = await contentHandle.boundingBox();
+      await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(start.x + start.width / 2, 715, { steps: 6 });
+      await page.waitForFunction(() => window.scrollY > 50);
+      await page.keyboard.press('Escape');
+      await page.mouse.up();
+      await browserExpect(page.locator('[data-box="field:content"]')).toContainText('Product');
+      await browserExpect(productTab.getByRole('region', { name: 'Meta box 1', exact: true })).toContainText('Content');
+      // Every meta box is placed, so a new one has none to offer; it is removed again.
+      await inventoryTab.getByRole('button', { name: 'Add block', exact: true }).click();
+      await layoutPicker.getByRole('button', { name: 'Meta box', exact: true }).click();
+      const boxPanel = page.getByRole('dialog', { name: 'Meta box' });
+      await browserExpect(boxPanel).toContainText('Every meta box is placed.');
+      await boxPanel.getByRole('button', { name: 'Done' }).click();
+      await browserExpect(boxPanel).toBeHidden();
+      await inventoryTab.getByRole('region', { name: 'Meta box 2', exact: true }).getByRole('button', { name: 'Remove Meta box' }).click();
+      await page.getByRole('button', { name: 'Remove', exact: true }).click();
+      await browserExpect(inventoryTab.getByRole('region', { name: 'Meta box 2', exact: true })).toHaveCount(0);
+      await page.getByRole('button', { name: 'Save collection' }).click();
+      await browserExpect(page.getByText('Collection saved.').first()).toBeVisible();
+
+      // The product editor: the Details group on the Pricing tab, and a refused save opens the tab that holds the error.
       await page.goto(`${origin}/dashboard/content/products/${item.id}`);
       await ready();
+      await browserExpect(page.getByRole('tab', { name: 'Inventory' })).toBeVisible();
+      // A tab's icon shows before its label.
+      await browserExpect(page.getByRole('tab', { name: 'Pricing' }).locator('svg')).toHaveCount(1);
+      await browserExpect(page.getByLabel('Price *')).toBeHidden();
+      await page.getByRole('tab', { name: 'Pricing' }).click();
+      expect(new URL(page.url()).searchParams.get('tab')).toBe('pricing');
+      // An empty required field is left out of an update; a price below the minimum is refused.
+      await page.getByLabel('Price *').fill('-1');
+      await page.getByRole('tab', { name: 'Product', exact: true }).click();
+      await browserExpect(page.getByLabel('Price *')).toBeHidden();
+      await page.getByRole('button', { name: 'Update', exact: true }).click();
+      await browserExpect(page.getByRole('tab', { name: /^Pricing/ })).toHaveAttribute('aria-selected', 'true');
+      await browserExpect(page.getByLabel('Price *')).toBeVisible();
+      await page.getByLabel('Price *').fill('19.5');
+      // The Sale tab inside the group, the condition on the sale price, and a new repeater row.
       await browserExpect(page.getByLabel('Sale price')).toBeHidden();
       await page.getByRole('tab', { name: 'Sale' }).click();
       await page.getByLabel('On sale').check();
@@ -204,6 +319,8 @@ describe.skipIf(!liveRomeDBTests())('generated CMS field groups', () => {
       await tags.getByRole('button', { name: 'Move up Tags 3' }).click();
       await tags.getByRole('button', { name: 'Remove Tags 1' }).click();
       await browserExpect(tags.locator('input')).toHaveCount(2);
+      await page.getByRole('tab', { name: 'Inventory' }).click();
+      expect(new URL(page.url()).searchParams.get('tab')).toBe('inventory');
       const specs = page.getByRole('group', { name: 'Specifications' });
       await browserExpect(specs.getByRole('region', { name: 'Specifications 1' })).toContainText('Weight');
       await specs.getByRole('button', { name: 'Add specifications' }).click();

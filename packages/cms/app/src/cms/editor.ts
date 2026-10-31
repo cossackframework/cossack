@@ -3,7 +3,7 @@
  * conversion from form values to typed record input. Client-safe; the server converts and
  * validates again before writing.
  */
-import { slugify, validateValue, type BlockCategory, type BlockCondition, type BlockStyle, type Breakpoint, type FieldDeclaration, type FieldKind, type StyleProperty, type ThemePresets } from '@cossackframework/cms';
+import { fieldPlacement, slugify, validateValue, type BlockCategory, type BlockCondition, type BlockStyle, type Breakpoint, type FieldDeclaration, type FieldKind, type StyleProperty, type ThemePresets } from '@cossackframework/cms';
 import { conditionInput } from './condition-control';
 
 /** One field as the editor shows it. */
@@ -93,6 +93,14 @@ export interface EditorBlock {
     children?: EditorBlock[];
 }
 
+/** A tab of the entry editor's main column: its label and icon, and the layout blocks it holds. */
+export interface EditorLayoutTab {
+    id: string;
+    label: string;
+    icon: string;
+    blocks: EditorBlock[];
+}
+
 export interface EditorView {
     /** Resource ID, such as `cms/posts`. */
     resource: string;
@@ -118,6 +126,8 @@ export interface EditorView {
     templateLock?: 'all' | 'insert';
     /** Field groups attached to the collection, in order. */
     groups: EditorGroup[];
+    /** The editor's arrangement: the main column's tabs (the first is the Edit tab) and the sidebar every tab shares; see `resolveEditorLayout`. */
+    layout: { tabs: EditorLayoutTab[]; sidebar: EditorBlock[] };
     /** Every collection, for blocks that name one, such as Latest entries. */
     collections: { name: string; label: string }[];
     /** Every term with its taxonomy, for blocks that pick one. */
@@ -133,10 +143,9 @@ export function editorFields(fields: { readonly [name: string]: FieldDeclaration
 }
 
 export function editorField(name: string, declaration: FieldDeclaration & { choices?: { readonly [value: string]: string } }): EditorField {
-    const sidebar = declaration.kind === 'boolean' || (declaration.media === true && declaration.kind === 'string' && !declaration.multiple) || declaration.kind === 'reference';
     return {
         name, label: declaration.label ?? name, kind: declaration.kind, required: declaration.required === true, nullable: declaration.nullable === true,
-        description: declaration.description ?? '', placement: declaration.placement ?? (sidebar ? 'sidebar' : 'main'),
+        description: declaration.description ?? '', placement: fieldPlacement(declaration),
         format: declaration.format ?? 'plain',
         choices: (declaration.values ?? []).map(value => ({ value, label: declaration.choices?.[value] ?? value })),
         multiple: declaration.multiple === true, minItems: declaration.minItems ?? null, maxItems: declaration.maxItems ?? null, addLabel: declaration.addLabel ?? '',

@@ -192,7 +192,7 @@ Implemented 2026-10-30, all four steps, with what was left out named below.
 - **Graph foundation.** `packages/cms/src/seo.ts` holds the schema types and per-type
   properties, templates, robots directives, author fields, crawler groups and `schemaGraph()`;
   the app's `cms/seo.ts` gathers the inputs. Collections carry `schema`, `robots` and
-  `seoTemplates` (collection manager → Search engines card); posts default to `BlogPosting`,
+  `seoTemplates` (collection manager → Search engines tab, a card on General until 2026-10-31); posts default to `BlogPosting`,
   pages to `WebPage`, and `ARTICLE_TYPES` decides which collections name authors. Settings →
   SEO grew templates, the site representation (name, logo, `sameAs`, X handle), author pages
   and the image preview size. Users have a `slug` (host step 13) and an author profile in

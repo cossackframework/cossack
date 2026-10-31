@@ -1,9 +1,10 @@
 /**
  * The block tree editor shared by the entry editor and Appearance → Widgets: blocks as nested,
  * collapsible sections with their type's icon, dragged by a handle (the tree previews the drop
- * with a ghost of the block in its new place; sideways changes the container), moved with the
- * arrow keys or buttons, hidden per device, with an inserter at every level offering what fits
- * there. Client-safe. The screen renders each field's control, since it owns media choosing.
+ * with a ghost of the block in its new place, opening the container it would land in; sideways
+ * changes the container; the page scrolls near the window's edges), moved with the arrow keys
+ * or buttons, hidden per device, with an inserter at every level offering what fits there.
+ * Client-safe. The screen renders each field's control, since it owns media choosing.
  */
 import { Client, ClientState, Component, Cossack } from '@cossackframework/core';
 import { component, html, type TemplateResult } from '@cossackframework/renderer';
@@ -48,6 +49,14 @@ export type BlockTreeProps = {
      * flashes it, scrolls it into view and shows the message under it with the block's name.
      */
     error?: string;
+    /** Blocks that stay where they are: no dragging, moving or removing, and no move puts another block in their place. An editor layout's Edit tab, say. */
+    pinned?: string[];
+    /** Containers start open rather than collapsed, for a tree that is read as a whole, such as an editor layout. */
+    expanded?: boolean;
+    /** Offer the per-device hide toggles. Default true; an editor layout has no devices to hide on. */
+    devices?: boolean;
+    /** The summary beside a block's name, in place of its first text; undefined falls back to it. */
+    summary?(block: EditorBlock, option: BlockOption | undefined): string | undefined;
 };
 
 /** Devices the hide toggles stand for, with their icons. */
@@ -90,6 +99,29 @@ const GRIP = html`<svg aria-hidden="true" viewBox="0 0 10 16" class="h-4 w-2.5 f
 /** A drag in progress: the block and the tree as it would be if dropped now. */
 interface Drag { id: string; blocks: EditorBlock[]; depth: number; moved: boolean }
 
+/** A tree's arrangement, for telling whether a move changed anything. */
+function treeShape(blocks: readonly EditorBlock[]): string {
+    return placeBlocks(blocks).map(place => `${place.block._id}:${place.depth}`).join(' ');
+}
+
+/** How near the window's top or bottom edge a drag scrolls, in pixels; the nearer, the faster. */
+const SCROLL_EDGE = 56;
+
+/**
+ * What a drag may scroll, nearest first: the ancestors that may scroll their content, then the
+ * page. An ancestor that only hides sideways overflow computes as scrolling vertically too
+ * without ever doing it, so the drag tries each in turn.
+ */
+function scrollersOf(element: HTMLElement): Element[] {
+    const scrollers: Element[] = [];
+    for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+        const overflow = getComputedStyle(parent).overflowY;
+        if ((overflow === 'auto' || overflow === 'scroll') && parent.scrollHeight > parent.clientHeight) scrollers.push(parent);
+    }
+    const page = document.scrollingElement ?? document.documentElement;
+    return scrollers.includes(page) ? scrollers : [...scrollers, page];
+}
+
 @Component()
 export class BlockTree extends Cossack {
     declare props: BlockTreeProps;
@@ -98,6 +130,12 @@ export class BlockTree extends Cossack {
     @ClientState() private pendingRemove: string | null = null;
     @ClientState() private drag: Drag | null = null;
     private pointer: { id: number; x: number; y: number; depth: number } | null = null;
+    /** The window's listeners while a drag is on. Lists render by position, so the handle that started a drag may show another block, or leave the page, as the preview moves. */
+    private listeners: { move(event: PointerEvent): void; up(event: PointerEvent): void; cancel(): void; key(event: KeyboardEvent): void } | null = null;
+    /** Where the pointer last was during a drag, and what the drag scrolls near the window's edges. */
+    private last: { x: number; y: number } | null = null;
+    private scrollers: Element[] = [];
+    private scrollFrame = 0;
     /** Each block's header, measured while dragging. */
     private headers = new Map<string, HTMLElement>();
     private handles = new Map<string, HTMLElement>();
@@ -111,9 +149,44 @@ export class BlockTree extends Cossack {
         return this.drag?.blocks ?? this.props.blocks;
     }
 
-    /** Containers are collapsed until opened; a new one, one a block just went into, or one holding the block an error names, is open. */
+    /** Whether a container nobody toggled starts collapsed. */
+    private get startCollapsed(): boolean {
+        return this.props.expanded !== true;
+    }
+
+    /**
+     * Containers are collapsed until opened (unless the tree starts `expanded`); a new one, one a
+     * block just went into, one holding the block an error names, or one a dragged block would
+     * land in, is open.
+     */
     private isCollapsed(block: EditorBlock, option: BlockOption | undefined): boolean {
-        return !!option?.children && (this.collapsed[block._id] ?? true) && !this.errorPath.has(block._id);
+        return !!option?.children && (this.collapsed[block._id] ?? this.startCollapsed) && !this.errorPath.has(block._id) && !this.dropPath.has(block._id);
+    }
+
+    /** The containers of the dragged block in the drop preview; computed per render. */
+    private dropPath = new Set<string>();
+
+    /** The containers of a block, outermost first. */
+    private ancestors(blocks: readonly EditorBlock[], id: string): string[] {
+        const places = placeBlocks(blocks);
+        const path: string[] = [];
+        for (let parent = places.find(place => place.block._id === id)?.parent ?? null; parent; parent = places.find(place => place.block._id === parent)?.parent ?? null) path.unshift(parent);
+        return path;
+    }
+
+    /**
+     * Whether a moved tree keeps to what the tree allows beyond the types' nesting rules: a block
+     * that comes to the top level is one of the `allowed` types, and the pinned blocks keep their
+     * place, so nothing moves above an Edit tab or below a sidebar that stays last.
+     */
+    private fits(next: readonly EditorBlock[]): boolean {
+        const pinned = this.props.pinned ?? [];
+        const allowed = this.props.allowed;
+        if (allowed.length && next.some(block => !allowed.includes(block.type) && !pinned.includes(block._id) && !this.props.blocks.some(entry => entry._id === block._id))) return false;
+        if (!pinned.length) return true;
+        const where = (blocks: readonly EditorBlock[]) => new Map(placeBlocks(blocks).filter(place => pinned.includes(place.block._id)).map(place => [place.block._id, `${place.parent}:${place.index}`]));
+        const after = where(next);
+        return [...where(this.props.blocks)].every(([id, place]) => after.get(id) === place);
     }
 
     /** The block the error names and its containers; computed per render. */
@@ -152,7 +225,7 @@ export class BlockTree extends Cossack {
     @Client()
     private shift(id: string, move: BlockMove, into?: string) {
         const next = shiftBlock(this.props.blocks, id, move, declarationsOf(this.props.options));
-        if (next !== this.props.blocks) {
+        if (next !== this.props.blocks && this.fits(next)) {
             if (into) this.collapsed = { ...this.collapsed, [into]: false };
             this.props.onChange([...next]);
             requestAnimationFrame(() => this.handles.get(id)?.focus());
@@ -181,7 +254,8 @@ export class BlockTree extends Cossack {
 
     @Client()
     private toggleCollapsed(id: string) {
-        this.collapsed = { ...this.collapsed, [id]: !this.collapsed[id] };
+        // An untoggled container is as the tree starts it, so the first click turns that over.
+        this.collapsed = { ...this.collapsed, [id]: !(this.collapsed[id] ?? this.startCollapsed) };
     }
 
     @Client()
@@ -198,46 +272,113 @@ export class BlockTree extends Cossack {
 
     @Client()
     private startDrag(event: PointerEvent, id: string) {
-        if (event.button !== 0 || this.props.lock === 'all') return;
+        if (event.button !== 0 || this.props.lock === 'all' || this.props.pinned?.includes(id)) return;
         event.preventDefault();
         (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
         const depth = placeBlocks(this.props.blocks).find(place => place.block._id === id)?.depth ?? 0;
         this.pointer = { id: event.pointerId, x: event.clientX, y: event.clientY, depth };
         this.drag = { id, blocks: this.props.blocks, depth, moved: false };
+        this.listen();
+        // After `listen`, which clears what an earlier drag left.
+        this.last = { x: event.clientX, y: event.clientY };
+        this.scrollers = scrollersOf(event.currentTarget as HTMLElement);
+        this.autoScroll();
+    }
+
+    /** Follow the drag from the window, whichever element is under the pointer; Escape cancels it wherever the focus is. */
+    @Client()
+    private listen() {
+        this.unlisten();
+        const listeners = {
+            move: (event: PointerEvent) => this.moveDrag(event), up: (event: PointerEvent) => this.endDrag(event), cancel: () => this.cancelDrag(),
+            key: (event: KeyboardEvent) => { if (event.key === 'Escape') { event.preventDefault(); this.cancelDrag(); } },
+        };
+        window.addEventListener('pointermove', listeners.move);
+        window.addEventListener('pointerup', listeners.up);
+        window.addEventListener('pointercancel', listeners.cancel);
+        window.addEventListener('keydown', listeners.key);
+        this.listeners = listeners;
+    }
+
+    @Client()
+    private unlisten() {
+        cancelAnimationFrame(this.scrollFrame);
+        this.last = null;
+        const listeners = this.listeners;
+        if (!listeners) return;
+        window.removeEventListener('pointermove', listeners.move);
+        window.removeEventListener('pointerup', listeners.up);
+        window.removeEventListener('pointercancel', listeners.cancel);
+        window.removeEventListener('keydown', listeners.key);
+        this.listeners = null;
+    }
+
+    /** While a drag is on, a pointer near the window's top or bottom scrolls the page, and the preview follows what comes under it. */
+    @Client()
+    private autoScroll() {
+        cancelAnimationFrame(this.scrollFrame);
+        const step = () => {
+            const last = this.last;
+            if (!this.drag || !last) return;
+            const bottom = window.innerHeight - SCROLL_EDGE;
+            const speed = Math.round(last.y < SCROLL_EDGE ? -(SCROLL_EDGE - last.y) / 3 : last.y > bottom ? (last.y - bottom) / 3 : 0);
+            // The nearest that moves scrolls; the preview follows what comes under the pointer.
+            const scrolled = speed !== 0 && this.scrollers.some(scroller => {
+                const before = scroller.scrollTop;
+                scroller.scrollTop = before + speed;
+                return scroller.scrollTop !== before;
+            });
+            if (scrolled && this.drag.moved) this.dragTo(last.x, last.y);
+            this.scrollFrame = requestAnimationFrame(step);
+        };
+        this.scrollFrame = requestAnimationFrame(step);
     }
 
     @Client()
     private moveDrag(event: PointerEvent) {
+        if (!this.pointer || event.pointerId !== this.pointer.id) return;
+        this.last = { x: event.clientX, y: event.clientY };
+        this.dragTo(event.clientX, event.clientY);
+    }
+
+    /** The preview for the pointer at (x, y): the row under it decides the drop. */
+    @Client()
+    private dragTo(x: number, y: number) {
         const pointer = this.pointer;
         const drag = this.drag;
-        if (!pointer || !drag || event.pointerId !== pointer.id) return;
-        if (!drag.moved && Math.abs(event.clientY - pointer.y) < 4 && Math.abs(event.clientX - pointer.x) < 12) return;
+        if (!pointer || !drag) return;
+        if (!drag.moved && Math.abs(y - pointer.y) < 4 && Math.abs(x - pointer.x) < 12) return;
         const original = placeBlocks(this.props.blocks);
         const from = original.findIndex(place => place.block._id === drag.id);
         const moving = new Set(placeBlocks([original[from]!.block]).map(place => place.block._id));
         // The rows that stay, in the order they show now; the one under the pointer decides the drop.
         const rest = placeBlocks(drag.blocks).filter(place => !moving.has(place.block._id));
-        const depth = Math.min(Math.max(pointer.depth + Math.round((event.clientX - pointer.x) / 24), 0), 3);
+        const depth = Math.min(Math.max(pointer.depth + Math.round((x - pointer.x) / 24), 0), 3);
         let to: number | null = null;
         for (const [index, place] of rest.entries()) {
             const rect = this.headers.get(place.block._id)?.getBoundingClientRect();
-            if (!rect || event.clientY < rect.top || event.clientY > rect.bottom) continue;
-            to = event.clientY < rect.top + rect.height / 2 ? index : index + 1;
+            if (!rect || y < rect.top || y > rect.bottom) continue;
+            to = y < rect.top + rect.height / 2 ? index : index + 1;
             break;
         }
         if (to === null) { if (!drag.moved) this.drag = { ...drag, moved: true }; return; }
-        const next = reorderBlocks(this.props.blocks, from, to, depth, declarationsOf(this.props.options));
-        const shape = (blocks: readonly EditorBlock[]) => placeBlocks(blocks).map(place => `${place.block._id}:${place.depth}`).join(' ');
-        if (shape(next) !== shape(drag.blocks) || !drag.moved) this.drag = { ...drag, blocks: next, depth, moved: true };
+        const reordered = reorderBlocks(this.props.blocks, from, to, depth, declarationsOf(this.props.options));
+        // A drop the tree does not allow previews as the block where it started.
+        const next = this.fits(reordered) ? reordered : [...this.props.blocks];
+        if (treeShape(next) !== treeShape(drag.blocks) || !drag.moved) this.drag = { ...drag, blocks: next, depth, moved: true };
     }
 
     @Client()
     private endDrag(event: PointerEvent) {
         const drag = this.drag;
         if (!this.pointer || event.pointerId !== this.pointer.id) return;
+        this.unlisten();
         this.pointer = null;
         this.drag = null;
-        if (drag?.moved && drag.blocks !== this.props.blocks) {
+        if (drag?.moved && treeShape(drag.blocks) !== treeShape(this.props.blocks)) {
+            // The container the block landed in stays open.
+            const opened = this.ancestors(drag.blocks, drag.id);
+            if (opened.length) this.collapsed = { ...this.collapsed, ...Object.fromEntries(opened.map(id => [id, false])) };
             this.props.onChange(drag.blocks);
             requestAnimationFrame(() => this.handles.get(drag.id)?.focus());
         }
@@ -245,6 +386,7 @@ export class BlockTree extends Cossack {
 
     @Client()
     private cancelDrag() {
+        this.unlisten();
         this.pointer = null;
         this.drag = null;
     }
@@ -252,7 +394,7 @@ export class BlockTree extends Cossack {
     @Client()
     private handleKey(event: KeyboardEvent, id: string) {
         if (event.key === 'Escape' && this.drag) { this.cancelDrag(); return; }
-        if (this.props.lock === 'all') return;
+        if (this.props.lock === 'all' || this.props.pinned?.includes(id)) return;
         const move = ({ ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'out', ArrowRight: 'in' } as const)[event.key as 'ArrowUp' | 'ArrowDown' | 'ArrowLeft' | 'ArrowRight'];
         if (!move) return;
         event.preventDefault();
@@ -290,12 +432,13 @@ export class BlockTree extends Cossack {
         const collapsed = this.isCollapsed(block, option);
         const held = collapsed ? placeBlocks(block.children ?? []).length : 0;
         const above = siblings[index - 1];
-        const locked = this.props.lock === 'all';
+        const pinned = this.props.pinned?.includes(block._id) === true;
+        const locked = this.props.lock === 'all' || pinned;
         const canGoIn = !ghost && !locked && !!above && !!this.option(above.type)?.children && shiftBlock(this.props.blocks, block._id, 'in', declarationsOf(this.props.options)) !== this.props.blocks;
         // The message names this block (or one of its fields): shown here in words, and the block flashes.
         const target = blockErrorTarget(this.props.error);
         const error = target?.id === block._id ? describeBlockError(this.props.error!, this.props.blocks, this.props.options) : '';
-        const summary = option?.field ? (typeof block.data.description === 'string' ? block.data.description : '') : blockSummary(block, this.props.previews);
+        const summary = this.props.summary?.(block, option) ?? (option?.field ? (typeof block.data.description === 'string' ? block.data.description : '') : blockSummary(block, this.props.previews));
         const prefix = `${this.props.id}-${block._id}`;
         // Rich text is written in place, whichever way the block's other settings are edited; its
         // toolbar names it, so it has no label of its own above the block's header.
@@ -304,10 +447,9 @@ export class BlockTree extends Cossack {
         return html`<section class=${`rounded-lg border bg-card ${ghost ? 'border-dashed border-primary bg-primary/5 opacity-50' : error ? 'cms-block-error border-destructive' : data ? 'border-dashed border-border' : 'border-border'}`} aria-label=${`${label} ${index + 1}`} data-block-tree-item=${block._id}>
             <header class="flex flex-wrap items-center gap-1.5 border-b border-border px-2 py-1.5" ref=${(element: Element) => { if (element) this.headers.set(block._id, element as HTMLElement); else this.headers.delete(block._id); }}>
                 <button type="button" class=${`flex h-7 w-5 shrink-0 touch-none items-center justify-center rounded border-none bg-transparent text-muted-foreground ${locked ? 'cursor-default opacity-40' : 'cursor-grab hover:bg-muted active:cursor-grabbing'}`} data-handle
-                    aria-label=${locked ? `${label}. ${__('The template keeps this order.')}` : `${__('Move')} ${label}. ${__('Drag, or use the arrow keys.')}`} ?disabled=${locked}
+                    aria-label=${pinned ? `${label}. ${__('This block stays where it is.')}` : locked ? `${label}. ${__('The template keeps this order.')}` : `${__('Move')} ${label}. ${__('Drag, or use the arrow keys.')}`} ?disabled=${locked}
                     ref=${(element: Element) => { if (element) this.handles.set(block._id, element as HTMLElement); else this.handles.delete(block._id); }}
-                    @pointerdown=${(event: PointerEvent) => this.startDrag(event, block._id)} @pointermove=${(event: PointerEvent) => this.moveDrag(event)}
-                    @pointerup=${(event: PointerEvent) => this.endDrag(event)} @pointercancel=${() => this.cancelDrag()} @lostpointercapture=${() => this.cancelDrag()}
+                    @pointerdown=${(event: PointerEvent) => this.startDrag(event, block._id)}
                     @keydown=${(event: KeyboardEvent) => this.handleKey(event, block._id)}>${GRIP}</button>
                 ${option?.children ? html`<button type="button" class="inline-flex h-7 w-6 shrink-0 items-center justify-center rounded border-none bg-transparent text-muted-foreground hover:bg-muted cursor-pointer [&_svg]:size-4"
                     aria-expanded=${collapsed ? 'false' : 'true'} aria-label=${`${collapsed ? __('Expand') : __('Collapse')} ${label}`} @click=${() => this.toggleCollapsed(block._id)}>
@@ -322,7 +464,7 @@ export class BlockTree extends Cossack {
                     ${collapsed ? html`<span class="ml-2 text-muted-foreground">${held} ${held === 1 ? __('block') : __('blocks')}</span>` : null}
                 </span>
                 <span class="flex flex-wrap items-center gap-1">
-                    ${data ? null : html`<span class="mr-1 inline-flex items-center gap-0.5" role="group" aria-label=${`${__('Hide')} ${label}`}>
+                    ${data || this.props.devices === false ? null : html`<span class="mr-1 inline-flex items-center gap-0.5" role="group" aria-label=${`${__('Hide')} ${label}`}>
                         ${BREAKPOINTS.map(breakpoint => {
                             const hidden = hide.includes(breakpoint);
                             const device = __(BREAKPOINT_DEVICES[breakpoint].label);
@@ -335,7 +477,7 @@ export class BlockTree extends Cossack {
                     ${iconButton(`${prefix}-out`, 'arrow-left', `${__('Move out')} ${label}`, () => this.shift(block._id, 'out'), { disabled: locked || !parent })}
                     ${iconButton(`${prefix}-in`, 'arrow-right', `${__('Move in')} ${label}`, () => this.shift(block._id, 'in', above?._id), { disabled: !canGoIn })}
                     ${option && this.props.onEdit && (option.fields.length > inlineFields.length || this.props.form || this.props.fieldGroup) ? iconButton(`${prefix}-edit`, 'pen', `${__('Edit')} ${label}`, () => this.props.onEdit!(block._id)) : null}
-                    ${this.props.lock ? null : iconButton(`${prefix}-remove`, 'trash-bin-trash', `${__('Remove')} ${label}`, () => { this.pendingRemove = block._id; }, { danger: true })}
+                    ${this.props.lock || pinned ? null : iconButton(`${prefix}-remove`, 'trash-bin-trash', `${__('Remove')} ${label}`, () => { this.pendingRemove = block._id; }, { danger: true })}
                 </span>
             </header>
             ${collapsed || (option && !inlineFields.length && !option.children && !error) ? null : html`<div class="space-y-3 p-3">
@@ -364,10 +506,11 @@ export class BlockTree extends Cossack {
 
     render() {
         this.errorPath = blockErrorPath(this.props.error, this.props.blocks);
+        this.dropPath = new Set(this.drag?.moved ? this.ancestors(this.drag.blocks, this.drag.id) : []);
         if (typeof window !== 'undefined') this.revealError();
         const places = placeBlocks(this.props.blocks);
         const containers = this.containers();
-        const allCollapsed = containers.every(block => this.collapsed[block._id] ?? true);
+        const allCollapsed = containers.every(block => this.collapsed[block._id] ?? this.startCollapsed);
         const pending = this.pendingRemove ? places.find(place => place.block._id === this.pendingRemove) : undefined;
         const pendingLabel = pending ? this.option(pending.block.type)?.label ?? pending.block.type : '';
         const held = pending ? placeBlocks([pending.block]).length - 1 : 0;

@@ -60,6 +60,7 @@ import { ArrowUpIcon } from '@cossackframework/solar-icons/arrow-up/line';
 import { ArrowDownIcon } from '@cossackframework/solar-icons/arrow-down/line';
 import { ArrowLeftIcon } from '@cossackframework/solar-icons/arrow-left/line';
 import { ArrowRightIcon } from '@cossackframework/solar-icons/arrow-right/line';
+import { SidebarMinimalisticIcon } from '@cossackframework/solar-icons/sidebar-minimalistic/line';
 import { AlignLeftIcon } from '@cossackframework/solar-icons/align-left/line';
 import { AlignHorizontalCenterIcon } from '@cossackframework/solar-icons/align-horizontal-center/line';
 import { AlignRightIcon } from '@cossackframework/solar-icons/align-right/line';
@@ -182,6 +183,7 @@ export const ICONS: Readonly<Record<string, IconEntry>> = Object.freeze({
     'arrow-down': { line: ArrowDownIcon },
     'arrow-left': { line: ArrowLeftIcon },
     'arrow-right': { line: ArrowRightIcon },
+    'sidebar-minimalistic': { line: SidebarMinimalisticIcon },
     // Forms: the section, its input blocks and the submissions screen.
     'checklist-minimalistic': { line: ChecklistMinimalisticIcon },
     'letter': { line: LetterIcon },

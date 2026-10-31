@@ -161,9 +161,9 @@ RomeDB array index on the path into the rows, so filters on rows seek through it
 ### Out of scope now
 
 Ranges and sorting on row fields, per-row references from other entries, importing ACF
-JSON, field groups shipped by plugins (manifests can declare collections' `layout`; a
-`fieldGroups` manifest key fits later), a Tabs block renderer for the site beyond a
-plain stacked fallback.
+JSON, a Tabs block renderer for the site beyond a plain stacked fallback. Field groups
+shipped by plugins came on 2026-10-30 as the manifest's `fieldGroups`
+([editor layout](cms-editor-layout.md)).
 
 ## Order
 

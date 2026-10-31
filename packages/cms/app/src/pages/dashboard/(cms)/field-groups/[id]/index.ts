@@ -31,6 +31,8 @@ export default class FieldGroupPage extends Cossack {
 
     /** True until the group is saved for the first time. */
     @State() fresh = false;
+    /** The plugin the group comes from; such a group is read-only here. */
+    @State() plugin = '';
 
     head(): HeadValue {
         return { title: this.fresh ? __('New field group') : this.draft ? `${this.draft.title} — ${__('Field group')}` : __('Field group') };
@@ -53,6 +55,7 @@ export default class FieldGroupPage extends Cossack {
             : await cms.fieldGroups.get(id);
         if (!group) { this.error = __('This field group does not exist.'); this.c.status(404); return; }
         this.draft = { id: group.id, title: group.title, description: group.description ?? '', placement: group.placement ?? 'main', order: group.order === undefined ? '' : String(group.order) };
+        this.plugin = group.plugin ?? '';
         this.targets = [...group.targets];
         this.choices = [
             ...cms.collections().filter(collection => !collection.managed).map(collection => ({ kind: 'collection' as const, name: collection.name, label: collection.label })),
@@ -140,9 +143,10 @@ export default class FieldGroupPage extends Cossack {
             ${pageHeader(this.fresh ? __('New field group') : draft.title, {
                 description: this.fresh ? __('A box of fields for editors. Lay its fields out and choose where it shows.') : `${__('Field group')} ${draft.id}`,
                 actions: html`<a href="/dashboard/field-groups" class="text-sm text-muted-foreground hover:text-foreground">← ${__('Field groups')}</a>
-                    ${component(Button, { type: 'button', disabled: this.fresh && !collectionName(draft.title), '@click': () => this.submit() }, this.fresh ? __('Create field group') : __('Save field group'))}`,
+                    ${component(Button, { type: 'button', disabled: Boolean(this.plugin) || (this.fresh && !collectionName(draft.title)), '@click': () => this.submit() }, this.fresh ? __('Create field group') : __('Save field group'))}`,
             })}
             ${this.message ? notice(this.message, 'success') : null}
+            ${this.plugin ? notice(`${__('This group comes from the plugin')} ${this.plugin}. ${__('It is changed in the plugin\'s manifest and goes with the plugin.')}`, 'info') : null}
             ${this.error ? notice(describeBlockError(this.error, this.blocks, this.options), 'error') : null}
             <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
                 ${component(Card, {}, html`
@@ -157,7 +161,7 @@ export default class FieldGroupPage extends Cossack {
                             control: attributes => component(Input, { ...attributes, '.value': draft.title, '@input': (event: Event) => this.setDraft('title', (event.target as HTMLInputElement).value) }) })}
                         ${component(Field, { label: __('Description'), for: 'group-description', hint: __('Shown under the box\'s title.'),
                             control: attributes => component(Textarea, { ...attributes, rows: 2, '.value': draft.description, '@input': (event: Event) => this.setDraft('description', (event.target as HTMLTextAreaElement).value) }) })}
-                        ${component(Field, { label: __('Placement'), for: 'group-placement', hint: __('In entry editors; terms, users and menu items have one column.'),
+                        ${component(Field, { label: __('Default placement'), for: 'group-placement', hint: __('Where the box starts in an entry editor; the collection manager\'s Editor tab moves it. Terms, users and menu items have one column.'),
                             control: attributes => component(NativeSelect, { ...attributes, '@change': (event: Event) => this.setDraft('placement', (event.target as HTMLSelectElement).value as Draft['placement']) }, html`
                                 <option value="main" ?selected=${draft.placement === 'main'}>${__('Main column')}</option>
                                 <option value="sidebar" ?selected=${draft.placement === 'sidebar'}>${__('Sidebar')}</option>`) })}

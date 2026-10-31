@@ -59,8 +59,16 @@ describe.skipIf(!liveRomeDBTests())('CMS plugin trust', () => {
       lacks(await web.page('/dashboard'), 'data-testid="support-widget"');
       lacks((await web.action('dashboard/(cms)/collections/[name]/index.ts', 'load', ['pages'], { params: { name: 'pages' } })).blocks.map(block => block.name).join(','), 'support-desk/contact');
 
+      lacks(await web.page('/dashboard/content/posts/new'), 'entry-tab-support-desk-support');
       await web.post('/dashboard/plugins', { plugin: 'support-desk', _action: 'grant' });
       expect(await web.page('/dashboard/plugins')).toMatch(/data-plugin="?support-desk"? data-version="?1\.0\.0"? data-active="?true/);
+      // The manifest's field group is stored, attached to posts and read-only; its tab is in the post editor while the plugin is active.
+      const postEditor = await web.page('/dashboard/content/posts/new');
+      contains(postEditor, 'entry-tab-support-desk-support');
+      contains(postEditor, 'Priority');
+      const postsManager = await web.page('/dashboard/collections/posts');
+      contains(postsManager, 'data-group=support-desk-support');
+      contains(postsManager, 'Plugin support-desk');
       const created = await web.action(editor, 'save', [ticket('  Printer jam  '), 'update', 0], { params: { collection: 'support-desk.tickets', id: 'new' }, state: { route: 'support-desk.tickets', id: 'new' } });
       expect(created.id).toMatch(/^[0-9a-f-]{36}$/);
       await web.action(editor, 'save', [ticket('Printer jam'), 'update', 0], { params: { collection: 'support-desk.tickets', id: 'new' }, state: { route: 'support-desk.tickets', id: 'new' } });
@@ -114,6 +122,10 @@ describe.skipIf(!liveRomeDBTests())('CMS plugin trust', () => {
       expect(await web.page('/dashboard/plugins')).toMatch(/data-plugin="?support-desk"? data-version="?1\.1\.0"? data-active="?false/);
       contains(await web.page('/dashboard/content/support-desk.tickets'), 'waiting for a schema migration');
       lacks(await web.page('/dashboard'), 'Support desk is active');
+      // Inactive: the plugin's tab is gone from the post editor; its group and the field stay.
+      const inactiveEditor = await web.page('/dashboard/content/posts/new');
+      lacks(inactiveEditor, 'entry-tab-support-desk-support');
+      contains(inactiveEditor, 'Priority');
     } finally { await server.close(); }
   }, 600_000);
 });

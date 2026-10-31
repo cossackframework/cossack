@@ -3,8 +3,10 @@
  * package never executes during installation; the host trusts what the manifest declares
  * only after this check, the policy lints and an administrator's grant.
  */
-import { blockProblems, type BlockDeclaration } from './blocks';
+import { blockProblems, CORE_BLOCKS, type Block, type BlockDeclaration } from './blocks';
 import { collectionProblems, type CollectionDefinition } from './collections';
+import { editorLayoutProblems, editorLayoutShapeProblem } from './editor-layout';
+import { FIELD_BLOCKS, fieldGroupProblems, type FieldGroup } from './field-groups';
 import { defineAction, defineFilter, type ExtensionPoint } from '@cossackframework/core/hooks';
 import { EXTENSION_POINTS } from './hooks';
 import { OWNER_NAME, resourceProblems, type ResourceAction, type ResourceDeclaration } from './resource';
@@ -62,6 +64,19 @@ export interface CmsPluginManifest {
     /** Block types named `<plugin>/<name>`; `ui.ts` renders them through its `blocks` export. */
     readonly blocks?: readonly BlockDeclaration[];
     /**
+     * Field groups the plugin ships, with IDs starting with `<plugin>-`: meta boxes attached to
+     * collections, taxonomies, users or menus. They are stored with the other groups when the
+     * plugin is granted (an upgrade replaces them), tagged with the plugin and read-only in the
+     * dashboard; their fields stay with the entries.
+     */
+    readonly fieldGroups?: readonly Omit<FieldGroup, 'plugin'>[];
+    /**
+     * Tabs and sidebar boxes the plugin adds to a collection's entry editor while it is active:
+     * a partial editor layout per collection, its own or another's. Tab IDs are prefixed with the
+     * plugin's name; a layout the administrator saved keeps a tab it already placed.
+     */
+    readonly editor?: readonly { readonly collection: string; readonly tabs?: readonly Block[]; readonly sidebar?: readonly Block[] }[];
+    /**
      * Extension points the plugin's server code registers handlers for: the CMS's own, or those
      * another installed plugin `provides`. Each needs the `hook:<point>` grant.
      */
@@ -100,7 +115,8 @@ export interface CmsPluginManifest {
 export const HOST_SLOTS = Object.freeze(['dashboard.nav', 'dashboard.overview'] as const);
 export type HostSlot = (typeof HOST_SLOTS)[number];
 
-const KNOWN_FIELDS = new Set(['schemaVersion', 'name', 'version', 'description', 'author', 'authorUrl', 'compatibility', 'dependencies', 'resources', 'collections', 'blocks', 'hooks', 'permissions', 'ui', 'provides', 'commands', 'theme', 'logo', 'cover', 'package', 'source']);
+const KNOWN_FIELDS = new Set(['schemaVersion', 'name', 'version', 'description', 'author', 'authorUrl', 'compatibility', 'dependencies', 'resources', 'collections', 'blocks', 'fieldGroups', 'editor', 'hooks', 'permissions', 'ui', 'provides', 'commands', 'theme', 'logo', 'cover', 'package', 'source']);
+const COLLECTION_NAME = /^[a-z][a-zA-Z0-9_]{0,40}$/;
 const ARTWORK = /^assets\/[A-Za-z0-9][A-Za-z0-9._-]{0,80}\.(?:png|jpe?g|webp|gif|avif|svg)$/;
 const HOST = /^(?:\*\.)?(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$|^localhost$/;
 const ACTIONS = new Set(['read', 'create', 'update', 'delete']);
@@ -157,6 +173,28 @@ export function manifestProblems(manifest: unknown): string[] {
         problems.push(...blockProblems(block, name));
         if (blockNames.has(block.name)) problems.push(`block ${block.name} is declared twice.`);
         blockNames.add(block.name);
+    }
+    // Groups are checked against the core and field blocks here; the host checks them against every block type when it stores them.
+    const groupTypes = new Map([...CORE_BLOCKS, ...FIELD_BLOCKS].map(block => [block.name, block]));
+    const groupIds = new Set<string>();
+    for (const [index, group] of (Array.isArray(value.fieldGroups) ? value.fieldGroups : value.fieldGroups === undefined ? [] : [null]).entries()) {
+        if (!group || typeof group !== 'object') { problems.push(`fieldGroups[${index}] must be a field group.`); continue; }
+        const id = String(group.id);
+        if ('plugin' in group) problems.push(`field group ${id}: plugin is set by the host.`);
+        if (typeof group.id !== 'string' || !group.id.startsWith(`${name}-`)) problems.push(`field group ${id}: IDs start with ${name}-.`);
+        for (const problem of fieldGroupProblems(group as FieldGroup, groupTypes).problems) problems.push(`field group ${id}: ${problem}`);
+        if (groupIds.has(id)) problems.push(`field group ${id} is declared twice.`);
+        groupIds.add(id);
+    }
+    const editorCollections = new Set<string>();
+    for (const [index, entry] of (Array.isArray(value.editor) ? value.editor : value.editor === undefined ? [] : [null]).entries()) {
+        if (!entry || typeof entry !== 'object' || typeof entry.collection !== 'string' || !COLLECTION_NAME.test(entry.collection)) { problems.push(`editor[${index}] must name a collection.`); continue; }
+        const layout = { tabs: entry.tabs ?? [], sidebar: entry.sidebar ?? [] };
+        const shape = editorLayoutShapeProblem(layout);
+        if (shape) problems.push(`editor ${entry.collection}: the layout ${shape}`);
+        else problems.push(...editorLayoutProblems(layout, { partial: true }).problems.map(problem => `editor ${entry.collection}: ${problem}`));
+        if (editorCollections.has(entry.collection)) problems.push(`editor ${entry.collection} is declared twice.`);
+        editorCollections.add(entry.collection);
     }
     const provided = new Set<string>();
     for (const [index, declaration] of (Array.isArray(value.provides) ? value.provides : value.provides === undefined ? [] : [null]).entries()) {

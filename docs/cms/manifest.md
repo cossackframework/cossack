@@ -111,6 +111,41 @@ plugin invalid.
 Block types named `<plugin>/<name>`, rendered on the site by the `blocks` export of
 `ui.ts`.
 
+## `fieldGroups`
+
+Field groups the plugin ships: meta boxes of typed fields attached to collections,
+taxonomies, users or menu items, in the shape `cms.saveFieldGroup()` takes, with IDs
+starting with `<plugin>-`. When the plugin is granted they are stored with the other
+groups, tagged with the plugin, and their targets' schemas are planned; granting it again
+after an upgrade replaces them. The dashboard shows them read-only, the collection manager
+cannot detach them, and they stay, with their fields' values, while the plugin is inactive.
+
+```json
+"fieldGroups": [{
+  "id": "shop-shipping", "title": "Shipping",
+  "targets": [{ "kind": "collection", "name": "products" }],
+  "blocks": [{ "_id": "weight", "type": "field/number", "data": { "label": "Weight", "name": "weight", "min": 0 } }]
+}]
+```
+
+## `editor`
+
+Tabs and sidebar boxes the plugin adds to a collection's entry editor while it is active,
+its own collection or another's: a partial editor layout per collection (see
+`specs/cms-editor-layout.md` and the `@cossackframework/cms` README), with `tabs` (`editor/tab` blocks) and `sidebar` blocks, which
+place meta boxes (`editor/box`). The host prefixes a tab's ID with the plugin's name; the
+editor's address names the open tab by that ID (`?tab=support-desk-support`), so a tab ID is
+lowercase letters, digits and single hyphens, at most 40 characters with the prefix, and
+never `json` or `sidebar`. A layout the administrator saved keeps a tab or a box it already
+placed, so moving a plugin's tab holds.
+
+```json
+"editor": [{
+  "collection": "products",
+  "tabs": [{ "_id": "shipping", "type": "editor/tab", "data": { "label": "Shipping" }, "children": [{ "_id": "box", "type": "editor/box", "data": { "box": "group:shop-shipping" } }] }]
+}]
+```
+
 ```json
 {
   "name": "support-desk/contact",

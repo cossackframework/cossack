@@ -7,6 +7,7 @@ import { blocksShapeProblem, type Block } from './blocks';
 import { FIELD_NAME, field, fieldProblems, TAXONOMY_NAME, type FieldDeclaration } from './fields';
 import { RESOURCE_NAME, type AccessRule, type ResourceDeclaration } from './resource';
 import { collectionSeoProblems, type CollectionRobots, type CollectionSchema, type CollectionSeoTemplates } from './seo';
+import { editorLayoutProblems, editorLayoutShapeProblem, type EditorLayout } from './editor-layout';
 
 /**
  * Entry states of a publishable collection. Pending entries wait for review; scheduled ones are
@@ -137,6 +138,11 @@ export interface CollectionDefinition {
     /** How far entries may change the template: `insert` keeps its blocks (no adding or removing), `all` keeps their order too. */
     readonly templateLock?: 'all' | 'insert';
     /**
+     * How the entry editor is arranged: tabs for the main column and the sidebar every tab shares,
+     * placing the editor's boxes (`editorBoxes`). Absent, the editor shows `defaultEditorLayout`.
+     */
+    readonly editor?: EditorLayout;
+    /**
      * The order of the fields, for built-in collections, whose module fields are not stored with
      * the added ones. Fields it does not name follow in their declared order.
      */
@@ -198,6 +204,11 @@ export function collectionProblems(definition: CollectionDefinition): string[] {
         else if (definition.template.length && !definition.features?.content) problems.push('The content template needs the content feature.');
     }
     if (definition.templateLock !== undefined && !['all', 'insert'].includes(definition.templateLock)) problems.push('The template lock is all or insert.');
+    if (definition.editor !== undefined) {
+        const shape = editorLayoutShapeProblem(definition.editor);
+        if (shape) problems.push(`The editor layout ${shape}`);
+        else problems.push(...editorLayoutProblems(definition.editor).problems.map(problem => `Editor layout: ${problem}`));
+    }
     if (definition.fieldOrder !== undefined && (!Array.isArray(definition.fieldOrder) || definition.fieldOrder.length > 64 || definition.fieldOrder.some(name => typeof name !== 'string' || !FIELD_NAME.test(name)))) problems.push('The field order names at most 64 fields.');
     const taken = new Set([...RESERVED_FIELDS, ...taxonomies]);
     for (const [name, declaration] of fields) {
@@ -301,6 +312,7 @@ export function extendCollection(builtin: CollectionDefinition, stored: Partial<
         ...(stored.comments !== undefined ? { comments: stored.comments } : {}),
         ...(stored.template !== undefined ? { template: stored.template } : {}),
         ...(stored.templateLock !== undefined ? { templateLock: stored.templateLock } : {}),
+        ...(stored.editor !== undefined ? { editor: stored.editor } : {}),
         ...(stored.layout !== undefined ? { layout: stored.layout } : {}),
         // The module's features are locked; stored ones add to them.
         ...(builtin.features || stored.features ? { features: { ...stored.features, ...builtin.features } } : {}),

@@ -218,3 +218,65 @@ describe.skipIf(!live)('field groups', () => {
         expect((await again.fieldGroups.get('events-fields'))!.targets).toEqual([]);
     });
 });
+
+/** A shop plugin that ships a Shipping group for products and a Shipping tab holding it. */
+const shop = {
+    name: 'shop', version: '1.0.0',
+    manifest: {
+        schemaVersion: 1, name: 'shop', version: '1.0.0',
+        fieldGroups: [{ id: 'shop-shipping', title: 'Shipping', targets: [{ kind: 'collection', name: 'products' }], blocks: [fieldBlock('weight', 'number', { name: 'weight', label: 'Weight', min: 0, index: true })] }],
+        editor: [{ collection: 'products', tabs: [{ _id: 'shipping', type: 'editor/tab', data: { label: 'Shipping' }, children: [{ _id: 'box', type: 'editor/box', data: { box: 'group:shop-shipping' } }] }] }],
+    },
+};
+
+describe.skipIf(!live)('editor layouts and plugin field groups', () => {
+    const service = romedbService();
+    let cms: CmsHost;
+
+    beforeAll(async () => {
+        cms = createCMS({ db: service.database(), modules: [contentModule], plugins: [shop] });
+        expect((await cms.migrate()).failed).toBeUndefined();
+        await cms.ready();
+        await cms.saveCollection(products, admin);
+    }, 30_000);
+
+    it('stores a collection\'s editor layout and refuses an invalid one', async () => {
+        const layout = { tabs: [{ _id: 'edit', type: 'editor/tab', data: { label: 'Product' }, children: [{ _id: 'content', type: 'editor/box', data: { box: 'field:content' } }] }], sidebar: [] };
+        const saved = await cms.saveCollection({ ...products, editor: layout }, admin);
+        expect(saved.editor).toEqual(layout);
+        expect(cms.collection('products').editor).toEqual(layout);
+        const other = createCMS({ db: service.database(), modules: [contentModule], plugins: [shop] });
+        await other.ready();
+        expect(other.collection('products').editor).toEqual(layout);
+        await expect(cms.saveCollection({ ...products, editor: { tabs: [{ _id: 'main', type: 'editor/tab', data: { label: 'Main' } }], sidebar: [] } }, admin))
+            .rejects.toMatchObject({ code: 'CMS_VALIDATION', message: expect.stringContaining('The first tab is edit.') });
+        // A built-in collection keeps a stored layout beside the module's definition.
+        const posts = cms.collection('posts');
+        await cms.saveCollection({ ...posts, editor: layout }, admin);
+        expect(cms.collection('posts').editor).toEqual(layout);
+        expect(cms.builtinCollection('posts')!.editor).toBeUndefined();
+    });
+
+    it('seeds a plugin\'s field groups when it is granted, read-only and attached by the manifest; its tabs apply while it is active', async () => {
+        expect(cms.fieldGroupsFor({ kind: 'collection', name: 'products' }).map(group => group.id)).toEqual([]);
+        expect(cms.editorLayoutAdditions('products')).toEqual([]);
+        await cms.grantPlugin('shop', admin);
+        const shipping = (await cms.fieldGroups.get('shop-shipping'))!;
+        expect(shipping).toMatchObject({ plugin: 'shop', title: 'Shipping', targets: [{ kind: 'collection', name: 'products' }] });
+        expect(cms.fieldGroupsFor({ kind: 'collection', name: 'products' }).map(group => group.id)).toEqual(['shop-shipping']);
+        expect(cms.resourceById('cms/products').fields.weight).toMatchObject({ kind: 'number', index: true });
+        expect(cms.editorLayoutAdditions('products')).toEqual([{ plugin: 'shop', layout: { tabs: shop.manifest.editor[0]!.tabs, sidebar: [] } }]);
+        const entry = await cms.resource('cms/products').create({ title: 'Crate', weight: 12 }, { principal: admin });
+        expect(entry.weight).toBe(12);
+        // The dashboard cannot change, detach or delete it; the manifest owns it.
+        await expect(cms.saveFieldGroup({ ...shipping, title: 'Delivery' }, admin)).rejects.toMatchObject({ code: 'CMS_FORBIDDEN' });
+        await expect(cms.deleteFieldGroup('shop-shipping', admin)).rejects.toMatchObject({ code: 'CMS_FORBIDDEN' });
+        await cms.saveCollection(cms.collection('products'), admin, { groups: [] });
+        expect(cms.fieldGroupsFor({ kind: 'collection', name: 'products' }).map(group => group.id)).toEqual(['shop-shipping']);
+        // Disabled: the tab goes, the group and its values stay.
+        await cms.revokePlugin('shop', admin);
+        expect(cms.editorLayoutAdditions('products')).toEqual([]);
+        expect(cms.fieldGroupsFor({ kind: 'collection', name: 'products' }).map(group => group.id)).toEqual(['shop-shipping']);
+        expect((await cms.resource('cms/products').get(entry.id, { principal: admin }))?.weight).toBe(12);
+    });
+});

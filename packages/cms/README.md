@@ -54,6 +54,19 @@ Data contract:
   kind's rules, bounded by `minItems` and `maxItems`, and indexed as an array when
   filterable; a gallery is a multiple media field and a multiple choice a list of its
   values. Conditions on fields clear what they hide on write.
+- A collection's entry editor is arranged by its `editor` layout: tabs for the main column
+  and a sidebar every tab shares, built from `editor/tab`, `editor/section` and `editor/box`
+  blocks with the core columns, grids and notes. A box is one of `editorBoxes()`: a field
+  (`field:excerpt`), a field group (`group:pricing`), a taxonomy (`taxonomy:categories`) or
+  the editor's own (`seo`, `attributes`, `languages`, `template`, `discussion`, `revisions`);
+  the title and the Publish box are pinned. Without a stored layout the editor shows
+  `defaultEditorLayout()`, the arrangement it always had; `resolveEditorLayout()` appends
+  boxes a layout does not name, leaves out boxes that are gone and merges what active
+  plugins' manifests add (`editor`). Plugin manifests also ship field groups
+  (`fieldGroups`), stored when the plugin is granted. A tab's ID names it in the editor's
+  address (`?tab=pricing`, `EDITOR_TAB_ID`). The collection manager's Editor tab edits the
+  layout as one tree, the sidebar its last row, so meta boxes (the dashboard's word for
+  boxes) drag between a tab and the sidebar.
 - Each mutation is one atomic batch: record, revision, audit and outbox rows, guarded by
   the operation ID, so a stale edit writes nothing.
 - Terms store their ancestors' IDs as a path, so a subtree is a prefix match and a move is

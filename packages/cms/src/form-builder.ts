@@ -6,6 +6,7 @@
  */
 import { field, type FieldDeclaration } from './fields';
 import { INPUT_NAME, flattenBlocks, type Block, type BlockCondition, type BlockDeclaration, type ConditionRule, type InputKind } from './blocks';
+import { boxBlock, EDIT_TAB } from './editor-layout';
 import { blockConditionProblem } from './block-shape';
 import type { CollectionDefinition } from './collections';
 import type { RecordShape } from './records';
@@ -673,6 +674,14 @@ export const forms: CollectionDefinition = {
         enabled: field.boolean({ default: true, placement: 'sidebar', label: 'Accepting submissions' }),
         settings: field.group(FORM_SETTINGS, { label: 'Settings' }),
         notifications: field.json({ label: 'Notifications', description: 'Emails sent for each submission.' }),
+    },
+    // The form on its own tab, its settings and notifications on a second; see editor-layout.ts.
+    editor: {
+        tabs: [
+            { _id: EDIT_TAB, type: 'editor/tab', data: { label: 'Form' }, children: [boxBlock('field:body')] },
+            { _id: 'settings', type: 'editor/tab', data: { label: 'Settings' }, children: [boxBlock('field:settings'), boxBlock('field:notifications')] },
+        ],
+        sidebar: [boxBlock('languages'), boxBlock('field:enabled'), boxBlock('revisions')],
     },
 };
 

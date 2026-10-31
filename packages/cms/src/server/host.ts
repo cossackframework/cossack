@@ -8,6 +8,7 @@ import { ClientError, type RomeDB, type Statement, type Value, type WorkLimits }
 import { blockId, blockMedia, blockProblems, validateBlocks, type Block, type BlockDeclaration } from '../blocks';
 import { blocksShapeProblem, normalizeFields, type FieldDeclaration } from '../fields';
 import { collectionProblems, collectionResource, contentBlocks, entryUrl, extendCollection, LOCALE, orderedFields, RESERVED_FIELDS, type CollectionDefinition } from '../collections';
+import type { EditorLayoutAddition } from '../editor-layout';
 import { fieldGroupDeclarations, fieldGroupProblems, fieldVisibility, flattenGroupFields, groupsForTarget, metaProblems, withTarget, type FieldGroup, type FieldGroupTarget } from '../field-groups';
 import { AUTHOR_FIELDS, collectionSeoProblems } from '../seo';
 import { CmsFieldGroups } from './field-groups';
@@ -1078,6 +1079,7 @@ export class CmsHost {
             ...(input.features !== undefined ? { features: input.features } : {}),
             ...(input.template !== undefined ? { template: input.template } : {}),
             ...(input.templateLock !== undefined ? { templateLock: input.templateLock } : {}),
+            ...(input.editor !== undefined ? { editor: input.editor } : {}),
             taxonomies: (input.taxonomies ?? []).filter(name => !(builtin.taxonomies ?? []).includes(name)),
             fields: normalizeFields(Object.fromEntries(Object.entries(input.fields ?? {}).filter(([name]) => !Object.hasOwn(builtin.fields, name)))),
             // The module's fields are not stored, so their place among the added ones is.
@@ -1105,7 +1107,8 @@ export class CmsHost {
         if (options.groups) {
             const wanted = new Map(options.groups.map((entry, index) => [entry.id, entry.order ?? index]));
             for (const id of wanted.keys()) if (!this.#groups.some(group => group.id === id)) problems.push(`Field group ${id} does not exist.`);
-            const attached = this.#groups.map(group => wanted.has(group.id) ? withTarget(group, target, true, wanted.get(group.id)) : withTarget(group, target, false));
+            // A plugin's group is attached by its manifest; the list cannot detach or reorder it.
+            const attached = this.#groups.map(group => group.plugin ? group : wanted.has(group.id) ? withTarget(group, target, true, wanted.get(group.id)) : withTarget(group, target, false));
             for (const [index, group] of attached.entries()) if (canonicalJson(group) !== canonicalJson(this.#groups[index])) changed.push(group);
             const scope = [...RESERVED_FIELDS, ...(definition.taxonomies ?? []), ...Object.keys(definition.fields)];
             const taken = new Map<string, string>();
@@ -1342,7 +1345,34 @@ export class CmsHost {
         ], { kind: 'cms.grants', retryConflicts: 5 });
         this.#activation = undefined;
         await this.#refreshPlugins();
+        await this.#seedFieldGroups(plugin, principal);
         return this.#pluginStatus(plugin, await this.#state());
+    }
+
+    /**
+     * Store the field groups a plugin's manifest ships, tagged with the plugin, and plan their
+     * targets' schemas. Granting the plugin again after an upgrade replaces them; the groups
+     * stay, with their fields' values, while the plugin is inactive, and go with the plugin.
+     */
+    async #seedFieldGroups(plugin: HostedPlugin, principal: Principal): Promise<void> {
+        if (!plugin.manifest.fieldGroups?.length) return;
+        await this.ready({ force: true });
+        for (const declared of plugin.manifest.fieldGroups) {
+            const group: FieldGroup = { ...declared, plugin: plugin.manifest.name };
+            const scope = [...new Set(group.targets.flatMap(target => this.#targetScope(target)))];
+            const checked = fieldGroupProblems(group, this.#blocks, scope);
+            for (const target of group.targets) if (target.kind === 'collection' && !this.#collections.has(target.name)) checked.problems.push(`Collection ${target.name} does not exist.`);
+            if (checked.problems.length) throw new CmsError('CMS_VALIDATION', `Field group ${group.id} of ${plugin.manifest.name}: ${checked.problems.join(' ')}`);
+            await this.fieldGroups.put({ ...group, blocks: checked.blocks }, principal);
+            await this.#migrateTargets(group, principal);
+        }
+    }
+
+    /** What active plugins add to a collection's entry editor: their tabs and sidebar boxes, in plugin order. */
+    editorLayoutAdditions(collection: string): EditorLayoutAddition[] {
+        return [...this.#plugins.values()].filter(plugin => !plugin.problems.length && this.#activePlugins.has(plugin.manifest.name))
+            .flatMap(plugin => (plugin.manifest.editor ?? []).filter(entry => entry.collection === collection)
+                .map(entry => ({ plugin: plugin.manifest.name, layout: { tabs: entry.tabs ?? [], sidebar: entry.sidebar ?? [] } })));
     }
 
     /** Disable a plugin: its grants are removed; its hooks, commands and resources stop. Data stays. */
@@ -1617,6 +1647,8 @@ export class CmsHost {
     async saveFieldGroup(input: FieldGroup, principal: Principal): Promise<FieldGroup> {
         this.#authorizeBuilder(principal);
         await this.ready({ force: true });
+        const existing = await this.fieldGroups.get(input.id);
+        if (existing?.plugin) throw new CmsError('CMS_FORBIDDEN', `The group ${existing.title} comes from the plugin ${existing.plugin}; it is changed in its manifest.`);
         const problems: string[] = [];
         for (const target of input.targets ?? []) {
             if (target.kind === 'collection' && !this.#collections.has(target.name)) problems.push(`Collection ${target.name} does not exist.`);
@@ -1650,6 +1682,7 @@ export class CmsHost {
         this.#authorizeBuilder(principal);
         const group = await this.fieldGroups.get(id);
         if (!group) throw new CmsError('CMS_NOT_FOUND', 'Field group not found.');
+        if (group.plugin) throw new CmsError('CMS_FORBIDDEN', `The group ${group.title} comes from the plugin ${group.plugin}; it is removed with the plugin.`);
         await this.fieldGroups.remove(id);
         await this.#migrateTargets(group, principal);
     }

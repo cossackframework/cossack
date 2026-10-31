@@ -62,7 +62,7 @@ So the revision is mostly about removing one concept, not adding three.
 
 ### Also worth deciding now
 
-- **Placement per attachment?** A group is main or sidebar everywhere. If a "Product details" group should sit in the sidebar for products and in the main column for pages, placement would move onto the target too. Recommendation: keep placement on the group until someone needs it; the target shape allows adding it later.
+- **Placement per attachment?** *Answered 2026-10-30 by [the editor layout](cms-editor-layout.md): the collection's layout places every box; a group's `placement` is only the default.* A group is main or sidebar everywhere. If a "Product details" group should sit in the sidebar for products and in the main column for pages, placement would move onto the target too. Recommendation: keep placement on the group until someone needs it; the target shape allows adding it later.
 - **Groups page.** Keep `/dashboard/field-groups` as the global list (it is the only place for taxonomy, user and menu targets) and show each group's targets there, with a link back to each collection.
 - **Entry editor.** Needs no new layout code: it already renders boxes from groups; the own-layout box is simply gone, and `content`, `excerpt` and `featuredImage` take their fixed places (main after title, main after content, sidebar).
 

@@ -2,7 +2,7 @@
  * Server helpers for the dashboard's content screens: which resource a route names, the
  * editor's view of it, and saving entries. Pages call these from their server methods.
  */
-import { blockCategory, blockMedia, blockSupports, bulkActions, cloneBlocks, fieldGroupDeclarations, type FieldGroupTarget, CmsError, CORE_FIELDS, entryActions, entryColumns, flattenBlocks, isCmsError, mediaUrl, principalId, recordTitle, richTextHtml, richTextMedia, type Block, type CollectionDefinition, type EntryAction, type EntryColumn, type MediaKind, type Principal, type RecordShape, type Resource, type RichTextDoc, type WriteActor } from '@cossackframework/cms';
+import { blockCategory, blockMedia, blockSupports, bulkActions, cloneBlocks, editorBoxes, fieldGroupDeclarations, type FieldGroupTarget, CmsError, CORE_FIELDS, entryActions, entryColumns, flattenBlocks, isCmsError, mediaUrl, principalId, recordTitle, resolveEditorLayout, richTextHtml, richTextMedia, type Block, type BlockDeclaration, type CollectionDefinition, type EntryAction, type EntryColumn, type MediaKind, type Principal, type RecordShape, type Resource, type RichTextDoc, type WriteActor } from '@cossackframework/cms';
 import { renderMarkdown, type CmsHost } from '@cossackframework/cms/server';
 import { activePresets } from './site';
 import { controlValue, editorBlocks, editorField, editorFields, editorInput, type BlockOption, type EditorBlock, type EditorField, type EditorGroup, type EditorTaxonomy, type EditorValues, type EditorView, type TermOption } from './editor';
@@ -32,6 +32,10 @@ export async function editorView(cms: CmsHost, route: string): Promise<EditorVie
     }
     const blocks = await blockOptions(cms);
     const titleField = collection ? 'title' : resource.titleField ?? '';
+    const groups = collection ? cms.fieldGroupsFor({ kind: 'collection', name: collection.name }) : [];
+    // The editor's boxes, placed by the collection's layout (or the default), with what active plugins add.
+    const boxes = editorBoxes({ collection: collection ?? { path: null }, fields: resource.fields, groups, taxonomies: taxonomies.map(taxonomy => ({ name: taxonomy.name, label: taxonomy.label })), special });
+    const resolved = resolveEditorLayout(collection?.editor, boxes, collection ? cms.editorLayoutAdditions(collection.name) : []);
     const termChoices: EditorView['termChoices'] = [];
     for (const declaration of cms.taxonomies.declarations) termChoices.push(...(await cms.taxonomies.tree(declaration.name)).slice(0, 200).map(term => ({ id: term.id, name: term.name, taxonomy: declaration.label, depth: term.depth })));
     return {
@@ -44,9 +48,13 @@ export async function editorView(cms: CmsHost, route: string): Promise<EditorVie
         template: editorBlocks(cloneBlocks(collection?.template ?? []) as EditorBlock[], blocks), ...(collection?.templateLock ? { templateLock: collection.templateLock } : {}),
         collections: cms.collections().filter(entry => entry.publishable !== false && !entry.managed).map(entry => ({ name: entry.name, label: entry.label })),
         termChoices,
-        groups: collection ? cms.fieldGroupsFor({ kind: 'collection', name: collection.name }).map(group => ({
+        groups: groups.map(group => ({
             id: group.id, title: group.title, description: group.description ?? '', placement: group.placement ?? 'main', blocks: editorBlocks(cloneBlocks(group.blocks) as EditorBlock[], blocks),
-        })) : [],
+        })),
+        layout: {
+            tabs: resolved.tabs.map(tab => ({ id: tab._id, label: String(tab.data.label ?? ''), icon: String(tab.data.icon ?? ''), blocks: cloneBlocks(tab.children ?? []) as EditorBlock[] })),
+            sidebar: cloneBlocks(resolved.sidebar) as EditorBlock[],
+        },
     };
 }
 
@@ -150,9 +158,19 @@ import type { MediaPreview } from './field-controls';
 
 /** The block types editors can add: those of modules and active plugins. */
 export async function blockOptions(cms: CmsHost): Promise<BlockOption[]> {
-    return (await cms.blocks()).map(block => ({ name: block.name, label: block.label, description: block.description ?? '', icon: block.icon ?? '',
+    return (await cms.blocks()).map(blockOption);
+}
+
+/** The options of a set of block types that are not the host's, such as the editor layout's. */
+export function optionsOf(types: ReadonlyMap<string, BlockDeclaration>): BlockOption[] {
+    return [...types.values()].map(blockOption);
+}
+
+/** A block type as the editors hold it. */
+export function blockOption(block: BlockDeclaration): BlockOption {
+    return { name: block.name, label: block.label, description: block.description ?? '', icon: block.icon ?? '',
         category: blockCategory(block), fields: editorFields(block.fields, []),
-        children: block.children ? { allowed: [...(block.children.allowed ?? [])], max: block.children.max ?? null } : null, parent: [...(block.parent ?? [])], supports: [...blockSupports(block)], field: block.field?.kind ?? '', input: Boolean(block.input), keywords: [...(block.keywords ?? [])], common: block.common === true }));
+        children: block.children ? { allowed: [...(block.children.allowed ?? [])], max: block.children.max ?? null } : null, parent: [...(block.parent ?? [])], supports: [...blockSupports(block)], field: block.field?.kind ?? '', input: Boolean(block.input), keywords: [...(block.keywords ?? [])], common: block.common === true };
 }
 
 /** Previews of files by ID; missing files are left out. */

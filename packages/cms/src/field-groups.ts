@@ -238,6 +238,8 @@ export interface FieldGroup {
     readonly order?: number;
     readonly targets: readonly FieldGroupTarget[];
     readonly blocks: readonly Block[];
+    /** The plugin whose manifest ships the group: seeded when the plugin is granted, read-only in the dashboard. */
+    readonly plugin?: string;
 }
 
 export const FIELD_GROUP_ID = /^[A-Za-z0-9_-]{1,40}$/;
@@ -280,6 +282,7 @@ export function fieldGroupProblems(group: FieldGroup, types: ReadonlyMap<string,
     if (group?.description !== undefined && (typeof group.description !== 'string' || group.description.length > FIELD_GROUP_LIMITS.description)) problems.push(`The description is at most ${FIELD_GROUP_LIMITS.description} characters.`);
     if (group?.placement !== undefined && !['main', 'sidebar'].includes(group.placement)) problems.push('Placement is main or sidebar.');
     if (group?.order !== undefined && !Number.isSafeInteger(group.order)) problems.push('Order is a whole number.');
+    if (group?.plugin !== undefined && (typeof group.plugin !== 'string' || !/^[a-z][a-z0-9-]{0,63}$/.test(group.plugin))) problems.push('Plugin is a plugin name.');
     const targets = Array.isArray(group?.targets) ? group.targets : [];
     if (!Array.isArray(group?.targets) || targets.length > FIELD_GROUP_LIMITS.targets) problems.push(`Targets list where the group shows, at most ${FIELD_GROUP_LIMITS.targets}.`);
     for (const [index, target] of targets.entries()) {

@@ -5,7 +5,9 @@ import { bindingPaths, findBlock, flattenBlocks, flattenGroupFields, hasPermissi
 import { collectionDraft, definitionOf, type CollectionDraft } from '../../../../../cms/builder';
 import { blockPanel } from '../../../../../cms/block-panel';
 import { BlockTree } from '../../../../../cms/block-tree';
-import { blockFilePreviews, blockOptions, findMedia } from '../../../../../cms/content';
+import { blockFilePreviews, blockOptions, findMedia, optionsOf } from '../../../../../cms/content';
+import { EditorLayoutEditor, type EditorLayoutDraft } from '../../../../../cms/editor-layout-editor';
+import { CORE_FIELDS, editorBoxes, editorLayoutTypes, resolveEditorLayout, type EditorBox, type EditorLayout, type EditorLayoutAddition } from '@cossackframework/cms';
 import { blocksInput, controlValue, editorBlocks, editorInput, type BlockOption, type EditorBlock, type EditorField } from '../../../../../cms/editor';
 import { bindingChoices, blockFields, moveItem, type BindingChoice, type MediaHooks, type MediaPreview } from '../../../../../cms/field-controls';
 import { requireAny } from '../../../../../cms/guards';
@@ -14,13 +16,17 @@ import { closedChooser, mediaChooser, uploadMedia, withFile, type MediaChooserSt
 import { RichTextField, richTextEditors } from '../../../../../cms/rich-text-field';
 import { activePresets } from '../../../../../cms/site';
 import { styleValues, withStyle, type BlockTab, type StyleValues } from '../../../../../cms/style-controls';
-import { iconButton, linkButton, notice, pageHeader } from '../../../../../cms/ui';
+import { iconButton, linkButton, notice, pageHeader, rememberTab, tabFromQuery } from '../../../../../cms/ui';
 
 /** The template block being edited in the panel. */
 interface BlockDialog { id: string; values: Record<string, unknown>; style: StyleValues; tab: BlockTab; errors: Record<string, string> }
 
 /** A field group as the manager lists it: attached in this order, with its fields for the template's bindings. */
-interface GroupRow { id: string; title: string; placement: 'main' | 'sidebar'; fields: { name: string; label: string; kind: string }[] }
+interface GroupRow { id: string; title: string; placement: 'main' | 'sidebar'; fields: { name: string; label: string; kind: string }[]; /** The plugin it comes from, which attaches it; empty for a group made here. */ plugin: string }
+
+/** The manager's tabs: the collection's settings, how search engines see its entries, and the arrangement of its entry editor. */
+const TABS = ['general', 'seo', 'editor'] as const;
+
 
 /** The bindable kind of a field block's type. */
 const BINDABLE: Record<string, EditorField['kind']> = { text: 'string', textarea: 'text', markdown: 'text', number: 'number', integer: 'integer', boolean: 'boolean', choice: 'enum', date: 'datetime' };
@@ -59,6 +65,16 @@ export default class CollectionBuilder extends Cossack {
     @State() presets: Required<ThemePresets> = { colors: [], fontSizes: [], spacing: [] };
     @State() dialog: BlockDialog | null = null;
     @State() chooser: MediaChooserState = closedChooser();
+    @State() tab: (typeof TABS)[number] = 'general';
+    /** The editor layout as control values: the stored one or the default, with what active plugins add, boxes that are gone kept and marked. */
+    @State() layout: EditorLayoutDraft = { tabs: [], sidebar: [] };
+    @State() boxes: EditorBox[] = [];
+    @State() layoutOptions: BlockOption[] = [];
+    @State() missing: string[] = [];
+    @State() added: Record<string, string> = {};
+    @State() additions: EditorLayoutAddition[] = [];
+    /** The layout is stored, or was changed here, so saving the collection keeps it. */
+    @State() layoutStored = false;
 
     head(): HeadValue {
         return { title: this.draft ? `${this.draft.label} — ${__('Collection')}` : __('Collection') };
@@ -67,6 +83,7 @@ export default class CollectionBuilder extends Cossack {
     async init() {
         await this.load(this.c.req.param('name') ?? '');
         if (this.c.req.query('created') === '1') this.message = __('Collection created. Add its fields, then save.');
+        this.tab = tabFromQuery(this.c.req.query('tab'), TABS);
     }
 
     @Server()
@@ -82,7 +99,7 @@ export default class CollectionBuilder extends Cossack {
         this.builtinFields = Object.keys(builtin?.fields ?? {});
         this.builtinFeatures = Object.entries(builtin?.features ?? {}).filter(([, on]) => on).map(([feature]) => feature);
         const attached = cms.fieldGroupsFor({ kind: 'collection', name });
-        this.groups = attached.map(group => ({ id: group.id, title: group.title, placement: group.placement ?? 'main', fields: this.groupFields(group.blocks) }));
+        this.groups = attached.map(group => ({ id: group.id, title: group.title, placement: group.placement ?? 'main', fields: this.groupFields(group.blocks), plugin: group.plugin ?? '' }));
         this.available = (await cms.fieldGroups.all()).filter(group => !attached.some(entry => entry.id === group.id)).map(group => ({ id: group.id, title: group.title }));
         this.attaching = '';
         this.taxonomies = cms.taxonomies.declarations.map(taxonomy => ({ name: taxonomy.name, label: taxonomy.label }));
@@ -97,6 +114,27 @@ export default class CollectionBuilder extends Cossack {
         this.template = editorBlocks((definition.template ?? []) as EditorBlock[], options);
         this.previews = await blockFilePreviews(cms, this.template);
         this.presets = await activePresets(cms);
+        // The editor's boxes and their arrangement; the layout's block types offer the boxes as the Box block's choices.
+        this.boxes = editorBoxes({ collection: definition, fields: resource.fields, groups: attached, taxonomies: this.taxonomies.filter(taxonomy => (definition.taxonomies ?? []).includes(taxonomy.name)), special: CORE_FIELDS });
+        this.additions = cms.editorLayoutAdditions(name);
+        const resolved = resolveEditorLayout(definition.editor, this.boxes, this.additions, { keep: true });
+        this.missing = resolved.missing;
+        this.added = resolved.added;
+        this.layoutOptions = optionsOf(editorLayoutTypes(this.boxes, resolved.missing));
+        this.layout = { tabs: editorBlocks(resolved.tabs as EditorBlock[], this.layoutOptions), sidebar: editorBlocks(resolved.sidebar as EditorBlock[], this.layoutOptions) };
+        this.layoutStored = definition.editor !== undefined;
+    }
+
+    @Client()
+    showTab(tab: (typeof TABS)[number]) {
+        this.tab = tab;
+        rememberTab(tab, TABS);
+    }
+
+    @Client()
+    changeLayout(layout: EditorLayoutDraft) {
+        this.layout = layout;
+        this.layoutStored = true;
     }
 
     @Client()
@@ -136,7 +174,7 @@ export default class CollectionBuilder extends Cossack {
         if (!hasPermission(this.c.get('principal'), PERMISSIONS.manageCollections) || this.groups.some(entry => entry.id === id)) return;
         const group = await this.c.get('cms').fieldGroups.get(id);
         if (!group) return;
-        this.groups = [...this.groups, { id: group.id, title: group.title, placement: group.placement ?? 'main', fields: this.groupFields(group.blocks) }];
+        this.groups = [...this.groups, { id: group.id, title: group.title, placement: group.placement ?? 'main', fields: this.groupFields(group.blocks), plugin: group.plugin ?? '' }];
         this.available = this.available.filter(entry => entry.id !== id);
         this.attaching = '';
     }
@@ -144,12 +182,12 @@ export default class CollectionBuilder extends Cossack {
     @Client()
     async submit() {
         if (!this.draft) return;
-        await this.save(this.draft, this.groups.map(group => group.id), this.template);
+        await this.save(this.draft, this.groups.map(group => group.id), this.template, this.layoutStored ? this.layout : null);
         if (this.error) toast.error(this.error); else toast.success(__('Collection saved.'));
     }
 
     @Server()
-    async save(draft: CollectionDraft, groups: string[], template: EditorBlock[] = []) {
+    async save(draft: CollectionDraft, groups: string[], template: EditorBlock[] = [], layout: EditorLayoutDraft | null = null) {
         this.error = '';
         this.message = '';
         // The block types are read again here: the template is checked against what the host has.
@@ -157,8 +195,15 @@ export default class CollectionBuilder extends Cossack {
         const types = new Map(options.map(option => [option.name, option]));
         const converted = blocksInput(template, types);
         if ('error' in converted) { this.error = `${__('Content template')}: ${converted.error}`; return; }
+        // The layout's boxes are checked by name, so a box that is not available now (a detached group's) is kept.
+        const layoutTypes = new Map(optionsOf(editorLayoutTypes()).map(option => [option.name, option]));
+        const tabs = layout ? blocksInput(layout.tabs, layoutTypes) : { value: [] };
+        const sidebar = layout ? blocksInput(layout.sidebar, layoutTypes) : { value: [] };
+        if ('error' in tabs) { this.error = `${__('Editor layout')}: ${tabs.error}`; return; }
+        if ('error' in sidebar) { this.error = `${__('Editor layout')}: ${sidebar.error}`; return; }
+        const editor: EditorLayout | undefined = layout ? { tabs: tabs.value as Block[], sidebar: sidebar.value as Block[] } : undefined;
         try {
-            const saved = await this.c.get('cms').saveCollection(definitionOf(draft, converted.value as Block[]), this.c.get('principal'), { groups: groups.map((id, order) => ({ id, order })) });
+            const saved = await this.c.get('cms').saveCollection(definitionOf(draft, converted.value as Block[], editor), this.c.get('principal'), { groups: groups.map((id, order) => ({ id, order })) });
             await this.load(saved.name);
             this.message = __('Collection saved.');
         } catch (error) {
@@ -313,9 +358,10 @@ export default class CollectionBuilder extends Cossack {
                 <a href=${`/dashboard/field-groups/${group.id}`} class="font-medium text-foreground hover:text-primary no-underline">${group.title}</a>
                 <p class="text-xs text-muted-foreground">${group.fields.length === 1 ? __('1 field') : `${group.fields.length} ${__('fields')}`} · ${group.placement === 'sidebar' ? __('Sidebar') : __('Main column')}</p>
             </div>
+            ${group.plugin ? component(Badge, { variant: 'outline' }, `${__('Plugin')} ${group.plugin}`) : html`
             ${iconButton(`group-${group.id}-up`, 'arrow-up', `${__('Move up')} ${group.title}`, () => this.moveGroup(index, -1), { disabled: index === 0 })}
             ${iconButton(`group-${group.id}-down`, 'arrow-down', `${__('Move down')} ${group.title}`, () => this.moveGroup(index, 1), { disabled: index === this.groups.length - 1 })}
-            ${iconButton(`group-${group.id}-remove`, 'close-circle', `${__('Remove')} ${group.title}`, () => this.detachGroup(group.id), { danger: true })}
+            ${iconButton(`group-${group.id}-remove`, 'close-circle', `${__('Remove')} ${group.title}`, () => this.detachGroup(group.id), { danger: true })}`}
         </li>`;
         return component(Card, {}, html`
             ${component(CardHeader, {}, html`<h2 class="text-base font-semibold text-foreground">${__('Field groups')}</h2>
@@ -370,6 +416,20 @@ export default class CollectionBuilder extends Cossack {
                 </div>`)}`);
     }
 
+    /** The Search engines tab: the settings of entries on the site, or why there are none. */
+    private seoTab(draft: CollectionDraft): TemplateResult {
+        return html`<div class="max-w-4xl">${draft.public ? this.searchCard(draft)
+            : notice(__('Entries of this collection are not on the site, so search engines do not see them. Turn on Show entries on the site in General to set their structured data, robots directives and title templates.'), 'info')}</div>`;
+    }
+
+    /** The Editor tab: the entry editor's arrangement. */
+    private editorTab(): TemplateResult {
+        return html`<div class="space-y-4">
+            <p class="text-sm text-muted-foreground">${__('How the entry editor is arranged: the tabs of its main column and the meta boxes of its sidebar. Save the collection to keep the layout.')}</p>
+            ${component(EditorLayoutEditor, { id: 'layout', layout: this.layout, options: this.layoutOptions, boxes: this.boxes, missing: this.missing, added: this.added, additions: this.additions, error: this.error, onChange: (layout: EditorLayoutDraft) => this.changeLayout(layout) })}
+        </div>`;
+    }
+
     render() {
         const draft = this.draft;
         if (!draft) return notice(this.error || __('This collection does not exist.'), 'error');
@@ -384,7 +444,14 @@ export default class CollectionBuilder extends Cossack {
             })}
             ${this.message ? notice(this.message, 'success') : null}
             ${this.error ? notice(this.error, 'error') : null}
-            <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
+            <div role="tablist" aria-label=${__('Collection')} class="flex gap-1 border-b border-border">
+                ${TABS.map(tab => html`<button type="button" role="tab" id=${`collection-tab-${tab}`} aria-selected=${this.tab === tab ? 'true' : 'false'} aria-controls=${`collection-${tab}`}
+                    class=${`-mb-px border-b-2 px-3 py-2 text-sm font-medium bg-transparent cursor-pointer ${this.tab === tab ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+                    @click=${() => this.showTab(tab)}>${tab === 'general' ? __('General') : tab === 'seo' ? __('Search engines') : __('Editor')}</button>`)}
+            </div>
+            ${this.tab === 'editor' ? html`<div id="collection-editor" role="tabpanel" aria-labelledby="collection-tab-editor">${this.editorTab()}</div>`
+            : this.tab === 'seo' ? html`<div id="collection-seo" role="tabpanel" aria-labelledby="collection-tab-seo">${this.seoTab(draft)}</div>`
+            : html`<div id="collection-general" role="tabpanel" aria-labelledby="collection-tab-general" class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
                 <div class="space-y-6">
                     ${component(Card, {}, html`
                         ${component(CardHeader, {}, html`<h2 class="text-base font-semibold text-foreground">${__('Features')}</h2>
@@ -409,7 +476,6 @@ export default class CollectionBuilder extends Cossack {
                         </div>`)}
                     `)}
                     ${this.groupsCard(draft)}
-                    ${draft.public ? this.searchCard(draft) : null}
                     ${draft.content ? this.templateCard(draft) : null}
                 </div>
                 <aside class="space-y-6">
@@ -434,7 +500,7 @@ export default class CollectionBuilder extends Cossack {
                         ${component(Button, { type: 'button', variant: 'destructive', size: 'sm', '@click': () => { this.confirmDelete = true; } }, __('Delete collection'))}
                     `))}
                 </aside>
-            </div>
+            </div>`}
             ${component(AlertDialog, {
                 id: 'delete-collection-dialog', open: this.confirmDelete, title: `${__('Delete')} ${draft.label}?`,
                 description: __('Every entry of this collection is deleted with it. This cannot be undone.'),

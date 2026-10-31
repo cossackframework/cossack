@@ -1,5 +1,5 @@
 import { Cossack, Page, State, ClientState, Server, Client, OnWindow, PreventNavigation, type HeadValue } from '@cossackframework/core';
-import { Button, Checkbox, Input, Modal, NativeSelect, Textarea, toast, CodeEditor } from '@cossackframework/ui';
+import { Button, Checkbox, Icon, Input, Modal, NativeSelect, Textarea, toast, CodeEditor } from '@cossackframework/ui';
 import { html, component, unsafeHTML, type TemplateResult } from '@cossackframework/renderer';
 import { ARTICLE_TYPES, blockId, CORE_BLOCKS, entryChecks, evaluateRule, fieldVisibility, findBlock, flattenBlocks, flattenGroupFields, formatBytes, isCmsError, languageName, mediaKind, recordSchema, recordTitle, renderSeoTemplate, richTextBlocks, TITLE_SEPARATORS, updateBlock, type Block, type BlockCondition, type Check, type EmbeddedBlock, type JsonSchema, type MediaKind, type RecordShape, type RichTextDoc } from '@cossackframework/cms';
 import { blockPanel } from '../../../../../../cms/block-panel';
@@ -13,7 +13,10 @@ import { BlockTree } from '../../../../../../cms/block-tree';
 import { bindingChoices, choicesControl, fieldControl, groupFields, multipleControl, type BindingChoice } from '../../../../../../cms/field-controls';
 import { MEDIA_ACCEPT, uploadFile } from '../../../../../../cms/media-chooser';
 import { FieldGroupView, plainBlocks, visibilityTypes, type RowPath } from '../../../../../../cms/field-group-view';
-import { box, CONTROL, linkButton, notice, rememberTab, shortDate, STATUS_LABELS, statusBadge, tabFromQuery } from '../../../../../../cms/ui';
+import { box, CONTROL, countBadge, linkButton, notice, rememberTab, shortDate, STATUS_LABELS, statusBadge, tabFromQuery } from '../../../../../../cms/ui';
+import { editorLayoutView } from '../../../../../../cms/editor-layout-view';
+import { ICONS } from '../../../../../../cms/icons';
+import { boxFields, layoutBoxes } from '@cossackframework/cms';
 import { conditionControl, conditionFields } from '../../../../../../cms/condition-control';
 import { notificationRulesControl } from '../../../../../../cms/notification-rules';
 import { siteOrigin } from '../../../../../../cms/seo';
@@ -28,10 +31,6 @@ interface BlockDialog { field: string; id: string; type: string; values: Record<
 
 /** A translation of the entry, or a language it has none in yet. */
 interface TranslationLink { code: string; label: string; id: string | null; title: string; status: string }
-/** The editor's views: the fields, a form's settings, or the entry as JSON in the API's shape. */
-type EditorTab = 'edit' | 'settings' | 'json';
-/** The fields of a form that live on its Settings tab. */
-const FORM_SETTINGS_FIELDS = new Set(['settings', 'notifications']);
 
 /**
  * The entry editor for every collection and resource. A new entry is `/new`. The title drives
@@ -60,8 +59,8 @@ export default class EntryEditor extends Cossack {
     @State() references: Record<string, { id: string; title: string }[]> = {};
     @State() previews: Record<string, MediaPreview> = {};
     @State() tabs: Record<string, 'write' | 'preview'> = {};
-    /** The editor's view: the fields, or the entry as JSON in the API's shape. */
-    @State() mode: EditorTab = 'edit';
+    /** The editor's view: one of the layout's tabs, or `json`, the entry as the API answers it. */
+    @State() mode = 'edit';
     @State() json = '';
     /** The entry's JSON Schema, for the JSON tab's completion and linting. */
     @State() schema: JsonSchema | null = null;
@@ -746,7 +745,7 @@ export default class EntryEditor extends Cossack {
         this.message = '';
         try { await this.save(this.values, intent, this.rev); }
         finally { this.saving = false; }
-        if (this.error) toast.error(this.error);
+        if (this.error) { toast.error(this.error); this.revealErrorTab(); }
         else {
             this.dirty = false;
             this.unsaved = false;
@@ -827,13 +826,37 @@ export default class EntryEditor extends Cossack {
         }
     }
 
-    /** The tabs this entry has: a form adds Settings; JSON needs a saved entry. */
-    private editorTabs(): EditorTab[] {
-        return ['edit', ...(this.view?.route === 'forms' ? ['settings' as const] : []), ...(this.id !== 'new' ? ['json' as const] : [])];
+    /** The tabs this entry has: the layout's, then JSON for a saved entry. */
+    private editorTabs(): string[] {
+        return [...(this.view?.layout.tabs.map(tab => tab.id) ?? ['edit']), ...(this.id !== 'new' ? ['json'] : [])];
+    }
+
+    /** The tab a field's box is on, so an error can open it; null for the sidebar's boxes, which every tab shows. */
+    private tabOf(name: string): string | null {
+        const view = this.view;
+        if (!view) return null;
+        const groups = view.groups.map(group => ({ id: group.id, blocks: plainBlocks(group.blocks) }));
+        for (const tab of view.layout.tabs) for (const entry of layoutBoxes(plainBlocks(tab.blocks))) if (boxFields(entry.id, groups).includes(name)) return tab.id;
+        for (const entry of layoutBoxes(plainBlocks(view.layout.sidebar))) if (boxFields(entry.id, groups).includes(name)) return null;
+        return view.layout.tabs[0]?.id ?? 'edit';
+    }
+
+    /** How many of the errors sit on a tab's own boxes. */
+    private errorsOn(tab: string): number {
+        return Object.keys(this.errors).filter(name => this.tabOf(name) === tab).length;
+    }
+
+    /** After a refused save, open the tab that holds the first error when the open tab has none. */
+    @Client()
+    private revealErrorTab() {
+        if (this.errorsOn(this.mode)) return;
+        const tabs = this.editorTabs();
+        const target = Object.keys(this.errors).map(name => this.tabOf(name)).find((tab): tab is string => tab !== null && tabs.includes(tab));
+        if (target && target !== this.mode) void this.showMode(target);
     }
 
     @Client()
-    async showMode(mode: EditorTab) {
+    async showMode(mode: string) {
         if (mode === this.mode) return;
         this.mode = mode;
         rememberTab(mode, this.editorTabs());
@@ -1023,11 +1046,12 @@ export default class EntryEditor extends Cossack {
         </div>`;
     }
 
-    private fieldRow(field: EditorField): TemplateResult {
+    /** A field with its label, help and error; inside a box titled by the label, the label is for screen readers alone. */
+    private fieldRow(field: EditorField, options: { labelHidden?: boolean } = {}): TemplateResult {
         const id = `field-${field.name}`;
         const value = this.values[field.name];
         return html`<div class="space-y-1.5">
-            ${field.kind === 'boolean' ? null : html`<label for=${id} class="block text-sm font-medium text-foreground">${field.label}${field.required ? html`<span class="text-destructive"> *</span>` : null}</label>`}
+            ${field.kind === 'boolean' ? null : html`<label for=${id} class=${options.labelHidden ? 'sr-only' : 'block text-sm font-medium text-foreground'}>${field.label}${field.required ? html`<span class="text-destructive"> *</span>` : null}</label>`}
             ${this.control(field, value, entry => this.set(field.name, entry), { field: field.name }, id)}
             ${field.description && !(field.kind === 'text' && field.format === 'markdown') ? html`<p class="text-xs text-muted-foreground">${field.description}</p>` : null}
             ${field.kind === 'blocks' ? null : this.errorFor(field.name)}
@@ -1341,28 +1365,95 @@ export default class EntryEditor extends Cossack {
         </div>`);
     }
 
-    render() {
-        const view = this.view;
-        if (!view) return html`<div class="space-y-4">${notice(this.error || __('Loading…'), this.error ? 'error' : 'info')}${linkButton(__('Back'), `/dashboard/content/${this.route}`, 'outline')}</div>`;
-        const titleField = view.titleField;
-        // Fields the groups place; the rest keep their declared place.
-        const groupBlocks = view.groups.flatMap(group => group.blocks);
-        const laidOut = new Set(flattenGroupFields(plainBlocks(groupBlocks)).map(block => String(block.data.name ?? '')));
-        // A form's settings and notifications have their own tab.
-        const onSettingsTab = (field: EditorField) => view.route === 'forms' && FORM_SETTINGS_FIELDS.has(field.name);
-        const main = view.fields.filter(field => field.placement === 'main' && !laidOut.has(field.name) && !onSettingsTab(field));
-        const sidebar = view.fields.filter(field => field.placement === 'sidebar' && !laidOut.has(field.name));
-        const settingsFields = view.fields.filter(onSettingsTab);
-        const tabs = this.editorTabs();
-        const tabLabels: Record<EditorTab, string> = { edit: view.route === 'forms' ? __('Form') : __('Edit'), settings: __('Settings'), json: 'JSON' };
-        const hidden = fieldVisibility(plainBlocks(groupBlocks), visibilityTypes(view.blocks), this.values).hidden;
-        const groupView = (id: string, blocks: EditorBlock[]) => component(FieldGroupView, {
-            id, blocks, options: view.blocks, fields: view.fields, values: this.values, hidden, errors: this.errors,
+    /** The blocks the conditions hide, computed once per render for every group box. */
+    private hidden: ReadonlySet<string> = new Set();
+
+    private groupBox(group: EditorView['groups'][number]): TemplateResult {
+        const view = this.view!;
+        const body = component(FieldGroupView, {
+            id: `group-${group.id}`, blocks: group.blocks, options: view.blocks, fields: view.fields, values: this.values, hidden: this.hidden, errors: this.errors,
             onChange: (name: string, value: unknown) => this.set(name, value),
             control: (field: EditorField, value: unknown, change: (value: unknown) => void, rows: RowPath, controlId: string) =>
                 this.control(field, value, change, rows.length ? { field: rows[0]!.field, rows, key: field.name } : { field: field.name }, controlId),
         });
-        const groupBox = (group: EditorView['groups'][number]) => box(group.title, html`${group.description ? html`<p class="text-xs text-muted-foreground">${group.description}</p>` : null}${groupView(`group-${group.id}`, group.blocks)}`, { id: `group-${group.id}-title` });
+        return box(group.title, html`${group.description ? html`<p class="text-xs text-muted-foreground">${group.description}</p>` : null}${body}`, { id: `group-${group.id}-title` });
+    }
+
+    private attributesBox(): TemplateResult {
+        return box(__('Attributes'), html`
+            <div class="space-y-1">
+                <label for="field-parent" class="block text-xs font-medium text-foreground">${__('Parent')}</label>
+                <select id="field-parent" class=${CONTROL} @change=${(event: Event) => this.set('parent', (event.target as HTMLSelectElement).value)}>
+                    <option value="" ?selected=${!this.values.parent}>(${__('no parent')})</option>
+                    ${this.parents.map(option => html`<option value=${option.id} ?selected=${option.id === this.values.parent}>${'— '.repeat(option.depth)}${option.name}</option>`)}
+                </select>
+                ${this.errorFor('parent')}
+            </div>
+            <div class="space-y-1">
+                <label for="field-menuOrder" class="block text-xs font-medium text-foreground">${__('Order')}</label>
+                ${component(Input, { id: 'field-menuOrder', type: 'number', size: 'sm', '.value': String(this.values.menuOrder ?? '0'), '@input': (event: Event) => this.set('menuOrder', (event.target as HTMLInputElement).value) })}
+            </div>`, { id: 'box-attributes' });
+    }
+
+    private discussionBox(view: EditorView): TemplateResult {
+        return box(__('Discussion'), html`<label class="flex items-center gap-2 text-sm text-foreground cursor-pointer">
+            ${component(Checkbox, { id: 'field-commentsOpen', checked: this.values.commentsOpen !== false, '@change': (event: Event) => this.set('commentsOpen', (event.target as HTMLInputElement).checked) })} ${__('Allow comments')}</label>
+            ${this.id === 'new' ? null : html`<a href=${`/dashboard/comments?collection=${view.route}&entry=${this.id}`} class="text-xs text-primary hover:underline">${__('Comments on this entry')}</a>`}`, { id: 'box-discussion' });
+    }
+
+    private revisionsBox(view: EditorView): TemplateResult {
+        return box(__('Revisions'), html`<ol class="space-y-1 text-xs text-muted-foreground">
+            ${this.revisions.map(entry => html`<li>#${entry.revision} · ${shortDate(entry.at)}${entry.actor ? html` · <span class="text-foreground">${entry.actor}</span>` : null}</li>`)}
+        </ol>
+        ${this.revisions.length > 1 ? html`<a href=${`/dashboard/content/${view.route}/${this.id}/revisions`} class="text-sm text-primary hover:underline">${__('Compare and restore')}</a>` : null}`, { id: 'box-revisions' });
+    }
+
+    /**
+     * One of the layout's boxes, by ID; nothing when this entry does not have it (a monolingual
+     * site has no Languages box, a new entry no revisions). Blocks fields such as the content stand
+     * on their own; every other field is a box titled by its label.
+     */
+    private boxView(id: string): TemplateResult | null {
+        const view = this.view!;
+        if (id.startsWith('field:')) {
+            const field = view.fields.find(entry => entry.name === id.slice('field:'.length));
+            if (!field) return null;
+            if (field.kind === 'blocks') return this.fieldRow(field);
+            // A checkbox says its help text, or Yes, since the box's title is the label.
+            const inner = field.kind === 'boolean' ? { ...field, label: field.description || __('Yes'), description: '' } : field;
+            return box(field.label, this.fieldRow(inner, { labelHidden: true }), { id: `box-field-${field.name}` });
+        }
+        if (id.startsWith('group:')) {
+            const group = view.groups.find(entry => entry.id === id.slice('group:'.length));
+            return group ? this.groupBox(group) : null;
+        }
+        if (id.startsWith('taxonomy:')) {
+            const taxonomy = view.taxonomies.find(entry => entry.name === id.slice('taxonomy:'.length));
+            return taxonomy ? this.taxonomyBox(taxonomy) : null;
+        }
+        switch (id) {
+            case 'seo': return view.path !== null && this.values.seo !== undefined ? this.seoBox() : null;
+            case 'attributes': return view.hierarchical ? this.attributesBox() : null;
+            case 'languages': return this.languages.multilingual && this.values.locale !== undefined && view.resource.startsWith('cms/') ? this.languagesBox(view) : null;
+            case 'template': return this.templateBox();
+            case 'discussion': return this.comments ? this.discussionBox(view) : null;
+            case 'revisions': return this.revisions.length ? this.revisionsBox(view) : null;
+            default: return null;
+        }
+    }
+
+    render() {
+        const view = this.view;
+        if (!view) return html`<div class="space-y-4">${notice(this.error || __('Loading…'), this.error ? 'error' : 'info')}${linkButton(__('Back'), `/dashboard/content/${this.route}`, 'outline')}</div>`;
+        const titleField = view.titleField;
+        this.hidden = fieldVisibility(plainBlocks(view.groups.flatMap(group => group.blocks)), visibilityTypes(view.blocks), this.values).hidden;
+        const tabs = this.editorTabs();
+        const tabLabel = (id: string) => id === 'json' ? 'JSON' : __(view.layout.tabs.find(tab => tab.id === id)?.label || id);
+        // A tab's icon, when it names one of the dashboard's.
+        const tabIcon = (id: string) => {
+            const entry = ICONS[view.layout.tabs.find(tab => tab.id === id)?.icon ?? ''];
+            return entry ? html`<span class="mr-1.5 inline-flex align-middle [&_svg]:size-4" aria-hidden="true">${component(Icon, { entry, size: 16 })}</span>` : null;
+        };
         const base = `/dashboard/content/${view.route}`;
         // Forms have no URL: their slug names them where the Form block places them.
         const form = view.route === 'forms';
@@ -1379,10 +1470,13 @@ export default class EntryEditor extends Cossack {
                     <a href=${form ? '/dashboard/forms' : base} class="text-muted-foreground hover:text-foreground">← ${__('All')} ${view.label.toLowerCase()}</a>
                 </div>
             </div>
-            ${tabs.length > 1 ? html`<div role="tablist" aria-label=${__('Editor view')} class="flex gap-1 border-b border-border">
-                ${tabs.map(mode => html`<button type="button" role="tab" id=${`entry-tab-${mode}`} aria-selected=${this.mode === mode ? 'true' : 'false'} aria-controls=${mode === 'edit' ? 'entry-fields' : `entry-${mode}`}
-                    class=${`-mb-px border-b-2 px-3 py-2 text-sm font-medium bg-transparent cursor-pointer ${this.mode === mode ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
-                    @click=${() => this.showMode(mode)}>${tabLabels[mode]}</button>`)}
+            ${tabs.length > 1 ? html`<div role="tablist" aria-label=${__('Editor view')} class="flex flex-wrap gap-1 border-b border-border">
+                ${tabs.map(mode => {
+                    const count = mode === 'json' ? 0 : this.errorsOn(mode);
+                    return html`<button type="button" role="tab" id=${`entry-tab-${mode}`} aria-selected=${this.mode === mode ? 'true' : 'false'} aria-controls=${`entry-${mode}`}
+                        class=${`-mb-px border-b-2 px-3 py-2 text-sm font-medium bg-transparent cursor-pointer ${this.mode === mode ? 'border-primary text-foreground' : count ? 'border-transparent text-destructive' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+                        @click=${() => this.showMode(mode)}>${tabIcon(mode)}${tabLabel(mode)}${count ? countBadge(count) : null}</button>`;
+                })}
             </div>` : null}
             ${this.message ? notice(this.message, 'success') : null}
             ${this.error ? notice(this.describe(this.error), 'error') : null}
@@ -1393,17 +1487,16 @@ export default class EntryEditor extends Cossack {
             </div>` : null}
             <div class=${`grid gap-6 ${this.mode === 'json' ? '' : 'lg:grid-cols-[minmax(0,1fr)_20rem]'}`}>
                 <div class="min-w-0">
-                ${this.mode === 'settings' ? html`<div id="entry-settings" role="tabpanel" aria-labelledby="entry-tab-settings" class="space-y-5">${settingsFields.map(field => this.fieldRow(field))}</div>` : null}
                 ${this.mode === 'json' ? this.jsonPanel() : null}
-                <div id="entry-fields" role="tabpanel" aria-labelledby="entry-tab-edit" class=${`space-y-5 ${this.mode === 'edit' ? '' : 'hidden'}`}>
-                    ${titleField ? html`<div class="space-y-1">
+                ${view.layout.tabs.map((tab, index) => html`<div id=${`entry-${tab.id}`} role="tabpanel" aria-labelledby=${`entry-tab-${tab.id}`} class=${`space-y-5 ${this.mode === tab.id ? '' : 'hidden'}`}>
+                    ${index === 0 && titleField ? html`<div class="space-y-1">
                         <label for="field-title" class="sr-only">${__('Title')}</label>
                         <input id="field-title" class=${`w-full rounded-lg border bg-background px-4 py-3 text-xl font-semibold text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring ${this.errors[titleField] ? 'border-destructive' : 'border-input'}`}
                             placeholder=${__('Add title')} .value=${String(this.values[titleField] ?? '')} @input=${(event: Event) => this.setTitle((event.target as HTMLInputElement).value)}
                             ?required=${view.titleRequired} aria-invalid=${this.errors[titleField] ? 'true' : 'false'} aria-describedby=${this.errors[titleField] ? 'field-title-error' : undefined}>
                         ${this.errors[titleField] ? html`<p id="field-title-error" role="alert" class="text-xs text-destructive">${this.errors[titleField]}</p>` : null}
                     </div>` : null}
-                    ${permalink !== null ? html`<div class="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                    ${index === 0 && permalink !== null ? html`<div class="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
                         <span>${form ? __('Slug') : __('Permalink')}:</span>
                         ${this.editingSlug ? html`<input id="field-slug" class=${`${CONTROL} max-w-xs py-1`} aria-label=${__('Slug')} .value=${String(this.values.slug ?? '')}
                                 @input=${(event: Event) => this.setSlug((event.target as HTMLInputElement).value)}>
@@ -1414,38 +1507,12 @@ export default class EntryEditor extends Cossack {
                         ${form ? html`<span class="basis-full text-xs">${__('Place the form on a page with the Form block and this slug.')}</span>` : null}
                         ${this.errorFor('slug')}
                     </div>` : null}
-                    ${main.map(field => this.fieldRow(field))}
-                    ${view.groups.filter(group => group.placement === 'main').map(groupBox)}
-                    ${view.path !== null && this.values.seo !== undefined ? this.seoBox() : null}
-                </div>
+                    ${editorLayoutView(tab.blocks, id => this.boxView(id))}
+                </div>`)}
                 </div>
                 <aside class=${`space-y-4 ${this.mode === 'json' ? 'hidden' : ''}`}>
                     ${this.publishBox(view)}
-                    ${view.hierarchical ? box(__('Attributes'), html`
-                        <div class="space-y-1">
-                            <label for="field-parent" class="block text-xs font-medium text-foreground">${__('Parent')}</label>
-                            <select id="field-parent" class=${CONTROL} @change=${(event: Event) => this.set('parent', (event.target as HTMLSelectElement).value)}>
-                                <option value="" ?selected=${!this.values.parent}>(${__('no parent')})</option>
-                                ${this.parents.map(option => html`<option value=${option.id} ?selected=${option.id === this.values.parent}>${'— '.repeat(option.depth)}${option.name}</option>`)}
-                            </select>
-                            ${this.errorFor('parent')}
-                        </div>
-                        <div class="space-y-1">
-                            <label for="field-menuOrder" class="block text-xs font-medium text-foreground">${__('Order')}</label>
-                            ${component(Input, { id: 'field-menuOrder', type: 'number', size: 'sm', '.value': String(this.values.menuOrder ?? '0'), '@input': (event: Event) => this.set('menuOrder', (event.target as HTMLInputElement).value) })}
-                        </div>`) : null}
-                    ${this.languages.multilingual && this.values.locale !== undefined && view.resource.startsWith('cms/') ? this.languagesBox(view) : null}
-                    ${this.templateBox()}
-                    ${view.taxonomies.map(taxonomy => this.taxonomyBox(taxonomy))}
-                    ${sidebar.length ? box(__('Details'), sidebar.map(field => this.fieldRow(field))) : null}
-                    ${view.groups.filter(group => group.placement === 'sidebar').map(groupBox)}
-                    ${this.comments ? box(__('Discussion'), html`<label class="flex items-center gap-2 text-sm text-foreground cursor-pointer">
-                        ${component(Checkbox, { id: 'field-commentsOpen', checked: this.values.commentsOpen !== false, '@change': (event: Event) => this.set('commentsOpen', (event.target as HTMLInputElement).checked) })} ${__('Allow comments')}</label>
-                        ${this.id === 'new' ? null : html`<a href=${`/dashboard/comments?collection=${view.route}&entry=${this.id}`} class="text-xs text-primary hover:underline">${__('Comments on this entry')}</a>`}`) : null}
-                    ${this.revisions.length ? box(__('Revisions'), html`<ol class="space-y-1 text-xs text-muted-foreground">
-                        ${this.revisions.map(entry => html`<li>#${entry.revision} · ${shortDate(entry.at)}${entry.actor ? html` · <span class="text-foreground">${entry.actor}</span>` : null}</li>`)}
-                    </ol>
-                    ${this.revisions.length > 1 ? html`<a href=${`/dashboard/content/${view.route}/${this.id}/revisions`} class="text-sm text-primary hover:underline">${__('Compare and restore')}</a>` : null}`) : null}
+                    ${editorLayoutView(view.layout.sidebar, id => this.boxView(id), { sidebar: true })}
                 </aside>
             </div>
             ${this.pickerModal()}
@@ -1454,4 +1521,3 @@ export default class EntryEditor extends Cossack {
         </div>`;
     }
 }
-

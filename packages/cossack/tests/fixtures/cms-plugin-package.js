@@ -22,6 +22,10 @@ export function deskManifest(version, overrides = {}) {
       access: { read: 'authenticated', create: 'authenticated', update: { any: ['owner', { permission: 'support-desk/tickets:update' }] }, delete: { permission: 'support-desk/tickets:delete' } },
     }],
     blocks: [{ name: 'support-desk/contact', label: 'Support contact', fields: { email: { kind: 'string', required: true, max: 120, label: 'Email' } } }],
+    // A field group for posts, stored when the plugin is granted, and a Support tab holding it while the plugin is active.
+    fieldGroups: [{ id: 'support-desk-support', title: 'Support', targets: [{ kind: 'collection', name: 'posts' }],
+      blocks: [{ _id: 'priority', type: 'field/choice', data: { label: 'Priority', name: 'supportPriority', choices: ['low', 'high'] } }] }],
+    editor: [{ collection: 'posts', tabs: [{ _id: 'support', type: 'editor/tab', data: { label: 'Support' }, children: [{ _id: 'box', type: 'editor/box', data: { box: 'group:support-desk-support' } }] }] }],
     hooks: [{ point: 'cms.resource.before-write', version: 1 }],
     permissions: { resources: { 'cms/posts': ['read'] }, define: ['support-desk:triage'] },
     ui: { slots: { 'dashboard.nav': [{ label: 'Support', href: '/dashboard/support' }] } },

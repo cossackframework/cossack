@@ -84,6 +84,8 @@ per plugin.
 | Store your own records | Declare `resources` in the plugin manifest; read and write them through `context.cms.resource('<plugin>/<name>')`. |
 | React to writes, or change them | Register handlers for [hooks](/docs/cms/hooks.md) in `server.ts`. |
 | Add content blocks | Declare `blocks` in the manifest; render them from `ui.ts`. |
+| Add fields to entries | Declare `fieldGroups` in the manifest: meta boxes stored when the plugin is granted. |
+| Arrange an entry editor | Declare `editor` in the manifest: tabs and sidebar boxes added to a collection's editor while the plugin is active. |
 | Add dashboard pages | Put pages under `pages/dashboard/...` in the plugin; link them from the `dashboard.nav` slot. |
 | Add an operator command | Declare `commands` in the manifest; handle them with `context.commands.add()`. |
 | Ship a site design | A plugin with a `theme` field and `templates/`; see [Themes](/docs/cms/themes.md). |
