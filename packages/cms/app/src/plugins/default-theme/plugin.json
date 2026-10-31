@@ -1,0 +1,154 @@
+{
+  "schemaVersion": 1,
+  "name": "default-theme",
+  "version": "1.0.0",
+  "description": "The default site theme of the Cossack CMS. Edit it, or copy it to start your own theme.",
+  "compatibility": {
+    "@cossackframework/cms": ">=0.9.0"
+  },
+  "logo": "assets/logo.svg",
+  "cover": "assets/cover.svg",
+  "theme": {
+    "label": "Cossack Default",
+    "description": "A clean, readable theme: a header menu with dropdowns, a footer menu, search and an accent color.",
+    "locations": {
+      "primary": "Primary menu",
+      "footer": "Footer menu"
+    },
+    "areas": {
+      "footer": "Footer widgets"
+    },
+    "presets": {
+      "colors": [
+        {
+          "slug": "base",
+          "name": "Base",
+          "value": "#ffffff"
+        },
+        {
+          "slug": "contrast",
+          "name": "Contrast",
+          "value": "#111827"
+        },
+        {
+          "slug": "primary",
+          "name": "Primary",
+          "value": "#2563eb"
+        },
+        {
+          "slug": "secondary",
+          "name": "Secondary",
+          "value": "#f1f5f9"
+        },
+        {
+          "slug": "accent",
+          "name": "Accent",
+          "value": "#f59e0b"
+        },
+        {
+          "slug": "muted",
+          "name": "Muted",
+          "value": "#64748b"
+        }
+      ]
+    },
+    "options": {
+      "accent": {
+        "kind": "enum",
+        "values": [
+          "neutral",
+          "blue",
+          "emerald",
+          "violet",
+          "rose",
+          "amber"
+        ],
+        "default": "neutral",
+        "label": "Accent color",
+        "choices": {
+          "neutral": "Neutral",
+          "blue": "Blue",
+          "emerald": "Emerald",
+          "violet": "Violet",
+          "rose": "Rose",
+          "amber": "Amber"
+        }
+      },
+      "width": {
+        "kind": "enum",
+        "values": [
+          "narrow",
+          "wide"
+        ],
+        "default": "narrow",
+        "label": "Content width",
+        "choices": {
+          "narrow": "Narrow, best for reading",
+          "wide": "Wide"
+        }
+      },
+      "fontFamily": {
+        "kind": "enum",
+        "values": [
+          "sans",
+          "humanist",
+          "serif",
+          "mono"
+        ],
+        "default": "sans",
+        "label": "Font",
+        "description": "System fonts: nothing to download.",
+        "choices": {
+          "sans": "Sans-serif",
+          "humanist": "Humanist sans-serif",
+          "serif": "Serif",
+          "mono": "Monospace"
+        }
+      },
+      "baseSize": {
+        "kind": "enum",
+        "values": [
+          "small",
+          "medium",
+          "large"
+        ],
+        "default": "medium",
+        "label": "Text size",
+        "choices": {
+          "small": "Small (15px)",
+          "medium": "Medium (16px)",
+          "large": "Large (18px)"
+        }
+      },
+      "headingWeight": {
+        "kind": "enum",
+        "values": [
+          "normal",
+          "medium",
+          "semibold",
+          "bold"
+        ],
+        "default": "bold",
+        "label": "Heading weight",
+        "choices": {
+          "normal": "Normal",
+          "medium": "Medium",
+          "semibold": "Semibold",
+          "bold": "Bold"
+        }
+      },
+      "showSearch": {
+        "kind": "boolean",
+        "default": true,
+        "label": "Show a search box in the header"
+      },
+      "footerText": {
+        "kind": "string",
+        "max": 200,
+        "default": "",
+        "label": "Footer text",
+        "description": "Shown instead of the copyright line when set."
+      }
+    }
+  }
+}

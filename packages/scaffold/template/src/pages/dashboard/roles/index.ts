@@ -5,7 +5,7 @@ import { PenNewRoundIcon as editIconSvg } from '@cossackframework/solar-icons/pe
 import { TrashBinMinimalisticIcon as deleteIconSvg } from '@cossackframework/solar-icons/trash-bin-minimalistic/line';
 import { UsersGroupRoundedIcon as usersIconSvg } from '@cossackframework/solar-icons/users-group-rounded/line';
 import { MagnifierIcon as searchIconSvg } from '@cossackframework/solar-icons/magnifier/line';
-import { guard } from '../../../services/rbac';
+import { requireRoleManager } from '../../../services/rbac';
 import {
     listRoles,
     deleteRole,
@@ -20,7 +20,7 @@ const searchIcon = { line: searchIconSvg };
 
 const PAGE_SIZE = 20;
 
-@Page({ transport: 'http', middlewares: [guard.requireRole('admin')] })
+@Page({ transport: 'http', middlewares: [requireRoleManager] })
 export default class RolesPage extends Cossack {
     @State() roles: RoleDetail[] = [];
     @State() total = 0;

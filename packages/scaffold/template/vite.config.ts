@@ -10,11 +10,15 @@ import { cossackSecurityPlugin } from '@cossackframework/framework/vite-security
 import { cossackSsg } from '@cossackframework/framework/vite-ssg-plugin';
 
 export default defineConfig(({ mode, command }) => ({
-  // Local D1 updates its WAL/SHM files for authenticated reads and writes.
-  // Those runtime files are not source code and must never trigger Vite HMR.
+  // Runtime files are not source code and must never reach Vite's watcher:
+  // local D1 updates its WAL/SHM files under .wrangler, RomeDB and media land
+  // in storage/, and queued RomeDB writes pass through .cossack/*-pending.
+  // Tailwind treats a changed file of unknown extension as a possible class
+  // source and answers it with a full page reload, which would drop unsaved
+  // form input on every database write.
   server: {
     watch: {
-      ignored: ['**/.wrangler/**'],
+      ignored: ['**/.wrangler/**', '**/storage/**', '**/.cossack/*-pending/**'],
     },
   },
   plugins: [
@@ -60,6 +64,12 @@ export default defineConfig(({ mode, command }) => ({
   },
   environments: {
     client: {
+      // Browser dependencies of the rendered pages, bundled before the first request
+      // so Vite does not find them one page at a time and reload the browser.
+      optimizeDeps: {
+        // @cossack:client-dependencies
+        include: [],
+      },
       build: {
         outDir: 'dist/client',
         target: 'esnext',
@@ -80,6 +90,9 @@ export default defineConfig(({ mode, command }) => ({
         // Keep authored server locations in private build artifacts for diagnosis.
         // Client maps remain opt-in; Desktop keeps its existing build defaults.
         sourcemap: mode !== 'desktop',
+        // Asset URLs the server renders, such as a theme's stylesheet, name the files the
+        // client build emits, so both builds name assets alike.
+        rolldownOptions: { output: { assetFileNames: 'assets/[name].[hash][extname]' } },
       },
       resolve: mode === 'desktop' && command === 'build'
         ? {
@@ -115,6 +128,10 @@ export default defineConfig(({ mode, command }) => ({
           '@cossackframework/framework/client/devtools',
           'hono/cookie',
         ],
+        // Pre-bundled packages import these rather than embedding copies: one
+        // renderer and one core keep directive classes and request state shared
+        // with application code (a copied renderer prints repeat() as text).
+        exclude: ['@cossackframework/core', '@cossackframework/renderer'],
       },
     },
   },

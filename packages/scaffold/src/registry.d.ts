@@ -3,7 +3,10 @@ import type { CapabilityDiagnostic } from '@cossackframework/core/runtime-capabi
 
 export type Adapter = 'cloudflare' | 'node';
 export type Preset = 'minimal' | 'database' | 'auth' | 'full-stack';
-export type Feature = 'ui' | 'database' | 'studio' | 'auth' | 'dashboard' | 'markdown' | 'examples' | 'desktop' | 'resource' | 'mutation' | 'scoped-service' | 'protected-route' | 'jobs' | 'turnstile' | 'schedules' | 'notifications' | 'workflows';
+export type Feature = 'ui' | 'database' | 'studio' | 'auth' | 'dashboard' | 'markdown' | 'examples' | 'desktop' | 'resource' | 'mutation' | 'scoped-service' | 'protected-route' | 'jobs' | 'turnstile' | 'schedules' | 'notifications' | 'workflows' | 'cms';
+export declare const FEATURE_CONFLICTS: readonly { features: readonly Feature[]; reason: string }[];
+/** Where auth keeps users, roles and sessions: the CMS on RomeDB, or the ORM `database` feature. */
+export declare function authStore(features: readonly Feature[]): 'cms' | 'database';
 export type AuthMethod = 'credentials' | 'oauth';
 export type DatabaseProvider = 'd1' | 'sqlite' | 'turso' | 'postgres' | 'mysql' | 'hyperdrive-postgres' | 'hyperdrive-mysql';
 export type OAuthProvider = 'github' | 'google' | 'gitlab' | 'facebook' | 'microsoft';

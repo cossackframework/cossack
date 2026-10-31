@@ -22,7 +22,7 @@ import type {
   EntityTarget,
   LifecycleEvent,
 } from "./metadata/types.js";
-import { In, type EntityShape } from "./query/types.js";
+import { In, type DeleteOptions, type EntityShape } from "./query/types.js";
 import { dialectFor } from "./dialect/dialects.js";
 import { registerORM, unregisterORM } from "./scope.js";
 import type { OrmSchema } from "./schema/types.js";
@@ -371,10 +371,11 @@ export class ORM {
     return entity;
   }
 
-  async remove<T extends BaseEntity>(entity: T): Promise<T> {
+  /** Removes the entity's row. With a `@DeleteDateColumn` it stamps the column instead, unless `force` is set. */
+  async remove<T extends BaseEntity>(entity: T, options: DeleteOptions = {}): Promise<T> {
     const state = this.stateFor(entity);
     await this.invokeHooks(entity, state.metadata, "before-remove");
-    const softDelete = state.metadata.columns.find((column) => column.deleteDate);
+    const softDelete = options.force ? undefined : state.metadata.columns.find((column) => column.deleteDate);
     if (softDelete) {
       (entity as unknown as Record<string, unknown>)[softDelete.propertyName] = new Date();
       await this.model(state.metadata.target).update(
@@ -382,9 +383,23 @@ export class ORM {
         { [softDelete.propertyName]: (entity as unknown as Record<string, unknown>)[softDelete.propertyName] },
       );
     } else {
-      await this.model(state.metadata.target).delete(this.primaryWhere(entity, state.metadata));
+      await this.model(state.metadata.target).delete(this.primaryWhere(entity, state.metadata), { force: true });
     }
     await this.invokeHooks(entity, state.metadata, "after-remove");
+    return entity;
+  }
+
+  /** Clears the entity's `@DeleteDateColumn` so reads see its row again. */
+  async restore<T extends BaseEntity>(entity: T): Promise<T> {
+    const state = this.stateFor(entity);
+    const deleteDate = state.metadata.columns.find((column) => column.deleteDate);
+    if (!deleteDate) throw new ConfigurationError(`${state.metadata.modelName}.restore() requires a @DeleteDateColumn().`);
+    (entity as unknown as Record<string, unknown>)[deleteDate.propertyName] = null;
+    await this.model(state.metadata.target).update(
+      this.primaryWhere(entity, state.metadata),
+      { [deleteDate.propertyName]: null },
+    );
+    this.refreshSnapshot(entity, state);
     return entity;
   }
 

@@ -1,4 +1,5 @@
 import { workflowsRecipeFiles } from './workflow-recipes.js';
+import { cmsAppDir, cmsAppFiles, cmsRecipeFiles, cmsSetupCode, isCmsPath, patchCmsNodeEntry, patchCmsViteConfig, patchCmsWorkerEntry } from './cms-recipe.js';
 import { jobsRecipeFiles, turnstileRecipeFiles, schedulesRecipeFiles, notificationsRecipeFiles } from './service-recipes.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -27,6 +28,7 @@ import {
   recipeCapabilityRequirements,
   recipeCapabilityDiagnostics,
   projectNameProblem,
+  authStore,
 } from './registry.js';
 
 export {
@@ -56,6 +58,27 @@ const scaffoldPackage = JSON.parse(
 );
 const templateVersion = scaffoldPackage.version;
 const dependencyVersions = scaffoldPackage.scaffold?.dependencyVersions ?? {};
+/**
+ * Packages rendered source imports in the browser. Vite cannot see page imports before a
+ * page loads, so the generated config lists them for the first dependency bundle.
+ */
+const CLIENT_DEPENDENCY = /^(?:@cossackframework\/solar-icons\/.+|@tiptap\/[^/]+|@simplewebauthn\/browser|@cossackframework\/(?:ui|auth|cms|framework\/plugins|core\/transport-routes))$/;
+
+/** Fill the client dependency list of vite.config.ts from the rendered source files. */
+export function withClientDependencies(viteConfig, files) {
+  const found = new Set();
+  for (const [rel, entry] of files) {
+    if (!rel.startsWith('src/') || !rel.endsWith('.ts')) continue;
+    const source = entry.content.toString('utf8');
+    for (const [, typeOnly, specifier] of source.matchAll(/(?:^|\n)\s*(?:import|export)(\s+type\b)?[^;'"]*?\bfrom\s*'([^']+)'/g)) if (!typeOnly && CLIENT_DEPENDENCY.test(specifier)) found.add(specifier);
+    for (const [, specifier] of source.matchAll(/\bimport\(\s*'([^']+)'\s*\)/g)) if (CLIENT_DEPENDENCY.test(specifier)) found.add(specifier);
+  }
+  const list = [...found].sort();
+  return viteConfig.replace(/(\/\/ @cossack:client-dependencies\n)(\s*)include: \[\],/, (_, marker, indent) =>
+    `${marker}${indent}include: [${list.length ? `\n${list.map(name => `${indent}  '${name}',`).join('\n')}\n${indent}` : ''}],`);
+}
+
+const TIPTAP_PACKAGES = ['@tiptap/core', '@tiptap/pm', '@tiptap/starter-kit', '@tiptap/extension-document', '@tiptap/extension-image', '@tiptap/extension-text-align', '@tiptap/extensions'];
 function dependencyVersion(name) {
   const version = dependencyVersions[name];
   if (typeof version !== 'string' || version.length === 0) {
@@ -246,8 +269,19 @@ const AUTH_PATHS = new Set([
   'src/auth-input.ts',
   'src/auth.ts',
   'src/config/auth.ts',
-  'src/lib/uuid.ts',
   'src/middlewares/auth.ts',
+  'src/pages/auth/forgot-password/index.ts',
+  'src/pages/auth/layout.ts',
+  'src/brand.ts',
+  'src/pages/auth/login/index.ts',
+  'src/pages/auth/register/index.ts',
+  'src/pages/auth/reset-password/index.ts',
+  'src/pages/auth/two-factor/index.ts',
+  'src/passkeys.client.ts',
+]);
+/** Auth storage on the ORM; the CMS store keeps users and sessions in RomeDB instead. */
+const AUTH_ORM_PATHS = new Set([
+  'src/lib/uuid.ts',
   'src/migrations/0001_create_users.ts',
   'src/migrations/0002_create_sessions.ts',
   'src/migrations/0008_add_session_public_id.ts',
@@ -255,44 +289,48 @@ const AUTH_PATHS = new Set([
   'src/models/User.ts',
   'src/models/Session.ts',
   'src/models/OAuthAccount.ts',
-  'src/pages/auth/forgot-password/index.ts',
-  'src/pages/auth/layout.ts',
-  'src/pages/auth/login/index.ts',
-  'src/pages/auth/register/index.ts',
-  'src/pages/auth/reset-password/index.ts',
 ]);
 const CREDENTIAL_AUTH_PATHS = new Set([
+  'src/pages/auth/two-factor/index.ts',
   'src/pages/auth/register/index.ts',
   'src/pages/auth/forgot-password/index.ts',
   'src/pages/auth/reset-password/index.ts',
 ]);
 const DASHBOARD_CORE_PATHS = new Set([
+  'src/dashboard/access.ts',
+  'src/dashboard/agent-icons.ts',
+  'src/dashboard/app-passwords.ts',
+  'src/dashboard/avatar-field.ts',
+  'src/dashboard/bulk.ts',
+  'src/dashboard/tabs.ts',
+  'src/dashboard/session-list.ts',
   'src/pages/dashboard/index.ts',
   'src/pages/dashboard/layout.ts',
-  'src/seeders/application.seeder.ts',
 ]);
 const MARKDOWN_PATHS = new Set([
   'src/markdown-processor.ts',
 ]);
 const RBAC_PATHS = new Set([
-  'src/config/permissions.ts',
   'src/lib/permissions.ts',
+  'src/services/rbac.ts',
+  'src/services/roles.ts',
+  'src/services/users.ts',
+]);
+const RBAC_ORM_PATHS = new Set([
   'src/migrations/0003_create_roles.ts',
   'src/migrations/0007_create_user_roles.ts',
   'src/models/Role.ts',
   'src/models/UserRole.ts',
-  'src/services/rbac.ts',
-  'src/services/roles.ts',
-  'src/services/users.ts',
 ]);
 const MODULE_PATHS = {
   users: [
     'src/pages/dashboard/users/index.ts',
     'src/pages/dashboard/users/new/index.ts',
     'src/pages/dashboard/users/[id]/index.ts',
+    'src/dashboard/user-sections.ts',
   ],
   sessions: ['src/pages/dashboard/sessions/index.ts'],
-  settings: ['src/pages/dashboard/profile/index.ts'],
+  settings: ['src/pages/dashboard/profile/index.ts', 'src/pages/dashboard/profile/security/index.ts'],
   roles: [
     'src/pages/dashboard/roles/index.ts',
     'src/pages/dashboard/roles/new/index.ts',
@@ -330,6 +368,11 @@ const DESKTOP_PATHS = new Set([
 ]);
 
 function capabilityFor(rel, recipe) {
+  if (isCmsPath(rel)) {
+    // With the examples home page, the CMS site keeps its other routes and leaves / to it.
+    if (rel === 'src/pages/(site)/index.ts' && recipe.resolvedFeatures.includes('examples')) return null;
+    return recipe.resolvedFeatures.includes('cms') ? 'cms' : null;
+  }
   if (rel === '.github/workflows/preview.yml') return recipe.adapter === 'cloudflare' ? 'base' : null;
   if (rel === 'src/pages/resource/index.ts') return recipe.resolvedFeatures.includes('resource') ? 'resource' : null;
   if (rel === 'src/pages/mutation/index.ts') return recipe.resolvedFeatures.includes('mutation') ? 'mutation' : null;
@@ -342,8 +385,16 @@ function capabilityFor(rel, recipe) {
   if (BASE_PATHS.has(rel) || rel.startsWith('public/') || rel === 'tsconfig.json') return 'base';
   if (UI_PATHS.has(rel)) return recipe.resolvedFeatures.includes('ui') ? 'ui' : null;
   if (ORM_PATHS.has(rel)) return recipe.resolvedFeatures.includes('database') ? 'database' : null;
+  const ormAuth = recipe.resolvedFeatures.includes('auth') && authStore(recipe.resolvedFeatures) === 'database';
+  if (AUTH_ORM_PATHS.has(rel)) return ormAuth ? 'auth' : null;
   if (AUTH_PATHS.has(rel)) return recipe.resolvedFeatures.includes('auth') ? 'auth' : null;
   if (DASHBOARD_CORE_PATHS.has(rel)) return recipe.resolvedFeatures.includes('dashboard') ? 'dashboard' : null;
+  // The application seeder belongs to the ORM; it seeds RBAC roles only for ORM auth.
+  if (rel === 'src/seeders/application.seeder.ts') return recipe.resolvedFeatures.includes('dashboard') && recipe.resolvedFeatures.includes('database') ? 'dashboard' : null;
+  if (RBAC_ORM_PATHS.has(rel)) {
+    const modules = recipe.dashboardModules;
+    return ormAuth && (modules.includes('users') || modules.includes('roles')) ? 'dashboard:rbac' : null;
+  }
   if (MARKDOWN_PATHS.has(rel)) return recipe.resolvedFeatures.includes('markdown') ? 'markdown' : null;
   if (RBAC_PATHS.has(rel)) {
     const modules = recipe.dashboardModules;
@@ -418,9 +469,15 @@ function middlewareRegistry(recipe) {
     );
     entries.push('  ormRequestMiddleware,');
   }
+  const cms = recipe.resolvedFeatures.includes('cms');
+  // The CMS host goes on the context before auth reads users from it.
+  if (cms) {
+    imports.push("import { cmsMiddleware, cmsPrincipal } from '../cms/middleware';");
+    entries.push('  cmsMiddleware,');
+  }
   if (recipe.resolvedFeatures.includes('auth')) {
     imports.push("import { auth } from '../auth';", "import { authGuard } from '../middlewares/auth';");
-    entries.push('  auth.middleware,', '  authGuard,');
+    entries.push('  auth.middleware,', ...(cms ? ['  cmsPrincipal,'] : []), '  authGuard,');
   }
   return `${imports.join('\n')}\n\nconst middlewares: MiddlewareHandler[] = [\n${entries.join('\n')}\n];\n\nexport default middlewares;\n`;
 }
@@ -443,11 +500,17 @@ function wranglerConfig(recipe, projectName) {
     : '';
   // Distributed SSE coordination for `@Page({ transport: 'sse' })` pages.
   // SseDurableObject is SQLite-backed: new_sqlite_classes, not new_classes.
+  const cms = recipe.resolvedFeatures.includes('cms');
   const sse = `,
   "durable_objects": {
-    "bindings": [{ "name": "COSSACK_SSE", "class_name": "SseDurableObject" }]
+    "bindings": [{ "name": "COSSACK_SSE", "class_name": "SseDurableObject" }${cms ? ', { "name": "ROMEDB_PENDING", "class_name": "RomeDBPendingWrites" }' : ''}]
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["SseDurableObject"] }]`;
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["SseDurableObject"] }${cms ? ', { "tag": "cms-v1", "new_sqlite_classes": ["RomeDBPendingWrites"] }' : ''}]${cms ? `,
+  // CMS media. Local development uses a local bucket; create the remote one with
+  // pnpm exec wrangler r2 bucket create ${commentName}-media
+  "r2_buckets": [{ "binding": "MEDIA", "bucket_name": ${json(`${projectName}-media`)} }],
+  // Resized image variants, crops and AVIF/WebP. Remove it to serve images as uploaded.
+  "images": { "binding": "IMAGES" }` : ''}`;
   const compatibilityFlag = recipe.config.database.startsWith('hyperdrive-')
     ? 'nodejs_compat'
     : 'nodejs_als';
@@ -460,7 +523,9 @@ function wranglerConfig(recipe, projectName) {
     else database += `,\n  "d1_databases": [${jobDatabase}]`;
   }
   const workflows = recipe.resolvedFeatures.includes('workflows') ? `,\n  \"workflows\": [{ \"name\": ${json(`${projectName}-approval`)}, \"binding\": \"WORKFLOWS\", \"class_name\": \"ApprovalWorkflow\" }]` : '';
-  const schedules = recipe.resolvedFeatures.includes('schedules') ? ',\n  "triggers": { "crons": ["0 * * * *"] }' : '';
+  // The CMS publishes scheduled entries and delivers webhooks every minute.
+  const crons = [...(recipe.resolvedFeatures.includes('schedules') ? ['0 * * * *'] : []), ...(cms ? ['* * * * *'] : [])];
+  const schedules = crons.length ? `,\n  "triggers": { "crons": ${JSON.stringify(crons)} }` : '';
   const notifications = recipe.resolvedFeatures.includes('notifications') ? ',\n    "MAIL_FROM": "no-reply@example.com"' : '';
   const turnstile = recipe.resolvedFeatures.includes('turnstile') ? ',\n    "TURNSTILE_SITE_KEY": "your-site-key",\n    "TURNSTILE_HOSTNAME": "localhost"' : '';
   return `{
@@ -492,6 +557,20 @@ function packageJson(recipe, projectName) {
     dependencies['@cossackframework/ui'] = `^${templateVersion}`;
     dependencies['@cossackframework/solar-icons'] =
       dependencyVersion('@cossackframework/solar-icons');
+  }
+  if (recipe.resolvedFeatures.includes('cms')) {
+    dependencies['@cossackframework/cms'] = `^${templateVersion}`;
+    dependencies['@cossackframework/romedb'] = `^${templateVersion}`;
+    dependencies['@cossackframework/auth'] = `^${templateVersion}`;
+    // The rich text editor, loaded in the browser only.
+    for (const name of TIPTAP_PACKAGES) dependencies[name] = dependencyVersion(name);
+    // Node stores media in S3 when S3_BUCKET is set, otherwise in a local directory.
+    if (recipe.adapter === 'node') dependencies['@aws-sdk/client-s3'] = dependencyVersion('@aws-sdk/client-s3');
+    // Node resizes images with sharp; Workers use the Images binding.
+    if (recipe.adapter === 'node') dependencies.sharp = dependencyVersion('sharp');
+    // Passkeys in the browser, and the authenticator app's QR code.
+    dependencies['@simplewebauthn/browser'] = dependencyVersion('@simplewebauthn/browser');
+    dependencies.uqr = dependencyVersion('uqr');
   }
   if (recipe.resolvedFeatures.includes('database')) {
     dependencies['@cossackframework/database'] = `^${templateVersion}`;
@@ -830,12 +909,13 @@ extendCacheDriver('database', () => createDatabaseCacheStore());
 }
 
 function modelsBarrel(recipe) {
+  const ormAuth = recipe.resolvedFeatures.includes('auth') && authStore(recipe.resolvedFeatures) === 'database';
   const names = [
-    ...(recipe.resolvedFeatures.includes('auth')
+    ...(ormAuth
       ? ['User', 'Session', 'OAuthAccount']
       : []),
-    ...(recipe.dashboardModules.includes('roles') ||
-        recipe.dashboardModules.includes('users')
+    ...(ormAuth && (recipe.dashboardModules.includes('roles') ||
+        recipe.dashboardModules.includes('users'))
       ? ['Role', 'UserRole']
       : []),
     'CacheItem',
@@ -1169,7 +1249,8 @@ export interface DashboardModule {
   label: string;
   href: string;
   icon: IconEntry;
-  authorization: 'authenticated' | 'admin';
+  /** Who sees the module: any signed-in user, administrators, or holders of a permission. */
+  authorization: 'authenticated' | 'admin' | { permission: string };
   placement?: 'navigation' | 'account';
   children?: DashboardModuleLink[];
 }
@@ -1386,8 +1467,8 @@ ${buttons}
                 <div class="h-px flex-1 bg-border"></div>
             </div>`;
   return content.replace(
-    '\n            </form>\n            <p class="mt-6',
-    `\n            </form>\n${separator}\n${oauthButtons}\n            <p class="mt-6`,
+    '\n            </form>\n',
+    `\n            </form>\n${separator}\n${oauthButtons}\n`,
   );
 }
 
@@ -1496,6 +1577,11 @@ function nodeEnvironmentValues(recipe, projectName, example = false) {
     }
   }
   if (recipe.resolvedFeatures.includes('turnstile')) values.push(['TURNSTILE_SITE_KEY', 'your-site-key'], ['TURNSTILE_SECRET_KEY', 'your-secret-key'], ['TURNSTILE_HOSTNAME', 'localhost']);
+  if (recipe.resolvedFeatures.includes('cms')) {
+    values.push(...cmsEnvironmentValues(example), ['ROMEDB_PENDING_DIR', '.cossack/romedb-pending'], ['MEDIA_DIR', 'storage/media']);
+    // Set S3_BUCKET to keep media in S3 or an S3-compatible service instead of MEDIA_DIR.
+    for (const name of ['S3_BUCKET', 'S3_REGION', 'S3_ENDPOINT', 'S3_ACCESS_KEY_ID', 'S3_SECRET_ACCESS_KEY']) values.push([name, '']);
+  }
   return values;
 }
 
@@ -1514,7 +1600,17 @@ function cloudflareEnvironmentValues(recipe, example = false) {
     values.push(...oauthEnvironmentValues(recipe, example));
   }
   if (recipe.resolvedFeatures.includes('turnstile')) values.push(['TURNSTILE_SECRET_KEY', 'your-secret-key']);
+  if (recipe.resolvedFeatures.includes('cms')) values.push(...cmsEnvironmentValues(example));
   return values;
+}
+
+/** RomeDB connection and the first-run setup code. Locally, \`romedb serve\` prints the URL and token file. */
+function cmsEnvironmentValues(example) {
+  return [
+    ['ROMEDB_URL', example ? 'https://cloud.romedb.com/v1/organizations/<organization>/databases/<database>' : 'http://127.0.0.1:4321'],
+    ['ROMEDB_TOKEN', example ? 'your-romedb-database-grant' : ''],
+    ['CMS_SETUP_CODE', example ? 'choose-a-one-time-setup-code' : cmsSetupCode()],
+  ];
 }
 
 function oauthEnvironmentValues(recipe, example = false) {
@@ -1553,10 +1649,13 @@ async function readEnvironment(projectDir, adapter) {
   }
 }
 
-function applyTheme(content, theme) {
-  if (theme === 'default') return content;
+/** The application stylesheet: the chosen theme after the base theme, and the CMS block styles when the cms feature is on. */
+function applyStyles(content, recipe) {
   const marker = '@import "@cossackframework/ui/theme/theme.css";';
-  return content.replace(marker, `${marker}\n@import "@cossackframework/ui/theme/themes/${theme}.css";`);
+  const imports = [marker];
+  if (recipe.config.theme !== 'default') imports.push(`@import "@cossackframework/ui/theme/themes/${recipe.config.theme}.css";`);
+  if (recipe.resolvedFeatures.includes('cms')) imports.push('@import "./cms/blocks.css";');
+  return content.replace(marker, imports.join('\n'));
 }
 
 export async function renderRecipe(recipe, options = {}) {
@@ -1575,7 +1674,7 @@ export async function renderRecipe(recipe, options = {}) {
     const capability = capabilityFor(rel, recipe);
     if (!capability) continue;
     let content = await fs.readFile(path.join(templateDir, rel));
-    if (rel === 'src/style.css') content = text(applyTheme(content.toString('utf8'), recipe.config.theme));
+    if (rel === 'src/style.css') content = text(applyStyles(content.toString('utf8'), recipe));
     if (rel === 'vite.config.ts' && recipe.resolvedFeatures.includes('markdown')) {
       content = text(content.toString('utf8')
         .replace(
@@ -1626,6 +1725,7 @@ export async function renderRecipe(recipe, options = {}) {
         recipe.config.authMethods.includes('oauth') ? recipe.config.oauth : [],
         { sqlite: recipe.resolvedFeatures.includes('database') && recipe.config.database === 'sqlite' },
       ));
+      if (recipe.resolvedFeatures.includes('cms')) content = text(patchCmsNodeEntry(content.toString('utf8')));
     }
     if ((recipe.adapter === 'node') && rel === 'vite.config.ts') {
       content = text(content.toString('utf8').replace(/\/\/ @cossack:cloudflare-start[\s\S]*?\/\/ @cossack:cloudflare-end\n?/g, ''));
@@ -1695,7 +1795,8 @@ export async function renderRecipe(recipe, options = {}) {
     capability: 'base',
   });
   files.set('.gitignore', {
-    content: text('node_modules/\ndist/\nout/\n.wrangler/\n.env*\n.dev.vars*\n!.env.example\n!.dev.vars.example\n.cossack/routes.ts\n.cossack/config.d.ts\n.cossack/preview.json\n.cossack/preview-secrets.json\n.cossack/**/*.lock\n'),
+    content: text('node_modules/\ndist/\nout/\n.wrangler/\n.env*\n.dev.vars*\n!.env.example\n!.dev.vars.example\n.cossack/routes.ts\n.cossack/config.d.ts\n.cossack/preview.json\n.cossack/preview-secrets.json\n.cossack/**/*.lock\n.cossack/romedb-pending/\n' +
+      (recipe.resolvedFeatures.includes('cms') ? 'storage/media/\n' : '')),
     capability: 'base',
   });
 
@@ -1704,8 +1805,17 @@ export async function renderRecipe(recipe, options = {}) {
     files.set('src/root.ts', { content: text(minimalRoot()), capability: 'base' });
     files.set('src/style.css', { content: text('/* Application styles */\n'), capability: 'base' });
   }
-  if (!recipe.resolvedFeatures.includes('examples')) {
+  // The CMS site serves the home page from src/pages/(site)/index.ts.
+  if (!recipe.resolvedFeatures.includes('examples') && !recipe.resolvedFeatures.includes('cms')) {
     files.set('src/pages/index.ts', { content: text(minimalPage()), capability: 'base' });
+  }
+  if (recipe.resolvedFeatures.includes('cms')) {
+    // The CMS application in @cossackframework/cms owns these files, among them the auth and
+    // dashboard storage modules over RomeDB that replace the database ones rendered above.
+    for (const rel of await cmsAppFiles()) {
+      const capability = capabilityFor(rel, recipe);
+      if (capability) files.set(rel, { content: await fs.readFile(path.join(cmsAppDir, rel)), capability });
+    }
   }
   if (recipe.resolvedFeatures.includes('database')) {
     files.set('orm.config.ts', {
@@ -1730,8 +1840,9 @@ export async function renderRecipe(recipe, options = {}) {
       content: text(modelsBarrel(recipe)),
       capability: 'database',
     });
+    const ormAuth = recipe.resolvedFeatures.includes('auth') && authStore(recipe.resolvedFeatures) === 'database';
     const migrationFiles = [
-      ...(recipe.resolvedFeatures.includes('auth')
+      ...(ormAuth
         ? [
             '0001_create_users.ts',
             '0002_create_sessions.ts',
@@ -1739,8 +1850,8 @@ export async function renderRecipe(recipe, options = {}) {
             '0008_add_session_public_id.ts',
           ]
         : []),
-      ...(recipe.dashboardModules.includes('roles') ||
-          recipe.dashboardModules.includes('users')
+      ...(ormAuth && (recipe.dashboardModules.includes('roles') ||
+          recipe.dashboardModules.includes('users'))
         ? ['0003_create_roles.ts', '0007_create_user_roles.ts']
         : []),
       '0006_create_cache_table.ts',
@@ -1754,7 +1865,7 @@ export async function renderRecipe(recipe, options = {}) {
       content: text(registeredBarrel('seeds', seedFiles)),
       capability: 'database',
     });
-    if (!recipe.dashboardModules.some(module => module === 'users' || module === 'roles')) {
+    if (!ormAuth || !recipe.dashboardModules.some(module => module === 'users' || module === 'roles')) {
       files.set('src/seeders/application.seeder.ts', {
         content: text(blankSeeder()),
         capability: 'database',
@@ -1813,6 +1924,15 @@ export async function renderRecipe(recipe, options = {}) {
     const vite = files.get('vite.config.ts');
     const config = vite.content.toString('utf8').replace('cossackConfig }', 'cossackConfig, cossackSchedules }').replace('    cossackConfig(),', '    cossackConfig(),\n    cossackSchedules(),');
     files.set('vite.config.ts', { ...vite, content: text(config) });
+  }
+  if (recipe.resolvedFeatures.includes('cms')) {
+    for (const [file, source] of Object.entries(cmsRecipeFiles({ adapter: recipe.adapter }))) files.set(file, { content: text(source), capability: 'cms' });
+    const vite = files.get('vite.config.ts');
+    files.set('vite.config.ts', { ...vite, content: text(patchCmsViteConfig(vite.content.toString('utf8'))) });
+    if (recipe.adapter === 'cloudflare') {
+      const entry = files.get('src/index.ts');
+      files.set('src/index.ts', { ...entry, content: text(patchCmsWorkerEntry(entry.content.toString('utf8'), { schedules: recipe.resolvedFeatures.includes('schedules') })) });
+    }
   }
   if (recipe.resolvedFeatures.includes('desktop')) {
     files.set('src/desktop/index.ts', {
@@ -1879,6 +1999,8 @@ export async function renderRecipe(recipe, options = {}) {
     });
     }
   }
+  const vite = files.get('vite.config.ts');
+  if (vite) files.set('vite.config.ts', { ...vite, content: text(withClientDependencies(vite.content.toString('utf8'), files)) });
   return files;
 }
 
@@ -3026,6 +3148,9 @@ export async function addFeature(projectDir, feature, options = {}) {
   const root = path.resolve(projectDir);
   const manifest = await readManifest(root);
   const current = await inferRecipe(root, manifest);
+  if (feature === 'cms' && current.resolvedFeatures.includes('auth') && authStore(current.resolvedFeatures) === 'database') {
+    throw new Error('This project keeps its users in the database feature. The cms feature keeps users, roles and sessions in RomeDB, so add it to a new project: cossack create <name> --features cms.');
+  }
   if (options.dryRun) options = { ...options, interactive: false };
   let previous = {};
   let startAtLast = false;

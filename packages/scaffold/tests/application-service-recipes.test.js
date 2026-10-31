@@ -62,7 +62,7 @@ it('notifications render the actual ledger schema, EMAIL binding, explicit scope
   expect(await read(root, 'src/jobs/index.ts')).toContain("createNotifications(env).deliver(payload.id)");
   const { DatabaseSync } = await import('node:sqlite'); const actual = new DatabaseSync(':memory:'); const generated = new DatabaseSync(':memory:');
   try {
-    const source = await fs.readFile(new URL('../../framework/src/notifications/d1-store.ts', import.meta.url), 'utf8'); const { notificationStateSchema } = await moduleFrom(source);
+    const source = await fs.readFile(new URL('../../core/src/notifications/sql-store.ts', import.meta.url), 'utf8'); const { notificationStateSchema } = await moduleFrom(source);
     actual.exec(notificationStateSchema); generated.exec(await read(root, 'src/jobs/migrations/0002_notifications.sql'));
     for (const pragma of ['table_info(cossack_notifications)', 'index_list(cossack_notifications)', 'index_info(cossack_notifications_inbox)']) expect(generated.prepare(`PRAGMA ${pragma}`).all()).toEqual(actual.prepare(`PRAGMA ${pragma}`).all());
     expect(generated.prepare("SELECT sql FROM sqlite_master WHERE name='cossack_notifications'").get().sql.replace(/\s/g, '')).toBe(actual.prepare("SELECT sql FROM sqlite_master WHERE name='cossack_notifications'").get().sql.replace(/\s/g, ''));

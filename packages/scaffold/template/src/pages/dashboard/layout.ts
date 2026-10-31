@@ -7,7 +7,9 @@ import { SunIcon as sunIconSvg } from '@cossackframework/solar-icons/sun/line';
 import { MoonIcon as moonIconSvg } from '@cossackframework/solar-icons/moon/line';
 import { AltArrowRightIcon as chevronIconSvg } from '@cossackframework/solar-icons/alt-arrow-right/line';
 import { Logout3Icon as logoutIconSvg } from '@cossackframework/solar-icons/logout-3/line';
-import { dashboardModules } from '../../dashboard/registry';
+import { navigation } from '../../dashboard/access';
+import { siteLogo, siteName } from '../../brand';
+import type { DashboardModule } from '../../dashboard/types';
 import { logout } from '../../auth';
 import { requireDashboardUser } from '../../middlewares/auth';
 import { themeStore } from '@/stores.client';
@@ -20,42 +22,28 @@ const logoutIcon = { line: logoutIconSvg };
 
 /**
  * Dashboard layout: sidebar nav + user menu + theme toggle, shared by every
- * /dashboard/* page. Installed dashboard modules describe their own icons,
- * destinations, submenu links, and whether they belong in navigation or the
- * account menu.
+ * /dashboard/* page. src/dashboard/access.ts decides which modules the user
+ * sees; each describes its icon, destination, submenu links, and whether it
+ * belongs in navigation or the account menu.
  *
- * Theme state here mirrors the App component: both manipulate the same
- * `<html>.dark` class + cookie, so the toggle stays consistent
- * regardless of which one rendered it.
+ * The theme toggle writes the same `cs-theme` cookie and themeStore the App
+ * component applies to `<html>.dark`, and draws itself from that class.
  */
 @Page({ transport: 'http', middlewares: [requireDashboardUser] })
 export default class DashboardLayout extends Cossack {
-    appName = server$(() => config('app.name'), { initial: 'My App' });
-    @State() theme: 'light' | 'dark' = 'dark';
+    appName = server$(() => siteName(), { initial: 'My App' });
+    appLogo = server$(() => siteLogo(), { initial: '/logo.svg' });
     /** Sidebar collapsed state. Seeded from the cookie at SSR (via this.c) and
      *  re-read client-side in onMount; persists across client navigations. */
     @State() sidebarCollapsed = false;
-    @State() isAdmin = false;
+    /** Navigation the signed-in user may open, resolved on the server. */
+    @State() modules: DashboardModule[] = [];
     @State() logoutError = '';
     @State() account: { name: string; email: string; avatar: string | null } = {
         name: '',
         email: '',
         avatar: null,
     };
-
-    private _themeUnsub?: () => void;
-
-    onCleanup() {
-        this._themeUnsub?.();
-    }
-
-    onMount() {
-        // Keep the toggle icon in sync with the global themeStore (so toggling
-        // from any page updates this layout's icon too).
-        this._themeUnsub = themeStore.subscribe((value) => {
-            this.theme = value;
-        });
-    }
 
     @Client()
     toggleTheme() {
@@ -89,7 +77,7 @@ export default class DashboardLayout extends Cossack {
 
     async init() {
         const user = this.user;
-        this.isAdmin = !!user?.roles?.some((r) => r.name === 'admin');
+        if (this.c) this.modules = await navigation(this.c);
         this.account = {
             name: user?.name ?? '',
             email: user?.email ?? '',
@@ -99,21 +87,13 @@ export default class DashboardLayout extends Cossack {
         this.sidebarCollapsed = this.c
             ? getCookie(this.c, 'cs-sidebar-collapsed') === 'true'
             : this.sidebarCollapsed;
-
-        // A valid cookie lets SSR render the matching toggle icon. With no
-        // cookie, root.ts resolves the system preference before first paint
-        // and the themeStore subscription synchronizes this state on mount.
-        const savedTheme = this.c ? getCookie(this.c, 'cs-theme') : undefined;
-        if (savedTheme === 'light' || savedTheme === 'dark') {
-            this.theme = savedTheme;
-        }
     }
 
     render(): TemplateResult {
         const iconClass = 'inline-flex items-center justify-center [&_svg]:size-4';
-        const availableModules = dashboardModules.filter((module) =>
-            module.authorization !== 'admin' || this.isAdmin,
-        );
+        // The theme icons: only one shows, so `hidden` must not share the element with `inline-flex`.
+        const themeIcon = 'items-center justify-center [&_svg]:size-4';
+        const availableModules = this.modules;
         const navigationModules = availableModules.filter(
             (module) => module.placement !== 'account',
         );
@@ -134,14 +114,17 @@ export default class DashboardLayout extends Cossack {
                     label: __(module.label), href: module.href, icon: module.icon,
                     active: this.isActive(module.href),
                 };
-                return module.children?.length ? {
-                    ...item,
+                if (!module.children?.length) return item;
+                // A group lists its own page as a link too; leave it out when a child already opens it.
+                const { href: _href, active: _active, ...group } = item;
+                return {
+                    ...(module.children.some((child) => child.href === module.href) ? group : item),
                     children: module.children.map((child) => ({
                         value: `module:${module.id}:${child.href}`,
                         label: __(child.label), href: child.href,
                         active: this.isActive(child.href),
                     })),
-                } : item;
+                };
             }),
         ];
 
@@ -151,33 +134,35 @@ export default class DashboardLayout extends Cossack {
                     id: 'dashboard-navigation', label: __('Dashboard navigation'),
                     expandLabel: __('Expand navigation'), collapseLabel: __('Collapse navigation'),
                     title: this.appName,
-                    brand: html`<a href="/dashboard" class="flex items-center gap-2 no-underline group-[.is-collapsed]:hidden" aria-label=${__('Dashboard')}>
-                        ${Image({ src: '/logo.svg', alt: '', width: 24, height: 24, loading: 'eager', class: 'size-6 shrink-0' })}
+                    // The brand opens the site itself, as WordPress's admin bar does; Dashboard is the first navigation item.
+                    brand: html`<a href="/" class="flex items-center gap-2 no-underline group-[.is-collapsed]:hidden" aria-label=${__('View site')} title=${__('View site')}>
+                        ${Image({ src: this.appLogo, alt: '', width: 24, height: 24, loading: 'eager', class: 'h-6 w-auto max-w-24 shrink-0 object-contain' })}
                         <span class="text-sm font-semibold text-foreground truncate">${this.appName}</span>
                     </a>
-                    <a href="/dashboard" class="hidden group-[.is-collapsed]:flex items-center justify-center" aria-label=${__('Dashboard')}>
-                        ${Image({ src: '/logo.svg', alt: '', width: 24, height: 24, loading: 'eager', class: 'size-6' })}
+                    <a href="/" class="hidden group-[.is-collapsed]:flex items-center justify-center" aria-label=${__('View site')} title=${__('View site')}>
+                        ${Image({ src: this.appLogo, alt: '', width: 24, height: 24, loading: 'eager', class: 'size-6 object-contain' })}
                     </a>`,
                     width: '248px',
                     collapsible: 'icon',
                     collapsed: this.sidebarCollapsed,
                     onCollapsedChange: () => this.onToggleSidebar(),
                     items: items,
+                    // The toggle renders both modes and the .dark class on <html> shows the current
+                    // one (sun in light mode, moon in dark mode), so the server's markup matches
+                    // before the cookie or system theme is known. A click switches to the other.
                     footer: html`
                         <div class="flex items-center gap-1">
                             <button
                                 type="button"
                                 @click=${() => this.toggleTheme()}
                                 class="flex-1 flex items-center justify-center gap-2 px-2 py-1.5 rounded-md text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground cursor-pointer border-none bg-transparent group-[.is-collapsed]:px-0"
-                                title=${this.theme === 'dark' ? __('Switch to light mode') : __('Switch to dark mode')}
-                                aria-label=${__('Toggle theme')}
+                                title=${__('Switch between light and dark mode')}
+                                aria-label=${__('Switch between light and dark mode')}
                             >
-                                <span class=${iconClass}>
-                                    ${this.theme === 'dark'
-                                        ? component(Icon, { entry: sunIcon, size: 16 })
-                                        : component(Icon, { entry: moonIcon, size: 16 })}
-                                </span>
-                                <span class="group-[.is-collapsed]:hidden">${this.theme === 'dark' ? __('Light') : __('Dark')}</span>
+                                <span class=${`${themeIcon} inline-flex dark:hidden`}>${component(Icon, { entry: sunIcon, size: 16 })}</span>
+                                <span class=${`${themeIcon} hidden dark:inline-flex`}>${component(Icon, { entry: moonIcon, size: 16 })}</span>
+                                <span class="group-[.is-collapsed]:hidden dark:hidden">${__('Light mode')}</span>
+                                <span class="hidden group-[.is-collapsed]:hidden dark:inline">${__('Dark mode')}</span>
                             </button>
                         </div>
                         <div class="h-px bg-border my-1 group-[.is-collapsed]:hidden"></div>

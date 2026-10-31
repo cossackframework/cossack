@@ -15,6 +15,10 @@ export default defineConfig({
         '@cossackframework/core',
         '@cossackframework/renderer',
         /^@cossackframework\/solar-icons(?:\/|$)/,
+        // CodeMirror stays a dependency: one copy per application, loaded only by the CodeEditor.
+        'codemirror',
+        /^@codemirror\//,
+        /^@lezer\//,
       ],
       output: {
         // UI components contain class-decorator initialization. Keeping every

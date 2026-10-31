@@ -10,8 +10,11 @@ const execFileAsync = promisify(execFile);
 // is scripts/test-desktop-runtime.mjs. @cossackframework/test-utils is private.
 export const publishedPackageNames = [
   'renderer', 'core', 'node-adapter', 'auth', 'ui',
-  'framework', 'database', 'studio', 'scaffold', 'typescript-plugin',
+  'framework', 'database', 'studio', 'scaffold', 'typescript-plugin', 'romedb', 'cms',
 ].map(name => `@cossackframework/${name}`).concat('cossack');
+
+/** Packages that publish TypeScript source for the application bundler. */
+const sourcePackages = ['@cossackframework/auth', '@cossackframework/romedb', '@cossackframework/cms'];
 
 /** Inspect the installed artifacts, never workspace package manifests or aliases. */
 export async function publishedImportPlan(projectDir) {
@@ -57,11 +60,11 @@ export async function verifyPublishedRelease(projectDir) {
   const importSource = entries => entries.map((specifier, index) =>
     specifier.endsWith('/vite-env') ? `import ${JSON.stringify(specifier)};` :
     `import type * as M${index} from ${JSON.stringify(specifier)};\ntype Export${index} = typeof M${index};`).join('\n') + '\n';
-  // Auth intentionally publishes TypeScript consumed by the application
-  // bundler. Its source uses extensionless imports; do not pretend it is a
-  // native Node ESM entry. All compiled package declarations also get NodeNext.
+  // Source packages intentionally publish TypeScript consumed by the application
+  // bundler. Their source uses extensionless imports; do not pretend they are
+  // native Node ESM entries. All compiled package declarations also get NodeNext.
   const nodeDeclarations = plan.declarations.filter(specifier =>
-    specifier !== '@cossackframework/auth' && !specifier.startsWith('@cossackframework/auth/'));
+    !sourcePackages.some(name => specifier === name || specifier.startsWith(`${name}/`)));
   for (const [mode, entries] of [['bundler', plan.declarations], ['NodeNext', nodeDeclarations]]) {
     await fs.writeFile(path.join(fixtureDir, `${mode}-imports.ts`), importSource(entries));
     await fs.writeFile(path.join(fixtureDir, `${mode}-tsconfig.json`), JSON.stringify({
@@ -79,6 +82,8 @@ export async function verifyPublishedRelease(projectDir) {
     '@cossackframework/framework/workflows', '@cossackframework/framework/client',
     '@cossackframework/framework/client/app', '@cossackframework/framework/ssg-renderer',
     '@cossackframework/framework/locale',
+    // The plugin registry is a virtual module the application's Vite build fills in.
+    '@cossackframework/framework/plugins',
   ]);
   const runtimeImports = [], deferredImports = [];
   for (const entry of plan.exports) {

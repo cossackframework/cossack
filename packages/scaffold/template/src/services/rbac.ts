@@ -9,6 +9,7 @@
 // answers yes/no via the callbacks below.
 
 import { createAuthorizer } from '@cossackframework/auth';
+import type { MiddlewareHandler } from 'hono';
 import type { PublicUser } from '../auth';
 
 export type { RoleAssignment } from '../models/User';
@@ -21,3 +22,21 @@ export const guard = createAuthorizer<PublicUser>({
     onUnauthorized: (c, reason) =>
         c.redirect(reason === 'unauthenticated' ? config('auth.redirectAfterLogout') : '/dashboard'),
 });
+
+/** Who may define roles and choose users' roles: administrators. */
+export function canAssignRoles(user: PublicUser | null | undefined): boolean {
+    return !!user?.roles.some((r) => r.name === 'admin');
+}
+
+/** Who may see and end a user's sessions and application passwords: the user and administrators. */
+export function canManageAccess(user: PublicUser | null | undefined, userId: string): boolean {
+    return !!user && (user.id === userId || canAssignRoles(user));
+}
+
+/** Guard of the role screens. */
+export const requireRoleManager: MiddlewareHandler = guard.requireRole('admin');
+
+/** Whether the user may change another account: administrators stay with administrators. */
+export function canManageUser(user: PublicUser | null | undefined, target: { roles: readonly { name: string }[] }): boolean {
+    return canAssignRoles(user) || !target.roles.some((r) => r.name === 'admin');
+}

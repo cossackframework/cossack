@@ -233,7 +233,7 @@ function getLocalePreloadHref(manifest: Record<string, any>): string | undefined
   return `/${entry.file}`;
 }
 
-const { pages, layouts, loadings } = registry;
+const { pages, layouts } = registry;
 // Realtime child components, by build-time registry id.
 const realtimeComponents: Record<string, new () => Cossack> = realtimeRegistry?.components ?? {};
 const realtimeComponentIds = new Map<Function, string>(Object.entries(realtimeComponents).map(([id, Component]) => [Component, id]));
@@ -667,16 +667,18 @@ export function createApp(options: CreateAppOptions = {}) {
 
         const pageInstance = createInstance(PageComponent, { serviceScope: activeServiceScope });
         requestComponents.push(pageInstance);
-        // Check if component has a loading template (method or file convention)
-        // If so, skip init() during SSR to show loading UI immediately
+        // A page defers init() past SSR only when it opts in with both
+        // loadingTemplate() (the skeleton SSR renders) and clientInit() (the
+        // client-side step that calls init() over RPC once hydrated). Nothing
+        // else runs init() after hydration: it is stripped from the client
+        // bundle, so a `loading.ts` file or loadingTemplate() alone must not
+        // skip it. `loading.ts` only shows during client navigation while the
+        // next page is fetched.
         const hasLoadingTemplate = typeof (pageInstance as any).loadingTemplate === 'function';
-        const lastSlash = path.lastIndexOf('/');
-        const loadingFilePath = `${path.substring(0, lastSlash)}/loading.ts`;
-        const hasLoadingFile = loadings[loadingFilePath] !== undefined;
-        const shouldSkipInit = hasLoadingTemplate || hasLoadingFile;
+        const hasClientInit = typeof (pageInstance as any).clientInit === 'function';
+        const shouldSkipInit = hasLoadingTemplate && hasClientInit;
 
         // Bootstrap Page with retrieved DO initial state (if any)
-        // Skip init() if component has a loading template to show loading UI immediately
         await pageInstance.bootstrap({
           context: c,
           user,
@@ -687,8 +689,8 @@ export function createApp(options: CreateAppOptions = {}) {
           skipInit: shouldSkipInit,
         });
 
-        // If we skipped init, set loading state so loadingTemplate() renders during SSR
-        // The client will then call init() via RPC to get the actual data
+        // If we skipped init, set loading state so loadingTemplate() renders during SSR.
+        // clientInit() then calls init() via RPC to get the actual data.
         if (shouldSkipInit) {
           (pageInstance as any).loading.init = 1;
         }
@@ -859,7 +861,7 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
       const middleware = middlewares[position];
       if (!middleware) { c.res = await handler(c); return; }
       const response = await middleware(c, () => dispatch(position + 1));
-      if (response) c.res = response;
+      if (response instanceof Response) c.res = response;
     };
     await dispatch(0);
     return c.res;

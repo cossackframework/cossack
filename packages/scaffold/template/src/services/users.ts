@@ -1,9 +1,10 @@
-import { sql } from '@cossackframework/database';
+import { In, sql } from '@cossackframework/database';
 import { ClientVisibleError } from '@cossackframework/core';
 import { uuidv7 } from '../lib/uuid';
 import { hashPassword, type PublicUser } from '../auth';
 import { User } from '../models/User';
 import { UserRole } from '../models/UserRole';
+import { Role } from '../models/Role';
 import type { RoleAssignment } from '../models/User';
 
 export interface UserSummary {
@@ -12,6 +13,8 @@ export interface UserSummary {
   name: string;
   avatar: string | null;
   createdAt: string;
+  /** Start of the user's newest sign-in session; null when none is left. */
+  lastSignedInAt: string | null;
   roles: RoleAssignment[];
 }
 
@@ -35,6 +38,8 @@ export interface CreateUserInput {
   email: string;
   password: string;
   name?: string;
+  /** Roles chosen by someone who may assign them; otherwise none. */
+  roleIds?: string[];
 }
 
 export interface UpdateUserInput {
@@ -61,6 +66,23 @@ function parseRoles(rows: readonly RoleRow[]): RoleAssignment[] {
     name: row.name,
     permissions: safeParseStrings(row.permissions),
   }));
+}
+
+/** Each user's newest auth session start. Sign-out deletes the session, and with it this time. */
+async function lastSignIns(userIds: readonly string[]): Promise<Map<string, string>> {
+  if (!userIds.length) return new Map();
+  const rows = (await sql<{ userId: string; lastSignedInAt: string | null }>`
+    SELECT user_id AS userId, MAX(created_at) AS lastSignedInAt
+    FROM sessions
+    WHERE user_id IN (${userIds}) AND meta = ${JSON.stringify({ type: 'auth' })}
+    GROUP BY user_id
+  `).rows;
+  const times = new Map<string, string>();
+  for (const row of rows) {
+    const at = row.lastSignedInAt ? new Date(row.lastSignedInAt) : null;
+    if (at && !Number.isNaN(at.getTime())) times.set(row.userId, at.toISOString());
+  }
+  return times;
 }
 
 async function roleRowsForUsers(userIds: readonly string[]): Promise<readonly RoleRow[]> {
@@ -101,16 +123,23 @@ export async function listUsers(options: ListUsersOptions = {}): Promise<ListUse
   const items: UserSummary[] = pageResult.rows.map((row) => ({
     ...row,
     name: row.name ?? '',
+    lastSignedInAt: null,
     roles: [],
   }));
-  const roleRows = await roleRowsForUsers(items.map((user) => user.id));
+  const [roleRows, signIns] = await Promise.all([
+    roleRowsForUsers(items.map((user) => user.id)),
+    lastSignIns(items.map((user) => user.id)),
+  ]);
   const byUser = new Map<string, RoleAssignment[]>();
   for (const row of roleRows) {
     const roles = byUser.get(row.userId!) ?? [];
     roles.push(...parseRoles([row]));
     byUser.set(row.userId!, roles);
   }
-  for (const item of items) item.roles = byUser.get(item.id) ?? [];
+  for (const item of items) {
+    item.roles = byUser.get(item.id) ?? [];
+    item.lastSignedInAt = signIns.get(item.id) ?? null;
+  }
   return {
     items,
     total: Number(countResult.rows[0]?.total ?? 0),
@@ -128,6 +157,7 @@ export async function getUser(id: string): Promise<UserDetail | null> {
     name: user.name ?? '',
     avatar: user.avatar,
     createdAt: user.createdAt.toISOString(),
+    lastSignedInAt: (await lastSignIns([id])).get(id) ?? null,
     roles: parseRoles(await roleRowsForUsers([id])),
   };
 }
@@ -146,6 +176,12 @@ export async function createUser(input: CreateUserInput): Promise<PublicUser> {
     meta: null,
     createdAt: new Date(),
   });
+  const roleIds = [...new Set(input.roleIds ?? [])];
+  if (roleIds.length) {
+    const known = await Role.find({ where: { id: In(roleIds) } });
+    if (known.length !== roleIds.length) throw new ClientVisibleError('Choose roles that exist.');
+    await syncUserRoles(id, roleIds);
+  }
   return { id, email: input.email, name: input.name ?? '', avatar: null, meta: null, roles: [] };
 }
 

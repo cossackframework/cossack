@@ -2,6 +2,12 @@
 
 This document outlines the architecture of the Cossack Framework, how its packages interact, and the lifecycle of a request.
 
+Two plans extend these packages: the [renderer improvements](plan-renderer-improvements.md)
+add template diagnostics, component tags, and a JSON app model to the renderer, and
+the [CMS and app-builder plan](cms-app-builder.md) adds `romedb`, `cms`, core hooks
+and `src/plugins/*/` composition. The app builder itself (Platform) is a separate
+private repository.
+
 ## Core Principle: Separation of Concerns
 
 The framework is built on a strict separation between the library (`core`, `renderer`) and the application (`framework`).

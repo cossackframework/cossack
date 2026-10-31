@@ -29,6 +29,8 @@ const packageDirectories = [
   'node-adapter',
   'desktop',
   'auth',
+  'romedb',
+  'cms',
   'ui',
   'framework',
   'database',
@@ -100,7 +102,7 @@ async function useTarballs(projectDir, tarballs, { documentation = false } = {})
   // their features into the minimal application.
   if (documentation) for (const name of [
     '@cossackframework/ui', '@cossackframework/auth', '@cossackframework/database',
-    '@cossackframework/node-adapter', '@cossackframework/studio',
+    '@cossackframework/node-adapter', '@cossackframework/studio', '@cossackframework/romedb', '@cossackframework/cms',
   ]) {
     if (!pkg.dependencies?.[name]) pkg.devDependencies[name] = `file:${tarballs.get(name)}`;
   }

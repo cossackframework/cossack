@@ -20,6 +20,10 @@
       "types": "./src/registry.d.ts",
       "import": "./src/registry.js"
     },
+    "./plugins": {
+      "types": "./src/plugins.d.ts",
+      "import": "./src/plugins.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [
@@ -31,25 +35,34 @@
   ],
   "scaffold": {
     "dependencyVersions": {
+      "@aws-sdk/client-s3": "^3.1156.0",
       "@cloudflare/vite-plugin": "^1.48.0",
+      "@cossackframework/solar-icons": "0.7.1",
+      "@cossackframework/studio": "^0.9.0",
       "@electron-forge/cli": "^8.0.1",
       "@electron-forge/maker-deb": "^8.0.1",
       "@electron-forge/maker-dmg": "^8.0.1",
       "@electron-forge/maker-wix": "^8.0.1",
       "@electron-forge/shared-types": "^8.0.1",
       "@electron/rebuild": "^4.2.0",
+      "@hono/node-server": "^2.0.5",
+      "@simplewebauthn/browser": "14.0.0",
+      "@tailwindcss/vite": "^4.3.3",
+      "@tiptap/core": "3.32.0",
+      "@tiptap/extension-document": "3.32.0",
+      "@tiptap/extension-image": "3.32.0",
+      "@tiptap/extension-text-align": "3.32.0",
+      "@tiptap/extensions": "3.32.0",
+      "@tiptap/pm": "3.32.0",
+      "@tiptap/starter-kit": "3.32.0",
       "@tursodatabase/database": "^0.7.2",
       "@tursodatabase/serverless": "^1.4.0",
-      "@cossackframework/solar-icons": "0.7.1",
-      "@cossackframework/studio": "^0.9.0",
-      "@hono/node-server": "^2.0.5",
-      "@tailwindcss/vite": "^4.3.3",
-      "@types/node": "^22.0.0",
       "@types/mdast": "^4.0.4",
+      "@types/node": "^22.0.0",
       "@types/pg": "^8.15.5",
       "@types/ws": "^8.18.0",
+      "electron": "^43.8.4",
       "hono": "^4.13.7",
-      "electron": "^43.7.0",
       "mysql2": "^3.14.3",
       "pg": "^8.16.3",
       "prettier": "^3.4.0",
@@ -62,13 +75,15 @@
       "remark-rehype": "^11.1.2",
       "remark-sugar-high": "^0.6.3",
       "remark-toc": "^9.0.0",
+      "sharp": "^0.35.5",
       "tailwindcss": "^4.3.3",
       "tsx": "^4.23.0",
       "typescript": "^7.0.2",
       "unified": "^11.0.5",
-      "vite": "^8.1.4",
+      "uqr": "0.1.3",
       "vfile-matter": "^5.0.1",
-      "vitest": "^4.1.11",
+      "vite": "~8.1.6",
+      "vitest": "^4.1.12",
       "wrangler": "^4.115.0",
       "ws": "^8.18.0"
     }
@@ -77,15 +92,18 @@
     "test": "vitest --run"
   },
   "dependencies": {
+    "@cossackframework/cms": "workspace:*",
     "@cossackframework/core": "workspace:*",
     "prompts": "^2.4.2",
     "yaml": "^2.9.0"
   },
   "devDependencies": {
     "@cossackframework/renderer": "workspace:*",
+    "@simplewebauthn/browser": "14.0.0",
     "esbuild": "^0.28.1",
     "prettier": "^3.9.10",
-    "vitest": "^4.1.11"
+    "uqr": "0.1.3",
+    "vitest": "^4.1.12"
   },
   "publishConfig": {
     "access": "public"

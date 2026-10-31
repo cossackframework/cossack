@@ -1,0 +1,138 @@
+/*
+ * Layout blocks: group, columns and grid, as cms/site-view.ts renders them. They respond to
+ * the width of the content root they are in (`.cms-content`, a container), not the viewport,
+ * so columns inside a column stack on their own and the site editor's device toggle only
+ * narrows the root. Breakpoints: sm below 640px, md below 1024px, lg from there. A theme
+ * overrides these in its own stylesheet.
+ */
+.cms-content { container-type: inline-size; }
+
+.cms-group, .cms-columns, .cms-grid { --cms-gap: 1.5rem; display: grid; gap: var(--cms-gap); }
+[data-gap="none"] { --cms-gap: 0; }
+[data-gap="small"] { --cms-gap: 0.75rem; }
+[data-gap="large"] { --cms-gap: 3rem; }
+
+.cms-group[data-align="wide"] { max-width: var(--cms-wide, 72rem); margin-inline: auto; }
+.cms-group[data-align="center"] { max-width: var(--cms-narrow, 40rem); margin-inline: auto; }
+.cms-group[data-align="left"] { max-width: var(--cms-narrow, 40rem); margin-inline-end: auto; }
+.cms-group[data-align="right"] { max-width: var(--cms-narrow, 40rem); margin-inline-start: auto; }
+
+/*
+ * Columns: twelve tracks. A column, or the wrapper of a styled column (`.cms-column-box`), is
+ * the grid item. Stacking is a custom property the columns block sets and its columns inherit,
+ * so edit markers and wrappers between them change nothing, and nested columns keep their own.
+ */
+.cms-columns { grid-template-columns: repeat(12, minmax(0, 1fr)); --cms-stack-sm: initial; --cms-stack-md: initial; }
+.cms-columns[data-stack="mobile"] { --cms-stack-sm: 12; }
+.cms-columns[data-stack="tablet"] { --cms-stack-sm: 12; --cms-stack-md: 12; }
+.cms-column, .cms-column-box { grid-column: span var(--cms-span, 12); min-width: 0; }
+.cms-column { display: flex; flex-direction: column; }
+.cms-column-box { display: flex; flex-direction: column; }
+.cms-column-box > .cms-column { flex: 1; }
+.cms-column[data-valign="center"] { justify-content: center; }
+.cms-column[data-valign="bottom"] { justify-content: flex-end; }
+.cms-column > :first-child { margin-top: 0; }
+
+/* A styled block's wrapper: `blockStyleAttributes` sets its colors, spacing, size and alignment inline through the presets' variables. */
+.cms-block { min-width: 0; }
+.cms-block > :first-child { margin-top: 0; }
+.cms-block > :last-child { margin-bottom: 0; }
+
+.cms-grid { grid-template-columns: repeat(var(--cms-cols-lg, 3), minmax(0, 1fr)); }
+
+@container (width >= 1024px) {
+    [data-hide~="lg"] { display: none; }
+}
+@container (640px <= width < 1024px) {
+    [data-hide~="md"] { display: none; }
+}
+@container (width < 1024px) {
+    .cms-grid { grid-template-columns: repeat(var(--cms-cols-md, 2), minmax(0, 1fr)); }
+    .cms-column, .cms-column-box { grid-column: span var(--cms-stack-md, var(--cms-span, 12)); }
+}
+@container (width < 640px) {
+    [data-hide~="sm"] { display: none; }
+    .cms-grid { grid-template-columns: repeat(var(--cms-cols-sm, 1), minmax(0, 1fr)); }
+    .cms-column, .cms-column-box { grid-column: span var(--cms-stack-sm, var(--cms-span, 12)); }
+}
+
+/* The site editor's device toggle narrows the content root; nothing else changes. */
+html[data-cms-device="tablet"] .cms-content { max-width: 48rem; margin-inline: auto; }
+html[data-cms-device="phone"] .cms-content { max-width: 24rem; margin-inline: auto; }
+
+/* The editors' "Add block" button: a slowly turning rainbow border, so it stands out among the controls. */
+@property --cms-angle { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
+.cms-add-block {
+    border: 1px solid transparent;
+    background: linear-gradient(var(--background), var(--background)) padding-box,
+        conic-gradient(from var(--cms-angle), #f472b6, #fb923c, #facc15, #4ade80, #22d3ee, #818cf8, #c084fc, #f472b6) border-box;
+    animation: cms-rainbow 6s linear infinite;
+}
+.cms-add-block:hover { background: linear-gradient(var(--muted), var(--muted)) padding-box,
+    conic-gradient(from var(--cms-angle), #f472b6, #fb923c, #facc15, #4ade80, #22d3ee, #818cf8, #c084fc, #f472b6) border-box; }
+@keyframes cms-rainbow { to { --cms-angle: 360deg; } }
+@media (prefers-reduced-motion: reduce) { .cms-add-block { animation: none; } }
+
+/*
+ * Forms (cms/form-view.ts). A block whose condition hides it stays in the HTML with
+ * `data-hidden`; without JavaScript every block shows and the server applies the conditions.
+ * The trap field is off screen for people and left in the page for bots.
+ */
+@media (scripting: enabled) {
+  .cms-form [data-cms-when][data-hidden] { display: none !important; }
+}
+.cms-form-trap { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
+
+/*
+ * Dividers (core/divider): a line of a thickness and length, a palette color or a CSS color,
+ * with text in the middle if asked; or a vertical line between things in a row.
+ */
+.cms-divider { --cms-divider-size: 1px; border: 0; margin-block: 2rem; margin-inline: auto; }
+.cms-divider[data-thickness="medium"] { --cms-divider-size: 2px; }
+.cms-divider[data-thickness="thick"] { --cms-divider-size: 4px; }
+.cms-divider[data-width="wide"] { width: 75%; }
+.cms-divider[data-width="narrow"] { width: 25%; }
+hr.cms-divider { height: var(--cms-divider-size); background: var(--cms-divider-color, var(--border)); }
+.cms-divider-text { display: flex; align-items: center; gap: 1rem; color: var(--muted-foreground); font-size: 0.875rem; }
+.cms-divider-text::before, .cms-divider-text::after { content: ''; flex: 1; height: var(--cms-divider-size); background: var(--cms-divider-color, var(--border)); }
+.cms-divider-vertical { width: var(--cms-divider-size); min-height: 4rem; align-self: stretch; margin-block: 0; margin-inline: 1rem; background: var(--cms-divider-color, var(--border)); }
+.cms-divider-vertical[data-width="wide"] { min-height: 8rem; width: var(--cms-divider-size); }
+.cms-divider-vertical[data-width="full"] { min-height: 100%; width: var(--cms-divider-size); }
+
+/* Cards (core/card): the image above, left of or right of the text. */
+.cms-card { display: grid; overflow: hidden; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--card); margin-block: 1.5rem; }
+.cms-card-media { min-height: 0; }
+.cms-card-media img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.cms-card[data-layout="top"] .cms-card-media img { aspect-ratio: 16 / 9; }
+.cms-card-body { padding: 1.25rem; }
+@container (width >= 640px) {
+    .cms-card[data-layout="left"], .cms-card[data-layout="right"] { grid-template-columns: 2fr 3fr; }
+    .cms-card[data-layout="right"] .cms-card-media { order: 2; }
+}
+
+/* Carousels (core/carousel): a scroll-snapping track; carousel.client.ts adds arrows, dots and autoplay. */
+.cms-carousel { position: relative; }
+.cms-carousel-track { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; scroll-behavior: smooth; gap: 0; border-radius: 0.75rem; background: var(--muted); scrollbar-width: none; }
+.cms-carousel-track::-webkit-scrollbar { display: none; }
+.cms-carousel-slide { position: relative; flex: 0 0 100%; margin: 0; scroll-snap-align: start; }
+.cms-carousel-image { display: block; width: 100%; height: 100%; object-fit: cover; }
+.cms-carousel[data-aspect="video"] .cms-carousel-image { aspect-ratio: 16 / 9; }
+.cms-carousel[data-aspect="wide"] .cms-carousel-image { aspect-ratio: 21 / 9; }
+.cms-carousel[data-aspect="square"] .cms-carousel-image { aspect-ratio: 1; }
+.cms-carousel-caption { position: absolute; inset-inline: 0; bottom: 0; padding: 0.5rem 1rem; background: color-mix(in oklab, black 55%, transparent); color: white; font-size: 0.875rem; }
+.cms-carousel-arrow { position: absolute; top: 50%; translate: 0 -50%; display: none; width: 2.5rem; height: 2.5rem; border: 0; border-radius: 9999px; background: color-mix(in oklab, var(--background) 85%, transparent); color: var(--foreground); font-size: 1.5rem; line-height: 1; cursor: pointer; box-shadow: 0 1px 3px rgb(0 0 0 / 0.2); }
+.cms-carousel-prev { left: 0.75rem; }
+.cms-carousel-next { right: 0.75rem; }
+.cms-carousel-dots { display: none; justify-content: center; gap: 0.5rem; margin-top: 0.75rem; }
+.cms-carousel-dots button { width: 0.625rem; height: 0.625rem; padding: 0; border: 0; border-radius: 9999px; background: var(--border); cursor: pointer; }
+.cms-carousel-dots button[aria-selected="true"] { background: var(--primary); }
+.cms-carousel[data-enhanced] .cms-carousel-arrow, .cms-carousel[data-enhanced] .cms-carousel-dots { display: flex; align-items: center; justify-content: center; }
+@media (prefers-reduced-motion: reduce) { .cms-carousel-track { scroll-behavior: auto; } }
+
+/* A block the editor's validation message names flashes a few times so it is found in a long tree. */
+.cms-block-error { animation: cms-block-flash 0.6s ease-in-out 4; }
+@keyframes cms-block-flash {
+    0%, 100% { box-shadow: 0 0 0 0 transparent; }
+    50% { box-shadow: 0 0 0 4px color-mix(in oklab, var(--destructive) 45%, transparent); }
+}
+@media (prefers-reduced-motion: reduce) { .cms-block-error { animation: none; } }

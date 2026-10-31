@@ -443,6 +443,8 @@ export interface RoutesManifest {
   filePathToId: Record<string, string>;
   /** Structural facts only. Source decorators and executable policies are not inferred here. */
   routes: RouteDescriptor[];
+  /** Route key to real source path, for plugin pages rendered under `src/plugins/<name>/pages`. */
+  sources?: Record<string, string>;
 }
 
 export interface RouteDescriptor {

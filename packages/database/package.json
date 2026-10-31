@@ -120,6 +120,6 @@
     "miniflare": "4.20260722.0",
     "reflect-metadata": "^0.2.2",
     "typescript": "^7.0.2",
-    "vitest": "^4.1.11"
+    "vitest": "^4.1.12"
   }
 }

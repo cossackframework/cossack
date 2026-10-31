@@ -1,0 +1,35 @@
+{
+  "name": "@cossackframework/romedb",
+  "version": "0.9.0",
+  "type": "module",
+  "description": "RomeDB service-protocol client and request bindings for Cossack on Workers and Node.js",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cossackframework/cossack",
+    "directory": "packages/romedb"
+  },
+  "main": "src/index.ts",
+  "files": [
+    "src",
+    "agent-docs.json"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "test": "vitest"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.0",
+    "vitest": "^4.1.12"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./values": "./src/values-entry.ts",
+    "./node": "./src/node.ts",
+    "./cloudflare": "./src/cloudflare.ts",
+    "./testing": "./src/testing.ts",
+    "./package.json": "./package.json"
+  }
+}

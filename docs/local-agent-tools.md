@@ -144,8 +144,8 @@ Use `read_documentation` with an optional `package` name. The allowed names are
 `@cossackframework/framework`, `@cossackframework/node-adapter`,
 `@cossackframework/desktop`, `@cossackframework/solar-icons`,
 `@cossackframework/database`, `@cossackframework/auth`,
-`@cossackframework/scaffold`, `@cossackframework/ui`, `@cossackframework/studio`
-and `@cossackframework/typescript-plugin`. Without `package`, the catalog covers
+`@cossackframework/scaffold`, `@cossackframework/ui`, `@cossackframework/studio`,
+`@cossackframework/typescript-plugin`, `@cossackframework/romedb` and `@cossackframework/cms`. Without `package`, the catalog covers
 all of them.
 `symbols` (default `false`) requires `package`. `symbol` (1 to 256 characters,
 not blank) requires `symbols: true`. The same service backs

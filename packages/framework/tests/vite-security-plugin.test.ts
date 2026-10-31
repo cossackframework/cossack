@@ -70,6 +70,24 @@ describe('ORM and session server-only imports', () => {
     `, '/src/leak.ts')).toThrow(/server-only import/);
   });
 
+  it('removes CMS host and RomeDB imports that only server methods use', () => {
+    const safe = stripClientServerOnlyImports(`
+      import { renderMarkdown } from '@cossackframework/cms/server';
+      import { createRomeDB } from '@cossackframework/romedb';
+      import { Float64 } from '@cossackframework/romedb/values';
+      class Page {
+        render() { return Float64.name; }
+      }
+    `, '/src/page.ts');
+    expect(safe).not.toContain('@cossackframework/cms/server');
+    expect(safe).not.toContain("from '@cossackframework/romedb'");
+    expect(safe).toContain('@cossackframework/romedb/values');
+    expect(() => stripClientServerOnlyImports(`
+      import { renderMarkdown } from '@cossackframework/cms/server';
+      export const leaked = renderMarkdown;
+    `, '/src/leak.ts')).toThrow(/server-only import/);
+  });
+
   it('ignores type-only imports and type positions when checking server-only references', () => {
     const source = `
       import type { Generated } from '@cossackframework/database';

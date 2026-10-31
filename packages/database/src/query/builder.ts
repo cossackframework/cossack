@@ -14,7 +14,7 @@ type Predicate<T extends object> =
   | ((expressions: ExpressionBuilder<T>) => SQLFragment);
 
 /** True when a structured predicate has no conditions, so it would match every row. */
-function matchesEveryRow(predicate: unknown): boolean {
+export function matchesEveryRow(predicate: unknown): boolean {
   if (predicate === undefined || predicate === null) return true;
   if (predicate instanceof SQLFragment) return false;
   if (Array.isArray(predicate)) return predicate.some(matchesEveryRow);
@@ -61,6 +61,7 @@ export class SelectQueryBuilder<T extends BaseEntity, Row = T> {
   private offsetValue: number | undefined;
   private distinctValue = false;
   private aggregateMode = false;
+  private includeDeleted = false;
 
   constructor(
     protected readonly orm: ORM,
@@ -99,6 +100,12 @@ export class SelectQueryBuilder<T extends BaseEntity, Row = T> {
   }
 
   distinct(value = true): this { this.distinctValue = value; return this; }
+
+  /**
+   * Include soft-deleted rows. An entity with a `@DeleteDateColumn` hides rows whose
+   * delete date is set unless a query asks for them.
+   */
+  withDeleted(value = true): this { this.includeDeleted = value; return this; }
 
   where(predicate: Predicate<T>): this {
     this.predicate = this.resolvePredicate(predicate);
@@ -181,7 +188,8 @@ export class SelectQueryBuilder<T extends BaseEntity, Row = T> {
         { kind: "fragment", value: join.on },
       );
     }
-    if (this.predicate) nodes.push({ kind: "text", value: " WHERE " }, { kind: "fragment", value: this.predicate });
+    const predicate = this.effectivePredicate();
+    if (predicate) nodes.push({ kind: "text", value: " WHERE " }, { kind: "fragment", value: predicate });
     if (this.groups.length) nodes.push({ kind: "text", value: " GROUP BY " }, { kind: "fragment", value: sql.join(this.groups) });
     const paginated = this.limitValue !== undefined || this.offsetValue !== undefined;
     const entityRows = !this.selections.length || Boolean(this.metadata.primaryColumns.length && this.selectedProperties
@@ -217,6 +225,14 @@ export class SelectQueryBuilder<T extends BaseEntity, Row = T> {
     }
     if (this.offsetValue !== undefined) nodes.push({ kind: "text", value: ` OFFSET ${integerLiteral(this.offsetValue)}` });
     return new SQLFragment(nodes);
+  }
+
+  /** The WHERE predicate plus the soft-delete guard, unless withDeleted() lifted it. */
+  private effectivePredicate(): SQLFragment | undefined {
+    const deleteDate = this.includeDeleted ? undefined : this.metadata.columns.find((column) => column.deleteDate);
+    if (!deleteDate) return this.predicate;
+    const guard = this.orm.sql.fragment`${this.orm.sql.id(this.alias, deleteDate.columnName)} IS NULL`;
+    return this.predicate ? this.orm.sql.fragment`(${this.predicate}) AND ${guard}` : guard;
   }
 
   async getRawMany(): Promise<readonly Row[]> {

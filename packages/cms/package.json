@@ -1,0 +1,48 @@
+{
+  "name": "@cossackframework/cms",
+  "version": "0.9.0",
+  "type": "module",
+  "description": "Cossack CMS: resources, schema planning, repositories, auth and stores on RomeDB",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cossackframework/cossack",
+    "directory": "packages/cms"
+  },
+  "main": "src/index.ts",
+  "files": [
+    "src",
+    "app",
+    "agent-docs.json"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "dev": "pnpm --dir app run dev",
+    "sync": "pnpm --dir app run sync",
+    "romedb": "pnpm --dir app run romedb",
+    "test": "vitest"
+  },
+  "dependencies": {
+    "@cossackframework/auth": "workspace:*",
+    "@cossackframework/core": "workspace:*",
+    "@cossackframework/romedb": "workspace:*",
+    "@cossackframework/renderer": "workspace:*",
+    "markdown-it": "15.0.2"
+  },
+  "peerDependencies": {
+    "hono": "^4.13.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.0",
+    "hono": "^4.13.7",
+    "vitest": "^4.1.12",
+    "@types/markdown-it": "^14.2.0"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./server": "./src/server/index.ts",
+    "./package.json": "./package.json"
+  }
+}

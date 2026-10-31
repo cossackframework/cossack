@@ -72,6 +72,13 @@ declare module 'virtual:cossack-config' {
   export default configs;
 }
 
+declare module 'virtual:cossack-plugins' {
+  /** Rendered plugins from `src/plugins/<name>/plugin.json`, sorted by name. */
+  const plugins: readonly import('./plugin-registry').PluginRegistration[];
+  export { plugins };
+  export default plugins;
+}
+
 declare module 'virtual:cossack-realtime-components' {
   interface CossackRealtimeComponentRegistry {
     /**

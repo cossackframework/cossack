@@ -1,5 +1,8 @@
-// `pnpm test:databases`: the live PostgreSQL and MySQL suites, run locally
-// before a release (docs/testing.md).
+// `pnpm test:databases`: the live PostgreSQL, MySQL and RomeDB suites, run
+// locally before a release (docs/testing.md).
+//
+// The RomeDB client and CMS suites start `romedb serve` themselves. They need a
+// RomeDB 0.2.9+ executable: set COSSACK_TEST_ROMEDB_BIN or put `romedb` on PATH.
 //
 // With COSSACK_TEST_POSTGRES_URL and COSSACK_TEST_MYSQL_URL both set, the
 // suites use those databases. Otherwise this script starts the pinned
@@ -40,6 +43,14 @@ const SUITES = [
   {
     name: 'Studio live introspection tests',
     args: ['--filter', '@cossackframework/studio', 'run', 'test', '--watch=false', 'tests/live-introspection.test.ts'],
+  },
+  {
+    name: 'RomeDB client tests',
+    args: ['--filter', '@cossackframework/romedb', 'run', 'test', '--watch=false'],
+  },
+  {
+    name: 'CMS tests',
+    args: ['--filter', '@cossackframework/cms', 'run', 'test', '--watch=false'],
   },
   {
     name: 'Studio MySQL definition browser test',
