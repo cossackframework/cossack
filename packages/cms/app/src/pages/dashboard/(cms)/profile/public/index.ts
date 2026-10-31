@@ -1,5 +1,5 @@
 import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackframework/core';
-import { Button, Card, CardBody, CardHeader, Field, Input, Textarea, toast } from '@cossackframework/ui';
+import { Button, Card, CardBody, CardHeader, Field, Input, Textarea } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { AUTHOR_FIELDS, authorUrl, isCmsError } from '@cossackframework/cms';
 import { siteOrigin } from '../../../../../cms/seo';
@@ -19,6 +19,8 @@ export default class PublicProfilePage extends Cossack {
     @State() authorPages = true;
     @State() origin = '';
     @State() error = '';
+    /** What the last save did. */
+    @State() message = '';
     @State() errors: Record<string, string> = {};
 
     head(): HeadValue {
@@ -43,8 +45,9 @@ export default class PublicProfilePage extends Cossack {
     @Client()
     async submit(event: Event) {
         event.preventDefault();
+        this.message = '';
         await this.save(this.form);
-        if (this.error) toast.error(this.error); else toast.success(__('Profile saved.'));
+        if (!this.error) this.message = __('Profile saved.');
     }
 
     @Server()
@@ -83,6 +86,7 @@ export default class PublicProfilePage extends Cossack {
                 </div>
                 <a href="/dashboard/profile" class="text-sm text-primary hover:underline">← ${__('Profile')}</a>
             </div>
+            ${this.message ? notice(this.message, 'success') : null}
             ${this.error ? notice(this.error, 'error') : null}
             ${component(Card, {}, html`
                 ${component(CardHeader, {}, html`<h2 class="text-base font-semibold text-foreground">${__('Author page')}</h2>

@@ -112,7 +112,7 @@ export default class DashboardLayout extends Cossack {
                 const item = {
                     value: `module:${module.id}`,
                     label: __(module.label), href: module.href, icon: module.icon,
-                    active: this.isActive(module.href),
+                    active: module.activeFor ? this.isActive(module.activeFor, false) : this.isActive(module.href),
                 };
                 if (!module.children?.length) return item;
                 // A group lists its own page as a link too; leave it out when a child already opens it.

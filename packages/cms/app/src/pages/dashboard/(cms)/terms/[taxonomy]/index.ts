@@ -1,5 +1,5 @@
 import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackframework/core';
-import { AlertDialog, Button, Card, CardBody, Field, Icon, Input, NativeSelect, Textarea, toast } from '@cossackframework/ui';
+import { AlertDialog, Button, Card, CardBody, Field, Icon, Input, NativeSelect, Textarea } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { isCmsError, PERMISSIONS, slugify, type TermShape } from '@cossackframework/cms';
 import { requireAny } from '../../../../../cms/guards';
@@ -21,6 +21,8 @@ export default class TermsPage extends Cossack {
     @State() slugTouched = false;
     @State() errors: Record<string, string> = {};
     @State() error = '';
+    /** What the last addition did. */
+    @State() message = '';
     @State() pendingDelete: Row | null = null;
 
     head(): HeadValue {
@@ -54,8 +56,9 @@ export default class TermsPage extends Cossack {
     @Client()
     async submit(event: Event) {
         event.preventDefault();
+        this.message = '';
         await this.create(this.draft);
-        if (!Object.keys(this.errors).length && !this.error) toast.success(`${this.taxonomy.singular} ${__('added.')}`);
+        if (!Object.keys(this.errors).length && !this.error) this.message = `${this.taxonomy.singular} ${__('added.')}`;
     }
 
     @Server()
@@ -77,6 +80,7 @@ export default class TermsPage extends Cossack {
     @Server()
     async remove(id: string) {
         this.error = '';
+        this.message = '';
         try { await this.c.get('cms').taxonomies.delete(id, { principal: this.c.get('principal') }); }
         catch (error) { this.error = isCmsError(error) ? error.message : __('The term could not be deleted.'); }
         await this.load();
@@ -87,6 +91,7 @@ export default class TermsPage extends Cossack {
         const base = `/dashboard/terms/${this.taxonomy.name}`;
         return html`<div class="space-y-6">
             ${pageHeader(this.taxonomy.label, { description: this.taxonomy.hierarchical ? __('Nest terms to organize them; archives include the terms below.') : undefined })}
+            ${this.message ? notice(this.message, 'success') : null}
             ${this.error ? notice(this.error, 'error') : null}
             <div class="grid gap-6 lg:grid-cols-[22rem_minmax(0,1fr)]">
                 ${component(Card, {}, component(CardBody, {}, html`

@@ -1,5 +1,5 @@
 import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackframework/core';
-import { Badge, Button, Card, CardBody, Checkbox, Input, NativeSelect, Textarea, toast } from '@cossackframework/ui';
+import { Badge, Button, Card, CardBody, Checkbox, Input, NativeSelect, Textarea } from '@cossackframework/ui';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
 import { displayValue, formatSiteDate, isCmsError, isRows, PERMISSIONS, type FormField, type SubmissionShape, type SubmissionStatus } from '@cossackframework/cms';
 import type { LoadedForm } from '@cossackframework/cms/server';
@@ -30,6 +30,8 @@ export default class SubmissionPage extends Cossack {
     @State() view: View | null = null;
     @State() note = '';
     @State() error = '';
+    /** What the last save did. */
+    @State() message = '';
     @State() editing = false;
     /** The answers being edited, as the form would post them. */
     @State() draft: Record<string, unknown> = {};
@@ -98,6 +100,7 @@ export default class SubmissionPage extends Cossack {
         const id = this.view?.id;
         if (!form || !id) return;
         this.error = '';
+        this.message = '';
         try {
             if (status === 'delete') {
                 await cms.forms.delete(form, [id], this.c.get('principal'));
@@ -151,8 +154,9 @@ export default class SubmissionPage extends Cossack {
     @Client()
     async submitValues(event: Event) {
         event.preventDefault();
+        this.message = '';
         await this.saveValues(this.draft);
-        if (this.error) toast.error(this.error); else toast.success(__('Answers saved.'));
+        if (!this.error) this.message = __('Answers saved.');
     }
 
     @Client()
@@ -212,8 +216,9 @@ export default class SubmissionPage extends Cossack {
     @Client()
     async submitNote(event: Event) {
         event.preventDefault();
+        this.message = '';
         await this.saveNote(this.note);
-        if (this.error) toast.error(this.error); else toast.success(__('Note saved.'));
+        if (!this.error) this.message = __('Note saved.');
     }
 
     private list(entries: readonly Answer[]): TemplateResult {
@@ -239,6 +244,7 @@ export default class SubmissionPage extends Cossack {
         return html`<div class="space-y-6">
             <a href=${back} class="text-sm text-primary hover:underline">← ${__('All submissions')}</a>
             ${pageHeader(`${__('Submission')}: ${this.form.title}`, { actions: html`${view.status === 'spam' ? component(Badge, { variant: 'destructive' }, __('Spam')) : view.status === 'trash' ? component(Badge, { variant: 'secondary' }, __('Trash')) : null}${actions}` })}
+            ${this.message ? notice(this.message, 'success') : null}
             ${this.error ? notice(this.error, 'error') : null}
             <div class="grid gap-6 lg:grid-cols-3">
                 <div class="lg:col-span-2">${component(Card, {}, component(CardBody, { class: 'p-0' }, html`<div class="flex items-center justify-between border-b border-border px-4 py-2">

@@ -1,5 +1,5 @@
 import { Cossack, Page, State, ClientState, Server, Client, OnWindow, PreventNavigation, type HeadValue } from '@cossackframework/core';
-import { Button, Checkbox, Icon, Input, Modal, NativeSelect, Textarea, toast, CodeEditor } from '@cossackframework/ui';
+import { Button, Checkbox, Icon, Input, Modal, NativeSelect, Textarea, CodeEditor } from '@cossackframework/ui';
 import { html, component, unsafeHTML, type TemplateResult } from '@cossackframework/renderer';
 import { ARTICLE_TYPES, blockId, CORE_BLOCKS, entryChecks, evaluateRule, fieldVisibility, findBlock, flattenBlocks, flattenGroupFields, formatBytes, isCmsError, languageName, mediaKind, recordSchema, recordTitle, renderSeoTemplate, richTextBlocks, TITLE_SEPARATORS, updateBlock, type Block, type BlockCondition, type Check, type EmbeddedBlock, type JsonSchema, type MediaKind, type RecordShape, type RichTextDoc } from '@cossackframework/cms';
 import { blockPanel } from '../../../../../../cms/block-panel';
@@ -68,6 +68,8 @@ export default class EntryEditor extends Cossack {
     @State() jsonDirty = false;
     @State() rendered: Record<string, string> = {};
     @State() picker: { open: boolean; target: MediaTarget | null; search: string; kind: string; items: (MediaPreview & { size: string; name: string })[] } = { open: false, target: null, search: '', kind: '', items: [] };
+    /** Why files of the last upload in the media picker failed, shown in the picker. */
+    @State() pickerErrors: string[] = [];
     @State() termDrafts: Record<string, { name: string; parent: string }> = {};
     @State() tagDrafts: Record<string, string> = {};
     @State() canManageTerms = false;
@@ -420,7 +422,7 @@ export default class EntryEditor extends Cossack {
             this.dirty = false;
             this.autosaved = this.snapshot();
             if (preview) preview.location.href = `/preview/${this.view.route}/${this.id}`;
-        } catch { preview?.close(); toast.error(__('The preview could not be prepared.')); }
+        } catch { preview?.close(); this.message = ''; this.error = __('The preview could not be prepared.'); }
     }
 
     @Server()
@@ -443,8 +445,10 @@ export default class EntryEditor extends Cossack {
 
     @Client()
     async copyPreviewLink() {
-        try { await navigator.clipboard.writeText(this.previewLink); toast.success(__('Link copied.')); }
-        catch { toast.error(__('Copy the link from the box.')); }
+        this.message = '';
+        this.error = '';
+        try { await navigator.clipboard.writeText(this.previewLink); this.message = __('Link copied.'); }
+        catch { this.error = __('Copy the link from the box.'); }
     }
 
     // --- Translations --------------------------------------------------------------
@@ -559,6 +563,7 @@ export default class EntryEditor extends Cossack {
     @Client()
     async openPicker(target: MediaTarget) {
         this.picker = { ...this.picker, open: true, target, kind: target.fileKind ?? 'image' };
+        this.pickerErrors = [];
         await this.findMedia(this.picker.search, this.picker.kind);
     }
 
@@ -611,9 +616,10 @@ export default class EntryEditor extends Cossack {
     async uploadInPicker(event: Event) {
         const input = event.currentTarget as HTMLInputElement;
         const files = [...(input.files ?? [])];
+        this.pickerErrors = [];
         for (const file of files) {
             try { this.choose(await uploadFile(file)); }
-            catch (error) { toast.error((error as Error).message || __('The upload failed.')); }
+            catch (error) { this.pickerErrors = [...this.pickerErrors, (error as Error).message || __('The upload failed.')]; }
         }
         input.value = '';
         await this.findMedia('', this.picker.kind);
@@ -637,7 +643,7 @@ export default class EntryEditor extends Cossack {
         const empty = { tab: 'general' as const, style: styleValues({}), ...(editorId ? { editor: editorId } : {}) };
         if (block.type === 'core/pattern') { this.blockDialog = { field, id: block._id, type: block.type, values: { pattern: block.data.pattern }, errors: {}, embedded: true, ...empty }; return; }
         const option = this.view?.blocks.find(entry => entry.name === block.type);
-        if (!option) { toast.error(__('This block type is no longer available.')); return; }
+        if (!option) { this.message = ''; this.error = __('This block type is no longer available.'); return; }
         this.blockDialog = { field, id: block._id, type: block.type, errors: {}, embedded: true, ...empty,
             values: Object.fromEntries(option.fields.map(entry => [entry.name, controlValue(entry, block.data[entry.name] ?? entry.defaultValue)])) };
     }
@@ -737,7 +743,8 @@ export default class EntryEditor extends Cossack {
         const title = this.view?.titleField ?? '';
         if (this.view?.titleRequired && intent !== 'trash' && !String(this.values[title] ?? '').trim()) {
             this.errors = { ...this.errors, [title]: __('Enter a title.') };
-            toast.error(__('Enter a title before saving.'));
+            this.message = '';
+            this.error = __('Enter a title before saving.');
             document.getElementById('field-title')?.focus();
             return;
         }
@@ -746,13 +753,12 @@ export default class EntryEditor extends Cossack {
         this.message = '';
         try { await this.save(this.values, intent, this.rev); }
         finally { this.saving = false; }
-        if (this.error) { toast.error(this.error); this.revealErrorTab(); }
+        if (this.error) this.revealErrorTab();
         else {
             this.dirty = false;
             this.unsaved = false;
             this.autosaved = this.snapshot();
             this.settleUrl();
-            if (this.message) toast.success(this.message);
         }
     }
 
@@ -867,10 +873,10 @@ export default class EntryEditor extends Cossack {
     @Client()
     async submitJson() {
         this.saving = true;
+        this.message = '';
         try { await this.applyJson(this.json, this.rev); }
         finally { this.saving = false; }
-        if (this.error) toast.error(this.error);
-        else { this.dirty = false; this.unsaved = false; this.autosaved = this.snapshot(); toast.success(this.message || __('Saved.')); }
+        if (!this.error) { this.dirty = false; this.unsaved = false; this.autosaved = this.snapshot(); if (!this.message) this.message = __('Saved.'); }
     }
 
     private jsonPanel(): TemplateResult {
@@ -1120,8 +1126,10 @@ export default class EntryEditor extends Cossack {
 
     @Client()
     async copyLink(url: string) {
-        try { await navigator.clipboard.writeText(`${this.seo.origin}${url}`); toast.success(__('Link copied.')); }
-        catch { toast.error(__('The link could not be copied.')); }
+        this.message = '';
+        this.error = '';
+        try { await navigator.clipboard.writeText(`${this.seo.origin}${url}`); this.message = __('Link copied.'); }
+        catch { this.error = __('The link could not be copied.'); }
     }
 
     /** Search title, description and image, with a preview of the search result. */
@@ -1277,6 +1285,7 @@ export default class EntryEditor extends Cossack {
                         ${__('Upload files')}<input type="file" multiple accept=${this.picker.kind === 'image' ? 'image/*' : MEDIA_ACCEPT} class="sr-only" @change=${(event: Event) => this.uploadInPicker(event)}>
                     </label>
                 </div>
+                ${this.pickerErrors.map(error => notice(error, 'error'))}
                 <ul class="grid max-h-[60vh] grid-cols-2 gap-3 overflow-y-auto sm:grid-cols-4">
                     ${this.picker.items.map(file => html`<li>
                         <button type="button" class="w-full overflow-hidden rounded-md border border-border bg-muted text-left hover:ring-2 hover:ring-ring cursor-pointer p-0" @click=${() => this.choose(file)}>

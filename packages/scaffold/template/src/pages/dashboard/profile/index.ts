@@ -1,5 +1,6 @@
 import { Cossack, Page, State, ClientState, Store, Validate, Client, Server, storeRules } from '@cossackframework/core';
-import { Card, CardBody, CardHeader, Field, Input, Button, Avatar, Form, toast } from '@cossackframework/ui';
+import { Card, CardBody, CardHeader, Field, Input, Button, Avatar, Form } from '@cossackframework/ui';
+import { notice } from '../../../dashboard/page';
 import { html, component, bind } from '@cossackframework/renderer';
 import { avatarUploads, updateUserProfile, uploadAvatar } from '../../../auth';
 import { avatarField } from '../../../dashboard/avatar-field';
@@ -22,6 +23,8 @@ export default class ProfilePage extends Cossack {
 
     @State() saved = false;
     @State() error = '';
+    /** What the last action did, shown under the heading. */
+    @State() message = '';
     /** Email shown in the profile card (read-only; seeded server-side). */
     @State() userEmail = '';
     /** Whether the auth store accepts picture uploads; otherwise the avatar is a URL. */
@@ -47,12 +50,13 @@ export default class ProfilePage extends Cossack {
     @Client()
     async chooseAvatar(file: File) {
         this.avatarError = '';
+        this.message = '';
         this.uploading = true;
         const preview = URL.createObjectURL(file);
         this.avatarPreview = preview;
         try {
             await this.storeAvatar(file);
-            toast.success(__('Picture updated.'));
+            this.message = __('Picture updated.');
         } catch (e: any) {
             this.avatarError = e?.message || __('The picture could not be uploaded.');
         } finally {
@@ -71,8 +75,9 @@ export default class ProfilePage extends Cossack {
     @Client()
     async removeAvatar() {
         this.form.avatar = '';
+        this.message = '';
         await this.clearAvatar();
-        toast.success(__('Picture removed.'));
+        this.message = __('Picture removed.');
     }
 
     @Server()
@@ -85,16 +90,16 @@ export default class ProfilePage extends Cossack {
     async handleSubmit(event: Event) {
         event.preventDefault();
         this.error = '';
+        this.message = '';
         this.saved = false;
         const ok = await this.validateAll();
         if (!ok) return;
         try {
             await this.save(this.form.name, this.form.avatar);
             this.saved = true;
-            toast.success(__('Profile updated.'));
+            this.message = __('Profile updated.');
         } catch (e: any) {
             this.error = e?.message || 'Could not save profile';
-            toast.error(this.error);
         }
     }
 
@@ -113,6 +118,8 @@ export default class ProfilePage extends Cossack {
                     </div>
                     <a href="/dashboard/profile/security" class="text-sm text-primary hover:underline">${__('Security and application passwords')} →</a>
                 </div>
+                ${this.message && !this.error ? notice(this.message, 'success') : null}
+                ${this.error ? notice(this.error, 'error') : null}
 
                 ${component(Card, {}, component(CardBody, {}, html`
                     <div class="flex items-center gap-4">

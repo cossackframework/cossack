@@ -1,5 +1,5 @@
 import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackframework/core';
-import { Badge, Button, Card, CardBody, CardHeader, toast } from '@cossackframework/ui';
+import { Badge, Button, Card, CardBody, CardHeader } from '@cossackframework/ui';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
 import { ANONYMOUS, ARTICLE_TYPES, CRAWLER_GROUPS, isCmsError, PERMISSIONS, recordTitle, type FieldFilter } from '@cossackframework/cms';
 import type { CrawlerVisits, NotFoundRow } from '@cossackframework/cms/server';
@@ -24,6 +24,8 @@ export default class HealthPage extends Cossack {
     @State() findings: Finding[] = [];
     @State() days = 14;
     @State() error = '';
+    /** What the last dismissal did, shown with the missing pages. */
+    @State() message = '';
 
     head(): HeadValue {
         return { title: __('Health') };
@@ -93,8 +95,9 @@ export default class HealthPage extends Cossack {
 
     @Client()
     async forget(path: string) {
+        this.message = '';
         await this.forgetMissing(path);
-        toast.success(__('Removed from the list.'));
+        this.message = __('Removed from the list.');
     }
 
     @Server()
@@ -137,7 +140,7 @@ export default class HealthPage extends Cossack {
             ${component(Card, {}, html`
                 ${component(CardHeader, {}, html`<h2 class="text-base font-semibold text-foreground">${__('Missing pages')} <span class="text-sm font-normal text-muted-foreground">(${this.missing.length})</span></h2>
                     <p class="text-sm text-muted-foreground">${__('Paths that answered 404 to readers or crawlers, most hit first. Redirect the ones that used to be pages.')}</p>`)}
-                ${component(CardBody, {}, this.missing.length ? html`<table class="w-full text-sm">
+                ${component(CardBody, { class: 'space-y-3' }, html`${this.message ? notice(this.message, 'success') : null}${this.missing.length ? html`<table class="w-full text-sm">
                     <thead><tr class="text-left text-xs uppercase text-muted-foreground"><th class="py-1 pr-3 font-medium">${__('Path')}</th><th class="py-1 pr-3 font-medium">${__('Hits')}</th><th class="py-1 pr-3 font-medium">${__('Last')}</th><th class="py-1 pr-3 font-medium">${__('From')}</th><th class="py-1 font-medium"></th></tr></thead>
                     <tbody>${this.missing.map(row => html`<tr class="border-t border-border">
                         <td class="py-1.5 pr-3"><code class="rounded bg-muted px-1.5 py-0.5 text-xs text-foreground">${row.path}</code></td>
@@ -145,7 +148,7 @@ export default class HealthPage extends Cossack {
                         <td class="max-w-48 truncate py-1.5 pr-3 text-xs text-muted-foreground" title=${row.referrer}>${row.referrer ? new URL(row.referrer).host : '—'}</td>
                         <td class="py-1.5 text-right whitespace-nowrap"><a href=${`/dashboard/tools/redirects?source=${encodeURIComponent(row.path)}`} class="text-primary hover:underline">${__('Redirect')}</a>
                             <button type="button" class="ml-3 text-muted-foreground hover:text-foreground bg-transparent border-none p-0 cursor-pointer" @click=${() => this.forget(row.path)}>${__('Dismiss')}</button></td></tr>`)}</tbody></table>`
-                    : html`<p class="text-sm text-muted-foreground">${__('Nothing missed yet.')}</p>`)}`)}
+                    : html`<p class="text-sm text-muted-foreground">${__('Nothing missed yet.')}</p>`}`)}`)}
             ${component(Badge, { variant: 'secondary' }, `${__('Counted since the upgrade that added this page; older visits are not known.')}`)}
         </div>`;
     }

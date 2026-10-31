@@ -25,6 +25,8 @@ export interface SettingsGroup {
     readonly permission?: string;
     /** Shown as a subpage of this group, such as Crawlers under SEO; keys keep the group's own ID. */
     readonly parent?: string;
+    /** An icon of the dashboard's set beside its name in the Settings navigation. */
+    readonly icon?: string;
 }
 
 export const DATE_FORMATS = Object.freeze({ long: 'October 16, 2026', medium: 'Oct 16, 2026', iso: '2026-10-16', us: '10/16/2026', eu: '16/10/2026' });
@@ -33,6 +35,7 @@ export const TIME_FORMATS = Object.freeze({ '12h': '3:45 pm', '24h': '15:45' });
 /** General and Media settings belong to the host; content modules add Writing and Reading. */
 export const general: SettingsGroup = {
     id: 'general',
+    icon: 'settings',
     label: 'General',
     fields: {
         siteTitle: field.string({ required: true, max: 120, default: 'My Site', label: 'Site title' }),
@@ -53,6 +56,7 @@ export const general: SettingsGroup = {
 
 export const media: SettingsGroup = {
     id: 'media',
+    icon: 'gallery',
     label: 'Files',
     fields: {
         maxUploadMb: field.integer({ default: 100, min: 1, max: 1_000_000, label: 'Maximum upload size (MB)', description: 'Uploads go straight to the bucket, so the limit is yours to set.' }),
@@ -62,6 +66,7 @@ export const media: SettingsGroup = {
 /** The active theme, a plugin name. Changed under Appearance → Themes. */
 export const appearance: SettingsGroup = {
     id: 'appearance',
+    icon: 'palette',
     label: 'Appearance',
     permission: 'cms:appearance',
     fields: {
@@ -75,6 +80,7 @@ export const appearance: SettingsGroup = {
 
 export const writing: SettingsGroup = {
     id: 'writing',
+    icon: 'pen',
     label: 'Writing',
     fields: {
         defaultCategory: { ...field.string({ max: 80, default: '', label: 'Default post category', description: 'Posts saved without a category get this one.' }), source: 'categories' },
@@ -84,6 +90,7 @@ export const writing: SettingsGroup = {
 
 export const reading: SettingsGroup = {
     id: 'reading',
+    icon: 'eye',
     label: 'Reading',
     fields: {
         showOnFront: { ...field.enum(['posts', 'page'], { default: 'posts', label: 'Your homepage displays' }), choices: { posts: 'Your latest posts', page: 'A static page' } },
@@ -99,6 +106,7 @@ export const reading: SettingsGroup = {
 /** Comments: who can post, what is held for moderation, and who is told. */
 export const discussion: SettingsGroup = {
     id: 'discussion',
+    icon: 'chat-round-line',
     label: 'Discussion',
     fields: {
         enabled: field.boolean({ default: true, label: 'Allow discussions', description: 'Off hides comments and their forms everywhere and refuses new ones. Stored comments are kept and can still be moderated.' }),
@@ -123,6 +131,7 @@ export const TITLE_SEPARATORS = Object.freeze({ dash: '–', pipe: '|', hyphen: 
 /** Site-wide search and sharing settings; entries override them in their SEO box. */
 export const seo: SettingsGroup = {
     id: 'seo',
+    icon: 'graph',
     label: 'SEO',
     fields: {
         titleSeparator: { ...field.enum(Object.keys(TITLE_SEPARATORS), { default: 'dash', label: 'Title separator', description: 'Between an entry\'s title and the site title.' }), choices: TITLE_SEPARATORS },
@@ -150,6 +159,7 @@ export const seo: SettingsGroup = {
 /** Which crawlers robots.txt lets in, by what they do with the pages. */
 export const crawlers: SettingsGroup = {
     id: 'crawlers',
+    icon: 'bolt',
     label: 'Crawlers',
     parent: 'seo',
     description: 'Crawlers by purpose. robots.txt asks; it does not enforce. Fetchers acting for a person (ChatGPT-User, Claude-User, Perplexity-User) ignore it, as browsers do.',
@@ -164,6 +174,7 @@ export const crawlers: SettingsGroup = {
 /** IndexNow: pings Bing, Yandex, Naver and Seznam when entries change. */
 export const indexnow: SettingsGroup = {
     id: 'indexnow',
+    icon: 'rocket',
     label: 'IndexNow',
     parent: 'seo',
     description: 'Tells Bing, Yandex, Naver and Seznam at once when a page is published, changed or removed, so their results and Copilot answers refresh within minutes. Google does not take part. Needs APP_URL.',
@@ -176,6 +187,7 @@ export const indexnow: SettingsGroup = {
 /** The site's languages: the default one without a URL prefix, others under `/<code>/`. */
 export const languages: SettingsGroup = {
     id: 'languages',
+    icon: 'global',
     label: 'Languages',
     fields: {
         default: field.string({ required: true, max: 16, default: 'en', pattern: '[a-z]{2,3}(?:-[a-z0-9]{2,8})?', label: 'Default language' }),

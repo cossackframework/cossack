@@ -423,7 +423,7 @@ describe.skipIf(!liveRomeDBTests())('generated CMS forms', () => {
       // Other content does not offer input blocks.
       await admin.goto(`${origin}/dashboard/content/posts/new`);
       await ready();
-      await admin.getByRole('button', { name: 'Add block' }).click();
+      await admin.locator('#field-content-add-top').click();
       const picker = admin.getByRole('dialog', { name: 'Blocks' });
       await browserExpect(picker.getByRole('heading', { name: 'Widgets' })).toBeVisible();
       await browserExpect(picker.getByRole('heading', { name: 'Form inputs' })).toHaveCount(0);

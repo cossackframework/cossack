@@ -1,5 +1,5 @@
 import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackframework/core';
-import { Button, Card, CardBody, Field, Input, NativeSelect, Textarea, toast } from '@cossackframework/ui';
+import { Button, Card, CardBody, Field, Input, NativeSelect, Textarea } from '@cossackframework/ui';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
 import { fieldVisibility, hasPermission, isCmsError, mediaUrl, PERMISSIONS, slugify } from '@cossackframework/cms';
 import { findMedia, groupsView, metaInput, metaValues, type GroupsView } from '../../../../../../cms/content';
@@ -23,6 +23,8 @@ export default class EditTerm extends Cossack {
     @State() parents: { id: string; name: string; depth: number }[] = [];
     @State() errors: Record<string, string> = {};
     @State() error = '';
+    /** What the last save did. */
+    @State() message = '';
     @State() found = false;
     /** The field groups attached to the taxonomy, and the term's values for them as control values. */
     @State() fieldGroups: GroupsView = { groups: [], fields: [], options: [] };
@@ -118,7 +120,7 @@ export default class EditTerm extends Cossack {
     @Client()
     async openChooser(target: MetaTarget) {
         this.target = target;
-        this.chooser = { ...this.chooser, open: true, field: target.key, multiple: target.multiple, kind: 'image' };
+        this.chooser = { ...this.chooser, open: true, error: '', field: target.key, multiple: target.multiple, kind: 'image' };
         await this.searchMedia(this.chooser.search);
     }
 
@@ -136,7 +138,7 @@ export default class EditTerm extends Cossack {
     @Client()
     async uploadFile(event: Event) {
         const { files, error } = await uploadMedia(event.currentTarget as HTMLInputElement);
-        if (error) toast.error(error);
+        this.chooser = { ...this.chooser, error };
         for (const file of files) this.chooseFile(file);
         await this.searchMedia('');
     }
@@ -146,8 +148,9 @@ export default class EditTerm extends Cossack {
     @Client()
     async submit(event: Event) {
         event.preventDefault();
+        this.message = '';
         await this.save(this.draft, this.meta);
-        if (this.error) toast.error(this.error); else toast.success(`${this.taxonomy.singular} ${__('updated.')}`);
+        if (!this.error) this.message = `${this.taxonomy.singular} ${__('updated.')}`;
     }
 
     @Server()
@@ -170,6 +173,8 @@ export default class EditTerm extends Cossack {
 
     @Server()
     async remove() {
+        this.error = '';
+        this.message = '';
         try {
             await this.c.get('cms').taxonomies.delete(this.c.req.param('id') ?? '', { principal: this.c.get('principal') });
             return this.redirect(`/dashboard/terms/${this.taxonomy.name}`);
@@ -203,6 +208,7 @@ export default class EditTerm extends Cossack {
         if (!this.found) return notice(this.error || __('This term does not exist.'), 'error');
         return html`<div class="max-w-2xl space-y-6">
             ${pageHeader(`${__('Edit')} ${this.taxonomy.singular.toLowerCase()}`, { actions: html`<a href=${`/dashboard/terms/${this.taxonomy.name}`} class="text-sm text-muted-foreground hover:text-foreground">← ${this.taxonomy.label}</a>` })}
+            ${this.message ? notice(this.message, 'success') : null}
             ${this.error ? notice(this.error, 'error') : null}
             <form class="space-y-6" @submit=${(event: Event) => this.submit(event)}>
             ${component(Card, {}, component(CardBody, {}, html`<div class="space-y-4">

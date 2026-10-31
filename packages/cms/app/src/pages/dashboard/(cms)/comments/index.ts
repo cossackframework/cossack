@@ -1,5 +1,5 @@
 import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackframework/core';
-import { Avatar, Badge, Button, Card, CardBody, Checkbox, Input, NativeSelect, Pagination, Textarea, toast } from '@cossackframework/ui';
+import { Avatar, Badge, Button, Card, CardBody, Checkbox, Input, NativeSelect, Pagination, Textarea } from '@cossackframework/ui';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
 import { COMMENT_STATUSES, isCmsError, PERMISSIONS, recordTitle, type CommentStatus } from '@cossackframework/cms';
 import { requireAny } from '../../../../cms/guards';
@@ -41,6 +41,8 @@ export default class CommentsPage extends Cossack {
     @State() replyText = '';
     @State() editing: { id: string; content: string; authorName: string; authorEmail: string; authorUrl: string } | null = null;
     @State() error = '';
+    /** What the last reply did. */
+    @State() message = '';
     /** Settings → Discussion → Allow discussions; off hides comments on the site, and they can still be moderated here. */
     @State() discussions = true;
 
@@ -98,6 +100,7 @@ export default class CommentsPage extends Cossack {
     @Server()
     async moderate(ids: string[], status: CommentStatus | 'delete') {
         this.error = '';
+        this.message = '';
         try {
             await this.c.get('cms').moderateComments(ids, status, this.c.get('principal'));
         } catch (error) { this.error = isCmsError(error) ? error.message : __('The comments could not be changed.'); }
@@ -114,23 +117,20 @@ export default class CommentsPage extends Cossack {
     @Server()
     async reply(row: Row, content: string) {
         this.error = '';
+        this.message = '';
         try {
             await this.c.get('cms').postComment({ collection: row.collection, entry: row.entryId, parent: row.id, content }, { principal: this.c.get('principal') });
             this.replying = '';
             this.replyText = '';
+            this.message = __('Reply posted.');
         } catch (error) { this.error = isCmsError(error) ? error.message : __('The reply could not be posted.'); }
         await this.load();
-    }
-
-    @Client()
-    async sendReply(row: Row) {
-        await this.reply(row, this.replyText);
-        if (this.error) toast.error(this.error); else toast.success(__('Reply posted.'));
     }
 
     @Server()
     async saveEdit(edit: { id: string; content: string; authorName: string; authorEmail: string; authorUrl: string }) {
         this.error = '';
+        this.message = '';
         try {
             const { comments } = this.c.get('cms');
             await comments.update(edit.id, { content: edit.content, authorName: edit.authorName, authorEmail: edit.authorEmail, authorUrl: edit.authorUrl });
@@ -183,7 +183,7 @@ export default class CommentsPage extends Cossack {
                     ${component(Textarea, { rows: 4, 'aria-label': __('Comment'), '.value': editing.content, '@input': (event: Event) => { this.editing = { ...editing, content: (event.target as HTMLTextAreaElement).value }; } })}
                     <div class="flex gap-2">${component(Button, { type: 'submit', size: 'sm' }, __('Update comment'))}${component(Button, { type: 'button', size: 'sm', variant: 'ghost', '@click': () => { this.editing = null; } }, __('Cancel'))}</div>
                 </form>` : html`<p class="whitespace-pre-wrap break-words text-sm text-foreground">${row.content}</p>${this.actions(row)}`}
-                ${this.replying === row.id ? html`<form class="mt-3 space-y-2" @submit=${(event: Event) => { event.preventDefault(); void this.sendReply(row); }}>
+                ${this.replying === row.id ? html`<form class="mt-3 space-y-2" @submit=${(event: Event) => { event.preventDefault(); void this.reply(row, this.replyText); }}>
                     ${component(Textarea, { rows: 3, 'aria-label': __('Reply'), '.value': this.replyText, '@input': (event: Event) => { this.replyText = (event.target as HTMLTextAreaElement).value; } })}
                     <div class="flex gap-2">${component(Button, { type: 'submit', size: 'sm', disabled: !this.replyText.trim() }, __('Reply'))}${component(Button, { type: 'button', size: 'sm', variant: 'ghost', '@click': () => { this.replying = ''; } }, __('Cancel'))}</div>
                 </form>` : null}
@@ -201,6 +201,7 @@ export default class CommentsPage extends Cossack {
         return html`<div class="space-y-6">
             ${pageHeader(this.entryFilter.title ? `${__('Comments on')} “${this.entryFilter.title}”` : __('Comments'))}
             ${this.discussions ? null : notice(__('Discussions are turned off: the site shows no comments and takes no new ones. Turn them on under Settings → Discussion.'))}
+            ${this.message ? notice(this.message, 'success') : null}
             ${this.error ? notice(this.error, 'error') : null}
             <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                 <nav aria-label=${__('Filter by status')} class="flex flex-wrap gap-x-3 gap-y-1 text-sm">${tabs.map(([key, label], index) => html`${index ? html`<span class="text-muted-foreground" aria-hidden="true">|</span>` : null}

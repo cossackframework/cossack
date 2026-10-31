@@ -1,5 +1,5 @@
 import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackframework/core';
-import { Button, Card, CardBody, CodeEditor, ColorPicker, Input, toast } from '@cossackframework/ui';
+import { Button, Card, CardBody, CodeEditor, ColorPicker, Input } from '@cossackframework/ui';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
 import { customCssProblem, isCmsError, PERMISSIONS, presetOverridesProblem, resolvePresets, slugify, type Preset } from '@cossackframework/cms';
 import { requireAny } from '../../../../../cms/guards';
@@ -24,6 +24,8 @@ export default class CustomizePage extends Cossack {
     @State() customCss = '';
     @State() errors: Record<string, string> = {};
     @State() error = '';
+    /** What the last publish did. */
+    @State() message = '';
 
     head(): HeadValue {
         return { title: __('Customize') };
@@ -76,8 +78,9 @@ export default class CustomizePage extends Cossack {
     @Client()
     async submit(event: Event) {
         event.preventDefault();
+        this.message = '';
         await this.save(this.values, this.colors.map(color => ({ slug: color.slug, value: color.value })), this.custom, this.customCss);
-        if (this.error) toast.error(this.error); else toast.success(__('Your changes are live.'));
+        if (!this.error) this.message = __('Your changes are live.');
     }
 
     @Server()
@@ -164,6 +167,7 @@ export default class CustomizePage extends Cossack {
                 description: __('Options, colors and CSS of the active theme. Site title and tagline are General settings; menus have their own screen.'),
                 actions: html`${linkButton(__('Menus'), '/dashboard/appearance/menus', 'outline')}<a href="/" target="_blank" rel="noopener" class="text-sm text-primary hover:underline">${__('View site')} ↗</a>`,
             })}
+            ${this.message ? notice(this.message, 'success') : null}
             ${this.error ? notice(this.error, 'error') : null}
             ${component(Card, {}, component(CardBody, {}, html`<form class="space-y-6" @submit=${(event: Event) => this.submit(event)}>
                 ${this.rows.length ? html`<section class="space-y-5" aria-labelledby="customize-options">

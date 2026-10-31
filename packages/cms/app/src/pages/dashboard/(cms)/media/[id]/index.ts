@@ -1,5 +1,5 @@
 import { Cossack, Page, State, ClientState, Server, Client, type HeadValue } from '@cossackframework/core';
-import { AlertDialog, Button, Card, CardBody, Field, Input, Textarea, toast } from '@cossackframework/ui';
+import { AlertDialog, Button, Card, CardBody, Field, Input, Textarea } from '@cossackframework/ui';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
 import { formatBytes, imageUrl, isCmsError, mediaKind, mediaUrl, PERMISSIONS, transformable, type ImageEdits, type ImageRect, type MediaKind } from '@cossackframework/cms';
 import { requireAny } from '../../../../../cms/guards';
@@ -19,6 +19,8 @@ export default class MediaDetails extends Cossack {
     @State() file: { id: string; url: string; name: string; kind: MediaKind; contentType: string; size: string; dimensions: string; createdAt: number; uploadedBy: string } | null = null;
     @State() details: Details = { title: '', alt: '', caption: '', description: '' };
     @State() error = '';
+    /** What the last save or copy did. */
+    @State() message = '';
     @State() confirmDelete = false;
     /** Entries and widget areas that use the file. */
     @State() usage: MediaUse[] = [];
@@ -143,9 +145,9 @@ export default class MediaDetails extends Cossack {
 
     @Client()
     async submitEdits() {
+        this.message = '';
         await this.saveEdits({ ...(this.crop ? { crop: this.crop } : {}), ...(this.focus ? { focus: this.focus } : {}) });
-        if (this.error) toast.error(this.error);
-        else { this.editsChanged = false; toast.success(__('Image edits saved. Pages show the new version.')); }
+        if (!this.error) { this.editsChanged = false; this.message = __('Image edits saved. Pages show the new version.'); }
     }
 
     @Server()
@@ -213,8 +215,9 @@ export default class MediaDetails extends Cossack {
     @Client()
     async submit(event: Event) {
         event.preventDefault();
+        this.message = '';
         await this.save(this.details);
-        if (this.error) toast.error(this.error); else toast.success(__('Media details saved.'));
+        if (!this.error) this.message = __('Media details saved.');
     }
 
     @Server()
@@ -230,6 +233,8 @@ export default class MediaDetails extends Cossack {
 
     @Server()
     async deleteFile() {
+        this.error = '';
+        this.message = '';
         try {
             await this.c.get('cms').files!.delete(this.c.req.param('id') ?? '', { principal: this.c.get('principal') });
             return this.redirect('/dashboard/media');
@@ -241,8 +246,10 @@ export default class MediaDetails extends Cossack {
     @Client()
     async copyUrl() {
         if (!this.file) return;
-        try { await navigator.clipboard.writeText(new URL(this.file.url, location.origin).href); toast.success(__('URL copied.')); }
-        catch { toast.error(__('Copy the URL from the field instead.')); }
+        this.error = '';
+        this.message = '';
+        try { await navigator.clipboard.writeText(new URL(this.file.url, location.origin).href); this.message = __('URL copied.'); }
+        catch { this.error = __('Copy the URL from the field instead.'); }
     }
 
     @Client()
@@ -255,6 +262,7 @@ export default class MediaDetails extends Cossack {
         if (!file) return html`<div class="space-y-4">${notice(this.error || __('Loading…'), 'error')}<a href="/dashboard/media" class="text-primary">← ${__('Media library')}</a></div>`;
         return html`<div class="space-y-6">
             ${pageHeader(__('Edit media'), { actions: html`<a href="/dashboard/media" class="text-sm text-muted-foreground hover:text-foreground">← ${__('Media library')}</a>` })}
+            ${this.message ? notice(this.message, 'success') : null}
             ${this.error ? notice(this.error, 'error') : null}
             <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
                 ${component(Card, {}, component(CardBody, { class: this.editable ? 'bg-muted/40 p-4' : 'flex items-center justify-center bg-muted/40 p-4' },

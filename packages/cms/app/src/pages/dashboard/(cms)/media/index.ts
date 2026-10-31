@@ -1,5 +1,5 @@
 import { Cossack, Page, State, Server, Client, flash, flashed, type HeadValue } from '@cossackframework/core';
-import { Button, Card, CardBody, Icon, Input, NativeSelect, Pagination, toast } from '@cossackframework/ui';
+import { Button, Card, CardBody, Icon, Input, NativeSelect, Pagination } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { formatBytes, isSameOriginPost, mediaKind, mediaUrl, PERMISSIONS, type MediaKind } from '@cossackframework/cms';
 import { requireAny } from '../../../../cms/guards';
@@ -70,6 +70,7 @@ export default class MediaLibrary extends Cossack {
         if (!files.length) return;
         this.uploading = true;
         this.errors = [];
+        this.message = '';
         let uploaded = 0;
         for (const file of files) {
             try { await uploadFile(file); uploaded++; }
@@ -77,7 +78,7 @@ export default class MediaLibrary extends Cossack {
         }
         this.uploading = false;
         if (uploaded) {
-            toast.success(`${__('Uploaded')} ${uploaded} ${uploaded === 1 ? __('file') : __('files')}.`);
+            this.message = `${__('Uploaded')} ${uploaded} ${uploaded === 1 ? __('file') : __('files')}.`;
             this.page = 1;
             await this.load();
         }

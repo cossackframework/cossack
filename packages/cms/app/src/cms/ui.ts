@@ -4,23 +4,6 @@ import { component, html, ifDefined, type TemplateResult } from '@cossackframewo
 import { Badge, Icon, Tooltip } from '@cossackframework/ui';
 import { icon } from './icons';
 
-/**
- * The heading of a screen. `titleActions` sit beside the title, as WordPress puts "Add New"
- * next to "Posts"; `actions` go to the right.
- */
-export function pageHeader(title: string, options: { description?: string; actions?: TemplateResult | null; titleActions?: TemplateResult | null } = {}): TemplateResult {
-    return html`<div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-            <div class="flex flex-wrap items-center gap-3">
-                <h1 class="text-2xl font-bold text-foreground">${title}</h1>
-                ${options.titleActions ?? null}
-            </div>
-            ${options.description ? html`<p class="mt-1 text-sm text-muted-foreground">${options.description}</p>` : null}
-        </div>
-        ${options.actions ? html`<div class="flex flex-wrap items-center gap-2">${options.actions}</div>` : null}
-    </div>`;
-}
-
 /** A small square button with an icon alone; its label is a tooltip and its accessible name. */
 export function iconButton(id: string, name: string, label: string, run: (event: Event) => void, options: { disabled?: boolean; danger?: boolean; pressed?: boolean; class?: string; size?: 'sm' | 'md' } = {}): TemplateResult {
     const size = options.size === 'md' ? 'h-8 w-8' : 'h-7 w-7';
@@ -31,18 +14,9 @@ export function iconButton(id: string, name: string, label: string, run: (event:
         @click=${run}>${component(Icon, { entry: icon(name), size: 16 })}</button>`);
 }
 
-const BUTTON = {
-    primary: 'bg-primary text-primary-foreground hover:opacity-90',
-    outline: 'border border-border text-foreground hover:bg-muted',
-} as const;
-
-export function linkButton(label: string, href: string, variant: keyof typeof BUTTON = 'primary', options: { size?: 'sm' | 'md' } = {}): TemplateResult {
-    const size = options.size === 'sm' ? 'px-3 py-1.5 text-sm' : 'px-4 py-2 text-sm';
-    return html`<a href=${href} class=${`inline-flex items-center justify-center rounded-md font-medium no-underline transition-colors ${size} ${BUTTON[variant]}`}>${label}</a>`;
-}
-
-// Tab helpers live with the shared dashboard shell, which the users screen uses without the CMS.
+// Tab, page and list helpers live with the shared dashboard shell, which the users screen uses without the CMS.
 export { countBadge, rememberTab, tabFromQuery } from '../dashboard/tabs';
+export { linkButton, notice, pageHeader, type NoticeTone } from '../dashboard/page';
 
 /** Labels of entry statuses. */
 export const STATUS_LABELS: Record<string, string> = { draft: 'Draft', pending: 'Pending review', scheduled: 'Scheduled', published: 'Published', trash: 'Trash' };
@@ -54,12 +28,6 @@ export function statusBadge(status: unknown): TemplateResult | null {
     if (status === 'draft') return component(Badge, { variant: 'secondary' }, __('Draft'));
     if (status === 'trash') return component(Badge, { variant: 'destructive' }, __('Trash'));
     return null;
-}
-
-/** A notice line; errors use role=alert. */
-export function notice(text: string, tone: 'info' | 'success' | 'error' = 'info'): TemplateResult {
-    const tones = { info: 'border-border text-foreground', success: 'border-emerald-500/40 text-foreground bg-emerald-500/5', error: 'border-destructive/50 text-destructive bg-destructive/5' };
-    return html`<p role=${tone === 'error' ? 'alert' : 'status'} class=${`rounded-md border px-3 py-2 text-sm ${tones[tone]}`}>${text}</p>`;
 }
 
 /** `2026/10/16 at 3:45 pm` in UTC, as dashboard lists show times. */

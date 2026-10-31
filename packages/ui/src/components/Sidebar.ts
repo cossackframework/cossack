@@ -126,7 +126,7 @@ export class Sidebar extends Cossack {
             ?hidden=${hidden} ?inert=${hidden} aria-hidden=${hidden ? 'true' : 'false'} ref=${(el:Element)=>this.connect(el)}>
             <div class=${`cs-sidebar__header group flex items-center gap-2 border-b shrink-0 ${rail ? 'flex-col py-3 px-0' : 'px-4 h-14'}`}>
                 ${brand != null ? html`<div class="cs-sidebar__brand flex-1 min-w-0">${brand}</div>` : html`<span class=${rail ? 'sr-only' : 'text-sm font-semibold truncate flex-1'}>${title}</span>`}
-                ${onCollapsedChange ? html`<button type="button" class="cs-sidebar__toggle size-7 inline-flex items-center justify-center rounded-md hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
+                ${onCollapsedChange ? html`<button type="button" class="cs-sidebar__toggle size-7 inline-flex items-center justify-center rounded-md hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-ring"
                     aria-label=${collapsed ? expandLabel : collapseLabel} aria-expanded=${!collapsed} aria-controls=${`${id}-nav`}
                     @click=${()=>this.propose(!this.collapsedBase())}><span aria-hidden="true">${component(Icon,{entry:HamburgerMenuIcon,size:16})}</span></button>` : null}
             </div>
@@ -143,13 +143,13 @@ export class Sidebar extends Cossack {
         const { '@click': supplied, ...props } = item.linkProps ?? {};
         return html`<a ...=${{...props,'@click':sidebarListener(supplied,event=>this.handleLinkNavigation(event as MouseEvent,item))}} href=${item.href}
             aria-current=${item.active ? 'page' : undefined} title=${props.title ?? (rail ? item.label : undefined)}
-            class=${`cs-sidebar__link flex items-center gap-2.5 rounded-md text-sm transition-colors motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-ring ${item.active ? 'bg-primary/10 text-primary font-medium' : 'text-muted-foreground hover:bg-accent'} ${rail ? 'justify-center px-0 py-2' : 'px-3 py-2'}`}>
+            class=${`cs-sidebar__link flex items-center gap-2.5 rounded-md text-sm transition-colors motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-ring ${item.active ? 'bg-primary/10 text-primary font-medium' : 'text-muted-foreground hover:bg-sidebar-accent'} ${rail ? 'justify-center px-0 py-2' : 'px-3 py-2'}`}>
             ${this.icon(item,rail)}<span class=${rail ? 'sr-only' : 'flex-1 truncate'}>${item.label}</span></a>`;
     }
     private renderItem(item: SidebarItem, rail: boolean): unknown {
         const panelId = `${this.props.id}-group-${encodeURIComponent(item.value)}`;
         return html`<li data-sidebar-value=${item.value}>${item.children ? html`<details class="cs-sidebar__group" ?open=${this.isExpanded(item)}>
-            <summary class=${`cs-sidebar__group-trigger list-none [&::-webkit-details-marker]:hidden flex items-center gap-2.5 rounded-md text-sm cursor-pointer hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring ${rail ? 'justify-center py-2' : 'px-3 py-2'}`}
+            <summary class=${`cs-sidebar__group-trigger list-none [&::-webkit-details-marker]:hidden flex items-center gap-2.5 rounded-md text-sm cursor-pointer hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-ring ${rail ? 'justify-center py-2' : 'px-3 py-2'}`}
                 title=${rail ? item.label : undefined} aria-controls=${panelId} @click=${(event:MouseEvent)=>this.toggleGroup(event,item)}>
                 ${this.icon(item,rail)}<span class=${rail ? 'sr-only' : 'flex-1 text-start truncate'}>${item.label}</span><span aria-hidden="true" class=${rail ? 'sr-only' : 'text-xs'}>${this.isExpanded(item) ? '−' : '+'}</span>
             </summary><div id=${panelId} class=${`cs-sidebar__group-items ${rail ? '' : 'ms-4 border-s ps-2'}`}>

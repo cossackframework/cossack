@@ -1,5 +1,5 @@
 import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackframework/core';
-import { Button, Card, CardBody, toast } from '@cossackframework/ui';
+import { Button, Card, CardBody } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { isCmsError, PERMISSIONS } from '@cossackframework/cms';
 import { requireAny } from '../../../../../cms/guards';
@@ -17,6 +17,8 @@ export default class SettingsPage extends Cossack {
     @State() values: SettingValues = {};
     @State() errors: Record<string, string> = {};
     @State() error = '';
+    /** What the last save did. */
+    @State() message = '';
 
     head(): HeadValue {
         return { title: `${this.label || __('Settings')} ${__('settings')}` };
@@ -42,8 +44,9 @@ export default class SettingsPage extends Cossack {
     @Client()
     async submit(event: Event) {
         event.preventDefault();
+        this.message = '';
         await this.save(this.values);
-        if (this.error) toast.error(this.error); else toast.success(__('Settings saved.'));
+        if (!this.error) this.message = __('Settings saved.');
     }
 
     @Server()
@@ -65,6 +68,7 @@ export default class SettingsPage extends Cossack {
         if (!this.group) return notice(this.error || __('These settings do not exist.'), 'error');
         return settingsFrame(this.links, this.group, html`<div class="space-y-6">
             ${pageHeader(`${this.label} ${__('settings')}`)}
+            ${this.message ? notice(this.message, 'success') : null}
             ${this.error ? notice(this.error, 'error') : null}
             ${component(Card, {}, component(CardBody, {}, html`<form class="space-y-5" @submit=${(event: Event) => this.submit(event)}>
                 ${this.rows.map(row => settingControl(row, this.values[row.name], this.errors[row.name], value => this.set(row.name, value)))}

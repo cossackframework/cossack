@@ -1,5 +1,5 @@
 import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackframework/core';
-import { AlertDialog, Badge, Button, Card, CardBody, CardHeader, Checkbox, Field, Input, NativeSelect, Textarea, toast } from '@cossackframework/ui';
+import { AlertDialog, Badge, Button, Card, CardBody, CardHeader, Checkbox, Field, Input, NativeSelect, Textarea } from '@cossackframework/ui';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
 import { bindingPaths, findBlock, flattenBlocks, flattenGroupFields, hasPermission, isCmsError, PERMISSIONS, RESERVED_FIELDS, SCHEMA_PROPERTIES, SCHEMA_TYPE_LABELS, SCHEMA_TYPES, SEO_TEMPLATE_VARIABLES, updateBlock, type Block, type RichTextDoc, type SchemaType, type ThemePresets } from '@cossackframework/cms';
 import { collectionDraft, definitionOf, type CollectionDraft } from '../../../../../cms/builder';
@@ -186,7 +186,6 @@ export default class CollectionBuilder extends Cossack {
     async submit() {
         if (!this.draft) return;
         await this.save(this.draft, this.groups.map(group => group.id), this.template, this.layoutStored ? this.layout : null);
-        if (this.error) toast.error(this.error); else toast.success(__('Collection saved.'));
     }
 
     @Server()
@@ -282,7 +281,7 @@ export default class CollectionBuilder extends Cossack {
 
     @Client()
     async openChooser(field: string, multiple: boolean, kind = 'image') {
-        this.chooser = { ...this.chooser, open: true, field, multiple, kind };
+        this.chooser = { ...this.chooser, open: true, error: '', field, multiple, kind };
         await this.searchMedia(this.chooser.search);
     }
 
@@ -307,7 +306,7 @@ export default class CollectionBuilder extends Cossack {
     @Client()
     async uploadFile(event: Event) {
         const { files, error } = await uploadMedia(event.currentTarget as HTMLInputElement);
-        if (error) toast.error(error);
+        this.chooser = { ...this.chooser, error };
         for (const file of files) this.chooseFile(file);
         await this.searchMedia('');
     }

@@ -411,7 +411,7 @@ export class SiteEditor extends Cossack {
     @Client()
     private openChooser(target: ChooserTarget, multiple: boolean) {
         this.chooserTarget = target;
-        this.props.onChooser({ ...this.props.draft.chooser, open: true, field: 'field' in target ? target.field : '', multiple, kind: this.fileKind(target) });
+        this.props.onChooser({ ...this.props.draft.chooser, open: true, error: '', field: 'field' in target ? target.field : '', multiple, kind: this.fileKind(target) });
         this.props.onSearchMedia(this.props.draft.chooser.search);
     }
 
@@ -449,7 +449,7 @@ export class SiteEditor extends Cossack {
     @Client()
     private async upload(event: Event) {
         const { files, error } = await uploadMedia(event.currentTarget as HTMLInputElement);
-        if (error) this.announcement = error;
+        this.props.onChooser({ ...this.props.draft.chooser, error });
         for (const file of files) this.choose(file);
         this.props.onSearchMedia('');
     }

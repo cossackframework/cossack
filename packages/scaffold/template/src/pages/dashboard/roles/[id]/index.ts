@@ -1,5 +1,6 @@
 import { Cossack, Page, State, Store, Validate, Client, Server, storeRules } from '@cossackframework/core';
-import { Card, CardBody, CardHeader, Field, Input, Button, Checkbox, Form, toast } from '@cossackframework/ui';
+import { Card, CardBody, CardHeader, Field, Input, Button, Checkbox, Form } from '@cossackframework/ui';
+import { notice } from '../../../../dashboard/page';
 import { html, component, bind } from '@cossackframework/renderer';
 import { requireRoleManager } from '../../../../services/rbac';
 import { getRole, updateRole, type RoleDetail } from '../../../../services/roles';
@@ -50,10 +51,8 @@ export default class EditRolePage extends Cossack {
         try {
             await this.save(this.role, this.selected);
             this.saved = true;
-            toast.success(__('Saved.'));
         } catch (e: any) {
             this.error = e?.message || __('Could not save role');
-            toast.error(this.error);
         }
     }
 
@@ -73,6 +72,8 @@ export default class EditRolePage extends Cossack {
                     <h1 class="text-2xl font-bold text-foreground">${this.role.name}</h1>
                     <p class="mt-1 text-sm text-muted-foreground">${__('Edit the role and its permissions.')}</p>
                 </div>
+                ${this.saved && !this.error ? notice(__('Saved.'), 'success') : null}
+                ${this.error ? notice(this.error, 'error') : null}
 
                 ${component(Card, {}, html`
                     ${component(CardHeader, {}, html`<h2 class="text-base font-semibold text-foreground">${__('Details')}</h2>`)}

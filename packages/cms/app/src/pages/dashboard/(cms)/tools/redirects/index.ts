@@ -1,5 +1,5 @@
 import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackframework/core';
-import { AlertDialog, Badge, Button, Card, CardBody, Field, Input, NativeSelect, Pagination, toast } from '@cossackframework/ui';
+import { AlertDialog, Badge, Button, Card, CardBody, Field, Input, NativeSelect, Pagination } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { isCmsError, PERMISSIONS, principalId, REDIRECT_STATUSES, type Redirect, type RedirectStatus } from '@cossackframework/cms';
 import { requireAny } from '../../../../../cms/guards';
@@ -25,6 +25,8 @@ export default class RedirectsPage extends Cossack {
     @State() kind: '' | 'auto' | 'manual' = '';
     @State() form: Form = { ...EMPTY };
     @State() error = '';
+    /** What the last save did. */
+    @State() message = '';
     @State() pendingDelete: Redirect | null = null;
 
     head(): HeadValue {
@@ -61,8 +63,9 @@ export default class RedirectsPage extends Cossack {
     async submit(event: Event) {
         event.preventDefault();
         const editing = Boolean(this.form.id);
+        this.message = '';
         await this.save(this.form);
-        if (this.error) toast.error(this.error); else toast.success(editing ? __('Redirect updated.') : __('Redirect added.'));
+        if (!this.error) this.message = editing ? __('Redirect updated.') : __('Redirect added.');
     }
 
     @Server()
@@ -82,6 +85,7 @@ export default class RedirectsPage extends Cossack {
 
     @Server()
     async remove(id: string) {
+        this.message = '';
         await this.c.get('cms').redirects.delete(id);
         if (this.form.id === id) this.form = { ...EMPTY };
         await this.load();
@@ -98,6 +102,7 @@ export default class RedirectsPage extends Cossack {
         const gone = Number(this.form.status) === 410;
         return html`<div class="space-y-6">
             ${pageHeader(__('Redirects'), { description: __('Send visitors from addresses without content to new ones. Redirects never hide a live page.') })}
+            ${this.message ? notice(this.message, 'success') : null}
             ${this.error ? notice(this.error, 'error') : null}
             ${component(Card, {}, component(CardBody, {}, html`<form class="grid gap-4 md:grid-cols-[1fr_1fr_14rem]" @submit=${(event: Event) => this.submit(event)}>
                 ${component(Field, { label: __('Source path'), for: 'redirect-source', hint: __('Such as /old-page, or /old/* for everything below it.'),

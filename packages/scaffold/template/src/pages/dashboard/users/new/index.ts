@@ -1,5 +1,6 @@
 import { Cossack, Page, Store, State, Validate, Client, Server, storeRules } from '@cossackframework/core';
-import { Card, CardBody, CardHeader, Checkbox, Field, Input, PasswordInput, Button, Form, toast } from '@cossackframework/ui';
+import { Card, CardBody, CardHeader, Checkbox, Field, Input, PasswordInput, Button, Form } from '@cossackframework/ui';
+import { notice } from '../../../../dashboard/page';
 import { html, component, bind } from '@cossackframework/renderer';
 import { canAssignRoles, guard } from '../../../../services/rbac';
 import { createUser } from '../../../../services/users';
@@ -59,7 +60,6 @@ export default class NewUserPage extends Cossack {
             await this.create(this.form.name, this.form.email, this.form.password, this.form.roleIds);
         } catch (e: any) {
             this.error = e?.message || __('Could not create user');
-            toast.error(this.error);
         }
     }
 
@@ -78,6 +78,7 @@ export default class NewUserPage extends Cossack {
                     <h1 class="text-2xl font-bold text-foreground">${__('New user')}</h1>
                     <p class="mt-1 text-sm text-muted-foreground">${__('Create a new user account.')}</p>
                 </div>
+                ${this.error ? notice(this.error, 'error') : null}
 
                 ${component(Card, {}, html`
                     ${component(CardHeader, {}, html`<h2 class="text-base font-semibold text-foreground">${__('Details')}</h2>`)}

@@ -302,6 +302,8 @@ const DASHBOARD_CORE_PATHS = new Set([
   'src/dashboard/app-passwords.ts',
   'src/dashboard/avatar-field.ts',
   'src/dashboard/bulk.ts',
+  'src/dashboard/list-table.ts',
+  'src/dashboard/page.ts',
   'src/dashboard/tabs.ts',
   'src/dashboard/time-ago.ts',
   'src/dashboard/session-list.ts',
@@ -1254,6 +1256,8 @@ export interface DashboardModule {
   authorization: 'authenticated' | 'admin' | { permission: string };
   placement?: 'navigation' | 'account';
   children?: DashboardModuleLink[];
+  /** Highlighted on every page under this path, such as \`/dashboard/settings\` for screens with their own navigation. */
+  activeFor?: string;
 }
 `;
 }

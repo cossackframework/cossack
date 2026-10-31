@@ -1,11 +1,12 @@
 import { Cossack, Page, State, Server, Client } from '@cossackframework/core';
-import { Card, CardBody, CardHeader, Button, Badge, Input, Icon, Pagination, AlertDialog } from '@cossackframework/ui';
+import { AlertDialog } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { PenNewRoundIcon as editIconSvg } from '@cossackframework/solar-icons/pen-new-round/line';
 import { TrashBinMinimalisticIcon as deleteIconSvg } from '@cossackframework/solar-icons/trash-bin-minimalistic/line';
 import { UsersGroupRoundedIcon as usersIconSvg } from '@cossackframework/solar-icons/users-group-rounded/line';
-import { MagnifierIcon as searchIconSvg } from '@cossackframework/solar-icons/magnifier/line';
 import { requireRoleManager } from '../../../services/rbac';
+import { listFilters, listFooter, listTable, rowActions } from '../../../dashboard/list-table';
+import { linkButton, notice, pageHeader } from '../../../dashboard/page';
 import {
     listRoles,
     deleteRole,
@@ -16,7 +17,6 @@ import {
 const editIcon = { line: editIconSvg };
 const deleteIcon = { line: deleteIconSvg };
 const usersIcon = { line: usersIconSvg };
-const searchIcon = { line: searchIconSvg };
 
 const PAGE_SIZE = 20;
 
@@ -27,6 +27,7 @@ export default class RolesPage extends Cossack {
     @State() page = 1;
     @State() appliedSearch = '';
     @State() error = '';
+    @State() message = '';
     /** Role pending deletion confirmation (null = dialog closed). */
     @State() pendingDelete: RoleDetail | null = null;
 
@@ -56,12 +57,15 @@ export default class RolesPage extends Cossack {
 
     @Server()
     async remove(id: string, name: string) {
+        this.message = '';
+        this.error = '';
         if (name === 'admin') {
             this.error = __('The admin role cannot be deleted.');
             return;
         }
         try {
             await deleteRole(id);
+            this.message = __('Role deleted.');
             const result = await this.query();
             const maxPage = Math.max(1, Math.ceil(result.total / PAGE_SIZE));
             if (this.page > maxPage) {
@@ -102,116 +106,25 @@ export default class RolesPage extends Cossack {
 
     render() {
         const totalPages = Math.max(1, Math.ceil(this.total / PAGE_SIZE));
-        const from = this.total === 0 ? 0 : (this.page - 1) * PAGE_SIZE + 1;
-        const to = Math.min(this.total, this.page * PAGE_SIZE);
-        const iconBtn = 'inline-flex items-center justify-center [&_svg]:size-4';
-        const iconBtnClass = 'inline-flex items-center justify-center w-8 h-8 rounded-md transition-colors border-none bg-transparent cursor-pointer';
-
         return html`
             <div class="space-y-6">
-                <div class="flex items-center justify-between gap-4">
-                    <div>
-                        <h1 class="text-2xl font-bold text-foreground">${__('Roles')}</h1>
-                        <p class="mt-1 text-sm text-muted-foreground">${__('Manage roles and their permissions.')}</p>
-                    </div>
-                    <a href="/dashboard/roles/new"
-                       class="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 transition-opacity">
-                        ${__('New role')}
-                    </a>
-                </div>
-
-                ${this.error ? html`<div class="text-sm text-destructive">${this.error}</div>` : null}
-
-                ${component(Card, {}, html`
-                    ${component(CardHeader, {}, html`
-                        <div class="flex flex-col sm:flex-row sm:items-center gap-3 sm:justify-between">
-                            <h2 class="text-base font-semibold text-foreground">${__('All roles')}</h2>
-                            <!-- Native GET form: submit navigates to ?search=… (URL reflects state). -->
-                            <form method="GET" action="/dashboard/roles" class="flex items-center gap-2">
-                                <div class="relative">
-                                    <span class="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground ${iconBtn}">${component(Icon, { entry: searchIcon, size: 16 })}</span>
-                                    ${component(Input, {
-                                        type: 'search',
-                                        name: 'search',
-                                        placeholder: __('Search roles'),
-                                        value: this.appliedSearch,
-                                        size: 'sm',
-                                        class: 'pl-8',
-                                    })}
-                                </div>
-                                ${component(Button, { type: 'submit', size: 'sm', variant: 'outline' }, __('Search'))}
-                            </form>
-                        </div>
-                    `)}
-                    ${component(CardBody, {}, html`
-                        <div class="overflow-x-auto">
-                            <table class="w-full">
-                                <thead>
-                                    <tr class="text-left text-xs uppercase tracking-wide text-muted-foreground">
-                                        <th class="py-2 pr-4 font-medium">${__('Role')}</th>
-                                        <th class="py-2 pr-4 font-medium">${__('Users')}</th>
-                                        <th class="py-2 text-right font-medium">${__('Actions')}</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    ${this.roles.map((role) => html`
-                                        <tr class="border-t border-border">
-                                            <td class="py-3 pr-4">
-                                                <a href="/dashboard/roles/${role.id}" class="text-sm font-medium text-foreground hover:underline">${role.name}</a>
-                                            </td>
-                                            <td class="py-3 pr-4 text-sm text-muted-foreground">${role.userCount ?? 0}</td>
-                                            <td class="py-3">
-                                                <div class="flex items-center justify-end gap-1">
-                                                    <a href="/dashboard/users?role=${role.name}"
-                                                       class="${iconBtnClass} text-muted-foreground hover:bg-muted hover:text-foreground"
-                       title=${__('View users with this role')}
-                       aria-label=${__('View users with this role')}>
-                                                        <span class=${iconBtn}>${component(Icon, { entry: usersIcon, size: 16 })}</span>
-                                                    </a>
-                                                    <a href="/dashboard/roles/${role.id}"
-                                                       class="${iconBtnClass} text-muted-foreground hover:bg-muted hover:text-foreground"
-                       title=${__('Edit role')}
-                       aria-label=${__('Edit role')}>
-                                                        <span class=${iconBtn}>${component(Icon, { entry: editIcon, size: 16 })}</span>
-                                                    </a>
-                                                    ${role.name !== 'admin'
-                                                        ? html`<button
-                                                              type="button"
-                                                              @click=${() => this.requestDelete(role)}
-                                                              class="${iconBtnClass} text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                                                              title=${__('Delete role')}
-                                                              aria-label=${__('Delete role')}>
-                                                              <span class=${iconBtn}>${component(Icon, { entry: deleteIcon, size: 16 })}</span>
-                                                          </button>`
-                                                        : null}
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    `)}
-                                </tbody>
-                            </table>
-                            ${this.roles.length === 0
-                                ? html`<p class="py-6 text-center text-sm text-muted-foreground">${__('No roles found.')}</p>`
-                                : null}
-                        </div>
-                        <div class="flex flex-col sm:flex-row items-center justify-between gap-3 mt-4 pt-4 border-t border-border">
-                            <p class="text-xs text-muted-foreground">
-                                ${__('Showing')} ${from}–${to} ${__('of')} ${this.total}
-                            </p>
-                            ${totalPages > 1
-                                ? component(Pagination, {
-                                      page: this.page,
-                                      totalPages,
-                                      label: __('Pagination'),
-                                      previousLabel: __('Previous page'),
-                                      nextLabel: __('Next page'),
-                                      pageLabel: (p: number) => `${__('Page')} ${p}`,
-                                      href: (p: number) => this.pageHref(p),
-                                  })
-                                : null}
-                        </div>
-                    `)}
-                `)}
+                ${pageHeader(__('Roles'), { description: __('Manage roles and their permissions.'), titleActions: linkButton(__('New role'), '/dashboard/roles/new', 'primary', { size: 'sm' }) })}
+                ${this.message && !this.error ? notice(this.message, 'success') : null}
+                ${this.error ? notice(this.error, 'error') : null}
+                ${listFilters({ action: '/dashboard/roles', search: { name: 'search', value: this.appliedSearch, placeholder: __('Search roles') } })}
+                ${listTable<RoleDetail>({
+                    rows: this.roles, key: role => role.id, rowAttribute: 'data-role', empty: __('No roles found.'),
+                    columns: [
+                        { label: __('Role'), cell: role => html`<a href="/dashboard/roles/${role.id}" class="font-medium text-foreground no-underline hover:text-primary">${role.name}</a>
+                            ${rowActions([
+                                { id: `role-${role.id}-edit`, label: __('Edit role'), icon: editIcon, href: `/dashboard/roles/${role.id}` },
+                                { id: `role-${role.id}-users`, label: __('View users with this role'), icon: usersIcon, href: `/dashboard/users?role=${encodeURIComponent(role.name)}` },
+                                ...(role.name !== 'admin' ? [{ id: `role-${role.id}-delete`, label: __('Delete role'), icon: deleteIcon, danger: true, run: () => this.requestDelete(role) }] : []),
+                            ])}` },
+                        { label: __('Users'), class: 'text-muted-foreground', cell: role => html`<a href="/dashboard/users?role=${encodeURIComponent(role.name)}" class="text-muted-foreground no-underline hover:text-primary">${role.userCount ?? 0}</a>` },
+                    ],
+                })}
+                ${listFooter({ total: this.total, page: this.page, totalPages, href: p => this.pageHref(p) })}
 
                 ${component(AlertDialog, {
                     id: 'delete-role-dialog',

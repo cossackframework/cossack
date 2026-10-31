@@ -13,8 +13,8 @@ async function renderedControls(file, state) {
   const component = (name, props) => { controls.push({ name, props }); return ''; };
   const html = () => '';
   const names = ['Card','CardBody','CardHeader','Avatar','Button','Badge','Input','NativeSelect','Pagination','Icon','AlertDialog','Field','Textarea'];
-  // The dashboard's shared bulk helpers render nothing here; only the page's own controls are counted.
-  const bulk = { bulkBar: () => '', selectAllBox: () => '', selectBox: () => '' };
+  // The dashboard's shared bulk, list and page helpers render nothing here; only the page's own controls are counted.
+  const bulk = { bulkBar: () => '', selectAllBox: () => '', selectBox: () => '', listFilters: () => '', listTable: () => '', listFooter: () => '', rowActions: () => '', pageHeader: () => '', linkButton: () => '', notice: () => '', timeAgo: () => '' };
   const page = new Function('html','component','__','searchIcon','editIcon','deleteIcon','PAGE_SIZE', ...names, ...Object.keys(bulk), code + '\nreturn page;')(
     html,component,value=>value,{},{},{},20,...names,...Object.values(bulk),
   );

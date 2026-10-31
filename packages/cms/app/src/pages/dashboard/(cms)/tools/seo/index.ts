@@ -1,5 +1,5 @@
 import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackframework/core';
-import { Button, Card, CardBody, Input, NativeSelect, Textarea, toast } from '@cossackframework/ui';
+import { Button, Card, CardBody, Input, NativeSelect, Textarea } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { isCmsError, PERMISSIONS, recordTitle, renderSeoTemplate, TITLE_SEPARATORS, type FieldFilter } from '@cossackframework/cms';
 import { requireAny } from '../../../../../cms/guards';
@@ -24,6 +24,8 @@ export default class SeoEditorPage extends Cossack {
     @State() filter: 'all' | 'missing' = 'all';
     @State() template = { title: '%title% %sep% %site%', sep: '–', site: '' };
     @State() error = '';
+    /** What the last row save did. */
+    @State() message = '';
 
     head(): HeadValue {
         return { title: __('SEO editor') };
@@ -83,8 +85,9 @@ export default class SeoEditorPage extends Cossack {
     async save(id: string) {
         const row = this.rows.find(entry => entry.id === id);
         if (!row) return;
+        this.message = '';
         await this.store(row);
-        if (this.error) toast.error(this.error); else toast.success(__('Saved.'));
+        if (!this.error) this.message = __('Saved.');
     }
 
     @Server()
@@ -111,6 +114,7 @@ export default class SeoEditorPage extends Cossack {
         const summary = this.collections.find(entry => entry.name === this.collection)?.summary ?? false;
         return html`<div class="space-y-6">
             ${pageHeader(__('SEO editor'), { description: __('Titles, descriptions and summaries of many entries at once. Empty titles and descriptions use the templates in Settings → SEO.') })}
+            ${this.message ? notice(this.message, 'success') : null}
             ${this.error ? notice(this.error, 'error') : null}
             <form method="get" action="/dashboard/tools/seo" class="flex flex-wrap items-end gap-3">
                 <label class="text-sm text-foreground">${__('Collection')}<br>${component(NativeSelect, { name: 'collection', '@change': (event: Event) => { window.location.href = href({ collection: (event.target as HTMLSelectElement).value }); } }, html`

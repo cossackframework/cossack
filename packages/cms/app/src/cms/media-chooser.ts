@@ -7,7 +7,7 @@ import { component, html, type TemplateResult } from '@cossackframework/renderer
 import { Button, Modal } from '@cossackframework/ui';
 import { mediaKind } from '@cossackframework/cms';
 import type { MediaPreview } from './field-controls';
-import { CONTROL } from './ui';
+import { CONTROL, notice } from './ui';
 
 export interface MediaChooserState {
     open: boolean;
@@ -20,6 +20,8 @@ export interface MediaChooserState {
     items: MediaPreview[];
     /** The file input's accept list; media files by default. */
     accept?: string;
+    /** Why an upload failed, shown in the chooser; cleared when it opens. */
+    error?: string;
 }
 
 /** The kinds of file the chooser can list, in its menu's order. */
@@ -65,6 +67,7 @@ export function mediaChooser(state: MediaChooserState, handlers: MediaChooserHan
                     ${__('Upload files')}<input type="file" multiple accept=${state.accept || MEDIA_ACCEPT} class="sr-only" @change=${(event: Event) => handlers.upload(event)}>
                 </label>
             </div>
+            ${state.error ? notice(state.error, 'error') : null}
             <ul class="grid max-h-[60vh] grid-cols-2 gap-3 overflow-y-auto sm:grid-cols-4">
                 ${state.items.map(file => html`<li>
                     <button type="button" class="w-full overflow-hidden rounded-md border border-border bg-muted p-0 text-left hover:ring-2 hover:ring-ring cursor-pointer" @click=${() => handlers.choose(file)}>

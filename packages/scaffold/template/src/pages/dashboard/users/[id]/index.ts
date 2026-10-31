@@ -1,5 +1,6 @@
 import { ClientVisibleError, Cossack, Page, State, ClientState, Validate, Client, Server, Store, storeRules } from '@cossackframework/core';
-import { Alert, Card, CardBody, CardHeader, Field, Input, PasswordInput, Button, Checkbox, Form, Tabs, toast } from '@cossackframework/ui';
+import { Alert, Card, CardBody, CardHeader, Field, Input, PasswordInput, Button, Checkbox, Form, Tabs } from '@cossackframework/ui';
+import { notice } from '../../../../dashboard/page';
 import { html, component, bind } from '@cossackframework/renderer';
 import { canAssignRoles, canManageUser, canManageAccess, guard } from '../../../../services/rbac';
 import { getUser, updateUser, syncUserRoles, changeUserPassword, type UserDetail } from '../../../../services/users';
@@ -45,7 +46,9 @@ export default class EditUserPage extends Cossack {
     /** Your own password before you change it; another user's needs none. */
     @State() currentPassword = '';
 
-    @State() saved = '';
+    /** The last action's outcome above the tabs: what it did, or why it failed (`failed`). */
+    @State() message = '';
+    @State() failed = '';
     @State() confirmPassword = '';
     /** The Change password card's outcome, shown above its form; `passwordFailed` makes it an error. */
     @State() passwordMessage = '';
@@ -181,18 +184,16 @@ export default class EditUserPage extends Cossack {
     @Client()
     async handleSubmit(event: Event) {
         event.preventDefault();
-        this.error = '';
-        this.saved = '';
+        this.message = '';
+        this.failed = '';
         const ok = await this.validateAll();
         if (!ok) return;
 
         try {
             await this.save();
-            this.saved = __('Saved.');
-            toast.success(__('Saved.'));
+            this.message = __('Saved.');
         } catch (e: any) {
-            this.error = e?.message || __('Could not save user');
-            toast.error(this.error);
+            this.failed = e?.message || __('Could not save user');
         }
     }
 
@@ -235,12 +236,13 @@ export default class EditUserPage extends Cossack {
     async chooseAvatar(file: File) {
         if (!this.userDetail) return;
         this.avatarError = '';
+        this.message = '';
         this.uploading = true;
         const preview = URL.createObjectURL(file);
         this.avatarPreview = preview;
         try {
             await this.storeAvatar(file);
-            toast.success(__('Picture updated.'));
+            this.message = __('Picture updated.');
         } catch (e: any) {
             this.avatarError = e?.message || __('The picture could not be uploaded.');
         } finally {
@@ -261,8 +263,9 @@ export default class EditUserPage extends Cossack {
     async removeAvatar() {
         if (!this.userDetail) return;
         this.userDetail.avatar = null;
+        this.message = '';
         await this.clearAvatar();
-        toast.success(__('Picture removed.'));
+        this.message = __('Picture removed.');
     }
 
     @Server()
@@ -389,7 +392,7 @@ export default class EditUserPage extends Cossack {
                     <p class="text-sm text-muted-foreground">${this.security.totp || this.security.passkeys
                         ? `${this.security.totp ? __('Authenticator app on.') : __('No authenticator app.')} ${this.security.passkeys} ${this.security.passkeys === 1 ? __('passkey') : __('passkeys')}.`
                         : __('This user signs in with a password only.')}</p>
-                    ${this.security.totp || this.security.passkeys ? component(Button, { type: 'button', variant: 'outline', '@click': async () => { await this.resetSecurity(); toast.success(__('Two-step sign-in reset.')); } }, __('Reset two-step sign-in')) : null}
+                    ${this.security.totp || this.security.passkeys ? component(Button, { type: 'button', variant: 'outline', '@click': async () => { this.message = ''; await this.resetSecurity(); this.message = __('Two-step sign-in reset.'); } }, __('Reset two-step sign-in')) : null}
                 `)}
             `) : null}
         </div>`;
@@ -399,10 +402,10 @@ export default class EditUserPage extends Cossack {
                     <p class="mt-1 text-sm text-muted-foreground">${own ? __('Devices signed in to your account.') : __('Devices signed in to this account.')}</p>`)}
                 ${component(CardBody, {}, html`
                     ${this.sessionsError ? html`<p role="alert" class="mb-3 text-sm text-destructive">${this.sessionsError}</p>` : null}
-                    ${sessionTable(this.sessions, { id: 'user-sessions', onRevoke: async (reference) => { await this.endSession(reference); if (!this.sessionsError) toast.success(__('Session ended.')); } })}`)}
+                    ${sessionTable(this.sessions, { id: 'user-sessions', onRevoke: async (reference) => { this.message = ''; await this.endSession(reference); if (!this.sessionsError) this.message = __('Session ended.'); } })}`)}
             `)}
             ${this.sessions.some((session) => !session.current) ? html`<div class="flex justify-end">
-                ${component(Button, { type: 'button', variant: 'outline', size: 'sm', '@click': async () => { await this.endOtherSessions(); toast.success(__('Signed out.')); } },
+                ${component(Button, { type: 'button', variant: 'outline', size: 'sm', '@click': async () => { this.message = ''; await this.endOtherSessions(); if (!this.sessionsError) this.message = __('Signed out.'); } },
                     own ? __('Sign out other sessions') : __('Sign out everywhere'))}
             </div>` : null}
         </div>`;
@@ -426,6 +429,8 @@ export default class EditUserPage extends Cossack {
                     <h1 class="text-2xl font-bold text-foreground">${this.userDetail.name || this.userDetail.email}</h1>
                     <p class="mt-1 text-sm text-muted-foreground">${this.canAssignRoles ? __('Edit user details and roles.') : __('Edit user details.')}</p>
                 </div>
+                ${this.message && !this.failed ? notice(this.message, 'success') : null}
+                ${this.failed ? notice(this.failed, 'error') : null}
 
                 ${component(Tabs, {
                           id: 'user-tabs', label: __('User'), value: this.tab, variant: 'underline',

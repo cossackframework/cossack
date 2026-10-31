@@ -1,5 +1,6 @@
 import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackframework/core';
-import { Alert, Badge, Button, Card, CardBody, CardHeader, Field, Input, toast } from '@cossackframework/ui';
+import { Alert, Badge, Button, Card, CardBody, CardHeader, Field, Input } from '@cossackframework/ui';
+import { notice } from '../../../../dashboard/page';
 import { html, component, unsafeHTML, type TemplateResult } from '@cossackframework/renderer';
 import {
     addPasskey, apiTokensAvailable, confirmAuthenticator, createApiToken, disableAuthenticator, listApiTokens, newRecoveryCodes, passkeyRegistration,
@@ -28,6 +29,8 @@ export default class SecurityPage extends Cossack {
     @State() required = false;
     @State() recovered = false;
     @State() error = '';
+    /** What the last action did, beside the errors. */
+    @State() message = '';
 
     head(): HeadValue {
         return { title: __('Security') };
@@ -91,8 +94,9 @@ export default class SecurityPage extends Cossack {
 
     @Client()
     async copyCodes() {
-        try { await navigator.clipboard.writeText(this.recoveryCodes.join('\n')); toast.success(__('Recovery codes copied.')); }
-        catch { toast.error(__('Copy the codes from the list.')); }
+        this.error = '';
+        try { await navigator.clipboard.writeText(this.recoveryCodes.join('\n')); this.message = __('Recovery codes copied.'); }
+        catch { this.message = ''; this.error = __('Copy the codes from the list.'); }
     }
 
     // --- Passkeys ------------------------------------------------------------------
@@ -100,11 +104,12 @@ export default class SecurityPage extends Cossack {
     @Client()
     async addPasskey() {
         this.error = '';
+        this.message = '';
         try {
             const { challenge, options } = await this.passkeyOptions();
             const response = await createPasskey(options);
             await this.savePasskey(challenge, response, this.passkeyName || navigatorName());
-            if (!this.error) { this.passkeyName = ''; toast.success(__('Passkey added.')); }
+            if (!this.error) { this.passkeyName = ''; this.message = __('Passkey added.'); }
         } catch (error) {
             if ((error as Error)?.name === 'NotAllowedError') return;
             this.error = (error as Error)?.message || __('The passkey could not be added.');
@@ -204,7 +209,8 @@ export default class SecurityPage extends Cossack {
             </div>
             ${this.required ? component(Alert, { variant: 'warning' }, __('This site requires two-step sign-in. Add an authenticator app or a passkey to continue.')) : null}
             ${this.recovered ? component(Alert, { variant: 'warning' }, __('You signed in with a recovery code. If you lost your phone, turn the authenticator off and set it up again.')) : null}
-            ${this.error ? component(Alert, { variant: 'destructive' }, this.error) : null}
+            ${this.message && !this.error ? notice(this.message, 'success') : null}
+            ${this.error ? notice(this.error, 'error') : null}
             ${this.recoveryCodes.length ? component(Card, {}, html`${component(CardHeader, {}, html`<h2 class="text-base font-semibold text-foreground">${__('Your recovery codes')}</h2>`)}
                 ${component(CardBody, { class: 'space-y-3' }, html`<p class="text-sm text-muted-foreground">${__('Save them somewhere safe. They are shown only now; each signs you in once without your phone.')}</p>
                     <ul class="grid grid-cols-2 gap-1 font-mono text-sm sm:grid-cols-5" data-recovery-codes>${this.recoveryCodes.map(code => html`<li class="rounded bg-muted px-2 py-1 text-center">${code}</li>`)}</ul>

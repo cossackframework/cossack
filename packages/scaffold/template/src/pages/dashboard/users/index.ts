@@ -1,9 +1,8 @@
 import { Cossack, Page, State, Server, Client } from '@cossackframework/core';
-import { Card, CardBody, CardHeader, Avatar, Button, Badge, Input, NativeSelect, Pagination, Icon, AlertDialog, toast } from '@cossackframework/ui';
+import { Avatar, Badge, NativeSelect, AlertDialog } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { PenNewRoundIcon as editIconSvg } from '@cossackframework/solar-icons/pen-new-round/line';
 import { TrashBinMinimalisticIcon as deleteIconSvg } from '@cossackframework/solar-icons/trash-bin-minimalistic/line';
-import { MagnifierIcon as searchIconSvg } from '@cossackframework/solar-icons/magnifier/line';
 import { canAssignRoles, canManageUser, guard } from '../../../services/rbac';
 import type { PublicUser } from '../../../auth';
 import {
@@ -15,12 +14,13 @@ import {
     type ListUsersResult,
 } from '../../../services/users';
 import { listRoles, type RoleDetail } from '../../../services/roles';
-import { bulkBar, selectAllBox, selectBox, type BulkChoice } from '../../../dashboard/bulk';
+import { bulkBar, type BulkChoice } from '../../../dashboard/bulk';
 import { timeAgo } from '../../../dashboard/time-ago';
+import { listFilters, listFooter, listTable, rowActions } from '../../../dashboard/list-table';
+import { linkButton, notice, pageHeader } from '../../../dashboard/page';
 
 const editIcon = { line: editIconSvg };
 const deleteIcon = { line: deleteIconSvg };
-const searchIcon = { line: searchIconSvg };
 
 const PAGE_SIZE = 20;
 
@@ -113,7 +113,6 @@ export default class UsersPage extends Cossack {
     async runBulk(key: string) {
         this.pendingBulk = null;
         await this.applyBulk(this.selected, key);
-        if (this.error) toast.error(this.error); else if (this.message) toast.success(this.message);
     }
 
     /**
@@ -153,6 +152,8 @@ export default class UsersPage extends Cossack {
 
     @Server()
     async remove(id: string) {
+        this.message = '';
+        this.error = '';
         if (id === this.user!.id) {
             this.error = __('You cannot delete your own account from here.');
             return;
@@ -164,6 +165,7 @@ export default class UsersPage extends Cossack {
                 return;
             }
             await deleteUser(id);
+            this.message = __('User deleted.');
             const result = await this.query();
             const maxPage = Math.max(1, Math.ceil(result.total / PAGE_SIZE));
             if (this.page > maxPage) {
@@ -221,146 +223,46 @@ export default class UsersPage extends Cossack {
 
     render() {
         const totalPages = Math.max(1, Math.ceil(this.total / PAGE_SIZE));
-        const from = this.total === 0 ? 0 : (this.page - 1) * PAGE_SIZE + 1;
-        const to = Math.min(this.total, this.page * PAGE_SIZE);
-        const iconBtn = 'inline-flex items-center justify-center [&_svg]:size-4';
-        const iconBtnClass = 'inline-flex items-center justify-center w-8 h-8 rounded-md transition-colors border-none bg-transparent cursor-pointer';
-        // The select's value mirrors the URL's role name.
-        const selectedRoleName = this.appliedRoleName;
-
+        const bulk = (id: string) => bulkBar({ id, choices: this.bulkChoices(), value: this.bulk, count: this.selected.length,
+            choose: key => { this.bulk = key; }, apply: () => this.submitBulk() });
         return html`
             <div class="space-y-6">
-                <div>
-                    <div class="flex flex-wrap items-center gap-3">
-                        <h1 class="text-2xl font-bold text-foreground">${__('Users')}</h1>
-                        <a href="/dashboard/users/new"
-                           class="inline-flex items-center justify-center rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90 transition-opacity">
-                            ${__('New user')}
-                        </a>
-                    </div>
-                    <p class="mt-1 text-sm text-muted-foreground">${__('Manage user accounts.')}</p>
+                ${pageHeader(__('Users'), { description: __('Manage user accounts.'), titleActions: linkButton(__('New user'), '/dashboard/users/new', 'primary', { size: 'sm' }) })}
+                ${this.message && !this.error ? notice(this.message, 'success') : null}
+                ${this.error ? notice(this.error, 'error') : null}
+                <div class="space-y-3">
+                    ${listFilters({ action: '/dashboard/users', id: 'users-filter-form', search: { name: 'search', value: this.appliedSearch, placeholder: __('Search by name or email') },
+                        filters: html`<div class="w-44">${component(NativeSelect, { name: 'role', size: 'sm', 'aria-label': __('Filter by role'),
+                            '@change': (event: Event) => (event.currentTarget as HTMLSelectElement).form?.requestSubmit() }, html`
+                            <option value="" ?selected=${!this.appliedRoleName}>${__('All roles')}</option>
+                            ${this.allRoles.map((r) => html`<option value=${r.name} ?selected=${this.appliedRoleName === r.name}>${r.name}</option>`)}`)}</div>` })}
+                    ${this.selectable.length ? bulk('users-bulk') : null}
                 </div>
-
-                ${this.error ? html`<div class="text-sm text-destructive">${this.error}</div>` : null}
-
-                ${component(Card, {}, html`
-                    ${component(CardHeader, {}, html`
-                        <div class="flex flex-col sm:flex-row sm:items-center gap-3 sm:justify-between">
-                            <h2 class="text-base font-semibold text-foreground">${__('All users')}</h2>
-                            <!-- Native GET form: submit navigates to ?search=…&role=… (URL reflects state).
-                                 The role <select> submits the form on change via a tiny inline script. -->
-                            <form method="GET" action="/dashboard/users" class="flex flex-col sm:flex-row gap-2 sm:items-center" id="users-filter-form">
-                                <div class="relative w-full sm:w-64">
-                                    <span class="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground ${iconBtn}">${component(Icon, { entry: searchIcon, size: 16 })}</span>
-                                    ${component(Input, {
-                                        type: 'search',
-                                        name: 'search',
-                                        placeholder: __('Search by name or email'),
-                                        value: this.appliedSearch,
-                                        size: 'sm',
-                                        class: 'pl-8 w-full',
-                                    })}
-                                </div>
-                                ${component(NativeSelect, {
-                                    name: 'role',
-                                    size: 'sm',
-                                    'aria-label': __('Filter by role'),
-                                    '@change': (event: Event) => (event.currentTarget as HTMLSelectElement).form?.requestSubmit(),
-                                }, html`
-                                    <option value="" ?selected=${!selectedRoleName}>${__('All roles')}</option>
-                                    ${this.allRoles.map((r) => html`<option value=${r.name} ?selected=${selectedRoleName === r.name}>${r.name}</option>`)}
-                                `)}
-                                ${component(Button, { type: 'submit', size: 'sm', variant: 'outline' }, __('Search'))}
-                            </form>
-                        </div>
-                    `)}
-                    ${component(CardBody, {}, html`
-                        ${this.selectable.length ? html`<div class="mb-3">${bulkBar({ id: 'users-bulk', choices: this.bulkChoices(), value: this.bulk, count: this.selected.length,
-                            choose: key => { this.bulk = key; }, apply: () => this.submitBulk() })}</div>` : null}
-                        <div class="overflow-x-auto">
-                            <table class="w-full">
-                                <thead>
-                                    <tr class="text-left text-xs uppercase tracking-wide text-muted-foreground">
-                                        <th class="w-10 py-2 pr-3">${selectAllBox(this.selectable, this.selected, ids => { this.selected = ids; })}</th>
-                                        <th class="py-2 pr-4 font-medium">${__('User')}</th>
-                                        <th class="py-2 pr-4 font-medium">${__('Roles')}</th>
-                                        <th class="py-2 pr-4 font-medium">${__('Last signed in')}</th>
-                                        <th class="py-2 pr-4 font-medium">${__('Created')}</th>
-                                        <th class="py-2 text-right font-medium">${__('Actions')}</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    ${this.users.map((u) => html`
-                                        <tr class=${`border-t border-border ${this.selected.includes(u.id) ? 'bg-primary/5' : ''}`} data-user=${u.id}>
-                                            <td class="py-3 pr-3">${this.selectable.includes(u.id) ? selectBox(u.id, u.name || u.email, this.selected, ids => { this.selected = ids; }) : null}</td>
-                                            <td class="py-3 pr-4">
-                                                <a href="/dashboard/users/${u.id}" class="flex items-center gap-3 hover:underline">
-                                                    ${component(Avatar, { src: u.avatar ?? undefined, alt: u.name, size: 32 })}
-                                                    <span class="flex flex-col">
-                                                        <span class="text-sm font-medium text-foreground">${u.name || '—'}</span>
-                                                        <span class="text-xs text-muted-foreground">${u.email}</span>
-                                                    </span>
-                                                </a>
-                                            </td>
-                                            <td class="py-3 pr-4">
-                                                <div class="flex flex-wrap gap-1">
-                                                    ${u.roles.length === 0
-                                                        ? html`<span class="text-xs text-muted-foreground">—</span>`
-                                                        : u.roles.map((r) => component(Badge, { variant: 'outline' }, r.name))}
-                                                </div>
-                                            </td>
-                                            <td class="py-3 pr-4 text-sm text-muted-foreground">
-                                                ${u.lastSignedInAt
-                                                    ? html`<time datetime=${u.lastSignedInAt} title=${this.formatDateTime(u.lastSignedInAt)}>${timeAgo(u.lastSignedInAt, this.now)}</time>`
-                                                    : __('Never')}
-                                            </td>
-                                            <td class="py-3 pr-4 text-sm text-muted-foreground">${this.formatDate(u.createdAt)}</td>
-                                            <td class="py-3">
-                                                <div class="flex items-center justify-end gap-1">
-                                                    <a href="/dashboard/users/${u.id}"
-                                                       class="${iconBtnClass} text-muted-foreground hover:bg-muted hover:text-foreground"
-                                                       title=${__('Edit user')}
-                                                       aria-label=${__('Edit user')}>
-                                                        <span class=${iconBtn}>${component(Icon, { entry: editIcon, size: 16 })}</span>
-                                                    </a>
-                                                    ${u.id !== this.user!.id
-                                                        ? html`<button
-                                                              type="button"
-                                                              @click=${() => this.requestDelete(u)}
-                                                              class="${iconBtnClass} text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                                                              title=${__('Delete user')}
-                                                              aria-label=${__('Delete user')}>
-                                                              <span class=${iconBtn}>${component(Icon, { entry: deleteIcon, size: 16 })}</span>
-                                                          </button>`
-                                                        : component(Badge, { variant: 'secondary' }, __('You'))}
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    `)}
-                                </tbody>
-                            </table>
-                            ${this.users.length === 0
-                                ? html`<p class="py-6 text-center text-sm text-muted-foreground">${__('No users found.')}</p>`
-                                : null}
-                        </div>
-                        <div class="flex flex-col sm:flex-row items-center justify-between gap-3 mt-4 pt-4 border-t border-border">
-                            <p class="text-xs text-muted-foreground">
-                                ${__('Showing')} ${from}–${to} ${__('of')} ${this.total}
-                            </p>
-                            ${totalPages > 1
-                                ? component(Pagination, {
-                                      page: this.page,
-                                      totalPages,
-                                      label: __('Pagination'),
-                                      previousLabel: __('Previous page'),
-                                      nextLabel: __('Next page'),
-                                      pageLabel: (p: number) => `${__('Page')} ${p}`,
-                                      href: (p: number) => this.pageHref(p),
-                                  })
-                                : null}
-                        </div>
-                    `)}
-                `)}
+                ${listTable<UserSummary>({
+                    rows: this.users, key: u => u.id, rowAttribute: 'data-user', empty: __('No users found.'),
+                    ...(this.selectable.length ? { selection: { selected: this.selected, selectable: this.selectable, label: u => u.name || u.email, change: ids => { this.selected = ids; } } } : {}),
+                    columns: [
+                        { label: __('User'), cell: u => html`<div class="flex items-start gap-3">
+                            ${component(Avatar, { src: u.avatar ?? undefined, alt: u.name, size: 32 })}
+                            <div class="min-w-0">
+                                <a href="/dashboard/users/${u.id}" class="font-medium text-foreground no-underline hover:text-primary">${u.name || '—'}</a>
+                                ${u.id === this.user!.id ? html` ${component(Badge, { variant: 'secondary' }, __('You'))}` : null}
+                                <span class="block text-xs text-muted-foreground">${u.email}</span>
+                                ${rowActions([
+                                    { id: `user-${u.id}-edit`, label: __('Edit user'), icon: editIcon, href: `/dashboard/users/${u.id}` },
+                                    ...(u.id !== this.user!.id && this.selectable.includes(u.id) ? [{ id: `user-${u.id}-delete`, label: __('Delete user'), icon: deleteIcon, danger: true, run: () => this.requestDelete(u) }] : []),
+                                ])}
+                            </div>
+                        </div>` },
+                        { label: __('Roles'), cell: u => html`<div class="flex flex-wrap gap-1">${u.roles.length === 0
+                            ? html`<span class="text-xs text-muted-foreground">—</span>` : u.roles.map((r) => component(Badge, { variant: 'outline' }, r.name))}</div>` },
+                        { label: __('Last signed in'), class: 'text-muted-foreground', cell: u => u.lastSignedInAt
+                            ? html`<time datetime=${u.lastSignedInAt} title=${this.formatDateTime(u.lastSignedInAt)}>${timeAgo(u.lastSignedInAt, this.now)}</time>` : __('Never') },
+                        { label: __('Created'), class: 'text-muted-foreground', cell: u => this.formatDate(u.createdAt) },
+                    ],
+                })}
+                ${this.users.length && this.selectable.length ? bulk('users-bulk-bottom') : null}
+                ${listFooter({ total: this.total, page: this.page, totalPages, href: p => this.pageHref(p) })}
 
                 ${component(AlertDialog, {
                     id: 'bulk-users-dialog',

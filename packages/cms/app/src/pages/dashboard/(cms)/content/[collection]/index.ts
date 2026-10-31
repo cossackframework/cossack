@@ -1,6 +1,7 @@
 import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackframework/core';
 import { bulkBar } from '../../../../../dashboard/bulk';
-import { Avatar, Card, CardBody, Button, Checkbox, HoverCard, Icon, NativeSelect, Input, Pagination, AlertDialog, Tooltip, toast } from '@cossackframework/ui';
+import { listFilters, listFooter, listTable } from '../../../../../dashboard/list-table';
+import { Avatar, HoverCard, Icon, NativeSelect, AlertDialog, Tooltip } from '@cossackframework/ui';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
 import { ENTRY_ACTION_IDS, evaluateRule, isCmsError, languageName, mediaUrl, recordTitle, type BuiltinEntryAction, type EntryAction, type EntryColumn, type FieldFilter, type ListFilter, type RecordShape } from '@cossackframework/cms';
 import { duplicateEntry, importEntries, importItems, listExtras, routeResource, runEntryCommand, termOptions, type ImportReport } from '../../../../../cms/content';
@@ -213,8 +214,8 @@ export default class EntriesPage extends Cossack {
         this.importing = true;
         try { await this.importJson(await file.text()); }
         finally { this.importing = false; }
-        if (this.error) toast.error(this.error);
-        else if (this.imported) toast[this.imported.failed.length ? 'error' : 'success'](`${this.imported.created} ${__('created')}, ${this.imported.updated} ${__('updated')}${this.imported.failed.length ? `, ${this.imported.failed.length} ${__('failed')}` : ''}.`);
+        // What the import did; the entries it could not take are listed below the message.
+        if (!this.error && this.imported) this.message = `${this.imported.created} ${__('created')}, ${this.imported.updated} ${__('updated')}${this.imported.failed.length ? `, ${this.imported.failed.length} ${__('failed')}` : ''}.`;
     }
 
     @Server()
@@ -339,13 +340,8 @@ export default class EntriesPage extends Cossack {
     }
 
     @Client()
-    toggle(id: string, checked: boolean) {
-        this.selected = checked ? [...new Set([...this.selected, id])] : this.selected.filter(entry => entry !== id);
-    }
-
-    @Client()
-    toggleAll(checked: boolean) {
-        this.selected = checked ? this.rows.map(row => row.id) : [];
+    select(ids: string[]) {
+        this.selected = ids;
     }
 
     /** The bulk actions the current tab offers. */
@@ -370,7 +366,6 @@ export default class EntriesPage extends Cossack {
         this.pendingBulk = null;
         const entries = this.rows.filter(row => this.selected.includes(row.id)).map(row => ({ id: row.id, rev: row.rev }));
         await this.applyBulk(entries, key);
-        if (this.error) toast.error(this.error); else if (this.message) toast.success(this.message);
     }
 
     @Client()
@@ -458,9 +453,7 @@ export default class EntriesPage extends Cossack {
         if (!this.label) return notice(this.error || __('This content type does not exist.'), 'error');
         const base = `/dashboard/content/${this.route}`;
         const totalPages = Math.max(1, Math.ceil(this.total / PAGE_SIZE));
-        const allSelected = this.rows.length > 0 && this.rows.every(row => this.selected.includes(row.id));
-        const th = 'px-3 py-2 font-medium';
-        const td = 'px-3 py-2';
+        const sortState = (key: Sort) => this.sort === key ? (this.dir === 'asc' ? 'ascending' as const : 'descending' as const) : 'none' as const;
         return html`<div class="space-y-6">
             ${pageHeader(this.label, {
                 titleActions: this.canCreate ? linkButton(`${__('New')} ${this.singular.toLowerCase()}`, `${base}/new`, 'primary', { size: 'sm' }) : null,
@@ -481,63 +474,38 @@ export default class EntriesPage extends Cossack {
                         <a href=${this.href({ status: tab.key, page: 1 })} class=${tab.key === this.status ? 'font-semibold text-foreground no-underline' : 'text-primary no-underline hover:underline'}
                             aria-current=${tab.key === this.status ? 'page' : 'false'}>${tab.label} <span class="text-muted-foreground">(${tab.count})</span></a>`)}
                 </nav>
-                <form method="get" action=${base} class="flex flex-wrap items-center gap-2" role="search">
-                    ${this.status !== 'all' ? html`<input type="hidden" name="status" value=${this.status}>` : null}
-                    ${this.sort ? html`<input type="hidden" name="sort" value=${this.sort}><input type="hidden" name="dir" value=${this.dir}>` : null}
-                    ${this.languages.length ? html`<div class="w-44">${component(NativeSelect, { name: 'lang', size: 'sm', 'aria-label': __('Filter by language') }, html`
+                ${listFilters({ action: base, hidden: { status: this.status !== 'all' ? this.status : '', sort: this.sort ?? '', dir: this.sort ? this.dir : '' },
+                    search: { name: 'q', value: this.search, placeholder: `${__('Search')} ${this.label.toLowerCase()}` },
+                    filters: html`${this.languages.length ? html`<div class="w-44">${component(NativeSelect, { name: 'lang', size: 'sm', 'aria-label': __('Filter by language') }, html`
                         <option value="" ?selected=${!this.locale}>${__('All languages')}</option>
                         ${this.languages.map(language => html`<option value=${language.code} ?selected=${language.code === this.locale}>${language.label}</option>`)}`)}</div>` : null}
                     ${this.taxonomy ? html`<div class="w-48">${component(NativeSelect, { name: 'term', size: 'sm', 'aria-label': `${__('Filter by')} ${this.taxonomy.label}` }, html`
                         <option value="" ?selected=${!this.term}>${__('All')} ${this.taxonomy.label.toLowerCase()}</option>
-                        ${this.taxonomy.terms.map(term => html`<option value=${term.id} ?selected=${term.id === this.term}>${'— '.repeat(term.depth)}${term.name}</option>`)}`)}</div>` : null}
-                    <div class="w-64 max-w-full">${component(Input, { type: 'search', name: 'q', value: this.search, size: 'sm', placeholder: `${__('Search')} ${this.label.toLowerCase()}`, 'aria-label': __('Search') })}</div>
-                    ${component(Button, { type: 'submit', size: 'sm', variant: 'outline', class: 'gap-1.5' }, html`${component(Icon, { entry: icon('filter'), size: 16 })}${__('Filter')}`)}
-                </form>
+                        ${this.taxonomy.terms.map(term => html`<option value=${term.id} ?selected=${term.id === this.term}>${'— '.repeat(term.depth)}${term.name}</option>`)}`)}</div>` : null}` })}
                 ${this.bulkBar('top')}
             </div>
-            ${component(Card, {}, component(CardBody, { class: 'p-0' }, html`
-                <div class="overflow-x-auto">
-                    <table class="w-full text-sm">
-                        <thead><tr class="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
-                            <th class="w-10 px-3 py-2">${component(Checkbox, { checked: allSelected, indeterminate: !allSelected && this.selected.length > 0, 'aria-label': __('Select all'), '@change': (event: Event) => this.toggleAll((event.target as HTMLInputElement).checked) })}</th>
-                            <th class=${th} aria-sort=${this.sort === 'title' ? (this.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>${this.sortable(__('Title'), 'title')}</th>
-                            ${this.hasSlug ? html`<th class=${th}>${__('Slug')}</th>` : null}
-                            <th class=${`${th} w-14`}>${__('Author')}</th>
-                            ${this.languages.length ? html`<th class=${th}>${__('Language')}</th>` : null}
-                            ${this.taxonomy ? html`<th class=${th}>${this.taxonomy.label}</th>` : null}
-                            ${this.columns.map(column => html`<th class=${th}>${column.label}</th>`)}
-                            <th class=${th} aria-sort=${this.sort === 'date' ? (this.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>${this.sortable(__('Date'), 'date')}</th>
-                        </tr></thead>
-                        <tbody>${this.rows.map(row => html`<tr class=${`group border-b border-border last:border-0 align-top ${this.selected.includes(row.id) ? 'bg-primary/5' : ''}`} data-entry=${row.id}>
-                            <td class=${td}>${component(Checkbox, { checked: this.selected.includes(row.id), 'aria-label': `${__('Select')} ${row.title}`, '@change': (event: Event) => this.toggle(row.id, (event.target as HTMLInputElement).checked) })}</td>
-                            <td class=${td}>
-                                <div class="flex items-start gap-3">
-                                    ${this.hasImage ? this.thumbnail(row) : null}
-                                    <div class="min-w-0">
-                                        <a href=${`${base}/${row.id}`} class="font-medium text-foreground hover:text-primary no-underline">${row.title}</a>
-                                        ${row.status && row.status !== 'published' && ['all', 'mine'].includes(this.status) ? html` <span class="text-muted-foreground">— ${statusBadge(row.status)}</span>` : null}
-                                        ${this.quickActions(row)}
-                                    </div>
-                                </div>
-                            </td>
-                            ${this.hasSlug ? html`<td class=${td}><code class="break-all text-xs text-muted-foreground">${row.slug}</code></td>` : null}
-                            <td class=${td}>${this.authorCell(row)}</td>
-                            ${this.languages.length ? html`<td class=${`${td} text-muted-foreground`}><span title=${languageName(row.locale)}>${row.locale.toUpperCase()}</span></td>` : null}
-                            ${this.taxonomy ? html`<td class=${`${td} text-muted-foreground`}>${row.terms.join(', ') || '—'}</td>` : null}
-                            ${this.columns.map(column => html`<td class=${`${td} text-muted-foreground`}>${column.values[row.id] ?? '—'}</td>`)}
-                            <td class=${`${td} text-muted-foreground`}><span class="block">${row.dateLabel}</span><span class="block text-xs">${row.date}</span></td>
-                        </tr>`)}</tbody>
-                    </table>
-                    ${this.rows.length ? null : html`<p class="px-3 py-8 text-center text-sm text-muted-foreground">${__('Nothing found.')}</p>`}
-                </div>`))}
+            ${listTable<Row>({
+                rows: this.rows, key: row => row.id, rowAttribute: 'data-entry',
+                selection: { selected: this.selected, label: row => row.title, change: ids => this.select(ids) },
+                columns: [
+                    { label: this.sortable(__('Title'), 'title'), sort: sortState('title'), cell: row => html`<div class="flex items-start gap-3">
+                        ${this.hasImage ? this.thumbnail(row) : null}
+                        <div class="min-w-0">
+                            <a href=${`${base}/${row.id}`} class="font-medium text-foreground hover:text-primary no-underline">${row.title}</a>
+                            ${row.status && row.status !== 'published' && ['all', 'mine'].includes(this.status) ? html` <span class="text-muted-foreground">— ${statusBadge(row.status)}</span>` : null}
+                            ${this.quickActions(row)}
+                        </div>
+                    </div>` },
+                    this.hasSlug && { label: __('Slug'), cell: row => html`<code class="break-all text-xs text-muted-foreground">${row.slug}</code>` },
+                    { label: __('Author'), class: 'w-14', cell: row => this.authorCell(row) },
+                    this.languages.length > 0 && { label: __('Language'), class: 'text-muted-foreground', cell: row => html`<span title=${languageName(row.locale)}>${row.locale.toUpperCase()}</span>` },
+                    this.taxonomy && { label: this.taxonomy.label, class: 'text-muted-foreground', cell: row => row.terms.join(', ') || '—' },
+                    ...this.columns.map(column => ({ label: column.label, class: 'text-muted-foreground', cell: (row: Row) => column.values[row.id] ?? '—' })),
+                    { label: this.sortable(__('Date'), 'date'), sort: sortState('date'), class: 'text-muted-foreground', cell: row => html`<span class="block">${row.dateLabel}</span><span class="block text-xs">${row.date}</span>` },
+                ],
+            })}
             ${this.rows.length ? this.bulkBar('bottom') : null}
-            <div class="flex flex-col items-center justify-between gap-3 sm:flex-row">
-                <p class="text-xs text-muted-foreground">${this.total} ${this.total === 1 ? __('item') : __('items')}</p>
-                ${totalPages > 1 ? component(Pagination, {
-                    page: this.page, totalPages, label: __('Pagination'), previousLabel: __('Previous page'), nextLabel: __('Next page'),
-                    pageLabel: (page: number) => `${__('Page')} ${page}`, href: (page: number) => this.href({ page }),
-                }) : null}
-            </div>
+            ${listFooter({ total: this.total, page: this.page, totalPages, href: page => this.href({ page }) })}
             ${component(AlertDialog, {
                 id: 'delete-entry-dialog',
                 open: this.pendingDelete !== null,

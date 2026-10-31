@@ -1,10 +1,12 @@
 import { Client, Cossack, Page, Server, State, type HeadValue } from '@cossackframework/core';
-import { AlertDialog, Badge, Card, CardBody, toast } from '@cossackframework/ui';
+import { AlertDialog, Badge } from '@cossackframework/ui';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
 import { evaluateRule, hasPermission, isCmsError, PERMISSIONS } from '@cossackframework/cms';
-import { bulkBar, selectAllBox, selectBox, type BulkChoice } from '../../../../dashboard/bulk';
+import { bulkBar, type BulkChoice } from '../../../../dashboard/bulk';
+import { listTable, rowActions } from '../../../../dashboard/list-table';
+import { icon } from '../../../../cms/icons';
 import { requireAny } from '../../../../cms/guards';
-import { linkButton, pageHeader } from '../../../../cms/ui';
+import { linkButton, notice, pageHeader } from '../../../../cms/ui';
 
 /** What a bulk action writes to each selected form. */
 const BULK_PATCHES: Record<string, Record<string, unknown>> = {
@@ -90,7 +92,6 @@ export default class FormsPage extends Cossack {
     async runBulk(key: string) {
         this.pendingBulk = null;
         await this.applyBulk(this.selected, key);
-        if (this.error) toast.error(this.error); else if (this.message) toast.success(this.message);
     }
 
     /** Apply a bulk action form by form; the repository checks each write against the forms' access rules. */
@@ -120,44 +121,40 @@ export default class FormsPage extends Cossack {
         await this.load();
     }
 
-    private row(row: Row): TemplateResult {
-        const status = !row.published ? component(Badge, { variant: 'outline' }, __('Draft'))
+    private status(row: Row): TemplateResult {
+        return !row.published ? component(Badge, { variant: 'outline' }, __('Draft'))
             : !row.enabled ? component(Badge, { variant: 'secondary' }, __('Off'))
             : row.closed ? component(Badge, { variant: 'warning' }, __('Closed')) : component(Badge, { variant: 'success' }, __('Accepting'));
-        const submissions = `/dashboard/forms/${row.id}/submissions`;
-        return html`<tr class=${`border-b border-border last:border-0 align-top ${this.selected.includes(row.id) ? 'bg-primary/5' : ''}`} data-form=${row.slug}>
-            ${this.bulkChoices().length ? html`<td class="w-10 px-3 py-2">${selectBox(row.id, row.title, this.selected, ids => { this.selected = ids; })}</td>` : null}
-            <td class="px-3 py-2">
-                ${this.canEdit ? html`<a href=${`/dashboard/content/forms/${row.id}`} class="font-medium text-foreground hover:text-primary">${row.title}</a>` : html`<span class="font-medium text-foreground">${row.title}</span>`}
-                <div class="mt-1 flex flex-wrap gap-x-3 text-xs">
-                    ${this.canEdit ? html`<a href=${`/dashboard/content/forms/${row.id}`} class="text-primary hover:underline">${__('Edit')}</a>` : null}
-                    ${this.canHandle ? html`<a href=${submissions} class="text-primary hover:underline">${__('Submissions')}</a>` : null}
-                </div>
-            </td>
-            <td class="px-3 py-2"><code class="text-xs">${row.slug}</code></td>
-            <td class="px-3 py-2 text-muted-foreground">${row.fields}</td>
-            <td class="px-3 py-2">${this.canHandle ? html`<a href=${submissions} class="text-foreground no-underline hover:text-primary">${row.kept}</a>
-                ${row.fresh ? html` <a href=${`${submissions}?status=new`} class="no-underline">${component(Badge, { variant: 'default' }, `${row.fresh} ${__('new')}`)}</a>` : null}` : html`<span class="text-muted-foreground">—</span>`}</td>
-            <td class="px-3 py-2">${status}</td>
-        </tr>`;
     }
 
     render() {
+        const bulk = this.bulkChoices().length > 0;
+        const submissions = (row: Row) => `/dashboard/forms/${row.id}/submissions`;
         return html`<div class="space-y-6">
             ${pageHeader(__('Forms'), {
-                description: __('Build forms from blocks. Place one on a page with the Form block and its slug.'),
+                description: __('Build forms from blocks. Place one on a page with the Form block.'),
                 titleActions: this.canCreate ? linkButton(__('New form'), '/dashboard/content/forms/new', 'primary', { size: 'sm' }) : null,
             })}
-            ${this.rows.length && this.bulkChoices().length ? bulkBar({ id: 'forms-bulk', choices: this.bulkChoices(), value: this.bulk, count: this.selected.length,
+            ${this.message && !this.error ? notice(this.message, 'success') : null}
+            ${this.error ? notice(this.error, 'error') : null}
+            ${this.rows.length && bulk ? bulkBar({ id: 'forms-bulk', choices: this.bulkChoices(), value: this.bulk, count: this.selected.length,
                 choose: key => { this.bulk = key; }, apply: () => this.submitBulk() }) : null}
-            ${component(Card, {}, component(CardBody, { class: 'p-0' }, html`<div class="overflow-x-auto"><table class="w-full text-sm">
-                <thead><tr class="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
-                    ${this.bulkChoices().length ? html`<th class="w-10 px-3 py-2">${selectAllBox(this.rows.map(row => row.id), this.selected, ids => { this.selected = ids; })}</th>` : null}
-                    <th class="px-3 py-2 font-medium">${__('Title')}</th><th class="px-3 py-2 font-medium">${__('Slug')}</th><th class="px-3 py-2 font-medium">${__('Fields')}</th>
-                    <th class="px-3 py-2 font-medium">${__('Submissions')}</th><th class="px-3 py-2 font-medium">${__('Status')}</th>
-                </tr></thead>
-                <tbody>${this.rows.map(row => this.row(row))}</tbody></table>
-                ${this.rows.length ? null : html`<p class="px-4 py-10 text-center text-sm text-muted-foreground">${__('No forms yet.')}</p>`}</div>`))}
+            ${listTable<Row>({
+                rows: this.rows, key: row => row.id, rowAttribute: 'data-form-id', empty: __('No forms yet.'),
+                ...(bulk ? { selection: { selected: this.selected, label: row => row.title, change: ids => { this.selected = ids; } } } : {}),
+                columns: [
+                    { label: __('Title'), cell: row => html`<span data-form=${row.slug}>${this.canEdit ? html`<a href=${`/dashboard/content/forms/${row.id}`} class="font-medium text-foreground no-underline hover:text-primary">${row.title}</a>` : html`<span class="font-medium text-foreground">${row.title}</span>`}</span>
+                        ${rowActions([
+                            ...(this.canEdit ? [{ id: `form-${row.id}-edit`, label: __('Edit'), icon: icon('pen'), href: `/dashboard/content/forms/${row.id}` }] : []),
+                            ...(this.canHandle ? [{ id: `form-${row.id}-submissions`, label: __('Submissions'), icon: icon('inbox'), href: submissions(row) }] : []),
+                        ])}` },
+                    { label: __('Slug'), cell: row => html`<code class="text-xs">${row.slug}</code>` },
+                    { label: __('Fields'), class: 'text-muted-foreground', cell: row => row.fields },
+                    { label: __('Submissions'), cell: row => this.canHandle ? html`<a href=${submissions(row)} class="text-foreground no-underline hover:text-primary">${row.kept}</a>
+                        ${row.fresh ? html` <a href=${`${submissions(row)}?status=new`} class="no-underline">${component(Badge, { variant: 'default' }, `${row.fresh} ${__('new')}`)}</a>` : null}` : html`<span class="text-muted-foreground">—</span>` },
+                    { label: __('Status'), cell: row => this.status(row) },
+                ],
+            })}
             ${component(AlertDialog, {
                 id: 'bulk-forms-dialog',
                 open: this.pendingBulk !== null,

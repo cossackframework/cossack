@@ -1,5 +1,5 @@
 import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackframework/core';
-import { Button, Card, CardBody, Checkbox, NativeSelect, toast } from '@cossackframework/ui';
+import { Button, Card, CardBody, Checkbox, NativeSelect } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { isCmsError, languageName, LOCALE, PERMISSIONS } from '@cossackframework/cms';
 import { requireAny } from '../../../../../cms/guards';
@@ -23,6 +23,8 @@ export default class LanguagesPage extends Cossack {
     @State() custom = '';
     @State() origin = '';
     @State() error = '';
+    /** What the last save did. */
+    @State() message = '';
 
     head(): HeadValue {
         return { title: __('Language settings') };
@@ -50,7 +52,9 @@ export default class LanguagesPage extends Cossack {
     @Client()
     addCustom() {
         const code = this.custom.trim().toLowerCase();
-        if (!LOCALE.test(code)) { toast.error(__('Use a code such as fr, pt-br or zh-hans.')); return; }
+        this.message = '';
+        this.error = '';
+        if (!LOCALE.test(code)) { this.error = __('Use a code such as fr, pt-br or zh-hans.'); return; }
         if (!this.options.some(option => option.code === code)) this.options = [...this.options, { code, label: code }];
         this.toggle(code, true);
         this.custom = '';
@@ -59,8 +63,9 @@ export default class LanguagesPage extends Cossack {
     @Client()
     async submit(event: Event) {
         event.preventDefault();
+        this.message = '';
         await this.save(this.main, this.others.filter(code => code !== this.main));
-        if (this.error) toast.error(this.error); else toast.success(__('Languages saved.'));
+        if (!this.error) this.message = __('Languages saved.');
     }
 
     @Server()
@@ -77,6 +82,7 @@ export default class LanguagesPage extends Cossack {
     render() {
         return settingsFrame(this.links, 'languages', html`<div class="space-y-6">
             ${pageHeader(__('Language settings'), { description: __('Publish entries in several languages. Each entry has one language; the editor links its translations.') })}
+            ${this.message ? notice(this.message, 'success') : null}
             ${this.error ? notice(this.error, 'error') : null}
             ${component(Card, {}, component(CardBody, {}, html`<form class="space-y-6" @submit=${(event: Event) => this.submit(event)}>
                 <div class="space-y-1">

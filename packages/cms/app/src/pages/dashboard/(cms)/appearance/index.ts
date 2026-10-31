@@ -1,5 +1,5 @@
 import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackframework/core';
-import { Badge, Button, Card, CardBody, toast } from '@cossackframework/ui';
+import { Badge, Button, Card, CardBody } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { isCmsError, PERMISSIONS } from '@cossackframework/cms';
 import { requireAny } from '../../../../cms/guards';
@@ -12,6 +12,8 @@ interface ThemeRow { name: string; label: string; description: string; version: 
 export default class ThemesPage extends Cossack {
     @State() themes: ThemeRow[] = [];
     @State() error = '';
+    /** What the last activation did. */
+    @State() message = '';
 
     head(): HeadValue {
         return { title: __('Themes') };
@@ -43,8 +45,9 @@ export default class ThemesPage extends Cossack {
 
     @Client()
     async choose(theme: ThemeRow) {
+        this.message = '';
         await this.activate(theme.name);
-        if (this.error) toast.error(this.error); else toast.success(`${theme.label} ${__('is now the active theme.')}`);
+        if (!this.error) this.message = `${theme.label} ${__('is now the active theme.')}`;
     }
 
     render() {
@@ -53,6 +56,7 @@ export default class ThemesPage extends Cossack {
                 description: __('A theme is a plugin that draws the public site. Add one with cossack add plugin, or copy src/plugins/default-theme to start your own.'),
                 actions: html`${linkButton(__('Customize'), '/dashboard/appearance/customize', 'outline')}${linkButton(__('Menus'), '/dashboard/appearance/menus', 'outline')}`,
             })}
+            ${this.message ? notice(this.message, 'success') : null}
             ${this.error ? notice(this.error, 'error') : null}
             ${this.themes.length ? html`<ul class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">${this.themes.map(theme => html`<li>
                 ${component(Card, { class: `overflow-hidden ${theme.active ? 'ring-2 ring-primary' : ''}` }, html`

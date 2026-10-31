@@ -1,5 +1,5 @@
 import { Client, Cossack, Page, Server, State, type HeadValue } from '@cossackframework/core';
-import { Badge, Button, Card, CardBody, toast } from '@cossackframework/ui';
+import { Badge, Button, Card, CardBody } from '@cossackframework/ui';
 import { component, html, type TemplateResult } from '@cossackframework/renderer';
 import { findBlock, hasPermission, isCmsError, PERMISSIONS, updateBlock, type RichTextDoc, type ThemePresets } from '@cossackframework/cms';
 import { requireAny } from '../../../../../cms/guards';
@@ -34,6 +34,8 @@ export default class WidgetsPage extends Cossack {
     @State() dialog: BlockDialog | null = null;
     @State() chooser: MediaChooserState = closedChooser();
     @State() error = '';
+    /** What the last save did. */
+    @State() message = '';
 
     head(): HeadValue {
         return { title: __('Widgets') };
@@ -77,9 +79,9 @@ export default class WidgetsPage extends Cossack {
 
     @Client()
     async submit(name: string) {
+        this.message = '';
         await this.save(name);
-        if (this.error) toast.error(this.error);
-        else toast.success(__('Widgets saved.'));
+        if (!this.error) this.message = __('Widgets saved.');
     }
 
     @Client()
@@ -135,7 +137,7 @@ export default class WidgetsPage extends Cossack {
 
     @Client()
     async openChooser(field: string, multiple: boolean, kind = 'image') {
-        this.chooser = { ...this.chooser, open: true, field, multiple, kind };
+        this.chooser = { ...this.chooser, open: true, error: '', field, multiple, kind };
         await this.searchMedia(this.chooser.search);
     }
 
@@ -162,7 +164,7 @@ export default class WidgetsPage extends Cossack {
     @Client()
     async upload(event: Event) {
         const { files, error } = await uploadMedia(event.currentTarget as HTMLInputElement);
-        if (error) toast.error(error);
+        this.chooser = { ...this.chooser, error };
         for (const file of files) this.choose(file);
         await this.searchMedia('');
     }
@@ -195,7 +197,7 @@ export default class WidgetsPage extends Cossack {
     /** The media chooser for an image in rich text: the chosen file is inserted into that editor. */
     @Client()
     async openRichMedia(area: string, block: string, field: string, editor: string) {
-        this.chooser = { ...this.chooser, open: true, field: `${area}\u0000${block}\u0000${field}\u0000${editor}`, multiple: false };
+        this.chooser = { ...this.chooser, open: true, error: '', field: `${area}\u0000${block}\u0000${field}\u0000${editor}`, multiple: false };
         await this.searchMedia(this.chooser.search);
     }
 
@@ -216,6 +218,7 @@ export default class WidgetsPage extends Cossack {
     render() {
         return html`<div class="space-y-6">
             ${pageHeader(__('Widgets'), { description: __('Blocks the theme shows outside entries, such as in a footer or a sidebar. Areas of other themes keep their widgets for when you switch.') })}
+            ${this.message ? notice(this.message, 'success') : null}
             ${this.error ? notice(this.error, 'error') : null}
             ${this.areas.length ? html`<div class="grid gap-4 lg:grid-cols-2">${this.areas.map(area => this.areaCard(area))}</div>`
                 : notice(__('The active theme has no widget areas.'))}

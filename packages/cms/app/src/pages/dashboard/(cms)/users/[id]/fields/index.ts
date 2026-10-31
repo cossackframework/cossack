@@ -1,5 +1,5 @@
 import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackframework/core';
-import { Button, toast } from '@cossackframework/ui';
+import { Button } from '@cossackframework/ui';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
 import { fieldVisibility, hasPermission, isCmsError, mediaUrl, PERMISSIONS } from '@cossackframework/cms';
 import { findMedia, groupsView, metaInput, metaValues, type GroupsView } from '../../../../../../cms/content';
@@ -25,6 +25,7 @@ export default class UserFields extends Cossack {
     @State() previews: Record<string, MediaPreview> = {};
     @State() errors: Record<string, string> = {};
     @State() error = '';
+    @State() message = '';
     @State() found = false;
     @State() chooser: MediaChooserState = closedChooser();
     private target: MetaTarget | null = null;
@@ -113,7 +114,7 @@ export default class UserFields extends Cossack {
     @Client()
     async openChooser(target: MetaTarget) {
         this.target = target;
-        this.chooser = { ...this.chooser, open: true, field: target.key, multiple: target.multiple, kind: 'image' };
+        this.chooser = { ...this.chooser, open: true, error: '', field: target.key, multiple: target.multiple, kind: 'image' };
         await this.searchMedia(this.chooser.search);
     }
 
@@ -131,7 +132,7 @@ export default class UserFields extends Cossack {
     @Client()
     async uploadFile(event: Event) {
         const { files, error } = await uploadMedia(event.currentTarget as HTMLInputElement);
-        if (error) toast.error(error);
+        this.chooser = { ...this.chooser, error };
         for (const file of files) this.chooseFile(file);
         await this.searchMedia('');
     }
@@ -141,8 +142,9 @@ export default class UserFields extends Cossack {
     @Client()
     async submit(event: Event) {
         event.preventDefault();
+        this.message = '';
         await this.save(this.meta);
-        if (this.error) toast.error(this.error); else toast.success(__('Saved.'));
+        if (!this.error) this.message = __('Saved.');
     }
 
     @Server()
@@ -188,6 +190,7 @@ export default class UserFields extends Cossack {
         const id = this.c.req.param('id') ?? '';
         return html`<div class="max-w-2xl space-y-6">
             ${pageHeader(`${__('Fields')}: ${this.name}`, { actions: html`<a href=${`/dashboard/users/${encodeURIComponent(id)}`} class="text-sm text-muted-foreground hover:text-foreground">← ${this.name}</a>` })}
+            ${this.message && !this.error ? notice(this.message, 'success') : null}
             ${this.error ? notice(this.error, 'error') : null}
             <form class="space-y-6" @submit=${(event: Event) => this.submit(event)}>
                 ${this.groupBoxes()}

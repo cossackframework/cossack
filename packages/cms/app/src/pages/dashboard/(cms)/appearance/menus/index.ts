@@ -1,5 +1,5 @@
 import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackframework/core';
-import { AlertDialog, Badge, Button, Card, CardBody, Field, Input, NativeSelect, toast } from '@cossackframework/ui';
+import { AlertDialog, Badge, Button, Card, CardBody, Field, Input, NativeSelect } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { isCmsError, PERMISSIONS } from '@cossackframework/cms';
 import { requireAny } from '../../../../../cms/guards';
@@ -16,6 +16,8 @@ export default class MenusPage extends Cossack {
     @State() name = '';
     @State() errors: Record<string, string> = {};
     @State() error = '';
+    /** What the last save of the locations did. */
+    @State() message = '';
     @State() pendingDelete: MenuRow | null = null;
 
     head(): HeadValue {
@@ -38,13 +40,13 @@ export default class MenusPage extends Cossack {
     async submit(event: Event) {
         event.preventDefault();
         await this.create(this.name);
-        if (this.error) toast.error(this.error);
     }
 
     @Server()
     async create(name: string) {
         this.errors = {};
         this.error = '';
+        this.message = '';
         try {
             const menu = await this.c.get('cms').menus.create({ name }, { principal: this.c.get('principal') });
             return this.redirect(`/dashboard/appearance/menus/${menu.id}`);
@@ -61,8 +63,9 @@ export default class MenusPage extends Cossack {
 
     @Client()
     async saveLocations() {
+        this.message = '';
         await this.assign(this.locations.map(location => ({ name: location.name, menu: location.menu })));
-        if (this.error) toast.error(this.error); else toast.success(__('Menu locations saved.'));
+        if (!this.error) this.message = __('Menu locations saved.');
     }
 
     @Server()
@@ -79,6 +82,7 @@ export default class MenusPage extends Cossack {
     @Server()
     async remove(id: string) {
         this.error = '';
+        this.message = '';
         try { await this.c.get('cms').menus.delete(id, { principal: this.c.get('principal') }); }
         catch (error) { this.error = isCmsError(error) ? error.message : __('The menu could not be deleted.'); }
         await this.load();
@@ -88,6 +92,7 @@ export default class MenusPage extends Cossack {
         const label = (name: string) => this.locations.find(location => location.name === name)?.label ?? name;
         return html`<div class="space-y-6">
             ${pageHeader(__('Menus'), { description: __('Build menus from pages, posts, categories and links, then choose where the theme shows them.') })}
+            ${this.message ? notice(this.message, 'success') : null}
             ${this.error ? notice(this.error, 'error') : null}
             <div class="grid gap-6 lg:grid-cols-[22rem_minmax(0,1fr)]">
                 <div class="space-y-6">

@@ -1,5 +1,5 @@
 import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackframework/core';
-import { AlertDialog, Badge, Button, Card, CardBody, CardHeader, Checkbox, Field, Input, toast } from '@cossackframework/ui';
+import { AlertDialog, Badge, Button, Card, CardBody, CardHeader, Checkbox, Field, Input } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { isCmsError, PERMISSIONS, WEBHOOK_EVENTS, type Webhook, type WebhookDelivery, type WebhookEvent } from '@cossackframework/cms';
 import { requireAny } from '../../../../../cms/guards';
@@ -26,6 +26,8 @@ export default class WebhooksPage extends Cossack {
     @State() selected = '';
     @State() revealed = false;
     @State() error = '';
+    /** What the last save or test did. */
+    @State() message = '';
     @State() pendingDelete: Webhook | null = null;
 
     head(): HeadValue {
@@ -57,8 +59,9 @@ export default class WebhooksPage extends Cossack {
     async submit(event: Event) {
         event.preventDefault();
         const editing = Boolean(this.form.id);
+        this.message = '';
         await this.save(this.form);
-        if (this.error) toast.error(this.error); else toast.success(editing ? __('Webhook updated.') : __('Webhook added. Copy its secret to verify deliveries.'));
+        if (!this.error) this.message = editing ? __('Webhook updated.') : __('Webhook added. Copy its secret to verify deliveries.');
     }
 
     @Server()
@@ -78,9 +81,11 @@ export default class WebhooksPage extends Cossack {
 
     @Client()
     async test() {
+        this.message = '';
+        this.error = '';
         const result = await this.ping(this.selected);
-        if (result.ok) toast.success(`${__('The receiver answered')} ${result.status}.`);
-        else toast.error(result.error ?? __('The test failed.'));
+        if (result.ok) this.message = `${__('The receiver answered')} ${result.status}.`;
+        else this.error = result.error ?? __('The test failed.');
     }
 
     @Server()
@@ -98,6 +103,7 @@ export default class WebhooksPage extends Cossack {
 
     @Server()
     async remove(id: string) {
+        this.message = '';
         await this.c.get('cms').webhooks.delete(id);
         await this.load('');
     }
@@ -107,6 +113,7 @@ export default class WebhooksPage extends Cossack {
         return html`<div class="space-y-6">
             ${pageHeader(__('Webhooks'), { description: __('Tell other services when entries change, such as to rebuild a static site.'),
                 actions: this.selected ? html`<a href="/dashboard/tools/webhooks" class="text-sm text-primary hover:underline">+ ${__('Add webhook')}</a>` : null })}
+            ${this.message ? notice(this.message, 'success') : null}
             ${this.error ? notice(this.error, 'error') : null}
             <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_24rem]">
                 <div class="space-y-6">

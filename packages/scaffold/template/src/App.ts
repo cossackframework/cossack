@@ -1,6 +1,5 @@
 import { Cossack, Page } from '@cossackframework/core';
-import { html, component } from '@cossackframework/renderer';
-import { Toaster } from '@cossackframework/ui';
+import { html } from '@cossackframework/renderer';
 import { themeStore } from './stores.client';
 
 /**
@@ -39,7 +38,6 @@ export class App extends Cossack {
         return html`
             <div class="min-h-screen bg-background text-foreground antialiased">
                 ${this.children}
-                ${component(Toaster)}
             </div>
         `;
     }

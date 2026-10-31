@@ -1,5 +1,5 @@
 import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackframework/core';
-import { Button, Card, CardBody, Checkbox, Field, Input, toast } from '@cossackframework/ui';
+import { Button, Card, CardBody, Checkbox, Field, Input } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { isCmsError, PERMISSIONS } from '@cossackframework/cms';
 import { requireAny } from '../../../../../cms/guards';
@@ -10,6 +10,8 @@ import { notice, pageHeader } from '../../../../../cms/ui';
 export default class EditTaxonomy extends Cossack {
     @State() draft = { name: '', label: '', singular: '', description: '', path: '', hierarchical: false, noindex: false, builtin: false };
     @State() error = '';
+    /** What the last save did. */
+    @State() message = '';
 
     head(): HeadValue {
         return { title: this.draft.label || __('Taxonomy') };
@@ -30,8 +32,9 @@ export default class EditTaxonomy extends Cossack {
     @Client()
     async submit(event: Event) {
         event.preventDefault();
+        this.message = '';
         await this.save(this.draft);
-        if (this.error) toast.error(this.error); else toast.success(__('Taxonomy saved.'));
+        if (!this.error) this.message = __('Taxonomy saved.');
     }
 
     @Server()
@@ -48,6 +51,7 @@ export default class EditTaxonomy extends Cossack {
 
     @Server()
     async remove() {
+        this.message = '';
         try {
             await this.c.get('cms').deleteTaxonomy(this.draft.name, this.c.get('principal'));
             return this.redirect('/dashboard/taxonomies');
@@ -62,6 +66,7 @@ export default class EditTaxonomy extends Cossack {
             control: attributes => component(Input, { ...attributes, '.value': this.draft[key], '@input': (event: Event) => this.setDraft(key, (event.target as HTMLInputElement).value) }) });
         return html`<div class="max-w-2xl space-y-6">
             ${pageHeader(this.draft.label, { description: `${__('Taxonomy')} ${this.draft.name}`, actions: html`<a href="/dashboard/taxonomies" class="text-sm text-muted-foreground hover:text-foreground">← ${__('Taxonomies')}</a>` })}
+            ${this.message ? notice(this.message, 'success') : null}
             ${this.error ? notice(this.error, 'error') : null}
             ${component(Card, {}, component(CardBody, {}, html`<form class="space-y-4" @submit=${(event: Event) => this.submit(event)}>
                 ${input('label', __('Plural name'))}

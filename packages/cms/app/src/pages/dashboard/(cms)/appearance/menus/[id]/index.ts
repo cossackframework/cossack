@@ -1,5 +1,5 @@
 import { Cossack, Page, State, ClientState, Server, Client, type HeadValue } from '@cossackframework/core';
-import { AlertDialog, Button, Card, CardBody, Checkbox, Icon, Input, toast } from '@cossackframework/ui';
+import { AlertDialog, Button, Card, CardBody, Checkbox, Icon, Input } from '@cossackframework/ui';
 import { html, component, repeat, type TemplateResult } from '@cossackframework/renderer';
 import {
     allowedMoves, buildMenu, dropDepths, flattenMenu, isCmsError, MENU_ATTRIBUTE, MENU_LIMITS, menuItemId, moveRows, PERMISSIONS, recordTitle, safeLinkUrl, shiftRows, subtreeEnd,
@@ -102,6 +102,8 @@ export default class MenuEditor extends Cossack {
     /** Field groups attached to menu items; each row's `meta` holds their control values. */
     @State() fieldGroups: GroupsView = { groups: [], fields: [], options: [] };
     @State() error = '';
+    /** What the last save did. */
+    @State() message = '';
     @State() conflict = false;
     @ClientState() selected: Record<string, string[]> = {};
     @ClientState() link = { url: '', label: '' };
@@ -139,11 +141,7 @@ export default class MenuEditor extends Cossack {
         this.sources = await sources(cms, principal);
         const assigned = await cms.menus.locations();
         this.locations = (await cms.menuLocations()).map(location => ({ ...location, checked: assigned.get(location.name) === menu.id }));
-        this.message(this.c.req.query('saved') === '1' ? __('Menu saved.') : '');
-    }
-
-    private message(text: string) {
-        if (text) this.announcement = text;
+        this.message = this.c.req.query('saved') === '1' ? __('Menu saved.') : '';
     }
 
     // --- Adding items ------------------------------------------------------------
@@ -172,7 +170,7 @@ export default class MenuEditor extends Cossack {
             added.push(source.kind === 'collection' ? { id, kind: 'entry', label: '', collection: source.name, entry: entry.id, depth: 0 } : { id, kind: 'term', label: '', taxonomy: source.name, term: entry.id, depth: 0 });
             targets[id] = { title: entry.title, type: source.singular, icon: source.icon, draft: false, missing: false, edit: source.kind === 'collection' ? `/dashboard/content/${source.name}/${entry.id}` : `/dashboard/terms/${source.name}/${entry.id}` };
         }
-        if (this.rows.length + added.length > MENU_LIMITS.items) { toast.error(`${__('A menu holds at most')} ${MENU_LIMITS.items} ${__('items.')}`); return; }
+        if (this.rows.length + added.length > MENU_LIMITS.items) { this.message = ''; this.conflict = false; this.error = `${__('A menu holds at most')} ${MENU_LIMITS.items} ${__('items.')}`; return; }
         this.targets = targets;
         this.rows = [...this.rows, ...added];
         this.selected = { ...this.selected, [source.name]: [] };
@@ -372,10 +370,10 @@ export default class MenuEditor extends Cossack {
     async submit(event: Event) {
         event.preventDefault();
         this.saving = true;
+        this.message = '';
         try { await this.save(this.name, this.rows, this.revision, this.locations.filter(location => location.checked).map(location => location.name)); }
         finally { this.saving = false; }
-        if (this.error) toast.error(this.error);
-        else { this.dirty = false; toast.success(__('Menu saved.')); }
+        if (!this.error) { this.dirty = false; this.message = __('Menu saved.'); }
     }
 
     @Server()
@@ -406,6 +404,8 @@ export default class MenuEditor extends Cossack {
 
     @Server()
     async deleteMenu() {
+        this.error = '';
+        this.message = '';
         try {
             await this.c.get('cms').menus.delete(this.c.req.param('id') ?? '', { principal: this.c.get('principal') });
             return this.redirect('/dashboard/appearance/menus');
@@ -546,6 +546,7 @@ export default class MenuEditor extends Cossack {
         const drag = this.drag;
         return html`<div class="space-y-6">
             ${pageHeader(__('Edit menu'), { actions: html`<a href="/dashboard/appearance/menus" class="text-sm text-muted-foreground hover:text-foreground">← ${__('All menus')}</a>` })}
+            ${this.message ? notice(this.message, 'success') : null}
             ${this.error ? html`<div class="space-y-2">${notice(this.error, 'error')}${this.conflict ? html`<a href=${`/dashboard/appearance/menus/${this.id}`} class="text-sm text-primary hover:underline">${__('Reload the menu')}</a>` : null}</div>` : null}
             <div class="grid gap-6 lg:grid-cols-[20rem_minmax(0,1fr)]">
                 <aside class="space-y-3" aria-label=${__('Add menu items')}>
