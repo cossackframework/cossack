@@ -58,7 +58,7 @@ describe.skipIf(!liveRomeDBTests())('generated CMS autosave', () => {
       await surface.click();
       await page.keyboard.type('Kept while autosaving');
       // Add a second block from the inserter: it must survive the autosave too.
-      await page.getByRole('button', { name: 'Add block', exact: true }).first().click();
+      await page.locator('#field-content-add-top').click();
       const picker = page.getByRole('dialog', { name: 'Blocks' });
       await picker.getByLabel('Search blocks').fill('heading');
       await picker.getByRole('button', { name: 'Heading', exact: true }).click();
