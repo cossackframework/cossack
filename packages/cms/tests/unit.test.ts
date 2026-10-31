@@ -2,14 +2,14 @@ import { describe, expect, it } from 'vitest';
 import {
     commandInput, declarationHash, defineResource, evaluateRule, field, formInput, formValue, isPluginPoint, manifestProblems, permissionMatches, providedPoints,
     requestedGrants, resolveResource, resourceProblems, storageCheck, storageName, storageType, userPrincipal, validateValue, normalizeDeclaration, fieldProblems, recordSchema,
-    htmlBlocks, htmlBlocksChanged,
+    htmlBlocks, htmlBlocksChanged, imageWidths, placeholderStyle, variantWidth, IMAGE_WIDTHS,
 } from '../src/index';
 import { planSchema, type Catalog } from '../src/server/schema';
 import { renameBlockIds } from '../src/server/block-ids';
 
 const catalog = (tables: Catalog['tables'] = new Map(), ledger: Partial<Catalog['ledger']> = {}): Catalog => ({
     sequence: 7, engineVersion: '0.2.9', tables,
-    ledger: { host: new Set([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]), explicit: new Map(), hashes: new Map(), ...ledger },
+    ledger: { host: new Set([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]), explicit: new Map(), hashes: new Map(), ...ledger },
 });
 
 describe('fields', () => {
@@ -101,6 +101,20 @@ describe('fields', () => {
         expect(storageCheck('"title"', field.string({ max: 10, min: 2 }))).toBe('length("title") <= 10 AND length("title") >= 2');
         expect(storageCheck('"s"', field.enum(['a', 'b']))).toBe(`"s" IN ('a', 'b')`);
         expect(storageCheck('"n"', field.integer({ min: 0, max: 9 }))).toBe('"n" >= 0 AND "n" <= 9');
+    });
+});
+
+describe('image settings', () => {
+    it('reads widths, snaps to them and blurs placeholders', () => {
+        expect(imageWidths('800, 400,400 , 9000, x')).toEqual([400, 800]);
+        expect(imageWidths('')).toBe(IMAGE_WIDTHS);
+        expect(variantWidth(500, [400, 800])).toBe(800);
+        expect(variantWidth(5000, [400, 800])).toBe(800);
+        expect(placeholderStyle(null, 10, 10)).toBe('');
+        const style = placeholderStyle('data:image/webp;base64,AAAA', 1600, 900);
+        expect(style).toMatch(/^background-image:url\("data:image\/svg\+xml;charset=utf-8,.*"\);background-size:cover/);
+        expect(decodeURIComponent(style)).toContain(`viewBox='0 0 1600 900'`);
+        expect(decodeURIComponent(style)).toContain(`href='data:image/webp;base64,AAAA'`);
     });
 });
 

@@ -40,6 +40,10 @@ async function exercise(origin, routeIds, diagnostics) {
   contains(dashboard, 'The Daily');
   contains(await web.page('/dashboard/users'), 'ada@example.com');
   contains(await web.page('/dashboard/roles'), 'Editor');
+  // Files → Summary counts the library once a day; Refresh counts again.
+  const summary = await web.page('/dashboard/media/summary');
+  contains(summary, 'Files summary');
+  contains(summary, 'Resized copies');
 
   // Terms: nested categories.
   const terms = 'dashboard/(cms)/terms/[taxonomy]/index.ts';

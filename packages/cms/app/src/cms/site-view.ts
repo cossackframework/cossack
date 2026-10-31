@@ -6,7 +6,7 @@
 import { component, html, ifDefined, unsafeHTML, type TemplateResult } from '@cossackframework/renderer';
 import { plugins } from '@cossackframework/framework/plugins';
 import { formBlock, inputBlock } from './form-view';
-import { archiveTemplate, assembleSiteTheme, blockStyleAttributes, entryTemplate, presetStyle, resolvePresets, siteThemeProblems, type ArchiveView, type EntryView, type MediaView, type MenuItemView, type RenderedBlock, type SiteTheme, type ThemeData, type ThemeHelpers, type ThemePresets } from '@cossackframework/cms';
+import { archiveTemplate, assembleSiteTheme, blockStyleAttributes, entryTemplate, placeholderStyle, presetStyle, resolvePresets, siteThemeProblems, type ArchiveView, type EntryView, type MediaView, type MenuItemView, type RenderedBlock, type SiteTheme, type ThemeData, type ThemeHelpers, type ThemePresets } from '@cossackframework/cms';
 
 export { archiveTemplate, entryTemplate };
 export type { ArchiveView, EntryView, MediaView, Paging, RenderedBlock, SiteView } from '@cossackframework/cms';
@@ -105,11 +105,11 @@ function columnSpan(block: RenderedBlock): number {
  * An image with its resized variants, for blocks; `sizes` is how wide it shows. Its width and
  * height keep the page from shifting as it loads, and its blurred placeholder shows until then.
  */
-export function image(media: MediaView | undefined, className = '', sizes = '(min-width: 768px) 768px, 100vw'): TemplateResult | null {
+export function image(media: MediaView | undefined, className = '', sizes = media?.sizes): TemplateResult | null {
     if (!media) return null;
     return html`<img src=${media.url} srcset=${ifDefined(media.srcset || undefined)} sizes=${ifDefined(media.srcset ? sizes : undefined)} alt=${media.alt}
-        width=${media.width ?? ''} height=${media.height ?? ''} loading="lazy" decoding="async" class=${className}
-        style=${ifDefined(media.placeholder ? `background-image:url(${media.placeholder});background-size:cover;background-repeat:no-repeat` : undefined)}>`;
+        width=${media.width ?? ''} height=${media.height ?? ''} loading=${media.priority ? 'eager' : 'lazy'} fetchpriority=${ifDefined(media.priority ? 'high' : undefined)} decoding="async" class=${className}
+        style=${ifDefined(placeholderStyle(media.placeholder, media.width, media.height) || undefined)}>`;
 }
 
 /** A media element's `preload`, from the block's choice. */

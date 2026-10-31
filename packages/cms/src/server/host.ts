@@ -27,7 +27,9 @@ import { canonicalJson, declarationHash, resolveResource, type Resource, type Re
 import { Outbox, type OutboxOptions } from './outbox';
 import { ResourceRepository, type FieldFilter, type ListOptions, type OperationContext } from './repository';
 import { migrate, planSchema, readCatalog, type MigrationReport, type SchemaPlan } from './schema';
-import { FileService, type CmsFile, type FileServiceOptions } from './files';
+import { FileService, type CmsFile, type FileServiceOptions, type ImageSettings } from './files';
+import { CmsCache } from './cache';
+import { imageWidths } from '../images';
 import { renameStoredDefinitions, renameStoredRecords } from './block-ids';
 import { HOST_STEPS, HOST_TABLES } from './host-schema';
 import { CmsSettings } from './site-settings';
@@ -280,6 +282,8 @@ export class CmsHost {
     readonly security: CmsSecurity;
     /** Media files, when the host has object storage. */
     readonly files: FileService | null;
+    /** A cache shared by every isolate, on RomeDB: values slow to compute, such as the library's summary. */
+    readonly cache: CmsCache;
     readonly readLimits: WorkLimits;
     readonly writeLimits: WorkLimits;
     /** Increments on every committed mutation, so request middleware can schedule delivery. */
@@ -410,7 +414,8 @@ export class CmsHost {
         this.areas = new CmsAreas(this.db, { now: this.#now, check: blocks => this.#checkBlocks(blocks) });
         this.previews = new CmsPreviews(this.db, { now: this.#now });
         this.autosaves = new CmsAutosaves(this.db, { now: this.#now });
-        this.files = options.storage ? new FileService(this.db, options.storage, { now: this.#now, ...(options.images ? { images: options.images } : {}), ...options.files }) : null;
+        this.files = options.storage ? new FileService(this.db, options.storage, { now: this.#now, ...(options.images ? { images: options.images } : {}), imageSettings: () => this.#imageSettings(), ...options.files }) : null;
+        this.cache = new CmsCache(this.db, { now: this.#now });
         for (const module of modules) module.register?.({ hooks: this.hooks, settings: this.settings, taxonomies: this.taxonomies, collection: name => this.#collections.get(name), blocks: () => this.#blocks, now: this.#now });
         for (const plugin of this.#plugins.values()) this.#registerPlugin(plugin);
         if (!options.hooks) this.hooks.freeze();
@@ -1610,6 +1615,12 @@ export class CmsHost {
      * A target's meta as it is stored: the groups' fields checked, hidden fields cleared, the
      * fields the input leaves out kept from `previous`.
      */
+    /** Settings → Files as the file service reads them. */
+    async #imageSettings(): Promise<ImageSettings> {
+        const settings = await this.settings.all();
+        return { widths: imageWidths(settings['media.imageWidths']), quality: settings['media.imageQuality'], maxWidth: settings['media.maxImageWidth'] };
+    }
+
     async #checkMeta(target: FieldGroupTarget, meta: unknown, previous: { readonly [field: string]: unknown } | null): Promise<{ readonly [field: string]: unknown }> {
         const { fields: groupFields, layout } = this.#groupFields(target);
         // Users carry their public author profile besides their groups' fields.

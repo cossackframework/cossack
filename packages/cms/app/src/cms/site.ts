@@ -4,7 +4,7 @@
  * from `init()` and hand the views to the theme's templates.
  */
 import {
-    ANONYMOUS, ARTICLE_TYPES, authorUrl, blockDocuments, blockIsData, blocksPlain, editedSize, hasBlockReference, parseBlockText, PATTERN_REFERENCE, resolveBindings, resolveBlockBindings, textBlocks, usesUserBinding, type BindingScopes, type ParsedText, flattenBlocks, escapeHtml, formatSiteDate, formInputs, formSettings, imageSrcset, imageUrl, isCmsError, languageName, mediaUrl, notificationRules, recordTitle, resolvePresets, richTextBlocks, richTextParts, richTextPlain, systemPrincipal, templateCandidates, transformable, urlList,
+    ANONYMOUS, ARTICLE_TYPES, authorUrl, blockDocuments, blockIsData, blocksPlain, editedSize, hasBlockReference, parseBlockText, PATTERN_REFERENCE, resolveBindings, resolveBlockBindings, textBlocks, usesUserBinding, type BindingScopes, type ParsedText, flattenBlocks, escapeHtml, formatSiteDate, formInputs, formSettings, imageSrcset, imageUrl, imageWidths, IMAGE_WIDTHS, isCmsError, languageName, mediaUrl, notificationRules, recordTitle, resolvePresets, richTextBlocks, richTextParts, richTextPlain, systemPrincipal, templateCandidates, transformable, urlList,
     type AuthorView, type Block,
     type Principal, type TemplatePage, type ThemeData, type ThemePresets,
     type ArchiveView, type BodyPart, type CollectionDefinition, type CommentShape, type CommentView, type CommentsView, type EntryReference, type EntryView, type FieldDeclaration, type FieldFilter,
@@ -103,6 +103,7 @@ function localeWhere(languages: SiteLanguages, locale: string): { [field: string
 /** The layout's data: site title, tagline, the menus of the active theme's locations and the language links. */
 export async function siteView(cms: CmsHost, theme: ThemeState, options: { locale?: string; languages?: readonly LanguageLink[]; forms?: FormRequest; template?: string | null; entry?: RecordShape | null; user?: { name: string } | null; usage?: { user: boolean } } = {}): Promise<SiteView & { noindex: boolean }> {
     const settings = await cms.settings.all();
+    useImageSettings(settings);
     const languages = await cms.languages();
     const locale = options.locale ?? languages.default;
     const info = cms.themes().find(entry => entry.name === theme.name);
@@ -243,17 +244,37 @@ async function pageMenu(cms: CmsHost, languages: SiteLanguages, locale: string):
 }
 
 /** A file as themes show it: cropped through a variant when the host resizes images, with `srcset`s. */
+/** Settings → Files as media views use them. Read at the start of each page, as they are the same for every visitor. */
+let imageOptions: { widths: readonly number[]; placeholder: boolean; sizes: string } = { widths: IMAGE_WIDTHS, placeholder: true, sizes: '(min-width: 768px) 768px, 100vw' };
+
+function useImageSettings(settings: SiteSettings): void {
+    imageOptions = { widths: imageWidths(settings['media.imageWidths']), placeholder: settings['media.placeholder'] !== 'none', sizes: settings['media.sizes'] || '(min-width: 768px) 768px, 100vw' };
+}
+
 export function mediaView(file: CmsFile | undefined, resizes: boolean): MediaView | null {
     if (!file) return null;
     const source = { ...file, version: file.updatedAt };
     const variants = resizes && transformable(file.contentType);
     const size = variants ? editedSize(file) : null;
-    const url = variants && file.edits?.crop && size ? imageUrl(source, { width: Math.min(size.width, 2560) }) : mediaUrl(file);
+    const { widths } = imageOptions;
+    const url = variants && file.edits?.crop && size ? imageUrl(source, { width: Math.min(size.width, widths[widths.length - 1]!) }) : mediaUrl(file);
     return {
         url, alt: file.alt, width: size?.width ?? file.width, height: size?.height ?? file.height, contentType: file.contentType, caption: file.caption,
-        srcset: variants ? imageSrcset(source) : '', wideSrcset: variants ? imageSrcset(source, { aspect: 16 / 9 }) : '',
-        placeholder: file.placeholder,
+        srcset: variants ? imageSrcset(source, { widths }) : '', wideSrcset: variants ? imageSrcset(source, { aspect: 16 / 9, widths }) : '',
+        placeholder: imageOptions.placeholder ? file.placeholder : null, sizes: imageOptions.sizes,
     };
+}
+
+/** Mark the first image of an entry to load at once: the featured image, or else the first Image block of its content. */
+function markFirstImage(image: MediaView | null, content: readonly RenderedBlock[]): MediaView | null {
+    if (image) return { ...image, priority: true };
+    let done = false;
+    walkBlocks(content, block => {
+        if (done || block.type !== 'core/image' || !block.media.image) return;
+        (block.media as Record<string, MediaView>).image = { ...block.media.image, priority: true };
+        done = true;
+    });
+    return image;
 }
 
 /**
@@ -431,6 +452,7 @@ export async function unlockToken(record: RecordShape): Promise<string> {
 export async function entryViews(cms: CmsHost, collection: CollectionDefinition, records: readonly RecordShape[], options: EntryViewOptions = {}): Promise<EntryView[]> {
     const resource = cms.resourceById(`cms/${collection.name}`);
     const settings = await cms.settings.all();
+    useImageSettings(settings);
     const languages = await cms.languages();
     const resizes = cms.files?.resizes ?? false;
     const fields = Object.entries(resource.fields);
@@ -532,6 +554,7 @@ export async function entryViews(cms: CmsHost, collection: CollectionDefinition,
         const details = options.full ? fields.filter(([name, declaration]) => !NOT_DETAILS.has(name) && !declaration.taxonomy && !declaration.media
             && !['text', 'blocks', 'richtext', 'json', 'reference', 'vector', 'bigint'].includes(declaration.kind) && typed[name] !== null && typed[name] !== undefined && typed[name] !== '' && !(Array.isArray(typed[name]) && !(typed[name] as unknown[]).length))
             .map(([name, declaration]) => ({ label: declaration.label ?? name, value: displayValue(declaration.kind, typed[name], settings) })) : [];
+        const featured = imageField ? mediaView(files.get(String(record[imageField[0]] ?? '')), resizes) : null;
         views.push({
             id: record.id, title: recordTitle(record, 'title'), url: urls.get(record.id) ?? null, collection: collection.name, kind: collection.singular,
             date: typeof record.publishedAt === 'number' ? formatSiteDate(record.publishedAt, settings) : '',
@@ -541,7 +564,7 @@ export async function entryViews(cms: CmsHost, collection: CollectionDefinition,
             excerpt: locked ? '' : excerptField && record.excerpt ? String(record.excerpt) : typeof record.summary === 'string' && record.summary ? excerptOf(record.summary, 40) : excerptOf(contentPlain(record), 40),
             summary: locked || typeof record.summary !== 'string' ? '' : record.summary,
             content,
-            image: imageField ? mediaView(files.get(String(record[imageField[0]] ?? '')), resizes) : null,
+            image: options.full && settings['media.eagerFirstImage'] && records.length === 1 ? markFirstImage(featured, content) : featured,
             terms: taxonomyFields.map(([name, declaration]) => ({
                 label: cms.taxonomies.declaration(declaration.taxonomy!).label,
                 terms: ((record[name] as string[] | undefined) ?? []).map(id => terms.get(id)).filter((term): term is TermShape => !!term).map(term => ({ name: term.name, url: termUrl(term, locale), icon: term.icon })),

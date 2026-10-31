@@ -6,11 +6,11 @@
 import type { StoragePresignedUpload, StorageProvider } from '@cossackframework/core/storage';
 import type { RomeDB, Value } from '@cossackframework/romedb';
 import { CmsError } from '../errors';
-import { declaredType, imageSize, matchesSignature, MEDIA_FILTER_EXCLUDES, MEDIA_FILTERS, sanitizeSvg, SVG_TYPE, type MediaKind } from '../media';
+import { declaredType, imageSize, matchesSignature, MEDIA_FILTER_EXCLUDES, MEDIA_FILTERS, mediaKind, sanitizeSvg, SVG_TYPE, type MediaKind } from '../media';
 import { hasPermission, PERMISSIONS, principalId, type Principal } from '../permissions';
 import { containsPattern } from './users';
-import { imageEditsProblems, transformable, variantRect, variantWidth, type ImageEdits } from '../images';
-import { FORMAT_TYPES, negotiateFormat, type ImageTransformer } from './images';
+import { IMAGE_WIDTHS, imageEditsProblems, transformable, variantRect, variantWidth, type ImageEdits } from '../images';
+import { FORMAT_TYPES, negotiateFormat, type ImageFormat, type ImageTransformer } from './images';
 
 export interface CmsFile {
     readonly id: string;
@@ -44,7 +44,28 @@ export interface FileServiceOptions {
     staleMs?: number;
     /** How long a presigned upload URL stays valid. Default one hour. */
     presignSeconds?: number;
+    /** The site's image settings (Settings → Files); `IMAGE_WIDTHS`, quality 78 and no downscaling without it. */
+    imageSettings?: () => Promise<ImageSettings>;
 }
+
+/** How images are resized: the variants' widths, their quality, and the widest original kept (0 for any). */
+export interface ImageSettings {
+    readonly widths: readonly number[];
+    readonly quality: number;
+    readonly maxWidth: number;
+}
+
+/** What the library holds: files and bytes in all and by kind, and the resized copies made of images. */
+export interface FileSummary {
+    readonly files: number;
+    readonly bytes: number;
+    readonly kinds: readonly { readonly kind: MediaKind; readonly files: number; readonly bytes: number }[];
+    /** Copies made before their size was recorded count in `files` alone. */
+    readonly variants: { readonly files: number; readonly bytes: number };
+}
+
+const DEFAULT_IMAGES: ImageSettings = { widths: IMAGE_WIDTHS, quality: 78, maxWidth: 0 };
+const OWN_FORMAT: { readonly [type: string]: ImageFormat } = { 'image/jpeg': 'jpeg', 'image/png': 'png', 'image/webp': 'webp', 'image/avif': 'avif' };
 
 /** An upload the browser sends itself: where to PUT the bytes, then `complete()` makes the file. */
 export interface PendingUpload {
@@ -82,6 +103,7 @@ export class FileService {
     readonly #staleMs: number;
     readonly #presignSeconds: number;
     readonly #images: ImageTransformer | undefined;
+    readonly #imageSettings: () => Promise<ImageSettings>;
     #warned = false;
 
     constructor(db: RomeDB, storage: StorageProvider, options: FileServiceOptions = {}) {
@@ -93,6 +115,7 @@ export class FileService {
         this.#staleMs = options.staleMs ?? 15 * 60_000;
         this.#presignSeconds = options.presignSeconds ?? 3600;
         this.#images = options.images;
+        this.#imageSettings = options.imageSettings ?? (async () => DEFAULT_IMAGES);
     }
 
     /** The accepted content types, or null for every type. */
@@ -121,6 +144,51 @@ export class FileService {
         await this.#dropVariants(id);
         // The placeholder shows the crop.
         return this.#placeholder((await this.get(id))!);
+    }
+
+    /**
+     * Scale an image wider than the largest width of Settings → Files down to it, in its own
+     * format, replacing the original. Other files, and transformers that fail, keep the upload.
+     */
+    async #shrink(file: CmsFile): Promise<CmsFile> {
+        const { maxWidth, quality } = await this.#imageSettings();
+        const format = OWN_FORMAT[file.contentType];
+        if (!this.#images || !maxWidth || !format || !file.width || !file.height || file.width <= maxWidth) return file;
+        const original = await this.#storage.get(`cms/files/${file.id}`);
+        if (!original) return file;
+        const height = Math.max(1, Math.round(file.height * maxWidth / file.width));
+        let bytes: Uint8Array;
+        try {
+            bytes = await this.#images.transform(original.body, { rect: { x: 0, y: 0, width: file.width, height: file.height }, source: { width: file.width, height: file.height }, width: maxWidth, height, format, quality });
+        } catch (error) {
+            if (!this.#warned) console.warn('[cms] could not scale down a large image; keeping it as uploaded.', error);
+            this.#warned = true;
+            return file;
+        }
+        await this.#storage.put(`cms/files/${file.id}`, streamOf(bytes), { size: bytes.byteLength, contentType: file.contentType });
+        await this.#db.write([{ rql: "UPDATE cms_files SET size = $size, width = $width, height = $height WHERE id = $id AND status = 'ready'",
+            params: { $size: bytes.byteLength, $width: maxWidth, $height: height, $id: file.id } }], WRITE);
+        return { ...file, size: bytes.byteLength, width: maxWidth, height };
+    }
+
+    /** Count the library by kind, and the resized copies; one read. */
+    async summary(): Promise<FileSummary> {
+        const result = await this.#db.read([
+            { rql: "SELECT content_type, count(*), sum(size) FROM cms_files WHERE status = 'ready' GROUP BY content_type" },
+            { rql: 'SELECT count(*), sum(size) FROM cms_file_variants' },
+        ]);
+        const kinds = new Map<MediaKind, { files: number; bytes: number }>();
+        for (const [type, count, bytes] of result.results[0]!.rows) {
+            const kind = mediaKind(String(type));
+            const entry = kinds.get(kind) ?? { files: 0, bytes: 0 };
+            kinds.set(kind, { files: entry.files + Number(count as bigint), bytes: entry.bytes + Number((bytes as bigint | null) ?? 0) });
+        }
+        const list = [...kinds].map(([kind, entry]) => ({ kind, ...entry })).sort((a, b) => b.bytes - a.bytes);
+        const [variantFiles, variantBytes] = result.results[1]!.rows[0] ?? [0n, null];
+        return {
+            files: list.reduce((sum, entry) => sum + entry.files, 0), bytes: list.reduce((sum, entry) => sum + entry.bytes, 0), kinds: list,
+            variants: { files: Number(variantFiles as bigint), bytes: Number((variantBytes as bigint | null) ?? 0) },
+        };
     }
 
     /**
@@ -156,9 +224,10 @@ export class FileService {
         const file = await this.get(id);
         if (!file || !this.#images || !transformable(file.contentType) || !file.width || !file.height) return null;
         if (!Number.isSafeInteger(request.width) || request.width < 1 || (request.height !== undefined && (!Number.isSafeInteger(request.height) || request.height < 1 || request.height > 10_000))) return null;
-        const aspect = request.height ? variantWidth(request.width) / request.height : undefined;
+        const settings = await this.#imageSettings();
+        const aspect = request.height ? variantWidth(request.width, settings.widths) / request.height : undefined;
         const rect = variantRect(file, aspect)!;
-        const width = Math.min(variantWidth(request.width), rect.width);
+        const width = Math.min(variantWidth(request.width, settings.widths), rect.width);
         const height = Math.max(1, Math.round(width * rect.height / rect.width));
         const format = negotiateFormat(request.accept, file.contentType);
         const key = `cms/variants/${id}/${file.updatedAt}/${width}x${height}${request.height ? 'c' : ''}.${format}`;
@@ -169,14 +238,14 @@ export class FileService {
         if (!original) return null;
         let bytes: Uint8Array;
         try {
-            bytes = await this.#images.transform(original.body, { rect, source: { width: file.width, height: file.height }, width, height, format, quality: format === 'avif' ? 60 : 78 });
+            bytes = await this.#images.transform(original.body, { rect, source: { width: file.width, height: file.height }, width, height, format, quality: format === 'avif' ? Math.max(30, settings.quality - 18) : settings.quality });
         } catch (error) {
             // A transformer that cannot run, such as sharp missing on Node, leaves the original.
             if (!this.#warned) console.warn('[cms] could not resize images; serving originals.', error);
             this.#warned = true;
             return null;
         }
-        await this.#db.write([{ rql: 'INSERT INTO cms_file_variants (key, file_id, created_at) VALUES ($key, $id, $now) ON CONFLICT (key) DO NOTHING', params: { $key: key, $id: id, $now: this.#now() } }], WRITE);
+        await this.#db.write([{ rql: 'INSERT INTO cms_file_variants (key, file_id, created_at, size) VALUES ($key, $id, $now, $size) ON CONFLICT (key) DO NOTHING', params: { $key: key, $id: id, $now: this.#now(), $size: bytes.byteLength } }], WRITE);
         await this.#storage.put(key, streamOf(bytes), { size: bytes.byteLength, contentType });
         return { file, body: streamOf(bytes), contentType, size: bytes.byteLength };
     }
@@ -211,7 +280,7 @@ export class FileService {
             if (!(error instanceof CmsError)) await this.#abandon(id).catch(() => undefined);
             throw error;
         }
-        return this.#placeholder(await this.#ready(id, size, imageSize(contentType, head)));
+        return this.#placeholder(await this.#shrink(await this.#ready(id, size, imageSize(contentType, head))));
     }
 
     /**
@@ -259,7 +328,7 @@ export class FileService {
             size = clean.byteLength;
             await this.#storage.put(pending.key, streamOf(clean), { size, contentType: pending.contentType });
         } else await body.cancel().catch(() => undefined);
-        return this.#placeholder(await this.#ready(id, size, imageSize(pending.contentType, head)));
+        return this.#placeholder(await this.#shrink(await this.#ready(id, size, imageSize(pending.contentType, head))));
     }
 
     /** Check the upload and record intent; the row is pending until the bytes are in. */

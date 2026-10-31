@@ -9,7 +9,8 @@ export { collectionSpec, searchTextPath, defineFieldRql, indexRql, readCatalog, 
 export { HOST_STEPS, HOST_TABLES } from './host-schema';
 export { Outbox, type DispatchReport, type OutboxOptions } from './outbox';
 export { CmsUsers, normalizeEmail, type CmsUser, type CmsRole, type UserPage } from './users';
-export { FileService, type CmsFile, type FileServiceOptions, type FileMetadata, type PendingUpload } from './files';
+export { FileService, type CmsFile, type FileServiceOptions, type FileMetadata, type FileSummary, type ImageSettings, type PendingUpload } from './files';
+export { CmsCache, type CacheEntry } from './cache';
 export { CmsTaxonomies, freeSlug, type TermUsage, type TermInput } from './taxonomies';
 export { CmsSettings } from './site-settings';
 export { renderMarkdown, excerptOf } from './markdown';

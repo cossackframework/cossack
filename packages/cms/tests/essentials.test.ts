@@ -509,6 +509,38 @@ describe.skipIf(!live)('scheduling, previews, revisions, redirects, tokens, webh
         await expect(cms.files!.setEdits(file.id, null, { principal: other })).rejects.toMatchObject({ code: 'CMS_FORBIDDEN' });
     });
 
+    it('scales down large uploads, resizes in the widths of Settings → Files and counts the library', async () => {
+        await cms.settings.update('media', { maxImageWidth: 1000, imageWidths: '800, 400, 400', imageQuality: 60 }, { principal: admin });
+        const bytes = png(3000, 1500);
+        const file = await cms.files!.upload({ name: 'wide.png', contentType: 'image/png', size: bytes.length, body: new Response(bytes).body! }, { principal: editor });
+        expect(file).toMatchObject({ width: 1000, height: 500 });
+        expect(transforms).toContainEqual({ width: 1000, height: 500, format: 'png', rect: { x: 0, y: 0, width: 3000, height: 1500 } });
+        expect(imageSrcset({ ...file, version: file.updatedAt }, { widths: [400, 800] }).split(', ').map(entry => entry.split(' ')[1])).toEqual(['400w', '800w']);
+        const variant = await cms.files!.variant(file.id, { width: 500, accept: 'image/webp' });
+        expect(new TextDecoder().decode(new Uint8Array(await new Response(variant!.body).arrayBuffer()))).toBe('webp:800x400');
+        const summary = await cms.files!.summary();
+        expect(summary.kinds.find(entry => entry.kind === 'image')?.files).toBeGreaterThan(0);
+        expect(summary.files).toBe(summary.kinds.reduce((sum, entry) => sum + entry.files, 0));
+        expect(summary.variants.bytes).toBeGreaterThanOrEqual('webp:800x400'.length);
+        await cms.settings.update('media', { maxImageWidth: 0, imageWidths: '320, 640, 960, 1280, 1920, 2560', imageQuality: 78 }, { principal: admin });
+    });
+
+    it('caches values in RomeDB with an expiry', async () => {
+        await cms.cache.set('test:a', { n: 1 }, 1000);
+        expect(await cms.cache.get('test:a')).toEqual({ n: 1 });
+        expect(await cms.cache.getMany(['test:a', 'test:none'])).toEqual([{ n: 1 }, undefined]);
+        clock += 1001;
+        expect(await cms.cache.get('test:a')).toBeUndefined();
+        let runs = 0;
+        const compute = async () => ++runs;
+        expect((await cms.cache.remember('test:b', 1000, compute)).value).toBe(1);
+        expect(await cms.cache.remember('test:b', 1000, compute)).toEqual({ value: 1, at: clock });
+        expect((await cms.cache.remember('test:b', 1000, compute, { fresh: true })).value).toBe(2);
+        await cms.cache.set('test:b', undefined);
+        expect(await cms.cache.has('test:b')).toBe(false);
+        await expect(cms.cache.set('has space', 1)).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
+    });
+
     it('applies changed built-in collections and new host tables on the next request', async () => {
         const extended: CmsModule = { ...contentModule, collections: contentModule.collections!.map(entry => entry.name === 'pages' ? { ...entry, fields: { ...entry.fields, summary2: field.string({ label: 'Teaser' }) } } : entry) };
         // As if the package was upgraded from before host step 5.

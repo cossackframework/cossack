@@ -60,6 +60,12 @@ export const media: SettingsGroup = {
     label: 'Files',
     fields: {
         maxUploadMb: field.integer({ default: 100, min: 1, max: 1_000_000, label: 'Maximum upload size (MB)', description: 'Uploads go straight to the bucket, so the limit is yours to set.' }),
+        maxImageWidth: field.integer({ default: 0, min: 0, max: 10_000, label: 'Largest image width (pixels)', description: 'JPEG, PNG, WebP and AVIF images wider than this are scaled down when uploaded. 0 keeps them as they are.' }),
+        imageWidths: field.string({ default: '320, 640, 960, 1280, 1920, 2560', max: 80, pattern: '\\s*\\d{2,4}(\\s*,\\s*\\d{2,4}){0,11}\\s*', label: 'Image widths (pixels)', description: 'Resized copies are made in these widths, and pages offer them to browsers. Up to 12, separated by commas.' }),
+        imageQuality: field.integer({ default: 78, min: 30, max: 100, label: 'Image quality', description: 'For JPEG and WebP copies, 30 to 100; AVIF copies use a little less for the same look.' }),
+        placeholder: { ...field.enum(['blurred', 'none'], { default: 'blurred', label: 'While images load' }), choices: { blurred: 'Show a blurred preview', none: 'Show nothing' } },
+        sizes: field.string({ default: '(min-width: 768px) 768px, 100vw', max: 200, label: 'Image sizes', description: 'How wide content images show, so browsers choose the right copy: the sizes attribute.' }),
+        eagerFirstImage: field.boolean({ default: true, label: 'Load the first image of a page at once', description: 'It is often the largest thing on screen; other images load as they come into view.' }),
     },
 };
 
@@ -211,6 +217,12 @@ export interface SiteSettings {
     'general.appIcon': string;
     'general.logo': string;
     'media.maxUploadMb': number;
+    'media.maxImageWidth': number;
+    'media.imageWidths': string;
+    'media.imageQuality': number;
+    'media.placeholder': 'blurred' | 'none';
+    'media.sizes': string;
+    'media.eagerFirstImage': boolean;
     'appearance.theme': string;
     'appearance.presets': { readonly [theme: string]: { readonly colors?: { readonly [slug: string]: string }; readonly custom?: readonly { slug: string; name: string; value: string }[] } } | null;
     'appearance.customCss': string;

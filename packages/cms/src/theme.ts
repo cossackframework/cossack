@@ -228,8 +228,12 @@ export interface MediaView {
     readonly srcset: string;
     /** `srcset` variants in a 16:9 shape around the focal point, for cards and headers. */
     readonly wideSrcset: string;
-    /** A blurred stand-in as a `data:` URL, shown while the image loads; null for other files. */
+    /** A tiny stand-in as a `data:` URL, shown blurred while the image loads (`placeholderStyle`); null for other files or when Settings → Files says none. */
     readonly placeholder: string | null;
+    /** How wide content images show, from Settings → Files, for `<img sizes>`. */
+    readonly sizes: string;
+    /** The page's first image: load it at once, with high priority (`loading="eager" fetchpriority="high"`). */
+    readonly priority?: boolean;
 }
 
 export interface TermLink {
