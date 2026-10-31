@@ -2,6 +2,7 @@
 import { createCredentialVerifier, createPasswordHasher, type CredentialVerifier, type PasswordHasher } from '@cossackframework/auth';
 import { ClientError, type RomeDB, type Statement, type Value } from '@cossackframework/romedb';
 import { CmsError } from '../errors';
+import { SYSTEM_META } from '../field-groups';
 import { slugify } from '../fields';
 import { userPrincipal, type Principal } from '../permissions';
 import { parseMeta, type MetaCheck } from './taxonomies';
@@ -210,6 +211,22 @@ export class CmsUsers {
                 params: { $name: next.name.trim(), $email: next.email, $avatar: next.avatar, $meta: JSON.stringify(meta), $slug: slug, $now: this.#now(), $id: id } }], WRITE);
             return result.results[0]!.affected === 1n;
         } catch (error) { throw uniqueEmail(error); }
+    }
+
+    /**
+     * Keep a value of the host's own in the user's meta, such as `_recent_blocks`, beside the
+     * profile fields and without their checks; null removes it. False when there is no such user.
+     */
+    async setSystemMeta(id: string, key: string, value: unknown): Promise<boolean> {
+        if (!SYSTEM_META.test(key)) throw new CmsError('CMS_VALIDATION', `${key} is not a system meta key.`);
+        const current = await this.get(id);
+        if (!current) return false;
+        const meta: { [field: string]: unknown } = { ...current.meta, [key]: value };
+        if (value === null || value === undefined) delete meta[key];
+        const json = JSON.stringify(meta);
+        if (json.length > 256 * 1024) throw new CmsError('CMS_LIMIT', 'The user\'s meta is too large.');
+        const result = await this.#db.write([{ rql: 'UPDATE cms_users SET meta = $meta WHERE id = $id', params: { $meta: json, $id: id } }], WRITE);
+        return result.results[0]!.affected === 1n;
     }
 
     /** The user with this author slug, or null. */

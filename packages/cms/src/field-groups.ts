@@ -399,12 +399,17 @@ export function rowUniqueProblem(name: string, declaration: FieldDeclaration, va
  * Problems in a target's meta values (terms, users, menu items) against its groups' fields:
  * unknown names, invalid values, missing required fields. The values come back with row IDs.
  */
+/** A key of meta the host keeps beside the fields, such as a user's recent blocks. */
+export const SYSTEM_META = /^_[a-z][a-z0-9_]{0,39}$/;
+
 export function metaProblems(fields: { readonly [name: string]: FieldDeclaration }, value: unknown, next: () => string): { errors: { [name: string]: string }; values: { [name: string]: unknown } } {
     const errors: { [name: string]: string } = {};
     const values: { [name: string]: unknown } = {};
     if (value === undefined || value === null) return { errors, values };
     if (typeof value !== 'object' || Array.isArray(value)) return { errors: { meta: 'must be an object of fields.' }, values };
     for (const [name, entry] of Object.entries(value as { [name: string]: unknown })) {
+        // `_` keys are the host's own, such as `_recent_blocks`: field names cannot start with `_`, so they are kept as they are.
+        if (SYSTEM_META.test(name)) { if (entry !== undefined && entry !== null) values[name] = entry; continue; }
         const declaration = fields[name];
         if (!declaration) { errors[name] = 'is not a field here.'; continue; }
         if (entry === undefined || entry === null || entry === '') continue;

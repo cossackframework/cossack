@@ -3,7 +3,7 @@ export { defineResource, resolveResource, resourceProblems, storageName, permiss
     type ResourceDeclaration, type Resource, type ResourceAccess, type ResourceAction, type AccessRule, type IndexDeclaration, type MigrationStep } from './resource';
 export { field, fieldProblems, validateValue, storageType, storageCheck, normalizeDeclaration, normalizeFields, slugify, FIELD_NAME, SLUG_PATTERN, TAXONOMY_NAME, ROW_ID, ROW_LIMITS, ITEM_LIMITS, MULTIPLE_KINDS, FIELD_MEDIA_KINDS, CHOICE_SOURCES, type FieldMediaKind, type ChoiceSource, type FieldDeclaration, type FieldKind, type ListItemKind } from './fields';
 export {
-    FIELD_BLOCK_TYPES, FIELD_BLOCKS, FIELD_GROUP_ID, FIELD_GROUP_LIMITS, fieldBlockFields, fieldBlockDeclaration, upgradeFieldBlocks, rowsSearchable, metaProblems, flattenGroupFields, fieldGroupDeclarations, fieldBlockKindOf, fieldBlockOf, layoutOf, sameTarget, targetOrder, groupsForTarget, withTarget, fieldGroupProblems,
+    FIELD_BLOCK_TYPES, FIELD_BLOCKS, FIELD_GROUP_ID, FIELD_GROUP_LIMITS, fieldBlockFields, fieldBlockDeclaration, upgradeFieldBlocks, rowsSearchable, metaProblems, SYSTEM_META, flattenGroupFields, fieldGroupDeclarations, fieldBlockKindOf, fieldBlockOf, layoutOf, sameTarget, targetOrder, groupsForTarget, withTarget, fieldGroupProblems,
     withRowIds, indexedRowPaths, indexedRowField, rowIndexPath, rowsPlain, rowUniqueProblem, conditionValues, hiddenKey, fieldVisibility, clearHidden,
     type FieldGroup, type FieldGroupTarget, type Row,
 } from './field-groups';

@@ -194,6 +194,18 @@ export async function filePreviews(cms: CmsHost, ids: Iterable<string>): Promise
     return Object.fromEntries([...files.values()].map(file => [file.id, { id: file.id, url: mediaUrl(file), title: file.title, alt: file.alt, contentType: file.contentType, width: file.width, height: file.height }]));
 }
 
+/** Previews of the files meta names, at any depth, such as a user's or a term's field values. */
+export function metaFilePreviews(cms: CmsHost, meta: { readonly [field: string]: unknown }): Promise<Record<string, MediaPreview>> {
+    const ids: string[] = [];
+    const walk = (value: unknown) => {
+        if (typeof value === 'string' && /^[A-Za-z0-9_-]{1,80}$/.test(value)) ids.push(value);
+        else if (Array.isArray(value)) value.forEach(walk);
+        else if (value && typeof value === 'object') Object.values(value).forEach(walk);
+    };
+    walk(meta);
+    return filePreviews(cms, ids);
+}
+
 /** Previews of the files blocks use. */
 export function blockFilePreviews(cms: CmsHost, blocks: readonly Block[]): Promise<Record<string, MediaPreview>> {
     return filePreviews(cms, blockMedia(blocks, cms.blockTypes));

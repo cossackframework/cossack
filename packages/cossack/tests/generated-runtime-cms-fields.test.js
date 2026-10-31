@@ -216,6 +216,14 @@ describe.skipIf(!liveRomeDBTests())('generated CMS field groups', () => {
       await page.getByRole('button', { name: 'Save field group' }).click();
       await browserExpect(page.getByText('Field group saved.').first()).toBeVisible();
 
+      // The inserter keeps the block just added in the user's meta and offers it first, under Recent.
+      await expect.poll(async () => (await (await web.request('/api/cms/me/recent-blocks')).json()).types[0]).toMatch(/^field\//);
+      await page.reload();
+      await ready();
+      await page.getByRole('button', { name: 'Add block', exact: true }).last().click();
+      await browserExpect(page.getByRole('dialog', { name: 'Blocks' }).getByRole('region', { name: 'Recent' }).getByRole('button', { name: 'Yes / no', exact: true })).toBeVisible();
+      await page.keyboard.press('Escape');
+
       // The collection manager's tabs keep the open one in the address.
       await page.goto(`${origin}/dashboard/collections/products`);
       await ready();
@@ -338,6 +346,20 @@ describe.skipIf(!liveRomeDBTests())('generated CMS field groups', () => {
       expect(saved.item.tags).toEqual(['blue', 'red']);
       expect(saved.item.specs.map(entry => [entry.name, entry.url ?? null])).toEqual([['Weight', null], ['Site', 'https://example.com'], ['Color', 'https://example.com/color']]);
       expect(saved.item.fragile).toBe(false);
+
+      // A group attached to users is a meta box on the user's Profile tab, saved there.
+      expect((await web.action(GROUP, 'save', [{ id: 'specifications', title: 'Specifications', description: 'What the product is made of.', placement: 'main', order: '' },
+        [{ kind: 'collection', name: 'products' }, { kind: 'taxonomy', name: 'categories' }, { kind: 'users' }], SPECS], { params: { id: 'specifications' } })).error).toBeFalsy();
+      const userId = /data-user="?([A-Za-z0-9_-]{8,})/.exec(await web.page('/dashboard/users'))?.[1];
+      expect(userId).toBeTruthy();
+      await page.goto(`${origin}/dashboard/users/${userId}`);
+      await ready();
+      const boxes = page.locator('[data-user-fields]');
+      await browserExpect(boxes.locator('#group-specifications-title')).toContainText('Specifications');
+      await boxes.getByRole('button', { name: 'Save fields' }).click();
+      await browserExpect(boxes.getByText('Fields saved.')).toBeVisible();
+      // The recent blocks stay in the meta beside the fields.
+      expect((await (await web.request('/api/cms/me/recent-blocks')).json()).types.length).toBeGreaterThan(0);
       expect(errors).toEqual([]);
     } finally {
       await browser?.close();

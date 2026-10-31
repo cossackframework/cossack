@@ -13,7 +13,7 @@ import { AppPasswords } from '../../../../dashboard/app-passwords';
 import { avatarField } from '../../../../dashboard/avatar-field';
 import { sessionTable } from '../../../../dashboard/session-list';
 import { countBadge, rememberTab, tabFromQuery } from '../../../../dashboard/tabs';
-import { userSections, type UserSection } from '../../../../dashboard/user-sections';
+import { userFields, UserFields, type UserFieldsData } from '../../../../dashboard/user-sections';
 
 @Page({ transport: 'http', middlewares: [guard.requireRole('admin')] })
 export default class EditUserPage extends Cossack {
@@ -71,7 +71,8 @@ export default class EditUserPage extends Cossack {
     @State() tab = 'profile';
     @State() tabs: string[] = ['profile', 'security'];
     /** Sections features add, such as the CMS's field groups. */
-    @State() sections: UserSection[] = [];
+    /** What a feature adds to the Profile tab, such as the CMS's field groups; null for nothing. */
+    @State() fields: UserFieldsData | null = null;
 
     @Server()
     async init() {
@@ -100,7 +101,7 @@ export default class EditUserPage extends Cossack {
         }
         this.tabs = ['profile', 'security', ...(this.canSeeAccess ? ['sessions'] : []), ...(this.tokensAvailable ? ['passwords'] : [])];
         this.tab = tabFromQuery(this.c.req.query('tab'), this.tabs);
-        if (!this.readOnly) this.sections = await userSections(this.c, id);
+        if (!this.readOnly) this.fields = await userFields(this.c, id);
     }
 
     // --- Sessions ----------------------------------------------------------------
@@ -341,11 +342,7 @@ export default class EditUserPage extends Cossack {
                 `)}
             `) : null}
 
-            ${this.sections.map(section => component(Card, { 'data-section': section.id }, html`
-                ${component(CardHeader, {}, html`<h2 class="text-base font-semibold text-foreground">${section.title}</h2>
-                    ${section.description ? html`<p class="mt-1 text-sm text-muted-foreground">${section.description}</p>` : null}`)}
-                ${component(CardBody, {}, html`<a href=${section.href} class="text-sm text-primary hover:underline">${__('Edit')} ${section.title.toLowerCase()} →</a>`)}
-            `))}
+            ${this.fields ? component(UserFields, { userId: this.userDetail.id, data: this.fields }) : null}
         </div>`;
         const security = html`<div class="space-y-8 max-w-2xl">
             ${component(Card, {}, html`

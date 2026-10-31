@@ -464,6 +464,17 @@ describe.skipIf(!live)('scheduling, previews, revisions, redirects, tokens, webh
         expect((await cms.areas.save('html-test', html('<b>x</b>').slice(0, 1), { principal: designer, expectedRevision: 1, known })).revision).toBe(2);
     });
 
+    it('keeps system meta such as recent blocks beside the profile fields', async () => {
+        const user = await cms.users.create({ email: 'recent@example.com', name: 'Recent' });
+        expect(await cms.users.setSystemMeta(user.id, '_recent_blocks', ['core/heading', 'core/image'])).toBe(true);
+        // Saving profile fields keeps it, and field checks leave it alone.
+        await cms.users.update(user.id, { meta: { bio: 'Writes.' } });
+        expect((await cms.users.get(user.id))?.meta).toMatchObject({ bio: 'Writes.', _recent_blocks: ['core/heading', 'core/image'] });
+        await expect(cms.users.setSystemMeta(user.id, 'recent', [])).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
+        await cms.users.setSystemMeta(user.id, '_recent_blocks', null);
+        expect((await cms.users.get(user.id))?.meta).not.toHaveProperty('_recent_blocks');
+    });
+
     it('finds users whose profile picture or fields name a file', async () => {
         const file = 'file-avatar-1';
         const pictured = await cms.users.create({ email: 'pictured@example.com', name: 'Pictured', avatar: `/media/${file}/me.png` });
