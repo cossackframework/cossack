@@ -11,6 +11,7 @@ import { hasPermission, PERMISSIONS, principalId, type Principal } from '../perm
 import { containsPattern } from './users';
 import { IMAGE_WIDTHS, imageEditsProblems, transformable, variantRect, variantWidth, type ImageEdits } from '../images';
 import { FORMAT_TYPES, negotiateFormat, type ImageFormat, type ImageTransformer } from './images';
+import { uuidv7 } from '@cossackframework/core';
 
 export interface CmsFile {
     readonly id: string;
@@ -342,7 +343,7 @@ export class FileService {
         if (this.#types && !this.#types.includes(contentType)) throw new CmsError('CMS_VALIDATION', `Files of type ${contentType} are not accepted.`);
         if (contentType === SVG_TYPE && file.size > SVG_MAX_BYTES) throw new CmsError('CMS_LIMIT', `SVG files must be at most ${SVG_MAX_BYTES / 1024 / 1024} MB.`);
         const name = file.name.replace(/[\x00-\x1f\x7f/\\]/g, '_').trim().slice(0, 200) || 'file';
-        const id = crypto.randomUUID();
+        const id = uuidv7();
         const key = `cms/files/${id}`;
         const now = this.#now();
         // Host work, such as storing an avatar, names the user the file belongs to.

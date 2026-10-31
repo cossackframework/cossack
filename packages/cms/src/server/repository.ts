@@ -20,6 +20,7 @@ import type { FieldFilter, ListFilter, ListOptions, RecordPage, RecordShape, Rev
 export type { FieldFilter, ListFilter, ListOptions };
 import type { AccessRule, Resource, ResourceAction } from '../resource';
 import type { CmsHost } from './host';
+import { uuidv7 } from '@cossackframework/core';
 
 export interface OperationContext {
     readonly principal: Principal;
@@ -276,11 +277,11 @@ export class ResourceRepository {
         if (access !== 'allow' && !(access.owner && context.principal.kind === 'user')) {
             throw new CmsError(context.principal.kind === 'user' ? 'CMS_FORBIDDEN' : 'CMS_UNAUTHENTICATED', `Not allowed to create ${this.resource.id}.`);
         }
-        const key = context.id ?? crypto.randomUUID();
+        const key = context.id ?? uuidv7();
         checkKey(key);
         const draft = await this.#prepareDraft('create', null, input, null, context);
         const now = this.#host.now();
-        const op = crypto.randomUUID();
+        const op = uuidv7();
         const owner = this.resource.ownership && context.principal.kind === 'user' ? context.principal.id : null;
         const record = this.#shape(key, 1, now, now, owner, draft);
         const document: { [field: string]: Value } = { id: new RecordId(this.resource.storage, key), _rev: 1, _op: op, _createdAt: now, _updatedAt: now, _owner: owner };
@@ -334,7 +335,7 @@ export class ResourceRepository {
         const draft = await this.#prepareDraft('update', id, patch, previous, context);
         const changed = Object.keys(draft).filter(name => draft[name] !== undefined);
         const now = this.#host.now();
-        const op = crypto.randomUUID();
+        const op = uuidv7();
         const revision = previous.rev + 1;
         const record = this.#shape(id, revision, previous.createdAt, now, previous.owner, { ...this.#fieldsOf(previous), ...draft });
         const params: { [key: string]: Value } = { $key: id, $expected: context.expectedRevision, $op: op, $now: now };
@@ -366,7 +367,7 @@ export class ResourceRepository {
         checkKey(id);
         if (!Number.isSafeInteger(context.expectedRevision) || context.expectedRevision < 1) throw new CmsError('CMS_VALIDATION', 'expectedRevision must be a positive integer.');
         const now = this.#host.now();
-        const op = crypto.randomUUID();
+        const op = uuidv7();
         const condition = this.#conditions(access, context.principal, [`id = type::record('${this.resource.storage}', $key)`, '"_rev" = $expected'], { $key: id, $expected: context.expectedRevision });
         // Guards run before the delete, against the same snapshot.
         const guard = `EXISTS (SELECT 1 FROM ${this.resource.storage} WHERE ${condition.rql})`;

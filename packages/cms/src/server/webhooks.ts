@@ -7,6 +7,7 @@ import type { RomeDB, Value } from '@cossackframework/romedb';
 import { CmsError } from '../errors';
 import { randomToken } from './tokens';
 import { WEBHOOK_EVENTS, webhookUrlProblem, type Webhook, type WebhookDelivery, type WebhookEvent, type WebhookInput, type WebhookPayload } from '../webhooks';
+import { uuidv7 } from '@cossackframework/core';
 
 const WRITE = { kind: 'cms.webhooks', retryConflicts: 5 } as const;
 /** Waits before attempts 2-6; the sixth failure marks the delivery failed. */
@@ -51,7 +52,7 @@ export class CmsWebhooks {
         if (options.collections && collections.some(entry => !options.collections!.includes(entry))) problems.push('Choose existing collections.');
         if (problems.length) throw new CmsError('CMS_VALIDATION', problems.join(' '));
         const now = this.#now();
-        const id = options.id ?? crypto.randomUUID();
+        const id = options.id ?? uuidv7();
         const params = { $id: id, $name: name, $url: url, $events: JSON.stringify(events), $collections: JSON.stringify(collections), $active: input.active === false ? 0 : 1, $now: now };
         if (options.id) {
             const result = await this.#db.write([{ rql: 'UPDATE cms_webhooks SET name = $name, url = $url, events = $events, collections = $collections, active = $active, updated_at = $now WHERE id = $id', params }], WRITE);
@@ -94,7 +95,7 @@ export class CmsWebhooks {
         await this.#db.write(hooks.map(hook => ({
             rql: `INSERT INTO cms_webhook_deliveries (id, webhook_id, event_id, event, payload, status, attempts, next_attempt_at, lease_until, created_at)
                 VALUES ($id, $hook, $key, $event, $payload, 'pending', 0, $now, 0, $now) ON CONFLICT (webhook_id, event_id) DO NOTHING`,
-            params: { $id: crypto.randomUUID(), $hook: hook.id, $key: payload.eventId, $event: payload.event, $payload: body, $now: now },
+            params: { $id: uuidv7(), $hook: hook.id, $key: payload.eventId, $event: payload.event, $payload: body, $now: now },
         })), WRITE);
         return hooks.length;
     }
@@ -139,7 +140,7 @@ export class CmsWebhooks {
     async ping(id: string): Promise<{ ok: boolean; status: number | null; error: string | null }> {
         const hook = await this.get(id);
         if (!hook) throw new CmsError('CMS_NOT_FOUND', 'Webhook not found.');
-        const delivery = crypto.randomUUID();
+        const delivery = uuidv7();
         const payload: WebhookPayload = { event: 'ping', eventId: delivery, at: this.#now() };
         return this.#send(hook.url, hook.secret, 'ping', delivery, JSON.stringify(payload));
     }

@@ -7,6 +7,7 @@ import type { RomeDB, Statement, Value } from '@cossackframework/romedb';
 import { CmsError } from '../errors';
 import { containsPattern } from './users';
 import { REDIRECT_PATH as PATH, redirectPath, redirectProblems, type Redirect, type RedirectInput, type RedirectStatus } from '../redirects';
+import { uuidv7 } from '@cossackframework/core';
 
 const WRITE = { kind: 'cms.redirects', retryConflicts: 5 } as const;
 const COLUMNS = 'id, source, target, status, prefix, kind, note, hits, last_hit_at, created_at, updated_at';
@@ -53,7 +54,7 @@ export class CmsRedirects {
         const status = input.status ?? 301;
         const target = status === 410 ? '' : input.target.trim();
         const now = this.#now();
-        const id = options.id ?? crypto.randomUUID();
+        const id = options.id ?? uuidv7();
         const params = { $id: id, $source: source, $target: target, $status: status, $prefix: source.endsWith('/*') ? 1 : 0, $note: input.note?.trim() ?? '', $now: now, $by: options.by ?? null };
         try {
             const result = await this.#db.write([options.id
@@ -124,7 +125,7 @@ export class CmsRedirects {
                 rql: `INSERT INTO cms_redirects (id, source, target, status, prefix, kind, note, hits, created_at, updated_at, created_by)
                     SELECT $rId, $rSource, $rTarget, 301, $rPrefix, 'auto', '', 0, $rNow, $rNow, $rBy WHERE 1 = 1${guard}
                     ON CONFLICT (source) DO UPDATE SET target = excluded.target, status = 301, prefix = excluded.prefix, kind = 'auto', updated_at = excluded.updated_at`,
-                params: { ...extra, $rId: crypto.randomUUID(), $rSource: options.prefix ? `${source}/*` : source, $rTarget: options.prefix ? `${target === '/' ? '' : target}/*` : target, $rPrefix: options.prefix ? 1 : 0, $rNow: now, $rBy: options.by ?? null },
+                params: { ...extra, $rId: uuidv7(), $rSource: options.prefix ? `${source}/*` : source, $rTarget: options.prefix ? `${target === '/' ? '' : target}/*` : target, $rPrefix: options.prefix ? 1 : 0, $rNow: now, $rBy: options.by ?? null },
             }),
         ];
     }

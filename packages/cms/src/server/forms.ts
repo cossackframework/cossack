@@ -25,6 +25,7 @@ import { migrate } from './schema';
 import { sha256Hex } from './tokens';
 import { bound, type ResourceRepository } from './repository';
 import type { CmsHost } from './host';
+import { uuidv7 } from '@cossackframework/core';
 
 /** Sends email, such as Cloudflare's `EMAIL` binding or an SMTP client. */
 export interface CmsMail {
@@ -256,8 +257,8 @@ export class CmsForms {
                 throw new CmsError('CMS_CONFLICT', 'This address already sent this form.', { fields: { [settings.oncePerEmail]: 'This address already sent this form.' } });
             }
         }
-        const id = crypto.randomUUID();
-        const op = crypto.randomUUID();
+        const id = uuidv7();
+        const op = uuidv7();
         const meta: { -readonly [K in keyof SubmissionMeta]: string } = {};
         if (settings.recordIp && context.ip) meta.ip = context.ip.slice(0, 64);
         if (context.userAgent) meta.userAgent = context.userAgent.slice(0, 300);
@@ -538,7 +539,7 @@ export class CmsForms {
 
     /** Keep what a form post returns to its page after the redirect, for ten minutes. Returns its key. */
     async saveResult(formId: string, data: unknown): Promise<string> {
-        const id = crypto.randomUUID();
+        const id = uuidv7();
         await this.#host.db.write([{ rql: 'INSERT INTO cms_form_results (id, form_id, data, expires_at) VALUES ($id, $form, $data, $expires)', params: { $id: id, $form: formId, $data: JSON.stringify(data), $expires: this.#host.now() + 10 * 60_000 } }], WRITE);
         return id;
     }

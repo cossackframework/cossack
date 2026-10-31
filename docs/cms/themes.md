@@ -108,7 +108,7 @@ import type { EntryView, ThemeHelpers } from '@cossackframework/cms';
 export default function entry(entry: EntryView, helpers: ThemeHelpers): TemplateResult {
   return html`<article>
     <h1>${entry.title}</h1>
-    ${entry.date ? html`<p>${entry.date}${entry.author ? html` · ${entry.author}` : null}</p>` : null}
+    ${entry.date ? html`<p>${entry.date}${entry.authors.length ? html` · ${entry.authors.map(author => author.name).join(', ')}` : null}</p>` : null}
     ${entry.image ? html`<img src=${entry.image.url} srcset=${entry.image.srcset} alt=${entry.image.alt}>` : null}
     ${helpers.block(entry.content)}
   </article>`;
@@ -138,10 +138,10 @@ that export over the files, slot by slot.
 | View | What it carries |
 | --- | --- |
 | `SiteView` | `title`, `tagline`, `blog` (the posts page URL), `menus` by location (items with `label`, `url`, `newTab`, `children`, `className`, `attributes`, `meta`), `locale`, `languages` (the page in each language), `searchUrl`, `homeUrl`, `areas` (rendered blocks by widget area), and `template`, the entry's template name so a layout can leave out its frame, as the default theme does for `entry-blank`. |
-| `EntryView` | `id`, `title`, `url`, `collection`, `kind` (the singular label), `date`, `author`, `excerpt`, `content` (`RenderedBlock[]`), `image` (`MediaView`), `terms` by taxonomy, `fields` (every field by name as a typed `FieldView`: a scalar, a `MediaView`, an `EntryReference`, `TermLink[]`, `RenderedBlock[]` for blocks, rich text and Markdown, or, for a multiple field, the list of its kind's views), `details` (scalar fields as labelled text), `template`, `locale`, `comments` (`CommentsView`, or null) and `locked`. In lists, `content` is empty. A locked entry withholds its excerpt, content and fields. |
+| `EntryView` | `id`, `title`, `url`, `collection`, `kind` (the singular label), `date`, `authors` (each `name`, `url` of their author page or null, `avatar`; the main author first; empty outside article collections), `excerpt`, `content` (`RenderedBlock[]`), `image` (`MediaView`), `terms` by taxonomy, `fields` (every field by name as a typed `FieldView`: a scalar, a `MediaView`, an `EntryReference`, `TermLink[]`, `RenderedBlock[]` for blocks, rich text and Markdown, or, for a multiple field, the list of its kind's views), `details` (scalar fields as labelled text), `template`, `locale`, `comments` (`CommentsView`, or null) and `locked`. In lists, `content` is empty. A locked entry withholds its excerpt, content and fields. |
 | `ArchiveView` | `kind` (`home`, `archive`, `term`, `search`), `collection`, `taxonomy`, `title`, `description`, `entries`, `paging` (`page`, `pages`, `base`) and `query`. |
 | `LockedView` | `entry`, `action` (where the password form posts) and `error` after a wrong password. |
-| `MediaView` | `url`, `alt`, `width`, `height`, `contentType`, `caption`, `srcset` and `wideSrcset` (16:9 variants around the focal point). |
+| `MediaView` | `url`, `alt`, `width`, `height`, `contentType`, `caption`, `srcset` and `wideSrcset` (16:9 variants around the focal point, in the widths of Settings → Files), `sizes` (Settings → Files), `placeholder` (a tiny `data:` URL, or null when Settings → Files turns placeholders off; `placeholderStyle()` blurs it behind the image) and `priority` (the entry's first image: load it with `loading="eager" fetchpriority="high"`). |
 | `RenderedBlock` | `id`, `type`, `data`, `html` (Markdown fields rendered), `media` by file ID, `content` (rich text fields as `BodyPart[]`), `children`, `layout`, `style`, and `field` on a block that stands for one of the entry's rich text or Markdown fields. |
 
 ## Helpers

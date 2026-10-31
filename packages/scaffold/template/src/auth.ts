@@ -260,10 +260,16 @@ export async function updateUserProfile(userId: string, patch: ProfileUpdate): P
 }
 
 // --- Password reset (uses the sessions table for tokens) -------------------
+function randomToken(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
 async function createPasswordResetToken(email: string): Promise<string | null> {
   const user = await User.findOne({ where: { email } });
   if (!user) return null; // do NOT leak whether the email exists
-  const token = uuidv7();
+  // A secret: 256 random bits, never a UUIDv7, whose time part is readable and leaves 74 random bits.
+  const token = randomToken();
   const now = new Date();
   const expiresAt = new Date(now.getTime() + 60 * 60 * 1000); // 1 hour
   const meta: SessionMeta = { type: 'password_reset' };

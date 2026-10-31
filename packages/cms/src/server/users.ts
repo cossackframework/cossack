@@ -6,6 +6,7 @@ import { SYSTEM_META } from '../field-groups';
 import { slugify } from '../fields';
 import { userPrincipal, type Principal } from '../permissions';
 import { parseMeta, type MetaCheck } from './taxonomies';
+import { uuidv7 } from '@cossackframework/core';
 
 export interface CmsUser {
     readonly id: string;
@@ -99,7 +100,7 @@ export class CmsUsers {
         checkProfile({ email, name: input.name, avatar: input.avatar ?? null });
         const meta = await this.#meta(input.meta, null);
         if (input.password !== undefined) checkPassword(input.password);
-        const id = input.id ?? crypto.randomUUID();
+        const id = input.id ?? uuidv7();
         if (!ID.test(id)) throw new CmsError('CMS_VALIDATION', 'Invalid user ID.');
         const hash = input.password === undefined ? null : await this.#hasher.hash(input.password);
         const now = this.#now();

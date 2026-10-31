@@ -28,6 +28,7 @@ import { registerORM, unregisterORM } from "./scope.js";
 import type { OrmSchema } from "./schema/types.js";
 import { compileSQL, SQLFragment } from "./sql/fragment.js";
 import { createSQLTag, type SQLTag } from "./sql/tag.js";
+import { uuidv7 } from "./uuid.js";
 
 interface ScopeContext {
   readonly root: ORM;
@@ -309,7 +310,7 @@ export class ORM {
         }
         if (column.version) (entity as unknown as Record<string, unknown>)[column.propertyName] ??= 1;
         if (column.generated === "uuid") {
-          (entity as unknown as Record<string, unknown>)[column.propertyName] ??= crypto.randomUUID();
+          (entity as unknown as Record<string, unknown>)[column.propertyName] ??= uuidv7();
         }
       }
       await this.saveCascades(entity, metadata, "insert");

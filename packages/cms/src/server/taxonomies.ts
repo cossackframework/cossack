@@ -11,6 +11,7 @@ import { hasPermission, PERMISSIONS, principalId, type Principal } from '../perm
 import type { TermDraft, TermWriteInput, WriteActor } from '../hooks';
 import type { TaxonomyDeclaration, TermShape } from '../taxonomy';
 import { containsPattern, inList } from './users';
+import { uuidv7 } from '@cossackframework/core';
 
 export type { TaxonomyDeclaration, TermShape };
 
@@ -183,7 +184,7 @@ export class CmsTaxonomies {
             { taxonomy, action: 'create', id: null, previous: null, actor: actorOf(context.principal) });
         const name = checkName(draft.name);
         const parent = await this.#parent(declaration, draft.parent);
-        const id = crypto.randomUUID();
+        const id = uuidv7();
         const slug = await this.#uniqueSlug(taxonomy, draft.slug.trim() ? checkSlug(draft.slug) : slugify(name, 120) || 'term', null);
         const now = this.#now();
         const params = {
@@ -281,7 +282,7 @@ export class CmsTaxonomies {
             if (!this.#canAssign(context.principal, declaration) && !hasPermission(context.principal, PERMISSIONS.manageTerms)) throw new CmsError('CMS_FORBIDDEN', `Not allowed to add ${declaration.label.toLowerCase()}.`);
             const now = this.#now();
             const statements = missing.map(([slug, name]) => {
-                const id = crypto.randomUUID();
+                const id = uuidv7();
                 bySlug.set(slug, id);
                 // A term another request created first wins; its ID is read back below.
                 return { rql: `INSERT INTO cms_terms (${COLUMNS}) VALUES ($id, $taxonomy, $name, $slug, '', NULL, $path, 0, $now, $now, '', '{}') ON CONFLICT (taxonomy, slug) DO NOTHING`,

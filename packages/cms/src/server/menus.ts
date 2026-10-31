@@ -9,6 +9,7 @@ import { CmsError } from '../errors';
 import { MENU_LIMITS, MENU_LOCATION, menuProblems, menuSize, normalizeMenu, type MenuItem, type MenuItemView, type MenuShape } from '../menus';
 import { hasPermission, PERMISSIONS, principalId, type Principal } from '../permissions';
 import type { MenuWriteInput } from '../hooks';
+import { uuidv7 } from '@cossackframework/core';
 
 export interface MenuSummary {
     readonly id: string;
@@ -93,7 +94,7 @@ export class CmsMenus {
         authorize(context.principal);
         const name = checkName(input.name);
         const items = await this.#filtered(await this.#withMeta(checkItems(input.items ?? []), []), { id: null, name, actor: actorOf(context.principal) });
-        const id = crypto.randomUUID();
+        const id = uuidv7();
         const now = this.#now();
         await this.#write([{ rql: `INSERT INTO cms_menus (${COLUMNS}, updated_by) VALUES ($id, $name, $items, 1, $now, $now, $by)`,
             params: { $id: id, $name: name, $items: JSON.stringify(items), $now: now, $by: principalId(context.principal) } }]);

@@ -194,9 +194,12 @@ shipped by plugins came on 2026-10-30 as the manifest's `fieldGroups`
 
 ## Outcome
 
-Implemented 2026-10-22. Users' dashboard profile box is the one piece of the plan left: the
-users screen is shared with non-CMS apps and reads through `src/auth.ts`, so its box waits
-for that abstraction to grow a meta hook. The host, API and `CmsUser.meta` already carry it.
+Implemented 2026-10-22. Users' boxes followed on 2026-10-31: the shared user screen loads
+`userFields` from the `src/dashboard/user-sections.ts` seam and renders its `UserFields`
+component on the Profile tab (the scaffold's renders nothing). The CMS's shows the groups as
+meta boxes saved through `POST /api/cms/users/<id>/meta`; the separate Fields page is gone.
+Meta keys starting with `_` (`SYSTEM_META`) are the host's, kept outside the fields' checks,
+such as `_recent_blocks`.
 
 | Area | Delivered | Verified by |
 | --- | --- | --- |

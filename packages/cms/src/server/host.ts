@@ -54,6 +54,7 @@ import type { ImageTransformer } from './images';
 import { checkComment, COMMENT_STATUSES, type CommentShape, type CommentStatus } from '../comments';
 import { sha256Hex } from './tokens';
 import type { SiteSettings } from '../settings';
+import { uuidv7 } from '@cossackframework/core';
 
 /** Structural plugin registration, as `@cossackframework/framework/plugins` provides it. */
 export interface PluginRegistrationLike {
@@ -691,7 +692,7 @@ export class CmsHost {
         }));
         if (!filtered || typeof filtered !== 'object' || !(COMMENT_STATUSES as readonly string[]).includes(filtered.status)) throw new CmsError('CMS_VALIDATION', 'A plugin returned an invalid comment.');
         const checked = checkComment(filtered, !user && settings['discussion.requireNameEmail']);
-        const comment = await this.comments.create({ id: crypto.randomUUID(), resource, recordId: record.id, parentId, userId: user?.id ?? null, ...checked,
+        const comment = await this.comments.create({ id: uuidv7(), resource, recordId: record.id, parentId, userId: user?.id ?? null, ...checked,
             status: filtered.status, ipHash, userAgent: context.userAgent?.slice(0, 300) ?? null });
         const url = (await this.entryUrls(collection, [record])).get(record.id) ?? null;
         return { comment, collection, entry: record, url };
