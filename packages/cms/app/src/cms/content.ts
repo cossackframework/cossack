@@ -2,7 +2,7 @@
  * Server helpers for the dashboard's content screens: which resource a route names, the
  * editor's view of it, and saving entries. Pages call these from their server methods.
  */
-import { blockCategory, blockMedia, blockSupports, bulkActions, cloneBlocks, editorBoxes, fieldGroupDeclarations, type FieldGroupTarget, CmsError, CORE_FIELDS, entryActions, entryColumns, flattenBlocks, isCmsError, mediaUrl, principalId, recordTitle, resolveEditorLayout, richTextHtml, richTextMedia, type Block, type BlockDeclaration, type CollectionDefinition, type EntryAction, type EntryColumn, type MediaKind, type Principal, type RecordShape, type Resource, type RichTextDoc, type WriteActor } from '@cossackframework/cms';
+import { blockCategory, blockMedia, entryAuthors, blockSupports, bulkActions, cloneBlocks, editorBoxes, fieldGroupDeclarations, type FieldGroupTarget, CmsError, CORE_FIELDS, entryActions, entryColumns, flattenBlocks, isCmsError, mediaUrl, principalId, recordTitle, resolveEditorLayout, richTextHtml, richTextMedia, type Block, type BlockDeclaration, type CollectionDefinition, type EntryAction, type EntryColumn, type MediaKind, type Principal, type RecordShape, type Resource, type RichTextDoc, type WriteActor } from '@cossackframework/cms';
 import { renderMarkdown, type CmsHost } from '@cossackframework/cms/server';
 import { activePresets } from './site';
 import { controlValue, editorBlocks, editorField, editorFields, editorInput, type BlockOption, type EditorBlock, type EditorField, type EditorGroup, type EditorTaxonomy, type EditorValues, type EditorView, type SourceChoice, type SourceChoices, type TermOption } from './editor';
@@ -163,6 +163,8 @@ export async function entryValues(cms: CmsHost, view: EditorView, record: Record
     const languages = await cms.languages();
     values.locale = typeof record?.locale === 'string' ? record.locale : languages.default;
     if (resource.fields.commentsOpen) values.commentsOpen = record ? record.commentsOpen !== false : await cms.settings.get('discussion.defaultOpen');
+    // Authors as user IDs, the first the main author; a new entry's are filled in with its creator on save.
+    if (resource.fields.authors) values.authors = record ? entryAuthors(record) : [];
     return values;
 }
 
@@ -275,7 +277,7 @@ export async function entryInput(cms: CmsHost, route: string, values: EditorValu
     const fields = [...view.fields];
     const titleField = view.titleField;
     if (titleField && resource.fields[titleField]) fields.push(editorField(titleField, resource.fields[titleField]!));
-    for (const name of ['slug', 'publishedAt', 'parent', 'menuOrder', 'seo', 'summary', 'locale', 'commentsOpen', 'template']) {
+    for (const name of ['slug', 'publishedAt', 'parent', 'menuOrder', 'authors', 'seo', 'summary', 'locale', 'commentsOpen', 'template']) {
         if (resource.fields[name] && (name !== 'slug' || view.slug) && (name !== 'publishedAt' || view.publishable)) fields.push(editorField(name, resource.fields[name]!));
     }
     const { input, errors } = editorInput(fields, values, view.blocks);

@@ -464,6 +464,24 @@ describe.skipIf(!live)('scheduling, previews, revisions, redirects, tokens, webh
         expect((await cms.areas.save('html-test', html('<b>x</b>').slice(0, 1), { principal: designer, expectedRevision: 1, known })).revision).toBe(2);
     });
 
+    it('lets co-authors edit an entry and lists it under each of them', async () => {
+        const posts = cms.resource('cms/posts');
+        const otherId = other.kind === 'user' ? other.id : '';
+        const post = await posts.create({ title: 'Together' }, { principal: author });
+        expect(post.authors).toEqual([authorId]);
+        // Only people who edit others' entries choose authors; the list as it is may be sent back.
+        await expect(posts.update(post.id, { authors: [authorId, otherId] }, { principal: author, expectedRevision: post.rev })).rejects.toMatchObject({ code: 'CMS_VALIDATION', fields: { authors: expect.stringContaining('others') } });
+        const same = await posts.update(post.id, { title: 'Together again', authors: [authorId] }, { principal: author, expectedRevision: post.rev });
+        await expect(posts.update(post.id, { title: 'Taken' }, { principal: other, expectedRevision: same.rev })).rejects.toBeTruthy();
+        const shared = await posts.update(post.id, { authors: [otherId, authorId] }, { principal: editor, expectedRevision: same.rev });
+        expect(shared.authors).toEqual([otherId, authorId]);
+        // A co-author edits it now, and finds it among their own.
+        const edited = await posts.update(post.id, { title: 'Together, edited' }, { principal: other, expectedRevision: shared.rev });
+        expect(edited.title).toBe('Together, edited');
+        expect((await posts.list({ owner: otherId, limit: 50 }, { principal: other })).records.map(record => record.id)).toContain(post.id);
+        expect((await posts.list({ limit: 50 }, { principal: other })).records.map(record => record.id)).toContain(post.id);
+    });
+
     it('keeps system meta such as recent blocks beside the profile fields', async () => {
         const user = await cms.users.create({ email: 'recent@example.com', name: 'Recent' });
         expect(await cms.users.setSystemMeta(user.id, '_recent_blocks', ['core/heading', 'core/image'])).toBe(true);

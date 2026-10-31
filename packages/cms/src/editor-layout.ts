@@ -22,12 +22,13 @@ import type { FieldGroup } from './field-groups';
  * `languages`, `template`, `discussion` and `revisions`. The title with its permalink and the
  * Publish box are not boxes: they are pinned.
  */
-export const EDITOR_BOX = /^(?:field:[a-z][a-zA-Z0-9_]{0,62}|group:[A-Za-z0-9_-]{1,40}|taxonomy:[a-z][a-zA-Z0-9_]{0,40}|seo|attributes|languages|template|discussion|revisions)$/;
+export const EDITOR_BOX = /^(?:field:[a-z][a-zA-Z0-9_]{0,62}|group:[A-Za-z0-9_-]{1,40}|taxonomy:[a-z][a-zA-Z0-9_]{0,40}|seo|attributes|authors|languages|template|discussion|revisions)$/;
 
 /** The editor's own boxes, with their default place. */
 export const EDITOR_OWN_BOXES: readonly { readonly id: string; readonly label: string; readonly placement: 'main' | 'sidebar'; readonly note: string }[] = Object.freeze([
     { id: 'seo', label: 'Search and sharing', placement: 'main', note: 'Shown when entries are on the site.' },
     { id: 'attributes', label: 'Attributes', placement: 'sidebar', note: 'Parent and order; shown when entries nest.' },
+    { id: 'authors', label: 'Authors', placement: 'sidebar', note: 'Who wrote the entry; the first is its main author.' },
     { id: 'languages', label: 'Languages', placement: 'sidebar', note: 'Shown when the site has several languages.' },
     { id: 'template', label: 'Template', placement: 'sidebar', note: 'Shown when the active theme offers templates for entries.' },
     { id: 'discussion', label: 'Discussion', placement: 'sidebar', note: 'Shown when comments are on.' },
@@ -82,6 +83,7 @@ export function editorBoxes(input: EditorBoxesInput): EditorBox[] {
     ];
     const sidebar: EditorBox[] = [
         ...(input.collection.hierarchical ? [own('attributes')] : []),
+        own('authors'),
         own('languages'),
         ...(input.fields.template ? [own('template')] : []),
         ...input.taxonomies.map(taxonomy => ({ id: `taxonomy:${taxonomy.name}`, label: taxonomy.label, placement: 'sidebar' as const })),
@@ -304,6 +306,7 @@ export function boxFields(id: string, groups: readonly Pick<FieldGroup, 'id' | '
     switch (id) {
         case 'seo': return ['seo', 'summary'];
         case 'attributes': return ['parent', 'menuOrder'];
+        case 'authors': return ['authors'];
         case 'languages': return ['locale', 'translationGroup'];
         case 'template': return ['template'];
         case 'discussion': return ['commentsOpen'];

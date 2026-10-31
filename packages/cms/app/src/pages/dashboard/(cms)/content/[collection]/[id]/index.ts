@@ -1,7 +1,7 @@
 import { Cossack, Page, State, ClientState, Server, Client, OnWindow, PreventNavigation, type HeadValue } from '@cossackframework/core';
-import { Button, Checkbox, Icon, Input, Modal, NativeSelect, Textarea, CodeEditor } from '@cossackframework/ui';
+import { Avatar, Button, Checkbox, Combobox, Icon, Input, Modal, NativeSelect, Textarea, CodeEditor } from '@cossackframework/ui';
 import { html, component, unsafeHTML, type TemplateResult } from '@cossackframework/renderer';
-import { ARTICLE_TYPES, blockId, CORE_BLOCKS, entryChecks, evaluateRule, fieldVisibility, findBlock, flattenBlocks, flattenGroupFields, formatBytes, isCmsError, languageName, mediaKind, recordSchema, recordTitle, renderSeoTemplate, richTextBlocks, TITLE_SEPARATORS, updateBlock, type Block, type BlockCondition, type Check, type EmbeddedBlock, type JsonSchema, type MediaKind, type RecordShape, type RichTextDoc } from '@cossackframework/cms';
+import { ARTICLE_TYPES, blockId, CORE_BLOCKS, entryAuthors, entryChecks, evaluateRule, fieldVisibility, findBlock, flattenBlocks, flattenGroupFields, formatBytes, isCmsError, languageName, mediaKind, recordSchema, recordTitle, renderSeoTemplate, richTextBlocks, TITLE_SEPARATORS, updateBlock, type Block, type BlockCondition, type Check, type EmbeddedBlock, type JsonSchema, type MediaKind, type RecordShape, type RichTextDoc } from '@cossackframework/cms';
 import { blockPanel } from '../../../../../../cms/block-panel';
 import { describeBlockError } from '../../../../../../cms/block-errors';
 import { styleValues, withStyle, type BlockTab, type StyleValues } from '../../../../../../cms/style-controls';
@@ -13,7 +13,7 @@ import { BlockTree } from '../../../../../../cms/block-tree';
 import { bindingChoices, choicesControl, fieldControl, groupFields, multipleControl, type BindingChoice } from '../../../../../../cms/field-controls';
 import { chooserKind, MEDIA_ACCEPT, MEDIA_KIND_CHOICES, uploadFile } from '../../../../../../cms/media-chooser';
 import { FieldGroupView, plainBlocks, visibilityTypes, type RowPath } from '../../../../../../cms/field-group-view';
-import { box, CONTROL, countBadge, linkButton, notice, rememberTab, shortDate, STATUS_LABELS, statusBadge, tabFromQuery } from '../../../../../../cms/ui';
+import { box, CONTROL, countBadge, iconButton, linkButton, notice, rememberTab, shortDate, STATUS_LABELS, statusBadge, tabFromQuery } from '../../../../../../cms/ui';
 import { editorLayoutView } from '../../../../../../cms/editor-layout-view';
 import { ICONS } from '../../../../../../cms/icons';
 import { boxFields, layoutBoxes } from '@cossackframework/cms';
@@ -73,6 +73,9 @@ export default class EntryEditor extends Cossack {
     @State() termDrafts: Record<string, { name: string; parent: string }> = {};
     @State() tagDrafts: Record<string, string> = {};
     @State() canManageTerms = false;
+    /** The entry's authors and, for people who edit others' entries, who else can be one: a user's name and picture by ID. */
+    @State() people: { id: string; name: string; avatar: string | null }[] = [];
+    @State() chooseAuthors = false;
     @State() blockDialog: BlockDialog | null = null;
     /** The saved status, which the Publish button's label depends on. */
     @State() savedStatus = '';
@@ -143,11 +146,20 @@ export default class EntryEditor extends Cossack {
             // Off under Settings → Discussion: the entry's switch hides with the comments.
             this.comments = Boolean(collection?.comments) && await cms.settings.get('discussion.enabled');
             if (resource.fields.template) this.templates = await cms.entryTemplates();
+            if (resource.fields.authors) {
+                // Only people who edit others' entries choose authors; others see who they are.
+                this.chooseAuthors = evaluateRule(resource.access.update, principal) === 'allow';
+                const current = record ? entryAuthors(record) : principal.kind === 'user' ? [principal.id] : [];
+                const known = await cms.users.getMany(current);
+                const others = this.chooseAuthors ? (await cms.users.list({ limit: 100 })).items : [];
+                this.people = [...current.map(id => known.get(id)).filter(user => user !== undefined), ...others.filter(user => !current.includes(user.id))]
+                    .map(user => ({ id: user.id, name: user.name || user.email, avatar: user.avatar }));
+            }
             if (record) {
                 this.rev = record.rev;
                 this.savedStatus = String(record.status ?? '');
-                const owner = record.owner ? await cms.users.get(record.owner) : null;
-                this.meta = { createdAt: record.createdAt, updatedAt: record.updatedAt, author: owner?.name ?? '', url: collection ? (await cms.entryUrls(collection, [record])).get(record.id) ?? null : null };
+                const authors = entryAuthors(record).map(id => this.people.find(person => person.id === id)?.name).filter(Boolean).join(', ');
+                this.meta = { createdAt: record.createdAt, updatedAt: record.updatedAt, author: authors, url: collection ? (await cms.entryUrls(collection, [record])).get(record.id) ?? null : null };
                 if (this.meta.url && view.publishable && record.status !== 'published') this.meta = { ...this.meta, url: null };
                 await this.loadRevisions(record.id);
                 if (view.path !== null || view.route === 'forms') this.previewLinks = await cms.previews.count(resource.id, record.id).catch(() => 0);
@@ -1102,7 +1114,7 @@ export default class EntryEditor extends Cossack {
                     <button type="button" class="text-destructive hover:underline bg-transparent border-none p-0 cursor-pointer" @click=${() => this.revokePreviewLinks()}>${__('Revoke')}</button></p>` : null}
             </div>` : null}
             ${isNew ? null : html`<dl class="space-y-0.5 text-xs text-muted-foreground">
-                ${this.meta.author ? html`<div>${__('Author')}: <span class="text-foreground">${this.meta.author}</span></div>` : null}
+                ${this.meta.author && !this.values.authors ? html`<div>${__('Author')}: <span class="text-foreground">${this.meta.author}</span></div>` : null}
                 <div>${__('Last modified')}: ${shortDate(this.meta.updatedAt)}</div>
                 <div>${__('Revision')} #${this.rev}</div>
             </dl>`}
@@ -1403,6 +1415,27 @@ export default class EntryEditor extends Cossack {
             </div>`, { id: 'box-attributes' });
     }
 
+    /**
+     * The Authors box: who wrote the entry, the first its main author, as Git co-authors. People
+     * who edit others' entries add, remove and reorder them; a new entry starts with its creator.
+     */
+    private authorsBox(): TemplateResult {
+        const ids = Array.isArray(this.values.authors) ? (this.values.authors as string[]) : [];
+        // A new entry's creator, loaded first, is its author until others are added.
+        const shown = ids.length ? ids : this.id === 'new' && this.people[0] ? [this.people[0].id] : [];
+        const person = (id: string) => this.people.find(entry => entry.id === id) ?? { id, name: __('Unknown user'), avatar: null };
+        const set = (next: string[]) => this.set('authors', next);
+        const choices = this.people.filter(entry => !shown.includes(entry.id)).map(entry => ({ value: entry.id, label: entry.name }));
+        return box(__('Authors'), html`<ul class="space-y-1.5" data-authors>${shown.map((id, index) => html`<li class="flex items-center gap-2 text-sm">
+                ${component(Avatar, { src: person(id).avatar ?? undefined, alt: person(id).name, size: 24 })}
+                <span class="min-w-0 flex-1 truncate text-foreground">${person(id).name}${index === 0 && shown.length > 1 ? html` <span class="text-xs text-muted-foreground">${__('main')}</span>` : null}</span>
+                ${this.chooseAuthors && index > 0 ? iconButton(`author-${id}-up`, 'arrow-up', `${__('Make main author')} ${person(id).name}`, () => set([id, ...shown.filter(entry => entry !== id)])) : null}
+                ${this.chooseAuthors && shown.length > 1 ? iconButton(`author-${id}-remove`, 'close-circle', `${__('Remove')} ${person(id).name}`, () => set(shown.filter(entry => entry !== id)), { danger: true }) : null}
+            </li>`)}</ul>
+            ${this.chooseAuthors && choices.length ? component(Combobox, { id: 'field-authors-add', options: choices, value: '', placeholder: __('Add an author…'), emptyLabel: __('Nobody matches.'),
+                onValueChange: (value: string) => { if (value) set([...shown, value]); } }) : null}`, { id: 'box-authors' });
+    }
+
     private discussionBox(view: EditorView): TemplateResult {
         return box(__('Discussion'), html`<label class="flex items-center gap-2 text-sm text-foreground cursor-pointer">
             ${component(Checkbox, { id: 'field-commentsOpen', checked: this.values.commentsOpen !== false, '@change': (event: Event) => this.set('commentsOpen', (event.target as HTMLInputElement).checked) })} ${__('Allow comments')}</label>
@@ -1442,6 +1475,7 @@ export default class EntryEditor extends Cossack {
         switch (id) {
             case 'seo': return view.path !== null && this.values.seo !== undefined ? this.seoBox() : null;
             case 'attributes': return view.hierarchical ? this.attributesBox() : null;
+            case 'authors': return this.values.authors !== undefined ? this.authorsBox() : null;
             case 'languages': return this.languages.multilingual && this.values.locale !== undefined && view.resource.startsWith('cms/') ? this.languagesBox(view) : null;
             case 'template': return this.templateBox();
             case 'discussion': return this.comments ? this.discussionBox(view) : null;

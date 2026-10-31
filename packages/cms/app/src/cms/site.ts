@@ -4,7 +4,7 @@
  * from `init()` and hand the views to the theme's templates.
  */
 import {
-    ANONYMOUS, ARTICLE_TYPES, authorUrl, blockDocuments, blockIsData, blocksPlain, editedSize, hasBlockReference, parseBlockText, PATTERN_REFERENCE, resolveBindings, resolveBlockBindings, textBlocks, usesUserBinding, type BindingScopes, type ParsedText, flattenBlocks, escapeHtml, formatSiteDate, formInputs, formSettings, imageSrcset, imageUrl, imageWidths, IMAGE_WIDTHS, isCmsError, languageName, mediaUrl, notificationRules, recordTitle, resolvePresets, richTextBlocks, richTextParts, richTextPlain, systemPrincipal, templateCandidates, transformable, urlList,
+    ANONYMOUS, ARTICLE_TYPES, authorUrl, entryAuthors, blockDocuments, blockIsData, blocksPlain, editedSize, hasBlockReference, parseBlockText, PATTERN_REFERENCE, resolveBindings, resolveBlockBindings, textBlocks, usesUserBinding, type BindingScopes, type ParsedText, flattenBlocks, escapeHtml, formatSiteDate, formInputs, formSettings, imageSrcset, imageUrl, imageWidths, IMAGE_WIDTHS, isCmsError, languageName, mediaUrl, notificationRules, recordTitle, resolvePresets, richTextBlocks, richTextParts, richTextPlain, systemPrincipal, templateCandidates, transformable, urlList,
     type AuthorView, type Block,
     type Principal, type TemplatePage, type ThemeData, type ThemePresets,
     type ArchiveView, type BodyPart, type CollectionDefinition, type CommentShape, type CommentView, type CommentsView, type EntryReference, type EntryView, type FieldDeclaration, type FieldFilter,
@@ -493,9 +493,9 @@ export async function entryViews(cms: CmsHost, collection: CollectionDefinition,
     for (const doc of docs) docMediaIds(cms, doc, mediaIds);
     if (options.full) for (const list of patterns.values()) for (const block of list as RenderedBlock[]) blockMediaIds(cms, block, mediaIds);
     const files = cms.files ? await cms.files.getMany([...mediaIds]) : new Map<string, CmsFile>();
-    // Articles name their author; with author pages on, the name links to the author's page, so the owners need slugs.
+    // Articles name their authors; with author pages on, the names link to the authors' pages, so the users need slugs.
     const articles = ARTICLE_TYPES.has(collection.schema?.type ?? 'WebPage');
-    const found = articles ? await cms.users.getMany(records.map(record => record.owner).filter((owner): owner is string => !!owner)) : new Map<string, CmsUser>();
+    const found = articles ? await cms.users.getMany([...new Set(records.flatMap(record => entryAuthors(record)))]) : new Map<string, CmsUser>();
     const owners = articles && settings['seo.authorPages'] ? await cms.users.withSlugs(found) : found;
     const references = await referencedRecords(cms, fields, records);
     const taxonomyFields = fields.filter(([, declaration]) => declaration.taxonomy);
@@ -559,8 +559,8 @@ export async function entryViews(cms: CmsHost, collection: CollectionDefinition,
             id: record.id, title: recordTitle(record, 'title'), url: urls.get(record.id) ?? null, collection: collection.name, kind: collection.singular,
             date: typeof record.publishedAt === 'number' ? formatSiteDate(record.publishedAt, settings) : '',
             updated: collection.publishable === false ? '' : formatSiteDate(record.updatedAt, settings),
-            author: record.owner && articles ? owners.get(record.owner)?.name ?? '' : '',
-            authorUrl: record.owner && articles && settings['seo.authorPages'] ? authorUrl(owners.get(record.owner)?.slug, localePrefix(languages, locale)) : null,
+            authors: articles ? entryAuthors(record).map(id => owners.get(id)).filter(user => user !== undefined)
+                .map(user => ({ name: user.name, url: settings['seo.authorPages'] ? authorUrl(user.slug, localePrefix(languages, locale)) : null, avatar: user.avatar })) : [],
             excerpt: locked ? '' : excerptField && record.excerpt ? String(record.excerpt) : typeof record.summary === 'string' && record.summary ? excerptOf(record.summary, 40) : excerptOf(contentPlain(record), 40),
             summary: locked || typeof record.summary !== 'string' ? '' : record.summary,
             content,

@@ -14,7 +14,7 @@ import { fieldVisibility, indexedRowField, rowIndexPath, rowsPlain, rowsSearchab
 import { normalizeRichText, richTextBlocks, richTextMedia, richTextPlain, withRichTextBlocks, type RichTextDoc } from '../richtext';
 import { searchedAsText, searchTextPath } from './schema';
 import { afterCommit, beforeWrite, type Draft, type ResourceEvent, type WriteActor } from '../hooks';
-import { hasPermission, PERMISSIONS, principalId, ruleScope, type Principal, type RecordScope } from '../permissions';
+import { evaluateRule, hasPermission, PERMISSIONS, principalId, ruleScope, type Principal, type RecordScope } from '../permissions';
 import type { FieldFilter, ListFilter, ListOptions, RecordPage, RecordShape, RevisionShape } from '../records';
 
 export type { FieldFilter, ListFilter, ListOptions };
@@ -207,10 +207,33 @@ export class ResourceRepository {
         return this.#inScope(this.resource.access.read, record, principal);
     }
 
+    /**
+     * Co-owners (an entry's authors): a new record starts with its creator. Only people the update
+     * rule allows on every record (who edit others' entries) choose others; an empty list reads as
+     * the creator alone.
+     */
+    #checkCoOwners(action: 'create' | 'update', draft: { [field: string]: unknown }, previous: RecordShape | null, principal: Principal, errors: { [field: string]: string }): void {
+        const co = this.resource.coOwners;
+        if (!co || principal.kind !== 'user' || errors[co]) return;
+        const given = draft[co] as readonly string[] | null | undefined;
+        if (action === 'create' && !given?.length) { draft[co] = [principal.id]; return; }
+        if (given === undefined || evaluateRule(this.resource.access.update, principal) === 'allow') return;
+        const fallback = previous ? (previous.owner ? [previous.owner] : []) : [principal.id];
+        const list = (value: unknown) => JSON.stringify(Array.isArray(value) && value.length ? value : fallback);
+        if (list(given) !== list(previous?.[co])) errors[co] = 'can be changed by people who edit others\' entries.';
+    }
+
+    /** Whether the user owns the record: its creator, or one of its co-owners (an entry's authors). */
+    #owns(record: RecordShape, user: string): boolean {
+        if (record.owner === user) return true;
+        const co = this.resource.coOwners;
+        return co !== undefined && Array.isArray(record[co]) && (record[co] as unknown[]).includes(user);
+    }
+
     #inScope(rule: AccessRule, record: RecordShape, principal: Principal): boolean {
         const scope = ruleScope(rule, principal);
         if (scope === 'allow' || scope === 'deny') return scope === 'allow';
-        if (scope.owner && principal.kind === 'user' && record.owner === principal.id) return true;
+        if (scope.owner && principal.kind === 'user' && this.#owns(record, principal.id)) return true;
         return scope.where.some(rule => Object.entries(rule).every(([name, value]) => record[name] === value));
     }
 
@@ -373,7 +396,8 @@ export class ResourceRepository {
             const scope: string[] = [];
             params = { ...params };
             if (access.owner && principal.kind === 'user') {
-                scope.push(`${prefix}"_owner" = $owner`);
+                const co = this.resource.coOwners;
+                scope.push(co ? `(${prefix}"_owner" = $owner OR array::contains(${prefix}${quote(co)}, $owner))` : `${prefix}"_owner" = $owner`);
                 params.$owner = principalId(principal);
             }
             access.where.forEach((rule, ruleIndex) => {
@@ -454,7 +478,10 @@ export class ResourceRepository {
         }
         if (filter.owner !== undefined) {
             if (!this.resource.ownership || typeof filter.owner !== 'string' || !KEY.test(filter.owner)) throw new CmsError('CMS_VALIDATION', 'Cannot filter on the owner.');
-            conditions.push(`${prefix}"_owner" = ${parameter(filter.owner)}`);
+            // An entry's authors own it too, so an author's archive lists what they co-wrote.
+            const owner = parameter(filter.owner);
+            const co = this.resource.coOwners;
+            conditions.push(co ? `(${prefix}"_owner" = ${owner} OR array::contains(${prefix}${quote(co)}, ${owner}))` : `${prefix}"_owner" = ${owner}`);
         }
         return conditions;
     }
@@ -621,6 +648,7 @@ export class ResourceRepository {
                 if (declaration.required && Object.hasOwn(input, name) && input[name] === null && !hidden.has(name)) errors[name] = 'is required.';
             }
         }
+        this.#checkCoOwners(action, draft, previous, principal, errors);
         if (Object.keys(errors).length) throw new CmsError('CMS_VALIDATION', 'Some fields are invalid.', { fields: errors });
         for (const name of hidden) draft[name] = action === 'create' ? undefined : null;
         return Object.freeze(draft);

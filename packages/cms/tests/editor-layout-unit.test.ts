@@ -26,7 +26,7 @@ describe('editor boxes', () => {
         const boxes = boxesOf(products, [pricing, stock]);
         expect(boxes.map(box => box.id)).toEqual([
             'field:content', 'field:excerpt', 'field:sku', 'group:pricing', 'seo',
-            'attributes', 'languages', 'template', 'taxonomy:categories', 'field:featuredImage', 'field:onSale', 'group:stock', 'discussion', 'revisions',
+            'attributes', 'authors', 'languages', 'template', 'taxonomy:categories', 'field:featuredImage', 'field:onSale', 'group:stock', 'discussion', 'revisions',
         ]);
         expect(boxes.find(box => box.id === 'group:pricing')).toMatchObject({ label: 'Pricing', placement: 'main' });
         expect(boxes.find(box => box.id === 'taxonomy:categories')).toMatchObject({ label: 'Categories', placement: 'sidebar' });
@@ -36,7 +36,7 @@ describe('editor boxes', () => {
     it('leaves out what the collection does not have, and fields a group lays out', () => {
         const flat: CollectionDefinition = { ...products, path: null, hierarchical: false, comments: false, taxonomies: [], features: { content: true, revisions: false } };
         const grouped: FieldGroup = { ...pricing, blocks: [fieldBlock('s', 'text', 'sku')] };
-        expect(boxesOf(flat, [grouped]).map(box => box.id)).toEqual(['field:content', 'group:pricing', 'languages', 'field:onSale']);
+        expect(boxesOf(flat, [grouped]).map(box => box.id)).toEqual(['field:content', 'group:pricing', 'authors', 'languages', 'field:onSale']);
     });
 
     it('builds the default layout: one Edit tab and the sidebar', () => {
@@ -44,7 +44,7 @@ describe('editor boxes', () => {
         expect(layout.tabs).toHaveLength(1);
         expect(layout.tabs[0]).toMatchObject({ _id: EDIT_TAB, type: 'editor/tab', data: { label: 'Edit' } });
         expect(layoutBoxes(layout.tabs).map(entry => entry.id)).toEqual(['field:content', 'field:excerpt', 'field:sku', 'group:pricing', 'seo']);
-        expect(layoutBoxes(layout.sidebar).map(entry => entry.id)).toEqual(['attributes', 'languages', 'template', 'taxonomy:categories', 'field:featuredImage', 'field:onSale', 'group:stock', 'discussion', 'revisions']);
+        expect(layoutBoxes(layout.sidebar).map(entry => entry.id)).toEqual(['attributes', 'authors', 'languages', 'template', 'taxonomy:categories', 'field:featuredImage', 'field:onSale', 'group:stock', 'discussion', 'revisions']);
         expect(boxBlock('field:featuredImage')).toEqual({ _id: 'box-field-featuredImage', type: 'editor/box', data: { box: 'field:featuredImage' } });
     });
 
@@ -163,7 +163,7 @@ describe('resolving a layout', () => {
         // The gone group's box is dropped; the main boxes the layout does not name follow on the first tab.
         expect(layoutBoxes(resolved.tabs[0]!.children!).map(entry => entry.id)).toEqual(['field:content', 'field:excerpt', 'field:sku', 'seo']);
         expect(layoutBoxes(resolved.tabs[1]!.children!).map(entry => entry.id)).toEqual(['group:pricing', 'field:onSale']);
-        expect(layoutBoxes(resolved.sidebar).map(entry => entry.id)).toEqual(['field:featuredImage', 'attributes', 'languages', 'template', 'taxonomy:categories', 'group:stock', 'discussion', 'revisions']);
+        expect(layoutBoxes(resolved.sidebar).map(entry => entry.id)).toEqual(['field:featuredImage', 'attributes', 'authors', 'languages', 'template', 'taxonomy:categories', 'group:stock', 'discussion', 'revisions']);
         expect(resolved.missing).toEqual(['group:gone', 'taxonomy:old']);
     });
 
@@ -177,7 +177,7 @@ describe('resolving a layout', () => {
         expect(fresh.added).toEqual({ 'shop-shipping': 'shop' });
         expect(layoutBoxes(fresh.tabs[1]!.children!).map(entry => entry.id)).toEqual(['group:shop-shipping']);
         // The plugin places the stock group, so the default leaves it to the plugin's sidebar block, at the end.
-        expect(layoutBoxes(fresh.sidebar).map(entry => entry.id)).toEqual(['attributes', 'languages', 'template', 'taxonomy:categories', 'field:featuredImage', 'field:onSale', 'discussion', 'revisions', 'group:stock']);
+        expect(layoutBoxes(fresh.sidebar).map(entry => entry.id)).toEqual(['attributes', 'authors', 'languages', 'template', 'taxonomy:categories', 'field:featuredImage', 'field:onSale', 'discussion', 'revisions', 'group:stock']);
         expect(layoutBoxes(fresh.tabs[0]!.children!).map(entry => entry.id)).not.toContain('group:shop-shipping');
         // Once the administrator moved the plugin's tab, the stored one wins.
         const moved: EditorLayout = { tabs: [{ _id: 'edit', type: 'editor/tab', data: { label: 'Edit' }, children: [] }, { _id: 'shop-shipping', type: 'editor/tab', data: { label: 'Delivery' }, children: [boxBlock('group:shop-shipping'), boxBlock('group:pricing')] }], sidebar: [] };

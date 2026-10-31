@@ -250,7 +250,8 @@ export interface SchemaPage {
     /** Entries: the collection's type and its mapped properties, already schema-shaped. */
     readonly type?: SchemaType;
     readonly properties?: { readonly [property: string]: unknown };
-    readonly author?: SchemaAuthor | null;
+    /** Who wrote the entry, the main author first; each becomes a Person. */
+    readonly authors?: readonly SchemaAuthor[];
     readonly keywords?: readonly string[];
     readonly section?: string;
     /** Things the page is about: terms with a `sameAs` URL. */
@@ -312,24 +313,26 @@ export function schemaGraph(site: SchemaSite, page: SchemaPage): { '@context': '
     if (breadcrumbId && page.breadcrumbs) {
         graph.push({ '@type': 'BreadcrumbList', '@id': breadcrumbId, itemListElement: [...page.breadcrumbs, { name: page.title, url: page.url }].map((crumb, index, all) => clean({ '@type': 'ListItem', position: index + 1, name: crumb.name, item: index === all.length - 1 ? undefined : crumb.url })) });
     }
-    const authorId = page.author ? `${page.author.url ?? page.url}#${page.author.url ? 'person' : 'author'}` : undefined;
+    const authors = (page.authors ?? []).map((author, index) => ({ author, id: author.url ? `${author.url}#person` : `${page.url}#author${index ? `-${index + 1}` : ''}` }));
+    // One author is a reference, several a list of them.
+    const authorRef = authors.length > 1 ? authors.map(entry => ref(entry.id)) : authors.length ? ref(authors[0]!.id) : undefined;
     const about = page.about?.map(thing => clean({ '@type': 'Thing', name: thing.name, sameAs: thing.sameAs }));
     if (type && ARTICLE_TYPES.has(type)) {
         graph.push(clean({
             '@type': type, '@id': entityId, headline: page.title, description: page.description, abstract: page.abstract, url: page.url, isPartOf: ref(pageId), mainEntityOfPage: ref(pageId), inLanguage: page.locale,
-            datePublished: page.published, dateModified: page.modified, image: imageId ? ref(imageId) : undefined, author: authorId ? ref(authorId) : undefined, publisher: ref(publisherId),
+            datePublished: page.published, dateModified: page.modified, image: imageId ? ref(imageId) : undefined, author: authorRef, publisher: ref(publisherId),
             keywords: page.keywords, articleSection: page.section, about,
         }));
-        if (authorId && page.author) graph.push(personNode(authorId, page.author));
+        for (const entry of authors) graph.push(personNode(entry.id, entry.author));
     } else if (type && type !== 'WebPage' && entityId) {
         const properties = page.properties ?? {};
         graph.push(clean({
             '@type': type, '@id': entityId, name: page.title, description: page.description, url: page.url, mainEntityOfPage: ref(pageId), image: imageId ? ref(imageId) : undefined,
-            ...(type === 'Recipe' || type === 'VideoObject' ? { datePublished: page.published, author: authorId ? ref(authorId) : undefined } : {}),
+            ...(type === 'Recipe' || type === 'VideoObject' ? { datePublished: page.published, author: authorRef } : {}),
             ...(type === 'VideoObject' ? { uploadDate: properties.uploadDate ?? page.published, thumbnailUrl: properties.thumbnailUrl ?? page.image?.url } : {}),
             ...properties, about,
         }));
-        if (authorId && page.author && (type === 'Recipe' || type === 'VideoObject')) graph.push(personNode(authorId, page.author));
+        if (type === 'Recipe' || type === 'VideoObject') for (const entry of authors) graph.push(personNode(entry.id, entry.author));
     } else if (page.kind === 'author' && page.profile && entityId) {
         graph.push(personNode(entityId, page.profile));
     }

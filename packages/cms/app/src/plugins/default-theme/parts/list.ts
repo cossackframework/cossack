@@ -8,7 +8,7 @@ function card(entry: EntryView): TemplateResult {
         ${entry.image ? html`<a href=${entry.url ?? '#'} class="block overflow-hidden rounded-lg">${image(entry.image, 'aspect-[4/3] w-full object-cover transition-transform group-hover:scale-105', '(min-width: 640px) 12rem, 100vw')}</a>` : html`<span class="hidden sm:block"></span>`}
         <div class="space-y-2">
             <h2 class="text-xl font-semibold"><a href=${entry.url ?? '#'} class="text-foreground no-underline hover:text-primary">${entry.title}</a></h2>
-            ${entry.date || entry.author ? html`<p class="text-xs text-muted-foreground">${entry.date}${entry.author ? ` · ${entry.author}` : ''}</p>` : null}
+            ${entry.date || entry.authors.length ? html`<p class="text-xs text-muted-foreground">${entry.date}${entry.authors.length ? ` · ${entry.authors.map(author => author.name).join(', ')}` : ''}</p>` : null}
             ${entry.excerpt ? html`<p class="text-sm leading-6 text-muted-foreground">${entry.excerpt}</p>` : null}
             ${entry.url ? html`<a href=${entry.url} class="text-sm font-medium text-primary hover:underline">${__('Read more')} →</a>` : null}
         </div>

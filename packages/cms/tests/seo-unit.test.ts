@@ -62,7 +62,7 @@ describe('structured data graph', () => {
             kind: 'entry', url: 'https://example.com/posts/hello', title: 'Hello', description: 'A post', locale: 'en', type: 'BlogPosting',
             image: { url: 'https://example.com/media/1/a.jpg', width: 1200, height: 630, alt: 'A' }, published: '2026-10-01T00:00:00.000Z', modified: '2026-10-02T00:00:00.000Z',
             breadcrumbs: [{ name: 'Home', url: 'https://example.com/' }, { name: 'Posts', url: 'https://example.com/posts' }],
-            author: { name: 'Ada', url: 'https://example.com/author/ada', description: 'Writes', jobTitle: 'Editor', website: 'https://ada.example', sameAs: ['https://x.com/ada'] },
+            authors: [{ name: 'Ada', url: 'https://example.com/author/ada', description: 'Writes', jobTitle: 'Editor', website: 'https://ada.example', sameAs: ['https://x.com/ada'] }],
             keywords: ['news'], section: 'News', about: [{ name: 'News', sameAs: 'https://www.wikidata.org/wiki/Q38926' }],
         });
         const nodes = graph['@graph'];
@@ -82,8 +82,12 @@ describe('structured data graph', () => {
         expect(byType('Person')).toMatchObject({ '@id': 'https://example.com/author/ada#person', name: 'Ada', url: 'https://example.com/author/ada', jobTitle: 'Editor', sameAs: ['https://ada.example', 'https://x.com/ada'] });
         expect(nodes.filter(node => node['@type'] === 'ImageObject')).toHaveLength(2);
         // No author page: the author node hangs off the entry.
-        const anonymous = schemaGraph({ ...site, representation: 'person', logo: null }, { kind: 'entry', url: 'https://example.com/p', title: 'P', description: '', locale: 'en', type: 'Article', author: { name: 'Bob', url: null } });
+        const anonymous = schemaGraph({ ...site, representation: 'person', logo: null }, { kind: 'entry', url: 'https://example.com/p', title: 'P', description: '', locale: 'en', type: 'Article', authors: [{ name: 'Bob', url: null }] });
         expect(anonymous['@graph'].find(node => node['@type'] === 'Article')).toMatchObject({ author: { '@id': 'https://example.com/p#author' }, publisher: { '@id': 'https://example.com/#person' } });
+        // Co-authors: a list of Persons, the main author first.
+        const shared = schemaGraph(site, { kind: 'entry', url: 'https://example.com/p', title: 'P', description: '', locale: 'en', type: 'Article', authors: [{ name: 'Ada', url: 'https://example.com/author/ada' }, { name: 'Bob', url: null }] });
+        expect(shared['@graph'].find(node => node['@type'] === 'Article')?.author).toEqual([{ '@id': 'https://example.com/author/ada#person' }, { '@id': 'https://example.com/p#author-2' }]);
+        expect(shared['@graph'].filter(node => node['@type'] === 'Person').map(node => node.name)).toEqual(['Ada', 'Bob']);
         expect(anonymous['@graph'].filter(node => node['@type'] === 'Person').map(node => node['@id'])).toEqual(['https://example.com/#person', 'https://example.com/p#author']);
     });
 

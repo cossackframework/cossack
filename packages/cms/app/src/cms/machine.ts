@@ -2,7 +2,7 @@
  * The site as machines read it: `/llms.txt` (the site, its collections and latest entries
  * with summaries) and entries as Markdown for `Accept: text/markdown`. Server-only.
  */
-import { ANONYMOUS, ARTICLE_TYPES, blocksMarkdown, entryMarkdown, mediaUrl, recordTitle, resolveBindings, richTextMarkdown, type CollectionDefinition, type RecordShape, type RichTextDoc, type Block } from '@cossackframework/cms';
+import { ANONYMOUS, ARTICLE_TYPES, blocksMarkdown, entryAuthors, entryMarkdown, mediaUrl, recordTitle, resolveBindings, richTextMarkdown, type CollectionDefinition, type RecordShape, type RichTextDoc, type Block } from '@cossackframework/cms';
 import { excerptOf, type CmsFile, type CmsHost } from '@cossackframework/cms/server';
 import { bindingScopes, isProtected } from './site';
 
@@ -95,12 +95,14 @@ export async function entryAsMarkdown(cms: CmsHost, collection: CollectionDefini
         else if (declaration.kind === 'text' && declaration.format === 'markdown' && typeof value === 'string') parts.push(text(value));
     }
     const image = resource.fields.featuredImage?.media && typeof record.featuredImage === 'string' ? media(record.featuredImage) : null;
-    const owner = record.owner && ARTICLE_TYPES.has(collection.schema?.type ?? 'WebPage') ? (await cms.users.getMany([record.owner])).get(record.owner) : undefined;
+    const authorIds = ARTICLE_TYPES.has(collection.schema?.type ?? 'WebPage') ? entryAuthors(record) : [];
+    const users = await cms.users.getMany(authorIds);
+    const authors = authorIds.map(id => users.get(id)?.name).filter((name): name is string => !!name);
     const taxonomyFields = fields.filter(([, declaration]) => declaration.taxonomy);
     const terms = await cms.taxonomies.getMany(taxonomyFields.flatMap(([name]) => Array.isArray(record[name]) ? record[name] as string[] : []));
     const summary = summaryOf(record) || excerptOf(parts.join('\n\n').replace(/[#>*_`]/g, ''), 40);
     return entryMarkdown({
-        title: recordTitle(record, 'title'), url: `${origin}${url}`, site: settings['general.siteTitle'], description: summary, author: owner?.name,
+        title: recordTitle(record, 'title'), url: `${origin}${url}`, site: settings['general.siteTitle'], description: summary, ...(authors.length ? { author: authors.join(', ') } : {}),
         published: typeof record.publishedAt === 'number' ? new Date(record.publishedAt).toISOString() : undefined, updated: new Date(record.updatedAt).toISOString(),
         terms: taxonomyFields.map(([name, declaration]) => ({ label: cms.taxonomies.declaration(declaration.taxonomy!).label, terms: (Array.isArray(record[name]) ? record[name] as string[] : []).map(id => terms.get(id)?.name ?? '').filter(Boolean) })),
         body: [image ? `![${mediaAlt(record.featuredImage as string)}](${image})` : '', ...parts].filter(part => part.trim()).join('\n\n'),

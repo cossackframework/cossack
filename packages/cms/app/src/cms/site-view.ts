@@ -166,7 +166,7 @@ function latestEntries(block: RenderedBlock): TemplateResult {
         ${showImage && entry.image ? html`<a href=${entry.url ?? '#'} class="block overflow-hidden rounded-md">${image(entry.image, 'aspect-[4/3] w-full object-cover', '(min-width: 640px) 8rem, 100vw')}</a>` : showImage ? html`<span class="hidden sm:block"></span>` : null}
         <div class=${showImage ? 'space-y-1' : 'space-y-1 sm:col-span-2'}>
             <h3 class="text-lg font-semibold"><a href=${entry.url ?? '#'} class="no-underline hover:text-primary">${entry.title}</a></h3>
-            ${showDate && entry.date ? html`<time class="block text-xs text-muted-foreground">${entry.date}${entry.author ? ` · ${entry.author}` : ''}</time>` : null}
+            ${showDate && entry.date ? html`<time class="block text-xs text-muted-foreground">${entry.date}${entry.authors.length ? ` · ${entry.authors.map(author => author.name).join(', ')}` : ''}</time>` : null}
             ${entry.excerpt ? html`<p class="text-sm leading-6 text-muted-foreground">${entry.excerpt}</p>` : null}
         </div>
     </article>`)}</div>`;

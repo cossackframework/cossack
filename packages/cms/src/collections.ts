@@ -160,7 +160,13 @@ export interface CollectionDefinition {
 }
 
 /** Field names the host derives from a definition. */
-export const CORE_FIELDS = Object.freeze(['title', 'slug', 'status', 'publishedAt', 'parent', 'menuOrder', 'seo', 'summary', 'locale', 'translationGroup', 'commentsOpen', 'template']);
+export const CORE_FIELDS = Object.freeze(['title', 'slug', 'status', 'publishedAt', 'parent', 'menuOrder', 'authors', 'seo', 'summary', 'locale', 'translationGroup', 'commentsOpen', 'template']);
+
+/** The users who wrote an entry, first its main author: its `authors`, or its creator for entries from before co-authors. */
+export function entryAuthors(record: { readonly owner?: string | null; readonly [field: string]: unknown }): string[] {
+    const authors = Array.isArray(record.authors) ? record.authors.filter((id): id is string => typeof id === 'string' && id !== '') : [];
+    return authors.length ? [...new Set(authors)] : record.owner ? [record.owner] : [];
+}
 /** Field names no declared field or group field may take: the core fields and the features'. */
 export const RESERVED_FIELDS = Object.freeze([...CORE_FIELDS, ...FEATURE_FIELDS]);
 const FEATURES = Object.freeze(['content', 'excerpt', 'featuredImage', 'revisions', 'password'] as const);
@@ -243,6 +249,8 @@ export function collectionResource(definition: CollectionDefinition, labels: { r
             parent: field.reference(id, { nullable: true, label: `Parent ${definition.singular.toLowerCase()}` }),
             menuOrder: field.integer({ default: 0, min: -1000, max: 1000, label: 'Order' }),
         } : {}),
+        // Who wrote the entry, as Git co-authors: user IDs, the first its main author. The repository fills in the creator; entries from before have none and read as their creator's.
+        authors: field.list('string', { max: 80, maxItems: 20, index: true, label: 'Authors' }),
         seo: field.group(SEO_FIELDS, { label: 'SEO' }),
         // The answer up front: two or three sentences themes show first, the meta description falls back to, and assistants quote.
         ...(typeof definition.path === 'string' ? { summary: field.text({ max: 600, label: 'Summary', description: 'Two or three sentences that answer what the entry is about.' }) } : {}),
@@ -264,6 +272,7 @@ export function collectionResource(definition: CollectionDefinition, labels: { r
         label: definition.label,
         titleField: 'title',
         ownership: true,
+        coOwners: 'authors',
         schemaless: true,
         revisions: features.revisions !== false,
         fields,

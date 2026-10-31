@@ -1,9 +1,9 @@
 import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackframework/core';
 import { bulkBar } from '../../../../../dashboard/bulk';
 import { listFilters, listFooter, listTable } from '../../../../../dashboard/list-table';
-import { Avatar, HoverCard, Icon, NativeSelect, AlertDialog, Tooltip } from '@cossackframework/ui';
+import { Avatar, AvatarGroup, HoverCard, Icon, NativeSelect, AlertDialog, Tooltip } from '@cossackframework/ui';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
-import { ENTRY_ACTION_IDS, evaluateRule, isCmsError, languageName, mediaUrl, recordTitle, type BuiltinEntryAction, type EntryAction, type EntryColumn, type FieldFilter, type ListFilter, type RecordShape } from '@cossackframework/cms';
+import { ENTRY_ACTION_IDS, entryAuthors, evaluateRule, isCmsError, languageName, mediaUrl, recordTitle, type BuiltinEntryAction, type EntryAction, type EntryColumn, type FieldFilter, type ListFilter, type RecordShape } from '@cossackframework/cms';
 import { duplicateEntry, importEntries, importItems, listExtras, routeResource, runEntryCommand, termOptions, type ImportReport } from '../../../../../cms/content';
 import type { TermOption } from '../../../../../cms/editor';
 import { icon } from '../../../../../cms/icons';
@@ -33,8 +33,8 @@ interface Row {
     slug: string;
     status: string;
     url: string | null;
-    author: string;
-    avatar: string | null;
+    /** Who wrote the entry, the main author first. */
+    authors: { id: string; name: string; avatar: string | null }[];
     locale: string;
     terms: string[];
     date: string;
@@ -172,7 +172,7 @@ export default class EntriesPage extends Cossack {
                 records = page.records;
                 this.total = total;
             }
-            const owners = await cms.users.getMany(records.map(record => record.owner).filter((owner): owner is string => !!owner));
+            const owners = await cms.users.getMany([...new Set(records.flatMap(record => entryAuthors(record)))]);
             const termIds = this.taxonomy ? records.flatMap(record => (record[this.taxonomy!.name] as string[] | undefined) ?? []) : [];
             const terms = await cms.taxonomies.getMany(termIds);
             const urls = collection ? await cms.entryUrls(collection, records) : new Map<string, string | null>();
@@ -185,12 +185,11 @@ export default class EntriesPage extends Cossack {
             this.rows = records.map(record => {
                 const published = record.status === 'published' && typeof record.publishedAt === 'number';
                 const scheduled = record.status === 'scheduled' && typeof record.publishedAt === 'number';
-                const owner = record.owner ? owners.get(record.owner) : undefined;
                 const image = imageField ? images.get(record[imageField] as string) : undefined;
                 return {
                     id: record.id, rev: record.rev, title: recordTitle(record, resource.titleField), slug: typeof record.slug === 'string' ? record.slug : '', status: String(record.status ?? ''),
                     url: visible(record),
-                    author: owner?.name ?? '—', avatar: owner?.avatar ?? null, locale: typeof record.locale === 'string' ? record.locale : '',
+                    authors: entryAuthors(record).map(id => owners.get(id)).filter(user => user !== undefined).map(user => ({ id: user.id, name: user.name || user.email, avatar: user.avatar })), locale: typeof record.locale === 'string' ? record.locale : '',
                     terms: this.taxonomy ? ((record[this.taxonomy.name] as string[] | undefined) ?? []).map(id => terms.get(id)?.name).filter((name): name is string => !!name) : [],
                     date: shortDate(published || scheduled ? record.publishedAt : record.updatedAt),
                     dateLabel: published ? __('Published') : scheduled ? __('Scheduled for') : __('Last modified'),
@@ -413,10 +412,15 @@ export default class EntriesPage extends Cossack {
     }
 
     /** The author as an avatar alone; the name shows on hover and focus. */
+    /** One author's picture, or the authors' as a group, with their names as the tooltip. */
     private authorCell(row: Row): TemplateResult {
-        if (row.author === '—') return html`<span class="text-muted-foreground">—</span>`;
+        if (!row.authors.length) return html`<span class="text-muted-foreground">—</span>`;
+        const names = row.authors.map(author => author.name).join(', ');
         const tip = `author-${row.id}-tip`;
-        return component(Tooltip, { id: tip, label: row.author }, html`<span tabindex="0" aria-describedby=${tip} aria-label=${row.author} class="inline-flex rounded-full">${component(Avatar, { src: row.avatar ?? undefined, alt: row.author, size: 28 })}</span>`);
+        const pictures = row.authors.length === 1
+            ? component(Avatar, { src: row.authors[0]!.avatar ?? undefined, alt: names, size: 28 })
+            : component(AvatarGroup, { label: names, size: 28, max: 3, items: row.authors.map(author => ({ value: author.id, ...(author.avatar ? { src: author.avatar } : {}), alt: author.name })) });
+        return component(Tooltip, { id: tip, label: names }, html`<span tabindex="0" aria-describedby=${tip} aria-label=${names} class="inline-flex rounded-full">${pictures}</span>`);
     }
 
     /** The bulk action select and its Apply button, above and below the table. */
@@ -497,7 +501,7 @@ export default class EntriesPage extends Cossack {
                         </div>
                     </div>` },
                     this.hasSlug && { label: __('Slug'), cell: row => html`<code class="break-all text-xs text-muted-foreground">${row.slug}</code>` },
-                    { label: __('Author'), class: 'w-14', cell: row => this.authorCell(row) },
+                    { label: __('Authors'), class: 'w-20', cell: row => this.authorCell(row) },
                     this.languages.length > 0 && { label: __('Language'), class: 'text-muted-foreground', cell: row => html`<span title=${languageName(row.locale)}>${row.locale.toUpperCase()}</span>` },
                     this.taxonomy && { label: this.taxonomy.label, class: 'text-muted-foreground', cell: row => row.terms.join(', ') || '—' },
                     ...this.columns.map(column => ({ label: column.label, class: 'text-muted-foreground', cell: (row: Row) => column.values[row.id] ?? '—' })),

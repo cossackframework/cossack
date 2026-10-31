@@ -6,7 +6,7 @@
  */
 import type { Context } from 'hono';
 import {
-    ARTICLE_TYPES, authorUrl, mediaUrl, renderSeoTemplate, robotsDirectives, schemaGraph, schemaProperties, SCHEMA_PROPERTIES, TITLE_SEPARATORS, urlList,
+    ARTICLE_TYPES, authorUrl, entryAuthors, mediaUrl, renderSeoTemplate, robotsDirectives, schemaGraph, schemaProperties, SCHEMA_PROPERTIES, TITLE_SEPARATORS, urlList,
     type Block, type CollectionDefinition, type EntryView, type LanguageLink, type RecordShape, type SchemaAuthor, type SchemaBreadcrumb, type SchemaImage, type SchemaPage, type SchemaSite, type SiteSettings, type TermShape,
 } from '@cossackframework/cms';
 import type { CmsFile, CmsHost, CmsUser } from '@cossackframework/cms/server';
@@ -152,9 +152,10 @@ export async function entrySeo(cms: CmsHost, c: Context, collection: CollectionD
     const article = ARTICLE_TYPES.has(type);
     const published = typeof record.publishedAt === 'number' ? new Date(record.publishedAt).toISOString() : '';
     const modified = new Date(record.updatedAt).toISOString();
-    const owner = record.owner ? (await cms.users.getMany([record.owner])).get(record.owner) : undefined;
-    const author = schemaAuthor(origin, owner, settings, prefix);
-    const variables = { title: view.title, sep, site: settings['general.siteTitle'], tagline: settings['general.tagline'], excerpt: seo.description || summary || view.excerpt, author: author?.name ?? '', collection: collection.label, date: view.date };
+    const ids = entryAuthors(record);
+    const users = await cms.users.getMany(ids);
+    const authors = ids.map(id => schemaAuthor(origin, users.get(id), settings, prefix)).filter(author => author !== null);
+    const variables = { title: view.title, sep, site: settings['general.siteTitle'], tagline: settings['general.tagline'], excerpt: seo.description || summary || view.excerpt, author: authors.map(author => author.name).join(', '), collection: collection.label, date: view.date };
     const title = renderSeoTemplate(collection.seoTemplates?.title || settings['seo.entryTitle'], { ...variables, title: seo.title || view.title });
     const description = seo.description || renderSeoTemplate(collection.seoTemplates?.description || settings['seo.entryDescription'], variables);
     const image = imageOf(origin, await fileOf(cms, seo.image), '') ?? (view.image ? { url: absolute(origin, view.image.url), width: view.image.width, height: view.image.height, alt: view.image.alt } : imageOf(origin, null, settings['seo.defaultImage']));
@@ -162,7 +163,7 @@ export async function entrySeo(cms: CmsHost, c: Context, collection: CollectionD
     const page: SchemaPage = {
         kind: 'entry', url, title: seo.title || view.title, description, locale: view.locale, image, published, modified, type,
         breadcrumbs: type === 'none' ? [] : await breadcrumbs(cms, origin, collection, record, view.locale, prefix),
-        properties: await mappedProperties(cms, origin, collection, record), author, about: type === 'none' ? [] : await aboutTerms(cms, collection, record),
+        properties: await mappedProperties(cms, origin, collection, record), authors, about: type === 'none' ? [] : await aboutTerms(cms, collection, record),
         keywords: view.terms.flatMap(group => group.terms.map(term => term.name)), section: view.terms[0]?.terms[0]?.name ?? '', abstract: summary, faq: type === 'none' ? [] : faqOf(record),
     };
     return base(origin, settings, { title, ogTitle: seo.socialTitle || seo.title || view.title, ogDescription: seo.socialDescription || description, description, url, image, robots, type: article ? 'article' : type === 'Person' ? 'profile' : 'website', locale: view.locale, links, graph: schemaGraph(await schemaSite(cms, origin, settings, view.locale), page), published: article ? published : '', modified: article ? modified : '', markdownUrl: settings['seo.markdown'] && view.url && !isProtected(record) ? `${absolute(origin, view.url)}?format=md` : '' });

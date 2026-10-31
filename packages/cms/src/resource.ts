@@ -48,6 +48,11 @@ export interface ResourceDeclaration {
     readonly access?: ResourceAccess;
     /** Record the creating user and enable `owner` rules. */
     readonly ownership?: boolean;
+    /**
+     * A multiple string field of user IDs who own the record beside its creator, such as an entry's
+     * `authors`: `owner` rules match them too. A record without any reads as its creator's alone.
+     */
+    readonly coOwners?: string;
     /** Keep a revision snapshot of every write. Default true. */
     readonly revisions?: boolean;
     /**
@@ -134,6 +139,10 @@ export function resourceProblems(declaration: ResourceDeclaration): string[] {
             if (!declared && !(['_createdAt', '_updatedAt', '_owner'] as string[]).includes(name)) problems.push(`index ${index.name} names undeclared field ${name}.`);
             else if (declared && (['json', 'vector', 'text'].includes(declared.kind) || declared.multiple)) problems.push(`index ${index.name} cannot include ${declared.multiple ? 'multiple' : declared.kind} field ${name}.`);
         }
+    }
+    if (declaration.coOwners !== undefined) {
+        const declared = declaration.fields[declaration.coOwners];
+        if (declaration.ownership !== true || !declared || declared.kind !== 'string' || declared.multiple !== true || declared.media || declared.taxonomy) problems.push('coOwners names a multiple string field of user IDs and needs ownership: true.');
     }
     for (const action of Object.keys(declaration.access ?? {})) {
         if (!['read', 'create', 'update', 'delete'].includes(action)) problems.push(`access.${action} is not an action.`);

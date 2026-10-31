@@ -354,6 +354,14 @@ export interface RepeaterView {
 /** A run of escaped HTML from the body, or a block embedded in it. */
 export type BodyPart = { readonly kind: 'html'; readonly html: string } | { readonly kind: 'block'; readonly block: RenderedBlock };
 
+/** An entry's author as themes show them. */
+export interface EntryAuthor {
+    readonly name: string;
+    /** Their author page, such as `/author/ada`; null when author pages are off. */
+    readonly url: string | null;
+    readonly avatar: string | null;
+}
+
 /** A comment as themes show it, with its replies. */
 export interface CommentView {
     readonly id: string;
@@ -443,10 +451,8 @@ export interface EntryView {
     readonly kind: string;
     /** The publication date in the site's format; empty for unpublishable collections. */
     readonly date: string;
-    /** The author's name, for article collections; empty otherwise. */
-    readonly author: string;
-    /** The author's page, such as `/author/ada`; null when author pages are off or the entry has no author. */
-    readonly authorUrl: string | null;
+    /** Who wrote the entry, the main author first, for article collections; empty otherwise. */
+    readonly authors: readonly EntryAuthor[];
     /** When the entry was last changed, in the site's format; empty for unpublishable collections. */
     readonly updated: string;
     readonly excerpt: string;
