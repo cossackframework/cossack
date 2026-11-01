@@ -421,9 +421,11 @@ export async function createClientApp({
   const rootOwnershipKey = (state: any) => layoutOwnershipKey(state?._app_state ?? {}, state, AppComponent);
   let rootOwnership = rootOwnershipKey(window.__INITIAL_STATE__);
 
-  const composeContent = () => {
+  /** The page wrapped in its layouts; `rendered` is the page's output from its own update, which it does not render again. */
+  const composeContent = (rendered?: { instance: Cossack; template: unknown }) => {
     if (!currentPage) return null;
-    let body = ((loadingPage ?? currentPage) as any)._getWrappedTemplate();
+    const page = loadingPage ?? currentPage;
+    let body = rendered?.instance === page ? rendered.template : (page as any)._getWrappedTemplate();
     for (let i = currentLayoutInstances.length - 1; i >= 0; i--) {
        const layout = currentLayoutInstances[i];
        layout.children = body;
@@ -432,7 +434,7 @@ export async function createClientApp({
     return body;
   }
 
-  const triggerAppUpdate = async (isCurrent: () => boolean = () => true) => {
+  const triggerAppUpdate = async (isCurrent: () => boolean = () => true, page?: { instance: Cossack; template: unknown }) => {
       const expectedPublication = publication;
       const allowed = () => publication === expectedPublication && isCurrent();
       if (!allowed()) return false;
@@ -440,12 +442,12 @@ export async function createClientApp({
       // abandoned application update. Small non-core adapters keep the fallback.
       let rendered: boolean;
       if (appInstance._frameworkRenderNavigation) {
-        appInstance.children = composeContent();
+        appInstance.children = composeContent(page);
         rendered = await appInstance._frameworkRenderNavigation(allowed);
       } else {
         await appInstance.updateComplete;
         if (!allowed()) return false;
-        appInstance.children = composeContent();
+        appInstance.children = composeContent(page);
         rendered = await appInstance.requestUpdate();
       }
       if (allowed()) syncHead();
@@ -547,12 +549,29 @@ export async function createClientApp({
     const hookUpdates = (instance: Cossack) => {
       const active = () => currentPage === instance || currentLayoutInstances.includes(instance);
       instance.updateHead = () => { if (active()) syncHead(); };
+      // The output of the instance's own update, which nothing else listens to: the app's render
+      // composes it instead of rendering the page a second time on every state change.
+      let output: { template: unknown } | undefined;
+      if (typeof instance.addRenderListener === 'function') instance.addRenderListener(template => { output = { template }; });
+      const takeOutput = (): { instance: Cossack; template: unknown } | undefined => {
+        const rendered = output;
+        output = undefined;
+        return rendered && { instance, template: rendered.template };
+      };
+      // Every call that joined one update (a handler setting several fields) shares one app render.
+      let composed: { update: unknown; render: Promise<boolean> } | undefined;
       const original = instance.requestUpdate.bind(instance);
       instance.requestUpdate = async (name?: string, oldValue?: unknown) => {
         if (!active() || (instance as any)._phase === LifecyclePhase.Destroyed) return false;
-        await original(name, oldValue);
+        // Only this update's own render counts: one that rendered nothing leaves the page to render.
+        output = undefined;
+        const update = original(name, oldValue);
+        await update;
         if (!active()) return false;
-        await triggerAppUpdate(active);
+        if (!(update instanceof Promise) || composed?.update !== update) {
+          composed = { update, render: triggerAppUpdate(active, takeOutput()) };
+        }
+        await composed.render;
         return true;
       };
     };

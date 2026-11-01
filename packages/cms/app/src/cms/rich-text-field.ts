@@ -57,6 +57,8 @@ export class RichTextField extends Cossack {
     private surface?: HTMLElement;
     /** The document the editor holds, as JSON: what it last emitted or was given. */
     private held = '';
+    /** The value last compared with `held`: the page renders the same object again on every unrelated keystroke. */
+    private heldValue: RichTextDoc | null | undefined;
 
     /**
      * A value that changed outside the editor (a restored autosave, the entry as saved, a pattern
@@ -66,7 +68,8 @@ export class RichTextField extends Cossack {
     @Client()
     updated(changed: Map<string | number | symbol, unknown>) {
         super.updated(changed);
-        if (!this.handle || !this.ready) return;
+        if (!this.handle || !this.ready || this.props.value === this.heldValue) return;
+        this.heldValue = this.props.value;
         const next = docKey(this.props.value);
         if (next === this.held) return;
         this.held = next;
@@ -86,12 +89,13 @@ export class RichTextField extends Cossack {
                 blockLabel: type => type === 'core/pattern' ? __('Synced pattern') : labels.get(type) ?? type,
                 blockSummary: block => block.type === 'core/pattern' ? this.props.patternTitles?.[String(block.data.pattern)] ?? __('Pattern')
                     : Object.values(block.data).find((value): value is string => typeof value === 'string' && value.trim() !== '') ?? '',
-                onChange: doc => { this.held = docKey(doc); this.props.onChange(doc); },
+                onChange: doc => { this.held = docKey(doc); this.heldValue = doc; this.props.onChange(doc); },
                 onSelection: active => { if (active.join() !== this.active.join()) this.active = active; },
                 onEditBlock: block => this.props.onEditBlock(block),
             });
             richTextEditors.set(this.props.id, this.handle);
             this.held = docKey(this.props.value);
+            this.heldValue = this.props.value;
             this.ready = true;
         } catch (error) {
             console.error('[cms] the rich text editor could not load', error);

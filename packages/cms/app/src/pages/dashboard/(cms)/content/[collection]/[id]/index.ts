@@ -107,6 +107,10 @@ export default class EntryEditor extends Cossack {
     /** The values as last loaded, saved or autosaved, so an unchanged editor sends nothing. */
     private autosaved = '';
     private autosaving = false;
+    /** The last editorial checks and the values and blocks they were made from. */
+    private checked: { key: unknown[]; checks: Check[] } | null = null;
+    /** What each hidden tab last showed, and the tab that was open then. */
+    private hiddenTabs = new Map<string, { active: string; content: TemplateResult }>();
 
     head(): HeadValue {
         const title = this.view ? (this.id === 'new' ? `${__('New')} ${this.view.singular.toLowerCase()}` : `${__('Edit')} ${this.view.singular.toLowerCase()}`) : __('Editor');
@@ -1131,7 +1135,13 @@ export default class EntryEditor extends Cossack {
         const blocks = Object.entries(this.values).flatMap(([name, value]) => this.view?.fields.find(field => field.name === name)?.kind === 'blocks' && Array.isArray(value) ? value as Block[] : []);
         let host = '';
         try { host = new URL(this.seo.origin).host; } catch { /* no origin yet */ }
-        return entryChecks({ title: String(this.values.title ?? ''), seoTitle: String(seo.title ?? ''), description: String(seo.description ?? ''), summary: String(this.values.summary ?? ''), blocks, types: new Map(CORE_BLOCKS.map(block => [block.name, block])), host, article: this.seo.article });
+        const input = { title: String(this.values.title ?? ''), seoTitle: String(seo.title ?? ''), description: String(seo.description ?? ''), summary: String(this.values.summary ?? ''), host, article: this.seo.article };
+        // Reading the content walks every block's text: typing in another field reuses the last result.
+        const key = [...Object.values(input), ...blocks];
+        if (this.checked && this.checked.key.length === key.length && this.checked.key.every((part, index) => part === key[index])) return this.checked.checks;
+        const checks = entryChecks({ ...input, blocks, types: new Map(CORE_BLOCKS.map(block => [block.name, block])) });
+        this.checked = { key, checks };
+        return checks;
     }
 
     @Client()
@@ -1488,6 +1498,17 @@ export default class EntryEditor extends Cossack {
         const titleField = view.titleField;
         this.hidden = fieldVisibility(plainBlocks(view.groups.flatMap(group => group.blocks)), visibilityTypes(view.blocks), this.values).hidden;
         const tabs = this.editorTabs();
+        // A hidden tab keeps what it showed until another tab opens: the renderer leaves the same
+        // template as it is, so typing in one tab renders that tab alone.
+        const active = tabs.includes(this.mode) ? this.mode : tabs[0];
+        const shown = (id: string, content: () => TemplateResult) => {
+            if (id === active) { this.hiddenTabs.delete(id); return content(); }
+            const kept = this.hiddenTabs.get(id);
+            if (kept?.active === active) return kept.content;
+            const fresh = content();
+            this.hiddenTabs.set(id, { active, content: fresh });
+            return fresh;
+        };
         const tabLabel = (id: string) => id === 'json' ? 'JSON' : __(view.layout.tabs.find(tab => tab.id === id)?.label || id);
         // A tab's icon, when it names one of the dashboard's.
         const tabIcon = (id: string) => {
@@ -1525,7 +1546,7 @@ export default class EntryEditor extends Cossack {
                     items: [...view.layout.tabs.map((tab, index) => ({
                         value: tab.id, ariaLabel: `${tabLabel(tab.id)}${this.errorsOn(tab.id) ? ` (${this.errorsOn(tab.id)})` : ''}`,
                         label: html`<span class=${this.errorsOn(tab.id) ? 'text-destructive' : ''}>${tabIcon(tab.id)}${tabLabel(tab.id)}${this.errorsOn(tab.id) ? countBadge(this.errorsOn(tab.id)) : null}</span>`,
-                        content: html`<div class="space-y-5">
+                        content: shown(tab.id, () => html`<div class="space-y-5">
                     ${index === 0 && titleField ? html`<div class="space-y-1">
                         <label for="field-title" class="sr-only">${__('Title')}</label>
                         <input id="field-title" class=${`w-full rounded-lg border bg-background px-4 py-3 text-xl font-semibold text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring ${this.errors[titleField] ? 'border-destructive' : 'border-input'}`}
@@ -1545,7 +1566,7 @@ export default class EntryEditor extends Cossack {
                         ${this.errorFor('slug')}
                     </div>` : null}
                     ${editorLayoutView(tab.blocks, id => this.boxView(id))}
-                        </div>`,
+                        </div>`),
                     })), ...(tabs.includes('json') ? [{ value: 'json', label: 'JSON', content: this.mode === 'json' ? this.jsonPanel() : null }] : [])],
                 })}
                 <aside class=${`mt-4 space-y-4 ${this.mode === 'json' ? 'hidden' : ''}`}>

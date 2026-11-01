@@ -22,7 +22,20 @@ const NO_VALUE = new Set<ConditionOperator>(['empty', 'notEmpty']);
  * them: in a form, the inputs of the form's top level, and for a block inside a repeater, the
  * repeater's rows' inputs first. In a field group, every field.
  */
-export function conditionFields(blocks: readonly EditorBlock[], options: readonly BlockOption[], except?: string): ConditionField[] {
+export function conditionFields(blocks: readonly EditorBlock[], options: readonly BlockOption[], except?: string): readonly ConditionField[] {
+    // Editors render this on every keystroke; blocks are replaced, never changed in place, so the same list gives the same fields.
+    const known = conditionCache.get(blocks);
+    if (known?.options === options && known.fields.has(except)) return known.fields.get(except)!;
+    const fields = collectConditionFields(blocks, options, except);
+    const entry = known?.options === options ? known : { options, fields: new Map<string | undefined, readonly ConditionField[]>() };
+    entry.fields.set(except, fields);
+    conditionCache.set(blocks, entry);
+    return fields;
+}
+
+const conditionCache = new WeakMap<readonly EditorBlock[], { options: readonly BlockOption[]; fields: Map<string | undefined, readonly ConditionField[]> }>();
+
+function collectConditionFields(blocks: readonly EditorBlock[], options: readonly BlockOption[], except?: string): ConditionField[] {
     const types = new Map(options.map(option => [option.name, option]));
     const input = (block: EditorBlock) => { const option = types.get(block.type); return !!option && (option.input || !!option.field); };
     const repeater = (block: EditorBlock) => { const option = types.get(block.type); return !!option?.input && !!option.children; };
