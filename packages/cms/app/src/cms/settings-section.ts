@@ -27,7 +27,14 @@ export class SettingsSection extends Cossack {
         this.observer.observe(element);
     }
 
-    onCleanup() { this.observer?.disconnect(); this.props.onConnect?.(this.props.id, undefined); }
+    onCleanup() {
+        this.observer?.disconnect();
+        // Teardown also runs on the server after rendering. The parent's `onConnect` is a client
+        // method there, which cannot be sent from an HTTP render and would only log a warning.
+        if (this.isServer) return;
+        this.element = undefined;
+        this.props.onConnect?.(this.props.id, undefined);
+    }
 
     @ClientTask()
     keepMounted() { if (this.props.eager && !this.ready) { this.ready = true; this.observer?.disconnect(); } }
