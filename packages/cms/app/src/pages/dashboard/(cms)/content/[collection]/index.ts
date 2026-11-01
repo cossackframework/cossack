@@ -7,16 +7,13 @@ import { ENTRY_ACTION_IDS, entryAuthors, evaluateRule, isCmsError, languageName,
 import { duplicateEntry, importEntries, importItems, listExtras, routeResource, runEntryCommand, termOptions, type ImportReport } from '../../../../../cms/content';
 import type { TermOption } from '../../../../../cms/editor';
 import { icon } from '../../../../../cms/icons';
-import { iconButton, linkButton, notice, pageHeader, shortDate, statusBadge } from '../../../../../cms/ui';
+import { linkButton, notice, pageHeader, shortDate, statusBadge } from '../../../../../cms/ui';
 
 const PAGE_SIZE = 20;
 
-/** Icons of the built-in quick actions. */
-const ACTION_ICONS: Record<BuiltinEntryAction, string> = { edit: 'pen', duplicate: 'copy', trash: 'trash-bin-trash', delete: 'trash-bin-trash', view: 'eye', restore: 'restart', 'delete-permanently': 'close-circle' };
-
 /** The list's own quick actions for an entry, before plugins change them: links for Edit and View, the rest run by the list. */
 function builtinActions(record: RecordShape, options: { base: string; url: string | null; canCreate: boolean; publishable: boolean }): EntryAction[] {
-    const action = (id: BuiltinEntryAction, label: string, extra: Partial<EntryAction> = {}): EntryAction => ({ id, label, icon: ACTION_ICONS[id], ...extra });
+    const action = (id: BuiltinEntryAction, label: string, extra: Partial<EntryAction> = {}): EntryAction => ({ id, label, ...extra });
     if (record.status === 'trash') return [action('restore', __('Restore')), action('delete-permanently', __('Delete permanently'), { danger: true })];
     return [
         action('edit', __('Edit'), { href: `${options.base}/${record.id}` }),
@@ -411,7 +408,6 @@ export default class EntriesPage extends Cossack {
                 <img src=${image.url} alt="" class="size-10 rounded-md border border-border bg-muted object-cover" loading="lazy"></a>`);
     }
 
-    /** The author as an avatar alone; the name shows on hover and focus. */
     /** One author's picture, or the authors' as a group, with their names as the tooltip. */
     private authorCell(row: Row): TemplateResult {
         if (!row.authors.length) return html`<span class="text-muted-foreground">—</span>`;
@@ -437,20 +433,18 @@ export default class EntriesPage extends Cossack {
         else if (id === 'delete' || id === 'delete-permanently') this.pendingDelete = row;
     }
 
-    /** The row's quick actions as icons with their labels as tooltips; plugins change them through `cms.dashboard.entry-actions`. */
+    /** The row's quick actions as words between bars; plugins change them through `cms.dashboard.entry-actions`. */
     private quickActions(row: Row): TemplateResult {
-        const tone = (entry: EntryAction) => entry.danger ? 'hover:border-destructive/40 hover:bg-destructive/10 hover:text-destructive' : 'hover:bg-muted hover:text-foreground';
-        const items = row.actions.map((entry, index) => {
-            const id = `row-${row.id}-action-${index}`;
-            if (entry.href) {
-                return component(Tooltip, { id: `${id}-tip`, label: entry.label }, html`<a href=${entry.href} aria-label=${entry.label} aria-describedby=${`${id}-tip`} data-action=${entry.id ?? ''}
-                    class=${`inline-flex h-7 w-7 items-center justify-center rounded border border-border bg-background text-muted-foreground no-underline [&_svg]:size-4 ${tone(entry)}`}>${component(Icon, { entry: icon(entry.icon, 'widget-4'), size: 16 })}</a>`);
-            }
+        const separator = html`<span aria-hidden="true" class="text-muted-foreground">|</span>`;
+        const items = row.actions.map(entry => {
+            const tone = entry.danger ? 'text-destructive' : 'text-primary';
+            if (entry.href) return html`<a href=${entry.href} data-action=${entry.id ?? ''} class=${`${tone} no-underline hover:underline`}>${entry.label}</a>`;
             const builtin = !entry.command && (ENTRY_ACTION_IDS as readonly string[]).includes(entry.id ?? '');
             if (!builtin && !entry.command) return null;
-            return iconButton(id, entry.icon ?? 'widget-4', entry.label, () => builtin ? this.runBuiltin(row, entry.id!) : this.pickAction(row, entry), { danger: entry.danger === true });
+            return html`<button type="button" data-action=${entry.id ?? ''} class=${`${tone} cursor-pointer border-none bg-transparent p-0 text-xs hover:underline`}
+                @click=${() => builtin ? this.runBuiltin(row, entry.id!) : this.pickAction(row, entry)}>${entry.label}</button>`;
         }).filter(item => item !== null);
-        return html`<div class="mt-1 flex flex-wrap items-center gap-1 opacity-80 group-hover:opacity-100 focus-within:opacity-100" data-quick-actions>${items}</div>`;
+        return html`<div class="mt-1 flex flex-wrap items-center gap-2 text-xs opacity-80 group-hover:opacity-100 focus-within:opacity-100" data-quick-actions>${items.flatMap((item, index) => index ? [separator, item] : [item])}</div>`;
     }
 
     render() {

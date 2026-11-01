@@ -185,10 +185,8 @@ export type BuiltinEntryAction = (typeof ENTRY_ACTION_IDS)[number];
 export interface EntryAction {
     /** A built-in action's name (`ENTRY_ACTION_IDS`), or any name a plugin gives its own so other plugins can find it. */
     readonly id?: string;
-    /** Spoken name, and the tooltip of its icon. */
+    /** What the action says: the quick action's text, or the bulk action's menu entry. */
     readonly label: string;
-    /** A Solar icon name, such as `pen` or `copy`. Quick actions show as icons; without one, a generic icon. Bulk actions ignore it. */
-    readonly icon?: string;
     /** Where the action goes. */
     readonly href?: string;
     /** The plugin command to run instead, with `{ resource, id }` or `{ resource, ids }` as its input. */

@@ -12,7 +12,7 @@ const SCAN_LIMIT = 2000;
 /**
  * Internal links across the site's published entries: which entries nothing links to
  * (orphans), which cornerstone entries have few links, and the most linked. Read on request
- * from the entries' content; sites with more than 2,000 entries are sampled.
+ * from the entries' content, as a visitor sees them; sites with more than 2,000 entries are sampled.
  */
 @Page({ transport: 'http', middlewares: [requireAny(PERMISSIONS.manageRedirects, PERMISSIONS.manageCollections)] })
 export default class LinksPage extends Cossack {
@@ -28,7 +28,9 @@ export default class LinksPage extends Cossack {
     async init() {
         const cms = this.c.get('cms');
         try {
-            const collections = cms.collections().filter(collection => typeof collection.path === 'string' && collection.slug !== false && !collection.managed);
+            // Visitors' view of the site: collections they cannot read (private ones) have no public pages.
+            const readable = new Set(cms.readable(ANONYMOUS).map(resource => resource.id));
+            const collections = cms.collections().filter(collection => typeof collection.path === 'string' && collection.slug !== false && !collection.managed && readable.has(`cms/${collection.name}`));
             const found: { record: RecordShape; collection: typeof collections[number]; url: string; links: string[] }[] = [];
             for (const collection of collections) {
                 const resource = cms.resourceById(`cms/${collection.name}`);

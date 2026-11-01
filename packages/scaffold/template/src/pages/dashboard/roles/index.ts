@@ -1,9 +1,6 @@
 import { Cossack, Page, State, Server, Client } from '@cossackframework/core';
 import { AlertDialog } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
-import { PenNewRoundIcon as editIconSvg } from '@cossackframework/solar-icons/pen-new-round/line';
-import { TrashBinMinimalisticIcon as deleteIconSvg } from '@cossackframework/solar-icons/trash-bin-minimalistic/line';
-import { UsersGroupRoundedIcon as usersIconSvg } from '@cossackframework/solar-icons/users-group-rounded/line';
 import { requireRoleManager } from '../../../services/rbac';
 import { listFilters, listFooter, listTable, rowActions } from '../../../dashboard/list-table';
 import { linkButton, notice, pageHeader } from '../../../dashboard/page';
@@ -13,10 +10,6 @@ import {
     type RoleDetail,
     type ListRolesResult,
 } from '../../../services/roles';
-
-const editIcon = { line: editIconSvg };
-const deleteIcon = { line: deleteIconSvg };
-const usersIcon = { line: usersIconSvg };
 
 const PAGE_SIZE = 20;
 
@@ -117,9 +110,9 @@ export default class RolesPage extends Cossack {
                     columns: [
                         { label: __('Role'), cell: role => html`<a href="/dashboard/roles/${role.id}" class="font-medium text-foreground no-underline hover:text-primary">${role.name}</a>
                             ${rowActions([
-                                { id: `role-${role.id}-edit`, label: __('Edit role'), icon: editIcon, href: `/dashboard/roles/${role.id}` },
-                                { id: `role-${role.id}-users`, label: __('View users with this role'), icon: usersIcon, href: `/dashboard/users?role=${encodeURIComponent(role.name)}` },
-                                ...(role.name !== 'admin' ? [{ id: `role-${role.id}-delete`, label: __('Delete role'), icon: deleteIcon, danger: true, run: () => this.requestDelete(role) }] : []),
+                                { id: `role-${role.id}-edit`, label: __('Edit'), href: `/dashboard/roles/${role.id}` },
+                                { id: `role-${role.id}-users`, label: __('View users'), href: `/dashboard/users?role=${encodeURIComponent(role.name)}` },
+                                ...(role.name !== 'admin' ? [{ id: `role-${role.id}-delete`, label: __('Delete'), danger: true, run: () => this.requestDelete(role) }] : []),
                             ])}` },
                         { label: __('Users'), class: 'text-muted-foreground', cell: role => html`<a href="/dashboard/users?role=${encodeURIComponent(role.name)}" class="text-muted-foreground no-underline hover:text-primary">${role.userCount ?? 0}</a>` },
                     ],

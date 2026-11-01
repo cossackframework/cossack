@@ -4,9 +4,8 @@
  * goes with `bulkBar` from `./bulk`, above and below the table.
  */
 import { component, html, ifDefined, type TemplateResult } from '@cossackframework/renderer';
-import { Button, Card, CardBody, Icon, Input, Pagination, Tooltip } from '@cossackframework/ui';
+import { Button, Card, CardBody, Icon, Input, Pagination } from '@cossackframework/ui';
 import { MagnifierIcon } from '@cossackframework/solar-icons/magnifier/line';
-import type { IconEntry } from '@cossackframework/solar-icons/types';
 import { selectAllBox, selectBox } from './bulk';
 
 export interface ListColumn<T> {
@@ -102,20 +101,19 @@ export interface RowAction {
     /** Unique on the page, such as `user-<id>-delete`. */
     id: string;
     label: string;
-    icon: IconEntry;
     href?: string;
     run?(): void;
     danger?: boolean;
 }
 
-/** A row's quick actions under its title, as icons with their labels as tooltips; clearer when the row is hovered or focused. */
+/** A row's quick actions under its title, as words between bars; clearer when the row is hovered or focused. */
 export function rowActions(actions: readonly RowAction[]): TemplateResult {
-    const button = 'inline-flex h-7 w-7 items-center justify-center rounded border border-border bg-background text-muted-foreground no-underline cursor-pointer [&_svg]:size-4';
-    return html`<div class="mt-1 flex flex-wrap items-center gap-1 opacity-80 group-hover:opacity-100 focus-within:opacity-100" data-quick-actions>${actions.map(action => {
-        const tone = action.danger ? 'hover:border-destructive/40 hover:bg-destructive/10 hover:text-destructive' : 'hover:bg-muted hover:text-foreground';
-        const icon = component(Icon, { entry: action.icon, size: 16 });
-        return component(Tooltip, { id: `${action.id}-tip`, label: action.label }, action.href
-            ? html`<a href=${action.href} aria-label=${action.label} aria-describedby=${`${action.id}-tip`} class=${`${button} ${tone}`}>${icon}</a>`
-            : html`<button type="button" aria-label=${action.label} aria-describedby=${`${action.id}-tip`} class=${`${button} ${tone}`} @click=${() => action.run?.()}>${icon}</button>`);
+    const separator = html`<span aria-hidden="true" class="text-muted-foreground">|</span>`;
+    return html`<div class="mt-1 flex flex-wrap items-center gap-2 text-xs opacity-80 group-hover:opacity-100 focus-within:opacity-100" data-quick-actions>${actions.flatMap((action, index) => {
+        const tone = action.danger ? 'text-destructive' : 'text-primary';
+        const control = action.href
+            ? html`<a href=${action.href} id=${action.id} class=${`${tone} no-underline hover:underline`}>${action.label}</a>`
+            : html`<button type="button" id=${action.id} class=${`${tone} cursor-pointer border-none bg-transparent p-0 text-xs hover:underline`} @click=${() => action.run?.()}>${action.label}</button>`;
+        return index ? [separator, control] : [control];
     })}</div>`;
 }

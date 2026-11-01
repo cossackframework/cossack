@@ -38,6 +38,9 @@ async function exercise(origin, routeIds, diagnostics) {
     contains(dashboard, `href="${link}"`);
   contains(dashboard, 'At a glance');
   contains(dashboard, 'The Daily');
+  // Roles are in the Users menu, not a menu of their own.
+  contains(dashboard, 'data-sidebar-value="module:users:/dashboard/roles/new"');
+  lacks(dashboard, 'data-sidebar-value="module:roles"');
   contains(await web.page('/dashboard/users'), 'ada@example.com');
   contains(await web.page('/dashboard/roles'), 'Editor');
   // Files → Summary counts the library once a day; Refresh counts again.
@@ -149,6 +152,10 @@ async function exercise(origin, routeIds, diagnostics) {
   contains(productPage, 'A pixel');
   contains(await web.page('/shop'), 'Rocket skates');
   contains(await web.page('/tag/intro'), 'Hello, World!');
+  // Links reads the site as visitors do: the private Products collection is left out, not an error.
+  const links = await web.page('/dashboard/tools/links');
+  contains(links, 'Orphaned entries');
+  lacks(links, 'Not allowed to read');
 
   // Settings change the site title, registration and the home page.
   const settings = 'dashboard/(cms)/settings/[group]/index.ts';
@@ -295,7 +302,10 @@ async function exercise(origin, routeIds, diagnostics) {
     '/dashboard/collections/posts', '/dashboard/collections/products', '/dashboard/tools/schema', '/dashboard/plugins', '/dashboard/content/pages', '/dashboard/content/products',
     '/dashboard/content/products/new', '/dashboard/profile', '/dashboard/sessions', '/dashboard/users/new', '/dashboard/roles/new', '/dashboard/appearance', '/dashboard/appearance/customize',
     '/dashboard/appearance/menus', `/dashboard/appearance/menus/${menuId}`, '/dashboard/settings/permalinks']) await web.page(pathname);
-  contains(await web.page('/dashboard/settings/general'), 'Anyone can register');
+  const general = await web.page('/dashboard/settings/general');
+  contains(general, 'Anyone can register');
+  // Settings has a secondary sidebar against the dashboard's own, so the main area drops its padding.
+  contains(general, 'data-subnav');
   contains(await web.page('/dashboard/blocks'), 'core/paragraph');
   expect((await web.request('/dashboard/settings')).headers.get('location')).toBe('/dashboard/settings/general');
   expect((await web.request('/dashboard/media/new')).headers.get('location')).toBe('/dashboard/media?upload=1');

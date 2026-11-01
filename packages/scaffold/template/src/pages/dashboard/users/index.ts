@@ -1,8 +1,6 @@
 import { Cossack, Page, State, Server, Client } from '@cossackframework/core';
 import { Avatar, Badge, NativeSelect, AlertDialog } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
-import { PenNewRoundIcon as editIconSvg } from '@cossackframework/solar-icons/pen-new-round/line';
-import { TrashBinMinimalisticIcon as deleteIconSvg } from '@cossackframework/solar-icons/trash-bin-minimalistic/line';
 import { canAssignRoles, canManageUser, guard } from '../../../services/rbac';
 import type { PublicUser } from '../../../auth';
 import {
@@ -18,9 +16,6 @@ import { bulkBar, type BulkChoice } from '../../../dashboard/bulk';
 import { timeAgo } from '../../../dashboard/time-ago';
 import { listFilters, listFooter, listTable, rowActions } from '../../../dashboard/list-table';
 import { linkButton, notice, pageHeader } from '../../../dashboard/page';
-
-const editIcon = { line: editIconSvg };
-const deleteIcon = { line: deleteIconSvg };
 
 const PAGE_SIZE = 20;
 
@@ -249,8 +244,8 @@ export default class UsersPage extends Cossack {
                                 ${u.id === this.user!.id ? html` ${component(Badge, { variant: 'secondary' }, __('You'))}` : null}
                                 <span class="block text-xs text-muted-foreground">${u.email}</span>
                                 ${rowActions([
-                                    { id: `user-${u.id}-edit`, label: __('Edit user'), icon: editIcon, href: `/dashboard/users/${u.id}` },
-                                    ...(u.id !== this.user!.id && this.selectable.includes(u.id) ? [{ id: `user-${u.id}-delete`, label: __('Delete user'), icon: deleteIcon, danger: true, run: () => this.requestDelete(u) }] : []),
+                                    { id: `user-${u.id}-edit`, label: __('Edit'), href: `/dashboard/users/${u.id}` },
+                                    ...(u.id !== this.user!.id && this.selectable.includes(u.id) ? [{ id: `user-${u.id}-delete`, label: __('Delete'), danger: true, run: () => this.requestDelete(u) }] : []),
                                 ])}
                             </div>
                         </div>` },

@@ -26,6 +26,10 @@ const logoutIcon = { line: logoutIconSvg };
  * sees; each describes its icon, destination, submenu links, and whether it
  * belongs in navigation or the account menu.
  *
+ * A page with navigation of its own (a secondary sidebar) marks its root
+ * `data-subnav`: the main area then drops its padding, so the page's
+ * navigation sits against the sidebar and runs to the footer.
+ *
  * The theme toggle writes the same `cs-theme` cookie and themeStore the App
  * component applies to `<html>.dark`, and draws itself from that class.
  */
@@ -94,8 +98,10 @@ export default class DashboardLayout extends Cossack {
         // The theme icons: only one shows, so `hidden` must not share the element with `inline-flex`.
         const themeIcon = 'items-center justify-center [&_svg]:size-4';
         const availableModules = this.modules;
+        // A module with a parent the user also sees is listed inside the parent's menu.
+        const nested = (module: DashboardModule) => !!module.parent && availableModules.some((other) => other.id === module.parent);
         const navigationModules = availableModules.filter(
-            (module) => module.placement !== 'account',
+            (module) => module.placement !== 'account' && !nested(module),
         );
         const accountModules = availableModules.filter(
             (module) => module.placement === 'account',
@@ -114,12 +120,17 @@ export default class DashboardLayout extends Cossack {
                     label: __(module.label), href: module.href, icon: module.icon,
                     active: module.activeFor ? this.isActive(module.activeFor, false) : this.isActive(module.href),
                 };
-                if (!module.children?.length) return item;
+                const children = [
+                    ...(module.children ?? []),
+                    ...availableModules.filter((other) => other.parent === module.id && nested(other))
+                        .flatMap((other) => other.children?.length ? other.children : [{ label: other.label, href: other.href }]),
+                ];
+                if (!children.length) return item;
                 // A group lists its own page as a link too; leave it out when a child already opens it.
                 const { href: _href, active: _active, ...group } = item;
                 return {
-                    ...(module.children.some((child) => child.href === module.href) ? group : item),
-                    children: module.children.map((child) => ({
+                    ...(children.some((child) => child.href === module.href) ? group : item),
+                    children: children.map((child) => ({
                         value: `module:${module.id}:${child.href}`,
                         label: __(child.label), href: child.href,
                         active: this.isActive(child.href),
@@ -207,7 +218,7 @@ export default class DashboardLayout extends Cossack {
                     `,
                 })}
                 <div class="flex-1 min-w-0 flex flex-col overflow-x-hidden">
-                    <main class="flex-1 p-6 sm:p-8 overflow-x-hidden">
+                    <main class="flex-1 p-6 sm:p-8 overflow-x-hidden has-[[data-subnav]]:grid has-[[data-subnav]]:grid-cols-1 has-[[data-subnav]]:p-0">
                         ${this.logoutError ? html`<p role="alert" class="mb-4 text-sm text-destructive">${this.logoutError}</p>` : null}
                         ${this.children}
                     </main>

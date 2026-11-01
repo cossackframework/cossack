@@ -117,12 +117,10 @@ An `EntryAction` is one of:
 Every action may also have:
 
 - `id`: a name, so that other plugins can find the action.
-- `icon`: a Solar icon name, such as `pen` or `copy`.
 - `danger`: shows the action in the destructive color.
 
-Quick actions show as icon buttons. The label is the tooltip and the accessible name. An
-action without a known icon gets a generic one. Bulk actions show as menu entries and
-ignore `icon`.
+Quick actions show as text links under the entry's title, separated by bars. Bulk
+actions show as menu entries.
 
 ### Quick actions
 
@@ -153,7 +151,7 @@ export function register(context: PluginContext) {
     return [
       ...(view ? [view] : []),
       ...kept.filter(action => action !== view),
-      { id: 'support-desk.ticket', label: 'Open a ticket', icon: 'ticket', href: `/dashboard/support-desk/new?entry=${record.id}` },
+      { id: 'support-desk.ticket', label: 'Open a ticket', href: `/dashboard/support-desk/new?entry=${record.id}` },
     ];
   });
 }

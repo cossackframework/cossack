@@ -1199,6 +1199,8 @@ function descriptor(module) {
       href: '/dashboard/roles',
       permission: 'admin',
       iconImport: "import { ShieldKeyholeIcon as iconSvg } from '@cossackframework/solar-icons/shield-keyhole/line';",
+      // Its links go in the Users menu; without the users module, Roles is a menu of its own.
+      parent: 'users',
       children: [
         ['All roles', '/dashboard/roles'],
         ['Add role', '/dashboard/roles/new'],
@@ -1213,6 +1215,7 @@ function descriptor(module) {
   const placement = definition.placement
     ? `\n  placement: '${definition.placement}',`
     : '';
+  const parent = definition.parent ? `\n  parent: '${definition.parent}',` : '';
   return `import type { DashboardModule } from '../types';
 ${definition.iconImport}
 
@@ -1223,7 +1226,7 @@ const descriptor: DashboardModule = {
   label: '${definition.label}',
   href: '${definition.href}',
   icon,
-  authorization: '${definition.permission}',${placement}${children}
+  authorization: '${definition.permission}',${placement}${parent}${children}
 };
 
 export default descriptor;
@@ -1256,6 +1259,8 @@ export interface DashboardModule {
   authorization: 'authenticated' | 'admin' | { permission: string };
   placement?: 'navigation' | 'account';
   children?: DashboardModuleLink[];
+  /** Another module whose menu lists this one's links, after its own, when the user sees both. */
+  parent?: string;
   /** Highlighted on every page under this path, such as \`/dashboard/settings\` for screens with their own navigation. */
   activeFor?: string;
 }

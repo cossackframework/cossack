@@ -4,7 +4,6 @@ import { html, component, type TemplateResult } from '@cossackframework/renderer
 import { evaluateRule, hasPermission, isCmsError, PERMISSIONS } from '@cossackframework/cms';
 import { bulkBar, type BulkChoice } from '../../../../dashboard/bulk';
 import { listTable, rowActions } from '../../../../dashboard/list-table';
-import { icon } from '../../../../cms/icons';
 import { requireAny } from '../../../../cms/guards';
 import { linkButton, notice, pageHeader } from '../../../../cms/ui';
 
@@ -145,8 +144,8 @@ export default class FormsPage extends Cossack {
                 columns: [
                     { label: __('Title'), cell: row => html`<span data-form=${row.slug}>${this.canEdit ? html`<a href=${`/dashboard/content/forms/${row.id}`} class="font-medium text-foreground no-underline hover:text-primary">${row.title}</a>` : html`<span class="font-medium text-foreground">${row.title}</span>`}</span>
                         ${rowActions([
-                            ...(this.canEdit ? [{ id: `form-${row.id}-edit`, label: __('Edit'), icon: icon('pen'), href: `/dashboard/content/forms/${row.id}` }] : []),
-                            ...(this.canHandle ? [{ id: `form-${row.id}-submissions`, label: __('Submissions'), icon: icon('inbox'), href: submissions(row) }] : []),
+                            ...(this.canEdit ? [{ id: `form-${row.id}-edit`, label: __('Edit'), href: `/dashboard/content/forms/${row.id}` }] : []),
+                            ...(this.canHandle ? [{ id: `form-${row.id}-submissions`, label: __('Submissions'), href: submissions(row) }] : []),
                         ])}` },
                     { label: __('Slug'), cell: row => html`<code class="text-xs">${row.slug}</code>` },
                     { label: __('Fields'), class: 'text-muted-foreground', cell: row => row.fields },
