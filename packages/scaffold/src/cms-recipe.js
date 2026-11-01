@@ -175,7 +175,8 @@ export function pendingWrites(env: PendingBindings): PendingWriteStore {
 
 /** Worker entry: export the pending-write Durable Object and run maintenance from cron. */
 export function patchCmsWorkerEntry(source, { schedules }) {
-  let patched = source.replace("import { template } from './root';", "import { template } from './root';\nimport { cmsFor } from './cms/index';\nimport { runMaintenance } from './cms/maintenance';");
+  let patched = source.replace("import { template } from './root';", "import { template } from './root';\nimport { cmsFor } from './cms/index';\nimport { runMaintenance } from './cms/maintenance';\nimport { pluginRouteActive } from './cms/middleware';");
+  patched = patched.replace('  htmlTemplate: template,\n', '  htmlTemplate: template,\n  // A rendered plugin\'s pages and handlers answer only while the plugin is active in the CMS.\n  isPluginActive: pluginRouteActive,\n');
   patched = patched.replace('export { SseDurableObject };', "export { SseDurableObject };\n// Unconfirmed RomeDB writes (ROMEDB_PENDING) survive isolate restarts here.\nexport { RomeDBPendingWrites } from '@cossackframework/romedb/cloudflare';");
   const maintenance = 'ctx.waitUntil(runMaintenance(cmsFor(env as never), { warm: true }));';
   if (schedules) {
@@ -190,7 +191,9 @@ export function patchCmsWorkerEntry(source, { schedules }) {
 /** Node entry: run maintenance every minute in the server process. */
 export function patchCmsNodeEntry(source) {
   return source
-    .replace("import { template } from './root';", "import { template } from './root';\nimport { cmsFor } from './cms/index';\nimport { runMaintenance } from './cms/maintenance';")
+    .replace("import { template } from './root';", "import { template } from './root';\nimport { cmsFor } from './cms/index';\nimport { runMaintenance } from './cms/maintenance';\nimport { pluginRouteActive } from './cms/middleware';")
+    // A rendered plugin's pages and handlers answer only while the plugin is active in the CMS.
+    .replace('htmlTemplate: template, runtimeAdapter: runtime })', 'htmlTemplate: template, runtimeAdapter: runtime, isPluginActive: pluginRouteActive })')
     .replace('  runtime.attach(server, fetch);', `  runtime.attach(server, fetch);
   // Recover unconfirmed writes and deliver outbox events in the background.
   const maintenance = setInterval(() => {

@@ -32,6 +32,8 @@ declare module 'virtual:cossack-pages' {
     layouts: Record<string, LayoutModule | LayoutModuleLoader>;
     loadings: Record<string, LoadingModule | undefined>;
     components: Record<string, ComponentModule>;
+    /** Route key -> rendered plugin whose `pages/` the page or layout comes from. */
+    owners?: Record<string, string>;
   }
 
   const registry: CossackPagesRegistry;

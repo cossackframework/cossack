@@ -49,6 +49,7 @@ describe('plugin pages', () => {
     expect(sources.plugins['/src/pages/index.ts']).toBeUndefined();
 
     const routes = discoverRoutes(root);
+    expect(routes.sources?.['/src/pages/api/tickets.ts']).toBe('/src/plugins/support-desk/pages/api/tickets.ts');
     const tickets = routes.routes.find(route => route.pattern === '/admin/tickets')!;
     expect(tickets.layoutPaths).toEqual(['/src/pages/layout.ts', '/src/pages/admin/layout.ts', '/src/pages/admin/tickets/layout.ts']);
     expect(routes.routes.find(route => route.pattern === '/admin/tickets/:id')).toBeDefined();
@@ -87,6 +88,9 @@ describe('plugin pages', () => {
       expect(source).toContain('!/src/plugins/*/pages/**/layout.ts');
       expect(source).toContain('/src/plugins/*/pages/**/loading.ts');
       expect(source).toContain('COSSACK_PLUGIN_ROUTE_CONFLICT');
+      // The router asks the host whether a plugin's routes answer, by route key.
+      expect(source).toContain("owners[key] = file.split('/')[3]");
+      expect(source).toContain('export default { pages, layouts, loadings, components, owners }');
     }
   });
 });

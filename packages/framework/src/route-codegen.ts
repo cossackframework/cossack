@@ -1,8 +1,10 @@
 /** Node-only compiler output. The core URL helper remains portable. */
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
-import { buildRoutesManifest, computeRouteIds, type RoutesManifest } from './route-ids.js';
+import { parseSync } from 'vite';
+import { buildRoutesManifest, classifyRoute, computeRouteIds, filePathToHttpRoute, type RoutesManifest } from './route-ids.js';
 import { scanPageSources } from './plugin-sources.js';
+import { isHttpHandlerProgram } from './page-inspection.js';
 
 export const ROUTES_MODULE_ID = 'virtual:cossack-routes';
 export const ROUTES_SOURCE_PATH = '.cossack/routes.ts';
@@ -53,13 +55,47 @@ export function scanPagesDir(
   return { pageKeys: pageKeys.sort(), layoutKeys: layoutKeys.sort(), markdownKeys: markdownKeys.sort() };
 }
 
+/** Parse results by source file; a page is parsed again only when its size or mtime changes. */
+const handlerSyntax = new Map<string, { size: number; mtimeMs: number; handler: boolean }>();
+
+/**
+ * Route keys of the functional HTTP handler modules outside `/api`: TypeScript page
+ * files whose exports are a default function, `defineApi()` or `GET`/`POST`… handlers
+ * rather than a component. The same Oxc parse that the client security plugin uses
+ * decides, so the manifest, the generated API types and the browser stubs agree, and
+ * nothing executes. Modules under `/api` are endpoints by path and are not parsed;
+ * Markdown pages are never handlers.
+ */
+export function discoverHttpHandlers(projectRoot: string, pageKeys: readonly string[], sources: Record<string, string> = {}): string[] {
+  const handlers: string[] = [];
+  for (const key of pageKeys) {
+    if (!key.endsWith('.ts') || classifyRoute(filePathToHttpRoute(key)) !== 'page') continue;
+    const file = resolve(projectRoot, '.' + (sources[key] ?? key));
+    const { size, mtimeMs } = statSync(file);
+    const cached = handlerSyntax.get(file);
+    const handler = cached && cached.size === size && cached.mtimeMs === mtimeMs ? cached.handler : isHttpHandlerSource(readFileSync(file, 'utf8'));
+    handlerSyntax.set(file, { size, mtimeMs, handler });
+    if (handler) handlers.push(key);
+  }
+  return handlers;
+}
+
+function isHttpHandlerSource(code: string): boolean {
+  try {
+    const result = parseSync('page.ts', code);
+    return !result.errors?.length && isHttpHandlerProgram(result.program);
+  } catch { return false; }
+}
+
 /**
  * Same discovered files and collision resolution as virtual:cossack-pages,
- * including plugin pages under `src/plugins/<name>/pages`.
+ * including plugin pages under `src/plugins/<name>/pages`. Functional handlers
+ * outside `/api` are endpoints by their syntax ({@link discoverHttpHandlers}).
  */
 export function discoverRoutes(projectRoot: string, includeMarkdown = false): RoutesManifest {
   const { pageKeys, layoutKeys, sources } = scanPageSources(projectRoot, includeMarkdown);
-  const manifest = buildRoutesManifest(pageKeys, layoutKeys, computeRouteIds(pageKeys, layoutKeys));
+  const handlers = discoverHttpHandlers(projectRoot, pageKeys, sources);
+  const manifest = buildRoutesManifest(pageKeys, layoutKeys, computeRouteIds(pageKeys, layoutKeys), { handlers });
   const pluginSources = Object.fromEntries(Object.entries(sources).filter(([key, source]) => key !== source));
   return Object.keys(pluginSources).length ? { ...manifest, sources: pluginSources } : manifest;
 }

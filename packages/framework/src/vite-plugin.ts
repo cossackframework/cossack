@@ -391,6 +391,8 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
         // registry is the shared bootstrap path for generated applications.
         return `
           ${!isSsrEnvironment && traceBridge ? `import ${JSON.stringify(TRACE_BRIDGE_MODULE)};` : ''}
+          // Route key -> plugin name, so the router can ask the host whether a plugin's routes answer.
+          const owners = {};
           function overlay(application, plugins) {
             const merged = { ...application };
             for (const [file, module] of Object.entries(plugins)) {
@@ -400,6 +402,7 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
                 throw new Error('[Cossack] COSSACK_PLUGIN_ROUTE_CONFLICT: ' + file.slice(1) + ' and another source both define ' + key.slice('/src/pages'.length) + '.');
               }
               merged[key] = module;
+              owners[key] = file.split('/')[3];
             }
             return merged;
           }
@@ -431,7 +434,7 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
           // (e.g. a UI barrel) and defeat tree-shaking.
           const components = {};
 
-          export default { pages, layouts, loadings, components };
+          export default { pages, layouts, loadings, components, owners };
         `;
       }
     },

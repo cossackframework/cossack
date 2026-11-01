@@ -193,6 +193,16 @@ handling. A path the application also defines fails the build with
 `COSSACK_PLUGIN_ROUTE_CONFLICT`. Markdown pages work once the application has the
 `markdown` feature.
 
+A functional handler module is an HTTP endpoint at any path: `pages/webhooks/support/index.ts`
+exporting `POST` serves `/webhooks/support`, and `pages/api/support/tickets.ts` serves
+`/api/support/tickets`. See [API routes](../api-routes.md).
+
+A plugin's pages, layouts and handlers answer only while the plugin is active. The CMS passes
+`isPluginActive` to `createApp`, and the framework answers a request for an inactive plugin's
+route, including RPC, SSE and WebSocket requests addressed to its components, exactly like an
+unknown URL: a JSON 404 under `/api`, otherwise the nearest 404 boundary that is not the
+plugin's own. None of the plugin's guards or handlers run.
+
 A dashboard page reads the plugin's data through the host on the request, as the
 signed-in user:
 

@@ -208,6 +208,22 @@ Default function precedence matches native routing. Component modules and plain
 handlers do not invent validated contracts. Source layout ancestry in the manifest
 does not assert that functional API modules execute component layouts.
 
+A route's kind comes from its pattern and its module shape. Every module under
+`/api` is an endpoint. A functional handler module elsewhere, recognized by the
+same Oxc parse the client security plugin uses, is an endpoint too, at paths such
+as `/webhooks/crm` or `/feed.xml`. The router registers the same module shapes at
+runtime; a default export that is neither a component nor a function registers
+nothing. Unknown paths keep the `/api` prefix rules for JSON 404s, and the
+built-in CORS covers other endpoints only through configured `paths`.
+
+The page registry records which rendered plugin owns each page and layout key.
+`createApp({ isPluginActive })` lets a host decide per request whether a plugin's
+routes answer. An inactive plugin's pages, layouts and handlers, and RPC, SSE and
+WebSocket requests addressed to its components, receive the unknown-URL response
+before any of the plugin's guards run, and its 404 boundaries are excluded from
+unknown-URL selection. Without the option plugin routes are always live; the CMS
+supplies its activation state.
+
 404 and error components retain source identities rather than competing public
 URLs. Unknown-path selection compiles effective source prefixes at application
 construction. Literal specificity and route-group precedence select an owner.

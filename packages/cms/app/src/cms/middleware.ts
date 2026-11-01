@@ -1,7 +1,17 @@
-import type { MiddlewareHandler } from 'hono';
+import type { Context, MiddlewareHandler } from 'hono';
 import { ANONYMOUS, type Principal } from '@cossackframework/cms';
 import { cmsFor, type CmsBindings } from './index';
 import { runMaintenance } from './maintenance';
+
+/**
+ * For `createApp({ isPluginActive })`: a rendered plugin's pages, layouts and HTTP handlers
+ * answer only while the plugin is active (migrated and granted); otherwise they are not found,
+ * like an unknown URL. Before setup, or while the CMS is unavailable, no plugin route answers.
+ */
+export async function pluginRouteActive(plugin: string, c: Context): Promise<boolean> {
+    try { return await cmsFor(c.env as CmsBindings).pluginActive(plugin); }
+    catch { return false; }
+}
 
 let lastMaintenance = 0;
 

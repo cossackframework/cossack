@@ -163,6 +163,12 @@ Functional API handlers do not execute component layouts. Method and middleware
 facts remain in `cossack routes --json` inspection. See
 [declared API contracts and generated types](./api-routes.md#declared-input-and-output).
 
+A route's `kind` is `api` for every module under `/api`, and for a functional
+handler module at any other path: a default function, `defineApi()` or
+`GET`/`POST`/… exports, decided from the file's syntax without running it. Such
+a module is an endpoint at `/webhooks/crm` or `/feed.xml` as much as under
+`/api`. Typed URLs and API types include it; the browser receives only stubs.
+
 ### Unknown URLs and boundary identity
 
 For an unknown URL, Cossack selects the longest matching prefix from effective

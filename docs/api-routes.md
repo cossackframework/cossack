@@ -10,6 +10,17 @@ You can build backend endpoints directly in your project. Choose one of two styl
 Place API routes under the public `/api` path. Route groups work here too:
 `src/pages/(account)/api/items/[id].ts` serves `/api/items/:id`.
 
+A functional handler module is an endpoint at any other path as well. A file
+that exports a default function, `defineApi()` handlers or `GET`/`POST`/…
+functions serves its URL wherever it sits: `src/pages/webhooks/crm/index.ts`
+serves `/webhooks/crm` and `src/pages/feed.xml/index.ts` serves `/feed.xml`.
+The framework recognizes the module by its syntax, so the generated URL helpers
+and API types include it and the browser receives only stubs. Such an endpoint
+has no component layouts, and its errors are JSON even for a browser
+navigation. Unknown methods and paths outside `/api` follow the page 404 rules,
+and the built-in CORS covers the endpoint only when `paths` lists it.
+Class-based routes outside `/api` remain pages.
+
 ## Cross-origin requests (CORS)
 
 CORS is built in for `/api` and `/api/*`. It is enabled by default, but the
@@ -22,6 +33,8 @@ Set `CORS_ORIGINS` to a comma-separated allowlist:
 # .env (Node) or .dev.vars (Wrangler local development)
 CORS_ORIGINS=https://app.example.com,https://*.example.org
 CORS_CREDENTIALS=true
+# Endpoints outside /api that browsers on those origins may call
+CORS_PATHS=/webhooks,/feed.xml
 ```
 
 Exact HTTP(S) origins, `*`, scheme-specific subdomain patterns such as
@@ -31,7 +44,9 @@ global `*` cannot be combined with credentials.
 
 Preflight requests return `204` before project auth/database middleware runs.
 CORS is intentionally not applied to pages or framework transport endpoints
-such as `/crpc`, uploads, SSE, and WebSockets. See [Configuration](./config.md#cors).
+such as `/crpc`, uploads, SSE, and WebSockets. Endpoints outside `/api` are
+covered only when `paths` (`CORS_PATHS`) lists them; an entry covers that path
+and everything below it. See [Configuration](./config.md#cors).
 
 ## Functional API Routes (Zero-Config)
 
@@ -288,6 +303,8 @@ Cossack follows a standard file-based routing convention for API routes:
 * `src/pages/api/hello.ts` → `/api/hello`
 * `src/pages/api/users/index.ts` → `/api/users`
 * `src/pages/api/users/[id].ts` → `/api/users/:id`
+* `src/pages/webhooks/crm/index.ts` → `/webhooks/crm` (a functional handler at any path)
+* `src/pages/feed.xml/index.ts` → `/feed.xml`
 
 ## Type Safety
 
