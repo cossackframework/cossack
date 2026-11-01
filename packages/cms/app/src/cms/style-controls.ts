@@ -5,7 +5,7 @@
  * Values are preset slugs; `blockStyleAttributes` renders them. Client-safe.
  */
 import { component, html, type TemplateResult } from '@cossackframework/renderer';
-import { Icon, Input, NativeSelect } from '@cossackframework/ui';
+import { Icon, Input, NativeSelect, Tabs } from '@cossackframework/ui';
 import { TEXT_ALIGNMENTS, type BlockStyle, type Preset, type StyleProperty, type ThemePresets } from '@cossackframework/cms';
 import type { EditorBlock } from './editor';
 import { icon } from './icons';
@@ -36,11 +36,15 @@ const ALIGN_ICONS: Record<(typeof TEXT_ALIGNMENTS)[number], string> = { left: 'a
 const ALIGN_LABELS: Record<(typeof TEXT_ALIGNMENTS)[number], string> = { left: 'Align left', center: 'Align center', right: 'Align right' };
 
 /** The two tabs over a block's settings. */
-export function blockTabs(active: BlockTab, pick: (tab: BlockTab) => void, idPrefix: string): TemplateResult {
-    const tab = (name: BlockTab, label: string) => html`<button type="button" role="tab" id=${`${idPrefix}-tab-${name}`} aria-selected=${active === name ? 'true' : 'false'} aria-controls=${`${idPrefix}-panel-${name}`}
-        class=${`-mb-px border-b-2 bg-transparent px-3 py-1.5 text-xs font-medium cursor-pointer ${active === name ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
-        @click=${() => pick(name)}>${label}</button>`;
-    return html`<div role="tablist" class="flex border-b border-border">${tab('general', __('General'))}${tab('style', __('Style'))}</div>`;
+export function blockTabs(active: BlockTab, pick: (tab: BlockTab) => void, idPrefix: string, content: Record<BlockTab, TemplateResult>): TemplateResult {
+    return component(Tabs, {
+        id: idPrefix, label: __('Block settings'), value: active, variant: 'underline',
+        onValueChange: (value: string) => pick(value as BlockTab),
+        items: [
+            { value: 'general', label: __('General'), content: content.general },
+            { value: 'style', label: __('Style'), content: content.style },
+        ],
+    });
 }
 
 /**

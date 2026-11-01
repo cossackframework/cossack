@@ -62,7 +62,7 @@ describe.skipIf(!liveRomeDBTests())('CMS themes', () => {
       const themes = await web.action('dashboard/(cms)/appearance/index.ts', 'activate', ['portfolio']);
       expect(themes.error).toBe('');
       expect(await web.page('/dashboard/appearance')).toContain('Child theme of Cossack Default');
-      await web.action(EDITOR, 'save', [{ title: 'Hello from the blog', slug: '', status: 'draft', publishedAt: '' }, 'publish', 0],
+      await web.action(EDITOR, 'save', [{ title: 'Hello from the blog', slug: '', status: 'draft', publishedAt: '', tags: ['Original tag'] }, 'publish', 0],
         { params: { collection: 'posts', id: 'new' }, state: { route: 'posts', id: 'new' } });
       // A template chosen for one page; the editor offers the theme's templates and refuses others.
       expect(await web.page('/dashboard/content/pages/new')).toMatch(/value="?entry-wide/);
@@ -258,7 +258,7 @@ describe.skipIf(!liveRomeDBTests())('CMS themes', () => {
       // Edit a block in place: click it on the page, change its text in the popover.
       await sections.getByText('First section').click();
       const form = tab.getByRole('dialog', { name: 'Edit Paragraph' });
-      await form.getByLabel('Text').fill('First section, edited on the site');
+      await form.getByRole('textbox', { name: 'Text' }).fill('First section, edited on the site');
       await form.getByRole('button', { name: 'Apply' }).click();
       await browserExpect(sections.getByText('First section, edited on the site')).toBeVisible();
       await browserExpect(bar.getByRole('status')).toHaveText('Unsaved changes');
@@ -290,7 +290,7 @@ describe.skipIf(!liveRomeDBTests())('CMS themes', () => {
 
       // A save made elsewhere meanwhile is a conflict, offered for reload.
       await tab.getByText('First section, edited on the site').click();
-      await tab.getByRole('dialog', { name: 'Edit Paragraph' }).getByLabel('Text').fill('Changed in the browser');
+      await tab.getByRole('dialog', { name: 'Edit Paragraph' }).getByRole('textbox', { name: 'Text' }).fill('Changed in the browser');
       await tab.getByRole('dialog', { name: 'Edit Paragraph' }).getByRole('button', { name: 'Apply' }).click();
       await web.action(EDITOR, 'save', [{ title: 'Rocket, renamed elsewhere' }, 'update', 2], { params: { collection: 'projects', id: rocket }, state: { route: 'projects', id: rocket } });
       await bar.getByRole('button', { name: 'Save', exact: true }).click();
@@ -302,6 +302,43 @@ describe.skipIf(!liveRomeDBTests())('CMS themes', () => {
       await bar.getByRole('button', { name: 'Exit', exact: true }).click();
       await browserExpect(taskbar).toBeVisible();
       expect(new URL(tab.url()).searchParams.has('edit')).toBe(false);
+      expect(errors).toEqual([]);
+
+      // Flat taxonomies in the public editor offer existing terms, keep selections visible,
+      // and still create new tags. Each change must survive saving and reloading the page.
+      const terms = await web.action('dashboard/(cms)/terms/[taxonomy]/index.ts', 'create',
+        [{ name: 'Available tag', slug: '', parent: '', description: '', icon: '' }],
+        { params: { taxonomy: 'tags' }, state: { taxonomy: { name: 'tags', label: 'Tags', singular: 'Tag', hierarchical: false, path: 'tag' } } });
+      expect(terms.error).toBe('');
+      await tab.goto(server.origin + '/posts/hello-from-the-blog?edit');
+      await tab.waitForFunction(() => window.__cossackReady === true);
+      await bar.getByRole('button', { name: 'Entry', exact: true }).click();
+      const entry = tab.getByRole('dialog', { name: 'Entry', exact: true });
+      const tags = entry.getByRole('combobox', { name: 'Tags', exact: true });
+      await browserExpect(entry.getByRole('button', { name: 'Remove Original tag', exact: true })).toBeVisible();
+      await tags.fill('avail');
+      await browserExpect(entry.getByRole('option', { name: 'Available tag', exact: true })).toBeVisible();
+      await tags.press('ArrowDown');
+      await tags.press('Enter');
+      await browserExpect(entry.getByRole('button', { name: 'Remove Available tag', exact: true })).toBeVisible();
+      await tags.fill('New browser tag');
+      await entry.getByRole('option', { name: 'Create "New browser tag"', exact: true }).click();
+      await browserExpect(entry.getByRole('button', { name: 'Remove New browser tag', exact: true })).toBeVisible();
+      await entry.getByRole('button', { name: 'Remove Original tag', exact: true }).click();
+      await tags.click();
+      await browserExpect(tags).toHaveAttribute('aria-expanded', 'true');
+      await tags.press('Escape');
+      await browserExpect(tags).toHaveAttribute('aria-expanded', 'false');
+      await browserExpect(entry).toBeVisible();
+      await bar.getByRole('button', { name: 'Save', exact: true }).click();
+      await browserExpect(bar.getByRole('status')).toHaveText('No unsaved changes');
+      await tab.reload();
+      await tab.waitForFunction(() => window.__cossackReady === true);
+      await bar.getByRole('button', { name: 'Entry', exact: true }).click();
+      await browserExpect(entry.getByRole('button', { name: 'Remove Available tag', exact: true })).toBeVisible();
+      await browserExpect(entry.getByRole('button', { name: 'Remove New browser tag', exact: true })).toBeVisible();
+      await browserExpect(entry.getByRole('button', { name: 'Remove Original tag', exact: true })).toHaveCount(0);
+      expect(await visitor.page('/tag/new-browser-tag')).toContain('Hello from the blog');
       expect(errors).toEqual([]);
     } finally {
       await browser?.close();

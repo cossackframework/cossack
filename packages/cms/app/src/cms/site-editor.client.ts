@@ -7,7 +7,7 @@
  */
 import { Client, ClientState, Component, Cossack } from '@cossackframework/core';
 import { component, html, type TemplateResult } from '@cossackframework/renderer';
-import { Button, Checkbox, Icon } from '@cossackframework/ui';
+import { Button, Checkbox, Icon, MultiSelect } from '@cossackframework/ui';
 import { blockId, BREAKPOINTS, findBlock, insertBlock, placeBlocks, removeBlock, shiftBlock, updateBlock, type BlockMove, type BlockPlace, type Breakpoint, type EmbeddedBlock, type RichTextDoc } from '@cossackframework/cms';
 import { blockDefaults, controlValue, editorInput, newBlock, type BlockOption, type EditorValues } from './editor';
 import { BREAKPOINT_DEVICES, declarationsOf, offeredIn } from './block-tree';
@@ -73,7 +73,7 @@ export class SiteEditor extends Cossack {
     };
 
     private readonly onKey = (event: KeyboardEvent) => {
-        if (event.key !== 'Escape') return;
+        if (event.key !== 'Escape' || event.defaultPrevented) return;
         if (this.form) {
             // Escape in a nested block's form selects its container.
             const parent = this.places().find(place => place.block._id === this.form!.id)?.parent ?? null;
@@ -488,15 +488,16 @@ export class SiteEditor extends Cossack {
                             @click=${() => this.toggleHide(block._id, breakpoint)}>${component(Icon, { entry: icon(BREAKPOINT_DEVICES[breakpoint].icon), size: 16 })}</button>`;
                     })}
                 </div>
-                ${blockTabs(form.tab, tab => this.showFormTab(tab), `site-block-${block._id}`)}
-                ${form.tab === 'style' ? styleControls(form.style, option.supports, this.props.draft.view.presets, `site-block-${block._id}-style`, style => this.setFormStyle(style))
-                : option.fields.length ? html`
+                ${blockTabs(form.tab, tab => this.showFormTab(tab), `site-block-${block._id}`, {
+                    style: styleControls(form.style, option.supports, this.props.draft.view.presets, `site-block-${block._id}-style`, style => this.setFormStyle(style)),
+                    general: option.fields.length ? html`
                     ${option.fields.filter(field => field.kind === 'richtext').map(field => html`<div class="space-y-1"><label class="block text-sm font-medium text-foreground" for=${`site-block-${block._id}-${field.name}`}>${field.label}</label>
                         ${component(RichTextField, { id: `site-block-${block._id}-${field.name}`, label: field.label, value: (form.values[field.name] as RichTextDoc | null) ?? null, blocks: [],
                             onChange: (doc: RichTextDoc) => this.setFormValue(field.name, doc), onMedia: () => this.openChooser({ kind: 'richtext', editor: `site-block-${block._id}-${field.name}` }, false),
                             onInsertBlock: () => undefined, onEditBlock: () => undefined })}</div>`)}
                     ${blockFields({ ...option, fields: option.fields.filter(field => field.kind !== 'richtext') }, form.values, (name, value) => this.setFormValue(name, value), `site-block-${block._id}`, name => this.media({ kind: 'block', field: name }), form.errors, [], this.props.draft.view.sources)}`
-                    : html`<p class="text-sm text-muted-foreground">${__('This block has no settings.')}</p>`}
+                    : html`<p class="text-sm text-muted-foreground">${__('This block has no settings.')}</p>`,
+                })}
                 <div class="flex justify-end gap-2">
                     ${component(Button, { type: 'button', variant: 'outline', size: 'sm', '@click': () => { this.form = null; } }, __('Cancel'))}
                     ${component(Button, { type: 'submit', size: 'sm' }, __('Apply'))}
@@ -577,9 +578,13 @@ export class SiteEditor extends Cossack {
                             ${component(Checkbox, { checked: chosen.includes(term.id), '@change': (event: Event) => this.setValue(taxonomy.name,
                                 (event.target as HTMLInputElement).checked ? [...chosen, term.id] : chosen.filter(id => id !== term.id)) })} ${term.name}</label>`)}</fieldset>`;
                 }
-                const names = Array.isArray(value) ? (value as string[]).join(', ') : '';
-                return row(`site-entry-${taxonomy.name}`, `${taxonomy.label} (${__('separate with commas')})`, html`<input id=${`site-entry-${taxonomy.name}`} class=${CONTROL} .value=${names}
-                    @change=${(event: Event) => this.setValue(taxonomy.name, (event.target as HTMLInputElement).value.split(',').map(name => name.trim()).filter(Boolean))}>`, taxonomy.name);
+                return row(`site-entry-${taxonomy.name}`, taxonomy.label, component(MultiSelect, {
+                    id: `site-entry-${taxonomy.name}`, value: Array.isArray(value) ? value as string[] : [],
+                    options: [...new Set(taxonomy.terms.map(term => term.name))], allowCreate: true,
+                    placeholder: __('Search or add…'), emptyLabel: __('No matching terms.'),
+                    createLabel: (name: string) => `${__('Create')} "${name}"`, removeLabel: (name: string) => `${__('Remove')} ${name}`,
+                    onValueChange: (names: string[]) => this.setValue(taxonomy.name, names),
+                }), taxonomy.name);
             })}
             ${fields.map(field => row(`site-entry-${field.name}`, field.label, fieldControl(field, this.values[field.name], value => this.setValue(field.name, value), `site-entry-${field.name}`,
                 { media: this.media({ kind: 'entry', field: field.name }), options: references[field.name] ?? [], sources: this.props.draft.view.sources }), field.name, field.kind === 'boolean'))}

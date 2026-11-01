@@ -1,5 +1,5 @@
 import { Cossack, Page, State, ClientState, Server, Client, type HeadValue } from '@cossackframework/core';
-import { AlertDialog, Button, Card, CardBody, Field, Input, Textarea } from '@cossackframework/ui';
+import { AlertDialog, Button, Card, CardBody, Field, Input, Tabs, Textarea } from '@cossackframework/ui';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
 import { formatBytes, imageUrl, isCmsError, mediaKind, mediaUrl, PERMISSIONS, transformable, type ImageEdits, type ImageRect, type MediaKind } from '@cossackframework/cms';
 import { requireAny } from '../../../../../cms/guards';
@@ -168,18 +168,7 @@ export default class MediaDetails extends Cossack {
         const crop = this.crop ?? { x: 0, y: 0, width, height };
         const percent = (value: number, total: number) => `${(value / total) * 100}%`;
         const cropped = { id: file.id, name: file.name, contentType: file.contentType, width, height, edits: this.crop ? { crop: this.crop } : null, version: this.source.version };
-        const tab = (mode: 'focus' | 'crop', label: string) => html`<button type="button" role="tab" aria-selected=${this.mode === mode ? 'true' : 'false'}
-            class=${`rounded px-3 py-1 text-xs font-medium border-none cursor-pointer ${this.mode === mode ? 'bg-muted text-foreground' : 'bg-transparent text-muted-foreground hover:text-foreground'}`}
-            @click=${() => { this.mode = mode; }}>${label}</button>`;
-        return html`<div class="space-y-3">
-            <div class="flex flex-wrap items-center justify-between gap-2">
-                <div role="tablist" aria-label=${__('Image editing')} class="flex gap-1">${tab('focus', __('Focal point'))}${tab('crop', __('Crop'))}</div>
-                <div class="flex gap-2">
-                    ${component(Button, { type: 'button', size: 'sm', variant: 'ghost', '@click': () => this.resetEdits() }, __('Reset'))}
-                    ${component(Button, { type: 'button', size: 'sm', disabled: !this.editsChanged, '@click': () => this.submitEdits() }, __('Save image edits'))}
-                </div>
-            </div>
-            ${this.mode === 'focus' ? html`<p class="text-xs text-muted-foreground">${__('Click the part that must stay in view when the image is cut to fit a shape, such as a face.')}</p>
+        const panel = this.mode === 'focus' ? html`<p class="text-xs text-muted-foreground">${__('Click the part that must stay in view when the image is cut to fit a shape, such as a face.')}</p>
                 <div class="relative mx-auto w-fit cursor-crosshair" ref=${(element: Element) => this.stageRef(element)} @pointerdown=${(event: PointerEvent) => this.pickFocus(event)} data-focus-stage>
                     <img src=${this.crop && this.editsChanged ? file.url : this.crop ? imageUrl(cropped, { width: Math.min(crop.width, 1280) }) : file.url} alt=${this.details.alt}
                         class=${`block max-h-[60vh] max-w-full select-none ${this.crop && this.editsChanged ? 'opacity-60' : ''}`} draggable="false">
@@ -208,7 +197,20 @@ export default class MediaDetails extends Cossack {
                     ${(['x', 'y', 'width', 'height'] as const).map(key => html`<label class="space-y-1 text-xs"><span class="block text-muted-foreground">${({ x: __('Left'), y: __('Top'), width: __('Width'), height: __('Height') })[key]}</span>
                         <input type="number" min="0" class="w-full rounded-md border border-input bg-background px-2 py-1 text-sm text-foreground" .value=${String(crop[key])}
                             @change=${(event: Event) => this.setCropValue(key, (event.target as HTMLInputElement).value)}></label>`)}
-                </fieldset>`}
+                </fieldset>`;
+        return html`<div class="space-y-3">
+            <div class="flex justify-end gap-2">
+                ${component(Button, { type: 'button', size: 'sm', variant: 'ghost', '@click': () => this.resetEdits() }, __('Reset'))}
+                ${component(Button, { type: 'button', size: 'sm', disabled: !this.editsChanged, '@click': () => this.submitEdits() }, __('Save image edits'))}
+            </div>
+            ${component(Tabs, {
+                id: 'image-editing', label: __('Image editing'), value: this.mode, variant: 'underline',
+                onValueChange: (mode: string) => { this.mode = mode as 'focus' | 'crop'; },
+                items: [
+                    { value: 'focus', label: __('Focal point'), content: this.mode === 'focus' ? html`<div class="space-y-3">${panel}</div>` : null },
+                    { value: 'crop', label: __('Crop'), content: this.mode === 'crop' ? html`<div class="space-y-3">${panel}</div>` : null },
+                ],
+            })}
         </div>`;
     }
 

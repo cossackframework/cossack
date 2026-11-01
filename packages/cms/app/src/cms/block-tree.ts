@@ -6,7 +6,7 @@
  * or buttons, hidden per device, with an inserter at every level offering what fits there.
  * Client-safe. The screen renders each field's control, since it owns media choosing.
  */
-import { Client, ClientState, Component, Cossack } from '@cossackframework/core';
+import { Client, ClientState, Component, Cossack, getTabbable } from '@cossackframework/core';
 import { component, html, type TemplateResult } from '@cossackframework/renderer';
 import { AlertDialog, Badge, Icon } from '@cossackframework/ui';
 import { blockId, BREAKPOINTS, FIELD_GROUP_LAYOUT, insertBlock, placeBlocks, removeBlock, shiftBlock, updateBlock, type BlockDeclaration, type BlockMove, type Breakpoint } from '@cossackframework/cms';
@@ -217,7 +217,10 @@ export class BlockTree extends Cossack {
             requestAnimationFrame(() => {
                 edit(block._id);
                 // Once the sheet is open, the cursor goes to the block's first field.
-                setTimeout(() => document.querySelector<HTMLElement>(':is(dialog[open], [role="dialog"]) [role="tabpanel"] :is(input:not([type="hidden"]):not([type="checkbox"]), textarea, select, [contenteditable="true"])')?.focus(), 150);
+                setTimeout(() => {
+                    const dialog = document.querySelector<HTMLElement>('dialog[open]');
+                    if (dialog) getTabbable(dialog).find(element => element.matches('input:not([type="checkbox"]), textarea, select, [contenteditable="true"]'))?.focus();
+                }, 150);
             });
         }
     }

@@ -1,5 +1,5 @@
 import { Cossack, Page, State, ClientState, Server, Client, OnWindow, PreventNavigation, type HeadValue } from '@cossackframework/core';
-import { Avatar, Button, Checkbox, Combobox, Icon, Input, Modal, NativeSelect, Textarea, CodeEditor } from '@cossackframework/ui';
+import { Avatar, Button, Checkbox, Combobox, Icon, Input, Modal, NativeSelect, Textarea, CodeEditor, Tabs } from '@cossackframework/ui';
 import { html, component, unsafeHTML, type TemplateResult } from '@cossackframework/renderer';
 import { ARTICLE_TYPES, blockId, CORE_BLOCKS, entryAuthors, entryChecks, evaluateRule, fieldVisibility, findBlock, flattenBlocks, flattenGroupFields, formatBytes, isCmsError, languageName, mediaKind, recordSchema, recordTitle, renderSeoTemplate, richTextBlocks, TITLE_SEPARATORS, updateBlock, type Block, type BlockCondition, type Check, type EmbeddedBlock, type JsonSchema, type MediaKind, type RecordShape, type RichTextDoc } from '@cossackframework/cms';
 import { blockPanel } from '../../../../../../cms/block-panel';
@@ -892,7 +892,7 @@ export default class EntryEditor extends Cossack {
     }
 
     private jsonPanel(): TemplateResult {
-        return html`<div class="space-y-3" role="tabpanel" id="entry-json" aria-labelledby="entry-tab-json">
+        return html`<div class="space-y-3">
             <p class="text-sm text-muted-foreground">${__('The entry as the content API answers it. Fields such as id, rev and url are read-only; everything else is saved as a PATCH would be, with the same checks.')}</p>
             ${Object.keys(this.errors).length ? html`<ul role="alert" class="space-y-1 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">${Object.entries(this.errors).map(([name, message]) => html`<li><code class="text-xs">${name}</code> ${this.describe(message)}</li>`)}</ul>` : null}
             ${component(CodeEditor, { id: 'field-json', value: this.json, language: 'json', label: __('Entry JSON'), ...(this.schema ? { schema: this.schema } : {}), class: 'min-h-[24rem] rounded-md border border-input bg-background shadow-xs focus-within:border-ring focus-within:ring-ring/50 focus-within:ring-[3px]',
@@ -1021,14 +1021,13 @@ export default class EntryEditor extends Cossack {
         const wrap = (before: string, after: string, placeholder: string) => this.format(id, text, next => change(next), before, after, placeholder);
         const tool = (label: string, title: string, run: () => void) => html`<button type="button" title=${title} aria-label=${title}
             class="rounded px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground border-none bg-transparent cursor-pointer" @click=${run}>${label}</button>`;
-        return html`<div class="rounded-lg border border-border bg-card">
-            <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border px-2 py-1.5">
-                <div role="tablist" aria-label=${`${field.label} ${__('editor')}`} class="flex gap-1">
-                    ${(['write', 'preview'] as const).map(entry => html`<button type="button" role="tab" aria-selected=${tab === entry ? 'true' : 'false'}
-                        class=${`rounded px-3 py-1 text-xs font-medium border-none cursor-pointer ${tab === entry ? 'bg-muted text-foreground' : 'bg-transparent text-muted-foreground hover:text-foreground'}`}
-                        @click=${() => this.showTab(id, entry, text)}>${entry === 'write' ? __('Write') : __('Preview')}</button>`)}
-                </div>
-                ${tab === 'write' ? html`<div class="flex flex-wrap items-center gap-0.5" role="toolbar" aria-label=${__('Formatting')}>
+        return component(Tabs, {
+            id: `${id}-editor`, label: `${field.label} ${__('editor')}`, value: tab, variant: 'underline',
+            class: 'rounded-lg border border-border bg-card [&>.cs-tabs__panel]:mt-0',
+            listProps: { class: 'w-full' }, onValueChange: (entry: string) => this.showTab(id, entry === 'preview' ? 'preview' : 'write', text),
+            items: [
+                { value: 'write', label: __('Write'), content: html`
+                <div class="flex flex-wrap items-center gap-0.5 border-b border-border px-2 py-1.5" role="toolbar" aria-label=${__('Formatting')}>
                     ${tool('B', __('Bold'), () => wrap('**', '**', __('bold text')))}
                     ${tool('I', __('Italic'), () => wrap('_', '_', __('italic text')))}
                     ${tool('H2', __('Heading'), () => wrap('\n## ', '\n', __('Heading')))}
@@ -1037,15 +1036,14 @@ export default class EntryEditor extends Cossack {
                     ${tool('</>', __('Code'), () => wrap('`', '`', 'code'))}
                     ${tool(__('Link'), __('Link'), () => wrap('[', '](https://)', __('link text')))}
                     ${tool(__('Add media'), __('Add media'), () => this.openPicker({ ...target, insert: true, editor: id }))}
-                </div>` : null}
-            </div>
-            ${tab === 'write'
-                ? html`<textarea id=${id} class="block min-h-[22rem] w-full resize-y rounded-b-lg border-0 bg-transparent p-4 font-mono text-sm leading-6 text-foreground focus:outline-none"
+                </div>
+                <textarea id=${id} class="block min-h-[22rem] w-full resize-y rounded-b-lg border-0 bg-transparent p-4 font-mono text-sm leading-6 text-foreground focus:outline-none"
                     .value=${String(value ?? '')} @input=${(event: Event) => change((event.target as HTMLTextAreaElement).value)}
                     aria-describedby=${`${id}-hint`}></textarea>
-                    <p id=${`${id}-hint`} class="border-t border-border px-4 py-2 text-xs text-muted-foreground">${__('Markdown: **bold**, _italic_, ## headings, - lists, [links](https://example.com). Blocks: {{ block core/button label="Buy" url="/cart" /}}; values: {{ $.price }}, {{ $site.title }}.')}</p>`
-                : html`<div class="cms-prose min-h-[22rem] p-4">${this.rendered[id] ? unsafeHTML(this.rendered[id]!) : html`<p class="text-muted-foreground">${__('Nothing to preview.')}</p>`}</div>`}
-        </div>`;
+                <p id=${`${id}-hint`} class="border-t border-border px-4 py-2 text-xs text-muted-foreground">${__('Markdown: **bold**, _italic_, ## headings, - lists, [links](https://example.com). Blocks: {{ block core/button label="Buy" url="/cart" /}}; values: {{ $.price }}, {{ $site.title }}.')}</p>` },
+                { value: 'preview', label: __('Preview'), content: html`<div class="cms-prose min-h-[22rem] p-4">${this.rendered[id] ? unsafeHTML(this.rendered[id]!) : html`<p class="text-muted-foreground">${__('Nothing to preview.')}</p>`}</div>` },
+            ],
+        });
     }
 
     private blocksControl(field: EditorField): TemplateResult {
@@ -1512,14 +1510,6 @@ export default class EntryEditor extends Cossack {
                     <a href=${form ? '/dashboard/forms' : base} class="text-muted-foreground hover:text-foreground">← ${__('All')} ${view.label.toLowerCase()}</a>
                 </div>
             </div>
-            ${tabs.length > 1 ? html`<div role="tablist" aria-label=${__('Editor view')} class="flex flex-wrap gap-1 border-b border-border">
-                ${tabs.map(mode => {
-                    const count = mode === 'json' ? 0 : this.errorsOn(mode);
-                    return html`<button type="button" role="tab" id=${`entry-tab-${mode}`} aria-selected=${this.mode === mode ? 'true' : 'false'} aria-controls=${`entry-${mode}`}
-                        class=${`-mb-px border-b-2 px-3 py-2 text-sm font-medium bg-transparent cursor-pointer ${this.mode === mode ? 'border-primary text-foreground' : count ? 'border-transparent text-destructive' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
-                        @click=${() => this.showMode(mode)}>${tabIcon(mode)}${tabLabel(mode)}${count ? countBadge(count) : null}</button>`;
-                })}
-            </div>` : null}
             ${this.message ? notice(this.message, 'success') : null}
             ${this.error ? notice(this.describe(this.error), 'error') : null}
             ${this.autosaveOffer ? html`<div role="status" class="flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-foreground">
@@ -1527,10 +1517,15 @@ export default class EntryEditor extends Cossack {
                 <span class="flex gap-2">${component(Button, { type: 'button', size: 'sm', '@click': () => this.restore() }, __('Restore the autosave'))}
                     ${component(Button, { type: 'button', size: 'sm', variant: 'ghost', '@click': () => this.dismissAutosave() }, __('Dismiss'))}</span>
             </div>` : null}
-            <div class=${`grid gap-6 ${this.mode === 'json' ? '' : 'lg:grid-cols-[minmax(0,1fr)_20rem]'}`}>
-                <div class="min-w-0">
-                ${this.mode === 'json' ? this.jsonPanel() : null}
-                ${view.layout.tabs.map((tab, index) => html`<div id=${`entry-${tab.id}`} role="tabpanel" aria-labelledby=${`entry-tab-${tab.id}`} class=${`space-y-5 ${this.mode === tab.id ? '' : 'hidden'}`}>
+            <div class=${`grid gap-x-6 ${this.mode === 'json' ? '' : 'lg:grid-cols-[minmax(0,1fr)_20rem]'}`}>
+                ${component(Tabs, {
+                    id: 'entry', label: __('Editor view'), value: this.mode, variant: 'underline', class: 'contents [&>.cs-tabs__panel]:min-w-0',
+                    listProps: { class: `col-span-full w-full flex-wrap [&>[data-value=json]]:ms-auto ${tabs.length > 1 ? '' : 'hidden'}` },
+                    onValueChange: (mode: string) => this.showMode(mode),
+                    items: [...view.layout.tabs.map((tab, index) => ({
+                        value: tab.id, ariaLabel: `${tabLabel(tab.id)}${this.errorsOn(tab.id) ? ` (${this.errorsOn(tab.id)})` : ''}`,
+                        label: html`<span class=${this.errorsOn(tab.id) ? 'text-destructive' : ''}>${tabIcon(tab.id)}${tabLabel(tab.id)}${this.errorsOn(tab.id) ? countBadge(this.errorsOn(tab.id)) : null}</span>`,
+                        content: html`<div class="space-y-5">
                     ${index === 0 && titleField ? html`<div class="space-y-1">
                         <label for="field-title" class="sr-only">${__('Title')}</label>
                         <input id="field-title" class=${`w-full rounded-lg border bg-background px-4 py-3 text-xl font-semibold text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring ${this.errors[titleField] ? 'border-destructive' : 'border-input'}`}
@@ -1550,9 +1545,10 @@ export default class EntryEditor extends Cossack {
                         ${this.errorFor('slug')}
                     </div>` : null}
                     ${editorLayoutView(tab.blocks, id => this.boxView(id))}
-                </div>`)}
-                </div>
-                <aside class=${`space-y-4 ${this.mode === 'json' ? 'hidden' : ''}`}>
+                        </div>`,
+                    })), ...(tabs.includes('json') ? [{ value: 'json', label: 'JSON', content: this.mode === 'json' ? this.jsonPanel() : null }] : [])],
+                })}
+                <aside class=${`mt-4 space-y-4 ${this.mode === 'json' ? 'hidden' : ''}`}>
                     ${this.publishBox(view)}
                     ${editorLayoutView(view.layout.sidebar, id => this.boxView(id), { sidebar: true })}
                 </aside>

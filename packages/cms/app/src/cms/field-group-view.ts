@@ -6,7 +6,7 @@
  */
 import { Client, ClientState, Component, Cossack } from '@cossackframework/core';
 import { component, html, type TemplateResult } from '@cossackframework/renderer';
-import { Badge, Button, Icon } from '@cossackframework/ui';
+import { Badge, Button, Icon, Tabs } from '@cossackframework/ui';
 import { blockId, hiddenKey, type Block, type BlockDeclaration } from '@cossackframework/cms';
 import { controlValue, type BlockOption, type EditorBlock, type EditorField } from './editor';
 import { icon } from './icons';
@@ -99,12 +99,16 @@ export class FieldGroupView extends Cossack {
             case 'core/tabs': {
                 const active = Math.min(this.tabs[block._id] ?? 0, Math.max(children.length - 1, 0));
                 const prefix = `${this.props.id}-${block._id}`;
-                return html`<div class="space-y-3">
-                    <div role="tablist" class="flex flex-wrap border-b border-border">${children.map((tab, index) => html`<button type="button" role="tab" id=${`${prefix}-tab-${index}`} aria-selected=${active === index ? 'true' : 'false'} aria-controls=${`${prefix}-panel-${index}`}
-                        class=${`-mb-px inline-flex items-center gap-1.5 border-b-2 bg-transparent px-3 py-1.5 text-sm font-medium cursor-pointer [&_svg]:size-4 ${active === index ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
-                        @click=${() => this.showTab(block._id, index)}>${typeof tab.data.icon === 'string' && tab.data.icon ? component(Icon, { entry: icon(tab.data.icon), size: 16 }) : null}${String(tab.data.label ?? '')}</button>`)}</div>
-                    ${children.map((tab, index) => active === index ? html`<div role="tabpanel" id=${`${prefix}-panel-${index}`} aria-labelledby=${`${prefix}-tab-${index}`}>${this.list(tab.children ?? [])}</div>` : null)}
-                </div>`;
+                return component(Tabs, {
+                    id: prefix, label: __('Field group tabs'), value: String(active), variant: 'underline',
+                    listProps: { class: 'flex flex-wrap' },
+                    onValueChange: (value: string) => this.showTab(block._id, Number(value)),
+                    items: children.map((tab, index) => ({
+                        value: String(index), label: String(tab.data.label ?? '').trim() || __('Tab'),
+                        icon: typeof tab.data.icon === 'string' && tab.data.icon ? component(Icon, { entry: icon(tab.data.icon), size: 16 }) : undefined,
+                        content: this.list(tab.children ?? []),
+                    })),
+                });
             }
             default: return option?.children ? html`<div class="space-y-4">${this.list(children)}</div>` : null;
         }

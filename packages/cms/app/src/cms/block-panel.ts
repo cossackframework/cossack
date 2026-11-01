@@ -43,10 +43,11 @@ export function blockPanel(props: BlockPanelProps): TemplateResult {
                 </div>
                 <button type="button" class="inline-flex size-8 shrink-0 items-center justify-center rounded-md border-none bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer" aria-label=${__('Close')} @click=${() => props.onClose()}>✕</button>
             </header>
-            ${withStyle ? html`<div class="px-5 pt-3">${blockTabs(props.tab, tab => props.onTab(tab), `${props.id}-panel`)}</div>` : null}
-            <div class="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4" role="tabpanel">
-                ${withStyle && props.tab === 'style' ? styleControls(props.style, option.supports, props.presets, `${props.id}-panel-style`, values => props.onStyle(values))
-                    : props.general}
+            <div class="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
+                ${withStyle ? blockTabs(props.tab, tab => props.onTab(tab), `${props.id}-settings`, {
+                    general: props.general,
+                    style: styleControls(props.style, option.supports, props.presets, `${props.id}-panel-style`, values => props.onStyle(values)),
+                }) : props.general}
             </div>
             <footer class="flex items-center justify-between gap-2 border-t border-border px-5 py-3">
                 <p class="text-xs text-muted-foreground">${__('Changes apply as you make them.')}</p>

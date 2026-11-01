@@ -143,7 +143,7 @@ async function fields(origin, routeIds, diagnostics) {
   // The layout's tabs: Product and Pricing, then JSON; every tab's boxes are in the page.
   contains(editor, 'entry-tab-pricing');
   contains(editor, 'entry-tab-json');
-  contains(editor, 'id=entry-pricing');
+  contains(editor, 'id=entry-panel-pricing');
   const terms = await (await web.request('/api/cms/content/products')).json();
   expect(terms.total).toBe(2);
   const list = await web.page('/dashboard/field-groups');
@@ -152,10 +152,15 @@ async function fields(origin, routeIds, diagnostics) {
   const manager = await web.page('/dashboard/collections/products');
   contains(manager, 'data-group=details');
   contains(manager, 'Content template');
-  // Search engines is a tab of its own.
-  expect(manager).not.toContain('Structured data type');
+  // Search engines stays mounted in its own hidden panel until selected.
+  const seoPanel = manager.match(/<div\b[^>]*\bid=collection-panel-seo\b[^>]*>/)?.[0];
+  expect(seoPanel).toMatch(/\shidden(?:\s|>)/);
   contains(manager, 'collection-tab-seo');
-  contains(await web.page('/dashboard/collections/products?tab=seo'), 'Structured data type');
+  const searchManager = await web.page('/dashboard/collections/products?tab=seo');
+  contains(searchManager, 'Structured data type');
+  const selectedSeoPanel = searchManager.match(/<div\b[^>]*\bid=collection-panel-seo\b[^>]*>/)?.[0];
+  expect(selectedSeoPanel).toBeDefined();
+  expect(selectedSeoPanel).not.toMatch(/\shidden(?:\s|>)/);
   return { web, item };
 }
 

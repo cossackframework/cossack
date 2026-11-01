@@ -80,6 +80,7 @@ import { ShieldCheckIcon } from '@cossackframework/solar-icons/shield-check/line
 import { EyeClosedIcon } from '@cossackframework/solar-icons/eye-closed/line';
 import { InboxIcon } from '@cossackframework/solar-icons/inbox/line';
 import { DownloadMinimalisticIcon } from '@cossackframework/solar-icons/download-minimalistic/line';
+import { UploadMinimalisticIcon } from '@cossackframework/solar-icons/upload-minimalistic/line';
 import { FilterIcon } from '@cossackframework/solar-icons/filter/line';
 import { CopyIcon } from '@cossackframework/solar-icons/copy/line';
 import { PenIcon } from '@cossackframework/solar-icons/pen/line';
@@ -201,6 +202,7 @@ export const ICONS: Readonly<Record<string, IconEntry>> = Object.freeze({
     'eye-closed': { line: EyeClosedIcon },
     'inbox': { line: InboxIcon },
     'download-minimalistic': { line: DownloadMinimalisticIcon },
+    'upload-minimalistic': { line: UploadMinimalisticIcon },
     // Lists, menus, the dashboard home and the newer blocks.
     'filter': { line: FilterIcon },
     'copy': { line: CopyIcon },

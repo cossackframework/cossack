@@ -1,4 +1,4 @@
-import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackframework/core';
+import { Cossack, Page, State, Server, Client, Ref, type RefObject, type HeadValue } from '@cossackframework/core';
 import { getCookie } from 'hono/cookie';
 import { bulkBar } from '../../../../../dashboard/bulk';
 import { listFilters, listFooter, listTable } from '../../../../../dashboard/list-table';
@@ -8,7 +8,7 @@ import { ENTRY_ACTION_IDS, entryAuthors, evaluateRule, isCmsError, languageName,
 import { duplicateEntry, importEntries, importItems, listExtras, routeResource, runEntryCommand, termOptions, type ImportReport } from '../../../../../cms/content';
 import type { TermOption } from '../../../../../cms/editor';
 import { icon } from '../../../../../cms/icons';
-import { clampPerPage, linkButton, notice, pageHeader, saveScreenPreferences, screenCookie, screenHelp, screenOptions, screenPreferences, shortDate, statusBadge } from '../../../../../cms/ui';
+import { clampPerPage, iconButton, linkButton, notice, pageHeader, saveScreenPreferences, screenCookie, screenHelp, screenOptions, screenPreferences, shortDate, statusBadge } from '../../../../../cms/ui';
 
 const PAGE_SIZE = 20;
 
@@ -56,6 +56,7 @@ type BulkKey = 'trash' | 'restore' | 'delete' | 'publish' | 'draft' | `plugin:${
  */
 @Page({ transport: 'http' })
 export default class EntriesPage extends Cossack {
+    @Ref() declare importFile: RefObject<HTMLInputElement>;
     @State() route = '';
     @State() label = '';
     @State() singular = '';
@@ -522,10 +523,13 @@ export default class EntriesPage extends Cossack {
             ${this.screenPanel()}
             ${pageHeader(this.label, {
                 titleActions: this.canCreate ? linkButton(`${__('New')} ${this.singular.toLowerCase()}`, `${base}/new`, 'primary', { size: 'sm' }) : null,
-                actions: html`${linkButton(__('Export JSON'), `/api/cms/export/${this.route}`, 'outline', { size: 'sm' })}
-                    ${this.canCreate ? html`<label class=${`inline-flex cursor-pointer items-center rounded-md border border-border px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted ${this.importing ? 'opacity-50' : ''}`}>
-                        ${this.importing ? __('Importing…') : __('Import JSON')}<input type="file" accept="application/json,.json" class="sr-only" ?disabled=${this.importing} @change=${(event: Event) => this.pickImport(event)}>
-                    </label>` : null}`,
+                actions: html`${component(Tooltip, { id: 'export-json-tip', label: __('Export JSON') }, html`<a href=${`/api/cms/export/${this.route}`} download
+                        aria-label=${__('Export JSON')} aria-describedby="export-json-tip"
+                        class="inline-flex h-8 w-8 items-center justify-center rounded border border-border bg-background text-muted-foreground hover:bg-muted hover:text-foreground [&_svg]:size-4">
+                        ${component(Icon, { entry: icon('download-minimalistic'), size: 16 })}</a>`)}
+                    ${this.canCreate ? html`${iconButton('import-json', 'upload-minimalistic', this.importing ? __('Importing…') : __('Import JSON'), () => this.importFile.value?.click(), { size: 'md', disabled: this.importing })}
+                        <input ref=${this.importFile} type="file" accept="application/json,.json" hidden ?disabled=${this.importing} @change=${(event: Event) => this.pickImport(event)}>
+                        <span class="sr-only" role="status">${this.importing ? __('Importing…') : ''}</span>` : null}`,
             })}
             ${this.message ? notice(this.message, 'success') : null}
             ${this.error ? notice(this.error, 'error') : null}

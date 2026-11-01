@@ -1,5 +1,5 @@
 import { Cossack, Page, State, ClientState, Server, Client, type HeadValue } from '@cossackframework/core';
-import { AlertDialog, Button, Card, CardBody, Checkbox, Icon, Input } from '@cossackframework/ui';
+import { AlertDialog, Button, Card, CardBody, Checkbox, Icon, Input, Tabs } from '@cossackframework/ui';
 import { html, component, repeat, type TemplateResult } from '@cossackframework/renderer';
 import {
     allowedMoves, buildMenu, dropDepths, flattenMenu, isCmsError, MENU_ATTRIBUTE, MENU_LIMITS, menuItemId, moveRows, PERMISSIONS, recordTitle, safeLinkUrl, shiftRows, subtreeEnd,
@@ -517,10 +517,11 @@ export default class MenuEditor extends Cossack {
                 ${iconButton(`item-${row.id}-toggle`, open ? 'close-circle' : 'pen', `${open ? __('Close') : __('Edit')} ${label}`, () => this.toggle(row.id), { class: 'shrink-0 border-transparent bg-transparent', pressed: open })}
             </div>
             ${open ? html`<div id=${`item-${row.id}`} class="mt-1 space-y-3 rounded-md border border-border bg-muted/30 p-3">
-                <div role="tablist" class="flex border-b border-border">${(['general', ...(this.fieldGroups.groups.length ? ['fields' as const] : []), 'advanced'] as const).map(name => html`<button type="button" role="tab" aria-selected=${tab === name ? 'true' : 'false'}
-                    class=${`-mb-px border-b-2 bg-transparent px-3 py-1.5 text-xs font-medium cursor-pointer ${tab === name ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
-                    @click=${() => this.showTab(row.id, name)}>${name === 'general' ? __('Navigation label') : name === 'fields' ? __('Fields') : __('Advanced')}</button>`)}</div>
-                ${tab === 'advanced' ? this.advanced(row, index) : tab === 'fields' ? this.fieldsTab(row, index) : html`
+                ${component(Tabs, {
+                    id: `menu-item-${row.id}`, label: label.trim() || __('Menu item'), value: tab, variant: 'underline',
+                    onValueChange: (value: string) => this.showTab(row.id, value as ItemTab),
+                    items: [
+                        { value: 'general', label: __('Navigation label'), content: html`<div class="space-y-3">
                 <div class="grid gap-3 sm:grid-cols-2">
                     <div class="space-y-1"><label for=${`label-${row.id}`} class="block text-xs font-medium text-foreground">${__('Navigation label')}</label>
                         <input id=${`label-${row.id}`} class=${CONTROL} maxlength=${MENU_LIMITS.label} .value=${row.label} placeholder=${target?.title ?? ''}
@@ -530,7 +531,12 @@ export default class MenuEditor extends Cossack {
                 </div>
                 <label class="flex items-center gap-2 text-sm text-foreground cursor-pointer">
                     ${component(Checkbox, { checked: row.newTab === true, '@change': (event: Event) => this.setRow(index, { newTab: (event.target as HTMLInputElement).checked })})} ${__('Open link in a new tab')}</label>
-                ${row.kind !== 'link' && target ? html`<p class="text-xs text-muted-foreground">${__('Original')}: ${target.edit ? html`<a href=${target.edit} class="text-primary hover:underline">${target.title}</a>` : target.title}</p>` : null}`}
+                ${row.kind !== 'link' && target ? html`<p class="text-xs text-muted-foreground">${__('Original')}: ${target.edit ? html`<a href=${target.edit} class="text-primary hover:underline">${target.title}</a>` : target.title}</p>` : null}
+                        </div>` },
+                        ...(this.fieldGroups.groups.length ? [{ value: 'fields', label: __('Fields'), content: this.fieldsTab(row, index) }] : []),
+                        { value: 'advanced', label: __('Advanced'), content: this.advanced(row, index) },
+                    ],
+                })}
                 <div class="flex flex-wrap items-center gap-2 text-xs">
                     <span class="text-muted-foreground">${__('Move')}:</span>
                     ${(['up', 'down', 'in', 'out'] as const).map(move => html`<button type="button" ?disabled=${!moves.has(move)} @click=${() => this.shift(index, move)}

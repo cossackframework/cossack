@@ -407,9 +407,54 @@ describe.skipIf(!liveRomeDBTests())('generated CMS application', () => {
       await page.waitForURL(/\/dashboard\/content\/posts\/[0-9a-f-]{36}$/);
       await browserExpect(page.getByRole('status').filter({ hasText: 'Published.' }).first()).toBeVisible();
       await browserExpect(page.locator('[data-block-tree-item] .ProseMirror strong').first()).toHaveText('bold');
+      // JSON sits at the far edge; keyboard switching retains the editor and its unsaved title.
+      const editorTabs = page.getByRole('tablist', { name: 'Editor view' });
+      const editTab = editorTabs.getByRole('tab', { name: 'Edit', exact: true });
+      const jsonTab = editorTabs.getByRole('tab', { name: 'JSON', exact: true });
+      const tabsBounds = await editorTabs.boundingBox(), jsonBounds = await jsonTab.boundingBox();
+      expect(Math.abs(tabsBounds.x + tabsBounds.width - jsonBounds.x - jsonBounds.width)).toBeLessThan(8);
+      expect(jsonBounds.x - (await editTab.boundingBox()).x).toBeGreaterThan(100);
+      const titleInput = page.getByPlaceholder('Add title');
+      await titleInput.fill('Unsaved title');
+      const richTextNode = await surface.elementHandle();
+      await editTab.focus();
+      await page.keyboard.press('End');
+      await browserExpect(jsonTab).toBeFocused();
+      await browserExpect(jsonTab).toHaveAttribute('aria-selected', 'true');
+      await browserExpect(page.getByRole('tabpanel', { name: 'JSON', exact: true })).toBeVisible();
+      await page.keyboard.press('Home');
+      await browserExpect(editTab).toHaveAttribute('aria-selected', 'true');
+      await browserExpect(titleInput).toHaveValue('Unsaved title');
+      expect(await richTextNode.evaluate(node => node.isConnected)).toBe(true);
+      await browserExpect(surface.locator('strong')).toHaveText('bold');
+      await titleInput.fill('Browser post: first try');
+      await page.getByRole('button', { name: 'Update', exact: true }).click();
+      await browserExpect(page.getByRole('status').filter({ hasText: 'Saved.' }).first()).toBeVisible();
       await page.goto(server.origin + '/posts/browser-post-first-try');
       await browserExpect(page.getByRole('heading', { name: 'Browser post: first try' })).toBeVisible();
       await browserExpect(page.locator('article .cms-prose strong')).toHaveText('bold');
+
+      // Icon actions retain accessible names, a native download and a keyboard file picker.
+      await page.goto(server.origin + '/dashboard/content/posts');
+      await ready();
+      const exportJson = page.getByRole('link', { name: 'Export JSON', exact: true });
+      await browserExpect(exportJson.locator('svg')).toHaveCount(1);
+      expect(await exportJson.innerText()).toBe('');
+      const downloadPromise = page.waitForEvent('download');
+      await exportJson.click();
+      const download = await downloadPromise;
+      expect(download.suggestedFilename()).toMatch(/\.json$/);
+      const exported = JSON.parse(await fs.readFile(await download.path(), 'utf8'));
+      expect(exported.items.some(entry => entry.title === 'Browser post: first try')).toBe(true);
+      const importJson = page.getByRole('button', { name: 'Import JSON', exact: true });
+      await browserExpect(importJson.locator('svg')).toHaveCount(1);
+      expect(await importJson.innerText()).toBe('');
+      await importJson.focus();
+      const chooserPromise = page.waitForEvent('filechooser');
+      await page.keyboard.press('Enter');
+      await (await chooserPromise).setFiles({ name: 'posts.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(exported)) });
+      await browserExpect(page.getByRole('status').filter({ hasText: '0 created, 1 updated' }).first()).toBeVisible();
+      await browserExpect(importJson).toBeEnabled();
 
       // A profile picture: an animated GIF uploads to the media library and shows at once.
       await page.goto(server.origin + '/dashboard/profile');
@@ -518,6 +563,7 @@ describe.skipIf(!liveRomeDBTests())('generated CMS application', () => {
       const venue = page.getByRole('region', { name: 'Single line 1' });
       // A new block opens its panel at once.
       const panel = page.getByRole('dialog', { name: 'Single line' });
+      await browserExpect(panel.getByLabel('Label *')).toBeFocused();
       await panel.getByLabel('Label *').fill('Venue');
       await panel.getByRole('button', { name: 'Done' }).click();
       await browserExpect(venue.locator('code', { hasText: 'venue' })).toBeVisible();
@@ -526,6 +572,20 @@ describe.skipIf(!liveRomeDBTests())('generated CMS application', () => {
       // The manager lists the group; saving the collection keeps it attached.
       await page.goto(server.origin + '/dashboard/collections/events');
       await ready();
+      // The collection tabs keep unsaved fields mounted and support keyboard switching.
+      await page.getByLabel('Plural name').fill('Events revised');
+      const collectionGeneral = page.getByRole('tab', { name: 'General', exact: true });
+      await collectionGeneral.focus();
+      await page.keyboard.press('ArrowRight');
+      await browserExpect(page.getByRole('tab', { name: 'Search engines' })).toBeFocused();
+      await browserExpect(page.getByRole('tabpanel', { name: 'Search engines' })).toBeVisible();
+      expect(new URL(page.url()).searchParams.get('tab')).toBe('seo');
+      const collectionIndicator = page.locator('#collection-list > .cs-tabs__indicator');
+      await browserExpect.poll(() => collectionIndicator.evaluate(el => parseFloat(el.style.width))).toBeGreaterThan(0);
+      await page.keyboard.press('ArrowLeft');
+      await browserExpect(collectionGeneral).toHaveAttribute('aria-selected', 'true');
+      await browserExpect(page.getByLabel('Plural name')).toHaveValue('Events revised');
+      await page.getByLabel('Plural name').fill('Events');
       await browserExpect(page.locator('li[data-group="event-details"]')).toBeVisible();
       await page.getByRole('button', { name: 'Save collection' }).click();
       await browserExpect(page.getByRole('status').filter({ hasText: 'Collection saved.' }).first()).toBeVisible();

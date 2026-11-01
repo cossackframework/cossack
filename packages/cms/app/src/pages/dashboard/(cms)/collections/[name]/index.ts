@@ -1,5 +1,5 @@
 import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackframework/core';
-import { AlertDialog, Badge, Button, Card, CardBody, CardHeader, Checkbox, Field, Input, NativeSelect, Textarea } from '@cossackframework/ui';
+import { AlertDialog, Badge, Button, Card, CardBody, CardHeader, Checkbox, Field, Input, NativeSelect, Tabs, Textarea } from '@cossackframework/ui';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
 import { bindingPaths, findBlock, flattenBlocks, flattenGroupFields, hasPermission, isCmsError, PERMISSIONS, RESERVED_FIELDS, SCHEMA_PROPERTIES, SCHEMA_TYPE_LABELS, SCHEMA_TYPES, SEO_TEMPLATE_VARIABLES, updateBlock, type Block, type RichTextDoc, type SchemaType, type ThemePresets } from '@cossackframework/cms';
 import { collectionDraft, definitionOf, type CollectionDraft } from '../../../../../cms/builder';
@@ -452,14 +452,11 @@ export default class CollectionBuilder extends Cossack {
             })}
             ${this.message ? notice(this.message, 'success') : null}
             ${this.error ? notice(this.error, 'error') : null}
-            <div role="tablist" aria-label=${__('Collection')} class="flex gap-1 border-b border-border">
-                ${TABS.map(tab => html`<button type="button" role="tab" id=${`collection-tab-${tab}`} aria-selected=${this.tab === tab ? 'true' : 'false'} aria-controls=${`collection-${tab}`}
-                    class=${`-mb-px border-b-2 px-3 py-2 text-sm font-medium bg-transparent cursor-pointer ${this.tab === tab ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
-                    @click=${() => this.showTab(tab)}>${tab === 'general' ? __('General') : tab === 'seo' ? __('Search engines') : __('Editor')}</button>`)}
-            </div>
-            ${this.tab === 'editor' ? html`<div id="collection-editor" role="tabpanel" aria-labelledby="collection-tab-editor">${this.editorTab()}</div>`
-            : this.tab === 'seo' ? html`<div id="collection-seo" role="tabpanel" aria-labelledby="collection-tab-seo">${this.seoTab(draft)}</div>`
-            : html`<div id="collection-general" role="tabpanel" aria-labelledby="collection-tab-general" class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
+            ${component(Tabs, {
+                id: 'collection', label: __('Collection'), value: this.tab, variant: 'underline',
+                onValueChange: (tab: string) => this.showTab(tab as (typeof TABS)[number]),
+                items: [
+                    { value: 'general', label: __('General'), content: html`<div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
                 <div class="space-y-6">
                     ${component(Card, {}, html`
                         ${component(CardHeader, {}, html`<h2 class="text-base font-semibold text-foreground">${__('Features')}</h2>
@@ -508,7 +505,11 @@ export default class CollectionBuilder extends Cossack {
                         ${component(Button, { type: 'button', variant: 'destructive', size: 'sm', '@click': () => { this.confirmDelete = true; } }, __('Delete collection'))}
                     `))}
                 </aside>
-            </div>`}
+                    </div>` },
+                    { value: 'seo', label: __('Search engines'), content: this.seoTab(draft) },
+                    { value: 'editor', label: __('Editor'), content: this.editorTab() },
+                ],
+            })}
             ${component(AlertDialog, {
                 id: 'delete-collection-dialog', open: this.confirmDelete, title: `${__('Delete')} ${draft.label}?`,
                 description: __('Every entry of this collection is deleted with it. This cannot be undone.'),
