@@ -4,7 +4,7 @@ import type { CmsHost } from '@cossackframework/cms/server';
 import { icon } from '../cms/icons';
 import { currentCms } from '../cms/index';
 import { dashboardModules } from './registry';
-import type { DashboardModule, DashboardModuleLink } from './types';
+import type { DashboardModule, DashboardModuleLink, DashboardStatus } from './types';
 
 /**
  * Navigation for the signed-in user, in WordPress order: content first (posts, media, pages,
@@ -96,6 +96,52 @@ export async function navigation(c: Context): Promise<DashboardModule[]> {
     // The author profile follows the profile settings in the account menu.
     account.splice(Math.min(1, account.length), 0, { id: 'public-profile', label: 'Public profile', href: '/dashboard/profile/public', icon: icon('user-id'), authorization: 'authenticated', placement: 'account' });
     return [...content, ...admin, ...account];
+}
+
+/**
+ * What waits for the signed-in user, for the dashboard's taskbar: comments to moderate, entries
+ * pending review, new form submissions, schema migrations, plugins waiting for a grant and
+ * deliveries, each with a count and where to go; then the links active plugins add to the
+ * `dashboard.taskbar` slot.
+ */
+export async function dashboardStatus(c: Context): Promise<DashboardStatus[]> {
+    const cms = c.get('cms') as CmsHost;
+    const principal: Principal = c.get('principal') ?? ANONYMOUS;
+    const can = (permission: string) => hasPermission(principal, permission);
+    const context = { principal };
+    const items: DashboardStatus[] = [];
+    if (can(PERMISSIONS.moderateComments) && cms.collections().some(collection => collection.comments)) {
+        const pending = await cms.comments.counts().then(counts => counts.pending).catch(() => 0);
+        if (pending) items.push({ id: 'comments', label: 'Comments to moderate', href: '/dashboard/comments?status=pending', count: pending, tone: 'warning' });
+    }
+    let pending = 0;
+    let first = '';
+    for (const collection of cms.collections()) {
+        if (collection.publishable === false || !can(`cms/${collection.name}:update`)) continue;
+        const count = await cms.resource(`cms/${collection.name}`).count({ where: { status: 'pending' } }, context).catch(() => 0);
+        if (count && !first) first = collection.name;
+        pending += count;
+    }
+    if (pending) items.push({ id: 'pending-review', label: 'Pending review', href: `/dashboard/content/${first}?status=pending`, count: pending, tone: 'warning' });
+    if (can(PERMISSIONS.manageSubmissions) && cms.collections().some(collection => collection.name === 'forms')) {
+        const fresh = await cms.forms.all().then(forms => cms.forms.inboxCounts(forms, principal)).then(counts => [...counts.values()].reduce((sum, count) => sum + count.fresh, 0)).catch(() => 0);
+        if (fresh) items.push({ id: 'submissions', label: 'New submissions', href: '/dashboard/forms', count: fresh });
+    }
+    if (can(PERMISSIONS.manageSchema) || can(PERMISSIONS.managePlugins)) {
+        const status = await cms.status().catch(() => ({ resources: [], plugins: [] }));
+        const migrations = status.resources.filter(resource => !resource.active).length;
+        if (migrations && can(PERMISSIONS.manageSchema)) items.push({ id: 'schema', label: 'Schema migrations waiting', href: '/dashboard/tools/schema', count: migrations, tone: 'error' });
+        const grants = status.plugins.filter(plugin => !plugin.active && plugin.missing.length).length;
+        if (grants && can(PERMISSIONS.managePlugins)) items.push({ id: 'plugins', label: 'Plugins waiting for a grant', href: '/dashboard/plugins', count: grants, tone: 'warning' });
+    }
+    if (can(PERMISSIONS.manageSchema)) {
+        const outbox = (await cms.outbox.pending({ limit: 100 }).catch(() => [])).length;
+        if (outbox) items.push({ id: 'outbox', label: 'Events waiting for delivery', href: '/dashboard', count: outbox });
+        const unconfirmed = (await cms.db.pending.list({ limit: 100 }).catch(() => [])).length;
+        if (unconfirmed) items.push({ id: 'unconfirmed', label: 'Writes waiting for confirmation', href: '/dashboard', count: unconfirmed, tone: 'warning' });
+    }
+    for (const link of await cms.slotLinks('dashboard.taskbar', principal).catch(() => [])) items.push({ id: `plugin-${link.plugin}-${link.href}`, label: link.label, href: link.href });
+    return items;
 }
 
 export { siteName } from '../brand';

@@ -7,9 +7,9 @@ import { SunIcon as sunIconSvg } from '@cossackframework/solar-icons/sun/line';
 import { MoonIcon as moonIconSvg } from '@cossackframework/solar-icons/moon/line';
 import { AltArrowRightIcon as chevronIconSvg } from '@cossackframework/solar-icons/alt-arrow-right/line';
 import { Logout3Icon as logoutIconSvg } from '@cossackframework/solar-icons/logout-3/line';
-import { navigation } from '../../dashboard/access';
+import { dashboardStatus, navigation } from '../../dashboard/access';
 import { siteLogo, siteName } from '../../brand';
-import type { DashboardModule } from '../../dashboard/types';
+import type { DashboardModule, DashboardStatus } from '../../dashboard/types';
 import { logout } from '../../auth';
 import { requireDashboardUser } from '../../middlewares/auth';
 import { themeStore } from '@/stores.client';
@@ -32,11 +32,19 @@ const logoutIcon = { line: logoutIconSvg };
  *
  * The theme toggle writes the same `cs-theme` cookie and themeStore the App
  * component applies to `<html>.dark`, and draws itself from that class.
+ *
+ * The taskbar along the bottom (desktop and tablet) opens the site, shows what
+ * waits for the user (`dashboardStatus` in src/dashboard/access.ts, a `server$`
+ * resource so it is fresh on every navigation) and holds the Screen options and
+ * Help buttons, which open the `#screen-options` and `#screen-help` popovers a
+ * screen renders with `screenOptions()` and `screenHelp()` from src/dashboard/page.ts.
  */
 @Page({ transport: 'http', middlewares: [requireDashboardUser] })
 export default class DashboardLayout extends Cossack {
     appName = server$(() => siteName(), { initial: 'My App' });
     appLogo = server$(() => siteLogo(), { initial: '/logo.svg' });
+    /** What waits for the user, with counts, for the taskbar. */
+    statuses: DashboardStatus[] = server$(() => dashboardStatus(this.c), { initial: [] });
     /** Sidebar collapsed state. Seeded from the cookie at SSR (via this.c) and
      *  re-read client-side in onMount; persists across client navigations. */
     @State() sidebarCollapsed = false;
@@ -139,8 +147,10 @@ export default class DashboardLayout extends Cossack {
             }),
         ];
 
+        const statusTone = (tone: DashboardStatus['tone']) => tone === 'error' ? 'text-destructive' : tone === 'warning' ? 'text-warning-text' : 'text-muted-foreground';
+        const taskbarButton = 'hidden h-7 cursor-pointer items-center gap-1 rounded-md border-none bg-transparent px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground';
         return html`
-            <div class="flex min-h-screen bg-background">
+            <div class="group/dashboard flex min-h-screen bg-background">
                 ${component(Sidebar, {
                     id: 'dashboard-navigation', label: __('Dashboard navigation'),
                     expandLabel: __('Expand navigation'), collapseLabel: __('Collapse navigation'),
@@ -217,13 +227,23 @@ export default class DashboardLayout extends Cossack {
                         `)}
                     `,
                 })}
-                <div class="flex-1 min-w-0 flex flex-col overflow-x-hidden">
+                <div class="flex-1 min-w-0 flex flex-col">
                     <main class="flex-1 p-6 sm:p-8 overflow-x-hidden has-[[data-subnav]]:grid has-[[data-subnav]]:grid-cols-1 has-[[data-subnav]]:p-0">
                         ${this.logoutError ? html`<p role="alert" class="mb-4 text-sm text-destructive">${this.logoutError}</p>` : null}
                         ${this.children}
                     </main>
-                    <footer class="border-t border-border px-6 sm:px-8 py-4 text-xs text-muted-foreground">
-                        &copy; ${new Date().getFullYear()} ${this.appName}. ${__('All rights reserved.')}
+                    <footer data-dashboard-taskbar aria-label=${__('Dashboard taskbar')} class="sticky bottom-0 z-30 hidden h-10 items-center gap-1 border-t border-border bg-background/95 px-3 text-xs text-muted-foreground backdrop-blur md:flex">
+                        <a href="/" class="inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-foreground no-underline hover:bg-muted" title=${__('View site')}>
+                            ${Image({ src: this.appLogo, alt: '', width: 16, height: 16, loading: 'eager', class: 'h-4 w-auto max-w-16 shrink-0 object-contain' })}
+                            <span class="max-w-40 truncate">${this.appName}</span>
+                        </a>
+                        <span aria-hidden="true" class="mx-1 h-4 w-px bg-border"></span>
+                        ${this.statuses.map((item) => html`<a href=${item.href} data-status=${item.id} class=${`inline-flex h-7 items-center gap-1.5 rounded-md px-2 no-underline hover:bg-muted hover:text-foreground ${statusTone(item.tone)}`}>
+                            ${__(item.label)}${item.count !== undefined ? html`<span class="rounded-full bg-muted px-1.5 py-px text-[0.7rem] font-semibold tabular-nums text-foreground">${item.count}</span>` : null}</a>`)}
+                        <span class="flex-1"></span>
+                        <button type="button" popovertarget="screen-options" class=${`${taskbarButton} group-has-[#screen-options]/dashboard:inline-flex`}>${__('Screen options')}</button>
+                        <button type="button" popovertarget="screen-help" class=${`${taskbarButton} group-has-[#screen-help]/dashboard:inline-flex`}>${__('Help')}</button>
+                        <span class="px-2">&copy; ${new Date().getFullYear()} ${this.appName}</span>
                     </footer>
                 </div>
             </div>

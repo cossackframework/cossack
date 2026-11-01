@@ -188,6 +188,8 @@ describe('plugin manifests', () => {
         expect(manifestProblems({ ...manifest, hooks: [{ point: 'cms.resource.after-commit', version: 2 }], extra: true, permissions: { define: ['other:x'], network: ['not a host'] } }))
             .toEqual(['extra is not a manifest field.', 'hooks: cms.resource.after-commit is version 1, not 2.', 'permissions.network: not a host is not a host name.', 'permissions.define: other:x must be named desk:<name>.']);
         expect(manifestProblems({ ...manifest, ui: { slots: { 'dashboard.footer': [] } } })).toEqual([expect.stringContaining('not a host slot')]);
+        // Both taskbars take links, with an optional permission, like the navigation.
+        expect(manifestProblems({ ...manifest, ui: { slots: { 'site.taskbar': [{ label: 'Desk', href: '/dashboard/desk' }], 'dashboard.taskbar': [{ label: 'Queue', href: '/dashboard/desk/queue', permission: 'desk:read' }] } } })).toEqual([]);
     });
 
     it('lets a plugin provide extension points and others hook into them', () => {

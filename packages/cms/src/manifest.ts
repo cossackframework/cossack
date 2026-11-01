@@ -117,8 +117,12 @@ export interface CmsPluginManifest {
     readonly [field: string]: unknown;
 }
 
-/** Dashboard slots plugins can fill. Components come from the plugin's `ui.ts` `slots` export. */
-export const HOST_SLOTS = Object.freeze(['dashboard.nav', 'dashboard.overview'] as const);
+/**
+ * Host slots plugins can fill with `ui.slots` links: the dashboard navigation, the dashboard's
+ * taskbar and the site's taskbar signed-in users see. `dashboard.overview` takes components, from
+ * the plugin's `ui.ts` `slots` export.
+ */
+export const HOST_SLOTS = Object.freeze(['dashboard.nav', 'dashboard.overview', 'dashboard.taskbar', 'site.taskbar'] as const);
 export type HostSlot = (typeof HOST_SLOTS)[number];
 
 const KNOWN_FIELDS = new Set(['schemaVersion', 'name', 'version', 'description', 'author', 'authorUrl', 'compatibility', 'dependencies', 'resources', 'collections', 'blocks', 'fieldGroups', 'editor', 'hooks', 'permissions', 'ui', 'provides', 'commands', 'theme', 'logo', 'cover', 'package', 'source']);

@@ -148,7 +148,9 @@ async function exercise(origin, routeIds, diagnostics) {
   // The SKU is in the page's state for editing, but the theme prints no field list of its own.
   lacks(productPage, '>SKU</dt>');
   // The editor's bar has an SEO list of its own; the page above it has none.
-  lacks(productPage.split('Edit this page')[0], '<dl');
+  lacks(productPage.split('Live Edit')[0], '<dl');
+  // The signed-in user's taskbar is on the page; the SEO list is its inspector.
+  contains(productPage, 'data-cms-taskbar');
   contains(productPage, 'A pixel');
   contains(await web.page('/shop'), 'Rocket skates');
   contains(await web.page('/tag/intro'), 'Hello, World!');
@@ -206,6 +208,12 @@ async function exercise(origin, routeIds, diagnostics) {
   expect((await web.action(settings, 'save', [{ showOnFront: 'page', pageOnFront: homeId }], { params: { group: 'reading' } })).error).toBe('');
   const front = await visitor.page('/');
   contains(front, 'Welcome home');
+  // The static front page is edited in place at /?edit, from the editor's taskbar. Every signed-in user has
+  // a taskbar (`visitor` registered Bob above); a reader who is not signed in gets none.
+  contains(front, 'data-cms-taskbar');
+  lacks(await browserless(origin, routeIds, diagnostics).page('/'), 'data-cms-taskbar');
+  expect(await web.page('/')).toMatch(/href="?\/\?edit/);
+  contains(await web.page('/?edit'), 'data-site-editing');
   // Without a menu, the primary location lists the top-level pages.
   contains(front, 'href="/home"');
   expect((await fetch(origin + '/missing-page')).status).toBe(404);
@@ -413,9 +421,10 @@ describe.skipIf(!liveRomeDBTests())('generated CMS application', () => {
       await browserExpect(page.locator('main img[src^="/media/"]').first()).toBeAttached();
 
       // A menu built by dragging: Team goes under About, then out and back with the keyboard.
+      const pageIds = {};
       for (const title of ['About', 'Team']) {
-        await web.action('dashboard/(cms)/content/[collection]/[id]/index.ts', 'save', [{ title, slug: '', status: 'draft', publishedAt: '', content: [], excerpt: '', featuredImage: '', parent: '', menuOrder: '0' }, 'publish', 0],
-          { params: { collection: 'pages', id: 'new' }, state: { route: 'pages', id: 'new' } });
+        pageIds[title] = (await web.action('dashboard/(cms)/content/[collection]/[id]/index.ts', 'save', [{ title, slug: '', status: 'draft', publishedAt: '', content: [], excerpt: '', featuredImage: '', parent: '', menuOrder: '0' }, 'publish', 0],
+          { params: { collection: 'pages', id: 'new' }, state: { route: 'pages', id: 'new' } })).id;
       }
       await page.goto(server.origin + '/dashboard/appearance/menus');
       await ready();
@@ -449,6 +458,41 @@ describe.skipIf(!liveRomeDBTests())('generated CMS application', () => {
       await page.goto(server.origin + '/posts');
       const primary = page.locator('nav[aria-label="Primary"]');
       await browserExpect(primary.locator('li li a', { hasText: 'Team' }).first()).toHaveAttribute('href', '/team');
+
+      // A static front page is edited in place at /: the taskbar's Live Edit opens /?edit, Exit leaves it; Edit opens the dashboard's editor.
+      expect((await web.action('dashboard/(cms)/settings/[group]/index.ts', 'save', [{ showOnFront: 'page', pageOnFront: pageIds.About }], { params: { group: 'reading' } })).error).toBe('');
+      await page.goto(server.origin + '/');
+      await ready();
+      const taskbar = page.getByRole('navigation', { name: 'Site taskbar' });
+      await browserExpect(taskbar.getByRole('link', { name: 'Edit', exact: true })).toHaveAttribute('href', `/dashboard/content/pages/${pageIds.About}`);
+      // The SEO button carries an icon before its label.
+      await browserExpect(taskbar.getByRole('button', { name: 'SEO', exact: true }).locator('svg')).toHaveCount(1);
+      await taskbar.getByRole('link', { name: 'Live Edit', exact: true }).click();
+      const editing = page.getByRole('region', { name: 'Editing' });
+      await browserExpect(editing.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+      await browserExpect(taskbar).toBeHidden();
+      expect(new URL(page.url()).search).toBe('?edit');
+      await editing.getByRole('button', { name: 'Exit', exact: true }).click();
+      await browserExpect(taskbar).toBeVisible();
+      expect(new URL(page.url()).search).toBe('');
+
+      // Screen options, from the dashboard's taskbar: hide the Slug column and list one page per screen; a reload keeps both.
+      await page.goto(server.origin + '/dashboard/content/pages');
+      await ready();
+      await browserExpect(page.locator('tr[data-entry]')).toHaveCount(2);
+      await browserExpect(page.getByRole('columnheader', { name: 'Slug' })).toBeVisible();
+      await page.getByRole('button', { name: 'Screen options' }).click();
+      const screenOptions = page.locator('#screen-options');
+      await screenOptions.getByLabel('Slug').uncheck();
+      await screenOptions.getByLabel('Number of items per page').fill('1');
+      await screenOptions.getByRole('button', { name: 'Apply' }).click();
+      await browserExpect(screenOptions).toBeHidden();
+      await browserExpect(page.locator('tr[data-entry]')).toHaveCount(1);
+      await browserExpect(page.getByRole('columnheader', { name: 'Slug' })).toHaveCount(0);
+      await page.reload();
+      await ready();
+      await browserExpect(page.locator('tr[data-entry]')).toHaveCount(1);
+      await browserExpect(page.getByRole('columnheader', { name: 'Slug' })).toHaveCount(0);
 
       await page.goto(server.origin + '/dashboard/collections/new');
       await ready();

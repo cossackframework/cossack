@@ -61,9 +61,9 @@ pure functions over view data and never read the database. Every item below keep
 - **Why it is possible.** Blocks are stored as JSON with ids and arrive on the page as
   `RenderedBlock` with `id`, `type`, `data` and rendered `html`; bodies are ProseMirror JSON.
   Edits write JSON back and the same template re-renders. There is no second representation.
-- **Edit mode is page state.** A signed-in user with write access to the entry sees a small
-  bar on the entry's page (fixed to the viewport, rendered by the page, which knows the
-  entry); `?edit` or its button enters edit mode. The editor is `site-editor.client.ts`,
+- **Edit mode is page state.** A signed-in user with write access to the entry sees *Live
+  Edit* in the site taskbar ([cms-taskbar.md](cms-taskbar.md)), which opens `?edit`; the page
+  knows the entry and enters edit mode. The editor is `site-editor.client.ts`,
   imported only on entering edit mode: a static import would land in every visitor's
   bundle. Visitors get no extra markup or script, and editors' pages are `private, no-store`.
 - **One content list.** `entry.content` is every blocks field of the entry, and each rich

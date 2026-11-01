@@ -2,12 +2,12 @@ import { Client, ClientState, Cossack, Page, Server, State, defineServerMiddlewa
 import { isTransportPath } from '@cossackframework/core/transport-routes';
 import { getCookie } from 'hono/cookie';
 import { component, html } from '@cossackframework/renderer';
-import { isCmsError, isSameOriginPost, type ArchiveView, type EntryView, type ThemeData } from '@cossackframework/cms';
+import { isCmsError, isSameOriginPost, type ArchiveView, type EntryView, type RecordShape, type ThemeData } from '@cossackframework/cms';
 import { archive, authorArchive, authorView, bindingScopes, commentResult, entryViews, homeView, isProtected, languageLinks, localePrefix, pageNumber, redirectFor, resolvePath, searchEntries, termArchive, themeData, themeState, unlockCookie, unlockToken, resolvedOptions, type Resolved, type ThemeState } from '../../../cms/site';
 import { archiveTemplate, entryTemplate, siteContent, siteTheme, themeHelpers, unavailable } from '../../../cms/site-view';
 import { authorSeo, entrySeo, homeSeo, listSeo } from '../../../cms/seo';
 import { emptySeo, seoHead, type SeoView } from '../../../cms/seo-head';
-import { editBar, type SiteDraft, type SiteEditable } from '../../../cms/site-editor';
+import type { SiteDraft, SiteEditable } from '../../../cms/site-editor';
 import { draftEntry, draftMedia, editableRecord, saveDraft, siteDraft, siteEditable } from '../../../cms/site-editing';
 import { fieldErrors } from '../../../cms/content';
 import { entryAsMarkdown, wantsMarkdown } from '../../../cms/machine';
@@ -25,9 +25,10 @@ const segmentsOf = (path: string | undefined) => (path ?? '').split('/').filter(
 /**
  * Resolve the path before rendering, so entries can redirect to their canonical URL and
  * missing paths can follow redirects. A root catch-all's middleware also sees requests for
- * routes registered after it, such as /crpc, so it acts only on page reads.
+ * routes registered after it, such as /crpc, so it acts only on page reads. The home page
+ * (`src/pages/(site)/index.ts`) runs it too.
  */
-const resolveSitePath = defineServerMiddleware(async (c, next) => {
+export const resolveSitePath = defineServerMiddleware(async (c, next) => {
     // Pages read with GET; a POST is a visitor's password for a protected entry, resolved the same way, never redirected.
     const post = c.req.method === 'POST';
     if ((c.req.method !== 'GET' && c.req.method !== 'HEAD' && !post) || isTransportPath(c.req.path)) { await next(); return; }
@@ -63,10 +64,12 @@ const resolveSitePath = defineServerMiddleware(async (c, next) => {
 });
 
 /**
- * Every site URL without its own route: collection archives (/posts), entries
- * (/posts/hello-world, /shop/rocket-skates), term archives (/category/news), nested pages
- * (/about/team) and other languages' pages (/fr, /fr/a-propos), drawn by the active theme.
- * Missing paths follow Tools → Redirects; anything else is a 404.
+ * Every site URL without its own route: the home page (/, which `src/pages/(site)/index.ts`
+ * routes here too), collection archives (/posts), entries (/posts/hello-world,
+ * /shop/rocket-skates), term archives (/category/news), nested pages (/about/team) and other
+ * languages' pages (/fr, /fr/a-propos), drawn by the active theme. Missing paths follow
+ * Tools → Redirects; anything else is a 404. An entry its editor may update, a static front
+ * page included, is edited in place at `?edit`.
  */
 @Page({ transport: 'http', middlewares: [resolveSitePath] })
 export default class SitePath extends Cossack {
@@ -80,7 +83,7 @@ export default class SitePath extends Cossack {
     /** What the theme's loader for the page returned. */
     @State() data: ThemeData = {};
     @State() seo: SeoView = emptySeo();
-    /** For a signed-in user who may update the entry: the bar's links. Null for visitors. */
+    /** For a signed-in user who may update the entry: what `?edit` opens, and the taskbar's editor links. Null for others. */
     @State() editable: SiteEditable | null = null;
     /** Edit mode: the entry's draft. `?edit` opens it. */
     @State() draft: SiteDraft | null = null;
@@ -89,6 +92,8 @@ export default class SitePath extends Cossack {
 
     head(): HeadValue {
         if (this.seo.title) return seoHead(this.seo);
+        // Before setup the site is unavailable: the layout's site title, kept out of search results.
+        if (this.kind === 'unavailable') return { meta: [{ tag: 'meta', attributes: { name: 'robots', content: 'noindex' } }] };
         return { title: this.kind === 'gone' ? __('Page removed') : __('Page not found'), meta: [{ tag: 'meta', attributes: { name: 'robots', content: 'noindex' } }] };
     }
 
@@ -113,6 +118,8 @@ export default class SitePath extends Cossack {
                 comment: commentResult(this.c.req.query('comment')), user: this.user ? { name: this.user.name } : null,
                 forms: { query: this.c.req.query(), principal: this.c.get('principal'), url: base }, usage,
             };
+            /** The entry the page shows, which its editor may edit in place: an entry, or the static front page. */
+            let shown: { collection: string; record: RecordShape } | null = null;
             // Templates read the theme's options with their bindings resolved, as the layout does.
             this.theme = { ...this.theme, options: resolvedOptions(this.theme.options, bindingScopes(settings, { entry: resolved.kind === 'entry' ? resolved.record : null, user: viewOptions.user })) };
             if (resolved.kind === 'home') {
@@ -120,6 +127,7 @@ export default class SitePath extends Cossack {
                 if (home.page && home.record) {
                     this.kind = 'entry';
                     this.entry = home.page;
+                    shown = { collection: 'pages', record: home.record };
                     this.seo = await entrySeo(cms, this.c, cms.collection('pages'), home.record, { ...home.page, url: base }, links);
                 } else {
                     this.kind = 'home';
@@ -139,6 +147,7 @@ export default class SitePath extends Cossack {
                 this.seo = await listSeo(cms, this.c, { kind: 'archive', collection: posts, title: this.view.title, description: '', url: base, locale: resolved.locale, links, page, noindex: posts.robots?.archiveNoindex, nofollow: posts.robots?.nofollow });
             } else if (resolved.kind === 'entry') {
                 this.kind = 'entry';
+                shown = { collection: resolved.collection.name, record: resolved.record };
                 // Editors read their protected entries; visitors unlock them with the password, which a cookie remembers.
                 const unlocked = isProtected(resolved.record) && (getCookie(this.c, unlockCookie(resolved.record)) === await unlockToken(resolved.record)
                     || (this.c.get('principal').kind === 'user' && cms.resource(`cms/${resolved.collection.name}`).canUpdate(resolved.record, this.c.get('principal'))));
@@ -163,12 +172,15 @@ export default class SitePath extends Cossack {
                 this.seo = await authorSeo(cms, this.c, { user: resolved.user, url: base, locale: resolved.locale, links, page });
             }
             const principal = this.c.get('principal');
-            if (resolved.kind === 'entry' && this.kind === 'entry' && principal.kind === 'user') {
-                this.editable = await siteEditable(cms, resolved.collection.name, resolved.record.id, principal);
-                // An editor's page shows their bar, and in edit mode their draft: never cache it.
+            if (shown && principal.kind === 'user') {
+                this.editable = await siteEditable(cms, shown.collection, shown.record.id, principal);
+                // An editor's page may hold their draft: never cache it.
                 if (this.editable) this.c.header('cache-control', 'private, no-store');
                 if (this.editable && this.c.req.query('edit') !== undefined) await this.startEditing();
             }
+            // The site taskbar shows the page's SEO and, for an entry the user may edit, its status and editor.
+            this.c.set('cms.taskbar', { seo: this.seo, entry: this.editable && shown
+                ? { collection: this.editable.collection, id: this.editable.id, status: String(shown.record.status ?? ''), dashboard: this.editable.dashboard, inPlace: true } : null });
             // A binding to the signed-in user makes the page theirs alone.
             if (usage.user && viewOptions.user) this.c.header('cache-control', 'private, no-store');
             if (this.kind === 'entry' && this.entry) this.data = await themeData(cms, this.theme, { kind: 'entry', collection: this.entry.collection, template: this.entry.template }, this.entry, principal, resolved.locale);
@@ -281,9 +293,12 @@ export default class SitePath extends Cossack {
         this.draft = { ...draft, chooser: { ...draft.chooser, search, items: await draftMedia(cms, search, this.c.get('principal'), draft.chooser.kind) } };
     }
 
+    /** Leave edit mode, and drop `?edit` from the address so a reload shows the page, not the editor. */
     @Client()
-    async edit() {
-        await this.startEditing();
+    async exitEditing() {
+        const url = new URL(window.location.href);
+        if (url.searchParams.has('edit')) { url.searchParams.delete('edit'); window.history.replaceState(window.history.state, '', url); }
+        await this.stopEditing();
     }
 
     /** Load the editor's code once edit mode shows. */
@@ -339,13 +354,14 @@ export default class SitePath extends Cossack {
         if (this.draft) this.draft = { ...this.draft, previews };
     }
 
+    /** Edit mode: the editor, once its code is loaded. `data-site-editing` hides the site taskbar meanwhile. */
     private editor() {
         const draft = this.draft;
-        if (!draft) return this.editable ? editBar(this.editable, () => this.edit(), this.seo) : null;
-        return html`<div ref=${(element: Element) => this.loadEditor(element)}>${this.editorReady && SiteEditor ? component(SiteEditor, {
+        if (!draft) return null;
+        return html`<div data-site-editing ref=${(element: Element) => this.loadEditor(element)}>${this.editorReady && SiteEditor ? component(SiteEditor, {
             draft, saving: this.saving,
             onChange: (values: EditorValues, preview: boolean) => this.changeDraft(values, preview),
-            onSave: () => this.save(), onExit: () => this.stopEditing(), onReload: () => this.startEditing(),
+            onSave: () => this.save(), onExit: () => this.exitEditing(), onReload: () => this.startEditing(),
             onSearchMedia: (search: string) => this.searchDraftMedia(search),
             onChooser: (chooser: MediaChooserState) => this.setChooser(chooser),
             onPreviews: (previews: Record<string, MediaPreview>) => this.setPreviews(previews),
@@ -359,8 +375,8 @@ export default class SitePath extends Cossack {
         if (this.kind === 'entry' && this.entry && this.locked) return siteContent(this.passwordForm(theme, helpers), this.theme);
         if (this.kind === 'entry' && this.entry) {
             const page = siteContent(entryTemplate(theme, this.entry.collection, this.entry.template)(this.entry, helpers), this.theme);
-            // Visitors get the theme's page alone. The editor sits outside the content root, which contains fixed elements.
-            return this.editable || this.draft ? html`${page}${this.editor()}` : page;
+            // The editor sits outside the content root, which contains fixed elements; the taskbar is the layout's.
+            return this.draft ? html`${page}${this.editor()}` : page;
         }
         if (this.kind === 'home' || this.kind === 'list') return siteContent(archiveTemplate(theme, this.view)(this.view, helpers), this.theme);
         if (this.kind === 'gone') return html`<section class="space-y-3 py-16 text-center">

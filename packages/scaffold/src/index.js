@@ -1264,6 +1264,16 @@ export interface DashboardModule {
   /** Highlighted on every page under this path, such as \`/dashboard/settings\` for screens with their own navigation. */
   activeFor?: string;
 }
+
+/** A status the dashboard's taskbar shows: what waits for the user, and where to go. */
+export interface DashboardStatus {
+  id: string;
+  label: string;
+  href: string;
+  /** How many, shown beside the label; omitted for a plain link. */
+  count?: number;
+  tone?: 'info' | 'warning' | 'error';
+}
 `;
 }
 

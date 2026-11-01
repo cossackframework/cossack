@@ -1,12 +1,23 @@
-import { Cossack, Page, State, type HeadContext, type HeadTag, type HeadValue } from '@cossackframework/core';
+import { Cossack, Page, Server, State, server$, type HeadContext, type HeadTag, type HeadValue } from '@cossackframework/core';
 import { html } from '@cossackframework/renderer';
 import { usesUserBinding, type SiteView, type ThemeData } from '@cossackframework/cms';
 import { bindingScopes, languageLinks, resolvedOptions, siteView, themeData, themeState, type ThemeState } from '../../cms/site';
 import { siteTheme, themeHelpers } from '../../cms/site-view';
+import { siteTaskbar } from '../../cms/site-taskbar';
+import { taskbar, type TaskbarView } from '../../cms/taskbar';
+import { logout } from '../../auth';
 
-/** The public site's frame, drawn by the active theme's layout, in the page's language. */
+/**
+ * The public site's frame, drawn by the active theme's layout, in the page's language, with
+ * the taskbar signed-in users see along the bottom. The taskbar is a `server$` resource: it is
+ * built during render, after the page's `init()` described the page (`c.set('cms.taskbar')`),
+ * and again on every client navigation, which a layout's `@State` is not.
+ */
 @Page({ transport: 'http' })
 export default class SiteLayout extends Cossack {
+    /** The signed-in user's taskbar; null for visitors, whose pages carry no trace of it. */
+    taskbar: TaskbarView | null = server$(() => siteTaskbar(this.c, this.user), { initial: null });
+    @State() logoutError = '';
     @State() site: SiteView & { noindex: boolean } = { title: '', tagline: '', logo: null, blog: null, menus: {}, noindex: false, locale: 'en', languages: [], searchUrl: '/search', homeUrl: '/', areas: {}, template: null };
     @State() theme: ThemeState = { name: null, options: {} };
     /** What the theme's `layout` loader returned. */
@@ -49,8 +60,22 @@ export default class SiteLayout extends Cossack {
         ];
     }
 
+    @Server()
+    async doLogout() {
+        this.logoutError = '';
+        try {
+            const { headers } = await logout(this.c);
+            headers.forEach((value, key) => this.c.header(key, value));
+            this.redirect(config('auth.redirectAfterLogout'));
+        } catch {
+            this.logoutError = __('Could not sign out. Try again.');
+        }
+    }
+
     async init() {
         const cms = this.c.get('cms');
+        // A signed-in user's page carries their taskbar: never share it through a cache.
+        if (this.user) this.c.header('cache-control', 'private, no-store');
         try {
             this.theme = await themeState(cms);
             const settings = await cms.settings.all();
@@ -73,6 +98,7 @@ export default class SiteLayout extends Cossack {
 
     render() {
         const theme = siteTheme(this.theme);
-        return theme.layout(this.site, html`${this.children}`, themeHelpers(theme, { ...this.theme, data: { layout: this.data } }, (path, exact) => this.isActive(path, exact)));
+        const frame = theme.layout(this.site, html`${this.children}`, themeHelpers(theme, { ...this.theme, data: { layout: this.data } }, (path, exact) => this.isActive(path, exact)));
+        return this.taskbar ? html`${frame}${taskbar(this.taskbar, { logout: () => this.doLogout(), error: this.logoutError })}` : frame;
     }
 }

@@ -1,4 +1,5 @@
 import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackframework/core';
+import { getCookie } from 'hono/cookie';
 import { bulkBar } from '../../../../../dashboard/bulk';
 import { listFilters, listFooter, listTable } from '../../../../../dashboard/list-table';
 import { Avatar, AvatarGroup, HoverCard, Icon, NativeSelect, AlertDialog, Tooltip } from '@cossackframework/ui';
@@ -7,7 +8,7 @@ import { ENTRY_ACTION_IDS, entryAuthors, evaluateRule, isCmsError, languageName,
 import { duplicateEntry, importEntries, importItems, listExtras, routeResource, runEntryCommand, termOptions, type ImportReport } from '../../../../../cms/content';
 import type { TermOption } from '../../../../../cms/editor';
 import { icon } from '../../../../../cms/icons';
-import { linkButton, notice, pageHeader, shortDate, statusBadge } from '../../../../../cms/ui';
+import { clampPerPage, linkButton, notice, pageHeader, saveScreenPreferences, screenCookie, screenHelp, screenOptions, screenPreferences, shortDate, statusBadge } from '../../../../../cms/ui';
 
 const PAGE_SIZE = 20;
 
@@ -49,7 +50,9 @@ type BulkKey = 'trash' | 'restore' | 'delete' | 'publish' | 'draft' | `plugin:${
 /**
  * Entries of one collection or resource, WordPress style: status tabs, a filter row, sortable
  * columns, checkboxes with bulk actions, and quick actions under each title. Plugins add
- * actions, bulk actions and columns through the `cms.dashboard.*` filters.
+ * actions, bulk actions and columns through the `cms.dashboard.*` filters. Screen options,
+ * opened from the taskbar, hide columns and set the entries a page lists, kept per collection
+ * in the browser's `cs-screen-entries-<collection>` cookie.
  */
 @Page({ transport: 'http' })
 export default class EntriesPage extends Cossack {
@@ -87,6 +90,9 @@ export default class EntriesPage extends Cossack {
     @State() pendingBulk: { key: BulkKey; label: string; text: string } | null = null;
     /** A plugin action with a question, waiting for confirmation. */
     @State() pendingAction: { row: Row; action: EntryAction } | null = null;
+    /** Screen options: entries a page lists, and the optional columns hidden, by ID. */
+    @State() perPage = PAGE_SIZE;
+    @State() hidden: string[] = [];
 
     head(): HeadValue {
         return { title: this.label || 'Content' };
@@ -103,6 +109,9 @@ export default class EntriesPage extends Cossack {
         this.dir = this.c.req.query('dir') === 'asc' ? 'asc' : 'desc';
         const page = Number(this.c.req.query('page'));
         this.page = Number.isSafeInteger(page) && page > 0 ? page : 1;
+        const screen = screenPreferences(getCookie(this.c, screenCookie(`entries-${this.route}`)), { hidden: [], perPage: PAGE_SIZE });
+        this.perPage = screen.perPage;
+        this.hidden = screen.hidden;
         await this.load();
     }
 
@@ -118,6 +127,9 @@ export default class EntriesPage extends Cossack {
         this.singular = collection?.singular ?? __('entry');
         this.publishable = Boolean(collection && collection.publishable !== false);
         this.hasSlug = Boolean(collection && collection.slug !== false);
+        // Screen options arrive with the client's state over RPC: keep them in bounds.
+        this.perPage = clampPerPage(this.perPage, PAGE_SIZE);
+        this.hidden = Array.isArray(this.hidden) ? this.hidden.filter(id => typeof id === 'string').slice(0, 50) : [];
         const languages = await cms.languages();
         this.languages = collection && languages.multilingual ? languages.all.map(code => ({ code, label: languageName(code) })) : [];
         if (!this.languages.some(language => language.code === this.locale)) this.locale = '';
@@ -163,7 +175,7 @@ export default class EntriesPage extends Cossack {
                 const dateField = this.publishable && ['published', 'scheduled'].includes(this.status) ? 'publishedAt' : 'updatedAt';
                 const order = this.sort === 'title' ? { field: resource.titleField ?? 'title', direction: this.dir } : { field: this.sort === 'date' ? dateField : 'updatedAt', direction: this.sort ? this.dir : 'desc' as const };
                 const [page, total] = await Promise.all([
-                    repository.list({ ...filter, limit: PAGE_SIZE, offset: (this.page - 1) * PAGE_SIZE, order }, context),
+                    repository.list({ ...filter, limit: this.perPage, offset: (this.page - 1) * this.perPage, order }, context),
                     repository.count(filter, context),
                 ]);
                 records = page.records;
@@ -447,12 +459,67 @@ export default class EntriesPage extends Cossack {
         return html`<div class="mt-1 flex flex-wrap items-center gap-2 text-xs opacity-80 group-hover:opacity-100 focus-within:opacity-100" data-quick-actions>${items.flatMap((item, index) => index ? [separator, item] : [item])}</div>`;
     }
 
+    /** The columns Screen options can hide; the title always shows. */
+    private optionalColumns(): { id: string; label: string }[] {
+        return [
+            ...(this.hasSlug ? [{ id: 'slug', label: __('Slug') }] : []),
+            { id: 'authors', label: __('Authors') },
+            ...(this.languages.length ? [{ id: 'language', label: __('Language') }] : []),
+            ...(this.taxonomy ? [{ id: 'terms', label: this.taxonomy.label }] : []),
+            ...this.columns.map(column => ({ id: `plugin:${column.id}`, label: column.label })),
+            { id: 'date', label: __('Date') },
+        ];
+    }
+
+    /** Screen options: the columns to show and the entries a page lists, applied together. */
+    private screenPanel() {
+        return screenOptions(html`<form data-screen-options class="space-y-3" @submit=${(event: Event) => this.applyScreen(event)}>
+            <fieldset class="space-y-1.5">
+                <legend class="mb-1 font-medium text-foreground">${__('Columns')}</legend>
+                <div class="grid grid-cols-2 gap-x-4 gap-y-1.5">${this.optionalColumns().map(column => html`<label class="flex items-center gap-2 text-foreground">
+                    <input type="checkbox" name="column" value=${column.id} ?checked=${!this.hidden.includes(column.id)} class="size-4 accent-primary">${column.label}</label>`)}</div>
+            </fieldset>
+            <label class="flex items-center justify-between gap-3 text-foreground">${__('Number of items per page')}
+                <input type="number" name="perPage" min="1" max="100" step="1" value=${String(this.perPage)} required
+                    class="w-20 rounded-md border border-input bg-background px-2 py-1 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"></label>
+            <div class="flex justify-end"><button type="submit" class="cursor-pointer rounded-md border-none bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90">${__('Apply')}</button></div>
+        </form>`);
+    }
+
+    /** Keep the chosen Screen options in their cookie; a new page size lists the first page again. */
+    @Client()
+    async applyScreen(event: Event) {
+        event.preventDefault();
+        // A submit event's target is the form, wherever the listener sits.
+        const form = new FormData(event.target as HTMLFormElement);
+        const checked = new Set(form.getAll('column').map(String));
+        // Columns this list does not offer now (another language setup, a plugin turned off) keep their choice.
+        const offered = this.optionalColumns().map(column => column.id);
+        const hidden = [...this.hidden.filter(id => !offered.includes(id)), ...offered.filter(id => !checked.has(id))];
+        const perPage = clampPerPage(form.get('perPage'), this.perPage);
+        saveScreenPreferences(`entries-${this.route}`, { hidden, perPage });
+        document.getElementById('screen-options')?.hidePopover?.();
+        this.hidden = hidden;
+        if (perPage === this.perPage) return;
+        this.perPage = perPage;
+        this.page = 1;
+        const url = new URL(window.location.href);
+        if (url.searchParams.has('page')) { url.searchParams.delete('page'); window.history.replaceState(window.history.state, '', url); }
+        await this.load();
+    }
+
     render() {
         if (!this.label) return notice(this.error || __('This content type does not exist.'), 'error');
         const base = `/dashboard/content/${this.route}`;
-        const totalPages = Math.max(1, Math.ceil(this.total / PAGE_SIZE));
+        const totalPages = Math.max(1, Math.ceil(this.total / this.perPage));
+        const shown = (id: string) => !this.hidden.includes(id);
         const sortState = (key: Sort) => this.sort === key ? (this.dir === 'asc' ? 'ascending' as const : 'descending' as const) : 'none' as const;
         return html`<div class="space-y-6">
+            ${screenHelp(html`<p>${__('The tabs above the list filter by status; the search looks through titles and content, and the filters narrow by term and language.')}</p>
+                <p>${__('Hover a row for its quick actions: edit, duplicate, view on the site, trash. Select rows to act on them together with the bulk actions.')}</p>
+                <p>${__('Export JSON downloads the entries shown; Import JSON creates or updates entries from such a file.')}</p>
+                <p>${__('Screen options, beside Help in the taskbar, choose the columns and how many entries a page lists.')}</p>`)}
+            ${this.screenPanel()}
             ${pageHeader(this.label, {
                 titleActions: this.canCreate ? linkButton(`${__('New')} ${this.singular.toLowerCase()}`, `${base}/new`, 'primary', { size: 'sm' }) : null,
                 actions: html`${linkButton(__('Export JSON'), `/api/cms/export/${this.route}`, 'outline', { size: 'sm' })}
@@ -494,12 +561,12 @@ export default class EntriesPage extends Cossack {
                             ${this.quickActions(row)}
                         </div>
                     </div>` },
-                    this.hasSlug && { label: __('Slug'), cell: row => html`<code class="break-all text-xs text-muted-foreground">${row.slug}</code>` },
-                    { label: __('Authors'), class: 'w-20', cell: row => this.authorCell(row) },
-                    this.languages.length > 0 && { label: __('Language'), class: 'text-muted-foreground', cell: row => html`<span title=${languageName(row.locale)}>${row.locale.toUpperCase()}</span>` },
-                    this.taxonomy && { label: this.taxonomy.label, class: 'text-muted-foreground', cell: row => row.terms.join(', ') || '—' },
-                    ...this.columns.map(column => ({ label: column.label, class: 'text-muted-foreground', cell: (row: Row) => column.values[row.id] ?? '—' })),
-                    { label: this.sortable(__('Date'), 'date'), sort: sortState('date'), class: 'text-muted-foreground', cell: row => html`<span class="block">${row.dateLabel}</span><span class="block text-xs">${row.date}</span>` },
+                    this.hasSlug && shown('slug') && { label: __('Slug'), cell: row => html`<code class="break-all text-xs text-muted-foreground">${row.slug}</code>` },
+                    shown('authors') && { label: __('Authors'), class: 'w-20', cell: row => this.authorCell(row) },
+                    this.languages.length > 0 && shown('language') && { label: __('Language'), class: 'text-muted-foreground', cell: row => html`<span title=${languageName(row.locale)}>${row.locale.toUpperCase()}</span>` },
+                    this.taxonomy && shown('terms') && { label: this.taxonomy.label, class: 'text-muted-foreground', cell: row => row.terms.join(', ') || '—' },
+                    ...this.columns.filter(column => shown(`plugin:${column.id}`)).map(column => ({ label: column.label, class: 'text-muted-foreground', cell: (row: Row) => column.values[row.id] ?? '—' })),
+                    shown('date') && { label: this.sortable(__('Date'), 'date'), sort: sortState('date'), class: 'text-muted-foreground', cell: row => html`<span class="block">${row.dateLabel}</span><span class="block text-xs">${row.date}</span>` },
                 ],
             })}
             ${this.rows.length ? this.bulkBar('bottom') : null}

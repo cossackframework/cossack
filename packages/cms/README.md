@@ -105,7 +105,9 @@ Data contract:
 - A menu is one JSON tree saved with a revision check. Entries and terms are stored by ID and
   resolved when the site renders.
 - A plugin runs only when its resources are migrated and an administrator grants what its
-  manifest requests. Builds run the plugin policy lints (`cossack plugins check`).
+  manifest requests. Builds run the plugin policy lints (`cossack plugins check`). Its
+  `ui.slots` links fill the dashboard navigation (`dashboard.nav`), the dashboard's bottom
+  taskbar (`dashboard.taskbar`) and the taskbar signed-in users see on the site (`site.taskbar`).
 - A theme is a plugin whose manifest has a `theme` field and whose `templates/` files (or
   `ui.ts` `theme` export) are the site templates, picked per page from most specific
   (`entry-posts`, `term-category`) to general (`entry`, `archive`). Themes own templates, not

@@ -671,9 +671,10 @@ export async function resolvePath(cms: CmsHost, segments: readonly string[]): Pr
     const prefixed = languages.multilingual && segments.length > 0 && languages.others.includes(segments[0]!);
     const locale = prefixed ? segments[0]! : languages.default;
     const rest = prefixed ? segments.slice(1) : segments;
-    if (prefixed && !rest.length) return { kind: 'home', locale };
+    // `/` and `/<language>` are home pages.
+    if (!rest.length) return { kind: 'home', locale };
     if (prefixed && rest.length === 1 && rest[0] === 'search') return { kind: 'search', locale };
-    if (!rest.length || rest.some(segment => !/^[a-z0-9-]{1,200}$/.test(segment))) return { kind: 'none', locale };
+    if (rest.some(segment => !/^[a-z0-9-]{1,200}$/.test(segment))) return { kind: 'none', locale };
     const path = rest.join('/');
     // Collections served under a path: /<path> is the archive, /<path>/<slug> an entry.
     for (const collection of cms.collections()) {

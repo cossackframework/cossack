@@ -17,8 +17,10 @@ it('renders the generated dashboard with named, stable sidebar items and group d
  const modules=[{id:'projects',label:'Projects',href:'/dashboard/projects',icon,authorization:'authenticated',children:[{label:'Project one',href:'/dashboard/projects/one'}]}];
  const page=new Function('html','component','Sidebar','DropdownMenu','Avatar','Icon','Image','__','dashboardIcon','sunIcon','moonIcon','chevronIcon','logoutIcon',code+'\nreturn page;')(html,component,Sidebar,DropdownMenu,Avatar,Icon,Image,value=>value,icon,icon,icon,icon,icon);
  // The layout shows the modules src/dashboard/access.ts resolved for the user.
- Object.assign(page,{appName:'Example',appLogo:'/logo.svg',modules,sidebarCollapsed:false,theme:'light',account:{name:'Alice',email:'alice@example.test',avatar:null},children:'Content',isActive:href=>href==='/dashboard/projects/one',onToggleSidebar:()=>{},toggleTheme:()=>{},doLogout:()=>{}});
+ Object.assign(page,{appName:'Example',appLogo:'/logo.svg',modules,statuses:[{id:'comments',label:'Comments to moderate',href:'/dashboard/comments?status=pending',count:3,tone:'warning'},{id:'plugin-desk',label:'Desk',href:'/dashboard/desk'}],sidebarCollapsed:false,theme:'light',account:{name:'Alice',email:'alice@example.test',avatar:null},children:'Content',isActive:href=>href==='/dashboard/projects/one',onToggleSidebar:()=>{},toggleTheme:()=>{},doLogout:()=>{}});
  const output=renderToString(page.render());
+ // The taskbar: the site link, the statuses with their counts, and the Screen options and Help buttons that open a screen's popovers.
+ for(const part of ['data-dashboard-taskbar','title="View site"','data-status="comments"','href="/dashboard/comments?status=pending"','>3</span>','data-status="plugin-desk"','popovertarget="screen-options"','popovertarget="screen-help"'])expect(output).toContain(part);
  for(const part of ['id="dashboard-navigation"','aria-label="Dashboard navigation"','data-sidebar-value="dashboard"','data-sidebar-value="module:projects"','data-sidebar-value="module:projects:/dashboard/projects/one"','href="/dashboard/projects"','href="/dashboard/projects/one"'])expect(output).toContain(part);
  // The generated layout wires the built-in collapse toggle through onCollapsedChange.
  expect(output).toContain('cs-sidebar__toggle');

@@ -131,10 +131,14 @@ describe.skipIf(!liveRomeDBTests())('CMS themes', () => {
       expect(css.headers.get('content-type')).toContain('text/css');
       // Minified: the theme's rule, with its color.
       expect(await css.text()).toMatch(/\.portfolio-project\{border-top:4px solid #123456;?\}/);
-      for (const text of ['data-cms-edit', 'Edit this page', editorChunk]) lacks(html, text);
+      for (const text of ['data-cms-edit', 'data-cms-taskbar', 'Live Edit', editorChunk]) lacks(html, text);
       // An editor's page loads the same scripts as a visitor's; the editor is not among them.
       const editorView = visible(await (await web.request('/projects/rocket')).text());
-      expect(editorView).toContain('Edit this page');
+      // The site taskbar: the editor's links to edit in place and in the dashboard, which visitors never see.
+      expect(editorView).toContain('data-cms-taskbar');
+      expect(editorView).toContain('Live Edit');
+      // Edit opens the entry in the dashboard: its link, with the pen icon, then the label.
+      expect(editorView).toMatch(new RegExp(`href="?/dashboard/content/projects/${rocket}"?[^>]*>[\\s\\S]{0,4000}?Edit`));
       expect(scriptsOf(html).length).toBeGreaterThan(0);
       expect(scriptsOf(editorView)).toEqual(scriptsOf(html));
 
@@ -208,9 +212,14 @@ describe.skipIf(!liveRomeDBTests())('CMS themes', () => {
       expect(response.headers()['cache-control']).toContain('private');
       await tab.waitForFunction(() => window.__cossackReady === true);
       expect(scripts.some(url => url.endsWith(editorChunk)), 'the editor loads only in edit mode').toBe(false);
-      await tab.getByRole('button', { name: 'Edit this page' }).click();
+      // The taskbar's Live Edit opens the editor at ?edit; the editor's own bar takes the taskbar's place.
+      const taskbar = tab.getByRole('navigation', { name: 'Site taskbar' });
+      await browserExpect(taskbar).toBeVisible();
+      await taskbar.getByRole('link', { name: 'Live Edit', exact: true }).click();
       const bar = tab.getByRole('region', { name: 'Editing' });
       await browserExpect(bar.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+      await browserExpect(taskbar).toBeHidden();
+      expect(new URL(tab.url()).searchParams.has('edit')).toBe(true);
       expect(scripts.some(url => url.endsWith(editorChunk))).toBe(true);
       const sections = tab.locator('[data-sections]');
       await browserExpect(sections.locator('[data-cms-edit="block"]')).toHaveCount(2);
@@ -289,6 +298,10 @@ describe.skipIf(!liveRomeDBTests())('CMS themes', () => {
       await bar.getByRole('button', { name: 'Reload' }).click();
       await browserExpect(tab.getByRole('heading', { name: 'Rocket, renamed elsewhere' })).toBeVisible();
       await browserExpect(sections.getByText('First section, edited on the site')).toBeVisible();
+      // Leaving edit mode brings the taskbar back and drops ?edit from the address, so a reload shows the page.
+      await bar.getByRole('button', { name: 'Exit', exact: true }).click();
+      await browserExpect(taskbar).toBeVisible();
+      expect(new URL(tab.url()).searchParams.has('edit')).toBe(false);
       expect(errors).toEqual([]);
     } finally {
       await browser?.close();

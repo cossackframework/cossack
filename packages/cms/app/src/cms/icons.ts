@@ -96,6 +96,7 @@ import { LinkRoundIcon } from '@cossackframework/solar-icons/link-round/line';
 import { HamburgerMenuIcon } from '@cossackframework/solar-icons/hamburger-menu/line';
 import { HistoryIcon } from '@cossackframework/solar-icons/history/line';
 import { EyeIcon } from '@cossackframework/solar-icons/eye/line';
+import { MagnifierIcon } from '@cossackframework/solar-icons/magnifier/line';
 import { CheckCircleIcon } from '@cossackframework/solar-icons/check-circle/line';
 import { RestartIcon } from '@cossackframework/solar-icons/restart/line';
 import { PenNewSquareIcon } from '@cossackframework/solar-icons/pen-new-square/line';
@@ -217,6 +218,7 @@ export const ICONS: Readonly<Record<string, IconEntry>> = Object.freeze({
     'hamburger-menu': { line: HamburgerMenuIcon },
     'history': { line: HistoryIcon },
     'eye': { line: EyeIcon },
+    'magnifier': { line: MagnifierIcon },
     'check-circle': { line: CheckCircleIcon },
     'restart': { line: RestartIcon },
     'pen-new-square': { line: PenNewSquareIcon },

@@ -578,7 +578,8 @@ describe.skipIf(!liveRomeDBTests())('generated CMS essentials', () => {
       await ready();
       await page.getByRole('button', { name: 'Sign in with a passkey' }).click();
       await page.waitForURL(/\/dashboard$/);
-      await browserExpect(page.getByText('At a glance')).toBeVisible();
+      // Exact: the dashboard's Help names the box too.
+      await browserExpect(page.getByText('At a glance', { exact: true })).toBeVisible();
       expect(errors).toEqual([]);
     } finally {
       await browser?.close();

@@ -4,7 +4,7 @@ import { html, component, type TemplateResult } from '@cossackframework/renderer
 import { plugins } from '@cossackframework/framework/plugins';
 import { evaluateRule, hasPermission, PERMISSIONS, recordTitle } from '@cossackframework/cms';
 import { icon } from '../../cms/icons';
-import { box, notice, shortDate } from '../../cms/ui';
+import { box, notice, screenHelp, shortDate } from '../../cms/ui';
 import { agentIcon, browserIcon, osIcon } from '../../dashboard/agent-icons';
 import { parseUserAgent } from '../../dashboard/session-list';
 
@@ -156,6 +156,9 @@ export default class DashboardPage extends Cossack {
             <span class="shrink-0 text-xs text-muted-foreground">${shortDate(entry.at)}</span></li>`)}</ul>`
             : html`<p class="text-sm text-muted-foreground">${__('No one is signed in.')}</p>`;
         return html`<div class="space-y-6">
+            ${screenHelp(html`<p>${__('At a glance counts the published entries of each collection, with drafts beside them; Recently published lists the newest entries with their authors.')}</p>
+                <p>${__('Notices at the top, and the taskbar below, show what waits for someone: comments to moderate, entries pending review, schema migrations and plugins waiting for a grant.')}</p>
+                <p>${__('Each box collapses from its title; plugins add their own boxes. Delivery counts the events and writes the site has not confirmed yet.')}</p>`)}
             <div class="flex items-center gap-4">
                 ${component(Avatar, { src: this.userAvatar ?? undefined, alt: this.userName, size: 48 })}
                 <div>

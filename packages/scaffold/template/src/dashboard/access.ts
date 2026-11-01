@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
 import { dashboardModules } from './registry';
-import type { DashboardModule } from './types';
+import type { DashboardModule, DashboardStatus } from './types';
 
 /** Navigation for the signed-in user: the installed modules they may open, in order. */
 export async function navigation(c: Context): Promise<DashboardModule[]> {
@@ -12,6 +12,11 @@ export async function navigation(c: Context): Promise<DashboardModule[]> {
         if (authorization === 'admin') return admin;
         return !!user?.roles?.some(role => role.permissions?.includes(authorization.permission));
     });
+}
+
+/** What waits for the signed-in user, for the dashboard's taskbar. Nothing here; the CMS counts comments, reviews and deliveries. */
+export async function dashboardStatus(_c: Context): Promise<DashboardStatus[]> {
+    return [];
 }
 
 export { siteName } from '../brand';
