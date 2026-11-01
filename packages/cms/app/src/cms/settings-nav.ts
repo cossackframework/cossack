@@ -1,58 +1,101 @@
-/**
- * The Settings screens' frame: the groups in a vertical list beside the page, and a group's
- * subpages (such as SEO → Crawlers and IndexNow) as tabs above its form.
- */
+/** Navigation for the scrolling Settings page and its JSON editor. */
 import { component, html, type TemplateResult } from '@cossackframework/renderer';
 import { Icon } from '@cossackframework/ui';
 import { PERMISSIONS } from '@cossackframework/cms';
 import type { CmsHost } from '@cossackframework/cms/server';
 import { icon } from './icons';
+import { settingsNavigation } from './settings-draft';
+import { searchSettings, settingsSectionHref, type SettingsSearchEntry } from './settings-search';
 
-/** A settings page: a group's, or a screen of its own such as Permalinks. */
 export interface SettingsLink {
     id: string;
     label: string;
     href: string;
-    /** The group it is a subpage of. */
     parent?: string;
-    /** Its icon in the navigation; a gear when it names none. */
     icon?: string;
+    /** Matching settings in this group and its descendants. */
+    count?: number;
 }
 
-/** The settings pages behind `cms:settings`: the groups in order, then Permalinks. Appearance groups have their own screens. */
+/** Settings groups in page order. Plugins each get a child beneath Plugins. */
 export function settingsLinks(cms: CmsHost): SettingsLink[] {
+    const groups = cms.settings.groups.filter(group => (group.permission ?? PERMISSIONS.manageSettings) === PERMISSIONS.manageSettings);
     return [
-        ...cms.settings.groups.filter(group => (group.permission ?? PERMISSIONS.manageSettings) === PERMISSIONS.manageSettings)
-            .map(group => ({ id: group.id, label: group.label, href: `/dashboard/settings/${group.id}`, ...(group.parent ? { parent: group.parent } : {}), ...(group.icon ? { icon: group.icon } : {}) })),
-        { id: 'permalinks', label: 'Permalinks', href: '/dashboard/settings/permalinks', icon: 'link' },
+        ...groups.filter(group => !group.plugin).map(group => ({ id: group.id, label: group.label, href: settingsSectionHref(group.id),
+            ...(group.parent ? { parent: group.parent } : {}), ...(group.icon ? { icon: group.icon } : {}) })),
+        { id: 'permalinks', label: 'Permalinks', href: settingsSectionHref('permalinks'), icon: 'link' },
+        { id: 'plugins', label: 'Plugins', href: settingsSectionHref('plugins'), icon: 'widget' },
+        ...groups.filter(group => group.plugin).map(group => ({ id: group.id, label: group.label, href: settingsSectionHref(group.id), parent: 'plugins', icon: 'plug-circle' })),
     ];
 }
 
-/** The page `current` inside the frame: the navigation, the subpage tabs of its group, then `body`. */
-export function settingsFrame(links: readonly SettingsLink[], current: string, body: TemplateResult): TemplateResult {
-    const here = links.find(link => link.id === current);
-    const top = here?.parent && links.some(link => link.id === here.parent) ? here.parent : current;
-    const subpages = links.filter(link => link.parent === top);
-    const tabs = subpages.length ? [links.find(link => link.id === top)!, ...subpages] : [];
-    const item = (link: SettingsLink) => html`<li><a href=${link.href} aria-current=${link.id === top ? 'page' : 'false'}
-        class=${`flex items-center gap-2 whitespace-nowrap rounded-md px-3 py-1.5 text-sm no-underline [&_svg]:size-4 ${link.id === top ? 'bg-background font-medium text-foreground shadow-xs' : 'text-muted-foreground hover:bg-background/60 hover:text-foreground'}`}>
-        <span aria-hidden="true" class="inline-flex shrink-0">${component(Icon, { entry: icon(link.icon ?? 'settings', 'settings'), size: 16 })}</span>${__(link.label)}</a></li>`;
-    // A secondary sidebar against the dashboard's own and as tall as the page (the layout drops its
-    // padding around `data-subnav`), in a lighter panel so the two levels read apart. Its header
-    // lines up with the dashboard sidebar's.
-    return html`<div data-subnav class="grid min-w-0 content-start md:grid-cols-[13rem_minmax(0,1fr)] md:content-normal">
-        <nav aria-label=${__('Settings')} class="border-b border-border bg-muted/40 md:border-b-0 md:border-e">
-            <div class="md:sticky md:top-0">
-                <p class="hidden h-14 items-center border-b border-border px-4 text-sm font-semibold text-foreground md:flex">${__('Settings')}</p>
-                <ul class="flex gap-1 overflow-x-auto p-2 md:flex-col md:overflow-visible">${links.filter(link => !link.parent || !links.some(entry => entry.id === link.parent)).map(item)}</ul>
+/** Keep matching groups and their ancestors, counting each matching field once per ancestor. */
+export function filterSettingsLinks(links: readonly SettingsLink[], entries: readonly SettingsSearchEntry[], query: string): SettingsLink[] {
+    const byId = new Map(links.map(link => [link.id, link]));
+    const counts = new Map<string, number>();
+    for (const entry of searchSettings(entries, query)) {
+        let group: string | undefined = entry.groupId;
+        const visited = new Set<string>();
+        while (group && byId.has(group) && !visited.has(group)) {
+            visited.add(group);
+            counts.set(group, (counts.get(group) ?? 0) + 1);
+            group = byId.get(group)!.parent;
+        }
+    }
+    return links.filter(link => !query.trim() || counts.has(link.id)).map(link => ({ ...link, count: counts.get(link.id) ?? 0 }));
+}
+
+/** Error links target the persistent section shell, including sections whose controls are deferred. */
+export function settingsErrorSummary(errors: Readonly<Record<string, string>>, onNavigate: (event: MouseEvent) => void = settingsNavigation): TemplateResult | null {
+    const entries = Object.entries(errors);
+    if (!entries.length) return null;
+    return html`<ul role="alert" class="space-y-1 text-sm text-destructive">${entries.map(([path, error]) => {
+        const separator = path.lastIndexOf('.');
+        const namespace = path.slice(0, separator);
+        const destination = separator < 1 ? '/dashboard/settings/json' : settingsSectionHref(namespace);
+        return html`<li><a href=${destination} data-settings-error-group=${namespace} @click=${onNavigate} class="underline"><code>${path}</code></a>: ${error}</li>`;
+    })}</ul>`;
+}
+
+export interface SettingsFrameOptions {
+    entries?: readonly SettingsSearchEntry[];
+    query?: string;
+    onNavigate?: (event: MouseEvent) => void;
+}
+
+/** The navigation grows with the page and occupies at least a viewport on desktop. */
+export function settingsFrame(links: readonly SettingsLink[], current: string, body: TemplateResult, options: SettingsFrameOptions = {}): TemplateResult {
+    const query = options.query ?? '';
+    const menu = options.entries ? filterSettingsLinks(links, options.entries, query) : links;
+    const onNavigate = options.onNavigate ?? settingsNavigation;
+    const ids = new Set(menu.map(link => link.id));
+    const byParent = new Map<string, SettingsLink[]>();
+    for (const link of menu) if (link.parent) {
+        const siblings = byParent.get(link.parent) ?? [];
+        siblings.push(link);
+        byParent.set(link.parent, siblings);
+    }
+    const roots = menu.filter(link => !link.parent || !ids.has(link.parent));
+    const item = (link: SettingsLink, ancestors: readonly string[] = []): TemplateResult => {
+        const children = (byParent.get(link.id) ?? []).filter(entry => !ancestors.includes(entry.id) && entry.id !== link.id);
+        return html`<li data-settings-menu-parent=${link.id} class="min-w-0">
+            <a href=${link.href} data-settings-menu-group=${link.id} data-settings-count=${link.count} @click=${onNavigate}
+                aria-current=${link.id === current ? 'location' : 'false'}
+                class=${`flex items-center gap-2 rounded-md px-3 py-2 text-sm no-underline [&_svg]:size-4 ${link.id === current ? 'bg-background font-medium text-foreground shadow-xs' : 'text-muted-foreground hover:bg-background/60 hover:text-foreground'}`}>
+                <span aria-hidden="true" class="inline-flex shrink-0">${component(Icon, { entry: icon(link.icon ?? 'settings', 'settings'), size: 16 })}</span>
+                <span class="min-w-0 flex-1 break-words">${__(link.label)}</span>
+                ${query.trim() && link.count !== undefined ? html`<span aria-label=${`${link.count} ${link.count === 1 ? __('setting') : __('settings')}`} class="shrink-0 rounded bg-background px-1.5 py-0.5 text-xs tabular-nums">${link.count}</span>` : null}
+            </a>
+            ${children.length ? html`<ul class="ms-5 space-y-0.5 border-s border-border ps-1">${children.map(child => item(child, [...ancestors, link.id]))}</ul>` : null}
+        </li>`;
+    };
+    return html`<div data-subnav class="grid min-h-screen min-w-0 content-start md:grid-cols-[13rem_minmax(0,1fr)] md:content-stretch">
+        <nav aria-label=${__('Settings')} class="self-stretch border-b border-border bg-muted/40 md:min-h-screen md:border-b-0 md:border-e">
+            <div class="md:sticky md:overflow-y-auto" style="top:var(--settings-toolbar-height, 56px);max-height:calc(100dvh - var(--settings-toolbar-height, 56px))">
+                <ul class="flex gap-1 overflow-x-auto p-2 md:flex-col md:overflow-x-visible">${roots.map(link => item(link))}</ul>
+                ${menu.length ? null : html`<p role="status" class="px-4 py-3 text-sm text-muted-foreground">${__('No settings match your search.')}</p>`}
             </div>
         </nav>
-        <div class="min-w-0 p-6 sm:p-8"><div class="max-w-3xl space-y-6">
-            ${tabs.length ? html`<nav aria-label=${`${__(tabs[0]!.label)} ${__('pages')}`} class="flex flex-wrap gap-1 border-b border-border">
-                ${tabs.map(link => html`<a href=${link.href} aria-current=${link.id === current ? 'page' : 'false'}
-                    class=${`-mb-px border-b-2 px-3 py-2 text-sm no-underline ${link.id === current ? 'border-primary font-medium text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>${__(link.label)}</a>`)}
-            </nav>` : null}
-            ${body}
-        </div></div>
+        <div class="min-w-0 p-6 sm:p-8"><div class="max-w-3xl space-y-6">${body}</div></div>
     </div>`;
 }

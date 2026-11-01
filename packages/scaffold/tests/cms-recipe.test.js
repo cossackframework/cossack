@@ -77,6 +77,26 @@ describe('cms recipe', () => {
     expect(JSON.parse(text(orm, 'package.json')).dependencies).not.toHaveProperty('@simplewebauthn/browser');
   });
 
+  it('renders the scrolling settings page and JSON tools from the CMS application on every runtime', async () => {
+    for (const adapter of ['node', 'cloudflare']) {
+      const files = await renderRecipe(resolveRecipe({ adapter, preset: 'minimal', features: ['cms'] }));
+      for (const rel of [
+        'src/pages/dashboard/(cms)/settings/index.ts',
+        'src/pages/dashboard/(cms)/settings/json/index.ts',
+        'src/pages/dashboard/(cms)/settings/layout.ts',
+        'src/cms/settings-form.ts',
+        'src/cms/settings-nav.ts',
+        'src/cms/settings-search.ts',
+        'src/cms/settings-section.ts',
+        'src/cms/settings-languages.ts',
+        'src/cms/settings-permalinks.ts',
+      ]) expect(files.has(rel), `${adapter}: ${rel}`).toBe(true);
+      expect(text(files, 'src/pages/dashboard/(cms)/settings/json/index.ts')).toContain('CodeEditor');
+      expect(text(files, 'src/cms/settings-nav.ts')).toContain('/dashboard/settings');
+      expect(text(files, 'src/pages/dashboard/(cms)/settings/layout.ts')).toContain('/dashboard/settings/json');
+    }
+  });
+
   it('binds the Images binding and runs maintenance every minute on Workers', async () => {
     const files = await renderRecipe(resolveRecipe({ adapter: 'cloudflare', preset: 'minimal', features: ['cms'] }));
     const config = JSON.parse(text(files, 'wrangler.jsonc').replace(/^\s*\/\/.*$/gm, ''));

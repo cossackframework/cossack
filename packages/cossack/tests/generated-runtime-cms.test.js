@@ -13,6 +13,8 @@ import { liveRomeDBTests, startRomeDBService } from '../../romedb/src/testing.ts
 
 afterEach(cleanupRoots);
 
+const SETTINGS = 'dashboard/(cms)/settings/index.ts';
+
 const doc = (...content) => ({ type: 'doc', content });
 const paragraph = (...content) => ({ type: 'paragraph', content });
 const text = (value, marks) => ({ type: 'text', text: value, ...(marks ? { marks: marks.map(type => ({ type })) } : {}) });
@@ -34,7 +36,7 @@ async function exercise(origin, routeIds, diagnostics) {
 
   // The shared dashboard: CMS navigation, users and the site name.
   const dashboard = await web.page('/dashboard');
-  for (const link of ['/dashboard/content/posts', '/dashboard/content/pages', '/dashboard/media', '/dashboard/collections', '/dashboard/settings/general', '/dashboard/users', '/dashboard/terms/categories'])
+  for (const link of ['/dashboard/content/posts', '/dashboard/content/pages', '/dashboard/media', '/dashboard/collections', '/dashboard/settings', '/dashboard/users', '/dashboard/terms/categories'])
     contains(dashboard, `href="${link}"`);
   contains(dashboard, 'At a glance');
   contains(dashboard, 'The Daily');
@@ -160,10 +162,9 @@ async function exercise(origin, routeIds, diagnostics) {
   lacks(links, 'Not allowed to read');
 
   // Settings change the site title, registration and the home page.
-  const settings = 'dashboard/(cms)/settings/[group]/index.ts';
   const visitor = browserless(origin, routeIds, diagnostics);
   contains(await visitor.page('/auth/register'), 'Registration is closed');
-  expect((await web.action(settings, 'save', [{ siteTitle: 'Rocket News', usersCanRegister: true }], { params: { group: 'general' } })).error).toBe('');
+  expect((await web.action(SETTINGS, 'save', [{ general: { siteTitle: 'Rocket News', usersCanRegister: true } }]))._cossack_return.error).toBe('');
   contains(await visitor.page('/'), 'Rocket News');
   lacks(await visitor.page('/auth/register'), 'Registration is closed');
   const registered = await visitor.action('auth/register/index.ts', 'register', [{ name: 'Bob', email: 'bob@example.com', password: 'another password' }]);
@@ -205,7 +206,7 @@ async function exercise(origin, routeIds, diagnostics) {
   const moved = await fetch(origin + '/team', { redirect: 'manual' });
   expect(moved.status).toBe(301);
   expect(moved.headers.get('location')).toBe('/home/team');
-  expect((await web.action(settings, 'save', [{ showOnFront: 'page', pageOnFront: homeId }], { params: { group: 'reading' } })).error).toBe('');
+  expect((await web.action(SETTINGS, 'save', [{ reading: { showOnFront: 'page', pageOnFront: homeId } }]))._cossack_return.error).toBe('');
   const front = await visitor.page('/');
   contains(front, 'Welcome home');
   // The static front page is edited in place at /?edit, from the editor's taskbar. Every signed-in user has
@@ -286,36 +287,41 @@ async function exercise(origin, routeIds, diagnostics) {
   expect((await fetch(origin + '/api/cms/content/nothing')).status).toBe(404);
 
   // Permalinks: posts move to the site root, and a posts page lists them.
-  const permalinks = 'dashboard/(cms)/settings/permalinks/index.ts';
-  expect((await web.action(permalinks, 'save', [true, 'posts', [{ name: 'categories', path: 'category' }, { name: 'tags', path: 'tag' }]])).error).toBe('');
+  expect((await web.action(SETTINGS, 'savePermalinks', [{ postsAtRoot: true, postsBase: 'posts', withCategory: false, bases: [{ name: 'categories', path: 'category' }, { name: 'tags', path: 'tag' }] }]))._cossack_return.error).toBe('');
   contains(await visitor.page('/hello-world'), 'zeppelin');
   // Old addresses redirect to the new ones.
   const oldPost = await fetch(origin + '/posts/hello-world', { redirect: 'manual' });
   expect([oldPost.status, oldPost.headers.get('location')]).toEqual([301, '/hello-world']);
   const blogPage = await web.action(editor, 'save', [{ title: 'Blog', slug: '', status: 'draft', publishedAt: '', content: [], excerpt: '', featuredImage: '', parent: '', menuOrder: '5' }, 'publish', 0],
     { params: { collection: 'pages', id: 'new' }, state: { route: 'pages', id: 'new' } });
-  expect((await web.action(settings, 'save', [{ pageForPosts: blogPage.id }], { params: { group: 'reading' } })).error).toBe('');
+  expect((await web.action(SETTINGS, 'save', [{ reading: { pageForPosts: blogPage.id } }]))._cossack_return.error).toBe('');
   contains(await visitor.page('/blog'), 'Hello, World!');
   contains(await visitor.page('/blog'), 'href="/hello-world"');
   // A new post cannot take a slug the site's routes own.
   const reserved = await web.action(editor, 'save', [{ title: 'Search', slug: '', excerpt: '', content: [], status: 'draft', publishedAt: '', sticky: false, featuredImage: '', categories: [], tags: [] }, 'publish', 0],
     { params: { collection: 'posts', id: 'new' }, state: { route: 'posts', id: 'new' } });
   contains(await web.page(`/dashboard/content/posts/${reserved.id}`), '/search-2');
-  expect((await web.action(permalinks, 'save', [false, 'posts', [{ name: 'categories', path: 'category' }, { name: 'tags', path: 'tag' }]])).error).toBe('');
+  expect((await web.action(SETTINGS, 'savePermalinks', [{ postsAtRoot: false, postsBase: 'posts', withCategory: false, bases: [{ name: 'categories', path: 'category' }, { name: 'tags', path: 'tag' }] }]))._cossack_return.error).toBe('');
   contains(await visitor.page('/posts/hello-world'), 'zeppelin');
 
   // Every dashboard screen renders for the administrator.
-  for (const pathname of ['/dashboard/settings/general', '/dashboard/settings/writing', '/dashboard/settings/reading', '/dashboard/settings/media', `/dashboard/media/${image.id}`,
+  for (const pathname of ['/dashboard/settings', `/dashboard/media/${image.id}`,
     `/dashboard/terms/categories/${news.id}`, '/dashboard/terms/tags', '/dashboard/taxonomies', '/dashboard/taxonomies/categories', '/dashboard/blocks', '/dashboard/collections',
     '/dashboard/collections/posts', '/dashboard/collections/products', '/dashboard/tools/schema', '/dashboard/plugins', '/dashboard/content/pages', '/dashboard/content/products',
     '/dashboard/content/products/new', '/dashboard/profile', '/dashboard/sessions', '/dashboard/users/new', '/dashboard/roles/new', '/dashboard/appearance', '/dashboard/appearance/customize',
-    '/dashboard/appearance/menus', `/dashboard/appearance/menus/${menuId}`, '/dashboard/settings/permalinks']) await web.page(pathname);
-  const general = await web.page('/dashboard/settings/general');
+    '/dashboard/appearance/menus', `/dashboard/appearance/menus/${menuId}`]) await web.page(pathname);
+  const general = await web.page('/dashboard/settings');
   contains(general, 'Anyone can register');
   // Settings has a secondary sidebar against the dashboard's own, so the main area drops its padding.
   contains(general, 'data-subnav');
   contains(await web.page('/dashboard/blocks'), 'core/paragraph');
-  expect((await web.request('/dashboard/settings')).headers.get('location')).toBe('/dashboard/settings/general');
+  for (const group of ['general', 'writing', 'reading', 'media', 'permalinks']) {
+    expect(general).toMatch(new RegExp(`data-settings-menu-group="?${group}(?:"|\\s|>)`));
+    expect(general).toMatch(new RegExp(`data-settings-section="?${group}(?:"|\\s|>)`));
+    expect((await web.request(`/dashboard/settings/${group}`)).headers.get('location')).toBe(`/dashboard/settings#settings-${group}`);
+  }
+  contains(general, 'aria-label="Edit settings JSON"');
+  expect((await web.request('/dashboard/settings')).status).toBe(200);
   expect((await web.request('/dashboard/media/new')).headers.get('location')).toBe('/dashboard/media?upload=1');
   // Subscribers reach their profile but not content tools.
   expect((await visitor.request('/dashboard/media')).headers.get('location')).toBe('/dashboard');
@@ -505,7 +511,7 @@ describe.skipIf(!liveRomeDBTests())('generated CMS application', () => {
       await browserExpect(primary.locator('li li a', { hasText: 'Team' }).first()).toHaveAttribute('href', '/team');
 
       // A static front page is edited in place at /: the taskbar's Live Edit opens /?edit, Exit leaves it; Edit opens the dashboard's editor.
-      expect((await web.action('dashboard/(cms)/settings/[group]/index.ts', 'save', [{ showOnFront: 'page', pageOnFront: pageIds.About }], { params: { group: 'reading' } })).error).toBe('');
+      expect((await web.action(SETTINGS, 'save', [{ reading: { showOnFront: 'page', pageOnFront: pageIds.About } }]))._cossack_return.error).toBe('');
       await page.goto(server.origin + '/');
       await ready();
       const taskbar = page.getByRole('navigation', { name: 'Site taskbar' });

@@ -1,9 +1,9 @@
 import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackframework/core';
 import { Button, Card, CardBody, CodeEditor, ColorPicker, Input } from '@cossackframework/ui';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
-import { customCssProblem, isCmsError, PERMISSIONS, presetOverridesProblem, resolvePresets, slugify, type Preset } from '@cossackframework/cms';
+import { customCssProblem, hasPermission, isCmsError, PERMISSIONS, presetOverridesProblem, resolvePresets, slugify, type Preset } from '@cossackframework/cms';
 import { requireAny } from '../../../../../cms/guards';
-import { settingControl, settingInput, settingRows, type SettingRow, type SettingValues } from '../../../../../cms/settings-form';
+import { findSettingsMedia, settingControl, settingInput, settingRows, type SettingRow, type SettingValues } from '../../../../../cms/settings-form';
 import { linkButton, notice, pageHeader } from '../../../../../cms/ui';
 
 /** A palette color as the screen edits it: the theme's value, and the site's when changed. */
@@ -24,6 +24,9 @@ export default class CustomizePage extends Cossack {
     @State() customCss = '';
     @State() errors: Record<string, string> = {};
     @State() error = '';
+    @State() mediaEnabled = false;
+    @State() mediaUpload = false;
+    private mediaEpoch = 0;
     /** What the last publish did. */
     @State() message = '';
 
@@ -33,6 +36,9 @@ export default class CustomizePage extends Cossack {
 
     async init() {
         const cms = this.c.get('cms');
+        const principal = this.c.get('principal');
+        this.mediaEnabled = !!cms.files && [PERMISSIONS.upload, PERMISSIONS.manageMedia, PERMISSIONS.manageUsers].some(permission => hasPermission(principal, permission));
+        this.mediaUpload = !!cms.files && hasPermission(principal, PERMISSIONS.upload);
         const name = await cms.activeTheme();
         const theme = cms.themes().find(entry => entry.name === name);
         if (!theme) return;
@@ -47,7 +53,7 @@ export default class CustomizePage extends Cossack {
     }
 
     @Client()
-    set(name: string, value: string | boolean) {
+    set(name: string, value: string | boolean | null) {
         this.values = { ...this.values, [name]: value };
     }
 
@@ -78,9 +84,15 @@ export default class CustomizePage extends Cossack {
     @Client()
     async submit(event: Event) {
         event.preventDefault();
+        this.mediaEpoch++;
         this.message = '';
         await this.save(this.values, this.colors.map(color => ({ slug: color.slug, value: color.value })), this.custom, this.customCss);
         if (!this.error) this.message = __('Your changes are live.');
+    }
+
+    @Server()
+    async findSettingFiles(search: string, kind: string) {
+        return findSettingsMedia(this.c.get('cms'), this.c.get('principal'), search, kind);
     }
 
     @Server()
@@ -172,7 +184,9 @@ export default class CustomizePage extends Cossack {
             ${component(Card, {}, component(CardBody, {}, html`<form class="space-y-6" @submit=${(event: Event) => this.submit(event)}>
                 ${this.rows.length ? html`<section class="space-y-5" aria-labelledby="customize-options">
                     <h2 id="customize-options" class="text-sm font-semibold text-foreground">${__('Options')}</h2>
-                    ${this.rows.map(row => settingControl(row, this.values[row.name], this.errors[row.name], value => this.set(row.name, value)))}
+                    ${this.rows.map(row => settingControl(row, this.values[row.name], this.errors[row.name], value => this.set(row.name, value), this.mediaEnabled ? {
+                        find: (search, kind) => this.findSettingFiles(search, kind), canUpload: this.mediaUpload, epoch: () => this.mediaEpoch,
+                    } : undefined))}
                 </section>` : null}
                 ${this.colorsSection()}
                 ${this.cssSection()}

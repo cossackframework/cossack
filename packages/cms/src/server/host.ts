@@ -15,6 +15,7 @@ import { CmsFieldGroups } from './field-groups';
 import { CmsError } from '../errors';
 import type { CmsModule } from '../module';
 import { appearance, general, media, type SettingsGroup } from '../settings';
+import { pluginSettingsGroupId } from '../plugin-settings';
 import { assembleSiteTheme, entryTemplateChoices, layerPresets, siteThemeProblems, type ArchiveView, type SiteTheme, type EntryView, type SiteView, type ThemeData, type ThemeManifest, type ThemePresets } from '../theme';
 import type { MenuItem, MenuItemView } from '../menus';
 import { recordTitle } from '../forms';
@@ -179,6 +180,11 @@ export interface PluginContext {
     readonly commands: { add(name: string, handler: CommandHandler): void };
     /** Data access limited to the plugin's own resources and its granted ones. */
     readonly cms: PluginCms;
+    /** Own declared settings, with defaults. Reads require the plugin to be active. */
+    readonly settings: {
+        get(name: string): Promise<unknown>;
+        all(): Promise<Readonly<Record<string, unknown>>>;
+    };
     /** `fetch` limited to the manifest's granted network hosts. */
     readonly fetch: typeof globalThis.fetch;
 }
@@ -403,6 +409,14 @@ export class CmsHost {
             if (declaration.taxonomy && !this.#builtinTaxonomies.has(declaration.taxonomy)) throw new Error(`${resource.id}.${name} uses taxonomy ${declaration.taxonomy}, which no module declares.`);
         }
         const groups = [general, media, appearance, ...modules.flatMap(module => module.settings ?? []), ...(options.settings ?? [])];
+        for (const group of groups) {
+            if (group.plugin !== undefined || group.id.startsWith('plugin:')) throw new Error('Plugin settings namespaces and ownership are assigned by the CMS host.');
+        }
+        for (const plugin of this.#plugins.values()) {
+            const declaration = plugin.manifest.settings;
+            if (plugin.problems.length || !declaration) continue;
+            groups.push({ ...declaration, id: pluginSettingsGroupId(plugin.manifest.name), plugin: plugin.manifest.name, json: true, permission: PERMISSIONS.manageSettings });
+        }
         for (const plugin of this.#plugins.values()) {
             if (!plugin.manifest.theme) continue;
             const theme = this.#hostTheme(plugin, new Set(groups.map(group => group.id)));
@@ -1765,7 +1779,7 @@ export class CmsHost {
         const inherited = manifest?.extends && parentManifest ? parentManifest : undefined;
         const fields = { ...inherited?.options, ...manifest?.options };
         const options = manifest && Object.keys(fields).length ? { id: plugin.manifest.name, label: manifest.label, permission: PERMISSIONS.manageAppearance, fields } : null;
-        if (options && (groups.has(options.id) || !/^[a-z][a-z0-9-]{0,40}$/.test(options.id))) problems.push(`Its options need a settings group named ${options.id}, which is taken or too long.`);
+        if (options && (groups.has(options.id) || ['plugins', 'json', '__proto__', 'constructor', 'prototype'].includes(options.id) || !/^[a-z][a-z0-9-]{0,40}$/.test(options.id))) problems.push(`Its options need a settings group named ${options.id}, which is taken, reserved or too long.`);
         const named = (entries: { readonly [name: string]: string }) => Object.entries(entries).map(([name, label]) => ({ name, label }));
         return Object.freeze({
             name: plugin.registration.name, version: plugin.registration.version, ...authorOf(plugin),
@@ -1926,6 +1940,19 @@ export class CmsHost {
                 },
             },
             cms: this.pluginCms(name),
+            settings: {
+                get: async field => {
+                    if (!(await active())) throw new CmsError('CMS_UNAVAILABLE', `Plugin ${name} is not active.`);
+                    const fields = plugin.manifest.settings?.fields;
+                    if (typeof field !== 'string' || !fields || !Object.hasOwn(fields, field)) throw new CmsError('CMS_NOT_FOUND', `Unknown setting of plugin ${name}.`);
+                    return structuredClone(await this.settings.get(`${pluginSettingsGroupId(name)}.${field}`));
+                },
+                all: async () => {
+                    if (!(await active())) throw new CmsError('CMS_UNAVAILABLE', `Plugin ${name} is not active.`);
+                    const values = await this.settings.all();
+                    return Object.fromEntries(Object.keys(plugin.manifest.settings?.fields ?? {}).map(field => [field, structuredClone(values[`${pluginSettingsGroupId(name)}.${field}`])]));
+                },
+            },
             fetch: async (input, init) => {
                 const url = new URL(input instanceof Request ? input.url : String(input));
                 const granted = (await this.#state()).grants.get(`plugin:${name}`) ?? new Set<string>();
@@ -2016,7 +2043,7 @@ function loadersOf(plugin: HostedPlugin): ThemeLoaders {
 
 /** A plugin that only ships a theme: no resources, blocks, hooks, commands, slots or permissions. */
 function isThemeOnly(manifest: CmsPluginManifest): boolean {
-    return manifest.theme !== undefined && !manifest.resources?.length && !manifest.collections?.length && !manifest.blocks?.length && !manifest.hooks?.length && !manifest.commands?.length
+    return manifest.theme !== undefined && manifest.settings === undefined && !manifest.resources?.length && !manifest.collections?.length && !manifest.blocks?.length && !manifest.hooks?.length && !manifest.commands?.length
         && !Object.keys(manifest.ui?.slots ?? {}).length && !Object.keys(manifest.permissions?.resources ?? {}).length && !manifest.permissions?.network?.length && !manifest.permissions?.define?.length;
 }
 

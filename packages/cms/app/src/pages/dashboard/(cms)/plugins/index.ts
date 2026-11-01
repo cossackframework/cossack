@@ -1,9 +1,10 @@
 import { Client, ClientState, Cossack, Page, State, flash, flashed, type HeadValue } from '@cossackframework/core';
 import { Badge, Card, CardBody, Input, NativeSelect } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
-import { isCmsError, isSameOriginPost, PERMISSIONS } from '@cossackframework/cms';
+import { hasPermission, isCmsError, isSameOriginPost, PERMISSIONS } from '@cossackframework/cms';
 import { requireAny } from '../../../../cms/guards';
 import { artwork, authorLine, notice, pageHeader } from '../../../../cms/ui';
+import { settingsSectionHref } from '../../../../cms/settings-search';
 
 interface PluginRow {
     name: string;
@@ -16,6 +17,7 @@ interface PluginRow {
     active: boolean;
     reason: string;
     missing: string[];
+    settings: boolean;
 }
 
 type PluginFilter = 'all' | 'active' | 'inactive' | 'themes';
@@ -39,9 +41,11 @@ export default class PluginsPage extends Cossack {
 
     async init() {
         const status = await this.c.get('cms').status();
+        const configurable = new Set(hasPermission(this.c.get('principal'), PERMISSIONS.manageSettings)
+            ? this.c.get('cms').settings.catalog({ principal: this.c.get('principal') }).map(group => group.plugin).filter(Boolean) : []);
         this.plugins = status.plugins.map(plugin => ({
             name: plugin.name, version: plugin.version, description: plugin.description, author: plugin.author, logo: plugin.logo, cover: plugin.cover, themeOnly: plugin.themeOnly,
-            active: plugin.active, reason: plugin.reason ?? '', missing: [...plugin.missing],
+            active: plugin.active, reason: plugin.reason ?? '', missing: [...plugin.missing], settings: configurable.has(plugin.name),
         }));
         this.message = flashed<string>('cms.message') ?? '';
     }
@@ -136,6 +140,7 @@ export default class PluginsPage extends Cossack {
                         <td class="px-3 py-3">${plugin.themeOnly ? component(Badge, { variant: 'secondary' }, __('Theme'))
                             : component(Badge, { variant: plugin.active ? 'success' : 'secondary' }, plugin.active ? __('Active') : __('Inactive'))}</td>
                         <td class="px-3 py-3"><div class="flex flex-wrap justify-end gap-2">
+                            ${plugin.settings ? html`<a href=${settingsSectionHref(`plugin:${plugin.name}`)} class="text-sm text-primary hover:underline">${__('Settings')}</a>` : null}
                             ${plugin.themeOnly ? html`<a href="/dashboard/appearance" class="text-sm text-primary hover:underline">${__('Manage in Appearance')} →</a>` : html`
                                 ${plugin.missing.length ? html`<button type="submit" name="_row" value=${`grant:${plugin.name}`} class=${`${button} bg-primary text-primary-foreground border-none`}>${__('Grant and enable')}</button>` : null}
                                 ${plugin.active ? html`<button type="submit" name="_row" value=${`disable:${plugin.name}`} class=${`${button} border border-destructive bg-transparent text-destructive`}>${__('Disable')}</button>` : null}`}

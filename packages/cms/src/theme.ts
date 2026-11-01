@@ -10,6 +10,7 @@ import type { TemplateResult } from '@cossackframework/renderer';
 import { fieldProblems } from './fields';
 import { MENU_LOCATION, type MenuItemView } from './menus';
 import type { SettingDeclaration } from './settings';
+import { settingControlProblems } from './settings-controls';
 import { PRESET_SLUG, STYLE_PROPERTIES, TEXT_ALIGNMENTS, type StyleProperty } from './block-shape';
 import type { BlockCondition, BlockLayout, BlockStyle, InputKind } from './blocks';
 import type { ChoiceOption, FormValue } from './form-builder';
@@ -76,9 +77,11 @@ export function themeProblems(theme: unknown): string[] {
     const options = Object.entries(value.options ?? {});
     if (options.length > 16) problems.push('theme.options: declare at most 16 options.');
     for (const [name, option] of options) {
+        if (['__proto__', 'constructor', 'prototype'].includes(name)) { problems.push(`theme.options.${name} is not a safe option name.`); continue; }
         if (!option || typeof option !== 'object' || !OPTION_KINDS.has(option.kind)) { problems.push(`theme.options.${name} must be a string, text, enum, boolean, integer or number field.`); continue; }
         if (option.unique || option.index || option.search || option.slugFrom || option.taxonomy || option.media) problems.push(`theme.options.${name} cannot be indexed, searched or derived.`);
         problems.push(...fieldProblems(name, option).map(problem => `theme.options: ${problem}`));
+        problems.push(...settingControlProblems(name, option).map(problem => `theme.options: ${problem}`));
     }
     if (value.presets !== undefined) problems.push(...presetProblems(value.presets).map(problem => `theme.presets: ${problem}`));
     return problems;

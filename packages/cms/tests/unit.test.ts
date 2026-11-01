@@ -13,6 +13,23 @@ const catalog = (tables: Catalog['tables'] = new Map(), ledger: Partial<Catalog[
 });
 
 describe('fields', () => {
+    it('validates numeric upper bounds as values and text upper bounds as counts', () => {
+        for (const declaration of [
+            field.number({ min: -0.5, max: 0.5, default: 0.25 }),
+            field.number({ min: -1, max: -0.25, default: -0.5 }),
+            field.integer({ max: 0, default: -1 }),
+            field.integer({ min: -10, max: -2, default: -5 }),
+            field.datetime({ max: 0, default: 0 }),
+        ]) expect(fieldProblems('value', declaration)).toEqual([]);
+        expect(validateValue('value', field.number({ max: -0.25 }), 0)).toMatch(/at most -0.25/);
+        expect(validateValue('value', field.integer({ max: 0 }), 1)).toMatch(/at most 0/);
+        expect(fieldProblems('value', field.number({ max: Infinity }))).toEqual(['field value: max must be a finite number.']);
+        expect(fieldProblems('value', field.integer({ max: 0.5 }))).toEqual(['field value: max must be a safe integer.']);
+        expect(fieldProblems('value', field.integer({ max: Number.MAX_SAFE_INTEGER + 1 }))).toEqual(['field value: max must be a safe integer.']);
+        for (const max of [0, -1, 0.5, Infinity]) expect(fieldProblems('value', field.string({ max }))).toContain('field value: max must be a positive integer.');
+        expect(fieldProblems('value', field.rows({ label: field.string() }, { max: 0 }))).toContain('field value: max must be a positive integer.');
+    });
+
     it('validates input by kind', () => {
         expect(validateValue('t', field.string({ max: 3 }), 'abcd')).toMatch(/at most 3/);
         expect(validateValue('t', field.string({ pattern: '[a-z]+' }), 'Abc')).toMatch(/format/);

@@ -2,17 +2,31 @@
  * Site settings, declared as groups of fields. Declarations are data and client-safe; the
  * host stores one row per key and validates writes against these declarations.
  */
-import { field, type FieldDeclaration } from './fields';
+import { field, type FieldDeclaration, type FieldMediaKind } from './fields';
 import { SEO_TEMPLATE_DEFAULTS } from './seo';
 
 /** Choices filled in by the host when a form renders, such as the list of roles. */
 /** Where a setting's choices come from; `media` lists the library's images by their URL. */
 export type SettingSource = 'roles' | 'pages' | 'categories' | 'timezones' | 'media';
+/** String settings keep their scalar value while offering a richer editor. */
+export type SettingControl = 'color' | 'file';
 
 export interface SettingDeclaration extends FieldDeclaration {
     readonly source?: SettingSource;
+    /** color: a hex color; file: an HTTP(S) or root-relative file URL. */
+    readonly control?: SettingControl;
+    /** file control: the kinds the media chooser lists first; other kinds remain available. */
+    readonly fileKinds?: readonly FieldMediaKind[];
     /** Labels for enum values. */
     readonly choices?: { readonly [value: string]: string };
+    /** Display section within a plugin's settings; it does not change the stored key. */
+    readonly section?: string;
+}
+
+export interface SettingsSection {
+    readonly id: string;
+    readonly label: string;
+    readonly description?: string;
 }
 
 export interface SettingsGroup {
@@ -27,6 +41,11 @@ export interface SettingsGroup {
     readonly parent?: string;
     /** An icon of the dashboard's set beside its name in the Settings navigation. */
     readonly icon?: string;
+    /** Opt into the shared scalar JSON editor and its validated save operation. */
+    readonly json?: boolean;
+    /** Plugin owner, assigned by the host, never by a plugin's declaration. */
+    readonly plugin?: string;
+    readonly sections?: readonly SettingsSection[];
 }
 
 export const DATE_FORMATS = Object.freeze({ long: 'October 16, 2026', medium: 'Oct 16, 2026', iso: '2026-10-16', us: '10/16/2026', eu: '16/10/2026' });
@@ -35,6 +54,7 @@ export const TIME_FORMATS = Object.freeze({ '12h': '3:45 pm', '24h': '15:45' });
 /** General and Media settings belong to the host; content modules add Writing and Reading. */
 export const general: SettingsGroup = {
     id: 'general',
+    json: true,
     icon: 'settings',
     label: 'General',
     fields: {
@@ -56,6 +76,7 @@ export const general: SettingsGroup = {
 
 export const media: SettingsGroup = {
     id: 'media',
+    json: true,
     icon: 'gallery',
     label: 'Files',
     fields: {
@@ -86,6 +107,7 @@ export const appearance: SettingsGroup = {
 
 export const writing: SettingsGroup = {
     id: 'writing',
+    json: true,
     icon: 'pen',
     label: 'Writing',
     fields: {
@@ -96,6 +118,7 @@ export const writing: SettingsGroup = {
 
 export const reading: SettingsGroup = {
     id: 'reading',
+    json: true,
     icon: 'eye',
     label: 'Reading',
     fields: {
@@ -112,6 +135,7 @@ export const reading: SettingsGroup = {
 /** Comments: who can post, what is held for moderation, and who is told. */
 export const discussion: SettingsGroup = {
     id: 'discussion',
+    json: true,
     icon: 'chat-round-line',
     label: 'Discussion',
     fields: {
@@ -137,6 +161,7 @@ export const TITLE_SEPARATORS = Object.freeze({ dash: '–', pipe: '|', hyphen: 
 /** Site-wide search and sharing settings; entries override them in their SEO box. */
 export const seo: SettingsGroup = {
     id: 'seo',
+    json: true,
     icon: 'graph',
     label: 'SEO',
     fields: {
@@ -165,6 +190,7 @@ export const seo: SettingsGroup = {
 /** Which crawlers robots.txt lets in, by what they do with the pages. */
 export const crawlers: SettingsGroup = {
     id: 'crawlers',
+    json: true,
     icon: 'bolt',
     label: 'Crawlers',
     parent: 'seo',
@@ -180,6 +206,7 @@ export const crawlers: SettingsGroup = {
 /** IndexNow: pings Bing, Yandex, Naver and Seznam when entries change. */
 export const indexnow: SettingsGroup = {
     id: 'indexnow',
+    json: true,
     icon: 'rocket',
     label: 'IndexNow',
     parent: 'seo',

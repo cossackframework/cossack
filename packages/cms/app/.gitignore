@@ -1,4 +1,4 @@
-# Only the CMS sources named in cossack-recipe.json are tracked. The rest of this
+# Only CMS sources named in cossack-recipe.json and application tests are tracked. The rest of this
 # application (the shared shell) is rendered by `pnpm sync` from packages/scaffold/template.
 /*
 !/.gitignore
@@ -6,6 +6,7 @@
 !/package.json
 !/cossack-recipe.json
 !/scripts/
+!/tests/
 /scripts/*
 !/scripts/sync.mjs
 !/scripts/romedb.sh

@@ -22,6 +22,10 @@ export interface MediaChooserState {
     accept?: string;
     /** Why an upload failed, shown in the chooser; cleared when it opens. */
     error?: string;
+    canUpload?: boolean;
+    /** The chooser normally accepts several uploads; scalar file settings use one. */
+    uploadMultiple?: boolean;
+    busy?: boolean;
 }
 
 /** The kinds of file the chooser can list, in its menu's order. */
@@ -63,9 +67,9 @@ export function mediaChooser(state: MediaChooserState, handlers: MediaChooserHan
                 <select class=${`${CONTROL} max-w-[10rem]`} aria-label=${__('Media type')} @change=${(event: Event) => handlers.filter((event.target as HTMLSelectElement).value)}>
                     ${MEDIA_KIND_CHOICES.map(choice => html`<option value=${choice.value} ?selected=${choice.value === state.kind}>${__(choice.label)}</option>`)}
                 </select>
-                <label class="inline-flex cursor-pointer items-center rounded-md border border-border px-3 py-2 text-sm text-foreground hover:bg-muted">
-                    ${__('Upload files')}<input type="file" multiple accept=${state.accept || MEDIA_ACCEPT} class="sr-only" @change=${(event: Event) => handlers.upload(event)}>
-                </label>
+                ${state.canUpload === false ? null : html`<label class="inline-flex cursor-pointer items-center rounded-md border border-border px-3 py-2 text-sm text-foreground hover:bg-muted">
+                    ${state.busy ? __('Uploading…') : state.uploadMultiple === false ? __('Upload file') : __('Upload files')}<input type="file" ?multiple=${state.uploadMultiple !== false} accept=${state.accept ?? MEDIA_ACCEPT} class="sr-only" ?disabled=${!!state.busy} @change=${(event: Event) => handlers.upload(event)}>
+                </label>`}
             </div>
             ${state.error ? notice(state.error, 'error') : null}
             <ul class="grid max-h-[60vh] grid-cols-2 gap-3 overflow-y-auto sm:grid-cols-4">

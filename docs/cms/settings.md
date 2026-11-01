@@ -1,6 +1,6 @@
 ---
 title: 'CMS Settings'
-description: 'Reading and writing site settings, declaring settings groups, subpages, and the site logo.'
+description: 'Declare plugin settings, edit and transfer settings as JSON, and read and write site settings.'
 ---
 
 # CMS Settings
@@ -62,22 +62,198 @@ createCMS({ /* ... */ settings: [shop] });
 
 - `choices` gives labels for enum values.
 - `source` fills a field's choices when the form renders: `roles`, `pages`, `categories`,
-  `timezones`, or `media`, which picks an image from the library and stores its URL.
+  `timezones`, or `media`, which opens the media library on images and stores a file URL.
+- `control` gives a string field a `color` or `file` editor. The value rules below apply
+  to host groups and plugin groups.
 - `permission` sets who may change the group.
-- `parent` shows the group as a subpage of another group. Its keys keep the group's own ID.
+- `parent` nests the group beneath another group in the sidebar. Its keys keep the group's own ID.
   For example, Crawlers (`crawlers.*`) and IndexNow (`indexnow.*`) have `parent: 'seo'`. They
-  show as tabs on the SEO page and not in the settings list.
+  appear beneath SEO and have their own sections on the settings page.
+- `json: true` includes a host or module group in the JSON editor and export. Only opt in
+  when its fields are supported scalar settings and the shared save operation covers all
+  validation and effects. Custom groups are excluded by default.
 
 Theme options are a separate group, `<plugin>.<option>`, which Appearance → Customize edits.
 See [Themes](/docs/cms/themes.md).
 
 ## The Settings screens
 
-Settings → `<group>` shows the groups behind `cms:settings` in a list at the side. A group
-with subpages shows them as tabs above its form. Permalinks and Languages have screens of
-their own in the same frame. In the application, `settingsLinks(cms)` and
-`settingsFrame(links, current, body)` in `src/cms/settings-nav.ts` build that frame for a new
-settings screen.
+Settings shows the groups behind `cms:settings` on one scrolling page. The sidebar fills
+the page height, and its links jump to sections on that page. SEO groups appear beneath
+SEO. Every installed plugin that declares valid settings has its own entry beneath Plugins.
+Languages and Permalinks are sections on the same page and keep their own save operations.
+
+**Search settings** in the top bar filters both the sidebar and the settings shown on the
+page. Search by group, plugin, section, field label, description, or setting key. Matching
+groups show how many settings were found. Parent entries remain visible when a child
+matches. Clearing search restores the other settings without discarding their edits.
+The code icon in the same bar opens the JSON editor. Save changes stays in the top bar
+while you scroll. Save includes edits hidden by the current search.
+The active sidebar entry follows the section you scroll to.
+
+Settings sections create their field controls as they enter the viewport. Sidebar links
+open the selected section immediately, including sections whose controls have not yet
+loaded. This keeps the initial page small when many plugins declare settings. Draft
+values are separate from the rendered controls, so filtering or switching to JSON keeps
+unsaved changes.
+
+Disabled plugins can be configured before activation. Saving their settings does not
+enable them or run their hooks.
+Enable, disable, and grant plugins on the separate dashboard Plugins screen.
+
+## Plugin settings
+
+Declare settings in the plugin manifest. The CMS supplies their form, validation, storage,
+and `cms:settings` permission. No custom settings page or registration callback is needed.
+
+```json
+{
+  "settings": {
+    "label": "Newsletter",
+    "description": "Control newsletter delivery.",
+    "sections": [{ "id": "delivery", "label": "Delivery" }],
+    "fields": {
+      "enabled": {
+        "kind": "boolean", "label": "Enable delivery", "default": false,
+        "section": "delivery"
+      },
+      "senderName": {
+        "kind": "string", "label": "Sender name", "default": "", "max": 120,
+        "section": "delivery"
+      },
+      "accentColor": {
+        "kind": "string", "control": "color", "label": "Accent color", "default": "#336699"
+      },
+      "brandAsset": {
+        "kind": "string", "control": "file", "fileKinds": ["image"],
+        "label": "Brand asset", "default": ""
+      }
+    }
+  }
+}
+```
+
+A plugin named `newsletter` owns the namespace `plugin:newsletter`. Its sender name is
+stored as `plugin:newsletter.senderName`. Sections organize the form and do not change
+the key. Field names are unique across the plugin, including fields in different sections.
+
+Supported kinds are `string`, `text`, `boolean`, `integer`, `number`, and `enum`.
+Use their usual labels, descriptions, defaults, required/nullable rules, bounds, patterns,
+and enum choices. Nested values, arrays, resource options, dynamic choice sources, and
+executable validators are unsupported. The host checks declarations and defaults before
+it registers the plugin.
+
+String fields can use `control: "color"` or `control: "file"`. A color control combines
+a color picker with a text input. It accepts `#RGB`, `#RGBA`, `#RRGGBB`, and `#RRGGBBAA`.
+The text input preserves alpha values. The picker selects a color without alpha.
+
+A file control accepts a URL, chooses an existing media file, or uploads a new file.
+It stores a root-relative or HTTP(S) URL as a string, so JSON and runtime reads use the
+same value. Optional `fileKinds` sets the initial library filter: `image`, `video`,
+`audio`, `document`, or `archive`. It does not restrict URLs pasted into the field.
+Browsing and uploading require the corresponding media permissions.
+
+An upload adds the file to the media library immediately. Save changes attaches its URL
+to the setting. Clearing or discarding the setting does not delete the file.
+An optional color or file field can be empty. Use `nullable: true` to also allow `null`.
+
+Plugin server handlers read their own settings through `PluginContext`:
+
+```ts
+import type { PluginContext } from '@cossackframework/cms/server';
+
+export function register(context: PluginContext) {
+  context.commands.add('delivery-status', async () => ({
+    enabled: await context.settings.get('enabled'),
+    settings: await context.settings.all(),
+  }));
+}
+```
+
+The example assumes a declared `delivery-status` command. Read values inside handlers,
+after activation, rather than during registration. The context applies defaults and
+returns detached values. It cannot read another plugin's settings or write settings.
+These server reads require an active plugin and do not publish values to visitors.
+
+Disabled plugins retain their values. Removed fields and absent plugins also retain
+their stored rows, but the dashboard and JSON export omit them. If an upgrade makes a
+stored value invalid, the settings surface reports the problem for correction.
+Theme options remain under Appearance → Customize with their existing keys and permission.
+
+## JSON editing, import, and export
+
+The **Edit settings JSON** code button opens a two-level document: a namespace containing
+named scalar values.
+The editor supplies completion and field descriptions from the authorized declarations.
+
+```json
+{
+  "general": {
+    "siteTitle": "Acme"
+  },
+  "plugin:newsletter": {
+    "enabled": true,
+    "senderName": "Acme updates"
+  }
+}
+```
+
+The same server validation handles ordinary forms, JSON edits, and imports. An Apply
+operation saves every changed value or none. Invalid or oversized input is rejected
+before any settings are written.
+
+- Input is strict JSON. Comments, trailing commas, duplicate keys, unknown settings,
+  unsafe property names, arrays, and nested field values are refused.
+- Missing groups and fields remain unchanged. Removing a key from the editor does not
+  delete its stored value. An empty document makes no changes.
+- `null` is allowed only for nullable fields. It assigns null, rather than resetting a
+  field. Nullable form controls keep null distinct from empty text, zero, and false.
+- Export contains saved, authorized effective values, including declared defaults. It
+  excludes unsaved drafts and unset values that have no valid default.
+- Export sorts keys and uses two-space indentation. Importing exported defaults pins
+  those values in the receiving site.
+
+Form and JSON views retain the same draft when switching within Settings. Invalid JSON
+stays in the editor until it is fixed or discarded. Leaving Settings with unsaved changes
+requires saving or discarding the draft. Concurrent changes to the same field use the
+last successful save; unchanged fields are not submitted again.
+
+Selecting an import file creates a preview. Review the changed keys, then select Apply
+changes. Selecting a file or opening its preview does not write settings. Export always
+downloads the saved state. Documents contain at most 2,048 fields and 48 KiB of UTF-8 text.
+The encoded database statement and parameters must fit within 60 KiB. Oversized operations
+fail before writing. Formatted exports obey the same file-size limit as imports.
+
+Settings reads use pagination and retry when the database changes during the read.
+The complete-read limit is 20,000 stored rows. Exceeding it reports a limit error instead
+of returning a truncated export or replacing unread values with defaults.
+
+Appearance, theme options, Languages, and Permalinks use dedicated operations and are
+excluded from this JSON surface. Keep deployment credentials in server configuration.
+This file is a settings export, not a complete site backup. References to pages, roles,
+categories, or media are not remapped when imported into another site.
+
+### Server APIs for settings documents
+
+Use the current principal for every dashboard-facing operation:
+
+```ts
+import { parseSettingsDocument, settingsJsonSchema } from '@cossackframework/cms';
+
+const context = { principal: c.get('principal') };
+const groups = cms.settings.catalog(context);
+const schema = settingsJsonSchema(groups);
+const saved = await cms.settings.snapshot(context);
+const patch = parseSettingsDocument(jsonText);
+cms.settings.validateDocument(patch, context); // No write.
+await cms.settings.applyDocument(patch, context);
+const exported = await cms.settings.exportDocument(context);
+```
+
+`catalog` returns authorized groups that opt into JSON. `snapshot` returns their effective
+values. `validateDocument` checks a patch without saving it. `applyDocument` validates and
+commits it atomically. `exportDocument` serializes the saved snapshot.
+Do not expose the unrestricted server `all()` result through a browser method.
 
 ## Discussions
 

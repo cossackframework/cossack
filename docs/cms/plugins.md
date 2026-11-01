@@ -119,11 +119,27 @@ The `PluginContext` holds:
 | `hooks.point(name, kind)` | A point by name: one the manifest lists in `hooks` or `provides`. |
 | `hooks.doAction(point, payload)`, `hooks.applyFilters(point, value, input)` | Run the handlers of a point the plugin `provides`. |
 | `commands.add(name, handler)` | Handle a command the manifest declares. |
+| `settings.get(name)`, `settings.all()` | Read the active plugin's declared settings, with defaults, as detached values. |
 | `cms.resource(id)` | A repository (`get`, `list`, `search`, `create`, `update`, `delete`) for the plugin's own resources and the ones it is granted. |
 | `fetch` | `fetch` limited to the hosts in `permissions.network`. |
 
 A theme's `server.ts` exports `loaders` instead of, or beside, `register`; see
 [Themes](/docs/cms/themes.md#loaders).
+
+Declare a `settings` object in the manifest to receive a generated form under Settings →
+Plugins. Its fields use the scalar kinds `string`, `text`, `boolean`, `integer`, `number`,
+and `enum`. String fields can use `control: "color"` for a color picker or `control: "file"`
+for a URL input with media selection and upload. Both controls store strings and support
+the same JSON editor and validation as other settings. Optional sections organize the
+form without changing stored keys. The host
+owns the namespace `plugin:<name>` and requires `cms:settings` to view or edit its values.
+See [Plugin settings](/docs/cms/settings.md#plugin-settings) for a declaration and the
+JSON import/export rules.
+
+Read `context.settings` inside active handlers. It cannot write values or read another
+plugin's settings. Administrators can configure disabled plugins before activation, and
+disabling a plugin retains its values. Invalid and absent plugins expose no editable
+settings. Theme options stay under Appearance → Customize.
 
 Handlers registered here do nothing while the plugin is inactive: a filter returns its
 value unchanged and an action returns at once.
@@ -249,7 +265,8 @@ render → build → migrate → grant → active
    requests: `plugin:enabled` plus every `resource:<id>:<action>` in `permissions.resources`,
    every `network:<host>` and every `hook:<point>`. `cms.grantPlugin(name, principal)` does
    the same from code. A plugin whose manifest only has a `theme` field is "theme only": it
-   needs no grant and is managed under Appearance instead.
+   needs no grant and is managed under Appearance instead. A theme with ordinary plugin
+   `settings` follows plugin activation rules for those settings' runtime reads.
 5. **Active.** Hooks run, commands run, slots and blocks show, and the plugin's collections
    appear on the site and in the dashboard.
 

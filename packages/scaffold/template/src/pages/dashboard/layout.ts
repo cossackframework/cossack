@@ -228,7 +228,7 @@ export default class DashboardLayout extends Cossack {
                     `,
                 })}
                 <div class="flex-1 min-w-0 flex flex-col">
-                    <main class="flex-1 p-6 sm:p-8 overflow-x-hidden has-[[data-subnav]]:grid has-[[data-subnav]]:grid-cols-1 has-[[data-subnav]]:p-0">
+                    <main class="flex-1 p-6 sm:p-8 overflow-x-hidden has-[[data-settings-toolbar]]:overflow-visible has-[[data-subnav]]:grid has-[[data-subnav]]:grid-cols-1 has-[[data-subnav]]:p-0">
                         ${this.logoutError ? html`<p role="alert" class="mb-4 text-sm text-destructive">${this.logoutError}</p>` : null}
                         ${this.children}
                     </main>

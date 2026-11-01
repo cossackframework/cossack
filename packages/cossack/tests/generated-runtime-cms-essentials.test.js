@@ -19,6 +19,7 @@ afterEach(cleanupRoots);
 
 const doc = (...content) => ({ type: 'doc', content });
 const paragraph = value => ({ type: 'paragraph', content: [{ type: 'text', text: value }] });
+const SETTINGS = 'dashboard/(cms)/settings/index.ts';
 const EDITOR = 'dashboard/(cms)/content/[collection]/[id]/index.ts';
 const SETUP = { code: 'setup-code-for-tests', siteTitle: 'Essentials', name: 'Ada', email: 'ada@example.com', password: 'long password', starter: 'on' };
 
@@ -180,7 +181,7 @@ async function essentials(origin, routeIds, diagnostics, { runtime }) {
   expect(robots).toMatch(/Sitemap: https?:\/\/[^/\s]+\/sitemap\.xml/);
   expect(robots).not.toContain('GPTBot');
   // Settings → Crawlers blocks AI training crawlers as a group.
-  expect((await web.action('dashboard/(cms)/settings/[group]/index.ts', 'save', [{ allowAiTraining: false, contentSignals: true }], { params: { group: 'crawlers' } })).error).toBe('');
+  expect((await web.action(SETTINGS, 'save', [{ crawlers: { allowAiTraining: false, contentSignals: true } }]))._cossack_return.error).toBe('');
   const blocked = await (await fetch(`${origin}/robots.txt`)).text();
   expect(blocked).toMatch(/User-agent: GPTBot\n(?:User-agent: [^\n]+\n)*Disallow: \//);
   expect(blocked).toContain('Content-Signal: search=yes, ai-input=yes, ai-train=no');
@@ -230,7 +231,7 @@ async function essentials(origin, routeIds, diagnostics, { runtime }) {
   expect(square.headers.get('content-type')).toBe('image/webp');
   if (runtime === 'node') expect(await sharp(Buffer.from(await square.arrayBuffer())).metadata()).toMatchObject({ width: 320, height: 320 });
   // Site and app icons from Settings → General: the head links them, the manifest lists resized app icons.
-  expect((await web.action('dashboard/(cms)/settings/[group]/index.ts', 'save', [{ favicon: image.url, appIcon: image.url }], { params: { group: 'general' } })).error).toBe('');
+  expect((await web.action(SETTINGS, 'save', [{ general: { favicon: image.url, appIcon: image.url } }]))._cossack_return.error).toBe('');
   const homeHead = await (await fetch(`${origin}/`)).text();
   expect(homeHead).toMatch(new RegExp(`<link rel="?icon"? href="?${image.url.replaceAll('.', '\\.')}"?`));
   expect(homeHead).toMatch(/rel="?apple-touch-icon"? sizes="?180x180"? href="?\/media\/[^"\s>]+\?w=180&(?:amp;)?h=180/);
@@ -306,7 +307,7 @@ async function essentials(origin, routeIds, diagnostics, { runtime }) {
   expect((await fetch(`${origin}/api/cms/content/patterns`)).status).toBe(401);
 
   // Translations: French pages under /fr with alternates and a language switcher.
-  expect((await web.action('dashboard/(cms)/settings/languages/index.ts', 'save', ['en', ['fr']])).error).toBe('');
+  expect((await web.action(SETTINGS, 'saveLanguages', [{ main: 'en', others: ['fr'] }]))._cossack_return.error).toBe('');
   const aboutId = await save(web, 'pages', { title: 'About us', slug: '', status: 'published', publishedAt: '', content: richText(paragraph('Who we are')), excerpt: '', featuredImage: '', parent: '', menuOrder: '0', locale: 'en' });
   const translated = await web.action(EDITOR, 'translate', ['fr'], { params: { collection: 'pages', id: aboutId }, state: { route: 'pages', id: aboutId } });
   const frenchId = translated._cossack_redirect.split('/').at(-1);
@@ -319,7 +320,7 @@ async function essentials(origin, routeIds, diagnostics, { runtime }) {
   expect((await fetch(`${origin}/a-propos`, { redirect: 'manual' })).headers.get('location')).toBe('/fr/a-propos');
   expect((await fetch(`${origin}/fr`)).status).toBe(200);
   contains(await web.page('/dashboard/content/pages?lang=fr'), 'À propos');
-  expect((await web.action('dashboard/(cms)/settings/languages/index.ts', 'save', ['en', []])).error).toBe('');
+  expect((await web.action(SETTINGS, 'saveLanguages', [{ main: 'en', others: [] }]))._cossack_return.error).toBe('');
 
   // Webhooks need a receiver the runtime can reach: this process, from Node.
   if (runtime === 'node') await webhooks(web);
@@ -348,12 +349,12 @@ async function essentials(origin, routeIds, diagnostics, { runtime }) {
   // Required two-step sign-in sends staff without it to set it up.
   const editorUser = 'dashboard/users/new/index.ts';
   await web.action(editorUser, 'create', ['Eve', 'eve@example.com', 'eve password 1', ['editor']]);
-  expect((await web.action('dashboard/(cms)/settings/[group]/index.ts', 'save', [{ requireTwoFactor: true }], { params: { group: 'general' } })).error).toBe('');
+  expect((await web.action(SETTINGS, 'save', [{ general: { requireTwoFactor: true } }]))._cossack_return.error).toBe('');
   const eve = browserless(origin, routeIds, diagnostics);
   await eve.action('auth/login/index.ts', 'login', [{ email: 'eve@example.com', password: 'eve password 1' }]);
   expect((await eve.request('/dashboard')).headers.get('location')).toBe('/dashboard/profile/security?required=1');
   contains(await eve.page('/dashboard/profile/security?required=1'), 'This site requires two-step sign-in');
-  expect((await web.action('dashboard/(cms)/settings/[group]/index.ts', 'save', [{ requireTwoFactor: false }], { params: { group: 'general' } })).error).toBe('');
+  expect((await web.action(SETTINGS, 'save', [{ general: { requireTwoFactor: false } }]))._cossack_return.error).toBe('');
 
   // An administrator issues an application password for Eve from her user screen; it acts as Eve.
   const eveId = (await (await web.request('/dashboard/users?search=eve')).text()).match(/\/dashboard\/users\/(?!new\b)([A-Za-z0-9_-]{8,})/)[1];
@@ -380,8 +381,14 @@ async function essentials(origin, routeIds, diagnostics, { runtime }) {
   await expect(max.action(userScreen, 'endOtherSessions', [], { params: { id: eveId } })).rejects.toThrow(/answered 400/);
 
   // Every new screen renders.
-  for (const pathname of ['/dashboard/tools/webhooks', '/dashboard/settings/discussion', '/dashboard/settings/seo', '/dashboard/settings/languages', `/dashboard/media/${image.id}`,
+  for (const pathname of ['/dashboard/tools/webhooks', '/dashboard/settings', `/dashboard/media/${image.id}`,
     '/dashboard/content/patterns', '/dashboard/content/patterns/new', '/dashboard/profile/security']) await web.page(pathname);
+  const settings = await web.page('/dashboard/settings');
+  for (const group of ['discussion', 'seo', 'crawlers', 'languages']) {
+    expect(settings).toMatch(new RegExp(`data-settings-menu-group="?${group}(?:"|\\s|>)`));
+    expect(settings).toMatch(new RegExp(`data-settings-section="?${group}(?:"|\\s|>)`));
+    expect((await web.request(`/dashboard/settings/${group}`)).headers.get('location')).toBe(`/dashboard/settings#settings-${group}`);
+  }
 }
 
 /** A webhook on published posts: signed deliveries reach a receiver in this process. */
@@ -496,9 +503,9 @@ describe.skipIf(!liveRomeDBTests())('generated CMS essentials', () => {
 
       // With two languages the posts list has a language column, and the sidebar still
       // reaches it from other screens without a reload.
-      expect((await web.action('dashboard/(cms)/settings/languages/index.ts', 'save', ['en', ['fr']])).error).toBe('');
+      expect((await web.action(SETTINGS, 'saveLanguages', [{ main: 'en', others: ['fr'] }]))._cossack_return.error).toBe('');
       const navigation = page.locator('#dashboard-navigation');
-      for (const start of ['/dashboard/media', '/dashboard/content/pages', '/dashboard/settings/general']) {
+      for (const start of ['/dashboard/media', '/dashboard/content/pages', '/dashboard/settings']) {
         await page.goto(origin + start);
         await ready();
         const allPosts = navigation.getByRole('link', { name: 'All posts' });

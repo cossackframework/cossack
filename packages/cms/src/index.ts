@@ -39,7 +39,10 @@ export { formInput, formValue, recordTitle, isSameOriginPost, type FormInput, ty
 export { manifestProblems, validateManifest, requestedGrants, commandInput, isPluginPoint, pointOwner, providedPoints, ManifestError, HOST_SLOTS, type CmsPluginManifest, type PluginAuthor, type ProvidedPoint, type PluginCommand, type CommandOption, type SlotLink, type HostSlot } from './manifest';
 export { MEDIA_TYPES, AVATAR_TYPES, ARCHIVE_TYPES, SVG_TYPE, MEDIA_FILTERS, MEDIA_FILTER_EXCLUDES, mediaKind, mediaUrl, formatBytes, matchesSignature, imageSize, declaredType, sanitizeSvg, type MediaKind } from './media';
 export { taxonomyProblems, type TaxonomyDeclaration, type TermShape } from './taxonomy';
-export { general, media, appearance, writing, reading, discussion, seo, crawlers, indexnow, languages, DATE_FORMATS, TIME_FORMATS, TITLE_SEPARATORS, formatSiteDate, validTimeZone, type SettingsGroup, type SettingDeclaration, type SettingSource, type SiteSettings } from './settings';
+export { general, media, appearance, writing, reading, discussion, seo, crawlers, indexnow, languages, DATE_FORMATS, TIME_FORMATS, TITLE_SEPARATORS, formatSiteDate, validTimeZone, type SettingsGroup, type SettingsSection, type SettingDeclaration, type SettingSource, type SettingControl, type SiteSettings } from './settings';
+export { validateSettingValue, settingControlProblems } from './settings-controls';
+export { pluginSettingsProblems, pluginSettingsGroupId, PLUGIN_SETTINGS_LIMITS, type PluginSettingsDeclaration, type PluginSettingDeclaration } from './plugin-settings';
+export { parseSettingsDocument, checkSettingsDocument, stringifySettingsDocument, settingsJsonSchema, isPortableSetting, SETTINGS_DOCUMENT_MAX_BYTES, SETTINGS_DOCUMENT_MAX_FIELDS, type SettingsValue, type SettingsDocument } from './settings-document';
 export type { CmsModule, ModuleContext } from './module';
 export {
     MENU_LIMITS, MENU_LOCATION, MENU_ATTRIBUTE, menuProblems, normalizeMenu, menuSize, menuItemId, flattenMenu, buildMenu, subtreeEnd, dropDepths, moveRows, shiftRows, allowedMoves,

@@ -90,8 +90,8 @@ export async function navigation(c: Context): Promise<DashboardModule[]> {
     ];
     if (tools.length) admin.push({ id: 'tools', label: 'Tools', href: tools[0]!.href, icon: icon('tuning-2'), authorization: 'authenticated', children: tools });
     // Settings has its own navigation beside its pages, so the sidebar holds one link.
-    if (can(PERMISSIONS.manageSettings)) admin.push({ id: 'site-settings', label: 'Settings', href: '/dashboard/settings/general', icon: icon('settings'), authorization: { permission: PERMISSIONS.manageSettings },
-        activeFor: '/dashboard/settings/' });
+    if (can(PERMISSIONS.manageSettings)) admin.push({ id: 'site-settings', label: 'Settings', href: '/dashboard/settings', icon: icon('settings'), authorization: { permission: PERMISSIONS.manageSettings },
+        activeFor: '/dashboard/settings' });
     const account = registry.filter(module => module.placement === 'account');
     // The author profile follows the profile settings in the account menu.
     account.splice(Math.min(1, account.length), 0, { id: 'public-profile', label: 'Public profile', href: '/dashboard/profile/public', icon: icon('user-id'), authorization: 'authenticated', placement: 'account' });

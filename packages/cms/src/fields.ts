@@ -197,7 +197,13 @@ export function fieldProblems(name: string, declaration: FieldDeclaration, depth
     if (declaration.maxItems !== undefined && (!multiple || !Number.isSafeInteger(declaration.maxItems) || declaration.maxItems < 1 || declaration.maxItems > mostItems)) problems.push(`${at}: maxItems applies to multiple fields and is 1-${mostItems}.`);
     if (declaration.minItems !== undefined && (!multiple || !Number.isSafeInteger(declaration.minItems) || declaration.minItems < 0 || declaration.minItems > (declaration.maxItems ?? mostItems))) problems.push(`${at}: minItems applies to multiple fields and is 0 to maxItems.`);
     if (declaration.addLabel !== undefined && (!multiple || typeof declaration.addLabel !== 'string' || declaration.addLabel.length > 60)) problems.push(`${at}: addLabel applies to multiple fields and is at most 60 characters.`);
-    if (declaration.max !== undefined && (!Number.isSafeInteger(declaration.max) || declaration.max < 1)) problems.push(`${at}: max must be a positive integer.`);
+    if (declaration.max !== undefined) {
+        if (kind === 'number') {
+            if (!Number.isFinite(declaration.max)) problems.push(`${at}: max must be a finite number.`);
+        } else if (kind === 'integer' || kind === 'datetime') {
+            if (!Number.isSafeInteger(declaration.max)) problems.push(`${at}: max must be a safe integer.`);
+        } else if (!Number.isSafeInteger(declaration.max) || declaration.max < 1) problems.push(`${at}: max must be a positive integer.`);
+    }
     if (declaration.min !== undefined && !Number.isFinite(declaration.min)) problems.push(`${at}: min must be a finite number.`);
     if (kind === 'enum') {
         if (!declaration.values?.length || declaration.values.some(value => !ENUM_VALUE.test(value)) || new Set(declaration.values).size !== declaration.values.length) {

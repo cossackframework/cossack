@@ -11,6 +11,7 @@ import { defineAction, defineFilter, type ExtensionPoint } from '@cossackframewo
 import { EXTENSION_POINTS } from './hooks';
 import { OWNER_NAME, resourceProblems, type ResourceAction, type ResourceDeclaration } from './resource';
 import { themeProblems, type ThemeManifest } from './theme';
+import { pluginSettingsProblems, type PluginSettingsDeclaration } from './plugin-settings';
 
 export interface CommandOption {
     readonly type: 'string' | 'number' | 'boolean';
@@ -106,6 +107,8 @@ export interface CmsPluginManifest {
         readonly slots?: { readonly [slot: string]: readonly SlotLink[] };
     };
     readonly commands?: readonly PluginCommand[];
+    /** Scalar options rendered under Settings → Plugins in the plugin's own namespace. */
+    readonly settings?: PluginSettingsDeclaration;
     /** A site theme: its `templates/` files (or `ui.ts` `theme` export) are the site templates. */
     readonly theme?: ThemeManifest;
     /** A square image in the plugin's `assets/` directory, such as `assets/logo.png`. Default: `assets/logo.*`. */
@@ -125,7 +128,7 @@ export interface CmsPluginManifest {
 export const HOST_SLOTS = Object.freeze(['dashboard.nav', 'dashboard.overview', 'dashboard.taskbar', 'site.taskbar'] as const);
 export type HostSlot = (typeof HOST_SLOTS)[number];
 
-const KNOWN_FIELDS = new Set(['schemaVersion', 'name', 'version', 'description', 'author', 'authorUrl', 'compatibility', 'dependencies', 'resources', 'collections', 'blocks', 'fieldGroups', 'editor', 'hooks', 'permissions', 'ui', 'provides', 'commands', 'theme', 'logo', 'cover', 'package', 'source']);
+const KNOWN_FIELDS = new Set(['schemaVersion', 'name', 'version', 'description', 'author', 'authorUrl', 'compatibility', 'dependencies', 'resources', 'collections', 'blocks', 'fieldGroups', 'editor', 'hooks', 'permissions', 'ui', 'provides', 'commands', 'settings', 'theme', 'logo', 'cover', 'package', 'source']);
 const COLLECTION_NAME = /^[a-z][a-zA-Z0-9_]{0,40}$/;
 const ARTWORK = /^assets\/[A-Za-z0-9][A-Za-z0-9._-]{0,80}\.(?:png|jpe?g|webp|gif|avif|svg)$/;
 const HOST = /^(?:\*\.)?(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$|^localhost$/;
@@ -160,6 +163,7 @@ export function manifestProblems(manifest: unknown): string[] {
     if (typeof value.name !== 'string' || !OWNER_NAME.test(value.name) || value.name.length > 64) problems.push('name must be a plugin name.');
     if (typeof value.version !== 'string' || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(value.version)) problems.push('version must be a semantic version.');
     for (const key of Object.keys(value)) if (!KNOWN_FIELDS.has(key)) problems.push(`${key} is not a manifest field.`);
+    if (value.settings !== undefined) problems.push(...pluginSettingsProblems(value.settings));
     const name = value.name;
     const resourceNames = new Set<string>();
     for (const [index, resource] of (Array.isArray(value.resources) ? value.resources : value.resources === undefined ? [] : [null]).entries()) {

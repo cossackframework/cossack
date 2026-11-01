@@ -50,6 +50,69 @@ A field the host does not know is a problem, so a typo in a field name fails lou
 | `compatibility` | Package names to version ranges, such as `{ "@cossackframework/cms": ">=0.9.0" }`. Ranges take `^`, `~`, `>=`, `<=`, `>`, `<`, `=`, `x` wildcards and `\|\|`. |
 | `dependencies` | npm packages the plugin's source imports, with ranges. `cossack add plugin` adds them to the application's `package.json`; run `pnpm install` afterwards. |
 
+## `settings`
+
+Settings rendered under Settings → Plugins, stored in the host-owned namespace
+`plugin:<name>`. The declaration is data and requires no custom settings page.
+
+```json
+{
+  "settings": {
+    "label": "Support desk",
+    "description": "Defaults for new support requests.",
+    "sections": [{ "id": "notifications", "label": "Notifications" }],
+    "fields": {
+      "enabled": {
+        "kind": "boolean", "label": "Send notifications", "default": false,
+        "section": "notifications"
+      },
+      "senderName": {
+        "kind": "string", "label": "Sender name", "max": 120, "default": "Support",
+        "section": "notifications"
+      },
+      "accentColor": {
+        "kind": "string", "control": "color", "label": "Accent color", "default": "#336699"
+      },
+      "attachment": {
+        "kind": "string", "control": "file", "fileKinds": ["document"],
+        "label": "Default attachment", "default": ""
+      }
+    }
+  }
+}
+```
+
+- `label` names the plugin's settings. `description` is optional.
+- `sections` is an optional ordered list of `{ id, label, description? }`. IDs must be
+  unique. A field's `section` must name one of them. Unassigned fields use the default section.
+- `fields` maps unique field names to declarations. Supported kinds are `string`, `text`,
+  `boolean`, `integer`, `number`, and `enum`.
+- A plugin can declare at most 128 fields and 32 sections. Labels contain 1–120 characters,
+  and descriptions contain at most 2,000 characters. Section IDs use lowercase letters,
+  digits, and hyphens, start with a letter, and contain at most 41 characters.
+- Scalar validation includes `required`, `nullable`, `default`, `min`, `max`, `pattern`,
+  and enum `values`, where applicable. `label`, `description`, and `choices` describe the form.
+- String fields accept `control: "color"` or `control: "file"`. Colors use hex notation
+  with 3, 4, 6, or 8 digits after `#`. Files store root-relative or HTTP(S) URLs.
+  Optional fields can contain an empty string. `nullable: true` also permits `null`.
+- File controls accept `fileKinds`, a nonempty list of distinct `image`, `video`, `audio`,
+  `document`, or `archive`. Its first entry sets the initial library filter.
+  This hint does not validate the content type of a pasted URL.
+- Field names cannot contain dots or use `__proto__`, `constructor`, or `prototype`.
+  Moving a field between sections preserves its stored key.
+- Arrays, nested fields, JSON values, dynamic `source` choices, executable validators,
+  and resource options such as `index`, `search`, or `access` are refused.
+
+The host supplies the namespace, ownership, `cms:settings` permission, and JSON eligibility.
+A declaration cannot replace built-in settings or choose another plugin's namespace.
+Defaults are checked when the manifest loads. Invalid declarations leave the plugin inactive.
+
+Valid installed plugins can be configured while disabled. Saving never activates a plugin.
+After activation, its server handlers read only its own values through
+`context.settings.get(field)` and `context.settings.all()`. Removing a declaration keeps
+its stored values but excludes them from editing and export. Theme `options` remain separate.
+See [Settings](/docs/cms/settings.md) for the two-level JSON format and save rules.
+
 ## `resources`
 
 Records the plugin owns. Each is a resource declaration like `defineResource()` takes,
