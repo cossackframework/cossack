@@ -218,9 +218,9 @@ and stronger sign-in.
   grouped by category, with search. Tools → Blocks groups them too.
 - **Titles.** A required text field rejects blank text on the server; the editor stops a
   blank title before sending. Move to trash changes only the status.
-- **Last sign-in.** Starting a session stamps `cms_users.last_sign_in_at` (host step 6,
-  backfilled from sessions), so it survives sign-out. ORM applications read the newest
-  auth session, which sign-out removes.
+- **Last sign-in.** Starting a session stamps `last_sign_in_at` on the account and on its
+  main-site member row (host steps 6 and 16), so it survives sign-out. ORM applications read
+  the newest auth session, which sign-out removes.
 - **Sessions and application passwords.** The user screen gets Profile, Sessions and
   Application passwords tabs. The last two show to the user and administrators (role
   managers) only (`canManageAccess`), and their server methods check again.

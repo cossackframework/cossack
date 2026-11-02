@@ -5,11 +5,12 @@ import {
     htmlBlocks, htmlBlocksChanged, imageWidths, placeholderStyle, variantWidth, IMAGE_WIDTHS,
 } from '../src/index';
 import { planSchema, type Catalog } from '../src/server/schema';
+import { HOST_STEPS } from '../src/server/host-schema';
 import { renameBlockIds } from '../src/server/block-ids';
 
 const catalog = (tables: Catalog['tables'] = new Map(), ledger: Partial<Catalog['ledger']> = {}): Catalog => ({
     sequence: 7, engineVersion: '0.2.9', tables,
-    ledger: { host: new Set([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]), explicit: new Map(), hashes: new Map(), ...ledger },
+    ledger: { host: new Set(HOST_STEPS.map(step => step.version)), explicit: new Map(), hashes: new Map(), ...ledger },
 });
 
 describe('fields', () => {

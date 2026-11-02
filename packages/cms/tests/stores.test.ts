@@ -104,12 +104,12 @@ describe.skipIf(!live)('CMS stores on RomeDB', () => {
         const user = await cms.users.create({ email: 'Editor@Example.com', name: 'Ed', password: 'correct horse', roles: ['editor'] });
         expect(user).toMatchObject({ email: 'editor@example.com', roles: ['editor'], permissions: ['cms/posts:*', 'cms:dashboard'] });
         await expect(cms.users.create({ email: 'editor@example.com', name: 'Dup', password: 'whatever1' })).rejects.toMatchObject({ code: 'CMS_CONFLICT' });
-        expect(await cms.users.verifier.verify('editor@example.com', 'wrong password')).toBeNull();
-        expect((await cms.users.verifier.verify('EDITOR@example.com', 'correct horse'))?.id).toBe(user.id);
+        expect(await cms.accounts.verifier.verify('editor@example.com', 'wrong password')).toBeNull();
+        expect((await cms.accounts.verifier.verify('EDITOR@example.com', 'correct horse'))?.id).toBe(user.id);
         expect(await cms.users.principal(user.id)).toMatchObject({ kind: 'user', id: user.id, permissions: ['cms/posts:*', 'cms:dashboard'] });
         await cms.users.setStatus(user.id, 'disabled');
         expect(await cms.users.principal(user.id)).toBeNull();
-        expect(await cms.users.verifier.verify('editor@example.com', 'correct horse')).toBeNull();
+        expect(await cms.accounts.verifier.verify('editor@example.com', 'correct horse')).toBeNull();
         await cms.users.setStatus(user.id, 'active');
     });
 

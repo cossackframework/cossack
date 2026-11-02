@@ -5,7 +5,7 @@
 import { createAuth, createSessionManager, type AuthKit, type AuthRealtimeProvider, type AuthSessionManager } from '@cossackframework/auth';
 import type { Context } from 'hono';
 import { getCookie } from 'hono/cookie';
-import { ANONYMOUS, userPrincipal, type Principal } from '../permissions';
+import { ANONYMOUS, type Principal } from '../permissions';
 import type { CmsHost } from './host';
 import type { CmsUser } from './users';
 
@@ -45,11 +45,7 @@ export function createCmsAuth(cms: CmsHost, options: CmsAuthOptions = {}): CmsAu
         cookie: { name: cookieName, ...(options.secure === undefined ? {} : { secure: options.secure }) },
         now: () => cms.now(),
     });
-    const resolve = async (userId: string): Promise<CmsRequestUser | null> => {
-        const user = await cms.users.get(userId);
-        if (!user || user.status !== 'active') return null;
-        return Object.freeze({ ...user, principal: userPrincipal(user.id, user.roles, user.permissions) });
-    };
+    const resolve = (userId: string): Promise<CmsRequestUser | null> => cms.users.resolve(userId);
     const realtime: AuthRealtimeProvider = {
         key: 'cossack.session',
         // The public reference survives rotation; the fingerprint does not.
@@ -75,9 +71,11 @@ export function createCmsAuth(cms: CmsHost, options: CmsAuthOptions = {}): CmsAu
         auth,
         cookieName,
         async signIn(email, password, c) {
-            const verified = await cms.users.verifier.verify(email, password);
+            const verified = await cms.accounts.verifier.verify(email, password);
             if (!verified || verified.status !== 'active') return null;
-            const user = (await resolve(verified.id))!;
+            // An account signs in where it is a member.
+            const user = await resolve(verified.id);
+            if (!user) return null;
             return { user, headers: (await sessions.create(user.id, c)).headers };
         },
         async signOut(c) {

@@ -19,7 +19,7 @@ export async function runMaintenance(cms: CmsHost, options: { warm?: boolean } =
     await cms.webhooks.prune();
     await cms.sessions.purgeExpired();
     await cms.oauthStates.purgeExpired(Date.now());
-    await cms.users.purgeExpiredResets();
+    await cms.accounts.purgeExpiredResets();
     await cms.previews.purgeExpired();
     await cms.security.purgeExpired();
     await cms.autosaves.purge();

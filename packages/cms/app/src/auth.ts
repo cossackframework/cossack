@@ -13,8 +13,8 @@ import {
     type AuthenticationResponseJSON, type PasskeyConfig, type PublicKeyCredentialCreationOptionsJSON, type PublicKeyCredentialRequestOptionsJSON, type RegistrationResponseJSON,
 } from '@cossackframework/auth/passkeys';
 import { ClientVisibleError, getRequestContext } from '@cossackframework/core';
-import { ANONYMOUS, hasPermission, isCmsError, PERMISSIONS, userPrincipal, type Principal } from '@cossackframework/cms';
-import type { ApiToken, CmsHost, CmsUser, SecurityStatus } from '@cossackframework/cms/server';
+import { ANONYMOUS, hasPermission, isCmsError, PERMISSIONS, type Principal } from '@cossackframework/cms';
+import type { ApiToken, CmsHost, CmsMember, SecurityStatus } from '@cossackframework/cms/server';
 import { renderSVG } from 'uqr';
 import { currentCms } from './cms/index';
 
@@ -57,12 +57,18 @@ function cms(c?: Context): CmsHost {
   return (c?.get('cms') as CmsHost | undefined) ?? currentCms();
 }
 
-function publicUser(user: CmsUser): PublicUser {
+function publicUser(user: CmsMember): PublicUser {
   return {
     id: user.id, email: user.email, name: user.name, avatar: user.avatar, meta: null,
     roles: user.assignments.map(role => ({ id: role.id, name: role.name, permissions: [...role.permissions] })),
-    principal: userPrincipal(user.id, user.roles, user.permissions),
+    principal: user.principal,
   };
+}
+
+/** The member a signed-in account acts as on this site, or null when it is not one or is disabled. */
+async function member(id: string, c?: Context): Promise<PublicUser | null> {
+  const user = await cms(c).users.resolve(id);
+  return user ? publicUser(user) : null;
 }
 
 // --- Sessions --------------------------------------------------------------
@@ -102,17 +108,14 @@ export const auth = createAuth<PublicUser>({
   extractSessionId: c => getCookie(c, SESSION_COOKIE),
   // Before setup the session table does not exist; the auth kit then treats the visitor as a guest.
   validateSessionId: async (sessionId, c) => (await authSessions.validate(sessionId, c))?.userId ?? null,
-  resolveUserById: async (userId, c) => {
-    const user = await cms(c).users.get(userId);
-    return user && user.status === 'active' ? publicUser(user) : null;
-  },
+  resolveUserById: (userId, c) => member(userId, c),
   createSession: async (user, c) => authSessions.create(user.id, c),
 });
 
 // --- Credentials -----------------------------------------------------------
 export async function loginUser(email: string, password: string): Promise<PublicUser | null> {
-  const user = await cms().users.verifier.verify(email, password);
-  return user && user.status === 'active' ? publicUser(user) : null;
+  const account = await cms().accounts.verifier.verify(email, password);
+  return account && account.status === 'active' ? member(account.id) : null;
 }
 
 /** Whether visitors may create accounts: the "Anyone can register" setting. */
@@ -124,7 +127,7 @@ export async function registrationOpen(): Promise<boolean> {
 /** True until the first administrator exists. /auth/login sends visitors to /auth/setup then. */
 export async function setupRequired(): Promise<boolean> {
   const host = cms();
-  try { return !(await host.installed()) || (await host.users.count()) === 0; }
+  try { return !(await host.installed()) || (await host.accounts.count()) === 0; }
   catch { return true; }
 }
 
@@ -134,7 +137,8 @@ export async function registerUser(email: string, password: string, name?: strin
   const role = await host.settings.get('general.defaultRole');
   const roles = role && (await host.users.role(role)) ? [role] : [];
   try {
-    return publicUser(await host.users.create({ email, password, name: name?.trim() || email.split('@')[0]!, roles }));
+    const user = await host.users.create({ email, password, name: name?.trim() || email.split('@')[0]!, roles });
+    return (await member(user.id))!;
   } catch (error) {
     if (isCmsError(error, 'CMS_CONFLICT')) throw new ClientVisibleError('An account with this email already exists.');
     throw error;
@@ -196,9 +200,9 @@ export async function completeTwoFactor(challengeId: string, code: string): Prom
     return left > 0 ? { error: `That code is not right. ${left} ${left === 1 ? 'try' : 'tries'} left.`, expired: false } : { error: 'Too many wrong codes. Enter your password again.', expired: true };
   }
   if (!(await host.security.takeChallenge(challengeId, 'signin'))) return { error: 'The sign-in expired. Enter your password again.', expired: true };
-  const user = await host.users.get(pending.userId);
-  if (!user || user.status !== 'active') return { error: 'This account cannot sign in.', expired: true };
-  return { user: publicUser(user), recovery: used === 'recovery' };
+  const user = await member(pending.userId);
+  if (!user) return { error: 'This account cannot sign in.', expired: true };
+  return { user, recovery: used === 'recovery' };
 }
 
 export async function securityStatus(userId: string): Promise<SecurityStatus> {
@@ -300,8 +304,7 @@ export async function completePasskeySignIn(c: Context, challengeId: string, res
   const verified = await verifyPasskeyAuthentication(site, response, pending.challenge, { ...passkey, transports: passkey.transports ?? undefined });
   if (!verified) return null;
   await host.security.usePasskey(passkey.id, verified.counter);
-  const user = await host.users.get(passkey.userId);
-  return user && user.status === 'active' ? publicUser(user) : null;
+  return member(passkey.userId, c);
 }
 
 // --- Application passwords -------------------------------------------------
@@ -328,7 +331,7 @@ export async function revokeApiToken(userId: string, id: string): Promise<void> 
  * global helpers. Unknown emails and a missing send_email binding are silent no-ops.
  */
 export async function requestPasswordReset(email: string, resetBaseUrl: string): Promise<void> {
-  const reset = await cms().users.createPasswordReset(email);
+  const reset = await cms().accounts.createPasswordReset(email);
   if (!reset) return; // do NOT leak whether the email exists
   const from = env('MAIL_FROM', 'no-reply@example.com');
   const emailBinding = binding<{ send: (m: unknown) => Promise<unknown> }>('EMAIL');
@@ -336,12 +339,12 @@ export async function requestPasswordReset(email: string, resetBaseUrl: string):
   const resetUrl = `${resetBaseUrl.replace(/\/$/, '')}/auth/reset-password?token=${reset.token}`;
   const html = `<p>We received a request to reset your password.</p><p><a href="${resetUrl}">Reset password</a></p><p>This link expires in 1 hour.</p>`;
   const text = `Reset your password: ${resetUrl}`;
-  await emailBinding.send({ to: reset.user.email, from, subject: 'Reset your password', html, text });
+  await emailBinding.send({ to: reset.account.email, from, subject: 'Reset your password', html, text });
 }
 
 /** One request can use a token; the account's sessions end with the change. */
 export async function resetPassword(token: string, newPassword: string): Promise<boolean> {
-  return cms().users.resetPassword(token, newPassword);
+  return cms().accounts.resetPassword(token, newPassword);
 }
 
 // --- Logout ----------------------------------------------------------------

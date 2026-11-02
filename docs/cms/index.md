@@ -36,7 +36,7 @@ contract (resources, repositories, collections, blocks) in more depth.
 | Import | Use |
 | --- | --- |
 | `@cossackframework/cms` | Client-safe: collections, fields, blocks, rich text, menus, the theme contract, permissions, settings, the extension points, manifests and media helpers. |
-| `@cossackframework/cms/server` | Server-only: `createCMS`, the host, repositories, users, taxonomies, menus, settings, files, auth and stores. |
+| `@cossackframework/cms/server` | Server-only: `createCMS`, the host, repositories, accounts (who signs in) and users (a site's members), taxonomies, menus, settings, files, auth and stores. |
 
 Plugin code imports from `@cossackframework/cms` only. The host is handed to a plugin's
 `register()` as a context; importing `@cossackframework/cms/server` from plugin source fails

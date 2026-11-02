@@ -7,7 +7,7 @@ export {
     withRowIds, indexedRowPaths, indexedRowField, rowIndexPath, rowsPlain, rowUniqueProblem, conditionValues, hiddenKey, fieldVisibility, clearHidden,
     type FieldGroup, type FieldGroupTarget, type Row,
 } from './field-groups';
-export { ANONYMOUS, PERMISSIONS, DEFAULT_ROLES, systemPrincipal, userPrincipal, hasPermission, permissionMatches, evaluateRule, ruleScope, principalId, type Principal, type RecordScope } from './permissions';
+export { ANONYMOUS, PERMISSIONS, DEFAULT_ROLES, NETWORK_ADMIN, isNetworkAdmin, systemPrincipal, userPrincipal, hasPermission, permissionMatches, evaluateRule, ruleScope, principalId, type Principal, type RecordScope } from './permissions';
 export { CmsError, isCmsError, type CmsErrorCode } from './errors';
 export { beforeWrite, afterCommit, formValidate, formBeforeSubmit, formPrefill, formConfirmation, formNotification, formSubmitted, termBeforeSave, commentBeforeSave, menuBeforeSave, entryActions, entryColumns, bulkActions, ENTRY_ACTION_IDS, EXTENSION_POINTS,
     type BeforeWriteInput, type Draft, type ResourceEvent, type WriteActor, type FormRef, type SubmissionContext, type FormErrors, type FormConfirmation, type FormEmail, type FormSubmittedEvent,

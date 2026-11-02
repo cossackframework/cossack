@@ -1,7 +1,7 @@
 import { Cossack, Page, RateLimit, State, flash, flashed, type HeadValue } from '@cossackframework/core';
 import { Alert } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
-import { DEFAULT_ROLES, isCmsError, isSameOriginPost, systemPrincipal } from '@cossackframework/cms';
+import { DEFAULT_ROLES, NETWORK_ADMIN, isCmsError, isSameOriginPost, systemPrincipal } from '@cossackframework/cms';
 import { seedStarterContent } from '@cossackframework/cms/server';
 import { authSessions, setupRequired } from '../../../auth';
 import { CONTROL } from '../../../cms/ui';
@@ -50,10 +50,11 @@ export default class SetupPage extends Cossack {
             return this.redirect('/auth/setup');
         }
         await cms.ready({ force: true });
-        if ((await cms.users.count()) > 0) return this.redirect('/auth/login');
+        if ((await cms.accounts.count()) > 0) return this.redirect('/auth/login');
         try {
             for (const role of DEFAULT_ROLES) await cms.users.defineRole({ ...role, permissions: [...role.permissions] });
-            const user = await cms.users.create({ email: value('email'), name: value('name'), password: value('password'), roles: ['admin'] });
+            // The first account runs the network as well as this site.
+            const user = await cms.users.create({ email: value('email'), name: value('name'), password: value('password'), roles: ['admin'], networkRole: NETWORK_ADMIN });
             await cms.settings.update('general', { siteTitle: value('siteTitle').trim() || 'My Site', adminEmail: user.email }, { principal: systemPrincipal('setup') });
             // A first post, a category, a contact form and its page, as the administrator, when asked for; a restored database keeps its own content.
             if (value('starter')) {

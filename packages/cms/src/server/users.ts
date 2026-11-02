@@ -1,12 +1,15 @@
-/** Users, roles and password-reset tokens on relational host tables. Emails are normalized to lowercase. */
-import { createCredentialVerifier, createPasswordHasher, type CredentialVerifier, type PasswordHasher } from '@cossackframework/auth';
+/**
+ * A site's users and roles on relational host tables. Each user is a member: an account from the
+ * network database (see accounts.ts), with the account's name, email, avatar and status copied
+ * in, and the site's own roles, slug and profile fields. Sign-in and passwords are the account's.
+ */
 import { ClientError, type RomeDB, type Statement, type Value } from '@cossackframework/romedb';
 import { CmsError } from '../errors';
 import { SYSTEM_META } from '../field-groups';
 import { slugify } from '../fields';
-import { userPrincipal, type Principal } from '../permissions';
+import { NETWORK_ADMIN, userPrincipal, type Principal } from '../permissions';
 import { parseMeta, type MetaCheck } from './taxonomies';
-import { uuidv7 } from '@cossackframework/core';
+import { ACCOUNT_ID, normalizeEmail, type AccountProfile, type CmsAccount, type CmsAccounts } from './accounts';
 
 export interface CmsUser {
     readonly id: string;
@@ -21,7 +24,7 @@ export interface CmsUser {
     /** Permissions of all roles together. */
     readonly permissions: readonly string[];
     readonly createdAt: number;
-    /** When the user last started a session, or null when never. */
+    /** When the user last started a session on this site, or null when never. */
     readonly lastSignInAt: number | null;
     /** Values of the field groups attached to users, and the author profile (`AUTHOR_FIELDS`). */
     readonly meta: { readonly [field: string]: unknown };
@@ -43,15 +46,10 @@ export interface UserPage {
     readonly total: number;
 }
 
-const EMAIL = /^[^\s@]{1,64}@[^\s@]{1,190}$/;
-const ID = /^[A-Za-z0-9_-]{1,80}$/;
+const ID = ACCOUNT_ID;
 const PERMISSION = /^(?:\*|[a-z][a-z0-9:/._*-]{0,127})$/;
-const TOKEN = /^[A-Za-z0-9_-]{32,128}$/;
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const WRITE = { kind: 'cms.users', retryConflicts: 5 } as const;
-
-const sha256 = async (text: string) => [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)))]
-    .map(byte => byte.toString(16).padStart(2, '0')).join('');
 
 /** `($p0, $p1, …)` with its parameters, for a bounded `IN` list. */
 export function inList(prefix: string, values: readonly Value[]): { rql: string; params: { [key: string]: Value } } {
@@ -65,53 +63,45 @@ export function containsPattern(text: string): string {
     return `%${text.toLowerCase().replace(/[\\%_]/g, character => `\\${character}`)}%`;
 }
 
+/** The request user: a member whose account is active, with the principal it acts as. */
+export type CmsMember = CmsUser & { readonly principal: Principal };
+
 export class CmsUsers {
     readonly #db: RomeDB;
-    readonly #hasher: PasswordHasher;
+    readonly #accounts: CmsAccounts;
     readonly #now: () => number;
     readonly #checkMeta: MetaCheck | undefined;
-    readonly verifier: CredentialVerifier<CmsUser>;
 
-    constructor(db: RomeDB, options: { hasher?: PasswordHasher; now?: () => number; checkMeta?: MetaCheck } = {}) {
+    constructor(db: RomeDB, options: { accounts: CmsAccounts; now?: () => number; checkMeta?: MetaCheck }) {
         this.#db = db;
-        this.#hasher = options.hasher ?? createPasswordHasher();
+        this.#accounts = options.accounts;
         this.#now = options.now ?? Date.now;
         this.#checkMeta = options.checkMeta;
-        type Row = { id: string; hash: string | null; status: string };
-        this.verifier = createCredentialVerifier<Row, CmsUser>({
-            find: async email => {
-                const result = await this.#db.read([{ rql: 'SELECT id, password_hash, status FROM cms_users WHERE email = $email', params: { $email: normalizeEmail(email) } }]);
-                const row = result.results[0]!.rows[0];
-                return row ? { id: row[0] as string, hash: row[1] as string | null, status: row[2] as string } : null;
-            },
-            passwordHash: row => row.status === 'active' ? row.hash : null,
-            user: async row => (await this.get(row.id))!,
-            hasher: this.#hasher,
-            replacePasswordHash: async (row, expected, replacement) => {
-                const result = await this.#db.write([{ rql: 'UPDATE cms_users SET password_hash = $next, updated_at = $now WHERE id = $id AND password_hash = $expected',
-                    params: { $next: replacement, $now: this.#now(), $id: row.id, $expected: expected } }], WRITE);
-                return result.results[0]!.affected === 1n;
-            },
-        });
     }
 
-    async create(input: { email: string; name: string; password?: string; roles?: readonly string[]; id?: string; avatar?: string | null; meta?: unknown }): Promise<CmsUser> {
-        const email = normalizeEmail(input.email);
-        checkProfile({ email, name: input.name, avatar: input.avatar ?? null });
+    /** A new account that is a member of this site with these roles. */
+    async create(input: AccountProfile & { email: string; name: string; password?: string; roles?: readonly string[]; id?: string; meta?: unknown; networkRole?: typeof NETWORK_ADMIN }): Promise<CmsUser> {
         const meta = await this.#meta(input.meta, null);
-        if (input.password !== undefined) checkPassword(input.password);
-        const id = input.id ?? uuidv7();
-        if (!ID.test(id)) throw new CmsError('CMS_VALIDATION', 'Invalid user ID.');
-        const hash = input.password === undefined ? null : await this.#hasher.hash(input.password);
+        for (const role of input.roles ?? []) if (!ID.test(role)) throw new CmsError('CMS_VALIDATION', `Invalid role ${role}.`);
+        const account = await this.#accounts.create(input);
+        try { return await this.#join(account, input.roles ?? [], meta); }
+        catch (error) {
+            await this.#accounts.delete(account.id).catch(() => undefined);
+            throw error;
+        }
+    }
+
+    /** Copy the account in as a member with these roles. */
+    async #join(account: CmsAccount, roles: readonly string[], meta: { readonly [field: string]: unknown }): Promise<CmsUser> {
         const now = this.#now();
-        const slug = await this.#freeSlug(input.name, id);
-        const statements: Statement[] = [{
-            rql: "INSERT INTO cms_users (id, email, name, password_hash, avatar, status, created_at, updated_at, meta, slug) VALUES ($id, $email, $name, $hash, $avatar, 'active', $now, $now, $meta, $slug)",
-            params: { $id: id, $email: email, $name: input.name.trim(), $hash: hash, $avatar: input.avatar ?? null, $now: now, $meta: JSON.stringify(meta), $slug: slug },
-        }, ...roleStatements(id, input.roles ?? [])];
-        try { await this.#db.write(statements, WRITE); }
-        catch (error) { throw uniqueEmail(error); }
-        return (await this.get(id))!;
+        const slug = await this.#freeSlug(account.name, account.id);
+        try {
+            await this.#db.write([{
+                rql: 'INSERT INTO cms_users (id, email, name, avatar, status, created_at, updated_at, meta, slug) VALUES ($id, $email, $name, $avatar, $status, $now, $now, $meta, $slug)',
+                params: { $id: account.id, $email: account.email, $name: account.name, $avatar: account.avatar, $status: account.status, $now: now, $meta: JSON.stringify(meta), $slug: slug },
+            }, ...roleStatements(account.id, roles)], WRITE);
+        } catch (error) { throw memberError(error); }
+        return (await this.get(account.id))!;
     }
 
     /** The meta to store: the field groups' check, or the input as given when users have no groups. */
@@ -198,20 +188,25 @@ export class CmsUsers {
         return { items: ids.map(id => users.get(id)).filter((user): user is CmsUser => user !== undefined), total: Number(result.results[1]!.rows[0]![0] as bigint) };
     }
 
-    /** Change name, email, avatar, profile meta or the author slug. */
-    async update(id: string, patch: { name?: string; email?: string; avatar?: string | null; meta?: unknown; slug?: string }): Promise<boolean> {
+    /**
+     * Change the name, email or avatar (on the account first, then the copy here), the profile
+     * meta or the author slug.
+     */
+    async update(id: string, patch: AccountProfile & { meta?: unknown; slug?: string }): Promise<boolean> {
         const current = await this.get(id);
         if (!current) return false;
-        const next = { name: patch.name ?? current.name, email: patch.email === undefined ? current.email : normalizeEmail(patch.email), avatar: patch.avatar === undefined ? current.avatar : patch.avatar || null };
-        checkProfile(next);
         const meta = patch.meta === undefined ? current.meta : await this.#meta(patch.meta, current.meta);
+        const profile = patch.name !== undefined || patch.email !== undefined || patch.avatar !== undefined
+            ? await this.#accounts.update(id, { ...(patch.name === undefined ? {} : { name: patch.name }), ...(patch.email === undefined ? {} : { email: patch.email }), ...(patch.avatar === undefined ? {} : { avatar: patch.avatar }) })
+            : current;
+        if (!profile) return false;
         // A slug is chosen once, from the name, and kept: author URLs stay stable through renames. A given slug is checked and made unique.
-        const slug = patch.slug !== undefined ? await this.#freeSlug(patch.slug, id) : current.slug ?? await this.#freeSlug(next.name, id);
+        const slug = patch.slug !== undefined ? await this.#freeSlug(patch.slug, id) : current.slug ?? await this.#freeSlug(profile.name, id);
         try {
             const result = await this.#db.write([{ rql: 'UPDATE cms_users SET name = $name, email = $email, avatar = $avatar, meta = $meta, slug = $slug, updated_at = $now WHERE id = $id',
-                params: { $name: next.name.trim(), $email: next.email, $avatar: next.avatar, $meta: JSON.stringify(meta), $slug: slug, $now: this.#now(), $id: id } }], WRITE);
+                params: { $name: profile.name, $email: profile.email, $avatar: profile.avatar, $meta: JSON.stringify(meta), $slug: slug, $now: this.#now(), $id: id } }], WRITE);
             return result.results[0]!.affected === 1n;
-        } catch (error) { throw uniqueEmail(error); }
+        } catch (error) { throw memberError(error); }
     }
 
     /**
@@ -272,17 +267,15 @@ export class CmsUsers {
         return `${base}-${crypto.randomUUID().slice(0, 8)}`;
     }
 
-    /** Remove a user with their roles, sessions and reset tokens in one batch. Their records keep their owner ID. */
+    /** Remove the member and their roles from this site; the account stays. Their records keep their owner ID. */
     async delete(id: string): Promise<boolean> {
         if (!ID.test(id)) return false;
         const params = { $id: id };
         const result = await this.#db.write([
             { rql: 'DELETE FROM cms_user_roles WHERE user_id = $id', params },
-            { rql: 'DELETE FROM cms_auth_sessions WHERE user_id = $id', params },
-            { rql: 'DELETE FROM cms_password_resets WHERE user_id = $id', params },
             { rql: 'DELETE FROM cms_users WHERE id = $id', params },
         ], WRITE);
-        return result.results[3]!.affected === 1n;
+        return result.results[1]!.affected === 1n;
     }
 
     /** Replace a user's roles in one atomic batch. */
@@ -290,15 +283,16 @@ export class CmsUsers {
         await this.#db.write([{ rql: 'DELETE FROM cms_user_roles WHERE user_id = $id', params: { $id: id } }, ...roleStatements(id, roles)], WRITE);
     }
 
+    /** Allow or stop the account's sign-in, and copy the status here. */
     async setStatus(id: string, status: 'active' | 'disabled'): Promise<boolean> {
+        if (!(await this.#accounts.setStatus(id, status))) return false;
         const result = await this.#db.write([{ rql: 'UPDATE cms_users SET status = $status, updated_at = $now WHERE id = $id', params: { $status: status, $now: this.#now(), $id: id } }], WRITE);
         return result.results[0]!.affected === 1n;
     }
 
+    /** Set the account's password. */
     async setPassword(id: string, password: string): Promise<boolean> {
-        checkPassword(password);
-        const result = await this.#db.write([{ rql: 'UPDATE cms_users SET password_hash = $hash, updated_at = $now WHERE id = $id', params: { $hash: await this.#hasher.hash(password), $now: this.#now(), $id: id } }], WRITE);
-        return result.results[0]!.affected === 1n;
+        return (await this.get(id)) !== null && this.#accounts.setPassword(id, password);
     }
 
     async count(): Promise<number> {
@@ -306,10 +300,20 @@ export class CmsUsers {
         return Number(result.results[0]!.rows[0]![0] as bigint);
     }
 
-    /** The request principal for an active user, or null. */
+    /**
+     * The member as the request user, or null unless their account is active. A network admin
+     * also acts with `*` and holds the `network_admin` role.
+     */
+    async resolve(id: string): Promise<CmsMember | null> {
+        const [user, account] = await Promise.all([this.get(id), this.#accounts.get(id)]);
+        if (!user || !account || account.status !== 'active') return null;
+        const admin = account.networkRole === NETWORK_ADMIN;
+        return Object.freeze({ ...user, principal: userPrincipal(user.id, admin ? [...user.roles, NETWORK_ADMIN] : user.roles, admin ? [...user.permissions, '*'] : user.permissions) });
+    }
+
+    /** The request principal for an active member, or null. */
     async principal(id: string): Promise<Principal | null> {
-        const user = await this.get(id);
-        return user && user.status === 'active' ? userPrincipal(user.id, user.roles, user.permissions) : null;
+        return (await this.resolve(id))?.principal ?? null;
     }
 
     /** Create or replace a role by ID. */
@@ -385,53 +389,6 @@ export class CmsUsers {
             : { rql: 'SELECT count(*) FROM cms_roles' }]);
         return Number(result.results[0]!.rows[0]![0] as bigint);
     }
-
-    /**
-     * A one-time reset token for an active account, or null for an unknown email. The token is
-     * returned once; the table keeps only its SHA-256, and earlier tokens for the user end.
-     */
-    async createPasswordReset(email: string, options: { ttlMs?: number } = {}): Promise<{ token: string; user: CmsUser } | null> {
-        const user = await this.findByEmail(email);
-        if (!user || user.status !== 'active') return null;
-        const token = [...crypto.getRandomValues(new Uint8Array(32))].map(byte => byte.toString(16).padStart(2, '0')).join('');
-        const now = this.#now();
-        await this.#db.write([
-            { rql: 'DELETE FROM cms_password_resets WHERE user_id = $user', params: { $user: user.id } },
-            { rql: 'INSERT INTO cms_password_resets (id, user_id, created_at, expires_at) VALUES ($id, $user, $now, $expires)',
-                params: { $id: await sha256(token), $user: user.id, $now: now, $expires: now + (options.ttlMs ?? 60 * 60_000) } },
-        ], WRITE);
-        return { token, user };
-    }
-
-    /**
-     * Set a new password with a reset token. One conditional delete consumes the token, so
-     * only one request can use it; the user's sessions end with the change.
-     */
-    async resetPassword(token: string, password: string): Promise<boolean> {
-        if (typeof token !== 'string' || !TOKEN.test(token)) return false;
-        checkPassword(password);
-        const id = await sha256(token);
-        const found = await this.#db.read([{ rql: 'SELECT user_id FROM cms_password_resets WHERE id = $id AND expires_at > $now', params: { $id: id, $now: this.#now() } }]);
-        const user = found.results[0]!.rows[0]?.[0] as string | undefined;
-        if (!user) return false;
-        const hash = await this.#hasher.hash(password);
-        const guard = 'EXISTS (SELECT 1 FROM cms_password_resets WHERE id = $id AND user_id = $user AND expires_at > $now)';
-        const params = { $id: id, $user: user, $now: this.#now() };
-        // The password and sessions change only if this request still holds the token.
-        const result = await this.#db.write([
-            { rql: `UPDATE cms_users SET password_hash = $hash, updated_at = $now WHERE id = $user AND ${guard}`, params: { ...params, $hash: hash } },
-            { rql: `DELETE FROM cms_auth_sessions WHERE user_id = $user AND ${guard}`, params },
-            { rql: 'DELETE FROM cms_password_resets WHERE id = $id AND user_id = $user AND expires_at > $now', params },
-        ], WRITE);
-        return result.results[2]!.affected === 1n && result.results[0]!.affected === 1n;
-    }
-
-    async purgeExpiredResets(): Promise<number> {
-        const expired = await this.#db.read([{ rql: 'SELECT 1 FROM cms_password_resets WHERE expires_at <= $now LIMIT 1', params: { $now: this.#now() } }]);
-        if (!expired.results[0]!.rows.length) return 0;
-        const result = await this.#db.write([{ rql: 'DELETE FROM cms_password_resets WHERE id IN (SELECT id FROM cms_password_resets WHERE expires_at <= $now LIMIT 500)', params: { $now: this.#now() } }], WRITE);
-        return Number(result.results[0]!.affected);
-    }
 }
 
 function roleOf(row: readonly Value[]): CmsRole {
@@ -446,32 +403,18 @@ function roleStatements(userId: string, roles: readonly string[]): Statement[] {
     });
 }
 
-function checkProfile(profile: { email: string; name: string; avatar: string | null }): void {
-    if (!EMAIL.test(profile.email)) throw new CmsError('CMS_VALIDATION', 'Enter a valid email address.', { fields: { email: 'is invalid.' } });
-    if (typeof profile.name !== 'string' || !profile.name.trim() || profile.name.length > 120) throw new CmsError('CMS_VALIDATION', 'Enter a name of at most 120 characters.', { fields: { name: 'is required.' } });
-    if (profile.avatar !== null && (typeof profile.avatar !== 'string' || profile.avatar.length > 2048 || !/^(?:https:\/\/|\/)[^\s]*$/.test(profile.avatar))) {
-        throw new CmsError('CMS_VALIDATION', 'The avatar must be an https URL or a site path.', { fields: { avatar: 'is invalid.' } });
-    }
-}
-
-function checkPassword(password: string): void {
-    if (typeof password !== 'string' || password.length < 8) throw new CmsError('CMS_VALIDATION', 'Passwords need at least 8 characters.', { fields: { password: 'is too short.' } });
-    if (new TextEncoder().encode(password).length > 1024) throw new CmsError('CMS_VALIDATION', 'Passwords can be at most 1024 bytes.', { fields: { password: 'is too long.' } });
-}
-
 function checkRole(role: { id: string; name: string; permissions: readonly string[] }): string[] {
     if (!ID.test(role.id) || typeof role.name !== 'string' || !role.name.trim() || role.name.length > 80) throw new CmsError('CMS_VALIDATION', 'Enter a role name of at most 80 characters.', { fields: { name: 'is required.' } });
+    if (role.id === NETWORK_ADMIN) throw new CmsError('CMS_VALIDATION', 'network_admin is the network\'s role; choose another name.', { fields: { name: 'is reserved.' } });
     const invalid = role.permissions.filter(permission => !PERMISSION.test(permission));
     if (invalid.length) throw new CmsError('CMS_VALIDATION', `Unknown permission ${invalid.join(', ')}.`, { fields: { permissions: 'are invalid.' } });
     return [...new Set(role.permissions)].sort();
 }
 
-function uniqueEmail(error: unknown): unknown {
+function memberError(error: unknown): unknown {
     if (error instanceof ClientError && error.outcome === 'rolled-back' && /UNIQUE/i.test(error.message)) return new CmsError('CMS_CONFLICT', 'A user with this email already exists.', { fields: { email: 'is taken.' } });
     if (error instanceof ClientError && error.outcome === 'rolled-back' && /FOREIGN|role/i.test(error.message)) return new CmsError('CMS_VALIDATION', 'Unknown role.');
     return error;
 }
 
-export function normalizeEmail(email: string): string {
-    return typeof email === 'string' ? email.trim().toLowerCase() : '';
-}
+export { normalizeEmail };

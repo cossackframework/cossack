@@ -63,7 +63,10 @@ export function createAuthSessionStore(db: RomeDB, options: { now?: () => number
                 rql: 'INSERT INTO cms_auth_sessions (id, public_id, user_id, created_at, expires_at, ip, user_agent) VALUES ($id, $public, $user, $created, $expires, $ip, $agent)',
                 params: { $id: record.id, $public: crypto.randomUUID(), $user: record.userId, $created: record.createdAt, $expires: record.expiresAt, $ip: meta.ip?.slice(0, 64) ?? null, $agent: meta.userAgent?.slice(0, 512) ?? null },
             }, {
-                // The user keeps the sign-in time after the session ends.
+                // The account keeps the sign-in time after the session ends, and so does its member row on the main site.
+                rql: 'UPDATE cms_accounts SET last_sign_in_at = $created WHERE id = $user',
+                params: { $user: record.userId, $created: record.createdAt },
+            }, {
                 rql: 'UPDATE cms_users SET last_sign_in_at = $created WHERE id = $user',
                 params: { $user: record.userId, $created: record.createdAt },
             }], { kind: 'cms.auth.session', retryConflicts: 5 });

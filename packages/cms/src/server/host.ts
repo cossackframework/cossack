@@ -22,7 +22,7 @@ import { recordTitle } from '../forms';
 import type { RecordShape } from '../records';
 import { taxonomyProblems, type TaxonomyDeclaration, type TermShape } from '../taxonomy';
 import { isPluginPoint, manifestProblems, providedPoints, requestedGrants, type CmsPluginManifest, type PluginCommand, type SlotLink } from '../manifest';
-import { ANONYMOUS, evaluateRule, hasPermission, PERMISSIONS, principalId, systemPrincipal, userPrincipal, type Principal } from '../permissions';
+import { ANONYMOUS, evaluateRule, hasPermission, PERMISSIONS, principalId, systemPrincipal, type Principal } from '../permissions';
 import { AVATAR_TYPES, mediaUrl } from '../media';
 import { canonicalJson, declarationHash, resolveResource, type Resource, type ResourceAction, type ResourceDeclaration } from '../resource';
 import { Outbox, type OutboxOptions } from './outbox';
@@ -39,6 +39,7 @@ import { CmsMenus } from './menus';
 import { CmsAreas } from './areas';
 import { CmsTaxonomies } from './taxonomies';
 import { CmsUsers } from './users';
+import { CmsAccounts } from './accounts';
 import { CmsPreviews, type PreviewLink } from './previews';
 import { CmsAutosaves, type Autosave } from './autosaves';
 import { CmsRedirects } from './redirects';
@@ -73,7 +74,13 @@ export interface PluginRegistrationLike {
 export type { CmsModule };
 
 export interface CmsOptions {
+    /** The site's database. */
     readonly db: RomeDB;
+    /**
+     * The network database: accounts and what signs them in (sessions, second factors, reset
+     * tokens, application passwords). It is the main site's database; default `db`.
+     */
+    readonly network?: RomeDB;
     /** Application resources; owner defaults to `app`. */
     readonly resources?: readonly ResourceDeclaration[];
     readonly modules?: readonly CmsModule[];
@@ -264,7 +271,12 @@ export const PLUGIN_ENABLED = 'plugin:enabled';
 
 export class CmsHost {
     readonly db: RomeDB;
+    /** The network database; the same as `db` on the main site. */
+    readonly network: RomeDB;
     readonly hooks: HookRegistry;
+    /** Who can sign in, on the network database. */
+    readonly accounts: CmsAccounts;
+    /** This site's members and roles. */
     readonly users: CmsUsers;
     readonly outbox: Outbox;
     readonly authSessions: ReturnType<typeof createAuthSessionStore>;
@@ -287,7 +299,7 @@ export class CmsHost {
     readonly comments: CmsComments;
     /** Forms' submissions: taking them, notifications, and handling them in the dashboard. */
     readonly forms: CmsForms;
-    /** Second factors and passkeys of users. */
+    /** Second factors and passkeys of accounts, on the network database. */
     readonly security: CmsSecurity;
     /** Media files, when the host has object storage. */
     readonly files: FileService | null;
@@ -328,6 +340,7 @@ export class CmsHost {
 
     constructor(options: CmsOptions) {
         this.db = options.db;
+        this.network = options.network ?? options.db;
         this.hooks = options.hooks ?? createHookRegistry();
         this.#now = options.now ?? Date.now;
         this.#activationTtl = options.activationTtlMs ?? 30_000;
@@ -368,14 +381,15 @@ export class CmsHost {
         }
         this.#apply(new Map(), new Map());
         this.fieldGroups = new CmsFieldGroups(this.db, { now: this.#now });
-        this.users = new CmsUsers(this.db, { now: this.#now, checkMeta: (meta, previous) => this.#checkMeta({ kind: 'users' }, meta, previous) });
+        this.accounts = new CmsAccounts(this.network, { now: this.#now });
+        this.users = new CmsUsers(this.db, { accounts: this.accounts, now: this.#now, checkMeta: (meta, previous) => this.#checkMeta({ kind: 'users' }, meta, previous) });
         this.redirects = new CmsRedirects(this.db, { now: this.#now });
         this.traffic = new CmsTraffic(this.db, { now: this.#now });
-        this.apiTokens = new CmsApiTokens(this.db, { now: this.#now });
+        this.apiTokens = new CmsApiTokens(this.network, { now: this.#now });
         this.webhooks = new CmsWebhooks(this.db, { now: this.#now, fetch: this.#fetch });
         this.comments = new CmsComments(this.db, { now: this.#now });
         this.forms = new CmsForms(this, { ...(options.mail ? { mail: options.mail } : {}), ...(options.mailFrom ? { mailFrom: options.mailFrom } : {}) });
-        this.security = new CmsSecurity(this.db, { now: this.#now });
+        this.security = new CmsSecurity(this.network, { now: this.#now });
         // Entry events become webhook deliveries; the outbox retries this until they are queued.
         this.hooks.addAction(afterCommit, event => this.#queueWebhooks(event), { plugin: 'cms' });
         // Published, changed and unpublished entries are pinged to IndexNow; a failed ping retries with the outbox.
@@ -390,8 +404,8 @@ export class CmsHost {
         this.hooks.addAction(formSubmitted, event => this.forms.notify(event), { plugin: 'cms' });
         this.hooks.addAction(formSubmitted, event => this.#queueFormWebhooks(event), { plugin: 'cms' });
         this.outbox = new Outbox(this.db, this.hooks, { now: this.#now, ...options.outbox });
-        this.authSessions = createAuthSessionStore(this.db, { now: this.#now, request: requestMetadata });
-        this.oauthStates = createOAuthStateStore(this.db);
+        this.authSessions = createAuthSessionStore(this.network, { now: this.#now, request: requestMetadata });
+        this.oauthStates = createOAuthStateStore(this.network);
         this.sessions = createSessionStore(this.db, { now: this.#now });
         this.taxonomies = new CmsTaxonomies(this.db, {
             taxonomies: () => this.#taxonomies,
@@ -650,9 +664,8 @@ export class CmsHost {
     async tokenPrincipal(token: string): Promise<{ principal: Principal; scope: ApiTokenScope; userId: string } | null> {
         const verified = await this.apiTokens.verify(token);
         if (!verified) return null;
-        const user = await this.users.get(verified.userId);
-        if (!user || user.status !== 'active') return null;
-        return { principal: userPrincipal(user.id, user.roles, user.permissions), scope: verified.scope, userId: user.id };
+        const user = await this.users.resolve(verified.userId);
+        return user ? { principal: user.principal, scope: verified.scope, userId: user.id } : null;
     }
 
     /** Whether the site has discussions at all (Settings → Discussion → Allow discussions). Off hides every comment; stored ones are kept. */

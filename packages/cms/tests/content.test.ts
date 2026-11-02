@@ -219,29 +219,34 @@ describe.skipIf(!live)('content, taxonomies, settings, users and media', () => {
         expect(await users.deleteRole('moderator')).toBe(true);
         expect((await users.get(created.id))!.roles).toEqual([]);
 
-        expect(await users.createPasswordReset('nobody@example.com')).toBeNull();
-        const reset = (await users.createPasswordReset('grace@example.com'))!;
-        await expect(users.resetPassword(reset.token, 'short')).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
+        expect(await cms.accounts.createPasswordReset('nobody@example.com')).toBeNull();
+        const reset = (await cms.accounts.createPasswordReset('grace@example.com'))!;
+        await expect(cms.accounts.resetPassword(reset.token, 'short')).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
     });
 
     it('consumes a reset token once and ends sessions', async () => {
-        const users = cms.users;
-        await users.create({ email: 'reset@example.com', name: 'Reset', password: 'first password' });
-        const reset = (await users.createPasswordReset('reset@example.com'))!;
-        const stored = await cms.db.read([{ rql: 'SELECT id FROM cms_password_resets WHERE user_id = $user', params: { $user: reset.user.id } }]);
+        const accounts = cms.accounts;
+        await cms.users.create({ email: 'reset@example.com', name: 'Reset', password: 'first password' });
+        const reset = (await accounts.createPasswordReset('reset@example.com'))!;
+        const stored = await cms.db.read([{ rql: 'SELECT id FROM cms_password_resets WHERE user_id = $user', params: { $user: reset.account.id } }]);
         expect(stored.results[0]!.rows[0]![0]).not.toBe(reset.token);
-        const [first, second] = await Promise.all([users.resetPassword(reset.token, 'second password'), users.resetPassword(reset.token, 'third password')]);
+        const [first, second] = await Promise.all([accounts.resetPassword(reset.token, 'second password'), accounts.resetPassword(reset.token, 'third password')]);
         expect([first, second].filter(Boolean)).toHaveLength(1);
-        expect(await users.verifier.verify('reset@example.com', first ? 'second password' : 'third password')).toMatchObject({ email: 'reset@example.com' });
-        expect(await users.resetPassword(reset.token, 'fourth password')).toBe(false);
+        expect(await accounts.verifier.verify('reset@example.com', first ? 'second password' : 'third password')).toMatchObject({ email: 'reset@example.com' });
+        expect(await accounts.resetPassword(reset.token, 'fourth password')).toBe(false);
     });
 
-    it('deletes a user with their sessions', async () => {
+    it('deletes an account with what signs it in, and a member without the account', async () => {
         const user = await cms.users.create({ email: 'gone@example.com', name: 'Gone', password: 'long password' });
         await cms.authSessions.create({ id: 'a'.repeat(64), userId: user.id, kind: 'auth', createdAt: Date.now(), expiresAt: Date.now() + 60_000 });
+        await cms.apiTokens.create(user.id, { name: 'Script', scope: 'read' });
         expect(await cms.users.delete(user.id)).toBe(true);
-        expect(await cms.authSessions.read('a'.repeat(64))).toBeNull();
         expect(await cms.users.get(user.id)).toBeNull();
+        expect(await cms.authSessions.read('a'.repeat(64))).not.toBeNull();
+        expect(await cms.accounts.delete(user.id)).toBe(true);
+        expect(await cms.accounts.get(user.id)).toBeNull();
+        expect(await cms.authSessions.read('a'.repeat(64))).toBeNull();
+        expect(await cms.apiTokens.list(user.id)).toEqual([]);
     });
 
     it('accepts media by signature, records image sizes and lists the library', async () => {

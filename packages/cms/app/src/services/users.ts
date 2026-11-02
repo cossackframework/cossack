@@ -94,9 +94,14 @@ export async function changeUserPassword(id: string, newPassword: string): Promi
   if (!(await visible(currentCms().users.setPassword(id, newPassword)))) throw new ClientVisibleError('User not found.');
 }
 
-/** Removes the account with its roles and sessions. Content keeps its author ID. */
+/**
+ * Removes the account with what signs it in, then its membership and roles. Content keeps its
+ * author ID. The last network admin cannot be deleted.
+ */
 export async function deleteUser(id: string): Promise<void> {
-  await visible(currentCms().users.delete(id));
+  const cms = currentCms();
+  await visible(cms.accounts.delete(id));
+  await cms.users.delete(id);
 }
 
 export async function assignRole(userId: string, roleId: string): Promise<void> {

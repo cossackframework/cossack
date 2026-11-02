@@ -50,6 +50,17 @@ export const PERMISSIONS = Object.freeze({
     unfilteredHtml: 'cms:html',
 });
 
+/**
+ * The network role, held by an account rather than given by a site: full access on every site
+ * of the network, and the network dashboard. Sites cannot define a role with this ID.
+ */
+export const NETWORK_ADMIN = 'network_admin';
+
+/** Whether the principal is a network admin. A site role with `*` does not make one. */
+export function isNetworkAdmin(principal: Principal): boolean {
+    return principal.kind === 'user' && principal.roles.includes(NETWORK_ADMIN);
+}
+
 /** Roles setup creates. Administrators can change them, except the administrator role itself. */
 export const DEFAULT_ROLES = Object.freeze([
     { id: 'admin', name: 'Administrator', permissions: ['*'] },

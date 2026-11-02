@@ -22,7 +22,7 @@ export const HOST_TABLES = [
     'cms_terms', 'cms_settings', 'cms_collections', 'cms_taxonomies', 'cms_field_groups', 'cms_menus', 'cms_menu_locations',
     'cms_preview_tokens', 'cms_autosaves', 'cms_file_variants', 'cms_redirects', 'cms_api_tokens', 'cms_webhooks', 'cms_webhook_deliveries',
     'cms_comments', 'cms_user_security', 'cms_passkeys', 'cms_auth_challenges', 'cms_areas', 'cms_form_sends', 'cms_form_mail', 'cms_form_results', 'cms_crawler_visits', 'cms_not_found', 'cms_cache',
-    'cossack_jobs', 'cossack_notifications',
+    'cms_accounts', 'cossack_jobs', 'cossack_notifications',
 ] as const;
 
 export const HOST_STEPS: readonly HostStep[] = [{
@@ -231,5 +231,21 @@ export const HOST_STEPS: readonly HostStep[] = [{
         { rql: 'CREATE TABLE cms_cache (key TEXT PRIMARY KEY, value TEXT NOT NULL, expires_at INTEGER)' },
         // Copies made before this step have no size.
         { rql: 'ALTER TABLE cms_file_variants ADD COLUMN size INTEGER' },
+    ],
+}, {
+    version: 16,
+    description: 'Accounts sign in; sites keep members',
+    statements: [
+        // Who can sign in. Only the network database (the main site's) has rows; sites keep members in cms_users under the same ID.
+        { rql: `CREATE TABLE cms_accounts (id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE, name TEXT NOT NULL, password_hash TEXT, avatar TEXT,
+            status TEXT NOT NULL CHECK(status IN ('active','disabled')), network_role TEXT CHECK(network_role IN ('network_admin')),
+            created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, last_sign_in_at INTEGER)` },
+        { rql: 'CREATE INDEX cms_accounts_created ON cms_accounts (created_at)' },
+        { rql: `INSERT INTO cms_accounts (id, email, name, password_hash, avatar, status, network_role, created_at, updated_at, last_sign_in_at)
+            SELECT id, email, name, password_hash, avatar, status, NULL, created_at, updated_at, last_sign_in_at FROM cms_users` },
+        // The oldest active administrator runs the network.
+        { rql: `UPDATE cms_accounts SET network_role = 'network_admin' WHERE id = (SELECT u.id FROM cms_users u JOIN cms_user_roles r ON r.user_id = u.id
+            WHERE r.role_id = 'admin' AND u.status = 'active' ORDER BY u.created_at, u.id LIMIT 1)` },
+        { rql: 'ALTER TABLE cms_users DROP COLUMN password_hash' },
     ],
 }];
