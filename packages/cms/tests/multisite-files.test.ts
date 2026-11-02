@@ -1,0 +1,102 @@
+import { mkdtemp, readdir, rm } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { createRomeDB, MemoryPendingWriteStore, type RomeDB } from '@cossackframework/romedb';
+import { connectNode, fileDatabases } from '@cossackframework/romedb/node';
+import { CmsNetwork, contentModule, createCMS, formsModule, DEFAULT_ROLES, NETWORK_ADMIN, type CmsHost, type NetworkSite } from '../src/server/index';
+
+/** Files open through `@romedb/node`'s native addon; without it, this suite skips. */
+const probe = await mkdtemp(path.join(os.tmpdir(), 'cossack-probe-'));
+const linked = await connectNode({ url: path.join(probe, 'probe.romedb') }).then(client => client.close().then(() => true), () => false);
+await rm(probe, { recursive: true, force: true });
+
+/** A network on files, as the CMS app runs on Node: app.romedb, and a file per added site beside it. */
+function fileNetwork(directory: string) {
+    const files = fileDatabases(directory);
+    const open = (url: string): RomeDB => createRomeDB({ url, connect: () => connectNode({ url }), pending: new MemoryPendingWriteStore() });
+    const network: CmsNetwork = new CmsNetwork({
+        db: open(path.join(directory, 'app.romedb')), networkHost: () => 'example.com', directory: files,
+        open: site => open(files.url(site.database)),
+        host: (site, db) => createCMS({ db, network: network.db, site: site.id, modules: [contentModule, formsModule], sessionsEnded: ended => network.endSessions(ended) }),
+    });
+    return network;
+}
+
+const record = (token: string, userId: string) => ({ id: token.repeat(64).slice(0, 64), userId, kind: 'auth' as const, createdAt: Date.now(), expiresAt: Date.now() + 60_000 });
+
+describe.skipIf(!linked)('a network on database files', () => {
+    let directory: string;
+    let network: CmsNetwork;
+    let main: CmsHost;
+    let owner: string;
+
+    const siteOf = async (host: string): Promise<CmsHost> => network.hostOf((await network.resolve(host) as { site: NetworkSite }).site);
+
+    beforeAll(async () => {
+        directory = await mkdtemp(path.join(os.tmpdir(), 'cossack-multisite-'));
+        network = fileNetwork(directory);
+        main = network.main;
+        expect((await main.migrate()).failed).toBeUndefined();
+        for (const role of DEFAULT_ROLES) await main.users.defineRole({ ...role, permissions: [...role.permissions] });
+        owner = (await main.users.create({ email: 'owner@example.com', name: 'Owner', password: 'owns the place', roles: ['admin'], networkRole: NETWORK_ADMIN })).id;
+    }, 60_000);
+
+    afterAll(async () => { await rm(directory, { recursive: true, force: true }); });
+
+    it('gives each added site its own file, schema and members', async () => {
+        const principal = (await main.users.principal(owner))!;
+        await network.createSite({ name: 'Blog', host: 'blog.example.com', admin: owner }, { principal });
+        await network.createSite({ name: 'Shop', host: 'shop.example.com', admin: owner, starter: true }, { principal });
+        const files = (await readdir(directory)).filter(name => name.endsWith('.romedb')).sort();
+        expect(files).toHaveLength(3);
+        expect(files).toContain('app.romedb');
+
+        const blog = await siteOf('blog.example.com');
+        const shop = await siteOf('shop.example.com');
+        expect(blog.db).not.toBe(shop.db);
+        const writer = await blog.users.create({ email: 'writer@example.com', name: 'Writer', password: 'writes daily', roles: ['author'] });
+        expect(await shop.users.get(writer.id)).toBeNull();
+        expect(await main.users.get(writer.id)).toBeNull();
+        expect((await main.accounts.verifier.verify('writer@example.com', 'writes daily'))?.id).toBe(writer.id);
+        expect((await shop.resource('cms/posts').list({ limit: 5 }, { principal: (await shop.users.principal(owner))! })).records.length).toBeGreaterThan(0);
+        expect((await blog.resource('cms/posts').list({ limit: 5 }, { principal: (await blog.users.principal(owner))! })).records).toEqual([]);
+    }, 60_000);
+
+    it('hands a network session to a site and ends it there when it ends', async () => {
+        const blog = await siteOf('blog.example.com');
+        const writer = (await main.accounts.findByEmail('writer@example.com'))!;
+        await main.authSessions.create(record('n', writer.id));
+        const reference = (await main.authSessions.publicReference(record('n', writer.id).id))!;
+        const handoff = (await network.handoffs.consume(await network.handoffs.issue({ session: reference, user: writer.id, site: 'blog' }), 'blog'))!;
+        await blog.authSessions.createChild(record('c', writer.id), { parentId: handoff.session, networkRole: handoff.networkRole });
+        expect((await blog.users.resolve(writer.id, { networkRole: handoff.networkRole }))!.principal).toMatchObject({ roles: ['author'] });
+        await main.authSessions.revoke(record('n', writer.id).id);
+        expect(await blog.authSessions.read(record('c', writer.id).id)).toBeNull();
+    });
+
+    it('opens every file again after a restart', async () => {
+        await network.release((await network.sites.get('blog'))!.database);
+        await network.release((await network.sites.get('shop'))!.database);
+        await network.db.close();
+        network = fileNetwork(directory);
+        main = network.main;
+        await main.ready();
+        expect(await main.installed()).toBe(true);
+        const blog = await siteOf('blog.example.com');
+        expect(await blog.installed()).toBe(true);
+        expect((await blog.users.list()).items.map(user => user.email).sort()).toEqual(['owner@example.com', 'writer@example.com']);
+        expect((await network.memberSites(owner)).map(site => site.id)).toEqual(['main', 'blog', 'shop']);
+    }, 60_000);
+
+    it('deletes a site\'s file 30 days after the site is deleted', async () => {
+        const principal = (await main.users.principal(owner))!;
+        const shop = (await network.sites.get('shop'))!;
+        await network.setSiteStatus('shop', 'deleted', { principal });
+        expect(await network.purgeDeleted({ olderThanMs: 0 })).toEqual(['shop']);
+        const files = await readdir(directory);
+        expect(files.some(name => name.startsWith(shop.database))).toBe(false);
+        expect(files.filter(name => name.endsWith('.romedb'))).toHaveLength(2);
+        expect(await network.resolve('shop.example.com')).toEqual({ kind: 'missing' });
+    }, 60_000);
+});

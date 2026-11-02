@@ -32,6 +32,7 @@ export const GUIDANCE_FAMILIES = Object.freeze({
     'resources, repositories and collections': ['cms-resources', 'cms-repositories', 'cms-collections', 'cms-field-groups'],
     'publishing, forms and appearance': ['cms-publishing', 'cms-forms', 'cms-appearance'],
     'plugins, auth and stores': ['cms-plugins', 'cms-auth-and-stores'],
+    'multisite networks': ['cms-multisite'],
   },
   'typescript-plugin': { 'editor diagnostics and completions': ['editor-template-checks'] },
   ui: { 'typed native controls and all component families': ['native-controls', 'radio-and-range', 'one-time-code', 'searchable-combobox', 'tag-multi-select', 'gregorian-date-controls', 'native-modal-dialogs', 'native-popover', 'action-menus', 'hover-content', 'alert-confirmation', 'modal-command-search', 'native-disclosures', 'typed-tabs', 'native-toggles', 'native-menubar', 'native-navigation', 'native-pagination', 'native-breadcrumb', 'native-layout', 'native-display', 'native-status', 'native-field-empty', 'native-avatar', 'native-typography-item', 'native-table-scroll-area', 'native-resizable', 'native-sidebar', 'native-toast', 'native-carousel', 'native-attachment', 'native-chat-display', 'native-message-scroller', 'native-icon', 'native-auth-form', 'composed-command-palette', 'server-data-table', 'native-dashboard-stat', 'native-settings-panel', 'turnstile-widget-lifecycle'] },

@@ -22,7 +22,8 @@ it('RomeDB and CMS guide examples typecheck strictly against declared public ent
     for (const [subpath, target] of Object.entries(core.exports)) if (target?.types) paths['@cossackframework/core' + subpath.slice(1)] = [path.join(root, 'packages/core', target.types)];
     for (const pkg of packages) {
       const manifest = JSON.parse(await fs.readFile(path.join(root, 'packages', pkg, 'package.json'), 'utf8'));
-      for (const [subpath, target] of Object.entries(manifest.exports)) if (subpath !== './package.json') paths[manifest.name + subpath.slice(1)] = [path.join(root, 'packages', pkg, target)];
+      // A conditional entry, such as romedb's ./dev, types through its `types` file.
+      for (const [subpath, target] of Object.entries(manifest.exports)) if (subpath !== './package.json') paths[manifest.name + subpath.slice(1)] = [path.join(root, 'packages', pkg, typeof target === 'string' ? target : target.types ?? target.default)];
       const metadata = JSON.parse(await fs.readFile(path.join(root, 'packages', pkg, 'agent-docs.json'), 'utf8'));
       for (const guide of metadata.guides) {
         expect(guide.markdown.length, guide.id).toBeGreaterThan(300);

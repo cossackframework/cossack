@@ -25,6 +25,8 @@ puts a default theme in `src/plugins/default-theme/` for you to edit or copy. Se
   themes and widget areas.
 - [Settings](/docs/cms/settings.md): reading and writing settings, declaring groups and
   subpages, discussions, and the site logo.
+- [Multisite](/docs/cms/multisite.md): many sites from one application, one database per
+  site, accounts shared across the network, and the network dashboard.
 - [Block references](/docs/cms/block-references.md): blocks and bindings inside text, such
   as `{{ block core/button … /}}` and `{{ $site.title }}`.
 
