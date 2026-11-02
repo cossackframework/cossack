@@ -69,7 +69,7 @@ describe.skipIf(!linked)('a network on database files', () => {
         await main.authSessions.create(record('n', writer.id));
         const reference = (await main.authSessions.publicReference(record('n', writer.id).id))!;
         const handoff = (await network.handoffs.consume(await network.handoffs.issue({ session: reference, user: writer.id, site: 'blog' }), 'blog'))!;
-        await blog.authSessions.createChild(record('c', writer.id), { parentId: handoff.session, networkRole: handoff.networkRole });
+        await blog.authSessions.createChild(record('c', writer.id), { parentId: handoff.session, networkRole: handoff.networkRole, expiresAt: handoff.expiresAt });
         expect((await blog.users.resolve(writer.id, { networkRole: handoff.networkRole }))!.principal).toMatchObject({ roles: ['author'] });
         await main.authSessions.revoke(record('n', writer.id).id);
         expect(await blog.authSessions.read(record('c', writer.id).id)).toBeNull();

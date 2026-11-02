@@ -22,6 +22,15 @@ export interface CmsAuthSession extends AuthSessionRecord {
     readonly networkRole: string | null;
 }
 
+/** What a child session takes from its network session's handoff. */
+export interface ChildSession {
+    /** The network session's public reference. */
+    readonly parentId: string;
+    readonly networkRole: string | null;
+    /** The network session's expiry. */
+    readonly expiresAt: number;
+}
+
 /** Network sessions that ended: one by its public reference, or an account's (all but `except`). Their child sessions end with them. */
 export type EndedSessions = { readonly session: string } | { readonly user: string; readonly except?: string };
 /** Structural `AuthSessionStore` from `@cossackframework/auth`. */
@@ -59,8 +68,8 @@ export interface CmsSessionStore {
  */
 export function createAuthSessionStore(db: RomeDB, options: { now?: () => number; request?: (context: unknown) => { ip?: string; userAgent?: string }; sessionsEnded?: (ended: EndedSessions) => Promise<void> } = {}): Omit<CmsAuthSessionStore, 'read'> & {
     read(id: string, context?: unknown): Promise<CmsAuthSession | null>;
-    /** A child session on a site, from a network session's handoff. */
-    createChild(record: AuthSessionRecord, child: { parentId: string; networkRole: string | null }, context?: unknown): Promise<void>;
+    /** A child session on a site, from a network session's handoff. It expires no later than its parent, and rotation keeps that. */
+    createChild(record: AuthSessionRecord, child: ChildSession, context?: unknown): Promise<void>;
     /** End the child sessions of these network sessions, or all of an account's (but `except`'s). */
     revokeChildren(ended: EndedSessions): Promise<number>;
     publicReference(id: string): Promise<string | null>;
@@ -74,12 +83,14 @@ export function createAuthSessionStore(db: RomeDB, options: { now?: () => number
 } {
     const now = options.now ?? Date.now;
     const ended = (scope: EndedSessions) => options.sessionsEnded?.(scope).catch(error => console.error('[cms] could not end child sessions', error));
-    const insert = async (record: AuthSessionRecord, child: { parentId: string; networkRole: string | null } | null, context: unknown) => {
+    const insert = async (record: AuthSessionRecord, child: ChildSession | null, context: unknown) => {
         assertRecord(record);
+        const expires = child ? Math.min(record.expiresAt, child.expiresAt) : record.expiresAt;
+        if (expires <= record.createdAt) throw new Error('The network session has expired.');
         const meta = options.request?.(context) ?? {};
         await db.write([{
             rql: 'INSERT INTO cms_auth_sessions (id, public_id, user_id, created_at, expires_at, ip, user_agent, parent_id, network_role) VALUES ($id, $public, $user, $created, $expires, $ip, $agent, $parent, $role)',
-            params: { $id: record.id, $public: crypto.randomUUID(), $user: record.userId, $created: record.createdAt, $expires: record.expiresAt, $ip: meta.ip?.slice(0, 64) ?? null, $agent: meta.userAgent?.slice(0, 512) ?? null,
+            params: { $id: record.id, $public: crypto.randomUUID(), $user: record.userId, $created: record.createdAt, $expires: expires, $ip: meta.ip?.slice(0, 64) ?? null, $agent: meta.userAgent?.slice(0, 512) ?? null,
                 $parent: child?.parentId ?? null, $role: child?.networkRole ?? null },
         }, {
                 // The account keeps the sign-in time after the session ends, and so does its member row on the main site.
@@ -103,13 +114,15 @@ export function createAuthSessionStore(db: RomeDB, options: { now?: () => number
             assertRecord(expected);
             assertRecord(replacement);
             if (replacement.userId !== expected.userId) return false;
-            const result = await db.write([{
-                rql: `UPDATE cms_auth_sessions SET id = $next, created_at = $created, expires_at = $expires
-                    WHERE id = $id AND user_id = $user AND created_at = $oldCreated AND expires_at = $oldExpires AND expires_at > $now`,
-                params: { $next: replacement.id, $created: replacement.createdAt, $expires: replacement.expiresAt, $id: expected.id, $user: expected.userId,
-                    $oldCreated: expected.createdAt, $oldExpires: expected.expiresAt, $now: Math.max(at, now()) },
-            }], { kind: 'cms.auth.session', retryConflicts: 5 });
-            return result.results[0]!.affected === 1n;
+            const guard = 'WHERE id = $id AND user_id = $user AND created_at = $oldCreated AND expires_at = $oldExpires AND expires_at > $now';
+            const params = { $next: replacement.id, $created: replacement.createdAt, $id: expected.id, $user: expected.userId,
+                $oldCreated: expected.createdAt, $oldExpires: expected.expiresAt, $now: Math.max(at, now()) };
+            // A child session keeps its expiry, so it never outlives the network session it came from.
+            const result = await db.write([
+                { rql: `UPDATE cms_auth_sessions SET id = $next, created_at = $created, expires_at = $expires ${guard} AND parent_id IS NULL`, params: { ...params, $expires: replacement.expiresAt } },
+                { rql: `UPDATE cms_auth_sessions SET id = $next, created_at = $created ${guard} AND parent_id IS NOT NULL`, params },
+            ], { kind: 'cms.auth.session', retryConflicts: 5 });
+            return result.results[0]!.affected + result.results[1]!.affected === 1n;
         },
         async revoke(id) {
             if (!TOKEN.test(id)) return;

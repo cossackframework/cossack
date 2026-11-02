@@ -21,7 +21,7 @@ describe.skipIf(!live)('sign-in handoffs and child sessions', () => {
     /** A child session on the blog from a handoff of this network session. */
     const handOff = async (reference: string, userId: string, token: string) => {
         const handoff = (await network.handoffs.consume(await network.handoffs.issue({ session: reference, user: userId, site: 'blog' }), 'blog'))!;
-        await blog.authSessions.createChild(record(token, userId), { parentId: handoff.session, networkRole: handoff.networkRole });
+        await blog.authSessions.createChild(record(token, userId), { parentId: handoff.session, networkRole: handoff.networkRole, expiresAt: handoff.expiresAt });
         return record(token, userId).id;
     };
 
@@ -51,7 +51,7 @@ describe.skipIf(!live)('sign-in handoffs and child sessions', () => {
         expect(await network.handoffs.consume(code, 'blog')).toBeNull();
         const fresh = await network.handoffs.issue({ session: reference, user, site: 'blog' });
         const [first, second] = await Promise.all([network.handoffs.consume(fresh, 'blog'), network.handoffs.consume(fresh, 'blog')]);
-        expect([first, second].filter(Boolean)).toEqual([{ session: reference, user, networkRole: null }]);
+        expect([first, second].filter(Boolean)).toEqual([{ session: reference, user, networkRole: null, expiresAt: expect.any(Number) }]);
         expect(await network.handoffs.consume(await network.handoffs.issue({ session: reference, user, site: 'blog', ttlMs: -1 }), 'blog')).toBeNull();
         expect(await network.handoffs.consume('not a code', 'blog')).toBeNull();
 
@@ -70,6 +70,26 @@ describe.skipIf(!live)('sign-in handoffs and child sessions', () => {
         await main.authSessions.revoke(record('b', user).id);
         expect(await blog.authSessions.read(child)).toBeNull();
         expect(await network.handoffs.reached({ session: reference })).toEqual([]);
+    });
+
+    it('ends a child session no later than its network session, also after rotation', async () => {
+        const parent = { ...record('i', user), expiresAt: Date.now() + 30_000 };
+        await main.authSessions.create(parent);
+        const reference = (await main.authSessions.publicReference(parent.id))!;
+        const handoff = (await network.handoffs.consume(await network.handoffs.issue({ session: reference, user, site: 'blog' }), 'blog'))!;
+        expect(handoff.expiresAt).toBe(parent.expiresAt);
+        const child = { ...record('j', user), expiresAt: Date.now() + 3_600_000 };
+        await blog.authSessions.createChild(child, { parentId: handoff.session, networkRole: handoff.networkRole, expiresAt: handoff.expiresAt });
+        const stored = (await blog.authSessions.read(child.id))!;
+        expect(stored.expiresAt).toBe(parent.expiresAt);
+        const rotated = { ...record('k', user), expiresAt: Date.now() + 3_600_000 };
+        expect(await blog.authSessions.replace(stored, rotated, Date.now())).toBe(true);
+        expect((await blog.authSessions.read(rotated.id))!.expiresAt).toBe(parent.expiresAt);
+        // A network session still rotates to a later expiry.
+        const later = { ...record('l', user), expiresAt: Date.now() + 3_600_000 };
+        expect(await main.authSessions.replace((await main.authSessions.read(parent.id))!, later, Date.now())).toBe(true);
+        expect((await main.authSessions.read(later.id))!.expiresAt).toBe(later.expiresAt);
+        await expect(blog.authSessions.createChild(record('m', user), { parentId: handoff.session, networkRole: null, expiresAt: Date.now() - 1 })).rejects.toThrow();
     });
 
     it('signs a suspended account out of every site, but keeps the session being used', async () => {

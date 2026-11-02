@@ -19,6 +19,8 @@ export interface Handoff {
     readonly user: string;
     /** The account's network role now, which the child session copies. */
     readonly networkRole: string | null;
+    /** When the network session expires; the child session ends no later. */
+    readonly expiresAt: number;
 }
 
 export class CmsHandoffs {
@@ -48,7 +50,7 @@ export class CmsHandoffs {
         const id = await sha256(code);
         const now = this.#now();
         const found = await this.#db.read([{
-            rql: `SELECT h.session_id, h.user_id, a.network_role FROM cms_handoffs h JOIN cms_accounts a ON a.id = h.user_id
+            rql: `SELECT h.session_id, h.user_id, a.network_role, s.expires_at FROM cms_handoffs h JOIN cms_accounts a ON a.id = h.user_id
                 JOIN cms_auth_sessions s ON s.public_id = h.session_id AND s.user_id = h.user_id
                 WHERE h.id = $id AND h.site_id = $site AND h.expires_at > $now AND s.expires_at > $now AND a.status = 'active'`,
             params: { $id: id, $site: site, $now: now },
@@ -57,7 +59,7 @@ export class CmsHandoffs {
         // Delete it either way; only the request whose delete removed it may use it.
         const taken = await this.#db.write([{ rql: 'DELETE FROM cms_handoffs WHERE id = $id', params: { $id: id } }], WRITE);
         if (!row || taken.results[0]!.affected !== 1n) return null;
-        const handoff = { session: row[0] as string, user: row[1] as string, networkRole: row[2] as string | null };
+        const handoff = { session: row[0] as string, user: row[1] as string, networkRole: row[2] as string | null, expiresAt: Number(row[3]) };
         await this.#db.write([{
             rql: 'INSERT INTO cms_session_sites (session_id, site_id, user_id, created_at) SELECT $session, $site, $user, $now WHERE 1 = 1 ON CONFLICT (session_id, site_id) DO NOTHING',
             params: { $session: handoff.session, $site: site, $user: handoff.user, $now: now },

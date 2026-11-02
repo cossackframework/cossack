@@ -1,7 +1,7 @@
 import type { Context } from 'hono';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import { NETWORK_ADMIN } from '@cossackframework/cms';
-import { MAIN_SITE, networkSite, type CmsHost, type CmsNetwork, type NetworkSite } from '@cossackframework/cms/server';
+import { MAIN_SITE, networkSite, type ChildSession, type CmsHost, type CmsNetwork, type NetworkSite } from '@cossackframework/cms/server';
 import { authSessions, SESSION_COOKIE_NAME } from '../auth';
 import { siteUrl, type CmsBindings } from './index';
 
@@ -93,7 +93,7 @@ async function toSite(c: Context, network: CmsNetwork, site: NetworkSite): Promi
     // A network admin may open any site; the first visit copies them in without a role, so their writes have an author.
     if (handoff.networkRole === NETWORK_ADMIN) await cms.users.addMember(handoff.user);
     if (!(await cms.users.get(handoff.user))) return c.text('Your account is not a member of this site.', 403);
-    c.set('cms.child', { parentId: handoff.session, networkRole: handoff.networkRole });
+    c.set('cms.child', { parentId: handoff.session, networkRole: handoff.networkRole, expiresAt: handoff.expiresAt });
     const { headers } = await authSessions.create(handoff.user, c);
     headers.forEach((value, name) => c.header(name, value, { append: true }));
     return c.redirect(nextPath(url.searchParams.get('next')));
@@ -126,7 +126,7 @@ function parsePending(value: string): { site: string | null; next: string } {
 declare module 'hono' {
     interface ContextVariableMap {
         /** A handoff in progress: the next session created on this request is a child session. */
-        'cms.child': { parentId: string; networkRole: string | null };
+        'cms.child': ChildSession;
         /** The network role a child session copied at its handoff. */
         'cms.networkRole': string | null;
     }

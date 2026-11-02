@@ -21,7 +21,7 @@ export { renderMarkdown, excerptOf } from './markdown';
 export { createCmsAuth, type CmsAuth, type CmsAuthOptions, type CmsRequestUser } from './auth';
 export {
     createAuthSessionStore, createOAuthStateStore, createSessionStore, createJobStore, createNotificationStore,
-    type CmsAuthSessionStore, type CmsOAuthStateStore, type CmsSessionStore, type CmsAuthSession, type EndedSessions,
+    type CmsAuthSessionStore, type CmsOAuthStateStore, type CmsSessionStore, type CmsAuthSession, type ChildSession, type EndedSessions,
 } from './stores';
 export { cmsReconcilers } from './reconcile';
 export { CmsPreviews, type PreviewLink } from './previews';

@@ -70,7 +70,8 @@ own session back:
 3. The network issues a one-use code for that site and session, valid for one minute, and
    redirects to `blog.example.com/auth/handoff?code=…`.
 4. The site trades the code for a *child session* in its own database, holding the network
-   role at that moment. Later requests to the site read only the site's database.
+   role at that moment. Later requests to the site read only the site's database. The child
+   session ends no later than the network session it came from.
 
 Signing out of any site signs out of the network and of every site the session reached.
 A password reset, a suspension, a new network role or deleting the account does the same.
