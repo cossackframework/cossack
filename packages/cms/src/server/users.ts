@@ -91,6 +91,15 @@ export class CmsUsers {
         }
     }
 
+    /** Make an existing account a member of this site, with these roles. */
+    async addMember(accountId: string, options: { roles?: readonly string[]; meta?: unknown } = {}): Promise<CmsUser | null> {
+        const account = await this.#accounts.get(accountId);
+        if (!account) return null;
+        const existing = await this.get(accountId);
+        if (existing) return existing;
+        return this.#join(account, options.roles ?? [], await this.#meta(options.meta, null));
+    }
+
     /** Copy the account in as a member with these roles. */
     async #join(account: CmsAccount, roles: readonly string[], meta: { readonly [field: string]: unknown }): Promise<CmsUser> {
         const now = this.#now();
@@ -302,12 +311,14 @@ export class CmsUsers {
 
     /**
      * The member as the request user, or null unless their account is active. A network admin
-     * also acts with `*` and holds the `network_admin` role.
+     * also acts with `*` and holds the `network_admin` role. A child session passes the network
+     * role it copied, so the account is not read: the network ends child sessions of an account
+     * it suspends.
      */
-    async resolve(id: string): Promise<CmsMember | null> {
-        const [user, account] = await Promise.all([this.get(id), this.#accounts.get(id)]);
-        if (!user || !account || account.status !== 'active') return null;
-        const admin = account.networkRole === NETWORK_ADMIN;
+    async resolve(id: string, session?: { networkRole: string | null }): Promise<CmsMember | null> {
+        const [user, account] = await Promise.all([this.get(id), session ? null : this.#accounts.get(id)]);
+        if (!user || (!session && (!account || account.status !== 'active'))) return null;
+        const admin = (session ? session.networkRole : account!.networkRole) === NETWORK_ADMIN;
         return Object.freeze({ ...user, principal: userPrincipal(user.id, admin ? [...user.roles, NETWORK_ADMIN] : user.roles, admin ? [...user.permissions, '*'] : user.permissions) });
     }
 

@@ -12,6 +12,7 @@ export async function runNetworkMaintenance(network: CmsNetwork, options: { warm
     const started = Date.now();
     await runMaintenance(network.main, options);
     if (!network.multisite || !(await network.main.installed())) return;
+    await network.handoffs.purgeExpired();
     let cursor = (await network.main.cache.get<string>(CURSOR)) ?? '';
     for (const site of await network.sites.inTurn(cursor)) {
         if (Date.now() - started > (options.budgetMs ?? 20_000)) break;

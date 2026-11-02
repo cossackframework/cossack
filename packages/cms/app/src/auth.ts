@@ -14,9 +14,10 @@ import {
 } from '@cossackframework/auth/passkeys';
 import { ClientVisibleError, getRequestContext } from '@cossackframework/core';
 import { ANONYMOUS, hasPermission, isCmsError, PERMISSIONS, type Principal } from '@cossackframework/cms';
-import type { ApiToken, CmsHost, CmsMember, SecurityStatus } from '@cossackframework/cms/server';
+import { MAIN_SITE, type ApiToken, type CmsHost, type CmsMember, type SecurityStatus } from '@cossackframework/cms/server';
 import { renderSVG } from 'uqr';
-import { currentCms } from './cms/index';
+import { currentCms, networkFor, type CmsBindings } from './cms/index';
+import { handoffSite } from './cms/handoff';
 
 const SESSION_COOKIE = 'session_id';
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7; // 7 days
@@ -65,9 +66,15 @@ function publicUser(user: CmsMember): PublicUser {
   };
 }
 
-/** The member a signed-in account acts as on this site, or null when it is not one or is disabled. */
+/**
+ * The member a signed-in account acts as on this site, or null when it is not one or is
+ * disabled. On a site other than the main one, the child session's network role stands in for
+ * the account, so the request reads only the site's database.
+ */
 async function member(id: string, c?: Context): Promise<PublicUser | null> {
-  const user = await cms(c).users.resolve(id);
+  const context = c ?? getRequestContext();
+  const child = context?.get('site')?.id !== MAIN_SITE ? context?.get('cms.networkRole') : undefined;
+  const user = await cms(c).users.resolve(id, child === undefined ? undefined : { networkRole: child });
   return user ? publicUser(user) : null;
 }
 
@@ -76,8 +83,16 @@ export const authSessions = createSessionManager({
   ttlSeconds: SESSION_TTL_SECONDS,
   cookie: { name: SESSION_COOKIE },
   store: {
-    create: (record, c) => cms(c).authSessions.create(record, c),
-    read: (id, c) => cms(c).authSessions.read(id, c),
+    create: (record, c) => {
+      // A handoff in progress makes the session a child of the network session.
+      const child = (c as Context).get('cms.child');
+      return child ? cms(c).authSessions.createChild(record, child, c) : cms(c).authSessions.create(record, c);
+    },
+    read: async (id, c) => {
+      const session = await cms(c).authSessions.read(id, c);
+      if (session?.parentId) (c as Context).set('cms.networkRole', session.networkRole);
+      return session;
+    },
     replace: (expected: AuthSessionRecord, replacement: AuthSessionRecord, now: number, c) => cms(c).authSessions.replace(expected, replacement, now, c),
     revoke: (id, c) => cms(c).authSessions.revoke(id, c),
   },
@@ -120,7 +135,8 @@ export async function loginUser(email: string, password: string): Promise<Public
 
 /** Whether visitors may create accounts: the "Anyone can register" setting. */
 export async function registrationOpen(): Promise<boolean> {
-  const host = cms();
+  const c = getRequestContext();
+  const host = (c ? await handoffSite(c, networkFor(c.env as CmsBindings)) : null) ?? cms();
   return (await host.installed()) && await host.settings.get('general.usersCanRegister');
 }
 
@@ -131,14 +147,21 @@ export async function setupRequired(): Promise<boolean> {
   catch { return true; }
 }
 
+/**
+ * A new account. Registering on the network host for another site (the visitor came from its
+ * sign-in) makes the account a member of that site only, with that site's default role.
+ */
 export async function registerUser(email: string, password: string, name?: string): Promise<PublicUser> {
-  const host = cms();
+  const c = getRequestContext();
+  const site = c ? await handoffSite(c, networkFor(c.env as CmsBindings)) : null;
+  const host = site ?? cms();
   if (!(await registrationOpen())) throw new ClientVisibleError('Registration is closed on this site.');
   const role = await host.settings.get('general.defaultRole');
   const roles = role && (await host.users.role(role)) ? [role] : [];
   try {
     const user = await host.users.create({ email, password, name: name?.trim() || email.split('@')[0]!, roles });
-    return (await member(user.id))!;
+    // The network host signs the account in; the handoff then takes it to its site.
+    return site ? { id: user.id, email: user.email, name: user.name, avatar: user.avatar, meta: null, roles: [], principal: ANONYMOUS } : (await member(user.id))!;
   } catch (error) {
     if (isCmsError(error, 'CMS_CONFLICT')) throw new ClientVisibleError('An account with this email already exists.');
     throw error;
@@ -348,8 +371,13 @@ export async function resetPassword(token: string, newPassword: string): Promise
 }
 
 // --- Logout ----------------------------------------------------------------
+/** Signing out of a site signs out of the network too, and so of every site the session reached. */
 export async function logout(c: Context): Promise<{ headers: Headers }> {
-  return { headers: await authSessions.revoke(getCookie(c, SESSION_COOKIE) ?? '', c) };
+  const id = getCookie(c, SESSION_COOKIE) ?? '';
+  const session = id ? await cms(c).authSessions.read(id, c).catch(() => null) : null;
+  const headers = await authSessions.revoke(id, c);
+  if (session?.parentId) await networkFor(c.env as CmsBindings).main.authSessions.revokeByReference(session.userId, session.parentId).catch(() => false);
+  return { headers };
 }
 
 /** Clear the same cookie policy used for creation and rotation. */

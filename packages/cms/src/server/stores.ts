@@ -11,6 +11,19 @@ const TOKEN = /^[A-Za-z0-9_-]{1,191}$/;
 const n = (value: Value | undefined) => Number(value as bigint);
 
 export interface AuthSessionRecord { readonly id: string; readonly userId: string; readonly kind: 'auth'; readonly createdAt: number; readonly expiresAt: number }
+
+/**
+ * A stored session. On a site other than the main one it is a child session: the network
+ * session it came from (`parentId`, that session's public reference) and the account's network
+ * role at the handoff, so site requests need not read the network database.
+ */
+export interface CmsAuthSession extends AuthSessionRecord {
+    readonly parentId: string | null;
+    readonly networkRole: string | null;
+}
+
+/** Network sessions that ended: one by its public reference, or an account's (all but `except`). Their child sessions end with them. */
+export type EndedSessions = { readonly session: string } | { readonly user: string; readonly except?: string };
 /** Structural `AuthSessionStore` from `@cossackframework/auth`. */
 export interface CmsAuthSessionStore {
     create(record: AuthSessionRecord, context?: unknown): Promise<void>;
@@ -44,7 +57,12 @@ export interface CmsSessionStore {
  * Auth sessions keyed by token. Rotation is one conditional update of the key; the public
  * reference survives it, so realtime descriptors detect rotation through the fingerprint.
  */
-export function createAuthSessionStore(db: RomeDB, options: { now?: () => number; request?: (context: unknown) => { ip?: string; userAgent?: string } } = {}): CmsAuthSessionStore & {
+export function createAuthSessionStore(db: RomeDB, options: { now?: () => number; request?: (context: unknown) => { ip?: string; userAgent?: string }; sessionsEnded?: (ended: EndedSessions) => Promise<void> } = {}): Omit<CmsAuthSessionStore, 'read'> & {
+    read(id: string, context?: unknown): Promise<CmsAuthSession | null>;
+    /** A child session on a site, from a network session's handoff. */
+    createChild(record: AuthSessionRecord, child: { parentId: string; networkRole: string | null }, context?: unknown): Promise<void>;
+    /** End the child sessions of these network sessions, or all of an account's (but `except`'s). */
+    revokeChildren(ended: EndedSessions): Promise<number>;
     publicReference(id: string): Promise<string | null>;
     findByReference(reference: string): Promise<{ id: string; userId: string; expiresAt: number } | null>;
     listForUser(userId: string, now: number): Promise<{ reference: string; createdAt: number; expiresAt: number; ip: string | null; userAgent: string | null }[]>;
@@ -55,27 +73,31 @@ export function createAuthSessionStore(db: RomeDB, options: { now?: () => number
     revokeByReference(userId: string, reference: string, current?: string): Promise<boolean>;
 } {
     const now = options.now ?? Date.now;
-    return {
-        async create(record, context) {
-            assertRecord(record);
-            const meta = options.request?.(context) ?? {};
-            await db.write([{
-                rql: 'INSERT INTO cms_auth_sessions (id, public_id, user_id, created_at, expires_at, ip, user_agent) VALUES ($id, $public, $user, $created, $expires, $ip, $agent)',
-                params: { $id: record.id, $public: crypto.randomUUID(), $user: record.userId, $created: record.createdAt, $expires: record.expiresAt, $ip: meta.ip?.slice(0, 64) ?? null, $agent: meta.userAgent?.slice(0, 512) ?? null },
-            }, {
+    const ended = (scope: EndedSessions) => options.sessionsEnded?.(scope).catch(error => console.error('[cms] could not end child sessions', error));
+    const insert = async (record: AuthSessionRecord, child: { parentId: string; networkRole: string | null } | null, context: unknown) => {
+        assertRecord(record);
+        const meta = options.request?.(context) ?? {};
+        await db.write([{
+            rql: 'INSERT INTO cms_auth_sessions (id, public_id, user_id, created_at, expires_at, ip, user_agent, parent_id, network_role) VALUES ($id, $public, $user, $created, $expires, $ip, $agent, $parent, $role)',
+            params: { $id: record.id, $public: crypto.randomUUID(), $user: record.userId, $created: record.createdAt, $expires: record.expiresAt, $ip: meta.ip?.slice(0, 64) ?? null, $agent: meta.userAgent?.slice(0, 512) ?? null,
+                $parent: child?.parentId ?? null, $role: child?.networkRole ?? null },
+        }, {
                 // The account keeps the sign-in time after the session ends, and so does its member row on the main site.
                 rql: 'UPDATE cms_accounts SET last_sign_in_at = $created WHERE id = $user',
                 params: { $user: record.userId, $created: record.createdAt },
-            }, {
-                rql: 'UPDATE cms_users SET last_sign_in_at = $created WHERE id = $user',
-                params: { $user: record.userId, $created: record.createdAt },
-            }], { kind: 'cms.auth.session', retryConflicts: 5 });
-        },
+        }, {
+            rql: 'UPDATE cms_users SET last_sign_in_at = $created WHERE id = $user',
+            params: { $user: record.userId, $created: record.createdAt },
+        }], { kind: 'cms.auth.session', retryConflicts: 5 });
+    };
+    return {
+        create: (record, context) => insert(record, null, context),
+        createChild: (record, child, context) => insert(record, child, context),
         async read(id) {
             if (!TOKEN.test(id)) return null;
-            const result = await db.read([{ rql: 'SELECT id, user_id, created_at, expires_at FROM cms_auth_sessions WHERE id = $id', params: { $id: id } }]);
+            const result = await db.read([{ rql: 'SELECT id, user_id, created_at, expires_at, parent_id, network_role FROM cms_auth_sessions WHERE id = $id', params: { $id: id } }]);
             const row = result.results[0]!.rows[0];
-            return row ? Object.freeze({ id: row[0] as string, userId: row[1] as string, kind: 'auth' as const, createdAt: n(row[2]), expiresAt: n(row[3]) }) : null;
+            return row ? Object.freeze({ id: row[0] as string, userId: row[1] as string, kind: 'auth' as const, createdAt: n(row[2]), expiresAt: n(row[3]), parentId: row[4] as string | null, networkRole: row[5] as string | null }) : null;
         },
         async replace(expected, replacement, at) {
             assertRecord(expected);
@@ -91,7 +113,10 @@ export function createAuthSessionStore(db: RomeDB, options: { now?: () => number
         },
         async revoke(id) {
             if (!TOKEN.test(id)) return;
+            const found = await db.read([{ rql: 'SELECT public_id, parent_id FROM cms_auth_sessions WHERE id = $id', params: { $id: id } }]);
             await db.write([{ rql: 'DELETE FROM cms_auth_sessions WHERE id = $id', params: { $id: id } }], { kind: 'cms.auth.session', retryConflicts: 5 });
+            const row = found.results[0]!.rows[0];
+            if (row && row[1] === null) await ended({ session: row[0] as string });
         },
         async publicReference(id) {
             if (!TOKEN.test(id)) return null;
@@ -124,13 +149,24 @@ export function createAuthSessionStore(db: RomeDB, options: { now?: () => number
                 rql: `DELETE FROM cms_auth_sessions WHERE public_id = $ref AND user_id = $user${current ? ' AND id != $current' : ''}`,
                 params: { $ref: reference, $user: userId, ...(current ? { $current: current } : {}) },
             }], { kind: 'cms.auth.session', retryConflicts: 5 });
-            return result.results[0]!.affected === 1n;
+            if (result.results[0]!.affected !== 1n) return false;
+            await ended({ session: reference });
+            return true;
         },
         async revokeAllForUser(userId, except) {
+            const kept = except && TOKEN.test(except) ? (await db.read([{ rql: 'SELECT public_id FROM cms_auth_sessions WHERE id = $id', params: { $id: except } }])).results[0]!.rows[0]?.[0] as string | undefined : undefined;
             const result = await db.write([{
                 rql: `DELETE FROM cms_auth_sessions WHERE user_id = $user${except ? ' AND id != $except' : ''}`,
                 params: { $user: userId, ...(except ? { $except: except } : {}) },
             }], { kind: 'cms.auth.session', retryConflicts: 5 });
+            await ended({ user: userId, ...(kept ? { except: kept } : {}) });
+            return Number(result.results[0]!.affected);
+        },
+        async revokeChildren(scope) {
+            const result = await db.write(['session' in scope
+                ? { rql: 'DELETE FROM cms_auth_sessions WHERE parent_id = $parent', params: { $parent: scope.session } }
+                : { rql: `DELETE FROM cms_auth_sessions WHERE user_id = $user AND parent_id IS NOT NULL${scope.except ? ' AND parent_id != $except' : ''}`, params: { $user: scope.user, ...(scope.except ? { $except: scope.except } : {}) } },
+            ], { kind: 'cms.auth.session', retryConflicts: 5 });
             return Number(result.results[0]!.affected);
         },
     };

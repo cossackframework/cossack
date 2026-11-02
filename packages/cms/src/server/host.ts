@@ -34,7 +34,7 @@ import { imageWidths } from '../images';
 import { renameStoredDefinitions, renameStoredRecords } from './block-ids';
 import { HOST_STEPS, HOST_TABLES } from './host-schema';
 import { CmsSettings } from './site-settings';
-import { createAuthSessionStore, createJobStore, createNotificationStore, createOAuthStateStore, createSessionStore } from './stores';
+import { createAuthSessionStore, createJobStore, createNotificationStore, createOAuthStateStore, createSessionStore, type EndedSessions } from './stores';
 import { CmsMenus } from './menus';
 import { CmsAreas } from './areas';
 import { CmsTaxonomies } from './taxonomies';
@@ -77,10 +77,12 @@ export interface CmsOptions {
     /** The site's database. */
     readonly db: RomeDB;
     /**
-     * The network database: accounts and what signs them in (sessions, second factors, reset
-     * tokens, application passwords). It is the main site's database; default `db`.
+     * The network database: accounts and what signs them in (second factors, reset tokens,
+     * application passwords, the main site's sessions). It is the main site's database; default `db`.
      */
     readonly network?: RomeDB;
+    /** Network sessions ended: end the child sessions that sites made from them. */
+    readonly sessionsEnded?: (ended: EndedSessions) => Promise<void>;
     /** Application resources; owner defaults to `app`. */
     readonly resources?: readonly ResourceDeclaration[];
     readonly modules?: readonly CmsModule[];
@@ -381,7 +383,7 @@ export class CmsHost {
         }
         this.#apply(new Map(), new Map());
         this.fieldGroups = new CmsFieldGroups(this.db, { now: this.#now });
-        this.accounts = new CmsAccounts(this.network, { now: this.#now });
+        this.accounts = new CmsAccounts(this.network, { now: this.#now, ...(options.sessionsEnded ? { sessionsEnded: options.sessionsEnded } : {}) });
         this.users = new CmsUsers(this.db, { accounts: this.accounts, now: this.#now, checkMeta: (meta, previous) => this.#checkMeta({ kind: 'users' }, meta, previous) });
         this.redirects = new CmsRedirects(this.db, { now: this.#now });
         this.traffic = new CmsTraffic(this.db, { now: this.#now });
@@ -404,7 +406,8 @@ export class CmsHost {
         this.hooks.addAction(formSubmitted, event => this.forms.notify(event), { plugin: 'cms' });
         this.hooks.addAction(formSubmitted, event => this.#queueFormWebhooks(event), { plugin: 'cms' });
         this.outbox = new Outbox(this.db, this.hooks, { now: this.#now, ...options.outbox });
-        this.authSessions = createAuthSessionStore(this.network, { now: this.#now, request: requestMetadata });
+        // The main site's sessions are the network's; another site's are child sessions handed off from them.
+        this.authSessions = createAuthSessionStore(this.db, { now: this.#now, request: requestMetadata, ...(options.sessionsEnded ? { sessionsEnded: options.sessionsEnded } : {}) });
         this.oauthStates = createOAuthStateStore(this.network);
         this.sessions = createSessionStore(this.db, { now: this.#now });
         this.taxonomies = new CmsTaxonomies(this.db, {

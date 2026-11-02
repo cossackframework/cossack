@@ -12,6 +12,7 @@ export { CmsUsers, type CmsUser, type CmsMember, type CmsRole, type UserPage } f
 export { CmsAccounts, normalizeEmail, type CmsAccount, type AccountProfile } from './accounts';
 export { CmsSites, MAIN_SITE, siteHost, type SiteRecord, type SiteDomain, type SiteStatus } from './sites';
 export { CmsNetwork, MAIN, networkSite, prefixedStorage, type NetworkSite, type SiteResolution, type CmsNetworkOptions } from './network';
+export { CmsHandoffs, type Handoff } from './handoffs';
 export { FileService, type CmsFile, type FileServiceOptions, type FileMetadata, type FileSummary, type ImageSettings, type PendingUpload } from './files';
 export { CmsCache, type CacheEntry } from './cache';
 export { CmsTaxonomies, freeSlug, type TermUsage, type TermInput } from './taxonomies';
@@ -20,7 +21,7 @@ export { renderMarkdown, excerptOf } from './markdown';
 export { createCmsAuth, type CmsAuth, type CmsAuthOptions, type CmsRequestUser } from './auth';
 export {
     createAuthSessionStore, createOAuthStateStore, createSessionStore, createJobStore, createNotificationStore,
-    type CmsAuthSessionStore, type CmsOAuthStateStore, type CmsSessionStore,
+    type CmsAuthSessionStore, type CmsOAuthStateStore, type CmsSessionStore, type CmsAuthSession, type EndedSessions,
 } from './stores';
 export { cmsReconcilers } from './reconcile';
 export { CmsPreviews, type PreviewLink } from './previews';

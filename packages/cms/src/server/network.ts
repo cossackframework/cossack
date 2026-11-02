@@ -6,7 +6,9 @@
 import type { RomeDB } from '@cossackframework/romedb';
 import type { StorageMetadata, StorageProvider } from '@cossackframework/core/storage';
 import type { CmsHost } from './host';
+import { CmsHandoffs } from './handoffs';
 import { CmsSites, MAIN_SITE, siteHost, type SiteRecord, type SiteStatus } from './sites';
+import type { EndedSessions } from './stores';
 
 /** The site a CMS host serves. */
 export interface NetworkSite {
@@ -51,6 +53,8 @@ export const MAIN: NetworkSite = Object.freeze({ id: MAIN_SITE, name: null, data
 export class CmsNetwork {
     readonly db: RomeDB;
     readonly sites: CmsSites;
+    /** One-use codes that sign a network session in on a site. */
+    readonly handoffs: CmsHandoffs;
     readonly #options: CmsNetworkOptions;
     readonly #now: () => number;
     readonly #hosts = new Map<string, CmsHost>();
@@ -62,6 +66,21 @@ export class CmsNetwork {
         this.#options = options;
         this.#now = options.now ?? Date.now;
         this.sites = new CmsSites(options.db, { now: this.#now });
+        this.handoffs = new CmsHandoffs(options.db, { now: this.#now });
+    }
+
+    /**
+     * End the child sessions sites made from these network sessions. Pass it to every host as
+     * `sessionsEnded`: signing out, a password reset, a suspension or a new network role end
+     * the account's sessions on every site it reached.
+     */
+    async endSessions(ended: EndedSessions): Promise<void> {
+        if (!this.multisite) return;
+        for (const id of await this.handoffs.reached(ended)) {
+            const record = await this.sites.get(id);
+            if (record && record.status !== 'creating') await this.hostOf(networkSite(record)).authSessions.revokeChildren(ended);
+        }
+        await this.handoffs.forget(ended);
     }
 
     /** Whether added sites can open their databases. */

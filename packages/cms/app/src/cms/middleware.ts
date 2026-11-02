@@ -4,6 +4,7 @@ import { getSupportedLocales, LOCALE_COOKIE_NAME, setRequestLocale } from '@coss
 import { ANONYMOUS, type Principal } from '@cossackframework/cms';
 import { MAIN, type SiteResolution } from '@cossackframework/cms/server';
 import { cmsFor, networkFor, type CmsBindings } from './index';
+import { handoff } from './handoff';
 import { runMaintenance } from './maintenance';
 
 /**
@@ -40,6 +41,9 @@ export const cmsMiddleware: MiddlewareHandler = async (c, next) => {
     c.set('cms', cms);
     c.set('site', found.site);
     c.set('principal', ANONYMOUS);
+    // Sign-in happens on the network host; other sites get their sessions through a handoff.
+    const routed = await handoff(c, network, found.site);
+    if (routed) return routed;
     // Before setup the definition tables do not exist yet; built-in collections apply.
     await cms.ready().catch(error => console.error('[cms] could not load collections', error));
     // Until a user picks a language (Profile → Dashboard language), the dashboard speaks the

@@ -98,7 +98,7 @@ describe.skipIf(!live)('accounts and members', () => {
         } finally { await stop(); }
     }, 60_000);
 
-    it('keeps accounts and what signs them in on the network database, and members on the site', async () => {
+    it('keeps accounts and what signs them in on the network database, and members and child sessions on the site', async () => {
         const other = await service.fresh();
         try {
             const site = createCMS({ db: other.db, network: cms.db });
@@ -109,7 +109,10 @@ describe.skipIf(!live)('accounts and members', () => {
             await site.apiTokens.create(user.id, { name: 'Script', scope: 'read' });
             await site.security.startTotp(user.id);
 
-            for (const table of ['cms_accounts', 'cms_auth_sessions', 'cms_api_tokens', 'cms_user_security']) {
+            // A site's sessions are child sessions in its own database (handoffs.test.ts).
+            expect(await count(other.db, 'SELECT count(*) FROM cms_auth_sessions WHERE user_id = $id', { $id: user.id })).toBe(1);
+            expect(await count(cms.db, 'SELECT count(*) FROM cms_auth_sessions WHERE user_id = $id', { $id: user.id })).toBe(0);
+            for (const table of ['cms_accounts', 'cms_api_tokens', 'cms_user_security']) {
                 expect(await count(cms.db, `SELECT count(*) FROM ${table} WHERE ${table === 'cms_accounts' ? 'id' : 'user_id'} = $id`, { $id: user.id }), table).toBe(1);
                 expect(await count(other.db, `SELECT count(*) FROM ${table}`), table).toBe(0);
             }

@@ -22,7 +22,7 @@ export const HOST_TABLES = [
     'cms_terms', 'cms_settings', 'cms_collections', 'cms_taxonomies', 'cms_field_groups', 'cms_menus', 'cms_menu_locations',
     'cms_preview_tokens', 'cms_autosaves', 'cms_file_variants', 'cms_redirects', 'cms_api_tokens', 'cms_webhooks', 'cms_webhook_deliveries',
     'cms_comments', 'cms_user_security', 'cms_passkeys', 'cms_auth_challenges', 'cms_areas', 'cms_form_sends', 'cms_form_mail', 'cms_form_results', 'cms_crawler_visits', 'cms_not_found', 'cms_cache',
-    'cms_accounts', 'cms_sites', 'cms_site_domains', 'cossack_jobs', 'cossack_notifications',
+    'cms_accounts', 'cms_sites', 'cms_site_domains', 'cms_handoffs', 'cms_session_sites', 'cossack_jobs', 'cossack_notifications',
 ] as const;
 
 export const HOST_STEPS: readonly HostStep[] = [{
@@ -261,5 +261,21 @@ export const HOST_STEPS: readonly HostStep[] = [{
         { rql: `CREATE TABLE cms_site_domains (host TEXT PRIMARY KEY, site_id TEXT NOT NULL, is_primary INTEGER NOT NULL CHECK(is_primary IN (0,1)),
             verified_at INTEGER, created_at INTEGER NOT NULL)` },
         { rql: 'CREATE INDEX cms_site_domains_site ON cms_site_domains (site_id, is_primary)' },
+    ],
+}, {
+    version: 18,
+    description: 'Sign-in handoffs and child sessions',
+    statements: [
+        // On a site other than the main one, a session is a child of a network session: its public reference, and the network role copied at the handoff.
+        { rql: 'ALTER TABLE cms_auth_sessions ADD COLUMN parent_id TEXT' },
+        { rql: 'ALTER TABLE cms_auth_sessions ADD COLUMN network_role TEXT' },
+        { rql: 'CREATE INDEX cms_auth_sessions_parent ON cms_auth_sessions (parent_id)' },
+        // One-use codes that carry a network session to a site, keyed by the SHA-256 of the code.
+        { rql: `CREATE TABLE cms_handoffs (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, user_id TEXT NOT NULL, site_id TEXT NOT NULL,
+            created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL)` },
+        { rql: 'CREATE INDEX cms_handoffs_expiry ON cms_handoffs (expires_at)' },
+        // The sites each network session reached, so ending it ends their child sessions.
+        { rql: 'CREATE TABLE cms_session_sites (session_id TEXT NOT NULL, site_id TEXT NOT NULL, user_id TEXT NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY (session_id, site_id))' },
+        { rql: 'CREATE INDEX cms_session_sites_user ON cms_session_sites (user_id)' },
     ],
 }];

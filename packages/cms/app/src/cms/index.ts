@@ -40,7 +40,7 @@ export function networkFor(env: CmsBindings): CmsNetwork {
         const images = imageTransformer(env);
         const mail = env.EMAIL;
         const multisite = siteDatabase(env, MAIN_SITE) !== null;
-        current = { key, network: new CmsNetwork({
+        const network: CmsNetwork = new CmsNetwork({
             db,
             networkHost: () => urlOf(env.APP_URL)?.host,
             ...(multisite ? { open: site => createRomeDB({ ...siteDatabase(env, site.database)!, pending: pendingWrites(env, site.database), reconcilers: cmsReconcilers() }) } : {}),
@@ -50,8 +50,11 @@ export function networkFor(env: CmsBindings): CmsNetwork {
                 ...(storage ? { storage: site.id === MAIN_SITE ? storage : prefixedStorage(storage, `sites/${site.id}/`) } : {}),
                 ...(images ? { images } : {}), siteUrl: () => siteUrl(env, site),
                 ...(mail ? { mail: { send: message => mail.send(message) }, mailFrom: env.MAIL_FROM || 'no-reply@example.com' } : {}),
+                // Ending a network session ends the child sessions sites made from it.
+                sessionsEnded: ended => network.endSessions(ended),
             }),
-        }) };
+        });
+        current = { key, network };
     }
     return current.network;
 }

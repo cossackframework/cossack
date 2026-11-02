@@ -9,6 +9,7 @@ import { ClientError, type RomeDB, type Value } from '@cossackframework/romedb';
 import { uuidv7 } from '@cossackframework/core';
 import { CmsError } from '../errors';
 import { NETWORK_ADMIN } from '../permissions';
+import type { EndedSessions } from './stores';
 
 export interface CmsAccount {
     readonly id: string;
@@ -44,12 +45,15 @@ export class CmsAccounts {
     readonly #db: RomeDB;
     readonly #hasher: PasswordHasher;
     readonly #now: () => number;
+    readonly #ended: (ended: EndedSessions) => Promise<void>;
     readonly verifier: CredentialVerifier<CmsAccount>;
 
-    constructor(db: RomeDB, options: { hasher?: PasswordHasher; now?: () => number } = {}) {
+    /** `sessionsEnded` hears when the account's sessions end, so sites can end the child sessions they handed off. */
+    constructor(db: RomeDB, options: { hasher?: PasswordHasher; now?: () => number; sessionsEnded?: (ended: EndedSessions) => Promise<void> } = {}) {
         this.#db = db;
         this.#hasher = options.hasher ?? createPasswordHasher();
         this.#now = options.now ?? Date.now;
+        this.#ended = ended => (options.sessionsEnded?.(ended) ?? Promise.resolve()).catch(error => console.error('[cms] could not end child sessions', error));
         type Row = { id: string; hash: string | null; status: string };
         this.verifier = createCredentialVerifier<Row, CmsAccount>({
             find: async email => {
@@ -127,8 +131,10 @@ export class CmsAccounts {
         if (status !== 'active' && status !== 'disabled') throw new CmsError('CMS_VALIDATION', 'Unknown account status.');
         const guard = status === 'disabled' ? ` AND (network_role IS NULL OR ${ANOTHER_ADMIN})` : '';
         const result = await this.#db.write([{ rql: `UPDATE cms_accounts SET status = $status, updated_at = $now WHERE id = $id${guard}`, params: { $status: status, $now: this.#now(), $id: id } }], WRITE);
-        if (result.results[0]!.affected === 1n) return true;
-        return this.#refuseLastAdmin(id, 'disabled');
+        if (result.results[0]!.affected !== 1n) return this.#refuseLastAdmin(id, 'disabled');
+        // A suspended account is signed out of every site.
+        if (status === 'disabled') await this.#ended({ user: id });
+        return true;
     }
 
     /** Make the account a network admin, or stop it being one. The network keeps at least one. */
@@ -136,8 +142,10 @@ export class CmsAccounts {
         if (role !== null && role !== NETWORK_ADMIN) throw new CmsError('CMS_VALIDATION', 'Unknown network role.');
         const guard = role === null ? ` AND (network_role IS NULL OR ${ANOTHER_ADMIN})` : '';
         const result = await this.#db.write([{ rql: `UPDATE cms_accounts SET network_role = $role, updated_at = $now WHERE id = $id${guard}`, params: { $role: role, $now: this.#now(), $id: id } }], WRITE);
-        if (result.results[0]!.affected === 1n) return true;
-        return this.#refuseLastAdmin(id, 'removed from the network role');
+        if (result.results[0]!.affected !== 1n) return this.#refuseLastAdmin(id, 'removed from the network role');
+        // Sites' child sessions copied the old role; the next handoff copies the new one.
+        await this.#ended({ user: id });
+        return true;
     }
 
     /**
@@ -154,8 +162,9 @@ export class CmsAccounts {
             ...['cms_auth_sessions', 'cms_password_resets', 'cms_user_security', 'cms_passkeys', 'cms_auth_challenges', 'cms_api_tokens']
                 .map(table => ({ rql: `DELETE FROM ${table} WHERE user_id = $id AND ${gone}`, params })),
         ], WRITE);
-        if (result.results[0]!.affected === 1n) return true;
-        return this.#refuseLastAdmin(id, 'deleted');
+        if (result.results[0]!.affected !== 1n) return this.#refuseLastAdmin(id, 'deleted');
+        await this.#ended({ user: id });
+        return true;
     }
 
     /** False for an unknown account; throws when the account is the last network admin. */
@@ -201,7 +210,9 @@ export class CmsAccounts {
             { rql: `DELETE FROM cms_auth_sessions WHERE user_id = $user AND ${guard}`, params },
             { rql: 'DELETE FROM cms_password_resets WHERE id = $id AND user_id = $user AND expires_at > $now', params },
         ], WRITE);
-        return result.results[2]!.affected === 1n && result.results[0]!.affected === 1n;
+        if (result.results[2]!.affected !== 1n || result.results[0]!.affected !== 1n) return false;
+        await this.#ended({ user: account });
+        return true;
     }
 
     async purgeExpiredResets(): Promise<number> {
