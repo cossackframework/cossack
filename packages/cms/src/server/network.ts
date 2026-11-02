@@ -115,6 +115,8 @@ export class CmsNetwork {
         if (site.database !== MAIN_SITE && !this.#options.open) throw new Error(`Site ${site.id} needs a site database provider.`);
         const db = site.database === MAIN_SITE ? this.db : this.#options.open!(site);
         const host = this.#options.host(site, db);
+        // Members are recorded under the host's site, so a host made for another site would misfile them.
+        if (host.site !== site.id && (host as { site?: string }).site !== undefined) throw new Error(`The host factory must pass site: '${site.id}' to createCMS.`);
         this.#hosts.set(site.database, host);
         const limit = Math.max(this.#options.maxHosts ?? 32, 2);
         for (const [database, dropped] of this.#hosts) {
@@ -166,7 +168,7 @@ export class CmsNetwork {
         let record = await this.sites.get(id);
         if (record && record.status !== 'creating') throw new CmsError('CMS_CONFLICT', 'A site with this ID exists.', { fields: { id: 'is taken.' } });
         if (!record) {
-            record = await this.sites.create({ id, name: input.name, database: `pending-${id}`, status: 'creating', domains: [{ host: this.#address(input.host), primary: true, verifiedAt: this.#now() }] });
+            record = await this.sites.create({ id, name: input.name, database: `pending-${id}`, status: 'creating', domains: [{ host: await this.#address(input.host), primary: true, verifiedAt: this.#now() }] });
             this.invalidate();
         }
         const done = (step: CreationStep) => record!.step !== null && CREATION_STEPS.indexOf(record!.step as CreationStep) >= CREATION_STEPS.indexOf(step);
@@ -263,10 +265,92 @@ export class CmsNetwork {
         return removed;
     }
 
+    /** Network settings: its name and what new sites' addresses end with. */
+    async settings(): Promise<NetworkSettings> {
+        const stored = await this.state<Partial<NetworkSettings>>('settings') ?? {};
+        return { name: typeof stored.name === 'string' ? stored.name : '', subdomainSuffix: typeof stored.subdomainSuffix === 'string' ? stored.subdomainSuffix : '' };
+    }
+
+    async saveSettings(patch: Partial<NetworkSettings>, context: { principal: Principal }): Promise<NetworkSettings> {
+        requireNetworkAdmin(context.principal);
+        const next = { ...await this.settings(), ...patch };
+        if (typeof next.name !== 'string' || next.name.length > 120) throw new CmsError('CMS_VALIDATION', 'Enter a network name of at most 120 characters.', { fields: { name: 'is too long.' } });
+        if (next.subdomainSuffix && !siteHost(next.subdomainSuffix)) throw new CmsError('CMS_VALIDATION', 'Enter a domain, such as example.com.', { fields: { subdomainSuffix: 'is invalid.' } });
+        const saved = { name: next.name.trim(), subdomainSuffix: next.subdomainSuffix ? siteHost(next.subdomainSuffix) : '' };
+        await this.setState('settings', saved);
+        return saved;
+    }
+
+    /** A value the network keeps by key in its database, such as where scheduled work stopped. */
+    async state<T>(key: string): Promise<T | undefined> {
+        const result = await this.db.read([{ rql: 'SELECT value FROM cms_network WHERE key = $key', params: { $key: key } }]);
+        const value = result.results[0]!.rows[0]?.[0];
+        return value === undefined ? undefined : JSON.parse(value as string) as T;
+    }
+
+    async setState(key: string, value: unknown): Promise<void> {
+        await this.db.write([{ rql: 'INSERT INTO cms_network (key, value, updated_at) SELECT $key, $value, $now WHERE 1 = 1 ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at',
+            params: { $key: key, $value: JSON.stringify(value), $now: this.#now() } }], { kind: 'cms.network', retryConflicts: 5 });
+    }
+
+    /** The sites an account is a member of, the main site first, without opening their databases. */
+    async memberSites(accountId: string): Promise<NetworkSite[]> {
+        const ids = (await this.main.accounts.memberships([accountId])).get(accountId) ?? [];
+        const sites: NetworkSite[] = ids.includes(MAIN_SITE) ? [MAIN] : [];
+        for (const id of ids) {
+            const record = id === MAIN_SITE ? null : await this.sites.get(id);
+            if (record && (record.status === 'active' || record.status === 'archived')) sites.push(networkSite(record));
+        }
+        return sites;
+    }
+
+    /** Delete an account: first its membership of every site, through each site's own user deletion, then the account. */
+    async deleteAccount(id: string, context: { principal: Principal }): Promise<boolean> {
+        requireNetworkAdmin(context.principal);
+        const account = await this.main.accounts.get(id);
+        if (!account) return false;
+        // Refuse the last network admin before anything changes.
+        if (account.networkRole && !(await this.main.accounts.list({ networkAdmins: true, limit: 2 })).items.some(other => other.id !== id && other.status === 'active')) {
+            throw new CmsError('CMS_FORBIDDEN', 'The last network admin cannot be deleted.');
+        }
+        for (const site of (await this.main.accounts.memberships([id])).get(id) ?? []) {
+            const record = site === MAIN_SITE ? null : await this.sites.get(site);
+            if (site === MAIN_SITE) await this.main.users.delete(id);
+            else if (record && record.status !== 'creating') await this.hostOf(networkSite(record)).users.delete(id);
+        }
+        return this.main.accounts.delete(id);
+    }
+
+    /** Sites whose schema has steps to apply after a deploy, with how many; each site applies its own when it next loads. */
+    async updates(options: { limit?: number; offset?: number } = {}): Promise<{ site: NetworkSite; name: string; pending: number }[]> {
+        const records = (await this.sites.list({ status: 'active', limit: options.limit ?? 50, offset: options.offset ?? 0 })).items;
+        const sites: { site: NetworkSite; name: string }[] = [{ site: MAIN, name: (await this.settings()).name || 'Main site' }, ...records.map(record => ({ site: networkSite(record), name: record.name }))];
+        const found: { site: NetworkSite; name: string; pending: number }[] = [];
+        for (const entry of sites) {
+            const plan = await this.hostOf(entry.site).plan().catch(() => null);
+            const pending = plan ? plan.steps.filter(step => step.kind === 'host').length : 0;
+            if (pending) found.push({ ...entry, pending });
+        }
+        return found;
+    }
+
+    /** Apply pending host steps, up to `limit` sites at a time. Returns the sites upgraded and those that failed. */
+    async upgrade(context: { principal: Principal; limit?: number }): Promise<{ upgraded: string[]; failed: { site: string; message: string }[] }> {
+        requireNetworkAdmin(context.principal);
+        const upgraded: string[] = [];
+        const failed: { site: string; message: string }[] = [];
+        for (const { site } of (await this.updates()).slice(0, context.limit ?? 10)) {
+            const report = await this.hostOf(site).migrate().catch(error => ({ failed: { message: (error as Error).message } }));
+            if (report.failed) failed.push({ site: site.id, message: report.failed.message });
+            else upgraded.push(site.id);
+        }
+        return { upgraded, failed };
+    }
+
     /** A new site's address: a host under the network's suffix, or any `.localhost` host in development. */
-    #address(host: string): string {
+    async #address(host: string): Promise<string> {
         const name = siteHost(host);
-        const suffix = this.subdomainSuffix;
+        const suffix = (await this.settings()).subdomainSuffix || this.subdomainSuffix;
         if (!name || (suffix && !name.endsWith(`.${suffix}`) && !name.endsWith('.localhost'))) {
             throw new CmsError('CMS_VALIDATION', suffix ? `New sites start at an address ending in .${suffix}; add their own domains once they exist.` : 'Enter the site\'s address, such as blog.example.com.', { fields: { host: 'is invalid.' } });
         }
@@ -305,6 +389,13 @@ export class CmsNetwork {
         }
         return this.#count.value;
     }
+}
+
+export interface NetworkSettings {
+    /** Shown on the network dashboard and sign-in; empty for the main site's title. */
+    readonly name: string;
+    /** What new sites' addresses end with; empty for the network host without `www.`. */
+    readonly subdomainSuffix: string;
 }
 
 /** What adding a site asks for. */

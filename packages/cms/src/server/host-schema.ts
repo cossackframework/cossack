@@ -22,7 +22,7 @@ export const HOST_TABLES = [
     'cms_terms', 'cms_settings', 'cms_collections', 'cms_taxonomies', 'cms_field_groups', 'cms_menus', 'cms_menu_locations',
     'cms_preview_tokens', 'cms_autosaves', 'cms_file_variants', 'cms_redirects', 'cms_api_tokens', 'cms_webhooks', 'cms_webhook_deliveries',
     'cms_comments', 'cms_user_security', 'cms_passkeys', 'cms_auth_challenges', 'cms_areas', 'cms_form_sends', 'cms_form_mail', 'cms_form_results', 'cms_crawler_visits', 'cms_not_found', 'cms_cache',
-    'cms_accounts', 'cms_sites', 'cms_site_domains', 'cms_handoffs', 'cms_session_sites', 'cossack_jobs', 'cossack_notifications',
+    'cms_accounts', 'cms_sites', 'cms_site_domains', 'cms_handoffs', 'cms_session_sites', 'cms_memberships', 'cms_network', 'cossack_jobs', 'cossack_notifications',
 ] as const;
 
 export const HOST_STEPS: readonly HostStep[] = [{
@@ -277,5 +277,17 @@ export const HOST_STEPS: readonly HostStep[] = [{
         // The sites each network session reached, so ending it ends their child sessions.
         { rql: 'CREATE TABLE cms_session_sites (session_id TEXT NOT NULL, site_id TEXT NOT NULL, user_id TEXT NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY (session_id, site_id))' },
         { rql: 'CREATE INDEX cms_session_sites_user ON cms_session_sites (user_id)' },
+    ],
+}, {
+    version: 19,
+    description: 'Memberships and network settings',
+    statements: [
+        // Which sites each account is a member of, so the network lists them without opening every site's database.
+        { rql: 'CREATE TABLE cms_memberships (account_id TEXT NOT NULL, site_id TEXT NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY (account_id, site_id))' },
+        { rql: 'CREATE INDEX cms_memberships_site ON cms_memberships (site_id)' },
+        // Only the network database has accounts, so only its members become rows: the main site's.
+        { rql: "INSERT INTO cms_memberships (account_id, site_id, created_at) SELECT u.id, 'main', u.created_at FROM cms_users u WHERE EXISTS (SELECT 1 FROM cms_accounts a WHERE a.id = u.id)" },
+        // Network settings and state by key, as JSON.
+        { rql: 'CREATE TABLE cms_network (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL)' },
     ],
 }];

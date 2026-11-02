@@ -83,6 +83,8 @@ export interface CmsOptions {
     readonly network?: RomeDB;
     /** Network sessions ended: end the child sessions that sites made from them. */
     readonly sessionsEnded?: (ended: EndedSessions) => Promise<void>;
+    /** This site's ID in the network; default `main`. */
+    readonly site?: string;
     /** Application resources; owner defaults to `app`. */
     readonly resources?: readonly ResourceDeclaration[];
     readonly modules?: readonly CmsModule[];
@@ -275,6 +277,8 @@ export class CmsHost {
     readonly db: RomeDB;
     /** The network database; the same as `db` on the main site. */
     readonly network: RomeDB;
+    /** This site's ID in the network: `main`, or the registry ID. */
+    readonly site: string;
     readonly hooks: HookRegistry;
     /** Who can sign in, on the network database. */
     readonly accounts: CmsAccounts;
@@ -343,6 +347,7 @@ export class CmsHost {
     constructor(options: CmsOptions) {
         this.db = options.db;
         this.network = options.network ?? options.db;
+        this.site = options.site ?? 'main';
         this.hooks = options.hooks ?? createHookRegistry();
         this.#now = options.now ?? Date.now;
         this.#activationTtl = options.activationTtlMs ?? 30_000;
@@ -384,7 +389,7 @@ export class CmsHost {
         this.#apply(new Map(), new Map());
         this.fieldGroups = new CmsFieldGroups(this.db, { now: this.#now });
         this.accounts = new CmsAccounts(this.network, { now: this.#now, ...(options.sessionsEnded ? { sessionsEnded: options.sessionsEnded } : {}) });
-        this.users = new CmsUsers(this.db, { accounts: this.accounts, now: this.#now, checkMeta: (meta, previous) => this.#checkMeta({ kind: 'users' }, meta, previous) });
+        this.users = new CmsUsers(this.db, { accounts: this.accounts, ...(options.site ? { site: options.site } : {}), now: this.#now, checkMeta: (meta, previous) => this.#checkMeta({ kind: 'users' }, meta, previous) });
         this.redirects = new CmsRedirects(this.db, { now: this.#now });
         this.traffic = new CmsTraffic(this.db, { now: this.#now });
         this.apiTokens = new CmsApiTokens(this.network, { now: this.#now });

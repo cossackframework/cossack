@@ -107,6 +107,49 @@ export class CmsAccounts {
         return Number(result.results[0]!.rows[0]![0] as bigint);
     }
 
+    /** Newest first. `search` matches name or email; `networkAdmins` keeps only them. */
+    async list(options: { search?: string; networkAdmins?: boolean; limit?: number; offset?: number } = {}): Promise<{ items: CmsAccount[]; total: number }> {
+        const conditions: string[] = [];
+        const params: { [key: string]: Value } = {};
+        if (options.search?.trim()) {
+            conditions.push("(lower(name) LIKE $q ESCAPE '\\' OR email LIKE $q ESCAPE '\\')");
+            params.$q = `%${options.search.trim().toLowerCase().slice(0, 100).replace(/[\\%_]/g, character => `\\${character}`)}%`;
+        }
+        if (options.networkAdmins) conditions.push(`network_role = '${NETWORK_ADMIN}'`);
+        const where = conditions.length ? ` WHERE ${conditions.join(' AND ')}` : '';
+        const result = await this.#db.read([
+            { rql: `SELECT ${COLUMNS} FROM cms_accounts${where} ORDER BY created_at DESC, id DESC LIMIT $limit OFFSET $offset`, params: { ...params, $limit: Math.min(Math.max(options.limit ?? 20, 1), 100), $offset: Math.max(options.offset ?? 0, 0) } },
+            { rql: `SELECT count(*) FROM cms_accounts${where}`, params },
+        ]);
+        return { items: result.results[0]!.rows.map(accountOf), total: Number(result.results[1]!.rows[0]![0] as bigint) };
+    }
+
+    /** The sites each account is a member of, by account. */
+    async memberships(ids: readonly string[]): Promise<Map<string, string[]>> {
+        const wanted = [...new Set(ids.filter(id => ACCOUNT_ID.test(id)))].slice(0, 200);
+        const sites = new Map<string, string[]>(wanted.map(id => [id, []]));
+        if (!wanted.length) return sites;
+        const params = Object.fromEntries(wanted.map((id, index) => [`$a${index}`, id]));
+        const result = await this.#db.read([{ rql: `SELECT account_id, site_id FROM cms_memberships WHERE account_id IN (${wanted.map((_, index) => `$a${index}`).join(', ')}) ORDER BY site_id`, params }]);
+        for (const [account, site] of result.results[0]!.rows) sites.get(account as string)!.push(site as string);
+        return sites;
+    }
+
+    /** How many members each site has, by site. */
+    async memberCounts(): Promise<Map<string, number>> {
+        const result = await this.#db.read([{ rql: 'SELECT site_id, count(*) FROM cms_memberships GROUP BY site_id' }]);
+        return new Map(result.results[0]!.rows.map(row => [row[0] as string, Number(row[1] as bigint)]));
+    }
+
+    /** Record that the account is a member of the site; sites call this when they add or remove members. */
+    async join(id: string, site: string): Promise<void> {
+        await this.#db.write([{ rql: 'INSERT INTO cms_memberships (account_id, site_id, created_at) SELECT $id, $site, $now WHERE 1 = 1 ON CONFLICT (account_id, site_id) DO NOTHING', params: { $id: id, $site: site, $now: this.#now() } }], WRITE);
+    }
+
+    async leave(id: string, site: string): Promise<void> {
+        await this.#db.write([{ rql: 'DELETE FROM cms_memberships WHERE account_id = $id AND site_id = $site', params: { $id: id, $site: site } }], WRITE);
+    }
+
     /** Change the name, email or avatar. Sites copy them to their member rows. */
     async update(id: string, patch: AccountProfile): Promise<CmsAccount | null> {
         const current = await this.get(id);
@@ -161,6 +204,7 @@ export class CmsAccounts {
             { rql: `DELETE FROM cms_accounts WHERE id = $id AND (network_role IS NULL OR ${ANOTHER_ADMIN})`, params },
             ...['cms_auth_sessions', 'cms_password_resets', 'cms_user_security', 'cms_passkeys', 'cms_auth_challenges', 'cms_api_tokens']
                 .map(table => ({ rql: `DELETE FROM ${table} WHERE user_id = $id AND ${gone}`, params })),
+            { rql: `DELETE FROM cms_memberships WHERE account_id = $id AND ${gone}`, params },
         ], WRITE);
         if (result.results[0]!.affected !== 1n) return this.#refuseLastAdmin(id, 'deleted');
         await this.#ended({ user: id });

@@ -1,7 +1,7 @@
 import { networkSite, type CmsHost, type CmsNetwork } from '@cossackframework/cms/server';
 
-/** Where the last scheduled run stopped among the added sites, in the main site's cache. */
-const CURSOR = 'network:maintenance-cursor';
+/** Where the last scheduled run stopped among the added sites, in the network's state. */
+const CURSOR = 'maintenance.cursor';
 
 /**
  * The scheduled run: the main site, then the added sites in turn from where the last run
@@ -15,13 +15,13 @@ export async function runNetworkMaintenance(network: CmsNetwork, options: { warm
     await network.handoffs.purgeExpired();
     // Sites deleted 30 days ago lose their database and media.
     await network.purgeDeleted().catch(error => console.error('[cms] could not purge deleted sites', error));
-    let cursor = (await network.main.cache.get<string>(CURSOR)) ?? '';
+    let cursor = (await network.state<string>(CURSOR)) ?? '';
     for (const site of await network.sites.inTurn(cursor)) {
         if (Date.now() - started > (options.budgetMs ?? 20_000)) break;
         await runMaintenance(network.hostOf(networkSite(site)), options).catch(error => console.error(`[cms] maintenance of site ${site.id} failed`, error));
         cursor = site.id;
     }
-    await network.main.cache.set(CURSOR, cursor);
+    await network.setState(CURSOR, cursor);
 }
 
 /**

@@ -95,6 +95,8 @@ describe.skipIf(!live)('accounts and members', () => {
             expect(await upgraded.accounts.get('gone')).toMatchObject({ status: 'disabled', networkRole: null });
             expect((await upgraded.accounts.verifier.verify('reader@example.com', 'old password'))?.id).toBe('reader');
             expect(isNetworkAdmin((await upgraded.users.principal('owner'))!)).toBe(true);
+            // Host step 19 records the main site's members.
+            expect(await count(db, "SELECT count(*) FROM cms_memberships WHERE site_id = 'main'")).toBe(4);
         } finally { await stop(); }
     }, 60_000);
 

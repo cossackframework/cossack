@@ -30,7 +30,7 @@ describe.skipIf(!live)('sign-in handoffs and child sessions', () => {
         const db = service.database();
         network = new CmsNetwork({
             db, open: () => other.db, networkHost: () => 'example.com',
-            host: (_site, siteDb) => createCMS({ db: siteDb, network: db, sessionsEnded: ended => network.endSessions(ended) }),
+            host: (site, siteDb) => createCMS({ db: siteDb, network: db, site: site.id, sessionsEnded: ended => network.endSessions(ended) }),
         });
         main = network.main;
         expect((await main.migrate()).failed).toBeUndefined();

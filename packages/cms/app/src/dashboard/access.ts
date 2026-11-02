@@ -1,8 +1,8 @@
 import type { Context } from 'hono';
-import { ANONYMOUS, evaluateRule, hasPermission, PERMISSIONS, type Principal } from '@cossackframework/cms';
-import type { CmsHost } from '@cossackframework/cms/server';
+import { ANONYMOUS, evaluateRule, hasPermission, isNetworkAdmin, PERMISSIONS, type Principal } from '@cossackframework/cms';
+import { MAIN_SITE, type CmsHost } from '@cossackframework/cms/server';
 import { icon } from '../cms/icons';
-import { currentCms } from '../cms/index';
+import { currentCms, networkFor, siteUrl, type CmsBindings } from '../cms/index';
 import { dashboardModules } from './registry';
 import type { DashboardModule, DashboardModuleLink, DashboardStatus } from './types';
 
@@ -92,6 +92,20 @@ export async function navigation(c: Context): Promise<DashboardModule[]> {
     // Settings has its own navigation beside its pages, so the sidebar holds one link.
     if (can(PERMISSIONS.manageSettings)) admin.push({ id: 'site-settings', label: 'Settings', href: '/dashboard/settings', icon: icon('settings'), authorization: { permission: PERMISSIONS.manageSettings },
         activeFor: '/dashboard/settings' });
+    const env = c.env as CmsBindings;
+    // Network admins run the network from the network host; other sites link there.
+    if (isNetworkAdmin(principal)) {
+        const here = c.get('site')?.id === MAIN_SITE;
+        const base = here ? '' : (env.APP_URL ?? '').replace(/\/$/, '');
+        if (here || base) admin.push({ id: 'network', label: 'Network', href: `${base}/dashboard/network`, icon: icon('global'), authorization: 'authenticated', activeFor: '/dashboard/network',
+            children: [['Home', ''], ['Sites', '/sites'], ['Users', '/users'], ['Updates', '/updates'], ['Settings', '/settings']].map(([label, path]) => ({ label: label!, href: `${base}/dashboard/network${path}` })) });
+    }
+    // My sites: every site the account belongs to, when there is more than one.
+    if (principal.kind === 'user') {
+        const sites = await networkFor(env).memberSites(principal.id).catch(() => []);
+        if (sites.length > 1) content.unshift({ id: 'my-sites', label: 'My sites', href: '#', icon: icon('home-2'), authorization: 'authenticated',
+            children: sites.map(site => ({ label: site.name ?? 'Main site', href: `${(siteUrl(env, site) ?? '').replace(/\/$/, '')}/dashboard` })) });
+    }
     const account = registry.filter(module => module.placement === 'account');
     // The author profile follows the profile settings in the account menu.
     account.splice(Math.min(1, account.length), 0, { id: 'public-profile', label: 'Public profile', href: '/dashboard/profile/public', icon: icon('user-id'), authorization: 'authenticated', placement: 'account' });

@@ -10,6 +10,7 @@ import { slugify } from '../fields';
 import { NETWORK_ADMIN, userPrincipal, type Principal } from '../permissions';
 import { parseMeta, type MetaCheck } from './taxonomies';
 import { ACCOUNT_ID, normalizeEmail, type AccountProfile, type CmsAccount, type CmsAccounts } from './accounts';
+import { MAIN_SITE } from './sites';
 
 export interface CmsUser {
     readonly id: string;
@@ -69,12 +70,15 @@ export type CmsMember = CmsUser & { readonly principal: Principal };
 export class CmsUsers {
     readonly #db: RomeDB;
     readonly #accounts: CmsAccounts;
+    readonly #site: string;
     readonly #now: () => number;
     readonly #checkMeta: MetaCheck | undefined;
 
-    constructor(db: RomeDB, options: { accounts: CmsAccounts; now?: () => number; checkMeta?: MetaCheck }) {
+    /** `site` is this site's ID in the network (default `main`), for the network's record of memberships. */
+    constructor(db: RomeDB, options: { accounts: CmsAccounts; site?: string; now?: () => number; checkMeta?: MetaCheck }) {
         this.#db = db;
         this.#accounts = options.accounts;
+        this.#site = options.site ?? MAIN_SITE;
         this.#now = options.now ?? Date.now;
         this.#checkMeta = options.checkMeta;
     }
@@ -110,6 +114,7 @@ export class CmsUsers {
                 params: { $id: account.id, $email: account.email, $name: account.name, $avatar: account.avatar, $status: account.status, $now: now, $meta: JSON.stringify(meta), $slug: slug },
             }, ...roleStatements(account.id, roles)], WRITE);
         } catch (error) { throw memberError(error); }
+        await this.#accounts.join(account.id, this.#site);
         return (await this.get(account.id))!;
     }
 
@@ -284,6 +289,7 @@ export class CmsUsers {
             { rql: 'DELETE FROM cms_user_roles WHERE user_id = $id', params },
             { rql: 'DELETE FROM cms_users WHERE id = $id', params },
         ], WRITE);
+        await this.#accounts.leave(id, this.#site);
         return result.results[1]!.affected === 1n;
     }
 

@@ -16,7 +16,7 @@ function memoryStorage(): StorageProvider & { objects: Map<string, Uint8Array> }
 }
 
 /** A host stand-in: the network only builds hosts and closes their databases. */
-const stubHost = (site: NetworkSite, db: RomeDB) => ({ site, db }) as unknown as CmsHost & { site: NetworkSite };
+const stubHost = (site: NetworkSite, db: RomeDB) => ({ site: site.id, db }) as unknown as CmsHost;
 
 describe('site hosts and media keys', () => {
     it('normalizes hosts the way the registry stores them', () => {
@@ -98,7 +98,7 @@ describe.skipIf(!live)('site registry and host resolution', () => {
         expect(await network.resolve('example.com')).toEqual({ kind: 'site', site: MAIN });
         expect(await network.resolve('nobody.example.com')).toEqual({ kind: 'missing' });
         expect(await network.resolve('old.example.com')).toMatchObject({ kind: 'archived', site: { id: 'old' } });
-        expect(network.hostOf((await network.resolve('blog.example.com') as { site: NetworkSite }).site)).toMatchObject({ site: { id: 'blog' } });
+        expect(network.hostOf((await network.resolve('blog.example.com') as { site: NetworkSite }).site)).toMatchObject({ site: 'blog' });
     });
 
     it('stops serving a deleted site and records when it went', async () => {

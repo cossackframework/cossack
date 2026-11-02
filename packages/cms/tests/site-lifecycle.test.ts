@@ -33,7 +33,7 @@ describe.skipIf(!live)('adding, archiving and deleting sites', () => {
                 const host = new URL(String(input)).hostname;
                 return answers[host] ? new Response(answers[host]) : new Response('Not found', { status: 404 });
             },
-            host: (_site, siteDb) => createCMS({ db: siteDb, network: db }),
+            host: (site, siteDb) => createCMS({ db: siteDb, network: db, site: site.id }),
         });
         main = network.main;
         expect((await main.migrate()).failed).toBeUndefined();
@@ -83,6 +83,35 @@ describe.skipIf(!live)('adding, archiving and deleting sites', () => {
         expect(await network.resolve('blog.example.com')).toEqual({ kind: 'redirect', host: 'www.theblog.test', site: 'the-blog' });
         expect(await network.removeDomain('the-blog', 'www.theblog.test', { principal: admin })).toBe(false);
         expect(await network.removeDomain('the-blog', 'blog.example.com', { principal: admin })).toBe(true);
+    });
+
+    it('records memberships, lists accounts and deletes an account from every site', async () => {
+        const blog = network.hostOf((await network.resolve('www.theblog.test') as { site: Parameters<CmsNetwork['hostOf']>[0] }).site);
+        const writer = await blog.users.create({ email: 'writer@example.com', name: 'Writer', password: 'writes daily', roles: ['author'] });
+        expect((await main.accounts.memberships([owner, writer.id])).get(owner)).toEqual(['main', 'the-blog']);
+        expect((await main.accounts.memberships([writer.id])).get(writer.id)).toEqual(['the-blog']);
+        expect((await main.accounts.memberCounts()).get('the-blog')).toBe(2);
+        expect((await network.memberSites(owner)).map(site => site.id)).toEqual(['main', 'the-blog']);
+        expect((await main.accounts.list({ search: 'writer' })).items.map(account => account.id)).toEqual([writer.id]);
+        expect((await main.accounts.list({ networkAdmins: true })).items.map(account => account.id)).toEqual([owner]);
+
+        await expect(network.deleteAccount(owner, { principal: admin })).rejects.toMatchObject({ code: 'CMS_FORBIDDEN' });
+        expect(await blog.users.get(owner)).not.toBeNull();
+        expect(await network.deleteAccount(writer.id, { principal: admin })).toBe(true);
+        expect(await blog.users.get(writer.id)).toBeNull();
+        expect(await main.accounts.get(writer.id)).toBeNull();
+        expect((await main.accounts.memberships([writer.id])).get(writer.id)).toEqual([]);
+    });
+
+    it('keeps network settings and lists sites with schema steps to apply', async () => {
+        await expect(network.saveSettings({ subdomainSuffix: 'not a domain' }, { principal: admin })).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
+        expect(await network.saveSettings({ name: 'Example Network', subdomainSuffix: 'sites.example.com' }, { principal: admin })).toEqual({ name: 'Example Network', subdomainSuffix: 'sites.example.com' });
+        await expect(network.createSite({ name: 'Shop', host: 'shop.example.com', admin: owner }, { principal: admin })).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
+        await network.saveSettings({ subdomainSuffix: '' }, { principal: admin });
+        expect(await network.updates()).toEqual([]);
+        expect(await network.upgrade({ principal: admin })).toEqual({ upgraded: [], failed: [] });
+        await network.setState('test.value', { n: 1 });
+        expect(await network.state('test.value')).toEqual({ n: 1 });
     });
 
     it('archives, deletes and restores a site, and purges it 30 days after deletion', async () => {

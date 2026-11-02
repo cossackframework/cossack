@@ -48,7 +48,7 @@ export function networkFor(env: CmsBindings): CmsNetwork {
             ...(directory ? { directory } : {}),
             hostUrl: host => siteUrl(env, { host })!,
             host: (site, siteDb) => createCMS({
-                db: siteDb, network: db, modules, resources, plugins,
+                db: siteDb, network: db, site: site.id, modules, resources, plugins,
                 // A site's media keys start with sites/<id>/; the main site keeps its own.
                 ...(storage ? { storage: site.id === MAIN_SITE ? storage : prefixedStorage(storage, `sites/${site.id}/`) } : {}),
                 ...(images ? { images } : {}), siteUrl: () => siteUrl(env, site),

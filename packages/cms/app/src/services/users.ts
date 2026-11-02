@@ -1,7 +1,7 @@
-import { ClientVisibleError } from '@cossackframework/core';
-import { isCmsError } from '@cossackframework/cms';
-import type { CmsUser } from '@cossackframework/cms/server';
-import { currentCms } from '../cms/index';
+import { ClientVisibleError, getRequestContext } from '@cossackframework/core';
+import { isCmsError, systemPrincipal } from '@cossackframework/cms';
+import { MAIN_SITE, type CmsUser } from '@cossackframework/cms/server';
+import { currentCms, networkFor, type CmsBindings } from '../cms/index';
 import type { PublicUser, RoleAssignment } from '../auth';
 
 export interface UserSummary {
@@ -95,13 +95,15 @@ export async function changeUserPassword(id: string, newPassword: string): Promi
 }
 
 /**
- * Removes the account with what signs it in, then its membership and roles. Content keeps its
+ * On the main site, deletes the account: from every site it belongs to, then what signs it in.
+ * On another site, removes the member and their roles; the account stays. Content keeps its
  * author ID. The last network admin cannot be deleted.
  */
 export async function deleteUser(id: string): Promise<void> {
+  const c = getRequestContext();
   const cms = currentCms();
-  await visible(cms.accounts.delete(id));
-  await cms.users.delete(id);
+  if (c?.get('site')?.id && c.get('site').id !== MAIN_SITE) { await visible(cms.users.delete(id)); return; }
+  await visible(networkFor(c!.env as CmsBindings).deleteAccount(id, { principal: systemPrincipal('users') }));
 }
 
 export async function assignRole(userId: string, roleId: string): Promise<void> {
