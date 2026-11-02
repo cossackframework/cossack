@@ -28,7 +28,8 @@ export default class ThemesPage extends Cossack {
         const cms = this.c.get('cms');
         const active = await cms.activeTheme();
         const labels = new Map(cms.themes().map(theme => [theme.name, theme.label]));
-        this.themes = cms.themes().map(theme => ({
+        // Themes the network hides are not offered.
+        this.themes = (await cms.availableThemes()).map(theme => ({
             name: theme.name, label: theme.label, description: theme.description, version: theme.version, author: theme.author, locations: theme.locations.map(location => location.label),
             parent: theme.parent ? labels.get(theme.parent) ?? theme.parent : '',
             options: Boolean(theme.options), problems: [...theme.problems], active: theme.name === active, logo: theme.logo, cover: theme.cover,

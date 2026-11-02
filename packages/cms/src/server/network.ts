@@ -8,7 +8,8 @@ import type { StorageMetadata, StorageProvider } from '@cossackframework/core/st
 import { CmsError } from '../errors';
 import { slugify } from '../fields';
 import { DEFAULT_ROLES, isNetworkAdmin, systemPrincipal, type Principal } from '../permissions';
-import type { CmsHost } from './host';
+import { PLUGIN_ENABLED, type CmsHost, type PluginStatus } from './host';
+import { POLICY_KEYS, readPolicy, type NetworkPluginState, type NetworkPolicy, type NetworkThemeState, type StoredPluginStates, type StoredThemeStates } from './network-policy';
 import { CmsHandoffs } from './handoffs';
 import { seedStarterContent } from './seed';
 import { CmsSites, MAIN_SITE, siteHost, type SiteRecord, type SiteStatus } from './sites';
@@ -279,6 +280,47 @@ export class CmsNetwork {
         const saved = { name: next.name.trim(), subdomainSuffix: next.subdomainSuffix ? siteHost(next.subdomainSuffix) : '' };
         await this.setState('settings', saved);
         return saved;
+    }
+
+    /** The network's plugin and theme states. */
+    policy(): Promise<NetworkPolicy> {
+        return readPolicy(this.db);
+    }
+
+    /**
+     * Set a plugin's state on every site. `network` approves everything its manifest requests
+     * now, and each site migrates it as it loads; an upgrade that requests more waits until a
+     * network admin sets it again. Hosts in other isolates see the change within their activation TTL.
+     */
+    async setPluginState(name: string, state: NetworkPluginState, context: { principal: Principal }): Promise<PluginStatus> {
+        requireNetworkAdmin(context.principal);
+        const plugin = (await this.main.status()).plugins.find(entry => entry.name === name && !entry.themeOnly);
+        if (!plugin) throw new CmsError('CMS_NOT_FOUND', `Unknown plugin ${name}.`);
+        if (state === 'network' && plugin.reason?.startsWith('Invalid manifest')) throw new CmsError('CMS_VALIDATION', `${name} cannot be activated: ${plugin.reason}`);
+        const stored: StoredPluginStates = { ...await this.state<StoredPluginStates>(POLICY_KEYS.plugins) };
+        if (state === 'available') delete stored[name];
+        else stored[name] = state === 'network' ? { state, grants: plugin.requests.filter(grant => grant !== PLUGIN_ENABLED) } : { state };
+        await this.setState(POLICY_KEYS.plugins, stored);
+        this.#expireHosts();
+        await this.main.ready();
+        return (await this.main.status()).plugins.find(entry => entry.name === name)!;
+    }
+
+    /** Hide a theme from every site, or make it available again. A site whose theme is hidden falls back to another. */
+    async setThemeState(name: string, state: NetworkThemeState, context: { principal: Principal }): Promise<void> {
+        requireNetworkAdmin(context.principal);
+        if (!this.main.themes().some(theme => theme.name === name)) throw new CmsError('CMS_NOT_FOUND', `Unknown theme ${name}.`);
+        const stored: StoredThemeStates = { ...await this.state<StoredThemeStates>(POLICY_KEYS.themes) };
+        if (state === 'hidden') stored[name] = 'hidden';
+        else delete stored[name];
+        await this.setState(POLICY_KEYS.themes, stored);
+        this.#expireHosts();
+    }
+
+    /** Open hosts read the network's states again on their next request. */
+    #expireHosts(): void {
+        this.main.expire();
+        for (const host of this.#hosts.values()) host.expire();
     }
 
     /** A value the network keeps by key in its database, such as where scheduled work stopped. */

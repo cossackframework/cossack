@@ -33,6 +33,7 @@ import { CmsCache } from './cache';
 import { imageWidths } from '../images';
 import { renameStoredDefinitions, renameStoredRecords } from './block-ids';
 import { HOST_STEPS, HOST_TABLES } from './host-schema';
+import { OPEN_POLICY, pluginState, readPolicy, type NetworkPluginState, type NetworkPolicy } from './network-policy';
 import { CmsSettings } from './site-settings';
 import { createAuthSessionStore, createJobStore, createNotificationStore, createOAuthStateStore, createSessionStore, type EndedSessions } from './stores';
 import { CmsMenus } from './menus';
@@ -247,6 +248,10 @@ export interface PluginStatus {
     readonly reason?: string;
     /** Grants the manifest requests that are not granted yet. */
     readonly missing: readonly string[];
+    /** Everything the manifest requests, for a network admin's approval. */
+    readonly requests: readonly string[];
+    /** What the network decides: active on every site, the site's choice, or hidden. */
+    readonly network: NetworkPluginState;
 }
 
 export interface ActivationStatus {
@@ -268,6 +273,8 @@ interface Activation {
     readonly grants: ReadonlyMap<string, ReadonlySet<string>>;
     /** Host schema versions in the ledger; empty before setup. */
     readonly hostVersions: ReadonlySet<number>;
+    /** The network's plugin and theme states. */
+    readonly policy: NetworkPolicy;
 }
 
 /** Every plugin needs this grant; disabling a plugin removes it with the others. */
@@ -788,12 +795,18 @@ export class CmsHost {
      */
     async activeTheme(): Promise<string | null> {
         const chosen = await this.settings.get('appearance.theme').catch(() => '');
-        const usable = [...this.#themes.values()].filter(theme => !theme.problems.length).sort((a, b) => a.name.localeCompare(b.name));
+        const usable = (await this.availableThemes()).filter(theme => !theme.problems.length).sort((a, b) => a.name.localeCompare(b.name));
         return usable.find(theme => theme.name === chosen)?.name ?? usable[0]?.name ?? null;
     }
 
+    /** The themes this site may choose: every theme the network does not hide. */
+    async availableThemes(): Promise<ThemeInfo[]> {
+        const hidden = (await this.#state().catch(() => null))?.policy.hiddenThemes ?? new Set<string>();
+        return this.themes().filter(theme => !hidden.has(theme.name));
+    }
+
     async activateTheme(name: string, principal: Principal): Promise<void> {
-        const theme = this.#themes.get(name);
+        const theme = (await this.availableThemes()).find(entry => entry.name === name);
         if (!theme) throw new CmsError('CMS_NOT_FOUND', `Unknown theme ${name}.`);
         if (theme.problems.length) throw new CmsError('CMS_VALIDATION', `${theme.label} cannot be used: ${theme.problems.join(' ')}`);
         await this.settings.update('appearance', { theme: name }, { principal });
@@ -1409,7 +1422,9 @@ export class CmsHost {
     async grantPlugin(name: string, principal: Principal): Promise<PluginStatus> {
         if (!hasPermission(principal, PERMISSIONS.managePlugins)) throw new CmsError('CMS_FORBIDDEN', 'Not allowed to manage plugins.');
         const plugin = this.#plugins.get(name);
-        if (!plugin) throw new CmsError('CMS_NOT_FOUND', `Unknown plugin ${name}.`);
+        const network = pluginState((await this.#state()).policy, name);
+        if (!plugin || network === 'hidden') throw new CmsError('CMS_NOT_FOUND', `Unknown plugin ${name}.`);
+        if (network === 'network') throw new CmsError('CMS_FORBIDDEN', `The network activates ${name} on every site.`);
         if (plugin.problems.length) throw new CmsError('CMS_VALIDATION', `Plugin ${name} has an invalid manifest: ${plugin.problems.join(' ')}`);
         const now = this.#now();
         await this.db.write([
@@ -1454,6 +1469,7 @@ export class CmsHost {
     /** Disable a plugin: its grants are removed; its hooks, commands and resources stop. Data stays. */
     async revokePlugin(name: string, principal: Principal): Promise<void> {
         if (!hasPermission(principal, PERMISSIONS.managePlugins)) throw new CmsError('CMS_FORBIDDEN', 'Not allowed to manage plugins.');
+        if (pluginState((await this.#state()).policy, name) === 'network') throw new CmsError('CMS_FORBIDDEN', `The network keeps ${name} active on every site.`);
         await this.db.write([{ rql: 'DELETE FROM cms_grants WHERE subject = $subject', params: { $subject: `plugin:${name}` } }], { kind: 'cms.grants', retryConflicts: 5 });
         this.#activation = undefined;
         await this.#refreshPlugins();
@@ -1519,7 +1535,7 @@ export class CmsHost {
                     if (own) return Promise.resolve();
                     if (!requested.has(action)) throw new CmsError('CMS_FORBIDDEN', `Plugin ${name} may not ${action} ${id}.`);
                     return this.#state().then(state => {
-                        if (!state.grants.get(`plugin:${name}`)?.has(`resource:${id}:${action}`)) throw new CmsError('CMS_FORBIDDEN', `Plugin ${name} is not granted ${action} on ${id}.`);
+                        if (!this.#granted(name, state).has(`resource:${id}:${action}`)) throw new CmsError('CMS_FORBIDDEN', `Plugin ${name} is not granted ${action} on ${id}.`);
                     });
                 };
                 return {
@@ -1587,16 +1603,34 @@ export class CmsHost {
             const resource = this.#resources.get(`cms/${collection.name}`);
             if (resource && state.hashes.get(resource.id) !== await declarationHash(resource)) stale.push(resource.id);
         }
-        if (!hostPending && !stale.length) return;
-        this.#upgrading ??= migrate(this.db, this.resources, { now: this.#now, only: stale }).then(async report => {
-            if (report.failed) console.error(`[cms] could not upgrade the schema: ${report.failed.message}`);
-            await this.#afterHostSteps(report);
-        }).catch(error => console.error('[cms] could not upgrade the schema', error)).finally(() => {
-            this.#upgrading = undefined;
-            this.#activation = undefined;
-            this.#installed = false;
-        });
-        await this.#upgrading;
+        // A plugin the network activates is migrated on every site as the site loads.
+        const networkActive = [...this.#plugins.values()].filter(plugin => !plugin.problems.length && pluginState(state.policy, plugin.manifest.name) === 'network');
+        for (const id of networkActive.flatMap(plugin => plugin.resources)) {
+            const resource = this.#resources.get(id);
+            if (resource && !stale.includes(id) && state.hashes.get(id) !== await declarationHash(resource)) stale.push(id);
+        }
+        if (hostPending || stale.length) {
+            this.#upgrading ??= migrate(this.db, this.resources, { now: this.#now, only: stale }).then(async report => {
+                if (report.failed) console.error(`[cms] could not upgrade the schema: ${report.failed.message}`);
+                await this.#afterHostSteps(report);
+            }).catch(error => console.error('[cms] could not upgrade the schema', error)).finally(() => {
+                this.#upgrading = undefined;
+                this.#activation = undefined;
+                this.#installed = false;
+            });
+            await this.#upgrading;
+        }
+        // And gets the field groups its manifest ships, once, as a site admin's grant would store them.
+        for (const plugin of networkActive) {
+            if (!plugin.manifest.fieldGroups?.length || this.#groups.some(group => group.plugin === plugin.manifest.name)) continue;
+            await this.#seedFieldGroups(plugin, systemPrincipal('network')).catch(error => console.error(`[cms] could not add the field groups of ${plugin.manifest.name}`, error));
+        }
+    }
+
+    /** Forget cached activation and definitions, so the next request reads the network's and the site's current state. */
+    expire(): void {
+        this.#activation = undefined;
+        this.#definitions = undefined;
     }
 
     async #loadDefinitions(): Promise<void> {
@@ -2013,7 +2047,7 @@ export class CmsHost {
             },
             fetch: async (input, init) => {
                 const url = new URL(input instanceof Request ? input.url : String(input));
-                const granted = (await this.#state()).grants.get(`plugin:${name}`) ?? new Set<string>();
+                const granted = this.#granted(name, await this.#state());
                 const hosts = [...granted].filter(grant => grant.startsWith('network:')).map(grant => grant.slice('network:'.length));
                 if (!hosts.some(host => host === url.hostname || (host.startsWith('*.') && url.hostname.endsWith(host.slice(1))))) {
                     throw new CmsError('CMS_FORBIDDEN', `Plugin ${name} is not granted network access to ${url.hostname}.`);
@@ -2026,30 +2060,43 @@ export class CmsHost {
 
     async #pluginStatus(plugin: HostedPlugin, state: Activation): Promise<PluginStatus> {
         const themeOnly = isThemeOnly(plugin.manifest);
-        const base = { name: plugin.registration.name, version: plugin.registration.version, description: typeof plugin.manifest.description === 'string' ? plugin.manifest.description : '', ...authorOf(plugin), ...artwork(plugin), themeOnly };
+        const network = themeOnly ? 'available' : pluginState(state.policy, plugin.manifest.name);
+        const base = { name: plugin.registration.name, version: plugin.registration.version, description: typeof plugin.manifest.description === 'string' ? plugin.manifest.description : '', ...authorOf(plugin), ...artwork(plugin), themeOnly,
+            requests: [PLUGIN_ENABLED, ...plugin.requested], network };
         if (plugin.problems.length) return { ...base, active: false, reason: `Invalid manifest: ${plugin.problems.join(' ')}`, missing: [] };
         // A theme alone runs nothing on the server: choosing it under Appearance is all it needs.
         if (themeOnly) return { ...base, active: true, missing: [] };
+        if (network === 'hidden') return { ...base, active: false, reason: 'Hidden by the network.', missing: [] };
         const unmigrated: string[] = [];
         for (const id of [...plugin.resources, ...(plugin.manifest.collections ?? []).map(collection => `cms/${collection.name}`)]) {
             const resource = this.#resources.get(id);
             if (!resource || state.hashes.get(id) !== await declarationHash(resource)) unmigrated.push(id);
         }
-        const granted = state.grants.get(`plugin:${plugin.manifest.name}`) ?? new Set<string>();
+        const granted = this.#granted(plugin.manifest.name, state);
         const missing = [PLUGIN_ENABLED, ...plugin.requested].filter(grant => !granted.has(grant));
         if (unmigrated.length) return { ...base, active: false, reason: `Waiting for a migration of ${unmigrated.join(', ')}.`, missing };
+        if (missing.length && network === 'network') return { ...base, active: false, reason: `Needs the network's grant for ${missing.join(', ')}.`, missing };
         if (missing.length) return { ...base, active: false, reason: granted.size ? `Needs a new grant for ${missing.join(', ')}.` : 'Not enabled.', missing };
         return { ...base, active: true, missing: [] };
+    }
+
+    /** What a plugin is granted: the network's approval when the network activates it, else the site's own grant. */
+    #granted(name: string, state: Activation): ReadonlySet<string> {
+        const network = state.policy.plugins.get(name);
+        if (network?.state === 'hidden') return new Set();
+        if (network?.state === 'network') return new Set([PLUGIN_ENABLED, ...network.grants]);
+        return state.grants.get(`plugin:${name}`) ?? new Set<string>();
     }
 
     #state(): Promise<Activation> {
         const now = this.#now();
         if (!this.#activation || now - this.#activation.at > this.#activationTtl) {
+            const policy = readPolicy(this.network).catch(error => { console.error('[cms] could not read the network policy', error); return OPEN_POLICY; });
             const state = this.db.read([
                 { rql: 'SELECT resource, declaration_hash FROM cms_schema_state ORDER BY resource LIMIT 1000' },
                 { rql: "SELECT subject, permission FROM cms_grants WHERE subject LIKE 'plugin:%' ORDER BY subject, permission LIMIT 1000" },
                 { rql: "SELECT version FROM cms_migrations WHERE kind = 'host' LIMIT 100" },
-            ]).then(result => {
+            ]).then(async result => {
                 const grants = new Map<string, Set<string>>();
                 for (const [subject, permission] of result.results[1]!.rows) {
                     const set = grants.get(subject as string) ?? new Set<string>();
@@ -2059,10 +2106,11 @@ export class CmsHost {
                 return {
                     hashes: new Map(result.results[0]!.rows.map(([resource, hash]) => [resource as string, hash as string])), grants,
                     hostVersions: new Set(result.results[2]!.rows.map(([version]) => Number(version as bigint))),
+                    policy: await policy,
                 };
-            }).catch(error => {
+            }).catch(async error => {
                 // Before the first migration the host tables do not exist yet.
-                if (/cms_schema_state|cms_grants|cms_migrations|no such table|not found/i.test(String((error as Error).message))) return { hashes: new Map<string, string>(), grants: new Map<string, Set<string>>(), hostVersions: new Set<number>() };
+                if (/cms_schema_state|cms_grants|cms_migrations|no such table|not found/i.test(String((error as Error).message))) return { hashes: new Map<string, string>(), grants: new Map<string, Set<string>>(), hostVersions: new Set<number>(), policy: await policy };
                 throw error;
             });
             this.#activation = { at: now, state };

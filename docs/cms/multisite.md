@@ -92,6 +92,9 @@ Network admins open `/dashboard/network` on the network host:
 - **Users**: every account with the sites it belongs to. Make or remove network admins,
   suspend, activate or delete accounts, and add new ones. Deleting an account first removes
   it from every site, through each site's own user deletion.
+- **Plugins**: one state per plugin for every site (see below).
+- **Themes**: which themes sites may choose. A hidden theme leaves every site's Appearance,
+  and a site that used it falls back to another theme.
 - **Settings**: the network name and the domain new sites' addresses end with.
 - **Updates**: sites with schema steps to apply after a deploy. Each site applies its own
   when it next loads; this page upgrades them now, ten at a time.
@@ -99,6 +102,23 @@ Network admins open `/dashboard/network` on the network host:
 Members of more than one site see **My sites** in the dashboard menu and the site taskbar's
 Start menu; `/dashboard/my-sites` lists them with their dashboards. Network admins also get a
 *Network* link in every site's dashboard taskbar.
+
+## Plugins across the network
+
+Plugin code ships with the application, so every site has the same plugins. Network →
+Plugins gives each one a state:
+
+| State | On every site |
+| --- | --- |
+| **Network active** | Runs, with the grants a network admin approved when activating it. Each site migrates its schema and stores its field groups when it next loads. Site admins see it as *Network active* and cannot disable it. |
+| **Available** (the default) | Each site's admins grant and disable it under Plugins, as on a single site. |
+| **Hidden** | Not offered, and inactive whatever the site granted. Its data stays. |
+
+An upgrade that requests more grants stays inactive on every site until a network admin
+approves it again (*Approve and keep active*). Network deactivate makes the plugin available
+again: each site's own grant applies, so a site that never granted it no longer runs it.
+Grants, settings and data stay in each site's database. Other processes see a change within
+30 seconds.
 
 ## Site states
 
@@ -136,9 +156,6 @@ scheduled publishing, the outbox, webhooks and write recovery also run on sites 
 
 ## Limits of this release
 
-- Plugin code ships with the application for every site; each site grants and configures
-  plugins itself. Network-wide plugin states (network active, available, hidden) and theme
-  availability are not built yet.
 - Each process keeps up to 32 site hosts open; the one used longest ago closes first.
 - On Node, one process owns the database files. Share a live network with another process,
   such as RomeDB Studio, through `romedb serve --directory storage/romedb`.

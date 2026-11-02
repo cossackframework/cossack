@@ -18,6 +18,8 @@ interface PluginRow {
     reason: string;
     missing: string[];
     settings: boolean;
+    /** The network runs it on every site; site admins cannot turn it off. */
+    networkActive: boolean;
 }
 
 type PluginFilter = 'all' | 'active' | 'inactive' | 'themes';
@@ -43,9 +45,10 @@ export default class PluginsPage extends Cossack {
         const status = await this.c.get('cms').status();
         const configurable = new Set(hasPermission(this.c.get('principal'), PERMISSIONS.manageSettings)
             ? this.c.get('cms').settings.catalog({ principal: this.c.get('principal') }).map(group => group.plugin).filter(Boolean) : []);
-        this.plugins = status.plugins.map(plugin => ({
+        // Plugins the network hides are not offered.
+        this.plugins = status.plugins.filter(plugin => plugin.network !== 'hidden').map(plugin => ({
             name: plugin.name, version: plugin.version, description: plugin.description, author: plugin.author, logo: plugin.logo, cover: plugin.cover, themeOnly: plugin.themeOnly,
-            active: plugin.active, reason: plugin.reason ?? '', missing: [...plugin.missing], settings: configurable.has(plugin.name),
+            active: plugin.active, reason: plugin.reason ?? '', missing: [...plugin.missing], settings: configurable.has(plugin.name), networkActive: plugin.network === 'network',
         }));
         this.message = flashed<string>('cms.message') ?? '';
     }
@@ -123,7 +126,7 @@ export default class PluginsPage extends Cossack {
                         <th class="w-10 px-3 py-2"><span class="sr-only">${__('Select')}</span></th><th class=${th}>${__('Plugin')}</th><th class=${th}>${__('Description')}</th><th class=${th}>${__('Status')}</th><th class=${`${th} text-right`}>${__('Actions')}</th>
                     </tr></thead>
                     <tbody>${rows.map(plugin => html`<tr data-plugin=${plugin.name} data-version=${plugin.version} data-active=${plugin.active ? 'true' : 'false'} class="border-b border-border last:border-0 align-top">
-                        <td class="px-3 py-3">${plugin.themeOnly ? null : html`<input type="checkbox" name="plugins" value=${plugin.name} aria-label=${`${__('Select')} ${plugin.name}`} class="size-4 cursor-pointer accent-primary">`}</td>
+                        <td class="px-3 py-3">${plugin.themeOnly || plugin.networkActive ? null : html`<input type="checkbox" name="plugins" value=${plugin.name} aria-label=${`${__('Select')} ${plugin.name}`} class="size-4 cursor-pointer accent-primary">`}</td>
                         <td class="px-3 py-3"><div class="flex min-w-[12rem] items-center gap-3">
                             ${artwork('logo', plugin.logo, plugin.name, plugin.name)}
                             <div class="min-w-0">
@@ -138,10 +141,11 @@ export default class PluginsPage extends Cossack {
                             ${plugin.missing.length ? html`<p class="mt-1 text-xs">${__('Requests')}: ${plugin.missing.join(', ')}</p>` : null}
                         </td>
                         <td class="px-3 py-3">${plugin.themeOnly ? component(Badge, { variant: 'secondary' }, __('Theme'))
+                            : plugin.networkActive ? component(Badge, { variant: plugin.active ? 'success' : 'warning' }, __('Network active'))
                             : component(Badge, { variant: plugin.active ? 'success' : 'secondary' }, plugin.active ? __('Active') : __('Inactive'))}</td>
                         <td class="px-3 py-3"><div class="flex flex-wrap justify-end gap-2">
                             ${plugin.settings ? html`<a href=${settingsSectionHref(`plugin:${plugin.name}`)} class="text-sm text-primary hover:underline">${__('Settings')}</a>` : null}
-                            ${plugin.themeOnly ? html`<a href="/dashboard/appearance" class="text-sm text-primary hover:underline">${__('Manage in Appearance')} →</a>` : html`
+                            ${plugin.networkActive ? null : plugin.themeOnly ? html`<a href="/dashboard/appearance" class="text-sm text-primary hover:underline">${__('Manage in Appearance')} →</a>` : html`
                                 ${plugin.missing.length ? html`<button type="submit" name="_row" value=${`grant:${plugin.name}`} class=${`${button} bg-primary text-primary-foreground border-none`}>${__('Grant and enable')}</button>` : null}
                                 ${plugin.active ? html`<button type="submit" name="_row" value=${`disable:${plugin.name}`} class=${`${button} border border-destructive bg-transparent text-destructive`}>${__('Disable')}</button>` : null}`}
                         </div></td>

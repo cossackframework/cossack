@@ -96,7 +96,7 @@ export async function navigation(c: Context): Promise<DashboardModule[]> {
     // Network admins run the network from the network host; other sites link there.
     const network = networkLink(c, principal);
     if (network) admin.push({ id: 'network', label: 'Network', href: network, icon: icon('global'), authorization: 'authenticated', activeFor: '/dashboard/network',
-        children: [['Home', ''], ['Sites', '/sites'], ['Users', '/users'], ['Updates', '/updates'], ['Settings', '/settings']].map(([label, path]) => ({ label: label!, href: `${network}${path}` })) });
+        children: [['Home', ''], ['Sites', '/sites'], ['Users', '/users'], ['Plugins', '/plugins'], ['Themes', '/themes'], ['Updates', '/updates'], ['Settings', '/settings']].map(([label, path]) => ({ label: label!, href: `${network}${path}` })) });
     // My sites: every site the account belongs to, when there is more than one.
     if (principal.kind === 'user') {
         const sites = await networkFor(env).memberSites(principal.id).catch(() => []);
@@ -153,7 +153,8 @@ export async function dashboardStatus(c: Context): Promise<DashboardStatus[]> {
         const status = await cms.status().catch(() => ({ resources: [], plugins: [] }));
         const migrations = status.resources.filter(resource => !resource.active).length;
         if (migrations && can(PERMISSIONS.manageSchema)) items.push({ id: 'schema', label: 'Schema migrations waiting', href: '/dashboard/tools/schema', count: migrations, tone: 'error' });
-        const grants = status.plugins.filter(plugin => !plugin.active && plugin.missing.length).length;
+        // A network-active plugin waits for the network admin, not the site's.
+        const grants = status.plugins.filter(plugin => !plugin.active && plugin.missing.length && plugin.network === 'available').length;
         if (grants && can(PERMISSIONS.managePlugins)) items.push({ id: 'plugins', label: 'Plugins waiting for a grant', href: '/dashboard/plugins', count: grants, tone: 'warning' });
     }
     if (can(PERMISSIONS.manageSchema)) {
