@@ -6,10 +6,11 @@
 import type { RomeDB } from '@cossackframework/romedb';
 import type { StorageMetadata, StorageProvider } from '@cossackframework/core/storage';
 import { CmsError } from '../errors';
+import { LOCALE } from '../collections';
 import { slugify } from '../fields';
 import { DEFAULT_ROLES, isNetworkAdmin, systemPrincipal, type Principal } from '../permissions';
 import { PLUGIN_ENABLED, type CmsHost, type PluginStatus } from './host';
-import { POLICY_KEYS, readPolicy, type NetworkPluginState, type NetworkPolicy, type NetworkThemeState, type StoredPluginStates, type StoredThemeStates } from './network-policy';
+import { pluginState, POLICY_KEYS, readPolicy, type NetworkPluginState, type NetworkPolicy, type NetworkThemeState, type StoredPluginStates, type StoredThemeStates } from './network-policy';
 import { CmsHandoffs } from './handoffs';
 import { seedStarterContent } from './seed';
 import { CmsSites, MAIN_SITE, siteHost, type SiteRecord, type SiteStatus } from './sites';
@@ -164,6 +165,7 @@ export class CmsNetwork {
         const directory = this.#options.directory;
         if (!directory || !this.#options.open) throw new CmsError('CMS_UNAVAILABLE', 'This network cannot add sites yet: it needs a provider for site databases.');
         const id = input.id ?? (slugify(input.name, 40) || 'site');
+        if (input.language && !LOCALE.test(input.language)) throw new CmsError('CMS_VALIDATION', 'Enter a language code, such as en or pt-br.', { fields: { language: 'is invalid.' } });
         const admin = await this.main.accounts.get(input.admin);
         if (!admin || admin.status !== 'active') throw new CmsError('CMS_VALIDATION', 'Choose an active account as the first administrator.', { fields: { admin: 'is invalid.' } });
         let record = await this.sites.get(id);
@@ -182,8 +184,19 @@ export class CmsNetwork {
             record = (await this.sites.update(id, { step: 'schema' }))!;
         }
         if (!done('seeded')) {
+            const system = systemPrincipal('network');
+            const defaults = await this.settings();
             for (const role of DEFAULT_ROLES) await host.users.defineRole({ ...role, permissions: [...role.permissions] });
-            await host.settings.update('general', { siteTitle: record.name, adminEmail: admin.email }, { principal: systemPrincipal('network') });
+            await host.settings.update('general', { siteTitle: record.name, adminEmail: admin.email }, { principal: system });
+            const language = input.language || defaults.defaultLanguage;
+            // Languages come with the content module.
+            if (language && host.settings.groups.some(group => group.id === 'languages')) await host.settings.update('languages', { default: language }, { principal: system });
+            // The network's defaults, as a site admin would choose them; one the network hid since is left out.
+            if (defaults.defaultTheme && (await host.availableThemes()).some(theme => theme.name === defaults.defaultTheme)) await host.activateTheme(defaults.defaultTheme, system);
+            const policy = await this.policy();
+            for (const name of defaults.defaultPlugins) {
+                if (pluginState(policy, name) === 'available') await host.grantPlugin(name, system).catch(error => console.warn(`[cms] site ${id} could not enable ${name}: ${(error as Error).message}`));
+            }
             record = (await this.sites.update(id, { step: 'seeded' }))!;
         }
         if (!done('members')) {
@@ -266,10 +279,14 @@ export class CmsNetwork {
         return removed;
     }
 
-    /** Network settings: its name and what new sites' addresses end with. */
+    /** Network settings: its name, what new sites' addresses end with, and what new sites start with. */
     async settings(): Promise<NetworkSettings> {
         const stored = await this.state<Partial<NetworkSettings>>('settings') ?? {};
-        return { name: typeof stored.name === 'string' ? stored.name : '', subdomainSuffix: typeof stored.subdomainSuffix === 'string' ? stored.subdomainSuffix : '' };
+        const text = (value: unknown) => typeof value === 'string' ? value : '';
+        return {
+            name: text(stored.name), subdomainSuffix: text(stored.subdomainSuffix), defaultTheme: text(stored.defaultTheme), defaultLanguage: text(stored.defaultLanguage),
+            defaultPlugins: Array.isArray(stored.defaultPlugins) ? stored.defaultPlugins.filter((name): name is string => typeof name === 'string') : [],
+        };
     }
 
     async saveSettings(patch: Partial<NetworkSettings>, context: { principal: Principal }): Promise<NetworkSettings> {
@@ -277,7 +294,15 @@ export class CmsNetwork {
         const next = { ...await this.settings(), ...patch };
         if (typeof next.name !== 'string' || next.name.length > 120) throw new CmsError('CMS_VALIDATION', 'Enter a network name of at most 120 characters.', { fields: { name: 'is too long.' } });
         if (next.subdomainSuffix && !siteHost(next.subdomainSuffix)) throw new CmsError('CMS_VALIDATION', 'Enter a domain, such as example.com.', { fields: { subdomainSuffix: 'is invalid.' } });
-        const saved = { name: next.name.trim(), subdomainSuffix: next.subdomainSuffix ? siteHost(next.subdomainSuffix) : '' };
+        if (next.defaultTheme && !this.main.themes().some(theme => theme.name === next.defaultTheme && !theme.problems.length)) throw new CmsError('CMS_VALIDATION', 'Choose an installed theme.', { fields: { defaultTheme: 'is unknown.' } });
+        const plugins = new Set((await this.main.status()).plugins.filter(plugin => !plugin.themeOnly).map(plugin => plugin.name));
+        const unknown = next.defaultPlugins.filter(name => !plugins.has(name));
+        if (unknown.length) throw new CmsError('CMS_VALIDATION', `Unknown plugins: ${unknown.join(', ')}.`, { fields: { defaultPlugins: 'are unknown.' } });
+        if (next.defaultLanguage && !LOCALE.test(next.defaultLanguage)) throw new CmsError('CMS_VALIDATION', 'Enter a language code, such as en or pt-br.', { fields: { defaultLanguage: 'is invalid.' } });
+        const saved: NetworkSettings = {
+            name: next.name.trim(), subdomainSuffix: next.subdomainSuffix ? siteHost(next.subdomainSuffix) : '',
+            defaultTheme: next.defaultTheme, defaultPlugins: [...new Set(next.defaultPlugins)], defaultLanguage: next.defaultLanguage,
+        };
         await this.setState('settings', saved);
         return saved;
     }
@@ -438,6 +463,12 @@ export interface NetworkSettings {
     readonly name: string;
     /** What new sites' addresses end with; empty for the network host without `www.`. */
     readonly subdomainSuffix: string;
+    /** The theme new sites start with; empty for the first available one. */
+    readonly defaultTheme: string;
+    /** Plugins granted on new sites, as a site admin would grant them. */
+    readonly defaultPlugins: readonly string[];
+    /** New sites' default language; empty for English. */
+    readonly defaultLanguage: string;
 }
 
 /** What adding a site asks for. */
@@ -451,6 +482,8 @@ export interface NewSite {
     readonly admin: string;
     /** A first post, a category, a contact form and its page. */
     readonly starter?: boolean;
+    /** The site's default language; the network's default when left out. */
+    readonly language?: string;
 }
 
 const CREATION_STEPS = ['database', 'schema', 'seeded', 'members'] as const;

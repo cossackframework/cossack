@@ -105,7 +105,7 @@ describe.skipIf(!live)('adding, archiving and deleting sites', () => {
 
     it('keeps network settings and lists sites with schema steps to apply', async () => {
         await expect(network.saveSettings({ subdomainSuffix: 'not a domain' }, { principal: admin })).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
-        expect(await network.saveSettings({ name: 'Example Network', subdomainSuffix: 'sites.example.com' }, { principal: admin })).toEqual({ name: 'Example Network', subdomainSuffix: 'sites.example.com' });
+        expect(await network.saveSettings({ name: 'Example Network', subdomainSuffix: 'sites.example.com' }, { principal: admin })).toEqual({ name: 'Example Network', subdomainSuffix: 'sites.example.com', defaultTheme: '', defaultPlugins: [], defaultLanguage: '' });
         await expect(network.createSite({ name: 'Shop', host: 'shop.example.com', admin: owner }, { principal: admin })).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
         await network.saveSettings({ subdomainSuffix: '' }, { principal: admin });
         expect(await network.updates()).toEqual([]);

@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { RomeDB } from '@cossackframework/romedb';
-import { CmsNetwork, contentModule, createCMS, field, NETWORK_ADMIN, systemPrincipal, type Block, type CmsHost, type NetworkSite, type PluginRegistrationLike, type Principal } from '../src/server/index';
+import { CmsNetwork, contentModule, createCMS, field, NETWORK_ADMIN, networkSite, systemPrincipal, type Block, type CmsHost, type NetworkSite, type PluginRegistrationLike, type Principal } from '../src/server/index';
 import { romedbService, live } from './helpers';
 
 const networkAdmin: Principal = { kind: 'user', id: 'root', roles: ['admin', NETWORK_ADMIN], permissions: ['*'] };
@@ -26,6 +26,8 @@ const themes: PluginRegistrationLike[] = [
 describe.skipIf(!live)('network plugin and theme states', () => {
     const service = romedbService();
     let other: { db: RomeDB; stop(): Promise<void> };
+    /** Databases of sites the tests add, by database ID. */
+    const added = new Map<string, { db: RomeDB; stop(): Promise<void> }>();
     let network: CmsNetwork;
     let blog: CmsHost;
     let plugins: PluginRegistrationLike[] = [promo(['api.example.com']), ...themes];
@@ -34,7 +36,14 @@ describe.skipIf(!live)('network plugin and theme states', () => {
     const open = () => {
         const db = service.database();
         const next: CmsNetwork = new CmsNetwork({
-            db, open: () => other.db, networkHost: () => 'example.com',
+            db, open: site => added.get(site.database)?.db ?? other.db, networkHost: () => 'example.com',
+            directory: {
+                async create(name) {
+                    if (!added.has(`db-${name}`)) added.set(`db-${name}`, await service.fresh());
+                    return `db-${name}`;
+                },
+                async delete() {},
+            },
             host: (site, siteDb) => createCMS({ db: siteDb, network: db, site: site.id, modules: [contentModule], plugins }),
         });
         return next;
@@ -52,7 +61,10 @@ describe.skipIf(!live)('network plugin and theme states', () => {
         await blog.ready();
     }, 60_000);
 
-    afterAll(async () => { await other?.stop(); });
+    afterAll(async () => {
+        await other?.stop();
+        for (const database of added.values()) await database.stop();
+    });
 
     it('leaves plugins to each site until the network decides', async () => {
         expect(await promoStatus(blog)).toMatchObject({ network: 'available', active: false, requests: ['plugin:enabled', 'network:api.example.com'] });
@@ -122,4 +134,31 @@ describe.skipIf(!live)('network plugin and theme states', () => {
         await network.setPluginState('promo', 'available', { principal: systemPrincipal('tests') });
         expect(await network.main.pluginActive('promo')).toBe(false);
     });
+
+    it('starts new sites with the network\'s theme, plugins and language', async () => {
+        await expect(network.saveSettings({ defaultTheme: 'missing' }, { principal: networkAdmin })).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
+        await expect(network.saveSettings({ defaultPlugins: ['folio'] }, { principal: networkAdmin })).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
+        await expect(network.saveSettings({ defaultLanguage: 'French' }, { principal: networkAdmin })).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
+        await network.saveSettings({ defaultTheme: 'folio', defaultPlugins: ['promo', 'promo'], defaultLanguage: 'fr' }, { principal: networkAdmin });
+        expect(await network.settings()).toMatchObject({ defaultTheme: 'folio', defaultPlugins: ['promo'], defaultLanguage: 'fr' });
+        const owner = (await network.main.users.create({ email: 'owner@example.com', name: 'Owner', password: 'owns the place', networkRole: NETWORK_ADMIN })).id;
+
+        const shop = network.hostOf(networkSite(await network.createSite({ name: 'Shop', host: 'shop.example.com', admin: owner }, { principal: networkAdmin })));
+        await shop.ready();
+        expect(await shop.activeTheme()).toBe('folio');
+        expect(await shop.settings.get('appearance.theme')).toBe('folio');
+        expect(await shop.pluginActive('promo')).toBe(true);
+        expect((await shop.languages()).default).toBe('fr');
+
+        // The form's language wins; a default the network hid since is left out.
+        await network.setPluginState('promo', 'hidden', { principal: networkAdmin });
+        await network.setThemeState('folio', 'hidden', { principal: networkAdmin });
+        const news = network.hostOf(networkSite(await network.createSite({ name: 'News', host: 'news.example.com', admin: owner, language: 'de' }, { principal: networkAdmin })));
+        expect((await news.languages()).default).toBe('de');
+        expect(await news.settings.get('appearance.theme')).toBe('');
+        expect(await news.activeTheme()).toBe('plain');
+        await network.setPluginState('promo', 'available', { principal: networkAdmin });
+        expect(await news.pluginActive('promo')).toBe(false);
+        await expect(network.createSite({ name: 'Bad', host: 'bad.example.com', admin: owner, language: 'Deutsch' }, { principal: networkAdmin })).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
+    }, 60_000);
 });

@@ -86,8 +86,8 @@ Network admins open `/dashboard/network` on the network host:
 
 - **Home**: counts of sites and accounts.
 - **Sites**: every site with its address, members and status. *Add site* asks for a name, an
-  address under the network's subdomain, the first administrator's email and optional
-  starter content. Row actions: Dashboard, Visit, Edit, Archive, Restore and Delete. A site's
+  address under the network's subdomain, a language, the first administrator's email and
+  optional starter content. Row actions: Dashboard, Visit, Edit, Archive, Restore and Delete. A site's
   page manages its name, domains and members.
 - **Users**: every account with the sites it belongs to. Make or remove network admins,
   suspend, activate or delete accounts, and add new ones. Deleting an account first removes
@@ -95,7 +95,9 @@ Network admins open `/dashboard/network` on the network host:
 - **Plugins**: one state per plugin for every site (see below).
 - **Themes**: which themes sites may choose. A hidden theme leaves every site's Appearance,
   and a site that used it falls back to another theme.
-- **Settings**: the network name and the domain new sites' addresses end with.
+- **Settings**: the network name, the domain new sites' addresses end with, and what new
+  sites start with: a theme, plugins to enable, and a language. A default theme or plugin
+  the network hides later is left out.
 - **Updates**: sites with schema steps to apply after a deploy. Each site applies its own
   when it next loads; this page upgrades them now, ten at a time.
 
@@ -144,7 +146,8 @@ const site = await network.createSite(
 ```
 
 `createSite` records each step it finishes: the database, the schema, the default roles and
-settings, then the first administrator. If a step fails, calling it again with the same input
+settings (with the network's default theme, plugins and language, or `language` when given),
+then the first administrator. If a step fails, calling it again with the same input
 resumes after the last finished step.
 
 ## Background work

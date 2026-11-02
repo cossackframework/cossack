@@ -18,6 +18,8 @@ export default class NetworkSites extends Cossack {
     @State() suffix = '';
     @State() message = '';
     @State() error = '';
+    /** What Add site's language starts at: the network's default for new sites. */
+    @State() language = 'en';
 
     head(): HeadValue {
         return { title: 'Sites' };
@@ -38,7 +40,9 @@ export default class NetworkSites extends Cossack {
             return { id: site.id, name: site.name, host, status: site.status, members: counts.get(site.id) ?? 0, createdAt: site.createdAt, ...siteLinks(this.c, { host }) };
         });
         this.canAdd = net.canAddSites;
-        this.suffix = (await net.settings()).subdomainSuffix || net.subdomainSuffix;
+        const settings = await net.settings();
+        this.suffix = settings.subdomainSuffix || net.subdomainSuffix;
+        this.language = settings.defaultLanguage || 'en';
         this.message = flashed<string>('network.message') ?? '';
         this.error = flashed<string>('network.error') ?? '';
     }
@@ -54,7 +58,7 @@ export default class NetworkSites extends Cossack {
             if (action === 'add') {
                 const admin = value('admin') ? await net.main.accounts.findByEmail(value('admin')) : await net.main.accounts.get(principal.kind === 'user' ? principal.id : '');
                 if (!admin) throw new Error(__('No account has that email. Add the person under Network → Users first.'));
-                const site = await net.createSite({ name: value('name'), host: value('host'), admin: admin.id, ...(value('id') ? { id: value('id') } : {}), starter: form.get('starter') === 'on' }, { principal });
+                const site = await net.createSite({ name: value('name'), host: value('host'), admin: admin.id, ...(value('id') ? { id: value('id') } : {}), ...(value('language') ? { language: value('language').toLowerCase() } : {}), starter: form.get('starter') === 'on' }, { principal });
                 flash('network.message', `${site.name} is ready.`);
             } else if (action === 'archive' || action === 'restore' || action === 'delete') {
                 const site = await net.setSiteStatus(value('site'), action === 'archive' ? 'archived' : action === 'delete' ? 'deleted' : 'active', { principal });
@@ -107,6 +111,7 @@ export default class NetworkSites extends Cossack {
                     <input type="hidden" name="action" value="add">
                     ${field('name', __('Name'), { required: true })}
                     ${field('host', __('Address'), { required: true, placeholder: this.suffix ? `blog.${this.suffix}` : 'blog.example.com', hint: this.suffix ? `${__('A subdomain of')} ${this.suffix}. ${__('Add its own domain once it exists.')}` : '' })}
+                    ${field('language', __('Language'), { value: this.language, hint: __('A language code, such as en, fr or pt-br.') })}
                     ${field('admin', __('First administrator'), { type: 'email', placeholder: __('Your account when empty'), hint: __('The email of an existing account.') })}
                     <label class="flex items-center gap-2 text-sm text-foreground"><input type="checkbox" name="starter" checked> ${__('Add starter content')}</label>
                     <button type="submit" class=${SUBMIT}>${__('Add site')}</button>
