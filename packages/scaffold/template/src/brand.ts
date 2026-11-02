@@ -7,3 +7,17 @@ export async function siteName(): Promise<string> {
 export async function siteLogo(): Promise<string> {
     return '/logo.svg';
 }
+
+/** Who the sign-in pages sign in to. */
+export interface SignInBrand {
+    name: string;
+    logo: string;
+    /** Where "Back to Home" goes. */
+    home: string;
+    /** The network whose account signs the visitor in to another site; empty otherwise. */
+    network: string;
+}
+
+export async function signInBrand(): Promise<SignInBrand> {
+    return { name: await siteName(), logo: await siteLogo(), home: '/', network: '' };
+}

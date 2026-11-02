@@ -66,6 +66,7 @@ own session back:
 
 1. `blog.example.com/auth/login` redirects to `example.com/auth/handoff?site=blog&next=/dashboard`.
 2. A visitor who is not signed in on the network signs in there as usual, with any method. The
+   sign-in page shows the site's name and logo, and *Back to Home* returns to the site. The
    handoff continues afterwards.
 3. The network issues a one-use code for that site and session, valid for one minute, and
    redirects to `blog.example.com/auth/handoff?code=…`.
@@ -95,7 +96,9 @@ Network admins open `/dashboard/network` on the network host:
 - **Updates**: sites with schema steps to apply after a deploy. Each site applies its own
   when it next loads; this page upgrades them now, ten at a time.
 
-Members of more than one site see **My sites** in the dashboard menu.
+Members of more than one site see **My sites** in the dashboard menu and the site taskbar's
+Start menu; `/dashboard/my-sites` lists them with their dashboards. Network admins also get a
+*Network* link in every site's dashboard taskbar.
 
 ## Site states
 

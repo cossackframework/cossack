@@ -99,7 +99,15 @@ async function toSite(c: Context, network: CmsNetwork, site: NetworkSite): Promi
     return c.redirect(nextPath(url.searchParams.get('next')));
 }
 
-/** On the network host, the site a visitor is signing in or registering for, or null. */
+/** On the network host, the site a visitor is signing in to (active or archived), or null. */
+export async function pendingSite(c: Context, network: CmsNetwork): Promise<NetworkSite | null> {
+    const id = parsePending(getCookie(c, HANDOFF_COOKIE) ?? '').site;
+    if (!id || c.get('site')?.id !== MAIN_SITE) return null;
+    const record = await network.sites.get(id);
+    return record && (record.status === 'active' || record.status === 'archived') ? networkSite(record) : null;
+}
+
+/** On the network host, the site a visitor is registering for, or null. */
 export async function handoffSite(c: Context, network: CmsNetwork): Promise<CmsHost | null> {
     const id = parsePending(getCookie(c, HANDOFF_COOKIE) ?? '').site;
     if (!id || c.get('site')?.id !== MAIN_SITE) return null;

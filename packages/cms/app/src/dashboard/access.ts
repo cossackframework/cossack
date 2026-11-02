@@ -94,22 +94,27 @@ export async function navigation(c: Context): Promise<DashboardModule[]> {
         activeFor: '/dashboard/settings' });
     const env = c.env as CmsBindings;
     // Network admins run the network from the network host; other sites link there.
-    if (isNetworkAdmin(principal)) {
-        const here = c.get('site')?.id === MAIN_SITE;
-        const base = here ? '' : (env.APP_URL ?? '').replace(/\/$/, '');
-        if (here || base) admin.push({ id: 'network', label: 'Network', href: `${base}/dashboard/network`, icon: icon('global'), authorization: 'authenticated', activeFor: '/dashboard/network',
-            children: [['Home', ''], ['Sites', '/sites'], ['Users', '/users'], ['Updates', '/updates'], ['Settings', '/settings']].map(([label, path]) => ({ label: label!, href: `${base}/dashboard/network${path}` })) });
-    }
+    const network = networkLink(c, principal);
+    if (network) admin.push({ id: 'network', label: 'Network', href: network, icon: icon('global'), authorization: 'authenticated', activeFor: '/dashboard/network',
+        children: [['Home', ''], ['Sites', '/sites'], ['Users', '/users'], ['Updates', '/updates'], ['Settings', '/settings']].map(([label, path]) => ({ label: label!, href: `${network}${path}` })) });
     // My sites: every site the account belongs to, when there is more than one.
     if (principal.kind === 'user') {
         const sites = await networkFor(env).memberSites(principal.id).catch(() => []);
-        if (sites.length > 1) content.unshift({ id: 'my-sites', label: 'My sites', href: '#', icon: icon('home-2'), authorization: 'authenticated',
+        if (sites.length > 1) content.unshift({ id: 'my-sites', label: 'My sites', href: '/dashboard/my-sites', icon: icon('home-2'), authorization: 'authenticated',
             children: sites.map(site => ({ label: site.name ?? 'Main site', href: `${(siteUrl(env, site) ?? '').replace(/\/$/, '')}/dashboard` })) });
     }
     const account = registry.filter(module => module.placement === 'account');
     // The author profile follows the profile settings in the account menu.
     account.splice(Math.min(1, account.length), 0, { id: 'public-profile', label: 'Public profile', href: '/dashboard/profile/public', icon: icon('user-id'), authorization: 'authenticated', placement: 'account' });
     return [...content, ...admin, ...account];
+}
+
+/** The network dashboard for a network admin: on the network host, or there from another site. Null for anyone else, or without APP_URL. */
+function networkLink(c: Context, principal: Principal): string | null {
+    if (!isNetworkAdmin(principal)) return null;
+    if (c.get('site')?.id === MAIN_SITE) return '/dashboard/network';
+    const base = ((c.env as CmsBindings).APP_URL ?? '').replace(/\/$/, '');
+    return base ? `${base}/dashboard/network` : null;
 }
 
 /**
@@ -124,6 +129,9 @@ export async function dashboardStatus(c: Context): Promise<DashboardStatus[]> {
     const can = (permission: string) => hasPermission(principal, permission);
     const context = { principal };
     const items: DashboardStatus[] = [];
+    // Network admins reach the network dashboard from every site's taskbar.
+    const network = networkLink(c, principal);
+    if (network) items.push({ id: 'network', label: 'Network', href: network });
     if (can(PERMISSIONS.moderateComments) && cms.collections().some(collection => collection.comments)) {
         const pending = await cms.comments.counts().then(counts => counts.pending).catch(() => 0);
         if (pending) items.push({ id: 'comments', label: 'Comments to moderate', href: '/dashboard/comments?status=pending', count: pending, tone: 'warning' });

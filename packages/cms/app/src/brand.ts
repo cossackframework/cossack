@@ -1,5 +1,7 @@
 /** The site's name and logo, from Settings → General, for the dashboard's sidebar and the sign-in pages. Replaces the scaffold's module. */
-import { currentCms } from './cms/index';
+import { getRequestContext } from '@cossackframework/core';
+import { currentCms, networkFor, siteUrl, type CmsBindings } from './cms/index';
+import { pendingSite } from './cms/handoff';
 
 export async function siteName(): Promise<string> {
     try { return await currentCms().settings.get('general.siteTitle'); }
@@ -10,4 +12,40 @@ export async function siteName(): Promise<string> {
 export async function siteLogo(): Promise<string> {
     try { return await currentCms().settings.get('general.logo') || '/logo.svg'; }
     catch { return '/logo.svg'; }
+}
+
+/** Who the sign-in pages sign in to. */
+export interface SignInBrand {
+    name: string;
+    logo: string;
+    /** Where "Back to Home" goes. */
+    home: string;
+    /** The network whose account signs the visitor in to another site; empty otherwise. */
+    network: string;
+}
+
+/**
+ * The sign-in pages' brand: this site's, or on the network host, the site the visitor came
+ * from to sign in, with its own address and logo.
+ */
+export async function signInBrand(): Promise<SignInBrand> {
+    const own = async () => ({ name: await siteName(), logo: await siteLogo(), home: '/', network: '' });
+    const c = getRequestContext();
+    if (!c) return own();
+    try {
+        const env = c.env as CmsBindings;
+        const network = networkFor(env);
+        const site = await pendingSite(c, network);
+        if (!site) return own();
+        const settings = network.hostOf(site).settings;
+        const home = siteUrl(env, site) ?? '/';
+        const logo = await settings.get('general.logo');
+        return {
+            name: await settings.get('general.siteTitle') || site.name || home,
+            // A site's media is served on its own host.
+            logo: logo ? new URL(logo, home).toString() : '/logo.svg',
+            home,
+            network: (await network.settings()).name || await siteName(),
+        };
+    } catch { return own(); }
 }
