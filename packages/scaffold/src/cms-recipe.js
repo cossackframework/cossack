@@ -45,7 +45,7 @@ export async function cmsAppFiles() {
 export function cmsRecipeFiles({ adapter }) {
   return {
     'src/cms/database.ts': adapter === 'cloudflare'
-      ? `import type { RomeDBOptions } from '@cossackframework/romedb';
+      ? `import { organizationDatabases, type DatabaseDirectory, type RomeDBOptions } from '@cossackframework/romedb';
 
 export interface DatabaseBindings {
     /**
@@ -76,10 +76,15 @@ export function siteDatabase(env: DatabaseBindings, database: string): Pick<Rome
     if (!env.ROMEDB_SITES_TOKEN) throw new Error('ROMEDB_SITES_URL needs ROMEDB_SITES_TOKEN, an organization key with the manage and query scopes.');
     return { url: \`\${sites.replace(/\\/$/, '')}/databases/\${database}\`, token: env.ROMEDB_SITES_TOKEN };
 }
+
+/** Creates and deletes added sites' databases, or null without ROMEDB_SITES_URL. */
+export function siteDirectory(env: DatabaseBindings): DatabaseDirectory | null {
+    return env.ROMEDB_SITES_URL && env.ROMEDB_SITES_TOKEN ? organizationDatabases({ url: env.ROMEDB_SITES_URL, token: env.ROMEDB_SITES_TOKEN }) : null;
+}
 `
-      : `import type { RomeDBOptions } from '@cossackframework/romedb';
-import path from 'node:path';
-import { connectNode, isServiceUrl } from '@cossackframework/romedb/node';
+      : `import path from 'node:path';
+import { organizationDatabases, type DatabaseDirectory, type RomeDBOptions } from '@cossackframework/romedb';
+import { connectNode, fileDatabases, isServiceUrl } from '@cossackframework/romedb/node';
 
 export interface DatabaseBindings {
     /**
@@ -124,6 +129,13 @@ export function siteDatabase(env: DatabaseBindings, database: string): Pick<Rome
     if (isServiceUrl(main)) return null;
     const url = path.join(path.dirname(main), \`\${database}.romedb\`);
     return { url, connect: () => connectNode({ url }) };
+}
+
+/** Creates and deletes added sites' databases: files beside the main one, or under ROMEDB_SITES_URL. Null when neither applies. */
+export function siteDirectory(env: DatabaseBindings): DatabaseDirectory | null {
+    if (env.ROMEDB_SITES_URL && env.ROMEDB_SITES_TOKEN) return organizationDatabases({ url: env.ROMEDB_SITES_URL, token: env.ROMEDB_SITES_TOKEN });
+    const main = env.ROMEDB_URL || 'storage/romedb/app.romedb';
+    return isServiceUrl(main) ? null : fileDatabases(path.dirname(main));
 }
 `,
     'src/cms/media.ts': adapter === 'cloudflare'

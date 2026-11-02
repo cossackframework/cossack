@@ -59,5 +59,8 @@ export {
     type PendingWriteStore,
 } from './pending';
 
+// Databases created and deleted by name: a Cloud organization or romedb serve --directory
+export { organizationDatabases, type DatabaseDirectory } from './directory';
+
 // D1-shaped facade for portable SQL ledgers
 export { rqlDatabase, numberPlaceholders, type RqlDatabase, type RqlStatement, type RqlBound, type RqlDatabaseOptions } from './rql';

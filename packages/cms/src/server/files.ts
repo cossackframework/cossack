@@ -459,6 +459,22 @@ export class FileService {
     }
 
     /** Resolve interrupted work: stale pending uploads are removed; stale deletes are completed. */
+    /** Delete every stored file and resized copy, for a site that is being deleted. The rows stay. */
+    async purgeStorage(): Promise<number> {
+        let removed = 0;
+        for (const table of ['cms_files', 'cms_file_variants']) {
+            let after = '';
+            for (;;) {
+                const result = await this.#db.read([{ rql: `SELECT key FROM ${table} WHERE key > $after ORDER BY key LIMIT 500`, params: { $after: after } }]);
+                const keys = result.results[0]!.rows.map(row => row[0] as string);
+                for (const key of keys) { await this.#storage.delete(key); removed++; }
+                if (keys.length < 500) break;
+                after = keys[keys.length - 1]!;
+            }
+        }
+        return removed;
+    }
+
     async sweep(options: { limit?: number } = {}): Promise<{ removed: number }> {
         const before = this.#now() - this.#staleMs;
         const result = await this.#db.read([{

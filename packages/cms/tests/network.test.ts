@@ -94,7 +94,7 @@ describe.skipIf(!live)('site registry and host resolution', () => {
         expect(await network.resolve('blog.example.com')).toEqual({ kind: 'site', site: MAIN });
         network.invalidate();
         expect(await network.resolve('Blog.Example.com:5173')).toMatchObject({ kind: 'site', site: { id: 'blog', database: 'db-blog', host: 'blog.example.com' } });
-        expect(await network.resolve('blog.example.org')).toEqual({ kind: 'redirect', host: 'blog.example.com' });
+        expect(await network.resolve('blog.example.org')).toEqual({ kind: 'redirect', host: 'blog.example.com', site: 'blog' });
         expect(await network.resolve('example.com')).toEqual({ kind: 'site', site: MAIN });
         expect(await network.resolve('nobody.example.com')).toEqual({ kind: 'missing' });
         expect(await network.resolve('old.example.com')).toMatchObject({ kind: 'archived', site: { id: 'old' } });

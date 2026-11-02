@@ -4,7 +4,7 @@ import { cmsReconcilers, CmsNetwork, createCMS, MAIN_SITE, prefixedStorage, type
 import type { Principal } from '@cossackframework/cms';
 import { plugins } from '@cossackframework/framework/plugins';
 import { modules, resources } from './resources';
-import { databaseConnection, siteDatabase, type DatabaseBindings } from './database';
+import { databaseConnection, siteDatabase, siteDirectory, type DatabaseBindings } from './database';
 import { pendingWrites, type PendingBindings } from './pending';
 import { imageTransformer, mediaStorage, type MediaBindings } from './media';
 
@@ -40,10 +40,13 @@ export function networkFor(env: CmsBindings): CmsNetwork {
         const images = imageTransformer(env);
         const mail = env.EMAIL;
         const multisite = siteDatabase(env, MAIN_SITE) !== null;
+        const directory = siteDirectory(env);
         const network: CmsNetwork = new CmsNetwork({
             db,
             networkHost: () => urlOf(env.APP_URL)?.host,
             ...(multisite ? { open: site => createRomeDB({ ...siteDatabase(env, site.database)!, pending: pendingWrites(env, site.database), reconcilers: cmsReconcilers() }) } : {}),
+            ...(directory ? { directory } : {}),
+            hostUrl: host => siteUrl(env, { host })!,
             host: (site, siteDb) => createCMS({
                 db: siteDb, network: db, modules, resources, plugins,
                 // A site's media keys start with sites/<id>/; the main site keeps its own.
@@ -68,7 +71,7 @@ export function cmsFor(env: CmsBindings): CmsHost {
  * A site's address: APP_URL for the main site, its primary domain for the others, never the
  * request's Host header. With an http APP_URL (development), sites keep its scheme and port.
  */
-export function siteUrl(env: CmsBindings, site: NetworkSite): string | undefined {
+export function siteUrl(env: CmsBindings, site: Pick<NetworkSite, 'host'>): string | undefined {
     if (!site.host) return env.APP_URL;
     const network = urlOf(env.APP_URL);
     return network?.protocol === 'http:' ? `http://${site.host}${network.port ? `:${network.port}` : ''}` : `https://${site.host}`;

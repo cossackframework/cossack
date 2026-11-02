@@ -31,6 +31,10 @@ export const cmsMiddleware: MiddlewareHandler = async (c, next) => {
     const url = new URL(c.req.url);
     // Before setup the registry does not exist yet: the main site answers.
     const found: SiteResolution = await network.resolve(url.host).catch(() => ({ kind: 'site', site: MAIN }));
+    // Which site a domain serves, for the network's domain check; aliases answer before they redirect.
+    if (url.pathname === '/.well-known/cossack-site' && found.kind !== 'missing') {
+        return c.text(found.kind === 'redirect' ? found.site : found.site.id, 200, { 'cache-control': 'no-store' });
+    }
     if (found.kind === 'missing') return c.text('No site at this address.', 404);
     if (found.kind === 'redirect') {
         url.hostname = found.host;

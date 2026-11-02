@@ -128,18 +128,69 @@ export class CmsSites {
         return (await this.get(input.id))!;
     }
 
-    /** Change the name, status or creation step. A deleted site records when it was deleted. */
-    async update(id: string, patch: { name?: string; status?: SiteStatus; step?: string | null }): Promise<SiteRecord | null> {
+    /** Change the name, database, status or creation step. A deleted site records when it was deleted. */
+    async update(id: string, patch: { name?: string; database?: string; status?: SiteStatus; step?: string | null }): Promise<SiteRecord | null> {
         const current = await this.get(id);
         if (!current) return null;
         if (patch.name !== undefined) checkName(patch.name);
+        if (patch.database !== undefined && !DATABASE.test(patch.database)) throw new CmsError('CMS_VALIDATION', 'Invalid database ID.');
         const status = patch.status ?? current.status;
         if (!STATUSES.includes(status)) throw new CmsError('CMS_VALIDATION', 'Unknown site status.');
         const now = this.#now();
         const deletedAt = status === 'deleted' ? current.deletedAt ?? now : null;
-        await this.#db.write([{ rql: 'UPDATE cms_sites SET name = $name, status = $status, step = $step, deleted_at = $deleted, updated_at = $now WHERE id = $id',
-            params: { $id: id, $name: (patch.name ?? current.name).trim(), $status: status, $step: patch.step === undefined ? current.step : patch.step, $deleted: deletedAt, $now: now } }], WRITE);
+        await this.#db.write([{ rql: 'UPDATE cms_sites SET name = $name, database = $database, status = $status, step = $step, deleted_at = $deleted, updated_at = $now WHERE id = $id',
+            params: { $id: id, $name: (patch.name ?? current.name).trim(), $database: patch.database ?? current.database, $status: status, $step: patch.step === undefined ? current.step : patch.step, $deleted: deletedAt, $now: now } }], WRITE);
         return this.get(id);
+    }
+
+    /** Add a domain that is not checked yet; it answers as an alias until a check makes it primary. */
+    async addDomain(id: string, host: string): Promise<SiteRecord | null> {
+        const name = siteHost(host);
+        if (!name) throw new CmsError('CMS_VALIDATION', 'Enter a host name, such as blog.example.com.', { fields: { host: 'is invalid.' } });
+        if (id !== MAIN_SITE && !(await this.get(id))) return null;
+        try {
+            await this.#db.write([{ rql: 'INSERT INTO cms_site_domains (host, site_id, is_primary, verified_at, created_at) VALUES ($host, $site, 0, NULL, $now)', params: { $host: name, $site: id, $now: this.#now() } }], WRITE);
+        } catch (error) {
+            if (error instanceof ClientError && error.outcome === 'rolled-back' && /UNIQUE|PRIMARY/i.test(error.message)) throw new CmsError('CMS_CONFLICT', 'Another site answers on this domain.', { fields: { host: 'is taken.' } });
+            throw error;
+        }
+        return id === MAIN_SITE ? null : this.get(id);
+    }
+
+    /** Record that the domain answered its check, and make it the site's primary domain when asked. */
+    async verifyDomain(id: string, host: string, options: { primary?: boolean } = {}): Promise<boolean> {
+        const name = siteHost(host);
+        const now = this.#now();
+        const result = await this.#db.write([
+            { rql: 'UPDATE cms_site_domains SET verified_at = $now WHERE host = $host AND site_id = $site', params: { $host: name, $site: id, $now: now } },
+            ...(options.primary ? [
+                { rql: 'UPDATE cms_site_domains SET is_primary = 0 WHERE site_id = $site AND host != $host AND EXISTS (SELECT 1 FROM cms_site_domains WHERE host = $host AND site_id = $site)', params: { $host: name, $site: id } },
+                { rql: 'UPDATE cms_site_domains SET is_primary = 1 WHERE host = $host AND site_id = $site', params: { $host: name, $site: id } },
+            ] : []),
+        ], WRITE);
+        return result.results[0]!.affected === 1n;
+    }
+
+    /** Remove an alias. The primary domain stays until another one is primary. */
+    async removeDomain(id: string, host: string): Promise<boolean> {
+        const result = await this.#db.write([{ rql: 'DELETE FROM cms_site_domains WHERE host = $host AND site_id = $site AND is_primary = 0', params: { $host: siteHost(host), $site: id } }], WRITE);
+        return result.results[0]!.affected === 1n;
+    }
+
+    /** Sites deleted before this time, oldest first: their 30 days to restore are over. */
+    async deletedBefore(at: number, limit = 20): Promise<SiteRecord[]> {
+        const result = await this.#db.read([{ rql: "SELECT id FROM cms_sites WHERE status = 'deleted' AND deleted_at < $at ORDER BY deleted_at LIMIT $limit", params: { $at: at, $limit: limit } }]);
+        return this.#many(result.results[0]!.rows.map(row => row[0] as string));
+    }
+
+    /** Forget a site and its domains, once its database and media are gone. */
+    async remove(id: string): Promise<void> {
+        await this.#db.write([
+            { rql: 'DELETE FROM cms_site_domains WHERE site_id = $id', params: { $id: id } },
+            { rql: 'DELETE FROM cms_session_sites WHERE site_id = $id', params: { $id: id } },
+            { rql: 'DELETE FROM cms_handoffs WHERE site_id = $id', params: { $id: id } },
+            { rql: 'DELETE FROM cms_sites WHERE id = $id', params: { $id: id } },
+        ], WRITE);
     }
 
     async #many(ids: readonly string[]): Promise<SiteRecord[]> {

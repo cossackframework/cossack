@@ -146,3 +146,5 @@ async function exists(file: string): Promise<boolean> {
     try { await fs.access(file, constants.F_OK); return true; }
     catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false; throw error; }
 }
+
+export { fileDatabases } from './node-directory';
