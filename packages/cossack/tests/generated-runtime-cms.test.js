@@ -12,7 +12,7 @@ import path from 'node:path';
 import { chromium, expect as browserExpect } from '@playwright/test';
 import { cleanupRoots, cossack, productionServer, project, typecheck, vite } from './fixtures/generated-app.js';
 import { browserless, contains, lacks, PNG, visible } from './fixtures/cms-client.js';
-import { findRomeDBBinary, liveRomeDBTests, startRomeDBService } from '../../romedb/src/testing.ts';
+import { findRomeDBBinary, liveRomeDBTests, servesDirectories, startRomeDBService } from '../../romedb/src/testing.ts';
 
 afterEach(cleanupRoots);
 
@@ -642,11 +642,14 @@ describe.skipIf(!liveRomeDBTests())('generated CMS application', () => {
     expect(devVars).toMatch(/^ROMEDB_URL=http:\/\/127\.0\.0\.1:4321$/m);
     expect(devVars).not.toMatch(/^ROMEDB_TOKEN=/m);
     const port = await freePort();
-    await fs.writeFile(path.join(root, '.dev.vars'), devVars.replace(/^ROMEDB_URL=.*$/m, `ROMEDB_URL=http://127.0.0.1:${port}`));
+    // Once the network has added sites, only APP_URL's host serves the main site.
+    const devPort = await freePort();
+    const vars = devVars.replace(/^ROMEDB_URL=.*$/m, `ROMEDB_URL=http://127.0.0.1:${port}`).replace(/^APP_URL=.*\n?/m, '');
+    await fs.writeFile(path.join(root, '.dev.vars'), `${vars.trimEnd()}\nAPP_URL=http://127.0.0.1:${devPort}\n`);
     const code = /^CMS_SETUP_CODE=(.*)$/m.exec(devVars)[1];
     const child = spawn(process.execPath, ['--input-type=module', '-e', `
       import { createServer } from 'vite';
-      const server = await createServer({ root: process.cwd(), server: { port: 0, host: '127.0.0.1' } });
+      const server = await createServer({ root: process.cwd(), server: { port: ${devPort}, strictPort: true, host: '127.0.0.1' } });
       await server.listen();
       console.log('CMS_DEV_ORIGIN=http://127.0.0.1:' + server.httpServer.address().port);
       process.on('message', async message => { if (message === 'STOP') { await server.close(); process.exit(0); } });
@@ -667,14 +670,24 @@ describe.skipIf(!liveRomeDBTests())('generated CMS application', () => {
       const setup = await web.post('/auth/setup', { code, siteTitle: 'Workers Dev', name: 'Ada', email: 'ada@example.com', password: 'long password' });
       expect(setup.headers.get('location'), await setup.text()).toBe('/dashboard');
       await fs.access(path.join(root, 'storage/romedb/token'));
+      // Beside it, a directory service holds added sites' databases, which the Worker creates through ROMEDB_SITES_URL.
+      if (servesDirectories()) {
+        expect(output).toContain(`started romedb serve --directory storage/romedb/sites for added sites at http://127.0.0.1:${port + 1}`);
+        contains(await web.page('/dashboard/network/sites'), 'Add site');
+        const added = await web.post('/dashboard/network/sites', { action: 'add', name: 'Blog', host: 'blog.localhost', admin: '', starter: 'on' });
+        expect(added.status, await added.text()).toBe(302);
+        contains(await web.page('/dashboard/network/sites'), 'Blog is ready.');
+        expect((await fs.readdir(path.join(root, 'storage/romedb/sites'))).filter(name => name.endsWith('.romedb'))).toHaveLength(1);
+      }
     } finally {
       if (child.connected) child.send('STOP'); else child.kill('SIGTERM');
       const kill = setTimeout(() => child.kill('SIGKILL'), 10_000);
       await exited;
       clearTimeout(kill);
     }
-    // The service stops with the dev server.
+    // The services stop with the dev server.
     await expect.poll(() => fetch(`http://127.0.0.1:${port}/v1/database`).then(() => 'answers', () => 'stopped'), { timeout: 10_000 }).toBe('stopped');
+    await expect.poll(() => fetch(`http://127.0.0.1:${port + 1}/v1/database`).then(() => 'answers', () => 'stopped'), { timeout: 10_000 }).toBe('stopped');
   }, 400_000);
 });
 

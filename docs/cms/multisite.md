@@ -32,6 +32,7 @@ Sites need a place to keep their databases:
 | --- | --- | --- |
 | Node | A file (`ROMEDB_URL=storage/romedb/app.romedb`, the default) | A file per site beside it: `storage/romedb/<uuid>.romedb`. Nothing to set. |
 | Node or Workers | A URL (`romedb serve` or RomeDB Cloud) | `ROMEDB_SITES_URL`, a RomeDB Cloud organization URL (or the organization URL of `romedb serve --directory`), and `ROMEDB_SITES_TOKEN`, an organization key with the `manage` and `query` scopes. |
+| Development (`pnpm dev`) with a loopback `ROMEDB_URL` | `romedb serve`, which `pnpm dev` starts | `romedb serve --directory storage/romedb/sites` on the next port, which `pnpm dev` also starts unless `ROMEDB_SITES_URL` is set. It needs RomeDB 0.2.12 or later. |
 
 Set `APP_URL` to the network's address, such as `https://example.com`. Sign-in happens on
 that host, and new sites start at a subdomain of it.
@@ -160,8 +161,8 @@ scheduled publishing, the outbox, webhooks and write recovery also run on sites 
 ## Limits of this release
 
 - Each process keeps up to 32 site hosts open; the one used longest ago closes first.
-- On Node, one process owns the database files. Share a live network with another process,
-  such as RomeDB Studio, through `romedb serve --directory storage/romedb`.
-- Workers development with several sites needs `ROMEDB_SITES_URL` pointing at a
-  `romedb serve --directory` you start yourself; `pnpm dev` starts only the main database's
-  service.
+- On Node, one process owns the database files. To share a live network with another
+  process, such as RomeDB Studio, run it over services instead: `ROMEDB_URL` at `romedb serve`
+  and `ROMEDB_SITES_URL` at `romedb serve --directory`, as `pnpm dev` does for a loopback URL.
+- In development, the main site answers only on `APP_URL`'s host once the network has added
+  sites. Open the dashboard at that address, such as `http://localhost:5173`.

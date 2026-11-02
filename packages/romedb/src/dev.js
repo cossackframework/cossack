@@ -1,7 +1,8 @@
 // @ts-check
 /**
  * Local development on Node.js: when ROMEDB_URL is a loopback address, start `romedb serve`
- * for it and hand its token to the dev server, so no token is copied into `.env`.
+ * for it and hand its token to the dev server, so no token is copied into `.env`. Beside it,
+ * `romedb serve --directory` keeps the databases of a CMS network's added sites.
  * Plain JavaScript: Vite configs and dev scripts import it from node_modules.
  */
 import { spawn, spawnSync } from 'node:child_process';
@@ -54,32 +55,100 @@ export async function startLocalRomeDB(options) {
     const file = path.join(storage, 'app.romedb');
     const create = await fs.access(file).then(() => false, () => true);
     const child = spawn(binary, ['serve', file, ...(create ? ['--create'] : []), '--port', String(service.port), '--token-file', tokenFile], { cwd: root, stdio: ['ignore', 'inherit', 'inherit'] });
-    // SIGTERM lets serve finish active requests and close the database. Sent synchronously,
-    // so it also works from a process 'exit' handler.
-    const stop = () => new Promise(resolve => {
+    const stop = stopper(child);
+    const token = await ready(child, service.origin, () => readToken(tokenFile), options.timeoutMs, stop);
+    log(`started romedb serve for ${path.relative(root, file)} at ${service.origin}`);
+    return { token, started: true, stop };
+}
+
+/**
+ * Start `romedb serve --directory` on `port` for the databases of a CMS network's added sites,
+ * unless a service already answers there. Its data stays in `storage/romedb/sites` under `root`,
+ * with the token in `storage/romedb/sites/romedb.token`.
+ * @param {{ port: number, root?: string, binary?: string, timeoutMs?: number, log?: (message: string) => void }} options
+ * @returns {Promise<{ url: string, token: string, started: boolean, stop(): Promise<void> } | undefined>} the organization
+ *   URL and its token; undefined when the executable cannot serve a directory (before RomeDB 0.2.12) or another service answers there.
+ */
+export async function startLocalSites(options) {
+    const origin = `http://127.0.0.1:${options.port}`;
+    const root = options.root ?? process.cwd();
+    const directory = path.join(root, 'storage/romedb/sites');
+    const tokenFile = path.join(directory, 'romedb.token');
+    const log = options.log ?? (message => console.log(`[romedb] ${message}`));
+    // The organization ID stays in the directory's manifest across restarts.
+    const organization = async () => {
+        try {
+            const manifest = JSON.parse(await fs.readFile(path.join(directory, 'romedb-directory.json'), 'utf8'));
+            return typeof manifest?.organizationId === 'string' ? manifest.organizationId : '';
+        } catch { return ''; }
+    };
+    const credentials = async () => {
+        const [token, id] = [await readToken(tokenFile), await organization()];
+        return token && id ? { url: `${origin}/v1/organizations/${id}`, token } : undefined;
+    };
+    if (await answers(origin)) {
+        const found = await credentials();
+        if (!found) log(`another service answers at ${origin}; set ROMEDB_SITES_URL and ROMEDB_SITES_TOKEN for added sites`);
+        return found ? { ...found, started: false, stop: async () => {} } : undefined;
+    }
+    const binary = options.binary ?? process.env.ROMEDB_BIN ?? 'romedb';
+    const help = spawnSync(binary, ['serve', '--help'], { encoding: 'utf8' });
+    if (help.status !== 0 || !`${help.stdout}${help.stderr}`.includes('--directory')) {
+        log('this romedb cannot serve a directory of databases (RomeDB 0.2.12 can), so the network cannot add sites');
+        return undefined;
+    }
+    await fs.mkdir(path.dirname(directory), { recursive: true, mode: 0o700 });
+    // Its startup lines name the organization URL and token file, which this reads itself.
+    const child = spawn(binary, ['serve', '--directory', directory, '--create', '--port', String(options.port)], { cwd: root, stdio: ['ignore', 'ignore', 'inherit'] });
+    const stop = stopper(child);
+    const found = await ready(child, origin, credentials, options.timeoutMs, stop);
+    log(`started romedb serve --directory ${path.relative(root, directory)} for added sites at ${origin}`);
+    return { ...found, started: true, stop };
+}
+
+/**
+ * SIGTERM lets serve finish active requests and close its databases. Sent synchronously, so it
+ * also works from a process 'exit' handler.
+ * @param {import('node:child_process').ChildProcess} child
+ * @returns {() => Promise<void>}
+ */
+function stopper(child) {
+    process.once('exit', () => { if (child.exitCode === null) child.kill('SIGTERM'); });
+    return () => new Promise(resolve => {
         if (child.exitCode !== null || child.signalCode !== null) return resolve(undefined);
         child.once('exit', () => resolve(undefined));
         child.kill('SIGTERM');
     });
-    process.once('exit', () => { if (child.exitCode === null) child.kill('SIGTERM'); });
-    const deadline = Date.now() + (options.timeoutMs ?? 20_000);
+}
+
+/**
+ * Wait until the service answers and `read` finds its credentials; stop it after the deadline.
+ * @template T
+ * @param {import('node:child_process').ChildProcess} child
+ * @param {string} origin
+ * @param {() => Promise<T | undefined | ''>} read
+ * @param {number | undefined} timeoutMs
+ * @param {() => Promise<void>} stop
+ * @returns {Promise<T>}
+ */
+async function ready(child, origin, read, timeoutMs, stop) {
+    const deadline = Date.now() + (timeoutMs ?? 20_000);
     while (Date.now() < deadline && child.exitCode === null) {
-        const token = await readToken(tokenFile);
-        if (token && await answers(service.origin)) {
-            log(`started romedb serve for ${path.relative(root, file)} at ${service.origin}`);
-            return { token, started: true, stop };
-        }
+        const found = await read();
+        if (found && await answers(origin)) return found;
         await new Promise(resolve => setTimeout(resolve, 100));
     }
     await stop();
-    throw new Error(`romedb serve did not answer at ${service.origin}.`);
+    throw new Error(`romedb serve did not answer at ${origin}.`);
 }
 
 /**
  * Vite plugin for `vite dev`: starts `romedb serve` for a loopback ROMEDB_URL (read from the
  * environment, `.dev.vars` or `.env`) and stops it with the dev server. The token lands in
- * `process.env.ROMEDB_TOKEN`; Workers apps pass it on with {@link romedbDevVars}. List it before
- * the Cloudflare plugin.
+ * `process.env.ROMEDB_TOKEN`. Unless ROMEDB_SITES_URL is set, it also starts
+ * `romedb serve --directory` on the next port for a CMS network's added sites, and sets
+ * ROMEDB_SITES_URL and ROMEDB_SITES_TOKEN. Workers apps pass these on with {@link romedbDevVars}.
+ * List it before the Cloudflare plugin.
  * @param {{ url?: string, root?: string }} [options]
  * @returns {import('vite').Plugin}
  */
@@ -100,20 +169,35 @@ export function romedbDev(options = {}) {
                 starting.catch(() => running.delete(key));
             }
             const service = await running.get(key);
-            if (service) process.env.ROMEDB_TOKEN = service.token;
+            if (!service) return;
+            process.env.ROMEDB_TOKEN = service.token;
+            if (process.env.ROMEDB_SITES_URL || await readVar(root, 'ROMEDB_SITES_URL')) return;
+            const sitesKey = `${key}\nsites`;
+            if (!running.has(sitesKey)) {
+                const starting = startLocalSites({ port: (localService(url)?.port ?? 4321) + 1, root });
+                running.set(sitesKey, starting);
+                starting.catch(() => running.delete(sitesKey));
+            }
+            const sites = await running.get(sitesKey);
+            if (sites && 'url' in sites) {
+                process.env.ROMEDB_SITES_URL = sites.url;
+                process.env.ROMEDB_SITES_TOKEN = sites.token;
+            }
         },
     };
 }
 
-/** @type {Map<string, ReturnType<typeof startLocalRomeDB>>} */
+/** @type {Map<string, ReturnType<typeof startLocalRomeDB> | ReturnType<typeof startLocalSites>>} */
 const running = new Map();
 
 /**
- * Cloudflare plugin `config` customizer: the token {@link romedbDev} read, as a local variable.
- * @returns {{ vars?: { ROMEDB_TOKEN: string } }}
+ * Cloudflare plugin `config` customizer: what {@link romedbDev} read (the token, and the added
+ * sites' organization URL and token), as local variables.
+ * @returns {{ vars?: { ROMEDB_TOKEN?: string, ROMEDB_SITES_URL?: string, ROMEDB_SITES_TOKEN?: string } }}
  */
 export function romedbDevVars() {
-    return process.env.ROMEDB_TOKEN ? { vars: { ROMEDB_TOKEN: process.env.ROMEDB_TOKEN } } : {};
+    const vars = Object.fromEntries(['ROMEDB_TOKEN', 'ROMEDB_SITES_URL', 'ROMEDB_SITES_TOKEN'].flatMap(name => process.env[name] ? [[name, process.env[name]]] : []));
+    return Object.keys(vars).length ? { vars } : {};
 }
 
 /** @param {string} origin */

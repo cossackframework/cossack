@@ -16,8 +16,25 @@ export function startLocalRomeDB(options: {
     log?: (message: string) => void;
 }): Promise<{ token: string; started: boolean; stop(): Promise<void> } | undefined>;
 
-/** Vite plugin: starts `romedb serve` for a loopback ROMEDB_URL and sets `process.env.ROMEDB_TOKEN`. */
+/**
+ * Start `romedb serve --directory` on `port` for a CMS network's added sites, unless a service
+ * answers there. Data stays in `storage/romedb/sites` under `root`. Undefined when the executable
+ * cannot serve a directory (before RomeDB 0.2.12), or another service answers there.
+ */
+export function startLocalSites(options: {
+    port: number;
+    root?: string;
+    binary?: string;
+    timeoutMs?: number;
+    log?: (message: string) => void;
+}): Promise<{ url: string; token: string; started: boolean; stop(): Promise<void> } | undefined>;
+
+/**
+ * Vite plugin: starts `romedb serve` for a loopback ROMEDB_URL and sets `process.env.ROMEDB_TOKEN`;
+ * unless ROMEDB_SITES_URL is set, also a directory service for added sites on the next port, setting
+ * ROMEDB_SITES_URL and ROMEDB_SITES_TOKEN.
+ */
 export function romedbDev(options?: { url?: string; root?: string }): Plugin;
 
-/** Cloudflare plugin `config` customizer that passes the token {@link romedbDev} read. */
-export function romedbDevVars(): { vars?: { ROMEDB_TOKEN: string } };
+/** Cloudflare plugin `config` customizer that passes on what {@link romedbDev} read. */
+export function romedbDevVars(): { vars?: { ROMEDB_TOKEN?: string; ROMEDB_SITES_URL?: string; ROMEDB_SITES_TOKEN?: string } };
