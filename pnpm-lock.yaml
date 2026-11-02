@@ -5,6 +5,7 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
+  '@romedb/node': link:../fastdb/turso/romedb/bindings/node
   '@electron/rebuild': ^4.2.0
   happy-dom@<21.0.4: 21.0.4
   nanoid@<3.3.18: 3.3.18
@@ -175,6 +176,9 @@ importers:
       '@hono/node-server':
         specifier: ^2.0.5
         version: 2.1.0(hono@4.13.11)
+      '@romedb/node':
+        specifier: link:../../../../fastdb/turso/romedb/bindings/node
+        version: link:../../../../fastdb/turso/romedb/bindings/node
       '@simplewebauthn/browser':
         specifier: 14.0.0
         version: 14.0.0
@@ -551,6 +555,13 @@ importers:
         version: 4.1.12(@types/node@26.0.0)(happy-dom@21.0.4)(jsdom@29.1.1)(vite@8.1.6(@types/node@26.0.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.0)(tsx@4.23.0)(yaml@2.9.0))
 
   packages/romedb:
+    dependencies:
+      '@romedb/node':
+        specifier: link:../../../fastdb/turso/romedb/bindings/node
+        version: link:../../../fastdb/turso/romedb/bindings/node
+      vite:
+        specifier: ~8.1.6
+        version: 8.1.6(@types/node@22.20.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.0)(tsx@4.23.0)(yaml@2.9.0)
     devDependencies:
       '@types/node':
         specifier: ^22.19.0

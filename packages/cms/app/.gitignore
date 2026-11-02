@@ -9,7 +9,6 @@
 !/tests/
 /scripts/*
 !/scripts/sync.mjs
-!/scripts/romedb.sh
 !/scripts/start.mjs
 !/src/
 /src/*
@@ -18,6 +17,7 @@
 !/src/passkeys.client.ts
 !/src/cms/
 # Rendered per runtime adapter by the recipe.
+/src/cms/database.ts
 /src/cms/media.ts
 /src/cms/pending.ts
 !/src/config/

@@ -46,6 +46,7 @@
       "@electron-forge/shared-types": "^8.0.1",
       "@electron/rebuild": "^4.2.0",
       "@hono/node-server": "^2.0.5",
+      "@romedb/node": "^0.2.12",
       "@simplewebauthn/browser": "14.0.0",
       "@tailwindcss/vite": "^4.3.3",
       "@tiptap/core": "3.32.0",

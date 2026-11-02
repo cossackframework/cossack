@@ -473,8 +473,14 @@ moderated under Comments (Turnstile when `TURNSTILE_SITE_KEY` and
 `TURNSTILE_SECRET_KEY` are set), patterns are reusable content, and Settings →
 Languages publishes translations under `/<code>/`. Staff can sign in with an
 authenticator app or a passkey, and General settings can require it. It needs a
-RomeDB database: `romedb serve` locally, or a RomeDB Cloud database
-(`ROMEDB_URL`, `ROMEDB_TOKEN`). The first visit to `/auth/setup` applies the
+RomeDB database, named by `ROMEDB_URL`. On Node the default is a file,
+`storage/romedb/app.romedb`, opened in the server's process: no service, port or
+token, and one process at a time. A URL with `ROMEDB_TOKEN` reaches `romedb serve`
+(to share a live database with Studio) or a RomeDB Cloud database. Workers reach
+RomeDB over HTTP: `pnpm dev` starts `romedb serve` for the loopback URL in
+`.dev.vars` and passes its token, and production uses RomeDB Cloud. To look into a
+file while its app runs, run the app on `romedb serve` instead; a plain copy of a
+live file can miss committed writes. The first visit to `/auth/setup` applies the
 schema and creates the administrator; it asks for `CMS_SETUP_CODE`. Media goes to
 R2 (`MEDIA` binding) on Workers, and to S3 (`S3_BUCKET`) or `MEDIA_DIR` on Node;
 images are resized with the Images binding (`IMAGES`) on Workers and `sharp` on
@@ -487,7 +493,7 @@ available with `cms` yet.
 
 ```bash
 cossack add cms
-romedb serve app.romedb --create   # prints the URL and the token file
+pnpm dev   # Node: creates storage/romedb/app.romedb; Workers: starts romedb serve
 ```
 
 #### `cossack add plugin`

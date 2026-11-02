@@ -89,7 +89,7 @@ live('RomeDB service contract', () => {
     it('reads its own writes through afterSequence', async () => {
         const write = await db.write([{ rql: `INSERT INTO ${ledger} (id, n) VALUES ($id, 1)`, params: { $id: 'raw' } }]);
         const other = await connect({ url, token });
-        const read = await other.read([{ rql: `SELECT n FROM ${ledger} WHERE id = 'raw'` }], { afterSequence: write.sequence });
+        const read = await other.read([{ sql: `SELECT n FROM ${ledger} WHERE id = 'raw'` }], { afterSequence: write.sequence });
         expect(read.sequence).toBeGreaterThanOrEqual(write.sequence);
         expect(read.results[0]!.rows).toEqual([[1n]]);
         await other.close();
@@ -160,7 +160,7 @@ live('RomeDB service contract', () => {
             return fetch(input, init);
         }) as typeof globalThis.fetch;
         const client = await connect({ url, token, fetch: slow });
-        const error = await client.read([{ rql: 'SELECT 1' }], { signal: controller.signal }).catch(e => e) as ClientError;
+        const error = await client.read([{ sql: 'SELECT 1' }], { signal: controller.signal }).catch(e => e) as ClientError;
         expect(error).toMatchObject({ code: 'FDB_CANCELLED', outcome: 'read-failed' });
         await client.close();
     });

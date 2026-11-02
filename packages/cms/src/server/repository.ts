@@ -886,7 +886,7 @@ function storedJson(value: unknown): Value {
 function toJson(value: Value): unknown {
     if (typeof value === 'bigint') return Number(value);
     if (value instanceof Float64) return value.value;
-    if (value instanceof RecordId) return value.toString();
+    if (value instanceof RecordId) return `${value.table}:${String(value.key)}`;
     if (Array.isArray(value)) return value.map(toJson);
     if (value && typeof value === 'object' && !(value instanceof Uint8Array) && !(value instanceof Vector)) {
         return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, toJson(entry)]));

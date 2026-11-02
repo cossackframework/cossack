@@ -32,7 +32,7 @@ The project is a `pnpm` workspace. All packages are located in the `packages` di
 -   **`scaffold`**: Node-only recipe engine for creation and feature composition. Use this repository as example/template for new projects.
 -   **`cossack`**: The Cossack CLI. It consumes `scaffold` directly.
 -   **`ui`**: UI components package. shadcn-ui inspired components.
--   **`romedb`**: RomeDB service-protocol client on Web APIs, request bindings with exact write recovery, typed values.
+-   **`romedb`**: RomeDB request bindings with exact write recovery, on RomeDB's own `@romedb/node` client (Workers and Node).
 -   **`cms`**: The open-source CMS on RomeDB: collections (schemaless, defined in the dashboard), blocks, rich text (ProseMirror JSON), taxonomies, media with resized variants, settings, themes (plugins), menus, scheduling, previews, revisions, redirects, SEO, comments, patterns, translations, API tokens, webhooks, two-step sign-in and passkeys, resources and schema planner, repositories, auth storage, stores, outbox, plugin hosting. `cossack add cms` renders it into the shared `auth` and `dashboard` pages, with a default theme in `src/plugins/default-theme/`. The package is also an application: `packages/cms/app` holds the CMS pages, components and API routes that `cossack add cms` renders (listed in its `cossack-recipe.json`), and `pnpm dev:cms` runs it against workspace sources; its shared shell is synced from the scaffold template (`specs/cms-package-app.md`). The app builder (Platform) is a separate private repository that uses it.
 
 ## 4. Development Workflow

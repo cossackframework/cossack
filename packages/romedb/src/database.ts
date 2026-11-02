@@ -1,19 +1,25 @@
 import {
     ClientError,
-    connectWithInfo,
-    preparedRequestId,
+    connect,
     validatePrepared,
     type BatchResult,
-    type ConnectOptions,
     type DatabaseInfo,
     type PreparedWrite,
     type RemoteDatabase,
     type RequestOptions,
-    type Statement,
+    type Statement as ClientStatement,
+    type Value,
     type WarmResult,
     type WorkLimits,
-} from './client';
-import type { PendingWrite, PendingWriteStore } from './pending';
+} from '@romedb/node/client';
+import type { EmbeddedDatabase } from '@romedb/node/embedded-client';
+import { preparedRequestId, type PendingWrite, type PendingWriteStore } from './pending';
+
+/** A service or Cloud connection, or a file this process opened with `@romedb/node`. */
+export type DatabaseClient = RemoteDatabase | EmbeddedDatabase;
+
+/** One RomeQL statement. `@romedb/node` calls the text `sql`; the binding passes it on as that. */
+export interface Statement { rql: string; params?: { [key: string]: Value } }
 
 /** The RomeDB engine release this package targets. Older engines are refused at preflight. */
 export const REQUIRED_ENGINE_VERSION = '0.2.9';
@@ -34,7 +40,14 @@ export interface RomeDBRetryOptions {
 
 export interface RomeDBOptions {
     url: string;
-    token: string;
+    /** Service or Cloud credential. Not needed when `connect` opens the database. */
+    token?: string;
+    /**
+     * Opens the database instead of the service client built from `url` and `token`, for
+     * example `connectNode` from `@cossackframework/romedb/node` for files. Called again after a
+     * failed open.
+     */
+    connect?: () => Promise<DatabaseClient>;
     /** Writes are saved here before dispatch. Use a durable store in production. */
     pending: PendingWriteStore;
     /** Explicit default budgets. A call may lower or raise them within the service ceilings. */
@@ -130,7 +143,7 @@ export class RomeDB {
     readonly #maxDelay: number;
     readonly #sleep: NonNullable<RomeDBOptions['sleep']>;
     readonly #now: () => number;
-    #client: Promise<RemoteDatabase> | undefined;
+    #client: Promise<DatabaseClient> | undefined;
     #preflight: Promise<DatabaseInfo> | undefined;
 
     constructor(options: RomeDBOptions) {
@@ -169,7 +182,7 @@ export class RomeDB {
         const call = { ...options, workLimits: options.workLimits ?? this.#limits.read };
         for (let attempt = 1; ; attempt++) {
             try {
-                return await client.read(statements, call);
+                return await client.read(clientStatements(statements), call);
             } catch (error) {
                 const delay = this.#retryDelay(error, attempt, options.signal);
                 if (delay === undefined) throw error;
@@ -197,7 +210,7 @@ export class RomeDB {
     async #writeOnce(statements: Statement[], options: WriteCallOptions): Promise<BatchResult> {
         const client = await this.#connection();
         if (options.afterSequence === undefined && !client.sequenceKnown) await this.preflight(options);
-        const request = client.prepareWrite(statements, { ...options, workLimits: options.workLimits ?? this.#limits.write });
+        const request = client.prepareWrite(clientStatements(statements), { ...options, workLimits: options.workLimits ?? this.#limits.write });
         const id = preparedRequestId(request);
         await this.pending.put(id, { request, savedAt: this.#now(), ...(options.kind === undefined ? {} : { kind: options.kind }) });
         let lastError: unknown;
@@ -228,16 +241,22 @@ export class RomeDB {
         const write = await this.pending.get(id);
         if (!write) return 'missing';
         const client = await this.#connection();
-        try {
-            await client.recover(write.request, options);
-            await this.pending.delete(id);
-            return 'confirmed';
-        } catch (error) {
-            if (error instanceof ClientError && error.outcome === 'rolled-back') {
+        if (client.databaseId === undefined) await this.preflight(options);
+        if (write.request.url !== client.url) return 'pending';
+        // An embedded file gets a new identity each time it opens, and a restored database a new
+        // one too: no receipt can confirm a write from an earlier identity, so reconcile it.
+        if (write.request.databaseId === client.databaseId) {
+            try {
+                await client.recover(write.request, options);
                 await this.pending.delete(id);
-                return 'rolled-back';
+                return 'confirmed';
+            } catch (error) {
+                if (error instanceof ClientError && error.outcome === 'rolled-back') {
+                    await this.pending.delete(id);
+                    return 'rolled-back';
+                }
+                if (!this.#outsideReceiptWindow(write, client.sequence)) return 'pending';
             }
-            if (!this.#outsideReceiptWindow(write, client.sequence)) return 'pending';
         }
         const reconcile = write.kind === undefined ? undefined : this.#options.reconcilers?.[write.kind];
         if (!reconcile) return 'pending';
@@ -266,7 +285,7 @@ export class RomeDB {
     /** Cloud only: start the database runtime. Request paths never warm; call this from a scheduled path. */
     async warm(options: RequestOptions = {}): Promise<WarmResult | undefined> {
         const client = await this.#connection();
-        return client.cloud ? client.warm(options) : undefined;
+        return cloud(client) ? client.warm(options) : undefined;
     }
 
     async close(): Promise<void> {
@@ -276,23 +295,23 @@ export class RomeDB {
         if (client) await (await client.catch(() => undefined))?.close();
     }
 
-    #connection(): Promise<RemoteDatabase> {
+    #connection(): Promise<DatabaseClient> {
         if (!this.#client) {
-            const options: ConnectOptions = {
-                url: this.#options.url,
-                token: this.#options.token,
-                ...(this.#options.timeoutMs === undefined ? {} : { timeoutMs: this.#options.timeoutMs }),
-                ...(this.#options.fetch === undefined ? {} : { fetch: this.#options.fetch }),
-            };
-            const cloud = /\/databases\/[0-9a-f-]{36}\/?$/.test(options.url);
+            const { url, token, timeoutMs, fetch } = this.#options;
             // Request scopes never warm; Cloud URLs defer details until a write needs a sequence.
-            this.#client = connectWithInfo(cloud ? { ...options, warm: false } : options).then(async ({ client, info }) => {
-                if (info) {
-                    // Local services return details at connect; check the engine right away.
-                    try { checkEngine(info.engineVersion, this.#required); }
-                    catch (error) { await client.close(); throw error; }
+            const open = this.#options.connect ?? (() => connect({
+                url, token: token ?? '', warm: false,
+                ...(timeoutMs === undefined ? {} : { timeoutMs }),
+                ...(fetch === undefined ? {} : { fetch }),
+            }));
+            this.#client = open().then(async client => {
+                if (cloud(client)) return client;
+                // Files and local services answer details at once; check the engine right away.
+                try {
+                    const info = await client.info();
+                    checkEngine(info.engineVersion, this.#required);
                     this.#preflight = Promise.resolve(info);
-                }
+                } catch (error) { await client.close(); throw error; }
                 return client;
             });
             this.#client.catch(() => { this.#client = undefined; this.#preflight = undefined; });
@@ -328,6 +347,20 @@ export function compareVersions(a: string, b: string): number {
         if (diff !== 0) return Math.sign(diff);
     }
     return 0;
+}
+
+function clientStatements(statements: Statement[]): ClientStatement[] {
+    if (!Array.isArray(statements)) throw new TypeError('statements require an array');
+    return statements.map(statement => {
+        if (statement === null || typeof statement !== 'object' || typeof statement.rql !== 'string' || Object.keys(statement).some(key => key !== 'rql' && key !== 'params')) {
+            throw new TypeError('statement requires RomeQL text in `rql` and optional params');
+        }
+        return statement.params === undefined ? { sql: statement.rql } : { sql: statement.rql, params: statement.params };
+    });
+}
+
+function cloud(client: DatabaseClient): client is RemoteDatabase {
+    return 'cloud' in client && client.cloud;
 }
 
 function checkEngine(version: string | undefined, required: string): void {

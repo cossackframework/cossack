@@ -40,9 +40,11 @@ becomes a runnable Cossack application as well as a library, the way
   `packages/scaffold/template`.
 - **Workspace member.** `packages/cms/app` is `@cossackframework/cms-app`,
   private, with `workspace:*` dependencies, so the dashboard runs against the
-  workspace sources of every package. Root `pnpm dev:cms` starts it, and starts
-  a local RomeDB first when nothing answers at `ROMEDB_URL` in `.env`
-  (`scripts/romedb.sh`, also `pnpm romedb` on its own).
+  workspace sources of every package. Root `pnpm dev:cms` starts it. The
+  database is the file `storage/romedb/app.romedb` by default, opened in the dev
+  server's process; with a loopback `ROMEDB_URL` the dev server starts
+  `romedb serve` itself and reads its token file (`romedbDev` from
+  `@cossackframework/romedb/dev`).
 - **Publishing.** `@cossackframework/cms` ships `src`, `app` and
   `agent-docs.json`; `app/.gitignore` keeps rendered files, `node_modules` and
   local state out of the tarball. The scaffold resolves

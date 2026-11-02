@@ -1,6 +1,9 @@
 import { constants } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { ClientError, connect } from '@romedb/node/client';
+import type { DatabaseClient } from './database';
 import { decodePendingWrite, encodePendingWrite, PendingWriteConflictError, samePendingWrite, type PendingWrite, type PendingWriteStore } from './pending';
 
 const MAX_FILE = 2_359_296;
@@ -95,4 +98,51 @@ export class FilePendingWriteStore implements PendingWriteStore {
         try { await directory.sync(); }
         finally { await directory.close(); }
     }
+}
+
+export interface NodeConnectionOptions {
+    /**
+     * A file path (or `file:` URL) opens the database in this process and creates it when it is
+     * missing. An `http(s)://` URL connects to `romedb serve` or RomeDB Cloud.
+     */
+    url: string;
+    /** Service or Cloud credential. Files need none. */
+    token?: string;
+    timeoutMs?: number;
+    /** Most files this process keeps open at once (`openEmbedded`'s `maxOpen`, default 16). */
+    maxOpen?: number;
+}
+
+/** True when `ROMEDB_URL` names a service rather than a file. */
+export function isServiceUrl(url: string): boolean {
+    return /^(?:https?|romedb):\/\//i.test(url);
+}
+
+/**
+ * Open the database `url` names with `@romedb/node`: a file in this process (one process owns a
+ * file), or a connection to `romedb serve` or Cloud. Pass it to `createRomeDB` as `connect`.
+ */
+export async function connectNode(options: NodeConnectionOptions): Promise<DatabaseClient> {
+    const { url, token, timeoutMs, maxOpen } = options;
+    const timeout = timeoutMs === undefined ? {} : { timeoutMs };
+    if (isServiceUrl(url)) {
+        if (!token) throw new TypeError(`ROMEDB_TOKEN is required for ${url}`);
+        return connect({ url, token, warm: false, ...timeout });
+    }
+    const file = path.resolve(url.startsWith('file:') ? fileURLToPath(url) : url);
+    // The addon loads only when a file is opened, so service URLs work where it can't load.
+    const { openEmbedded } = await import('@romedb/node/embedded-client');
+    const open = (create: boolean) => openEmbedded({ path: file, create, ...timeout, ...(maxOpen === undefined ? {} : { maxOpen }) });
+    if (await exists(file)) return open(false);
+    await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
+    // Another process may create it first; open that file then.
+    return open(true).catch(error => {
+        if (error instanceof ClientError && error.code === 'FDB_ALREADY_EXISTS') return open(false);
+        throw error;
+    });
+}
+
+async function exists(file: string): Promise<boolean> {
+    try { await fs.access(file, constants.F_OK); return true; }
+    catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false; throw error; }
 }

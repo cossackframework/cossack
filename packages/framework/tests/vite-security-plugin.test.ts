@@ -74,14 +74,18 @@ describe('ORM and session server-only imports', () => {
     const safe = stripClientServerOnlyImports(`
       import { renderMarkdown } from '@cossackframework/cms/server';
       import { createRomeDB } from '@cossackframework/romedb';
+      import { connect } from '@romedb/node/client';
       import { Float64 } from '@cossackframework/romedb/values';
+      import { Vector } from '@romedb/node/values';
       class Page {
-        render() { return Float64.name; }
+        render() { return Float64.name + Vector.name; }
       }
     `, '/src/page.ts');
     expect(safe).not.toContain('@cossackframework/cms/server');
     expect(safe).not.toContain("from '@cossackframework/romedb'");
+    expect(safe).not.toContain('@romedb/node/client');
     expect(safe).toContain('@cossackframework/romedb/values');
+    expect(safe).toContain('@romedb/node/values');
     expect(() => stripClientServerOnlyImports(`
       import { renderMarkdown } from '@cossackframework/cms/server';
       export const leaked = renderMarkdown;

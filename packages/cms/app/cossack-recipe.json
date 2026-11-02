@@ -24,6 +24,7 @@
     "src/pages/dashboard/index.ts"
   ],
   "rendered": [
+    "src/cms/database.ts",
     "src/cms/media.ts",
     "src/cms/pending.ts"
   ]

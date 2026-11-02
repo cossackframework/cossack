@@ -12,7 +12,7 @@ input blocks with conditional logic, and each keeps its submissions in a table o
 with notifications, webhooks and hooks like Gravity Forms'. Add it to an
 application with `cossack add cms`, which renders the shared `auth` and `dashboard` pages
 over CMS storage and a default theme into `src/plugins/default-theme/`. It runs on Cloudflare Workers
-with RomeDB Cloud and on Node.js with `romedb serve`. The package is also an application: `app/`
+with RomeDB Cloud and on Node.js with a RomeDB file in the server's process, `romedb serve` or Cloud. The package is also an application: `app/`
 holds the pages, components and API routes that `cossack add cms` renders, and `pnpm dev` here (or
 `pnpm dev:cms` at the repository root) runs them from the workspace; see `app/README.md`.
 

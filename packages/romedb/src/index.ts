@@ -1,14 +1,16 @@
-// Service-protocol client (Web APIs only)
+// RomeDB's client and typed values (`@romedb/node/client`: Web APIs only, so it also runs on
+// Workers). `RecordId` is RomeDB's `Record`, renamed so it does not hide TypeScript's `Record`.
 export {
     connect,
-    connectWithInfo,
     normalizeUrl,
     validatePrepared,
-    preparedRequestId,
     ClientError,
     RemoteDatabase,
-    type Client,
-    type Statement,
+    Float64,
+    Record as RecordId,
+    Vector,
+    encodeValue,
+    decodeValue,
     type RequestOptions,
     type ReadOptions,
     type WriteOptions,
@@ -16,16 +18,16 @@ export {
     type PreparedWrite,
     type QueryResult,
     type BatchResult,
-    type ExecutionWork,
     type Capabilities,
     type DatabaseInfo,
     type ConnectOptions,
     type WarmResult,
     type Outcome,
-} from './client';
+    type Value,
+    type PortableValue,
+} from '@romedb/node/client';
 
-// Typed values and codecs
-export { Float64, RecordId, Vector, encodeValue, decodeValue, type Value, type PortableValue } from './values';
+// JSON transport for SSR state, RPC and plugin boundaries, and row helpers
 export { toTransport, fromTransport, TRANSPORT_VERSION, type TransportValue } from './transport';
 export { objects, first, one, scalar, affected, DuplicateColumnError, CardinalityError, type Row } from './rows';
 
@@ -37,6 +39,8 @@ export {
     REQUIRED_ENGINE_VERSION,
     EngineVersionError,
     UncertainWriteError,
+    type DatabaseClient,
+    type Statement,
     type RomeDBOptions,
     type RomeDBWorkLimits,
     type RomeDBRetryOptions,
@@ -50,6 +54,7 @@ export {
     PendingWriteConflictError,
     encodePendingWrite,
     decodePendingWrite,
+    preparedRequestId,
     type PendingWrite,
     type PendingWriteStore,
 } from './pending';

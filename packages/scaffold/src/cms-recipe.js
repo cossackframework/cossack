@@ -44,6 +44,49 @@ export async function cmsAppFiles() {
 
 export function cmsRecipeFiles({ adapter }) {
   return {
+    'src/cms/database.ts': adapter === 'cloudflare'
+      ? `import type { RomeDBOptions } from '@cossackframework/romedb';
+
+export interface DatabaseBindings {
+    /**
+     * RomeDB database URL. Workers reach RomeDB over HTTP: a RomeDB Cloud database, or
+     * \`romedb serve\` in development (\`pnpm dev\` starts it for a loopback URL).
+     */
+    ROMEDB_URL?: string;
+    /** Database grant (Cloud \`query\` scope) or the local service token. Server-only. */
+    ROMEDB_TOKEN?: string;
+}
+
+/** How the CMS reaches its database. */
+export function databaseConnection(env: DatabaseBindings): Pick<RomeDBOptions, 'url' | 'token' | 'connect'> {
+    const url = env.ROMEDB_URL;
+    const token = env.ROMEDB_TOKEN;
+    if (!url || !token) throw new Error('The CMS needs ROMEDB_URL and ROMEDB_TOKEN: a RomeDB Cloud database, or a loopback URL that pnpm dev serves with romedb serve.');
+    return { url, token };
+}
+`
+      : `import type { RomeDBOptions } from '@cossackframework/romedb';
+import { connectNode, isServiceUrl } from '@cossackframework/romedb/node';
+
+export interface DatabaseBindings {
+    /**
+     * A file path opens the database in this process and creates it on first use (default
+     * storage/romedb/app.romedb). A URL connects to \`romedb serve\` (\`pnpm dev\` starts it for a
+     * loopback URL) or to a RomeDB Cloud database.
+     */
+    ROMEDB_URL?: string;
+    /** Credential for a service or Cloud URL. Server-only. Files need none. */
+    ROMEDB_TOKEN?: string;
+}
+
+/** How the CMS reaches its database. One process owns a file; share it through \`romedb serve\`. */
+export function databaseConnection(env: DatabaseBindings): Pick<RomeDBOptions, 'url' | 'token' | 'connect'> {
+    const url = env.ROMEDB_URL || 'storage/romedb/app.romedb';
+    const token = env.ROMEDB_TOKEN || undefined;
+    if (isServiceUrl(url) && !token) throw new Error(\`ROMEDB_TOKEN is required for \${url}. Use a file path in ROMEDB_URL to keep the database in this process.\`);
+    return { url, ...(token ? { token } : {}), connect: () => connectNode({ url, ...(token ? { token } : {}) }) };
+}
+`,
     'src/cms/media.ts': adapter === 'cloudflare'
       ? `import type { StorageProvider } from '@cossackframework/core/storage';
 import type { ImageTransformer } from '@cossackframework/cms/server';
@@ -202,11 +245,23 @@ export function patchCmsNodeEntry(source) {
   maintenance.unref();`);
 }
 
-/** Vite: plugin policy lints fail builds (raw RomeQL, undeclared network, permissions or hooks). */
-export function patchCmsViteConfig(source) {
-  return source
-    .replace("import { cossackSsg } from '@cossackframework/framework/vite-ssg-plugin';", "import { cossackSsg } from '@cossackframework/framework/vite-ssg-plugin';\nimport { cossackPluginPolicy } from 'cossack/plugin-policy';")
+/**
+ * Vite: plugin policy lints fail builds (raw RomeQL, undeclared network, permissions or hooks).
+ * `pnpm dev` starts \`romedb serve\` for a loopback ROMEDB_URL; on Node, RomeDB's native
+ * addon loads with Node rather than through Vite.
+ */
+export function patchCmsViteConfig(source, { adapter }) {
+  const cloudflare = adapter === 'cloudflare';
+  let patched = source
+    .replace("import { cossackSsg } from '@cossackframework/framework/vite-ssg-plugin';", `import { cossackSsg } from '@cossackframework/framework/vite-ssg-plugin';\nimport { cossackPluginPolicy } from 'cossack/plugin-policy';\nimport { ${cloudflare ? 'romedbDev, romedbDevVars' : 'romedbDev'} } from '@cossackframework/romedb/dev';`)
+    .replace('  plugins: [\n', '  plugins: [\n    // Starts `romedb serve` in development when ROMEDB_URL is a loopback URL.\n    romedbDev(),\n')
     .replace('    cossackConfig(),', '    cossackConfig(),\n    // Rendered plugins must stay within their manifest; violations fail the build.\n    cossackPluginPolicy(),');
+  if (cloudflare) {
+    patched = patched.replace("      viteEnvironment: { name: 'ssr' },\n", "      viteEnvironment: { name: 'ssr' },\n      // The token of the local romedb serve that romedbDev started.\n      config: romedbDevVars,\n");
+  } else {
+    patched = patched.replace("            noExternal: [\n              'hono',", "            // RomeDB's native addon loads with Node, not through Vite.\n            external: ['@romedb/node'],\n            noExternal: [\n              'hono',");
+  }
+  return patched;
 }
 
 export function cmsSetupCode() {

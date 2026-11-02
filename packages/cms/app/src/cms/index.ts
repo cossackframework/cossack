@@ -4,14 +4,11 @@ import { cmsReconcilers, createCMS, type CmsHost } from '@cossackframework/cms/s
 import type { Principal } from '@cossackframework/cms';
 import { plugins } from '@cossackframework/framework/plugins';
 import { modules, resources } from './resources';
+import { databaseConnection, type DatabaseBindings } from './database';
 import { pendingWrites, type PendingBindings } from './pending';
 import { imageTransformer, mediaStorage, type MediaBindings } from './media';
 
-export interface CmsBindings extends PendingBindings, MediaBindings {
-    /** RomeDB database URL: a Cloud database URL, or `http://127.0.0.1:4321` for `romedb serve`. */
-    ROMEDB_URL?: string;
-    /** Database grant (Cloud `query` scope) or the local service token. Server-only. */
-    ROMEDB_TOKEN?: string;
+export interface CmsBindings extends DatabaseBindings, PendingBindings, MediaBindings {
     APP_URL?: string;
     /** Sends form notifications: Cloudflare's Email Service binding, or any `{ send(message) }`. */
     EMAIL?: { send(message: { to: string; from: string; subject: string; text: string; replyTo?: string }): Promise<unknown> };
@@ -28,14 +25,12 @@ declare module 'hono' {
 
 let current: { key: string; cms: CmsHost } | undefined;
 
-/** One CMS host per isolate or process, keyed by its database credential. */
+/** One CMS host per isolate or process, keyed by its database address and credential. */
 export function cmsFor(env: CmsBindings): CmsHost {
-    const url = env.ROMEDB_URL;
-    const token = env.ROMEDB_TOKEN;
-    if (!url || !token) throw new Error('The CMS needs ROMEDB_URL and ROMEDB_TOKEN. Start `romedb serve` locally, or use a RomeDB Cloud database.');
-    const key = `${url}\n${token}`;
+    const connection = databaseConnection(env);
+    const key = `${connection.url}\n${connection.token ?? ''}`;
     if (current?.key !== key) {
-        const db = createRomeDB({ url, token, pending: pendingWrites(env), reconcilers: cmsReconcilers() });
+        const db = createRomeDB({ ...connection, pending: pendingWrites(env), reconcilers: cmsReconcilers() });
         const storage = mediaStorage(env);
         const images = imageTransformer(env);
         const mail = env.EMAIL;

@@ -1,15 +1,18 @@
-// The cms feature in a generated application against a local `romedb serve`: template and
+// The cms feature in a generated application, on Node against a RomeDB file in the server's
+// process (the default) and a local `romedb serve`, and on Workers against `romedb serve`: template and
 // type checks, setup through /auth/setup, the shared /dashboard with users and settings,
 // posts with rich text, terms and media, a collection built in the dashboard with blocks,
 // themes, menus, the content API, the public site and background outbox delivery. The same
 // flow runs on Node and on Workers; a browser case drives the editors.
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import fs from 'node:fs/promises';
+import { spawn } from 'node:child_process';
+import { createServer } from 'node:net';
 import path from 'node:path';
 import { chromium, expect as browserExpect } from '@playwright/test';
 import { cleanupRoots, cossack, productionServer, project, typecheck, vite } from './fixtures/generated-app.js';
 import { browserless, contains, lacks, PNG, visible } from './fixtures/cms-client.js';
-import { liveRomeDBTests, startRomeDBService } from '../../romedb/src/testing.ts';
+import { findRomeDBBinary, liveRomeDBTests, startRomeDBService } from '../../romedb/src/testing.ts';
 
 afterEach(cleanupRoots);
 
@@ -342,10 +345,6 @@ async function exercise(origin, routeIds, diagnostics) {
 }
 
 describe.skipIf(!liveRomeDBTests())('generated CMS application', () => {
-  let service;
-  beforeAll(async () => { service = await startRomeDBService(); }, 30_000);
-  afterAll(async () => { await service?.stop(); });
-
   it('sets up, manages content and collections, and serves the site on Node', async () => {
     const root = await project('node', ['cms'], {}, process.env.CMS_KEEP ? [] : undefined);
     const templates = JSON.parse((await cossack(root, ['check', 'templates', '--json'])).stdout);
@@ -368,11 +367,14 @@ describe.skipIf(!liveRomeDBTests())('generated CMS application', () => {
     expect(client).toContain('ProseMirror-hideselection');
     expect(await read(path.join(root, 'dist/server'))).not.toContain('ProseMirror-hideselection');
     const routeIds = JSON.parse(await fs.readFile(path.join(root, 'dist/client/cossack-routes.json'), 'utf8')).filePathToId;
-    const environment = { APP_SECRET: 'generated-cms-test-secret-0123456789abcdef', ROMEDB_URL: service.url, ROMEDB_TOKEN: service.token, CMS_SETUP_CODE: 'setup-code-for-tests',
+    // ROMEDB_URL defaults to the file storage/romedb/app.romedb, opened in the server's process.
+    expect(await fs.readFile(path.join(root, '.env'), 'utf8')).toMatch(/^ROMEDB_URL=storage\/romedb\/app\.romedb$/m);
+    const environment = { APP_SECRET: 'generated-cms-test-secret-0123456789abcdef', ROMEDB_URL: path.join(root, 'storage/romedb/app.romedb'), ROMEDB_TOKEN: '', CMS_SETUP_CODE: 'setup-code-for-tests',
       ROMEDB_PENDING_DIR: path.join(root, '.cossack/romedb-pending'), MEDIA_DIR: path.join(root, 'storage/media') };
     const server = await productionServer(root, environment);
     try { await exercise(server.origin, routeIds, () => server.diagnostics()); }
     finally { await server.close(); }
+    expect((await fs.stat(path.join(root, 'storage/romedb/app.romedb'))).mode & 0o777).toBe(0o600);
   }, 400_000);
 
   it('edits posts and builds a collection in the browser', async () => {
@@ -390,6 +392,10 @@ describe.skipIf(!liveRomeDBTests())('generated CMS application', () => {
       const context = await browser.newContext();
       await context.addCookies([...web.jar].map(([name, value]) => ({ name, value, url: server.origin })));
       const page = await context.newPage();
+      // Playwright turns on file chooser interception when the first listener is added, without
+      // waiting for it, so a key press right after waitForEvent('filechooser') can open the native
+      // picker instead. Listen from the start.
+      page.on('filechooser', () => {});
       const errors = [];
       page.on('pageerror', error => errors.push(error.message));
       const ready = () => page.waitForFunction(() => window.__cossackReady === true);
@@ -628,4 +634,57 @@ describe.skipIf(!liveRomeDBTests())('generated CMS application', () => {
       } finally { await runtime.close(); }
     } finally { await database.stop(); }
   }, 400_000);
+
+  it('starts romedb serve for a loopback ROMEDB_URL in Workers development', async () => {
+    const root = await project('cloudflare', ['cms']);
+    const devVars = await fs.readFile(path.join(root, '.dev.vars'), 'utf8');
+    // Local Workers development names a loopback service and no token: pnpm dev reads it from serve.
+    expect(devVars).toMatch(/^ROMEDB_URL=http:\/\/127\.0\.0\.1:4321$/m);
+    expect(devVars).not.toMatch(/^ROMEDB_TOKEN=/m);
+    const port = await freePort();
+    await fs.writeFile(path.join(root, '.dev.vars'), devVars.replace(/^ROMEDB_URL=.*$/m, `ROMEDB_URL=http://127.0.0.1:${port}`));
+    const code = /^CMS_SETUP_CODE=(.*)$/m.exec(devVars)[1];
+    const child = spawn(process.execPath, ['--input-type=module', '-e', `
+      import { createServer } from 'vite';
+      const server = await createServer({ root: process.cwd(), server: { port: 0, host: '127.0.0.1' } });
+      await server.listen();
+      console.log('CMS_DEV_ORIGIN=http://127.0.0.1:' + server.httpServer.address().port);
+      process.on('message', async message => { if (message === 'STOP') { await server.close(); process.exit(0); } });
+    `], { cwd: root, env: { ...process.env, ROMEDB_BIN: findRomeDBBinary(), NODE_ENV: 'development', VITEST: '' }, stdio: ['ignore', 'pipe', 'pipe', 'ipc'] });
+    let output = '';
+    child.stdout.on('data', data => { output += data; });
+    child.stderr.on('data', data => { output += data; });
+    const exited = new Promise(resolve => child.once('exit', resolve));
+    try {
+      await expect.poll(() => {
+        if (child.exitCode !== null) throw new Error(output);
+        return /CMS_DEV_ORIGIN=(\S+)/.exec(output)?.[1];
+      }, { timeout: 60_000 }).toBeTruthy();
+      const origin = /CMS_DEV_ORIGIN=(\S+)/.exec(output)[1];
+      expect(output).toContain(`started romedb serve for storage/romedb/app.romedb at http://127.0.0.1:${port}`);
+      const web = browserless(origin, {}, () => output);
+      contains(await web.page('/auth/setup'), 'Set up your site');
+      const setup = await web.post('/auth/setup', { code, siteTitle: 'Workers Dev', name: 'Ada', email: 'ada@example.com', password: 'long password' });
+      expect(setup.headers.get('location'), await setup.text()).toBe('/dashboard');
+      await fs.access(path.join(root, 'storage/romedb/token'));
+    } finally {
+      if (child.connected) child.send('STOP'); else child.kill('SIGTERM');
+      const kill = setTimeout(() => child.kill('SIGKILL'), 10_000);
+      await exited;
+      clearTimeout(kill);
+    }
+    // The service stops with the dev server.
+    await expect.poll(() => fetch(`http://127.0.0.1:${port}/v1/database`).then(() => 'answers', () => 'stopped'), { timeout: 10_000 }).toBe('stopped');
+  }, 400_000);
 });
+
+function freePort() {
+  return new Promise((resolve, reject) => {
+    const server = createServer();
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const { port } = server.address();
+      server.close(() => resolve(port));
+    });
+  });
+}

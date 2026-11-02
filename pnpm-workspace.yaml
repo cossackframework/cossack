@@ -16,6 +16,8 @@ allowBuilds:
   workerd: true
 
 overrides:
+  # Until RomeDB publishes @romedb/node 0.2.12 (its plan, R1): the sibling RomeDB checkout.
+  '@romedb/node': link:../fastdb/turso/romedb/bindings/node
   '@electron/rebuild': ^4.2.0
   'happy-dom@<21.0.4': 21.0.4
   'nanoid@<3.3.18': 3.3.18

@@ -161,12 +161,12 @@ describe('pending write stores', () => {
         expect(client).toBe(10);
         const { connect } = await import('../src/index');
         const remote = await connect({ url: LOCAL, token: 't', fetch: service().fetch });
-        const a = remote.prepareWrite([{ rql: 'SELECT 1' }], { requestId: 'a' });
-        const b = remote.prepareWrite([{ rql: 'SELECT 2' }], { requestId: 'a' });
+        const a = remote.prepareWrite([{ sql: 'SELECT 1' }], { requestId: 'a' });
+        const b = remote.prepareWrite([{ sql: 'SELECT 2' }], { requestId: 'a' });
         await store.put('a', { request: a, savedAt: 2 });
         await store.put('a', { request: a, savedAt: 2 });
         await expect(store.put('a', { request: b, savedAt: 3 })).rejects.toBeInstanceOf(PendingWriteConflictError);
-        await store.put('c', { request: remote.prepareWrite([{ rql: 'SELECT 3' }], { requestId: 'c' }), savedAt: 1, kind: 'k' });
+        await store.put('c', { request: remote.prepareWrite([{ sql: 'SELECT 3' }], { requestId: 'c' }), savedAt: 1, kind: 'k' });
         expect((await store.list()).map(write => write.savedAt)).toEqual([1, 2]);
         expect((await store.get('a'))!.request.body).toBe(a.body);
         await store.delete('a');

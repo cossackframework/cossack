@@ -1,5 +1,5 @@
 import type { RomeDB, WriteCallOptions } from './database';
-import { Float64, RecordId, type Value } from './values';
+import { Float64, Record, type Value } from '@romedb/node/client';
 
 type Bindable = string | number | null | bigint | boolean;
 
@@ -86,6 +86,6 @@ function closing(sql: string, start: number, quote: string): number {
 function plain(value: Value): unknown {
     if (typeof value === 'bigint') return value >= BigInt(Number.MIN_SAFE_INTEGER) && value <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(value) : value;
     if (value instanceof Float64) return value.value;
-    if (value instanceof RecordId) return value.toString();
+    if (value instanceof Record) return `${value.table}:${String(value.key)}`;
     return value;
 }

@@ -58,8 +58,8 @@ functions, not a plugin runtime.
 
 | Owner | Responsibility |
 | --- | --- |
-| RomeDB repository | Publish a portable Web API client and codec for the service protocol, separate from Node journals and native access. Until it does, `packages/romedb` carries one. |
-| `packages/romedb` | The Web API service-protocol client (0.2.9 behavior), bound into request scopes: configuration, typed mapping, engine preflight, explicit `workLimits`, `warm: false` request defaults, durable pending-write stores (file, Durable Object), and a D1-shaped SQL facade. No CMS policy. |
+| RomeDB repository | `@romedb/node`: the service-protocol client and value types on Web APIs only (they run on Workers without `nodejs_compat`), and embedded files on Node. |
+| `packages/romedb` | RomeDB's client bound into request scopes: configuration, `{ rql }` statements, engine preflight, explicit `workLimits`, `warm: false` request defaults, durable pending-write stores (file, Durable Object), and a D1-shaped SQL facade. No CMS policy. |
 | `@cossackframework/core/hooks` | Typed local action/filter dispatcher. No database, discovery, or CMS names. |
 | `packages/framework`, existing | Compose `src/plugins/*/` into routes, layouts, middleware, translations, assets, and configuration. Emit a static plugin registry. |
 | `packages/auth`, existing | Stay RomeDB-free. New shared contracts, such as a grant model, are portable interfaces here. |
@@ -76,13 +76,12 @@ The CMS provides RomeDB implementations of `AuthSessionStore`, the OAuth state
 store, the framework `SessionStore`, `JobStore`, and `NotificationStore`. Each
 operation is one atomic request whose affected count is checked.
 
-The 0.2.9 `@romedb/node/client` exposes `connect`, `info`, `read`, `prepareWrite`,
+`@romedb/node/client` exposes `connect`, `info`, `read`, `prepareWrite`,
 `submit`, `recover`, `writeAtomic`, `warm`, and `close` with an injectable `fetch`.
-It imports `node:crypto`, `node:buffer`, `node:events`, `node:url`, and `node:fs`
-for its journal, and it is not on npm. Stage 1 qualifies it on Workers under
-`nodejs_compat` or extracts a Web API entry, publishes it, and replaces the file
-journal. On a Cloud URL, `connect()` defers the details request and sends a
-background `/warm`; request scopes disable that warm and warm from a scheduled path.
+From 0.2.12 it uses Web APIs only, so Workers bundle it without `nodejs_compat`;
+pending writes stay in Cossack's stores instead of its Node journal. On a Cloud URL,
+`connect()` defers the details request and sends a background `/warm`; request
+scopes disable that warm and warm from a scheduled path.
 
 ## Deployment profiles
 

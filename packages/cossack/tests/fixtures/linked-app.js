@@ -37,6 +37,12 @@ export async function linkRepositoryModules(root, { packages = workspacePackages
     fs.symlink(path.join(repository, 'packages', name), path.join(modules, '@cossackframework', name), 'junction')));
   // Generated apps depend on the CLI package too (vite.config imports cossack/plugin-policy).
   await fs.symlink(path.join(repository, 'packages/cossack'), path.join(modules, 'cossack'), 'junction').catch(error => { if (error.code !== 'EEXIST') throw error; });
+  // pnpm links @romedb/node (a RomeDB checkout until it is published) into the packages that use it, not the root.
+  const romedbNode = await fs.realpath(path.join(repository, 'packages/romedb/node_modules/@romedb/node')).catch(() => undefined);
+  if (romedbNode && !exclude.includes('@romedb')) {
+    await fs.mkdir(path.join(modules, '@romedb'), { recursive: true });
+    await fs.symlink(romedbNode, path.join(modules, '@romedb/node'), 'junction').catch(error => { if (error.code !== 'EEXIST') throw error; });
+  }
   return modules;
 }
 

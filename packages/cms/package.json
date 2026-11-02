@@ -21,7 +21,6 @@
   "scripts": {
     "dev": "pnpm --dir app run dev",
     "sync": "pnpm --dir app run sync",
-    "romedb": "pnpm --dir app run romedb",
     "test": "vitest"
   },
   "dependencies": {

@@ -1,4 +1,4 @@
-import { validatePrepared, type PreparedWrite } from './client';
+import { validatePrepared, type PreparedWrite } from '@romedb/node/client';
 
 /** A saved write persisted before dispatch, so an uncertain outcome can be recovered by exact body. */
 export interface PendingWrite {
@@ -44,7 +44,16 @@ export function decodePendingWrite(stored: string): PendingWrite {
 }
 
 export function samePendingWrite(a: PendingWrite, b: PendingWrite): boolean {
-    return a.request.body === b.request.body && a.request.url === b.request.url && a.request.databaseId === b.request.databaseId && a.request.queryVersion === b.request.queryVersion;
+    return a.request.body === b.request.body && a.request.url === b.request.url && a.request.databaseId === b.request.databaseId && a.request.version === b.request.version && queryVersion(a.request) === queryVersion(b.request);
+}
+
+/** The request ID of a saved write. */
+export function preparedRequestId(request: PreparedWrite): string {
+    return validatePrepared(request).requestId;
+}
+
+function queryVersion(request: PreparedWrite): number | undefined {
+    return request.version === 2 ? request.queryVersion : undefined;
 }
 
 /** Process memory. For tests and single-process development only. */

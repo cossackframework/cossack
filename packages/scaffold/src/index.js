@@ -571,6 +571,8 @@ function packageJson(recipe, projectName) {
     if (recipe.adapter === 'node') dependencies['@aws-sdk/client-s3'] = dependencyVersion('@aws-sdk/client-s3');
     // Node resizes images with sharp; Workers use the Images binding.
     if (recipe.adapter === 'node') dependencies.sharp = dependencyVersion('sharp');
+    // Node opens RomeDB files in process, and reaches `romedb serve` and Cloud, with RomeDB's own library.
+    if (recipe.adapter === 'node') dependencies['@romedb/node'] = dependencyVersion('@romedb/node');
     // Passkeys in the browser, and the authenticator app's QR code.
     dependencies['@simplewebauthn/browser'] = dependencyVersion('@simplewebauthn/browser');
     dependencies.uqr = dependencyVersion('uqr');
@@ -1598,7 +1600,7 @@ function nodeEnvironmentValues(recipe, projectName, example = false) {
   }
   if (recipe.resolvedFeatures.includes('turnstile')) values.push(['TURNSTILE_SITE_KEY', 'your-site-key'], ['TURNSTILE_SECRET_KEY', 'your-secret-key'], ['TURNSTILE_HOSTNAME', 'localhost']);
   if (recipe.resolvedFeatures.includes('cms')) {
-    values.push(...cmsEnvironmentValues(example), ['ROMEDB_PENDING_DIR', '.cossack/romedb-pending'], ['MEDIA_DIR', 'storage/media']);
+    values.push(...cmsEnvironmentValues(example, 'node'), ['ROMEDB_PENDING_DIR', '.cossack/romedb-pending'], ['MEDIA_DIR', 'storage/media']);
     // Set S3_BUCKET to keep media in S3 or an S3-compatible service instead of MEDIA_DIR.
     for (const name of ['S3_BUCKET', 'S3_REGION', 'S3_ENDPOINT', 'S3_ACCESS_KEY_ID', 'S3_SECRET_ACCESS_KEY']) values.push([name, '']);
   }
@@ -1620,16 +1622,23 @@ function cloudflareEnvironmentValues(recipe, example = false) {
     values.push(...oauthEnvironmentValues(recipe, example));
   }
   if (recipe.resolvedFeatures.includes('turnstile')) values.push(['TURNSTILE_SECRET_KEY', 'your-secret-key']);
-  if (recipe.resolvedFeatures.includes('cms')) values.push(...cmsEnvironmentValues(example));
+  if (recipe.resolvedFeatures.includes('cms')) values.push(...cmsEnvironmentValues(example, 'cloudflare'));
   return values;
 }
 
-/** RomeDB connection and the first-run setup code. Locally, \`romedb serve\` prints the URL and token file. */
-function cmsEnvironmentValues(example) {
+/**
+ * RomeDB connection and the first-run setup code. Node keeps the database in a file by default
+ * (a URL needs ROMEDB_TOKEN). Workers reach RomeDB over HTTP: locally, \`pnpm dev\` starts
+ * \`romedb serve\` for the loopback URL and passes its token, so .dev.vars holds none.
+ */
+function cmsEnvironmentValues(example, adapter) {
+  const setup = ['CMS_SETUP_CODE', example ? 'choose-a-one-time-setup-code' : cmsSetupCode()];
+  if (adapter === 'node') return [['ROMEDB_URL', 'storage/romedb/app.romedb'], ['ROMEDB_TOKEN', ''], setup];
+  if (!example) return [['ROMEDB_URL', 'http://127.0.0.1:4321'], setup];
   return [
-    ['ROMEDB_URL', example ? 'https://cloud.romedb.com/v1/organizations/<organization>/databases/<database>' : 'http://127.0.0.1:4321'],
-    ['ROMEDB_TOKEN', example ? 'your-romedb-database-grant' : ''],
-    ['CMS_SETUP_CODE', example ? 'choose-a-one-time-setup-code' : cmsSetupCode()],
+    ['ROMEDB_URL', 'https://cloud.romedb.com/v1/organizations/<organization>/databases/<database>'],
+    ['ROMEDB_TOKEN', 'your-romedb-database-grant'],
+    setup,
   ];
 }
 
@@ -1816,7 +1825,7 @@ export async function renderRecipe(recipe, options = {}) {
   });
   files.set('.gitignore', {
     content: text('node_modules/\ndist/\nout/\n.wrangler/\n.env*\n.dev.vars*\n!.env.example\n!.dev.vars.example\n.cossack/routes.ts\n.cossack/config.d.ts\n.cossack/preview.json\n.cossack/preview-secrets.json\n.cossack/**/*.lock\n.cossack/romedb-pending/\n' +
-      (recipe.resolvedFeatures.includes('cms') ? 'storage/media/\n' : '')),
+      (recipe.resolvedFeatures.includes('cms') ? 'storage/media/\nstorage/romedb/\n' : '')),
     capability: 'base',
   });
 
@@ -1948,7 +1957,7 @@ export async function renderRecipe(recipe, options = {}) {
   if (recipe.resolvedFeatures.includes('cms')) {
     for (const [file, source] of Object.entries(cmsRecipeFiles({ adapter: recipe.adapter }))) files.set(file, { content: text(source), capability: 'cms' });
     const vite = files.get('vite.config.ts');
-    files.set('vite.config.ts', { ...vite, content: text(patchCmsViteConfig(vite.content.toString('utf8'))) });
+    files.set('vite.config.ts', { ...vite, content: text(patchCmsViteConfig(vite.content.toString('utf8'), { adapter: recipe.adapter })) });
     if (recipe.adapter === 'cloudflare') {
       const entry = files.get('src/index.ts');
       files.set('src/index.ts', { ...entry, content: text(patchCmsWorkerEntry(entry.content.toString('utf8'), { schedules: recipe.resolvedFeatures.includes('schedules') })) });

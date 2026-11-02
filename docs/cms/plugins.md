@@ -359,6 +359,6 @@ manifest's resources are migrated again; added grants need a new grant.
   `generated-runtime-cms-plugins.test.js` do exactly this with the fixtures in
   `tests/fixtures/plugin-package.js` and `cms-plugin-package.js`.
 - To test hooks and commands in process, build a host with `createCMS({ db, plugins })`
-  where each plugin is `{ name, version, manifest, module: { register } }` against a local
-  `romedb serve`, then `grantPlugin()` and call `runCommand()` or write through a
+  where each plugin is `{ name, version, manifest, module: { register } }` against a RomeDB
+  file or a local `romedb serve`, then `grantPlugin()` and call `runCommand()` or write through a
   repository. `packages/cms/tests/stores.test.ts` shows the pattern.

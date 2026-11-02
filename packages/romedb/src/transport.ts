@@ -1,4 +1,4 @@
-import { Float64, RecordId, Vector, fromBase64, plainObject, toBase64, type Value } from './values';
+import { Float64, Record, Vector, type Value } from '@romedb/node/values';
 
 /** Version of the JSON transport representation. */
 export const TRANSPORT_VERSION = 1;
@@ -24,7 +24,7 @@ export function toTransport(value: Value): TransportValue {
     }
     if (typeof value === 'bigint') return tag('int', value.toString());
     if (value instanceof Float64) return tag('f64', floatBits(value.value));
-    if (value instanceof RecordId) return tag('rec', { table: value.table, [typeof value.key === 'bigint' ? 'int' : 'key']: String(value.key) });
+    if (value instanceof Record) return tag('rec', { table: value.table, [typeof value.key === 'bigint' ? 'int' : 'key']: String(value.key) });
     if (value instanceof Vector) return tag('vec', toBase64(value.bytes));
     if (value instanceof Uint8Array) return tag('bin', toBase64(value));
     if (Array.isArray(value)) return value.map(toTransport);
@@ -64,8 +64,8 @@ export function fromTransport(value: unknown, depth = 0): Value {
         }
         case 'rec': {
             if (!plainObject(payload) || typeof payload.table !== 'string') throw new TypeError('invalid record');
-            if (typeof payload.key === 'string' && Object.keys(payload).length === 2) return new RecordId(payload.table, payload.key);
-            if (typeof payload.int === 'string' && Object.keys(payload).length === 2 && /^(?:0|-?[1-9][0-9]{0,18})$/.test(payload.int)) return new RecordId(payload.table, BigInt(payload.int));
+            if (typeof payload.key === 'string' && Object.keys(payload).length === 2) return new Record(payload.table, payload.key);
+            if (typeof payload.int === 'string' && Object.keys(payload).length === 2 && /^(?:0|-?[1-9][0-9]{0,18})$/.test(payload.int)) return new Record(payload.table, BigInt(payload.int));
             throw new TypeError('invalid record');
         }
         case 'bin':
@@ -94,4 +94,25 @@ function floatBits(value: number): string {
     let hex = '';
     for (let i = 0; i < 8; i++) hex += view.getUint8(i).toString(16).padStart(2, '0');
     return hex;
+}
+
+function plainObject(value: unknown): value is { [key: string]: unknown } {
+    if (value === null || typeof value !== 'object') return false;
+    const prototype = Object.getPrototypeOf(value);
+    return prototype === Object.prototype || prototype === null;
+}
+
+function toBase64(bytes: Uint8Array): string {
+    let binary = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    return btoa(binary);
+}
+
+function fromBase64(payload: string): Uint8Array {
+    if (payload.length > 1_048_576 || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(payload)) throw new TypeError('invalid base64 bytes');
+    const binary = atob(payload);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    if (toBase64(bytes) !== payload) throw new TypeError('invalid base64 bytes');
+    return bytes;
 }
