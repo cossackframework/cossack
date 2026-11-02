@@ -2,7 +2,8 @@ import type { Context, MiddlewareHandler } from 'hono';
 import { getCookie } from 'hono/cookie';
 import { getSupportedLocales, LOCALE_COOKIE_NAME, setRequestLocale } from '@cossackframework/core';
 import { ANONYMOUS, type Principal } from '@cossackframework/cms';
-import { cmsFor, type CmsBindings } from './index';
+import { MAIN, type SiteResolution } from '@cossackframework/cms/server';
+import { cmsFor, networkFor, type CmsBindings } from './index';
 import { runMaintenance } from './maintenance';
 
 /**
@@ -11,19 +12,33 @@ import { runMaintenance } from './maintenance';
  * like an unknown URL. Before setup, or while the CMS is unavailable, no plugin route answers.
  */
 export async function pluginRouteActive(plugin: string, c: Context): Promise<boolean> {
-    try { return await cmsFor(c.env as CmsBindings).pluginActive(plugin); }
+    try { return await (c.get('cms') ?? cmsFor(c.env as CmsBindings)).pluginActive(plugin); }
     catch { return false; }
 }
 
-let lastMaintenance = 0;
+/** When each site's maintenance last ran in this isolate, by database. */
+const lastMaintenance = new Map<string, number>();
 
 /**
- * Puts the CMS host on the context with current collection definitions, then delivers outbox
- * events and webhooks after requests that wrote. Maintenance also runs at most once a minute.
+ * Finds the site the request's host names and puts its CMS host on the context with current
+ * collection definitions, then delivers outbox events and webhooks after requests that wrote.
+ * Maintenance also runs at most once a minute for each site. A host no site claims gets a 404,
+ * an alias redirects to its site's primary domain, and an archived site shows only its dashboard.
  */
 export const cmsMiddleware: MiddlewareHandler = async (c, next) => {
-    const cms = cmsFor(c.env as CmsBindings);
+    const network = networkFor(c.env as CmsBindings);
+    const url = new URL(c.req.url);
+    // Before setup the registry does not exist yet: the main site answers.
+    const found: SiteResolution = await network.resolve(url.host).catch(() => ({ kind: 'site', site: MAIN }));
+    if (found.kind === 'missing') return c.text('No site at this address.', 404);
+    if (found.kind === 'redirect') {
+        url.hostname = found.host;
+        return c.redirect(url.toString(), 301);
+    }
+    if (found.kind === 'archived' && !/^\/(?:dashboard|auth)(?:\/|$)/.test(c.req.path)) return c.text('This site is archived.', 503);
+    const cms = network.hostOf(found.site);
     c.set('cms', cms);
+    c.set('site', found.site);
     c.set('principal', ANONYMOUS);
     // Before setup the definition tables do not exist yet; built-in collections apply.
     await cms.ready().catch(error => console.error('[cms] could not load collections', error));
@@ -38,8 +53,8 @@ export const cmsMiddleware: MiddlewareHandler = async (c, next) => {
     await next();
     const now = Date.now();
     if (cms.outboxWrites !== writes) later(c, cms.outbox.dispatch({ limit: 10 }).then(() => cms.webhooks.dispatch({ limit: 10 })));
-    if (now - lastMaintenance > 60_000) {
-        lastMaintenance = now;
+    if (now - (lastMaintenance.get(found.site.database) ?? 0) > 60_000) {
+        lastMaintenance.set(found.site.database, now);
         later(c, runMaintenance(cms, { warm: false }));
     }
 };

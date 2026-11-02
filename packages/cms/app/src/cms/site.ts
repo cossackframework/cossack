@@ -29,15 +29,20 @@ const visitor = { principal: ANONYMOUS };
 /** Patterns are private; the site reads them to render the entries that use them. */
 const renderer = { principal: systemPrincipal('site') };
 
-/** Texts with block references, parsed once per isolate: saving checks them, so serving a page parses each text once. */
-const PARSED = new Map<string, ParsedText>();
+/**
+ * Texts with block references, parsed once per site in each isolate: saving checks them, so
+ * serving a page parses each text once. Sites can have different block types active.
+ */
+const PARSED = new WeakMap<CmsHost, Map<string, ParsedText>>();
 
 function parsedText(cms: CmsHost, text: string): ParsedText {
-    let parsed = PARSED.get(text);
+    let texts = PARSED.get(cms);
+    if (!texts) PARSED.set(cms, texts = new Map());
+    let parsed = texts.get(text);
     if (!parsed) {
         parsed = parseBlockText(text, cms.blockTypes);
-        if (PARSED.size >= 500) PARSED.delete(PARSED.keys().next().value!);
-        PARSED.set(text, parsed);
+        if (texts.size >= 500) texts.delete(texts.keys().next().value!);
+        texts.set(text, parsed);
     }
     return parsed;
 }
@@ -105,7 +110,7 @@ function localeWhere(languages: SiteLanguages, locale: string): { [field: string
 /** The layout's data: site title, tagline, the menus of the active theme's locations and the language links. */
 export async function siteView(cms: CmsHost, theme: ThemeState, options: { locale?: string; languages?: readonly LanguageLink[]; forms?: FormRequest; template?: string | null; entry?: RecordShape | null; user?: { name: string } | null; usage?: { user: boolean } } = {}): Promise<SiteView & { noindex: boolean }> {
     const settings = await cms.settings.all();
-    useImageSettings(settings);
+    useImageSettings(cms, settings);
     const languages = await cms.languages();
     const locale = options.locale ?? languages.default;
     const info = cms.themes().find(entry => entry.name === theme.name);
@@ -190,7 +195,7 @@ function walkBlocks(blocks: readonly RenderedBlock[], visit: (block: RenderedBlo
  * For the rich text inside blocks, the entry's rich text fields among them.
  */
 function bodyRenderer(cms: CmsHost, files: ReadonlyMap<string, CmsFile>, patterns: ReadonlyMap<string, Block[]>, usage?: { user: boolean }): (doc: RichTextDoc, scope?: BindingScopes, depth?: number) => BodyPart[] {
-    const resizes = cms.files?.resizes ?? false;
+    const resizes = imageOptions(cms);
     const media = (id: string) => {
         const view = mediaView(files.get(id), resizes);
         return view ? { url: view.url, width: view.width, height: view.height, srcset: view.srcset } : null;
@@ -245,18 +250,25 @@ async function pageMenu(cms: CmsHost, languages: SiteLanguages, locale: string):
     } catch { return []; /* before setup, or without pages */ }
 }
 
-/** A file as themes show it: cropped through a variant when the host resizes images, with `srcset`s. */
-/** Settings → Files as media views use them. Read at the start of each page, as they are the same for every visitor. */
-let imageOptions: { widths: readonly number[]; placeholder: boolean; sizes: string } = { widths: IMAGE_WIDTHS, placeholder: true, sizes: '(min-width: 768px) 768px, 100vw' };
+/** How a site shows images: whether it resizes them, and Settings → Files. */
+export interface ImageOptions { readonly resizes: boolean; readonly widths: readonly number[]; readonly placeholder: boolean; readonly sizes: string }
 
-function useImageSettings(settings: SiteSettings): void {
-    imageOptions = { widths: imageWidths(settings['media.imageWidths']), placeholder: settings['media.placeholder'] !== 'none', sizes: settings['media.sizes'] || '(min-width: 768px) 768px, 100vw' };
+/** Each site's Settings → Files, as its last page read them; they are the same for every visitor. */
+const IMAGE_SETTINGS = new WeakMap<CmsHost, Omit<ImageOptions, 'resizes'>>();
+
+function useImageSettings(cms: CmsHost, settings: SiteSettings): void {
+    IMAGE_SETTINGS.set(cms, { widths: imageWidths(settings['media.imageWidths']), placeholder: settings['media.placeholder'] !== 'none', sizes: settings['media.sizes'] || '(min-width: 768px) 768px, 100vw' });
 }
 
-export function mediaView(file: CmsFile | undefined, resizes: boolean): MediaView | null {
+function imageOptions(cms: CmsHost): ImageOptions {
+    return { resizes: cms.files?.resizes ?? false, ...(IMAGE_SETTINGS.get(cms) ?? { widths: IMAGE_WIDTHS, placeholder: true, sizes: '(min-width: 768px) 768px, 100vw' }) };
+}
+
+/** A file as themes show it: cropped through a variant when the host resizes images, with `srcset`s. */
+export function mediaView(file: CmsFile | undefined, imageOptions: ImageOptions): MediaView | null {
     if (!file) return null;
     const source = { ...file, version: file.updatedAt };
-    const variants = resizes && transformable(file.contentType);
+    const variants = imageOptions.resizes && transformable(file.contentType);
     const size = variants ? editedSize(file) : null;
     const { widths } = imageOptions;
     const url = variants && file.edits?.crop && size ? imageUrl(source, { width: Math.min(size.width, widths[widths.length - 1]!) }) : mediaUrl(file);
@@ -290,7 +302,7 @@ function renderedBlock(cms: CmsHost, block: { _id: string; type: string; data: R
     const html: Record<string, string> = {};
     const media: Record<string, MediaView> = {};
     const content: Record<string, BodyPart[]> = {};
-    const resizes = cms.files?.resizes ?? false;
+    const resizes = imageOptions(cms);
     const type = cms.blockTypes.get(block.type);
     // Code keeps its text: a value put into a Custom HTML block's HTML would run as markup.
     const bound = Object.entries(type?.fields ?? {}).filter(([, declaration]) => (declaration.kind === 'string' && !declaration.media) || (declaration.kind === 'text' && declaration.format !== 'code')).map(([key]) => key);
@@ -454,9 +466,9 @@ export async function unlockToken(record: RecordShape): Promise<string> {
 export async function entryViews(cms: CmsHost, collection: CollectionDefinition, records: readonly RecordShape[], options: EntryViewOptions = {}): Promise<EntryView[]> {
     const resource = cms.resourceById(`cms/${collection.name}`);
     const settings = await cms.settings.all();
-    useImageSettings(settings);
+    useImageSettings(cms, settings);
     const languages = await cms.languages();
-    const resizes = cms.files?.resizes ?? false;
+    const resizes = imageOptions(cms);
     const fields = Object.entries(resource.fields);
     // The entry's content is its blocks fields and its rich text and Markdown fields, rendered into `entry.content` in declared order; `entry.fields` keeps them apart.
     const contentFields = fields.filter(([, declaration]) => (declaration.kind === 'blocks' && !declaration.form) || isTextField(declaration));

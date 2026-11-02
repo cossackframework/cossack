@@ -1,10 +1,10 @@
 import { createRomeDB } from '@cossackframework/romedb';
 import { getRequestContext } from '@cossackframework/core';
-import { cmsReconcilers, createCMS, type CmsHost } from '@cossackframework/cms/server';
+import { cmsReconcilers, CmsNetwork, createCMS, MAIN_SITE, prefixedStorage, type CmsHost, type NetworkSite } from '@cossackframework/cms/server';
 import type { Principal } from '@cossackframework/cms';
 import { plugins } from '@cossackframework/framework/plugins';
 import { modules, resources } from './resources';
-import { databaseConnection, type DatabaseBindings } from './database';
+import { databaseConnection, siteDatabase, type DatabaseBindings } from './database';
 import { pendingWrites, type PendingBindings } from './pending';
 import { imageTransformer, mediaStorage, type MediaBindings } from './media';
 
@@ -18,15 +18,20 @@ export interface CmsBindings extends DatabaseBindings, PendingBindings, MediaBin
 
 declare module 'hono' {
     interface ContextVariableMap {
+        /** The host of the site the request reached. */
         cms: CmsHost;
+        site: NetworkSite;
         principal: Principal;
     }
 }
 
-let current: { key: string; cms: CmsHost } | undefined;
+let current: { key: string; network: CmsNetwork } | undefined;
 
-/** One CMS host per isolate or process, keyed by its database address and credential. */
-export function cmsFor(env: CmsBindings): CmsHost {
+/**
+ * One network per isolate or process, keyed by the main database's address and credential. The
+ * main database holds the accounts and the site registry; each added site has its own database.
+ */
+export function networkFor(env: CmsBindings): CmsNetwork {
     const connection = databaseConnection(env);
     const key = `${connection.url}\n${connection.token ?? ''}`;
     if (current?.key !== key) {
@@ -34,12 +39,41 @@ export function cmsFor(env: CmsBindings): CmsHost {
         const storage = mediaStorage(env);
         const images = imageTransformer(env);
         const mail = env.EMAIL;
-        current = { key, cms: createCMS({
-            db, modules, resources, plugins, ...(storage ? { storage } : {}), ...(images ? { images } : {}), siteUrl: () => env.APP_URL,
-            ...(mail ? { mail: { send: message => mail.send(message) }, mailFrom: env.MAIL_FROM || 'no-reply@example.com' } : {}),
+        const multisite = siteDatabase(env, MAIN_SITE) !== null;
+        current = { key, network: new CmsNetwork({
+            db,
+            networkHost: () => urlOf(env.APP_URL)?.host,
+            ...(multisite ? { open: site => createRomeDB({ ...siteDatabase(env, site.database)!, pending: pendingWrites(env, site.database), reconcilers: cmsReconcilers() }) } : {}),
+            host: (site, siteDb) => createCMS({
+                db: siteDb, network: db, modules, resources, plugins,
+                // A site's media keys start with sites/<id>/; the main site keeps its own.
+                ...(storage ? { storage: site.id === MAIN_SITE ? storage : prefixedStorage(storage, `sites/${site.id}/`) } : {}),
+                ...(images ? { images } : {}), siteUrl: () => siteUrl(env, site),
+                ...(mail ? { mail: { send: message => mail.send(message) }, mailFrom: env.MAIL_FROM || 'no-reply@example.com' } : {}),
+            }),
         }) };
     }
-    return current.cms;
+    return current.network;
+}
+
+/** The main site's host. A request's own site is `c.get('cms')`. */
+export function cmsFor(env: CmsBindings): CmsHost {
+    return networkFor(env).main;
+}
+
+/**
+ * A site's address: APP_URL for the main site, its primary domain for the others, never the
+ * request's Host header. With an http APP_URL (development), sites keep its scheme and port.
+ */
+export function siteUrl(env: CmsBindings, site: NetworkSite): string | undefined {
+    if (!site.host) return env.APP_URL;
+    const network = urlOf(env.APP_URL);
+    return network?.protocol === 'http:' ? `http://${site.host}${network.port ? `:${network.port}` : ''}` : `https://${site.host}`;
+}
+
+function urlOf(value: string | undefined): URL | undefined {
+    try { return value ? new URL(value) : undefined; }
+    catch { return undefined; }
 }
 
 /** The CMS host of the current request, for server code without a context argument. */

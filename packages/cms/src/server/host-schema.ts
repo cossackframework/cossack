@@ -22,7 +22,7 @@ export const HOST_TABLES = [
     'cms_terms', 'cms_settings', 'cms_collections', 'cms_taxonomies', 'cms_field_groups', 'cms_menus', 'cms_menu_locations',
     'cms_preview_tokens', 'cms_autosaves', 'cms_file_variants', 'cms_redirects', 'cms_api_tokens', 'cms_webhooks', 'cms_webhook_deliveries',
     'cms_comments', 'cms_user_security', 'cms_passkeys', 'cms_auth_challenges', 'cms_areas', 'cms_form_sends', 'cms_form_mail', 'cms_form_results', 'cms_crawler_visits', 'cms_not_found', 'cms_cache',
-    'cms_accounts', 'cossack_jobs', 'cossack_notifications',
+    'cms_accounts', 'cms_sites', 'cms_site_domains', 'cossack_jobs', 'cossack_notifications',
 ] as const;
 
 export const HOST_STEPS: readonly HostStep[] = [{
@@ -247,5 +247,19 @@ export const HOST_STEPS: readonly HostStep[] = [{
         { rql: `UPDATE cms_accounts SET network_role = 'network_admin' WHERE id = (SELECT u.id FROM cms_users u JOIN cms_user_roles r ON r.user_id = u.id
             WHERE r.role_id = 'admin' AND u.status = 'active' ORDER BY u.created_at, u.id LIMIT 1)` },
         { rql: 'ALTER TABLE cms_users DROP COLUMN password_hash' },
+    ],
+}, {
+    version: 17,
+    description: 'Site registry',
+    statements: [
+        // Sites added to the network, each with its own database. Only the network database has rows; the main site has none.
+        { rql: `CREATE TABLE cms_sites (id TEXT PRIMARY KEY, name TEXT NOT NULL, database TEXT NOT NULL UNIQUE,
+            status TEXT NOT NULL CHECK(status IN ('creating','active','archived','deleted')), step TEXT,
+            created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, deleted_at INTEGER)` },
+        { rql: 'CREATE INDEX cms_sites_created ON cms_sites (created_at)' },
+        // The host names a site answers on: one primary, the rest redirect to it. The main site's are under `main`.
+        { rql: `CREATE TABLE cms_site_domains (host TEXT PRIMARY KEY, site_id TEXT NOT NULL, is_primary INTEGER NOT NULL CHECK(is_primary IN (0,1)),
+            verified_at INTEGER, created_at INTEGER NOT NULL)` },
+        { rql: 'CREATE INDEX cms_site_domains_site ON cms_site_domains (site_id, is_primary)' },
     ],
 }];

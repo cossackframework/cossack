@@ -10,6 +10,8 @@ export { HOST_STEPS, HOST_TABLES } from './host-schema';
 export { Outbox, type DispatchReport, type OutboxOptions } from './outbox';
 export { CmsUsers, type CmsUser, type CmsMember, type CmsRole, type UserPage } from './users';
 export { CmsAccounts, normalizeEmail, type CmsAccount, type AccountProfile } from './accounts';
+export { CmsSites, MAIN_SITE, siteHost, type SiteRecord, type SiteDomain, type SiteStatus } from './sites';
+export { CmsNetwork, MAIN, networkSite, prefixedStorage, type NetworkSite, type SiteResolution, type CmsNetworkOptions } from './network';
 export { FileService, type CmsFile, type FileServiceOptions, type FileMetadata, type FileSummary, type ImageSettings, type PendingUpload } from './files';
 export { CmsCache, type CacheEntry } from './cache';
 export { CmsTaxonomies, freeSlug, type TermUsage, type TermInput } from './taxonomies';

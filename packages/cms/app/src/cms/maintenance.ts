@@ -1,4 +1,25 @@
-import type { CmsHost } from '@cossackframework/cms/server';
+import { networkSite, type CmsHost, type CmsNetwork } from '@cossackframework/cms/server';
+
+/** Where the last scheduled run stopped among the added sites, in the main site's cache. */
+const CURSOR = 'network:maintenance-cursor';
+
+/**
+ * The scheduled run: the main site, then the added sites in turn from where the last run
+ * stopped, within a time budget. Scheduled publishing, the outbox, webhooks and write recovery
+ * so also run on sites nobody visits.
+ */
+export async function runNetworkMaintenance(network: CmsNetwork, options: { warm?: boolean; budgetMs?: number } = {}): Promise<void> {
+    const started = Date.now();
+    await runMaintenance(network.main, options);
+    if (!network.multisite || !(await network.main.installed())) return;
+    let cursor = (await network.main.cache.get<string>(CURSOR)) ?? '';
+    for (const site of await network.sites.inTurn(cursor)) {
+        if (Date.now() - started > (options.budgetMs ?? 20_000)) break;
+        await runMaintenance(network.hostOf(networkSite(site)), options).catch(error => console.error(`[cms] maintenance of site ${site.id} failed`, error));
+        cursor = site.id;
+    }
+    await network.main.cache.set(CURSOR, cursor);
+}
 
 /**
  * Background upkeep: recover unconfirmed writes by exact replay, publish scheduled entries,

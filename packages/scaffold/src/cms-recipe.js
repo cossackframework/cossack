@@ -55,6 +55,10 @@ export interface DatabaseBindings {
     ROMEDB_URL?: string;
     /** Database grant (Cloud \`query\` scope) or the local service token. Server-only. */
     ROMEDB_TOKEN?: string;
+    /** Where added sites keep their databases: a RomeDB Cloud organization URL, or \`romedb serve --directory\`. */
+    ROMEDB_SITES_URL?: string;
+    /** Organization key with the \`manage\` and \`query\` scopes, for ROMEDB_SITES_URL. Server-only. */
+    ROMEDB_SITES_TOKEN?: string;
 }
 
 /** How the CMS reaches its database. */
@@ -64,8 +68,17 @@ export function databaseConnection(env: DatabaseBindings): Pick<RomeDBOptions, '
     if (!url || !token) throw new Error('The CMS needs ROMEDB_URL and ROMEDB_TOKEN: a RomeDB Cloud database, or a loopback URL that pnpm dev serves with romedb serve.');
     return { url, token };
 }
+
+/** How the CMS reaches an added site's database, or null while sites cannot have their own (no ROMEDB_SITES_URL). */
+export function siteDatabase(env: DatabaseBindings, database: string): Pick<RomeDBOptions, 'url' | 'token' | 'connect'> | null {
+    const sites = env.ROMEDB_SITES_URL;
+    if (!sites) return null;
+    if (!env.ROMEDB_SITES_TOKEN) throw new Error('ROMEDB_SITES_URL needs ROMEDB_SITES_TOKEN, an organization key with the manage and query scopes.');
+    return { url: \`\${sites.replace(/\\/$/, '')}/databases/\${database}\`, token: env.ROMEDB_SITES_TOKEN };
+}
 `
       : `import type { RomeDBOptions } from '@cossackframework/romedb';
+import path from 'node:path';
 import { connectNode, isServiceUrl } from '@cossackframework/romedb/node';
 
 export interface DatabaseBindings {
@@ -77,6 +90,13 @@ export interface DatabaseBindings {
     ROMEDB_URL?: string;
     /** Credential for a service or Cloud URL. Server-only. Files need none. */
     ROMEDB_TOKEN?: string;
+    /**
+     * Where added sites keep their databases when ROMEDB_URL is a URL: a RomeDB Cloud organization
+     * URL, or \`romedb serve --directory\`. With a file, each site is a file beside it.
+     */
+    ROMEDB_SITES_URL?: string;
+    /** Organization key with the \`manage\` and \`query\` scopes, for ROMEDB_SITES_URL. Server-only. */
+    ROMEDB_SITES_TOKEN?: string;
 }
 
 /** How the CMS reaches its database. One process owns a file; share it through \`romedb serve\`. */
@@ -85,6 +105,25 @@ export function databaseConnection(env: DatabaseBindings): Pick<RomeDBOptions, '
     const token = env.ROMEDB_TOKEN || undefined;
     if (isServiceUrl(url) && !token) throw new Error(\`ROMEDB_TOKEN is required for \${url}. Use a file path in ROMEDB_URL to keep the database in this process.\`);
     return { url, ...(token ? { token } : {}), connect: () => connectNode({ url, ...(token ? { token } : {}) }) };
+}
+
+/**
+ * How the CMS reaches an added site's database: a file beside the main one
+ * (storage/romedb/<database>.romedb), or a database of ROMEDB_SITES_URL. Null when the main
+ * database is a URL and ROMEDB_SITES_URL is not set.
+ */
+export function siteDatabase(env: DatabaseBindings, database: string): Pick<RomeDBOptions, 'url' | 'token' | 'connect'> | null {
+    const sites = env.ROMEDB_SITES_URL;
+    if (sites) {
+        const token = env.ROMEDB_SITES_TOKEN;
+        if (!token) throw new Error('ROMEDB_SITES_URL needs ROMEDB_SITES_TOKEN, an organization key with the manage and query scopes.');
+        const url = \`\${sites.replace(/\\/$/, '')}/databases/\${database}\`;
+        return { url, token, connect: () => connectNode({ url, token }) };
+    }
+    const main = env.ROMEDB_URL || 'storage/romedb/app.romedb';
+    if (isServiceUrl(main)) return null;
+    const url = path.join(path.dirname(main), \`\${database}.romedb\`);
+    return { url, connect: () => connectNode({ url }) };
 }
 `,
     'src/cms/media.ts': adapter === 'cloudflare'
@@ -194,13 +233,17 @@ export interface PendingBindings {
     ROMEDB_PENDING?: DurableObjectNamespaceLike;
 }
 
-/** Writes are saved in a Durable Object before dispatch, so an unconfirmed write survives the isolate. */
-export function pendingWrites(env: PendingBindings): PendingWriteStore {
+/**
+ * Writes are saved in a Durable Object before dispatch, so an unconfirmed write survives the
+ * isolate. Each database has its own objects; the main site's keep their name.
+ */
+export function pendingWrites(env: PendingBindings, database = 'main'): PendingWriteStore {
     if (!env.ROMEDB_PENDING) throw new Error('Bind the ROMEDB_PENDING Durable Object (class RomeDBPendingWrites) in wrangler.jsonc.');
-    return new DurableObjectPendingWriteStore(env.ROMEDB_PENDING);
+    return new DurableObjectPendingWriteStore(env.ROMEDB_PENDING, database === 'main' ? {} : { name: \`romedb:\${database}\` });
 }
 `
-      : `import { FilePendingWriteStore } from '@cossackframework/romedb/node';
+      : `import path from 'node:path';
+import { FilePendingWriteStore } from '@cossackframework/romedb/node';
 import type { PendingWriteStore } from '@cossackframework/romedb';
 
 export interface PendingBindings {
@@ -208,9 +251,13 @@ export interface PendingBindings {
     ROMEDB_PENDING_DIR?: string;
 }
 
-/** Writes are saved as private files before dispatch, so an unconfirmed write survives a restart. */
-export function pendingWrites(env: PendingBindings): PendingWriteStore {
-    return new FilePendingWriteStore(env.ROMEDB_PENDING_DIR ?? '.cossack/romedb-pending');
+/**
+ * Writes are saved as private files before dispatch, so an unconfirmed write survives a
+ * restart. Each added site has its own folder (sites/<database>); the main site's are at the top.
+ */
+export function pendingWrites(env: PendingBindings, database = 'main'): PendingWriteStore {
+    const directory = env.ROMEDB_PENDING_DIR ?? '.cossack/romedb-pending';
+    return new FilePendingWriteStore(database === 'main' ? directory : path.join(directory, 'sites', database));
 }
 `,
   };
@@ -218,10 +265,10 @@ export function pendingWrites(env: PendingBindings): PendingWriteStore {
 
 /** Worker entry: export the pending-write Durable Object and run maintenance from cron. */
 export function patchCmsWorkerEntry(source, { schedules }) {
-  let patched = source.replace("import { template } from './root';", "import { template } from './root';\nimport { cmsFor } from './cms/index';\nimport { runMaintenance } from './cms/maintenance';\nimport { pluginRouteActive } from './cms/middleware';");
+  let patched = source.replace("import { template } from './root';", "import { template } from './root';\nimport { networkFor } from './cms/index';\nimport { runNetworkMaintenance } from './cms/maintenance';\nimport { pluginRouteActive } from './cms/middleware';");
   patched = patched.replace('  htmlTemplate: template,\n', '  htmlTemplate: template,\n  // A rendered plugin\'s pages and handlers answer only while the plugin is active in the CMS.\n  isPluginActive: pluginRouteActive,\n');
   patched = patched.replace('export { SseDurableObject };', "export { SseDurableObject };\n// Unconfirmed RomeDB writes (ROMEDB_PENDING) survive isolate restarts here.\nexport { RomeDBPendingWrites } from '@cossackframework/romedb/cloudflare';");
-  const maintenance = 'ctx.waitUntil(runMaintenance(cmsFor(env as never), { warm: true }));';
+  const maintenance = 'ctx.waitUntil(runNetworkMaintenance(networkFor(env as never), { warm: true }));';
   if (schedules) {
     return patched.replace(
       'async scheduled(controller: ScheduledController, env: CloudflareBindings) { await createSchedules(env).scheduled(controller); },',
@@ -234,13 +281,13 @@ export function patchCmsWorkerEntry(source, { schedules }) {
 /** Node entry: run maintenance every minute in the server process. */
 export function patchCmsNodeEntry(source) {
   return source
-    .replace("import { template } from './root';", "import { template } from './root';\nimport { cmsFor } from './cms/index';\nimport { runMaintenance } from './cms/maintenance';\nimport { pluginRouteActive } from './cms/middleware';")
+    .replace("import { template } from './root';", "import { template } from './root';\nimport { networkFor } from './cms/index';\nimport { runNetworkMaintenance } from './cms/maintenance';\nimport { pluginRouteActive } from './cms/middleware';")
     // A rendered plugin's pages and handlers answer only while the plugin is active in the CMS.
     .replace('htmlTemplate: template, runtimeAdapter: runtime })', 'htmlTemplate: template, runtimeAdapter: runtime, isPluginActive: pluginRouteActive })')
     .replace('  runtime.attach(server, fetch);', `  runtime.attach(server, fetch);
-  // Recover unconfirmed writes and deliver outbox events in the background.
+  // Recover unconfirmed writes and deliver outbox events in the background, on each site in turn.
   const maintenance = setInterval(() => {
-    runMaintenance(cmsFor(env as never)).catch(error => console.error('[cms] maintenance failed', error));
+    runNetworkMaintenance(networkFor(env as never)).catch(error => console.error('[cms] maintenance failed', error));
   }, 60_000);
   maintenance.unref();`);
 }
