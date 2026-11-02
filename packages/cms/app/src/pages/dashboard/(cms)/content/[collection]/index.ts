@@ -4,7 +4,7 @@ import { bulkBar } from '../../../../../dashboard/bulk';
 import { listFilters, listFooter, listTable } from '../../../../../dashboard/list-table';
 import { Avatar, AvatarGroup, HoverCard, Icon, NativeSelect, AlertDialog, Tooltip } from '@cossackframework/ui';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
-import { ENTRY_ACTION_IDS, entryAuthors, evaluateRule, isCmsError, languageName, mediaUrl, recordTitle, type BuiltinEntryAction, type EntryAction, type EntryColumn, type FieldFilter, type ListFilter, type RecordShape } from '@cossackframework/cms';
+import { ENTRY_ACTION_IDS, entryAuthors, evaluateRule, isCmsError, languageName, mediaUrl, recordTitle, translationGroupOf, type BuiltinEntryAction, type EntryAction, type EntryColumn, type FieldFilter, type ListFilter, type RecordShape } from '@cossackframework/cms';
 import { duplicateEntry, importEntries, importItems, listExtras, routeResource, runEntryCommand, termOptions, type ImportReport } from '../../../../../cms/content';
 import type { TermOption } from '../../../../../cms/editor';
 import { icon } from '../../../../../cms/icons';
@@ -34,6 +34,8 @@ interface Row {
     /** Who wrote the entry, the main author first. */
     authors: { id: string; name: string; avatar: string | null }[];
     locale: string;
+    /** Every site language: this entry, its translation, or none yet. */
+    languages: { code: string; label: string; id: string | null; status: string }[];
     terms: string[];
     date: string;
     dateLabel: string;
@@ -80,7 +82,9 @@ export default class EntriesPage extends Cossack {
     @State() hasImage = false;
     /** Languages to filter by, on a site with several. */
     @State() languages: { code: string; label: string }[] = [];
+    /** The language listed: one at a time on a site with several, the default first; `all` lists every entry. */
     @State() locale = '';
+    @State() defaultLocale = '';
     @State() sort: Sort = '';
     @State() dir: 'asc' | 'desc' = 'desc';
     @State() selected: string[] = [];
@@ -133,7 +137,9 @@ export default class EntriesPage extends Cossack {
         this.hidden = Array.isArray(this.hidden) ? this.hidden.filter(id => typeof id === 'string').slice(0, 50) : [];
         const languages = await cms.languages();
         this.languages = collection && languages.multilingual ? languages.all.map(code => ({ code, label: languageName(code) })) : [];
-        if (!this.languages.some(language => language.code === this.locale)) this.locale = '';
+        this.defaultLocale = this.languages.length ? languages.default : '';
+        if (!this.languages.length) this.locale = '';
+        else if (this.locale !== 'all' && !this.languages.some(language => language.code === this.locale)) this.locale = languages.default;
         this.canCreate = evaluateRule(resource.access.create, principal) !== 'deny';
         const taxonomyName = Object.values(resource.fields).find(field => field.taxonomy && cms.taxonomies.declaration(field.taxonomy).hierarchical)?.taxonomy
             ?? Object.values(resource.fields).find(field => field.taxonomy)?.taxonomy;
@@ -157,7 +163,7 @@ export default class EntriesPage extends Cossack {
             { key: 'trash', label: __('Trash'), filter: { where: { status: 'trash' } } },
         ] : [{ key: 'all', label: __('All'), filter: {} }];
         try {
-            const language: { [field: string]: FieldFilter } = this.locale ? { locale: this.locale } : {};
+            const language: { [field: string]: FieldFilter } = this.locale && this.locale !== 'all' ? { locale: this.locale } : {};
             const counts = await repository.countMany(tabs.map(tab => ({ ...tab.filter, where: { ...(tab.filter.where ?? {}), ...language } })), context);
             // Empty tabs other than All and Published stay out of the way, as in WordPress.
             this.counts = tabs.map((tab, index) => ({ key: tab.key, label: tab.label, count: counts[index]! }))
@@ -186,6 +192,7 @@ export default class EntriesPage extends Cossack {
             const termIds = this.taxonomy ? records.flatMap(record => (record[this.taxonomy!.name] as string[] | undefined) ?? []) : [];
             const terms = await cms.taxonomies.getMany(termIds);
             const urls = collection ? await cms.entryUrls(collection, records) : new Map<string, string | null>();
+            const translations = collection && this.languages.length ? await cms.translationsOf(collection, records, context) : new Map<string, Map<string, RecordShape>>();
             const images = imageField && cms.files ? await cms.files.getMany(records.map(record => record[imageField]).filter((id): id is string => typeof id === 'string' && !!id)) : new Map();
             const visible = (record: RecordShape) => (record.status === 'published' && typeof record.publishedAt === 'number') || !this.publishable ? urls.get(record.id) ?? null : null;
             const base = `/dashboard/content/${this.route}`;
@@ -200,6 +207,10 @@ export default class EntriesPage extends Cossack {
                     id: record.id, rev: record.rev, title: recordTitle(record, resource.titleField), slug: typeof record.slug === 'string' ? record.slug : '', status: String(record.status ?? ''),
                     url: visible(record),
                     authors: entryAuthors(record).map(id => owners.get(id)).filter(user => user !== undefined).map(user => ({ id: user.id, name: user.name || user.email, avatar: user.avatar })), locale: typeof record.locale === 'string' ? record.locale : '',
+                    languages: this.languages.map(({ code, label }) => {
+                        const entry = translations.get(translationGroupOf(record))?.get(code);
+                        return { code, label, id: entry?.id ?? null, status: entry ? String(entry.status ?? '') : '' };
+                    }),
                     terms: this.taxonomy ? ((record[this.taxonomy.name] as string[] | undefined) ?? []).map(id => terms.get(id)?.name).filter((name): name is string => !!name) : [],
                     date: shortDate(published || scheduled ? record.publishedAt : record.updatedAt),
                     dateLabel: published ? __('Published') : scheduled ? __('Scheduled for') : __('Last modified'),
@@ -377,6 +388,34 @@ export default class EntriesPage extends Cossack {
         await this.applyBulk(entries, key);
     }
 
+    /** Open an entry's translation in a language, starting it as a draft copy. */
+    @Server()
+    async translate(id: string, locale: string) {
+        this.error = '';
+        try {
+            const translation = await this.c.get('cms').translateEntry(this.route, id, locale, this.c.get('principal'));
+            return this.redirect(`/dashboard/content/${this.route}/${translation.id}`);
+        } catch (error) { this.error = isCmsError(error) ? error.message : __('The translation could not be started.'); }
+    }
+
+    /** The entry's language and its translations: a link to each, a button to start a missing one. */
+    private languagesCell(row: Row): TemplateResult {
+        const chip = 'inline-flex h-6 min-w-8 items-center justify-center rounded border px-1.5 text-[11px] font-medium no-underline';
+        return html`<div class="flex flex-wrap gap-1" data-translations>${row.languages.map(language => {
+            const code = language.code.toUpperCase();
+            if (language.id === row.id) return html`<span class=${`${chip} border-primary bg-primary text-primary-foreground`} title=${`${language.label}: ${__('this entry')}`}>${code}</span>`;
+            if (language.id) {
+                const done = !this.publishable || language.status === 'published';
+                return html`<a href=${`/dashboard/content/${this.route}/${language.id}`} data-translation=${language.code} class=${`${chip} ${done ? 'border-border text-foreground' : 'border-dashed border-border text-muted-foreground'} hover:bg-muted`}
+                    title=${`${language.label}: ${language.status || __('translated')}`} aria-label=${`${__('Edit translation')}: ${language.label}`}>${code}</a>`;
+            }
+            return this.canCreate
+                ? html`<button type="button" data-translate=${language.code} class=${`${chip} cursor-pointer border-dashed border-border bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground`}
+                    title=${`${__('Translate into')} ${language.label}`} aria-label=${`${__('Translate into')} ${language.label}`} @click=${() => this.translate(row.id, language.code)}>+${code}</button>`
+                : html`<span class=${`${chip} border-transparent text-muted-foreground/60`} title=${`${language.label}: ${__('not translated')}`}>${code}</span>`;
+        })}</div>`;
+    }
+
     @Client()
     async pickAction(row: Row, action: EntryAction) {
         if (action.confirm) { this.pendingAction = { row, action }; return; }
@@ -389,7 +428,7 @@ export default class EntriesPage extends Cossack {
         if (next.status && next.status !== 'all') params.set('status', String(next.status));
         if (next.q) params.set('q', String(next.q));
         if (next.term) params.set('term', String(next.term));
-        if (next.lang) params.set('lang', String(next.lang));
+        if (next.lang && next.lang !== this.defaultLocale) params.set('lang', String(next.lang));
         if (next.sort) { params.set('sort', String(next.sort)); params.set('dir', String(next.dir)); }
         if (Number(next.page) > 1) params.set('page', String(next.page));
         const query = params.toString();
@@ -465,7 +504,7 @@ export default class EntriesPage extends Cossack {
         return [
             ...(this.hasSlug ? [{ id: 'slug', label: __('Slug') }] : []),
             { id: 'authors', label: __('Authors') },
-            ...(this.languages.length ? [{ id: 'language', label: __('Language') }] : []),
+            ...(this.languages.length ? [{ id: 'language', label: __('Languages') }] : []),
             ...(this.taxonomy ? [{ id: 'terms', label: this.taxonomy.label }] : []),
             ...this.columns.map(column => ({ id: `plugin:${column.id}`, label: column.label })),
             { id: 'date', label: __('Date') },
@@ -517,6 +556,7 @@ export default class EntriesPage extends Cossack {
         const sortState = (key: Sort) => this.sort === key ? (this.dir === 'asc' ? 'ascending' as const : 'descending' as const) : 'none' as const;
         return html`<div class="space-y-6">
             ${screenHelp(html`<p>${__('The tabs above the list filter by status; the search looks through titles and content, and the filters narrow by term and language.')}</p>
+                ${this.languages.length ? html`<p>${__('The list shows one language at a time. In the Languages column, the filled code is the entry; the others open its translations, and a plus starts a missing one.')}</p>` : null}
                 <p>${__('Hover a row for its quick actions: edit, duplicate, view on the site, trash. Select rows to act on them together with the bulk actions.')}</p>
                 <p>${__('Export JSON downloads the entries shown; Import JSON creates or updates entries from such a file.')}</p>
                 <p>${__('Screen options, beside Help in the taskbar, choose the columns and how many entries a page lists.')}</p>`)}
@@ -546,7 +586,7 @@ export default class EntriesPage extends Cossack {
                 ${listFilters({ action: base, hidden: { status: this.status !== 'all' ? this.status : '', sort: this.sort ?? '', dir: this.sort ? this.dir : '' },
                     search: { name: 'q', value: this.search, placeholder: `${__('Search')} ${this.label.toLowerCase()}` },
                     filters: html`${this.languages.length ? html`<div class="w-44">${component(NativeSelect, { name: 'lang', size: 'sm', 'aria-label': __('Filter by language') }, html`
-                        <option value="" ?selected=${!this.locale}>${__('All languages')}</option>
+                        <option value="all" ?selected=${this.locale === 'all'}>${__('All languages')}</option>
                         ${this.languages.map(language => html`<option value=${language.code} ?selected=${language.code === this.locale}>${language.label}</option>`)}`)}</div>` : null}
                     ${this.taxonomy ? html`<div class="w-48">${component(NativeSelect, { name: 'term', size: 'sm', 'aria-label': `${__('Filter by')} ${this.taxonomy.label}` }, html`
                         <option value="" ?selected=${!this.term}>${__('All')} ${this.taxonomy.label.toLowerCase()}</option>
@@ -567,7 +607,7 @@ export default class EntriesPage extends Cossack {
                     </div>` },
                     this.hasSlug && shown('slug') && { label: __('Slug'), cell: row => html`<code class="break-all text-xs text-muted-foreground">${row.slug}</code>` },
                     shown('authors') && { label: __('Authors'), class: 'w-20', cell: row => this.authorCell(row) },
-                    this.languages.length > 0 && shown('language') && { label: __('Language'), class: 'text-muted-foreground', cell: row => html`<span title=${languageName(row.locale)}>${row.locale.toUpperCase()}</span>` },
+                    this.languages.length > 0 && shown('language') && { label: __('Languages'), cell: row => this.languagesCell(row) },
                     this.taxonomy && shown('terms') && { label: this.taxonomy.label, class: 'text-muted-foreground', cell: row => row.terms.join(', ') || '—' },
                     ...this.columns.filter(column => shown(`plugin:${column.id}`)).map(column => ({ label: column.label, class: 'text-muted-foreground', cell: (row: Row) => column.values[row.id] ?? '—' })),
                     shown('date') && { label: this.sortable(__('Date'), 'date'), sort: sortState('date'), class: 'text-muted-foreground', cell: row => html`<span class="block">${row.dateLabel}</span><span class="block text-xs">${row.date}</span>` },

@@ -103,6 +103,23 @@
       ]
     },
     {
+      "id": "cms-languages",
+      "title": "Publish entries in several languages",
+      "summary": "One entry per language in a translation group, language URL modes, per-language slugs, translateEntry and batch translations, fields shared across translations, page and dashboard interface languages, and language packs.",
+      "imports": [
+        "@cossackframework/cms",
+        "@cossackframework/cms/server"
+      ],
+      "markdown": "Each entry has one language (`locale`); its translations are separate entries sharing `translationGroup`, the ID of the group's first entry (`translationGroupOf(record)` from `@cossackframework/cms`). Each translation has its own status, slug, SEO, revisions and comments. Do not store per-language values in one record such as `title.fr`.\n\nSettings → Languages stores `languages.default`, `languages.others` (comma-separated codes, at most 19) and `languages.urls`: `hide-default` serves the default language unprefixed (`/about`, `/fr/a-propos`), `all` prefixes every language (`/en/about`, `/` redirects 302 to `/en`). Write them with `cms.saveLanguages({ default, others, urls? }, principal)`; read `cms.languages()` → `{ default, others, all, multilingual, prefixDefault }`. Build URLs with `cms.entryUrls`, `cms.archiveUrl(collection, locale)` and `cms.localePrefix(locale, languages)`, never by hand.\n\nSlugs are unique per language (`field.slug(..., { uniqueBy: ['locale'] })`); a new entry without a locale takes the default. `cms.translateEntry(collection, id, locale, principal)` starts a draft copy or returns the existing translation (`CMS_CONFLICT` when one exists that the user cannot read). `cms.translations(collection, record, context)` returns a Map by language; `cms.translationsOf(collection, records, context)` batches a list by group, then language.\n\nA field declared `translatable: false` (field groups: Same in every language) has one value for an entry and its translations: an update copies a changed value to every translation in the same write and bumps their revisions; a principal who cannot update every translation gets `CMS_FORBIDDEN`. Not for text, rich text, blocks, rows, vectors, slugs, unique fields or searched lists. `repository.updatable(ids, context)` returns the IDs the principal may update.\n\nSite pages call the core `setRequestLocale(locale)`, so `<html lang>` and theme `__()` text follow the content language. The dashboard follows the `cossack_locale` cookie (Profile → Dashboard language), defaulting to the site's default language when a catalog has it. Language packs are plugins with `translations/<code>.json` (application keys) and `translations/<code>/<plugin>.json` (`<plugin>::` keys), and manifest `translations: [codes]`; `cossack lang add <code>` seeds a catalog from literal `__()` keys when the app has no default catalog. Terms and site settings are not translated.",
+      "examples": [
+        {
+          "id": "cms-languages",
+          "language": "typescript",
+          "source": "import { field, translationGroupOf, type CollectionDefinition, type Principal } from '@cossackframework/cms';\nimport type { CmsHost } from '@cossackframework/cms/server';\n\n/** Products: the price is the same in every language; the tagline is translated. */\nexport const products: CollectionDefinition = {\n    name: 'products', label: 'Products', singular: 'Product', path: 'products', features: {},\n    fields: {\n        price: field.integer({ nullable: true, translatable: false, label: 'Price' }),\n        tagline: field.string({ nullable: true, label: 'Tagline' }),\n    },\n};\n\nexport async function translateProduct(cms: CmsHost, id: string, principal: Principal) {\n    await cms.saveLanguages({ default: 'en', others: ['fr'], urls: 'hide-default' }, principal);\n    const french = await cms.translateEntry('products', id, 'fr', principal);\n    const source = await cms.resource('cms/products').get(id, { principal });\n    const byLanguage = source ? await cms.translations(cms.collection('products'), source, { principal }) : new Map();\n    const urls = await cms.entryUrls(cms.collection('products'), [...byLanguage.values()]);\n    return { group: translationGroupOf(french), french: urls.get(french.id) };\n}\n"
+        }
+      ]
+    },
+    {
       "id": "cms-auth-and-stores",
       "title": "Use CMS auth, sessions and ledgers",
       "summary": "The scaffolded src/auth.ts runs @cossackframework/auth on CMS users and RomeDB sessions; createCmsAuth() does the same for hand-written apps, and the host provides the session bag and ledgers.",

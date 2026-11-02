@@ -181,7 +181,7 @@ async function essentials(origin, routeIds, diagnostics, { runtime }) {
   expect(robots).toMatch(/Sitemap: https?:\/\/[^/\s]+\/sitemap\.xml/);
   expect(robots).not.toContain('GPTBot');
   // Settings → Crawlers blocks AI training crawlers as a group.
-  expect((await web.action(SETTINGS, 'save', [{ crawlers: { allowAiTraining: false, contentSignals: true } }]))._cossack_return.error).toBe('');
+  expect((await web.action(SETTINGS, 'saveAll', [{ document: { crawlers: { allowAiTraining: false, contentSignals: true } }, languages: null, permalinks: null, groups: {} }]))._cossack_return.error).toBe('');
   const blocked = await (await fetch(`${origin}/robots.txt`)).text();
   expect(blocked).toMatch(/User-agent: GPTBot\n(?:User-agent: [^\n]+\n)*Disallow: \//);
   expect(blocked).toContain('Content-Signal: search=yes, ai-input=yes, ai-train=no');
@@ -231,7 +231,7 @@ async function essentials(origin, routeIds, diagnostics, { runtime }) {
   expect(square.headers.get('content-type')).toBe('image/webp');
   if (runtime === 'node') expect(await sharp(Buffer.from(await square.arrayBuffer())).metadata()).toMatchObject({ width: 320, height: 320 });
   // Site and app icons from Settings → General: the head links them, the manifest lists resized app icons.
-  expect((await web.action(SETTINGS, 'save', [{ general: { favicon: image.url, appIcon: image.url } }]))._cossack_return.error).toBe('');
+  expect((await web.action(SETTINGS, 'saveAll', [{ document: { general: { favicon: image.url, appIcon: image.url } }, languages: null, permalinks: null, groups: {} }]))._cossack_return.error).toBe('');
   const homeHead = await (await fetch(`${origin}/`)).text();
   expect(homeHead).toMatch(new RegExp(`<link rel="?icon"? href="?${image.url.replaceAll('.', '\\.')}"?`));
   expect(homeHead).toMatch(/rel="?apple-touch-icon"? sizes="?180x180"? href="?\/media\/[^"\s>]+\?w=180&(?:amp;)?h=180/);
@@ -307,20 +307,46 @@ async function essentials(origin, routeIds, diagnostics, { runtime }) {
   expect((await fetch(`${origin}/api/cms/content/patterns`)).status).toBe(401);
 
   // Translations: French pages under /fr with alternates and a language switcher.
-  expect((await web.action(SETTINGS, 'saveLanguages', [{ main: 'en', others: ['fr'] }]))._cossack_return.error).toBe('');
+  expect((await web.action(SETTINGS, 'saveAll', [{ document: null, languages: { main: 'en', others: ['fr'] }, permalinks: null, groups: {} }]))._cossack_return.error).toBe('');
   const aboutId = await save(web, 'pages', { title: 'About us', slug: '', status: 'published', publishedAt: '', content: richText(paragraph('Who we are')), excerpt: '', featuredImage: '', parent: '', menuOrder: '0', locale: 'en' });
   const translated = await web.action(EDITOR, 'translate', ['fr'], { params: { collection: 'pages', id: aboutId }, state: { route: 'pages', id: aboutId } });
   const frenchId = translated._cossack_redirect.split('/').at(-1);
   await save(web, 'pages', { title: 'À propos', slug: 'a-propos', status: 'published', publishedAt: '', content: richText(paragraph('Qui sommes-nous')), excerpt: '', featuredImage: '', parent: '', menuOrder: '0' }, frenchId, 1);
   const french = await visitor.page('/fr/a-propos');
   contains(french, 'Qui sommes-nous');
+  // The page says its language, whatever the interface's.
+  expect(french).toMatch(/<html[^>]*\slang="?fr"?/);
+  expect(await visitor.page('/about-us')).toMatch(/<html[^>]*\slang="?en"?/);
   expect(french).toMatch(/<link rel="?alternate"? hreflang="?en"? href="?https?:\/\/[^/"\s]+\/about-us/);
   // The language switcher links the English page.
   expect(french).toMatch(/<a href="?\/about-us"? hreflang="?en"? lang="?en"?/);
-  expect((await fetch(`${origin}/a-propos`, { redirect: 'manual' })).headers.get('location')).toBe('/fr/a-propos');
+  // A path in another language than the entry's redirects temporarily: the language settings can change.
+  const otherLanguage = await fetch(`${origin}/a-propos`, { redirect: 'manual' });
+  expect([otherLanguage.status, otherLanguage.headers.get('location')]).toEqual([302, '/fr/a-propos']);
+  const defaultCode = await fetch(`${origin}/en/about-us`, { redirect: 'manual' });
+  expect([defaultCode.status, defaultCode.headers.get('location')]).toEqual([302, '/about-us']);
   expect((await fetch(`${origin}/fr`)).status).toBe(200);
   contains(await web.page('/dashboard/content/pages?lang=fr'), 'À propos');
-  expect((await web.action(SETTINGS, 'saveLanguages', [{ main: 'en', others: [] }]))._cossack_return.error).toBe('');
+  // The list opens on the default language; its Languages column links each translation.
+  const englishList = await web.page('/dashboard/content/pages');
+  contains(englishList, 'About us');
+  lacks(englishList, 'À propos');
+  contains(englishList, `/dashboard/content/pages/${frenchId}`);
+  contains(await web.page('/dashboard/content/pages?lang=all'), 'À propos');
+  // Language in URLs → Every language: English pages move under /en, and their old addresses redirect.
+  const urls = mode => web.action(SETTINGS, 'saveAll', [{ document: null, languages: { main: 'en', others: ['fr'], urls: mode }, permalinks: null, groups: {} }]);
+  expect((await urls('all'))._cossack_return.error).toBe('');
+  contains(await visitor.page('/en/about-us'), 'Who we are');
+  const unprefixed = await fetch(`${origin}/about-us`, { redirect: 'manual' });
+  expect([unprefixed.status, unprefixed.headers.get('location')]).toEqual([302, '/en/about-us']);
+  const root = await fetch(`${origin}/?page=1`, { redirect: 'manual' });
+  expect([root.status, root.headers.get('location')]).toEqual([302, '/en?page=1']);
+  expect(await visitor.page('/fr/a-propos')).toMatch(/hreflang="?en"? href="?https?:\/\/[^/"\s]+\/en\/about-us/);
+  expect((await urls('hide-default'))._cossack_return.error).toBe('');
+  const english = await fetch(`${origin}/en`, { redirect: 'manual' });
+  expect([english.status, english.headers.get('location')]).toEqual([302, '/']);
+  contains(await visitor.page('/about-us'), 'Who we are');
+  expect((await web.action(SETTINGS, 'saveAll', [{ document: null, languages: { main: 'en', others: [] }, permalinks: null, groups: {} }]))._cossack_return.error).toBe('');
 
   // Webhooks need a receiver the runtime can reach: this process, from Node.
   if (runtime === 'node') await webhooks(web);
@@ -349,12 +375,12 @@ async function essentials(origin, routeIds, diagnostics, { runtime }) {
   // Required two-step sign-in sends staff without it to set it up.
   const editorUser = 'dashboard/users/new/index.ts';
   await web.action(editorUser, 'create', ['Eve', 'eve@example.com', 'eve password 1', ['editor']]);
-  expect((await web.action(SETTINGS, 'save', [{ general: { requireTwoFactor: true } }]))._cossack_return.error).toBe('');
+  expect((await web.action(SETTINGS, 'saveAll', [{ document: { general: { requireTwoFactor: true } }, languages: null, permalinks: null, groups: {} }]))._cossack_return.error).toBe('');
   const eve = browserless(origin, routeIds, diagnostics);
   await eve.action('auth/login/index.ts', 'login', [{ email: 'eve@example.com', password: 'eve password 1' }]);
   expect((await eve.request('/dashboard')).headers.get('location')).toBe('/dashboard/profile/security?required=1');
   contains(await eve.page('/dashboard/profile/security?required=1'), 'This site requires two-step sign-in');
-  expect((await web.action(SETTINGS, 'save', [{ general: { requireTwoFactor: false } }]))._cossack_return.error).toBe('');
+  expect((await web.action(SETTINGS, 'saveAll', [{ document: { general: { requireTwoFactor: false } }, languages: null, permalinks: null, groups: {} }]))._cossack_return.error).toBe('');
 
   // An administrator issues an application password for Eve from her user screen; it acts as Eve.
   const eveId = (await (await web.request('/dashboard/users?search=eve')).text()).match(/\/dashboard\/users\/(?!new\b)([A-Za-z0-9_-]{8,})/)[1];
@@ -503,7 +529,7 @@ describe.skipIf(!liveRomeDBTests())('generated CMS essentials', () => {
 
       // With two languages the posts list has a language column, and the sidebar still
       // reaches it from other screens without a reload.
-      expect((await web.action(SETTINGS, 'saveLanguages', [{ main: 'en', others: ['fr'] }]))._cossack_return.error).toBe('');
+      expect((await web.action(SETTINGS, 'saveAll', [{ document: null, languages: { main: 'en', others: ['fr'] }, permalinks: null, groups: {} }]))._cossack_return.error).toBe('');
       const navigation = page.locator('#dashboard-navigation');
       for (const start of ['/dashboard/media', '/dashboard/content/pages', '/dashboard/settings']) {
         await page.goto(origin + start);
@@ -512,8 +538,25 @@ describe.skipIf(!liveRomeDBTests())('generated CMS essentials', () => {
         if (!(await allPosts.isVisible())) await navigation.locator('summary', { hasText: 'Posts' }).click();
         await allPosts.click();
         await page.waitForURL(origin + '/dashboard/content/posts');
-        await browserExpect(page.getByRole('columnheader', { name: 'Language' })).toBeVisible();
+        await browserExpect(page.getByRole('columnheader', { name: 'Languages' })).toBeVisible();
       }
+      // A plus in the Languages column starts the missing translation as a draft and opens it.
+      await page.locator('[data-entry]').first().getByRole('button', { name: 'Translate into Français' }).click();
+      await page.waitForURL(/\/dashboard\/content\/posts\/(?!new)[^/?]+$/);
+      await page.goto(origin + '/dashboard/content/posts?lang=fr');
+      await ready();
+      await browserExpect(page.locator('[data-entry]')).toHaveCount(1);
+      // A French page renders in French, and client navigation to its English translation switches back.
+      const hello = await save(web, 'pages', { title: 'Hello page', slug: '', status: 'published', publishedAt: '', content: richText(paragraph('Hello body')), excerpt: '', featuredImage: '', parent: '', menuOrder: '0', locale: 'en' });
+      const bonjour = (await web.action(EDITOR, 'translate', ['fr'], { params: { collection: 'pages', id: hello }, state: { route: 'pages', id: hello } }))._cossack_redirect.split('/').at(-1);
+      await save(web, 'pages', { title: 'Bonjour', slug: 'bonjour', status: 'published', publishedAt: '', content: richText(paragraph('Bonjour body')), excerpt: '', featuredImage: '', parent: '', menuOrder: '0' }, bonjour, 1);
+      await page.goto(origin + '/fr/bonjour');
+      await ready();
+      await browserExpect(page.locator('html')).toHaveAttribute('lang', 'fr');
+      await page.locator('a[hreflang="en"]').first().click();
+      await page.waitForURL(origin + '/hello-page');
+      await browserExpect(page.getByText('Hello body').first()).toBeVisible();
+      await browserExpect(page.locator('html')).toHaveAttribute('lang', 'en');
 
       // Users: when each last signed in, and the Sessions tab for the user and administrators.
       await page.goto(origin + '/dashboard/users');

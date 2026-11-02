@@ -127,6 +127,15 @@ describe('field groups', () => {
         expect(fieldBlockDeclaration(fieldBlock('c', 'choice', { name: 'c', label: 'C', multiple: true, choices: ['s', 'm'], defaultValue: 'm' }), types)).toEqual({ kind: 'enum', values: ['s', 'm'], label: 'C', multiple: true, default: ['m'] });
         expect(fieldBlockDeclaration(fieldBlock('b', 'boolean', { name: 'b', label: 'B', multiple: true }), types)).toEqual({ kind: 'boolean', label: 'B', default: false });
         expect(fieldProblems('tags', declaration)).toEqual([]);
+        // Same in every language: a price or an SKU, never a unique text or a long text.
+        const price = fieldBlockDeclaration(fieldBlock('price', 'number', { name: 'price', label: 'Price', shared: true }), types)!;
+        expect(price).toMatchObject({ kind: 'number', translatable: false });
+        expect(fieldBlockOf('price', price).data).toMatchObject({ shared: true });
+        expect(fieldBlockDeclaration(fieldBlock('sku', 'text', { name: 'sku', label: 'SKU', shared: true, unique: true }), types)).not.toHaveProperty('translatable');
+        expect(FIELD_BLOCKS.find(block => block.name === 'field/textarea')!.fields).not.toHaveProperty('shared');
+        expect(fieldProblems('price', price)).toEqual([]);
+        expect(fieldProblems('body', field.text({ translatable: false }))).toEqual([expect.stringContaining('always translated')]);
+        expect(fieldProblems('slug', field.slug('title', { translatable: false }))).toEqual([expect.stringContaining('always translated')]);
         expect(FIELD_BLOCKS.find(block => block.name === 'field/boolean')!.fields).not.toHaveProperty('multiple');
         expect(FIELD_BLOCKS.find(block => block.name === 'field/media')!.fields).toHaveProperty('multiple');
         // Field blocks of earlier builds read as today's.

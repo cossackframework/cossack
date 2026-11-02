@@ -1,7 +1,7 @@
 import { Cossack, Page, State, ClientState, Server, Client, OnWindow, PreventNavigation, type HeadValue } from '@cossackframework/core';
 import { Avatar, Button, Checkbox, Combobox, Icon, Input, Modal, NativeSelect, Textarea, CodeEditor, Tabs } from '@cossackframework/ui';
 import { html, component, unsafeHTML, type TemplateResult } from '@cossackframework/renderer';
-import { ARTICLE_TYPES, blockId, CORE_BLOCKS, entryAuthors, entryChecks, evaluateRule, fieldVisibility, findBlock, flattenBlocks, flattenGroupFields, formatBytes, isCmsError, languageName, mediaKind, recordSchema, recordTitle, renderSeoTemplate, richTextBlocks, TITLE_SEPARATORS, updateBlock, type Block, type BlockCondition, type Check, type EmbeddedBlock, type JsonSchema, type MediaKind, type RecordShape, type RichTextDoc } from '@cossackframework/cms';
+import { ARTICLE_TYPES, blockId, CORE_BLOCKS, entryAuthors, systemPrincipal, entryChecks, evaluateRule, fieldVisibility, findBlock, flattenBlocks, flattenGroupFields, formatBytes, isCmsError, languageName, mediaKind, recordSchema, recordTitle, renderSeoTemplate, richTextBlocks, TITLE_SEPARATORS, updateBlock, type Block, type BlockCondition, type Check, type EmbeddedBlock, type JsonSchema, type MediaKind, type RecordShape, type RichTextDoc } from '@cossackframework/cms';
 import { blockPanel } from '../../../../../../cms/block-panel';
 import { describeBlockError } from '../../../../../../cms/block-errors';
 import { styleValues, withStyle, type BlockTab, type StyleValues } from '../../../../../../cms/style-controls';
@@ -84,6 +84,8 @@ export default class EntryEditor extends Cossack {
     @State() templates: string[] = [];
     @State() languages: { multilingual: boolean; options: { code: string; label: string }[] } = { multilingual: false, options: [] };
     @State() translations: TranslationLink[] = [];
+    /** Fields the same in every language are read-only: the user cannot update every translation. */
+    @State() sharedLocked = false;
     /** What the search preview needs: the site, the separator and the templates that apply to this collection. */
     @State() seo = { origin: '', siteTitle: '', tagline: '', separator: '–', titleTemplate: '%title% %sep% %site%', descriptionTemplate: '%excerpt%', collection: '', article: false, summary: false };
     /** Entries of the site related to this one's title, to link to. */
@@ -211,6 +213,11 @@ export default class EntryEditor extends Cossack {
         const record = await cms.resource(`cms/${collectionName}`).get(id, { principal });
         if (!record) return;
         const found = await cms.translations(cms.collection(collectionName), record, { principal });
+        if (Object.values(cms.resourceById(`cms/${collectionName}`).fields).some(field => field.translatable === false)) {
+            // Every translation counts, also the ones this user cannot read.
+            const others = [...(await cms.translations(cms.collection(collectionName), record, { principal: systemPrincipal('translations') })).values()].filter(entry => entry.id !== record.id).map(entry => entry.id);
+            this.sharedLocked = others.length > 0 && (await cms.resource(`cms/${collectionName}`).updatable(others, { principal })).size < others.length;
+        }
         this.translations = this.languages.options.map(option => {
             const entry = found.get(option.code);
             return { code: option.code, label: option.label, id: entry?.id ?? null, title: entry ? recordTitle(entry, 'title') : '', status: String(entry?.status ?? '') };
@@ -1069,10 +1076,13 @@ export default class EntryEditor extends Cossack {
     private fieldRow(field: EditorField, options: { labelHidden?: boolean } = {}): TemplateResult {
         const id = `field-${field.name}`;
         const value = this.values[field.name];
-        return html`<div class="space-y-1.5">
+        const shared = field.shared && this.languages.multilingual;
+        const control = this.control(field, value, entry => this.set(field.name, entry), { field: field.name }, id);
+        return html`<div class="space-y-1.5" data-shared=${shared ? 'true' : ''}>
             ${field.kind === 'boolean' ? null : html`<label for=${id} class=${options.labelHidden ? 'sr-only' : 'block text-sm font-medium text-foreground'}>${field.label}${field.required ? html`<span class="text-destructive"> *</span>` : null}</label>`}
-            ${this.control(field, value, entry => this.set(field.name, entry), { field: field.name }, id)}
+            ${shared && this.sharedLocked ? html`<fieldset disabled class="contents">${control}</fieldset>` : control}
             ${field.description && !(field.kind === 'text' && field.format === 'markdown') ? html`<p class="text-xs text-muted-foreground">${field.description}</p>` : null}
+            ${shared ? html`<p class="text-xs text-muted-foreground">${this.sharedLocked ? __('Same in every language. You cannot edit every translation, so it is read-only here.') : __('Same in every language: saving copies it to the translations.')}</p>` : null}
             ${field.kind === 'blocks' ? null : this.errorFor(field.name)}
         </div>`;
     }

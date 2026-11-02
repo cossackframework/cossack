@@ -54,6 +54,7 @@ description: 'Documentation for getting started with Cossack and learning its fe
 - [Hooks](/docs/cms/hooks.md)
 - [Themes](/docs/cms/themes.md)
 - [Settings](/docs/cms/settings.md)
+- [Languages](/docs/cms/languages.md)
 - [Block References](/docs/cms/block-references.md)
 
 ## Session & State

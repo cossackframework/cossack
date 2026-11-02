@@ -92,7 +92,9 @@ export function themeData(cms: CmsHost, theme: ThemeState, page: TemplatePage | 
 
 /** The URL prefix of a language: empty for the default one. */
 export function localePrefix(languages: SiteLanguages, locale: string): string {
-    return languages.multilingual && locale !== languages.default && languages.others.includes(locale) ? `/${locale}` : '';
+    if (!languages.multilingual) return '';
+    const code = languages.all.includes(locale) ? locale : languages.default;
+    return code !== languages.default || languages.prefixDefault ? `/${code}` : '';
 }
 
 /** Language filter for queries: only on a site with several languages. */
@@ -668,9 +670,22 @@ export type Resolved =
  */
 export async function resolvePath(cms: CmsHost, segments: readonly string[]): Promise<Resolved> {
     const languages = await cms.languages();
-    const prefixed = languages.multilingual && segments.length > 0 && languages.others.includes(segments[0]!);
+    // Both URL modes take the default language's code, so links from the other mode redirect.
+    const prefixed = languages.multilingual && segments.length > 0 && languages.all.includes(segments[0]!);
     const locale = prefixed ? segments[0]! : languages.default;
     const rest = prefixed ? segments.slice(1) : segments;
+    const resolved = await resolveIn(cms, languages, locale, rest, segments);
+    // Pages other than entries (which redirect to their own URL) move to their language's prefix.
+    // The default language can change, so these redirects are temporary.
+    const prefix = localePrefix(languages, locale);
+    if (['home', 'archive', 'term', 'author', 'search'].includes(resolved.kind) && prefix !== (prefixed ? `/${segments[0]}` : '')) {
+        return { kind: 'redirect', url: `${prefix}/${rest.join('/')}`.replace(/\/$/, '') || '/', status: 302 };
+    }
+    return resolved;
+}
+
+async function resolveIn(cms: CmsHost, languages: SiteLanguages, locale: string, rest: readonly string[], segments: readonly string[]): Promise<Resolved> {
+    const prefixed = rest.length < segments.length;
     // `/` and `/<language>` are home pages.
     if (!rest.length) return { kind: 'home', locale };
     if (prefixed && rest.length === 1 && rest[0] === 'search') return { kind: 'search', locale };
@@ -684,7 +699,7 @@ export async function resolvePath(cms: CmsHost, segments: readonly string[]): Pr
         const slugs = path.slice(collection.path.length + 1).split('/');
         // Category permalinks take /<path>/<category>/<slug>; the entry then answers at its own address only.
         if (!collection.hierarchical && slugs.length > (collection.permalink === 'category' ? 2 : 1)) return { kind: 'none', locale };
-        const found = await bySlug(cms, collection, slugs.at(-1)!);
+        const found = await bySlug(cms, collection, slugs.at(-1)!, languages, locale);
         return found ? canonical(cms, collection, found, segments) : { kind: 'none', locale };
     }
     // Author pages at /author/<slug>, when Settings → SEO turns them on.
@@ -702,7 +717,7 @@ export async function resolvePath(cms: CmsHost, segments: readonly string[]): Pr
     const roots = cms.collections().filter(collection => collection.path === '').sort((a, b) => Number(!a.hierarchical) - Number(!b.hierarchical) || a.name.localeCompare(b.name));
     for (const root of roots) {
         if (!root.hierarchical && rest.length > (root.permalink === 'category' ? 2 : 1)) continue;
-        const found = await bySlug(cms, root, rest.at(-1)!);
+        const found = await bySlug(cms, root, rest.at(-1)!, languages, locale);
         if (found) return canonical(cms, root, found, segments);
     }
     return { kind: 'none', locale };
@@ -720,10 +735,17 @@ export async function redirectFor(cms: CmsHost, path: string, query: string, lat
     return { kind: 'redirect', url: location, status: match.redirect.status as 301 | 302 | 307 | 308 };
 }
 
-async function bySlug(cms: CmsHost, collection: CollectionDefinition, slug: string): Promise<RecordShape | null> {
+/**
+ * The published entry with a slug in a language; each language has its own slugs. A slug
+ * only another language has finds that entry, which then redirects to its own URL.
+ */
+async function bySlug(cms: CmsHost, collection: CollectionDefinition, slug: string, languages: SiteLanguages, locale: string): Promise<RecordShape | null> {
     if (collection.slug === false) return null;
     const where: { [field: string]: FieldFilter } = { slug, ...(collection.publishable === false ? {} : { status: 'published' }) };
-    return (await cms.resource(`cms/${collection.name}`).list({ where, limit: 1 }, visitor)).records[0] ?? null;
+    const repository = cms.resource(`cms/${collection.name}`);
+    const found = (await repository.list({ where: { ...where, ...localeWhere(languages, locale) }, limit: 1 }, visitor)).records[0];
+    if (found || !languages.multilingual) return found ?? null;
+    return (await repository.list({ where, limit: 1 }, visitor)).records[0] ?? null;
 }
 
 /** An entry answers only at its URL (ancestors' slugs, language prefix); other paths redirect there. */
@@ -732,7 +754,11 @@ async function canonical(cms: CmsHost, collection: CollectionDefinition, record:
     if (!url) return { kind: 'none', locale: (await cms.languages()).default };
     const languages = await cms.languages();
     const locale = typeof record.locale === 'string' && languages.all.includes(record.locale) ? record.locale : languages.default;
-    return url === `/${segments.join('/')}` ? { kind: 'entry', collection, record, locale } : { kind: 'redirect', url };
+    if (url === `/${segments.join('/')}`) return { kind: 'entry', collection, record, locale };
+    // Which language a prefix names follows the settings, which can change (a new default language,
+    // another URL mode): a browser must not keep that redirect. Other paths to the entry move for good.
+    const requested = languages.multilingual && languages.all.includes(segments[0] ?? '') ? `/${segments[0]}` : '';
+    return { kind: 'redirect', url, ...(requested !== localePrefix(languages, locale) ? { status: 302 as const } : {}) };
 }
 
 /** Entries of every collection that uses the term's taxonomy, including terms below it, in one language. */

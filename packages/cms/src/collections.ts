@@ -20,6 +20,11 @@ export type ContentStatus = (typeof CONTENT_STATUSES)[number];
 export const LOCALE = /^[a-z]{2,3}(?:-[a-z0-9]{2,8})?$/;
 
 /** A language's own name, such as `Français` for `fr`. Client-safe: dashboards render it. */
+/** The translation group of an entry: the group's first entry names it and keeps no group of its own. */
+export function translationGroupOf(record: { readonly id: string; readonly translationGroup?: unknown }): string {
+    return typeof record.translationGroup === 'string' ? record.translationGroup : record.id;
+}
+
 export function languageName(code: string): string {
     try {
         const name = new Intl.DisplayNames([code], { type: 'language' }).of(code) ?? code;
@@ -235,7 +240,8 @@ export function collectionResource(definition: CollectionDefinition, labels: { r
     const features = definition.features ?? {};
     const fields: { [name: string]: FieldDeclaration } = {
         title: field.string({ required: true, max: 200, search: true, label: 'Title' }),
-        ...(slug ? { slug: field.slug('title', { required: true, label: 'Slug' }) } : {}),
+        // Each language has its own slugs: /about and /fr/about can be translations of each other.
+        ...(slug ? { slug: field.slug('title', { required: true, label: 'Slug', uniqueBy: ['locale'] }) } : {}),
         // The content is blocks, as in WordPress; the Rich text block is the word processor among them.
         ...(contentBlocks(features.content) ? { content: field.blocks({ search: true, label: 'Content', ...(contentBlocks(features.content)!.length ? { blocks: contentBlocks(features.content)! } : {}) }) } : {}),
         ...(features.excerpt ? { excerpt: field.text({ max: 1000, label: 'Excerpt', description: 'A short summary for lists, feeds and link previews.' }) } : {}),

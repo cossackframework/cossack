@@ -1,4 +1,4 @@
-import { Client, ClientState, Cossack, Page, Server, State, defineServerMiddleware, type HeadValue } from '@cossackframework/core';
+import { Client, ClientState, Cossack, Page, Server, State, defineServerMiddleware, setRequestLocale, type HeadValue } from '@cossackframework/core';
 import { isTransportPath } from '@cossackframework/core/transport-routes';
 import { getCookie } from 'hono/cookie';
 import { component, html } from '@cossackframework/renderer';
@@ -39,8 +39,10 @@ export const resolveSitePath = defineServerMiddleware(async (c, next) => {
     // Before setup, or while a migration is pending, content is unavailable.
     try {
         resolved = await resolvePath(cms, segmentsOf(c.req.param('path')));
+        const query = new URL(c.req.url).search.slice(1);
+        // A canonical or language redirect keeps the query, such as ?page=2 or ?edit.
+        if (resolved.kind === 'redirect' && query && !resolved.url.includes('?')) resolved = { ...resolved, url: `${resolved.url}?${query}` };
         if (resolved.kind === 'none' && !post) {
-            const query = new URL(c.req.url).search.slice(1);
             resolved = await redirectFor(cms, c.req.path, query, work => { try { c.executionCtx.waitUntil(work.catch(() => undefined)); } catch { void work.catch(() => undefined); } }) ?? resolved;
         }
     } catch (error) { if (!isCmsError(error, 'CMS_UNAVAILABLE')) throw error; resolved = { kind: 'unavailable' }; }
@@ -60,6 +62,8 @@ export const resolveSitePath = defineServerMiddleware(async (c, next) => {
         if (resolved.kind !== 'unavailable') trackCrawler(c, resolved.kind === 'none' || resolved.kind === 'gone' ? 'not-found' : resolved.kind === 'entry' || resolved.kind === 'archive' || resolved.kind === 'home' || resolved.kind === 'term' || resolved.kind === 'author' || resolved.kind === 'search' ? resolved.kind : 'other');
     }
     c.set('cms.site', resolved);
+    // The page renders in its content's language: <html lang>, and the theme's text when a catalog has it.
+    if ('locale' in resolved) setRequestLocale(resolved.locale);
     await next();
 });
 

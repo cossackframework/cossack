@@ -126,6 +126,10 @@ export function resourceProblems(declaration: ResourceDeclaration): string[] {
     for (const name of names) {
         const from = declaration.fields[name]!.slugFrom;
         if (from !== undefined && !['string', 'text'].includes(declaration.fields[from]?.kind as string)) problems.push(`field ${name}: slugFrom ${from} is not a declared string or text field.`);
+        for (const other of declaration.fields[name]!.uniqueBy ?? []) {
+            const scope = declaration.fields[other];
+            if (!scope || scope.multiple || ['json', 'vector', 'text', 'blocks', 'richtext', 'rows'].includes(scope.kind)) problems.push(`field ${name}: uniqueBy ${other} is not a declared single-value field.`);
+        }
     }
     const searchable = names.filter(name => declaration.fields[name]!.search);
     if (searchable.length > 16) problems.push('at most 16 fields can be searched.');

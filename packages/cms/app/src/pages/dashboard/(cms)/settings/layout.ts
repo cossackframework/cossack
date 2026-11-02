@@ -30,6 +30,9 @@ export default class SettingsLayout extends Cossack {
     }
 
     @Client()
+    discard() { if (!this.draft.saving) this.draft.discard(); }
+
+    @Client()
     searchKey(event: KeyboardEvent) {
         if (event.key === 'Escape') { this.draft.setSearch(''); event.preventDefault(); }
     }
@@ -52,7 +55,8 @@ export default class SettingsLayout extends Cossack {
                         <span aria-hidden="true">${component(Icon, { entry: icon('code-square'), size: 18 })}</span>
                     </a>
                     <div class="ms-auto flex shrink-0 items-center gap-2" data-settings-actions>
-                        ${component(Button, { type: 'submit', form: 'settings-actions', disabled: this.draft.saving || blocked || (preview ? !Object.keys(preview.patch).length : !this.draft.documentDirty()) },
+                        ${this.draft.dirty() ? component(Button, { type: 'button', variant: 'outline', disabled: this.draft.saving, '@click': this.discard }, __('Discard changes')) : null}
+                        ${component(Button, { type: 'submit', form: 'settings-actions', disabled: this.draft.saving || blocked || (preview ? !Object.keys(preview.patch).length : json ? !this.draft.documentDirty() : !this.draft.dirty()) },
                             this.draft.saving ? __('Working…') : json ? preview ? __('Apply changes') : __('Preview changes') : __('Save changes'))}
                     </div>
                 </div>

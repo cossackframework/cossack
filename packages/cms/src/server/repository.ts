@@ -8,6 +8,7 @@
 import { ClientError, Float64, RecordId, UncertainWriteError, Vector, type Statement, type Value } from '@cossackframework/romedb';
 import type { HookRegistry } from '@cossackframework/core/hooks';
 import { CmsError } from '../errors';
+import { translationGroupOf } from '../collections';
 import { FIELD_NAME, slugify, validateValue, type FieldDeclaration } from '../fields';
 import { blockId, blockMedia, blocksPlain, flattenBlocks, htmlBlocksChanged, validateBlocks, type Block } from '../blocks';
 import { fieldVisibility, indexedRowField, rowIndexPath, rowsPlain, rowsSearchable, rowUniqueProblem, withRowIds } from '../field-groups';
@@ -353,6 +354,8 @@ export class ResourceRepository {
             condition.params,
         )];
         const guard = `EXISTS (SELECT 1 FROM ${this.resource.storage} WHERE id = type::record('${this.resource.storage}', $key) AND "_op" = $op)`;
+        const shared = await this.#sharedStatement(id, previous, draft, guard, { $key: id, $op: op, $now: now }, context);
+        if (shared) statements.push(shared);
         statements.push(...this.#sideEffects(guard, op, id, revision, 'update', record, context.principal, now, {}, previous));
         // A published entry whose URL changes keeps answering at the old one. The audit row,
         // written only when the change commits, guards these relational statements.
@@ -360,6 +363,52 @@ export class ResourceRepository {
         const result = await this.#write(statements, op, context);
         if (result !== 1) throw new CmsError('CMS_CONFLICT', 'The record changed since it was read. Reload and try again.');
         return this.#redact(record, context.principal);
+    }
+
+    /**
+     * Fields that are the same in every language (`translatable: false`) and changed: one
+     * statement writes them to the entry's other translations, once the entry's own update
+     * committed, and moves their revisions on so an editor holding an older one reloads. The
+     * principal must be able to update every translation.
+     */
+    async #sharedStatement(id: string, previous: RecordShape, draft: Draft, guard: string, params: { [key: string]: Value }, context: OperationContext): Promise<Statement | null> {
+        if (!this.resource.fields.translationGroup) return null;
+        const changed = Object.entries(this.resource.fields).filter(([name, declaration]) => declaration.translatable === false && draft[name] !== undefined
+            && JSON.stringify(draft[name] ?? null) !== JSON.stringify(previous[name] ?? null)).map(([name]) => name);
+        if (!changed.length) return null;
+        const group = translationGroupOf(previous);
+        const members = await this.#host.db.read([{
+            rql: `SELECT record::id(id) FROM ${this.resource.storage} WHERE ("translationGroup" = $group OR id = type::record('${this.resource.storage}', $group)) AND record::id(id) != $key LIMIT 100`,
+            params: { $group: group, $key: id },
+        }], this.#readOptions(context));
+        const others = members.results[0]!.rows.map(row => row[0] as string);
+        if (!others.length) return null;
+        if ((await this.updatable(others, context)).size < others.length) {
+            const labels = changed.map(name => this.resource.fields[name]!.label ?? name).join(', ');
+            throw new CmsError('CMS_FORBIDDEN', `${labels} is the same in every language, and you cannot edit every translation.`, { fields: Object.fromEntries(changed.map(name => [name, 'is the same in every language.'])) });
+        }
+        const values: { [key: string]: Value } = { ...params, $group: group };
+        const assignments = changed.map((name, index) => {
+            values[`$s${index}`] = this.#store(name, this.resource.fields[name]!, draft[name]);
+            return `${quote(name)} = $s${index}`;
+        });
+        return {
+            rql: `UPDATE ${this.resource.storage} SET ${[...assignments, '"_rev" = "_rev" + 1', '"_op" = $op', '"_updatedAt" = $now'].join(', ')} WHERE ("translationGroup" = $group OR id = type::record('${this.resource.storage}', $group)) AND record::id(id) != $key AND ${guard}`,
+            params: values,
+        };
+    }
+
+    /** The IDs among these the principal may update. */
+    async updatable(ids: readonly string[], context: OperationContext): Promise<Set<string>> {
+        let access: Access;
+        try { access = await this.#authorize('update', context.principal); } catch (error) { if (error instanceof CmsError) return new Set(); throw error; }
+        const wanted = [...new Set(ids.filter(id => typeof id === 'string' && KEY.test(id)))].slice(0, 200);
+        if (!wanted.length) return new Set();
+        const params: { [key: string]: Value } = {};
+        const list = wanted.map((key, index) => { params[`$k${index}`] = key; return `type::record('${this.resource.storage}', $k${index})`; }).join(', ');
+        const { rql, params: bound } = this.#conditions(access, context.principal, [`id IN (${list})`], params);
+        const result = await this.#host.db.read([{ rql: `SELECT record::id(id) FROM ${this.resource.storage} WHERE ${rql} LIMIT ${wanted.length}`, params: bound }], this.#readOptions(context));
+        return new Set(result.results[0]!.rows.map(row => row[0] as string));
     }
 
     async delete(id: string, context: OperationContext & { readonly expectedRevision: number }): Promise<void> {
@@ -515,7 +564,13 @@ export class ResourceRepository {
         const final = filtered === draft ? draft : this.#validate(action, filtered, previous, context.principal);
         await this.#checkReferences(final, id);
         await this.#checkTemplate(final, previous);
-        return this.#uniqueSlugs(final, id, context);
+        return this.#uniqueSlugs(await this.#withLocale(action, final), id, previous, context);
+    }
+
+    /** A new content entry belongs to a language: the site's default unless it names one. */
+    async #withLocale(action: 'create' | 'update', draft: Draft): Promise<Draft> {
+        if (action !== 'create' || !this.resource.id.startsWith('cms/') || !this.resource.fields.locale || !this.resource.fields.translationGroup || typeof draft.locale === 'string') return draft;
+        return Object.freeze({ ...draft, locale: (await this.#host.languages()).default });
     }
 
     /** Terms, media and parent records named by the draft must exist; a record cannot be its own ancestor. */
@@ -561,19 +616,30 @@ export class ResourceRepository {
         }
     }
 
-    /** Unique slug fields get the first free `-2`, `-3`, … suffix, so a duplicate title does not fail the write. */
-    async #uniqueSlugs(draft: Draft, id: string | null, context: OperationContext): Promise<Draft> {
+    /**
+     * Unique slug fields get the first free `-2`, `-3`, … suffix, so a duplicate title does not fail the write.
+     * A slug unique by other fields (its language) is free when those differ; changing them checks the slug again.
+     */
+    async #uniqueSlugs(draft: Draft, id: string | null, previous: RecordShape | null, context: OperationContext): Promise<Draft> {
         let adjusted: { [field: string]: unknown } | undefined;
         for (const [name, declaration] of Object.entries(this.resource.fields)) {
-            const value = draft[name];
+            const scope = declaration.uniqueBy ?? [];
+            const value = draft[name] ?? (scope.some(other => draft[other] !== undefined) ? previous?.[name] : undefined);
             if (!declaration.slugFrom || !declaration.unique || typeof value !== 'string' || !value) continue;
             const params: { [key: string]: Value } = { $slug: value, $prefix: `${value}-%`, ...(id ? { $key: id } : {}) };
+            const within = scope.map((other, index) => {
+                const current = draft[other] !== undefined ? draft[other] : previous?.[other];
+                if (current === null || current === undefined) return ` AND ${quote(other)} IS NULL`;
+                params[`$u${index}`] = current as Value;
+                return ` AND ${quote(other)} = $u${index}`;
+            }).join('');
             const result = await this.#host.db.read([{
-                rql: `SELECT ${quote(name)} FROM ${this.resource.storage} WHERE (${quote(name)} = $slug OR ${quote(name)} LIKE $prefix)${id ? ' AND record::id(id) != $key' : ''} LIMIT 1000`, params,
+                rql: `SELECT ${quote(name)} FROM ${this.resource.storage} WHERE (${quote(name)} = $slug OR ${quote(name)} LIKE $prefix)${within}${id ? ' AND record::id(id) != $key' : ''} LIMIT 1000`, params,
             }], this.#readOptions(context));
             const taken = new Set(result.results[0]!.rows.map(row => row[0] as string));
-            // Entries at the site root share one namespace with routes and other root collections.
-            for (const slug of await this.#host.rootSlugConflicts(this.resource.id, value)) taken.add(slug);
+            // Entries at the site root share one namespace, per language, with routes and other root collections.
+            const locale = draft.locale !== undefined ? draft.locale : previous?.locale;
+            for (const slug of await this.#host.rootSlugConflicts(this.resource.id, value, typeof locale === 'string' ? locale : null)) taken.add(slug);
             if (!taken.has(value)) continue;
             let suffix = 2;
             while (taken.has(`${value}-${suffix}`)) suffix++;

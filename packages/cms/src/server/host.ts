@@ -7,7 +7,7 @@ import type { StorageProvider } from '@cossackframework/core/storage';
 import { ClientError, type RomeDB, type Statement, type Value, type WorkLimits } from '@cossackframework/romedb';
 import { blockId, blockMedia, blockProblems, htmlBlocksChanged, validateBlocks, type Block, type BlockDeclaration } from '../blocks';
 import { blocksShapeProblem, normalizeFields, type FieldDeclaration } from '../fields';
-import { collectionProblems, collectionResource, contentBlocks, entryUrl, extendCollection, LOCALE, orderedFields, RESERVED_FIELDS, type CollectionDefinition } from '../collections';
+import { collectionProblems, collectionResource, contentBlocks, entryUrl, extendCollection, languageName, LOCALE, translationGroupOf, orderedFields, RESERVED_FIELDS, type CollectionDefinition } from '../collections';
 import type { EditorLayoutAddition } from '../editor-layout';
 import { fieldGroupDeclarations, fieldGroupProblems, fieldVisibility, flattenGroupFields, groupsForTarget, metaProblems, withTarget, type FieldGroup, type FieldGroupTarget } from '../field-groups';
 import { AUTHOR_FIELDS, collectionSeoProblems } from '../seo';
@@ -115,13 +115,15 @@ export interface CmsOptions {
     readonly mailFrom?: string;
 }
 
-/** The site's languages: the default one without a URL prefix, the others under `/<code>/`. */
+/** The site's languages: the others under `/<code>/`, and the default one too when `prefixDefault`. */
 export interface SiteLanguages {
     readonly default: string;
     readonly others: readonly string[];
     readonly all: readonly string[];
     /** More than one language. */
     readonly multilingual: boolean;
+    /** Settings → Languages → Language in URLs is *Every language*: the default's pages are under `/<code>/` too. */
+    readonly prefixDefault: boolean;
 }
 
 /** A theme from a rendered plugin. */
@@ -908,9 +910,9 @@ export class CmsHost {
     /**
      * Slugs an entry of a collection served at the site root cannot take, among `base` and
      * `base-N`: routes of the application, the first segments of collection and taxonomy
-     * paths, and the slugs of other root collections' entries.
+     * paths, and the slugs of other root collections' entries in the same language.
      */
-    async rootSlugConflicts(resourceId: string, base: string): Promise<string[]> {
+    async rootSlugConflicts(resourceId: string, base: string, locale: string | null = null): Promise<string[]> {
         const name = resourceId.startsWith('cms/') ? resourceId.slice(4) : '';
         const collection = this.#collections.get(name);
         if (!collection || collection.path !== '') return [];
@@ -923,8 +925,8 @@ export class CmsHost {
         const taken = [...reserved].filter(word => word === base || word.startsWith(`${base}-`));
         const others = [...this.#collections.values()].filter(other => other.name !== name && other.path === '' && other.slug !== false);
         const statements = others.map(other => ({
-            rql: `SELECT "slug" FROM ${this.resourceById(`cms/${other.name}`).storage} WHERE "slug" = $slug OR "slug" LIKE $prefix LIMIT 1000`,
-            params: { $slug: base, $prefix: `${base}-%` },
+            rql: `SELECT "slug" FROM ${this.resourceById(`cms/${other.name}`).storage} WHERE ("slug" = $slug OR "slug" LIKE $prefix)${locale ? ' AND "locale" = $locale' : ''} LIMIT 1000`,
+            params: { $slug: base, $prefix: `${base}-%`, ...(locale ? { $locale: locale } : {}) },
         }));
         if (statements.length) for (const result of (await this.db.read(statements)).results) for (const row of result.rows) taken.push(row[0] as string);
         return taken;
@@ -953,34 +955,42 @@ export class CmsHost {
         const configured = settings?.['languages.default'];
         const main = typeof configured === 'string' && LOCALE.test(configured) ? configured : 'en';
         const others = [...new Set(String(settings?.['languages.others'] ?? '').split(',').map(code => code.trim()).filter(code => LOCALE.test(code) && code !== main))];
-        return { default: main, others, all: [main, ...others], multilingual: others.length > 0 };
+        return { default: main, others, all: [main, ...others], multilingual: others.length > 0, prefixDefault: others.length > 0 && settings?.['languages.urls'] === 'all' };
     }
 
-    /** `/<code>` for an entry in another language than the default; empty otherwise. */
+    /** `/<code>` for an entry in another language than the default, or in any language when `prefixDefault`; empty otherwise. */
     localePrefix(locale: unknown, languages: SiteLanguages): string {
-        return languages.multilingual && typeof locale === 'string' && languages.others.includes(locale) ? `/${locale}` : '';
+        if (!languages.multilingual) return '';
+        const code = typeof locale === 'string' && languages.all.includes(locale) ? locale : languages.default;
+        return code !== languages.default || languages.prefixDefault ? `/${code}` : '';
     }
 
     /**
      * Change the site's languages. Entries saved while the site had one language take the
      * default, so every entry belongs to a language.
      */
-    async saveLanguages(input: { default: string; others: readonly string[] }, principal: Principal): Promise<SiteLanguages> {
+    async saveLanguages(input: { default: string; others: readonly string[]; urls?: 'hide-default' | 'all' }, principal: Principal): Promise<SiteLanguages> {
         const codes = [input.default, ...input.others].map(code => String(code).trim().toLowerCase());
         if (codes.some(code => !LOCALE.test(code)) || new Set(codes).size !== codes.length || codes.length > 20) {
             throw new CmsError('CMS_VALIDATION', 'Languages are distinct codes such as en, fr or pt-br, at most 20.');
         }
-        await this.settings.update('languages', { default: codes[0], others: codes.slice(1).join(',') }, { principal });
+        if (input.urls !== undefined && input.urls !== 'hide-default' && input.urls !== 'all') throw new CmsError('CMS_VALIDATION', 'Language in URLs is hide-default or all.');
+        await this.settings.update('languages', { default: codes[0], others: codes.slice(1).join(','), ...(input.urls ? { urls: input.urls } : {}) }, { principal });
+        await this.#labelLocales(codes[0]!);
+        this.menus.refresh();
+        return this.languages();
+    }
+
+    /** Entries saved without a language take the default one, so every entry belongs to a language. */
+    async #labelLocales(locale: string): Promise<void> {
         for (const collection of this.#collections.values()) {
             const storage = this.resourceById(`cms/${collection.name}`).storage;
-            await this.db.write([{ rql: `UPDATE ${storage} SET "locale" = $locale WHERE "locale" IS NULL`, params: { $locale: codes[0]! } }],
+            await this.db.write([{ rql: `UPDATE ${storage} SET "locale" = $locale WHERE "locale" IS NULL`, params: { $locale: locale } }],
                 { kind: 'cms.languages', workLimits: { rowsRead: 1_000_000, rowMutations: 100_000, vmSteps: 10_000_000 } }).catch(error => {
                 // A collection whose table is not created yet has nothing to label.
                 if (!(error instanceof ClientError && /no such table|not found|does not exist/i.test(error.message))) throw error;
             });
         }
-        this.menus.refresh();
-        return this.languages();
     }
 
     /**
@@ -988,14 +998,34 @@ export class CmsHost {
      * A translation group is named after its first entry, which keeps no group of its own.
      */
     async translations(collection: CollectionDefinition, record: RecordShape, context: OperationContext = { principal: ANONYMOUS }): Promise<Map<string, RecordShape>> {
+        return (await this.translationsOf(collection, [record], context)).get(translationGroupOf(record))!;
+    }
+
+    /**
+     * The translations of several entries, such as a page of the dashboard's list, by
+     * translation group and then language, each entry itself included. One request per
+     * hundred translations, as the principal may read them.
+     */
+    async translationsOf(collection: CollectionDefinition, records: readonly RecordShape[], context: OperationContext = { principal: ANONYMOUS }): Promise<Map<string, Map<string, RecordShape>>> {
         const languages = await this.languages();
         const localeOf = (entry: RecordShape) => typeof entry.locale === 'string' ? entry.locale : languages.default;
-        const found = new Map<string, RecordShape>([[localeOf(record), record]]);
-        const group = typeof record.translationGroup === 'string' ? record.translationGroup : record.id;
+        const groups = [...new Set(records.map(translationGroupOf))].slice(0, 100);
+        const found = new Map(groups.map(group => [group, new Map<string, RecordShape>()]));
+        const add = (entry: RecordShape) => {
+            const members = found.get(translationGroupOf(entry));
+            if (members && !members.has(localeOf(entry))) members.set(localeOf(entry), entry);
+        };
+        for (const record of records) add(record);
+        if (!groups.length) return found;
         const repository = this.resource(`cms/${collection.name}`);
-        const members = (await repository.list({ where: { translationGroup: group }, limit: 50 }, context)).records;
-        const source = group !== record.id ? (await repository.getMany([group], context)).get(group) : undefined;
-        for (const entry of [...(source ? [source] : []), ...members]) if (!found.has(localeOf(entry))) found.set(localeOf(entry), entry);
+        const known = new Set(records.map(record => record.id));
+        for (const source of (await repository.getMany(groups.filter(group => !known.has(group)), context)).values()) add(source);
+        // At most 20 languages each: 2,000 translations for a full page.
+        for (let offset = 0; offset < 2000; offset += 100) {
+            const page = (await repository.list({ where: { translationGroup: { in: groups } }, limit: 100, offset, order: { field: 'createdAt', direction: 'asc' } }, context)).records;
+            for (const entry of page) add(entry);
+            if (page.length < 100) break;
+        }
         return found;
     }
 
@@ -1010,8 +1040,12 @@ export class CmsHost {
         const repository = this.resource(`cms/${collection.name}`);
         const source = await repository.get(id, { principal });
         if (!source) throw new CmsError('CMS_NOT_FOUND', 'Entry not found.');
-        const existing = (await this.translations(collection, source, { principal })).get(locale);
-        if (existing) return existing;
+        // A translation the principal cannot read still exists: never start a second one.
+        const existing = (await this.translations(collection, source, { principal: systemPrincipal('translations') })).get(locale);
+        if (existing) {
+            if ((await repository.getMany([existing.id], { principal })).has(existing.id)) return existing;
+            throw new CmsError('CMS_CONFLICT', `A ${languageName(locale)} translation exists that you cannot open.`);
+        }
         const input: { [field: string]: unknown } = {};
         for (const [name, declaration] of Object.entries(repository.resource.fields)) {
             if (['slug', 'status', 'publishedAt', 'locale', 'translationGroup', 'parent'].includes(name) || source[name] === undefined || source[name] === null) continue;
@@ -1288,6 +1322,8 @@ export class CmsHost {
         const report = await migrate(this.db, this.resources, { ...options, now: this.#now });
         this.#activation = undefined;
         await this.#afterHostSteps(report);
+        // Entries from before languages were stored on every entry, now unique per language, take the default.
+        if (report.applied.some(step => step.resource?.startsWith('cms/'))) await this.#labelLocales((await this.languages()).default);
         return report;
     }
 
@@ -1811,7 +1847,8 @@ export class CmsHost {
                 const records = await this.resource(`cms/${name}`).getMany([...ids], { principal: ANONYMOUS });
                 // In another language, an entry item shows the entry's translation when there is one.
                 const shown = new Map<string, RecordShape>();
-                for (const record of records.values()) shown.set(record.id, translate ? (await this.translations(collection, record)).get(locale!) ?? record : record);
+                const translations = translate ? await this.translationsOf(collection, [...records.values()]) : null;
+                for (const record of records.values()) shown.set(record.id, translations?.get(translationGroupOf(record))?.get(locale!) ?? record);
                 const urls = await this.entryUrls(collection, [...shown.values()]);
                 for (const [id, record] of shown) found.set(`${name}:${id}`, { title: recordTitle(record, 'title'), url: urls.get(record.id) ?? null });
             } catch (error) {

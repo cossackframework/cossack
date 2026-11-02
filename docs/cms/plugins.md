@@ -238,6 +238,12 @@ Components the plugin's pages import by relative path. They are ordinary compone
 Translations, joined to the application's catalog under the plugin's namespace:
 `lang/en.json` with `{ "title": "Support desk" }` is read as `__('support-desk::title')`.
 
+### `translations/`
+
+A language pack's catalogs: `translations/<locale>.json` translates the application's text,
+and `translations/<locale>/<plugin>.json` another plugin's. Packs add their locales. See
+[Languages](/docs/cms/languages.md#language-packs).
+
 ### `config/<file>.ts`
 
 Configuration factories like `src/config/*.ts`, joined as `<plugin>::<file>`:

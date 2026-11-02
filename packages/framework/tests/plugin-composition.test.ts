@@ -128,12 +128,41 @@ describe('plugin registry', () => {
 });
 
 describe('plugin translations, configuration and middleware', () => {
-  it('namespaces plugin catalogs under the application locales', () => {
-    const source = (cossackLang().load as Function).call({ environment: { name: 'ssr' } }, '\0virtual:cossack-lang') as string;
-    expect(source).toContain("import.meta.glob('/src/plugins/*/lang/*.json', { eager: true })");
-    expect(source).toContain("plugin + '::' + name");
-    // Application keys override plugin keys.
-    expect(source).toContain('Object.assign(merged, messages)');
+  /** The generated catalog module, run against these files instead of Vite's glob. */
+  function langModule(environment: 'ssr' | 'client', files: Record<string, Record<string, string>>) {
+    const source = (cossackLang().load as Function).call({ environment: { name: environment } }, '\0virtual:cossack-lang') as string;
+    const glob = (patterns: string | string[], options?: { eager?: boolean }) => {
+      const tests = [patterns].flat().map(pattern => new RegExp(`^${pattern.replace(/\./g, '\\.').replace(/\*/g, '[^/]+')}$`));
+      return Object.fromEntries(Object.entries(files).filter(([key]) => tests.some(test => test.test(key)))
+        .map(([key, messages]) => [key, options?.eager ? { default: messages } : async () => ({ default: messages })]));
+    };
+    const body = source.replace(/import\.meta\.glob\(/g, '__glob(').replace(/export \{([^}]*)\};?/, 'return {$1};');
+    return new Function('__glob', body)(glob) as { supportedLocales: string[]; loadCatalog(locale: string): Promise<Record<string, string> | undefined> };
+  }
+
+  it.each(['ssr', 'client'] as const)('namespaces plugin catalogs and merges language packs (%s)', async environment => {
+    const lang = langModule(environment, {
+      '/src/lang/en.json': { Hello: 'Hello', Bye: 'Bye' },
+      '/src/lang/vi.json': { Bye: 'Tạm biệt (app)' },
+      '/src/plugins/support-desk/lang/en.json': { title: 'Support desk' },
+      '/src/plugins/support-desk/lang/vi.json': { title: 'Bàn (plugin)', open: 'Mở' },
+      '/src/plugins/support-desk/lang/de.json': { title: 'Helpdesk' },
+      '/src/plugins/lang-vi/translations/vi.json': { Hello: 'Xin chào', Bye: 'Tạm biệt' },
+      '/src/plugins/lang-vi/translations/vi/support-desk.json': { title: 'Bàn hỗ trợ' },
+    });
+    // Plugins' own catalogs join existing locales only; packs add theirs.
+    expect(lang.supportedLocales).toEqual(['en', 'vi']);
+    expect(await lang.loadCatalog('en')).toEqual({ Hello: 'Hello', Bye: 'Bye', 'support-desk::title': 'Support desk' });
+    // Application keys override packs, and packs override a plugin's own catalog.
+    expect(await lang.loadCatalog('vi')).toEqual({ Hello: 'Xin chào', Bye: 'Tạm biệt (app)', 'support-desk::title': 'Bàn hỗ trợ', 'support-desk::open': 'Mở' });
+    expect(await lang.loadCatalog('de')).toBeUndefined();
+  });
+
+  it('gives a pack-only application an empty default catalog, so the source text stays the default', async () => {
+    const lang = langModule('ssr', { '/src/plugins/lang-vi/translations/vi.json': { Hello: 'Xin chào' } });
+    expect(lang.supportedLocales).toEqual(['en', 'vi']);
+    expect(await lang.loadCatalog('en')).toEqual({});
+    expect(langModule('ssr', { '/src/lang/es.json': { Hello: 'Hola' } }).supportedLocales).toEqual(['es']);
   });
 
   it('keys plugin configuration by plugin and file', () => {

@@ -45,6 +45,8 @@ const MULTIPLE_SETTINGS: { readonly [name: string]: FieldDeclaration } = {
     maxItems: field.integer({ min: 1, max: ITEM_LIMITS.max, label: 'Most values' }),
     addLabel: field.string({ max: 60, label: 'Add button', description: 'The button that adds a value; "Add new" when empty.' }),
 };
+/** Translations of an entry share the field's value instead of translating it. */
+const SHARED = field.boolean({ default: false, label: 'Same in every language', description: 'One value for an entry and its translations: saving one copies it to the others.' });
 /** Field kinds that are one value by nature. */
 const SINGLE_KINDS: ReadonlySet<FieldBlockKind> = new Set<FieldBlockKind>(['boolean', 'blocks', 'repeater']);
 
@@ -72,18 +74,18 @@ export function upgradeFieldBlocks(blocks: readonly Block[]): Block[] {
 
 /** Built-in field blocks, one per builder type. */
 export const FIELD_BLOCKS: readonly BlockDeclaration[] = Object.freeze([
-    declare('text', { max: MAX_LENGTH, unique: field.boolean({ default: false, label: 'Unique', description: 'No two entries share a value.' }), index: INDEX, search: SEARCH, defaultValue: DEFAULT }),
+    declare('text', { max: MAX_LENGTH, unique: field.boolean({ default: false, label: 'Unique', description: 'No two entries share a value.' }), index: INDEX, search: SEARCH, defaultValue: DEFAULT, shared: SHARED }),
     declare('textarea', { max: MAX_LENGTH, search: SEARCH }),
     declare('markdown', { max: MAX_LENGTH, search: SEARCH }),
-    declare('number', { min: field.number({ label: 'Minimum' }), max: field.number({ label: 'Maximum' }), index: INDEX, defaultValue: DEFAULT }),
-    declare('integer', { min: field.integer({ label: 'Minimum' }), max: field.integer({ label: 'Maximum' }), index: INDEX, defaultValue: DEFAULT }),
-    declare('boolean', { defaultValue: field.boolean({ default: false, label: 'Checked by default' }) }),
-    declare('date', { index: INDEX }),
-    declare('choice', { choices: field.list('string', { label: 'Choices' }), index: INDEX, defaultValue: DEFAULT }),
-    declare('media'),
-    declare('reference', { target: field.string({ required: true, max: 40, pattern: '[a-z][a-z0-9_]*', label: 'Collection' }), index: INDEX }),
+    declare('number', { min: field.number({ label: 'Minimum' }), max: field.number({ label: 'Maximum' }), index: INDEX, defaultValue: DEFAULT, shared: SHARED }),
+    declare('integer', { min: field.integer({ label: 'Minimum' }), max: field.integer({ label: 'Maximum' }), index: INDEX, defaultValue: DEFAULT, shared: SHARED }),
+    declare('boolean', { defaultValue: field.boolean({ default: false, label: 'Checked by default' }), shared: SHARED }),
+    declare('date', { index: INDEX, shared: SHARED }),
+    declare('choice', { choices: field.list('string', { label: 'Choices' }), index: INDEX, defaultValue: DEFAULT, shared: SHARED }),
+    declare('media', { shared: SHARED }),
+    declare('reference', { target: field.string({ required: true, max: 40, pattern: '[a-z][a-z0-9_]*', label: 'Collection' }), index: INDEX, shared: SHARED }),
     declare('blocks', { blocks: field.list('string', { label: 'Allowed blocks', description: 'Block type names; empty allows all.' }) }),
-    declare('json'),
+    declare('json', { shared: SHARED }),
     declare('repeater', {
         min: field.integer({ min: 0, max: ROW_LIMITS.max, label: 'Fewest rows' }),
         max: field.integer({ min: 1, max: ROW_LIMITS.max, label: 'Most rows' }),
@@ -104,8 +106,11 @@ export function fieldBlockDeclaration(block: Block, types: ReadonlyMap<string, B
     const flag = (key: string) => data[key] === true;
     const required = flag('required');
     const multiple = flag('multiple') && !SINGLE_KINDS.has(kind);
+    // A unique text, or a searched list of texts, is always translated.
+    const shared = flag('shared') && !['textarea', 'markdown', 'blocks', 'repeater'].includes(kind) && !(kind === 'text' && (flag('unique') && !multiple || multiple && flag('search')));
     const common: Partial<FieldDeclaration> = {
         label: text('label') || text('name'),
+        ...(shared ? { translatable: false } : {}),
         ...(text('description') ? { description: text('description') } : {}),
         ...(required ? { required: true } : {}),
         ...(multiple ? {
@@ -208,6 +213,7 @@ export function fieldBlockOf(name: string, declaration: FieldDeclaration, id = n
         if (declaration.addLabel) data.addLabel = declaration.addLabel;
     }
     if (declaration.search) data.search = true;
+    if (declaration.translatable === false) data.shared = true;
     if (kind === 'choice') data.choices = [...(declaration.values ?? [])];
     if (kind === 'reference') data.target = declaration.target?.startsWith('cms/') ? declaration.target.slice(4) : declaration.target ?? '';
     if (kind === 'blocks' && declaration.blocks?.length) data.blocks = [...declaration.blocks];

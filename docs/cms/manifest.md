@@ -316,6 +316,14 @@ plugin and at most 41 characters; options are `string`, `number` or `boolean`, w
 Makes the plugin a theme. See [Themes](/docs/cms/themes.md#the-manifest) for the fields:
 `label`, `description`, `locations`, `areas`, `options`, `presets` and `extends`.
 
+## `translations`
+
+The interface languages a language pack translates, such as `["vi", "pt-br"]`: at most 50
+distinct codes. Each code has a `translations/<code>.json` file, for the application's text,
+or a `translations/<code>/` directory of `<plugin>.json` files, for other plugins' text. The
+field describes the pack; the catalogs join the build whether or not the plugin is active.
+See [Languages](/docs/cms/languages.md#language-packs).
+
 ## What a manifest asks the administrator for
 
 `requestedGrants(manifest)` from `@cossackframework/cms` lists them: `plugin:enabled` for

@@ -134,7 +134,7 @@ export function collectionSpec(resource: Resource, storageOf: (resourceId: strin
     const indexes: IndexSpec[] = [{ name: `${resource.storage}___updated`, kind: 'scalar', paths: ['_updatedAt'], unique: false }];
     if (resource.ownership) indexes.push({ name: `${resource.storage}___owner`, kind: 'scalar', paths: ['_owner'], unique: false });
     for (const [name, declaration] of Object.entries(resource.fields)) {
-        if (declaration.unique) indexes.push({ name: `${resource.storage}__u_${name.toLowerCase()}`, kind: 'scalar', paths: [name], unique: true });
+        if (declaration.unique) indexes.push({ name: `${resource.storage}__u_${name.toLowerCase()}`, kind: 'scalar', paths: [...(declaration.uniqueBy ?? []), name], unique: true });
         else if (declaration.index || declaration.kind === 'reference') indexes.push({ name: `${resource.storage}__${name.toLowerCase()}`, kind: declaration.multiple ? 'array' : 'scalar', paths: [name], unique: false });
     }
     // A row field's index steps into every row of each rows field above it.

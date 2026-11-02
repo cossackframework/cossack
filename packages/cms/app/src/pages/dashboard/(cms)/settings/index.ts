@@ -1,5 +1,5 @@
 import { Client, ClientState, Cossack, Inject, OnWindow, Page, PreventNavigation, Server, Shared, server$, type HeadValue } from '@cossackframework/core';
-import { Badge, Button, Card, CardBody } from '@cossackframework/ui';
+import { Badge, Card, CardBody } from '@cossackframework/ui';
 import { component, html, repeat, type TemplateResult } from '@cossackframework/renderer';
 import { hasPermission, isCmsError, PERMISSIONS, type SettingsDocument, type SettingsSection as SectionDeclaration } from '@cossackframework/cms';
 import { requireAny } from '../../../../cms/guards';
@@ -9,13 +9,25 @@ import { filterSettingsLinks, settingsErrorSummary, settingsFrame, settingsLinks
 import { searchSettings, settingsSearchEntries, settingsSectionId, type SettingsSearchEntry } from '../../../../cms/settings-search';
 import { SettingsSection } from '../../../../cms/settings-section';
 import { activeSettingsSection } from '../../../../cms/settings-scroll';
-import { LanguagesSettings, loadLanguageSettings, saveLanguageSettings, type LanguageSettingsData, type LanguageSettingsInput } from '../../../../cms/settings-languages';
-import { PermalinksSettings, loadPermalinkSettings, savePermalinkSettings, type PermalinkSettingsData, type PermalinkSettingsInput } from '../../../../cms/settings-permalinks';
+import { languageDraft, languageInput, LanguagesSettings, loadLanguageSettings, saveLanguageSettings, type LanguageSettingsData, type LanguageSettingsInput } from '../../../../cms/settings-languages';
+import { PermalinksSettings, loadPermalinkSettings, permalinkDraft, savePermalinkSettings, type PermalinkSettingsData, type PermalinkSettingsInput } from '../../../../cms/settings-permalinks';
 import { notice } from '../../../../cms/ui';
 
 interface GroupView {
     id: string; label: string; description: string; plugin: string; active: boolean; theme: boolean; portable: boolean;
     sections: readonly SectionDeclaration[]; rows: SettingRow[]; values: SettingValues;
+}
+/** Everything the toolbar's Save sends: the portable document and the sections saved by their own operations. */
+interface SaveInput {
+    document: SettingsDocument | null;
+    languages: LanguageSettingsInput | null;
+    permalinks: PermalinkSettingsInput | null;
+    groups: Record<string, SettingValues>;
+}
+/** What was saved, in order; the first part that fails stops the rest and names its section. */
+interface SaveResult {
+    document: SettingsDocument | null; languages: LanguageSettingsData | null; permalinks: PermalinkSettingsData | null; groups: string[];
+    error: string; fields: Record<string, string>;
 }
 interface SettingsView {
     links: SettingsLink[]; entries: SettingsSearchEntry[]; groups: GroupView[];
@@ -51,6 +63,7 @@ export default class SettingsPage extends Cossack {
     @ClientState() target = 'general';
     @ClientState() active = 'general';
     private unsubscribe?: () => void;
+    private discards = 0;
     private sectionElements = new Map<string, Element>();
     private resize?: ResizeObserver;
     private scrollFrame?: number;
@@ -65,7 +78,12 @@ export default class SettingsPage extends Cossack {
         this.draft.initialize(this.view.snapshot, this.view.invalid);
         this.draft.navigated(window.location.pathname);
         for (const group of this.view.groups.filter(group => !group.portable)) this.draft.initializeSection(group.id, group.values);
-        this.unsubscribe = this.draft.subscribe(() => { this.revision++; this.updateActiveSection(); });
+        this.discards = this.draft.discards;
+        this.unsubscribe = this.draft.subscribe(() => {
+            // The toolbar's Discard also clears what the last save reported.
+            if (this.draft.discards !== this.discards) { this.discards = this.draft.discards; this.error = ''; this.message = ''; this.errors = {}; }
+            this.revision++; this.updateActiveSection();
+        });
         if (typeof ResizeObserver !== 'undefined') {
             this.resize = new ResizeObserver(this.sectionsResized);
             for (const element of this.sectionElements.values()) this.resize.observe(element);
@@ -179,12 +197,20 @@ export default class SettingsPage extends Cossack {
     @Client()
     async submit(event: Event) {
         event.preventDefault(); this.error = ''; this.message = '';
-        if (this.draft.saving || this.draft.jsonError || Object.keys(this.draft.errors).length || this.draft.preview?.imported || !this.draft.documentDirty()) return;
+        if (this.draft.saving || this.draft.jsonError || Object.keys(this.draft.errors).length || this.draft.preview?.imported || !this.draft.dirty()) return;
+        const changes = this.draft.changes();
+        const languages = this.view.languages && this.draft.sectionDirty('languages') ? languageInput(this.draft, this.view.languages) : null;
+        const permalinks = this.view.permalinks && this.draft.sectionDirty('permalinks') ? this.draft.section('permalinks', permalinkDraft(this.view.permalinks)) : null;
+        const groups = Object.fromEntries(this.view.groups.filter(group => !group.portable && this.draft.sectionDirty(group.id)).map(group => [group.id, this.draft.section(group.id, group.values)]));
         this.draft.setSaving(true);
         try {
-            const result = await this.save(this.draft.changes());
+            const result = await this.saveAll({ document: Object.keys(changes).length ? changes : null, languages, permalinks, groups });
+            if (result.document) this.draft.accept(result.document);
+            if (result.languages) this.draft.acceptSection('languages', languageDraft(result.languages));
+            if (result.permalinks) this.draft.acceptSection('permalinks', permalinkDraft(result.permalinks));
+            for (const id of result.groups) this.draft.acceptSection(id, groups[id]);
             this.error = result.error; this.errors = result.fields;
-            if (result.document) { this.draft.accept(result.document); this.message = __('Settings saved.'); }
+            if (!result.error) this.message = __('Settings saved.');
         } catch { this.error = __('The settings could not be saved. Your draft is kept.'); }
         finally { this.draft.setSaving(false); }
     }
@@ -192,46 +218,41 @@ export default class SettingsPage extends Cossack {
     @Server()
     async findMedia(search: string, kind: string) { return findSettingsMedia(this.c.get('cms'), this.c.get('principal'), search, kind); }
 
+    /** One save for the whole page: the document first, then Languages, Permalinks and the groups outside the document. */
     @Server()
-    async save(document: SettingsDocument): Promise<{ document: SettingsDocument | null; error: string; fields: Record<string, string> }> {
-        try { return { document: await this.c.get('cms').settings.applyDocument(document, { principal: this.c.get('principal') }), error: '', fields: {} }; }
-        catch (error) { return { document: null, error: isCmsError(error) ? error.message : __('The settings could not be saved.'), fields: isCmsError(error) ? { ...error.fields } : {} }; }
+    async saveAll(input: SaveInput): Promise<SaveResult> {
+        const cms = this.c.get('cms'), principal = this.c.get('principal'), origin = new URL(this.c.req.url).origin;
+        const result: SaveResult = { document: null, languages: null, permalinks: null, groups: [], error: '', fields: {} };
+        const failed = (section: string, error: string, fields: Record<string, string> = {}) => ({ ...result, error: `${section}: ${error}`, fields });
+        if (input.document) {
+            try { result.document = await cms.settings.applyDocument(input.document, { principal }); }
+            catch (error) { return { ...result, error: isCmsError(error) ? error.message : __('The settings could not be saved.'), fields: isCmsError(error) ? { ...error.fields } : {} }; }
+        }
+        if (input.languages) {
+            const saved = await saveLanguageSettings(cms, principal, input.languages, origin);
+            if (!saved.data) return failed(__('Languages'), saved.error);
+            result.languages = saved.data;
+        }
+        if (input.permalinks) {
+            const saved = await savePermalinkSettings(cms, principal, input.permalinks, origin);
+            if (!saved.data) return failed(__('Permalinks'), saved.error, Object.fromEntries(Object.entries(saved.fields).map(([name, error]) => [`permalinks.${name}`, error])));
+            result.permalinks = saved.data;
+        }
+        for (const [id, values] of Object.entries(input.groups ?? {})) {
+            const group = cms.settings.groups.find(group => group.id === id && !group.plugin && group.id !== 'languages' && (group.permission ?? PERMISSIONS.manageSettings) === PERMISSIONS.manageSettings);
+            if (!group) return failed(id, __('These settings do not exist.'));
+            const { input: valid, errors } = settingInput(group, values);
+            if (Object.keys(errors).length) return failed(group.label, __('Some settings are invalid.'), Object.fromEntries(Object.entries(errors).map(([name, value]) => [`${id}.${name}`, value])));
+            try { await cms.settings.update(id, valid, { principal }); }
+            catch (error) { return failed(group.label, isCmsError(error) ? error.message : __('The settings could not be saved.'), isCmsError(error) ? Object.fromEntries(Object.entries(error.fields ?? {}).map(([name, value]) => [`${id}.${name}`, value])) : {}); }
+            result.groups.push(id);
+        }
+        return result;
     }
-
-    @Client()
-    async submitGroup(event: Event, group: GroupView) {
-        event.preventDefault(); this.error = ''; this.message = '';
-        if (this.draft.saving) return;
-        this.draft.setSaving(true);
-        const values = this.draft.section(group.id, group.values);
-        try {
-            const result = await this.saveGroup(group.id, values);
-            this.error = result.error; this.errors = result.fields;
-            if (!result.error) { this.draft.acceptSection(group.id, values); this.message = __('Settings saved.'); }
-        } catch { this.error = __('The settings could not be saved. Your draft is kept.'); }
-        finally { this.draft.setSaving(false); }
-    }
-
-    @Server()
-    async saveGroup(id: string, values: SettingValues) {
-        const cms = this.c.get('cms');
-        const group = cms.settings.groups.find(group => group.id === id && !group.plugin && group.id !== 'languages' && (group.permission ?? PERMISSIONS.manageSettings) === PERMISSIONS.manageSettings);
-        if (!group) return { error: __('These settings do not exist.'), fields: {} as Record<string, string> };
-        const { input, errors } = settingInput(group, values);
-        if (Object.keys(errors).length) return { error: __('Some settings are invalid.'), fields: Object.fromEntries(Object.entries(errors).map(([name, value]) => [`${id}.${name}`, value])) };
-        try { await cms.settings.update(id, input, { principal: this.c.get('principal') }); return { error: '', fields: {} as Record<string, string> }; }
-        catch (error) { return { error: isCmsError(error) ? error.message : __('The settings could not be saved.'), fields: isCmsError(error) ? { ...error.fields } : {} }; }
-    }
-
-    @Server()
-    async saveLanguages(input: LanguageSettingsInput) { return saveLanguageSettings(this.c.get('cms'), this.c.get('principal'), input, new URL(this.c.req.url).origin); }
-
-    @Server()
-    async savePermalinks(input: PermalinkSettingsInput) { return savePermalinkSettings(this.c.get('cms'), this.c.get('principal'), input, new URL(this.c.req.url).origin); }
 
     @Shared()
     groupContent(group: GroupView, fields: Set<string>, blocked: boolean): TemplateResult {
-        const controls = html`<fieldset class="min-w-0 space-y-5" ?disabled=${this.draft.saving || (group.portable ? blocked : !!this.loading.saveGroup)}>
+        const controls = html`<fieldset class="min-w-0 space-y-5" ?disabled=${this.draft.saving || (group.portable && blocked)}>
             ${[{ id: '', label: '', description: '' }, ...group.sections].map(section => {
                 const rows = group.rows.filter(row => row.section === section.id && fields.has(`${group.id}.${row.name}`));
                 return rows.length ? html`<fieldset class="min-w-0 space-y-4">
@@ -243,9 +264,7 @@ export default class SettingsPage extends Cossack {
                 </fieldset>` : null;
             })}
         </fieldset>`;
-        return component(Card, group.plugin ? { 'data-plugin-settings': group.plugin } : {}, component(CardBody, {}, group.portable ? controls : html`<form @submit=${(event: Event) => this.submitGroup(event, group)} class="space-y-4">
-            ${controls}${component(Button, { type: 'submit', disabled: !!this.loading.saveGroup || !this.draft.sectionDirty(group.id) }, `${__('Save')} ${group.label}`)}
-        </form>`));
+        return component(Card, group.plugin ? { 'data-plugin-settings': group.plugin } : {}, component(CardBody, {}, controls));
     }
 
     render() {
@@ -253,6 +272,7 @@ export default class SettingsPage extends Cossack {
         const fields = new Set(matches.map(entry => entry.id));
         const blocked = !!this.draft.jsonError || !!this.draft.preview?.imported;
         const ordered = filterSettingsLinks(this.view.links, this.view.entries, this.draft.search);
+        const permalinkErrors = Object.fromEntries(Object.entries(this.errors).filter(([key]) => key.startsWith('permalinks.')).map(([key, error]) => [key.slice(11), error]));
         return settingsFrame(this.view.links, this.active, html`<div class="min-w-0 space-y-8">
             <form id="settings-actions" hidden @submit=${this.submit}></form>
             <div class="space-y-4">
@@ -274,8 +294,8 @@ export default class SettingsPage extends Cossack {
                     ${group?.plugin ? html`<p class="text-xs text-muted-foreground">${group.plugin}</p>` : null}
                     ${group?.theme ? html`<a href="/dashboard/appearance/customize" class="text-sm text-primary hover:underline">${__('Theme customization')}</a>` : null}</div>`;
                 return component(SettingsSection, { id: link.id, heading, count: keys.length, onConnect: this.trackSection, eager: !keys.length || link.id === this.target || link.id === ordered[0]?.id,
-                    content: () => link.id === 'languages' && this.view.languages ? component(LanguagesSettings, { draft: this.draft, initial: this.view.languages, fields: keys, onSave: this.saveLanguages })
-                        : link.id === 'permalinks' && this.view.permalinks ? component(PermalinksSettings, { draft: this.draft, initial: this.view.permalinks, fields: keys, onSave: this.savePermalinks })
+                    content: () => link.id === 'languages' && this.view.languages ? component(LanguagesSettings, { draft: this.draft, initial: this.view.languages, fields: keys })
+                        : link.id === 'permalinks' && this.view.permalinks ? component(PermalinksSettings, { draft: this.draft, initial: this.view.permalinks, fields: keys, errors: permalinkErrors })
                         : group && keys.length ? this.groupContent(group, fields, blocked) : html`` });
             })}
         </div>`, { entries: this.view.entries, query: this.draft.search, onNavigate: this.openSection });

@@ -164,7 +164,7 @@ async function exercise(origin, routeIds, diagnostics) {
   // Settings change the site title, registration and the home page.
   const visitor = browserless(origin, routeIds, diagnostics);
   contains(await visitor.page('/auth/register'), 'Registration is closed');
-  expect((await web.action(SETTINGS, 'save', [{ general: { siteTitle: 'Rocket News', usersCanRegister: true } }]))._cossack_return.error).toBe('');
+  expect((await web.action(SETTINGS, 'saveAll', [{ document: { general: { siteTitle: 'Rocket News', usersCanRegister: true } }, languages: null, permalinks: null, groups: {} }]))._cossack_return.error).toBe('');
   contains(await visitor.page('/'), 'Rocket News');
   lacks(await visitor.page('/auth/register'), 'Registration is closed');
   const registered = await visitor.action('auth/register/index.ts', 'register', [{ name: 'Bob', email: 'bob@example.com', password: 'another password' }]);
@@ -206,7 +206,7 @@ async function exercise(origin, routeIds, diagnostics) {
   const moved = await fetch(origin + '/team', { redirect: 'manual' });
   expect(moved.status).toBe(301);
   expect(moved.headers.get('location')).toBe('/home/team');
-  expect((await web.action(SETTINGS, 'save', [{ reading: { showOnFront: 'page', pageOnFront: homeId } }]))._cossack_return.error).toBe('');
+  expect((await web.action(SETTINGS, 'saveAll', [{ document: { reading: { showOnFront: 'page', pageOnFront: homeId } }, languages: null, permalinks: null, groups: {} }]))._cossack_return.error).toBe('');
   const front = await visitor.page('/');
   contains(front, 'Welcome home');
   // The static front page is edited in place at /?edit, from the editor's taskbar. Every signed-in user has
@@ -287,21 +287,21 @@ async function exercise(origin, routeIds, diagnostics) {
   expect((await fetch(origin + '/api/cms/content/nothing')).status).toBe(404);
 
   // Permalinks: posts move to the site root, and a posts page lists them.
-  expect((await web.action(SETTINGS, 'savePermalinks', [{ postsAtRoot: true, postsBase: 'posts', withCategory: false, bases: [{ name: 'categories', path: 'category' }, { name: 'tags', path: 'tag' }] }]))._cossack_return.error).toBe('');
+  expect((await web.action(SETTINGS, 'saveAll', [{ document: null, languages: null, permalinks: { postsAtRoot: true, postsBase: 'posts', withCategory: false, bases: [{ name: 'categories', path: 'category' }, { name: 'tags', path: 'tag' }] }, groups: {} }]))._cossack_return.error).toBe('');
   contains(await visitor.page('/hello-world'), 'zeppelin');
   // Old addresses redirect to the new ones.
   const oldPost = await fetch(origin + '/posts/hello-world', { redirect: 'manual' });
   expect([oldPost.status, oldPost.headers.get('location')]).toEqual([301, '/hello-world']);
   const blogPage = await web.action(editor, 'save', [{ title: 'Blog', slug: '', status: 'draft', publishedAt: '', content: [], excerpt: '', featuredImage: '', parent: '', menuOrder: '5' }, 'publish', 0],
     { params: { collection: 'pages', id: 'new' }, state: { route: 'pages', id: 'new' } });
-  expect((await web.action(SETTINGS, 'save', [{ reading: { pageForPosts: blogPage.id } }]))._cossack_return.error).toBe('');
+  expect((await web.action(SETTINGS, 'saveAll', [{ document: { reading: { pageForPosts: blogPage.id } }, languages: null, permalinks: null, groups: {} }]))._cossack_return.error).toBe('');
   contains(await visitor.page('/blog'), 'Hello, World!');
   contains(await visitor.page('/blog'), 'href="/hello-world"');
   // A new post cannot take a slug the site's routes own.
   const reserved = await web.action(editor, 'save', [{ title: 'Search', slug: '', excerpt: '', content: [], status: 'draft', publishedAt: '', sticky: false, featuredImage: '', categories: [], tags: [] }, 'publish', 0],
     { params: { collection: 'posts', id: 'new' }, state: { route: 'posts', id: 'new' } });
   contains(await web.page(`/dashboard/content/posts/${reserved.id}`), '/search-2');
-  expect((await web.action(SETTINGS, 'savePermalinks', [{ postsAtRoot: false, postsBase: 'posts', withCategory: false, bases: [{ name: 'categories', path: 'category' }, { name: 'tags', path: 'tag' }] }]))._cossack_return.error).toBe('');
+  expect((await web.action(SETTINGS, 'saveAll', [{ document: null, languages: null, permalinks: { postsAtRoot: false, postsBase: 'posts', withCategory: false, bases: [{ name: 'categories', path: 'category' }, { name: 'tags', path: 'tag' }] }, groups: {} }]))._cossack_return.error).toBe('');
   contains(await visitor.page('/posts/hello-world'), 'zeppelin');
 
   // Every dashboard screen renders for the administrator.
@@ -511,7 +511,7 @@ describe.skipIf(!liveRomeDBTests())('generated CMS application', () => {
       await browserExpect(primary.locator('li li a', { hasText: 'Team' }).first()).toHaveAttribute('href', '/team');
 
       // A static front page is edited in place at /: the taskbar's Live Edit opens /?edit, Exit leaves it; Edit opens the dashboard's editor.
-      expect((await web.action(SETTINGS, 'save', [{ reading: { showOnFront: 'page', pageOnFront: pageIds.About } }]))._cossack_return.error).toBe('');
+      expect((await web.action(SETTINGS, 'saveAll', [{ document: { reading: { showOnFront: 'page', pageOnFront: pageIds.About } }, languages: null, permalinks: null, groups: {} }]))._cossack_return.error).toBe('');
       await page.goto(server.origin + '/');
       await ready();
       const taskbar = page.getByRole('navigation', { name: 'Site taskbar' });

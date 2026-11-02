@@ -24,6 +24,10 @@ describe('fields', () => {
         expect(validateValue('value', field.number({ max: -0.25 }), 0)).toMatch(/at most -0.25/);
         expect(validateValue('value', field.integer({ max: 0 }), 1)).toMatch(/at most 0/);
         expect(fieldProblems('value', field.number({ max: Infinity }))).toEqual(['field value: max must be a finite number.']);
+        // A unique field can be unique within others' values, such as a slug per language.
+        expect(fieldProblems('slug', field.slug('title', { uniqueBy: ['locale'] }))).toEqual([]);
+        expect(fieldProblems('slug', field.string({ uniqueBy: ['locale'] }))).toEqual([expect.stringContaining('uniqueBy')]);
+        expect(resourceProblems({ name: 'things', owner: 'app', fields: { slug: field.slug('title', { uniqueBy: ['lang'] }), title: field.string() }, access: {} } as never)).toEqual(expect.arrayContaining([expect.stringContaining('uniqueBy lang')]));
         expect(fieldProblems('value', field.integer({ max: 0.5 }))).toEqual(['field value: max must be a safe integer.']);
         expect(fieldProblems('value', field.integer({ max: Number.MAX_SAFE_INTEGER + 1 }))).toEqual(['field value: max must be a safe integer.']);
         for (const max of [0, -1, 0.5, Infinity]) expect(fieldProblems('value', field.string({ max }))).toContain('field value: max must be a positive integer.');
@@ -205,6 +209,10 @@ describe('plugin manifests', () => {
         expect(manifestProblems({ ...manifest, hooks: [{ point: 'cms.resource.after-commit', version: 2 }], extra: true, permissions: { define: ['other:x'], network: ['not a host'] } }))
             .toEqual(['extra is not a manifest field.', 'hooks: cms.resource.after-commit is version 1, not 2.', 'permissions.network: not a host is not a host name.', 'permissions.define: other:x must be named desk:<name>.']);
         expect(manifestProblems({ ...manifest, ui: { slots: { 'dashboard.footer': [] } } })).toEqual([expect.stringContaining('not a host slot')]);
+        // A language pack lists the interface languages it translates.
+        expect(manifestProblems({ ...manifest, translations: ['vi', 'pt-br'] })).toEqual([]);
+        expect(manifestProblems({ ...manifest, translations: ['vi', 'vi'] })).toEqual([expect.stringContaining('translations lists')]);
+        expect(manifestProblems({ ...manifest, translations: 'vi' })).toEqual([expect.stringContaining('translations lists')]);
         // Both taskbars take links, with an optional permission, like the navigation.
         expect(manifestProblems({ ...manifest, ui: { slots: { 'site.taskbar': [{ label: 'Desk', href: '/dashboard/desk' }], 'dashboard.taskbar': [{ label: 'Queue', href: '/dashboard/desk/queue', permission: 'desk:read' }] } } })).toEqual([]);
     });

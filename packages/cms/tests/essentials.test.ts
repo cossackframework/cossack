@@ -273,17 +273,67 @@ describe.skipIf(!live)('scheduling, previews, revisions, redirects, tokens, webh
         await cms.settings.update('discussion', { defaultOpen: true, blockedWords: '' }, { principal: admin });
     });
 
+    it('copies fields that are the same in every language to the translations', async () => {
+        clock += 1000;
+        await cms.saveCollection({ name: 'products', label: 'Products', singular: 'Product', icon: 'box', path: 'products', features: {},
+            fields: { price: field.integer({ nullable: true, translatable: false, label: 'Price' }), tagline: field.string({ nullable: true, label: 'Tagline' }) } }, admin);
+        expect((await cms.migrate()).failed).toBeUndefined();
+        await cms.saveLanguages({ default: 'en', others: ['fr'] }, admin);
+        const maker = (id: string): Principal => ({ kind: 'user', id, roles: [], permissions: ['cms/products:create', 'cms/products:read'] });
+        const [ann, bob] = [maker('ann'), maker('bob')];
+        const products = cms.resource('cms/products');
+        const widget = await products.create({ title: 'Widget', price: 10, tagline: 'Handy' }, { principal: ann });
+        const french = await cms.translateEntry('products', widget.id, 'fr', ann);
+        expect(french).toMatchObject({ price: 10, tagline: 'Handy' });
+        // Saving either copies the price to the other and moves the other's revision on.
+        const cheaper = await products.update(french.id, { price: 12, tagline: 'Pratique' }, { principal: ann, expectedRevision: french.rev });
+        expect(await products.get(widget.id, { principal: ann })).toMatchObject({ price: 12, tagline: 'Handy', rev: widget.rev + 1 });
+        await expect(products.update(widget.id, { title: 'Stale' }, { principal: ann, expectedRevision: widget.rev })).rejects.toMatchObject({ code: 'CMS_CONFLICT' });
+        // An unchanged value copies nothing.
+        await products.update(french.id, { title: 'Bidule', price: 12 }, { principal: ann, expectedRevision: cheaper.rev });
+        expect((await products.get(widget.id, { principal: ann }))!.rev).toBe(widget.rev + 1);
+        // Bob owns a translation of an entry Ann owns: neither can change the shared price alone.
+        const gadget = await products.create({ title: 'Gadget', price: 5 }, { principal: ann });
+        const theirs = await products.create({ title: 'Gadget FR', price: 5, locale: 'fr' }, { principal: bob });
+        await cms.db.write([{ rql: `UPDATE ${cms.resourceById('cms/products').storage} SET "translationGroup" = $group WHERE id = type::record('${cms.resourceById('cms/products').storage}', $key)`, params: { $group: gadget.id, $key: theirs.id } }]);
+        await expect(products.update(gadget.id, { price: 6 }, { principal: ann, expectedRevision: gadget.rev })).rejects.toMatchObject({ code: 'CMS_FORBIDDEN', fields: { price: expect.any(String) } });
+        expect(await products.update(gadget.id, { title: 'Gadget 2' }, { principal: ann, expectedRevision: gadget.rev })).toMatchObject({ title: 'Gadget 2', price: 5 });
+        expect((await products.get(theirs.id, { principal: bob }))!.price).toBe(5);
+        expect(await products.updatable([gadget.id, theirs.id], { principal: bob })).toEqual(new Set([theirs.id]));
+        await cms.saveLanguages({ default: 'en', others: [] }, admin);
+    });
+
     it('serves translations under language prefixes', async () => {
         const pages = cms.resource('cms/pages');
         const about = await pages.create({ title: 'About', status: 'published' }, { principal: editor });
         await cms.saveLanguages({ default: 'en', others: ['fr'] }, admin);
-        expect(await cms.languages()).toEqual({ default: 'en', others: ['fr'], all: ['en', 'fr'], multilingual: true });
+        expect(await cms.languages()).toEqual({ default: 'en', others: ['fr'], all: ['en', 'fr'], multilingual: true, prefixDefault: false });
         expect((await pages.get(about.id, { principal: editor }))?.locale).toBe('en');
         const french = await cms.translateEntry('pages', about.id, 'fr', editor);
-        expect(french).toMatchObject({ locale: 'fr', translationGroup: about.id, status: 'draft', title: 'About', slug: 'about-2' });
+        // Each language has its own slugs, so the translation keeps the original's.
+        expect(french).toMatchObject({ locale: 'fr', translationGroup: about.id, status: 'draft', title: 'About', slug: 'about' });
         expect((await cms.translateEntry('pages', about.id, 'fr', editor)).id).toBe(french.id);
+        const second = await pages.create({ title: 'About' }, { principal: editor });
+        expect(second).toMatchObject({ locale: 'en', slug: 'about-2' });
+        // Moving an entry to another language checks its slug there.
+        const moved = await pages.update(second.id, { locale: 'fr' }, { principal: editor, expectedRevision: second.rev });
+        expect(moved).toMatchObject({ locale: 'fr', slug: 'about-2' });
+        const third = await pages.create({ title: 'About', locale: 'fr' }, { principal: editor });
+        expect(third.slug).toBe('about-3');
+        await pages.delete(second.id, { principal: editor, expectedRevision: moved.rev });
+        await pages.delete(third.id, { principal: editor, expectedRevision: third.rev });
         const published = await pages.update(french.id, { title: 'À propos', slug: 'a-propos', status: 'published' }, { principal: editor, expectedRevision: french.rev });
         expect((await cms.entryUrls(cms.collection('pages'), [about, published]))).toEqual(new Map([[about.id, '/about'], [french.id, '/fr/a-propos']]));
+        // Language in URLs → Every language: the default's pages take its code too.
+        await cms.saveLanguages({ default: 'en', others: ['fr'], urls: 'all' }, admin);
+        expect((await cms.languages()).prefixDefault).toBe(true);
+        expect((await cms.entryUrls(cms.collection('pages'), [about, published]))).toEqual(new Map([[about.id, '/en/about'], [french.id, '/fr/a-propos']]));
+        expect(await cms.archiveUrl(cms.collection('posts'), 'en')).toBe('/en/posts');
+        await expect(cms.saveLanguages({ default: 'en', others: ['fr'], urls: 'some' as 'all' }, admin)).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
+        // Saving without a mode keeps it.
+        await cms.saveLanguages({ default: 'en', others: ['fr'] }, admin);
+        expect((await cms.languages()).prefixDefault).toBe(true);
+        await cms.saveLanguages({ default: 'en', others: ['fr'], urls: 'hide-default' }, admin);
         expect([...(await cms.translations(cms.collection('pages'), about)).keys()]).toEqual(['en', 'fr']);
         expect([...(await cms.translations(cms.collection('pages'), published)).keys()]).toEqual(['fr', 'en']);
         // A page cannot take a language code as its slug.

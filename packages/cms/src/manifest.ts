@@ -4,7 +4,7 @@
  * only after this check, the policy lints and an administrator's grant.
  */
 import { blockProblems, CORE_BLOCKS, type Block, type BlockDeclaration } from './blocks';
-import { collectionProblems, type CollectionDefinition } from './collections';
+import { collectionProblems, LOCALE, type CollectionDefinition } from './collections';
 import { editorLayoutProblems, editorLayoutShapeProblem } from './editor-layout';
 import { FIELD_BLOCKS, fieldGroupProblems, type FieldGroup } from './field-groups';
 import { defineAction, defineFilter, type ExtensionPoint } from '@cossackframework/core/hooks';
@@ -115,6 +115,12 @@ export interface CmsPluginManifest {
     readonly logo?: string;
     /** A 4:3 image for the Plugins and Themes screens, such as `assets/cover.png`. Default: `assets/cover.*`. */
     readonly cover?: string;
+    /**
+     * The interface languages the plugin translates, such as `["vi"]`: a language pack's
+     * `translations/<code>.json` (the application's text) and `translations/<code>/<plugin>.json`
+     * (another plugin's). Each code needs its directory or file.
+     */
+    readonly translations?: readonly string[];
     /** Rendered by `cossack add plugin`: the npm package the plugin came from. */
     readonly package?: string;
     readonly [field: string]: unknown;
@@ -128,7 +134,7 @@ export interface CmsPluginManifest {
 export const HOST_SLOTS = Object.freeze(['dashboard.nav', 'dashboard.overview', 'dashboard.taskbar', 'site.taskbar'] as const);
 export type HostSlot = (typeof HOST_SLOTS)[number];
 
-const KNOWN_FIELDS = new Set(['schemaVersion', 'name', 'version', 'description', 'author', 'authorUrl', 'compatibility', 'dependencies', 'resources', 'collections', 'blocks', 'fieldGroups', 'editor', 'hooks', 'permissions', 'ui', 'provides', 'commands', 'settings', 'theme', 'logo', 'cover', 'package', 'source']);
+const KNOWN_FIELDS = new Set(['schemaVersion', 'name', 'version', 'description', 'author', 'authorUrl', 'compatibility', 'dependencies', 'resources', 'collections', 'blocks', 'fieldGroups', 'editor', 'hooks', 'permissions', 'ui', 'provides', 'commands', 'settings', 'theme', 'logo', 'cover', 'translations', 'package', 'source']);
 const COLLECTION_NAME = /^[a-z][a-zA-Z0-9_]{0,40}$/;
 const ARTWORK = /^assets\/[A-Za-z0-9][A-Za-z0-9._-]{0,80}\.(?:png|jpe?g|webp|gif|avif|svg)$/;
 const HOST = /^(?:\*\.)?(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$|^localhost$/;
@@ -164,6 +170,8 @@ export function manifestProblems(manifest: unknown): string[] {
     if (typeof value.version !== 'string' || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(value.version)) problems.push('version must be a semantic version.');
     for (const key of Object.keys(value)) if (!KNOWN_FIELDS.has(key)) problems.push(`${key} is not a manifest field.`);
     if (value.settings !== undefined) problems.push(...pluginSettingsProblems(value.settings));
+    if (value.translations !== undefined && (!Array.isArray(value.translations) || value.translations.length > 50 || new Set(value.translations).size !== value.translations.length
+        || value.translations.some(code => typeof code !== 'string' || !LOCALE.test(code)))) problems.push('translations lists at most 50 distinct language codes, such as vi or pt-br.');
     const name = value.name;
     const resourceNames = new Set<string>();
     for (const [index, resource] of (Array.isArray(value.resources) ? value.resources : value.resources === undefined ? [] : [null]).entries()) {

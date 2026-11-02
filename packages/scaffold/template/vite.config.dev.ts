@@ -12,7 +12,8 @@
  * result in node_modules/.vite/deps_ssr) cuts cold start to ~5s. The app's own
  * src/ still transforms normally, so HMR is unaffected. The framework plugin
  * re-bundles a linked package on every start (Vite's cache does not follow its
- * sources), so a change in the framework checkout is never served stale.
+ * sources), and a running dev server restarts when one is rebuilt, so a change
+ * in the framework checkout is never served stale.
  *
  * This is applied ONLY when the COSSACK_LOCAL env var is set (see scripts/dev.js):
  *

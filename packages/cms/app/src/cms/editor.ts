@@ -14,6 +14,8 @@ export interface EditorField {
     required: boolean;
     nullable: boolean;
     description: string;
+    /** One value for an entry and its translations (`translatable: false`). */
+    shared: boolean;
     placement: 'main' | 'sidebar';
     format: 'plain' | 'markdown' | 'code';
     /** code: the code editor's language, unless the block names one. */
@@ -155,7 +157,7 @@ export function editorFields(fields: { readonly [name: string]: FieldDeclaration
 export function editorField(name: string, declaration: FieldDeclaration & { choices?: { readonly [value: string]: string } }): EditorField {
     return {
         name, label: declaration.label ?? name, kind: declaration.kind, required: declaration.required === true, nullable: declaration.nullable === true,
-        description: declaration.description ?? '', placement: fieldPlacement(declaration),
+        description: declaration.description ?? '', shared: declaration.translatable === false, placement: fieldPlacement(declaration),
         format: declaration.format ?? 'plain', language: declaration.language ?? '',
         choices: (declaration.values ?? []).map(value => ({ value, label: declaration.choices?.[value] ?? value })),
         multiple: declaration.multiple === true, minItems: declaration.minItems ?? null, maxItems: declaration.maxItems ?? null, addLabel: declaration.addLabel ?? '',

@@ -217,7 +217,7 @@ export const indexnow: SettingsGroup = {
     },
 };
 
-/** The site's languages: the default one without a URL prefix, others under `/<code>/`. */
+/** The site's languages: others under `/<code>/`, the default one too when `urls` is `all`. */
 export const languages: SettingsGroup = {
     id: 'languages',
     icon: 'global',
@@ -225,6 +225,8 @@ export const languages: SettingsGroup = {
     fields: {
         default: field.string({ required: true, max: 16, default: 'en', pattern: '[a-z]{2,3}(?:-[a-z0-9]{2,8})?', label: 'Default language' }),
         others: field.string({ max: 300, default: '', pattern: '(?:[a-z]{2,3}(?:-[a-z0-9]{2,8})?(?:,[a-z]{2,3}(?:-[a-z0-9]{2,8})?){0,19})?', label: 'Other languages', description: 'Codes separated by commas, such as fr,de,pt-br.' }),
+        urls: { ...field.enum(['hide-default', 'all'], { default: 'hide-default', label: 'Language in URLs' }),
+            choices: { 'hide-default': 'Hide the default language\'s code', all: 'Every language has its code' } },
     },
 };
 
@@ -301,6 +303,7 @@ export interface SiteSettings {
     'indexnow.key': string;
     'languages.default': string;
     'languages.others': string;
+    'languages.urls': 'hide-default' | 'all';
     readonly [key: string]: unknown;
 }
 

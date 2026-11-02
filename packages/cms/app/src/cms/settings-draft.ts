@@ -63,6 +63,8 @@ export class SettingsDraft {
     @ClientState() toolbarHeight = 56;
     /** Invalidates pending controls when the whole document is replaced or discarded. */
     @ClientState() epoch = 0;
+    /** Counts the toolbar's discards, so the page can clear what the last save reported. */
+    @ClientState() discards = 0;
     @ClientState() sections: Record<string, unknown> = {};
     @ClientState() sectionBaselines: Record<string, unknown> = {};
     private pathname = '';
@@ -135,6 +137,7 @@ export class SettingsDraft {
         this.baselineErrors = errors;
         this.errors = { ...errors };
         this.sections = structuredClone(this.sectionBaselines);
+        this.discards++;
         this.changed();
     }
 

@@ -29,6 +29,7 @@ import {
     registerLocale,
     __hydrateLocale,
     getDefaultLocale,
+    getLocale,
 } from '@cossackframework/core';
 import { CossackElement, captureRenderDrafts } from '@cossackframework/renderer';
 import { classifyRoute, computeRouteIds, filePathToHttpRoute, filePathToRoutePath, resolvePageRouteFiles } from '../route-ids.js';
@@ -100,7 +101,7 @@ export interface CreateClientAppOptions {
  * a page whose state was mutated server-side never serves stale content.
  */
 const PAGE_CACHE_MAX = 20;
-type CachedPage = { html: string; state: any; url: string };
+type CachedPage = { html: string; state: any; lang?: string; url: string };
 const pageCache = new Map<string, CachedPage>();
 let pageCacheEpoch = 0;
 
@@ -161,6 +162,7 @@ function parseStateFromHTML(html: string) {
           return {
             state: JSON.parse(content.substring(jsonStart)),
             title: doc.title,
+            lang: doc.documentElement.getAttribute('lang') ?? '',
             modulePreloads: Array.from(
               doc.querySelectorAll<HTMLLinkElement>('link[rel="modulepreload"][href]')
             ).map((link) => link.href),
@@ -209,6 +211,21 @@ class NotAPageError extends Error {
   constructor(readonly url: string) { super(`Not a page: ${url}`); }
 }
 
+/**
+ * A page in another language, such as a site's `/fr/...` pages, renders in it: the
+ * client takes the page's locale and catalog, and its `<html lang>`, without the cookie.
+ */
+function applyPageLocale(langState: { locale?: string; messages?: Record<string, string>; defaultLocale?: string; defaultMessages?: Record<string, string> } | undefined, lang: string) {
+  if (langState && typeof langState === 'object' && langState.locale) {
+    if (langState.defaultMessages && langState.defaultLocale) registerLocale(langState.defaultLocale, langState.defaultMessages);
+    if (langState.locale !== getLocale() || langState.messages) __hydrateLocale(langState.locale, langState.messages);
+  } else if (lang && lang !== getLocale()) {
+    // No catalog in that language: its text falls back to the default catalog.
+    __hydrateLocale(lang);
+  }
+  if (lang && document.documentElement.lang !== lang) document.documentElement.lang = lang;
+}
+
 async function fetchPage(url: string, signal?: AbortSignal, trace: NavigationTrace = event => emitNavigationDiagnostic(null, event)) {
   signal?.throwIfAborted();
   const key = pageCacheKey(url);
@@ -237,7 +254,7 @@ async function fetchPage(url: string, signal?: AbortSignal, trace: NavigationTra
     if (!response.ok && !validBoundary) throw new Error(`Failed to load page: ${response.status} ${response.statusText}`);
 
     if (parsed) {
-      const data = { html, state: parsed.state, url: response.url || new URL(key, window.location.href).href };
+      const data = { html, state: parsed.state, lang: parsed.lang, url: response.url || new URL(key, window.location.href).href };
       preloadPageModules(parsed.modulePreloads);
       // An RPC may have invalidated the cache while this prefetch was in
       // flight. Return its result to the original caller, but never let that
@@ -913,7 +930,7 @@ export async function createClientApp({
           await owner.wait(triggerAppUpdate(() => !owner.signal.aborted));
       }
 
-      const { state, url: responseUrl } = await owner.wait(fetchPage(url, owner.signal, trace));
+      const { state, lang, url: responseUrl } = await owner.wait(fetchPage(url, owner.signal, trace));
       if (seq !== navigationSequence) {
         // A newer navigation began while this page was loading: discard the
         // late response — it must never commit over the newer navigation.
@@ -933,6 +950,7 @@ export async function createClientApp({
       if (!destination.hash) destination.hash = requestedUrl.hash;
       const destinationUrl = destination.pathname + destination.search + destination.hash;
       const redirected = destination.pathname !== requestedUrl.pathname || destination.search !== requestedUrl.search;
+      applyPageLocale(state.__cossackLang, lang ?? '');
       prepared = await owner.wait(prepareComponent(state, destinationUrl, owner, trace));
       let ownerDisposed = false;
       const commit = async () => {

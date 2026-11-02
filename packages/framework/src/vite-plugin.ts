@@ -12,7 +12,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { installDevelopmentTraceBridge, TRACE_BRIDGE_MODULE } from './vite-development-traces.js';
 import { installPublicReloadPrivacy } from './vite-public-diagnostics.js';
 import { checkTemplatesForBuild, formatTemplateDiagnostic, startDevelopmentTemplateChecks } from './vite-template-diagnostics.js';
-import { clientOptimizedDependencies, linkedDependencies, ssrOptimizedDependencies } from './vite-dependency-optimization.js';
+import { clientOptimizedDependencies, linkedDependencies, linkedDependencyFolders, restartOnLinkedRebuilds, ssrOptimizedDependencies } from './vite-dependency-optimization.js';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { resolve, dirname, relative } from 'path';
 import { generateRoutes, ROUTES_MODULE_ID, ROUTES_SOURCE_PATH, ROUTE_GLOB_EXCLUDES } from './route-codegen.js';
@@ -126,6 +126,8 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
   let publicDirectory: string | false = 'public';
   let developmentBase = '/';
   let traceBridge: ReturnType<typeof installDevelopmentTraceBridge> | undefined;
+  /** Linked packages Vite pre-bundles, watched while the dev server runs. */
+  let linkedFolders: { name: string; folder: string }[] = [];
   if (options.markdownProcessor) {
     configuredMarkdownProcessor = options.markdownProcessor;
   }
@@ -215,6 +217,8 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
         env.command === 'serve' && linkedDependencies(root, listed ?? []).length > 0 ? { force: true } : {};
       const client = [...include, ...(userConfig.environments?.client?.optimizeDeps?.include ?? []), ...(userConfig.optimizeDeps?.include ?? [])];
       const ssr = [...ssrOptimizedDependencies(), ...(userConfig.environments?.ssr?.optimizeDeps?.include ?? []), ...(userConfig.ssr?.optimizeDeps?.include ?? [])];
+      // A running server watches them too: one rebuilt meanwhile restarts it (see configureServer).
+      linkedFolders = env.command === 'serve' ? linkedDependencyFolders(root, [...client, ...ssr]) : [];
       return {
         ssr: {
           noExternal: [
@@ -450,6 +454,10 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
       handler(server) {
         const restoreReloadPrivacy = installPublicReloadPrivacy(server);
         server.httpServer?.once('close', restoreReloadPrivacy);
+        // A linked package rebuilt while the server runs is bundled again, without deleting node_modules/.vite.
+        if (linkedFolders.length && server.httpServer && !server.config.server?.middlewareMode) {
+          server.httpServer.once('close', restartOnLinkedRebuilds(server, linkedFolders));
+        }
         // Middleware-mode servers (SSG rendering, tests) serve no editing session.
         if (options.templateDiagnostics !== false && server.httpServer && !server.config.server?.middlewareMode) {
           const logger = server.config.logger;
@@ -697,7 +705,8 @@ function emitRoutesManifest(projectRoot: string, clientOutDir: string, includeMa
 }
 
 /**
- * Virtual module exposing the user's `src/lang/*.json` catalogs.
+ * Virtual module exposing the user's `src/lang/*.json` catalogs, plugins'
+ * namespaced `lang/*.json`, and language packs' `translations/` catalogs.
  *
  * - **Server**: catalogs are `import.meta.glob`-ed eagerly so the locale
  *   middleware can read any locale synchronously during SSR.
@@ -730,34 +739,46 @@ export function cossackLang(): Plugin {
         // client so each locale becomes its own chunk (code splitting).
         const modules = import.meta.glob('/src/lang/*.json'${globOptions});
         // Plugin catalogs (src/plugins/<name>/lang/<locale>.json) join the
-        // application's locales under '<name>::key'. Application keys win.
+        // application's locales under '<name>::key'.
         const pluginModules = import.meta.glob('/src/plugins/*/lang/*.json'${globOptions});
-        const pluginCatalogs = {};
-        for (const [key, mod] of Object.entries(pluginModules)) {
-          const plugin = key.split('/')[3];
-          const locale = extractLocale(key);
-          (pluginCatalogs[locale] ??= []).push([plugin, mod]);
-        }
-        for (const list of Object.values(pluginCatalogs)) list.sort((a, b) => a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0);
+        // Language packs: a plugin's translations/<locale>.json translates the
+        // application's own keys, translations/<locale>/<plugin>.json another
+        // plugin's. Packs add their locales.
+        const packModules = import.meta.glob(['/src/plugins/*/translations/*.json', '/src/plugins/*/translations/*/*.json']${globOptions});
         function messagesOf(mod) { return (mod && mod.default) ? mod.default : (mod || {}); }
-        function withPlugins(locale, messages, loaded) {
-          const merged = {};
-          (pluginCatalogs[locale] ?? []).forEach(([plugin], index) => {
-            for (const [name, value] of Object.entries(messagesOf(loaded[index]))) merged[plugin + '::' + name] = value;
-          });
-          return Object.assign(merged, messages);
-        }
-
         function extractLocale(globKey) {
           const parts = globKey.split('/');
           const file = parts[parts.length - 1];
-          return file.replace(/\\.json$/, '');
+          return file.replace(/\.json$/, '');
+        }
+
+        // Each locale's sources in merge order: plugins' own catalogs, then packs,
+        // then the application's, so application keys win and packs override plugins.
+        const sources = {};
+        const add = (locale, rank, order, prefix, mod) => (sources[locale] ??= []).push({ rank, order, prefix, mod });
+        for (const [key, mod] of Object.entries(pluginModules)) add(extractLocale(key), 0, key, key.split('/')[3] + '::', mod);
+        for (const [key, mod] of Object.entries(packModules)) {
+          const parts = key.split('/');
+          if (parts.length === 6) add(extractLocale(key), 1, key, '', mod);
+          else add(parts[5], 1, key, extractLocale(key) + '::', mod);
+        }
+        for (const [key, mod] of Object.entries(modules)) add(extractLocale(key), 2, key, '', mod);
+        for (const list of Object.values(sources)) list.sort((a, b) => a.rank - b.rank || (a.order < b.order ? -1 : a.order > b.order ? 1 : 0));
+        function merge(list, loaded) {
+          const merged = {};
+          list.forEach((source, index) => {
+            for (const [name, value] of Object.entries(messagesOf(loaded[index]))) merged[source.prefix + name] = value;
+          });
+          return merged;
         }
 
         const defaultLocale = ${JSON.stringify(process.env.APP_LOCALE || 'en')} || 'en';
+        // The application's catalogs and packs name the locales; plugins' own catalogs only join them.
+        const named = Object.keys(sources).filter(locale => sources[locale].some(source => source.rank > 0));
+        // A pack never makes its language the default: the source text is the default's catalog.
+        if (named.length && !named.includes(defaultLocale) && Object.keys(packModules).length) { named.push(defaultLocale); sources[defaultLocale] ??= []; }
 
-        const supportedLocales = Object.keys(modules)
-          .map(extractLocale)
+        const supportedLocales = named
           .sort((a, b) => {
             // Default locale first so wildcard / fallback behavior prefers
             // the configured default (APP_LOCALE) instead of hardcoding 'en'.
@@ -769,19 +790,15 @@ export function cossackLang(): Plugin {
         // Lazy loaders used by the client. On the server these are pre-resolved
         // (eager), but we keep the same call signature for a unified API.
         const catalogs = {};
-        for (const [key, mod] of Object.entries(modules)) {
-          const locale = extractLocale(key);
-          const plugins = pluginCatalogs[locale] ?? [];
+        for (const locale of supportedLocales) {
+          const list = sources[locale];
           if (${isSsrEnvironment ? 'true' : 'false'}) {
-            const messages = withPlugins(locale, messagesOf(mod), plugins.map(entry => entry[1]));
+            const messages = merge(list, list.map(source => source.mod));
             catalogs[locale] = () => Promise.resolve({ default: messages });
-          } else if (plugins.length) {
-            catalogs[locale] = async () => {
-              const [application, ...loaded] = await Promise.all([mod(), ...plugins.map(entry => entry[1]())]);
-              return { default: withPlugins(locale, messagesOf(application), loaded) };
-            };
+          } else if (list.length === 1 && !list[0].prefix) {
+            catalogs[locale] = list[0].mod;
           } else {
-            catalogs[locale] = mod;
+            catalogs[locale] = async () => ({ default: merge(list, await Promise.all(list.map(source => source.mod()))) });
           }
         }
 

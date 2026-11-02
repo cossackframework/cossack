@@ -27,7 +27,7 @@ export {
     fieldPlacement, editorBoxes, editorLayoutTypes, editorTabId, boxBlock, layoutBoxes, defaultEditorLayout, editorLayoutShapeProblem, editorLayoutProblems, resolveEditorLayout, boxFields,
     type EditorBox, type EditorBoxesInput, type EditorLayout, type EditorLayoutAddition, type ResolvedEditorLayout,
 } from './editor-layout';
-export { CONTENT_STATUSES, CORE_FIELDS, ENTRY_TEMPLATE, entryAuthors, FEATURE_FIELDS, RESERVED_FIELDS, LOCALE, SEO_FIELDS, collectionProblems, collectionResource, contentBlocks, entryUrl, extendCollection, languageName, orderedFields, posts, pages, type CollectionDefinition, type CollectionFeatures, type ContentStatus } from './collections';
+export { CONTENT_STATUSES, CORE_FIELDS, ENTRY_TEMPLATE, entryAuthors, FEATURE_FIELDS, RESERVED_FIELDS, LOCALE, SEO_FIELDS, collectionProblems, collectionResource, contentBlocks, entryUrl, extendCollection, languageName, orderedFields, posts, pages, translationGroupOf, type CollectionDefinition, type CollectionFeatures, type ContentStatus } from './collections';
 export { CORE_BLOCKS, BLOCK_CATEGORIES, BLOCK_NAME, BLOCK_LIMITS, FIELD_BLOCK_KINDS, FIELD_GROUP_LAYOUT, FIELD_GROUP_LIMIT, RESERVED_FIELD_NAMES, BREAKPOINTS, STYLE_PROPERTIES, TEXT_ALIGNMENTS, PRESET_SLUG, INPUT_KINDS, INPUT_NAME, CONDITION_OPERATORS, CONDITION_LIMIT, FORM_INPUT_LIMIT, RESERVED_INPUT_NAMES,
     blockCategory, blockIsData, blockProblems, blocksShapeProblem, blockLayoutProblem, blockStyleProblem, blockConditionProblem, blockSupports, blockAllowedIn, validateBlocks, blockMedia, blockDocuments, blocksPlain, cloneBlocks, blockId, inputName,
     flattenBlocks, placeBlocks, findBlock, HTML_BLOCK, htmlBlocks, htmlBlocksChanged, updateBlock, removeBlock, insertBlock, moveBlock, shiftBlock, blockTreeProblem,

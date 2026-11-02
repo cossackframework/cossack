@@ -57,6 +57,14 @@ export interface FieldDeclaration {
     readonly search?: boolean;
     /** Enforce uniqueness with a unique index. */
     readonly unique?: boolean;
+    /** With `unique`: unique among records with the same values of these fields, such as a slug per `locale`. */
+    readonly uniqueBy?: readonly string[];
+    /**
+     * Content collections: `false` keeps one value for an entry and its translations, such as a
+     * price or an SKU. Saving any of them copies the value to the others. Text, rich text, blocks,
+     * rows, slugs and unique fields are always translated.
+     */
+    readonly translatable?: boolean;
     /** Create a scalar index. */
     readonly index?: boolean;
     /** Field-level access: permissions needed to read or write the field. */
@@ -220,6 +228,11 @@ export function fieldProblems(name: string, declaration: FieldDeclaration, depth
     if (declaration.search && !['string', 'text', 'richtext', 'blocks'].includes(kind)) problems.push(`${at}: only string, text, rich text and blocks fields can be searched.`);
     if (declaration.unique && ['json', 'vector', 'text', 'blocks', 'richtext', 'rows'].includes(kind)) problems.push(`${at}: ${kind} fields cannot be indexed.`);
     else if (declaration.unique && multiple) problems.push(`${at}: multiple fields cannot be unique.`);
+    if (declaration.translatable !== undefined && (typeof declaration.translatable !== 'boolean' || (declaration.translatable === false
+        && (['text', 'richtext', 'blocks', 'rows', 'vector'].includes(kind) || declaration.slugFrom !== undefined || declaration.unique || (multiple && declaration.search))))) {
+        problems.push(`${at}: translatable is true or false; text, rich text, blocks, rows, vectors, slugs and unique fields are always translated.`);
+    }
+    if (declaration.uniqueBy !== undefined && (!declaration.unique || !Array.isArray(declaration.uniqueBy) || !declaration.uniqueBy.length || declaration.uniqueBy.length > 3 || declaration.uniqueBy.some(other => typeof other !== 'string' || other === name))) problems.push(`${at}: uniqueBy names 1-3 other fields and applies to unique fields.`);
     // A multiple field of a scalar kind has an array index on its path; the big kinds cannot be indexed.
     if (declaration.index && ['json', 'vector', 'text', 'blocks', 'richtext', 'rows'].includes(kind)) problems.push(`${at}: ${kind} fields cannot be indexed.`);
     if (declaration.blocks !== undefined && ((kind !== 'blocks' && kind !== 'richtext') || !Array.isArray(declaration.blocks) || declaration.blocks.some(name => typeof name !== 'string' || !/^[a-z][a-z0-9-]*\/[a-z][a-z0-9-]*$/.test(name)))) problems.push(`${at}: blocks lists block type names and applies to blocks and rich text fields.`);

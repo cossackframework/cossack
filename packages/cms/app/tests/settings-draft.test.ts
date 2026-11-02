@@ -121,7 +121,10 @@ describe('settings form drafts', () => {
         expect(confirm).toHaveBeenCalledTimes(1);
         draft.set(row('enabled', 'boolean'), true);
         draft.setSection('permalinks', { postsBase: 'articles' });
+        expect(draft.discards).toBe(0);
         draft.discard();
+        // The page clears what the last save reported when the toolbar discards.
+        expect(draft.discards).toBe(1);
         expect(draft.values['plugin:newsletter']!.enabled).toBe(false);
         expect(draft.section('languages', null)).toEqual({ main: 'en', others: [] });
         expect(draft.section('permalinks', null)).toEqual({ postsBase: 'posts' });

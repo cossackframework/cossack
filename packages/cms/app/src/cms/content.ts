@@ -420,7 +420,9 @@ export async function importEntries(cms: CmsHost, route: string, items: readonly
         try {
             let existing = id ? await repository.get(id, { principal }) : null;
             if (!existing && resource.fields.slug && typeof fields.slug === 'string' && fields.slug) {
-                existing = (await repository.list({ where: { slug: fields.slug }, limit: 1 }, { principal })).records[0] ?? null;
+                // Slugs are unique per language: match the entry's language, or the default one.
+                const locale = resource.fields.locale ? typeof fields.locale === 'string' ? fields.locale : (await cms.languages()).default : null;
+                existing = (await repository.list({ where: { slug: fields.slug, ...(locale ? { locale } : {}) }, limit: 1 }, { principal })).records[0] ?? null;
             }
             if (existing) {
                 await repository.update(existing.id, fields, { principal, expectedRevision: existing.rev });

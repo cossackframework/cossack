@@ -1,8 +1,11 @@
 // @vitest-environment node
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { fileURLToPath } from 'node:url';
-import { clientOptimizedDependencies, isInstalledPackage, linkedDependencies } from '../src/vite-dependency-optimization';
+import { clientOptimizedDependencies, isInstalledPackage, linkedDependencies, linkedDependencyFolders, restartOnLinkedRebuilds } from '../src/vite-dependency-optimization';
 import { cossackPages } from '../src/vite-plugin';
 
 const installed = pathToFileURL('/app/node_modules/.pnpm/@cossackframework+framework@0.9.0/node_modules/@cossackframework/framework/dist/esm/vite-plugin.js').href;
@@ -54,5 +57,28 @@ describe('client dependency pre-bundling', () => {
         const ssr = configure({ root: packageRoot, environments: { ssr: { optimizeDeps: { include: ['@cossackframework/core'] } } } }, 'serve');
         expect(ssr.environments.ssr.optimizeDeps.force).toBe(true);
         expect(configure({ root: packageRoot }, 'build').environments.client.optimizeDeps.force).toBeUndefined();
+    });
+
+    it('watches the build output of linked packages', () => {
+        expect(linkedDependencyFolders(packageRoot, ['@cossackframework/core/devtools', 'vitest'])).toEqual([
+            { name: '@cossackframework/core', folder: join(packageRoot, '../core/dist') },
+        ]);
+    });
+
+    // A package rebuilt while the dev server runs keeps its old bundle until the server bundles it again.
+    it('restarts a running dev server once after a linked package is rebuilt', async () => {
+        const folder = mkdtempSync(join(tmpdir(), 'cossack-linked-'));
+        try {
+            const server = { restart: vi.fn(async () => {}), config: { logger: { info: vi.fn(), error: vi.fn() } } };
+            const stop = restartOnLinkedRebuilds(server, [{ name: '@cossackframework/core', folder }], 50);
+            for (const file of ['index.js', 'index.d.ts', 'shared.js']) writeFileSync(join(folder, file), 'export {};');
+            await vi.waitFor(() => expect(server.restart).toHaveBeenCalledTimes(1), { timeout: 2000 });
+            expect(server.restart).toHaveBeenCalledWith(true);
+            expect(server.config.logger.info).toHaveBeenCalledWith(expect.stringContaining('@cossackframework/core changed'), { timestamp: true });
+            stop();
+            writeFileSync(join(folder, 'index.js'), 'export const later = 1;');
+            await new Promise(resolve => setTimeout(resolve, 200));
+            expect(server.restart).toHaveBeenCalledTimes(1);
+        } finally { rmSync(folder, { recursive: true, force: true }); }
     });
 });

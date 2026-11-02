@@ -1,9 +1,14 @@
-import { Cossack, Page, State, ClientState, Store, Validate, Client, Server, storeRules } from '@cossackframework/core';
-import { Card, CardBody, CardHeader, Field, Input, Button, Avatar, Form } from '@cossackframework/ui';
+import { Cossack, Page, State, ClientState, Store, Validate, Client, Server, storeRules, getLocale, getSupportedLocales, setLocale } from '@cossackframework/core';
+import { Card, CardBody, CardHeader, Field, Input, Button, Avatar, Form, NativeSelect } from '@cossackframework/ui';
 import { notice } from '../../../dashboard/page';
 import { html, component, bind } from '@cossackframework/renderer';
 import { avatarUploads, updateUserProfile, uploadAvatar } from '../../../auth';
 import { avatarField } from '../../../dashboard/avatar-field';
+
+/** A language's name in itself, such as Français or Tiếng Việt. */
+function languageLabel(code: string): string {
+    try { return new Intl.DisplayNames([code], { type: 'language' }).of(code) ?? code; } catch { return code; }
+}
 
 interface ProfileForm {
     name: string;
@@ -33,6 +38,9 @@ export default class ProfilePage extends Cossack {
     @ClientState() avatarError = '';
     /** The chosen picture while it uploads; browser-only, so server state never echoes it back. */
     @ClientState() avatarPreview = '';
+    /** Languages the interface has catalogs for, from the application and language packs. */
+    @State() languages: { code: string; label: string }[] = [];
+    @State() language = '';
 
     async init() {
         // Seed the form server-side (serializes via @Store) so it's populated
@@ -44,6 +52,20 @@ export default class ProfilePage extends Cossack {
             this.userEmail = user.email;
         }
         this.avatarUploads = avatarUploads;
+        this.languages = getSupportedLocales().map(code => ({ code, label: languageLabel(code) }));
+        this.language = getLocale();
+    }
+
+    /** Keep the dashboard's language in this browser (the `cossack_locale` cookie), then draw it again. */
+    @Client()
+    async chooseLanguage(event: Event) {
+        this.error = '';
+        try {
+            await setLocale((event.target as HTMLSelectElement).value);
+            window.location.reload();
+        } catch {
+            this.error = __('That language could not be loaded.');
+        }
     }
 
     /** Upload a picture: it shows at once and is saved when the upload finishes. */
@@ -147,6 +169,13 @@ export default class ProfilePage extends Cossack {
                         `)}
                     `)}
                 `)}
+
+                ${this.languages.length > 1 ? component(Card, {}, html`
+                    ${component(CardHeader, {}, html`<h2 class="text-base font-semibold text-foreground">${__('Dashboard language')}</h2>`)}
+                    ${component(CardBody, {}, component(Field, { label: __('Language'), for: 'dashboard-language', hint: __('Kept in this browser.'),
+                        control: attributes => component(NativeSelect, { ...attributes, '@change': (event: Event) => this.chooseLanguage(event) }, html`
+                            ${this.languages.map(language => html`<option value=${language.code} ?selected=${language.code === this.language}>${language.label}</option>`)}`) }))}
+                `) : null}
             </div>
         `;
     }

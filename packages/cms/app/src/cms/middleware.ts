@@ -1,4 +1,6 @@
 import type { Context, MiddlewareHandler } from 'hono';
+import { getCookie } from 'hono/cookie';
+import { getSupportedLocales, LOCALE_COOKIE_NAME, setRequestLocale } from '@cossackframework/core';
 import { ANONYMOUS, type Principal } from '@cossackframework/cms';
 import { cmsFor, type CmsBindings } from './index';
 import { runMaintenance } from './maintenance';
@@ -25,6 +27,13 @@ export const cmsMiddleware: MiddlewareHandler = async (c, next) => {
     c.set('principal', ANONYMOUS);
     // Before setup the definition tables do not exist yet; built-in collections apply.
     await cms.ready().catch(error => console.error('[cms] could not load collections', error));
+    // Until a user picks a language (Profile → Dashboard language), the dashboard speaks the
+    // site's default one when a catalog has it. Site pages then switch to their content's language.
+    const supported = getSupportedLocales();
+    if (supported.length > 1 && !getCookie(c, LOCALE_COOKIE_NAME)) {
+        const main = (await cms.languages()).default;
+        if (supported.some(code => code.toLowerCase() === main.toLowerCase())) setRequestLocale(main);
+    }
     const writes = cms.outboxWrites;
     await next();
     const now = Date.now();

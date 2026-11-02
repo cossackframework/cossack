@@ -1,4 +1,4 @@
-import { Cossack, Page, Server, State, server$, type HeadContext, type HeadTag, type HeadValue } from '@cossackframework/core';
+import { Cossack, Page, Server, State, server$, setRequestLocale, type HeadContext, type HeadTag, type HeadValue } from '@cossackframework/core';
 import { html } from '@cossackframework/renderer';
 import { usesUserBinding, type SiteView, type ThemeData } from '@cossackframework/cms';
 import { bindingScopes, languageLinks, resolvedOptions, siteView, themeData, themeState, type ThemeState } from '../../cms/site';
@@ -84,6 +84,8 @@ export default class SiteLayout extends Cossack {
             // The catch-all route resolves its path first; other routes are in the default language.
             const resolved = this.c.get('cms.site');
             const page = resolved && 'locale' in resolved ? resolved : { kind: this.c.req.path === '/' ? 'home' as const : 'search' as const, locale: languages.default };
+            // The catch-all route set its content's language; the others render in the default one.
+            if (!(resolved && 'locale' in resolved)) setRequestLocale(languages.default);
             const template = resolved?.kind === 'entry' && typeof resolved.record.template === 'string' && resolved.record.template ? resolved.record.template : null;
             // Widgets and theme options bind like blocks: `$` is the entry shown, `$site` and `$user` are there on every page.
             const entry = resolved?.kind === 'entry' ? resolved.record : null;

@@ -93,7 +93,7 @@ describe.skipIf(!liveRomeDBTests())('CMS unified settings', () => {
       expect(pluginsPage).toContain('Newsletter');
       expect(pluginsPage).toContain('Receipts');
       expect((await command()).status).not.toBe(200);
-      expect(returned(await web.action(SETTINGS_PAGE, 'save', [{ 'plugin:newsletter': { senderName: 'Configured while disabled' } }])).error).toBe('');
+      expect(returned(await web.action(SETTINGS_PAGE, 'saveAll', [{ document: { 'plugin:newsletter': { senderName: 'Configured while disabled' } }, languages: null, permalinks: null, groups: {} }])).error).toBe('');
       expect((await saved())['plugin:newsletter'].senderName).toBe('Configured while disabled');
       expect((await command()).status).not.toBe(200);
 
@@ -115,7 +115,7 @@ describe.skipIf(!liveRomeDBTests())('CMS unified settings', () => {
         '{"plugin:newsletter":{"unknown":true}}',
       ]) expect(returned(await web.action(JSON_PAGE, 'preview', [text])).error, text).toBeTruthy();
       expect((await saved()).general.siteTitle).toBe('Settings test');
-      await expect(visitor.action(SETTINGS_PAGE, 'save', [{ general: { siteTitle: 'Anonymous edit' } }])).rejects.toThrow();
+      await expect(visitor.action(SETTINGS_PAGE, 'saveAll', [{ document: { general: { siteTitle: 'Anonymous edit' } }, languages: null, permalinks: null, groups: {} }])).rejects.toThrow();
       await expect(visitor.action(JSON_PAGE, 'download', [])).rejects.toThrow();
       await expect(visitor.action(JSON_PAGE, 'apply', [{ general: { siteTitle: 'Anonymous edit' } }])).rejects.toThrow();
 
@@ -265,22 +265,9 @@ describe.skipIf(!liveRomeDBTests())('CMS unified settings', () => {
       await search.fill('Default language');
       await openGroup('languages');
       await browserExpect(tab.getByLabel('Default language', { exact: true })).toHaveValue('fr');
-      await tab.getByRole('button', { name: 'Save languages', exact: true }).click();
-      await browserExpect(tab.getByText('Languages saved.', { exact: true })).toBeVisible();
-      await browserExpect(tab.getByRole('button', { name: 'Save languages', exact: true })).toBeDisabled();
-      await tab.getByLabel('Default language', { exact: true }).selectOption('en');
-      await tab.getByRole('button', { name: 'Save languages', exact: true }).click();
-      await browserExpect(tab.getByRole('button', { name: 'Save languages', exact: true })).toBeDisabled();
-      await search.fill('Posts base');
-      await openGroup('permalinks');
-      await browserExpect(tab.getByLabel('Posts base', { exact: true })).toHaveValue('settings-test-posts');
-      await tab.getByRole('button', { name: 'Save permalinks', exact: true }).click();
-      await browserExpect(tab.getByText('Permalink structure updated.', { exact: true })).toBeVisible();
-      await browserExpect(tab.getByRole('button', { name: 'Save permalinks', exact: true })).toBeDisabled();
-      await tab.getByLabel('Posts base', { exact: true }).fill(originalPostsBase);
-      if (postsAtRoot) await tab.getByRole('radio', { name: /^Post name/ }).check();
-      await tab.getByRole('button', { name: 'Save permalinks', exact: true }).click();
-      await browserExpect(tab.getByRole('button', { name: 'Save permalinks', exact: true })).toBeDisabled();
+      // Sections have no save buttons of their own: their drafts join the toolbar's Save below.
+      await browserExpect(tab.getByRole('button', { name: 'Save languages', exact: true })).toHaveCount(0);
+      await browserExpect(tab.getByRole('button', { name: 'Save permalinks', exact: true })).toHaveCount(0);
 
       await search.fill('no-match-723bab05');
       await browserExpect(menu.locator('[data-settings-menu-group]')).toHaveCount(0);
@@ -327,7 +314,7 @@ describe.skipIf(!liveRomeDBTests())('CMS unified settings', () => {
       await browserExpect(tab).toHaveURL(server.origin + '/dashboard/settings/json');
       await browserExpect(jsonButton).toHaveAttribute('aria-current', 'page');
       await browserExpect(toolbar.getByRole('button', { name: 'Preview changes', exact: true })).toBeInViewport();
-      await browserExpect(tab.getByRole('button', { name: 'Discard changes', exact: true })).toHaveCount(0);
+      await browserExpect(toolbar.getByRole('button', { name: 'Discard changes', exact: true })).toBeVisible();
       const editor = tab.locator('[data-language="json"] .cm-content').first();
       await browserExpect.poll(() => editorText(editor)).toContain('Browser draft');
       await browserExpect.poll(() => editorText(editor)).toContain('Search draft title');
@@ -345,6 +332,29 @@ describe.skipIf(!liveRomeDBTests())('CMS unified settings', () => {
       await browserExpect.poll(async () => (await saved())['plugin:newsletter'].senderName).toBe('Browser draft');
       expect((await saved()).general.siteTitle).toBe('Search draft title');
       expect((await saved())['plugin:newsletter']).toMatchObject({ accentColor: '#663399cc', brandAsset: assetUrl });
+      // The same Save stored the Languages and Permalinks drafts, after the document.
+      await browserExpect(tab.getByText('Settings saved.', { exact: true })).toBeVisible();
+      expect((await web.request('/settings-test-posts')).status).toBe(200);
+      await search.fill('Default language');
+      await openGroup('languages');
+      await browserExpect(tab.getByLabel('Default language', { exact: true })).toHaveValue('fr');
+      await browserExpect(saveChanges).toBeDisabled();
+      // Discard changes reverts every section's draft.
+      const discardChanges = toolbar.getByRole('button', { name: 'Discard changes', exact: true });
+      await browserExpect(discardChanges).toHaveCount(0);
+      await tab.getByLabel('Default language', { exact: true }).selectOption('en');
+      await discardChanges.click();
+      await browserExpect(tab.getByLabel('Default language', { exact: true })).toHaveValue('fr');
+      await browserExpect(discardChanges).toHaveCount(0);
+      await browserExpect(saveChanges).toBeDisabled();
+      await tab.getByLabel('Default language', { exact: true }).selectOption('en');
+      await search.fill('Posts base');
+      await openGroup('permalinks');
+      await tab.getByLabel('Posts base', { exact: true }).fill(originalPostsBase);
+      if (postsAtRoot) await tab.getByRole('radio', { name: /^Post name/ }).check();
+      await saveChanges.click();
+      await browserExpect(tab.getByText('Settings saved.', { exact: true })).toBeVisible();
+      await browserExpect(saveChanges).toBeDisabled();
       await search.fill('');
 
       await openGroup('plugin:newsletter');

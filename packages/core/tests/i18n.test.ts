@@ -13,6 +13,7 @@ import {
     getDefaultLocale,
     setDefaultLocale,
     setLocaleStoreGetter,
+    setRequestLocale,
     setLocaleLoader,
     normalizeLocale,
     resolveAutoLocale,
@@ -355,6 +356,19 @@ describe('__ with per-request store (server)', () => {
         registerLocale('es', { bye: 'Adiós' });
         setLocaleStoreGetter(() => ({ locale: 'es', messages: {} }));
         expect(__('bye')).toBe('Adiós');
+    });
+    it('switches the request to a content language with setRequestLocale', () => {
+        const store = { locale: 'en', messages: { hello: 'Hello' }, defaultLocale: 'en', catalogs: { en: { hello: 'Hello', bye: 'Bye' }, FR: { hello: 'Bonjour' } } };
+        setLocaleStoreGetter(() => store);
+        setRequestLocale('fr');
+        // The catalog's own spelling of the code, its messages, and the default's for missing keys.
+        expect([getLocale(), __('hello'), __('bye')]).toEqual(['FR', 'Bonjour', 'Bye']);
+        // A language without a catalog still names the page's language; text falls back to the default.
+        setRequestLocale('vi');
+        expect([getLocale(), __('hello')]).toEqual(['vi', 'Hello']);
+        expect(() => setRequestLocale('<script>')).toThrow(/not a locale code/);
+        setLocaleStoreGetter(null);
+        expect(() => setRequestLocale('fr')).toThrow(/during a request/);
     });
 });
 

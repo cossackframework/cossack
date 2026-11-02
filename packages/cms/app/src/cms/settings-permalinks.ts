@@ -1,11 +1,10 @@
 /** The permalink form used by the unified Settings page. */
 import { Client, ClientState, Component, Cossack } from '@cossackframework/core';
-import { Button } from '@cossackframework/ui';
-import { component, html } from '@cossackframework/renderer';
+import { html } from '@cossackframework/renderer';
 import { isCmsError, type Principal } from '@cossackframework/cms';
 import type { CmsHost } from '@cossackframework/cms/server';
 import type { SettingsDraft } from './settings-draft';
-import { CONTROL, notice } from './ui';
+import { CONTROL } from './ui';
 
 interface Base { name: string; label: string; singular: string; path: string }
 export interface PermalinkSettingsInput { postsAtRoot: boolean; postsBase: string; withCategory: boolean; bases: { name: string; path: string }[] }
@@ -46,18 +45,16 @@ export type PermalinksSettingsProps = {
     draft: SettingsDraft;
     initial: PermalinkSettingsData;
     fields?: readonly string[];
-    onSave(input: PermalinkSettingsInput): Promise<PermalinkSettingsResult>;
+    /** Field problems from the last save, by field name. */
+    errors?: Readonly<Record<string, string>>;
 };
 
-const permalinkDraft = (data: PermalinkSettingsData): PermalinkSettingsInput => ({ postsAtRoot: data.postsAtRoot, postsBase: data.postsBase, withCategory: data.withCategory, bases: data.bases.map(base => ({ ...base })) });
+export const permalinkDraft = (data: PermalinkSettingsData): PermalinkSettingsInput => ({ postsAtRoot: data.postsAtRoot, postsBase: data.postsBase, withCategory: data.withCategory, bases: data.bases.map(base => ({ ...base })) });
 
 @Component()
 export class PermalinksSettings extends Cossack {
     declare props: PermalinksSettingsProps;
     @ClientState() private revision = 0;
-    @ClientState() private error = '';
-    @ClientState() private errors: Record<string, string> = {};
-    @ClientState() private message = '';
     private unsubscribe?: () => void;
 
     onMount() {
@@ -71,32 +68,12 @@ export class PermalinksSettings extends Cossack {
     set(patch: Partial<PermalinkSettingsInput>) {
         const current = this.props.draft.section('permalinks', permalinkDraft(this.props.initial));
         this.props.draft.setSection('permalinks', { ...current, ...patch });
-        this.error = '';
-        this.errors = {};
-        this.message = '';
     }
 
     @Client()
     setBase(name: string, path: string) {
         const current = this.props.draft.section('permalinks', permalinkDraft(this.props.initial));
         this.set({ bases: current.bases.map(base => base.name === name ? { ...base, path } : base) });
-    }
-
-    @Client()
-    discard() { this.props.draft.discardSection('permalinks'); this.error = ''; this.errors = {}; this.message = ''; }
-
-    @Client()
-    async submit(event: Event) {
-        event.preventDefault();
-        this.error = '';
-        this.errors = {};
-        this.message = '';
-        try {
-            const result = await this.props.onSave(this.props.draft.section('permalinks', permalinkDraft(this.props.initial)));
-            this.error = result.error;
-            this.errors = result.fields;
-            if (result.data) { this.props.draft.acceptSection('permalinks', permalinkDraft(result.data)); this.message = __('Permalink structure updated.'); }
-        } catch { this.error = __('The permalinks could not be saved. Your changes are kept.'); }
     }
 
     render() {
@@ -108,11 +85,10 @@ export class PermalinksSettings extends Cossack {
             <span><span class="block text-sm font-medium text-foreground">${label}</span><code class="break-all text-xs text-muted-foreground">${example}</code></span>
         </label>`;
         const taxonomies = this.props.initial.taxonomies.filter(taxonomy => show(`taxonomy.${taxonomy.name}`));
-        return html`<form class="space-y-5" @submit=${this.submit}>
+        const errors = this.props.errors ?? {};
+        return html`<div class="space-y-5">
             <p class="text-sm text-muted-foreground">${__('Choose the addresses of posts and archives. Old addresses redirect to the new ones.')}</p>
-            ${this.message ? notice(this.message, 'success') : null}
-            ${this.error ? notice(this.error, 'error') : null}
-            <fieldset class="min-w-0 space-y-5" ?disabled=${!!this.loading.submit}>
+            <fieldset class="min-w-0 space-y-5" ?disabled=${this.props.draft.saving}>
                 ${show('posts') || show('postsBase') || show('category') ? html`<fieldset id="permalink-posts" class="min-w-0 space-y-3">
                     <legend class="mb-2 text-base font-semibold text-foreground">${__('Post permalinks')}</legend>
                     ${show('posts') || show('postsBase') ? html`${option(true, __('Post name'), sample(''))}${option(false, __('Under a base'), sample(`/${form.postsBase.trim() || 'posts'}`))}` : null}
@@ -123,7 +99,7 @@ export class PermalinksSettings extends Cossack {
                     </label>` : null}
                     ${(show('posts') || show('postsBase')) && !form.postsAtRoot ? html`<div class="space-y-1"><label for="posts-base" class="block text-sm font-medium text-foreground">${__('Posts base')}</label>
                         <input id="posts-base" class=${CONTROL} .value=${form.postsBase} @input=${(event: Event) => this.set({ postsBase: (event.target as HTMLInputElement).value })}>
-                        ${this.errors.posts ? html`<p role="alert" class="text-xs text-destructive">${this.errors.posts}</p>` : null}
+                        ${errors.posts ? html`<p role="alert" class="text-xs text-destructive">${errors.posts}</p>` : null}
                     </div>` : null}
                 </fieldset>` : null}
                 ${taxonomies.length ? html`<fieldset class="min-w-0 space-y-3">
@@ -134,15 +110,11 @@ export class PermalinksSettings extends Cossack {
                             <label for=${`base-${taxonomy.name}`} class="block text-sm font-medium text-foreground">${taxonomy.singular} ${__('base')}</label>
                             <input id=${`base-${taxonomy.name}`} class=${CONTROL} .value=${path} @input=${(event: Event) => this.setBase(taxonomy.name, (event.target as HTMLInputElement).value)}>
                             <p class="break-all text-xs text-muted-foreground"><code>${this.props.initial.origin}/${path || '…'}/sample-${taxonomy.singular.toLowerCase()}</code></p>
-                            ${this.errors[taxonomy.name] ? html`<p role="alert" class="text-xs text-destructive">${this.errors[taxonomy.name]}</p>` : null}
+                            ${errors[taxonomy.name] ? html`<p role="alert" class="text-xs text-destructive">${errors[taxonomy.name]}</p>` : null}
                         </div>`;
                     })}
                 </fieldset>` : null}
             </fieldset>
-            <div class="flex flex-wrap gap-3">
-                ${component(Button, { type: 'submit', disabled: !!this.loading.submit || !this.props.draft.sectionDirty('permalinks') }, __('Save permalinks'))}
-                ${component(Button, { type: 'button', variant: 'outline', disabled: !!this.loading.submit || !this.props.draft.sectionDirty('permalinks'), '@click': this.discard }, __('Discard permalink changes'))}
-            </div>
-        </form>`;
+        </div>`;
     }
 }
