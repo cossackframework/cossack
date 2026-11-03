@@ -3,7 +3,8 @@ import { Card, CardBody } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { MAIN_SITE, type SiteStatus } from '@cossackframework/cms/server';
 import { pageHeader } from '../../../../cms/ui';
-import { network, siteLinks, siteStatus } from '../../../../cms/network-ui';
+import { network, siteLinks } from '../../../../cms/network-ui';
+import { siteStatus } from '../../../../cms/network-view';
 
 interface MySite {
     id: string;

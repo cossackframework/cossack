@@ -2,7 +2,9 @@ import { Cossack, Page, State, flash, flashed, type HeadValue } from '@cossackfr
 import { html } from '@cossackframework/renderer';
 import { isCmsError, isSameOriginPost } from '@cossackframework/cms';
 import { CONTROL, notice, pageHeader } from '../../../../../cms/ui';
-import { field, network, requireNetworkAdmin, SUBMIT } from '../../../../../cms/network-ui';
+import { requireNetworkAdmin } from '../../../../../cms/guards';
+import { network } from '../../../../../cms/network-ui';
+import { field, SUBMIT } from '../../../../../cms/network-view';
 
 /** Network → Settings: the network's name, the address new sites start at, and what they start with. */
 @Page({ transport: 'http', middlewares: [requireNetworkAdmin()] })

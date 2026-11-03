@@ -3,7 +3,9 @@ import { html } from '@cossackframework/renderer';
 import { isCmsError, isSameOriginPost } from '@cossackframework/cms';
 import { networkSite, type SiteDomain, type SiteStatus } from '@cossackframework/cms/server';
 import { notice, pageHeader } from '../../../../../../cms/ui';
-import { actionButton, field, network, requireNetworkAdmin, siteLinks, siteStatus, SUBMIT } from '../../../../../../cms/network-ui';
+import { requireNetworkAdmin } from '../../../../../../cms/guards';
+import { network, siteLinks } from '../../../../../../cms/network-ui';
+import { actionButton, field, siteStatus, SUBMIT } from '../../../../../../cms/network-view';
 
 interface Member { id: string; name: string; email: string; roles: string }
 

@@ -5,10 +5,11 @@
  */
 import { ClientError, type RomeDB, type Value } from '@cossackframework/romedb';
 import { CmsError } from '../errors';
+import { MAIN_SITE } from '../permissions';
 import { inList } from './users';
 
 /** The main site: the network database, with no registry row. */
-export const MAIN_SITE = 'main';
+export { MAIN_SITE };
 
 export type SiteStatus = 'creating' | 'active' | 'archived' | 'deleted';
 

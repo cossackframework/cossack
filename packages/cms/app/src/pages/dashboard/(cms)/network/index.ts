@@ -2,7 +2,8 @@ import { Cossack, Page, State, type HeadValue } from '@cossackframework/core';
 import { Card, CardBody } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { linkButton, notice, pageHeader } from '../../../../cms/ui';
-import { network, requireNetworkAdmin } from '../../../../cms/network-ui';
+import { requireNetworkAdmin } from '../../../../cms/guards';
+import { network } from '../../../../cms/network-ui';
 
 /** The network at a glance: its sites, accounts and pending upgrades. */
 @Page({ transport: 'http', middlewares: [requireNetworkAdmin()] })

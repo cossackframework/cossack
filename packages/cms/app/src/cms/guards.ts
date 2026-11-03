@@ -1,6 +1,6 @@
 import { defineServerMiddleware } from '@cossackframework/core';
 import { isTransportPath } from '@cossackframework/core/transport-routes';
-import { ANONYMOUS, hasPermission, type Principal } from '@cossackframework/cms';
+import { ANONYMOUS, hasPermission, isNetworkAdmin, MAIN_SITE, type Principal } from '@cossackframework/cms';
 import type { Context } from 'hono';
 
 const principal = (c: Context): Principal => c.get('principal') ?? ANONYMOUS;
@@ -14,5 +14,14 @@ export function requireAny(...permissions: string[]) {
             return c.json(current.kind === 'user' ? { error: 'Forbidden', code: 'COSSACK_RPC_FORBIDDEN' } : { error: 'Authentication required', code: 'COSSACK_RPC_UNAUTHENTICATED' }, current.kind === 'user' ? 403 : 401);
         }
         return c.redirect(current.kind === 'user' ? '/dashboard' : config('auth.redirectAfterLogout'));
+    });
+}
+
+/** The network dashboard: network admins, on the network host. Others go to their dashboard. */
+export function requireNetworkAdmin() {
+    return defineServerMiddleware(async (c, next) => {
+        if (isNetworkAdmin(principal(c)) && c.get('site')?.id === MAIN_SITE) { await next(); return; }
+        if (isTransportPath(c.req.path, 'rpc', 'upload', 'websocket')) return c.json({ error: 'Forbidden', code: 'COSSACK_RPC_FORBIDDEN' }, 403);
+        return c.redirect('/dashboard');
     });
 }

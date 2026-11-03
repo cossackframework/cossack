@@ -604,6 +604,16 @@ describe.skipIf(!liveRomeDBTests())('generated CMS application', () => {
       await browserExpect(page.locator('li[data-group="event-details"]')).toBeVisible();
       await page.goto(server.origin + '/dashboard/content/events/new');
       await browserExpect(page.getByLabel('Venue')).toBeVisible();
+
+      // The taskbar's Network link opens the network dashboard, whose pages load in the browser too.
+      await page.goto(server.origin + '/dashboard');
+      await ready();
+      await page.locator('a[data-status="network"]').click();
+      await page.waitForURL(/\/dashboard\/network$/);
+      await browserExpect(page.locator('main h1')).toHaveText('Network');
+      await page.locator('main').getByRole('link', { name: 'Plugins', exact: true }).click();
+      await page.waitForURL(/\/dashboard\/network\/plugins$/);
+      await browserExpect(page.locator('main h1')).toHaveText('Network plugins');
       expect(errors).toEqual([]);
     } finally {
       await browser?.close();

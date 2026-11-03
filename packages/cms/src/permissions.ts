@@ -56,6 +56,9 @@ export const PERMISSIONS = Object.freeze({
  */
 export const NETWORK_ADMIN = 'network_admin';
 
+/** The main site's ID: the network database, served on the network host. */
+export const MAIN_SITE = 'main';
+
 /** Whether the principal is a network admin. A site role with `*` does not make one. */
 export function isNetworkAdmin(principal: Principal): boolean {
     return principal.kind === 'user' && principal.roles.includes(NETWORK_ADMIN);
