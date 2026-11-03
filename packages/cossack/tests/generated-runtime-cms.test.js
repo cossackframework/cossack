@@ -679,6 +679,8 @@ describe.skipIf(!liveRomeDBTests())('generated CMS application', () => {
         contains(await web.page('/dashboard/network/sites'), 'Blog is ready.');
         expect((await fs.readdir(path.join(root, 'storage/romedb/sites'))).filter(name => name.endsWith('.romedb'))).toHaveLength(1);
       }
+      // The network home counts the main site as active, beside any added one.
+      expect(await web.page('/dashboard/network')).toMatch(new RegExp(`Active sites</p>\\s*<a href="/dashboard/network/sites"[^>]*>\\s*${servesDirectories() ? 2 : 1}\\s*<`));
     } finally {
       if (child.connected) child.send('STOP'); else child.kill('SIGTERM');
       const kill = setTimeout(() => child.kill('SIGKILL'), 10_000);
@@ -688,6 +690,8 @@ describe.skipIf(!liveRomeDBTests())('generated CMS application', () => {
     // The services stop with the dev server.
     await expect.poll(() => fetch(`http://127.0.0.1:${port}/v1/database`).then(() => 'answers', () => 'stopped'), { timeout: 10_000 }).toBe('stopped');
     await expect.poll(() => fetch(`http://127.0.0.1:${port + 1}/v1/database`).then(() => 'answers', () => 'stopped'), { timeout: 10_000 }).toBe('stopped');
+    // Development warns about @State changes that do not re-render; the pages this case visits make none.
+    expect(output).not.toContain('[Cossack] Nested');
   }, 400_000);
 });
 

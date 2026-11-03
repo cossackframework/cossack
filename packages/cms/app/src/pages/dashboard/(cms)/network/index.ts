@@ -20,9 +20,9 @@ export default class NetworkHome extends Cossack {
     async init() {
         const net = network(this.c);
         this.name = (await net.settings()).name;
-        for (const status of ['active', 'archived', 'deleted'] as const) this.sites[status] = (await net.sites.list({ status, limit: 1 })).total;
+        const [active, archived, deleted] = await Promise.all((['active', 'archived', 'deleted'] as const).map(async status => (await net.sites.list({ status, limit: 1 })).total));
         // The main site counts as an active site.
-        this.sites.active += 1;
+        this.sites = { active: active + 1, archived, deleted };
         this.accounts = await net.main.accounts.count();
         this.admins = (await net.main.accounts.list({ networkAdmins: true, limit: 1 })).total;
         this.canAdd = net.canAddSites;
