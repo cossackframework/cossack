@@ -2,18 +2,18 @@ import { Client, Cossack, Page, Server, State, flashed, type HeadValue } from '@
 import { AlertDialog } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { isCmsError, MAIN_SITE } from '@cossackframework/cms';
-import type { SiteStatus } from '@cossackframework/cms/server';
+import { networkSite, type SiteStatus } from '@cossackframework/cms/server';
 import { linkButton, notice, pageHeader, shortDate } from '../../../../../cms/ui';
 import { requireNetworkAdmin } from '../../../../../cms/guards';
-import { network, siteLinks } from '../../../../../cms/network-ui';
-import { siteStatus } from '../../../../../cms/network-view';
+import { network, siteIconUrl, siteLinks } from '../../../../../cms/network-ui';
+import { siteIcon, siteStatus } from '../../../../../cms/network-view';
 import { listFilters, listFooter, listTable, rowActions } from '../../../../../dashboard/list-table';
 
 const PAGE_SIZE = 20;
 const STATUSES = ['active', 'archived', 'deleted', 'creating'] as const;
 const STATUS_LABELS: Record<string, string> = { '': 'All', active: 'Active', archived: 'Archived', deleted: 'Deleted', creating: 'Being created' };
 
-interface SiteRow { id: string; name: string; host: string; status: SiteStatus; members: number; createdAt: number | null; home: string; dashboard: string }
+interface SiteRow { id: string; name: string; host: string; status: SiteStatus; members: number; createdAt: number | null; home: string; dashboard: string; icon: string }
 
 /** Network → Sites: every site as a list table, the main site first, with its address, members and state. */
 @Page({ transport: 'http', middlewares: [requireNetworkAdmin()] })
@@ -51,10 +51,12 @@ export default class NetworkSites extends Cossack {
     private async load() {
         const net = network(this.c);
         const search = this.search ? { search: this.search } : {};
-        const [totals, members, mainName] = await Promise.all([
+        const [totals, members, mainName, networkIcon] = await Promise.all([
             Promise.all(STATUSES.map(status => net.sites.list({ ...search, status, limit: 1 }).then(found => found.total))),
             net.main.accounts.memberCounts(),
             net.main.settings.get('general.siteTitle').then(title => title || __('Main site'), () => __('Main site')),
+            // The main site's icon is the network's, for sites without one.
+            siteIconUrl(this.c, net.main, { host: null }),
         ]);
         const withMain = !this.search || mainName.toLowerCase().includes(this.search.toLowerCase()) ? 1 : 0;
         const byStatus = new Map(STATUSES.map((status, index) => [status, totals[index]!]));
@@ -64,11 +66,13 @@ export default class NetworkSites extends Cossack {
         ];
         const found = await net.sites.list({ ...search, ...(this.status ? { status: this.status as SiteStatus } : {}), limit: PAGE_SIZE, offset: (this.page - 1) * PAGE_SIZE });
         const leadsWithMain = withMain && this.page === 1 && (!this.status || this.status === 'active');
-        const main: SiteRow[] = leadsWithMain ? [{ id: MAIN_SITE, name: mainName, host: new URL(siteLinks(this.c, { host: null }).home, this.c.req.url).host, status: 'active', members: members.get(MAIN_SITE) ?? 0, createdAt: null, ...siteLinks(this.c, { host: null }) }] : [];
-        this.rows = [...main, ...found.items.map(site => {
+        const main: SiteRow[] = leadsWithMain ? [{ id: MAIN_SITE, name: mainName, host: new URL(siteLinks(this.c, { host: null }).home, this.c.req.url).host, status: 'active', members: members.get(MAIN_SITE) ?? 0, createdAt: null, icon: networkIcon, ...siteLinks(this.c, { host: null }) }] : [];
+        this.rows = [...main, ...await Promise.all(found.items.map(async site => {
             const host = site.domains.find(domain => domain.primary)?.host ?? '';
-            return { id: site.id, name: site.name, host, status: site.status, members: members.get(site.id) ?? 0, createdAt: site.createdAt, ...siteLinks(this.c, { host }) };
-        })];
+            // Sites being created or deleted have no settings to read.
+            const own = site.status === 'active' || site.status === 'archived' ? await siteIconUrl(this.c, net.hostOf(networkSite(site)), { host }) : '';
+            return { id: site.id, name: site.name, host, status: site.status, members: members.get(site.id) ?? 0, createdAt: site.createdAt, icon: own || networkIcon, ...siteLinks(this.c, { host }) };
+        }))];
         this.total = found.total + (this.status === '' || this.status === 'active' ? withMain : 0);
         this.pages = Math.max(1, Math.ceil(found.total / PAGE_SIZE));
     }
@@ -148,12 +152,12 @@ export default class NetworkSites extends Cossack {
             ${listTable<SiteRow>({
                 rows: this.rows, key: row => row.id, rowAttribute: 'data-site', empty: this.search || this.status ? __('No sites match.') : __('No sites besides the main one yet.'),
                 columns: [
-                    { label: __('Site'), cell: row => html`<div class="min-w-0">
+                    { label: __('Site'), cell: row => html`<div class="flex items-start gap-3">${siteIcon(row.icon)}<div class="min-w-0">
                         ${row.id === MAIN_SITE ? html`<span class="font-medium text-foreground">${row.name}</span> <span class="text-xs text-muted-foreground">(${__('main site')})</span>`
                             : html`<a href=${`/dashboard/network/sites/${row.id}`} class="font-medium text-foreground no-underline hover:text-primary">${row.name}</a>`}
                         <span class="block text-xs text-muted-foreground">${row.host}</span>
                         ${actions(row)}
-                    </div>` },
+                    </div></div>` },
                     { label: __('Members'), class: 'text-right text-muted-foreground', cell: row => row.members },
                     { label: __('Status'), cell: row => siteStatus(row.status) },
                     { label: __('Created'), class: 'text-muted-foreground', cell: row => row.createdAt === null ? '—' : shortDate(row.createdAt) },

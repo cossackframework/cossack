@@ -92,8 +92,9 @@ account that is a member of that site only, with that site's default role.
 Network admins open `/dashboard/network` on the network host, while the network is on:
 
 - **Home**: counts of sites and accounts.
-- **Sites**: a list table of every site, the main site first, with its address, members and
-  status; status links (All, Active, Archived, Deleted) and a search filter it. *Add site*,
+- **Sites**: a list table of every site, the main site first, with its icon (Settings →
+  General → Site icon; the network's, the main site's, for a site without one), address,
+  members and status; status links (All, Active, Archived, Deleted) and a search filter it. *Add site*,
   a page of its own at `/dashboard/network/sites/new`, asks for a name, an address under the
   network's subdomain, a language, the first administrator's email and optional starter
   content. Row actions: Edit, Dashboard, Visit, Archive, Restore and Delete (after a

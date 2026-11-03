@@ -729,6 +729,10 @@ describe.skipIf(!liveRomeDBTests())('generated CMS application', () => {
         contains(await web.page('/dashboard/network/sites/blog'), 'grace@example.com');
       }
       contains(await web.page('/dashboard/network/users'), 'grace@example.com');
+      // Sites show their icons; a site without one shows the network's, which is the main site's.
+      expect((await web.action(SETTINGS, 'saveAll', [{ document: { general: { favicon: '/network-icon.svg' } }, languages: null, permalinks: null, network: null, groups: {} }]))._cossack_return.error).toBe('');
+      const icons = [...(await web.page('/dashboard/network/sites')).matchAll(/<img src="?([^"\s>]+)"?[^>]*data-site-icon/g)].map(match => match[1]);
+      expect(icons).toEqual(Array(servesDirectories() ? 2 : 1).fill(`${origin}/network-icon.svg`));
       // The network home counts the main site as active, beside any added one.
       expect(await web.page('/dashboard/network')).toMatch(new RegExp(`Active sites</p>\\s*<a href="/dashboard/network/sites"[^>]*>\\s*${servesDirectories() ? 2 : 1}\\s*<`));
     } finally {

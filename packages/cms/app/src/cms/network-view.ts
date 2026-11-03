@@ -1,6 +1,8 @@
 /** Render helpers for the network pages; client-safe, unlike `./network-ui`. */
 import type { SiteStatus } from '@cossackframework/cms/server';
-import { html, type TemplateResult } from '@cossackframework/renderer';
+import { component, html, type TemplateResult } from '@cossackframework/renderer';
+import { Icon } from '@cossackframework/ui';
+import { icon } from './icons';
 import { CONTROL } from './ui';
 
 const STATUS: Record<SiteStatus, string> = { creating: 'Being created', active: 'Active', archived: 'Archived', deleted: 'Deleted' };
@@ -8,6 +10,12 @@ const STATUS: Record<SiteStatus, string> = { creating: 'Being created', active: 
 export function siteStatus(status: SiteStatus): TemplateResult {
     const tone = status === 'active' ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' : status === 'deleted' ? 'bg-destructive/10 text-destructive' : 'bg-muted text-muted-foreground';
     return html`<span class=${`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${tone}`}>${__(STATUS[status])}</span>`;
+}
+
+/** A site's icon beside its name, or a globe when neither the site nor the network has one. */
+export function siteIcon(url: string): TemplateResult {
+    return url ? html`<img src=${url} alt="" width="20" height="20" loading="lazy" data-site-icon class="mt-0.5 size-5 shrink-0 rounded-sm object-contain">`
+        : html`<span aria-hidden="true" data-site-icon class="mt-0.5 inline-flex size-5 shrink-0 items-center justify-center text-muted-foreground [&_svg]:size-5">${component(Icon, { entry: icon('global'), size: 20 })}</span>`;
 }
 
 /** A labelled input for the network's plain forms. */
