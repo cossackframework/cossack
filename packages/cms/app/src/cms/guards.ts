@@ -17,10 +17,10 @@ export function requireAny(...permissions: string[]) {
     });
 }
 
-/** The network dashboard: network admins, on the network host. Others go to their dashboard. */
+/** The network dashboard: network admins, on the network host, while the network is on. Others go to their dashboard. */
 export function requireNetworkAdmin() {
     return defineServerMiddleware(async (c, next) => {
-        if (isNetworkAdmin(principal(c)) && c.get('site')?.id === MAIN_SITE) { await next(); return; }
+        if (isNetworkAdmin(principal(c)) && c.get('site')?.id === MAIN_SITE && await c.get('network')?.enabled()) { await next(); return; }
         if (isTransportPath(c.req.path, 'rpc', 'upload', 'websocket')) return c.json({ error: 'Forbidden', code: 'COSSACK_RPC_FORBIDDEN' }, 403);
         return c.redirect('/dashboard');
     });

@@ -94,6 +94,17 @@ describe('global settings search', () => {
         ]);
     });
 
+    it('adds the Network section last, with its own entries, only when asked', () => {
+        const { cms } = fixture();
+        expect(settingsLinks(cms).some(link => link.id === 'network')).toBe(false);
+        expect(settingsSearchEntries(cms).some(entry => entry.groupId === 'network')).toBe(false);
+        const links = settingsLinks(cms, { network: true });
+        const entries = settingsSearchEntries(cms, { network: true });
+        expect(links.at(-1)).toMatchObject({ id: 'network', label: 'Network', href: `/dashboard/settings#${settingsSectionId('network')}` });
+        expect(searchSettings(entries, 'multisite').map(entry => entry.id)).toEqual(['network.enabled']);
+        expect(filterSettingsLinks(links, entries, 'new sites').map(({ id, count }) => ({ id, count }))).toEqual([{ id: 'network', count: 4 }]);
+    });
+
     it('restores the complete menu when search clears and returns no unrelated groups for no matches', () => {
         const { cms } = fixture();
         const entries = settingsSearchEntries(cms);

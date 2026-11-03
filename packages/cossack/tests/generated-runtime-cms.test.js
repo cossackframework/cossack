@@ -605,6 +605,17 @@ describe.skipIf(!liveRomeDBTests())('generated CMS application', () => {
       await page.goto(server.origin + '/dashboard/content/events/new');
       await browserExpect(page.getByLabel('Venue')).toBeVisible();
 
+      // The network is off until Settings → Network turns it on; saving reloads the page, with Network in the menu.
+      await page.goto(server.origin + '/dashboard');
+      await ready();
+      await browserExpect(page.locator('a[data-status="network"]')).toHaveCount(0);
+      await page.goto(server.origin + '/dashboard/settings#settings-network');
+      await ready();
+      await page.getByLabel('Run a network of sites').check();
+      await browserExpect(page.getByLabel('Network name')).toBeVisible();
+      await Promise.all([page.waitForEvent('load'), page.getByRole('button', { name: 'Save changes' }).click()]);
+      await ready();
+      await browserExpect(page.getByLabel('Run a network of sites')).toBeChecked();
       // The taskbar's Network link opens the network dashboard, whose pages load in the browser too.
       await page.goto(server.origin + '/dashboard');
       await ready();
@@ -675,11 +686,17 @@ describe.skipIf(!liveRomeDBTests())('generated CMS application', () => {
       }, { timeout: 60_000 }).toBeTruthy();
       const origin = /CMS_DEV_ORIGIN=(\S+)/.exec(output)[1];
       expect(output).toContain(`started romedb serve for storage/romedb/app.romedb at http://127.0.0.1:${port}`);
-      const web = browserless(origin, {}, () => output);
+      // Route IDs from the CLI, which match the dev server's without a build.
+      const routeIds = JSON.parse((await cossack(root, ['routes', '--json'])).stdout).data.manifest.filePathToId;
+      const web = browserless(origin, routeIds, () => output);
       contains(await web.page('/auth/setup'), 'Set up your site');
       const setup = await web.post('/auth/setup', { code, siteTitle: 'Workers Dev', name: 'Ada', email: 'ada@example.com', password: 'long password' });
       expect(setup.headers.get('location'), await setup.text()).toBe('/dashboard');
       await fs.access(path.join(root, 'storage/romedb/token'));
+      // The network dashboard waits until Settings → Network turns the network on.
+      expect((await web.request('/dashboard/network')).headers.get('location')).toBe('/dashboard');
+      const network = { enabled: true, name: 'Dev network', subdomainSuffix: '', defaultTheme: '', defaultPlugins: [], defaultLanguage: '' };
+      expect((await web.action(SETTINGS, 'saveAll', [{ document: null, languages: null, permalinks: null, network, groups: {} }]))._cossack_return.error).toBe('');
       // Beside it, a directory service holds added sites' databases, which the Worker creates through ROMEDB_SITES_URL.
       if (servesDirectories()) {
         expect(output).toContain(`started romedb serve --directory storage/romedb/sites for added sites at http://127.0.0.1:${port + 1}`);

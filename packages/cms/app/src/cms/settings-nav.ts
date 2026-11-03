@@ -17,8 +17,8 @@ export interface SettingsLink {
     count?: number;
 }
 
-/** Settings groups in page order. Plugins each get a child beneath Plugins. */
-export function settingsLinks(cms: CmsHost): SettingsLink[] {
+/** Settings groups in page order. Plugins each get a child beneath Plugins; `network` adds the main site's Network section last. */
+export function settingsLinks(cms: CmsHost, options: { network?: boolean } = {}): SettingsLink[] {
     const groups = cms.settings.groups.filter(group => (group.permission ?? PERMISSIONS.manageSettings) === PERMISSIONS.manageSettings);
     return [
         ...groups.filter(group => !group.plugin).map(group => ({ id: group.id, label: group.label, href: settingsSectionHref(group.id),
@@ -26,6 +26,7 @@ export function settingsLinks(cms: CmsHost): SettingsLink[] {
         { id: 'permalinks', label: 'Permalinks', href: settingsSectionHref('permalinks'), icon: 'link' },
         { id: 'plugins', label: 'Plugins', href: settingsSectionHref('plugins'), icon: 'widget' },
         ...groups.filter(group => group.plugin).map(group => ({ id: group.id, label: group.label, href: settingsSectionHref(group.id), parent: 'plugins', icon: 'plug-circle' })),
+        ...(options.network ? [{ id: 'network', label: 'Network', href: settingsSectionHref('network'), icon: 'global' }] : []),
     ];
 }
 

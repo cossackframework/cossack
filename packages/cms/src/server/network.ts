@@ -1,7 +1,7 @@
 /**
  * A network of sites in one isolate or process: which site a request's host names, and one
  * CMS host per site database, kept for the sites used last. The main site is the network
- * database; while it is the only site, every host serves it.
+ * database; while it is the only site, or while the network is off, every host serves it.
  */
 import type { RomeDB } from '@cossackframework/romedb';
 import type { StorageMetadata, StorageProvider } from '@cossackframework/core/storage';
@@ -73,6 +73,7 @@ export class CmsNetwork {
     readonly #hosts = new Map<string, CmsHost>();
     readonly #lookups = new Map<string, { at: number; value: Promise<SiteResolution> }>();
     #count: { at: number; value: Promise<number> } | undefined;
+    #enabled: { at: number; value: Promise<boolean> } | undefined;
 
     constructor(options: CmsNetworkOptions) {
         this.db = options.db;
@@ -145,6 +146,27 @@ export class CmsNetwork {
         return value;
     }
 
+    /**
+     * Whether the network serves its added sites. Off until a network admin turns it on: until
+     * then the install is one site, and the network dashboard is hidden. Reused for 30 seconds.
+     */
+    enabled(): Promise<boolean> {
+        const now = this.#now();
+        if (!this.#enabled || now - this.#enabled.at >= (this.#options.cacheMs ?? 30_000)) {
+            // Before setup `cms_network` does not exist yet: the network is off.
+            const value = this.state<boolean>(ENABLED).then(stored => stored === true, () => false);
+            this.#enabled = { at: now, value };
+        }
+        return this.#enabled.value;
+    }
+
+    /** Turn the network on or off. Off, added sites stop answering; their databases and registry rows stay. */
+    async setEnabled(enabled: boolean, context: { principal: Principal }): Promise<void> {
+        requireNetworkAdmin(context.principal);
+        await this.setState(ENABLED, enabled);
+        this.invalidate();
+    }
+
     /** Whether sites can be added: the network opens and creates site databases. */
     get canAddSites(): boolean {
         return this.multisite && this.#options.directory !== undefined;
@@ -164,6 +186,7 @@ export class CmsNetwork {
         requireNetworkAdmin(context.principal);
         const directory = this.#options.directory;
         if (!directory || !this.#options.open) throw new CmsError('CMS_UNAVAILABLE', 'This network cannot add sites yet: it needs a provider for site databases.');
+        if (!(await this.enabled())) throw new CmsError('CMS_UNAVAILABLE', 'Turn the network on in Settings before adding sites.');
         const id = input.id ?? (slugify(input.name, 40) || 'site');
         if (input.language && !LOCALE.test(input.language)) throw new CmsError('CMS_VALIDATION', 'Enter a language code, such as en or pt-br.', { fields: { language: 'is invalid.' } });
         const admin = await this.main.accounts.get(input.admin);
@@ -360,10 +383,11 @@ export class CmsNetwork {
             params: { $key: key, $value: JSON.stringify(value), $now: this.#now() } }], { kind: 'cms.network', retryConflicts: 5 });
     }
 
-    /** The sites an account is a member of, the main site first, without opening their databases. */
+    /** The sites an account is a member of, the main site first, without opening their databases. Off, the network is its main site. */
     async memberSites(accountId: string): Promise<NetworkSite[]> {
         const ids = (await this.main.accounts.memberships([accountId])).get(accountId) ?? [];
         const sites: NetworkSite[] = ids.includes(MAIN_SITE) ? [MAIN] : [];
+        if (!(await this.enabled())) return sites;
         for (const id of ids) {
             const record = id === MAIN_SITE ? null : await this.sites.get(id);
             if (record && (record.status === 'active' || record.status === 'archived')) sites.push(networkSite(record));
@@ -428,6 +452,7 @@ export class CmsNetwork {
     invalidate(): void {
         this.#lookups.clear();
         this.#count = undefined;
+        this.#enabled = undefined;
     }
 
     async #resolve(name: string): Promise<SiteResolution> {
@@ -438,6 +463,8 @@ export class CmsNetwork {
         if (!name) return { kind: 'missing' };
         if (name === network) return main;
         const found = await this.sites.siteOf(name);
+        // Off, the main site answers everywhere except at an added site's domains, which serve nothing.
+        if (!(await this.enabled())) return found && found.site !== MAIN_SITE ? { kind: 'missing' } : main;
         if (!found) return { kind: 'missing' };
         if (found.site === MAIN_SITE) return found.domain.primary || !network ? main : { kind: 'redirect', host: network, site: MAIN_SITE };
         const record = await this.sites.get(found.site);
@@ -485,6 +512,9 @@ export interface NewSite {
     /** The site's default language; the network's default when left out. */
     readonly language?: string;
 }
+
+/** The `cms_network` key of whether the network is on. */
+const ENABLED = 'enabled';
 
 const CREATION_STEPS = ['database', 'schema', 'seeded', 'members'] as const;
 type CreationStep = typeof CREATION_STEPS[number];

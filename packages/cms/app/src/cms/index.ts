@@ -21,6 +21,8 @@ declare module 'hono' {
         /** The host of the site the request reached. */
         cms: CmsHost;
         site: NetworkSite;
+        /** The network the site belongs to; `enabled()` says whether it serves added sites. */
+        network: CmsNetwork;
         principal: Principal;
     }
 }

@@ -44,6 +44,7 @@ export const cmsMiddleware: MiddlewareHandler = async (c, next) => {
     const cms = network.hostOf(found.site);
     c.set('cms', cms);
     c.set('site', found.site);
+    c.set('network', network);
     c.set('principal', ANONYMOUS);
     // Sign-in happens on the network host; other sites get their sessions through a handoff.
     const routed = await handoff(c, network, found.site);

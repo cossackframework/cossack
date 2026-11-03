@@ -19,8 +19,8 @@ export function settingsSectionId(groupId: string): string { return `settings-${
 
 export function settingsSectionHref(groupId: string): string { return `/dashboard/settings#${encodeURIComponent(settingsSectionId(groupId))}`; }
 
-/** The calling page requires cms:settings. Include every group served by Settings, including non-JSON groups. */
-export function settingsSearchEntries(cms: CmsHost): SettingsSearchEntry[] {
+/** The calling page requires cms:settings. Include every group served by Settings, including non-JSON groups; `network` for the Network section. */
+export function settingsSearchEntries(cms: CmsHost, options: { network?: boolean } = {}): SettingsSearchEntry[] {
     const groups = cms.settings.groups.filter(group => (group.permission ?? PERMISSIONS.manageSettings) === PERMISSIONS.manageSettings);
     const entries: SettingsSearchEntry[] = [];
     for (const group of groups) {
@@ -49,6 +49,22 @@ export function settingsSearchEntries(cms: CmsHost): SettingsSearchEntry[] {
     for (const taxonomy of cms.taxonomies.declarations.filter(entry => entry.path)) {
         entries.push(permalink(`taxonomy.${taxonomy.name}`, `${taxonomy.singular} base`,
             `Address prefix for ${taxonomy.label.toLowerCase()} archives.`, `${taxonomy.name} ${taxonomy.label} archive bases path URL`));
+    }
+
+    // The network's settings live in the network database and save through the network.
+    if (options.network) {
+        const network = (id: string, label: string, description: string, keywords = ''): SettingsSearchEntry => ({
+            id: `network.${id}`, groupId: 'network', name: id, label, group: 'Network', description, href: settingsSectionHref('network'),
+            text: ['network', id, label, description, keywords].join(' ').toLowerCase(),
+        });
+        entries.push(
+            network('enabled', 'Run a network of sites', 'Add sites with their own databases, addresses and members.', 'multisite enable disable on off'),
+            network('name', 'Network name', 'Shown on the network dashboard and the sign-in page.', 'title'),
+            network('subdomainSuffix', 'Addresses of new sites', 'The domain new sites start under.', 'subdomain suffix domain URL'),
+            network('defaultTheme', 'Theme of new sites', 'The theme new sites start with.', 'new sites appearance'),
+            network('defaultPlugins', 'Plugins enabled on new sites', 'Plugins new sites start with.', 'new sites'),
+            network('defaultLanguage', 'Language of new sites', 'The default language new sites start with.', 'new sites locale'),
+        );
     }
     return entries;
 }

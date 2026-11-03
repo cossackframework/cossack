@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { RomeDB } from '@cossackframework/romedb';
 import type { StorageProvider } from '@cossackframework/core/storage';
-import { CmsNetwork, createCMS, MAIN, prefixedStorage, siteHost, type CmsHost, type NetworkSite } from '../src/server/index';
+import { CmsNetwork, createCMS, MAIN, prefixedStorage, siteHost, systemPrincipal, type CmsHost, type NetworkSite } from '../src/server/index';
 import { romedbService, live } from './helpers';
 
 function memoryStorage(): StorageProvider & { objects: Map<string, Uint8Array> } {
@@ -89,10 +89,18 @@ describe.skipIf(!live)('site registry and host resolution', () => {
         expect((await network.sites.list()).total).toBe(3);
     });
 
-    it('resolves hosts to sites, aliases to their primary domain, and unknown hosts to nothing', async () => {
+    it('serves only the main site while the network is off, and nothing at added sites\' domains', async () => {
         // The lookups above were cached while the network had one site.
         expect(await network.resolve('blog.example.com')).toEqual({ kind: 'site', site: MAIN });
         network.invalidate();
+        expect(await network.enabled()).toBe(false);
+        expect(await network.resolve('blog.example.com')).toEqual({ kind: 'missing' });
+        expect(await network.resolve('example.com')).toEqual({ kind: 'site', site: MAIN });
+        expect(await network.resolve('preview.example.net')).toEqual({ kind: 'site', site: MAIN });
+        await network.setEnabled(true, { principal: systemPrincipal('test') });
+    });
+
+    it('resolves hosts to sites, aliases to their primary domain, and unknown hosts to nothing', async () => {
         expect(await network.resolve('Blog.Example.com:5173')).toMatchObject({ kind: 'site', site: { id: 'blog', database: 'db-blog', host: 'blog.example.com' } });
         expect(await network.resolve('blog.example.org')).toEqual({ kind: 'redirect', host: 'blog.example.com', site: 'blog' });
         expect(await network.resolve('example.com')).toEqual({ kind: 'site', site: MAIN });

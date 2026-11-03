@@ -7,8 +7,8 @@ description: 'Run many CMS sites from one application: one database per site, ac
 
 One CMS application can run many sites. Each site has its own RomeDB database, its own
 domains, content, settings, roles and members. Accounts are shared: a person signs in once and
-reaches every site they are a member of. Every install is a network of one site until you add
-a second one, and nothing changes for a single-site install.
+reaches every site they are a member of. The network is off until a network admin turns it
+on, and nothing changes for a single-site install.
 
 ## How it is organized
 
@@ -26,6 +26,12 @@ with that ID. The last active network admin cannot be suspended, demoted or dele
 
 ## Turning it on
 
+A network admin turns the network on under Settings → Network, on the main site: *Run a
+network of sites*. The Network menu and the network dashboard then appear on the main site.
+Turning it off again hides them, and the added sites stop answering (a 404) while their
+databases and registry rows stay; turning it on again serves them again. Scheduled
+maintenance also skips them while the network is off.
+
 Sites need a place to keep their databases:
 
 | Runtime | Main database | Added sites |
@@ -37,8 +43,8 @@ Sites need a place to keep their databases:
 Set `APP_URL` to the network's address, such as `https://example.com`. Sign-in happens on
 that host, and new sites start at a subdomain of it.
 
-Without a place for site databases, Network → Sites explains what to set, and the rest of the
-dashboard is unchanged.
+Without a place for site databases, Settings → Network and Network → Sites explain what to
+set, and the rest of the dashboard is unchanged.
 
 ## Addresses
 
@@ -54,8 +60,8 @@ for SaaS.
   shows as *Waiting for DNS*.
 - A site's absolute URLs (sitemaps, feeds, emails) come from its primary domain, never from
   the request's `Host` header.
-- While the network has only the main site, every host serves it, so preview URLs and
-  tunnels keep working.
+- While the network has only the main site, or is off, every host serves it, so preview URLs
+  and tunnels keep working. Off, an added site's domains get the 404.
 
 Subdirectory sites (`example.com/blog`) are not supported.
 
@@ -83,7 +89,7 @@ account that is a member of that site only, with that site's default role.
 
 ## The network dashboard
 
-Network admins open `/dashboard/network` on the network host:
+Network admins open `/dashboard/network` on the network host, while the network is on:
 
 - **Home**: counts of sites and accounts.
 - **Sites**: every site with its address, members and status. *Add site* asks for a name, an
@@ -96,15 +102,18 @@ Network admins open `/dashboard/network` on the network host:
 - **Plugins**: one state per plugin for every site (see below).
 - **Themes**: which themes sites may choose. A hidden theme leaves every site's Appearance,
   and a site that used it falls back to another theme.
-- **Settings**: the network name, the domain new sites' addresses end with, and what new
-  sites start with: a theme, plugins to enable, and a language. A default theme or plugin
-  the network hides later is left out.
 - **Updates**: sites with schema steps to apply after a deploy. Each site applies its own
   when it next loads; this page upgrades them now, ten at a time.
 
+The network's settings are under **Settings → Network** on the main site: whether the network
+is on, its name, the domain new sites' addresses end with, and what new sites start with: a
+theme, plugins to enable, and a language. A default theme or plugin the network hides later
+is left out. They save with the page's *Save changes*.
+
 Members of more than one site see **My sites** in the dashboard menu and the site taskbar's
-Start menu; `/dashboard/my-sites` lists them with their dashboards. Network admins also get a
-*Network* link in every site's dashboard taskbar.
+Start menu; `/dashboard/my-sites` lists them with their dashboards. The Network menu and the
+taskbar's *Network* link show only on the main site; from another site, network admins reach
+it through My sites.
 
 ## Plugins across the network
 

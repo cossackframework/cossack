@@ -93,10 +93,9 @@ export async function navigation(c: Context): Promise<DashboardModule[]> {
     if (can(PERMISSIONS.manageSettings)) admin.push({ id: 'site-settings', label: 'Settings', href: '/dashboard/settings', icon: icon('settings'), authorization: { permission: PERMISSIONS.manageSettings },
         activeFor: '/dashboard/settings' });
     const env = c.env as CmsBindings;
-    // Network admins run the network from the network host; other sites link there.
-    const network = networkLink(c, principal);
-    if (network) admin.push({ id: 'network', label: 'Network', href: network, icon: icon('global'), authorization: 'authenticated', activeFor: '/dashboard/network',
-        children: [['Home', ''], ['Sites', '/sites'], ['Users', '/users'], ['Plugins', '/plugins'], ['Themes', '/themes'], ['Updates', '/updates'], ['Settings', '/settings']].map(([label, path]) => ({ label: label!, href: `${network}${path}` })) });
+    // Network admins run the network from the network host; its settings are under Settings there.
+    if (await showsNetwork(c, principal)) admin.push({ id: 'network', label: 'Network', href: '/dashboard/network', icon: icon('global'), authorization: 'authenticated', activeFor: '/dashboard/network',
+        children: [['Home', ''], ['Sites', '/sites'], ['Users', '/users'], ['Plugins', '/plugins'], ['Themes', '/themes'], ['Updates', '/updates']].map(([label, path]) => ({ label: label!, href: `/dashboard/network${path}` })) });
     // My sites: every site the account belongs to, when there is more than one.
     if (principal.kind === 'user') {
         const sites = await networkFor(env).memberSites(principal.id).catch(() => []);
@@ -109,12 +108,9 @@ export async function navigation(c: Context): Promise<DashboardModule[]> {
     return [...content, ...admin, ...account];
 }
 
-/** The network dashboard for a network admin: on the network host, or there from another site. Null for anyone else, or without APP_URL. */
-function networkLink(c: Context, principal: Principal): string | null {
-    if (!isNetworkAdmin(principal)) return null;
-    if (c.get('site')?.id === MAIN_SITE) return '/dashboard/network';
-    const base = ((c.env as CmsBindings).APP_URL ?? '').replace(/\/$/, '');
-    return base ? `${base}/dashboard/network` : null;
+/** Whether the dashboard links the network's: for network admins, on the main site, while the network is on. Other sites reach it through My sites. */
+async function showsNetwork(c: Context, principal: Principal): Promise<boolean> {
+    return isNetworkAdmin(principal) && c.get('site')?.id === MAIN_SITE && await networkFor(c.env as CmsBindings).enabled().catch(() => false);
 }
 
 /**
@@ -129,9 +125,8 @@ export async function dashboardStatus(c: Context): Promise<DashboardStatus[]> {
     const can = (permission: string) => hasPermission(principal, permission);
     const context = { principal };
     const items: DashboardStatus[] = [];
-    // Network admins reach the network dashboard from every site's taskbar.
-    const network = networkLink(c, principal);
-    if (network) items.push({ id: 'network', label: 'Network', href: network });
+    // Network admins reach the network dashboard from the main site's taskbar.
+    if (await showsNetwork(c, principal)) items.push({ id: 'network', label: 'Network', href: '/dashboard/network' });
     if (can(PERMISSIONS.moderateComments) && cms.collections().some(collection => collection.comments)) {
         const pending = await cms.comments.counts().then(counts => counts.pending).catch(() => 0);
         if (pending) items.push({ id: 'comments', label: 'Comments to moderate', href: '/dashboard/comments?status=pending', count: pending, tone: 'warning' });

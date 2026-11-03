@@ -55,6 +55,7 @@ describe.skipIf(!live)('network plugin and theme states', () => {
         other = await service.fresh();
         network = open();
         expect((await network.main.migrate()).failed).toBeUndefined();
+        await network.setEnabled(true, { principal: systemPrincipal('tests') });
         await network.sites.create({ id: 'blog', name: 'Blog', database: 'blog-db', domains: [{ host: 'blog.example.com' }] });
         blog = await siteOf(network);
         expect((await blog.migrate()).failed).toBeUndefined();

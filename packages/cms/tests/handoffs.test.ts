@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { RomeDB } from '@cossackframework/romedb';
-import { CmsNetwork, createCMS, isNetworkAdmin, NETWORK_ADMIN, type CmsHost } from '../src/server/index';
+import { CmsNetwork, createCMS, isNetworkAdmin, NETWORK_ADMIN, systemPrincipal, type CmsHost } from '../src/server/index';
 import { romedbService, live } from './helpers';
 
 const record = (id: string, userId: string) => ({ id: id.repeat(64).slice(0, 64), userId, kind: 'auth' as const, createdAt: Date.now(), expiresAt: Date.now() + 60_000 });
@@ -34,6 +34,7 @@ describe.skipIf(!live)('sign-in handoffs and child sessions', () => {
         });
         main = network.main;
         expect((await main.migrate()).failed).toBeUndefined();
+        await network.setEnabled(true, { principal: systemPrincipal('tests') });
         await network.sites.create({ id: 'blog', name: 'Blog', database: 'blog-db', domains: [{ host: 'blog.example.com' }] });
         blog = network.hostOf((await network.resolve('blog.example.com') as { site: Parameters<CmsNetwork['hostOf']>[0] }).site);
         expect((await blog.migrate()).failed).toBeUndefined();

@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createRomeDB, MemoryPendingWriteStore, type RomeDB } from '@cossackframework/romedb';
 import { connectNode, fileDatabases } from '@cossackframework/romedb/node';
-import { CmsNetwork, contentModule, createCMS, formsModule, DEFAULT_ROLES, NETWORK_ADMIN, type CmsHost, type NetworkSite } from '../src/server/index';
+import { CmsNetwork, contentModule, createCMS, formsModule, DEFAULT_ROLES, NETWORK_ADMIN, systemPrincipal, type CmsHost, type NetworkSite } from '../src/server/index';
 
 /** Files open through `@romedb/node`'s native addon; without it, this suite skips. */
 const probe = await mkdtemp(path.join(os.tmpdir(), 'cossack-probe-'));
@@ -40,6 +40,7 @@ describe.skipIf(!native)('a network on database files', () => {
         expect((await main.migrate()).failed).toBeUndefined();
         for (const role of DEFAULT_ROLES) await main.users.defineRole({ ...role, permissions: [...role.permissions] });
         owner = (await main.users.create({ email: 'owner@example.com', name: 'Owner', password: 'owns the place', roles: ['admin'], networkRole: NETWORK_ADMIN })).id;
+        await network.setEnabled(true, { principal: systemPrincipal('tests') });
     }, 60_000);
 
     afterAll(async () => { await rm(directory, { recursive: true, force: true }); });

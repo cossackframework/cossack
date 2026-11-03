@@ -1,7 +1,7 @@
 import { Client, ClientState, Cossack, Inject, Page, PreventNavigation, Server, server$, type HeadValue } from '@cossackframework/core';
 import { Button, Card, CardBody, CodeEditor } from '@cossackframework/ui';
 import { component, html, key } from '@cossackframework/renderer';
-import { isCmsError, parseSettingsDocument, PERMISSIONS, SETTINGS_DOCUMENT_MAX_BYTES, SETTINGS_DOCUMENT_MAX_FIELDS, settingsJsonSchema, stringifySettingsDocument, type SettingsDocument } from '@cossackframework/cms';
+import { isCmsError, isNetworkAdmin, MAIN_SITE, parseSettingsDocument, PERMISSIONS, SETTINGS_DOCUMENT_MAX_BYTES, SETTINGS_DOCUMENT_MAX_FIELDS, settingsJsonSchema, stringifySettingsDocument, type SettingsDocument } from '@cossackframework/cms';
 import { requireAny } from '../../../../../cms/guards';
 import { formatSettingsDraft, mergeSettings, settingsChanges, SettingsDraft, settingsNavigation } from '../../../../../cms/settings-draft';
 import { settingsEditorSnapshot } from '../../../../../cms/settings-form';
@@ -21,7 +21,9 @@ export default class JsonSettingsPage extends Cossack {
         const principal = this.c.get('principal');
         const groups = cms.settings.catalog({ principal });
         const snapshot = await settingsEditorSnapshot(cms, principal);
-        return { links: settingsLinks(cms), entries: settingsSearchEntries(cms), snapshot: snapshot.document, invalid: snapshot.errors, schema: settingsJsonSchema(groups),
+        // The Network section's link, as on Settings.
+        const network = isNetworkAdmin(principal) && this.c.get('site')?.id === MAIN_SITE;
+        return { links: settingsLinks(cms, { network }), entries: settingsSearchEntries(cms, { network }), snapshot: snapshot.document, invalid: snapshot.errors, schema: settingsJsonSchema(groups),
             references: groups.flatMap(group => Object.entries(group.fields).filter(([, field]) => field.control === 'file' || field.source && ['roles', 'pages', 'categories', 'media'].includes(field.source)).map(([name]) => `${group.id}.${name}`)) };
     }, { initial: { links: [], entries: [], snapshot: {}, invalid: {}, schema: {}, references: [] } });
     @ClientState() error = '';

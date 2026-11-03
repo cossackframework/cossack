@@ -1,7 +1,7 @@
 import { Client, ClientState, Cossack, Inject, OnWindow, Page, PreventNavigation, Server, Shared, server$, type HeadValue } from '@cossackframework/core';
 import { Badge, Card, CardBody } from '@cossackframework/ui';
 import { component, html, repeat, type TemplateResult } from '@cossackframework/renderer';
-import { hasPermission, isCmsError, PERMISSIONS, type SettingsDocument, type SettingsSection as SectionDeclaration } from '@cossackframework/cms';
+import { hasPermission, isCmsError, isNetworkAdmin, MAIN_SITE, PERMISSIONS, type SettingsDocument, type SettingsSection as SectionDeclaration } from '@cossackframework/cms';
 import { requireAny } from '../../../../cms/guards';
 import { SettingsDraft, settingsNavigation } from '../../../../cms/settings-draft';
 import { findSettingsMedia, settingControl, settingInput, settingRows, settingsEditorSnapshot, type SettingRow, type SettingValue, type SettingValues } from '../../../../cms/settings-form';
@@ -11,6 +11,7 @@ import { SettingsSection } from '../../../../cms/settings-section';
 import { activeSettingsSection } from '../../../../cms/settings-scroll';
 import { languageDraft, languageInput, LanguagesSettings, loadLanguageSettings, saveLanguageSettings, type LanguageSettingsData, type LanguageSettingsInput } from '../../../../cms/settings-languages';
 import { PermalinksSettings, loadPermalinkSettings, permalinkDraft, savePermalinkSettings, type PermalinkSettingsData, type PermalinkSettingsInput } from '../../../../cms/settings-permalinks';
+import { NetworkSettingsForm, loadNetworkSettings, networkDraft, saveNetworkSettings, type NetworkSettingsData, type NetworkSettingsInput } from '../../../../cms/settings-network';
 import { notice } from '../../../../cms/ui';
 
 interface GroupView {
@@ -22,17 +23,20 @@ interface SaveInput {
     document: SettingsDocument | null;
     languages: LanguageSettingsInput | null;
     permalinks: PermalinkSettingsInput | null;
+    network: NetworkSettingsInput | null;
     groups: Record<string, SettingValues>;
 }
 /** What was saved, in order; the first part that fails stops the rest and names its section. */
 interface SaveResult {
-    document: SettingsDocument | null; languages: LanguageSettingsData | null; permalinks: PermalinkSettingsData | null; groups: string[];
+    document: SettingsDocument | null; languages: LanguageSettingsData | null; permalinks: PermalinkSettingsData | null; network: NetworkSettingsData | null; groups: string[];
     error: string; fields: Record<string, string>;
 }
 interface SettingsView {
     links: SettingsLink[]; entries: SettingsSearchEntry[]; groups: GroupView[];
     canUpload: boolean; canBrowse: boolean;
     snapshot: SettingsDocument; invalid: Record<string, string>; languages: LanguageSettingsData | null; permalinks: PermalinkSettingsData | null;
+    /** The Network section: for network admins, on the main site. */
+    network: NetworkSettingsData | null;
 }
 
 /** One document of settings. The menu and visible fields use the same search matches. */
@@ -51,11 +55,12 @@ export default class SettingsPage extends Cossack {
             sections: group.sections ?? [], ...await settingRows(cms, group, principal),
         })));
         const snapshot = await settingsEditorSnapshot(cms, principal);
-        return { links: settingsLinks(cms), entries: settingsSearchEntries(cms), groups, snapshot: snapshot.document, invalid: snapshot.errors,
+        const network = this.managesNetwork();
+        return { links: settingsLinks(cms, { network }), entries: settingsSearchEntries(cms, { network }), groups, snapshot: snapshot.document, invalid: snapshot.errors,
             canUpload: !!cms.files && hasPermission(principal, PERMISSIONS.upload),
             canBrowse: !!cms.files && [PERMISSIONS.upload, PERMISSIONS.manageMedia, PERMISSIONS.manageUsers].some(permission => hasPermission(principal, permission)),
-            languages: await loadLanguageSettings(cms, origin), permalinks: loadPermalinkSettings(cms, origin) };
-    }, { initial: { links: [], entries: [], groups: [], canUpload: false, canBrowse: false, snapshot: {}, invalid: {}, languages: null, permalinks: null } });
+            languages: await loadLanguageSettings(cms, origin), permalinks: loadPermalinkSettings(cms, origin), network: network ? await loadNetworkSettings(this.c.get('network')) : null };
+    }, { initial: { links: [], entries: [], groups: [], canUpload: false, canBrowse: false, snapshot: {}, invalid: {}, languages: null, permalinks: null, network: null } });
     @ClientState() message = '';
     @ClientState() error = '';
     @ClientState() errors: Record<string, string> = {};
@@ -73,6 +78,11 @@ export default class SettingsPage extends Cossack {
     private scrollDeadline = 0;
 
     head(): HeadValue { return { title: __('Settings') }; }
+
+    /** The network's settings belong to network admins, on its main site. Server only. */
+    private managesNetwork(): boolean {
+        return isNetworkAdmin(this.c.get('principal')) && this.c.get('site')?.id === MAIN_SITE;
+    }
 
     onMount() {
         this.draft.initialize(this.view.snapshot, this.view.invalid);
@@ -201,13 +211,17 @@ export default class SettingsPage extends Cossack {
         const changes = this.draft.changes();
         const languages = this.view.languages && this.draft.sectionDirty('languages') ? languageInput(this.draft, this.view.languages) : null;
         const permalinks = this.view.permalinks && this.draft.sectionDirty('permalinks') ? this.draft.section('permalinks', permalinkDraft(this.view.permalinks)) : null;
+        const network = this.view.network && this.draft.sectionDirty('network') ? this.draft.section('network', networkDraft(this.view.network)) : null;
         const groups = Object.fromEntries(this.view.groups.filter(group => !group.portable && this.draft.sectionDirty(group.id)).map(group => [group.id, this.draft.section(group.id, group.values)]));
         this.draft.setSaving(true);
         try {
-            const result = await this.saveAll({ document: Object.keys(changes).length ? changes : null, languages, permalinks, groups });
+            const result = await this.saveAll({ document: Object.keys(changes).length ? changes : null, languages, permalinks, network, groups });
             if (result.document) this.draft.accept(result.document);
             if (result.languages) this.draft.acceptSection('languages', languageDraft(result.languages));
             if (result.permalinks) this.draft.acceptSection('permalinks', permalinkDraft(result.permalinks));
+            if (result.network) this.draft.acceptSection('network', networkDraft(result.network));
+            // Network appears in, or leaves, the dashboard menu.
+            if (result.network && result.network.enabled !== this.view.network?.enabled && !result.error) { window.location.reload(); return; }
             for (const id of result.groups) this.draft.acceptSection(id, groups[id]);
             this.error = result.error; this.errors = result.fields;
             if (!result.error) this.message = __('Settings saved.');
@@ -218,11 +232,11 @@ export default class SettingsPage extends Cossack {
     @Server()
     async findMedia(search: string, kind: string) { return findSettingsMedia(this.c.get('cms'), this.c.get('principal'), search, kind); }
 
-    /** One save for the whole page: the document first, then Languages, Permalinks and the groups outside the document. */
+    /** One save for the whole page: the document first, then Languages, Permalinks, Network and the groups outside the document. */
     @Server()
     async saveAll(input: SaveInput): Promise<SaveResult> {
         const cms = this.c.get('cms'), principal = this.c.get('principal'), origin = new URL(this.c.req.url).origin;
-        const result: SaveResult = { document: null, languages: null, permalinks: null, groups: [], error: '', fields: {} };
+        const result: SaveResult = { document: null, languages: null, permalinks: null, network: null, groups: [], error: '', fields: {} };
         const failed = (section: string, error: string, fields: Record<string, string> = {}) => ({ ...result, error: `${section}: ${error}`, fields });
         if (input.document) {
             try { result.document = await cms.settings.applyDocument(input.document, { principal }); }
@@ -237,6 +251,12 @@ export default class SettingsPage extends Cossack {
             const saved = await savePermalinkSettings(cms, principal, input.permalinks, origin);
             if (!saved.data) return failed(__('Permalinks'), saved.error, Object.fromEntries(Object.entries(saved.fields).map(([name, error]) => [`permalinks.${name}`, error])));
             result.permalinks = saved.data;
+        }
+        if (input.network) {
+            if (!this.managesNetwork()) return failed(__('Network'), __('Only network admins change the network, on its main site.'));
+            const saved = await saveNetworkSettings(this.c.get('network'), principal, input.network);
+            if (!saved.data) return failed(__('Network'), saved.error, Object.fromEntries(Object.entries(saved.fields).map(([name, error]) => [`network.${name}`, error])));
+            result.network = saved.data;
         }
         for (const [id, values] of Object.entries(input.groups ?? {})) {
             const group = cms.settings.groups.find(group => group.id === id && !group.plugin && group.id !== 'languages' && (group.permission ?? PERMISSIONS.manageSettings) === PERMISSIONS.manageSettings);
@@ -273,6 +293,7 @@ export default class SettingsPage extends Cossack {
         const blocked = !!this.draft.jsonError || !!this.draft.preview?.imported;
         const ordered = filterSettingsLinks(this.view.links, this.view.entries, this.draft.search);
         const permalinkErrors = Object.fromEntries(Object.entries(this.errors).filter(([key]) => key.startsWith('permalinks.')).map(([key, error]) => [key.slice(11), error]));
+        const networkErrors = Object.fromEntries(Object.entries(this.errors).filter(([key]) => key.startsWith('network.')).map(([key, error]) => [key.slice(8), error]));
         return settingsFrame(this.view.links, this.active, html`<div class="min-w-0 space-y-8">
             <form id="settings-actions" hidden @submit=${this.submit}></form>
             <div class="space-y-4">
@@ -296,6 +317,7 @@ export default class SettingsPage extends Cossack {
                 return component(SettingsSection, { id: link.id, heading, count: keys.length, onConnect: this.trackSection, eager: !keys.length || link.id === this.target || link.id === ordered[0]?.id,
                     content: () => link.id === 'languages' && this.view.languages ? component(LanguagesSettings, { draft: this.draft, initial: this.view.languages, fields: keys })
                         : link.id === 'permalinks' && this.view.permalinks ? component(PermalinksSettings, { draft: this.draft, initial: this.view.permalinks, fields: keys, errors: permalinkErrors })
+                        : link.id === 'network' && this.view.network ? component(NetworkSettingsForm, { draft: this.draft, initial: this.view.network, fields: keys, errors: networkErrors })
                         : group && keys.length ? this.groupContent(group, fields, blocked) : html`` });
             })}
         </div>`, { entries: this.view.entries, query: this.draft.search, onNavigate: this.openSection });

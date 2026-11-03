@@ -44,6 +44,14 @@ describe.skipIf(!live)('adding, archiving and deleting sites', () => {
 
     afterAll(async () => { await other?.stop(); });
 
+    it('adds sites only while the network is on', async () => {
+        expect(await network.enabled()).toBe(false);
+        await expect(network.createSite({ name: 'Blog', host: 'blog.example.com', admin: owner }, { principal: admin })).rejects.toMatchObject({ code: 'CMS_UNAVAILABLE' });
+        await expect(network.setEnabled(true, { principal: userPrincipal('someone', ['admin'], ['*']) })).rejects.toMatchObject({ code: 'CMS_FORBIDDEN' });
+        await network.setEnabled(true, { principal: admin });
+        expect(await network.enabled()).toBe(true);
+    });
+
     it('lets only network admins add sites, at an address under the network', async () => {
         await expect(network.createSite({ name: 'Blog', host: 'blog.example.com', admin: owner }, { principal: userPrincipal('someone', ['admin'], ['*']) })).rejects.toMatchObject({ code: 'CMS_FORBIDDEN' });
         await expect(network.createSite({ name: 'Blog', host: 'blog.example.org', admin: owner }, { principal: admin })).rejects.toMatchObject({ code: 'CMS_VALIDATION' });

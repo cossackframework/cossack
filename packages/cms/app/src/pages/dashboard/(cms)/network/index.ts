@@ -46,7 +46,7 @@ export default class NetworkHome extends Cossack {
                 <li><a class="text-primary" href="/dashboard/network/plugins">${__('Plugins')}</a> — ${__('plugins active on every site, available to each site, or hidden.')}</li>
                 <li><a class="text-primary" href="/dashboard/network/themes">${__('Themes')}</a> — ${__('the themes sites may choose.')}</li>
                 <li><a class="text-primary" href="/dashboard/network/updates">${__('Updates')}</a> — ${__('sites with schema steps to apply after a deploy.')}</li>
-                <li><a class="text-primary" href="/dashboard/network/settings">${__('Settings')}</a> — ${__('the network name and the address new sites start at.')}</li>
+                <li><a class="text-primary" href="/dashboard/settings#settings-network">${__('Settings')}</a> — ${__('the network name, the address new sites start at, and turning the network off.')}</li>
             </ul>
         </div>`;
     }

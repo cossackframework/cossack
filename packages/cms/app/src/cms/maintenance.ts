@@ -15,6 +15,8 @@ export async function runNetworkMaintenance(network: CmsNetwork, options: { warm
     await network.handoffs.purgeExpired();
     // Sites deleted 30 days ago lose their database and media.
     await network.purgeDeleted().catch(error => console.error('[cms] could not purge deleted sites', error));
+    // Off, the network serves its main site only.
+    if (!(await network.enabled())) return;
     let cursor = (await network.state<string>(CURSOR)) ?? '';
     for (const site of await network.sites.inTurn(cursor)) {
         if (Date.now() - started > (options.budgetMs ?? 20_000)) break;
