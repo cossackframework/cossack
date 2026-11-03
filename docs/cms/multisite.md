@@ -75,6 +75,9 @@ codes and passkeys) sign in its **site accounts**. A site account's passkey is b
 site's address, and its sessions are ordinary sessions in the site's database.
 
 **Network accounts** sign in only on the network host, so their passkeys work for every site.
+For the same reason they add and remove passkeys there: on an added site, the Security page
+lists a network account's passkeys and links *Manage passkeys on <network>*, and refuses to
+add or remove them. Authenticator apps are not bound to an address, so they change on any site.
 The site's sign-in pages link *Network account? Sign in on <network>*, and the site gets its
 own session back:
 
@@ -112,7 +115,16 @@ a site's network link) creates a network account that is a member of that site o
   password, second factors and application passwords change only by the person or a network
   admin; the site manages its roles and can remove it, and the account stays.
 - **Deleted.** Deleting a site account on its site deletes it with what signs it in.
-- **Existing accounts** stay network accounts. There is no conversion between the kinds yet.
+- **Converted.** On Network → Sites → the site, a network admin makes a member's site account
+  a network account (*Make a network account*), or a network account a site account of that
+  site (*Make a site account*). The member keeps their ID, so their roles and the content they
+  wrote stay theirs, and their password, authenticator app and application passwords move
+  with them. Their sessions end, and their passkeys are removed: a passkey works only on the
+  address it was made on. A network account becomes a site account only when it belongs to
+  that site alone and is not a network admin. A site account becomes a network account only
+  when no network account has its email. If a conversion stops between the two databases,
+  running it again finishes it.
+- **Existing accounts** stay network accounts until converted.
 
 ## The network dashboard
 
@@ -190,9 +202,44 @@ from `@cossackframework/romedb` restores integers, record IDs and binary values 
 are read in key order, a page at a time. Sessions, sign-in challenges, reset tokens, second
 factors, passkeys, application passwords, preview links, handoffs, the cache and the
 network's own tables (accounts, the site registry) stay out, and webhook secrets are null.
-Media files are not included; `cms_files` rows name their storage keys. There is no JSON
-import; to run a site on its own, see the next section. In code, `siteExport(host.db, { site })` from `@cossackframework/cms/server` yields the
-same document as text chunks.
+Media files are not included; `cms_files` rows name their storage keys. The CMS's own tables
+come first, then the collections' (`r__cms__posts` and the rest), so an import has the
+collections' definitions before their records. In code, `siteExport(host.db, { site })` from
+`@cossackframework/cms/server` yields the same document as text chunks.
+
+## Importing an export
+
+An export fills a new site: on a fresh install, or as a site added to a network.
+
+- **A new install.** `/auth/setup` offers *Moving a site here? Start from its export*: the
+  setup code and the file. Then *Take over this site* follows, as in the next section.
+- **A network.** Add the site with *Add starter content* off. While it has no entries and no
+  site accounts, its page under Network → Sites shows *Import an export*.
+
+The browser sends the file itself as the request body, so the server reads it as a stream,
+a row at a time; without JavaScript the form uploads it. What happens:
+
+- The site's schema is applied, then each CMS table in the export replaces the site's: its
+  settings, roles, members, menus, taxonomies, revisions and the rest. The imported collections
+  then get their tables, and their records come in with their IDs.
+- The site keeps its own schema ledgers and leaves the export's pending work behind (the
+  outbox, webhook deliveries, background jobs), so nothing is sent twice. Webhooks arrive turned
+  off, with new secrets, since exports leave the secrets out.
+- Members whose ID is a network account of this network stay network accounts. On an added
+  site, the others get site accounts without passwords, and set them with *Forgot password*.
+  On a new install they wait for the takeover. Network members who were on the site before the
+  import, such as the admin who added it, stay members.
+- A table the export has but this install does not, such as a plugin's that is not installed,
+  is left out, and the page says so. A table this install has with columns the export lacks
+  imports when those columns have defaults. An export with columns this install lacks comes
+  from a newer CMS: update first.
+- If an import stops partway, the site shows it, and importing again starts over. Two imports
+  of one site do not run at once.
+- Media files are not in exports: copy the storage separately.
+
+In code, `siteImport(host, stream)` from `@cossackframework/cms/server` imports and reports what
+it imported; `siteImportState(host)` says whether a site can take one (`new`, `stopped`,
+`running` or `used`).
 
 ## Moving a site to its own install
 
@@ -209,11 +256,13 @@ one with *Forgot password*, or the administrator sets it under Users. Sessions c
 database end. Media files move separately: the new install's storage needs the site's
 files (on the network they are under `sites/<id>/`).
 
-The export above is JSON for now. A `.romedb` export, a file the new install opens
-directly, needs RomeDB to copy an open database (requested from RomeDB as R2). Until then,
+To get there, import the site's JSON export into the new install (above), or copy its
+database. A `.romedb` export, a file the new install opens directly with its site accounts'
+passwords, waits for RomeDB 0.2.13, which copies an open database (`exportFile`). Until then,
 with the application stopped (one process owns the files), the RomeDB CLI copies a site's
 file: `echo "VACUUM INTO 'blog.romedb';" | romedb storage/romedb/sites/<database>.romedb`, where
-`<database>` is the site's database ID from the registry. The copy is one file.
+`<database>` is the site's database ID from the registry. The copy is one file. It holds the
+site's sessions too, which are keyed by their tokens: the takeover ends them.
 
 ## Site states
 
@@ -253,6 +302,8 @@ scheduled publishing, the outbox, webhooks and write recovery also run on sites 
 ## Limits of this release
 
 - Each process keeps up to 32 site hosts open; the one used longest ago closes first.
+- An import runs in one request. On Workers, the request's CPU limit bounds how large a site
+  imports; on Node it is bounded by time only.
 - On Node, one process owns the database files. To share a live network with another
   process, such as RomeDB Studio, run it over services instead: `ROMEDB_URL` at `romedb serve`
   and `ROMEDB_SITES_URL` at `romedb serve --directory`, as `pnpm dev` does for a loopback URL.

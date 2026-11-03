@@ -5,6 +5,7 @@
  * rows name their storage keys.
  */
 import { encodeValue, type RomeDB, type Statement, type Value } from '@cossackframework/romedb';
+import { HOST_TABLES } from './host-schema';
 
 /**
  * Tables left out: credentials and sign-in state (sessions, second factors, passkeys, reset
@@ -32,8 +33,9 @@ export interface SiteExportOptions {
 /**
  * The export as text chunks: `{ format: 'cossack-site-export', version: 1, exportedAt, site,
  * skipped, redacted, tables: [{ name, model, columns?, rows }] }`. Relational rows are arrays in
- * `columns` order; document rows are whole documents. Each table is read in key order, a page
- * at a time, at least as fresh as the first read.
+ * `columns` order; document rows are whole documents. The CMS's own tables come first, by name,
+ * so an import has the collections' definitions before their records; then the rest, by name.
+ * Each table is read in key order, a page at a time, at least as fresh as the first read.
  */
 export async function* siteExport(db: RomeDB, options: SiteExportOptions): AsyncGenerator<string> {
     const read = (statements: Statement[], after?: number) => db.read(statements, { ...(after === undefined ? {} : { afterSequence: after }), ...(options.signal ? { signal: options.signal } : {}) });
@@ -41,7 +43,7 @@ export async function* siteExport(db: RomeDB, options: SiteExportOptions): Async
     const sequence = first.sequence;
     const info = first.results[0]!.rows[0]![0] as unknown as { tables?: { name: string; model: string }[] };
     const tables = (info.tables ?? []).filter(table => !EXPORT_SKIPPED_TABLES.has(table.name) && (table.model === 'relational' || table.model === 'document'))
-        .sort((a, b) => a.name.localeCompare(b.name));
+        .sort((a, b) => Number(!HOST.has(a.name)) - Number(!HOST.has(b.name)) || a.name.localeCompare(b.name));
     const json = (value: unknown) => JSON.stringify(value);
     const pageSize = Math.min(Math.max(options.pageSize ?? 200, 1), 1000);
     yield `{"format":"cossack-site-export","version":1,"exportedAt":${json(new Date((options.now ?? Date.now)()).toISOString())},"site":${json(options.site)},`
@@ -74,7 +76,9 @@ export async function* siteExport(db: RomeDB, options: SiteExportOptions): Async
     yield ']}\n';
 }
 
+const HOST: ReadonlySet<string> = new Set(HOST_TABLES);
+
 /** A RomeQL identifier, quoted when it is not a plain lowercase name. */
-function quote(name: string): string {
+export function quote(name: string): string {
     return /^[a-z_][a-z0-9_]*$/.test(name) ? name : `"${name.replaceAll('"', '""')}"`;
 }

@@ -1,13 +1,15 @@
-import { Cossack, Page, State, flash, flashed, type HeadValue } from '@cossackframework/core';
+import { Client, Cossack, Page, State, flash, flashed, type HeadValue } from '@cossackframework/core';
 import { Badge, Card, CardBody, CardHeader } from '@cossackframework/ui';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
 import { isCmsError, isSameOriginPost } from '@cossackframework/cms';
-import { networkSite, type SiteDomain, type SiteStatus } from '@cossackframework/cms/server';
+import { networkSite, siteImportState, type SiteDomain, type SiteStatus } from '@cossackframework/cms/server';
 import { notice, pageHeader, shortDate } from '../../../../../../cms/ui';
 import { requireNetworkAdmin } from '../../../../../../cms/guards';
 import { network, siteLinks } from '../../../../../../cms/network-ui';
 import { actionButton, field, siteStatus, SUBMIT } from '../../../../../../cms/network-view';
 import { listTable } from '../../../../../../dashboard/list-table';
+import { importRequest, importSummary, sendsExport } from '../../../../../../cms/site-import';
+import { sendExport } from '../../../../../../cms/import.client';
 
 /** `movable`: the account can change kind here, a network account only when it belongs to this site alone and does not run the network. */
 interface Member { id: string; name: string; email: string; roles: string; account: 'site' | 'network'; movable: boolean }
@@ -26,6 +28,10 @@ export default class NetworkSite extends Cossack {
     @State() dashboard = '';
     /** The site's export request: who asked and when, and the approval while it lasts. */
     @State() exportRequest: { by: string; at: number; approvedAt: number | null; expiresAt: number | null } | null = null;
+    /** Whether an export can be imported: into a new site, or again after an import stopped. */
+    @State() importState: 'new' | 'stopped' | 'running' | 'used' = 'used';
+    @State() importing = false;
+    @State() importError = '';
     @State() message = '';
     @State() error = '';
 
@@ -49,6 +55,7 @@ export default class NetworkSite extends Cossack {
                 movable: user.account === 'site' || (!runsNetwork.has(user.id) && (sites.get(user.id) ?? []).every(site => site === record.id)),
             }));
             this.roles = (await host.users.roles()).map(role => ({ id: role.id, name: role.name }));
+            this.importState = await siteImportState(host);
         }
         const request = (await net.exportRequests()).get(record.id);
         if (request) {
@@ -62,6 +69,8 @@ export default class NetworkSite extends Cossack {
     async post() {
         if (!isSameOriginPost(this.c.req.raw)) return this.c.text('Forbidden', 403);
         const id = this.c.req.param('id') ?? '';
+        // An export sent as the request body; everything else is a form.
+        if (sendsExport(this.c)) return this.importSite(id, true);
         const form = await this.c.req.formData();
         const value = (name: string) => String(form.get(name) ?? '').trim();
         const net = network(this.c);
@@ -94,6 +103,8 @@ export default class NetworkSite extends Cossack {
                 const to = value('to') === 'site' ? 'site' : 'network';
                 const user = await net.hostOf(networkSite(record)).users.convert(value('account'), to);
                 flash('network.message', `${user.name} ${to === 'site' ? __('has a site account now.') : __('has a network account now.')}`);
+            } else if (action === 'import') {
+                return this.importSite(id, false);
             } else if (action === 'remove-member') {
                 await net.hostOf(networkSite(record)).users.delete(value('account'));
                 flash('network.message', __('Removed from the site.'));
@@ -108,6 +119,35 @@ export default class NetworkSite extends Cossack {
             flash('network.error', isCmsError(error) || error instanceof Error ? (error as Error).message : __('The site could not be changed.'));
         }
         return this.redirect(`/dashboard/network/sites/${id}`);
+    }
+
+    /** Fill the site from an export: in the request body, or a form's file. */
+    private async importSite(id: string, raw: boolean) {
+        const net = network(this.c);
+        try {
+            const record = await net.sites.get(id);
+            if (!record || record.status === 'creating') throw new Error(__('There is no such site.'));
+            flash('network.message', importSummary(await importRequest(this.c, net.hostOf(networkSite(record)))));
+            return raw ? this.c.json({ next: `/dashboard/network/sites/${id}` }) : this.redirect(`/dashboard/network/sites/${id}`);
+        } catch (error) {
+            const message = isCmsError(error) || error instanceof Error ? (error as Error).message : __('The export could not be imported.');
+            if (raw) return this.c.json({ error: message }, 400);
+            flash('network.error', message);
+            return this.redirect(`/dashboard/network/sites/${id}`);
+        }
+    }
+
+    /** Send the export as the request body, so a large file is read as a stream. */
+    @Client()
+    async upload(event: SubmitEvent) {
+        event.preventDefault();
+        const form = event.currentTarget as HTMLFormElement;
+        this.importing = true;
+        this.importError = '';
+        const result = await sendExport(form);
+        if (result.next) { location.assign(result.next); return; }
+        this.importing = false;
+        this.importError = result.error ?? '';
     }
 
     render() {
@@ -169,6 +209,14 @@ export default class NetworkSite extends Cossack {
                 </form>
                 <p class="text-xs text-muted-foreground">${__('A network account signs in on the network and can join other sites; a site account signs in on this site only. Changing the kind keeps the member\'s roles, password and authenticator app. Their sessions end, and their passkeys are removed: passkeys work only on the address they were made on.')}</p>
             </section>`}
+            ${this.status !== 'creating' && (this.importState === 'new' || this.importState === 'stopped') ? card(__('Import an export'), html`
+                ${this.importState === 'stopped' ? html`<p class="text-sm text-foreground" data-import-stopped>${__('An import into this site stopped partway. Import the export again to start over.')}</p>` : null}
+                ${this.importError ? notice(this.importError, 'error') : null}
+                <form method="post" enctype="multipart/form-data" class="flex max-w-xl flex-wrap items-end gap-3" data-site-import @submit=${(event: SubmitEvent) => this.upload(event)}>
+                    <input type="hidden" name="action" value="import">
+                    <input name="file" type="file" required accept=".json,application/json" aria-label=${__('Export file')} class="block flex-1 text-sm text-foreground">
+                    <button type="submit" ?disabled=${this.importing} class=${SUBMIT}>${this.importing ? __('Importing…') : __('Import')}</button>
+                </form>`, __('Fill this new site from another site\'s JSON export: its content, settings, roles and members. Network accounts among the members stay network accounts; the others get site accounts and set their passwords with Forgot password. Media files are not in exports: copy them to this site\'s storage.')) : null}
             ${this.status === 'creating' ? null : card(__('Database export'), html`
                 ${this.exportRequest ? html`<p class="text-sm text-foreground" data-export-request>${this.exportRequest.approvedAt
                     ? `${__('Approved')} ${shortDate(this.exportRequest.approvedAt)}: ${__('the site can download its export until')} ${shortDate(this.exportRequest.expiresAt)}.`

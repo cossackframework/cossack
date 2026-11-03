@@ -136,6 +136,15 @@ export class CmsAccounts {
         return { items: result.results[0]!.rows.map(accountOf), total: Number(result.results[1]!.rows[0]![0] as bigint) };
     }
 
+    /** Which of these IDs, 200 at most, are accounts here. */
+    async existing(ids: readonly string[]): Promise<Set<string>> {
+        const wanted = [...new Set(ids.filter(id => ACCOUNT_ID.test(id)))].slice(0, 200);
+        if (!wanted.length) return new Set();
+        const params = Object.fromEntries(wanted.map((id, index) => [`$a${index}`, id]));
+        const result = await this.#db.read([{ rql: `SELECT id FROM cms_accounts WHERE id IN (${wanted.map((_, index) => `$a${index}`).join(', ')})`, params }]);
+        return new Set(result.results[0]!.rows.map(row => row[0] as string));
+    }
+
     /** The sites each account is a member of, by account. */
     async memberships(ids: readonly string[]): Promise<Map<string, string[]>> {
         const wanted = [...new Set(ids.filter(id => ACCOUNT_ID.test(id)))].slice(0, 200);

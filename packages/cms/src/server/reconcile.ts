@@ -22,6 +22,6 @@ export function cmsReconcilers(): { [kind: string]: Reconciler } {
         },
         'cms.forms': drop,
         'cms.migration': drop, 'cms.session': drop, 'cms.auth.session': drop, 'cms.auth.oauth': drop, 'cms.users': drop,
-        'cms.outbox': drop, 'cms.files': drop, 'cms.jobs': drop, 'cms.notifications': drop,
+        'cms.outbox': drop, 'cms.files': drop, 'cms.import': drop, 'cms.jobs': drop, 'cms.notifications': drop,
     };
 }

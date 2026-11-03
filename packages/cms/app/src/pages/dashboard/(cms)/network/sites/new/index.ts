@@ -65,7 +65,8 @@ export default class NewNetworkSite extends Cossack {
                         hint: this.suffix ? `${__('A subdomain of')} ${this.suffix}. ${__('Add its own domain once it exists.')}` : '' })}
                     ${field('language', __('Language'), { value: this.form.language, hint: __('A language code, such as en, fr or pt-br.') })}
                     ${field('admin', __('First administrator'), { type: 'email', value: this.form.admin, placeholder: __('Your account when empty'), hint: __('The email of an existing account.') })}
-                    <label class="flex items-center gap-2 text-sm text-foreground"><input type="checkbox" name="starter" class="size-4 accent-primary" ?checked=${this.form.starter}> ${__('Add starter content')}</label>
+                    <label class="flex items-start gap-2 text-sm text-foreground"><input type="checkbox" name="starter" class="mt-0.5 size-4 accent-primary" ?checked=${this.form.starter}>
+                        <span>${__('Add starter content')}<span class="block text-xs text-muted-foreground">${__('Leave it off to fill the site from another site\'s export: its page offers the import while the site is empty.')}</span></span></label>
                     <div class="flex items-center gap-2">
                         <button type="submit" class=${SUBMIT}>${__('Add site')}</button>
                         <a href="/dashboard/network/sites" class="inline-flex items-center justify-center rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground no-underline hover:bg-muted">${__('Cancel')}</a>

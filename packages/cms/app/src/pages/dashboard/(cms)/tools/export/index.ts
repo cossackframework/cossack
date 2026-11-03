@@ -70,7 +70,8 @@ export default class ExportPage extends Cossack {
             ${this.message ? notice(this.message, 'success') : null}
             ${this.error ? notice(this.error, 'error') : null}
             ${component(Card, { class: 'max-w-2xl' }, component(CardBody, { class: 'space-y-4' }, html`${body}
-                <p class="text-xs text-muted-foreground">${__('Sessions, passwords, second factors, application passwords and webhook secrets stay out. Media files are not included; their records are.')}</p>`))}
+                <p class="text-xs text-muted-foreground">${__('Sessions, passwords, second factors, application passwords and webhook secrets stay out. Media files are not included; their records are.')}</p>
+                <p class="text-xs text-muted-foreground">${__('To move the site, import the file into a new install at its setup, or into a new site of a network from its page under Network → Sites.')}</p>`))}
         </div>`;
     }
 }

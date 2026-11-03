@@ -757,6 +757,24 @@ describe.skipIf(!liveRomeDBTests())('generated CMS application', () => {
         const grace = accountPage.split('/').pop();
         contains(await siteAdmin.page(`/dashboard/users/${grace}`), 'data-locked-profile');
         await expect(siteAdmin.action('dashboard/users/[id]/index.ts', 'applyPasswordChange', ['taken over', '', 'taken over'], { params: { id: grace } })).rejects.toThrow(/network account/i);
+        // A network account's passkeys belong to the network host: the blog lists them and links there, and does not add them.
+        const security = await blogAdmin.page('/dashboard/profile/security');
+        contains(security, 'data-passkeys-elsewhere');
+        contains(security, `${origin}/dashboard/profile/security`);
+        await expect(blogAdmin.action('dashboard/profile/security/index.ts', 'passkeyOptions', [])).rejects.toThrow(/passkeys on Dev network/);
+        lacks(await siteAdmin.page('/dashboard/profile/security'), 'data-passkeys-elsewhere');
+        // A network admin makes Thanh's site account a network account and back; the password comes along, and the sessions end.
+        const thanh = /data-member="?([0-9a-f-]{36})"?(?:(?!data-member)[\s\S])*?thanh@example\.com/.exec(await web.page('/dashboard/network/sites/blog'))[1];
+        expect((await web.post('/dashboard/network/sites/blog', { action: 'convert-member', account: thanh, to: 'network' })).status).toBe(302);
+        contains(await web.page('/dashboard/network/sites/blog'), 'Thanh has a network account now.');
+        contains(await web.page('/dashboard/network/users'), 'thanh@example.com');
+        expect((await reader.request('/dashboard')).status).toBe(302);
+        const moved = browserless(blogOrigin, routeIds, () => output, { connect: '127.0.0.1' });
+        expect(JSON.stringify(await moved.action('auth/login/index.ts', 'login', [{ email: 'thanh@example.com', password: 'long password' }]))).toContain('Invalid credentials');
+        expect((await web.post('/dashboard/network/sites/blog', { action: 'convert-member', account: thanh, to: 'site' })).status).toBe(302);
+        lacks(await web.page('/dashboard/network/users'), 'thanh@example.com');
+        await moved.action('auth/login/index.ts', 'login', [{ email: 'thanh@example.com', password: 'long password' }]);
+        contains(await moved.page('/dashboard'), 'thanh@example.com');
       }
       contains(await web.page('/dashboard/network/users'), 'grace@example.com');
       // Sites show their icons; a site without one shows the network's, which is the main site's.
@@ -781,6 +799,20 @@ describe.skipIf(!liveRomeDBTests())('generated CMS application', () => {
       }
       // The network home counts the main site as active, beside any added one.
       expect(await web.page('/dashboard/network')).toMatch(new RegExp(`Active sites</p>\\s*<a href="/dashboard/network/sites"[^>]*>\\s*${servesDirectories() ? 2 : 1}\\s*<`));
+      if (servesDirectories()) {
+        // A new site without starter content fills from the blog's export, sent as the request body.
+        expect((await web.post('/dashboard/network/sites/new', { name: 'Copy', host: 'copy.localhost', admin: '' })).status).toBe(302);
+        contains(await web.page('/dashboard/network/sites/copy'), 'data-site-import');
+        const blogExport = await (await web.request('/api/cms/network/sites/blog/export')).text();
+        const imported = await web.request('/dashboard/network/sites/copy', { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json' }, body: blogExport });
+        expect(imported.status, await imported.clone().text()).toBe(200);
+        expect(await imported.json()).toEqual({ next: '/dashboard/network/sites/copy' });
+        const copyPage = await web.page('/dashboard/network/sites/copy');
+        contains(copyPage, 'Imported Blog');
+        contains(copyPage, 'thanh@example.com');
+        lacks(copyPage, 'data-site-import');
+        contains(await browserless(`http://copy.localhost:${devPort}`, routeIds, () => output, { connect: '127.0.0.1' }).page('/'), 'Hello World!');
+      }
     } finally {
       if (child.connected) child.send('STOP'); else child.kill('SIGTERM');
       const kill = setTimeout(() => child.kill('SIGKILL'), 10_000);

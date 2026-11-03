@@ -13,6 +13,7 @@ export { CmsAccounts, normalizeEmail, type CmsAccount, type AccountProfile } fro
 export { CmsSites, MAIN_SITE, siteHost, type SiteRecord, type SiteDomain, type SiteStatus } from './sites';
 export { CmsNetwork, MAIN, networkSite, prefixedStorage, type NetworkSite, type SiteResolution, type CmsNetworkOptions, type NewSite, type NetworkSettings, type SiteExportPolicy, type ExportRequest } from './network';
 export { siteExport, EXPORT_SKIPPED_TABLES, EXPORT_REDACTED_COLUMNS, type SiteExportOptions } from './site-export';
+export { siteImport, siteImportState, type SiteImportOptions, type SiteImportReport } from './site-import';
 export { OPEN_POLICY, pluginState, readPolicy, type NetworkPluginState, type NetworkPolicy, type NetworkThemeState } from './network-policy';
 export { CmsHandoffs, type Handoff } from './handoffs';
 export { FileService, type CmsFile, type FileServiceOptions, type FileMetadata, type FileSummary, type ImageSettings, type PendingUpload } from './files';
