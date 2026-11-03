@@ -1,7 +1,8 @@
 /**
- * A site's users and roles on relational host tables. Each user is a member: an account from the
- * network database (see accounts.ts), with the account's name, email, avatar and status copied
- * in, and the site's own roles, slug and profile fields. Sign-in and passwords are the account's.
+ * A site's users and roles on relational host tables. Each user is a member: an account, with
+ * the account's name, email, avatar and status copied in, and the site's own roles, slug and
+ * profile fields. Sign-in and passwords are the account's. The account is a network account
+ * (see accounts.ts), or on an added site a site account, in the site's own database.
  */
 import { ClientError, type RomeDB, type Statement, type Value } from '@cossackframework/romedb';
 import { CmsError } from '../errors';
@@ -31,6 +32,8 @@ export interface CmsUser {
     readonly meta: { readonly [field: string]: unknown };
     /** The author page's slug, such as `ada-lovelace`; null until the user is saved or `withSlugs` runs. */
     readonly slug: string | null;
+    /** `site`: an account of this site only, in its database. `network`: a network account. */
+    readonly account: 'site' | 'network';
 }
 
 export interface CmsRole {
@@ -70,27 +73,40 @@ export type CmsMember = CmsUser & { readonly principal: Principal };
 export class CmsUsers {
     readonly #db: RomeDB;
     readonly #accounts: CmsAccounts;
+    readonly #siteAccounts: CmsAccounts | null;
     readonly #site: string;
     readonly #now: () => number;
     readonly #checkMeta: MetaCheck | undefined;
 
-    /** `site` is this site's ID in the network (default `main`), for the network's record of memberships. */
-    constructor(db: RomeDB, options: { accounts: CmsAccounts; site?: string; now?: () => number; checkMeta?: MetaCheck }) {
+    /**
+     * `accounts` are the network's; `siteAccounts`, on an added site, its own. `site` is this
+     * site's ID in the network (default `main`), for the network's record of memberships.
+     */
+    constructor(db: RomeDB, options: { accounts: CmsAccounts; siteAccounts?: CmsAccounts; site?: string; now?: () => number; checkMeta?: MetaCheck }) {
         this.#db = db;
         this.#accounts = options.accounts;
+        this.#siteAccounts = options.siteAccounts ?? null;
         this.#site = options.site ?? MAIN_SITE;
         this.#now = options.now ?? Date.now;
         this.#checkMeta = options.checkMeta;
     }
 
-    /** A new account that is a member of this site with these roles. */
-    async create(input: AccountProfile & { email: string; name: string; password?: string; roles?: readonly string[]; id?: string; meta?: unknown; networkRole?: typeof NETWORK_ADMIN }): Promise<CmsUser> {
+    /**
+     * A new account that is a member of this site with these roles: a site account on an added
+     * site, unless `network` asks for a network account, and a network account on the main site.
+     */
+    async create(input: AccountProfile & { email: string; name: string; password?: string; roles?: readonly string[]; id?: string; meta?: unknown; networkRole?: typeof NETWORK_ADMIN; network?: boolean }): Promise<CmsUser> {
         const meta = await this.#meta(input.meta, null);
         for (const role of input.roles ?? []) if (!ID.test(role)) throw new CmsError('CMS_VALIDATION', `Invalid role ${role}.`);
-        const account = await this.#accounts.create(input);
-        try { return await this.#join(account, input.roles ?? [], meta); }
+        const store = input.network || !this.#siteAccounts ? this.#accounts : this.#siteAccounts;
+        if (store === this.#siteAccounts && input.networkRole) throw new CmsError('CMS_VALIDATION', 'Network admins have network accounts.');
+        // Members' emails are unique on a site, whichever kind their account is.
+        if (await this.findByEmail(input.email).catch(() => null)) throw new CmsError('CMS_CONFLICT', 'An account with this email already exists.', { fields: { email: 'is taken.' } });
+        const { network: _network, ...profile } = input;
+        const account = await store.create(profile);
+        try { return await this.#join(account, input.roles ?? [], meta, store === this.#accounts); }
         catch (error) {
-            await this.#accounts.delete(account.id).catch(() => undefined);
+            await store.delete(account.id).catch(() => undefined);
             throw error;
         }
     }
@@ -101,11 +117,11 @@ export class CmsUsers {
         if (!account) return null;
         const existing = await this.get(accountId);
         if (existing) return existing;
-        return this.#join(account, options.roles ?? [], await this.#meta(options.meta, null));
+        return this.#join(account, options.roles ?? [], await this.#meta(options.meta, null), true);
     }
 
-    /** Copy the account in as a member with these roles. */
-    async #join(account: CmsAccount, roles: readonly string[], meta: { readonly [field: string]: unknown }): Promise<CmsUser> {
+    /** Copy the account in as a member with these roles. The network records the memberships of its own accounts. */
+    async #join(account: CmsAccount, roles: readonly string[], meta: { readonly [field: string]: unknown }, network: boolean): Promise<CmsUser> {
         const now = this.#now();
         const slug = await this.#freeSlug(account.name, account.id);
         try {
@@ -114,7 +130,7 @@ export class CmsUsers {
                 params: { $id: account.id, $email: account.email, $name: account.name, $avatar: account.avatar, $status: account.status, $now: now, $meta: JSON.stringify(meta), $slug: slug },
             }, ...roleStatements(account.id, roles)], WRITE);
         } catch (error) { throw memberError(error); }
-        await this.#accounts.join(account.id, this.#site);
+        if (network) await this.#accounts.join(account.id, this.#site);
         return (await this.get(account.id))!;
     }
 
@@ -139,7 +155,10 @@ export class CmsUsers {
         const result = await this.#db.read([
             { rql: `SELECT id, email, name, avatar, status, created_at, last_sign_in_at, meta, slug FROM cms_users WHERE id IN ${list.rql}`, params: list.params },
             { rql: `SELECT ur.user_id, r.id, r.name, r.permissions FROM cms_user_roles ur JOIN cms_roles r ON r.id = ur.role_id WHERE ur.user_id IN ${list.rql} ORDER BY r.id`, params: list.params },
+            // On an added site, accounts in its own database are site accounts.
+            ...(this.#siteAccounts ? [{ rql: `SELECT id FROM cms_accounts WHERE id IN ${list.rql}`, params: list.params }] : []),
         ]);
+        const local = new Set((result.results[2]?.rows ?? []).map(row => row[0] as string));
         const roles = new Map<string, CmsUser['assignments'][number][]>();
         for (const [user, role, name, permissions] of result.results[1]!.rows) {
             const entry = roles.get(user as string) ?? [];
@@ -154,6 +173,7 @@ export class CmsUsers {
                 status: row[4] as CmsUser['status'], createdAt: Number(row[5] as bigint), lastSignInAt: row[6] === null ? null : Number(row[6] as bigint), meta: parseMeta(row[7]), slug: (row[8] as string | null) ?? null,
                 roles: Object.freeze(assignments.map(role => role.id)), assignments: Object.freeze(assignments),
                 permissions: Object.freeze([...new Set(assignments.flatMap(role => role.permissions))].sort()),
+                account: local.has(row[0] as string) ? 'site' : 'network',
             }));
         }
         return users;
@@ -211,7 +231,7 @@ export class CmsUsers {
         if (!current) return false;
         const meta = patch.meta === undefined ? current.meta : await this.#meta(patch.meta, current.meta);
         const profile = patch.name !== undefined || patch.email !== undefined || patch.avatar !== undefined
-            ? await this.#accounts.update(id, { ...(patch.name === undefined ? {} : { name: patch.name }), ...(patch.email === undefined ? {} : { email: patch.email }), ...(patch.avatar === undefined ? {} : { avatar: patch.avatar }) })
+            ? await this.#store(current).update(id, { ...(patch.name === undefined ? {} : { name: patch.name }), ...(patch.email === undefined ? {} : { email: patch.email }), ...(patch.avatar === undefined ? {} : { avatar: patch.avatar }) })
             : current;
         if (!profile) return false;
         // A slug is chosen once, from the name, and kept: author URLs stay stable through renames. A given slug is checked and made unique.
@@ -281,15 +301,20 @@ export class CmsUsers {
         return `${base}-${crypto.randomUUID().slice(0, 8)}`;
     }
 
-    /** Remove the member and their roles from this site; the account stays. Their records keep their owner ID. */
+    /**
+     * Remove the member and their roles from this site. A network account stays; a site account
+     * is deleted with what signs it in. Their records keep their owner ID.
+     */
     async delete(id: string): Promise<boolean> {
         if (!ID.test(id)) return false;
+        const user = await this.get(id);
         const params = { $id: id };
         const result = await this.#db.write([
             { rql: 'DELETE FROM cms_user_roles WHERE user_id = $id', params },
             { rql: 'DELETE FROM cms_users WHERE id = $id', params },
         ], WRITE);
-        await this.#accounts.leave(id, this.#site);
+        if (user?.account === 'site') await this.#siteAccounts!.delete(id);
+        else await this.#accounts.leave(id, this.#site);
         return result.results[1]!.affected === 1n;
     }
 
@@ -300,14 +325,21 @@ export class CmsUsers {
 
     /** Allow or stop the account's sign-in, and copy the status here. */
     async setStatus(id: string, status: 'active' | 'disabled'): Promise<boolean> {
-        if (!(await this.#accounts.setStatus(id, status))) return false;
+        const user = await this.get(id);
+        if (!user || !(await this.#store(user).setStatus(id, status))) return false;
         const result = await this.#db.write([{ rql: 'UPDATE cms_users SET status = $status, updated_at = $now WHERE id = $id', params: { $status: status, $now: this.#now(), $id: id } }], WRITE);
         return result.results[0]!.affected === 1n;
     }
 
     /** Set the account's password. */
     async setPassword(id: string, password: string): Promise<boolean> {
-        return (await this.get(id)) !== null && this.#accounts.setPassword(id, password);
+        const user = await this.get(id);
+        return user !== null && this.#store(user).setPassword(id, password);
+    }
+
+    /** The store of a member's account: this site's for a site account, the network's otherwise. */
+    #store(user: CmsUser): CmsAccounts {
+        return user.account === 'site' ? this.#siteAccounts! : this.#accounts;
     }
 
     async count(): Promise<number> {
@@ -322,7 +354,7 @@ export class CmsUsers {
      * it suspends.
      */
     async resolve(id: string, session?: { networkRole: string | null }): Promise<CmsMember | null> {
-        const [user, account] = await Promise.all([this.get(id), session ? null : this.#accounts.get(id)]);
+        const [user, account] = await Promise.all([this.get(id), session ? null : (async () => await this.#siteAccounts?.get(id) ?? await this.#accounts.get(id))()]);
         if (!user || (!session && (!account || account.status !== 'active'))) return null;
         const admin = (session ? session.networkRole : account!.networkRole) === NETWORK_ADMIN;
         return Object.freeze({ ...user, principal: userPrincipal(user.id, admin ? [...user.roles, NETWORK_ADMIN] : user.roles, admin ? [...user.permissions, '*'] : user.permissions) });

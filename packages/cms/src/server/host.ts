@@ -280,6 +280,14 @@ interface Activation {
 /** Every plugin needs this grant; disabling a plugin removes it with the others. */
 export const PLUGIN_ENABLED = 'plugin:enabled';
 
+/** Where an account and what signs it in live: the site's own database, or the network's. */
+export interface AccountStores {
+    readonly kind: 'site' | 'network';
+    readonly accounts: CmsAccounts;
+    readonly security: CmsSecurity;
+    readonly apiTokens: CmsApiTokens;
+}
+
 export class CmsHost {
     readonly db: RomeDB;
     /** The network database; the same as `db` on the main site. */
@@ -287,8 +295,14 @@ export class CmsHost {
     /** This site's ID in the network: `main`, or the registry ID. */
     readonly site: string;
     readonly hooks: HookRegistry;
-    /** Who can sign in, on the network database. */
+    /** Network accounts: who signs in on the network host, on the network database. */
     readonly accounts: CmsAccounts;
+    /**
+     * Site accounts: people who sign in on this site only, on its own database, with their own
+     * second factors, passkeys and application passwords. Null on the main site, whose accounts
+     * are the network's.
+     */
+    readonly siteAccounts: CmsAccounts | null;
     /** This site's members and roles. */
     readonly users: CmsUsers;
     readonly outbox: Outbox;
@@ -312,8 +326,12 @@ export class CmsHost {
     readonly comments: CmsComments;
     /** Forms' submissions: taking them, notifications, and handling them in the dashboard. */
     readonly forms: CmsForms;
-    /** Second factors and passkeys of accounts, on the network database. */
+    /** Second factors and passkeys of network accounts, on the network database. */
     readonly security: CmsSecurity;
+    /** Second factors and passkeys of site accounts; null on the main site. */
+    readonly siteSecurity: CmsSecurity | null;
+    /** Application passwords of site accounts; null on the main site. */
+    readonly siteApiTokens: CmsApiTokens | null;
     /** Media files, when the host has object storage. */
     readonly files: FileService | null;
     /** A cache shared by every isolate, on RomeDB: values slow to compute, such as the library's summary. */
@@ -396,14 +414,19 @@ export class CmsHost {
         this.#apply(new Map(), new Map());
         this.fieldGroups = new CmsFieldGroups(this.db, { now: this.#now });
         this.accounts = new CmsAccounts(this.network, { now: this.#now, ...(options.sessionsEnded ? { sessionsEnded: options.sessionsEnded } : {}) });
-        this.users = new CmsUsers(this.db, { accounts: this.accounts, ...(options.site ? { site: options.site } : {}), now: this.#now, checkMeta: (meta, previous) => this.#checkMeta({ kind: 'users' }, meta, previous) });
+        const added = this.network !== this.db;
+        // A site account's sessions are this site's: ending them ends nothing elsewhere.
+        this.siteAccounts = added ? new CmsAccounts(this.db, { now: this.#now, sessionsEnded: async ended => { if ('user' in ended) await this.authSessions.revokeAllForUser(ended.user, ended.except); } }) : null;
+        this.users = new CmsUsers(this.db, { accounts: this.accounts, ...(this.siteAccounts ? { siteAccounts: this.siteAccounts } : {}), ...(options.site ? { site: options.site } : {}), now: this.#now, checkMeta: (meta, previous) => this.#checkMeta({ kind: 'users' }, meta, previous) });
         this.redirects = new CmsRedirects(this.db, { now: this.#now });
         this.traffic = new CmsTraffic(this.db, { now: this.#now });
         this.apiTokens = new CmsApiTokens(this.network, { now: this.#now });
+        this.siteApiTokens = added ? new CmsApiTokens(this.db, { now: this.#now }) : null;
         this.webhooks = new CmsWebhooks(this.db, { now: this.#now, fetch: this.#fetch });
         this.comments = new CmsComments(this.db, { now: this.#now });
         this.forms = new CmsForms(this, { ...(options.mail ? { mail: options.mail } : {}), ...(options.mailFrom ? { mailFrom: options.mailFrom } : {}) });
         this.security = new CmsSecurity(this.network, { now: this.#now });
+        this.siteSecurity = added ? new CmsSecurity(this.db, { now: this.#now }) : null;
         // Entry events become webhook deliveries; the outbox retries this until they are queued.
         this.hooks.addAction(afterCommit, event => this.#queueWebhooks(event), { plugin: 'cms' });
         // Published, changed and unpublished entries are pinged to IndexNow; a failed ping retries with the outbox.
@@ -676,8 +699,23 @@ export class CmsHost {
      * The principal of an application password, with its access, or null. Only the content
      * API accepts these; `read` access may only read.
      */
+    /**
+     * The stores that sign people in on this host: the site's own on an added site, the
+     * network's on the main site. Sign-in by email, passkey or reset token starts here.
+     */
+    get signIn(): AccountStores {
+        return this.siteAccounts ? { kind: 'site', accounts: this.siteAccounts, security: this.siteSecurity!, apiTokens: this.siteApiTokens! }
+            : { kind: 'network', accounts: this.accounts, security: this.security, apiTokens: this.apiTokens };
+    }
+
+    /** The stores holding a user's account: the site's for a site account, the network's otherwise. */
+    async storesOf(userId: string): Promise<AccountStores> {
+        return this.siteAccounts && await this.siteAccounts.get(userId) ? this.signIn
+            : { kind: 'network', accounts: this.accounts, security: this.security, apiTokens: this.apiTokens };
+    }
+
     async tokenPrincipal(token: string): Promise<{ principal: Principal; scope: ApiTokenScope; userId: string } | null> {
-        const verified = await this.apiTokens.verify(token);
+        const verified = await this.siteApiTokens?.verify(token) ?? await this.apiTokens.verify(token);
         if (!verified) return null;
         const user = await this.users.resolve(verified.userId);
         return user ? { principal: user.principal, scope: verified.scope, userId: user.id } : null;

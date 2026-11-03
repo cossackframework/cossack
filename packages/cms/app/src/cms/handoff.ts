@@ -6,18 +6,18 @@ import { authSessions, SESSION_COOKIE_NAME } from '../auth';
 import { siteUrl, type CmsBindings } from './index';
 
 /**
- * Sign-in for a network of sites. Accounts sign in only on the network host (the main site);
- * another site sends visitors there, and gets its own child session back through a one-use code:
+ * Sign-in for a network of sites. An added site's own sign-in pages sign in its site accounts.
+ * Network accounts sign in only on the network host (the main site), and the site gets its own
+ * child session back through a one-use code:
  *
- * 1. `<site>/auth/login` → `<network>/auth/handoff?site=<id>&next=<path>`.
+ * 1. `<site>/auth/handoff?next=<path>` (the sign-in pages' network link) →
+ *    `<network>/auth/handoff?site=<id>&next=<path>`.
  * 2. Without a network session, the network keeps the request in a cookie and shows its sign-in;
  *    after any sign-in, the next page continues the handoff.
  * 3. With one, the network issues a code bound to the site and the session, valid for a minute,
  *    and sends the visitor to `<site>/auth/handoff?code=…`, which trades it for a child session.
  */
 const HANDOFF_COOKIE = 'cms_handoff';
-/** Sign-in pages that exist only on the network host. */
-const NETWORK_PAGES = /^\/auth\/(?:login|register|forgot-password|reset-password|two-factor)(?:\/|$)/;
 
 /** A path on the same site to go to afterwards; anything else is the dashboard. */
 function nextPath(value: string | null | undefined): string {
@@ -36,15 +36,13 @@ export async function handoff(c: Context, network: CmsNetwork, site: NetworkSite
     const env = c.env as CmsBindings;
     const url = new URL(c.req.url);
     if (site.id !== MAIN_SITE) {
-        if (url.pathname === '/auth/handoff') return toSite(c, network, site);
-        if (!env.APP_URL || !NETWORK_PAGES.test(url.pathname)) return null;
-        const login = /^\/auth\/(?:login|register)(?:\/|$)/.test(url.pathname);
-        const target = new URL(login ? '/auth/handoff' : `${url.pathname}${url.search}`, env.APP_URL);
-        if (login) {
-            target.searchParams.set('site', site.id);
-            target.searchParams.set('next', nextPath(url.searchParams.get('next')));
-            if (url.pathname.startsWith('/auth/register')) target.searchParams.set('register', '1');
-        }
+        if (url.pathname !== '/auth/handoff') return null;
+        if (url.searchParams.has('code')) return toSite(c, network, site);
+        // Sign in with a network account: on the network host, which hands the session back.
+        if (!env.APP_URL) return c.text('This network has no sign-in host: set APP_URL.', 404);
+        const target = new URL('/auth/handoff', env.APP_URL);
+        target.searchParams.set('site', site.id);
+        target.searchParams.set('next', nextPath(url.searchParams.get('next')));
         return c.redirect(target.toString());
     }
     if (url.pathname === '/auth/handoff') return fromNetwork(c, network);

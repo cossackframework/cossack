@@ -39,7 +39,7 @@ describe.skipIf(!live)('sign-in handoffs and child sessions', () => {
         blog = network.hostOf((await network.resolve('blog.example.com') as { site: Parameters<CmsNetwork['hostOf']>[0] }).site);
         expect((await blog.migrate()).failed).toBeUndefined();
         await blog.users.defineRole({ id: 'author', name: 'Author', permissions: ['cms:dashboard'] });
-        user = (await blog.users.create({ email: 'writer@example.com', name: 'Writer', password: 'writes a lot', roles: ['author'] })).id;
+        user = (await blog.users.create({ email: 'writer@example.com', name: 'Writer', password: 'writes a lot', roles: ['author'], network: true })).id;
     }, 60_000);
 
     afterAll(async () => { await other?.stop(); });

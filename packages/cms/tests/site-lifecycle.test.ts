@@ -95,7 +95,7 @@ describe.skipIf(!live)('adding, archiving and deleting sites', () => {
 
     it('records memberships, lists accounts and deletes an account from every site', async () => {
         const blog = network.hostOf((await network.resolve('www.theblog.test') as { site: Parameters<CmsNetwork['hostOf']>[0] }).site);
-        const writer = await blog.users.create({ email: 'writer@example.com', name: 'Writer', password: 'writes daily', roles: ['author'] });
+        const writer = await blog.users.create({ email: 'writer@example.com', name: 'Writer', password: 'writes daily', roles: ['author'], network: true });
         expect((await main.accounts.memberships([owner, writer.id])).get(owner)).toEqual(['main', 'the-blog']);
         expect((await main.accounts.memberships([writer.id])).get(writer.id)).toEqual(['the-blog']);
         expect((await main.accounts.memberCounts()).get('the-blog')).toBe(2);

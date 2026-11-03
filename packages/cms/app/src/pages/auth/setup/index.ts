@@ -60,7 +60,7 @@ export default class SetupPage extends Cossack {
             return this.redirect('/auth/setup');
         }
         await cms.ready({ force: true });
-        if ((await cms.accounts.count()) > 0) return this.redirect('/auth/login');
+        if (await cms.accounts.hasNetworkAdmin()) return this.redirect('/auth/login');
         if ((await cms.users.count()) > 0) return this.takeOver(value('email'), value('password'));
         try {
             for (const role of DEFAULT_ROLES) await cms.users.defineRole({ ...role, permissions: [...role.permissions] });
@@ -110,7 +110,7 @@ export default class SetupPage extends Cossack {
         </div>`;
         if (this.members) return html`<h3 class="mb-2 text-xl font-semibold text-foreground">${__('Take over this site')}</h3>
             <p class="mb-6 text-sm text-muted-foreground">${this.siteTitle ? `${this.siteTitle}: ` : ''}${__('this database comes from another install, with')} ${this.members} ${this.members === 1 ? __('member') : __('members')}.
-                ${__('Sign in as one of its administrators: that account gets this password and runs this install. The other members keep their accounts without passwords; they set one with Forgot password, or you set it under Users.')}</p>
+                ${__('Sign in as one of its administrators: that account gets this password and runs this install. The site\'s own accounts keep their passwords; members who signed in with a network account get accounts without one, and set it with Forgot password, or you set it under Users.')}</p>
             <form method="post" class="space-y-4">
                 ${this.error ? component(Alert, { variant: 'destructive' }, this.error) : null}
                 ${field('code', __('Setup code'), 'password', 'off', { hint: __('CMS_SETUP_CODE from the environment.') })}

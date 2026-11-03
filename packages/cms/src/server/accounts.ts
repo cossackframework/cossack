@@ -107,6 +107,12 @@ export class CmsAccounts {
         return Number(result.results[0]!.rows[0]![0] as bigint);
     }
 
+    /** Whether an active network admin exists. Until one does, the install needs setup, or a takeover of a site's database. */
+    async hasNetworkAdmin(): Promise<boolean> {
+        const result = await this.#db.read([{ rql: `SELECT 1 FROM cms_accounts WHERE network_role = '${NETWORK_ADMIN}' AND status = 'active' LIMIT 1` }]);
+        return result.results[0]!.rows.length > 0;
+    }
+
     /** Newest first. `search` matches name or email; `networkAdmins` keeps only them. */
     async list(options: { search?: string; networkAdmins?: boolean; limit?: number; offset?: number } = {}): Promise<{ items: CmsAccount[]; total: number }> {
         const conditions: string[] = [];

@@ -5,7 +5,7 @@ import { signInBrand } from '../../brand';
 
 @Page({ transport: 'http' })
 export default class AuthLayout extends Cossack {
-    brand = server$(() => signInBrand(), { initial: { name: 'My App', logo: '/logo.svg', home: '/', network: '' } });
+    brand = server$(() => signInBrand(), { initial: { name: 'My App', logo: '/logo.svg', home: '/', network: '', networkSignIn: null } });
     render() {
         return html`
             <div class="flex justify-center items-center min-h-screen bg-muted/40 px-4">
@@ -17,6 +17,8 @@ export default class AuthLayout extends Cossack {
                         </a>
                         ${this.brand.network ? html`<p class="-mt-4 mb-6 text-center text-sm text-muted-foreground">${__('Sign in with your account on')} ${this.brand.network}.</p>` : null}
                         ${this.children}
+                        ${this.brand.networkSignIn ? html`<p class="mt-6 text-center text-sm text-muted-foreground">${__('Network account?')}
+                            <a href=${this.brand.networkSignIn.href} data-network-sign-in class="font-medium text-primary hover:underline">${__('Sign in on')} ${this.brand.networkSignIn.name}</a></p>` : null}
                         <div class="mt-6 text-center text-sm">
                             <a href=${this.brand.home} class="text-muted-foreground hover:text-foreground">&larr; ${__('Back to Home')}</a>
                         </div>

@@ -56,7 +56,7 @@ describe.skipIf(!native)('a network on database files', () => {
         const blog = await siteOf('blog.example.com');
         const shop = await siteOf('shop.example.com');
         expect(blog.db).not.toBe(shop.db);
-        const writer = await blog.users.create({ email: 'writer@example.com', name: 'Writer', password: 'writes daily', roles: ['author'] });
+        const writer = await blog.users.create({ email: 'writer@example.com', name: 'Writer', password: 'writes daily', roles: ['author'], network: true });
         expect(await shop.users.get(writer.id)).toBeNull();
         expect(await main.users.get(writer.id)).toBeNull();
         expect((await main.accounts.verifier.verify('writer@example.com', 'writes daily'))?.id).toBe(writer.id);
@@ -125,7 +125,7 @@ describe.skipIf(!native)('a network on database files', () => {
         expect(await standalone.accounts.verifier.verify('writer@example.com', 'writes daily')).toBeNull();
         expect(await standalone.accounts.get(writer.id)).toMatchObject({ email: 'writer@example.com', networkRole: null });
         expect((await standalone.accounts.memberships([owner, writer.id])).get(writer.id)).toEqual(['main']);
-        expect((await standalone.users.principal(owner))?.roles).toContain('admin');
+        expect(await standalone.users.principal(owner)).toMatchObject({ roles: expect.arrayContaining(['admin']) });
         // Taking over again changes nothing but the password.
         expect(await standalone.accounts.adoptMembers('main', owner, 'another password')).toBe(0);
     }, 60_000);

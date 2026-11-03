@@ -1,5 +1,5 @@
 import { Cossack, Page, State, flash, flashed, type HeadValue } from '@cossackframework/core';
-import { Card, CardBody, CardHeader } from '@cossackframework/ui';
+import { Badge, Card, CardBody, CardHeader } from '@cossackframework/ui';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
 import { isCmsError, isSameOriginPost } from '@cossackframework/cms';
 import { networkSite, type SiteDomain, type SiteStatus } from '@cossackframework/cms/server';
@@ -9,7 +9,7 @@ import { network, siteLinks } from '../../../../../../cms/network-ui';
 import { actionButton, field, siteStatus, SUBMIT } from '../../../../../../cms/network-view';
 import { listTable } from '../../../../../../dashboard/list-table';
 
-interface Member { id: string; name: string; email: string; roles: string }
+interface Member { id: string; name: string; email: string; roles: string; account: 'site' | 'network' }
 
 /** One site: its name, domains (with the check that makes one primary), members and state. */
 @Page({ transport: 'http', middlewares: [requireNetworkAdmin()] })
@@ -39,7 +39,7 @@ export default class NetworkSite extends Cossack {
         Object.assign(this, { id: record.id, name: record.name, status: record.status, createdAt: record.createdAt, domains: [...record.domains] }, siteLinks(this.c, networkSite(record)));
         if (record.status !== 'creating') {
             const host = net.hostOf(networkSite(record));
-            this.members = (await host.users.list({ limit: 100 })).items.map(user => ({ id: user.id, name: user.name, email: user.email, roles: user.assignments.map(role => role.name).join(', ') || __('No role') }));
+            this.members = (await host.users.list({ limit: 100 })).items.map(user => ({ id: user.id, name: user.name, email: user.email, roles: user.assignments.map(role => role.name).join(', ') || __('No role'), account: user.account }));
             this.roles = (await host.users.roles()).map(role => ({ id: role.id, name: role.name }));
         }
         const request = (await net.exportRequests()).get(record.id);
@@ -77,7 +77,7 @@ export default class NetworkSite extends Cossack {
                 flash('network.message', __('Removed.'));
             } else if (action === 'add-member') {
                 const account = await net.main.accounts.findByEmail(value('email'));
-                if (!account) throw new Error(__('No account has that email.'));
+                if (!account) throw new Error(__('No network account has that email.'));
                 const host = net.hostOf(networkSite(record));
                 await host.users.addMember(account.id);
                 await host.users.setRoles(account.id, value('role') ? [value('role')] : []);
@@ -136,7 +136,9 @@ export default class NetworkSite extends Cossack {
                 ${listTable<Member>({
                     rows: this.members, key: member => member.id, rowAttribute: 'data-member', empty: __('This site has no members.'),
                     columns: [
-                        { label: __('Member'), cell: member => html`<a href=${`/dashboard/network/users/${member.id}`} class="font-medium text-foreground no-underline hover:text-primary">${member.name}</a>
+                        // Site accounts are the site's own: the network lists only its accounts.
+                        { label: __('Member'), cell: member => html`${member.account === 'network' ? html`<a href=${`/dashboard/network/users/${member.id}`} class="font-medium text-foreground no-underline hover:text-primary">${member.name}</a>`
+                                : html`<span class="font-medium text-foreground">${member.name}</span> ${component(Badge, { variant: 'outline' }, __('Site account'))}`}
                             <span class="block text-xs text-muted-foreground">${member.email}</span>` },
                         { label: __('Roles'), class: 'text-muted-foreground', cell: member => member.roles },
                         { label: '', class: 'text-right', cell: member => actionButton('remove-member', __('Remove from site'), { account: member.id }, { danger: true }) },
@@ -144,7 +146,7 @@ export default class NetworkSite extends Cossack {
                 })}
                 <form method="post" class="flex max-w-xl flex-wrap items-end gap-3">
                     <input type="hidden" name="action" value="add-member">
-                    <div class="flex-1">${field('email', __('Add an account'), { type: 'email', required: true })}</div>
+                    <div class="flex-1">${field('email', __('Add a network account'), { type: 'email', required: true, hint: __('Site accounts are added on the site, under Users.') })}</div>
                     <select name="role" aria-label=${__('Role')} class="rounded-md border border-input bg-background px-3 py-2 text-sm">
                         <option value="">${__('No role')}</option>
                         ${this.roles.map(role => html`<option value=${role.id} ?selected=${role.id === 'editor'}>${role.name}</option>`)}

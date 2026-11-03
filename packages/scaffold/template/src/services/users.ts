@@ -16,9 +16,17 @@ export interface UserSummary {
   /** Start of the user's newest sign-in session; null when none is left. */
   lastSignedInAt: string | null;
   roles: RoleAssignment[];
+  /** A label beside the name in lists, such as the kind of account. */
+  badge?: string;
 }
 
-export interface UserDetail extends UserSummary {}
+export interface UserDetail extends UserSummary {
+  /**
+   * Why only the user can change their profile, password and sign-in methods here, when others
+   * manage them elsewhere; this site still manages the user's roles.
+   */
+  lockedProfile?: string;
+}
 
 export interface ListUsersOptions {
   search?: string;

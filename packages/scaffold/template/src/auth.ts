@@ -201,6 +201,12 @@ const credentials = createCredentialVerifier<User, PublicUser>({
 
 export const loginUser = credentials.verify;
 
+/** Whether this is the user's current password, before they change it. */
+export async function passwordMatches(userId: string, password: string): Promise<boolean> {
+  const row = await User.findOne({ where: { id: userId } });
+  return !!row && (await loginUser(row.email, password))?.id === userId;
+}
+
 /** Whether visitors may create accounts on /auth/register. */
 export async function registrationOpen(): Promise<boolean> {
   return true;

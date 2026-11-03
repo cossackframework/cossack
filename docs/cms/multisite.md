@@ -6,18 +6,21 @@ description: 'Run many CMS sites from one application: one database per site, ac
 # Multisite
 
 One CMS application can run many sites. Each site has its own RomeDB database, its own
-domains, content, settings, roles and members. Accounts are shared: a person signs in once and
-reaches every site they are a member of. The network is off until a network admin turns it
-on, and nothing changes for a single-site install.
+domains, content, settings, roles and members. There are two kinds of accounts. A *network
+account* signs in once, on the network host, and reaches every site it is a member of. A
+*site account* belongs to one added site, signs in on that site's own address, and lives in
+the site's database. The network is off until a network admin turns it on, and nothing
+changes for a single-site install.
 
 ## How it is organized
 
 | Part | Where it lives |
 | --- | --- |
 | **Main site** | The first database (`ROMEDB_URL`). It is also the *network database*. |
-| **Accounts** | `cms_accounts` in the network database: email, password hash, status, profile and network role. Sessions, second factors, reset tokens and application passwords belong to the account and live there too. |
+| **Network accounts** | `cms_accounts` in the network database: email, password hash, status, profile and network role. Their sessions on the network host, second factors, reset tokens and application passwords live there too. |
+| **Site accounts** | `cms_accounts` in an added site's own database, with their sessions, second factors, passkeys, reset tokens and application passwords beside them in the same tables. The network database does not list them. |
 | **Site registry** | `cms_sites` and `cms_site_domains` in the network database. The main site has no row. |
-| **Members** | `cms_users` in each site's database. A member row has the account's ID, a copy of its name, email, avatar and status, and the site's own roles, author slug and profile fields. |
+| **Members** | `cms_users` in each site's database. A member row has the account's ID, a copy of its name, email, avatar and status, and the site's own roles, author slug and profile fields. An email is one member per site, whichever kind its account is. |
 | **Everything else** | Collections, entries, terms, menus, settings, files, comments, forms, redirects, webhooks and plugin grants stay in each site's own database. No query spans two databases. |
 
 A **network admin** (`network_admin`, the account that ran setup) has full access to every
@@ -67,11 +70,15 @@ Subdirectory sites (`example.com/blog`) are not supported.
 
 ## Signing in
 
-Login, registration, password reset, two-step sign-in and passkeys happen only on the
-network host, so a passkey works for every site. A site sends visitors there and gets its
+An added site's own sign-in pages (`/auth/login`, registration, password reset, two-step
+codes and passkeys) sign in its **site accounts**. A site account's passkey is bound to the
+site's address, and its sessions are ordinary sessions in the site's database.
+
+**Network accounts** sign in only on the network host, so their passkeys work for every site.
+The site's sign-in pages link *Network account? Sign in on <network>*, and the site gets its
 own session back:
 
-1. `blog.example.com/auth/login` redirects to `example.com/auth/handoff?site=blog&next=/dashboard`.
+1. `blog.example.com/auth/handoff` (the link) redirects to `example.com/auth/handoff?site=blog&next=/dashboard`.
 2. A visitor who is not signed in on the network signs in there as usual, with any method. The
    sign-in page shows the site's name and logo, and *Back to Home* returns to the site. The
    handoff continues afterwards.
@@ -81,11 +88,31 @@ own session back:
    role at that moment. Later requests to the site read only the site's database. The child
    session ends no later than the network session it came from.
 
+A network account's password does not sign in on an added site's own form. *Forgot password*
+there sends a member with a network account the network's reset link.
+
 Signing out of any site signs out of the network and of every site the session reached.
 A password reset, a suspension, a new network role or deleting the account does the same.
+Signing a site account out ends its session on that site only.
 
-"Anyone can register" stays a site setting. Registering from a site's sign-in creates an
-account that is a member of that site only, with that site's default role.
+"Anyone can register" stays a site setting. Registering on an added site creates a site
+account with the site's default role. Registering through the network's sign-in (coming from
+a site's network link) creates a network account that is a member of that site only.
+
+## Site accounts and network accounts on a site
+
+- **Created on the site.** An added site's Users → New user creates a site account. Network
+  admins add network accounts to a site from Network → Sites → the site, or Network → Users →
+  the account.
+- **Listed.** A site's Users shows both kinds and marks *Network account*. Network → Users
+  lists network accounts only; the site's page under Network → Sites lists its members with a
+  *Site account* badge, and Sites counts every member.
+- **Changed.** The site's user managers change site accounts fully: profile, password, second
+  factors, application passwords, suspension, deletion. A network account's name, email,
+  password, second factors and application passwords change only by the person or a network
+  admin; the site manages its roles and can remove it, and the account stays.
+- **Deleted.** Deleting a site account on its site deletes it with what signs it in.
+- **Existing accounts** stay network accounts. There is no conversion between the kinds yet.
 
 ## The network dashboard
 
@@ -100,8 +127,8 @@ Network admins open `/dashboard/network` on the network host, while the network 
   content. Row actions: Edit, Dashboard, Visit, Archive, Restore and Delete (after a
   confirmation). A site's page manages its name, domains, members and state. The IDs `main`
   and `new` are reserved; a site named *New* gets the ID `new-site`.
-- **Users**: a list table of every account with the sites it belongs to; All and Network
-  admins links and a search filter it. *Add account* (`/dashboard/network/users/new`) asks for
+- **Users**: a list table of every network account with the sites it belongs to; All and
+  Network admins links and a search filter it. Site accounts are listed on their sites. *Add account* (`/dashboard/network/users/new`) asks for
   a name, an email, a password and whether the account is a network admin. An account's page
   edits its name, email and password (sites' member rows get the new name and email), adds it
   to sites with a role and removes it from them, makes or removes network admins, suspends,
@@ -171,13 +198,15 @@ same document as text chunks.
 
 A site's database can run on its own, as the main database of a new install (`ROMEDB_URL`
 pointing at the file, or at `romedb serve FILE`). It has the site's content, settings,
-roles and members, but not their accounts, which stay in the network database. On the first
-visit, `/auth/setup` sees members without accounts and offers **Take over this site**: with
-the setup code, one of the site's administrators enters their email and a new password. Every
-member then gets an account without a password, recorded as a member of the new install; the
-administrator's has the new password and is its network admin. Sessions copied with the
-database end. Other members set a password with *Forgot password*, or the administrator sets
-one under Users. Media files move separately: the new install's storage needs the site's
+roles, members and site accounts, but not the network accounts of its members, which stay in
+the network database. On the first
+visit, `/auth/setup` sees that no network admin exists and offers **Take over this site**:
+with the setup code, one of the site's administrators enters their email and a new password.
+The administrator's account gets the new password and becomes the install's network admin.
+Site accounts keep their passwords: they were the site's all along. Members with a network
+account get an account without a password, recorded as a member of the new install, and set
+one with *Forgot password*, or the administrator sets it under Users. Sessions copied with the
+database end. Media files move separately: the new install's storage needs the site's
 files (on the network they are under `sites/<id>/`).
 
 The export above is JSON for now. A `.romedb` export, a file the new install opens

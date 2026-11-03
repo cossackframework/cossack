@@ -242,6 +242,7 @@ export default class UsersPage extends Cossack {
                             <div class="min-w-0">
                                 <a href="/dashboard/users/${u.id}" class="font-medium text-foreground no-underline hover:text-primary">${u.name || '—'}</a>
                                 ${u.id === this.user!.id ? html` ${component(Badge, { variant: 'secondary' }, __('You'))}` : null}
+                                ${u.badge ? html` ${component(Badge, { variant: 'outline' }, u.badge)}` : null}
                                 <span class="block text-xs text-muted-foreground">${u.email}</span>
                                 ${rowActions([
                                     { id: `user-${u.id}-edit`, label: __('Edit'), href: `/dashboard/users/${u.id}` },

@@ -13,7 +13,7 @@ import {
     type AuthenticationResponseJSON, type PasskeyConfig, type PublicKeyCredentialCreationOptionsJSON, type PublicKeyCredentialRequestOptionsJSON, type RegistrationResponseJSON,
 } from '@cossackframework/auth/passkeys';
 import { ClientVisibleError, getRequestContext } from '@cossackframework/core';
-import { ANONYMOUS, hasPermission, isCmsError, PERMISSIONS, type Principal } from '@cossackframework/cms';
+import { ANONYMOUS, hasPermission, isCmsError, isNetworkAdmin, PERMISSIONS, type Principal } from '@cossackframework/cms';
 import { MAIN_SITE, type ApiToken, type CmsHost, type CmsMember, type SecurityStatus } from '@cossackframework/cms/server';
 import { renderSVG } from 'uqr';
 import { currentCms, networkFor, type CmsBindings } from './cms/index';
@@ -128,9 +128,41 @@ export const auth = createAuth<PublicUser>({
 });
 
 // --- Credentials -----------------------------------------------------------
+/**
+ * Email and password sign in this host's accounts: network accounts on the main site, the
+ * site's own accounts on an added site. Network accounts reach an added site through the
+ * network's sign-in (`/auth/handoff`).
+ */
 export async function loginUser(email: string, password: string): Promise<PublicUser | null> {
-  const account = await cms().accounts.verifier.verify(email, password);
+  const account = await cms().signIn.accounts.verifier.verify(email, password);
   return account && account.status === 'active' ? member(account.id) : null;
+}
+
+/** Whether this is the user's current password, before they change it: their site account's, or their network account's. */
+export async function passwordMatches(userId: string, password: string): Promise<boolean> {
+  const { accounts } = await cms().storesOf(userId);
+  const account = await accounts.get(userId);
+  return !!account && (await accounts.verifier.verify(account.email, password))?.id === userId;
+}
+
+/** What others see on an added site instead of a network account's profile, password and sign-in methods. */
+export const NETWORK_ACCOUNT_LOCKED = 'A network account: its name, email, password and sign-in methods change on the network, by the person or a network admin. This site manages its roles.';
+
+/**
+ * Whether the request's user may change this account's profile, password, second factors and
+ * application passwords here. On an added site a network account is the person's or a network
+ * admin's to change; the dashboard's user permissions govern the rest.
+ */
+export async function manageableHere(userId: string): Promise<boolean> {
+  const host = cms();
+  if (!host.siteAccounts) return true;
+  const principal = (getRequestContext()?.get('principal') as Principal | undefined) ?? ANONYMOUS;
+  if (principal.kind === 'user' && (principal.id === userId || isNetworkAdmin(principal))) return true;
+  return (await host.users.get(userId))?.account !== 'network';
+}
+
+async function requireManageable(userId: string): Promise<void> {
+  if (!(await manageableHere(userId))) throw new ClientVisibleError(NETWORK_ACCOUNT_LOCKED);
 }
 
 /** Whether visitors may create accounts: the "Anyone can register" setting. */
@@ -140,16 +172,20 @@ export async function registrationOpen(): Promise<boolean> {
   return (await host.installed()) && await host.settings.get('general.usersCanRegister');
 }
 
-/** True until the first administrator exists. /auth/login sends visitors to /auth/setup then. */
+/**
+ * True until an active network admin exists: a fresh install, or a site's database taking over
+ * as its own install. /auth/login sends visitors to /auth/setup then.
+ */
 export async function setupRequired(): Promise<boolean> {
   const host = cms();
-  try { return !(await host.installed()) || (await host.accounts.count()) === 0; }
+  try { return !(await host.installed()) || !(await host.accounts.hasNetworkAdmin()); }
   catch { return true; }
 }
 
 /**
- * A new account. Registering on the network host for another site (the visitor came from its
- * sign-in) makes the account a member of that site only, with that site's default role.
+ * A new account, with the site's default role. On an added site it is a site account. On the
+ * network host for another site (the visitor came from its network sign-in) it is a network
+ * account, a member of that site only.
  */
 export async function registerUser(email: string, password: string, name?: string): Promise<PublicUser> {
   const c = getRequestContext();
@@ -159,7 +195,7 @@ export async function registerUser(email: string, password: string, name?: strin
   const role = await host.settings.get('general.defaultRole');
   const roles = role && (await host.users.role(role)) ? [role] : [];
   try {
-    const user = await host.users.create({ email, password, name: name?.trim() || email.split('@')[0]!, roles });
+    const user = await host.users.create({ email, password, name: name?.trim() || email.split('@')[0]!, roles, ...(site ? { network: true } : {}) });
     // The network host signs the account in; the handoff then takes it to its site.
     return site ? { id: user.id, email: user.email, name: user.name, avatar: user.avatar, meta: null, roles: [], principal: ANONYMOUS } : (await member(user.id))!;
   } catch (error) {
@@ -188,6 +224,7 @@ export const avatarUploads = true;
  * change their own picture, and user managers anyone's.
  */
 export async function uploadAvatar(userId: string, file: File): Promise<string> {
+  await requireManageable(userId);
   const principal = (getRequestContext()?.get('principal') as Principal | undefined) ?? ANONYMOUS;
   try { return await cms().uploadAvatar(userId, { name: file.name, contentType: file.type, size: file.size, body: file.stream() }, { principal }); }
   catch (error) { throw isCmsError(error) ? new ClientVisibleError(error.message) : error; }
@@ -207,29 +244,34 @@ export type { SecurityStatus, ApiToken };
  * sign-in (5 minutes, 5 tries) that /auth/two-factor completes with a code.
  */
 export async function beginTwoFactor(userId: string): Promise<string | null> {
-  const host = cms();
-  if (!(await host.security.requiresCode(userId))) return null;
-  return host.security.createChallenge('signin', userId, 'password');
+  const { security } = cms().signIn;
+  if (!(await security.requiresCode(userId))) return null;
+  return security.createChallenge('signin', userId, 'password');
 }
 
 /** Finish a pending sign-in with an authenticator or recovery code. */
 export async function completeTwoFactor(challengeId: string, code: string): Promise<{ user: PublicUser; recovery: boolean } | { error: string; expired: boolean }> {
-  const host = cms();
-  const pending = await host.security.challenge(challengeId, 'signin');
+  const { security } = cms().signIn;
+  const pending = await security.challenge(challengeId, 'signin');
   if (!pending?.userId) return { error: 'The sign-in expired. Enter your password again.', expired: true };
-  const used = await host.security.verifyCode(pending.userId, code);
+  const used = await security.verifyCode(pending.userId, code);
   if (!used) {
-    const left = await host.security.failChallenge(challengeId);
+    const left = await security.failChallenge(challengeId);
     return left > 0 ? { error: `That code is not right. ${left} ${left === 1 ? 'try' : 'tries'} left.`, expired: false } : { error: 'Too many wrong codes. Enter your password again.', expired: true };
   }
-  if (!(await host.security.takeChallenge(challengeId, 'signin'))) return { error: 'The sign-in expired. Enter your password again.', expired: true };
+  if (!(await security.takeChallenge(challengeId, 'signin'))) return { error: 'The sign-in expired. Enter your password again.', expired: true };
   const user = await member(pending.userId);
   if (!user) return { error: 'This account cannot sign in.', expired: true };
   return { user, recovery: used === 'recovery' };
 }
 
+/** The second factors, passkeys and application passwords of a user's account: its site's for a site account, the network's otherwise. */
+async function storesOf(userId: string) {
+  return cms().storesOf(userId);
+}
+
 export async function securityStatus(userId: string): Promise<SecurityStatus> {
-  return cms().security.status(userId);
+  return (await storesOf(userId)).security.status(userId);
 }
 
 /**
@@ -240,13 +282,13 @@ export async function secondFactorRequired(user: PublicUser): Promise<boolean> {
   const host = cms();
   if (!hasPermission(user.principal, PERMISSIONS.dashboard)) return false;
   if (!(await host.settings.get('general.requireTwoFactor').catch(() => false))) return false;
-  return !(await host.security.hasSecondFactor(user.id));
+  return !(await (await storesOf(user.id)).security.hasSecondFactor(user.id));
 }
 
 /** A new authenticator secret, its `otpauth://` URI and a QR code of it as SVG. */
 export async function startAuthenticator(user: PublicUser): Promise<{ secret: string; uri: string; qr: string }> {
   const host = cms();
-  const secret = await host.security.startTotp(user.id);
+  const secret = await (await storesOf(user.id)).security.startTotp(user.id);
   const issuer = await host.settings.get('general.siteTitle').catch(() => 'Cossack');
   const uri = totpUri({ secret, issuer, account: user.email });
   return { secret, uri, qr: renderSVG(uri, { border: 1 }) };
@@ -254,26 +296,27 @@ export async function startAuthenticator(user: PublicUser): Promise<{ secret: st
 
 /** Confirm the authenticator with a code from it; returns the recovery codes, shown once. */
 export async function confirmAuthenticator(userId: string, code: string): Promise<string[]> {
-  try { return await cms().security.confirmTotp(userId, code); }
+  try { return await (await storesOf(userId)).security.confirmTotp(userId, code); }
   catch (error) { throw isCmsError(error) ? new ClientVisibleError(error.message) : error; }
 }
 
 /** Turning the authenticator off needs one of its codes, or a recovery code. */
 export async function disableAuthenticator(userId: string, code: string): Promise<void> {
-  const host = cms();
-  if (!(await host.security.verifyCode(userId, code))) throw new ClientVisibleError('That code is not right.');
-  await host.security.disableTotp(userId);
+  const { security } = await storesOf(userId);
+  if (!(await security.verifyCode(userId, code))) throw new ClientVisibleError('That code is not right.');
+  await security.disableTotp(userId);
 }
 
 export async function newRecoveryCodes(userId: string, code: string): Promise<string[]> {
-  const host = cms();
-  if (!(await host.security.verifyCode(userId, code))) throw new ClientVisibleError('That code is not right.');
-  return host.security.regenerateRecoveryCodes(userId);
+  const { security } = await storesOf(userId);
+  if (!(await security.verifyCode(userId, code))) throw new ClientVisibleError('That code is not right.');
+  return security.regenerateRecoveryCodes(userId);
 }
 
 /** Remove a user's second factors, for a user manager helping someone who lost their device. */
 export async function resetSecondFactors(userId: string): Promise<void> {
-  await cms().security.reset(userId);
+  await requireManageable(userId);
+  await (await storesOf(userId)).security.reset(userId);
 }
 
 /** The site's relying party for passkeys: this host, and the origins the browser may report. */
@@ -289,44 +332,48 @@ function passkeySite(c: Context, siteName: string): PasskeyConfig {
 export async function passkeyRegistration(c: Context, user: PublicUser): Promise<{ challenge: string; options: PublicKeyCredentialCreationOptionsJSON }> {
   const host = cms(c);
   const site = passkeySite(c, await host.settings.get('general.siteTitle').catch(() => 'Cossack'));
-  const existing = await host.security.passkeys(user.id);
+  const { security } = await host.storesOf(user.id);
+  const existing = await security.passkeys(user.id);
   const options = await passkeyRegistrationOptions(site, { id: user.id, name: user.email, displayName: user.name }, existing.map(passkey => ({ ...passkey, transports: passkey.transports ?? undefined })));
-  return { challenge: await host.security.createChallenge('passkey-register', user.id, options.challenge), options };
+  return { challenge: await security.createChallenge('passkey-register', user.id, options.challenge), options };
 }
 
 export async function addPasskey(c: Context, user: PublicUser, challengeId: string, response: RegistrationResponseJSON, name: string): Promise<void> {
   const host = cms(c);
-  const pending = await host.security.challenge(challengeId, 'passkey-register');
-  if (!pending || pending.userId !== user.id || !(await host.security.takeChallenge(challengeId, 'passkey-register'))) throw new ClientVisibleError('The passkey request expired. Try again.');
+  const { security } = await host.storesOf(user.id);
+  const pending = await security.challenge(challengeId, 'passkey-register');
+  if (!pending || pending.userId !== user.id || !(await security.takeChallenge(challengeId, 'passkey-register'))) throw new ClientVisibleError('The passkey request expired. Try again.');
   const site = passkeySite(c, await host.settings.get('general.siteTitle').catch(() => 'Cossack'));
   const passkey = await verifyPasskeyRegistration(site, response, pending.challenge);
   if (!passkey) throw new ClientVisibleError('The passkey could not be verified.');
-  try { await host.security.addPasskey(user.id, passkey, name); }
+  try { await security.addPasskey(user.id, passkey, name); }
   catch (error) { throw isCmsError(error) ? new ClientVisibleError(error.message) : error; }
 }
 
 export async function removePasskey(userId: string, id: string): Promise<void> {
-  await cms().security.removePasskey(userId, id);
+  await (await storesOf(userId)).security.removePasskey(userId, id);
 }
 
+/** A passkey signs in this host's accounts, bound to this host: the network's on the main site, the site's own on an added site. */
 export async function passkeySignIn(c: Context): Promise<{ challenge: string; options: PublicKeyCredentialRequestOptionsJSON }> {
   const host = cms(c);
   const site = passkeySite(c, await host.settings.get('general.siteTitle').catch(() => 'Cossack'));
   const options = await passkeyAuthenticationOptions(site);
-  return { challenge: await host.security.createChallenge('passkey-signin', null, options.challenge), options };
+  return { challenge: await host.signIn.security.createChallenge('passkey-signin', null, options.challenge), options };
 }
 
 /** The user a passkey signs in, after checking its signature against the challenge. */
 export async function completePasskeySignIn(c: Context, challengeId: string, response: AuthenticationResponseJSON): Promise<PublicUser | null> {
   const host = cms(c);
-  const pending = await host.security.challenge(challengeId, 'passkey-signin');
-  if (!pending || !(await host.security.takeChallenge(challengeId, 'passkey-signin'))) return null;
-  const passkey = await host.security.passkey(response?.id);
+  const { security } = host.signIn;
+  const pending = await security.challenge(challengeId, 'passkey-signin');
+  if (!pending || !(await security.takeChallenge(challengeId, 'passkey-signin'))) return null;
+  const passkey = await security.passkey(response?.id);
   if (!passkey) return null;
   const site = passkeySite(c, await host.settings.get('general.siteTitle').catch(() => 'Cossack'));
   const verified = await verifyPasskeyAuthentication(site, response, pending.challenge, { ...passkey, transports: passkey.transports ?? undefined });
   if (!verified) return null;
-  await host.security.usePasskey(passkey.id, verified.counter);
+  await security.usePasskey(passkey.id, verified.counter);
   return member(passkey.userId, c);
 }
 
@@ -335,26 +382,35 @@ export async function completePasskeySignIn(c: Context, challengeId: string, res
 export const apiTokensAvailable = true;
 
 export async function listApiTokens(userId: string): Promise<ApiToken[]> {
-  return cms().apiTokens.list(userId);
+  return await manageableHere(userId) ? (await storesOf(userId)).apiTokens.list(userId) : [];
 }
 
-/** A new application password; the token is shown once. */
+/** A new application password; the token is shown once. A network account's work on every site it belongs to. */
 export async function createApiToken(userId: string, name: string, scope: 'read' | 'write'): Promise<string> {
-  try { return (await cms().apiTokens.create(userId, { name, scope })).token; }
+  await requireManageable(userId);
+  try { return (await (await storesOf(userId)).apiTokens.create(userId, { name, scope })).token; }
   catch (error) { throw isCmsError(error) ? new ClientVisibleError(error.message) : error; }
 }
 
 export async function revokeApiToken(userId: string, id: string): Promise<void> {
-  await cms().apiTokens.revoke(userId, id).catch(() => undefined);
+  await requireManageable(userId);
+  await (await storesOf(userId)).apiTokens.revoke(userId, id).catch(() => undefined);
 }
 
 // --- Password reset ----------------------------------------------------------
 /**
  * Creates a reset token and emails it. Reads the `EMAIL` binding and `MAIL_FROM` via the
- * global helpers. Unknown emails and a missing send_email binding are silent no-ops.
+ * global helpers. Unknown emails and a missing send_email binding are silent no-ops. On an
+ * added site, a member with a network account gets the network's reset link.
  */
 export async function requestPasswordReset(email: string, resetBaseUrl: string): Promise<void> {
-  const reset = await cms().accounts.createPasswordReset(email);
+  const host = cms();
+  let reset = await host.signIn.accounts.createPasswordReset(email);
+  if (!reset && host.siteAccounts && (await host.users.findByEmail(email).catch(() => null))?.account === 'network') {
+    const network = env('APP_URL', '');
+    reset = network ? await host.accounts.createPasswordReset(email) : null;
+    resetBaseUrl = network;
+  }
   if (!reset) return; // do NOT leak whether the email exists
   const from = env('MAIL_FROM', 'no-reply@example.com');
   const emailBinding = binding<{ send: (m: unknown) => Promise<unknown> }>('EMAIL');
@@ -367,7 +423,7 @@ export async function requestPasswordReset(email: string, resetBaseUrl: string):
 
 /** One request can use a token; the account's sessions end with the change. */
 export async function resetPassword(token: string, newPassword: string): Promise<boolean> {
-  return cms().accounts.resetPassword(token, newPassword);
+  return cms().signIn.accounts.resetPassword(token, newPassword);
 }
 
 // --- Logout ----------------------------------------------------------------

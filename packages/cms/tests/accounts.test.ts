@@ -100,13 +100,13 @@ describe.skipIf(!live)('accounts and members', () => {
         } finally { await stop(); }
     }, 60_000);
 
-    it('keeps accounts and what signs them in on the network database, and members and child sessions on the site', async () => {
+    it('keeps network accounts and what signs them in on the network database, and members and child sessions on the site', async () => {
         const other = await service.fresh();
         try {
             const site = createCMS({ db: other.db, network: cms.db });
             expect((await site.migrate()).failed).toBeUndefined();
             await site.users.defineRole({ id: 'author', name: 'Author', permissions: ['cms:dashboard'] });
-            const user = await site.users.create({ email: 'member@example.com', name: 'Member', password: 'members only', roles: ['author'] });
+            const user = await site.users.create({ email: 'member@example.com', name: 'Member', password: 'members only', roles: ['author'], network: true });
             await site.authSessions.create({ id: 'm'.repeat(64), userId: user.id, kind: 'auth', createdAt: Date.now(), expiresAt: Date.now() + 60_000 });
             await site.apiTokens.create(user.id, { name: 'Script', scope: 'read' });
             await site.security.startTotp(user.id);

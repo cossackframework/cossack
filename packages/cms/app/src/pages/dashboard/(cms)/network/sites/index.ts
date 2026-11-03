@@ -51,8 +51,9 @@ export default class NetworkSites extends Cossack {
     private async load() {
         const net = network(this.c);
         const search = this.search ? { search: this.search } : {};
-        const [totals, members, mainName, networkIcon, requests] = await Promise.all([
+        const [totals, memberships, mainName, networkIcon, requests] = await Promise.all([
             Promise.all(STATUSES.map(status => net.sites.list({ ...search, status, limit: 1 }).then(found => found.total))),
+            // Network accounts by site, for sites whose database is not open: being created or deleted.
             net.main.accounts.memberCounts(),
             net.main.settings.get('general.siteTitle').then(title => title || __('Main site'), () => __('Main site')),
             // The main site's icon is the network's, for sites without one.
@@ -67,12 +68,14 @@ export default class NetworkSites extends Cossack {
         ];
         const found = await net.sites.list({ ...search, ...(this.status ? { status: this.status as SiteStatus } : {}), limit: PAGE_SIZE, offset: (this.page - 1) * PAGE_SIZE });
         const leadsWithMain = withMain && this.page === 1 && (!this.status || this.status === 'active');
-        const main: SiteRow[] = leadsWithMain ? [{ id: MAIN_SITE, name: mainName, host: new URL(siteLinks(this.c, { host: null }).home, this.c.req.url).host, status: 'active', members: members.get(MAIN_SITE) ?? 0, createdAt: null, icon: networkIcon, exportRequested: false, ...siteLinks(this.c, { host: null }) }] : [];
+        const main: SiteRow[] = leadsWithMain ? [{ id: MAIN_SITE, name: mainName, host: new URL(siteLinks(this.c, { host: null }).home, this.c.req.url).host, status: 'active', members: await net.main.users.count().catch(() => memberships.get(MAIN_SITE) ?? 0), createdAt: null, icon: networkIcon, exportRequested: false, ...siteLinks(this.c, { host: null }) }] : [];
         this.rows = [...main, ...await Promise.all(found.items.map(async site => {
             const host = site.domains.find(domain => domain.primary)?.host ?? '';
-            // Sites being created or deleted have no settings to read.
-            const own = site.status === 'active' || site.status === 'archived' ? await siteIconUrl(this.c, net.hostOf(networkSite(site)), { host }) : '';
-            return { id: site.id, name: site.name, host, status: site.status, members: members.get(site.id) ?? 0, createdAt: site.createdAt, icon: own || networkIcon,
+            // Sites being created or deleted have no settings to read; open ones count site accounts too.
+            const open = site.status === 'active' || site.status === 'archived' ? net.hostOf(networkSite(site)) : null;
+            const own = open ? await siteIconUrl(this.c, open, { host }) : '';
+            const members = open ? await open.users.count().catch(() => memberships.get(site.id) ?? 0) : memberships.get(site.id) ?? 0;
+            return { id: site.id, name: site.name, host, status: site.status, members, createdAt: site.createdAt, icon: own || networkIcon,
                 exportRequested: requests.get(site.id)?.approvedAt === null, ...siteLinks(this.c, { host }) };
         }))];
         this.total = found.total + (this.status === '' || this.status === 'active' ? withMain : 0);

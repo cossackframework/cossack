@@ -727,6 +727,36 @@ describe.skipIf(!liveRomeDBTests())('generated CMS application', () => {
         expect((await web.post(accountPage, { action: 'add-site', site: 'blog', role: 'author' })).status).toBe(302);
         contains(await web.page(accountPage), 'Grace is a member now.');
         contains(await web.page('/dashboard/network/sites/blog'), 'grace@example.com');
+        // The blog's sign-in links the network's: a network account signs in there and comes back with a child session.
+        const blogOrigin = `http://blog.localhost:${devPort}`;
+        const blogAdmin = browserless(blogOrigin, routeIds, () => output, { connect: '127.0.0.1' });
+        contains(await blogAdmin.page('/auth/login'), 'data-network-sign-in');
+        const toNetwork = new URL((await blogAdmin.request('/auth/handoff?next=/dashboard')).headers.get('location'));
+        expect(toNetwork.toString()).toBe(`${origin}/auth/handoff?site=blog&next=%2Fdashboard`);
+        const back = new URL((await web.request(toNetwork.pathname + toNetwork.search)).headers.get('location'));
+        expect(back.origin).toBe(blogOrigin);
+        expect((await blogAdmin.request(back.pathname + back.search)).headers.get('location')).toBe('/dashboard');
+        // A user added on the blog is a site account: listed on the blog and on its network page, not among the network's accounts.
+        await blogAdmin.action('dashboard/users/new/index.ts', 'create', ['Thanh', 'thanh@example.com', 'long password', ['author']]);
+        const blogUsers = await blogAdmin.page('/dashboard/users');
+        contains(blogUsers, 'thanh@example.com');
+        contains(blogUsers, 'Network account');
+        lacks(await web.page('/dashboard/network/users'), 'thanh@example.com');
+        contains(await web.page('/dashboard/network/sites/blog'), 'Site account');
+        // It signs in on the blog's own sign-in, where a network account's password does not.
+        const reader = browserless(blogOrigin, routeIds, () => output, { connect: '127.0.0.1' });
+        await reader.action('auth/login/index.ts', 'login', [{ email: 'thanh@example.com', password: 'long password' }]);
+        contains(await reader.page('/dashboard'), 'thanh@example.com');
+        const outsider = browserless(blogOrigin, routeIds, () => output, { connect: '127.0.0.1' });
+        expect(JSON.stringify(await outsider.action('auth/login/index.ts', 'login', [{ email: 'grace@example.com', password: 'long password' }]))).toContain('Invalid credentials');
+        expect((await outsider.request('/dashboard')).status).toBe(302);
+        // A site admin with a site account manages a network account's roles there, not its profile, password or sign-in methods.
+        await blogAdmin.action('dashboard/users/new/index.ts', 'create', ['Lan', 'lan@example.com', 'long password', ['admin']]);
+        const siteAdmin = browserless(blogOrigin, routeIds, () => output, { connect: '127.0.0.1' });
+        await siteAdmin.action('auth/login/index.ts', 'login', [{ email: 'lan@example.com', password: 'long password' }]);
+        const grace = accountPage.split('/').pop();
+        contains(await siteAdmin.page(`/dashboard/users/${grace}`), 'data-locked-profile');
+        await expect(siteAdmin.action('dashboard/users/[id]/index.ts', 'applyPasswordChange', ['taken over', '', 'taken over'], { params: { id: grace } })).rejects.toThrow(/network account/i);
       }
       contains(await web.page('/dashboard/network/users'), 'grace@example.com');
       // Sites show their icons; a site without one shows the network's, which is the main site's.

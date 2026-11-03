@@ -16,8 +16,10 @@ export interface SignInBrand {
     home: string;
     /** The network whose account signs the visitor in to another site; empty otherwise. */
     network: string;
+    /** On a site of a network: where its members with a network account sign in instead, and the network's name. */
+    networkSignIn: { href: string; name: string } | null;
 }
 
 export async function signInBrand(): Promise<SignInBrand> {
-    return { name: await siteName(), logo: await siteLogo(), home: '/', network: '' };
+    return { name: await siteName(), logo: await siteLogo(), home: '/', network: '', networkSignIn: null };
 }

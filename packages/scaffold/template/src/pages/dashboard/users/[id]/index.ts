@@ -7,7 +7,7 @@ import { getUser, updateUser, syncUserRoles, changeUserPassword, type UserDetail
 import { listRoles, type RoleDetail } from '../../../../services/roles';
 import {
     apiTokensAvailable, avatarUploads, createApiToken, listApiTokens, resetSecondFactors, revokeApiToken, revokeSessionOf, revokeSessionsOf, securityStatus, sessionsOf,
-    loginUser, twoFactorAvailable, uploadAvatar, type ApiToken, type PublicUser, type SessionInfo,
+    passwordMatches, twoFactorAvailable, uploadAvatar, type ApiToken, type PublicUser, type SessionInfo,
 } from '../../../../auth';
 import { AppPasswords } from '../../../../dashboard/app-passwords';
 import { avatarField } from '../../../../dashboard/avatar-field';
@@ -33,6 +33,8 @@ export default class EditUserPage extends Cossack {
     @State() canAssignRoles = false;
     /** Accounts that can manage roles are read-only for other user managers. */
     @State() readOnly = false;
+    /** Someone else's account whose profile, password and sign-in methods are managed elsewhere (`lockedProfile`); its roles are this site's. */
+    @State() locked = false;
     @State() avatarUploads = false;
     @ClientState() uploading = false;
     @ClientState() avatarError = '';
@@ -89,6 +91,7 @@ export default class EditUserPage extends Cossack {
         this.userDetail = user;
         this.assignedRoleIds = user.roles.map((r) => r.id);
         this.readOnly = !canManageUser(this.user as PublicUser | undefined, user);
+        this.locked = !!user.lockedProfile && user.id !== this.user?.id;
         if (twoFactorAvailable) {
             const status = await securityStatus(id);
             this.security = { available: true, totp: status.totp, passkeys: status.passkeys.length };
@@ -96,7 +99,7 @@ export default class EditUserPage extends Cossack {
         this.canSeeAccess = canManageAccess(this.user as PublicUser | undefined, id);
         if (this.canSeeAccess) {
             this.sessions = await sessionsOf(this.c, id);
-            this.tokensAvailable = apiTokensAvailable;
+            this.tokensAvailable = apiTokensAvailable && !this.locked;
             if (this.tokensAvailable) this.tokens = await listApiTokens(id);
         }
         this.tabs = ['profile', 'security', ...(this.canSeeAccess ? ['sessions'] : []), ...(this.tokensAvailable ? ['passwords'] : [])];
@@ -282,7 +285,7 @@ export default class EditUserPage extends Cossack {
         if (password !== confirm) throw new ClientVisibleError(__('The passwords do not match.'));
         if (id === this.user?.id) {
             const target = await getUser(id);
-            if (!target || !current || !(await loginUser(target.email, current))) throw new ClientVisibleError(__('The current password is incorrect.'));
+            if (!target || !current || !(await passwordMatches(id, current))) throw new ClientVisibleError(__('The current password is incorrect.'));
         }
         await changeUserPassword(id, password);
     }
@@ -297,10 +300,14 @@ export default class EditUserPage extends Cossack {
         </div>`;
 
         const own = this.userDetail.id === this.user?.id;
+        const lockedNote = html`<p role="status" data-locked-profile class="rounded-md border border-border px-3 py-2 text-sm text-foreground">${this.userDetail.lockedProfile}</p>`;
         const profile = html`<div class="space-y-8 max-w-2xl">
             ${component(Card, {}, html`
                 ${component(CardHeader, {}, html`<h2 class="text-base font-semibold text-foreground">${__('Profile')}</h2>`)}
-                ${component(CardBody, {}, html`
+                ${component(CardBody, {}, this.locked ? html`<div class="space-y-3">
+                    ${lockedNote}
+                    <p class="text-sm text-foreground">${this.userDetail.name}<span class="block text-muted-foreground">${this.userDetail.email}</span></p>
+                </div>` : html`
                     ${component(Form, {
                         submit: (e: Event) => this.handleSubmit(e),
                     }, html`
@@ -347,7 +354,7 @@ export default class EditUserPage extends Cossack {
         const security = html`<div class="space-y-8 max-w-2xl">
             ${component(Card, {}, html`
                 ${component(CardHeader, {}, html`<h2 class="text-base font-semibold text-foreground">${__('Change password')}</h2>`)}
-                ${component(CardBody, {}, html`
+                ${component(CardBody, {}, this.locked ? lockedNote : html`
                     ${component(Form, {
                         submit: (e: Event) => this.handleChangePassword(e),
                     }, html`
@@ -389,7 +396,7 @@ export default class EditUserPage extends Cossack {
                     <p class="text-sm text-muted-foreground">${this.security.totp || this.security.passkeys
                         ? `${this.security.totp ? __('Authenticator app on.') : __('No authenticator app.')} ${this.security.passkeys} ${this.security.passkeys === 1 ? __('passkey') : __('passkeys')}.`
                         : __('This user signs in with a password only.')}</p>
-                    ${this.security.totp || this.security.passkeys ? component(Button, { type: 'button', variant: 'outline', '@click': async () => { this.message = ''; await this.resetSecurity(); this.message = __('Two-step sign-in reset.'); } }, __('Reset two-step sign-in')) : null}
+                    ${!this.locked && (this.security.totp || this.security.passkeys) ? component(Button, { type: 'button', variant: 'outline', '@click': async () => { this.message = ''; await this.resetSecurity(); this.message = __('Two-step sign-in reset.'); } }, __('Reset two-step sign-in')) : null}
                 `)}
             `) : null}
         </div>`;
