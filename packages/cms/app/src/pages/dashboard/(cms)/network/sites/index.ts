@@ -1,124 +1,176 @@
-import { Cossack, Page, State, flash, flashed, type HeadValue } from '@cossackframework/core';
-import { html } from '@cossackframework/renderer';
-import { isCmsError, isSameOriginPost } from '@cossackframework/cms';
+import { Client, Cossack, Page, Server, State, flashed, type HeadValue } from '@cossackframework/core';
+import { AlertDialog } from '@cossackframework/ui';
+import { html, component } from '@cossackframework/renderer';
+import { isCmsError, MAIN_SITE } from '@cossackframework/cms';
 import type { SiteStatus } from '@cossackframework/cms/server';
-import { notice, pageHeader, shortDate } from '../../../../../cms/ui';
+import { linkButton, notice, pageHeader, shortDate } from '../../../../../cms/ui';
 import { requireNetworkAdmin } from '../../../../../cms/guards';
 import { network, siteLinks } from '../../../../../cms/network-ui';
-import { actionButton, field, siteStatus, SUBMIT } from '../../../../../cms/network-view';
+import { siteStatus } from '../../../../../cms/network-view';
+import { listFilters, listFooter, listTable, rowActions } from '../../../../../dashboard/list-table';
 
-interface SiteRow { id: string; name: string; host: string; status: SiteStatus; members: number; createdAt: number; home: string; dashboard: string }
+const PAGE_SIZE = 20;
+const STATUSES = ['active', 'archived', 'deleted', 'creating'] as const;
+const STATUS_LABELS: Record<string, string> = { '': 'All', active: 'Active', archived: 'Archived', deleted: 'Deleted', creating: 'Being created' };
 
-/** Network → Sites: every site with its address, members and state, and the form that adds one. */
+interface SiteRow { id: string; name: string; host: string; status: SiteStatus; members: number; createdAt: number | null; home: string; dashboard: string }
+
+/** Network → Sites: every site as a list table, the main site first, with its address, members and state. */
 @Page({ transport: 'http', middlewares: [requireNetworkAdmin()] })
 export default class NetworkSites extends Cossack {
     @State() rows: SiteRow[] = [];
     @State() total = 0;
+    @State() pages = 1;
+    @State() page = 1;
     @State() search = '';
     @State() status = '';
+    /** The status links above the list, with how many sites each has. */
+    @State() counts: { key: string; count: number }[] = [];
     @State() canAdd = false;
-    @State() suffix = '';
     @State() message = '';
     @State() error = '';
-    /** What Add site's language starts at: the network's default for new sites. */
-    @State() language = 'en';
+    /** The site waiting for the delete confirmation. */
+    @State() pendingDelete: SiteRow | null = null;
 
     head(): HeadValue {
         return { title: 'Sites' };
     }
 
     async init() {
-        const net = network(this.c);
         const query = this.c.req.query();
-        this.search = query.q ?? '';
-        this.status = ['active', 'archived', 'deleted', 'creating'].includes(query.status ?? '') ? query.status! : '';
-        const [page, counts] = await Promise.all([
-            net.sites.list({ ...(this.search ? { search: this.search } : {}), ...(this.status ? { status: this.status as SiteStatus } : {}), limit: 100 }),
-            net.main.accounts.memberCounts(),
-        ]);
-        this.total = page.total;
-        this.rows = page.items.map(site => {
-            const host = site.domains.find(domain => domain.primary)?.host ?? '';
-            return { id: site.id, name: site.name, host, status: site.status, members: counts.get(site.id) ?? 0, createdAt: site.createdAt, ...siteLinks(this.c, { host }) };
-        });
-        this.canAdd = net.canAddSites;
-        const settings = await net.settings();
-        this.suffix = settings.subdomainSuffix || net.subdomainSuffix;
-        this.language = settings.defaultLanguage || 'en';
+        this.search = query.q?.trim() ?? '';
+        this.status = (STATUSES as readonly string[]).includes(query.status ?? '') ? query.status! : '';
+        const page = Number(query.page);
+        this.page = page >= 1 ? Math.floor(page) : 1;
+        this.canAdd = network(this.c).canAddSites;
         this.message = flashed<string>('network.message') ?? '';
-        this.error = flashed<string>('network.error') ?? '';
+        await this.load();
     }
 
-    async post() {
-        if (!isSameOriginPost(this.c.req.raw)) return this.c.text('Forbidden', 403);
-        const form = await this.c.req.formData();
-        const value = (name: string) => String(form.get(name) ?? '').trim();
+    /** The page of sites and the counts by status. The main site, which has no registry row, leads All and Active. */
+    private async load() {
         const net = network(this.c);
-        const principal = this.c.get('principal');
+        const search = this.search ? { search: this.search } : {};
+        const [totals, members, mainName] = await Promise.all([
+            Promise.all(STATUSES.map(status => net.sites.list({ ...search, status, limit: 1 }).then(found => found.total))),
+            net.main.accounts.memberCounts(),
+            net.main.settings.get('general.siteTitle').then(title => title || __('Main site'), () => __('Main site')),
+        ]);
+        const withMain = !this.search || mainName.toLowerCase().includes(this.search.toLowerCase()) ? 1 : 0;
+        const byStatus = new Map(STATUSES.map((status, index) => [status, totals[index]!]));
+        this.counts = [
+            { key: '', count: totals.reduce((sum, count) => sum + count, withMain) },
+            ...STATUSES.map(status => ({ key: status, count: byStatus.get(status)! + (status === 'active' ? withMain : 0) })).filter(entry => entry.key !== 'creating' || entry.count),
+        ];
+        const found = await net.sites.list({ ...search, ...(this.status ? { status: this.status as SiteStatus } : {}), limit: PAGE_SIZE, offset: (this.page - 1) * PAGE_SIZE });
+        const leadsWithMain = withMain && this.page === 1 && (!this.status || this.status === 'active');
+        const main: SiteRow[] = leadsWithMain ? [{ id: MAIN_SITE, name: mainName, host: new URL(siteLinks(this.c, { host: null }).home, this.c.req.url).host, status: 'active', members: members.get(MAIN_SITE) ?? 0, createdAt: null, ...siteLinks(this.c, { host: null }) }] : [];
+        this.rows = [...main, ...found.items.map(site => {
+            const host = site.domains.find(domain => domain.primary)?.host ?? '';
+            return { id: site.id, name: site.name, host, status: site.status, members: members.get(site.id) ?? 0, createdAt: site.createdAt, ...siteLinks(this.c, { host }) };
+        })];
+        this.total = found.total + (this.status === '' || this.status === 'active' ? withMain : 0);
+        this.pages = Math.max(1, Math.ceil(found.total / PAGE_SIZE));
+    }
+
+    /** Archive, restore or delete a site. A deleted site can be restored for 30 days. */
+    @Server()
+    async change(id: string, action: 'archive' | 'restore' | 'delete') {
+        this.message = '';
+        this.error = '';
         try {
-            const action = value('action');
-            if (action === 'add') {
-                const admin = value('admin') ? await net.main.accounts.findByEmail(value('admin')) : await net.main.accounts.get(principal.kind === 'user' ? principal.id : '');
-                if (!admin) throw new Error(__('No account has that email. Add the person under Network → Users first.'));
-                const site = await net.createSite({ name: value('name'), host: value('host'), admin: admin.id, ...(value('id') ? { id: value('id') } : {}), ...(value('language') ? { language: value('language').toLowerCase() } : {}), starter: form.get('starter') === 'on' }, { principal });
-                flash('network.message', `${site.name} is ready.`);
-            } else if (action === 'archive' || action === 'restore' || action === 'delete') {
-                const site = await net.setSiteStatus(value('site'), action === 'archive' ? 'archived' : action === 'delete' ? 'deleted' : 'active', { principal });
-                flash('network.message', action === 'delete' ? `${site.name} is deleted. It can be restored for 30 days.` : `${site.name} is ${action === 'archive' ? 'archived' : 'active'}.`);
-            }
+            const site = await network(this.c).setSiteStatus(id, action === 'archive' ? 'archived' : action === 'delete' ? 'deleted' : 'active', { principal: this.c.get('principal') });
+            this.message = action === 'delete' ? `${site.name} ${__('is deleted. It can be restored for 30 days.')}` : `${site.name} ${action === 'archive' ? __('is archived.') : __('is active.')}`;
         } catch (error) {
-            flash('network.error', isCmsError(error) || error instanceof Error ? (error as Error).message : 'The site could not be changed.');
+            this.error = isCmsError(error) ? error.message : __('The site could not be changed.');
         }
-        return this.redirect('/dashboard/network/sites');
+        await this.load();
+        if (this.page > this.pages) { this.page = this.pages; await this.load(); }
+    }
+
+    @Client()
+    async act(row: SiteRow, action: 'archive' | 'restore') {
+        await this.change(row.id, action);
+    }
+
+    @Client()
+    requestDelete(row: SiteRow) {
+        this.pendingDelete = row;
+    }
+
+    @Client()
+    async confirmDelete() {
+        const row = this.pendingDelete;
+        this.pendingDelete = null;
+        if (row) await this.change(row.id, 'delete');
+    }
+
+    /** The list's address with the current search and status. */
+    private href(options: { status?: string; page?: number } = {}): string {
+        const params = new URLSearchParams();
+        const status = options.status ?? this.status;
+        if (this.search) params.set('q', this.search);
+        if (status) params.set('status', status);
+        if ((options.page ?? 1) > 1) params.set('page', String(options.page));
+        const query = params.toString();
+        return query ? `/dashboard/network/sites?${query}` : '/dashboard/network/sites';
     }
 
     render() {
-        const actions = (row: SiteRow) => html`<div class="flex flex-wrap gap-1.5">
-            ${row.status === 'active' || row.status === 'archived' ? html`<a class="rounded-md border border-border px-2.5 py-1 text-xs font-medium text-foreground no-underline hover:bg-muted" href=${row.dashboard}>${__('Dashboard')}</a>
-                <a class="rounded-md border border-border px-2.5 py-1 text-xs font-medium text-foreground no-underline hover:bg-muted" href=${row.home}>${__('Visit')}</a>` : null}
-            <a class="rounded-md border border-border px-2.5 py-1 text-xs font-medium text-foreground no-underline hover:bg-muted" href=${`/dashboard/network/sites/${row.id}`}>${__('Edit')}</a>
-            ${row.status === 'active' ? actionButton('archive', __('Archive'), { site: row.id }) : null}
-            ${row.status === 'archived' || row.status === 'deleted' ? actionButton('restore', __('Restore'), { site: row.id }) : null}
-            ${row.status !== 'deleted' && row.status !== 'creating' ? actionButton('delete', __('Delete'), { site: row.id }, { danger: true }) : null}
-        </div>`;
-        return html`<div class="max-w-6xl space-y-6">
-            ${pageHeader(__('Sites'), { description: __('The main site is the network itself; every other site has its own database.') })}
-            ${this.message ? notice(this.message, 'success') : null}
+        const actions = (row: SiteRow) => rowActions([
+            ...(row.id === MAIN_SITE ? [] : [{ id: `site-${row.id}-edit`, label: __('Edit'), href: `/dashboard/network/sites/${row.id}` }]),
+            ...(row.status === 'active' || row.status === 'archived' ? [
+                { id: `site-${row.id}-dashboard`, label: __('Dashboard'), href: row.dashboard },
+                { id: `site-${row.id}-visit`, label: __('Visit'), href: row.home },
+            ] : []),
+            ...(row.id === MAIN_SITE ? [] : [
+                ...(row.status === 'active' ? [{ id: `site-${row.id}-archive`, label: __('Archive'), run: () => this.act(row, 'archive') }] : []),
+                ...(row.status === 'archived' || row.status === 'deleted' ? [{ id: `site-${row.id}-restore`, label: __('Restore'), run: () => this.act(row, 'restore') }] : []),
+                ...(row.status === 'active' || row.status === 'archived' ? [{ id: `site-${row.id}-delete`, label: __('Delete'), danger: true, run: () => this.requestDelete(row) }] : []),
+            ]),
+        ]);
+        return html`<div class="space-y-6">
+            ${pageHeader(__('Sites'), {
+                description: __('The main site is the network itself; every other site has its own database.'),
+                titleActions: this.canAdd ? linkButton(__('Add site'), '/dashboard/network/sites/new', 'primary', { size: 'sm' }) : null,
+            })}
+            ${this.message && !this.error ? notice(this.message, 'success') : null}
             ${this.error ? notice(this.error, 'error') : null}
-            <form method="get" class="flex flex-wrap gap-2">
-                <input name="q" .value=${this.search} placeholder=${__('Search names and domains')} class="rounded-md border border-input bg-background px-3 py-2 text-sm">
-                <select name="status" class="rounded-md border border-input bg-background px-3 py-2 text-sm">
-                    ${[['', __('Any status')], ['active', __('Active')], ['archived', __('Archived')], ['deleted', __('Deleted')], ['creating', __('Being created')]].map(([value, label]) => html`<option value=${value} ?selected=${this.status === value}>${label}</option>`)}
-                </select>
-                <button type="submit" class="rounded-md border border-border bg-background px-3 py-2 text-sm cursor-pointer">${__('Filter')}</button>
-            </form>
-            <div class="overflow-x-auto rounded-lg border border-border">
-                <table class="w-full text-sm">
-                    <thead class="bg-muted/50 text-left text-muted-foreground"><tr>
-                        <th class="px-3 py-2 font-medium">${__('Site')}</th><th class="px-3 py-2 font-medium">${__('Members')}</th>
-                        <th class="px-3 py-2 font-medium">${__('Status')}</th><th class="px-3 py-2 font-medium">${__('Created')}</th><th class="px-3 py-2"></th>
-                    </tr></thead>
-                    <tbody>${this.rows.length ? this.rows.map(row => html`<tr class="border-t border-border align-top">
-                        <td class="px-3 py-2"><a class="font-medium text-foreground" href=${`/dashboard/network/sites/${row.id}`}>${row.name}</a><div class="text-xs text-muted-foreground">${row.host}</div></td>
-                        <td class="px-3 py-2">${row.members}</td>
-                        <td class="px-3 py-2">${siteStatus(row.status)}</td>
-                        <td class="px-3 py-2 text-muted-foreground">${shortDate(row.createdAt)}</td>
-                        <td class="px-3 py-2">${actions(row)}</td>
-                    </tr>`) : html`<tr><td colspan="5" class="px-3 py-6 text-center text-muted-foreground">${__('No sites besides the main one yet.')}</td></tr>`}</tbody>
-                </table>
+            ${this.canAdd ? null : notice(__('This network cannot add sites yet: give it a provider for site databases (see Settings → Network).'))}
+            <div class="space-y-3">
+                <nav aria-label=${__('Filter by status')} class="flex flex-wrap gap-x-3 gap-y-1 text-sm">
+                    ${this.counts.map((tab, index) => html`${index ? html`<span class="text-muted-foreground" aria-hidden="true">|</span>` : null}
+                        <a href=${this.href({ status: tab.key })} class=${tab.key === this.status ? 'font-semibold text-foreground no-underline' : 'text-primary no-underline hover:underline'}
+                            aria-current=${tab.key === this.status ? 'page' : 'false'}>${__(STATUS_LABELS[tab.key]!)} <span class="text-muted-foreground">(${tab.count})</span></a>`)}
+                </nav>
+                ${listFilters({ action: '/dashboard/network/sites', hidden: { status: this.status }, search: { name: 'q', value: this.search, placeholder: __('Search names and domains') } })}
             </div>
-            ${this.canAdd ? html`<section id="add" class="max-w-xl space-y-4 rounded-lg border border-border p-4">
-                <h2 class="text-lg font-semibold text-foreground">${__('Add site')}</h2>
-                <form method="post" class="space-y-4">
-                    <input type="hidden" name="action" value="add">
-                    ${field('name', __('Name'), { required: true })}
-                    ${field('host', __('Address'), { required: true, placeholder: this.suffix ? `blog.${this.suffix}` : 'blog.example.com', hint: this.suffix ? `${__('A subdomain of')} ${this.suffix}. ${__('Add its own domain once it exists.')}` : '' })}
-                    ${field('language', __('Language'), { value: this.language, hint: __('A language code, such as en, fr or pt-br.') })}
-                    ${field('admin', __('First administrator'), { type: 'email', placeholder: __('Your account when empty'), hint: __('The email of an existing account.') })}
-                    <label class="flex items-center gap-2 text-sm text-foreground"><input type="checkbox" name="starter" checked> ${__('Add starter content')}</label>
-                    <button type="submit" class=${SUBMIT}>${__('Add site')}</button>
-                </form>
-            </section>` : notice(__('This network cannot add sites yet: give it a provider for site databases (see Network).'))}
+            ${listTable<SiteRow>({
+                rows: this.rows, key: row => row.id, rowAttribute: 'data-site', empty: this.search || this.status ? __('No sites match.') : __('No sites besides the main one yet.'),
+                columns: [
+                    { label: __('Site'), cell: row => html`<div class="min-w-0">
+                        ${row.id === MAIN_SITE ? html`<span class="font-medium text-foreground">${row.name}</span> <span class="text-xs text-muted-foreground">(${__('main site')})</span>`
+                            : html`<a href=${`/dashboard/network/sites/${row.id}`} class="font-medium text-foreground no-underline hover:text-primary">${row.name}</a>`}
+                        <span class="block text-xs text-muted-foreground">${row.host}</span>
+                        ${actions(row)}
+                    </div>` },
+                    { label: __('Members'), class: 'text-right text-muted-foreground', cell: row => row.members },
+                    { label: __('Status'), cell: row => siteStatus(row.status) },
+                    { label: __('Created'), class: 'text-muted-foreground', cell: row => row.createdAt === null ? '—' : shortDate(row.createdAt) },
+                ],
+            })}
+            ${listFooter({ total: this.total, page: this.page, totalPages: this.pages, href: page => this.href({ page }) })}
+            ${component(AlertDialog, {
+                id: 'delete-site-dialog',
+                open: this.pendingDelete !== null,
+                title: __('Delete site?'),
+                description: this.pendingDelete ? `${this.pendingDelete.name} ${__('stops answering at once. Its database and media are deleted for good after 30 days; until then it can be restored.')}` : '',
+                cancelLabel: __('Cancel'),
+                actionLabel: __('Delete'),
+                actionVariant: 'destructive',
+                onAction: () => this.confirmDelete(),
+                onOpenChange: () => { this.pendingDelete = null; },
+            })}
         </div>`;
     }
 }

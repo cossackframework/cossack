@@ -83,6 +83,8 @@ describe.skipIf(!live)('site registry and host resolution', () => {
         await expect(network.sites.create({ id: 'copy', name: 'Copy', database: 'db-copy', domains: [{ host: 'blog.example.org' }] })).rejects.toMatchObject({ code: 'CMS_CONFLICT' });
         expect(await network.sites.get('copy')).toBeNull();
         await expect(network.sites.create({ id: 'main', name: 'Main', database: 'db-main', domains: [{ host: 'main.example.com' }] })).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
+        // `new` is the dashboard's Add site address.
+        await expect(network.sites.create({ id: 'new', name: 'New', database: 'db-new', domains: [{ host: 'new.example.com' }] })).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
         await network.sites.create({ id: 'shop', name: 'Shop', database: 'db-shop', domains: [{ host: 'shop.example.com' }] });
         await network.sites.create({ id: 'old', name: 'Old', database: 'db-old', status: 'archived', domains: [{ host: 'old.example.com' }] });
         expect((await network.sites.list({ search: 'example.org' })).items.map(site => site.id)).toEqual(['blog']);

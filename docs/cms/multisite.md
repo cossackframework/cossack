@@ -92,13 +92,20 @@ account that is a member of that site only, with that site's default role.
 Network admins open `/dashboard/network` on the network host, while the network is on:
 
 - **Home**: counts of sites and accounts.
-- **Sites**: every site with its address, members and status. *Add site* asks for a name, an
-  address under the network's subdomain, a language, the first administrator's email and
-  optional starter content. Row actions: Dashboard, Visit, Edit, Archive, Restore and Delete. A site's
-  page manages its name, domains and members.
-- **Users**: every account with the sites it belongs to. Make or remove network admins,
-  suspend, activate or delete accounts, and add new ones. Deleting an account first removes
-  it from every site, through each site's own user deletion.
+- **Sites**: a list table of every site, the main site first, with its address, members and
+  status; status links (All, Active, Archived, Deleted) and a search filter it. *Add site*,
+  a page of its own at `/dashboard/network/sites/new`, asks for a name, an address under the
+  network's subdomain, a language, the first administrator's email and optional starter
+  content. Row actions: Edit, Dashboard, Visit, Archive, Restore and Delete (after a
+  confirmation). A site's page manages its name, domains, members and state. The IDs `main`
+  and `new` are reserved; a site named *New* gets the ID `new-site`.
+- **Users**: a list table of every account with the sites it belongs to; All and Network
+  admins links and a search filter it. *Add account* (`/dashboard/network/users/new`) asks for
+  a name, an email, a password and whether the account is a network admin. An account's page
+  edits its name, email and password (sites' member rows get the new name and email), adds it
+  to sites with a role and removes it from them, makes or removes network admins, suspends,
+  activates or deletes it. Deleting an account first removes it from every site, through each
+  site's own user deletion. Your own account changes only from your profile.
 - **Plugins**: one state per plugin for every site (see below).
 - **Themes**: which themes sites may choose. A hidden theme leaves every site's Appearance,
   and a site that used it falls back to another theme.

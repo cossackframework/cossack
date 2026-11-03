@@ -13,7 +13,7 @@ import { PLUGIN_ENABLED, type CmsHost, type PluginStatus } from './host';
 import { pluginState, POLICY_KEYS, readPolicy, type NetworkPluginState, type NetworkPolicy, type NetworkThemeState, type StoredPluginStates, type StoredThemeStates } from './network-policy';
 import { CmsHandoffs } from './handoffs';
 import { seedStarterContent } from './seed';
-import { CmsSites, MAIN_SITE, siteHost, type SiteRecord, type SiteStatus } from './sites';
+import { CmsSites, MAIN_SITE, RESERVED_SITE_IDS, siteHost, type SiteRecord, type SiteStatus } from './sites';
 import type { EndedSessions } from './stores';
 
 /** The site a CMS host serves. */
@@ -187,7 +187,8 @@ export class CmsNetwork {
         const directory = this.#options.directory;
         if (!directory || !this.#options.open) throw new CmsError('CMS_UNAVAILABLE', 'This network cannot add sites yet: it needs a provider for site databases.');
         if (!(await this.enabled())) throw new CmsError('CMS_UNAVAILABLE', 'Turn the network on in Settings before adding sites.');
-        const id = input.id ?? (slugify(input.name, 40) || 'site');
+        const slug = slugify(input.name, 40) || 'site';
+        const id = input.id ?? (RESERVED_SITE_IDS.has(slug) ? `${slug}-site` : slug);
         if (input.language && !LOCALE.test(input.language)) throw new CmsError('CMS_VALIDATION', 'Enter a language code, such as en or pt-br.', { fields: { language: 'is invalid.' } });
         const admin = await this.main.accounts.get(input.admin);
         if (!admin || admin.status !== 'active') throw new CmsError('CMS_VALIDATION', 'Choose an active account as the first administrator.', { fields: { admin: 'is invalid.' } });

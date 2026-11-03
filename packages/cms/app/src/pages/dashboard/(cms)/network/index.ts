@@ -34,7 +34,7 @@ export default class NetworkHome extends Cossack {
             <p class="text-sm text-muted-foreground">${label}</p>
             <a href=${href} class="text-2xl font-semibold text-foreground no-underline">${value}</a>`));
         return html`<div class="max-w-5xl space-y-6">
-            ${pageHeader(this.name || __('Network'), { description: __('Every site in this network, and the accounts that sign in to them.'), actions: this.canAdd ? linkButton(__('Add site'), '/dashboard/network/sites#add') : null })}
+            ${pageHeader(this.name || __('Network'), { description: __('Every site in this network, and the accounts that sign in to them.'), actions: this.canAdd ? linkButton(__('Add site'), '/dashboard/network/sites/new') : null })}
             ${this.canAdd ? null : notice(__('Sites need their own databases: files beside the main one on Node, or ROMEDB_SITES_URL and ROMEDB_SITES_TOKEN (a RomeDB organization). Until then the network is this site only.'))}
             <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 ${stat(__('Active sites'), this.sites.active, '/dashboard/network/sites')}

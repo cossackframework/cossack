@@ -625,6 +625,15 @@ describe.skipIf(!liveRomeDBTests())('generated CMS application', () => {
       await page.locator('main').getByRole('link', { name: 'Plugins', exact: true }).click();
       await page.waitForURL(/\/dashboard\/network\/plugins$/);
       await browserExpect(page.locator('main h1')).toHaveText('Network plugins');
+      // Sites and Users are list tables with pages of their own; the main site leads Sites.
+      await page.goto(server.origin + '/dashboard/network/sites');
+      await ready();
+      await browserExpect(page.locator('tr[data-site="main"]')).toContainText('main site');
+      await page.goto(server.origin + '/dashboard/network/users');
+      await ready();
+      await page.locator('tr[data-account]').first().getByRole('link', { name: 'Edit' }).click();
+      await page.waitForURL(/\/dashboard\/network\/users\/[0-9a-f-]{36}$/);
+      await browserExpect(page.getByRole('heading', { name: 'Profile' })).toBeVisible();
       expect(errors).toEqual([]);
     } finally {
       await browser?.close();
@@ -700,12 +709,26 @@ describe.skipIf(!liveRomeDBTests())('generated CMS application', () => {
       // Beside it, a directory service holds added sites' databases, which the Worker creates through ROMEDB_SITES_URL.
       if (servesDirectories()) {
         expect(output).toContain(`started romedb serve --directory storage/romedb/sites for added sites at http://127.0.0.1:${port + 1}`);
-        contains(await web.page('/dashboard/network/sites'), 'Add site');
-        const added = await web.post('/dashboard/network/sites', { action: 'add', name: 'Blog', host: 'blog.localhost', admin: '', starter: 'on' });
+        contains(await web.page('/dashboard/network/sites/new'), 'Add site');
+        const added = await web.post('/dashboard/network/sites/new', { name: 'Blog', host: 'blog.localhost', admin: '', starter: 'on' });
         expect(added.status, await added.text()).toBe(302);
-        contains(await web.page('/dashboard/network/sites'), 'Blog is ready.');
+        expect(added.headers.get('location')).toBe('/dashboard/network/sites/blog');
+        contains(await web.page('/dashboard/network/sites/blog'), 'Blog is ready.');
+        contains(await web.page('/dashboard/network/sites'), 'blog.localhost');
         expect((await fs.readdir(path.join(root, 'storage/romedb/sites'))).filter(name => name.endsWith('.romedb'))).toHaveLength(1);
       }
+      // Add account has its own page, then the account's page adds it to sites.
+      const account = await web.post('/dashboard/network/users/new', { name: 'Grace', email: 'grace@example.com', password: 'long password' });
+      expect(account.status, await account.text()).toBe(302);
+      const accountPage = account.headers.get('location');
+      expect(accountPage).toMatch(/^\/dashboard\/network\/users\/[0-9a-f-]{36}$/);
+      contains(await web.page(accountPage), 'Grace can sign in now.');
+      if (servesDirectories()) {
+        expect((await web.post(accountPage, { action: 'add-site', site: 'blog', role: 'author' })).status).toBe(302);
+        contains(await web.page(accountPage), 'Grace is a member now.');
+        contains(await web.page('/dashboard/network/sites/blog'), 'grace@example.com');
+      }
+      contains(await web.page('/dashboard/network/users'), 'grace@example.com');
       // The network home counts the main site as active, beside any added one.
       expect(await web.page('/dashboard/network')).toMatch(new RegExp(`Active sites</p>\\s*<a href="/dashboard/network/sites"[^>]*>\\s*${servesDirectories() ? 2 : 1}\\s*<`));
     } finally {

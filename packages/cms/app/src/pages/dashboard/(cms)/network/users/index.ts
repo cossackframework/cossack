@@ -1,117 +1,174 @@
-import { Cossack, Page, State, flash, flashed, type HeadValue } from '@cossackframework/core';
-import { html } from '@cossackframework/renderer';
-import { isCmsError, isSameOriginPost, NETWORK_ADMIN } from '@cossackframework/cms';
-import { MAIN_SITE } from '@cossackframework/cms/server';
-import { notice, pageHeader, shortDate } from '../../../../../cms/ui';
+import { Client, Cossack, Page, Server, State, flashed, type HeadValue } from '@cossackframework/core';
+import { AlertDialog, Badge } from '@cossackframework/ui';
+import { html, component } from '@cossackframework/renderer';
+import { isCmsError, NETWORK_ADMIN } from '@cossackframework/cms';
+import { linkButton, notice, pageHeader, shortDate } from '../../../../../cms/ui';
 import { requireNetworkAdmin } from '../../../../../cms/guards';
-import { network } from '../../../../../cms/network-ui';
-import { actionButton, field, SUBMIT } from '../../../../../cms/network-view';
+import { network, siteNames } from '../../../../../cms/network-ui';
+import { listFilters, listFooter, listTable, rowActions } from '../../../../../dashboard/list-table';
 
-interface AccountRow { id: string; name: string; email: string; status: 'active' | 'disabled'; admin: boolean; sites: string[]; lastSignInAt: number | null; self: boolean }
+const PAGE_SIZE = 20;
 
-/** Network → Users: every account, the sites it belongs to, the network admins, and suspension. */
+interface AccountRow { id: string; name: string; email: string; status: 'active' | 'disabled'; admin: boolean; sites: string[]; lastSignInAt: number | null; createdAt: number; self: boolean }
+type AccountAction = 'make-admin' | 'remove-admin' | 'suspend' | 'activate' | 'delete';
+
+/** Network → Users: every account as a list table, with the sites it belongs to, network admins and suspension. */
 @Page({ transport: 'http', middlewares: [requireNetworkAdmin()] })
 export default class NetworkUsers extends Cossack {
     @State() rows: AccountRow[] = [];
     @State() total = 0;
+    @State() page = 1;
     @State() search = '';
     @State() admins = false;
+    /** All accounts and network admins, for the links above the list. */
+    @State() counts = { all: 0, admins: 0 };
     @State() message = '';
     @State() error = '';
+    /** The account waiting for the delete confirmation. */
+    @State() pendingDelete: AccountRow | null = null;
 
     head(): HeadValue {
         return { title: 'Network users' };
     }
 
     async init() {
-        const net = network(this.c);
         const query = this.c.req.query();
-        this.search = query.q ?? '';
+        this.search = query.q?.trim() ?? '';
         this.admins = query.admins === '1';
-        const page = await net.main.accounts.list({ ...(this.search ? { search: this.search } : {}), networkAdmins: this.admins, limit: 100 });
-        const memberships = await net.main.accounts.memberships(page.items.map(account => account.id));
-        const names = new Map<string, string>([[MAIN_SITE, __('Main site')]]);
-        for (const id of new Set([...memberships.values()].flat())) if (!names.has(id)) names.set(id, (await net.sites.get(id))?.name ?? id);
-        const principal = this.c.get('principal');
-        this.total = page.total;
-        this.rows = page.items.map(account => ({
-            id: account.id, name: account.name, email: account.email, status: account.status, admin: account.networkRole === NETWORK_ADMIN,
-            sites: (memberships.get(account.id) ?? []).map(id => names.get(id) ?? id), lastSignInAt: account.lastSignInAt, self: principal.kind === 'user' && principal.id === account.id,
-        }));
+        const page = Number(query.page);
+        this.page = page >= 1 ? Math.floor(page) : 1;
         this.message = flashed<string>('network.message') ?? '';
-        this.error = flashed<string>('network.error') ?? '';
+        await this.load();
     }
 
-    async post() {
-        if (!isSameOriginPost(this.c.req.raw)) return this.c.text('Forbidden', 403);
-        const form = await this.c.req.formData();
-        const value = (name: string) => String(form.get(name) ?? '').trim();
+    private async load() {
+        const net = network(this.c);
+        const search = this.search ? { search: this.search } : {};
+        const [found, all, admins] = await Promise.all([
+            net.main.accounts.list({ ...search, networkAdmins: this.admins, limit: PAGE_SIZE, offset: (this.page - 1) * PAGE_SIZE }),
+            net.main.accounts.list({ ...search, limit: 1 }),
+            net.main.accounts.list({ ...search, networkAdmins: true, limit: 1 }),
+        ]);
+        const memberships = await net.main.accounts.memberships(found.items.map(account => account.id));
+        const names = await siteNames(this.c, [...memberships.values()].flat());
+        const principal = this.c.get('principal');
+        this.counts = { all: all.total, admins: admins.total };
+        this.total = found.total;
+        this.rows = found.items.map(account => ({
+            id: account.id, name: account.name, email: account.email, status: account.status, admin: account.networkRole === NETWORK_ADMIN,
+            sites: (memberships.get(account.id) ?? []).map(id => names.get(id) ?? id), lastSignInAt: account.lastSignInAt, createdAt: account.createdAt,
+            self: principal.kind === 'user' && principal.id === account.id,
+        }));
+    }
+
+    /** Change an account; your own stays as it is, so the network keeps an admin who can act. */
+    @Server()
+    async change(id: string, action: AccountAction) {
+        this.message = '';
+        this.error = '';
         const net = network(this.c);
         const principal = this.c.get('principal');
-        const accounts = net.main.accounts;
         try {
-            const action = value('action');
-            const id = value('account');
-            if (action === 'add') {
-                const account = await accounts.create({ email: value('email'), name: value('name') || value('email').split('@')[0]!, password: value('password') });
-                flash('network.message', `${account.name} ${__('can sign in now. Add them to sites under Network → Sites.')}`);
-            } else if (action === 'make-admin' || action === 'remove-admin') {
-                await accounts.setNetworkRole(id, action === 'make-admin' ? NETWORK_ADMIN : null);
-                flash('network.message', __('Saved.'));
+            if (principal.kind === 'user' && principal.id === id) throw new Error(__('Change your own account from your profile.'));
+            if (action === 'make-admin' || action === 'remove-admin') {
+                await net.main.accounts.setNetworkRole(id, action === 'make-admin' ? NETWORK_ADMIN : null);
+                this.message = __('Saved.');
             } else if (action === 'suspend' || action === 'activate') {
                 // Suspension signs the account out of every site.
-                await accounts.setStatus(id, action === 'suspend' ? 'disabled' : 'active');
-                flash('network.message', action === 'suspend' ? __('Suspended and signed out everywhere.') : __('Active again.'));
+                await net.main.accounts.setStatus(id, action === 'suspend' ? 'disabled' : 'active');
+                this.message = action === 'suspend' ? __('Suspended and signed out everywhere.') : __('Active again.');
             } else if (action === 'delete') {
                 await net.deleteAccount(id, { principal });
-                flash('network.message', __('Deleted from every site.'));
+                this.message = __('Deleted from every site.');
             }
         } catch (error) {
-            flash('network.error', isCmsError(error) || error instanceof Error ? (error as Error).message : 'The account could not be changed.');
+            this.error = isCmsError(error) || error instanceof Error ? (error as Error).message : __('The account could not be changed.');
         }
-        return this.redirect('/dashboard/network/users');
+        await this.load();
+        const pages = Math.max(1, Math.ceil(this.total / PAGE_SIZE));
+        if (this.page > pages) { this.page = pages; await this.load(); }
+    }
+
+    @Client()
+    async act(row: AccountRow, action: AccountAction) {
+        await this.change(row.id, action);
+    }
+
+    @Client()
+    requestDelete(row: AccountRow) {
+        this.pendingDelete = row;
+    }
+
+    @Client()
+    async confirmDelete() {
+        const row = this.pendingDelete;
+        this.pendingDelete = null;
+        if (row) await this.change(row.id, 'delete');
+    }
+
+    private href(options: { admins?: boolean; page?: number } = {}): string {
+        const params = new URLSearchParams();
+        if (this.search) params.set('q', this.search);
+        if (options.admins ?? this.admins) params.set('admins', '1');
+        if ((options.page ?? 1) > 1) params.set('page', String(options.page));
+        const query = params.toString();
+        return query ? `/dashboard/network/users?${query}` : '/dashboard/network/users';
     }
 
     render() {
-        return html`<div class="max-w-6xl space-y-6">
-            ${pageHeader(__('Users'), { description: __('Accounts sign in once, on this host, and reach the sites they are members of. Roles are set per site.') })}
-            ${this.message ? notice(this.message, 'success') : null}
+        const tabs = [{ admins: false, label: __('All'), count: this.counts.all }, { admins: true, label: __('Network admins'), count: this.counts.admins }];
+        return html`<div class="space-y-6">
+            ${pageHeader(__('Users'), {
+                description: __('Accounts sign in once, on this host, and reach the sites they are members of. Roles are set per site.'),
+                titleActions: linkButton(__('Add account'), '/dashboard/network/users/new', 'primary', { size: 'sm' }),
+            })}
+            ${this.message && !this.error ? notice(this.message, 'success') : null}
             ${this.error ? notice(this.error, 'error') : null}
-            <form method="get" class="flex flex-wrap items-center gap-2">
-                <input name="q" .value=${this.search} placeholder=${__('Search names and emails')} class="rounded-md border border-input bg-background px-3 py-2 text-sm">
-                <label class="flex items-center gap-1.5 text-sm"><input type="checkbox" name="admins" value="1" ?checked=${this.admins}> ${__('Network admins')}</label>
-                <button type="submit" class="rounded-md border border-border bg-background px-3 py-2 text-sm cursor-pointer">${__('Filter')}</button>
-            </form>
-            <div class="overflow-x-auto rounded-lg border border-border">
-                <table class="w-full text-sm">
-                    <thead class="bg-muted/50 text-left text-muted-foreground"><tr>
-                        <th class="px-3 py-2 font-medium">${__('Account')}</th><th class="px-3 py-2 font-medium">${__('Sites')}</th>
-                        <th class="px-3 py-2 font-medium">${__('Last sign-in')}</th><th class="px-3 py-2"></th>
-                    </tr></thead>
-                    <tbody>${this.rows.map(row => html`<tr class="border-t border-border align-top">
-                        <td class="px-3 py-2"><span class="font-medium text-foreground">${row.name}</span>
-                            ${row.admin ? html`<span class="ml-1.5 rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">${__('Network admin')}</span>` : null}
-                            ${row.status === 'disabled' ? html`<span class="ml-1.5 rounded-full bg-destructive/10 px-2 py-0.5 text-xs text-destructive">${__('Suspended')}</span>` : null}
-                            <div class="text-xs text-muted-foreground">${row.email}</div></td>
-                        <td class="px-3 py-2"><div class="flex flex-wrap gap-1">${row.sites.map(site => html`<span class="rounded-full bg-muted px-2 py-0.5 text-xs">${site}</span>`)}</div></td>
-                        <td class="px-3 py-2 text-muted-foreground">${row.lastSignInAt ? shortDate(row.lastSignInAt) : __('Never')}</td>
-                        <td class="px-3 py-2"><div class="flex flex-wrap gap-1.5">${row.self ? null : html`
-                            ${row.admin ? actionButton('remove-admin', __('Remove network admin'), { account: row.id }) : actionButton('make-admin', __('Make network admin'), { account: row.id })}
-                            ${row.status === 'active' ? actionButton('suspend', __('Suspend'), { account: row.id }, { danger: true }) : actionButton('activate', __('Activate'), { account: row.id })}
-                            ${actionButton('delete', __('Delete'), { account: row.id }, { danger: true })}`}</div></td>
-                    </tr>`)}</tbody>
-                </table>
+            <div class="space-y-3">
+                <nav aria-label=${__('Filter accounts')} class="flex flex-wrap gap-x-3 gap-y-1 text-sm">
+                    ${tabs.map((tab, index) => html`${index ? html`<span class="text-muted-foreground" aria-hidden="true">|</span>` : null}
+                        <a href=${this.href({ admins: tab.admins })} class=${tab.admins === this.admins ? 'font-semibold text-foreground no-underline' : 'text-primary no-underline hover:underline'}
+                            aria-current=${tab.admins === this.admins ? 'page' : 'false'}>${tab.label} <span class="text-muted-foreground">(${tab.count})</span></a>`)}
+                </nav>
+                ${listFilters({ action: '/dashboard/network/users', hidden: { admins: this.admins ? '1' : '' }, search: { name: 'q', value: this.search, placeholder: __('Search names and emails') } })}
             </div>
-            <section class="max-w-xl space-y-4 rounded-lg border border-border p-4">
-                <h2 class="text-lg font-semibold text-foreground">${__('Add account')}</h2>
-                <form method="post" class="space-y-4">
-                    <input type="hidden" name="action" value="add">
-                    ${field('name', __('Name'))}
-                    ${field('email', __('Email'), { type: 'email', required: true })}
-                    ${field('password', __('Password'), { type: 'password', required: true, hint: __('At least 8 characters.') })}
-                    <button type="submit" class=${SUBMIT}>${__('Add account')}</button>
-                </form>
-            </section>
+            ${listTable<AccountRow>({
+                rows: this.rows, key: row => row.id, rowAttribute: 'data-account', empty: __('No accounts match.'),
+                columns: [
+                    { label: __('Account'), cell: row => html`<div class="min-w-0">
+                        <a href=${`/dashboard/network/users/${row.id}`} class="font-medium text-foreground no-underline hover:text-primary">${row.name}</a>
+                        ${row.self ? html` ${component(Badge, { variant: 'secondary' }, __('You'))}` : null}
+                        ${row.admin ? html` ${component(Badge, { variant: 'default' }, __('Network admin'))}` : null}
+                        ${row.status === 'disabled' ? html` ${component(Badge, { variant: 'destructive' }, __('Suspended'))}` : null}
+                        <span class="block text-xs text-muted-foreground">${row.email}</span>
+                        ${rowActions([
+                            { id: `account-${row.id}-edit`, label: __('Edit'), href: `/dashboard/network/users/${row.id}` },
+                            ...(row.self ? [] : [
+                                row.admin ? { id: `account-${row.id}-remove-admin`, label: __('Remove network admin'), run: () => this.act(row, 'remove-admin') }
+                                    : { id: `account-${row.id}-make-admin`, label: __('Make network admin'), run: () => this.act(row, 'make-admin') },
+                                row.status === 'active' ? { id: `account-${row.id}-suspend`, label: __('Suspend'), danger: true, run: () => this.act(row, 'suspend') }
+                                    : { id: `account-${row.id}-activate`, label: __('Activate'), run: () => this.act(row, 'activate') },
+                                { id: `account-${row.id}-delete`, label: __('Delete'), danger: true, run: () => this.requestDelete(row) },
+                            ]),
+                        ])}
+                    </div>` },
+                    { label: __('Sites'), cell: row => html`<div class="flex flex-wrap gap-1">${row.sites.length ? row.sites.map(site => component(Badge, { variant: 'outline' }, site)) : html`<span class="text-xs text-muted-foreground">—</span>`}</div>` },
+                    { label: __('Last sign-in'), class: 'text-muted-foreground', cell: row => row.lastSignInAt ? shortDate(row.lastSignInAt) : __('Never') },
+                    { label: __('Created'), class: 'text-muted-foreground', cell: row => shortDate(row.createdAt) },
+                ],
+            })}
+            ${listFooter({ total: this.total, page: this.page, totalPages: Math.max(1, Math.ceil(this.total / PAGE_SIZE)), href: page => this.href({ page }) })}
+            ${component(AlertDialog, {
+                id: 'delete-account-dialog',
+                open: this.pendingDelete !== null,
+                title: __('Delete account?'),
+                description: this.pendingDelete ? `${this.pendingDelete.name} ${__('is removed from every site and can no longer sign in. This cannot be undone.')}` : '',
+                cancelLabel: __('Cancel'),
+                actionLabel: __('Delete'),
+                actionVariant: 'destructive',
+                onAction: () => this.confirmDelete(),
+                onOpenChange: () => { this.pendingDelete = null; },
+            })}
         </div>`;
     }
 }

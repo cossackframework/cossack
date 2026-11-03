@@ -36,6 +36,8 @@ export interface SiteRecord {
 }
 
 const ID = /^[a-z0-9][a-z0-9-]{0,62}$/;
+/** IDs no added site takes: the main site's, and `new`, the dashboard's Add site address. */
+export const RESERVED_SITE_IDS: ReadonlySet<string> = new Set([MAIN_SITE, 'new']);
 const DATABASE = /^[A-Za-z0-9_-]{1,80}$/;
 const HOST = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 const STATUSES: readonly SiteStatus[] = ['creating', 'active', 'archived', 'deleted'];
@@ -106,7 +108,7 @@ export class CmsSites {
      * says otherwise. A domain another site has is a conflict.
      */
     async create(input: { id: string; name: string; database: string; status?: SiteStatus; step?: string | null; domains: readonly { host: string; primary?: boolean; verifiedAt?: number | null }[] }): Promise<SiteRecord> {
-        if (!ID.test(input.id) || input.id === MAIN_SITE) throw new CmsError('CMS_VALIDATION', 'Site IDs are lowercase letters, digits and hyphens.', { fields: { id: 'is invalid.' } });
+        if (!ID.test(input.id) || RESERVED_SITE_IDS.has(input.id)) throw new CmsError('CMS_VALIDATION', 'Site IDs are lowercase letters, digits and hyphens, other than main and new.', { fields: { id: 'is invalid.' } });
         if (!DATABASE.test(input.database)) throw new CmsError('CMS_VALIDATION', 'Invalid database ID.');
         checkName(input.name);
         const status = input.status ?? 'active';
