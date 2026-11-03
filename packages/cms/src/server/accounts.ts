@@ -35,6 +35,12 @@ export const ACCOUNT_ID = /^[A-Za-z0-9_-]{1,80}$/;
 const TOKEN = /^[A-Za-z0-9_-]{32,128}$/;
 const COLUMNS = 'id, email, name, avatar, status, network_role, created_at, last_sign_in_at';
 const WRITE = { kind: 'cms.accounts', retryConflicts: 5 } as const;
+/** What moves with an account to another database: the row, second factors and application passwords. */
+const MOVED = {
+    cms_accounts: ['id', 'email', 'name', 'password_hash', 'avatar', 'status', 'network_role', 'created_at', 'updated_at', 'last_sign_in_at'],
+    cms_user_security: ['user_id', 'totp_secret', 'totp_confirmed_at', 'totp_last_step', 'recovery', 'updated_at'],
+    cms_api_tokens: ['id', 'user_id', 'name', 'secret_hash', 'scope', 'created_at', 'last_used_at', 'expires_at'],
+} as const;
 /** Another active network admin remains, so this account may stop being one. */
 const ANOTHER_ADMIN = `EXISTS (SELECT 1 FROM cms_accounts WHERE network_role = '${NETWORK_ADMIN}' AND status = 'active' AND id <> $id)`;
 
@@ -236,6 +242,38 @@ export class CmsAccounts {
         if (result.results[0]!.affected !== 1n) return this.#refuseLastAdmin(id, 'deleted');
         await this.#ended({ user: id });
         return true;
+    }
+
+    /**
+     * Move the account to another database's accounts under the same ID: its row with the
+     * password hash, its second factors and application passwords, and with `site`, its
+     * membership there. Then it is deleted here with what else signs it in, and its sessions
+     * end. Passkeys go: they are bound to the host they were made on. A retry after a failure
+     * between the two writes finishes the move. Throws CMS_CONFLICT when the other database
+     * has another account with the email.
+     */
+    async moveTo(target: CmsAccounts, id: string, options: { site?: string } = {}): Promise<boolean> {
+        if (!ACCOUNT_ID.test(id) || target === this) return false;
+        const params = { $id: id };
+        const found = await this.#db.read([
+            { rql: `SELECT ${MOVED.cms_accounts.join(', ')} FROM cms_accounts WHERE id = $id`, params },
+            { rql: `SELECT ${MOVED.cms_user_security.join(', ')} FROM cms_user_security WHERE user_id = $id`, params },
+            { rql: `SELECT ${MOVED.cms_api_tokens.join(', ')} FROM cms_api_tokens WHERE user_id = $id`, params },
+        ]);
+        if (!found.results[0]!.rows.length) return false;
+        const copy = (table: keyof typeof MOVED, key: string, row: readonly Value[], index: number) => ({
+            rql: `INSERT INTO ${table} (${MOVED[table].join(', ')}) VALUES (${MOVED[table].map((_, column) => `$v${index}_${column}`).join(', ')}) ON CONFLICT (${key}) DO NOTHING`,
+            params: Object.fromEntries(row.map((value, column) => [`$v${index}_${column}`, value])),
+        });
+        try {
+            await target.#db.write([
+                copy('cms_accounts', 'id', found.results[0]!.rows[0]!, 0),
+                ...found.results[1]!.rows.map(row => copy('cms_user_security', 'user_id', row, 1)),
+                ...found.results[2]!.rows.map((row, index) => copy('cms_api_tokens', 'id', row, 2 + index)),
+                ...(options.site ? [{ rql: 'INSERT INTO cms_memberships (account_id, site_id, created_at) VALUES ($id, $site, $now) ON CONFLICT (account_id, site_id) DO NOTHING', params: { $id: id, $site: options.site, $now: this.#now() } }] : []),
+            ], WRITE);
+        } catch (error) { throw uniqueEmail(error); }
+        return this.delete(id);
     }
 
     /** False for an unknown account; throws when the account is the last network admin. */

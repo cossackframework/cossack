@@ -9,7 +9,8 @@ import { network, siteLinks } from '../../../../../../cms/network-ui';
 import { actionButton, field, siteStatus, SUBMIT } from '../../../../../../cms/network-view';
 import { listTable } from '../../../../../../dashboard/list-table';
 
-interface Member { id: string; name: string; email: string; roles: string; account: 'site' | 'network' }
+/** `movable`: the account can change kind here, a network account only when it belongs to this site alone and does not run the network. */
+interface Member { id: string; name: string; email: string; roles: string; account: 'site' | 'network'; movable: boolean }
 
 /** One site: its name, domains (with the check that makes one primary), members and state. */
 @Page({ transport: 'http', middlewares: [requireNetworkAdmin()] })
@@ -39,7 +40,14 @@ export default class NetworkSite extends Cossack {
         Object.assign(this, { id: record.id, name: record.name, status: record.status, createdAt: record.createdAt, domains: [...record.domains] }, siteLinks(this.c, networkSite(record)));
         if (record.status !== 'creating') {
             const host = net.hostOf(networkSite(record));
-            this.members = (await host.users.list({ limit: 100 })).items.map(user => ({ id: user.id, name: user.name, email: user.email, roles: user.assignments.map(role => role.name).join(', ') || __('No role'), account: user.account }));
+            const users = (await host.users.list({ limit: 100 })).items;
+            const network = users.filter(user => user.account === 'network').map(user => user.id);
+            const [sites, admins] = await Promise.all([net.main.accounts.memberships(network), net.main.accounts.list({ networkAdmins: true, limit: 100 })]);
+            const runsNetwork = new Set(admins.items.map(account => account.id));
+            this.members = users.map(user => ({
+                id: user.id, name: user.name, email: user.email, roles: user.assignments.map(role => role.name).join(', ') || __('No role'), account: user.account,
+                movable: user.account === 'site' || (!runsNetwork.has(user.id) && (sites.get(user.id) ?? []).every(site => site === record.id)),
+            }));
             this.roles = (await host.users.roles()).map(role => ({ id: role.id, name: role.name }));
         }
         const request = (await net.exportRequests()).get(record.id);
@@ -82,6 +90,10 @@ export default class NetworkSite extends Cossack {
                 await host.users.addMember(account.id);
                 await host.users.setRoles(account.id, value('role') ? [value('role')] : []);
                 flash('network.message', `${account.name} ${__('is a member now.')}`);
+            } else if (action === 'convert-member') {
+                const to = value('to') === 'site' ? 'site' : 'network';
+                const user = await net.hostOf(networkSite(record)).users.convert(value('account'), to);
+                flash('network.message', `${user.name} ${to === 'site' ? __('has a site account now.') : __('has a network account now.')}`);
             } else if (action === 'remove-member') {
                 await net.hostOf(networkSite(record)).users.delete(value('account'));
                 flash('network.message', __('Removed from the site.'));
@@ -141,7 +153,9 @@ export default class NetworkSite extends Cossack {
                                 : html`<span class="font-medium text-foreground">${member.name}</span> ${component(Badge, { variant: 'outline' }, __('Site account'))}`}
                             <span class="block text-xs text-muted-foreground">${member.email}</span>` },
                         { label: __('Roles'), class: 'text-muted-foreground', cell: member => member.roles },
-                        { label: '', class: 'text-right', cell: member => actionButton('remove-member', __('Remove from site'), { account: member.id }, { danger: true }) },
+                        { label: '', class: 'text-right', cell: member => html`<span class="inline-flex flex-wrap justify-end gap-1.5">
+                            ${member.movable ? actionButton('convert-member', member.account === 'site' ? __('Make a network account') : __('Make a site account'), { account: member.id, to: member.account === 'site' ? 'network' : 'site' }) : null}
+                            ${actionButton('remove-member', __('Remove from site'), { account: member.id }, { danger: true })}</span>` },
                     ],
                 })}
                 <form method="post" class="flex max-w-xl flex-wrap items-end gap-3">
@@ -153,6 +167,7 @@ export default class NetworkSite extends Cossack {
                     </select>
                     <button type="submit" class=${SUBMIT}>${__('Add')}</button>
                 </form>
+                <p class="text-xs text-muted-foreground">${__('A network account signs in on the network and can join other sites; a site account signs in on this site only. Changing the kind keeps the member\'s roles, password and authenticator app. Their sessions end, and their passkeys are removed: passkeys work only on the address they were made on.')}</p>
             </section>`}
             ${this.status === 'creating' ? null : card(__('Database export'), html`
                 ${this.exportRequest ? html`<p class="text-sm text-foreground" data-export-request>${this.exportRequest.approvedAt

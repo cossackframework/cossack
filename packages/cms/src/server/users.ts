@@ -5,7 +5,7 @@
  * (see accounts.ts), or on an added site a site account, in the site's own database.
  */
 import { ClientError, type RomeDB, type Statement, type Value } from '@cossackframework/romedb';
-import { CmsError } from '../errors';
+import { CmsError, isCmsError } from '../errors';
 import { SYSTEM_META } from '../field-groups';
 import { slugify } from '../fields';
 import { NETWORK_ADMIN, userPrincipal, type Principal } from '../permissions';
@@ -316,6 +316,38 @@ export class CmsUsers {
         if (user?.account === 'site') await this.#siteAccounts!.delete(id);
         else await this.#accounts.leave(id, this.#site);
         return result.results[1]!.affected === 1n;
+    }
+
+    /**
+     * Make a member's site account a network account, or a network account a site account of
+     * this site, under the same ID: roles, profile and authorship stay. Only on an added site. A
+     * network account must belong to this site alone and not run the network. The account's
+     * sessions end, and its passkeys go with the host they were made on.
+     */
+    async convert(id: string, to: 'site' | 'network'): Promise<CmsUser> {
+        if (!this.#siteAccounts) throw new CmsError('CMS_VALIDATION', 'Only added sites have site accounts.');
+        const user = await this.get(id);
+        if (!user) throw new CmsError('CMS_NOT_FOUND', 'There is no such member.');
+        if (to === 'network') {
+            if (user.account === 'site') {
+                try { await this.#siteAccounts.moveTo(this.#accounts, id, { site: this.#site }); }
+                catch (error) {
+                    if (isCmsError(error, 'CMS_CONFLICT')) throw new CmsError('CMS_CONFLICT', 'A network account already has this email.', { fields: { email: 'is taken on the network.' } });
+                    throw error;
+                }
+            }
+        } else if (to === 'site') {
+            // Also finishes a move that copied the account here but did not delete it on the network.
+            const account = await this.#accounts.get(id);
+            if (account) {
+                if (account.networkRole) throw new CmsError('CMS_VALIDATION', 'Network admins keep network accounts.');
+                if (((await this.#accounts.memberships([id])).get(id) ?? []).some(site => site !== this.#site)) {
+                    throw new CmsError('CMS_VALIDATION', 'The account belongs to other sites too. Remove it from them first.');
+                }
+                await this.#accounts.moveTo(this.#siteAccounts, id);
+            }
+        } else throw new CmsError('CMS_VALIDATION', 'Choose a site or network account.');
+        return (await this.get(id))!;
     }
 
     /** Replace a user's roles in one atomic batch. */
