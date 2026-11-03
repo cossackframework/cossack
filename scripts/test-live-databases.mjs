@@ -2,7 +2,7 @@
 // locally before a release (docs/testing.md).
 //
 // The RomeDB client and CMS suites start `romedb serve` themselves. They need a
-// RomeDB 0.2.9+ executable: set COSSACK_TEST_ROMEDB_BIN or put `romedb` on PATH.
+// RomeDB 0.2.12+ executable: set COSSACK_TEST_ROMEDB_BIN or put `romedb` on PATH.
 //
 // With COSSACK_TEST_POSTGRES_URL and COSSACK_TEST_MYSQL_URL both set, the
 // suites use those databases. Otherwise this script starts the pinned

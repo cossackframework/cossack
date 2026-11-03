@@ -8,7 +8,7 @@ import { CmsNetwork, contentModule, createCMS, formsModule, DEFAULT_ROLES, NETWO
 
 /** Files open through `@romedb/node`'s native addon; without it, this suite skips. */
 const probe = await mkdtemp(path.join(os.tmpdir(), 'cossack-probe-'));
-const linked = await connectNode({ url: path.join(probe, 'probe.romedb') }).then(client => client.close().then(() => true), () => false);
+const native = await connectNode({ url: path.join(probe, 'probe.romedb') }).then(client => client.close().then(() => true), () => false);
 await rm(probe, { recursive: true, force: true });
 
 /** A network on files, as the CMS app runs on Node: app.romedb, and a file per added site beside it. */
@@ -25,7 +25,7 @@ function fileNetwork(directory: string) {
 
 const record = (token: string, userId: string) => ({ id: token.repeat(64).slice(0, 64), userId, kind: 'auth' as const, createdAt: Date.now(), expiresAt: Date.now() + 60_000 });
 
-describe.skipIf(!linked)('a network on database files', () => {
+describe.skipIf(!native)('a network on database files', () => {
     let directory: string;
     let network: CmsNetwork;
     let main: CmsHost;

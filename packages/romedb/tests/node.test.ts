@@ -6,9 +6,9 @@ import { ClientError, createRomeDB, Float64, MemoryPendingWriteStore, objects, o
 import { connectNode, isServiceUrl } from '../src/node';
 import { servesDirectories, startRomeDBDirectory, type RomeDBTestDirectory } from '../src/testing';
 
-/** `@romedb/node` is linked from a RomeDB checkout until it ships as a package. */
-const linked = await import('@romedb/node/embedded-client').then(() => true, () => false);
-const files = linked ? describe : describe.skip;
+/** `@romedb/node` ships its native addon for Linux x64 only so far; elsewhere these suites skip. */
+const native = await import('@romedb/node/embedded-client').then(() => true, () => false);
+const files = native ? describe : describe.skip;
 
 const values: { [key: string]: Value } = {
     max: 9223372036854775807n,
@@ -133,7 +133,7 @@ files('Files through @romedb/node', () => {
     });
 });
 
-const serve = linked && servesDirectories() ? describe : describe.skip;
+const serve = native && servesDirectories() ? describe : describe.skip;
 
 serve('romedb serve --directory through @romedb/node', () => {
     let service: RomeDBTestDirectory;

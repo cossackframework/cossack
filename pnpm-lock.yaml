@@ -5,7 +5,7 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  '@romedb/node': link:../fastdb/turso/romedb/bindings/node
+  '@romedb/node': https://github.com/romedb/romedb/releases/download/romedb-v0.2.12/romedb-node-0.2.12.tgz
   '@electron/rebuild': ^4.2.0
   happy-dom@<21.0.4: 21.0.4
   nanoid@<3.3.18: 3.3.18
@@ -177,8 +177,8 @@ importers:
         specifier: ^2.0.5
         version: 2.1.0(hono@4.13.11)
       '@romedb/node':
-        specifier: link:../../../../fastdb/turso/romedb/bindings/node
-        version: link:../../../../fastdb/turso/romedb/bindings/node
+        specifier: https://github.com/romedb/romedb/releases/download/romedb-v0.2.12/romedb-node-0.2.12.tgz
+        version: https://github.com/romedb/romedb/releases/download/romedb-v0.2.12/romedb-node-0.2.12.tgz
       '@simplewebauthn/browser':
         specifier: 14.0.0
         version: 14.0.0
@@ -557,8 +557,8 @@ importers:
   packages/romedb:
     dependencies:
       '@romedb/node':
-        specifier: link:../../../fastdb/turso/romedb/bindings/node
-        version: link:../../../fastdb/turso/romedb/bindings/node
+        specifier: https://github.com/romedb/romedb/releases/download/romedb-v0.2.12/romedb-node-0.2.12.tgz
+        version: https://github.com/romedb/romedb/releases/download/romedb-v0.2.12/romedb-node-0.2.12.tgz
       vite:
         specifier: ~8.1.6
         version: 8.1.6(@types/node@22.20.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.0)(tsx@4.23.0)(yaml@2.9.0)
@@ -1849,6 +1849,11 @@ packages:
 
   '@rolldown/pluginutils@1.0.1':
     resolution: {integrity: sha512-2j9bGt5Jh8hj+vPtgzPtl72j0yRxHAyumoo6TNfAjsLB04UtpSvPbPcDcBMxz7n+9CYB0c1GxQFxYRg2jimqGw==}
+
+  '@romedb/node@https://github.com/romedb/romedb/releases/download/romedb-v0.2.12/romedb-node-0.2.12.tgz':
+    resolution: {integrity: sha512-rztt98nhqw220u+87SSr0Z5hz9Yc4xBYHn5S9a59ogIYUbNzHvpOgUIJniXdwZ4hGSlvNfBNfft9OYnlK+rZaQ==, tarball: https://github.com/romedb/romedb/releases/download/romedb-v0.2.12/romedb-node-0.2.12.tgz}
+    version: 0.2.12
+    engines: {node: '>=22'}
 
   '@sagold/json-pointer@5.1.2':
     resolution: {integrity: sha512-+wAhJZBXa6MNxRScg6tkqEbChEHMgVZAhTHVJ60Y7sbtXtu9XA49KfUkdWlS2x78D6H9nryiKePiYozumauPfA==}
@@ -5806,6 +5811,8 @@ snapshots:
     optional: true
 
   '@rolldown/pluginutils@1.0.1': {}
+
+  '@romedb/node@https://github.com/romedb/romedb/releases/download/romedb-v0.2.12/romedb-node-0.2.12.tgz': {}
 
   '@sagold/json-pointer@5.1.2': {}
 
