@@ -8,7 +8,7 @@ import type { StorageMetadata, StorageProvider } from '@cossackframework/core/st
 import { CmsError } from '../errors';
 import { LOCALE } from '../collections';
 import { slugify } from '../fields';
-import { DEFAULT_ROLES, isNetworkAdmin, systemPrincipal, type Principal } from '../permissions';
+import { DEFAULT_ROLES, isNetworkAdmin, principalId, systemPrincipal, type Principal } from '../permissions';
 import { PLUGIN_ENABLED, type CmsHost, type PluginStatus } from './host';
 import { pluginState, POLICY_KEYS, readPolicy, type NetworkPluginState, type NetworkPolicy, type NetworkThemeState, type StoredPluginStates, type StoredThemeStates } from './network-policy';
 import { CmsHandoffs } from './handoffs';
@@ -310,6 +310,7 @@ export class CmsNetwork {
         return {
             name: text(stored.name), subdomainSuffix: text(stored.subdomainSuffix), defaultTheme: text(stored.defaultTheme), defaultLanguage: text(stored.defaultLanguage),
             defaultPlugins: Array.isArray(stored.defaultPlugins) ? stored.defaultPlugins.filter((name): name is string => typeof name === 'string') : [],
+            siteExports: stored.siteExports === 'self' ? 'self' : 'request',
         };
     }
 
@@ -323,12 +324,72 @@ export class CmsNetwork {
         const unknown = next.defaultPlugins.filter(name => !plugins.has(name));
         if (unknown.length) throw new CmsError('CMS_VALIDATION', `Unknown plugins: ${unknown.join(', ')}.`, { fields: { defaultPlugins: 'are unknown.' } });
         if (next.defaultLanguage && !LOCALE.test(next.defaultLanguage)) throw new CmsError('CMS_VALIDATION', 'Enter a language code, such as en or pt-br.', { fields: { defaultLanguage: 'is invalid.' } });
+        if (next.siteExports !== 'request' && next.siteExports !== 'self') throw new CmsError('CMS_VALIDATION', 'Site exports are request or self.', { fields: { siteExports: 'is invalid.' } });
         const saved: NetworkSettings = {
             name: next.name.trim(), subdomainSuffix: next.subdomainSuffix ? siteHost(next.subdomainSuffix) : '',
-            defaultTheme: next.defaultTheme, defaultPlugins: [...new Set(next.defaultPlugins)], defaultLanguage: next.defaultLanguage,
+            defaultTheme: next.defaultTheme, defaultPlugins: [...new Set(next.defaultPlugins)], defaultLanguage: next.defaultLanguage, siteExports: next.siteExports,
         };
         await this.setState('settings', saved);
         return saved;
+    }
+
+    /** Sites' export requests by site: those waiting for a network admin, and approvals that have not expired. */
+    async exportRequests(): Promise<Map<string, ExportRequest>> {
+        const now = this.#now();
+        const stored = await this.state<StoredExportRequests>(EXPORTS) ?? {};
+        const requests = new Map<string, ExportRequest>();
+        for (const [site, entry] of Object.entries(stored)) {
+            const expiresAt = entry.approvedAt ? entry.approvedAt + EXPORT_APPROVAL_MS : null;
+            if (expiresAt === null || expiresAt > now) requests.set(site, { site, requestedBy: entry.requestedBy, requestedAt: entry.requestedAt, approvedBy: entry.approvedBy ?? null, approvedAt: entry.approvedAt ?? null, expiresAt });
+        }
+        return requests;
+    }
+
+    /**
+     * Whether a site may download its database export now: the main site always; another site
+     * when the network lets sites export themselves, or for 7 days after a network admin
+     * approved its request. The site's own permission is the caller's to check.
+     */
+    async exportAccess(site: string): Promise<{ allowed: boolean; request: ExportRequest | null }> {
+        const request = site === MAIN_SITE ? null : (await this.exportRequests()).get(site) ?? null;
+        const allowed = site === MAIN_SITE || (await this.settings()).siteExports === 'self' || request?.approvedAt != null;
+        return { allowed, request };
+    }
+
+    /** A site asks a network admin for its export. Asking again while a request waits changes nothing. */
+    async requestExport(site: string, context: { principal: Principal }): Promise<ExportRequest> {
+        if (context.principal.kind !== 'user') throw new CmsError('CMS_UNAUTHENTICATED', 'Sign in to request an export.');
+        const record = await this.sites.get(site);
+        if (!record || (record.status !== 'active' && record.status !== 'archived')) throw new CmsError('CMS_NOT_FOUND', 'There is no such site.');
+        const current = (await this.exportRequests()).get(site);
+        if (current && current.approvedAt === null) return current;
+        await this.#setExport(site, { requestedBy: context.principal.id, requestedAt: this.#now() });
+        return (await this.exportRequests()).get(site)!;
+    }
+
+    /** The site withdraws its request, or gives up an approval it no longer needs. */
+    async withdrawExport(site: string, context: { principal: Principal }): Promise<void> {
+        if (context.principal.kind !== 'user') throw new CmsError('CMS_UNAUTHENTICATED', 'Sign in to withdraw an export request.');
+        await this.#setExport(site, null);
+    }
+
+    /** A network admin approves a site's request, for 7 days of downloads, or declines it. */
+    async answerExport(site: string, approve: boolean, context: { principal: Principal }): Promise<ExportRequest | null> {
+        requireNetworkAdmin(context.principal);
+        const current = (await this.exportRequests()).get(site);
+        if (!current) throw new CmsError('CMS_NOT_FOUND', 'This site has not requested an export.');
+        if (!approve) { await this.#setExport(site, null); return null; }
+        await this.#setExport(site, { requestedBy: current.requestedBy, requestedAt: current.requestedAt, approvedBy: principalId(context.principal), approvedAt: this.#now() });
+        return (await this.exportRequests()).get(site)!;
+    }
+
+    async #setExport(site: string, entry: StoredExportRequests[string] | null): Promise<void> {
+        const stored: StoredExportRequests = { ...await this.state<StoredExportRequests>(EXPORTS) };
+        // Expired approvals go with the next change.
+        for (const [id, value] of Object.entries(stored)) if (value.approvedAt && value.approvedAt + EXPORT_APPROVAL_MS <= this.#now()) delete stored[id];
+        if (entry) stored[site] = entry;
+        else delete stored[site];
+        await this.setState(EXPORTS, stored);
     }
 
     /** The network's plugin and theme states. */
@@ -497,7 +558,25 @@ export interface NetworkSettings {
     readonly defaultPlugins: readonly string[];
     /** New sites' default language; empty for English. */
     readonly defaultLanguage: string;
+    /** How added sites export their databases: `request` a network admin's approval (the default), or download them `self`. */
+    readonly siteExports: SiteExportPolicy;
 }
+
+export type SiteExportPolicy = 'request' | 'self';
+
+/** A site's request to export its database, and the network admin's answer. */
+export interface ExportRequest {
+    readonly site: string;
+    /** The account that asked. */
+    readonly requestedBy: string;
+    readonly requestedAt: number;
+    readonly approvedBy: string | null;
+    readonly approvedAt: number | null;
+    /** Until when the site may download after the approval; null while it waits. */
+    readonly expiresAt: number | null;
+}
+
+type StoredExportRequests = Record<string, { requestedBy: string; requestedAt: number; approvedBy?: string; approvedAt?: number }>;
 
 /** What adding a site asks for. */
 export interface NewSite {
@@ -516,6 +595,10 @@ export interface NewSite {
 
 /** The `cms_network` key of whether the network is on. */
 const ENABLED = 'enabled';
+/** The `cms_network` key of sites' export requests. */
+const EXPORTS = 'exports';
+/** How long an approved export stays downloadable. */
+const EXPORT_APPROVAL_MS = 7 * 24 * 60 * 60_000;
 
 const CREATION_STEPS = ['database', 'schema', 'seeded', 'members'] as const;
 type CreationStep = typeof CREATION_STEPS[number];

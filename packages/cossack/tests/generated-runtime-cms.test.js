@@ -704,7 +704,7 @@ describe.skipIf(!liveRomeDBTests())('generated CMS application', () => {
       await fs.access(path.join(root, 'storage/romedb/token'));
       // The network dashboard waits until Settings → Network turns the network on.
       expect((await web.request('/dashboard/network')).headers.get('location')).toBe('/dashboard');
-      const network = { enabled: true, name: 'Dev network', subdomainSuffix: '', defaultTheme: '', defaultPlugins: [], defaultLanguage: '' };
+      const network = { enabled: true, name: 'Dev network', subdomainSuffix: '', defaultTheme: '', defaultPlugins: [], defaultLanguage: '', siteExports: 'request' };
       expect((await web.action(SETTINGS, 'saveAll', [{ document: null, languages: null, permalinks: null, network, groups: {} }]))._cossack_return.error).toBe('');
       // Beside it, a directory service holds added sites' databases, which the Worker creates through ROMEDB_SITES_URL.
       if (servesDirectories()) {
@@ -733,6 +733,22 @@ describe.skipIf(!liveRomeDBTests())('generated CMS application', () => {
       expect((await web.action(SETTINGS, 'saveAll', [{ document: { general: { favicon: '/network-icon.svg' } }, languages: null, permalinks: null, network: null, groups: {} }]))._cossack_return.error).toBe('');
       const icons = [...(await web.page('/dashboard/network/sites')).matchAll(/<img src="?([^"\s>]+)"?[^>]*data-site-icon/g)].map(match => match[1]);
       expect(icons).toEqual(Array(servesDirectories() ? 2 : 1).fill(`${origin}/network-icon.svg`));
+      // Tools → Export downloads the main site's database at once, without accounts or sessions; network admins download any site's.
+      contains(await web.page('/dashboard/tools/export'), 'Download export');
+      const own = await web.request('/api/cms/site-export');
+      expect(own.status).toBe(200);
+      expect(own.headers.get('content-disposition')).toMatch(/^attachment; filename="main-\d{4}-\d{2}-\d{2}\.json"$/);
+      const exported = await own.json();
+      expect(exported).toMatchObject({ format: 'cossack-site-export', version: 1, site: { id: 'main', name: 'Workers Dev' } });
+      expect(exported.tables.map(table => table.name)).toContain('cms_settings');
+      expect(exported.tables.map(table => table.name)).not.toContain('cms_accounts');
+      expect(exported.tables.map(table => table.name)).not.toContain('cms_auth_sessions');
+      if (servesDirectories()) {
+        const blogExport = await (await web.request('/api/cms/network/sites/blog/export')).json();
+        expect(blogExport.site).toEqual({ id: 'blog', name: 'Blog', host: 'blog.localhost' });
+        expect(blogExport.tables.find(table => table.name === 'r__cms__posts').rows.length).toBeGreaterThan(0);
+        contains(await web.page('/dashboard/network/sites/blog'), 'Download export');
+      }
       // The network home counts the main site as active, beside any added one.
       expect(await web.page('/dashboard/network')).toMatch(new RegExp(`Active sites</p>\\s*<a href="/dashboard/network/sites"[^>]*>\\s*${servesDirectories() ? 2 : 1}\\s*<`));
     } finally {

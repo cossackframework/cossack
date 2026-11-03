@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { RomeDB } from '@cossackframework/romedb';
-import { CmsNetwork, createCMS, NETWORK_ADMIN, systemPrincipal, userPrincipal, type CmsHost, type Principal } from '../src/server/index';
+import { decodeValue, type RomeDB } from '@cossackframework/romedb';
+import { CmsNetwork, createCMS, NETWORK_ADMIN, siteExport, systemPrincipal, userPrincipal, type CmsHost, type Principal } from '../src/server/index';
 import { romedbService, live } from './helpers';
 
 describe.skipIf(!live)('adding, archiving and deleting sites', () => {
@@ -113,13 +113,65 @@ describe.skipIf(!live)('adding, archiving and deleting sites', () => {
 
     it('keeps network settings and lists sites with schema steps to apply', async () => {
         await expect(network.saveSettings({ subdomainSuffix: 'not a domain' }, { principal: admin })).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
-        expect(await network.saveSettings({ name: 'Example Network', subdomainSuffix: 'sites.example.com' }, { principal: admin })).toEqual({ name: 'Example Network', subdomainSuffix: 'sites.example.com', defaultTheme: '', defaultPlugins: [], defaultLanguage: '' });
+        expect(await network.saveSettings({ name: 'Example Network', subdomainSuffix: 'sites.example.com' }, { principal: admin })).toEqual({ name: 'Example Network', subdomainSuffix: 'sites.example.com', defaultTheme: '', defaultPlugins: [], defaultLanguage: '', siteExports: 'request' });
         await expect(network.createSite({ name: 'Shop', host: 'shop.example.com', admin: owner }, { principal: admin })).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
         await network.saveSettings({ subdomainSuffix: '' }, { principal: admin });
         expect(await network.updates()).toEqual([]);
         expect(await network.upgrade({ principal: admin })).toEqual({ upgraded: [], failed: [] });
         await network.setState('test.value', { n: 1 });
         expect(await network.state('test.value')).toEqual({ n: 1 });
+    });
+
+    it('exports a site\'s database without credentials, in pages, with its values intact', async () => {
+        const blog = network.hostOf((await network.resolve('www.theblog.test') as { site: Parameters<CmsNetwork['hostOf']>[0] }).site);
+        await blog.settings.update('general', { tagline: 'Notes' }, { principal: systemPrincipal('test') });
+        let text = '';
+        for await (const chunk of siteExport(blog.db, { site: { id: 'the-blog', name: 'The Blog', host: 'www.theblog.test' }, now: () => 0, pageSize: 2 })) text += chunk;
+        const exported = JSON.parse(text) as { format: string; version: number; exportedAt: string; site: unknown; skipped: string[]; tables: { name: string; model: string; columns?: string[]; rows: unknown[] }[] };
+        expect(exported).toMatchObject({ format: 'cossack-site-export', version: 1, exportedAt: '1970-01-01T00:00:00.000Z', site: { id: 'the-blog', name: 'The Blog', host: 'www.theblog.test' } });
+        const names = exported.tables.map(table => table.name);
+        expect(names).toEqual(expect.arrayContaining(['cms_settings', 'cms_users', 'cms_roles', 'cms_user_roles']));
+        for (const secret of ['cms_auth_sessions', 'cms_user_security', 'cms_passkeys', 'cms_api_tokens', 'cms_accounts', 'cms_network']) expect(names).not.toContain(secret);
+        // Rows come in key order across pages of two, as RomeDB's portable values.
+        const settings = exported.tables.find(table => table.name === 'cms_settings')!;
+        const rows = settings.rows.map(row => (row as unknown[]).map(value => decodeValue(value)));
+        expect(rows.length).toBeGreaterThan(2);
+        expect(rows.map(row => row[0])).toEqual([...rows.map(row => row[0])].sort());
+        expect(rows.find(row => row[0] === 'general.tagline')?.[settings.columns!.indexOf('value')]).toBe('"Notes"');
+        expect(typeof rows[0]![settings.columns!.indexOf('updated_at')]).toBe('bigint');
+        const roles = exported.tables.find(table => table.name === 'cms_roles')!;
+        expect(roles.rows).toHaveLength((await blog.users.roles()).length);
+    });
+
+    it('lets a site download its export after a network admin approves its request, or at once when sites export themselves', async () => {
+        const siteAdmin = userPrincipal(owner, ['admin'], ['*']);
+        expect(await network.exportAccess('main')).toEqual({ allowed: true, request: null });
+        expect(await network.exportAccess('the-blog')).toEqual({ allowed: false, request: null });
+        const request = await network.requestExport('the-blog', { principal: siteAdmin });
+        expect(request).toMatchObject({ site: 'the-blog', requestedBy: owner, requestedAt: now, approvedAt: null, expiresAt: null });
+        expect(await network.requestExport('the-blog', { principal: siteAdmin })).toEqual(request);
+        await expect(network.requestExport('nowhere', { principal: siteAdmin })).rejects.toMatchObject({ code: 'CMS_NOT_FOUND' });
+        await expect(network.answerExport('the-blog', true, { principal: siteAdmin })).rejects.toMatchObject({ code: 'CMS_FORBIDDEN' });
+        expect((await network.exportAccess('the-blog')).allowed).toBe(false);
+
+        now += 1_000;
+        expect(await network.answerExport('the-blog', true, { principal: admin })).toMatchObject({ approvedBy: owner, approvedAt: now, expiresAt: now + 7 * 24 * 60 * 60_000 });
+        expect((await network.exportAccess('the-blog')).allowed).toBe(true);
+        // An approval lasts 7 days.
+        now += 7 * 24 * 60 * 60_000;
+        expect(await network.exportAccess('the-blog')).toEqual({ allowed: false, request: null });
+
+        await network.requestExport('the-blog', { principal: siteAdmin });
+        expect(await network.answerExport('the-blog', false, { principal: admin })).toBeNull();
+        expect((await network.exportRequests()).size).toBe(0);
+        await network.requestExport('the-blog', { principal: siteAdmin });
+        await network.withdrawExport('the-blog', { principal: siteAdmin });
+        expect((await network.exportRequests()).size).toBe(0);
+
+        await expect(network.saveSettings({ siteExports: 'everyone' as 'self' }, { principal: admin })).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
+        await network.saveSettings({ siteExports: 'self' }, { principal: admin });
+        expect(await network.exportAccess('the-blog')).toEqual({ allowed: true, request: null });
+        await network.saveSettings({ siteExports: 'request' }, { principal: admin });
     });
 
     it('archives, deletes and restores a site, and purges it 30 days after deletion', async () => {

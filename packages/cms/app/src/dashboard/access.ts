@@ -87,6 +87,7 @@ export async function navigation(c: Context): Promise<DashboardModule[]> {
         ...(can(PERMISSIONS.manageSettings) ? [{ label: 'SEO editor', href: '/dashboard/tools/seo' }] : []),
         ...(can(PERMISSIONS.manageWebhooks) ? [{ label: 'Webhooks', href: '/dashboard/tools/webhooks' }] : []),
         ...(can(PERMISSIONS.manageSchema) ? [{ label: 'Schema', href: '/dashboard/tools/schema' }] : []),
+        ...(can(PERMISSIONS.manageSettings) ? [{ label: 'Export', href: '/dashboard/tools/export' }] : []),
     ];
     if (tools.length) admin.push({ id: 'tools', label: 'Tools', href: tools[0]!.href, icon: icon('tuning-2'), authorization: 'authenticated', children: tools });
     // Settings has its own navigation beside its pages, so the sidebar holds one link.
@@ -125,8 +126,12 @@ export async function dashboardStatus(c: Context): Promise<DashboardStatus[]> {
     const can = (permission: string) => hasPermission(principal, permission);
     const context = { principal };
     const items: DashboardStatus[] = [];
-    // Network admins reach the network dashboard from the main site's taskbar.
-    if (await showsNetwork(c, principal)) items.push({ id: 'network', label: 'Network', href: '/dashboard/network' });
+    // Network admins reach the network dashboard from the main site's taskbar, with sites' export requests.
+    if (await showsNetwork(c, principal)) {
+        items.push({ id: 'network', label: 'Network', href: '/dashboard/network' });
+        const waiting = [...(await networkFor(c.env as CmsBindings).exportRequests().catch(() => new Map())).values()].filter(request => request.approvedAt === null);
+        if (waiting.length) items.push({ id: 'export-requests', label: 'Export requests', href: `/dashboard/network/sites/${waiting[0]!.site}`, count: waiting.length, tone: 'warning' });
+    }
     if (can(PERMISSIONS.moderateComments) && cms.collections().some(collection => collection.comments)) {
         const pending = await cms.comments.counts().then(counts => counts.pending).catch(() => 0);
         if (pending) items.push({ id: 'comments', label: 'Comments to moderate', href: '/dashboard/comments?status=pending', count: pending, tone: 'warning' });

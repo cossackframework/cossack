@@ -13,7 +13,7 @@ const PAGE_SIZE = 20;
 const STATUSES = ['active', 'archived', 'deleted', 'creating'] as const;
 const STATUS_LABELS: Record<string, string> = { '': 'All', active: 'Active', archived: 'Archived', deleted: 'Deleted', creating: 'Being created' };
 
-interface SiteRow { id: string; name: string; host: string; status: SiteStatus; members: number; createdAt: number | null; home: string; dashboard: string; icon: string }
+interface SiteRow { id: string; name: string; host: string; status: SiteStatus; members: number; createdAt: number | null; home: string; dashboard: string; icon: string; exportRequested: boolean }
 
 /** Network → Sites: every site as a list table, the main site first, with its address, members and state. */
 @Page({ transport: 'http', middlewares: [requireNetworkAdmin()] })
@@ -51,12 +51,13 @@ export default class NetworkSites extends Cossack {
     private async load() {
         const net = network(this.c);
         const search = this.search ? { search: this.search } : {};
-        const [totals, members, mainName, networkIcon] = await Promise.all([
+        const [totals, members, mainName, networkIcon, requests] = await Promise.all([
             Promise.all(STATUSES.map(status => net.sites.list({ ...search, status, limit: 1 }).then(found => found.total))),
             net.main.accounts.memberCounts(),
             net.main.settings.get('general.siteTitle').then(title => title || __('Main site'), () => __('Main site')),
             // The main site's icon is the network's, for sites without one.
             siteIconUrl(this.c, net.main, { host: null }),
+            net.exportRequests(),
         ]);
         const withMain = !this.search || mainName.toLowerCase().includes(this.search.toLowerCase()) ? 1 : 0;
         const byStatus = new Map(STATUSES.map((status, index) => [status, totals[index]!]));
@@ -66,12 +67,13 @@ export default class NetworkSites extends Cossack {
         ];
         const found = await net.sites.list({ ...search, ...(this.status ? { status: this.status as SiteStatus } : {}), limit: PAGE_SIZE, offset: (this.page - 1) * PAGE_SIZE });
         const leadsWithMain = withMain && this.page === 1 && (!this.status || this.status === 'active');
-        const main: SiteRow[] = leadsWithMain ? [{ id: MAIN_SITE, name: mainName, host: new URL(siteLinks(this.c, { host: null }).home, this.c.req.url).host, status: 'active', members: members.get(MAIN_SITE) ?? 0, createdAt: null, icon: networkIcon, ...siteLinks(this.c, { host: null }) }] : [];
+        const main: SiteRow[] = leadsWithMain ? [{ id: MAIN_SITE, name: mainName, host: new URL(siteLinks(this.c, { host: null }).home, this.c.req.url).host, status: 'active', members: members.get(MAIN_SITE) ?? 0, createdAt: null, icon: networkIcon, exportRequested: false, ...siteLinks(this.c, { host: null }) }] : [];
         this.rows = [...main, ...await Promise.all(found.items.map(async site => {
             const host = site.domains.find(domain => domain.primary)?.host ?? '';
             // Sites being created or deleted have no settings to read.
             const own = site.status === 'active' || site.status === 'archived' ? await siteIconUrl(this.c, net.hostOf(networkSite(site)), { host }) : '';
-            return { id: site.id, name: site.name, host, status: site.status, members: members.get(site.id) ?? 0, createdAt: site.createdAt, icon: own || networkIcon, ...siteLinks(this.c, { host }) };
+            return { id: site.id, name: site.name, host, status: site.status, members: members.get(site.id) ?? 0, createdAt: site.createdAt, icon: own || networkIcon,
+                exportRequested: requests.get(site.id)?.approvedAt === null, ...siteLinks(this.c, { host }) };
         }))];
         this.total = found.total + (this.status === '' || this.status === 'active' ? withMain : 0);
         this.pages = Math.max(1, Math.ceil(found.total / PAGE_SIZE));
@@ -159,7 +161,8 @@ export default class NetworkSites extends Cossack {
                         ${actions(row)}
                     </div></div>` },
                     { label: __('Members'), class: 'text-right text-muted-foreground', cell: row => row.members },
-                    { label: __('Status'), cell: row => siteStatus(row.status) },
+                    { label: __('Status'), cell: row => html`<div class="flex flex-wrap items-center gap-1">${siteStatus(row.status)}
+                        ${row.exportRequested ? html`<a href=${`/dashboard/network/sites/${row.id}`} class="rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-700 no-underline dark:text-amber-300">${__('Export requested')}</a>` : null}</div>` },
                     { label: __('Created'), class: 'text-muted-foreground', cell: row => row.createdAt === null ? '—' : shortDate(row.createdAt) },
                 ],
             })}

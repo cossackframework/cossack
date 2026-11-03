@@ -2,9 +2,9 @@ import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createRomeDB, MemoryPendingWriteStore, type RomeDB } from '@cossackframework/romedb';
+import { createRomeDB, decodeValue, MemoryPendingWriteStore, RecordId, type RomeDB } from '@cossackframework/romedb';
 import { connectNode, fileDatabases } from '@cossackframework/romedb/node';
-import { CmsNetwork, contentModule, createCMS, formsModule, DEFAULT_ROLES, NETWORK_ADMIN, systemPrincipal, type CmsHost, type NetworkSite } from '../src/server/index';
+import { CmsNetwork, contentModule, createCMS, formsModule, DEFAULT_ROLES, NETWORK_ADMIN, siteExport, systemPrincipal, type CmsHost, type NetworkSite } from '../src/server/index';
 
 /** Files open through `@romedb/node`'s native addon; without it, this suite skips. */
 const probe = await mkdtemp(path.join(os.tmpdir(), 'cossack-probe-'));
@@ -62,6 +62,15 @@ describe.skipIf(!native)('a network on database files', () => {
         expect((await main.accounts.verifier.verify('writer@example.com', 'writes daily'))?.id).toBe(writer.id);
         expect((await shop.resource('cms/posts').list({ limit: 5 }, { principal: (await shop.users.principal(owner))! })).records.length).toBeGreaterThan(0);
         expect((await blog.resource('cms/posts').list({ limit: 5 }, { principal: (await blog.users.principal(owner))! })).records).toEqual([]);
+        // The shop's export holds its starter post whole, with its record ID.
+        let text = '';
+        for await (const chunk of siteExport(shop.db, { site: { id: 'shop', name: 'Shop', host: 'shop.example.com' } })) text += chunk;
+        const posts = (JSON.parse(text) as { tables: { name: string; model: string; rows: unknown[] }[] }).tables.find(table => table.name === 'r__cms__posts')!;
+        expect(posts.model).toBe('document');
+        const post = decodeValue(posts.rows[0]) as { id: RecordId; title: string };
+        expect(post.id).toBeInstanceOf(RecordId);
+        expect(post.id.table).toBe('r__cms__posts');
+        expect(typeof post.title).toBe('string');
     }, 60_000);
 
     it('hands a network session to a site and ends it there when it ends', async () => {

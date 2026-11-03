@@ -114,8 +114,8 @@ Network admins open `/dashboard/network` on the network host, while the network 
   when it next loads; this page upgrades them now, ten at a time.
 
 The network's settings are under **Settings → Network** on the main site: whether the network
-is on, its name, the domain new sites' addresses end with, and what new sites start with: a
-theme, plugins to enable, and a language. A default theme or plugin the network hides later
+is on, its name, the domain new sites' addresses end with, what new sites start with (a
+theme, plugins to enable, and a language) and how sites export their databases (see below). A default theme or plugin the network hides later
 is left out. They save with the page's *Save changes*.
 
 Members of more than one site see **My sites** in the dashboard menu and the site taskbar's
@@ -139,6 +139,33 @@ approves it again (*Approve and keep active*). Network deactivate makes the plug
 again: each site's own grant applies, so a site that never granted it no longer runs it.
 Grants, settings and data stay in each site's database. Other processes see a change within
 30 seconds.
+
+## Exporting a site
+
+Every site can download its database as one JSON file under **Tools → Export**, for its
+admins (Settings permission) signed in with a session. The main site downloads at once. An
+added site follows Settings → Network → *Site exports*:
+
+| Setting | An added site |
+| --- | --- |
+| **Site admins request an export; a network admin approves it** (the default) | *Request export* records a request. Network admins see it in the main site's taskbar (*Export requests*), as a badge in Network → Sites, and on the site's page, where they approve or decline it. After an approval the site downloads its export for 7 days. |
+| **Site admins export their own site** | Tools → Export downloads at once. |
+
+Network admins download any site's export from its page under Network → Sites
+(`GET /api/cms/network/sites/<id>/export`); a site downloads its own from
+`GET /api/cms/site-export`.
+
+The file, `<site>-<date>.json`, is `{ format: 'cossack-site-export', version: 1, exportedAt,
+site, skipped, redacted, tables }`. Each table has its `name`, `model` and `rows`; relational
+tables also list their `columns`, and their rows are arrays in that order, while document
+tables' rows are whole documents. Values use RomeDB's portable encoding, so `decodeValue`
+from `@cossackframework/romedb` restores integers, record IDs and binary values exactly. Rows
+are read in key order, a page at a time. Sessions, sign-in challenges, reset tokens, second
+factors, passkeys, application passwords, preview links, handoffs, the cache and the
+network's own tables (accounts, the site registry) stay out, and webhook secrets are null.
+Media files are not included; `cms_files` rows name their storage keys. There is no import
+yet. In code, `siteExport(host.db, { site })` from `@cossackframework/cms/server` yields the
+same document as text chunks.
 
 ## Site states
 

@@ -23,6 +23,8 @@ export default class NetworkSite extends Cossack {
     @State() roles: { id: string; name: string }[] = [];
     @State() home = '';
     @State() dashboard = '';
+    /** The site's export request: who asked and when, and the approval while it lasts. */
+    @State() exportRequest: { by: string; at: number; approvedAt: number | null; expiresAt: number | null } | null = null;
     @State() message = '';
     @State() error = '';
 
@@ -39,6 +41,11 @@ export default class NetworkSite extends Cossack {
             const host = net.hostOf(networkSite(record));
             this.members = (await host.users.list({ limit: 100 })).items.map(user => ({ id: user.id, name: user.name, email: user.email, roles: user.assignments.map(role => role.name).join(', ') || __('No role') }));
             this.roles = (await host.users.roles()).map(role => ({ id: role.id, name: role.name }));
+        }
+        const request = (await net.exportRequests()).get(record.id);
+        if (request) {
+            const account = await net.main.accounts.get(request.requestedBy);
+            this.exportRequest = { by: account ? `${account.name} (${account.email})` : request.requestedBy, at: request.requestedAt, approvedAt: request.approvedAt, expiresAt: request.expiresAt };
         }
         this.message = flashed<string>('network.message') ?? '';
         this.error = flashed<string>('network.error') ?? '';
@@ -78,6 +85,9 @@ export default class NetworkSite extends Cossack {
             } else if (action === 'remove-member') {
                 await net.hostOf(networkSite(record)).users.delete(value('account'));
                 flash('network.message', __('Removed from the site.'));
+            } else if (action === 'approve-export' || action === 'decline-export') {
+                await net.answerExport(id, action === 'approve-export', { principal });
+                flash('network.message', action === 'approve-export' ? __('Approved. The site can download its export under Tools → Export for 7 days.') : __('Declined.'));
             } else if (action === 'archive' || action === 'restore' || action === 'delete') {
                 const site = await net.setSiteStatus(id, action === 'archive' ? 'archived' : action === 'delete' ? 'deleted' : 'active', { principal });
                 flash('network.message', action === 'delete' ? `${site.name} ${__('is deleted. It can be restored for 30 days.')}` : `${site.name} ${action === 'archive' ? __('is archived.') : __('is active.')}`);
@@ -142,6 +152,13 @@ export default class NetworkSite extends Cossack {
                     <button type="submit" class=${SUBMIT}>${__('Add')}</button>
                 </form>
             </section>`}
+            ${this.status === 'creating' ? null : card(__('Database export'), html`
+                ${this.exportRequest ? html`<p class="text-sm text-foreground" data-export-request>${this.exportRequest.approvedAt
+                    ? `${__('Approved')} ${shortDate(this.exportRequest.approvedAt)}: ${__('the site can download its export until')} ${shortDate(this.exportRequest.expiresAt)}.`
+                    : `${this.exportRequest.by} ${__('requested an export on')} ${shortDate(this.exportRequest.at)}.`}</p>
+                    ${this.exportRequest.approvedAt ? null : html`<div class="flex flex-wrap gap-2">${actionButton('approve-export', __('Approve'))}${actionButton('decline-export', __('Decline'), {}, { danger: true })}</div>`}` : null}
+                <a href=${`/api/cms/network/sites/${this.id}/export`} download class="inline-flex w-fit items-center justify-center rounded-md border border-border px-3 py-1.5 text-sm font-medium text-foreground no-underline hover:bg-muted">${__('Download export')}</a>`,
+                __('The site\'s database as one JSON file. Sessions, passwords, second factors, application passwords and webhook secrets stay out; media files are not included.'))}
             ${this.status === 'creating' ? null : card(__('Site state'), html`<div class="flex flex-wrap gap-2">
                 ${this.status === 'active' ? actionButton('archive', __('Archive'), {}) : null}
                 ${this.status === 'archived' || this.status === 'deleted' ? actionButton('restore', __('Restore'), {}) : null}

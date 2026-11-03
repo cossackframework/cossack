@@ -6,7 +6,7 @@
 import { Client, ClientState, Component, Cossack } from '@cossackframework/core';
 import { html, type TemplateResult } from '@cossackframework/renderer';
 import { isCmsError, type Principal } from '@cossackframework/cms';
-import type { CmsNetwork, NetworkSettings } from '@cossackframework/cms/server';
+import type { CmsNetwork, NetworkSettings, SiteExportPolicy } from '@cossackframework/cms/server';
 import type { SettingsDraft } from './settings-draft';
 import { CONTROL, notice } from './ui';
 
@@ -17,6 +17,7 @@ export interface NetworkSettingsInput {
     defaultTheme: string;
     defaultPlugins: string[];
     defaultLanguage: string;
+    siteExports: SiteExportPolicy;
 }
 export interface NetworkSettingsData extends NetworkSettingsInput {
     /** What new sites' addresses end with while `subdomainSuffix` is empty. */
@@ -38,7 +39,7 @@ export async function loadNetworkSettings(network: CmsNetwork): Promise<NetworkS
     ]);
     return {
         enabled, name: settings.name, subdomainSuffix: settings.subdomainSuffix, defaultTheme: settings.defaultTheme,
-        defaultPlugins: [...settings.defaultPlugins], defaultLanguage: settings.defaultLanguage, fallbackSuffix: network.subdomainSuffix,
+        defaultPlugins: [...settings.defaultPlugins], defaultLanguage: settings.defaultLanguage, siteExports: settings.siteExports, fallbackSuffix: network.subdomainSuffix,
         themes: network.main.themes().filter(theme => !theme.problems.length && !policy.hiddenThemes.has(theme.name)).map(theme => ({ name: theme.name, label: theme.label })),
         plugins: status.plugins.filter(plugin => !plugin.themeOnly && plugin.network === 'available').map(plugin => plugin.name),
         canAddSites: network.canAddSites, sites: active.total + archived.total,
@@ -49,12 +50,12 @@ export async function loadNetworkSettings(network: CmsNetwork): Promise<NetworkS
 export async function saveNetworkSettings(network: CmsNetwork, principal: Principal, input: NetworkSettingsInput): Promise<NetworkSettingsResult> {
     const text = (value: unknown) => typeof value === 'string';
     if (!input || typeof input.enabled !== 'boolean' || ![input.name, input.subdomainSuffix, input.defaultTheme, input.defaultLanguage].every(text)
-        || !Array.isArray(input.defaultPlugins) || !input.defaultPlugins.every(text)) return { data: null, error: __('The network settings are invalid.'), fields: {} };
+        || !Array.isArray(input.defaultPlugins) || !input.defaultPlugins.every(text) || (input.siteExports !== 'request' && input.siteExports !== 'self')) return { data: null, error: __('The network settings are invalid.'), fields: {} };
     try {
         if (input.enabled !== await network.enabled()) await network.setEnabled(input.enabled, { principal });
         const patch: Partial<NetworkSettings> = {
             name: input.name, subdomainSuffix: input.subdomainSuffix.trim(), defaultTheme: input.defaultTheme,
-            defaultPlugins: input.defaultPlugins, defaultLanguage: input.defaultLanguage.trim().toLowerCase(),
+            defaultPlugins: input.defaultPlugins, defaultLanguage: input.defaultLanguage.trim().toLowerCase(), siteExports: input.siteExports,
         };
         const saved = await network.settings();
         // Turning the network on or off leaves the rest alone, even when a stored value went stale.
@@ -67,7 +68,7 @@ export async function saveNetworkSettings(network: CmsNetwork, principal: Princi
 
 export const networkDraft = (data: NetworkSettingsData): NetworkSettingsInput => ({
     enabled: data.enabled, name: data.name, subdomainSuffix: data.subdomainSuffix, defaultTheme: data.defaultTheme,
-    defaultPlugins: [...data.defaultPlugins], defaultLanguage: data.defaultLanguage,
+    defaultPlugins: [...data.defaultPlugins], defaultLanguage: data.defaultLanguage, siteExports: data.siteExports,
 });
 
 export type NetworkSettingsProps = {
@@ -142,6 +143,14 @@ export class NetworkSettingsForm extends Cossack {
                         <p class="text-xs text-muted-foreground">${__('Network active plugins run on every site already.')}</p>${error('defaultPlugins')}
                     </div>` : null}
                     ${input('defaultLanguage', __('Language'), __('A language code, such as en, fr or pt-br. Add site can choose another.'), 'en')}
+                </fieldset>` : null}
+                ${show('siteExports') ? html`<fieldset class="min-w-0 space-y-2">
+                    <legend class="mb-2 text-base font-semibold text-foreground">${__('Site exports')}</legend>
+                    ${([['request', __('Site admins request an export; a network admin approves it'), __('The site can then download it under Tools → Export for 7 days. Requests wait on the site\'s page under Network → Sites.')],
+                        ['self', __('Site admins export their own site'), __('Tools → Export downloads the site\'s database at once.')]] as const).map(([value, label, hint]) => html`<label class="flex cursor-pointer items-start gap-3 rounded-md border border-border p-3 has-[:checked]:border-primary">
+                        <input type="radio" name="network-siteExports" class="mt-1" .checked=${form.siteExports === value} @change=${() => this.set({ siteExports: value })}>
+                        <span><span class="block text-sm font-medium text-foreground">${label}</span><span class="text-xs text-muted-foreground">${hint}</span></span>
+                    </label>`)}${error('siteExports')}
                 </fieldset>` : null}` : null}
         </fieldset>`;
     }
