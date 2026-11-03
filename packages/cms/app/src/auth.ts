@@ -14,7 +14,7 @@ import {
 } from '@cossackframework/auth/passkeys';
 import { ClientVisibleError, getRequestContext } from '@cossackframework/core';
 import { ANONYMOUS, hasPermission, isCmsError, isNetworkAdmin, PERMISSIONS, type Principal } from '@cossackframework/cms';
-import { MAIN_SITE, type ApiToken, type CmsHost, type CmsMember, type SecurityStatus } from '@cossackframework/cms/server';
+import { MAIN_SITE, type ApiToken, type CmsHost, type CmsMember, type SecurityStatus as AccountSecurity } from '@cossackframework/cms/server';
 import { renderSVG } from 'uqr';
 import { currentCms, networkFor, type CmsBindings } from './cms/index';
 import { handoffSite } from './cms/handoff';
@@ -237,7 +237,10 @@ export const twoFactorAvailable = true;
 /** Cookie holding a pending sign-in between the password and the second factor. */
 export const TWO_FACTOR_COOKIE = 'two_factor';
 
-export type { SecurityStatus, ApiToken };
+export type { ApiToken };
+
+/** An account's second factors and passkeys; on an added site, a network account's passkeys are the network host's. */
+export type SecurityStatus = AccountSecurity & { passkeysManagedAt?: { name: string; href: string | null } | null };
 
 /**
  * After a correct password: null when the user signs in at once, or the ID of a pending
@@ -271,7 +274,29 @@ async function storesOf(userId: string) {
 }
 
 export async function securityStatus(userId: string): Promise<SecurityStatus> {
-  return (await storesOf(userId)).security.status(userId);
+  const [status, elsewhere] = await Promise.all([(await storesOf(userId)).security.status(userId), networkPasskeys(userId)]);
+  return { ...status, passkeysManagedAt: elsewhere };
+}
+
+/**
+ * Where a network account's passkeys are kept when this is an added site: the network host.
+ * They are bound to its address and sign in there, so this site lists them and links there
+ * rather than adding or removing them. Null for site accounts and on the main site.
+ */
+async function networkPasskeys(userId: string): Promise<{ name: string; href: string | null } | null> {
+  const host = cms();
+  if (!host.siteAccounts || (await host.storesOf(userId)).kind !== 'network') return null;
+  const c = getRequestContext();
+  const network = networkFor(c?.env as CmsBindings);
+  const name = (await network.settings()).name || await network.main.settings.get('general.siteTitle').catch(() => 'the network');
+  let href: string | null = null;
+  try { href = new URL('/dashboard/profile/security', env('APP_URL', '')).href; } catch { /* no network address */ }
+  return { name, href };
+}
+
+async function requireLocalPasskeys(userId: string): Promise<void> {
+  const elsewhere = await networkPasskeys(userId);
+  if (elsewhere) throw new ClientVisibleError(`Add or remove this account's passkeys on ${elsewhere.name}.`);
 }
 
 /**
@@ -330,6 +355,7 @@ function passkeySite(c: Context, siteName: string): PasskeyConfig {
 }
 
 export async function passkeyRegistration(c: Context, user: PublicUser): Promise<{ challenge: string; options: PublicKeyCredentialCreationOptionsJSON }> {
+  await requireLocalPasskeys(user.id);
   const host = cms(c);
   const site = passkeySite(c, await host.settings.get('general.siteTitle').catch(() => 'Cossack'));
   const { security } = await host.storesOf(user.id);
@@ -339,6 +365,7 @@ export async function passkeyRegistration(c: Context, user: PublicUser): Promise
 }
 
 export async function addPasskey(c: Context, user: PublicUser, challengeId: string, response: RegistrationResponseJSON, name: string): Promise<void> {
+  await requireLocalPasskeys(user.id);
   const host = cms(c);
   const { security } = await host.storesOf(user.id);
   const pending = await security.challenge(challengeId, 'passkey-register');
@@ -351,6 +378,7 @@ export async function addPasskey(c: Context, user: PublicUser, challengeId: stri
 }
 
 export async function removePasskey(userId: string, id: string): Promise<void> {
+  await requireLocalPasskeys(userId);
   await (await storesOf(userId)).security.removePasskey(userId, id);
 }
 

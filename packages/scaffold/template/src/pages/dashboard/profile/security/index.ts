@@ -158,6 +158,24 @@ export default class SecurityPage extends Cossack {
         await this.load();
     }
 
+    /** The passkeys, added and removed here, or listed with a link to the host that keeps them. */
+    private passkeys(): TemplateResult {
+        const elsewhere = this.status.passkeysManagedAt;
+        const list = this.status.passkeys.length ? html`<ul class="divide-y divide-border rounded-md border border-border">${this.status.passkeys.map(passkey => html`<li class="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-sm">
+            <span><span class="font-medium text-foreground">${passkey.name}</span> <span class="text-xs text-muted-foreground">· ${__('added')} ${date(passkey.createdAt)} · ${__('last used')} ${date(passkey.lastUsedAt)}${passkey.backedUp ? ` · ${__('synced')}` : ''}</span></span>
+            ${elsewhere ? null : html`<button type="button" class="text-xs text-destructive hover:underline bg-transparent border-none p-0 cursor-pointer" @click=${() => this.deletePasskey(passkey.id)}>${__('Remove')}</button>`}
+        </li>`)}</ul>` : html`<p class="text-sm text-muted-foreground">${__('No passkeys yet.')}</p>`;
+        if (elsewhere) return html`${list}
+            <p class="text-sm text-muted-foreground" data-passkeys-elsewhere>${__('Your passkeys sign you in on :site. Add or remove them there.', { site: elsewhere.name })}
+                ${elsewhere.href ? html`<a href=${elsewhere.href} class="font-medium text-foreground underline">${__('Manage passkeys on :site', { site: elsewhere.name })}</a>` : null}</p>`;
+        return html`${list}
+            <div class="flex flex-wrap items-end gap-2">
+                ${component(Field, { label: __('Name'), for: 'passkey-name', control: attributes => component(Input, { ...attributes, maxlength: 80, placeholder: __('Such as Work laptop'),
+                    '.value': this.passkeyName, '@input': (event: Event) => { this.passkeyName = (event.target as HTMLInputElement).value; } }) })}
+                ${component(Button, { type: 'button', variant: 'outline', '@click': () => this.addPasskey() }, __('Add a passkey'))}
+            </div>`;
+    }
+
     private authenticator(): TemplateResult {
         const codeInput = (id: string) => component(Input, { id, autocomplete: 'one-time-code', inputmode: 'numeric', maxlength: 20, placeholder: '123456', class: 'max-w-40',
             '.value': this.code, '@input': (event: Event) => { this.code = (event.target as HTMLInputElement).value; } });
@@ -219,16 +237,7 @@ export default class SecurityPage extends Cossack {
                 ${component(CardBody, {}, this.authenticator())}`) : null}
             ${this.available ? component(Card, {}, html`${component(CardHeader, {}, html`<h2 class="text-base font-semibold text-foreground">${__('Passkeys')}</h2>
                 <p class="text-sm text-muted-foreground">${__('Sign in with your fingerprint, face or device PIN instead of a password. Passkeys cannot be phished.')}</p>`)}
-                ${component(CardBody, { class: 'space-y-4' }, html`
-                    ${this.status.passkeys.length ? html`<ul class="divide-y divide-border rounded-md border border-border">${this.status.passkeys.map(passkey => html`<li class="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-sm">
-                        <span><span class="font-medium text-foreground">${passkey.name}</span> <span class="text-xs text-muted-foreground">· ${__('added')} ${date(passkey.createdAt)} · ${__('last used')} ${date(passkey.lastUsedAt)}${passkey.backedUp ? ` · ${__('synced')}` : ''}</span></span>
-                        <button type="button" class="text-xs text-destructive hover:underline bg-transparent border-none p-0 cursor-pointer" @click=${() => this.deletePasskey(passkey.id)}>${__('Remove')}</button>
-                    </li>`)}</ul>` : html`<p class="text-sm text-muted-foreground">${__('No passkeys yet.')}</p>`}
-                    <div class="flex flex-wrap items-end gap-2">
-                        ${component(Field, { label: __('Name'), for: 'passkey-name', control: attributes => component(Input, { ...attributes, maxlength: 80, placeholder: __('Such as Work laptop'),
-                            '.value': this.passkeyName, '@input': (event: Event) => { this.passkeyName = (event.target as HTMLInputElement).value; } }) })}
-                        ${component(Button, { type: 'button', variant: 'outline', '@click': () => this.addPasskey() }, __('Add a passkey'))}
-                    </div>`)}`) : null}
+                ${component(CardBody, { class: 'space-y-4' }, this.passkeys())}`) : null}
             ${this.tokensAvailable ? component(Card, {}, html`${component(CardHeader, {}, html`<h2 class="text-base font-semibold text-foreground">${__('Application passwords')}</h2>
                 <p class="text-sm text-muted-foreground">${__('Let apps and scripts use the content API as you: send the password as Authorization: Bearer. Revoke one to cut off its app.')}</p>`)}
                 ${component(CardBody, {}, component(AppPasswords, { tokens: this.tokens, newToken: this.newToken,

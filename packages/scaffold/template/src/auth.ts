@@ -312,6 +312,8 @@ export interface SecurityStatus {
   totp: boolean;
   recoveryCodes: number;
   passkeys: { id: string; name: string; deviceType: string | null; backedUp: boolean; createdAt: number; lastUsedAt: number | null }[];
+  /** Set when another host keeps the account's passkeys: the page lists them and links there instead of adding or removing them. */
+  passkeysManagedAt?: { name: string; href: string | null } | null;
 }
 
 export interface ApiToken { id: string; userId: string; name: string; scope: 'read' | 'write'; createdAt: number; lastUsedAt: number | null; expiresAt: number | null }
