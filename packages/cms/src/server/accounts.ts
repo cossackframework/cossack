@@ -192,6 +192,27 @@ export class CmsAccounts {
     }
 
     /**
+     * A site's database becomes its own install: every member without an account gets one
+     * without a password, recorded as a member of `site`; `admin`, a member, gets this password
+     * and the network role. Sessions copied with the database end. One write; returns how many
+     * accounts it made.
+     */
+    async adoptMembers(site: string, admin: string, password: string): Promise<number> {
+        checkPassword(password);
+        const member = await this.#db.read([{ rql: 'SELECT 1 FROM cms_users WHERE id = $admin', params: { $admin: admin } }]);
+        if (!member.results[0]!.rows.length) throw new CmsError('CMS_VALIDATION', 'The administrator must be a member of the site.', { fields: { email: 'is not a member.' } });
+        const now = this.#now();
+        const result = await this.#db.write([
+            { rql: 'INSERT INTO cms_accounts (id, email, name, password_hash, avatar, status, network_role, created_at, updated_at) SELECT id, email, name, NULL, avatar, status, NULL, created_at, $now FROM cms_users WHERE id NOT IN (SELECT id FROM cms_accounts)', params: { $now: now } },
+            { rql: "UPDATE cms_accounts SET password_hash = $hash, network_role = $role, status = 'active', updated_at = $now WHERE id = $admin",
+                params: { $hash: await this.#hasher.hash(password), $role: NETWORK_ADMIN, $now: now, $admin: admin } },
+            { rql: 'INSERT INTO cms_memberships (account_id, site_id, created_at) SELECT id, $site, $now FROM cms_users WHERE 1 = 1 ON CONFLICT (account_id, site_id) DO NOTHING', params: { $site: site, $now: now } },
+            { rql: 'DELETE FROM cms_auth_sessions' },
+        ], WRITE);
+        return Number(result.results[0]!.affected);
+    }
+
+    /**
      * Remove the account with everything that signs it in: sessions, reset tokens, second
      * factors, pending sign-ins and application passwords. Site members are removed by their sites.
      */

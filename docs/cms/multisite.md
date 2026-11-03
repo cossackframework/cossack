@@ -163,9 +163,28 @@ from `@cossackframework/romedb` restores integers, record IDs and binary values 
 are read in key order, a page at a time. Sessions, sign-in challenges, reset tokens, second
 factors, passkeys, application passwords, preview links, handoffs, the cache and the
 network's own tables (accounts, the site registry) stay out, and webhook secrets are null.
-Media files are not included; `cms_files` rows name their storage keys. There is no import
-yet. In code, `siteExport(host.db, { site })` from `@cossackframework/cms/server` yields the
+Media files are not included; `cms_files` rows name their storage keys. There is no JSON
+import; to run a site on its own, see the next section. In code, `siteExport(host.db, { site })` from `@cossackframework/cms/server` yields the
 same document as text chunks.
+
+## Moving a site to its own install
+
+A site's database can run on its own, as the main database of a new install (`ROMEDB_URL`
+pointing at the file, or at `romedb serve FILE`). It has the site's content, settings,
+roles and members, but not their accounts, which stay in the network database. On the first
+visit, `/auth/setup` sees members without accounts and offers **Take over this site**: with
+the setup code, one of the site's administrators enters their email and a new password. Every
+member then gets an account without a password, recorded as a member of the new install; the
+administrator's has the new password and is its network admin. Sessions copied with the
+database end. Other members set a password with *Forgot password*, or the administrator sets
+one under Users. Media files move separately: the new install's storage needs the site's
+files (on the network they are under `sites/<id>/`).
+
+The export above is JSON for now. A `.romedb` export, a file the new install opens
+directly, needs RomeDB to copy an open database (requested from RomeDB as R2). Until then,
+with the application stopped (one process owns the files), the RomeDB CLI copies a site's
+file: `echo "VACUUM INTO 'blog.romedb';" | romedb storage/romedb/sites/<database>.romedb`, where
+`<database>` is the site's database ID from the registry. The copy is one file.
 
 ## Site states
 

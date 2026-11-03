@@ -109,4 +109,24 @@ describe.skipIf(!native)('a network on database files', () => {
         expect(files.filter(name => name.endsWith('.romedb'))).toHaveLength(2);
         expect(await network.resolve('shop.example.com')).toEqual({ kind: 'missing' });
     }, 60_000);
+
+    it('runs a site\'s database as its own install: members get accounts, its administrator a new password', async () => {
+        const blog = await siteOf('blog.example.com');
+        const writer = (await main.accounts.findByEmail('writer@example.com'))!;
+        // The blog's database alone, as another install's main database.
+        const standalone = createCMS({ db: blog.db, modules: [contentModule, formsModule] });
+        expect(await standalone.accounts.count()).toBe(0);
+        await expect(standalone.accounts.adoptMembers('main', '01a19fc6-0000-7000-8000-000000000000', 'a new password')).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
+        expect(await standalone.accounts.count()).toBe(0);
+        expect(await standalone.accounts.adoptMembers('main', owner, 'a new password')).toBe(2);
+        expect((await standalone.accounts.verifier.verify('owner@example.com', 'a new password'))?.id).toBe(owner);
+        expect(await standalone.accounts.get(owner)).toMatchObject({ networkRole: NETWORK_ADMIN, status: 'active' });
+        // Passwords stay in the network: other members set one with a reset.
+        expect(await standalone.accounts.verifier.verify('writer@example.com', 'writes daily')).toBeNull();
+        expect(await standalone.accounts.get(writer.id)).toMatchObject({ email: 'writer@example.com', networkRole: null });
+        expect((await standalone.accounts.memberships([owner, writer.id])).get(writer.id)).toEqual(['main']);
+        expect((await standalone.users.principal(owner))?.roles).toContain('admin');
+        // Taking over again changes nothing but the password.
+        expect(await standalone.accounts.adoptMembers('main', owner, 'another password')).toBe(0);
+    }, 60_000);
 });
