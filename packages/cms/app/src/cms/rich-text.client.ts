@@ -88,7 +88,8 @@ function cmsBlock(options: RichTextOptions) {
                 title.className = 'text-xs font-semibold uppercase tracking-wide text-muted-foreground';
                 const summary = document.createElement('p');
                 summary.className = 'truncate text-sm text-foreground';
-                text.append(title, summary);
+                text.appendChild(title);
+                text.appendChild(summary);
                 const actions = document.createElement('div');
                 actions.className = 'flex shrink-0 gap-2';
                 const button = (label: string, run: () => void) => {
@@ -104,8 +105,10 @@ function cmsBlock(options: RichTextOptions) {
                     const position = getPos();
                     if (typeof position === 'number') editor.chain().focus().deleteRange({ from: position, to: position + node.nodeSize }).run();
                 });
-                actions.append(edit, remove);
-                dom.append(text, actions);
+                actions.appendChild(edit);
+                actions.appendChild(remove);
+                dom.appendChild(text);
+                dom.appendChild(actions);
                 const paint = () => {
                     const block = blockOf(node);
                     title.textContent = options.blockLabel(block.type);

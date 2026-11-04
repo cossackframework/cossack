@@ -89,7 +89,7 @@ export class SiteEditor extends Cossack {
     onMount() {
         this.style = document.createElement('style');
         this.style.textContent = STYLE;
-        document.head.append(this.style);
+        document.head.appendChild(this.style);
         document.addEventListener('click', this.onDocumentClick, true);
         document.addEventListener('keydown', this.onKey);
         window.addEventListener('beforeunload', this.onLeave);

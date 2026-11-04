@@ -138,7 +138,7 @@ export function enhanceForm(form: HTMLFormElement): void {
                 item.removeAttribute('hidden');
                 item.removeAttribute('data-cms-item-template');
                 for (const element of item.querySelectorAll('[disabled]')) element.removeAttribute('disabled');
-                list.append(item);
+                list.appendChild(item);
                 item.querySelector<HTMLElement>('input, select, textarea')?.focus();
             }
             settleItems(group);
@@ -161,7 +161,7 @@ export function enhanceForm(form: HTMLFormElement): void {
             row.removeAttribute('hidden');
             row.removeAttribute('data-cms-row-template');
             for (const element of row.querySelectorAll('[disabled]')) element.removeAttribute('disabled');
-            list.append(row);
+            list.appendChild(row);
             for (const group of row.querySelectorAll<HTMLElement>('[data-cms-multiple]')) settleItems(group);
             row.querySelector<HTMLElement>('input:not([type=hidden]), select, textarea')?.focus();
         }

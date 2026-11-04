@@ -673,7 +673,8 @@ function packageJson(recipe, projectName) {
         'cf-typegen': 'wrangler types --env-interface CloudflareBindings',
         deploy: 'cossack deploy',
       };
-  scripts.typecheck = 'cossack routes --generate && tsc --noEmit';
+  // Cloudflare's names and the app's bindings come from generated types, so they are generated first.
+  scripts.typecheck = `${recipe.adapter === 'cloudflare' ? 'pnpm run cf-typegen && ' : ''}cossack routes --generate && tsc --noEmit`;
   scripts['check:templates'] = 'cossack check templates';
   scripts.format = 'prettier --write "src/**/*.ts"';
   if (recipe.resolvedFeatures.includes('desktop')) {

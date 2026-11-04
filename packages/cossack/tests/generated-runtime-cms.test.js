@@ -10,7 +10,7 @@ import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
 import path from 'node:path';
 import { chromium, expect as browserExpect } from '@playwright/test';
-import { cleanupRoots, cossack, productionServer, project, typecheck, vite } from './fixtures/generated-app.js';
+import { cleanupRoots, cossack, productionServer, project, repository, run, typecheck, vite } from './fixtures/generated-app.js';
 import { browserless, contains, lacks, PNG, visible } from './fixtures/cms-client.js';
 import { findRomeDBBinary, liveRomeDBTests, servesDirectories, startRomeDBService } from '../../romedb/src/testing.ts';
 
@@ -665,6 +665,9 @@ describe.skipIf(!liveRomeDBTests())('generated CMS application', () => {
     const database = await startRomeDBService();
     try {
       await vite(root, []);
+      // Cloudflare's generated types declare their own Element, beside the DOM's in *.client.ts.
+      await run(process.execPath, [path.join(repository, 'node_modules/wrangler/bin/wrangler.js'), 'types', '--env-interface', 'CloudflareBindings'], { cwd: root, env: { ...process.env, WRANGLER_SEND_METRICS: 'false' } });
+      await typecheck(root, 'Workers CMS');
       const configPath = path.join(root, 'dist/ssr/wrangler.json');
       const config = JSON.parse(await fs.readFile(configPath, 'utf8'));
       expect(config.durable_objects.bindings).toContainEqual({ name: 'ROMEDB_PENDING', class_name: 'RomeDBPendingWrites' });
@@ -705,6 +708,7 @@ describe.skipIf(!liveRomeDBTests())('generated CMS application', () => {
     child.stdout.on('data', data => { output += data; });
     child.stderr.on('data', data => { output += data; });
     const exited = new Promise(resolve => child.once('exit', resolve));
+    let sitesOrigin;
     try {
       await expect.poll(() => {
         if (child.exitCode !== null) throw new Error(output);
@@ -725,7 +729,9 @@ describe.skipIf(!liveRomeDBTests())('generated CMS application', () => {
       expect((await web.action(SETTINGS, 'saveAll', [{ document: null, languages: null, permalinks: null, network, groups: {} }]))._cossack_return.error).toBe('');
       // Beside it, a directory service holds added sites' databases, which the Worker creates through ROMEDB_SITES_URL.
       if (servesDirectories()) {
-        expect(output).toContain(`started romedb serve --directory storage/romedb/sites for added sites at http://127.0.0.1:${port + 1}`);
+        // On the next free port: another process can hold the one after the database's.
+        sitesOrigin = /started romedb serve --directory storage\/romedb\/sites for added sites at (http:\/\/127\.0\.0\.1:\d+)/.exec(output)?.[1];
+        expect(sitesOrigin, output).toBeTruthy();
         contains(await web.page('/dashboard/network/sites/new'), 'Add site');
         const added = await web.post('/dashboard/network/sites/new', { name: 'Blog', host: 'blog.localhost', admin: '', starter: 'on' });
         expect(added.status, await added.text()).toBe(302);
@@ -838,7 +844,7 @@ describe.skipIf(!liveRomeDBTests())('generated CMS application', () => {
     }
     // The services stop with the dev server.
     await expect.poll(() => fetch(`http://127.0.0.1:${port}/v1/database`).then(() => 'answers', () => 'stopped'), { timeout: 10_000 }).toBe('stopped');
-    await expect.poll(() => fetch(`http://127.0.0.1:${port + 1}/v1/database`).then(() => 'answers', () => 'stopped'), { timeout: 10_000 }).toBe('stopped');
+    if (sitesOrigin) await expect.poll(() => fetch(`${sitesOrigin}/v1/database`).then(() => 'answers', () => 'stopped'), { timeout: 10_000 }).toBe('stopped');
     // Development warns about @State changes that do not re-render; the pages this case visits make none.
     expect(output).not.toContain('[Cossack] Nested');
   }, 400_000);
