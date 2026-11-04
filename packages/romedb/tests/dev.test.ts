@@ -105,6 +105,24 @@ directories('startLocalSites', () => {
         finally { await restarted?.stop(); }
     }, 30_000);
 
+    it('moves to the next port when something else holds this one', async () => {
+        const root = await mkdtemp(path.join(os.tmpdir(), 'cossack-romedb-sites-'));
+        roots.push(root);
+        const port = await freePort();
+        // It holds the port without answering HTTP, so nothing mistakes it for a service to reuse.
+        const holder = createServer(socket => socket.destroy());
+        await new Promise<void>(resolve => holder.listen(port, '127.0.0.1', resolve));
+        const sites = await startLocalSites({ port, root, binary, log: () => {} });
+        try {
+            expect(sites).toMatchObject({ started: true });
+            expect(Number(new URL(sites!.url).port)).toBeGreaterThan(port);
+            await expect(organizationDatabases({ url: sites!.url, token: sites!.token }).create('site-blog')).resolves.toMatch(/^[0-9a-f-]{36}$/);
+        } finally {
+            await sites?.stop();
+            await new Promise(resolve => holder.close(resolve));
+        }
+    }, 30_000);
+
     it('steps aside for a romedb that cannot serve a directory', async () => {
         const root = await mkdtemp(path.join(os.tmpdir(), 'cossack-romedb-sites-'));
         roots.push(root);

@@ -31,7 +31,7 @@ export function startLocalSites(options: {
 
 /**
  * Vite plugin: starts `romedb serve` for a loopback ROMEDB_URL and sets `process.env.ROMEDB_TOKEN`;
- * unless ROMEDB_SITES_URL is set, also a directory service for added sites on the next port, setting
+ * unless ROMEDB_SITES_URL is set, also a directory service for added sites on the next free port, setting
  * ROMEDB_SITES_URL and ROMEDB_SITES_TOKEN.
  */
 export function romedbDev(options?: { url?: string; root?: string }): Plugin;

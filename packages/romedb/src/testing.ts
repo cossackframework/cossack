@@ -30,13 +30,29 @@ export function liveRomeDBTests(): boolean {
     return findRomeDBBinary() !== undefined || process.env.COSSACK_TEST_REQUIRE_LIVE === '1';
 }
 
+/**
+ * Run `start` on a free port. Another process can take the port before `romedb serve` binds it,
+ * above all with test files running in parallel, so that failure tries another port.
+ */
+export async function onFreePort<T>(start: (port: number) => Promise<T>, attempts = 5): Promise<T> {
+    for (let attempt = 1; ; attempt++) {
+        try { return await start(await freePort()); }
+        catch (error) {
+            if (attempt >= attempts || !/Address already in use|AddrInUse/.test(String(error))) throw error;
+        }
+    }
+}
+
 /** Start `romedb serve` on a free loopback port, on `file` or a new database in a temporary directory. */
-export async function startRomeDBService(options: { binary?: string; timeoutMs?: number; file?: string } = {}): Promise<RomeDBTestService> {
+export function startRomeDBService(options: { binary?: string; timeoutMs?: number; file?: string } = {}): Promise<RomeDBTestService> {
     const binary = options.binary ?? findRomeDBBinary();
     if (!binary) throw new Error('No RomeDB executable: set COSSACK_TEST_ROMEDB_BIN or put romedb on PATH.');
     const version = spawnSync(binary, ['--version'], { encoding: 'utf8' }).stdout.trim().replace(/^romedb\s+/, '');
+    return onFreePort(port => serveDatabase(binary, version, port, options));
+}
+
+async function serveDatabase(binary: string, version: string, port: number, options: { timeoutMs?: number; file?: string }): Promise<RomeDBTestService> {
     const directory = await mkdtemp(path.join(os.tmpdir(), 'cossack-romedb-'));
-    const port = await freePort();
     const tokenFile = path.join(directory, 'token');
     const database = options.file ? [options.file] : [path.join(directory, 'test.romedb'), '--create'];
     const child = spawn(binary, ['serve', ...database, '--port', String(port), '--token-file', tokenFile], { stdio: ['ignore', 'pipe', 'pipe'] });
@@ -76,11 +92,14 @@ export function servesDirectories(binary = findRomeDBBinary()): boolean {
 }
 
 /** Start `romedb serve --directory` on a free loopback port, over `directory` or a new temporary one. It is removed on stop. */
-export async function startRomeDBDirectory(options: { binary?: string; timeoutMs?: number; directory?: string } = {}): Promise<RomeDBTestDirectory> {
+export function startRomeDBDirectory(options: { binary?: string; timeoutMs?: number; directory?: string } = {}): Promise<RomeDBTestDirectory> {
     const binary = options.binary ?? findRomeDBBinary();
     if (!binary) throw new Error('No RomeDB executable: set COSSACK_TEST_ROMEDB_BIN or put romedb on PATH.');
+    return onFreePort(port => serveDirectory(binary, port, options));
+}
+
+async function serveDirectory(binary: string, port: number, options: { timeoutMs?: number; directory?: string }): Promise<RomeDBTestDirectory> {
     const directory = options.directory ?? await mkdtemp(path.join(os.tmpdir(), 'cossack-romedb-dir-'));
-    const port = await freePort();
     const tokenFile = path.join(directory, 'romedb.token');
     const child = spawn(binary, ['serve', '--directory', directory, '--create', '--port', String(port), '--token-file', tokenFile], { stdio: ['ignore', 'pipe', 'pipe'] });
     let output = '';
@@ -104,7 +123,8 @@ export async function startRomeDBDirectory(options: { binary?: string; timeoutMs
         }
         await new Promise(resolve => setTimeout(resolve, 50));
     }
-    await stop(child, directory);
+    // A caller's folder stays for the next port; it goes on stop, once the service has started.
+    await stop(child, options.directory ? undefined : directory);
     throw new Error(`RomeDB directory service did not start: ${output.slice(0, 2000)}`);
 }
 
@@ -116,7 +136,7 @@ async function reachable(url: string, token: string): Promise<boolean> {
     } catch { return false; }
 }
 
-async function stop(child: ChildProcess, directory: string): Promise<void> {
+async function stop(child: ChildProcess, directory: string | undefined): Promise<void> {
     if (child.exitCode === null) {
         const exited = new Promise(resolve => child.once('exit', resolve));
         child.kill('SIGTERM');
@@ -124,7 +144,7 @@ async function stop(child: ChildProcess, directory: string): Promise<void> {
         await exited;
         clearTimeout(timer);
     }
-    await rm(directory, { recursive: true, force: true });
+    if (directory) await rm(directory, { recursive: true, force: true });
 }
 
 function freePort(): Promise<number> {
