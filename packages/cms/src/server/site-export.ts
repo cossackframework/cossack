@@ -4,7 +4,7 @@
  * binary values come back exactly with `decodeValue`. Media files are not included: `cms_files`
  * rows name their storage keys.
  */
-import { encodeValue, type RomeDB, type Statement, type Value } from '@cossackframework/romedb';
+import { ClientError, encodeValue, type RomeDB, type Statement, type Value } from '@cossackframework/romedb';
 import { HOST_TABLES } from './host-schema';
 
 /**
@@ -61,15 +61,22 @@ export async function* siteExport(db: RomeDB, options: SiteExportOptions): Async
         const redacted = new Set(EXPORT_REDACTED_COLUMNS[table.name] ?? []);
         yield `${index ? ',' : ''}{"name":${json(table.name)},"model":${json(table.model)},${table.model === 'relational' ? `"columns":${json(columns)},` : ''}"rows":[`;
         let count = 0;
-        for (let offset = 0; ; offset += pageSize) {
+        let size = pageSize;
+        for (;;) {
             const select = table.model === 'relational' ? columns.map(quote).join(', ') : '*';
-            const page = (await read([{ rql: `SELECT ${select} FROM ${name} ORDER BY ${order} LIMIT $limit OFFSET $offset`, params: { $limit: pageSize, $offset: offset } }], sequence)).results[0]!;
+            let page;
+            try { page = (await read([{ rql: `SELECT ${select} FROM ${name} ORDER BY ${order} LIMIT $limit OFFSET $offset`, params: { $limit: size, $offset: count } }], sequence)).results[0]!; }
+            catch (error) {
+                // A page of large rows can pass the limit on one response: read fewer.
+                if (error instanceof ClientError && (error.code === 'RDB_LIMIT' || error.code === 'RDB_RESULT_TOO_LARGE') && size > 1) { size = Math.max(1, Math.floor(size / 2)); continue; }
+                throw error;
+            }
             const rows = page.rows.map(row => table.model === 'relational'
                 ? json(row.map((value, column) => encodeValue(redacted.has(columns[column]!) ? null : value as Value)))
                 : json(encodeValue(row[0] as Value)));
             if (rows.length) yield `${count ? ',' : ''}${rows.join(',')}`;
             count += rows.length;
-            if (page.rows.length < pageSize) break;
+            if (page.rows.length < size) break;
         }
         yield ']}';
     }

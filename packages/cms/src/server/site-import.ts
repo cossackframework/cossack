@@ -40,8 +40,11 @@ const IMPORT_KEY = 'import';
 /** An import that wrote nothing for this long has stopped; another may take over. */
 const IMPORT_LEASE_MS = 5 * 60_000;
 const WRITE = { kind: 'cms.import', retryConflicts: 3 } as const;
-const BATCH_ROWS = 100;
-const BATCH_TEXT = 512 * 1024;
+/** What one write holds: RomeDB takes 32 statements and 64 KiB of JSON a request. */
+const BATCH_STATEMENTS = 32;
+const BATCH_TEXT = 48 * 1024;
+/** A statement's text around its row's values, at most. */
+const STATEMENT_TEXT = 1024;
 
 /**
  * Import an export into this site. The site must have no entries and no accounts of its own,
@@ -97,10 +100,12 @@ async function importInto(host: CmsHost, source: ReadableStream<Uint8Array> | As
             size = 0;
         };
         for (let row = await reader.row(); row !== undefined; row = await reader.row()) {
-            batch.push(columns ? insertRow(table.name, columns, row) : { rql: `INSERT INTO ${quote(table.name)} DOCUMENT $document`, params: { $document: decoded(row) } });
-            size += reader.lastSize;
+            const statement = columns ? insertRow(table.name, columns, row) : { rql: `INSERT INTO ${quote(table.name)} DOCUMENT $document`, params: { $document: decoded(row) } };
+            const text = reader.lastSize + STATEMENT_TEXT;
+            if (batch.length >= BATCH_STATEMENTS || size + text > BATCH_TEXT) await flush();
+            batch.push(statement);
+            size += text;
             rows++;
-            if (batch.length >= BATCH_ROWS || size >= BATCH_TEXT) await flush();
         }
         if (batch.length) await flush();
         count++;

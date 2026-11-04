@@ -6,7 +6,7 @@ import { romedbService, live } from './helpers';
 /** The export as text chunks of an awkward size, so values and characters straddle them. */
 async function exported(host: CmsHost, site: string): Promise<string[]> {
     let text = '';
-    for await (const chunk of siteExport(host.db, { site: { id: site, name: 'Blog', host: 'blog.example.com' }, pageSize: 3 })) text += chunk;
+    for await (const chunk of siteExport(host.db, { site: { id: site, name: 'Blog', host: 'blog.example.com' } })) text += chunk;
     const chunks: string[] = [];
     for (let at = 0; at < text.length; at += 37) chunks.push(text.slice(at, at + 37));
     return chunks;
@@ -59,6 +59,10 @@ describe.skipIf(!live)('importing a site export into a new site', () => {
         await blog.settings.update('general', { tagline: 'Notes from far away' }, { principal: admin });
         await blog.db.write([{ rql: "INSERT INTO cms_webhooks (id, name, url, events, collections, secret, active, created_at, updated_at) VALUES ('hook', 'Hook', 'https://hooks.example.com', '[]', '[]', 'old secret', 1, 1, 1)" }]);
         await blog.users.create({ email: 'reader@example.com', name: 'Reader', password: 'reads a lot', roles: ['subscriber'] });
+        // More than one RomeDB request or response holds: 32 statements, 64 KiB, 256 KiB.
+        for (let batch = 0; batch < 20; batch++) {
+            await blog.db.write(Array.from({ length: 13 }, (_, index) => ({ rql: 'INSERT INTO cms_not_found (path, hits, first_at, last_hit_at, referrer) VALUES ($path, 1, 1, 1, $referrer)', params: { $path: `/${batch}/${index}`, $referrer: 'r'.repeat(2048) } })));
+        }
         // The full site has content already.
         await seedStarterContent(await hostOf('full.example.com'), { principal: admin });
     }, 120_000);
@@ -78,6 +82,7 @@ describe.skipIf(!live)('importing a site export into a new site', () => {
         expect(report).toMatchObject({ site: { id: 'blog', name: 'Blog', host: 'blog.example.com' }, skipped: [] });
         expect(report.rows).toBeGreaterThan(10);
         expect(await copy.settings.get('general.tagline')).toBe('Notes from far away');
+        expect((await copy.db.read([{ rql: 'SELECT count(*), sum(length(referrer)) FROM cms_not_found' }])).results[0]!.rows[0]).toEqual([260n, 260n * 2048n]);
         const admin = (await copy.users.principal(owner))!;
         expect(copy.collection('articles').label).toBe('Articles');
         expect((await copy.resource('cms/articles').list({}, { principal: admin })).records.map(record => record.title)).toEqual(['Ünïcödé 🎉 title']);
