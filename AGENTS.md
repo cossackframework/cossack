@@ -52,6 +52,9 @@ pnpm run test:unit
 ### E2E Tests
 pnpm run test:e2e
 
+### Packed CMS Apps
+`pnpm test:cms:packed` builds a CMS app from packed tarballs on both adapters, which the linked test apps cannot show: strict dependency resolution, a second copy of a package, and dependency pre-bundling. Run it after changing a package's dependencies or entry points. It also runs inside `pnpm test:scaffold:local`.
+
 ### CLI Integration Tests
 Run them through pnpm, for example `pnpm --filter cossack run test:integration tests/deploy-integration.test.js`.
 Never run them with vitest directly: outside `pnpm run`, generated test apps can install packages through their linked folders and corrupt the repository's `node_modules`.
