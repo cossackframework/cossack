@@ -3,13 +3,16 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { chromium, expect as browserExpect } from '@playwright/test';
+import { chromium, expect as playwrightExpect } from '@playwright/test';
 import { cleanupRoots, cossack, productionServer, project, typecheck, vite } from './fixtures/generated-app.js';
 import { browserless, PNG } from './fixtures/cms-client.js';
-import { connect } from '../../romedb/src/client.ts';
+import { createRomeDB, MemoryPendingWriteStore } from '../../romedb/src/index.ts';
 import { liveRomeDBTests, startRomeDBService } from '../../romedb/src/testing.ts';
 
 afterEach(cleanupRoots);
+
+// A save rewrites permalinks and languages, which takes seconds with other suites running.
+const browserExpect = playwrightExpect.configure({ timeout: 15_000 });
 
 const SETTINGS_PAGE = 'dashboard/(cms)/settings/index.ts';
 const JSON_PAGE = 'dashboard/(cms)/settings/json/index.ts';
@@ -79,7 +82,7 @@ describe.skipIf(!liveRomeDBTests())('CMS unified settings', () => {
     let tab;
     const errors = [];
     try {
-      storage = await connect({ url: database.url, token: database.token });
+      storage = createRomeDB({ url: database.url, token: database.token, pending: new MemoryPendingWriteStore() });
       const routeIds = JSON.parse(await fs.readFile(path.join(root, 'dist/client/cossack-routes.json'), 'utf8')).filePathToId;
       const web = browserless(server.origin, routeIds, () => server.diagnostics());
       const visitor = browserless(server.origin, routeIds);
@@ -433,7 +436,7 @@ describe.skipIf(!liveRomeDBTests())('CMS unified settings', () => {
 
       // A changed declaration can leave an invalid stored value. The form must remain
       // usable so the administrator can repair it instead of losing the whole page.
-      await storage.writeAtomic([{ rql: 'UPDATE cms_settings SET value = $value WHERE key = $key', params: { $key: 'plugin:newsletter.senderName', $value: '42' } }]);
+      await storage.write([{ rql: 'UPDATE cms_settings SET value = $value WHERE key = $key', params: { $key: 'plugin:newsletter.senderName', $value: '42' } }]);
       await expect(web.action(JSON_PAGE, 'download', [])).rejects.toThrow();
       await tab.goto(server.origin + '/dashboard/settings');
       await openGroup('plugin:newsletter');

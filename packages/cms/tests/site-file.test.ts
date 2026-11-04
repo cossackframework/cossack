@@ -121,6 +121,10 @@ describe.skipIf(!live)('a site as a .romedb file', () => {
         try {
             expect((await db.read([{ rql: 'SELECT count(*) FROM cms_auth_sessions' }])).results[0]!.rows[0]![0]).toBe(0n);
             expect((await db.preflight()).id).not.toBe((await blog.db.preflight()).id);
+            // The organization route is the one Cloud has.
+            await db.write([{ rql: 'INSERT INTO cms_cache (key, value) VALUES ($key, $value)', params: { $key: 'k', $value: TOKEN } }]);
+            const copy = await siteFile(db);
+            expect((await bytesOf(copy.body)).includes(TOKEN)).toBe(false);
         } finally {
             await db.close();
             await directory.stop();
