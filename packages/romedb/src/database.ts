@@ -3,6 +3,7 @@ import {
     connect,
     validatePrepared,
     type BatchResult,
+    type DatabaseFile,
     type DatabaseInfo,
     type PreparedWrite,
     type RemoteDatabase,
@@ -280,6 +281,23 @@ export class RomeDB {
             else if (status === 'pending') report.pending.push(id);
         }
         return report;
+    }
+
+    /**
+     * The database as a `.romedb` file: one snapshot, while reads and writes continue. It is the
+     * whole database, sessions and credentials included, so clean it before it leaves the
+     * server (`cleanedFile` on Node). Read `body` to the end or cancel it.
+     */
+    async exportFile(options: RequestOptions = {}): Promise<DatabaseFile> {
+        // The embedded client also takes a destination; with these options both stream the file.
+        return (await this.#connection() as RemoteDatabase).exportFile(options);
+    }
+
+    /** Whether `exportFile` works here. RomeDB Cloud cannot copy a database into a file yet. */
+    async exportsFiles(options: RequestOptions = {}): Promise<boolean> {
+        // A loopback organization URL counts as Cloud until the details arrive.
+        await this.preflight(options);
+        return !cloud(await this.#connection());
     }
 
     /** Cloud only: start the database runtime. Request paths never warm; call this from a scheduled path. */

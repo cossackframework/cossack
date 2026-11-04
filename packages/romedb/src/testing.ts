@@ -30,15 +30,16 @@ export function liveRomeDBTests(): boolean {
     return findRomeDBBinary() !== undefined || process.env.COSSACK_TEST_REQUIRE_LIVE === '1';
 }
 
-/** Start `romedb serve` on a free loopback port with a new database in a temporary directory. */
-export async function startRomeDBService(options: { binary?: string; timeoutMs?: number } = {}): Promise<RomeDBTestService> {
+/** Start `romedb serve` on a free loopback port, on `file` or a new database in a temporary directory. */
+export async function startRomeDBService(options: { binary?: string; timeoutMs?: number; file?: string } = {}): Promise<RomeDBTestService> {
     const binary = options.binary ?? findRomeDBBinary();
     if (!binary) throw new Error('No RomeDB executable: set COSSACK_TEST_ROMEDB_BIN or put romedb on PATH.');
     const version = spawnSync(binary, ['--version'], { encoding: 'utf8' }).stdout.trim().replace(/^romedb\s+/, '');
     const directory = await mkdtemp(path.join(os.tmpdir(), 'cossack-romedb-'));
     const port = await freePort();
     const tokenFile = path.join(directory, 'token');
-    const child = spawn(binary, ['serve', path.join(directory, 'test.romedb'), '--create', '--port', String(port), '--token-file', tokenFile], { stdio: ['ignore', 'pipe', 'pipe'] });
+    const database = options.file ? [options.file] : [path.join(directory, 'test.romedb'), '--create'];
+    const child = spawn(binary, ['serve', ...database, '--port', String(port), '--token-file', tokenFile], { stdio: ['ignore', 'pipe', 'pipe'] });
     let output = '';
     child.stdout?.on('data', chunk => { output += chunk; });
     child.stderr?.on('data', chunk => { output += chunk; });

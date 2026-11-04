@@ -10,6 +10,7 @@ import { actionButton, field, siteStatus, SUBMIT } from '../../../../../../cms/n
 import { listTable } from '../../../../../../dashboard/list-table';
 import { importRequest, importSummary, sendsExport } from '../../../../../../cms/site-import';
 import { sendExport } from '../../../../../../cms/import.client';
+import { databaseFiles } from '../../../../../../cms/database';
 
 /** `movable`: the account can change kind here, a network account only when it belongs to this site alone and does not run the network. */
 interface Member { id: string; name: string; email: string; roles: string; account: 'site' | 'network'; movable: boolean }
@@ -30,6 +31,8 @@ export default class NetworkSite extends Cossack {
     @State() exportRequest: { by: string; at: number; approvedAt: number | null; expiresAt: number | null } | null = null;
     /** Whether an export can be imported: into a new site, or again after an import stopped. */
     @State() importState: 'new' | 'stopped' | 'running' | 'used' = 'used';
+    /** Whether this install makes `.romedb` files. */
+    @State() files = false;
     @State() importing = false;
     @State() importError = '';
     @State() message = '';
@@ -56,6 +59,7 @@ export default class NetworkSite extends Cossack {
             }));
             this.roles = (await host.users.roles()).map(role => ({ id: role.id, name: role.name }));
             this.importState = await siteImportState(host);
+            this.files = await databaseFiles(host.db);
         }
         const request = (await net.exportRequests()).get(record.id);
         if (request) {
@@ -222,8 +226,12 @@ export default class NetworkSite extends Cossack {
                     ? `${__('Approved')} ${shortDate(this.exportRequest.approvedAt)}: ${__('the site can download its export until')} ${shortDate(this.exportRequest.expiresAt)}.`
                     : `${this.exportRequest.by} ${__('requested an export on')} ${shortDate(this.exportRequest.at)}.`}</p>
                     ${this.exportRequest.approvedAt ? null : html`<div class="flex flex-wrap gap-2">${actionButton('approve-export', __('Approve'))}${actionButton('decline-export', __('Decline'), {}, { danger: true })}</div>`}` : null}
-                <a href=${`/api/cms/network/sites/${this.id}/export`} download class="inline-flex w-fit items-center justify-center rounded-md border border-border px-3 py-1.5 text-sm font-medium text-foreground no-underline hover:bg-muted">${__('Download export')}</a>`,
-                __('The site\'s database as one JSON file. Sessions, passwords, second factors, application passwords and webhook secrets stay out; media files are not included.'))}
+                <div class="flex flex-wrap gap-2">
+                    <a href=${`/api/cms/network/sites/${this.id}/export`} download class="inline-flex w-fit items-center justify-center rounded-md border border-border px-3 py-1.5 text-sm font-medium text-foreground no-underline hover:bg-muted">${__('Download export')}</a>
+                    ${this.files ? html`<a href=${`/api/cms/network/sites/${this.id}/export?format=romedb`} download data-database-file class="inline-flex w-fit items-center justify-center rounded-md border border-border px-3 py-1.5 text-sm font-medium text-foreground no-underline hover:bg-muted">${__('Download database file')}</a>` : null}
+                </div>`,
+                this.files ? __('The JSON export leaves out sessions, passwords, second factors, application passwords and webhook secrets. The database file is a .romedb file that a new install opens directly: it keeps the site\'s own accounts with their password hashes, without sessions, pending work or webhook secrets. Media files are in neither.')
+                    : __('The site\'s database as one JSON file. Sessions, passwords, second factors, application passwords and webhook secrets stay out; media files are not included.'))}
             ${this.status === 'creating' ? null : card(__('Site state'), html`<div class="flex flex-wrap gap-2">
                 ${this.status === 'active' ? actionButton('archive', __('Archive'), {}) : null}
                 ${this.status === 'archived' || this.status === 'deleted' ? actionButton('restore', __('Restore'), {}) : null}

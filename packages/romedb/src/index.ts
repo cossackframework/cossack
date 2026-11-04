@@ -19,6 +19,7 @@ export {
     type QueryResult,
     type BatchResult,
     type Capabilities,
+    type DatabaseFile,
     type DatabaseInfo,
     type ConnectOptions,
     type WarmResult,

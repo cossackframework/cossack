@@ -41,7 +41,7 @@ Sites need a place to keep their databases:
 | --- | --- | --- |
 | Node | A file (`ROMEDB_URL=storage/romedb/app.romedb`, the default) | A file per site beside it: `storage/romedb/<uuid>.romedb`. Nothing to set. |
 | Node or Workers | A URL (`romedb serve` or RomeDB Cloud) | `ROMEDB_SITES_URL`, a RomeDB Cloud organization URL (or the organization URL of `romedb serve --directory`), and `ROMEDB_SITES_TOKEN`, an organization key with the `manage` and `query` scopes. |
-| Development (`pnpm dev`) with a loopback `ROMEDB_URL` | `romedb serve`, which `pnpm dev` starts | `romedb serve --directory storage/romedb/sites` on the next port, which `pnpm dev` also starts unless `ROMEDB_SITES_URL` is set. It needs RomeDB 0.2.12 or later. |
+| Development (`pnpm dev`) with a loopback `ROMEDB_URL` | `romedb serve`, which `pnpm dev` starts | `romedb serve --directory storage/romedb/sites` on the next port, which `pnpm dev` also starts unless `ROMEDB_SITES_URL` is set. |
 
 Set `APP_URL` to the network's address, such as `https://example.com`. Sign-in happens on
 that host, and new sites start at a subdomain of it.
@@ -194,7 +194,10 @@ Network admins download any site's export from its page under Network → Sites
 (`GET /api/cms/network/sites/<id>/export`); a site downloads its own from
 `GET /api/cms/site-export`.
 
-The file, `<site>-<date>.json`, is `{ format: 'cossack-site-export', version: 1, exportedAt,
+The export comes in two forms: **JSON**, which works everywhere and an import reads, and a
+**database file**, which a new install opens directly.
+
+The JSON file, `<site>-<date>.json`, is `{ format: 'cossack-site-export', version: 1, exportedAt,
 site, skipped, redacted, tables }`. Each table has its `name`, `model` and `rows`; relational
 tables also list their `columns`, and their rows are arrays in that order, while document
 tables' rows are whole documents. Values use RomeDB's portable encoding, so `decodeValue`
@@ -206,6 +209,26 @@ Media files are not included; `cms_files` rows name their storage keys. The CMS'
 come first, then the collections' (`r__cms__posts` and the rest), so an import has the
 collections' definitions before their records. In code, `siteExport(host.db, { site })` from
 `@cossackframework/cms/server` yields the same document as text chunks.
+
+The database file, `<site>-<date>.romedb`, is the whole database at one moment, taken while
+the site keeps running (`?format=romedb` on either address, *Download database file* in
+the dashboard). Use it for sites too large to import.
+
+- **It keeps** the site's content, settings and members, and its own accounts with their
+  password hashes, authenticator secrets, passkeys and application passwords. Keep it private.
+- **It leaves out** sessions, sign-in challenges, reset tokens, preview links, handoffs and the
+  cache, plus pending work (the outbox, webhook deliveries, background jobs). Webhooks are
+  turned off, with new secrets. Media files are not included.
+- **The main site's file** is the network's database, with every network account, so only
+  network admins download it. Its other admins get the JSON export.
+- **Where it works:** on Node, with a database file or `romedb serve`. A copy holds live
+  sessions, and only a server with a disk can clean one: the server copies the database to
+  a private folder under `TMPDIR`, removes what stays out, copies it again so that nothing
+  deleted remains in the file, and sends that. The folder needs room for two copies and goes
+  when the download ends. On Workers and on RomeDB Cloud, sites export JSON.
+
+RomeDB builds one copy of a database at a time; a second download at that moment is told to
+try again.
 
 ## Importing an export
 
@@ -256,13 +279,11 @@ one with *Forgot password*, or the administrator sets it under Users. Sessions c
 database end. Media files move separately: the new install's storage needs the site's
 files (on the network they are under `sites/<id>/`).
 
-To get there, import the site's JSON export into the new install (above), or copy its
-database. A `.romedb` export, a file the new install opens directly with its site accounts'
-passwords, waits for RomeDB 0.2.13, which copies an open database (`exportFile`). Until then,
-with the application stopped (one process owns the files), the RomeDB CLI copies a site's
-file: `echo "VACUUM INTO 'blog.romedb';" | romedb storage/romedb/sites/<database>.romedb`, where
-`<database>` is the site's database ID from the registry. The copy is one file. It holds the
-site's sessions too, which are keyed by their tokens: the takeover ends them.
+To get there, download the site's database file and point `ROMEDB_URL` at it, or import the
+site's JSON export into the new install (above). Site accounts keep their passwords only with
+the database file; a JSON import gives them accounts without passwords. The file keeps the
+database's RomeDB identity, so open it with `ROMEDB_URL` or `romedb serve FILE`:
+`romedb serve --directory` refuses a copy under another name.
 
 ## Site states
 
@@ -301,6 +322,9 @@ scheduled publishing, the outbox, webhooks and write recovery also run on sites 
 
 ## Limits of this release
 
+- The CMS needs RomeDB 0.2.13 or later, and refuses an older engine at connect. That includes
+  RomeDB Cloud until it moves to 0.2.13. Databases from RomeDB 0.2.12 or earlier that hold
+  documents do not open: export them as JSON on the old release first, or start new ones.
 - Each process keeps up to 32 site hosts open; the one used longest ago closes first.
 - An import runs in one request. On Workers, the request's CPU limit bounds how large a site
   imports; on Node it is bounded by time only.

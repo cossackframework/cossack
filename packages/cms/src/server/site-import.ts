@@ -9,7 +9,7 @@
 import { decodeValue, type PortableValue, type Statement, type Value } from '@cossackframework/romedb';
 import { CmsError } from '../errors';
 import { HOST_TABLES } from './host-schema';
-import { EXPORT_SKIPPED_TABLES, quote } from './site-export';
+import { EXPORT_SKIPPED_TABLES, newSecret, quote } from './site-export';
 import type { CmsHost } from './host';
 
 export interface SiteImportReport {
@@ -171,7 +171,7 @@ function insertRow(table: string, columns: readonly string[], row: unknown): Sta
     const values = columns.map((_, index) => decoded(row[index]));
     if (table === 'cms_webhooks') {
         // Exports leave webhook secrets out: a new one, and the webhook off until someone checks it.
-        values[columns.indexOf('secret')] = [...crypto.getRandomValues(new Uint8Array(32))].map(byte => byte.toString(16).padStart(2, '0')).join('');
+        values[columns.indexOf('secret')] = newSecret();
         if (columns.includes('active')) values[columns.indexOf('active')] = 0n;
     }
     return {

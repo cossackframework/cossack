@@ -45,7 +45,7 @@ export async function cmsAppFiles() {
 export function cmsRecipeFiles({ adapter }) {
   return {
     'src/cms/database.ts': adapter === 'cloudflare'
-      ? `import { organizationDatabases, type DatabaseDirectory, type RomeDBOptions } from '@cossackframework/romedb';
+      ? `import { organizationDatabases, type DatabaseDirectory, type DatabaseFile, type RomeDB, type RomeDBOptions } from '@cossackframework/romedb';
 
 export interface DatabaseBindings {
     /**
@@ -81,10 +81,20 @@ export function siteDatabase(env: DatabaseBindings, database: string): Pick<Rome
 export function siteDirectory(env: DatabaseBindings): DatabaseDirectory | null {
     return env.ROMEDB_SITES_URL && env.ROMEDB_SITES_TOKEN ? organizationDatabases({ url: env.ROMEDB_SITES_URL, token: env.ROMEDB_SITES_TOKEN }) : null;
 }
+
+/** Workers have no disk to clean a copy on, and a raw copy holds live sessions: sites export JSON here. */
+export async function databaseFiles(_db: RomeDB): Promise<boolean> {
+    return false;
+}
+
+export async function databaseFile(_db: RomeDB, _signal: AbortSignal): Promise<DatabaseFile> {
+    throw new Error('Database files need Node.js.');
+}
 `
       : `import path from 'node:path';
-import { organizationDatabases, type DatabaseDirectory, type RomeDBOptions } from '@cossackframework/romedb';
-import { connectNode, fileDatabases, isServiceUrl } from '@cossackframework/romedb/node';
+import { organizationDatabases, type DatabaseDirectory, type DatabaseFile, type RomeDB, type RomeDBOptions } from '@cossackframework/romedb';
+import { cleanedFile, connectNode, fileDatabases, isServiceUrl } from '@cossackframework/romedb/node';
+import { cleanSiteFile } from '@cossackframework/cms/server';
 
 export interface DatabaseBindings {
     /**
@@ -136,6 +146,16 @@ export function siteDirectory(env: DatabaseBindings): DatabaseDirectory | null {
     if (env.ROMEDB_SITES_URL && env.ROMEDB_SITES_TOKEN) return organizationDatabases({ url: env.ROMEDB_SITES_URL, token: env.ROMEDB_SITES_TOKEN });
     const main = env.ROMEDB_URL || 'storage/romedb/app.romedb';
     return isServiceUrl(main) ? null : fileDatabases(path.dirname(main));
+}
+
+/** Whether a site can download its database as a \`.romedb\` file here: not on RomeDB Cloud yet. */
+export function databaseFiles(db: RomeDB): Promise<boolean> {
+    return db.exportsFiles();
+}
+
+/** A site's database as a \`.romedb\` file, cleaned on this server's disk before it leaves. */
+export function databaseFile(db: RomeDB, signal: AbortSignal): Promise<DatabaseFile> {
+    return cleanedFile(db, cleanSiteFile, { signal, timeoutMs: 120_000 });
 }
 `,
     'src/cms/media.ts': adapter === 'cloudflare'
