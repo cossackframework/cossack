@@ -40,7 +40,51 @@ export async function linkRepositoryModules(root, { packages = workspacePackages
   return modules;
 }
 
-const cacheRoot = path.join(os.tmpdir(), 'cossack-linked-app-cache');
+/**
+ * Links `dependency`, installed at `target`, into an app's `modules`. Scopes arrive from
+ * `linkRepositoryModules` as links to the repository's own folders, so the scope becomes a real
+ * folder first. Written through the link, this would replace the repository's package with a
+ * link into the cache, and two workers doing so at once would fail with EEXIST.
+ */
+export async function linkInstalledPackage(modules, target, dependency) {
+  const link = path.join(modules, dependency);
+  const scope = path.dirname(link);
+  if ((await fs.lstat(scope).catch(() => null))?.isSymbolicLink()) {
+    const source = await fs.realpath(scope);
+    await fs.unlink(scope);
+    await fs.mkdir(scope);
+    await Promise.all((await fs.readdir(source)).map(name => fs.symlink(path.join(source, name), path.join(scope, name), 'junction')));
+  }
+  await fs.mkdir(scope, { recursive: true });
+  await fs.rm(link, { force: true, recursive: true });
+  await fs.symlink(target, link, 'junction');
+}
+
+const CACHE_NAME = 'cossack-linked-app-cache';
+
+/**
+ * Fails when a package in the repository's node_modules links into the cache: something wrote
+ * through a linked folder, and every run after it uses those links, not the installed packages.
+ */
+export async function assertRepositoryModulesIntact(modules = path.join(repository, 'node_modules')) {
+  const links = [];
+  const inspect = async (folder, name) => {
+    const target = await fs.readlink(path.join(folder, name)).catch(() => null);
+    if (target?.includes(CACHE_NAME)) links.push(path.join(folder, name));
+  };
+  for (const entry of await fs.readdir(modules, { withFileTypes: true })) {
+    if (entry.isDirectory() && entry.name.startsWith('@')) {
+      const scope = path.join(modules, entry.name);
+      await Promise.all((await fs.readdir(scope)).map(name => inspect(scope, name)));
+    } else if (entry.isSymbolicLink()) await inspect(modules, entry.name);
+  }
+  if (links.length) {
+    throw new Error(`The repository's node_modules links into the test cache:\n${links.join('\n')}\n`
+      + 'Delete these links, then run `pnpm install --frozen-lockfile --config.optimistic-repeat-install=false`.');
+  }
+}
+
+const cacheRoot = path.join(os.tmpdir(), CACHE_NAME);
 const pending = new Map();
 let scaffoldFingerprint;
 
@@ -82,10 +126,8 @@ async function buildBase(key, entry, { name, adapter, features, options, package
         dependencies: Object.fromEntries(install.map(dependency => [dependency, pkg.dependencies?.[dependency] ?? pkg.devDependencies?.[dependency] ?? 'latest'])) }));
       await promisify(execFile)('pnpm', ['install', '--ignore-workspace', '--ignore-scripts'], { cwd: stagingInstalled, timeout: 60000, maxBuffer: 1024 * 1024 });
       for (const dependency of install) {
-        await fs.mkdir(path.dirname(path.join(projectDir, 'node_modules', dependency)), { recursive: true });
-        await fs.rm(path.join(projectDir, 'node_modules', dependency), { force: true, recursive: true });
         // Points at the final cache location; valid once `staging` is renamed.
-        await fs.symlink(path.join(installed, 'node_modules', dependency), path.join(projectDir, 'node_modules', dependency), 'junction');
+        await linkInstalledPackage(path.join(projectDir, 'node_modules'), path.join(installed, 'node_modules', dependency), dependency);
       }
     }
     try { await fs.rename(staging, entry); }
@@ -110,6 +152,7 @@ async function cachedBase(settings) {
   if (!pending.has(key)) pending.set(key, (async () => {
     try { await fs.access(path.join(entry, settings.name, 'package.json')); const now = new Date(); await fs.utimes(entry, now, now); }
     catch { await buildBase(key, entry, settings); await pruneCache(entry); }
+    await assertRepositoryModulesIntact();
     return path.join(entry, settings.name);
   })().catch(error => { pending.delete(key); throw error; }));
   return pending.get(key);
