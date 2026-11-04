@@ -282,7 +282,7 @@ Findings:
   Cossack client sends `redirect: 'manual'` and refuses 3xx responses.
 - The service rejects unused parameters, and `DEFINE FIELD ... DEFAULT $param` reports the
   parameter as unused, so array defaults cannot be declared.
-- Concurrent writes to one row fail with a rolled-back `FDB_WRITE_CONFLICT` rather than a
+- Concurrent writes to one row fail with a rolled-back `RDB_WRITE_CONFLICT` rather than a
   zero-row update. Repositories report it as a conflict; stores retry it.
 - The job and notification ledgers moved from the framework to core as portable SQL stores
   (`createSqlJobStore`, `createSqlNotificationStore`); the D1 names remain.

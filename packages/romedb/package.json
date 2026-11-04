@@ -21,7 +21,7 @@
     "test": "vitest"
   },
   "dependencies": {
-    "@romedb/node": "^0.2.12"
+    "@romedb/node": "^0.2.13"
   },
   "devDependencies": {
     "@types/node": "^22.19.0",

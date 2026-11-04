@@ -59,7 +59,7 @@ Never run them with vitest directly: outside `pnpm run`, generated test apps can
 ### Slow Suites: Run Locally Before a Release
 CI skips these suites because they are slow or need Docker or a display. Run both locally before every release, and report the results in the release PR:
 
-- `pnpm test:databases`: live PostgreSQL and MySQL suites, plus Studio introspection against both, and the RomeDB client and CMS suites. Needs Docker, or set `COSSACK_TEST_POSTGRES_URL` and `COSSACK_TEST_MYSQL_URL`; the RomeDB suites need a RomeDB 0.2.12+ executable through `COSSACK_TEST_ROMEDB_BIN` or `PATH`.
+- `pnpm test:databases`: live PostgreSQL and MySQL suites, plus Studio introspection against both, and the RomeDB client and CMS suites. Needs Docker, or set `COSSACK_TEST_POSTGRES_URL` and `COSSACK_TEST_MYSQL_URL`; the RomeDB suites need a RomeDB 0.2.13+ executable through `COSSACK_TEST_ROMEDB_BIN` or `PATH`.
 - `pnpm test:desktop`: packages and runs the Desktop app, including its dev restart check.
 
 Also run them after changing `packages/database`, `packages/studio`, `packages/desktop`, `packages/romedb` or `packages/cms`.

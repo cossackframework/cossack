@@ -161,7 +161,7 @@ live('RomeDB service contract', () => {
         }) as typeof globalThis.fetch;
         const client = await connect({ url, token, fetch: slow });
         const error = await client.read([{ sql: 'SELECT 1' }], { signal: controller.signal }).catch(e => e) as ClientError;
-        expect(error).toMatchObject({ code: 'FDB_CANCELLED', outcome: 'read-failed' });
+        expect(error).toMatchObject({ code: 'RDB_CANCELLED', outcome: 'read-failed' });
         await client.close();
     });
 });

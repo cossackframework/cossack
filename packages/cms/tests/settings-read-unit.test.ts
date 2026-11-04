@@ -46,16 +46,16 @@ describe('settings read consistency', () => {
     });
 
     it('uses defaults only for an explicit missing settings table', async () => {
-        const read = vi.fn().mockRejectedValue(new ClientError('FDB_QUERY', 'no such table: cms_settings', 'read-failed'));
+        const read = vi.fn().mockRejectedValue(new ClientError('RDB_QUERY', 'no such table: cms_settings', 'read-failed'));
         expect(await new CmsSettings(database(read), groups).snapshot(context)).toEqual({ data: { a: 'default-a', z: 'default-z' } });
-        const otherTable = new ClientError('FDB_QUERY', 'no such table: unrelated', 'read-failed');
+        const otherTable = new ClientError('RDB_QUERY', 'no such table: unrelated', 'read-failed');
         read.mockRejectedValue(otherTable);
         await expect(new CmsSettings(database(read), groups).snapshot(context)).rejects.toBe(otherTable);
     });
 
     it('reduces oversized result pages while keeping the same read cursor', async () => {
         const read = vi.fn()
-            .mockRejectedValueOnce(new ClientError('FDB_RESULT_TOO_LARGE', 'Response exceeds the result limit', 'read-failed'))
+            .mockRejectedValueOnce(new ClientError('RDB_RESULT_TOO_LARGE', 'Response exceeds the result limit', 'read-failed'))
             .mockResolvedValueOnce(result(1, [['data.a', '"smaller-page"']]));
         expect(await new CmsSettings(database(read), groups).get('data.a')).toBe('smaller-page');
         expect(read.mock.calls.map(([statements]) => statements[0].params)).toEqual([{ $after: '', $limit: 100 }, { $after: '', $limit: 50 }]);

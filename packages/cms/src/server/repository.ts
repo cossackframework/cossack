@@ -292,7 +292,7 @@ export class ResourceRepository {
         const guard = `EXISTS (SELECT 1 FROM ${this.resource.storage} WHERE id = type::record('${this.resource.storage}', $key) AND "_op" = $op)`;
         statements.push(...this.#sideEffects(guard, op, key, 1, 'create', record, context.principal, now));
         await this.#write(statements, op, context, error => {
-            if (error.code === 'FDB_CONSTRAINT') throw new CmsError('CMS_CONFLICT', 'A record with the same unique value already exists.', { cause: error });
+            if (error.code === 'RDB_CONSTRAINT') throw new CmsError('CMS_CONFLICT', 'A record with the same unique value already exists.', { cause: error });
         });
         return this.#redact(record, context.principal);
     }
@@ -320,7 +320,7 @@ export class ResourceRepository {
         const guard = { rql: `EXISTS (SELECT 1 FROM ${this.resource.storage} WHERE id = type::record('${this.resource.storage}', $key) AND "_op" = $op)`, params: { $key: context.id, $op: context.op } };
         const statements: Statement[] = [{ rql: `INSERT INTO ${this.resource.storage} DOCUMENT $document`, params: { $document: document } }, ...(context.attach?.(guard) ?? [])];
         await this.#write(statements, context.op, context, error => {
-            if (error.code === 'FDB_CONSTRAINT') throw new CmsError('CMS_CONFLICT', 'A record with the same unique value already exists.', { cause: error });
+            if (error.code === 'RDB_CONSTRAINT') throw new CmsError('CMS_CONFLICT', 'A record with the same unique value already exists.', { cause: error });
         }, 0, context.kind);
         return record;
     }
@@ -774,9 +774,9 @@ export class ResourceRepository {
         } catch (error) {
             if (error instanceof UncertainWriteError) throw new CmsError('CMS_UNCERTAIN', 'The change was sent but not confirmed. It will be completed or reported shortly.', { requestId: error.requestId, cause: error });
             if (error instanceof ClientError && error.outcome === 'rolled-back') {
-                if (error.code === 'FDB_WRITE_CONFLICT') throw new CmsError('CMS_CONFLICT', 'The record changed since it was read. Reload and try again.', { cause: error });
+                if (error.code === 'RDB_WRITE_CONFLICT') throw new CmsError('CMS_CONFLICT', 'The record changed since it was read. Reload and try again.', { cause: error });
                 onRolledBack?.(error);
-                if (error.code === 'FDB_VALIDATION' || error.code === 'FDB_CONSTRAINT') throw new CmsError('CMS_VALIDATION', 'The database rejected the values.', { cause: error });
+                if (error.code === 'RDB_VALIDATION' || error.code === 'RDB_CONSTRAINT') throw new CmsError('CMS_VALIDATION', 'The database rejected the values.', { cause: error });
             }
             throw error;
         }

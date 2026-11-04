@@ -149,7 +149,7 @@ describe.skipIf(!live)('schema planner and migration ledger', () => {
         const v2 = defineResource({ name: 'codes', fields: { code: field.string({ unique: true }), label: field.string() } });
         const next = createCMS({ db, resources: [v2] });
         const report = await next.migrate();
-        expect(report.failed).toMatchObject({ code: 'FDB_CONSTRAINT', step: expect.objectContaining({ resource: 'app/codes' }) });
+        expect(report.failed).toMatchObject({ code: 'RDB_CONSTRAINT', step: expect.objectContaining({ resource: 'app/codes' }) });
         const info = await db.read([{ rql: 'INFO FOR TABLE r__app__codes' }]);
         expect((info.results[0]!.rows[0]![0] as { fields: { path: string[] }[] }).fields.map(entry => entry.path[0])).not.toContain('label');
         expect((await next.status()).resources).toEqual([{ id: 'app/codes', active: false }]);

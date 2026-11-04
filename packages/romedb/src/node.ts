@@ -137,7 +137,7 @@ export async function connectNode(options: NodeConnectionOptions): Promise<Datab
     await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
     // Another process may create it first; open that file then.
     return open(true).catch(error => {
-        if (error instanceof ClientError && error.code === 'FDB_ALREADY_EXISTS') return open(false);
+        if (error instanceof ClientError && error.code === 'RDB_ALREADY_EXISTS') return open(false);
         throw error;
     });
 }

@@ -162,7 +162,7 @@ export class CmsSecurity {
                     $device: passkey.deviceType ?? null, $backed: passkey.backedUp ? 1 : 0, $now: this.#now() },
             }], WRITE);
         } catch (error) {
-            if ((error as { code?: string }).code === 'FDB_CONSTRAINT') throw new CmsError('CMS_CONFLICT', 'This passkey is already registered.', { cause: error });
+            if ((error as { code?: string }).code === 'RDB_CONSTRAINT') throw new CmsError('CMS_CONFLICT', 'This passkey is already registered.', { cause: error });
             throw error;
         }
     }

@@ -69,7 +69,7 @@ files('Files through @romedb/node', () => {
         try {
             const error = await db.read([{ rql: 'SELEC nonsense' }]).catch(error => error);
             expect(error).toBeInstanceOf(ClientError);
-            expect(error.code).toBe('FDB_VALIDATION');
+            expect(error.code).toBe('RDB_VALIDATION');
             await expect(db.read([{ sql: 'SELECT 1' } as never])).rejects.toThrow(/rql/);
         } finally { await db.close(); }
     });

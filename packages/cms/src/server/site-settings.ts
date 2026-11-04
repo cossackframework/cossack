@@ -218,7 +218,7 @@ export class CmsSettings {
                 try { result = await this.#db.read([{ rql: 'SELECT key, value FROM cms_settings WHERE key > $after ORDER BY key LIMIT $limit', params: { $after: after, $limit: pageSize } }]); }
                 catch (error) {
                     if (error instanceof ClientError && /cms_settings/i.test(error.message) && /no such table|not found|does not exist/i.test(error.message)) return { values: Object.freeze(values) as SiteSettings, errors };
-                    if (error instanceof ClientError && (error.code === 'FDB_LIMIT' || error.code === 'FDB_RESULT_TOO_LARGE') && pageSize > 1) { pageSize = Math.max(1, Math.floor(pageSize / 2)); continue; }
+                    if (error instanceof ClientError && (error.code === 'RDB_LIMIT' || error.code === 'RDB_RESULT_TOO_LARGE') && pageSize > 1) { pageSize = Math.max(1, Math.floor(pageSize / 2)); continue; }
                     throw error;
                 }
                 if (sequence !== undefined && sequence !== result.sequence) break;

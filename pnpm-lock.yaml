@@ -176,8 +176,8 @@ importers:
         specifier: ^2.0.5
         version: 2.1.0(hono@4.13.11)
       '@romedb/node':
-        specifier: ^0.2.12
-        version: 0.2.12
+        specifier: ^0.2.13
+        version: 0.2.13
       '@simplewebauthn/browser':
         specifier: 14.0.0
         version: 14.0.0
@@ -556,8 +556,8 @@ importers:
   packages/romedb:
     dependencies:
       '@romedb/node':
-        specifier: ^0.2.12
-        version: 0.2.12
+        specifier: ^0.2.13
+        version: 0.2.13
       vite:
         specifier: ~8.1.6
         version: 8.1.6(@types/node@22.20.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.0)(tsx@4.23.0)(yaml@2.9.0)
@@ -1849,8 +1849,8 @@ packages:
   '@rolldown/pluginutils@1.0.1':
     resolution: {integrity: sha512-2j9bGt5Jh8hj+vPtgzPtl72j0yRxHAyumoo6TNfAjsLB04UtpSvPbPcDcBMxz7n+9CYB0c1GxQFxYRg2jimqGw==}
 
-  '@romedb/node@0.2.12':
-    resolution: {integrity: sha512-nTbpBXbhDAvfOPohr9rG6JqYcwbkOxKpX8cDAD2hNxyJ/FLtvO/3ST3nvd8MmC/EVtauvLk3D1mMivCCcVng2A==}
+  '@romedb/node@0.2.13':
+    resolution: {integrity: sha512-ic9KzgHcU8tolK2FASXzYCjf4YG5RwpV7YLJ+7AMG6MBYuyAWCfNV0kdTSx9Hl6g03zTTE7DQI2u/k/pZH7FGw==}
     engines: {node: '>=22'}
 
   '@sagold/json-pointer@5.1.2':
@@ -1897,6 +1897,7 @@ packages:
   '@smithy/core@3.36.2':
     resolution: {integrity: sha512-oRw0rB9QSUiCZfEs23G5F4Af+b2rQt1lItIICWu5IejFNd+uPM8SWqiKLMpQ6bX1Q7slsLbjuoE2niErFtkVPQ==}
     engines: {node: '>=18.0.0'}
+    deprecated: Deprecated due to a bug in custom logger data redaction. See https://github.com/aws/aws-sdk-js-v3/issues/8393.
 
   '@smithy/credential-provider-imds@4.5.2':
     resolution: {integrity: sha512-A9uSdn72ozbRUSit0eib0TW7nXuNPlaeM0zcGkJ+nE6tFcSDbnmtwoxbTCFBukVQcszDAyvsd7+rTduPTXpygg==}
@@ -5810,7 +5811,7 @@ snapshots:
 
   '@rolldown/pluginutils@1.0.1': {}
 
-  '@romedb/node@0.2.12': {}
+  '@romedb/node@0.2.13': {}
 
   '@sagold/json-pointer@5.1.2': {}
 

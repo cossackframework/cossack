@@ -63,7 +63,7 @@ export class CmsRedirects {
             if (options.id && result.results[0]!.affected === 0n) throw new CmsError('CMS_NOT_FOUND', 'Redirect not found.');
         } catch (error) {
             if (error instanceof CmsError) throw error;
-            if ((error as { code?: string }).code === 'FDB_CONSTRAINT') throw new CmsError('CMS_CONFLICT', `A redirect from ${source} already exists.`, { cause: error });
+            if ((error as { code?: string }).code === 'RDB_CONSTRAINT') throw new CmsError('CMS_CONFLICT', `A redirect from ${source} already exists.`, { cause: error });
             throw error;
         }
         this.#prefixes = undefined;

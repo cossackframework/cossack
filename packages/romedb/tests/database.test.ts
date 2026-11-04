@@ -2,7 +2,7 @@ import { mkdtemp, rm, stat } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { ClientError, createRomeDB, EngineVersionError, MemoryPendingWriteStore, PendingWriteConflictError, UncertainWriteError, type PendingWriteStore } from '../src/index';
+import { ClientError, createRomeDB, EngineVersionError, MemoryPendingWriteStore, PendingWriteConflictError, REQUIRED_ENGINE_VERSION, UncertainWriteError, type PendingWriteStore } from '../src/index';
 import { FilePendingWriteStore } from '../src/node';
 import { DurableObjectPendingWriteStore, RomeDBPendingWrites } from '../src/cloudflare';
 
@@ -19,7 +19,7 @@ function service(options: { engine?: string; onQuery?: (body: { [key: string]: u
     const bodies: string[] = [];
     const fetch = (async (input: RequestInfo | URL, init: RequestInit = {}) => {
         const url = String(input);
-        if (url === LOCAL) return json(details(options.engine ?? '0.2.9'));
+        if (url === LOCAL) return json(details(options.engine ?? REQUIRED_ENGINE_VERSION));
         const body = JSON.parse(String(init.body));
         if (url.endsWith('/read')) {
             reads++;
@@ -36,7 +36,7 @@ const noSleep = async () => {};
 
 describe('RomeDB binding', () => {
     it('refuses an older or missing engine release', async () => {
-        for (const engine of ['0.2.8', undefined]) {
+        for (const engine of ['0.2.12', undefined]) {
             const db = createRomeDB({ url: LOCAL, token: 't', pending: new MemoryPendingWriteStore(), fetch: service({ engine: engine as string }).fetch });
             if (engine === undefined) {
                 const fetch = (async (input: RequestInfo | URL) => String(input) === LOCAL ? json(details()) : json({})) as typeof globalThis.fetch;
@@ -44,7 +44,7 @@ describe('RomeDB binding', () => {
                 await expect(missing.read([{ rql: 'SELECT 1' }])).rejects.toBeInstanceOf(EngineVersionError);
                 continue;
             }
-            await expect(db.read([{ rql: 'SELECT 1' }])).rejects.toThrow(/0\.2\.8 is older than the required 0\.2\.9/);
+            await expect(db.read([{ rql: 'SELECT 1' }])).rejects.toThrow(/0\.2\.12 is older than the required 0\.2\.13/);
         }
         const newer = createRomeDB({ url: LOCAL, token: 't', pending: new MemoryPendingWriteStore(), fetch: service({ engine: '2.10.1' }).fetch });
         expect((await newer.preflight()).engineVersion).toBe('2.10.1');
@@ -74,7 +74,7 @@ describe('RomeDB binding', () => {
 
     it('recovers backpressure with the same body and bounded attempts', async () => {
         const fake = service({ onQuery: (body, attempt) => attempt < 3
-            ? json({ error: { code: 'FDB_UNAVAILABLE', message: 'busy' } }, 503, { 'retry-after': '1' })
+            ? json({ error: { code: 'RDB_UNAVAILABLE', message: 'busy' } }, 503, { 'retry-after': '1' })
             : json({ requestId: body.requestId, sequence: 11, results: [{ columns: [], rows: [], affected: '1' }] }) });
         const delays: number[] = [];
         const db = createRomeDB({ url: LOCAL, token: 't', pending: new MemoryPendingWriteStore(), fetch: fake.fetch, sleep: async ms => { delays.push(ms); }, retry: { attempts: 3, maxDelayMs: 500 } });
@@ -103,10 +103,10 @@ describe('RomeDB binding', () => {
     });
 
     it('drops the saved request when the database confirms a rollback', async () => {
-        const fake = service({ onQuery: (body) => json({ requestId: body.requestId, sequence: 11, error: { code: 'FDB_CONSTRAINT', message: 'unique' } }, 409) });
+        const fake = service({ onQuery: (body) => json({ requestId: body.requestId, sequence: 11, error: { code: 'RDB_CONSTRAINT', message: 'unique' } }, 409) });
         const pending = new MemoryPendingWriteStore();
         const db = createRomeDB({ url: LOCAL, token: 't', pending, fetch: fake.fetch, sleep: noSleep });
-        await expect(db.write([{ rql: 'INSERT INTO x VALUES (1)' }])).rejects.toMatchObject({ outcome: 'rolled-back', code: 'FDB_CONSTRAINT' });
+        await expect(db.write([{ rql: 'INSERT INTO x VALUES (1)' }])).rejects.toMatchObject({ outcome: 'rolled-back', code: 'RDB_CONSTRAINT' });
         expect(fake.queries).toBe(1);
         expect(await pending.list()).toHaveLength(0);
     });
@@ -125,7 +125,7 @@ describe('RomeDB binding', () => {
         let sequence = 10;
         const fetch = (async (input: RequestInfo | URL, init: RequestInit = {}) => {
             const url = String(input);
-            if (url === LOCAL) return json({ ...details('0.2.9'), sequence });
+            if (url === LOCAL) return json({ ...details(REQUIRED_ENGINE_VERSION), sequence });
             const body = JSON.parse(String(init.body));
             if (url.endsWith('/read')) return json({ readVersion: 2, requestId: body.requestId, sequence, results: [{ columns: [], rows: [], affected: '0' }] });
             throw new TypeError('reset');
@@ -142,10 +142,10 @@ describe('RomeDB binding', () => {
     });
 
     it('retries reads under backpressure only', async () => {
-        const fake = service({ onRead: attempt => attempt === 1 ? json({ error: 'busy' }, 503) : json({ error: { code: 'FDB_SYNTAX', message: 'bad' } }, 400) });
+        const fake = service({ onRead: attempt => attempt === 1 ? json({ error: 'busy' }, 503) : json({ error: { code: 'RDB_SYNTAX', message: 'bad' } }, 400) });
         const db = createRomeDB({ url: LOCAL, token: 't', pending: new MemoryPendingWriteStore(), fetch: fake.fetch, sleep: noSleep });
         const error = await db.read([{ rql: 'SELEC 1' }]).catch(e => e) as ClientError;
-        expect(error.code).toBe('FDB_SYNTAX');
+        expect(error.code).toBe('RDB_SYNTAX');
         expect(fake.reads).toBe(2);
     });
 });

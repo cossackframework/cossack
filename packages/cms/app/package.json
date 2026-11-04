@@ -47,7 +47,7 @@
     "@tiptap/extensions": "3.32.0",
     "@aws-sdk/client-s3": "^3.1156.0",
     "sharp": "^0.35.5",
-    "@romedb/node": "^0.2.12",
+    "@romedb/node": "^0.2.13",
     "@simplewebauthn/browser": "14.0.0",
     "uqr": "0.1.3",
     "@cossackframework/node-adapter": "workspace:*",

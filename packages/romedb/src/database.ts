@@ -22,7 +22,7 @@ export type DatabaseClient = RemoteDatabase | EmbeddedDatabase;
 export interface Statement { rql: string; params?: { [key: string]: Value } }
 
 /** The RomeDB engine release this package targets. Older engines are refused at preflight. */
-export const REQUIRED_ENGINE_VERSION = '0.2.9';
+export const REQUIRED_ENGINE_VERSION = '0.2.13';
 
 export interface RomeDBWorkLimits {
     /** Default budget for each read batch. */
@@ -83,7 +83,7 @@ export interface WriteCallOptions extends ReadCallOptions {
     kind?: string;
     /**
      * Re-run a batch the engine rolled back for a concurrent write to the same rows
-     * (`FDB_WRITE_CONFLICT`), up to this many times, as a new request. Use only when
+     * (`RDB_WRITE_CONFLICT`), up to this many times, as a new request. Use only when
      * re-evaluating the statements against newer data is correct. Default 0.
      */
     retryConflicts?: number;
@@ -201,7 +201,7 @@ export class RomeDB {
             try {
                 return await this.#writeOnce(statements, attempt === 0 ? options : { ...options, requestId: undefined });
             } catch (error) {
-                if (attempt >= retries || !(error instanceof ClientError) || error.outcome !== 'rolled-back' || error.code !== 'FDB_WRITE_CONFLICT') throw error;
+                if (attempt >= retries || !(error instanceof ClientError) || error.outcome !== 'rolled-back' || error.code !== 'RDB_WRITE_CONFLICT') throw error;
                 await this.#sleep(Math.floor(Math.random() * 10 * (attempt + 1)), options.signal).catch(() => {});
             }
         }
@@ -321,9 +321,9 @@ export class RomeDB {
 
     #retryDelay(error: unknown, attempt: number, signal: AbortSignal | undefined, writing = false): number | undefined {
         if (attempt >= this.#attempts || signal?.aborted || !(error instanceof ClientError)) return undefined;
-        if (error.code === 'FDB_CANCELLED' || error.code === 'FDB_AUTH' || error.code === 'FDB_FORBIDDEN' || error.code === 'FDB_CLOSED') return undefined;
+        if (error.code === 'RDB_CANCELLED' || error.code === 'RDB_AUTH' || error.code === 'RDB_FORBIDDEN' || error.code === 'RDB_CLOSED') return undefined;
         const backpressure = error.status === 503 || error.status === 429;
-        if (!backpressure && !(writing && error.outcome === 'unknown') && !(error.outcome === 'read-failed' && (error.code === 'FDB_TRANSPORT' || error.status === undefined))) return undefined;
+        if (!backpressure && !(writing && error.outcome === 'unknown') && !(error.outcome === 'read-failed' && (error.code === 'RDB_TRANSPORT' || error.status === undefined))) return undefined;
         const base = error.retryAfterMs ?? 50 * 2 ** (attempt - 1);
         return Math.min(this.#maxDelay, base) + Math.floor(Math.random() * 25);
     }

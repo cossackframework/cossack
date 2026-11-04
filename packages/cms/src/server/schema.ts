@@ -389,7 +389,7 @@ export async function migrate(db: RomeDB, resources: readonly Resource[], option
 }
 
 function isSequenceConflict(error: ClientError): boolean {
-    return error.code === 'FDB_CONFLICT' || /sequence/i.test(error.message);
+    return error.code === 'RDB_CONFLICT' || /sequence/i.test(error.message);
 }
 
 function fieldDrift(desired: FieldSpec, existing: CatalogField): string[] {
