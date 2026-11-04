@@ -1,5 +1,5 @@
 import type { RomeDB, WriteCallOptions } from './database';
-import { Float64, Record, type Value } from '@romedb/node/client';
+import { Float64, Record, type Value } from '@romedb/client';
 
 type Bindable = string | number | null | bigint | boolean;
 

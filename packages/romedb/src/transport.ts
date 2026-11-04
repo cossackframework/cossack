@@ -1,4 +1,4 @@
-import { Float64, Record, Vector, type Value } from '@romedb/node/values';
+import { Float64, Record, Vector, type Value } from '@romedb/client/values';
 
 /** Version of the JSON transport representation. */
 export const TRANSPORT_VERSION = 1;

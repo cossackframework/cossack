@@ -75,11 +75,11 @@ export function servesDirectories(binary = findRomeDBBinary()): boolean {
     return `${help.stdout}${help.stderr}`.includes('--directory');
 }
 
-/** Start `romedb serve --directory` on a free loopback port over a new temporary directory. */
-export async function startRomeDBDirectory(options: { binary?: string; timeoutMs?: number } = {}): Promise<RomeDBTestDirectory> {
+/** Start `romedb serve --directory` on a free loopback port, over `directory` or a new temporary one. It is removed on stop. */
+export async function startRomeDBDirectory(options: { binary?: string; timeoutMs?: number; directory?: string } = {}): Promise<RomeDBTestDirectory> {
     const binary = options.binary ?? findRomeDBBinary();
     if (!binary) throw new Error('No RomeDB executable: set COSSACK_TEST_ROMEDB_BIN or put romedb on PATH.');
-    const directory = await mkdtemp(path.join(os.tmpdir(), 'cossack-romedb-dir-'));
+    const directory = options.directory ?? await mkdtemp(path.join(os.tmpdir(), 'cossack-romedb-dir-'));
     const port = await freePort();
     const tokenFile = path.join(directory, 'romedb.token');
     const child = spawn(binary, ['serve', '--directory', directory, '--create', '--port', String(port), '--token-file', tokenFile], { stdio: ['ignore', 'pipe', 'pipe'] });

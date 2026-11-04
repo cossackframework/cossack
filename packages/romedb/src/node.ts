@@ -1,15 +1,10 @@
-import { constants, createWriteStream } from 'node:fs';
+import { constants } from 'node:fs';
 import fs from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
-import { Readable } from 'node:stream';
-import { pipeline } from 'node:stream/promises';
-import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { fileURLToPath } from 'node:url';
-import { ClientError, connect, type DatabaseFile, type RequestOptions } from '@romedb/node/client';
-import type { EmbeddedDatabase } from '@romedb/node/embedded-client';
-import { createRomeDB, type DatabaseClient, type RomeDB } from './database';
-import { decodePendingWrite, encodePendingWrite, MemoryPendingWriteStore, PendingWriteConflictError, samePendingWrite, type PendingWrite, type PendingWriteStore } from './pending';
+import { ClientError, connect } from '@romedb/client';
+import type { DatabaseClient } from './database';
+import { decodePendingWrite, encodePendingWrite, PendingWriteConflictError, samePendingWrite, type PendingWrite, type PendingWriteStore } from './pending';
 
 const MAX_FILE = 2_359_296;
 const ID = /^[A-Za-z0-9_-]{1,80}$/;
@@ -150,61 +145,6 @@ export async function connectNode(options: NodeConnectionOptions): Promise<Datab
 async function exists(file: string): Promise<boolean> {
     try { await fs.access(file, constants.F_OK); return true; }
     catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false; throw error; }
-}
-
-const FILE_CHUNK = 256 * 1024;
-
-/**
- * The database as a `.romedb` file with `clean` applied, for a file that leaves the server
- * without everything in the database. A snapshot goes to a private temporary folder, `clean`
- * changes that copy, and a second copy is what is sent, because deleted rows stay in the freed
- * pages of the first, which is removed before anything is sent. The folder needs room for two
- * copies (`directory`, by default the system's, `TMPDIR`) and goes when `body` ends or is
- * cancelled.
- */
-export async function cleanedFile(db: RomeDB, clean: (copy: RomeDB) => Promise<void>, options: RequestOptions & { directory?: string } = {}): Promise<DatabaseFile> {
-    const { directory: parent = os.tmpdir(), ...request } = options;
-    const directory = await fs.mkdtemp(path.join(parent, 'romedb-file-'));
-    const remove = () => fs.rm(directory, { recursive: true, force: true });
-    try {
-        const snapshot = path.join(directory, 'snapshot.romedb');
-        const cleaned = path.join(directory, 'cleaned.romedb');
-        const file = await db.exportFile(request);
-        await pipeline(Readable.fromWeb(file.body as NodeReadableStream<Uint8Array>), createWriteStream(snapshot, { flags: 'wx', mode: 0o600 }), request.signal ? { signal: request.signal } : {});
-        const client = await connectNode({ url: snapshot }) as EmbeddedDatabase;
-        try {
-            await clean(createRomeDB({ url: snapshot, pending: new MemoryPendingWriteStore(), connect: async () => client }));
-            await client.exportFile(cleaned, request.signal ? { signal: request.signal } : {});
-        } finally { await client.close(); }
-        // The first copy still holds what was cleaned: it goes before anything is sent.
-        for (const name of await fs.readdir(directory)) if (path.join(directory, name) !== cleaned) await fs.rm(path.join(directory, name), { force: true });
-        const handle = await fs.open(cleaned, 'r');
-        const { size } = await handle.stat();
-        const finish = async () => {
-            await handle.close().catch(() => undefined);
-            await remove();
-        };
-        let position = 0;
-        const body = new ReadableStream<Uint8Array>({
-            async pull(controller) {
-                try {
-                    const chunk = new Uint8Array(FILE_CHUNK);
-                    const { bytesRead } = await handle.read(chunk, 0, FILE_CHUNK, position);
-                    position += bytesRead;
-                    if (bytesRead) controller.enqueue(chunk.subarray(0, bytesRead));
-                    else { await finish(); controller.close(); }
-                } catch (error) {
-                    await finish();
-                    throw error;
-                }
-            },
-            cancel: finish,
-        });
-        return { sequence: file.sequence, size, body };
-    } catch (error) {
-        await remove();
-        throw error;
-    }
 }
 
 export { fileDatabases } from './node-directory';

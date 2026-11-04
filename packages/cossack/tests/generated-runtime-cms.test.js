@@ -22,7 +22,7 @@ const doc = (...content) => ({ type: 'doc', content });
 const paragraph = (...content) => ({ type: 'paragraph', content });
 const text = (value, marks) => ({ type: 'text', text: value, ...(marks ? { marks: marks.map(type => ({ type })) } : {}) });
 
-async function exercise(origin, routeIds, diagnostics, { files = false } = {}) {
+async function exercise(origin, routeIds, diagnostics) {
   const web = browserless(origin, routeIds, diagnostics);
   // Before setup the site is unavailable and sign-in leads to setup.
   const early = await web.request('/');
@@ -340,22 +340,16 @@ async function exercise(origin, routeIds, diagnostics, { files = false } = {}) {
   const session = await fetch(origin + '/api/auth/session', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'ada@example.com', password: 'long password' }) });
   expect(session.status).toBe(200);
   expect(session.headers.getSetCookie().some(cookie => cookie.startsWith('session_id='))).toBe(true);
-  // Node installs clean a copy of the database and send it as a file, without the session that asked for it; Workers keep JSON.
-  const tools = await web.page('/dashboard/tools/export');
-  if (files) {
-    contains(tools, 'data-database-file');
-    const file = await web.request('/api/cms/site-export?format=romedb');
-    expect(file.status, await file.clone().text().then(text => text.slice(0, 500))).toBe(200);
-    expect(file.headers.get('content-disposition')).toMatch(/^attachment; filename="main-\d{4}-\d{2}-\d{2}\.romedb"$/);
-    const bytes = Buffer.from(await file.arrayBuffer());
-    expect(bytes.length).toBe(Number(file.headers.get('content-length')));
-    expect(bytes.includes('ada@example.com')).toBe(true);
-    expect(web.jar.get('session_id')).toMatch(/^[0-9a-f]{64}$/);
-    expect(bytes.includes(web.jar.get('session_id'))).toBe(false);
-  } else {
-    lacks(tools, 'data-database-file');
-    expect((await web.request('/api/cms/site-export?format=romedb')).status).toBe(501);
-  }
+  // Every runtime sends the database as a file, without the session that asked for it.
+  contains(await web.page('/dashboard/tools/export'), 'data-database-file');
+  const file = await web.request('/api/cms/site-export?format=romedb');
+  expect(file.status, await file.clone().text().then(text => text.slice(0, 500))).toBe(200);
+  expect(file.headers.get('content-disposition')).toMatch(/^attachment; filename="main-\d{4}-\d{2}-\d{2}\.romedb"$/);
+  const bytes = Buffer.from(await file.arrayBuffer());
+  expect(bytes.length).toBe(Number(file.headers.get('content-length')));
+  expect(bytes.includes('ada@example.com')).toBe(true);
+  expect(web.jar.get('session_id')).toMatch(/^[0-9a-f]{64}$/);
+  expect(bytes.includes(web.jar.get('session_id'))).toBe(false);
   // The main site's file holds every network account: another of its admins gets JSON only.
   await web.action('dashboard/users/new/index.ts', 'create', ['Bea', 'bea@example.com', 'long password', ['admin']]);
   const admin = browserless(origin, routeIds, diagnostics);
@@ -395,7 +389,7 @@ describe.skipIf(!liveRomeDBTests())('generated CMS application', () => {
     const environment = { APP_SECRET: 'generated-cms-test-secret-0123456789abcdef', ROMEDB_URL: path.join(root, 'storage/romedb/app.romedb'), ROMEDB_TOKEN: '', CMS_SETUP_CODE: 'setup-code-for-tests',
       ROMEDB_PENDING_DIR: path.join(root, '.cossack/romedb-pending'), MEDIA_DIR: path.join(root, 'storage/media') };
     const server = await productionServer(root, environment);
-    try { await exercise(server.origin, routeIds, () => server.diagnostics(), { files: true }); }
+    try { await exercise(server.origin, routeIds, () => server.diagnostics()); }
     finally { await server.close(); }
     expect((await fs.stat(path.join(root, 'storage/romedb/app.romedb'))).mode & 0o777).toBe(0o600);
   }, 400_000);

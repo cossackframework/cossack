@@ -1,4 +1,4 @@
-import type { BatchResult, QueryResult, Value } from '@romedb/node/client';
+import type { BatchResult, QueryResult, Value } from '@romedb/client';
 
 export type Row = { [column: string]: Value };
 

@@ -67,8 +67,13 @@ describe('cms recipe', () => {
     expect(text(files, 'src/passkeys.client.ts')).toContain('@simplewebauthn/browser');
     expect(text(files, 'src/auth.ts')).toContain('export const twoFactorAvailable = true;');
     expect(text(files, 'src/cms/media.ts')).toContain("import('sharp')");
-    expect(JSON.parse(text(files, 'package.json')).dependencies).toMatchObject({ sharp: expect.any(String), '@simplewebauthn/browser': '14.0.0', uqr: '0.1.3' });
+    const dependencies = JSON.parse(text(files, 'package.json')).dependencies;
+    expect(dependencies).toMatchObject({ sharp: expect.any(String), '@simplewebauthn/browser': '14.0.0', uqr: '0.1.3' });
+    // Different versions would install a second copy of RomeDB's value classes.
+    expect(dependencies['@romedb/client']).toMatch(/^\d/);
+    expect(dependencies['@romedb/client']).toBe(dependencies['@romedb/node']);
     const config = text(files, 'vite.config.ts');
+    expect(config).toContain("external: ['@romedb/client', '@romedb/node']");
     expect(config.slice(config.indexOf('@cossack:client-dependencies'))).toContain("'@simplewebauthn/browser'");
     // Applications with database auth keep passwords only.
     const orm = await renderRecipe(resolveRecipe({ adapter: 'node', preset: 'minimal', features: ['dashboard'] }));
@@ -103,7 +108,10 @@ describe('cms recipe', () => {
     expect(config.images).toEqual({ binding: 'IMAGES' });
     expect(config.triggers.crons).toEqual(['* * * * *']);
     expect(text(files, 'src/cms/media.ts')).toContain('env.IMAGES');
-    expect(JSON.parse(text(files, 'package.json')).dependencies).not.toHaveProperty('sharp');
+    const dependencies = JSON.parse(text(files, 'package.json')).dependencies;
+    expect(dependencies).not.toHaveProperty('sharp');
+    // Workers reach RomeDB by URL, without the package that holds the native addon.
+    expect(dependencies).not.toHaveProperty('@romedb/node');
   });
 
   it('binds R2 media on Workers and keeps the examples home page', async () => {

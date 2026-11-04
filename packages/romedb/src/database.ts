@@ -3,8 +3,10 @@ import {
     connect,
     validatePrepared,
     type BatchResult,
+    type Client,
     type DatabaseFile,
     type DatabaseInfo,
+    type FileExportOptions,
     type PreparedWrite,
     type RemoteDatabase,
     type RequestOptions,
@@ -12,18 +14,27 @@ import {
     type Value,
     type WarmResult,
     type WorkLimits,
-} from '@romedb/node/client';
-import type { EmbeddedDatabase } from '@romedb/node/embedded-client';
+} from '@romedb/client';
 import { preparedRequestId, type PendingWrite, type PendingWriteStore } from './pending';
 
+/**
+ * A file this process opened with `@romedb/node`, described here so that Workers, which never
+ * open files, need neither that package nor its native addon.
+ */
+export interface EmbeddedClient extends Client {
+    readonly url: string;
+    readonly sequenceKnown: boolean;
+    exportFile(options?: FileExportOptions): Promise<DatabaseFile>;
+}
+
 /** A service or Cloud connection, or a file this process opened with `@romedb/node`. */
-export type DatabaseClient = RemoteDatabase | EmbeddedDatabase;
+export type DatabaseClient = RemoteDatabase | EmbeddedClient;
 
 /** One RomeQL statement. `@romedb/node` calls the text `sql`; the binding passes it on as that. */
 export interface Statement { rql: string; params?: { [key: string]: Value } }
 
 /** The RomeDB engine release this package targets. Older engines are refused at preflight. */
-export const REQUIRED_ENGINE_VERSION = '0.2.13';
+export const REQUIRED_ENGINE_VERSION = '0.2.14';
 
 export interface RomeDBWorkLimits {
     /** Default budget for each read batch. */
@@ -284,20 +295,15 @@ export class RomeDB {
     }
 
     /**
-     * The database as a `.romedb` file: one snapshot, while reads and writes continue. It is the
-     * whole database, sessions and credentials included, so clean it before it leaves the
-     * server (`cleanedFile` on Node). Read `body` to the end or cancel it.
+     * The database as a `.romedb` file: one snapshot, while reads and writes continue, on every
+     * form of RomeDB. It is the whole database, sessions and credentials included, unless
+     * `emptyTables` names tables to leave out: their rows reach no part of the file, and the file
+     * is then a new database. Read `body` to the end or cancel it.
      */
-    async exportFile(options: RequestOptions = {}): Promise<DatabaseFile> {
-        // The embedded client also takes a destination; with these options both stream the file.
-        return (await this.#connection() as RemoteDatabase).exportFile(options);
-    }
-
-    /** Whether `exportFile` works here. RomeDB Cloud cannot copy a database into a file yet. */
-    async exportsFiles(options: RequestOptions = {}): Promise<boolean> {
-        // A loopback organization URL counts as Cloud until the details arrive.
-        await this.preflight(options);
-        return !cloud(await this.#connection());
+    async exportFile(options: FileExportOptions = {}): Promise<DatabaseFile> {
+        // Older engines cannot leave tables out, and Cloud connections have not checked yet.
+        await this.preflight(options.signal ? { signal: options.signal } : {});
+        return (await this.#connection()).exportFile(options);
     }
 
     /** Cloud only: start the database runtime. Request paths never warm; call this from a scheduled path. */

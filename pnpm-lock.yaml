@@ -175,9 +175,12 @@ importers:
       '@hono/node-server':
         specifier: ^2.0.5
         version: 2.1.0(hono@4.13.11)
+      '@romedb/client':
+        specifier: 0.2.15
+        version: 0.2.15
       '@romedb/node':
-        specifier: ^0.2.13
-        version: 0.2.13
+        specifier: 0.2.15
+        version: 0.2.15
       '@simplewebauthn/browser':
         specifier: 14.0.0
         version: 14.0.0
@@ -555,13 +558,16 @@ importers:
 
   packages/romedb:
     dependencies:
-      '@romedb/node':
-        specifier: ^0.2.13
-        version: 0.2.13
+      '@romedb/client':
+        specifier: 0.2.15
+        version: 0.2.15
       vite:
         specifier: ~8.1.6
         version: 8.1.6(@types/node@22.20.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.0)(tsx@4.23.0)(yaml@2.9.0)
     devDependencies:
+      '@romedb/node':
+        specifier: 0.2.15
+        version: 0.2.15
       '@types/node':
         specifier: ^22.19.0
         version: 22.20.1
@@ -1849,8 +1855,12 @@ packages:
   '@rolldown/pluginutils@1.0.1':
     resolution: {integrity: sha512-2j9bGt5Jh8hj+vPtgzPtl72j0yRxHAyumoo6TNfAjsLB04UtpSvPbPcDcBMxz7n+9CYB0c1GxQFxYRg2jimqGw==}
 
-  '@romedb/node@0.2.13':
-    resolution: {integrity: sha512-ic9KzgHcU8tolK2FASXzYCjf4YG5RwpV7YLJ+7AMG6MBYuyAWCfNV0kdTSx9Hl6g03zTTE7DQI2u/k/pZH7FGw==}
+  '@romedb/client@0.2.15':
+    resolution: {integrity: sha512-N6tZHcE0OWDOuM8+JjQFCBsUH2NBUomVih2g8X6dtf2LHIerpmZk6LWbP0dFr256zDs7OdLCR1z+TAziGO/n9g==}
+    engines: {node: '>=22'}
+
+  '@romedb/node@0.2.15':
+    resolution: {integrity: sha512-kWbCPHbdzEbMcnrJ73W/7IKpf0pPkRfotPCQa1BbKpyhjRZKfNUPU0qkzSQtcWPJxQbwRoHNHbA0hiAhOy+2yw==}
     engines: {node: '>=22'}
 
   '@sagold/json-pointer@5.1.2':
@@ -5811,7 +5821,11 @@ snapshots:
 
   '@rolldown/pluginutils@1.0.1': {}
 
-  '@romedb/node@0.2.13': {}
+  '@romedb/client@0.2.15': {}
+
+  '@romedb/node@0.2.15':
+    dependencies:
+      '@romedb/client': 0.2.15
 
   '@sagold/json-pointer@5.1.2': {}
 

@@ -32,7 +32,7 @@ The project is a `pnpm` workspace. All packages are located in the `packages` di
 -   **`scaffold`**: Node-only recipe engine for creation and feature composition. Use this repository as example/template for new projects.
 -   **`cossack`**: The Cossack CLI. It consumes `scaffold` directly.
 -   **`ui`**: UI components package. shadcn-ui inspired components.
--   **`romedb`**: RomeDB request bindings with exact write recovery, on RomeDB's own `@romedb/node` client (Workers and Node).
+-   **`romedb`**: RomeDB request bindings with exact write recovery, on RomeDB's own `@romedb/client` (Workers and Node), with `@romedb/node` to open files on Node.
 -   **`cms`**: The open-source CMS on RomeDB: collections (schemaless, defined in the dashboard), blocks, rich text (ProseMirror JSON), taxonomies, media with resized variants, settings, themes (plugins), menus, scheduling, previews, revisions, redirects, SEO, comments, patterns, translations, API tokens, webhooks, two-step sign-in and passkeys, multisite (one database per site, shared accounts, a network dashboard), resources and schema planner, repositories, auth storage, stores, outbox, plugin hosting. `cossack add cms` renders it into the shared `auth` and `dashboard` pages, with a default theme in `src/plugins/default-theme/`. The package is also an application: `packages/cms/app` holds the CMS pages, components and API routes that `cossack add cms` renders (listed in its `cossack-recipe.json`), and `pnpm dev:cms` runs it against workspace sources; its shared shell is synced from the scaffold template (`specs/cms-package-app.md`). The app builder (Platform) is a separate private repository that uses it.
 
 ## 4. Development Workflow
@@ -59,7 +59,7 @@ Never run them with vitest directly: outside `pnpm run`, generated test apps can
 ### Slow Suites: Run Locally Before a Release
 CI skips these suites because they are slow or need Docker or a display. Run both locally before every release, and report the results in the release PR:
 
-- `pnpm test:databases`: live PostgreSQL and MySQL suites, plus Studio introspection against both, and the RomeDB client and CMS suites. Needs Docker, or set `COSSACK_TEST_POSTGRES_URL` and `COSSACK_TEST_MYSQL_URL`; the RomeDB suites need a RomeDB 0.2.13+ executable through `COSSACK_TEST_ROMEDB_BIN` or `PATH`.
+- `pnpm test:databases`: live PostgreSQL and MySQL suites, plus Studio introspection against both, and the RomeDB client and CMS suites. Needs Docker, or set `COSSACK_TEST_POSTGRES_URL` and `COSSACK_TEST_MYSQL_URL`; the RomeDB suites need a RomeDB 0.2.14+ executable through `COSSACK_TEST_ROMEDB_BIN` or `PATH`.
 - `pnpm test:desktop`: packages and runs the Desktop app, including its dev restart check.
 
 Also run them after changing `packages/database`, `packages/studio`, `packages/desktop`, `packages/romedb` or `packages/cms`.

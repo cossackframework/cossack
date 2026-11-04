@@ -36,7 +36,7 @@ const noSleep = async () => {};
 
 describe('RomeDB binding', () => {
     it('refuses an older or missing engine release', async () => {
-        for (const engine of ['0.2.12', undefined]) {
+        for (const engine of ['0.2.13', undefined]) {
             const db = createRomeDB({ url: LOCAL, token: 't', pending: new MemoryPendingWriteStore(), fetch: service({ engine: engine as string }).fetch });
             if (engine === undefined) {
                 const fetch = (async (input: RequestInfo | URL) => String(input) === LOCAL ? json(details()) : json({})) as typeof globalThis.fetch;
@@ -44,10 +44,32 @@ describe('RomeDB binding', () => {
                 await expect(missing.read([{ rql: 'SELECT 1' }])).rejects.toBeInstanceOf(EngineVersionError);
                 continue;
             }
-            await expect(db.read([{ rql: 'SELECT 1' }])).rejects.toThrow(/0\.2\.12 is older than the required 0\.2\.13/);
+            await expect(db.read([{ rql: 'SELECT 1' }])).rejects.toThrow(/0\.2\.13 is older than the required 0\.2\.14/);
         }
         const newer = createRomeDB({ url: LOCAL, token: 't', pending: new MemoryPendingWriteStore(), fetch: service({ engine: '2.10.1' }).fetch });
         expect((await newer.preflight()).engineVersion).toBe('2.10.1');
+    });
+
+    it('asks for a file with tables left out only from an engine that leaves them out', async () => {
+        const ID = '00000000-0000-4000-8000-000000000002';
+        const CLOUD = `https://cloud.romedb.com/v1/organizations/00000000-0000-4000-8000-000000000001/databases/${ID}`;
+        const files: string[] = [];
+        const reach = (engine: string) => (async (input: RequestInfo | URL) => {
+            const url = String(input);
+            if (!url.includes('/file')) return json({ ...details(engine), id: ID });
+            files.push(url);
+            return new Response('file', { headers: { 'content-type': 'application/vnd.romedb.database', 'content-length': '4', 'x-romedb-sequence': '10', 'x-romedb-database-id': ID } });
+        }) as typeof globalThis.fetch;
+        // Cloud connections defer their details, so nothing else has checked the engine yet.
+        const old = createRomeDB({ url: CLOUD, token: 't', pending: new MemoryPendingWriteStore(), fetch: reach('0.2.13') });
+        await expect(old.exportFile({ emptyTables: ['cms_cache'] })).rejects.toBeInstanceOf(EngineVersionError);
+        expect(files).toEqual([]);
+
+        const current = createRomeDB({ url: CLOUD, token: 't', pending: new MemoryPendingWriteStore(), fetch: reach(REQUIRED_ENGINE_VERSION) });
+        const file = await current.exportFile({ emptyTables: ['cms_cache', 'cms_sessions'] });
+        expect(file.size).toBe(4);
+        expect(await new Response(file.body).text()).toBe('file');
+        expect(files).toEqual([`${CLOUD}/file?empty=cms_cache,cms_sessions`]);
     });
 
     it('sends explicit work limits by default', async () => {

@@ -1,7 +1,6 @@
 /** Site exports as downloads, for the export endpoints. Server only. */
-import { ClientError } from '@cossackframework/romedb';
-import { siteExport, type CmsHost, type NetworkSite } from '@cossackframework/cms/server';
-import { databaseFile, databaseFiles } from './database';
+import { ClientError, type DatabaseFile } from '@cossackframework/romedb';
+import { siteExport, siteFile, type CmsHost, type NetworkSite } from '@cossackframework/cms/server';
 
 /**
  * A site's database export as a download, `<site>-<date>.json`, streamed table by table. The
@@ -29,21 +28,33 @@ export async function exportResponse(host: CmsHost, site: Pick<NetworkSite, 'id'
 
 /**
  * A site's database as a download, `<site>-<date>.romedb`, which a new install opens directly.
- * Its accounts come along, so a site's own accounts keep their passwords; sessions and pending
- * work do not. The copy is cleaned on this server before the first byte goes out.
+ * Its accounts come along, so a site's own accounts keep their passwords; sessions, webhooks and
+ * pending work do not.
  */
 export async function fileExportResponse(host: CmsHost, site: Pick<NetworkSite, 'id'>, signal: AbortSignal): Promise<Response> {
-    if (!(await databaseFiles(host.db))) return Response.json({ error: 'This install exports sites as JSON only.', code: 'CMS_UNAVAILABLE' }, { status: 501 });
     let file;
-    try { file = await databaseFile(host.db, signal); }
+    try { file = await siteFile(host.db, { signal }); }
     catch (error) {
-        // RomeDB builds one copy of a database at a time.
-        if (error instanceof ClientError && error.code === 'RDB_BUSY') return Response.json({ error: 'Another copy of this database is being made. Try again in a moment.', code: 'CMS_UNAVAILABLE' }, { status: 503, headers: { 'retry-after': '30' } });
+        if (!(error instanceof ClientError)) throw error;
+        // RomeDB builds one copy of a database at a time, and Cloud one across the service.
+        if (error.code === 'RDB_BUSY') return Response.json({ error: 'Another database copy is being made. Try again in a moment.', code: 'CMS_UNAVAILABLE' }, { status: 503, headers: { 'retry-after': String(Math.ceil((error.retryAfterMs ?? 30_000) / 1000)) } });
+        // RomeDB's deadline passed, rather than the visitor leaving: a large copy can take longer on Cloud.
+        if (error.code === 'RDB_CANCELLED' && !signal.aborted) return Response.json({ error: 'The database copy took too long to make. Download the JSON export instead.', code: 'CMS_UNAVAILABLE' }, { status: 504 });
         throw error;
     }
     const date = new Date(host.now()).toISOString().slice(0, 10);
-    return new Response(file.body, { headers: {
+    return new Response(sized(file), { headers: {
         'content-type': 'application/vnd.romedb.database', 'content-length': String(file.size), 'cache-control': 'private, no-store',
         'content-disposition': `attachment; filename="${site.id}-${date}.romedb"`,
     } });
+}
+
+/**
+ * The file's bytes, with a length the runtime can send. Workers drop `content-length` from a
+ * stream they cannot measure, and a browser then shows no progress and cannot tell a cut-off
+ * download from a finished one.
+ */
+function sized(file: DatabaseFile): ReadableStream<Uint8Array> {
+    const { FixedLengthStream } = globalThis as { FixedLengthStream?: new (length: number) => TransformStream<Uint8Array, Uint8Array> };
+    return FixedLengthStream ? file.body.pipeThrough(new FixedLengthStream(file.size)) : file.body;
 }

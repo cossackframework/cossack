@@ -3,10 +3,12 @@ import { decodeValue, encodeValue, Float64, fromTransport, RecordId, toTransport
 
 describe('RomeDB values', () => {
     it('are the classes RomeDB returns, with RecordId as its Record', async () => {
-        const romedb = await import('@romedb/node/values');
+        const romedb = await import('@romedb/client/values');
         expect(RecordId).toBe(romedb.Record);
         expect(Float64).toBe(romedb.Float64);
         expect(Vector).toBe(romedb.Vector);
+        // The embedded client refuses values made by another copy of these classes.
+        expect((await import('@romedb/node/values')).Record).toBe(romedb.Record);
         expect(decodeValue(encodeValue(new RecordId('posts', 1n)))).toEqual(new RecordId('posts', 1n));
         expect(() => new RecordId('sqlite_master', 'x')).toThrow(/nonreserved/);
     });

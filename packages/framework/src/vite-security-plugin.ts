@@ -370,6 +370,7 @@ function isServerOnlyImportSource(source: string): boolean {
     source.startsWith('@cossackframework/auth/') ||
     // RomeDB clients and the CMS host: pages use them only inside @Server methods.
     ((source === '@cossackframework/romedb' || source.startsWith('@cossackframework/romedb/') ||
+      source === '@romedb/client' || source.startsWith('@romedb/client/') ||
       source === '@romedb/node' || source.startsWith('@romedb/node/')) && !CLIENT_SAFE_IMPORT_SOURCES.has(source)) ||
     source === '@cossackframework/cms/server' ||
     source.startsWith('node:');
@@ -923,6 +924,7 @@ const SERVER_ONLY_IMPORT_SOURCES = new Set([
   '@cossackframework/framework/session',
   // RomeDB credentials, pending writes and CMS repositories never reach the client.
   '@cossackframework/romedb',
+  '@romedb/client',
   '@romedb/node',
   '@cossackframework/cms/server',
 ]);
@@ -930,6 +932,7 @@ const SERVER_ONLY_IMPORT_SOURCES = new Set([
 /** Client-safe subpaths of otherwise server-only packages (typed values and transport codecs). */
 const CLIENT_SAFE_IMPORT_SOURCES = new Set([
   '@cossackframework/romedb/values',
+  '@romedb/client/values',
   '@romedb/node/values',
 ]);
 

@@ -58,7 +58,7 @@ functions, not a plugin runtime.
 
 | Owner | Responsibility |
 | --- | --- |
-| RomeDB repository | `@romedb/node`: the service-protocol client and value types on Web APIs only (they run on Workers without `nodejs_compat`), and embedded files on Node. |
+| RomeDB repository | `@romedb/client`: the service-protocol client and value types on Web APIs only (they run on Workers without `nodejs_compat`). `@romedb/node`: embedded files on Node. |
 | `packages/romedb` | RomeDB's client bound into request scopes: configuration, `{ rql }` statements, engine preflight, explicit `workLimits`, `warm: false` request defaults, durable pending-write stores (file, Durable Object), and a D1-shaped SQL facade. No CMS policy. |
 | `@cossackframework/core/hooks` | Typed local action/filter dispatcher. No database, discovery, or CMS names. |
 | `packages/framework`, existing | Compose `src/plugins/*/` into routes, layouts, middleware, translations, assets, and configuration. Emit a static plugin registry. |
@@ -76,9 +76,9 @@ The CMS provides RomeDB implementations of `AuthSessionStore`, the OAuth state
 store, the framework `SessionStore`, `JobStore`, and `NotificationStore`. Each
 operation is one atomic request whose affected count is checked.
 
-`@romedb/node/client` exposes `connect`, `info`, `read`, `prepareWrite`,
+`@romedb/client` exposes `connect`, `info`, `read`, `prepareWrite`,
 `submit`, `recover`, `writeAtomic`, `warm`, and `close` with an injectable `fetch`.
-From 0.2.12 it uses Web APIs only, so Workers bundle it without `nodejs_compat`;
+It uses Web APIs only, so Workers bundle it without `nodejs_compat`;
 pending writes stay in Cossack's stores instead of its Node journal. On a Cloud URL,
 `connect()` defers the details request and sends a background `/warm`; request
 scopes disable that warm and warm from a scheduled path.
@@ -278,7 +278,7 @@ page view stay low. Run type checks and tests during implementation.
 
 Findings:
 
-- Workers reject `fetch(..., { redirect: 'error' })`, which `@romedb/node/client` uses. The
+- Workers reject `fetch(..., { redirect: 'error' })`, which RomeDB's client used then. The
   Cossack client sends `redirect: 'manual'` and refuses 3xx responses.
 - The service rejects unused parameters, and `DEFINE FIELD ... DEFAULT $param` reports the
   parameter as unused, so array defaults cannot be declared.

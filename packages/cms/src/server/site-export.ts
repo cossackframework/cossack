@@ -4,7 +4,7 @@
  * binary values come back exactly with `decodeValue`. Media files are not included: `cms_files`
  * rows name their storage keys.
  */
-import { ClientError, encodeValue, type RomeDB, type Statement, type Value } from '@cossackframework/romedb';
+import { ClientError, encodeValue, type DatabaseFile, type RomeDB, type Statement, type Value } from '@cossackframework/romedb';
 import { HOST_TABLES } from './host-schema';
 
 /**
@@ -23,33 +23,29 @@ export const EXPORT_REDACTED_COLUMNS: Readonly<Record<string, readonly string[]>
 
 /**
  * Tables a `.romedb` file leaves empty: sign-in state (sessions are keyed by their tokens, so a
- * copy would sign in on the live site), the cache, and pending work, which would run again where
- * the file is opened. Accounts stay, so a site's own accounts keep their passwords.
+ * copy would sign in on the live site), the cache, pending work, which would run again where
+ * the file is opened, and webhooks, whose secrets are the live site's. Accounts stay, so a
+ * site's own accounts keep their passwords.
  */
 export const FILE_EXPORT_EMPTIED_TABLES: readonly string[] = [
     'cms_auth_sessions', 'cms_sessions', 'cms_session_values', 'cms_session_sites', 'cms_oauth_states', 'cms_password_resets', 'cms_auth_challenges',
-    'cms_preview_tokens', 'cms_handoffs', 'cms_cache', 'cms_outbox', 'cms_webhook_deliveries', 'cossack_jobs',
+    'cms_preview_tokens', 'cms_handoffs', 'cms_cache', 'cms_outbox', 'cms_webhooks', 'cms_webhook_deliveries', 'cossack_jobs',
 ];
 
-/** Rows deleted per write. A request changes a bounded number of rows. */
-const CLEAN_BATCH = 500;
+/** RomeDB's longest wait for a copy to start arriving. On Cloud a job builds it first. */
+const FILE_EXPORT_TIMEOUT = 120_000;
 
 /**
- * Clean a copy of a site's database before it leaves as a `.romedb` file: the tables above go
- * empty, and webhooks turn off with new secrets, as in an import. Pass it to `cleanedFile`.
+ * A site's database as a `.romedb` file, which a new install opens directly: one snapshot while
+ * the site keeps running, on every runtime. RomeDB never reads the tables above into the copy,
+ * so no part of the file holds their rows, and the file is a new database.
  */
-export async function cleanSiteFile(copy: RomeDB): Promise<void> {
-    const info = (await copy.read([{ rql: 'INFO FOR DB' }])).results[0]!.rows[0]![0] as unknown as { tables?: { name: string }[] };
-    const here = new Set((info.tables ?? []).map(table => table.name));
-    for (const table of FILE_EXPORT_EMPTIED_TABLES.filter(name => here.has(name))) {
-        for (let deleted = CLEAN_BATCH; deleted === CLEAN_BATCH;) {
-            const result = await copy.write([{ rql: `DELETE FROM ${table} WHERE rowid IN (SELECT rowid FROM ${table} LIMIT ${CLEAN_BATCH})` }]);
-            deleted = Number(result.results[0]!.affected);
-        }
-    }
-    if (!here.has('cms_webhooks')) return;
-    const hooks = (await copy.read([{ rql: 'SELECT id FROM cms_webhooks' }])).results[0]!.rows;
-    for (const [id] of hooks) await copy.write([{ rql: 'UPDATE cms_webhooks SET secret = $secret, active = 0 WHERE id = $id', params: { $secret: newSecret(), $id: id! } }]);
+export async function siteFile(db: RomeDB, options: { signal?: AbortSignal } = {}): Promise<DatabaseFile> {
+    const signal = options.signal ? { signal: options.signal } : {};
+    const info = (await db.read([{ rql: 'INFO FOR DB' }], signal)).results[0]!.rows[0]![0] as unknown as { tables: { name: string }[] };
+    // RomeDB refuses a name the database does not have, and an older site can lack a table.
+    const here = new Set(info.tables.map(table => table.name));
+    return db.exportFile({ ...signal, timeoutMs: FILE_EXPORT_TIMEOUT, emptyTables: FILE_EXPORT_EMPTIED_TABLES.filter(name => here.has(name)) });
 }
 
 /** A new webhook secret, for one that comes from a copy or an export. */

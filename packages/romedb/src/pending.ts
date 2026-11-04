@@ -1,4 +1,4 @@
-import { validatePrepared, type PreparedWrite } from '@romedb/node/client';
+import { validatePrepared, type PreparedWrite } from '@romedb/client';
 
 /** A saved write persisted before dispatch, so an uncertain outcome can be recovered by exact body. */
 export interface PendingWrite {

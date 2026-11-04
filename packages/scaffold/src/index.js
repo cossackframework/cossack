@@ -571,8 +571,9 @@ function packageJson(recipe, projectName) {
     if (recipe.adapter === 'node') dependencies['@aws-sdk/client-s3'] = dependencyVersion('@aws-sdk/client-s3');
     // Node resizes images with sharp; Workers use the Images binding.
     if (recipe.adapter === 'node') dependencies.sharp = dependencyVersion('sharp');
-    // Node opens RomeDB files in process, and reaches `romedb serve` and Cloud, with RomeDB's own library.
-    if (recipe.adapter === 'node') dependencies['@romedb/node'] = dependencyVersion('@romedb/node');
+    // Node opens RomeDB files in process with @romedb/node. Both stay outside the server bundle and
+    // on one version: the embedded client and the URL client share @romedb/client's value classes.
+    if (recipe.adapter === 'node') for (const name of ['@romedb/client', '@romedb/node']) dependencies[name] = dependencyVersion(name);
     // Passkeys in the browser, and the authenticator app's QR code.
     dependencies['@simplewebauthn/browser'] = dependencyVersion('@simplewebauthn/browser');
     dependencies.uqr = dependencyVersion('uqr');

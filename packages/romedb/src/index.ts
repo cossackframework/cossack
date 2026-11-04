@@ -1,4 +1,4 @@
-// RomeDB's client and typed values (`@romedb/node/client`: Web APIs only, so it also runs on
+// RomeDB's client and typed values (`@romedb/client`: Web APIs only, so it also runs on
 // Workers). `RecordId` is RomeDB's `Record`, renamed so it does not hide TypeScript's `Record`.
 export {
     connect,
@@ -21,12 +21,13 @@ export {
     type Capabilities,
     type DatabaseFile,
     type DatabaseInfo,
+    type FileExportOptions,
     type ConnectOptions,
     type WarmResult,
     type Outcome,
     type Value,
     type PortableValue,
-} from '@romedb/node/client';
+} from '@romedb/client';
 
 // JSON transport for SSR state, RPC and plugin boundaries, and row helpers
 export { toTransport, fromTransport, TRANSPORT_VERSION, type TransportValue } from './transport';
