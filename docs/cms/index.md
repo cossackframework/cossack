@@ -27,6 +27,8 @@ puts a default theme in `src/plugins/default-theme/` for you to edit or copy. Se
   subpages, discussions, and the site logo.
 - [Multisite](/docs/cms/multisite.md): many sites from one application, one database per
   site, accounts shared across the network, and the network dashboard.
+- [Co-editing](/docs/cms/collaboration.md): several people in one entry, live text and
+  presence through the entry's room, the shared draft, and the rules that merge changes.
 - [Block references](/docs/cms/block-references.md): blocks and bindings inside text, such
   as `{{ block core/button … /}}` and `{{ $site.title }}`.
 

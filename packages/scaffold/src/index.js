@@ -62,7 +62,7 @@ const dependencyVersions = scaffoldPackage.scaffold?.dependencyVersions ?? {};
  * Packages rendered source imports in the browser. Vite cannot see page imports before a
  * page loads, so the generated config lists them for the first dependency bundle.
  */
-const CLIENT_DEPENDENCY = /^(?:@cossackframework\/solar-icons\/.+|@tiptap\/[^/]+|@simplewebauthn\/browser|@cossackframework\/(?:ui|auth|cms|framework\/plugins|core\/transport-routes))$/;
+const CLIENT_DEPENDENCY = /^(?:@cossackframework\/solar-icons\/.+|@tiptap\/[^/]+|prosemirror-collab|@simplewebauthn\/browser|@cossackframework\/(?:ui|auth|cms|framework\/plugins|core\/transport-routes))$/;
 
 /** Fill the client dependency list of vite.config.ts from the rendered source files. */
 export function withClientDependencies(viteConfig, files) {
@@ -78,7 +78,7 @@ export function withClientDependencies(viteConfig, files) {
     `${marker}${indent}include: [${list.length ? `\n${list.map(name => `${indent}  '${name}',`).join('\n')}\n${indent}` : ''}],`);
 }
 
-const TIPTAP_PACKAGES = ['@tiptap/core', '@tiptap/pm', '@tiptap/starter-kit', '@tiptap/extension-document', '@tiptap/extension-image', '@tiptap/extension-text-align', '@tiptap/extensions'];
+const TIPTAP_PACKAGES = ['@tiptap/core', '@tiptap/pm', '@tiptap/starter-kit', '@tiptap/extension-document', '@tiptap/extension-image', '@tiptap/extension-text-align', '@tiptap/extensions', 'prosemirror-collab'];
 function dependencyVersion(name) {
   const version = dependencyVersions[name];
   if (typeof version !== 'string' || version.length === 0) {
@@ -501,14 +501,15 @@ function wranglerConfig(recipe, projectName) {
       recipe.config.authMethods.includes('credentials'))
     ? `,\n  "send_email": [{ "name": "EMAIL" }]`
     : '';
-  // Distributed SSE coordination for `@Page({ transport: 'sse' })` pages.
-  // SseDurableObject is SQLite-backed: new_sqlite_classes, not new_classes.
+  // Distributed SSE coordination for `@Page({ transport: 'sse' })` pages, and the live instances
+  // of realtime pages, layouts and components (`transport: 'durable-object'`), which the framework
+  // reaches through COSSACK_OBJECT. Both are SQLite-backed: new_sqlite_classes, not new_classes.
   const cms = recipe.resolvedFeatures.includes('cms');
   const sse = `,
   "durable_objects": {
-    "bindings": [{ "name": "COSSACK_SSE", "class_name": "SseDurableObject" }${cms ? ', { "name": "ROMEDB_PENDING", "class_name": "RomeDBPendingWrites" }' : ''}]
+    "bindings": [{ "name": "COSSACK_SSE", "class_name": "SseDurableObject" }, { "name": "COSSACK_OBJECT", "class_name": "AppDurableObject" }${cms ? ', { "name": "ROMEDB_PENDING", "class_name": "RomeDBPendingWrites" }' : ''}]
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["SseDurableObject"] }${cms ? ', { "tag": "cms-v1", "new_sqlite_classes": ["RomeDBPendingWrites"] }' : ''}]${cms ? `,
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["SseDurableObject"] }, { "tag": "realtime-v1", "new_sqlite_classes": ["AppDurableObject"] }${cms ? ', { "tag": "cms-v1", "new_sqlite_classes": ["RomeDBPendingWrites"] }' : ''}]${cms ? `,
   // CMS media. Local development uses a local bucket; create the remote one with
   // pnpm exec wrangler r2 bucket create ${commentName}-media
   "r2_buckets": [{ "binding": "MEDIA", "bucket_name": ${json(`${projectName}-media`)} }],

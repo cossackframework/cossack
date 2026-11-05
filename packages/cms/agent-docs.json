@@ -201,6 +201,23 @@
           "source": "import { createRomeDB, MemoryPendingWriteStore, organizationDatabases } from '@cossackframework/romedb';\nimport { CmsNetwork, createCMS, type Principal } from '@cossackframework/cms/server';\n\nconst pending = new MemoryPendingWriteStore();\nconst organization = organizationDatabases({ url: 'https://cloud.romedb.com/v1/organizations/0b6c1a43-5a2e-4f0e-9b37-2f1e8c0d4a11', token: 'organization-key' });\nconst db = createRomeDB({ url: 'http://127.0.0.1:4321', token: 'local-service-token', pending });\n\n// The main database holds the accounts and the site registry; each added site has its own.\nconst network: CmsNetwork = new CmsNetwork({\n    db,\n    networkHost: () => 'example.com',\n    directory: organization,\n    open: site => createRomeDB({ url: organization.url(site.database), token: 'organization-key', pending }),\n    host: (site, siteDb) => createCMS({ db: siteDb, network: db, site: site.id, sessionsEnded: ended => network.endSessions(ended) }),\n});\n\nexport async function hostFor(hostName: string) {\n    const found = await network.resolve(hostName);\n    return found.kind === 'site' ? network.hostOf(found.site) : null;\n}\n\nexport function addBlog(principal: Principal, admin: string) {\n    return network.createSite({ name: 'Blog', host: 'blog.example.com', admin }, { principal });\n}\n"
         }
       ]
+    },
+    {
+      "id": "cms-collab",
+      "title": "Edit an entry together",
+      "summary": "A saved entry has a room (EntryRoom, a realtime component scoped to the entry) that applies every editor’s change in order and keeps the shared draft in cms_drafts; three client-safe rules converge the editors: last-write-wins scalars with PendingKeys, block tree ops by ID (treeOps, applyTreeOp, treeHash) and prosemirror-collab for rich text (StepLog).",
+      "imports": [
+        "@cossackframework/cms",
+        "@cossackframework/cms/server"
+      ],
+      "markdown": "The room is the authority: its action queue orders every change, so no CRDT is needed. Scalars: an editor applies its own change at once, sends it, and ignores remote values of that field while `PendingKeys` has one of its own in flight (the room applied that one later). Blocks: `treeOps(field, before, after, { skip })` turns two trees into inserts anchored on the sibling before, moves, removes and patches of one key; the room applies each with `applyTreeOp` (dropping what no longer applies) and answers the tree’s `treeHash`, which an editor compares to its own before asking for the room’s tree. Rich text: `StepLog` is the central authority’s version and bounded step log per document (`richTextPath(field, { id, key })` names a block’s document); the browser side is `prosemirror-collab`. `groupPeers`, `livePeers`, `participantColor` and `checkPresence` shape presence. `cms.drafts` (`CmsDrafts`) stores one draft row per entry, capped at `DRAFT_MAX_BYTES` (a RomeDB request takes 64 KiB), and names who is editing (`editing`, `editors`). See docs/cms/collaboration.md and specs/cms-collaboration.md.",
+      "examples": [
+        {
+          "id": "cms-collab-tree-ops",
+          "language": "typescript",
+          "source": "import { applyTreeOp, treeHash, treeOps, type Block } from '@cossackframework/cms';\n\n// An editor moved block b first and changed a's text; the room applies the ops in order and answers its hash.\nconst before: Block[] = [{ _id: 'a', type: 'core/paragraph', data: { text: 'A' } }, { _id: 'b', type: 'core/paragraph', data: { text: 'B' } }];\nconst after: Block[] = [{ _id: 'b', type: 'core/paragraph', data: { text: 'B' } }, { _id: 'a', type: 'core/paragraph', data: { text: 'A!' } }];\nlet tree: readonly Block[] = before;\nfor (const op of treeOps('content', before, after)) {\n    const next = applyTreeOp(tree, op);\n    if (next) tree = next; // null: the op no longer applies (its block went away)\n}\nconsole.log(treeHash(tree) === treeHash(after)); // true\n"
+        }
+      ]
     }
   ]
 }

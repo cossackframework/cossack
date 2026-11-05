@@ -49,6 +49,7 @@ export async function runMaintenance(cms: CmsHost, options: { warm?: boolean } =
     await cms.previews.purgeExpired();
     await cms.security.purgeExpired();
     await cms.autosaves.purge();
+    await cms.drafts.purge();
     await cms.traffic.prune();
     await cms.forms.maintain();
     await cms.files?.sweep();

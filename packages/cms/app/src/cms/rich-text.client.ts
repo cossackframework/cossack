@@ -1,16 +1,18 @@
 /**
- * The rich text editor: TipTap (ProseMirror) configured to the CMS document contract. The
- * `.client.ts` name keeps TipTap out of server bundles; the server receives a stub.
- * Only the nodes and marks the host accepts are registered, so pasted content is reduced to
- * them, and links and images are filtered by the same URL rules as on save.
+ * The rich text editor: TipTap (ProseMirror) configured to the CMS document contract, which
+ * `rich-text-schema.ts` defines for the editor and the entry room alike. The `.client.ts` name
+ * keeps TipTap out of server bundles; the server receives a stub. Only the nodes and marks the
+ * host accepts are registered, so pasted content is reduced to them, and links and images are
+ * filtered by the same URL rules as on save. With `collab`, the editor takes part in the
+ * entry's room: its steps go there, and the room's steps come back.
  */
-import { Editor, Node } from '@tiptap/core';
-import { Document } from '@tiptap/extension-document';
-import { Image } from '@tiptap/extension-image';
-import { TextAlign } from '@tiptap/extension-text-align';
+import { Editor, type NodeViewRendererProps } from '@tiptap/core';
 import { Placeholder } from '@tiptap/extensions';
-import { StarterKit } from '@tiptap/starter-kit';
 import { safeImageUrl, safeLinkUrl, type EmbeddedBlock, type RichTextDoc } from '@cossackframework/cms';
+import { blockOf, cmsBlock, richTextExtensions, type BlockView } from './rich-text-schema';
+import { CollabSession, collabPlugins, type Caret, type CollabOptions } from './collab/rich-text-collab.client';
+
+export type { Caret, CollabOptions, CollabTransport, StepsResult } from './collab/rich-text-collab.client';
 
 export type RichTextCommand =
     | 'paragraph' | 'heading2' | 'heading3' | 'heading4' | 'bold' | 'italic' | 'underline' | 'strike' | 'code'
@@ -34,6 +36,10 @@ export interface RichTextHandle {
     replaceBlock(id: string, doc: RichTextDoc): void;
     /** Replace the whole document from outside (a restored autosave, a saved entry), without reporting it as a change. */
     setContent(doc: RichTextDoc | null): void;
+    /** The current selection, as ProseMirror positions. */
+    selection(): { anchor: number; head: number };
+    /** The editor's part in the room, with `collab`. */
+    collab: CollabSession | null;
     focus(): void;
     destroy(): void;
 }
@@ -51,110 +57,69 @@ export interface RichTextOptions {
     /** Names of the formats active at the selection, for the toolbar. */
     onSelection(active: string[]): void;
     onEditBlock(block: EmbeddedBlock): void;
+    /** The selection moved: its ProseMirror positions, for other editors' carets. */
+    onCaret?(anchor: number, head: number): void;
+    /** Take part in the entry's room: the document comes from it and steps go through it. */
+    collab?: CollabOptions;
 }
 
-/** Blocks as atoms between paragraphs: a card with the block's name and Edit and Remove buttons. */
-function cmsBlock(options: RichTextOptions) {
-    return Node.create({
-        name: 'cmsBlock',
-        group: 'cmsBlock',
-        atom: true,
-        selectable: true,
-        draggable: true,
-        addAttributes() {
-            return { _id: { default: null }, type: { default: null }, data: { default: {} } };
-        },
-        parseHTML() {
-            return [{
-                tag: 'div[data-cms-block]',
-                getAttrs: element => {
-                    try { return { _id: element.getAttribute('data-id'), type: element.getAttribute('data-type'), data: JSON.parse(element.getAttribute('data-data') ?? '{}') }; }
-                    catch { return false; }
-                },
-            }];
-        },
-        renderHTML({ node }) {
-            return ['div', { 'data-cms-block': '', 'data-id': node.attrs._id, 'data-type': node.attrs.type, 'data-data': JSON.stringify(node.attrs.data ?? {}) }];
-        },
-        addNodeView() {
-            return ({ node: initial, editor, getPos }) => {
-                let node = initial;
-                const dom = document.createElement('div');
-                dom.className = 'my-4 flex items-center justify-between gap-3 rounded-lg border border-dashed border-border bg-muted/40 px-4 py-3 not-prose';
-                dom.contentEditable = 'false';
-                const text = document.createElement('div');
-                text.className = 'min-w-0';
-                const title = document.createElement('p');
-                title.className = 'text-xs font-semibold uppercase tracking-wide text-muted-foreground';
-                const summary = document.createElement('p');
-                summary.className = 'truncate text-sm text-foreground';
-                text.appendChild(title);
-                text.appendChild(summary);
-                const actions = document.createElement('div');
-                actions.className = 'flex shrink-0 gap-2';
-                const button = (label: string, run: () => void) => {
-                    const element = document.createElement('button');
-                    element.type = 'button';
-                    element.textContent = label;
-                    element.className = 'rounded-md border border-border bg-background px-2.5 py-1 text-xs text-foreground hover:bg-muted cursor-pointer';
-                    element.addEventListener('click', event => { event.preventDefault(); run(); });
-                    return element;
-                };
-                const edit = button(__('Edit'), () => options.onEditBlock(blockOf(node)));
-                const remove = button(__('Remove'), () => {
-                    const position = getPos();
-                    if (typeof position === 'number') editor.chain().focus().deleteRange({ from: position, to: position + node.nodeSize }).run();
-                });
-                actions.appendChild(edit);
-                actions.appendChild(remove);
-                dom.appendChild(text);
-                dom.appendChild(actions);
-                const paint = () => {
-                    const block = blockOf(node);
-                    title.textContent = options.blockLabel(block.type);
-                    summary.textContent = options.blockSummary(block);
-                    edit.setAttribute('aria-label', `${__('Edit')} ${title.textContent}`);
-                    remove.setAttribute('aria-label', `${__('Remove')} ${title.textContent}`);
-                };
-                paint();
-                return {
-                    dom,
-                    update: updated => {
-                        if (updated.type.name !== 'cmsBlock') return false;
-                        node = updated;
-                        paint();
-                        return true;
-                    },
-                    selectNode: () => dom.classList.add('ring-2', 'ring-ring'),
-                    deselectNode: () => dom.classList.remove('ring-2', 'ring-ring'),
-                    stopEvent: event => event.target instanceof HTMLButtonElement,
-                    ignoreMutation: () => true,
-                };
-            };
-        },
-    });
-}
-
-function blockOf(node: { attrs: Record<string, unknown> }): EmbeddedBlock {
-    return { _id: String(node.attrs._id), type: String(node.attrs.type), data: (node.attrs.data ?? {}) as EmbeddedBlock['data'] };
-}
-
-/** Images keep their media ID; pasted images from other sites are dropped unless they are https. */
-const MediaImage = Image.extend({
-    addAttributes() {
-        return {
-            ...this.parent?.(),
-            mediaId: {
-                default: null,
-                parseHTML: element => element.getAttribute('data-media-id'),
-                renderHTML: attributes => attributes.mediaId ? { 'data-media-id': attributes.mediaId } : {},
-            },
+/** The editor's card for an embedded block: the block's name and Edit and Remove buttons. */
+function blockCard(options: RichTextOptions): BlockView {
+    return () => ({ node: initial, editor, getPos }: NodeViewRendererProps) => {
+        let node = initial;
+        const dom = document.createElement('div');
+        dom.className = 'my-4 flex items-center justify-between gap-3 rounded-lg border border-dashed border-border bg-muted/40 px-4 py-3 not-prose';
+        dom.contentEditable = 'false';
+        const text = document.createElement('div');
+        text.className = 'min-w-0';
+        const title = document.createElement('p');
+        title.className = 'text-xs font-semibold uppercase tracking-wide text-muted-foreground';
+        const summary = document.createElement('p');
+        summary.className = 'truncate text-sm text-foreground';
+        text.appendChild(title);
+        text.appendChild(summary);
+        const actions = document.createElement('div');
+        actions.className = 'flex shrink-0 gap-2';
+        const button = (label: string, run: () => void) => {
+            const element = document.createElement('button');
+            element.type = 'button';
+            element.textContent = label;
+            element.className = 'rounded-md border border-border bg-background px-2.5 py-1 text-xs text-foreground hover:bg-muted cursor-pointer';
+            element.addEventListener('click', event => { event.preventDefault(); run(); });
+            return element;
         };
-    },
-    parseHTML() {
-        return [{ tag: 'img[src]', getAttrs: element => safeImageUrl(element.getAttribute('src')) ? null : false }];
-    },
-});
+        const edit = button(__('Edit'), () => options.onEditBlock(blockOf(node)));
+        const remove = button(__('Remove'), () => {
+            const position = getPos();
+            if (typeof position === 'number') editor.chain().focus().deleteRange({ from: position, to: position + node.nodeSize }).run();
+        });
+        actions.appendChild(edit);
+        actions.appendChild(remove);
+        dom.appendChild(text);
+        dom.appendChild(actions);
+        const paint = () => {
+            const block = blockOf(node);
+            title.textContent = options.blockLabel(block.type);
+            summary.textContent = options.blockSummary(block);
+            edit.setAttribute('aria-label', `${__('Edit')} ${title.textContent}`);
+            remove.setAttribute('aria-label', `${__('Remove')} ${title.textContent}`);
+        };
+        paint();
+        return {
+            dom,
+            update: updated => {
+                if (updated.type.name !== 'cmsBlock') return false;
+                node = updated;
+                paint();
+                return true;
+            },
+            selectNode: () => dom.classList.add('ring-2', 'ring-ring'),
+            deselectNode: () => dom.classList.remove('ring-2', 'ring-ring'),
+            stopEvent: event => event.target instanceof HTMLButtonElement,
+            ignoreMutation: () => true,
+        };
+    };
+}
 
 export function mountRichText(element: HTMLElement, options: RichTextOptions): RichTextHandle {
     const active = (editor: Editor) => [
@@ -162,26 +127,23 @@ export function mountRichText(element: HTMLElement, options: RichTextOptions): R
         ...([2, 3, 4] as const).filter(level => editor.isActive('heading', { level })).map(level => `heading${level}`),
         ...(['center', 'right'] as const).filter(align => editor.isActive({ textAlign: align })).map(align => `align${align[0]!.toUpperCase()}${align.slice(1)}`),
     ];
+    let session: CollabSession | null = null;
     const editor = new Editor({
         element,
         extensions: [
-            Document.extend({ content: '(block | cmsBlock)+' }),
-            StarterKit.configure({
-                document: false,
-                heading: { levels: [2, 3, 4] },
-                link: { openOnClick: false, autolink: true, defaultProtocol: 'https', isAllowedUri: url => safeLinkUrl(url), shouldAutoLink: url => safeLinkUrl(url) },
-            }),
-            TextAlign.configure({ types: ['heading', 'paragraph'], alignments: ['left', 'center', 'right'] }),
+            ...richTextExtensions(cmsBlock(blockCard(options))),
             Placeholder.configure({ placeholder: options.placeholder }),
-            MediaImage.configure({ inline: false, allowBase64: false }),
-            cmsBlock(options),
         ],
         content: options.content && options.content.content.length ? options.content as never : '',
         editorProps: { attributes: { class: options.className, 'aria-label': options.label, 'aria-multiline': 'true', role: 'textbox' } },
         onUpdate: ({ editor }) => options.onChange(editor.getJSON() as RichTextDoc),
-        onSelectionUpdate: ({ editor }) => options.onSelection(active(editor)),
-        onTransaction: ({ editor }) => options.onSelection(active(editor)),
+        onSelectionUpdate: ({ editor }) => { options.onSelection(active(editor)); options.onCaret?.(editor.state.selection.anchor, editor.state.selection.head); },
+        onTransaction: ({ editor }) => { options.onSelection(active(editor)); session?.flush(); },
     });
+    if (options.collab) {
+        for (const plugin of collabPlugins(options.collab)) editor.registerPlugin(plugin);
+        session = new CollabSession(editor, options.collab);
+    }
     const chain = () => editor.chain().focus();
     const find = (id: string): { position: number; size: number } | null => {
         let found: { position: number; size: number } | null = null;
@@ -266,7 +228,9 @@ export function mountRichText(element: HTMLElement, options: RichTextOptions): R
             if (found) chain().insertContentAt({ from: found.position, to: found.position + found.size }, doc.content).run();
         },
         setContent(doc) { editor.commands.setContent(doc && doc.content.length ? doc as never : '', { emitUpdate: false }); },
+        selection() { const { anchor, head } = editor.state.selection; return { anchor, head }; },
+        collab: session,
         focus() { editor.commands.focus(); },
-        destroy() { editor.destroy(); },
+        destroy() { session?.destroy(); editor.destroy(); },
     };
 }

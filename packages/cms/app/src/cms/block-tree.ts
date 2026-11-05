@@ -18,6 +18,7 @@ import { newBlock, type BlockOption, type EditorBlock, type EditorField } from '
 import type { MediaPreview } from './field-controls';
 import { blockIcon, blockIconColor, icon } from './icons';
 import { iconButton } from './ui';
+import { presenceChip, presenceOutline, type Someone } from './collab/presence';
 
 export type BlockTreeProps = {
     /** Page-unique prefix for control IDs. */
@@ -57,6 +58,10 @@ export type BlockTreeProps = {
     devices?: boolean;
     /** The summary beside a block's name, in place of its first text; undefined falls back to it. */
     summary?(block: EditorBlock, option: BlockOption | undefined): string | undefined;
+    /** Who else is in each block, by block ID: the block is outlined in their color and named after its title. */
+    editing?: Record<string, readonly Someone[]>;
+    /** A drag started (the block's ID) or ended (null), for the others' presence. */
+    onDrag?(id: string | null): void;
 };
 
 /** Devices the hide toggles stand for, with their icons. */
@@ -281,6 +286,7 @@ export class BlockTree extends Cossack {
         const depth = placeBlocks(this.props.blocks).find(place => place.block._id === id)?.depth ?? 0;
         this.pointer = { id: event.pointerId, x: event.clientX, y: event.clientY, depth };
         this.drag = { id, blocks: this.props.blocks, depth, moved: false };
+        this.props.onDrag?.(id);
         this.listen();
         // After `listen`, which clears what an earlier drag left.
         this.last = { x: event.clientX, y: event.clientY };
@@ -378,6 +384,7 @@ export class BlockTree extends Cossack {
         this.unlisten();
         this.pointer = null;
         this.drag = null;
+        this.props.onDrag?.(null);
         if (drag?.moved && treeShape(drag.blocks) !== treeShape(this.props.blocks)) {
             // The container the block landed in stays open.
             const opened = this.ancestors(drag.blocks, drag.id);
@@ -392,6 +399,7 @@ export class BlockTree extends Cossack {
         this.unlisten();
         this.pointer = null;
         this.drag = null;
+        this.props.onDrag?.(null);
     }
 
     @Client()
@@ -447,7 +455,8 @@ export class BlockTree extends Cossack {
         // toolbar names it, so it has no label of its own above the block's header.
         const inlineFields = option?.fields.filter(field => field.kind === 'richtext') ?? [];
         const data = option?.category === 'data';
-        return html`<section class=${`rounded-lg border bg-card ${ghost ? 'border-dashed border-primary bg-primary/5 opacity-50' : error ? 'cms-block-error border-destructive' : data ? 'border-dashed border-border' : 'border-border'}`} aria-label=${`${label} ${index + 1}`} data-block-tree-item=${block._id}>
+        const here = this.props.editing?.[block._id] ?? [];
+        return html`<section class=${`rounded-lg border bg-card ${ghost ? 'border-dashed border-primary bg-primary/5 opacity-50' : error ? 'cms-block-error border-destructive' : data ? 'border-dashed border-border' : 'border-border'}`} aria-label=${`${label} ${index + 1}`} data-block-tree-item=${block._id} style=${presenceOutline(here)}>
             <header class="flex flex-wrap items-center gap-1.5 border-b border-border px-2 py-1.5" ref=${(element: Element) => { if (element) this.headers.set(block._id, element as HTMLElement); else this.headers.delete(block._id); }}>
                 <button type="button" class=${`flex h-7 w-5 shrink-0 touch-none items-center justify-center rounded border-none bg-transparent text-muted-foreground ${locked ? 'cursor-default opacity-40' : 'cursor-grab hover:bg-muted active:cursor-grabbing'}`} data-handle
                     aria-label=${pinned ? `${label}. ${__('This block stays where it is.')}` : locked ? `${label}. ${__('The template keeps this order.')}` : `${__('Move')} ${label}. ${__('Drag, or use the arrow keys.')}`} ?disabled=${locked}
@@ -462,6 +471,7 @@ export class BlockTree extends Cossack {
                     <span class="font-medium text-foreground">${option?.field && typeof block.data.label === 'string' && block.data.label ? block.data.label : label}</span>
                     ${option?.field ? html` <code class="text-xs text-muted-foreground">${typeof block.data.name === 'string' && block.data.name ? block.data.name : fieldName(String(block.data.label ?? ''))}</code> ${component(Badge, { variant: 'outline' }, label)}` : null}
                     ${data ? html` ${component(Badge, { variant: 'outline' }, __('Data only'))}` : null}
+                    ${here.length ? html` ${presenceChip(here, __('is here'))}` : null}
                     ${block.when ? html` ${component(Badge, { variant: 'outline' }, block.when.action === 'hide' ? __('Hidden if…') : __('Shown if…'))}` : null}
                     ${summary ? html`<span class="ml-2 text-muted-foreground">${summary}</span>` : null}
                     ${collapsed ? html`<span class="ml-2 text-muted-foreground">${held} ${held === 1 ? __('block') : __('blocks')}</span>` : null}

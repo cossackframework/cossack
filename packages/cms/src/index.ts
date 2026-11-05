@@ -75,3 +75,4 @@ export { REDIRECT_STATUSES, REDIRECT_PATH, redirectPath, redirectProblems, type 
 export { WEBHOOK_EVENTS, webhookUrlProblem, type Webhook, type WebhookDelivery, type WebhookEvent, type WebhookInput, type WebhookPayload } from './webhooks';
 export { COMMENT_STATUSES, checkComment, type CommentShape, type CommentRow, type CommentStatus } from './comments';
 export { IMAGE_WIDTHS, TRANSFORMABLE_TYPES, blurredPlaceholder, imageWidths, placeholderStyle, imageEditsProblems, editedSize, variantWidth, variantRect, transformable, imageUrl, imageSrcset, type ImageEdits, type ImageRect, type ImageSource } from './images';
+export { COLLAB_COLORS, PRESENCE_TIMEOUT, participantColor, livePeers, groupPeers, checkPresence, PendingKeys, scalarKey, patchKey, richTextPath, parseRichTextPath, stableJson, treeOps, applyTreeOp, treeHash, StepLog, type PeerPresence, type PeerState, type Participant, type TreeOp, type TreeOpsOptions } from './collab';

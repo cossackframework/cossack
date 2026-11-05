@@ -10,7 +10,7 @@ import { promisify } from 'node:util';
 import { createLinkedApp, repository } from './linked-app.js';
 
 export { repository };
-export const CMS_EDITOR_PACKAGES = ['@tiptap/core', '@tiptap/pm', '@tiptap/starter-kit', '@tiptap/extension-document', '@tiptap/extension-image', '@tiptap/extension-text-align', '@tiptap/extensions'];
+export const CMS_EDITOR_PACKAGES = ['@tiptap/core', '@tiptap/pm', '@tiptap/starter-kit', '@tiptap/extension-document', '@tiptap/extension-image', '@tiptap/extension-text-align', '@tiptap/extensions', 'prosemirror-collab'];
 const roots = [];
 /** Removes `parent` in the next cleanupRoots(), for tests that create their own temp app. */
 export function trackRoot(parent) { roots.push(parent); }

@@ -6,7 +6,7 @@ import { Client, ClientState, Component, Cossack } from '@cossackframework/core'
 import { component, html, type TemplateResult } from '@cossackframework/renderer';
 import { DropdownMenu, Icon } from '@cossackframework/ui';
 import type { EmbeddedBlock, RichTextDoc } from '@cossackframework/cms';
-import type { RichTextCommand, RichTextHandle } from './rich-text.client';
+import type { CollabTransport, RichTextCommand, RichTextHandle } from './rich-text.client';
 import { BlockInserter, type BlockInserterProps } from './block-inserter';
 import type { BindingChoice } from './field-controls';
 import { icon } from './icons';
@@ -32,10 +32,24 @@ export type RichTextFieldProps = {
     patternTitles?: Record<string, string>;
     /** Entry fields the text may show (`{{ $.price }}`); a toolbar menu inserts one at the cursor. */
     bindings?: readonly BindingChoice[];
+    /** Edit the document together in the entry's room: it comes from there, and every change goes through it. */
+    collab?: RichTextCollabProps;
 };
+
+export interface RichTextCollabProps {
+    /** The document's path in the room (`richTextPath`). */
+    path: string;
+    /** This browser tab's ID in the room. */
+    clientID: string;
+    transport: CollabTransport;
+    /** The selection moved, for other editors' carets. */
+    onSelection(anchor: number, head: number): void;
+}
 
 /** Mounted editors by field ID, for the page's media picker and block forms. */
 export const richTextEditors = new Map<string, RichTextHandle>();
+/** Mounted editors by their document's path in the room, for the room's steps and carets. */
+export const collabEditors = new Map<string, RichTextHandle>();
 
 const SURFACE = `${PROSE} min-h-[22rem] px-4 py-3 focus:outline-none [&_p.is-editor-empty:first-child]:before:pointer-events-none [&_p.is-editor-empty:first-child]:before:float-left [&_p.is-editor-empty:first-child]:before:h-0 [&_p.is-editor-empty:first-child]:before:text-muted-foreground [&_p.is-editor-empty:first-child]:before:content-[attr(data-placeholder)] [&_img.ProseMirror-selectednode]:ring-2 [&_img.ProseMirror-selectednode]:ring-ring`;
 
@@ -59,6 +73,10 @@ export class RichTextField extends Cossack {
     private held = '';
     /** The value last compared with `held`: the page renders the same object again on every unrelated keystroke. */
     private heldValue: RichTextDoc | null | undefined;
+    /** When the room's document could not be fetched: the editor runs alone until this time, then tries again. */
+    private collabRetryAt = 0;
+    /** A mount is under way (the editor loads, the room answers): no second one starts meanwhile. */
+    private busy = false;
 
     /**
      * A value that changed outside the editor (a restored autosave, the entry as saved, a pattern
@@ -68,7 +86,15 @@ export class RichTextField extends Cossack {
     @Client()
     updated(changed: Map<string | number | symbol, unknown>) {
         super.updated(changed);
-        if (!this.handle || !this.ready || this.props.value === this.heldValue) return;
+        // The room came up after the editor mounted: mount again, on the room's document.
+        if (this.props.collab && this.handle && !this.handle.collab && this.surface && this.ready && !this.busy && Date.now() >= this.collabRetryAt) {
+            const element = this.surface;
+            this.surface = undefined;
+            void this.connect(element);
+            return;
+        }
+        // In a room the document is the room's: it changes through steps alone.
+        if (this.props.collab || !this.handle || !this.ready || this.props.value === this.heldValue) return;
         this.heldValue = this.props.value;
         const next = docKey(this.props.value);
         if (next === this.held) return;
@@ -78,14 +104,21 @@ export class RichTextField extends Cossack {
 
     @Client()
     private async connect(element: Element | undefined) {
-        if (!element || this.surface === element) return;
+        if (!element || this.surface === element || this.busy) return;
         this.surface = element as HTMLElement;
+        this.busy = true;
         try {
             const { mountRichText } = await import('./rich-text.client');
             this.handle?.destroy();
             const labels = new Map(this.props.blocks.map(block => [block.name, block.label]));
+            // In a room the document starts as the room holds it, at the room's version; when the room cannot be
+            // reached, the editor runs alone for a while and joins when it comes up.
+            const shared = this.props.collab ? await this.sharedDocument(this.props.collab) : null;
+            const collab = shared ? this.props.collab : undefined;
+            if (this.surface !== element) return;
             this.handle = mountRichText(this.surface, {
-                content: this.props.value, label: this.props.label, placeholder: this.props.placeholder ?? __('Start writing…'), className: SURFACE,
+                content: shared ? shared.doc : this.props.value, label: this.props.label, placeholder: this.props.placeholder ?? __('Start writing…'), className: SURFACE,
+                ...(collab && shared ? { collab: { transport: collab.transport, clientID: collab.clientID, version: shared.version }, onCaret: (anchor: number, head: number) => collab.onSelection(anchor, head) } : {}),
                 blockLabel: type => type === 'core/pattern' ? __('Synced pattern') : labels.get(type) ?? type,
                 blockSummary: block => block.type === 'core/pattern' ? this.props.patternTitles?.[String(block.data.pattern)] ?? __('Pattern')
                     : Object.values(block.data).find((value): value is string => typeof value === 'string' && value.trim() !== '') ?? '',
@@ -94,18 +127,33 @@ export class RichTextField extends Cossack {
                 onEditBlock: block => this.props.onEditBlock(block),
             });
             richTextEditors.set(this.props.id, this.handle);
-            this.held = docKey(this.props.value);
-            this.heldValue = this.props.value;
+            if (collab) collabEditors.set(collab.path, this.handle);
+            this.held = docKey(shared ? shared.doc : this.props.value);
+            this.heldValue = shared ? shared.doc : this.props.value;
             this.ready = true;
+            // The page's values follow the room's document.
+            if (shared && docKey(shared.doc) !== docKey(this.props.value)) this.props.onChange(shared.doc ?? { type: 'doc', content: [] });
         } catch (error) {
             console.error('[cms] the rich text editor could not load', error);
             this.failed = __('The editor could not load. Reload the page to try again.');
+        } finally { this.busy = false; }
+    }
+
+    /** The room's document, asked for a few times while the connection settles; null when the room stays out of reach. */
+    @Client()
+    private async sharedDocument(collab: RichTextCollabProps): Promise<{ doc: RichTextDoc | null; version: number } | null> {
+        for (let attempt = 0; attempt < 5; attempt++) {
+            try { return await collab.transport.document(); }
+            catch { await new Promise(resolve => setTimeout(resolve, 300 * (attempt + 1))); }
         }
+        this.collabRetryAt = Date.now() + 5000;
+        return null;
     }
 
     onCleanup() {
         this.handle?.destroy();
         if (richTextEditors.get(this.props.id) === this.handle) richTextEditors.delete(this.props.id);
+        if (this.props.collab && collabEditors.get(this.props.collab.path) === this.handle) collabEditors.delete(this.props.collab.path);
     }
 
     @Client()

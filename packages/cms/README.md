@@ -7,7 +7,8 @@ users and sign-in with authenticator apps and passkeys, the framework stores, an
 plugin hosting. Publishing tools: scheduled entries, preview links, autosaves, revisions you
 can compare and restore, automatic and managed redirects, per-entry SEO, resized image
 variants with crops and focal points, application passwords for the content API, signed
-webhooks, moderated comments, reusable patterns and translations. Forms are built from
+webhooks, moderated comments, reusable patterns and translations. Several people edit one
+entry together through its room (live text, presence, a shared draft; `docs/cms/collaboration.md`). Forms are built from
 input blocks with conditional logic, and each keeps its submissions in a table of its own,
 with notifications, webhooks and hooks like Gravity Forms'. Add it to an
 application with `cossack add cms`, which renders the shared `auth` and `dashboard` pages
@@ -34,7 +35,7 @@ export const products: CollectionDefinition = {
 
 | Entry | Use |
 | --- | --- |
-| `@cossackframework/cms` | Collections, blocks, fields, rich text, menus, the theme contract, permissions, settings, extension points, manifests, media helpers (client-safe) |
+| `@cossackframework/cms` | Collections, blocks, fields, rich text, menus, the theme contract, permissions, settings, extension points, manifests, media helpers, the co-editing rules (client-safe) |
 | `@cossackframework/cms/server` | `createCMS`, repositories, planner, users, taxonomies, menus, settings, files, auth, stores, outbox, Markdown (server-only) |
 
 Data contract:

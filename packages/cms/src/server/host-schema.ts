@@ -23,6 +23,7 @@ export const HOST_TABLES = [
     'cms_preview_tokens', 'cms_autosaves', 'cms_file_variants', 'cms_redirects', 'cms_api_tokens', 'cms_webhooks', 'cms_webhook_deliveries',
     'cms_comments', 'cms_user_security', 'cms_passkeys', 'cms_auth_challenges', 'cms_areas', 'cms_form_sends', 'cms_form_mail', 'cms_form_results', 'cms_crawler_visits', 'cms_not_found', 'cms_cache',
     'cms_accounts', 'cms_sites', 'cms_site_domains', 'cms_handoffs', 'cms_session_sites', 'cms_memberships', 'cms_network', 'cossack_jobs', 'cossack_notifications',
+    'cms_drafts',
 ] as const;
 
 export const HOST_STEPS: readonly HostStep[] = [{
@@ -289,5 +290,15 @@ export const HOST_STEPS: readonly HostStep[] = [{
         { rql: "INSERT INTO cms_memberships (account_id, site_id, created_at) SELECT u.id, 'main', u.created_at FROM cms_users u WHERE EXISTS (SELECT 1 FROM cms_accounts a WHERE a.id = u.id)" },
         // Network settings and state by key, as JSON.
         { rql: 'CREATE TABLE cms_network (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL)' },
+    ],
+}, {
+    version: 20,
+    description: 'Shared drafts of entries edited together',
+    statements: [
+        // One row per entry: the room's values and rich text versions between saves, and who is editing.
+        { rql: `CREATE TABLE cms_drafts (id TEXT PRIMARY KEY, resource TEXT NOT NULL, record_id TEXT NOT NULL, base_rev INTEGER NOT NULL, data TEXT NOT NULL,
+            logs TEXT NOT NULL, editors TEXT NOT NULL, editors_at INTEGER NOT NULL, at INTEGER NOT NULL)` },
+        { rql: 'CREATE INDEX cms_drafts_editing ON cms_drafts (resource, editors_at)' },
+        { rql: 'CREATE INDEX cms_drafts_at ON cms_drafts (at)' },
     ],
 }];

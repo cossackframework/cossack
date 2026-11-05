@@ -1,14 +1,17 @@
-import { Cossack, Page, State, ClientState, Server, Client, OnWindow, PreventNavigation, type HeadValue } from '@cossackframework/core';
+import { Cossack, Page, State, ClientState, Server, Client, On, OnWindow, PreventNavigation, type HeadValue } from '@cossackframework/core';
 import { Avatar, Button, Checkbox, Combobox, Icon, Input, Modal, NativeSelect, Textarea, CodeEditor, Tabs } from '@cossackframework/ui';
 import { html, component, unsafeHTML, type TemplateResult } from '@cossackframework/renderer';
-import { ARTICLE_TYPES, blockId, CORE_BLOCKS, entryAuthors, systemPrincipal, entryChecks, evaluateRule, fieldVisibility, findBlock, flattenBlocks, flattenGroupFields, formatBytes, isCmsError, languageName, mediaKind, recordSchema, recordTitle, renderSeoTemplate, richTextBlocks, TITLE_SEPARATORS, updateBlock, type Block, type BlockCondition, type Check, type EmbeddedBlock, type JsonSchema, type MediaKind, type RecordShape, type RichTextDoc } from '@cossackframework/cms';
+import { applyTreeOp, ARTICLE_TYPES, blockId, CORE_BLOCKS, entryAuthors, groupPeers, livePeers, patchKey, PendingKeys, richTextPath, scalarKey, treeHash, treeOps, systemPrincipal, entryChecks, evaluateRule, fieldVisibility, findBlock, flattenBlocks, flattenGroupFields, formatBytes, isCmsError, languageName, mediaKind, recordSchema, recordTitle, renderSeoTemplate, richTextBlocks, TITLE_SEPARATORS, updateBlock, type Block, type BlockCondition, type Check, type EmbeddedBlock, type JsonSchema, type MediaKind, type RecordShape, type RichTextDoc, type Participant, type PeerPresence, type PeerState, type TreeOp } from '@cossackframework/cms';
 import { blockPanel } from '../../../../../../cms/block-panel';
 import { describeBlockError } from '../../../../../../cms/block-errors';
 import { styleValues, withStyle, type BlockTab, type StyleValues } from '../../../../../../cms/style-controls';
 import { renderMarkdown, type CmsHost } from '@cossackframework/cms/server';
 import { applyEntryJson, contentField, editorView, entryJson, entryValues, fieldErrors, mediaPreviews, parentOptions, patternBlocks, routeResource, saveEntry, termOptions, type MediaPreview, type SaveIntent } from '../../../../../../cms/content';
 import { blockDefaults, controlValue, editorBlocks, editorInput, entryUrl, suggestedSlug, type EditorBlock, type EditorField, type EditorValues, type EditorView, type TermOption } from '../../../../../../cms/editor';
-import { RichTextField, richTextEditors } from '../../../../../../cms/rich-text-field';
+import { collabEditors, RichTextField, richTextEditors, type RichTextFieldProps } from '../../../../../../cms/rich-text-field';
+import type { Caret } from '../../../../../../cms/rich-text.client';
+import { EntryRoom, type RoomHandle, type RoomSnapshot } from '../../../../../../cms/collab/room';
+import { avatarStack, namesOf, onTab, presenceChip, presenceOutline, type Someone } from '../../../../../../cms/collab/presence';
 import { BlockTree } from '../../../../../../cms/block-tree';
 import { bindingChoices, choicesControl, fieldControl, groupFields, multipleControl, type BindingChoice } from '../../../../../../cms/field-controls';
 import { chooserKind, MEDIA_ACCEPT, MEDIA_KIND_CHOICES, uploadFile } from '../../../../../../cms/media-chooser';
@@ -113,6 +116,20 @@ export default class EntryEditor extends Cossack {
     private checked: { key: unknown[]; checks: Check[] } | null = null;
     /** What each hidden tab last showed, and the tab that was open then. */
     private hiddenTabs = new Map<string, { active: string; content: TemplateResult }>();
+    // --- Co-editing: a saved entry is edited in its room, with everyone who has it open ---------
+    /** The room, once this tab joined it. */
+    @ClientState() room: RoomHandle | null = null;
+    /** Everyone in the room, this tab included. */
+    @ClientState() peers: PeerState[] = [];
+    @ClientState() roomStatus = { connected: false, dirty: false, diverged: false, oversized: false };
+    /** This tab's ID in the room. */
+    private self = '';
+    /** This tab's changes the room has not echoed yet. */
+    private pending = new PendingKeys();
+    private presenceTimer: ReturnType<typeof setTimeout> | undefined;
+    private previewRefresh: ReturnType<typeof setTimeout> | undefined;
+    /** This tab is telling the room about its own save: the room's "saved by" is not news here. */
+    private savingSelf = false;
 
     head(): HeadValue {
         const title = this.view ? (this.id === 'new' ? `${__('New')} ${this.view.singular.toLowerCase()}` : `${__('Edit')} ${this.view.singular.toLowerCase()}`) : __('Editor');
@@ -184,9 +201,9 @@ export default class EntryEditor extends Cossack {
                 if (!record && locale && languages.all.includes(locale)) this.values = { ...this.values, locale };
                 if (record) await this.loadTranslations(collection.name, record.id);
             }
-            // Unsaved work from a closed tab or a crash.
+            // Unsaved work on a new entry from a closed tab or a crash; a saved entry's room keeps its draft instead.
             const autosave = await cms.latestAutosave(resource.id, this.id, principal).catch(() => null);
-            if (autosave && (!record || autosave.at > record.updatedAt)) this.autosaveOffer = { at: autosave.at };
+            if (autosave && !record) this.autosaveOffer = { at: autosave.at };
             if (!record && collection && collection.name !== 'patterns') await this.loadPatterns(collection.name, true);
             if (collection?.name === 'patterns') this.collectionChoices = cms.collections().filter(entry => entry.name !== 'patterns').map(entry => ({ name: entry.name, label: entry.label }));
             await this.loadPatternTitles();
@@ -247,19 +264,24 @@ export default class EntryEditor extends Cossack {
 
     @Client()
     set(name: string, value: unknown) {
+        const previous = this.values[name];
         this.values = { ...this.values, [name]: value };
         this.dirty = true;
         this.unsaved = true;
         if (this.errors[name]) this.errors = Object.fromEntries(Object.entries(this.errors).filter(([key]) => key !== name));
+        this.share(name, previous, value);
     }
 
     @Client()
     setTitle(value: string) {
         const title = this.view?.titleField || 'title';
+        const previous = this.values;
         this.values = { ...this.values, [title]: value, ...(this.view?.slug && !this.slugTouched ? { slug: suggestedSlug(value) } : {}) };
         this.dirty = true;
         this.unsaved = true;
         if (this.errors[title]) this.errors = Object.fromEntries(Object.entries(this.errors).filter(([key]) => key !== title));
+        this.share(title, previous[title], value);
+        if (this.values.slug !== previous.slug) this.share('slug', previous.slug, this.values.slug);
     }
 
     /** A field of a group, such as the SEO title. */
@@ -291,16 +313,234 @@ export default class EntryEditor extends Cossack {
         this.set(field, update(this.values[field], 0));
     }
 
+    // --- Co-editing --------------------------------------------------------------
+
+    /** The field a value belongs to; undefined for the editor's own keys (title, slug, status…), which are scalars. */
+    private fieldOf(name: string): EditorField | undefined {
+        return this.view?.fields.find(field => field.name === name);
+    }
+
+    /** Rich text keys of a block type: their documents travel as steps, not as patches. */
+    private richKeys(type: string): string[] {
+        return this.view?.blocks.find(block => block.name === type)?.fields.filter(field => field.kind === 'richtext').map(field => field.name) ?? [];
+    }
+
+    /** Send a change to the room: a blocks field as ops by block, a rich text field not at all (its steps went already), anything else as a value. */
+    @Client()
+    private share(name: string, previous: unknown, value: unknown) {
+        const room = this.room;
+        if (!room) return;
+        const field = this.fieldOf(name);
+        if (field?.kind === 'richtext' && !field.multiple) return;
+        if (field?.kind === 'blocks') {
+            const before = Array.isArray(previous) ? previous as EditorBlock[] : [];
+            const after = Array.isArray(value) ? value as EditorBlock[] : [];
+            for (const op of treeOps(name, before, after, { skip: (type, key) => this.richKeys(type).includes(key) })) {
+                const key = op.kind === 'patch' ? patchKey(name, op.id, op.path) : `tree:${name}`;
+                this.pending.sent(key);
+                room.tree(op).then(result => { if (!result.applied) { this.pending.settled(key); void this.resyncBlocks(name); } })
+                    .catch(() => this.pending.settled(key));
+            }
+            return;
+        }
+        const key = scalarKey(name);
+        this.pending.sent(key);
+        room.set(name, value).then(result => { if (!result.applied) this.pending.settled(key); }).catch(() => this.pending.settled(key));
+    }
+
+    /** The room's tree of a blocks field replaces this editor's: after a dropped op, or a hash that differs. */
+    @Client()
+    private async resyncBlocks(name: string) {
+        const room = this.room;
+        if (!room) return;
+        try {
+            const { blocks } = await room.blocks(name);
+            this.values = { ...this.values, [name]: blocks as EditorBlock[] };
+            this.previewsSoon();
+        } catch { /* the next snapshot brings it */ }
+    }
+
+    @Client()
+    private onRoomReady(handle: RoomHandle) {
+        this.self = handle.peer;
+        this.room = handle;
+    }
+
+    /** The room's draft replaces the values, apart from fields this tab has changes in flight for. */
+    @Client()
+    private onSnapshot(snapshot: RoomSnapshot, options: { initial: boolean; resets: readonly string[] }) {
+        const values = { ...this.values };
+        for (const [name, value] of Object.entries(snapshot.values)) {
+            const field = this.fieldOf(name);
+            if (!options.initial && !this.pending.accepts(field?.kind === 'blocks' ? `tree:${name}` : scalarKey(name))) continue;
+            // A shared rich text document is the editor's own; the items of a multiple field come as a value.
+            values[name] = value;
+        }
+        this.values = values;
+        this.rev = snapshot.rev;
+        if (options.initial) { this.pending.clear(); this.announce({ tab: this.mode }); }
+        this.previewsSoon();
+    }
+
+    @Client()
+    private onRemoteSet(peer: string, name: string, value: unknown) {
+        const key = scalarKey(name);
+        if (peer === this.self) { this.pending.settled(key); return; }
+        if (!this.pending.accepts(key)) return;
+        this.values = { ...this.values, [name]: value };
+        if (this.fieldOf(name)?.media) this.previewsSoon();
+    }
+
+    @Client()
+    private onRemoteTree(peer: string, op: TreeOp, hash: string) {
+        const name = op.field;
+        const key = op.kind === 'patch' ? patchKey(name, op.id, op.path) : `tree:${name}`;
+        if (peer === this.self) {
+            this.pending.settled(key);
+            if (this.pending.accepts(`tree:${name}`) && treeHash(this.blocks(name)) !== hash) void this.resyncBlocks(name);
+            return;
+        }
+        if (!this.pending.accepts(key)) return;
+        const next = applyTreeOp(this.blocks(name), op) as EditorBlock[] | null;
+        if (!next) { void this.resyncBlocks(name); return; }
+        this.values = { ...this.values, [name]: next };
+        if (this.pending.accepts(`tree:${name}`) && treeHash(next) !== hash) void this.resyncBlocks(name);
+        this.previewsSoon();
+    }
+
+    /** Who is in the room; the others' selections become carets in the rich text documents they are in. */
+    @Client()
+    private onPeers(peers: readonly PeerState[], self: string) {
+        this.self = self;
+        this.peers = livePeers(peers, Date.now());
+        const me = this.myUser();
+        const carets = new Map<string, Caret[]>();
+        for (const peer of this.peers) {
+            const selection = peer.presence.selection;
+            if (peer.peer === self || peer.user === me || !selection) continue;
+            carets.set(selection.path, [...carets.get(selection.path) ?? [], { peer: peer.peer, name: peer.name, color: peer.color, anchor: selection.anchor, head: selection.head }]);
+        }
+        for (const [path, editor] of collabEditors) editor.collab?.setCarets(carets.get(path) ?? []);
+    }
+
+    @Client()
+    private onRoomStatus(status: { connected: boolean; dirty: boolean; diverged: boolean; oversized: boolean }) {
+        this.roomStatus = status;
+        if (status.connected) this.unsaved = status.dirty;
+    }
+
+    @Client()
+    private onRemoteSaved(by: string, rev: number) {
+        this.rev = rev;
+        this.unsaved = false;
+        this.dirty = false;
+        if (!this.savingSelf) this.message = `${by} ${__('saved this entry.')}`;
+    }
+
+    /** Tell the room this tab saved; the others hear who did, this tab keeps its own notice. */
+    @Client()
+    private async announceSaved() {
+        const room = this.room;
+        if (!room) return;
+        this.savingSelf = true;
+        try { await room.saved(); } catch { /* the next join brings the room's draft */ }
+        finally { this.savingSelf = false; }
+    }
+
+    /** Where this tab is, for the others. */
+    @Client()
+    private announce(state: PeerPresence) {
+        this.room?.presence(state);
+    }
+
+    @Client()
+    private announceSelection(path: string, anchor: number, head: number) {
+        if (this.presenceTimer) clearTimeout(this.presenceTimer);
+        this.presenceTimer = setTimeout(() => this.announce({ selection: { path, anchor, head } }), 100);
+    }
+
+    /** Focus moved: the field (`data-field`) and the block (`data-block-tree-item`) around it. */
+    @On('focusin')
+    @Client()
+    private trackFocus(event: FocusEvent) {
+        if (!this.room) return;
+        const target = event.target instanceof Element ? event.target : null;
+        const field = target?.closest('[data-field]')?.getAttribute('data-field') ?? undefined;
+        const block = target?.closest('[data-block-tree-item]')?.getAttribute('data-block-tree-item') ?? undefined;
+        this.announce({ field, block });
+    }
+
+    /** Media previews follow the values, a little after they changed. */
+    @Client()
+    private previewsSoon() {
+        if (this.previewRefresh) return;
+        this.previewRefresh = setTimeout(() => { this.previewRefresh = undefined; void this.refreshPreviews(this.values); }, 500);
+    }
+
+    /** Whether a field is one rich text document the room holds (a multiple field travels as one value). */
+    private sharedRichText(name: string): boolean {
+        const field = this.fieldOf(name);
+        return field?.kind === 'richtext' && !field.multiple;
+    }
+
+    /** The rich text editor's part in the room, for a document at `path`. */
+    private collabFor(path: string | null): { collab?: RichTextFieldProps['collab'] } {
+        const room = this.room;
+        if (!room || !path) return {};
+        return { collab: { path, clientID: this.self, transport: room.transport(path), onSelection: (anchor: number, head: number) => this.announceSelection(path, anchor, head) } };
+    }
+
+    private myUser(): string {
+        return this.peers.find(peer => peer.peer === this.self)?.user ?? '';
+    }
+
+    /** Other users whose focus is in a field of the entry (not in a block). */
+    private peersIn(field: string): Someone[] {
+        const me = this.myUser();
+        return this.peers.filter(peer => peer.user !== me && peer.presence.field === field && !peer.presence.block);
+    }
+
+    /** Other users in each block, or dragging it, by block ID. */
+    private editingBlocks(): Record<string, Someone[]> {
+        const me = this.myUser();
+        const result: Record<string, Someone[]> = {};
+        for (const peer of this.peers) {
+            if (peer.user === me) continue;
+            for (const id of [peer.presence.block, peer.presence.dragging]) if (id) (result[id] ??= []).push(peer);
+        }
+        return result;
+    }
+
+    private participants(): Participant[] {
+        return groupPeers(this.peers);
+    }
+
+    private roomProps(): EntryRoom['props'] {
+        return {
+            onReady: (handle: RoomHandle) => this.onRoomReady(handle),
+            onSnapshot: (snapshot: RoomSnapshot, options: { initial: boolean; resets: readonly string[] }) => this.onSnapshot(snapshot, options),
+            onSet: (peer: string, field: string, value: unknown) => this.onRemoteSet(peer, field, value),
+            onTree: (peer: string, op: TreeOp, hash: string) => this.onRemoteTree(peer, op, hash),
+            onPeers: (peers: readonly PeerState[], self: string) => this.onPeers(peers, self),
+            onSaved: (by: string, rev: number) => this.onRemoteSaved(by, rev),
+            onStatus: (status: { connected: boolean; dirty: boolean; diverged: boolean; oversized: boolean }) => this.onRoomStatus(status),
+        };
+    }
+
     // --- Autosave ----------------------------------------------------------------
 
     onMount() {
         this.autosaved = this.snapshot();
+        // A saved entry is edited in its room, whose draft replaces the autosave and the reload restore.
+        if (this.id !== 'new') return;
         this.autosaveTimer = setInterval(() => { void this.autosaveTick(); }, 30_000);
         this.recoverDraft();
     }
 
     onCleanup() {
         if (this.autosaveTimer) clearInterval(this.autosaveTimer);
+        if (this.presenceTimer) clearTimeout(this.presenceTimer);
+        if (this.previewRefresh) clearTimeout(this.previewRefresh);
     }
 
     /** Where unsaved values wait out a reload: one key per editor URL. */
@@ -312,7 +552,7 @@ export default class EntryEditor extends Cossack {
     @OnWindow('beforeunload')
     keepDraft() {
         try {
-            if (this.unsaved && this.view) window.sessionStorage.setItem(this.draftKey(), JSON.stringify({ at: Date.now(), values: this.values }));
+            if (this.unsaved && this.view && !this.room) window.sessionStorage.setItem(this.draftKey(), JSON.stringify({ at: Date.now(), values: this.values }));
             else window.sessionStorage.removeItem(this.draftKey());
         } catch { /* storage may be unavailable; the autosave still has the draft */ }
     }
@@ -426,11 +666,11 @@ export default class EntryEditor extends Cossack {
         this.autosaveOffer = null;
     }
 
-    /** Leaving with unsaved changes asks first; they stay in the autosave either way. */
+    /** Leaving with unsaved changes asks first; they stay in the autosave either way. In a connected room the draft is kept there, so no prompt. */
     @PreventNavigation()
     @Client()
     confirmLeave(): boolean {
-        return this.unsaved && !window.confirm(__('Leave the editor? Your latest changes are not saved.'));
+        return this.unsaved && !this.roomStatus.connected && !window.confirm(__('Leave the editor? Your latest changes are not saved.'));
     }
 
     // --- Previews ------------------------------------------------------------------
@@ -774,6 +1014,8 @@ export default class EntryEditor extends Cossack {
         this.saving = true;
         this.error = '';
         this.message = '';
+        // In a room, save what everyone wrote: the room's draft, apart from this tab's changes still on their way.
+        if (this.room) { try { this.onSnapshot(await this.room.fresh(), { initial: false, resets: [] }); } catch { /* save what this tab holds */ } }
         try { await this.save(this.values, intent, this.rev); }
         finally { this.saving = false; }
         if (this.error) this.revealErrorTab();
@@ -781,16 +1023,18 @@ export default class EntryEditor extends Cossack {
             this.dirty = false;
             this.unsaved = false;
             this.autosaved = this.snapshot();
+            void this.announceSaved();
             this.settleUrl();
         }
     }
 
-    /** After the first save, the address becomes the entry's, without a reload: the editor keeps its state. */
+    /** After the first save, the editor opens at the entry's own address, where its room is. */
     @Client()
     private settleUrl() {
         if (this.id === 'new' || !window.location.pathname.endsWith('/new')) return;
-        const url = `/dashboard/content/${this.route}/${this.id}${window.location.search}${window.location.hash}`;
-        window.history.replaceState(window.history.state, '', url);
+        const query = new URLSearchParams(window.location.search);
+        query.set('saved', '1');
+        void this.navigate(`/dashboard/content/${this.route}/${this.id}?${query}${window.location.hash}`, { history: 'replace' });
     }
 
     @Server()
@@ -889,6 +1133,7 @@ export default class EntryEditor extends Cossack {
     async showMode(mode: string) {
         if (mode === this.mode) return;
         this.mode = mode;
+        this.announce({ tab: mode });
         rememberTab(mode, this.editorTabs());
         if (mode === 'json' && !this.jsonDirty) await this.loadJson();
     }
@@ -899,7 +1144,7 @@ export default class EntryEditor extends Cossack {
         this.message = '';
         try { await this.applyJson(this.json, this.rev); }
         finally { this.saving = false; }
-        if (!this.error) { this.dirty = false; this.unsaved = false; this.autosaved = this.snapshot(); if (!this.message) this.message = __('Saved.'); }
+        if (!this.error) { this.dirty = false; this.unsaved = false; this.autosaved = this.snapshot(); void this.announceSaved(); if (!this.message) this.message = __('Saved.'); }
     }
 
     private jsonPanel(): TemplateResult {
@@ -985,11 +1230,14 @@ export default class EntryEditor extends Cossack {
             case 'blocks': return this.blocksControl(field);
             // Rich text inside a block, or one item of a multiple field: its own editor for the picker and its blocks; inside the
             // side panel (a block embedded in rich text) it takes no blocks, as the panel cannot open a second one.
+            // In a room, a block's rich text and the entry's own rich text fields are edited together; the side panel's and a list's items are not.
             case 'richtext': if (target.block !== undefined || id !== field.name) return component(RichTextField, {
                 id, label: field.label, value: (value as RichTextDoc | null) ?? null, blocks: target.dialog ? [] : this.richTextBlocks(field), onChange: (doc: RichTextDoc) => change(doc),
                 onMedia: () => this.openPicker({ field: target.field, richText: true, editor: id }),
                 onInsertBlock: (type: string) => this.insertRichBlock(target.field, type, id), onEditBlock: (block: EmbeddedBlock) => this.editRichBlock(target.field, block, id),
                 bindings: this.bindings(), patternTitles: this.patternTitles,
+                ...this.collabFor(target.dialog || target.rows || target.group ? null : target.block !== undefined ? richTextPath(target.field, { id: target.block, key: target.key ?? field.name })
+                    : id === `field-${field.name}` && this.sharedRichText(field.name) ? richTextPath(field.name) : null),
             });
             return component(RichTextField, {
                 id, label: field.label, value: (value as RichTextDoc | null) ?? null,
@@ -999,6 +1247,7 @@ export default class EntryEditor extends Cossack {
                 onInsertBlock: (type: string) => this.insertRichBlock(field.name, type),
                 onEditBlock: (block: EmbeddedBlock) => this.editRichBlock(field.name, block),
                 patternTitles: this.patternTitles,
+                ...this.collabFor(this.sharedRichText(field.name) ? richTextPath(field.name) : null),
             });
             // Media files open this editor's picker, which knows where the chosen file goes.
             default: if (field.media && field.kind === 'string') return this.mediaControl({ ...target, multiple: field.multiple, fileKind: chooserKind(field) }, value, field.label);
@@ -1067,6 +1316,7 @@ export default class EntryEditor extends Cossack {
                 ...(field.form || this.view?.route === 'patterns' ? {} : { onPatterns: () => this.openPatterns(field.name) }),
                 onChange: (blocks: EditorBlock[]) => this.set(field.name, blocks),
                 control: (entry: EditorField, value: unknown, change: (value: unknown) => void, block: EditorBlock, id: string) => this.control(entry, value, change, { field: field.name, block: block._id, key: entry.name }, id),
+                editing: this.editingBlocks(), onDrag: (id: string | null) => this.announce({ dragging: id ?? undefined }),
             })}
             ${this.errorFor(field.name)}
         </div>`;
@@ -1078,8 +1328,10 @@ export default class EntryEditor extends Cossack {
         const value = this.values[field.name];
         const shared = field.shared && this.languages.multilingual;
         const control = this.control(field, value, entry => this.set(field.name, entry), { field: field.name }, id);
-        return html`<div class="space-y-1.5" data-shared=${shared ? 'true' : ''}>
+        const here = this.peersIn(field.name);
+        return html`<div class="space-y-1.5" data-shared=${shared ? 'true' : ''} data-field=${field.name} style=${presenceOutline(here)}>
             ${field.kind === 'boolean' ? null : html`<label for=${id} class=${options.labelHidden ? 'sr-only' : 'block text-sm font-medium text-foreground'}>${field.label}${field.required ? html`<span class="text-destructive"> *</span>` : null}</label>`}
+            ${here.length ? presenceChip(here, __('is here')) : null}
             ${shared && this.sharedLocked ? html`<fieldset disabled class="contents">${control}</fieldset>` : control}
             ${field.description && !(field.kind === 'text' && field.format === 'markdown') ? html`<p class="text-xs text-muted-foreground">${field.description}</p>` : null}
             ${shared ? html`<p class="text-xs text-muted-foreground">${this.sharedLocked ? __('Same in every language. You cannot edit every translation, so it is read-only here.') : __('Same in every language: saving copies it to the translations.')}</p>` : null}
@@ -1526,6 +1778,9 @@ export default class EntryEditor extends Cossack {
             return entry ? html`<span class="mr-1.5 inline-flex align-middle [&_svg]:size-4" aria-hidden="true">${component(Icon, { entry, size: 16 })}</span>` : null;
         };
         const base = `/dashboard/content/${view.route}`;
+        // Who else is on each tab, for the tab labels.
+        const participants = this.participants();
+        const me = this.myUser();
         // Forms have no URL: their slug names them where the Form block places them.
         const form = view.route === 'forms';
         const permalink = view.slug ? form ? String(this.values.slug ?? '') || '…' : entryUrl(view.path, [String(this.values.slug ?? '') || '…']) : null;
@@ -1536,6 +1791,8 @@ export default class EntryEditor extends Cossack {
                     ${this.id === 'new' ? null : linkButton(__('New'), `${base}/new`, 'outline')}
                 </div>
                 <div class="flex items-center gap-3 text-sm">
+                    ${this.id !== 'new' ? component(EntryRoom, this.roomProps()) : null}
+                    ${this.room && !this.roomStatus.connected ? html`<span role="status" class="text-xs text-muted-foreground">${__('Reconnecting…')}</span>` : null}
                     ${this.meta.url ? html`<a href=${this.meta.url} class="text-primary hover:underline" target="_blank" rel="noopener">${__('View')} ${view.singular.toLowerCase()} ↗</a>` : null}
                     ${form && this.id !== 'new' ? html`<a href=${`/dashboard/forms/${this.id}/submissions`} class="text-primary hover:underline">${__('Submissions')}</a>` : null}
                     <a href=${form ? '/dashboard/forms' : base} class="text-muted-foreground hover:text-foreground">← ${__('All')} ${view.label.toLowerCase()}</a>
@@ -1543,6 +1800,11 @@ export default class EntryEditor extends Cossack {
             </div>
             ${this.message ? notice(this.message, 'success') : null}
             ${this.error ? notice(this.describe(this.error), 'error') : null}
+            ${this.roomStatus.diverged ? html`<div role="status" class="flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-foreground">
+                <span>${__('This entry was changed outside the editor. The draft here no longer starts from the saved entry.')}</span>
+                ${component(Button, { type: 'button', size: 'sm', '@click': () => { void this.room?.reload(); } }, __('Reload the draft from the entry'))}
+            </div>` : null}
+            ${this.roomStatus.oversized ? notice(__('The draft is too large to be kept between sessions. Save soon, or shorten it.'), 'warning') : null}
             ${this.autosaveOffer ? html`<div role="status" class="flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-foreground">
                 <span>${this.id === 'new' ? __('You have unsaved work from') : __('There is an autosave of this entry that is newer than the version below, from')} ${shortDate(this.autosaveOffer.at)}.</span>
                 <span class="flex gap-2">${component(Button, { type: 'button', size: 'sm', '@click': () => this.restore() }, __('Restore the autosave'))}
@@ -1554,10 +1816,11 @@ export default class EntryEditor extends Cossack {
                     listProps: { class: `col-span-full w-full flex-wrap [&>[data-value=json]]:ms-auto ${tabs.length > 1 ? '' : 'hidden'}` },
                     onValueChange: (mode: string) => this.showMode(mode),
                     items: [...view.layout.tabs.map((tab, index) => ({
-                        value: tab.id, ariaLabel: `${tabLabel(tab.id)}${this.errorsOn(tab.id) ? ` (${this.errorsOn(tab.id)})` : ''}`,
-                        label: html`<span class=${this.errorsOn(tab.id) ? 'text-destructive' : ''}>${tabIcon(tab.id)}${tabLabel(tab.id)}${this.errorsOn(tab.id) ? countBadge(this.errorsOn(tab.id)) : null}</span>`,
+                        value: tab.id, ariaLabel: `${tabLabel(tab.id)}${this.errorsOn(tab.id) ? ` (${this.errorsOn(tab.id)})` : ''}${onTab(participants, tab.id, me).length ? `. ${__('Here')}: ${namesOf(onTab(participants, tab.id, me))}` : ''}`,
+                        label: html`<span class=${this.errorsOn(tab.id) ? 'text-destructive' : ''}>${tabIcon(tab.id)}${tabLabel(tab.id)}${this.errorsOn(tab.id) ? countBadge(this.errorsOn(tab.id)) : null}${onTab(participants, tab.id, me).length ? html`<span class="ml-1.5 inline-flex align-middle">${avatarStack(onTab(participants, tab.id, me), { size: 16, max: 3, label: `${tabLabel(tab.id)}: ${__('here')}` })}</span>` : null}</span>`,
                         content: shown(tab.id, () => html`<div class="space-y-5">
-                    ${index === 0 && titleField ? html`<div class="space-y-1">
+                    ${index === 0 && titleField ? html`<div class="space-y-1" data-field=${titleField} style=${presenceOutline(this.peersIn(titleField))}>
+                        ${this.peersIn(titleField).length ? presenceChip(this.peersIn(titleField), __('is here')) : null}
                         <label for="field-title" class="sr-only">${__('Title')}</label>
                         <input id="field-title" class=${`w-full rounded-lg border bg-background px-4 py-3 text-xl font-semibold text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring ${this.errors[titleField] ? 'border-destructive' : 'border-input'}`}
                             placeholder=${__('Add title')} .value=${String(this.values[titleField] ?? '')} @input=${(event: Event) => this.setTitle((event.target as HTMLInputElement).value)}

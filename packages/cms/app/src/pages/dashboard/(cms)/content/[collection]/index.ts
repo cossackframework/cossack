@@ -4,9 +4,10 @@ import { bulkBar } from '../../../../../dashboard/bulk';
 import { listFilters, listFooter, listTable } from '../../../../../dashboard/list-table';
 import { Avatar, AvatarGroup, HoverCard, Icon, NativeSelect, AlertDialog, Tooltip } from '@cossackframework/ui';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
-import { ENTRY_ACTION_IDS, entryAuthors, evaluateRule, isCmsError, languageName, mediaUrl, recordTitle, translationGroupOf, type BuiltinEntryAction, type EntryAction, type EntryColumn, type FieldFilter, type ListFilter, type RecordShape } from '@cossackframework/cms';
+import { ENTRY_ACTION_IDS, entryAuthors, evaluateRule, isCmsError, languageName, mediaUrl, participantColor, recordTitle, translationGroupOf, type BuiltinEntryAction, type EntryAction, type EntryColumn, type FieldFilter, type ListFilter, type RecordShape } from '@cossackframework/cms';
 import { duplicateEntry, importEntries, importItems, listExtras, routeResource, runEntryCommand, termOptions, type ImportReport } from '../../../../../cms/content';
 import type { TermOption } from '../../../../../cms/editor';
+import { avatarStack, type Someone } from '../../../../../cms/collab/presence';
 import { icon } from '../../../../../cms/icons';
 import { clampPerPage, iconButton, linkButton, notice, pageHeader, saveScreenPreferences, screenCookie, screenHelp, screenOptions, screenPreferences, shortDate, statusBadge } from '../../../../../cms/ui';
 
@@ -33,6 +34,8 @@ interface Row {
     url: string | null;
     /** Who wrote the entry, the main author first. */
     authors: { id: string; name: string; avatar: string | null }[];
+    /** Who has the entry open in its room right now. */
+    editing: Someone[];
     locale: string;
     /** Every site language: this entry, its translation, or none yet. */
     languages: { code: string; label: string; id: string | null; status: string }[];
@@ -189,6 +192,9 @@ export default class EntriesPage extends Cossack {
                 this.total = total;
             }
             const owners = await cms.users.getMany([...new Set(records.flatMap(record => entryAuthors(record)))]);
+            // Who is editing each entry now, from its room's draft row.
+            const editing = await cms.drafts.editors(resource.id, records.map(record => record.id)).catch(() => new Map<string, string[]>());
+            const editors = await cms.users.getMany([...new Set([...editing.values()].flat())]);
             const termIds = this.taxonomy ? records.flatMap(record => (record[this.taxonomy!.name] as string[] | undefined) ?? []) : [];
             const terms = await cms.taxonomies.getMany(termIds);
             const urls = collection ? await cms.entryUrls(collection, records) : new Map<string, string | null>();
@@ -207,6 +213,7 @@ export default class EntriesPage extends Cossack {
                     id: record.id, rev: record.rev, title: recordTitle(record, resource.titleField), slug: typeof record.slug === 'string' ? record.slug : '', status: String(record.status ?? ''),
                     url: visible(record),
                     authors: entryAuthors(record).map(id => owners.get(id)).filter(user => user !== undefined).map(user => ({ id: user.id, name: user.name || user.email, avatar: user.avatar })), locale: typeof record.locale === 'string' ? record.locale : '',
+                    editing: (editing.get(record.id) ?? []).map(id => editors.get(id)).filter(user => user !== undefined).map(user => ({ user: user.id, name: user.name || user.email, avatar: user.avatar, color: participantColor(user.id) })),
                     languages: this.languages.map(({ code, label }) => {
                         const entry = translations.get(translationGroupOf(record))?.get(code);
                         return { code, label, id: entry?.id ?? null, status: entry ? String(entry.status ?? '') : '' };
@@ -602,6 +609,7 @@ export default class EntriesPage extends Cossack {
                         <div class="min-w-0">
                             <a href=${`${base}/${row.id}`} class="font-medium text-foreground hover:text-primary no-underline">${row.title}</a>
                             ${row.status && row.status !== 'published' && ['all', 'mine'].includes(this.status) ? html` <span class="text-muted-foreground">— ${statusBadge(row.status)}</span>` : null}
+                            ${row.editing.length ? html` <span class="ml-1 inline-flex align-middle">${avatarStack(row.editing, { size: 16, max: 3, label: __('Editing now') })}</span>` : null}
                             ${this.quickActions(row)}
                         </div>
                     </div>` },
