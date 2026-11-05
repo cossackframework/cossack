@@ -3,8 +3,13 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ClientError, connect } from '@romedb/client';
-import type { DatabaseClient } from './database';
+import type { DatabaseClient, EmbeddedClient } from './database';
 import { decodePendingWrite, encodePendingWrite, PendingWriteConflictError, samePendingWrite, type PendingWrite, type PendingWriteStore } from './pending';
+
+/** What this entry uses of `@romedb/node`, an optional peer: a Node app on a service does not install it. */
+interface EmbeddedOpener {
+    openEmbedded(options: { path: string; create: boolean; timeoutMs?: number; maxOpen?: number }): Promise<EmbeddedClient>;
+}
 
 const MAX_FILE = 2_359_296;
 const ID = /^[A-Za-z0-9_-]{1,80}$/;
@@ -131,7 +136,9 @@ export async function connectNode(options: NodeConnectionOptions): Promise<Datab
     }
     const file = path.resolve(url.startsWith('file:') ? fileURLToPath(url) : url);
     // The addon loads only when a file is opened, so service URLs work where it can't load.
-    const { openEmbedded } = await import('@romedb/node/embedded-client');
+    // Published as source, so this also has to compile where the peer is not installed.
+    // @ts-ignore
+    const { openEmbedded } = await import('@romedb/node/embedded-client') as EmbeddedOpener;
     const open = (create: boolean) => openEmbedded({ path: file, create, ...timeout, ...(maxOpen === undefined ? {} : { maxOpen }) });
     if (await exists(file)) return open(false);
     await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
