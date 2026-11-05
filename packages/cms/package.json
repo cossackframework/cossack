@@ -21,7 +21,7 @@
   "scripts": {
     "dev": "pnpm --dir app run dev",
     "sync": "pnpm --dir app run sync",
-    "test": "vitest"
+    "test": "pnpm sync && vitest"
   },
   "dependencies": {
     "@cossackframework/auth": "workspace:*",
