@@ -64,6 +64,8 @@ export interface BlockOption {
     icon: string;
     category: BlockCategory;
     fields: EditorField[];
+    /** The field that is the block's text, shown as its summary in the tree. */
+    body?: string;
     /** A container: the types it holds (empty for any) and how many at most. Null for a leaf block. */
     children: { allowed: string[]; max: number | null } | null;
     /** Types this block goes inside alone, such as a column in columns. */

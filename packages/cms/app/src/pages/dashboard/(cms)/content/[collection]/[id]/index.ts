@@ -356,6 +356,7 @@ export default class EntryEditor extends Cossack {
         try {
             const { blocks } = await room.blocks(name);
             this.values = { ...this.values, [name]: blocks as EditorBlock[] };
+            this.followDialog(name);
             this.previewsSoon();
         } catch { /* the next snapshot brings it */ }
     }
@@ -370,13 +371,16 @@ export default class EntryEditor extends Cossack {
     @Client()
     private onSnapshot(snapshot: RoomSnapshot, options: { initial: boolean; resets: readonly string[] }) {
         const values = { ...this.values };
+        const trees: string[] = [];
         for (const [name, value] of Object.entries(snapshot.values)) {
             const field = this.fieldOf(name);
             if (!options.initial && !this.pending.accepts(field?.kind === 'blocks' ? `tree:${name}` : scalarKey(name))) continue;
             // A shared rich text document is the editor's own; the items of a multiple field come as a value.
             values[name] = value;
+            if (field?.kind === 'blocks') trees.push(name);
         }
         this.values = values;
+        for (const name of trees) this.followDialog(name);
         this.rev = snapshot.rev;
         if (options.initial) { this.pending.clear(); this.announce({ tab: this.mode }); }
         this.previewsSoon();
@@ -404,6 +408,7 @@ export default class EntryEditor extends Cossack {
         const next = applyTreeOp(this.blocks(name), op) as EditorBlock[] | null;
         if (!next) { void this.resyncBlocks(name); return; }
         this.values = { ...this.values, [name]: next };
+        this.followDialog(name, op);
         if (this.pending.accepts(`tree:${name}`) && treeHash(next) !== hash) void this.resyncBlocks(name);
         this.previewsSoon();
     }
@@ -459,15 +464,42 @@ export default class EntryEditor extends Cossack {
         this.presenceTimer = setTimeout(() => this.announce({ selection: { path, anchor, head } }), 100);
     }
 
-    /** Focus moved: the field (`data-field`) and the block (`data-block-tree-item`) around it. */
+    /** Focus moved: the field (`data-field`) and the block (`data-block-tree-item`, or the side panel's `data-block-sheet`) around it. */
     @On('focusin')
     @Client()
     private trackFocus(event: FocusEvent) {
         if (!this.room) return;
         const target = event.target instanceof Element ? event.target : null;
-        const field = target?.closest('[data-field]')?.getAttribute('data-field') ?? undefined;
-        const block = target?.closest('[data-block-tree-item]')?.getAttribute('data-block-tree-item') ?? undefined;
+        const field = target?.closest('[data-field]')?.getAttribute('data-field') || undefined;
+        const block = (target?.closest('[data-block-tree-item]')?.getAttribute('data-block-tree-item') || target?.closest('[data-block-sheet]')?.getAttribute('data-block-sheet')) || undefined;
         this.announce({ field, block });
+    }
+
+    /**
+     * The side panel shows its block as the room has it: a remote patch changes that one key (what this
+     * tab types in the others stays), a replaced tree brings the whole block, and a removed block closes it.
+     */
+    @Client()
+    private followDialog(field: string, op?: TreeOp) {
+        const dialog = this.blockDialog;
+        if (!dialog || dialog.embedded || dialog.field !== field) return;
+        if (op && (op.kind === 'insert' || op.kind === 'move' || op.id !== dialog.id)) return;
+        const block = findBlock(this.blocks(field), dialog.id);
+        if (!block) { this.blockDialog = null; return; }
+        const option = this.view?.blocks.find(entry => entry.name === block.type);
+        if (!option) return;
+        const valueOf = (entry: EditorField) => block.data[entry.name] ?? controlValue(entry, entry.defaultValue);
+        const { when: _previous, ...rest } = dialog;
+        if (op?.kind === 'patch') {
+            if (op.path.startsWith('data.')) {
+                const entry = option.fields.find(candidate => candidate.name === op.path.slice(5));
+                if (entry && entry.kind !== 'richtext') this.blockDialog = { ...dialog, values: { ...dialog.values, [entry.name]: valueOf(entry) }, errors: { ...dialog.errors, [entry.name]: '' } };
+            } else if (op.path === 'style' || op.path === 'layout') this.blockDialog = { ...dialog, style: styleValues(block) };
+            else if (op.path === 'when') this.blockDialog = block.when ? { ...rest, when: block.when } : rest;
+            return;
+        }
+        this.blockDialog = { ...rest, style: styleValues(block), ...(block.when ? { when: block.when } : {}),
+            values: Object.fromEntries(option.fields.filter(entry => entry.kind !== 'richtext').map(entry => [entry.name, valueOf(entry)])) };
     }
 
     /** Media previews follow the values, a little after they changed. */
@@ -494,10 +526,22 @@ export default class EntryEditor extends Cossack {
         return this.peers.find(peer => peer.peer === this.self)?.user ?? '';
     }
 
-    /** Other users whose focus is in a field of the entry (not in a block). */
+    /** Other users whose focus is in a field of the entry, by its presence anchor (not in a block). */
     private peersIn(field: string): Someone[] {
         const me = this.myUser();
         return this.peers.filter(peer => peer.user !== me && peer.presence.field === field && !peer.presence.block);
+    }
+
+    /**
+     * A row around one synced control, named for presence (`data-field`) and, when another editor
+     * is in it, outlined in their color with a chip under its label. The sidebar's rows are named
+     * by their key (`status`, `parent`, a taxonomy's name) and the search box's by `seo.<key>`;
+     * the resource's own fields have `fieldRow`, group fields the `FieldGroupView`.
+     */
+    private tracked(field: string, body: TemplateResult, options: { label?: TemplateResult | null; class?: string } = {}): TemplateResult {
+        const here = this.peersIn(field);
+        return html`<div class=${options.class ?? 'space-y-1'} data-field=${field} style=${presenceOutline(here)}>
+            ${options.label ?? null}${here.length ? presenceChip(here, __('is here')) : null}${body}</div>`;
     }
 
     /** Other users in each block, or dragging it, by block ID. */
@@ -1224,7 +1268,10 @@ export default class EntryEditor extends Cossack {
             // Rows outside a layout (a plugin resource's): the group view renders them with this editor's controls.
             case 'rows': return component(FieldGroupView, {
                 id, blocks: [{ _id: field.name, type: 'field/repeater', data: { name: field.name, label: field.label } }], options: this.view?.blocks ?? [], fields: [field], values: { [field.name]: value },
-                onChange: (_name: string, next: unknown) => change(next), hidden: new Set<string>(), control: (sub: EditorField, subValue: unknown, subChange: (value: unknown) => void, rows: RowPath, subId: string) => this.control(sub, subValue, subChange, { field: target.field, rows, key: sub.name }, subId),
+                onChange: (_name: string, next: unknown) => change(next), hidden: new Set<string>(),
+                // The field's row around this control shows who is in the field itself; the view shows who is in each row's controls.
+                presence: (anchor: string) => anchor === field.name ? [] : this.peersIn(anchor),
+                control: (sub: EditorField, subValue: unknown, subChange: (value: unknown) => void, rows: RowPath, subId: string) => this.control(sub, subValue, subChange, { field: target.field, rows, key: sub.name }, subId),
             });
             case 'text': if (field.format === 'markdown' && target.block === undefined) return this.markdownControl(field, value, change, id, target); break;
             case 'blocks': return this.blocksControl(field);
@@ -1355,17 +1402,15 @@ export default class EntryEditor extends Cossack {
             : button(__('Save draft'), 'update');
         const selectable = ['draft', 'pending', 'published'] as const;
         return box(view.publishable ? __('Publish') : __('Save'), html`
-            ${view.publishable && status !== 'trash' ? html`<div class="space-y-1">
-                <label for="field-status" class="block text-xs font-medium text-foreground">${__('Status')}</label>
-                ${component(NativeSelect, { id: 'field-status', size: 'sm', '@change': (event: Event) => this.set('status', (event.target as HTMLSelectElement).value) }, html`
-                    ${selectable.map(value => html`<option value=${value} ?selected=${(status === 'scheduled' ? 'published' : status) === value}>${value === 'published' && future ? __('Scheduled') : __(STATUS_LABELS[value])}</option>`)}`)}
-            </div>` : view.publishable ? html`<p class="flex items-center gap-2 text-sm text-muted-foreground">${__('Status')}: ${statusBadge(status)}</p>` : null}
-            ${view.publishable ? html`<div class="space-y-1">
-                <label for="field-publishedAt" class="block text-xs font-medium text-foreground">${live && !future ? __('Published on (UTC)') : __('Publish on (UTC)')}</label>
+            ${view.publishable && status !== 'trash' ? this.tracked('status', component(NativeSelect, { id: 'field-status', size: 'sm', '@change': (event: Event) => this.set('status', (event.target as HTMLSelectElement).value) }, html`
+                    ${selectable.map(value => html`<option value=${value} ?selected=${(status === 'scheduled' ? 'published' : status) === value}>${value === 'published' && future ? __('Scheduled') : __(STATUS_LABELS[value])}</option>`)}`),
+                { label: html`<label for="field-status" class="block text-xs font-medium text-foreground">${__('Status')}</label>` })
+            : view.publishable ? html`<p class="flex items-center gap-2 text-sm text-muted-foreground">${__('Status')}: ${statusBadge(status)}</p>` : null}
+            ${view.publishable ? this.tracked('publishedAt', html`
                 ${component(Input, { id: 'field-publishedAt', type: 'datetime-local', size: 'sm', '.value': String(this.values.publishedAt ?? ''), '@input': (event: Event) => this.set('publishedAt', (event.target as HTMLInputElement).value) })}
                 <p class="text-xs text-muted-foreground">${future && (status === 'published' || status === 'scheduled') ? __('Goes live at this time.') : __('Leave empty to publish immediately.')}</p>
-                ${this.errorFor('publishedAt')}
-            </div>` : null}
+                ${this.errorFor('publishedAt')}`,
+                { label: html`<label for="field-publishedAt" class="block text-xs font-medium text-foreground">${live && !future ? __('Published on (UTC)') : __('Publish on (UTC)')}</label>` }) : null}
             ${!isNew && (view.path !== null || view.route === 'forms') ? html`<div class="space-y-2 border-t border-border pt-3">
                 <div class="flex flex-wrap items-center gap-2">
                     ${component(Button, { type: 'button', variant: 'outline', size: 'sm', '@click': () => this.openPreview() }, __('Preview'))}
@@ -1422,22 +1467,23 @@ export default class EntryEditor extends Cossack {
         const description = String(seo.description ?? '') || renderSeoTemplate(this.seo.descriptionTemplate, variables);
         const url = `${this.seo.origin}${this.meta.url ?? (this.view?.path !== null ? entryUrl(this.view?.path, [String(this.values.slug ?? '') || 'slug']) ?? '' : '')}`;
         const counter = (text: string, ideal: number) => html`<span class=${`text-xs ${[...text].length > ideal ? 'text-amber-600' : 'text-muted-foreground'}`}>${[...text].length} / ${ideal}</span>`;
-        const text = (key: string, label: string, ideal: number, multiline = false) => html`<div class="space-y-1">
-            <div class="flex items-center justify-between"><label for=${`seo-${key}`} class="block text-sm font-medium text-foreground">${label}</label>${counter(String(seo[key] ?? ''), ideal)}</div>
-            ${multiline ? component(Textarea, { id: `seo-${key}`, rows: 3, '.value': String(seo[key] ?? ''), '@input': (event: Event) => this.setGroup('seo', key, (event.target as HTMLTextAreaElement).value) })
-                : component(Input, { id: `seo-${key}`, '.value': String(seo[key] ?? ''), '@input': (event: Event) => this.setGroup('seo', key, (event.target as HTMLInputElement).value) })}
-        </div>`;
+        // Each key is its own presence anchor (`seo.description`), so the chip sits on the row someone else is in.
+        const text = (key: string, label: string, ideal: number, multiline = false) => this.tracked(`seo.${key}`,
+            multiline ? component(Textarea, { id: `seo-${key}`, rows: 3, '.value': String(seo[key] ?? ''), '@input': (event: Event) => this.setGroup('seo', key, (event.target as HTMLTextAreaElement).value) })
+                : component(Input, { id: `seo-${key}`, '.value': String(seo[key] ?? ''), '@input': (event: Event) => this.setGroup('seo', key, (event.target as HTMLInputElement).value) }),
+            { label: html`<div class="flex items-center justify-between"><label for=${`seo-${key}`} class="block text-sm font-medium text-foreground">${label}</label>${counter(String(seo[key] ?? ''), ideal)}</div>` });
+        const check = (key: string, label: string) => this.tracked(`seo.${key}`, html`<label class="flex items-center gap-2 text-sm text-foreground cursor-pointer">
+            ${component(Checkbox, { checked: seo[key] === true, '@change': (event: Event) => this.setGroup('seo', key, (event.target as HTMLInputElement).checked) })} ${label}</label>`);
         const checks = this.checks();
         const tone = (status: Check['status']) => status === 'ok' ? 'bg-emerald-500' : status === 'warn' ? 'bg-amber-500' : 'bg-sky-500';
         const warnings = checks.filter(check => check.status === 'warn').length;
         return html`<section aria-labelledby="seo-title-heading" class="space-y-4 rounded-lg border border-border bg-card p-4">
             <h2 id="seo-title-heading" class="text-sm font-semibold text-foreground">${__('Search and sharing')}</h2>
-            ${this.seo.summary ? html`<div class="space-y-1">
-                <div class="flex items-center justify-between"><label for="field-summary" class="block text-sm font-medium text-foreground">${__('Summary')}</label>${counter(String(this.values.summary ?? ''), 300)}</div>
+            ${this.seo.summary ? this.tracked('summary', html`
                 ${component(Textarea, { id: 'field-summary', rows: 3, '.value': String(this.values.summary ?? ''), '@input': (event: Event) => this.set('summary', (event.target as HTMLTextAreaElement).value) })}
                 <p class="text-xs text-muted-foreground">${__('Two or three sentences that answer what this is about. Shown first by the theme, quoted by answer engines, and the meta description when there is none.')}</p>
-                ${this.errorFor('summary')}
-            </div>` : null}
+                ${this.errorFor('summary')}`,
+                { label: html`<div class="flex items-center justify-between"><label for="field-summary" class="block text-sm font-medium text-foreground">${__('Summary')}</label>${counter(String(this.values.summary ?? ''), 300)}</div>` }) : null}
             <details class="rounded-md border border-border" ?open=${this.checksOpen} @toggle=${(event: Event) => { this.checksOpen = (event.target as HTMLDetailsElement).open; }}>
                 <summary class="flex cursor-pointer items-center gap-2 px-3 py-2 text-sm text-foreground">
                     <span class=${`inline-block size-2.5 rounded-full ${warnings ? 'bg-amber-500' : 'bg-emerald-500'}`} aria-hidden="true"></span>
@@ -1460,17 +1506,15 @@ export default class EntryEditor extends Cossack {
                 </div>
                 ${text('socialTitle', __('Social title'), 70)}
                 ${text('socialDescription', __('Social description'), 200, true)}
-                <div class="space-y-1"><span class="block text-sm font-medium text-foreground">${__('Social image')}</span>
-                    ${this.mediaControl({ field: 'seo', key: 'image', group: true }, seo.image ?? null, __('Image'))}
-                    <p class="text-xs text-muted-foreground">${__('Shown when the entry is shared. Defaults to the featured image. 1200 × 630 pixels suits every network.')}</p></div>
+                ${this.tracked('seo.image', html`${this.mediaControl({ field: 'seo', key: 'image', group: true }, seo.image ?? null, __('Image'))}
+                    <p class="text-xs text-muted-foreground">${__('Shown when the entry is shared. Defaults to the featured image. 1200 × 630 pixels suits every network.')}</p>`,
+                    { label: html`<span class="block text-sm font-medium text-foreground">${__('Social image')}</span>` })}
             </details>
-            <div class="space-y-1"><label for="seo-canonical" class="block text-sm font-medium text-foreground">${__('Canonical URL')}</label>
-                ${component(Input, { id: 'seo-canonical', placeholder: url, '.value': String(seo.canonical ?? ''), '@input': (event: Event) => this.setGroup('seo', 'canonical', (event.target as HTMLInputElement).value) })}
-                <p class="text-xs text-muted-foreground">${__('Only when this content first appeared at another address.')}</p></div>
-            <label class="flex items-center gap-2 text-sm text-foreground cursor-pointer">
-                ${component(Checkbox, { checked: seo.noindex === true, '@change': (event: Event) => this.setGroup('seo', 'noindex', (event.target as HTMLInputElement).checked) })} ${__('Hide from search engines')}</label>
-            <label class="flex items-center gap-2 text-sm text-foreground cursor-pointer">
-                ${component(Checkbox, { checked: seo.cornerstone === true, '@change': (event: Event) => this.setGroup('seo', 'cornerstone', (event.target as HTMLInputElement).checked) })} ${__('Cornerstone content: one of the site\'s most important entries')}</label>
+            ${this.tracked('seo.canonical', html`${component(Input, { id: 'seo-canonical', placeholder: url, '.value': String(seo.canonical ?? ''), '@input': (event: Event) => this.setGroup('seo', 'canonical', (event.target as HTMLInputElement).value) })}
+                <p class="text-xs text-muted-foreground">${__('Only when this content first appeared at another address.')}</p>`,
+                { label: html`<label for="seo-canonical" class="block text-sm font-medium text-foreground">${__('Canonical URL')}</label>` })}
+            ${check('noindex', __('Hide from search engines'))}
+            ${check('cornerstone', __('Cornerstone content: one of the site\'s most important entries'))}
             ${this.linkSuggestions.length ? html`<div class="space-y-1">
                 <p class="text-sm font-medium text-foreground">${__('Related entries to link to')}</p>
                 <ul class="space-y-1 text-sm">${this.linkSuggestions.map(entry => html`<li class="flex items-center justify-between gap-2">
@@ -1480,13 +1524,12 @@ export default class EntryEditor extends Cossack {
             </div>` : null}
             <details class="space-y-3 text-sm">
                 <summary class="cursor-pointer text-muted-foreground">${__('Snippets and AI answers')}</summary>
-                <label class="flex items-center gap-2 text-sm text-foreground cursor-pointer">
-                    ${component(Checkbox, { checked: seo.nosnippet === true, '@change': (event: Event) => this.setGroup('seo', 'nosnippet', (event.target as HTMLInputElement).checked) })} ${__('No snippets: engines show the title only and do not quote the page in AI answers')}</label>
-                ${seo.nosnippet === true ? null : html`<div class="space-y-1"><label for="seo-maxSnippet" class="block text-sm font-medium text-foreground">${__('Longest quote, in characters')}</label>
+                ${check('nosnippet', __('No snippets: engines show the title only and do not quote the page in AI answers'))}
+                ${seo.nosnippet === true ? null : this.tracked('seo.maxSnippet', html`
                     ${component(Input, { id: 'seo-maxSnippet', type: 'number', min: 0, size: 'sm', placeholder: __('No limit'), '.value': seo.maxSnippet === undefined || seo.maxSnippet === null ? '' : String(seo.maxSnippet), '@input': (event: Event) => { const value = (event.target as HTMLInputElement).value; this.setGroup('seo', 'maxSnippet', value === '' ? null : Number(value)); } })}
-                    <p class="text-xs text-muted-foreground">${__('max-snippet: how much of the text results and AI Overviews may quote.')}</p></div>`}
-                <label class="flex items-center gap-2 text-sm text-foreground cursor-pointer">
-                    ${component(Checkbox, { checked: seo.noarchive === true, '@change': (event: Event) => this.setGroup('seo', 'noarchive', (event.target as HTMLInputElement).checked) })} ${__('No cached copy (Bing: also keeps the page out of Copilot training)')}</label>
+                    <p class="text-xs text-muted-foreground">${__('max-snippet: how much of the text results and AI Overviews may quote.')}</p>`,
+                    { label: html`<label for="seo-maxSnippet" class="block text-sm font-medium text-foreground">${__('Longest quote, in characters')}</label>` })}
+                ${check('noarchive', __('No cached copy (Bing: also keeps the page out of Copilot training)'))}
             </details>
             ${this.errorFor('seo')}
         </section>`;
@@ -1512,7 +1555,8 @@ export default class EntryEditor extends Cossack {
         const selected = (this.values[taxonomy.name] as string[] | undefined) ?? [];
         if (!taxonomy.hierarchical) {
             const suggestions = taxonomy.terms.filter(term => !selected.some(name => name.toLowerCase() === term.name.toLowerCase())).slice(0, 12);
-            return box(taxonomy.label, html`
+            // The box is one anchor: focus in its input, its terms or its new-term form counts as being in the taxonomy.
+            return box(taxonomy.label, this.tracked(taxonomy.name, html`
                 <div class="flex gap-2">
                     <input id=${`tags-${taxonomy.name}`} class=${CONTROL} list=${`tags-${taxonomy.name}-list`} placeholder=${__('Separate with commas')}
                         .value=${this.tagDrafts[taxonomy.name] ?? ''} aria-label=${`${__('Add')} ${taxonomy.label.toLowerCase()}`}
@@ -1525,10 +1569,10 @@ export default class EntryEditor extends Cossack {
                     ${name}<button type="button" class="text-muted-foreground hover:text-destructive bg-transparent border-none cursor-pointer" aria-label=${`${__('Remove')} ${name}`} @click=${() => this.removeTag(taxonomy.name, name)}>×</button></li>`)}</ul>` : null}
                 ${suggestions.length ? html`<p class="text-xs text-muted-foreground">${__('Choose from')}: ${suggestions.map((term, index) => html`${index ? ', ' : ''}<button type="button" class="text-primary hover:underline bg-transparent border-none p-0 cursor-pointer"
                     @click=${() => this.set(taxonomy.name, [...selected, term.name])}>${term.name}</button>`)}</p>` : null}
-                ${this.errorFor(taxonomy.name)}`);
+                ${this.errorFor(taxonomy.name)}`, { class: 'space-y-3' }));
         }
         const draft = this.termDrafts[taxonomy.name] ?? { name: '', parent: '' };
-        return box(taxonomy.label, html`
+        return box(taxonomy.label, this.tracked(taxonomy.name, html`
             <div class="max-h-56 space-y-1 overflow-y-auto">
                 ${taxonomy.terms.length ? taxonomy.terms.map(term => html`<label class="flex items-center gap-2 text-sm text-foreground cursor-pointer" style=${`padding-left: ${term.depth * 1.25}rem`}>
                     ${component(Checkbox, { checked: selected.includes(term.id), '@change': (event: Event) => this.toggleTerm(taxonomy.name, term.id, (event.target as HTMLInputElement).checked) })} ${term.name}</label>`)
@@ -1546,7 +1590,7 @@ export default class EntryEditor extends Cossack {
                     ${component(Button, { type: 'button', size: 'sm', variant: 'outline', disabled: !draft.name.trim(), '@click': () => this.addTerm(taxonomy.name, draft.name, draft.parent) }, `${__('New')} ${taxonomy.singular.toLowerCase()}`)}
                 </div>
             </details>` : null}
-            ${this.errorFor(taxonomy.name)}`);
+            ${this.errorFor(taxonomy.name)}`, { class: 'space-y-3' }));
     }
 
     private pickerModal(): TemplateResult {
@@ -1622,6 +1666,8 @@ export default class EntryEditor extends Cossack {
         return blockPanel({
             id: 'entry-block', open: Boolean(dialog && option), option, tab: dialog?.tab ?? 'general', style: dialog?.style ?? styleValues({}), presets: this.view?.presets ?? { colors: [], fontSizes: [], spacing: [] },
             styleTab: dialog ? !dialog.embedded : false,
+            // Focus in the panel counts as focus in the block; the others' presence there shows in the panel as in the tree.
+            ...(dialog && !dialog.embedded ? { block: dialog.id, field: dialog.field, editing: this.editingBlocks()[dialog.id] ?? [] } : {}),
             onTab: tab => this.showDialogTab(tab), onStyle: style => this.setDialogStyle(style), onClose: () => { this.blockDialog = null; },
             general: dialog && option ? html`${fields.length ? fields.map(entry => {
                 const id = `block-${dialog.id}-${entry.name}`;
@@ -1645,14 +1691,12 @@ export default class EntryEditor extends Cossack {
         // A template the active theme no longer has stays listed, so saving keeps it.
         const choices = current && !this.templates.includes(current) ? [...this.templates, current] : this.templates;
         const label = (name: string) => name.slice('entry-'.length).replace(/[-_]+/g, ' ').replace(/^./, letter => letter.toUpperCase());
-        return box(__('Template'), html`<div class="space-y-1">
-            <label for="field-template" class="sr-only">${__('Template')}</label>
+        return box(__('Template'), this.tracked('template', html`
             <select id="field-template" class=${CONTROL} @change=${(event: Event) => this.set('template', (event.target as HTMLSelectElement).value)}>
                 <option value="" ?selected=${!current}>${__('Default template')}</option>
                 ${choices.map(name => html`<option value=${name} ?selected=${name === current}>${label(name)}${this.templates.includes(name) ? '' : ` (${__('not in the active theme')})`}</option>`)}
             </select>
-            ${this.errorFor('template')}
-        </div>`);
+            ${this.errorFor('template')}`, { label: html`<label for="field-template" class="sr-only">${__('Template')}</label>` }));
     }
 
     /** The blocks the conditions hide, computed once per render for every group box. */
@@ -1662,7 +1706,7 @@ export default class EntryEditor extends Cossack {
         const view = this.view!;
         const body = component(FieldGroupView, {
             id: `group-${group.id}`, blocks: group.blocks, options: view.blocks, fields: view.fields, values: this.values, hidden: this.hidden, errors: this.errors,
-            onChange: (name: string, value: unknown) => this.set(name, value),
+            onChange: (name: string, value: unknown) => this.set(name, value), presence: (anchor: string) => this.peersIn(anchor),
             control: (field: EditorField, value: unknown, change: (value: unknown) => void, rows: RowPath, controlId: string) =>
                 this.control(field, value, change, rows.length ? { field: rows[0]!.field, rows, key: field.name } : { field: field.name }, controlId),
         });
@@ -1671,18 +1715,14 @@ export default class EntryEditor extends Cossack {
 
     private attributesBox(): TemplateResult {
         return box(__('Attributes'), html`
-            <div class="space-y-1">
-                <label for="field-parent" class="block text-xs font-medium text-foreground">${__('Parent')}</label>
+            ${this.tracked('parent', html`
                 <select id="field-parent" class=${CONTROL} @change=${(event: Event) => this.set('parent', (event.target as HTMLSelectElement).value)}>
                     <option value="" ?selected=${!this.values.parent}>(${__('no parent')})</option>
                     ${this.parents.map(option => html`<option value=${option.id} ?selected=${option.id === this.values.parent}>${'— '.repeat(option.depth)}${option.name}</option>`)}
                 </select>
-                ${this.errorFor('parent')}
-            </div>
-            <div class="space-y-1">
-                <label for="field-menuOrder" class="block text-xs font-medium text-foreground">${__('Order')}</label>
-                ${component(Input, { id: 'field-menuOrder', type: 'number', size: 'sm', '.value': String(this.values.menuOrder ?? '0'), '@input': (event: Event) => this.set('menuOrder', (event.target as HTMLInputElement).value) })}
-            </div>`, { id: 'box-attributes' });
+                ${this.errorFor('parent')}`, { label: html`<label for="field-parent" class="block text-xs font-medium text-foreground">${__('Parent')}</label>` })}
+            ${this.tracked('menuOrder', component(Input, { id: 'field-menuOrder', type: 'number', size: 'sm', '.value': String(this.values.menuOrder ?? '0'), '@input': (event: Event) => this.set('menuOrder', (event.target as HTMLInputElement).value) }),
+                { label: html`<label for="field-menuOrder" class="block text-xs font-medium text-foreground">${__('Order')}</label>` })}`, { id: 'box-attributes' });
     }
 
     /**
@@ -1696,19 +1736,19 @@ export default class EntryEditor extends Cossack {
         const person = (id: string) => this.people.find(entry => entry.id === id) ?? { id, name: __('Unknown user'), avatar: null };
         const set = (next: string[]) => this.set('authors', next);
         const choices = this.people.filter(entry => !shown.includes(entry.id)).map(entry => ({ value: entry.id, label: entry.name }));
-        return box(__('Authors'), html`<ul class="space-y-1.5" data-authors>${shown.map((id, index) => html`<li class="flex items-center gap-2 text-sm">
+        return box(__('Authors'), this.tracked('authors', html`<ul class="space-y-1.5" data-authors>${shown.map((id, index) => html`<li class="flex items-center gap-2 text-sm">
                 ${component(Avatar, { src: person(id).avatar ?? undefined, alt: person(id).name, size: 24 })}
                 <span class="min-w-0 flex-1 truncate text-foreground">${person(id).name}${index === 0 && shown.length > 1 ? html` <span class="text-xs text-muted-foreground">${__('main')}</span>` : null}</span>
                 ${this.chooseAuthors && index > 0 ? iconButton(`author-${id}-up`, 'arrow-up', `${__('Make main author')} ${person(id).name}`, () => set([id, ...shown.filter(entry => entry !== id)])) : null}
                 ${this.chooseAuthors && shown.length > 1 ? iconButton(`author-${id}-remove`, 'close-circle', `${__('Remove')} ${person(id).name}`, () => set(shown.filter(entry => entry !== id)), { danger: true }) : null}
             </li>`)}</ul>
             ${this.chooseAuthors && choices.length ? component(Combobox, { id: 'field-authors-add', options: choices, value: '', placeholder: __('Add an author…'), emptyLabel: __('Nobody matches.'),
-                onValueChange: (value: string) => { if (value) set([...shown, value]); } }) : null}`, { id: 'box-authors' });
+                onValueChange: (value: string) => { if (value) set([...shown, value]); } }) : null}`, { class: 'space-y-3' }), { id: 'box-authors' });
     }
 
     private discussionBox(view: EditorView): TemplateResult {
-        return box(__('Discussion'), html`<label class="flex items-center gap-2 text-sm text-foreground cursor-pointer">
-            ${component(Checkbox, { id: 'field-commentsOpen', checked: this.values.commentsOpen !== false, '@change': (event: Event) => this.set('commentsOpen', (event.target as HTMLInputElement).checked) })} ${__('Allow comments')}</label>
+        return box(__('Discussion'), html`${this.tracked('commentsOpen', html`<label class="flex items-center gap-2 text-sm text-foreground cursor-pointer">
+            ${component(Checkbox, { id: 'field-commentsOpen', checked: this.values.commentsOpen !== false, '@change': (event: Event) => this.set('commentsOpen', (event.target as HTMLInputElement).checked) })} ${__('Allow comments')}</label>`)}
             ${this.id === 'new' ? null : html`<a href=${`/dashboard/comments?collection=${view.route}&entry=${this.id}`} class="text-xs text-primary hover:underline">${__('Comments on this entry')}</a>`}`, { id: 'box-discussion' });
     }
 

@@ -184,7 +184,7 @@ export function optionsOf(types: ReadonlyMap<string, BlockDeclaration>): BlockOp
 /** A block type as the editors hold it. */
 export function blockOption(block: BlockDeclaration): BlockOption {
     return { name: block.name, label: block.label, description: block.description ?? '', icon: block.icon ?? '',
-        category: blockCategory(block), fields: editorFields(block.fields, []),
+        category: blockCategory(block), fields: editorFields(block.fields, []), ...(block.body ? { body: block.body } : {}),
         children: block.children ? { allowed: [...(block.children.allowed ?? [])], max: block.children.max ?? null } : null, parent: [...(block.parent ?? [])], supports: [...blockSupports(block)], field: block.field?.kind ?? '', input: Boolean(block.input), keywords: [...(block.keywords ?? [])], common: block.common === true };
 }
 

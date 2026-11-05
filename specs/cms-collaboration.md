@@ -59,14 +59,30 @@ in the order it receives them, broadcasts it, and keeps the shared draft between
   comes from the room before the editor mounts, and the editor mounts again when the room comes
   up after it. A block's rich text edited in the side panel and the items of a multiple rich
   text field are not co-edited: the panel's edits reach the document as steps when it closes,
-  and a multiple field travels as one value.
+  and a multiple field travels as one value. The side panel of a tree block follows the room
+  (`followDialog`): a remote patch of a key replaces that key alone, so what the tab types in
+  the panel's other fields stays; a replaced tree brings the whole block; a removed block closes
+  the panel. The tree's summary prefers the block type's `body` field, since a patch reorders
+  the data's keys.
 - **Presence.** Every peer is a browser tab; `groupPeers` groups them by user with the layout
-  tabs open. The header shows the other editors (`avatarStack`, color rings by
-  `participantColor`, up to five then "+N"); each layout tab's label shows the editors on it;
+  tabs open. The header shows everyone in the entry, the viewer first and named "(you)"
+  (`avatarStack` at 16 px, color rings by `participantColor`, up to five then "+N"); each
+  layout tab's label shows the editors on it;
   a field or block another editor is in is outlined in their color with a chip (`presenceChip`),
-  as is a dragged block (`BlockTree` `editing` and `onDrag`); carets carry names. A tab's own
-  user is left out of outlines, carets and stacks. Peers time out after 30 seconds; tabs send
-  presence every 15 seconds and `leave` on `pagehide`. The entries list shows who is in each
+  as is a dragged block (`BlockTree` `editing` and `onDrag`); carets carry names. Every synced
+  control is a presence anchor (`data-field`, compared as a string): the resource's fields
+  (`fieldRow`), group fields through `FieldGroupView` `presence` (a repeater's row fields as
+  `items:<rowId>.<name>`), the sidebar's rows by their key (`status`, `publishedAt`, `parent`,
+  `menuOrder`, `template`, `authors`, `commentsOpen`, a taxonomy's box by its name) and the
+  search box's keys (`seo.description`), the last two through the page's `tracked`. Focus in a
+  block's side panel (`data-block-sheet`) counts as focus in the block, and the panel shows who
+  else is in it; without a picture an avatar shows the editor's initials on their color. A
+  tab's own user is left out of outlines, carets and stacks. Peers time out after 30 seconds
+  (`PRESENCE_TIMEOUT`): the room drops them and broadcasts `left`, and each tab also forgets
+  the peers it has not heard from for as long by its own clock (`expiredPeers`), since a
+  restarted instance sends no `left`. Tabs send presence every 15 seconds and `leave` on
+  `pagehide`; a heartbeat from a tab the room no longer knows (throttled in the background, or
+  after a restart) re-creates the peer with the user's name and picture, as `join` does. The entries list shows who is in each
   entry's room from the draft rows (`cms.drafts.editors`, a 90-second window).
 - **Saving and divergence.** Any participant saves; before saving the page takes the room's
   draft for fields it has no change in flight for; after saving it calls `saved`, which reads

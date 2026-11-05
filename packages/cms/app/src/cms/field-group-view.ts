@@ -8,6 +8,7 @@ import { Client, ClientState, Component, Cossack } from '@cossackframework/core'
 import { component, html, type TemplateResult } from '@cossackframework/renderer';
 import { Badge, Button, Icon, Tabs } from '@cossackframework/ui';
 import { blockId, hiddenKey, type Block, type BlockDeclaration } from '@cossackframework/cms';
+import { presenceChip, presenceOutline, type Someone } from './collab/presence';
 import { controlValue, type BlockOption, type EditorBlock, type EditorField } from './editor';
 import { icon } from './icons';
 import { iconButton } from './ui';
@@ -32,6 +33,8 @@ export type FieldGroupViewProps = {
     control(field: EditorField, value: unknown, change: (value: unknown) => void, rows: RowPath, id: string): TemplateResult | null;
     /** The rows above this view, for nested views. */
     rows?: RowPath;
+    /** Who else is in a field, by its presence anchor (`data-field`): the field is outlined in their color with a chip. */
+    presence?(anchor: string): readonly Someone[];
 };
 
 /** The block types as declarations, enough for `fieldVisibility`: which blocks are field blocks and of what kind. */
@@ -54,6 +57,11 @@ export class FieldGroupView extends Cossack {
 
     private rowKey(name: string, id: string): string {
         return `${this.props.id}:${name}:${id}`;
+    }
+
+    /** A field's presence anchor here: its name under the rows above it (`items:<rowId>.title`). */
+    private anchor(name: string): string {
+        return [...(this.props.rows ?? []).map(row => `${row.field}:${row.id}`), name].join('.');
     }
 
     @Client()
@@ -118,11 +126,15 @@ export class FieldGroupView extends Cossack {
         const name = typeof block.data.name === 'string' ? block.data.name : '';
         const field = this.props.fields.find(entry => entry.name === name);
         if (!field) return null;
-        if (option.field === 'repeater') return this.repeater(block, field);
+        const anchor = this.anchor(name);
+        const here = this.props.presence?.(anchor) ?? [];
+        const chip = here.length ? presenceChip(here, __('is here')) : null;
+        if (option.field === 'repeater') return html`<div class="space-y-1.5" data-field=${anchor} style=${presenceOutline(here)}>${chip}${this.repeater(block, field)}</div>`;
         const id = [this.props.id, ...(this.props.rows ?? []).map(row => `${row.field}-${row.id}`), name].join('-');
         const error = this.props.errors?.[name];
-        return html`<div class="space-y-1.5">
+        return html`<div class="space-y-1.5" data-field=${anchor} style=${presenceOutline(here)}>
             ${field.kind === 'boolean' ? null : html`<label for=${id} class="block text-sm font-medium text-foreground">${field.label}${field.required ? html`<span class="text-destructive"> *</span>` : null}</label>`}
+            ${chip}
             ${this.props.control(field, this.props.values[name], value => this.props.onChange(name, value), this.props.rows ?? [], id)}
             ${field.description ? html`<p class="text-xs text-muted-foreground">${field.description}</p>` : null}
             ${error ? html`<p role="alert" class="text-xs text-destructive">${field.label} ${error}</p>` : null}
@@ -176,7 +188,7 @@ export class FieldGroupView extends Cossack {
                     ${collapsed ? null : html`<div class="border-t border-border p-3">${component(FieldGroupView, {
                         id: `${prefix}-${id}`, blocks: block.children ?? [], options: this.props.options, fields: field.fields, values: row, hidden: this.props.hidden, rows: rowPath,
                         onChange: (sub: string, value: unknown) => set(rows.map((entry, at) => at === index ? { ...entry, [sub]: value } : entry)),
-                        control: this.props.control,
+                        control: this.props.control, ...(this.props.presence ? { presence: this.props.presence } : {}),
                     })}</div>`}
                 </section>`;
             })}

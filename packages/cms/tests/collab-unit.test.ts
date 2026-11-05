@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-    applyTreeOp, checkPresence, COLLAB_COLORS, groupPeers, livePeers, parseRichTextPath, participantColor, patchKey, PendingKeys, richTextPath, scalarKey, StepLog, treeHash, treeOps,
+    applyTreeOp, checkPresence, COLLAB_COLORS, expiredPeers, groupPeers, livePeers, parseRichTextPath, participantColor, patchKey, PendingKeys, richTextPath, scalarKey, StepLog, treeHash, treeOps,
     type Block, type PeerState, type TreeOp,
 } from '../src/index';
 
@@ -30,6 +30,7 @@ describe('participants', () => {
         const peers = [peer('1', 'bob', 'edit', 100), peer('2', 'alice', 'seo', 100), peer('3', 'alice', 'edit', 100), peer('4', 'alice', 'edit', 100), peer('5', 'carol', undefined, 0)];
         const live = livePeers(peers, 30_050);
         expect(live.map(entry => entry.peer)).toEqual(['1', '2', '3', '4']);
+        expect(expiredPeers(peers, 30_050)).toEqual(['5']);
         expect(groupPeers(live)).toEqual([
             { user: 'alice', name: 'ALICE', avatar: null, color: participantColor('alice'), tabs: ['seo', 'edit'], peers: 3 },
             { user: 'bob', name: 'BOB', avatar: null, color: participantColor('bob'), tabs: ['edit'], peers: 1 },

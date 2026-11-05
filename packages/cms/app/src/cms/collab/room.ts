@@ -22,7 +22,7 @@ import type { Context, MiddlewareHandler } from 'hono';
 import { Node as ProseMirrorNode } from '@tiptap/pm/model';
 import { Step } from '@tiptap/pm/transform';
 import {
-    applyTreeOp, checkPresence, findBlock, groupPeers, livePeers, parseRichTextPath, participantColor, richTextProblem, stableJson, StepLog, systemPrincipal, treeHash, updateBlock,
+    applyTreeOp, checkPresence, expiredPeers, findBlock, groupPeers, livePeers, parseRichTextPath, participantColor, richTextProblem, stableJson, StepLog, systemPrincipal, treeHash, updateBlock,
     type Block, type Participant, type PeerPresence, type PeerState, type Principal, type RichTextDoc, type TreeOp,
 } from '@cossackframework/cms';
 import type { CmsHost } from '@cossackframework/cms/server';
@@ -287,10 +287,12 @@ export class EntryRoom extends Cossack {
         return [...new Set(livePeers(this.roomPeers.values(), Date.now()).map(peer => peer.user))];
     }
 
-    /** Peers that fell silent leave; the participants follow; the draft row names who is here. */
+    /** Peers that fell silent leave, and every tab hears it; the participants follow; the draft row names who is here. */
     private presenceChanged(): void {
-        const now = Date.now();
-        for (const [id, peer] of this.roomPeers) if (now - peer.at >= EDITORS_EVERY) this.roomPeers.delete(id);
+        for (const id of expiredPeers(this.roomPeers.values(), Date.now())) {
+            this.roomPeers.delete(id);
+            this.broadcastEvent('left', id);
+        }
         const participants = groupPeers(this.roomPeers.values());
         if (stableJson(participants) !== stableJson(this.participants)) this.participants = participants;
         if (this.roomPeers.size && !this.editorsTimer) this.editorsTimer = setInterval(() => { this.presenceChanged(); void this.reportEditors(); }, EDITORS_EVERY);
@@ -333,13 +335,18 @@ export class EntryRoom extends Cossack {
         return this.snapshot();
     }
 
+    /** A tab's state as the room keeps it: the user's name and picture, looked up when the tab arrives. */
+    private async peerState(cms: CmsHost, peer: string, userId: string, presence: unknown): Promise<PeerState> {
+        const user = await cms.users.get(userId).catch(() => null);
+        return { peer, user: userId, name: user?.name || user?.email || userId, avatar: user?.avatar ?? null, color: participantColor(userId), at: Date.now(), presence: checkPresence(presence) };
+    }
+
     @Server()
     async join(peer: unknown, presence: unknown): Promise<RoomSnapshot> {
         const { cms, principal } = this.contextOf();
         await this.load(cms);
         if (typeof peer !== 'string' || !PEER.test(peer)) throw new Error('Invalid peer.');
-        const user = await cms.users.get(principal.id).catch(() => null);
-        const state: PeerState = { peer, user: principal.id, name: user?.name || user?.email || principal.id, avatar: user?.avatar ?? null, color: participantColor(principal.id), at: Date.now(), presence: checkPresence(presence) };
+        const state = await this.peerState(cms, peer, principal.id, presence);
         this.roomPeers.set(peer, state);
         this.presenceChanged();
         this.broadcastEvent('presence', state);
@@ -461,9 +468,8 @@ export class EntryRoom extends Cossack {
         await this.load(cms);
         if (typeof peer !== 'string' || !PEER.test(peer)) return;
         const known = this.roomPeers.get(peer);
-        const next: PeerState = known
-            ? { ...known, at: Date.now(), presence: checkPresence(state) }
-            : { peer, user: principal.id, name: principal.id, avatar: null, color: participantColor(principal.id), at: Date.now(), presence: checkPresence(state) };
+        // A tab the room dropped as silent (throttled in the background, or the instance restarted) comes back under its user's name, not their ID.
+        const next: PeerState = known ? { ...known, at: Date.now(), presence: checkPresence(state) } : await this.peerState(cms, peer, principal.id, state);
         this.roomPeers.set(peer, next);
         this.presenceChanged();
         this.broadcastEvent('presence', next);
@@ -512,7 +518,27 @@ export class EntryRoom extends Cossack {
     onMount() {
         this.peerId = crypto.randomUUID();
         void this.enter(0);
-        this.heartbeat = setInterval(() => { if (this.joined) void this.presence(this.peerId, this.current).catch(() => undefined); }, HEARTBEAT);
+        this.heartbeat = setInterval(() => {
+            if (!this.joined) return;
+            void this.presence(this.peerId, this.current).catch(() => undefined);
+            // Peers this tab has not heard from have gone, whether or not the room said so (a restarted instance never does).
+            this.forget(expiredPeers(this.peers.values(), Date.now()));
+        }, HEARTBEAT);
+    }
+
+    /** Peers heard from, stamped with this tab's clock: the room's `at` is on another. */
+    @Client()
+    private hear(peers: readonly PeerState[]): void {
+        const now = Date.now();
+        for (const peer of peers) this.peers.set(peer.peer, { ...peer, at: now });
+        this.props.onPeers([...this.peers.values()], this.peerId);
+    }
+
+    @Client()
+    private forget(ids: readonly string[]): void {
+        let gone = false;
+        for (const id of ids) if (this.peers.delete(id)) gone = true;
+        if (gone) this.props.onPeers([...this.peers.values()], this.peerId);
     }
 
     onCleanup() {
@@ -534,8 +560,8 @@ export class EntryRoom extends Cossack {
                 const snapshot = await this.join(this.peerId, this.current);
                 const initial = !this.joined;
                 this.joined = true;
-                this.peers = new Map(snapshot.peers.map(peer => [peer.peer, peer]));
-                this.props.onPeers([...this.peers.values()], this.peerId);
+                this.peers = new Map();
+                this.hear(snapshot.peers);
                 // The page gets the room once it is joined: calls before the connection opens would fail.
                 if (initial) this.props.onReady(this.handle());
                 this.props.onSnapshot(snapshot, { initial, resets: initial ? [] : Object.keys(snapshot.versions) });
@@ -605,13 +631,12 @@ export class EntryRoom extends Cossack {
 
     @OnEvent('presence')
     private receivePresence(peer: PeerState) {
-        this.peers.set(peer.peer, peer);
-        this.props.onPeers([...this.peers.values()], this.peerId);
+        this.hear([peer]);
     }
 
     @OnEvent('left')
     private receiveLeft(peer: string) {
-        if (this.peers.delete(peer)) this.props.onPeers([...this.peers.values()], this.peerId);
+        this.forget([peer]);
     }
 
     /** Someone saved: everyone takes the saved values; the others hear who it was (the saver's own tab said "Saved." already). */
@@ -628,11 +653,11 @@ export class EntryRoom extends Cossack {
         for (const path of resets) void collabEditors.get(path)?.collab?.reload();
     }
 
-    /** Who else is here, as an avatar stack; the page shows the rest. */
+    /** Everyone in the entry as an avatar stack, the viewer first; the page shows the rest. */
     render(): TemplateResult | null {
-        const me = this.peers.get(this.peerId)?.user;
-        const others = this.participants.filter(participant => participant.user !== me);
-        if (!others.length) return null;
-        return html`<div class="flex items-center gap-2" data-room-participants=${others.length}>${avatarStack(others, { size: 28, max: 5, label: __('Also editing') })}</div>`;
+        const me = this.peers.get(this.peerId)?.user ?? '';
+        const everyone = [...this.participants.filter(participant => participant.user === me), ...this.participants.filter(participant => participant.user !== me)];
+        if (!everyone.length) return null;
+        return html`<div class="flex items-center gap-2" data-room-participants=${everyone.length}>${avatarStack(everyone, { size: 16, max: 5, label: __('In this entry'), self: me })}</div>`;
     }
 }

@@ -80,6 +80,11 @@ export function livePeers(peers: Iterable<PeerState>, now: number, timeout = PRE
     return [...peers].filter(peer => now - peer.at < timeout);
 }
 
+/** The peers not heard from within the timeout, by ID: they left without saying so. */
+export function expiredPeers(peers: Iterable<PeerState>, now: number, timeout = PRESENCE_TIMEOUT): string[] {
+    return [...peers].filter(peer => now - peer.at >= timeout).map(peer => peer.peer);
+}
+
 /** The room's users from its peers, by name. */
 export function groupPeers(peers: Iterable<PeerState>): Participant[] {
     const users = new Map<string, { user: string; name: string; avatar: string | null; color: string; tabs: Set<string>; peers: number }>();

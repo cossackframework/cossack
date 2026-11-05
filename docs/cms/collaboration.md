@@ -17,12 +17,14 @@ configured.
 
 ## What you see
 
-- **Who else is here.** Avatars of the other editors sit in the editor's header, ringed in
-  each one's color. A layout tab shows the avatars of the editors on it, so a crowded entry
-  reads at a glance. Hovering a stack names everyone.
+- **Who is here.** Small avatars of everyone in the entry sit in the editor's header, you
+  first, ringed in each one's color; without a picture an avatar shows the person's initials. A layout tab shows the avatars of the editors on it, so a crowded entry
+  reads at a glance. Hovering a stack names everyone. A tab that falls silent, through a closed
+  laptop or a lost connection, is gone from the stacks and chips within half a minute.
 - **Where they are.** A field or block another editor is in is outlined in their color with a
-  chip naming them; a block someone is dragging is outlined too. In rich text, their caret
-  carries their name and their selection is tinted.
+  chip naming them: the title, a field in a group, a sidebar setting such as the status or a
+  term, or a row of the search and sharing box; a block someone is dragging is outlined too.
+  In rich text, their caret carries their name and their selection is tinted.
 - **Saving.** Anyone may save or publish. The save takes the room's draft, so it holds what
   everyone wrote, and the others see "*Name* saved this entry." The entry's revisions record
   the saver. While the room is connected, leaving the editor asks nothing: unsaved work stays
@@ -43,7 +45,7 @@ the room's values:
 | Content | Rule |
 | --- | --- |
 | Title, slug, status, dates, choices, terms, field groups | Last change wins, per field. An editor's own change applies at once; a remote value of a field is ignored while the editor still has a change of that field on its way, because the room applied that change later. Presence shows who is in a field, so two people typing the same title at once is visible and rare. |
-| Blocks | Changes travel by block ID: insert after a sibling, move, remove, patch one key. Two editors working in different blocks never disturb each other; a move keeps the other editor's edits to the moved block. The room drops an op on a block that is gone and answers each op with a hash of its tree; an editor whose tree differs asks for the room's. |
+| Blocks | Changes travel by block ID: insert after a sibling, move, remove, patch one key. Two editors working in different blocks never disturb each other; a move keeps the other editor's edits to the moved block. The room drops an op on a block that is gone and answers each op with a hash of its tree; an editor whose tree differs asks for the room's. A block's settings typed in the side panel travel the same way, and an open panel follows the room: a key another editor changes updates in it, a block they remove closes it. |
 | Rich text | `prosemirror-collab`, with the room as the central authority: each document has a version and a log of recent steps; a batch made against an old version comes back with the steps the editor lacked, which rebase its own. Text typed by two people in one paragraph merges by character. |
 
 Rich text fields of the entry and the text of `core/richtext` blocks are edited this way. Rich

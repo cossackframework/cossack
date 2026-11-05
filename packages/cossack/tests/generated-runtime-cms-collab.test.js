@@ -1,7 +1,8 @@
 // Co-editing in a generated CMS application on Node: two signed-in users open one entry, and
 // its room carries their changes to each other: a title typed by one appears for the other,
-// rich text typed by both merges, presence names who is where, a save by one refreshes the
-// other, and a reload comes back to the shared draft.
+// rich text typed by both merges, a block's settings typed in the side panel reach the other's
+// tree and open panel, presence names who is where (the title, a search-box row, the status),
+// a save by one refreshes the other, and a reload comes back to the shared draft.
 import { afterEach, describe, expect, it } from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -53,7 +54,8 @@ describe.skipIf(!liveRomeDBTests())('generated CMS co-editing', () => {
       await eve.action('auth/login/index.ts', 'login', [{ email: 'eve@example.com', password: 'eve password 1' }]);
       expect(eve.jar.has('session_id')).toBe(true);
       // A post with one rich text block, saved as a draft by Ada.
-      const created = await ada.action(EDITOR, 'save', [{ title: 'Shared post', slug: '', status: 'draft', publishedAt: '', content: [{ _id: 'rt', type: 'core/richtext', data: { text: doc('Hello') } }] }, 'draft', 0],
+      const created = await ada.action(EDITOR, 'save', [{ title: 'Shared post', slug: '', status: 'draft', publishedAt: '',
+        content: [{ _id: 'rt', type: 'core/richtext', data: { text: doc('Hello') } }, { _id: 'hd', type: 'core/heading', data: { text: 'Head', level: 'h2' } }] }, 'draft', 0],
         { params: { collection: 'posts', id: 'new' }, state: { route: 'posts', id: 'new' } });
       expect(created.id, JSON.stringify(created.errors ?? created.error)).toMatch(/^[0-9a-f-]{36}$/);
       const url = `${origin}/dashboard/content/posts/${created.id}`;
@@ -61,10 +63,14 @@ describe.skipIf(!liveRomeDBTests())('generated CMS co-editing', () => {
       browser = await chromium.launch({ headless: true });
       const adaPage = await open(browser, origin, ada, url, errors);
       const evePage = await open(browser, origin, eve, url, errors);
-      // Each sees the other in the header once both joined the room.
-      await browserExpect(adaPage.locator('[data-room-participants]')).toHaveAttribute('data-room-participants', '1', { timeout: 20_000 });
-      await browserExpect(evePage.locator('[data-room-participants]')).toHaveAttribute('data-room-participants', '1', { timeout: 20_000 });
-      await browserExpect(adaPage.locator('[data-room-participants] [data-presence-user]')).toHaveCount(1);
+      // The header stack shows both once both joined the room, the viewer first.
+      await browserExpect(adaPage.locator('[data-room-participants]')).toHaveAttribute('data-room-participants', '2', { timeout: 20_000 });
+      await browserExpect(evePage.locator('[data-room-participants]')).toHaveAttribute('data-room-participants', '2', { timeout: 20_000 });
+      await browserExpect(adaPage.locator('[data-room-participants] [data-presence-user]')).toHaveCount(2);
+      // Neither has a picture: the avatars show initials; the names mark the viewer.
+      await browserExpect(adaPage.locator('[data-room-participants] .cs-avatar__fallback')).toHaveText(['A', 'E']);
+      await browserExpect(evePage.locator('[data-room-participants] .cs-avatar__fallback')).toHaveText(['E', 'A']);
+      await browserExpect(adaPage.locator('[data-room-participants] [data-presence]')).toHaveAttribute('title', 'Ada (you), Eve');
 
       // A title typed by Ada reaches Eve, who did not touch it.
       const adaTitle = adaPage.locator('#field-title');
@@ -73,6 +79,33 @@ describe.skipIf(!liveRomeDBTests())('generated CMS co-editing', () => {
       await browserExpect(evePage.locator('#field-title')).toHaveValue('Shared post, by Ada', { timeout: 10_000 });
       // Ada's focus in the title shows on Eve's screen, with Ada's name.
       await browserExpect(evePage.locator('[data-field="title"] [data-presence-chip]')).toContainText('Ada', { timeout: 10_000 });
+      // The meta description, a key of the search box, and the status select in the sidebar carry the chip on their rows too.
+      const adaMeta = adaPage.locator('#seo-description');
+      await adaMeta.click();
+      await adaMeta.fill('Described by Ada');
+      await browserExpect(evePage.locator('#seo-description')).toHaveValue('Described by Ada', { timeout: 10_000 });
+      await browserExpect(evePage.locator('[data-field="seo.description"] [data-presence-chip]')).toContainText('Ada', { timeout: 10_000 });
+      await adaPage.locator('#field-status').focus();
+      await browserExpect(evePage.locator('[data-field="status"] [data-presence-chip]')).toContainText('Ada', { timeout: 10_000 });
+      await browserExpect(evePage.locator('[data-field="seo.description"] [data-presence-chip]')).toHaveCount(0);
+
+      // A heading's text typed in Ada's side panel reaches Eve's tree; Eve opens the same panel and it follows Ada's next change.
+      await adaPage.locator('[data-block-tree-item="hd"] [aria-label="Edit Heading"]').click();
+      await adaPage.locator('#block-hd-text').fill('Head by Ada');
+      await browserExpect(evePage.locator('[data-block-tree-item="hd"] header')).toContainText('Head by Ada', { timeout: 10_000 });
+      // Ada's focus in the panel counts as the heading block: Eve sees her there.
+      await browserExpect(evePage.locator('[data-block-tree-item="hd"] [data-presence-chip]')).toContainText('Ada', { timeout: 10_000 });
+      await evePage.locator('[data-block-tree-item="hd"] [aria-label="Edit Heading"]').click();
+      await browserExpect(evePage.locator('#block-hd-text')).toHaveValue('Head by Ada');
+      await browserExpect(evePage.locator('[data-block-sheet="hd"] [data-presence-chip]')).toContainText('Ada', { timeout: 10_000 });
+      await adaPage.locator('#block-hd-text').fill('Head by Ada, again');
+      await adaPage.locator('#block-hd-level').selectOption('h3');
+      await browserExpect(evePage.locator('#block-hd-text')).toHaveValue('Head by Ada, again', { timeout: 10_000 });
+      await browserExpect(evePage.locator('#block-hd-level')).toHaveValue('h3', { timeout: 10_000 });
+      await adaPage.keyboard.press('Escape');
+      await evePage.keyboard.press('Escape');
+      await browserExpect(adaPage.locator('[data-block-sheet]')).toHaveCount(0);
+      await browserExpect(evePage.locator('[data-block-sheet]')).toHaveCount(0);
 
       // Both type into the same rich text block; the room merges the text.
       const adaText = adaPage.locator('[data-block-tree-item="rt"] .ProseMirror');
@@ -103,6 +136,7 @@ describe.skipIf(!liveRomeDBTests())('generated CMS co-editing', () => {
       const saved = await (await ada.request(`/api/cms/content/posts/${created.id}`)).json();
       expect(saved.item.title).toBe('Shared post, by Ada');
       expect(JSON.stringify(saved.item.content)).toContain('Eve says: Hello from Ada');
+      expect(JSON.stringify(saved.item.content)).toContain('"Head by Ada, again"');
 
       // The entries list names who is in the room: both editors, on the entry's row.
       expect(await ada.page('/dashboard/content/posts')).toMatch(/data-presence="?2"?/);

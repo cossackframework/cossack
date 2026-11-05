@@ -9,6 +9,7 @@ import { Button, Icon, Sheet } from '@cossackframework/ui';
 import type { ThemePresets } from '@cossackframework/cms';
 import type { BlockOption } from './editor';
 import { blockIcon, blockIconColor } from './icons';
+import { presenceChip, type Someone } from './collab/presence';
 import { blockTabs, styleControls, type BlockTab, type StyleValues } from './style-controls';
 
 export interface BlockPanelProps {
@@ -25,6 +26,11 @@ export interface BlockPanelProps {
     styleTab?: boolean;
     /** The closing button's label; "Done" by default. */
     doneLabel?: string;
+    /** The block and field the panel edits, for presence: focus in the panel counts as focus in the block. */
+    block?: string;
+    field?: string;
+    /** Other editors in this block right now. */
+    editing?: readonly Someone[];
     onTab(tab: BlockTab): void;
     onStyle(values: StyleValues): void;
     onClose(): void;
@@ -34,12 +40,13 @@ export function blockPanel(props: BlockPanelProps): TemplateResult {
     const option = props.option;
     const withStyle = props.styleTab !== false && !!option && option.supports.length > 0 && option.category !== 'data';
     return component(Sheet, { id: `${props.id}-panel`, open: props.open && !!option, side: 'right', size: '30rem', 'aria-label': option?.label ?? __('Block'), onOpenChange: (open: boolean) => { if (!open) props.onClose(); } },
-        option ? html`<form class="flex h-full flex-col" @submit=${(event: Event) => { event.preventDefault(); props.onClose(); }}>
+        option ? html`<form class="flex h-full flex-col" data-block-sheet=${props.block ?? ''} data-field=${props.field ?? ''} @submit=${(event: Event) => { event.preventDefault(); props.onClose(); }}>
             <header class="flex items-start gap-3 border-b border-border px-5 py-4">
                 <span class=${`mt-0.5 inline-flex shrink-0 [&_svg]:size-5 ${blockIconColor(option.category)}`}>${component(Icon, { entry: blockIcon(option.icon), size: 20 })}</span>
                 <div class="min-w-0 flex-1">
                     <h2 class="text-base font-semibold text-foreground">${option.label}</h2>
                     ${option.description ? html`<p class="text-xs text-muted-foreground">${option.description}</p>` : null}
+                    ${props.editing?.length ? html`<p class="mt-1">${presenceChip(props.editing, __('is editing this block too'))}</p>` : null}
                 </div>
                 <button type="button" class="inline-flex size-8 shrink-0 items-center justify-center rounded-md border-none bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer" aria-label=${__('Close')} @click=${() => props.onClose()}>✕</button>
             </header>

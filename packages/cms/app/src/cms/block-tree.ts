@@ -86,8 +86,11 @@ export function declarationsOf(options: readonly BlockOption[]): Map<string, Blo
 }
 
 /** A block's first text, for summaries. */
-export function blockSummary(block: EditorBlock, previews: Record<string, MediaPreview> = {}): string {
-    const text = Object.values(block.data).find((value): value is string => typeof value === 'string' && value.trim() !== '' && !previews[value]);
+export function blockSummary(block: EditorBlock, previews: Record<string, MediaPreview> = {}, option?: BlockOption): string {
+    const shown = (value: unknown): value is string => typeof value === 'string' && value.trim() !== '' && !previews[value];
+    // The block's body field first, then its fields in their declared order: a patch from the room may reorder the data's keys.
+    const names = [...(option?.body ? [option.body] : []), ...(option?.fields.map(field => field.name) ?? []), ...Object.keys(block.data)];
+    const text = names.map(name => block.data[name]).find(shown);
     return text ? text.replace(/[*_#>`]/g, '').slice(0, 120) : '';
 }
 
@@ -449,7 +452,7 @@ export class BlockTree extends Cossack {
         // The message names this block (or one of its fields): shown here in words, and the block flashes.
         const target = blockErrorTarget(this.props.error);
         const error = target?.id === block._id ? describeBlockError(this.props.error!, this.props.blocks, this.props.options) : '';
-        const summary = this.props.summary?.(block, option) ?? (option?.field ? (typeof block.data.description === 'string' ? block.data.description : '') : blockSummary(block, this.props.previews));
+        const summary = this.props.summary?.(block, option) ?? (option?.field ? (typeof block.data.description === 'string' ? block.data.description : '') : blockSummary(block, this.props.previews, option));
         const prefix = `${this.props.id}-${block._id}`;
         // Rich text is written in place, whichever way the block's other settings are edited; its
         // toolbar names it, so it has no label of its own above the block's header.
