@@ -1,7 +1,7 @@
 import { Cossack, Page, State, ClientState, Server, Client, On, OnWindow, PreventNavigation, type HeadValue } from '@cossackframework/core';
 import { Avatar, Button, Checkbox, Combobox, Icon, Input, Modal, NativeSelect, Textarea, CodeEditor, Tabs } from '@cossackframework/ui';
 import { html, component, unsafeHTML, type TemplateResult } from '@cossackframework/renderer';
-import { applyTreeOp, ARTICLE_TYPES, blockId, CORE_BLOCKS, entryAuthors, groupPeers, livePeers, patchKey, PendingKeys, richTextPath, scalarKey, treeHash, treeOps, systemPrincipal, entryChecks, evaluateRule, fieldVisibility, findBlock, flattenBlocks, flattenGroupFields, formatBytes, isCmsError, languageName, mediaKind, recordSchema, recordTitle, renderSeoTemplate, richTextBlocks, TITLE_SEPARATORS, updateBlock, type Block, type BlockCondition, type Check, type EmbeddedBlock, type JsonSchema, type MediaKind, type RecordShape, type RichTextDoc, type Participant, type PeerPresence, type PeerState, type TreeOp } from '@cossackframework/cms';
+import { applyTreeOp, ARTICLE_TYPES, blockId, CORE_BLOCKS, entryAuthors, groupPeers, livePeers, patchKey, PendingKeys, richTextPath, parseRichTextPath, scalarKey, treeHash, treeOps, systemPrincipal, entryChecks, evaluateRule, fieldVisibility, findBlock, flattenBlocks, flattenGroupFields, formatBytes, hasPermission, isCmsError, languageName, mediaKind, recordSchema, recordTitle, renderSeoTemplate, richTextBlocks, TITLE_SEPARATORS, updateBlock, PERMISSIONS, participantColor, formatNoteTarget, noteBlock, noteField, noteThreads, parseNoteTarget, type Block, type BlockCondition, type Check, type EmbeddedBlock, type JsonSchema, type MediaKind, type Note, type NoteAction, type NoteRange, type NoteStatus, type NoteThread, type RecordShape, type RichTextDoc, type Participant, type PeerPresence, type PeerState, type TreeOp } from '@cossackframework/cms';
 import { blockPanel } from '../../../../../../cms/block-panel';
 import { describeBlockError } from '../../../../../../cms/block-errors';
 import { styleValues, withStyle, type BlockTab, type StyleValues } from '../../../../../../cms/style-controls';
@@ -9,16 +9,17 @@ import { renderMarkdown, type CmsHost } from '@cossackframework/cms/server';
 import { applyEntryJson, contentField, editorView, entryJson, entryValues, fieldErrors, mediaPreviews, parentOptions, patternBlocks, routeResource, saveEntry, termOptions, type MediaPreview, type SaveIntent } from '../../../../../../cms/content';
 import { blockDefaults, controlValue, editorBlocks, editorInput, entryUrl, suggestedSlug, type EditorBlock, type EditorField, type EditorValues, type EditorView, type TermOption } from '../../../../../../cms/editor';
 import { collabEditors, RichTextField, richTextEditors, type RichTextFieldProps } from '../../../../../../cms/rich-text-field';
-import type { Caret } from '../../../../../../cms/rich-text.client';
-import { EntryRoom, type RoomHandle, type RoomSnapshot } from '../../../../../../cms/collab/room';
+import type { Caret, NoteMark } from '../../../../../../cms/rich-text.client';
+import { EntryRoom, type NoteChange, type RoomHandle, type RoomSnapshot } from '../../../../../../cms/collab/room';
 import { avatarStack, namesOf, onTab, presenceChip, presenceOutline, type Someone } from '../../../../../../cms/collab/presence';
-import { BlockTree } from '../../../../../../cms/block-tree';
+import { BlockTree, blockSummary } from '../../../../../../cms/block-tree';
+import { noteButton, noteMarker, notesRail, type NoteAnchorView, type NoteComposer } from '../../../../../../cms/notes-rail';
 import { bindingChoices, choicesControl, fieldControl, groupFields, multipleControl, type BindingChoice } from '../../../../../../cms/field-controls';
 import { chooserKind, MEDIA_ACCEPT, MEDIA_KIND_CHOICES, uploadFile } from '../../../../../../cms/media-chooser';
 import { FieldGroupView, plainBlocks, visibilityTypes, type RowPath } from '../../../../../../cms/field-group-view';
 import { box, CONTROL, countBadge, iconButton, linkButton, notice, rememberTab, shortDate, STATUS_LABELS, statusBadge, tabFromQuery } from '../../../../../../cms/ui';
 import { editorLayoutView } from '../../../../../../cms/editor-layout-view';
-import { ICONS } from '../../../../../../cms/icons';
+import { ICONS, icon } from '../../../../../../cms/icons';
 import { boxFields, layoutBoxes } from '@cossackframework/cms';
 import { conditionControl, conditionFields } from '../../../../../../cms/condition-control';
 import { notificationRulesControl } from '../../../../../../cms/notification-rules';
@@ -130,6 +131,33 @@ export default class EntryEditor extends Cossack {
     private previewRefresh: ReturnType<typeof setTimeout> | undefined;
     /** This tab is telling the room about its own save: the room's "saved by" is not news here. */
     private savingSelf = false;
+    // --- Notes: review threads on the entry, its fields, blocks and passages, through the room ---
+    @State() notes: Note[] = [];
+    /** Who the notes name, by user ID. */
+    @State() noteAuthors: Record<string, Someone> = {};
+    /** People a note can mention: the site's users but the viewer. */
+    @State() mentionable: { id: string; name: string }[] = [];
+    /** The viewer's user ID: their own notes can be changed and removed. */
+    @State() meId = '';
+    /** The viewer removes anyone's notes (user administrators). */
+    @State() canRemoveNotes = false;
+    /** Open notes keep the entry from being published (Settings → Writing). */
+    @State() notesGate = false;
+    /** The rail is open; `?notes=open` opens it on arrival, from the lists' markers and the home card. */
+    @State() notesOpen = false;
+    @ClientState() notesFilter: NoteStatus = 'open';
+    @ClientState() composer: NoteComposer | null = null;
+    @ClientState() editingNote: { id: string; body: string } | null = null;
+    /** The thread chosen in the rail, highlighted there and in the content. */
+    @ClientState() activeNote: string | null = null;
+    /** A note waiting for the viewer to confirm its removal. */
+    @ClientState() noteRemoval: string | null = null;
+    @ClientState() notesBusy = false;
+    @ClientState() notesError = '';
+    /** Text notes whose words the editor could not find: shown on their block or field instead. */
+    @ClientState() detachedNotes: string[] = [];
+    /** Where text notes sit now in the open editors, by note ID, for writing back after a save. */
+    private noteRanges = new Map<string, NoteRange>();
 
     head(): HeadValue {
         const title = this.view ? (this.id === 'new' ? `${__('New')} ${this.view.singular.toLowerCase()}` : `${__('Edit')} ${this.view.singular.toLowerCase()}`) : __('Editor');
@@ -186,6 +214,18 @@ export default class EntryEditor extends Cossack {
                 if (this.meta.url && view.publishable && record.status !== 'published') this.meta = { ...this.meta, url: null };
                 await this.loadRevisions(record.id);
                 if (view.path !== null || view.route === 'forms') this.previewLinks = await cms.previews.count(resource.id, record.id).catch(() => 0);
+            }
+            // The entry's notes, with who wrote them; opening the entry marks the viewer's mentions seen.
+            if (record && principal.kind === 'user') {
+                this.meId = principal.id;
+                this.canRemoveNotes = hasPermission(principal, PERMISSIONS.manageUsers);
+                this.notes = await cms.notes.forEntry(resource.id, record.id).catch(() => []);
+                const authors = await cms.users.getMany([...new Set([principal.id, ...this.notes.map(note => note.userId)])]);
+                this.noteAuthors = Object.fromEntries([...authors.values()].map(user => [user.id, { user: user.id, name: user.name || user.email, avatar: user.avatar, color: participantColor(user.id) }]));
+                this.mentionable = (await cms.users.list({ limit: 100 }).catch(() => ({ items: [] }))).items.filter(user => user.id !== principal.id).map(user => ({ id: user.id, name: user.name || user.email }));
+                this.notesGate = await cms.settings.get('writing.requireResolvedNotes');
+                this.notesOpen = this.c.req.query('notes') === 'open';
+                await cms.notes.markSeen(principal.id, resource.id, record.id).catch(() => undefined);
             }
             const settings = await cms.settings.all();
             this.seo = {
@@ -382,6 +422,9 @@ export default class EntryEditor extends Cossack {
         this.values = values;
         for (const name of trees) this.followDialog(name);
         this.rev = snapshot.rev;
+        // The room holds the notes while it lives: its list replaces what the page loaded.
+        this.notes = snapshot.notes;
+        this.noteAuthors = { ...this.noteAuthors, ...snapshot.people };
         if (options.initial) { this.pending.clear(); this.announce({ tab: this.mode }); }
         this.previewsSoon();
     }
@@ -502,6 +545,244 @@ export default class EntryEditor extends Cossack {
             values: Object.fromEntries(option.fields.filter(entry => entry.kind !== 'richtext').map(entry => [entry.name, valueOf(entry)])) };
     }
 
+    // --- Notes ---------------------------------------------------------------------------------
+
+    /** Open threads: the roots still waiting for review. */
+    private openRoots(): Note[] {
+        return this.notes.filter(note => !note.parentId && note.status === 'open');
+    }
+
+    /** Open threads on a field, counting those on its blocks and passages. */
+    private fieldNoteCount(field: string): number {
+        return this.openRoots().filter(note => { const target = parseNoteTarget(note.target); return !!target && noteField(target) === field; }).length;
+    }
+
+    /** Open threads by block ID in a blocks field, counting the passages inside each block. */
+    private blockNoteCounts(field: string): Record<string, number> {
+        const counts: Record<string, number> = {};
+        for (const note of this.openRoots()) {
+            const target = parseNoteTarget(note.target);
+            const block = target ? noteBlock(target) : null;
+            if (block && block.field === field) counts[block.block] = (counts[block.block] ?? 0) + 1;
+        }
+        return counts;
+    }
+
+    /** A field's name in words: its label, a taxonomy's, or a sidebar key's. */
+    private fieldLabel(name: string): string {
+        return this.fieldOf(name)?.label ?? this.view?.taxonomies.find(taxonomy => taxonomy.name === name)?.label ?? __(SIDEBAR_LABELS[name] ?? name);
+    }
+
+    /** The marker and the add button beside a field's label; nothing on a new entry, which has no room yet. */
+    private noteTools(field: string, options: { always?: boolean } = {}): TemplateResult | null {
+        if (this.id === 'new') return null;
+        const label = this.fieldLabel(field);
+        return html`<span class="ml-auto inline-flex items-center gap-1">
+            ${noteMarker(this.fieldNoteCount(field), label, () => this.showNotes({ field }))}
+            ${noteButton(`note-${field.replace(/[^a-zA-Z0-9_-]/g, '-')}`, label, () => this.startNote(formatNoteTarget({ kind: 'field', field })), options)}</span>`;
+    }
+
+    /** The notes of a rich text document, for its editor: their last known places and the words they quote; and the toolbar's Note. */
+    private notesFor(path: string | null): Partial<Pick<RichTextFieldProps, 'notes' | 'onNote'>> {
+        if (!path || this.id === 'new') return {};
+        const marks = this.notes.filter(note => !note.parentId && note.status === 'open' && note.target === `text:${path}`).map(note => ({ id: note.id, range: note.range, quote: note.quote }));
+        return {
+            notes: { marks, active: this.activeNote, onClick: (id: string) => this.selectNote(id, { reveal: false }), onMoved: (placed: readonly NoteMark[]) => this.onNotesPlaced(path, placed) },
+            // Without a passage, the note goes on the document's block, or on the field.
+            onNote: (range: NoteRange | null, quote: string) => {
+                const parsed = parseRichTextPath(path);
+                const whole = parsed?.block ? formatNoteTarget({ kind: 'block', field: parsed.field, block: parsed.block.id }) : formatNoteTarget({ kind: 'field', field: parsed?.field ?? path });
+                this.startNote(range ? `text:${path}` : whole, range, quote);
+            },
+        };
+    }
+
+    /** Where a document's notes sit now; those the editor could not place are detached. */
+    @Client()
+    private onNotesPlaced(path: string, placed: readonly NoteMark[]) {
+        const found = new Set<string>();
+        for (const mark of placed) { this.noteRanges.set(mark.id, { from: mark.from, to: mark.to }); found.add(mark.id); }
+        const here = (id: string) => this.notes.find(note => note.id === id)?.target === `text:${path}`;
+        const detached = this.notes.filter(note => !note.parentId && note.status === 'open' && here(note.id) && !found.has(note.id)).map(note => note.id);
+        const next = [...this.detachedNotes.filter(id => !here(id)), ...detached].sort();
+        if (next.join() !== [...this.detachedNotes].sort().join()) this.detachedNotes = next;
+    }
+
+    /** Where a thread sits, in words, for the rail. */
+    private noteAnchor(root: Note): NoteAnchorView {
+        const target = parseNoteTarget(root.target);
+        if (!target || target.kind === 'entry') return { label: __('This entry'), quote: '', detached: false };
+        if (target.kind === 'field') return { label: this.fieldLabel(target.field), quote: '', detached: false };
+        const at = noteBlock(target);
+        if (!at) return { label: this.fieldLabel(target.kind === 'text' ? target.path : ''), quote: root.quote, detached: this.detachedNotes.includes(root.id) };
+        const block = findBlock(this.blocks(at.field), at.block);
+        const option = block ? this.view?.blocks.find(entry => entry.name === block.type) : undefined;
+        const label = block ? option?.label ?? block.type : __('A removed block');
+        const summary = block ? blockSummary(block, this.previews, option) : '';
+        if (target.kind === 'block') return { label: summary ? `${label}: ${summary}` : label, quote: '', detached: !block };
+        return { label, quote: root.quote, detached: !block || this.detachedNotes.includes(root.id) };
+    }
+
+    @Client()
+    private startNote(target: string, range: NoteRange | null = null, quote = '') {
+        this.composer = { target, range, quote, parentId: null, body: '' };
+        this.editingNote = null;
+        this.activeNote = null;
+        this.notesFilter = 'open';
+        this.notesError = '';
+        this.notesOpen = true;
+    }
+
+    /** Open the rail on the notes of a field or a block: the first open thread there is chosen. */
+    @Client()
+    private showNotes(where: { field?: string; block?: string }) {
+        const first = this.openRoots().find(note => {
+            const target = parseNoteTarget(note.target);
+            if (!target) return false;
+            return where.block ? noteBlock(target)?.block === where.block : noteField(target) === where.field;
+        });
+        this.notesFilter = 'open';
+        this.notesOpen = true;
+        if (first) this.activeNote = first.id;
+    }
+
+    /** Choose a thread: the rail opens on it and the entry scrolls to where it sits. */
+    @Client()
+    private selectNote(id: string, options: { reveal?: boolean } = {}) {
+        const root = this.notes.find(note => note.id === id);
+        this.activeNote = id;
+        this.notesOpen = true;
+        if (root) this.notesFilter = root.status;
+        if (root && options.reveal !== false) void this.revealNote(root);
+    }
+
+    /** Scroll to a thread's place, on its tab, and flash it. */
+    @Client()
+    private async revealNote(root: Note) {
+        const target = parseNoteTarget(root.target);
+        if (!target || target.kind === 'entry') return;
+        const field = noteField(target);
+        const tab = field ? this.tabOf(field) : null;
+        if (tab && tab !== this.mode) { await this.showMode(tab); await new Promise(resolve => setTimeout(resolve, 50)); }
+        const block = noteBlock(target);
+        const element = document.querySelector<HTMLElement>(`.cms-note[data-note="${root.id}"]`)
+            ?? (block ? document.querySelector<HTMLElement>(`[data-block-tree-item="${block.block}"]`) : null)
+            ?? (field ? document.querySelector<HTMLElement>(`[data-field="${field}"]`) : null);
+        if (!element) return;
+        element.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        element.classList.add('cms-note-flash');
+        setTimeout(() => element.classList.remove('cms-note-flash'), 2000);
+    }
+
+    @Client()
+    private async postNote() {
+        const composer = this.composer;
+        if (!composer || !this.room || !composer.body.trim()) return;
+        this.notesBusy = true;
+        this.notesError = '';
+        try {
+            const note = await this.room.note({ kind: 'create', target: composer.target, range: composer.range, quote: composer.quote, body: composer.body, parentId: composer.parentId });
+            this.composer = null;
+            if (note) {
+                this.applyNote({ kind: 'created', note, author: this.noteAuthors[note.userId] ?? { user: note.userId, name: __('You'), avatar: null, color: participantColor(note.userId) } });
+                this.activeNote = note.parentId ?? note.id;
+            }
+        } catch (error) { this.notesError = (error as Error).message || __('The note could not be saved.'); }
+        finally { this.notesBusy = false; }
+    }
+
+    @Client()
+    private async noteAction(action: NoteAction) {
+        if (!this.room) return;
+        this.notesBusy = true;
+        this.notesError = '';
+        try { await this.room.note(action); }
+        catch (error) { this.notesError = (error as Error).message || __('The note could not be changed.'); }
+        finally { this.notesBusy = false; }
+    }
+
+    @Client()
+    private async saveNoteEdit() {
+        const editing = this.editingNote;
+        if (!editing || !editing.body.trim()) return;
+        await this.noteAction({ kind: 'edit', id: editing.id, body: editing.body });
+        if (!this.notesError) this.editingNote = null;
+    }
+
+    /** A note change from the room, or this tab's own, applied once. */
+    @Client()
+    private applyNote(change: NoteChange) {
+        switch (change.kind) {
+            case 'created':
+                if (this.notes.some(note => note.id === change.note.id)) return;
+                this.noteAuthors = { ...this.noteAuthors, [change.author.user]: change.author };
+                this.notes = [...this.notes.map(note => note.id === change.note.parentId ? { ...note, updatedAt: change.note.createdAt } : note), change.note];
+                return;
+            case 'edited':
+            case 'status':
+                this.notes = this.notes.map(note => note.id === change.note.id ? change.note : note);
+                return;
+            case 'removed': {
+                const gone = new Set(change.ids);
+                this.notes = this.notes.filter(note => !gone.has(note.id));
+                for (const id of gone) this.noteRanges.delete(id);
+                if (this.activeNote && gone.has(this.activeNote)) this.activeNote = null;
+                if (this.composer?.parentId && gone.has(this.composer.parentId)) this.composer = null;
+                if (this.editingNote && gone.has(this.editingNote.id)) this.editingNote = null;
+                return;
+            }
+            case 'moved':
+                this.notes = this.notes.map(note => { const move = change.moves.find(entry => entry.id === note.id); return move ? { ...note, range: move.range } : note; });
+                return;
+        }
+    }
+
+    /** After a save, the places of the passages that moved are written back, so a reload finds them. */
+    @Client()
+    private persistNoteMoves() {
+        if (!this.room) return;
+        const moves = this.notes.filter(note => !note.parentId && note.target.startsWith('text:')).flatMap(note => {
+            const live = this.noteRanges.get(note.id);
+            return live && (live.from !== note.range?.from || live.to !== note.range?.to) ? [{ id: note.id, range: live }] : [];
+        });
+        if (moves.length) void this.room.note({ kind: 'move', moves }).catch(() => undefined);
+    }
+
+    private notesRailView(): TemplateResult | null {
+        if (this.id === 'new') return null;
+        return notesRail({
+            id: 'entry-notes', open: this.notesOpen, threads: noteThreads(this.notes), filter: this.notesFilter, people: this.noteAuthors, me: this.meId, admin: this.canRemoveNotes,
+            active: this.activeNote, composer: this.composer, editing: this.editingNote, mentionable: this.mentionable, busy: this.notesBusy, error: this.notesError,
+            anchor: root => this.noteAnchor(root),
+            onClose: () => { this.notesOpen = false; }, onFilter: filter => { this.notesFilter = filter; }, onSelect: id => this.selectNote(id),
+            onCompose: composer => { this.composer = composer; }, onSubmit: () => { void this.postNote(); },
+            onEdit: editing => { this.editingNote = editing; }, onSaveEdit: () => { void this.saveNoteEdit(); },
+            onResolve: id => { void this.noteAction({ kind: 'resolve', id }); }, onReopen: id => { void this.noteAction({ kind: 'reopen', id }); }, onRemove: id => { this.noteRemoval = id; },
+        });
+    }
+
+    private noteRemovalModal(): TemplateResult {
+        const note = this.noteRemoval ? this.notes.find(entry => entry.id === this.noteRemoval) : undefined;
+        return component(Modal, { open: !!note, size: 'max-w-md', 'aria-label': __('Remove note'), onOpenChange: (open: boolean) => { if (!open) this.noteRemoval = null; } }, note ? html`
+            <div class="space-y-4">
+                <h2 class="text-lg font-semibold text-foreground">${note.parentId ? __('Remove this reply?') : __('Remove this thread?')}</h2>
+                <p class="text-sm text-muted-foreground">${note.parentId ? __('The reply is deleted for everyone.') : __('The note and its replies are deleted for everyone.')}</p>
+                <div class="flex justify-end gap-2">
+                    ${component(Button, { type: 'button', variant: 'outline', '@click': () => { this.noteRemoval = null; } }, __('Cancel'))}
+                    ${component(Button, { type: 'button', variant: 'destructive', '@click': () => { this.noteRemoval = null; void this.noteAction({ kind: 'remove', id: note.id }); } }, __('Remove'))}
+                </div>
+            </div>` : html``);
+    }
+
+    /** The header's Notes button: opens the rail, with the count of open threads. */
+    private notesToggle(): TemplateResult | null {
+        if (this.id === 'new') return null;
+        const open = this.openRoots().length;
+        return html`<button type="button" class=${`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-sm cursor-pointer [&_svg]:size-4 ${this.notesOpen ? 'border-amber-500 bg-amber-500/10 text-foreground' : 'border-border bg-background text-foreground hover:bg-muted'}`}
+            aria-pressed=${this.notesOpen ? 'true' : 'false'} data-notes-toggle=${open} @click=${() => { this.notesOpen = !this.notesOpen; }}>
+            ${component(Icon, { entry: icon('notes'), size: 16 })}${__('Notes')}${open ? html`<span class="rounded-full bg-amber-500/15 px-1.5 text-xs font-medium text-amber-700 dark:text-amber-300">${open}</span>` : null}</button>`;
+    }
+
     /** Media previews follow the values, a little after they changed. */
     @Client()
     private previewsSoon() {
@@ -540,8 +821,9 @@ export default class EntryEditor extends Cossack {
      */
     private tracked(field: string, body: TemplateResult, options: { label?: TemplateResult | null; class?: string } = {}): TemplateResult {
         const here = this.peersIn(field);
-        return html`<div class=${options.class ?? 'space-y-1'} data-field=${field} style=${presenceOutline(here)}>
-            ${options.label ?? null}${here.length ? presenceChip(here, __('is here')) : null}${body}</div>`;
+        return html`<div class=${`group ${options.class ?? 'space-y-1'}`} data-field=${field} style=${presenceOutline(here)}>
+            ${options.label ? html`<div class="flex items-center gap-2">${options.label}${this.noteTools(field)}</div>` : this.noteTools(field)}
+            ${here.length ? presenceChip(here, __('is here')) : null}${body}</div>`;
     }
 
     /** Other users in each block, or dragging it, by block ID. */
@@ -567,6 +849,7 @@ export default class EntryEditor extends Cossack {
             onTree: (peer: string, op: TreeOp, hash: string) => this.onRemoteTree(peer, op, hash),
             onPeers: (peers: readonly PeerState[], self: string) => this.onPeers(peers, self),
             onSaved: (by: string, rev: number) => this.onRemoteSaved(by, rev),
+            onNote: (change: NoteChange) => this.applyNote(change),
             onStatus: (status: { connected: boolean; dirty: boolean; diverged: boolean; oversized: boolean }) => this.onRoomStatus(status),
         };
     }
@@ -1068,6 +1351,7 @@ export default class EntryEditor extends Cossack {
             this.unsaved = false;
             this.autosaved = this.snapshot();
             void this.announceSaved();
+            this.persistNoteMoves();
             this.settleUrl();
         }
     }
@@ -1278,24 +1562,30 @@ export default class EntryEditor extends Cossack {
             // Rich text inside a block, or one item of a multiple field: its own editor for the picker and its blocks; inside the
             // side panel (a block embedded in rich text) it takes no blocks, as the panel cannot open a second one.
             // In a room, a block's rich text and the entry's own rich text fields are edited together; the side panel's and a list's items are not.
-            case 'richtext': if (target.block !== undefined || id !== field.name) return component(RichTextField, {
-                id, label: field.label, value: (value as RichTextDoc | null) ?? null, blocks: target.dialog ? [] : this.richTextBlocks(field), onChange: (doc: RichTextDoc) => change(doc),
-                onMedia: () => this.openPicker({ field: target.field, richText: true, editor: id }),
-                onInsertBlock: (type: string) => this.insertRichBlock(target.field, type, id), onEditBlock: (block: EmbeddedBlock) => this.editRichBlock(target.field, block, id),
-                bindings: this.bindings(), patternTitles: this.patternTitles,
-                ...this.collabFor(target.dialog || target.rows || target.group ? null : target.block !== undefined ? richTextPath(target.field, { id: target.block, key: target.key ?? field.name })
-                    : id === `field-${field.name}` && this.sharedRichText(field.name) ? richTextPath(field.name) : null),
-            });
-            return component(RichTextField, {
-                id, label: field.label, value: (value as RichTextDoc | null) ?? null,
-                blocks: this.richTextBlocks(field), bindings: this.bindings(),
-                onChange: (doc: RichTextDoc) => change(doc),
-                onMedia: () => this.openPicker({ field: field.name, richText: true }),
-                onInsertBlock: (type: string) => this.insertRichBlock(field.name, type),
-                onEditBlock: (block: EmbeddedBlock) => this.editRichBlock(field.name, block),
-                patternTitles: this.patternTitles,
-                ...this.collabFor(this.sharedRichText(field.name) ? richTextPath(field.name) : null),
-            });
+            case 'richtext': {
+                // The document's path in the room, when it is shared there: notes sit on shared documents alone.
+                const shared = target.block !== undefined || id !== field.name
+                    ? target.dialog || target.rows || target.group ? null : target.block !== undefined ? richTextPath(target.field, { id: target.block, key: target.key ?? field.name })
+                        : id === `field-${field.name}` && this.sharedRichText(field.name) ? richTextPath(field.name) : null
+                    : this.sharedRichText(field.name) ? richTextPath(field.name) : null;
+                if (target.block !== undefined || id !== field.name) return component(RichTextField, {
+                    id, label: field.label, value: (value as RichTextDoc | null) ?? null, blocks: target.dialog ? [] : this.richTextBlocks(field), onChange: (doc: RichTextDoc) => change(doc),
+                    onMedia: () => this.openPicker({ field: target.field, richText: true, editor: id }),
+                    onInsertBlock: (type: string) => this.insertRichBlock(target.field, type, id), onEditBlock: (block: EmbeddedBlock) => this.editRichBlock(target.field, block, id),
+                    bindings: this.bindings(), patternTitles: this.patternTitles,
+                    ...this.collabFor(shared), ...this.notesFor(shared),
+                });
+                return component(RichTextField, {
+                    id, label: field.label, value: (value as RichTextDoc | null) ?? null,
+                    blocks: this.richTextBlocks(field), bindings: this.bindings(),
+                    onChange: (doc: RichTextDoc) => change(doc),
+                    onMedia: () => this.openPicker({ field: field.name, richText: true }),
+                    onInsertBlock: (type: string) => this.insertRichBlock(field.name, type),
+                    onEditBlock: (block: EmbeddedBlock) => this.editRichBlock(field.name, block),
+                    patternTitles: this.patternTitles,
+                    ...this.collabFor(shared), ...this.notesFor(shared),
+                });
+            }
             // Media files open this editor's picker, which knows where the chosen file goes.
             default: if (field.media && field.kind === 'string') return this.mediaControl({ ...target, multiple: field.multiple, fileKind: chooserKind(field) }, value, field.label);
         }
@@ -1364,6 +1654,7 @@ export default class EntryEditor extends Cossack {
                 onChange: (blocks: EditorBlock[]) => this.set(field.name, blocks),
                 control: (entry: EditorField, value: unknown, change: (value: unknown) => void, block: EditorBlock, id: string) => this.control(entry, value, change, { field: field.name, block: block._id, key: entry.name }, id),
                 editing: this.editingBlocks(), onDrag: (id: string | null) => this.announce({ dragging: id ?? undefined }),
+                ...(this.id === 'new' ? {} : { notes: this.blockNoteCounts(field.name), onNote: (id: string) => this.startNote(formatNoteTarget({ kind: 'block', field: field.name, block: id })), onNotes: (id: string) => this.showNotes({ block: id }) }),
             })}
             ${this.errorFor(field.name)}
         </div>`;
@@ -1376,8 +1667,8 @@ export default class EntryEditor extends Cossack {
         const shared = field.shared && this.languages.multilingual;
         const control = this.control(field, value, entry => this.set(field.name, entry), { field: field.name }, id);
         const here = this.peersIn(field.name);
-        return html`<div class="space-y-1.5" data-shared=${shared ? 'true' : ''} data-field=${field.name} style=${presenceOutline(here)}>
-            ${field.kind === 'boolean' ? null : html`<label for=${id} class=${options.labelHidden ? 'sr-only' : 'block text-sm font-medium text-foreground'}>${field.label}${field.required ? html`<span class="text-destructive"> *</span>` : null}</label>`}
+        return html`<div class="group space-y-1.5" data-shared=${shared ? 'true' : ''} data-field=${field.name} style=${presenceOutline(here)}>
+            ${field.kind === 'boolean' ? this.noteTools(field.name) : html`<div class="flex items-center gap-2"><label for=${id} class=${options.labelHidden ? 'sr-only' : 'block text-sm font-medium text-foreground'}>${field.label}${field.required ? html`<span class="text-destructive"> *</span>` : null}</label>${this.noteTools(field.name)}</div>`}
             ${here.length ? presenceChip(here, __('is here')) : null}
             ${shared && this.sharedLocked ? html`<fieldset disabled class="contents">${control}</fieldset>` : control}
             ${field.description && !(field.kind === 'text' && field.format === 'markdown') ? html`<p class="text-xs text-muted-foreground">${field.description}</p>` : null}
@@ -1444,9 +1735,14 @@ export default class EntryEditor extends Cossack {
         try { host = new URL(this.seo.origin).host; } catch { /* no origin yet */ }
         const input = { title: String(this.values.title ?? ''), seoTitle: String(seo.title ?? ''), description: String(seo.description ?? ''), summary: String(this.values.summary ?? ''), host, article: this.seo.article };
         // Reading the content walks every block's text: typing in another field reuses the last result.
-        const key = [...Object.values(input), ...blocks];
+        const openNotes = this.openRoots().length;
+        const key = [...Object.values(input), ...blocks, openNotes, this.notesGate];
         if (this.checked && this.checked.key.length === key.length && this.checked.key.every((part, index) => part === key[index])) return this.checked.checks;
-        const checks = entryChecks({ ...input, blocks, types: new Map(CORE_BLOCKS.map(block => [block.name, block])) });
+        // Open notes are a soft check; with the Writing setting on, they hold publishing, and the check says so.
+        const notes: Check[] = openNotes ? [{ id: 'notes', status: 'warn', message: this.notesGate
+            ? (openNotes === 1 ? __('1 open note holds this entry back from publishing.') : `${openNotes} ${__('open notes hold this entry back from publishing.')}`)
+            : (openNotes === 1 ? __('1 open note is waiting for review.') : `${openNotes} ${__('open notes are waiting for review.')}`) }] : [];
+        const checks = [...entryChecks({ ...input, blocks, types: new Map(CORE_BLOCKS.map(block => [block.name, block])) }), ...notes];
         this.checked = { key, checks };
         return checks;
     }
@@ -1824,7 +2120,8 @@ export default class EntryEditor extends Cossack {
         // Forms have no URL: their slug names them where the Form block places them.
         const form = view.route === 'forms';
         const permalink = view.slug ? form ? String(this.values.slug ?? '') || '…' : entryUrl(view.path, [String(this.values.slug ?? '') || '…']) : null;
-        return html`<div class="space-y-6">
+        // The open Notes rail takes the right of the screen: the editor makes room for it, so the sidebar's boxes and Save stay reachable.
+        return html`<div class=${`space-y-6 ${this.notesOpen ? 'lg:pr-[26rem]' : ''}`}>
             <div class="flex flex-wrap items-center justify-between gap-3">
                 <div class="flex items-center gap-3">
                     <h1 class="text-2xl font-bold text-foreground">${this.id === 'new' ? `${__('New')} ${view.singular.toLowerCase()}` : `${__('Edit')} ${view.singular.toLowerCase()}`}</h1>
@@ -1832,6 +2129,7 @@ export default class EntryEditor extends Cossack {
                 </div>
                 <div class="flex items-center gap-3 text-sm">
                     ${this.id !== 'new' ? component(EntryRoom, this.roomProps()) : null}
+                    ${this.notesToggle()}
                     ${this.room && !this.roomStatus.connected ? html`<span role="status" class="text-xs text-muted-foreground">${__('Reconnecting…')}</span>` : null}
                     ${this.meta.url ? html`<a href=${this.meta.url} class="text-primary hover:underline" target="_blank" rel="noopener">${__('View')} ${view.singular.toLowerCase()} ↗</a>` : null}
                     ${form && this.id !== 'new' ? html`<a href=${`/dashboard/forms/${this.id}/submissions`} class="text-primary hover:underline">${__('Submissions')}</a>` : null}
@@ -1859,12 +2157,15 @@ export default class EntryEditor extends Cossack {
                         value: tab.id, ariaLabel: `${tabLabel(tab.id)}${this.errorsOn(tab.id) ? ` (${this.errorsOn(tab.id)})` : ''}${onTab(participants, tab.id, me).length ? `. ${__('Here')}: ${namesOf(onTab(participants, tab.id, me))}` : ''}`,
                         label: html`<span class=${this.errorsOn(tab.id) ? 'text-destructive' : ''}>${tabIcon(tab.id)}${tabLabel(tab.id)}${this.errorsOn(tab.id) ? countBadge(this.errorsOn(tab.id)) : null}${onTab(participants, tab.id, me).length ? html`<span class="ml-1.5 inline-flex align-middle">${avatarStack(onTab(participants, tab.id, me), { size: 16, max: 3, label: `${tabLabel(tab.id)}: ${__('here')}` })}</span>` : null}</span>`,
                         content: shown(tab.id, () => html`<div class="space-y-5">
-                    ${index === 0 && titleField ? html`<div class="space-y-1" data-field=${titleField} style=${presenceOutline(this.peersIn(titleField))}>
+                    ${index === 0 && titleField ? html`<div class="group space-y-1" data-field=${titleField} style=${presenceOutline(this.peersIn(titleField))}>
                         ${this.peersIn(titleField).length ? presenceChip(this.peersIn(titleField), __('is here')) : null}
                         <label for="field-title" class="sr-only">${__('Title')}</label>
-                        <input id="field-title" class=${`w-full rounded-lg border bg-background px-4 py-3 text-xl font-semibold text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring ${this.errors[titleField] ? 'border-destructive' : 'border-input'}`}
+                        <div class="relative">
+                        <input id="field-title" class=${`w-full rounded-lg border bg-background px-4 py-3 pr-20 text-xl font-semibold text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring ${this.errors[titleField] ? 'border-destructive' : 'border-input'}`}
                             placeholder=${__('Add title')} .value=${String(this.values[titleField] ?? '')} @input=${(event: Event) => this.setTitle((event.target as HTMLInputElement).value)}
                             ?required=${view.titleRequired} aria-invalid=${this.errors[titleField] ? 'true' : 'false'} aria-describedby=${this.errors[titleField] ? 'field-title-error' : undefined}>
+                        <span class="absolute right-3 top-1/2 -translate-y-1/2">${this.noteTools(titleField)}</span>
+                        </div>
                         ${this.errors[titleField] ? html`<p id="field-title-error" role="alert" class="text-xs text-destructive">${this.errors[titleField]}</p>` : null}
                     </div>` : null}
                     ${index === 0 && permalink !== null ? html`<div class="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
@@ -1890,6 +2191,15 @@ export default class EntryEditor extends Cossack {
             ${this.pickerModal()}
             ${this.blockDialogModal()}
             ${this.patternModal()}
+            ${this.notesRailView()}
+            ${this.noteRemovalModal()}
         </div>`;
     }
 }
+
+/** The sidebar's keys in words, for note anchors on them. */
+const SIDEBAR_LABELS: Record<string, string> = {
+    status: 'Status', publishedAt: 'Publish date', parent: 'Parent', menuOrder: 'Order', template: 'Template', authors: 'Authors', commentsOpen: 'Discussion', summary: 'Summary',
+    'seo.title': 'SEO title', 'seo.description': 'Meta description', 'seo.socialTitle': 'Social title', 'seo.socialDescription': 'Social description', 'seo.image': 'Social image',
+    'seo.canonical': 'Canonical URL', 'seo.noindex': 'Hide from search engines', 'seo.cornerstone': 'Cornerstone content', 'seo.nosnippet': 'No snippets', 'seo.maxSnippet': 'Longest quote', 'seo.noarchive': 'No cached copy',
+};

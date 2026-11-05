@@ -22,8 +22,8 @@ import type { Context, MiddlewareHandler } from 'hono';
 import { Node as ProseMirrorNode } from '@tiptap/pm/model';
 import { Step } from '@tiptap/pm/transform';
 import {
-    applyTreeOp, checkPresence, expiredPeers, findBlock, groupPeers, livePeers, parseRichTextPath, participantColor, richTextProblem, stableJson, StepLog, systemPrincipal, treeHash, updateBlock,
-    type Block, type Participant, type PeerPresence, type PeerState, type Principal, type RichTextDoc, type TreeOp,
+    applyTreeOp, checkNoteAction, checkPresence, CmsError, expiredPeers, findBlock, groupPeers, hasPermission, livePeers, parseRichTextPath, participantColor, PERMISSIONS, richTextProblem, stableJson, StepLog, systemPrincipal, treeHash, updateBlock,
+    type Block, type Note, type NoteAction, type NoteRange, type Participant, type PeerPresence, type PeerState, type Principal, type RichTextDoc, type TreeOp,
 } from '@cossackframework/cms';
 import type { CmsHost } from '@cossackframework/cms/server';
 import { editorView, entryValues, routeResource } from '../content';
@@ -31,7 +31,7 @@ import type { EditorValues, EditorView } from '../editor';
 import { collabEditors } from '../rich-text-field';
 import type { CollabTransport, StepsResult } from '../rich-text.client';
 import { richTextSchema } from '../rich-text-schema';
-import { avatarStack } from './presence';
+import { avatarStack, type Someone } from './presence';
 
 const PEER = /^[A-Za-z0-9_-]{8,64}$/;
 /** A scalar value or a block op, as JSON, at most. */
@@ -93,7 +93,19 @@ export interface RoomSnapshot {
     hashes: Record<string, string>;
     rev: number;
     peers: PeerState[];
+    /** The entry's notes, roots and replies, oldest first. */
+    notes: Note[];
+    /** The people the notes name, by user ID: their authors, and everyone who joined. */
+    people: Record<string, Someone>;
 }
+
+/** What the room tells every tab about a note. */
+export type NoteChange =
+    | { kind: 'created'; note: Note; author: Someone }
+    | { kind: 'edited'; note: Note }
+    | { kind: 'status'; note: Note }
+    | { kind: 'removed'; ids: string[] }
+    | { kind: 'moved'; moves: { id: string; range: NoteRange }[] };
 
 /** What the editor page does with the room, in the browser. */
 export interface RoomHandle {
@@ -112,6 +124,8 @@ export interface RoomHandle {
     saved(): Promise<void>;
     /** Start the draft over from the record, after a change outside the room. */
     reload(): Promise<void>;
+    /** Leave, change, resolve or remove a note; everyone hears of it. Answers the note made or changed. */
+    note(action: NoteAction): Promise<Note | null>;
 }
 
 export type EntryRoomProps = {
@@ -124,6 +138,8 @@ export type EntryRoomProps = {
     /** The peers in the room, this tab included. */
     onPeers(peers: readonly PeerState[], self: string): void;
     onSaved(by: string, rev: number): void;
+    /** A note was made, changed, resolved, removed or moved, by anyone in the room, this tab included. */
+    onNote(change: NoteChange): void;
     /** Connection and draft state for the page's indicators. */
     onStatus(status: { connected: boolean; dirty: boolean; diverged: boolean; oversized: boolean }): void;
 };
@@ -156,6 +172,10 @@ export class EntryRoom extends Cossack {
     private docs = new Map<string, ProseMirrorNode>();
     private logs = new Map<string, StepLog>();
     private roomPeers = new Map<string, PeerState>();
+    /** The entry's notes as the room holds them, the authority while it lives; `cms.notes` keeps them. */
+    private notes: Note[] = [];
+    /** Who the notes and the peers name, so tabs show names without looking anyone up. */
+    private people = new Map<string, Someone>();
     private baseRev = 0;
     private entryLoading: Promise<void> | undefined;
     private persistTimer: ReturnType<typeof setTimeout> | undefined;
@@ -202,7 +222,20 @@ export class EntryRoom extends Cossack {
                 for (const [path, version] of Object.entries(draft.versions)) if (Number.isSafeInteger(version) && version >= 0) this.logs.set(path, new StepLog(version));
                 this.dirty = true;
             } else this.values = values;
+            this.notes = await cms.notes.forEntry(resource.id, id).catch(() => []);
+            await this.know(cms, this.notes.map(note => note.userId));
         })().catch(error => { this.entryLoading = undefined; throw error; });
+    }
+
+    /** Make sure the people are known by name and picture, looking up those who are not yet. */
+    private async know(cms: CmsHost, userIds: readonly string[]): Promise<void> {
+        const missing = [...new Set(userIds)].filter(id => !this.people.has(id));
+        if (!missing.length) return;
+        const users = await cms.users.getMany(missing).catch(() => new Map());
+        for (const id of missing) {
+            const user = users.get(id);
+            this.people.set(id, { user: id, name: user?.name || user?.email || id, avatar: user?.avatar ?? null, color: participantColor(id) });
+        }
     }
 
     private richTextAt(path: string): { field: string; block?: { id: string; key: string } } | null {
@@ -256,7 +289,7 @@ export class EntryRoom extends Cossack {
     }
 
     private snapshot(): RoomSnapshot {
-        return { values: this.values, versions: this.versions(), hashes: this.hashes(), rev: this.rev, peers: [...this.roomPeers.values()] };
+        return { values: this.values, versions: this.versions(), hashes: this.hashes(), rev: this.rev, peers: [...this.roomPeers.values()], notes: this.notes, people: Object.fromEntries(this.people) };
     }
 
     /** A change happened: the draft is dirty and gets written soon. */
@@ -338,7 +371,9 @@ export class EntryRoom extends Cossack {
     /** A tab's state as the room keeps it: the user's name and picture, looked up when the tab arrives. */
     private async peerState(cms: CmsHost, peer: string, userId: string, presence: unknown): Promise<PeerState> {
         const user = await cms.users.get(userId).catch(() => null);
-        return { peer, user: userId, name: user?.name || user?.email || userId, avatar: user?.avatar ?? null, color: participantColor(userId), at: Date.now(), presence: checkPresence(presence) };
+        const state: PeerState = { peer, user: userId, name: user?.name || user?.email || userId, avatar: user?.avatar ?? null, color: participantColor(userId), at: Date.now(), presence: checkPresence(presence) };
+        this.people.set(userId, { user: userId, name: state.name, avatar: state.avatar, color: state.color });
+        return state;
     }
 
     @Server()
@@ -347,6 +382,9 @@ export class EntryRoom extends Cossack {
         await this.load(cms);
         if (typeof peer !== 'string' || !PEER.test(peer)) throw new Error('Invalid peer.');
         const state = await this.peerState(cms, peer, principal.id, presence);
+        // Notes written outside the room (the API) show to whoever joins next.
+        this.notes = await cms.notes.forEntry(this.resourceId, this.entryId).catch(() => this.notes);
+        await this.know(cms, this.notes.map(note => note.userId));
         this.roomPeers.set(peer, state);
         this.presenceChanged();
         this.broadcastEvent('presence', state);
@@ -473,6 +511,69 @@ export class EntryRoom extends Cossack {
         this.roomPeers.set(peer, next);
         this.presenceChanged();
         this.broadcastEvent('presence', next);
+    }
+
+    /**
+     * A note from a tab: stored, applied to the room's threads and told to everyone. Anyone in the
+     * room (so, anyone who may edit the entry) leaves, resolves and reopens notes; authors change
+     * their own, and authors and user administrators remove them.
+     */
+    @Server()
+    async note(peer: unknown, action: unknown): Promise<Note | null> {
+        const { cms, principal } = this.contextOf();
+        await this.load(cms);
+        if (typeof peer !== 'string' || !PEER.test(peer)) throw new CmsError('CMS_VALIDATION', 'Invalid peer.');
+        const input = checkNoteAction(action);
+        const tell = (change: NoteChange) => this.broadcastEvent('note', change);
+        const current = (id: string) => {
+            const note = this.notes.find(entry => entry.id === id);
+            if (!note) throw new CmsError('CMS_NOT_FOUND', 'The note no longer exists.');
+            return note;
+        };
+        switch (input.kind) {
+            case 'create': {
+                const note = await cms.notes.create({ resource: this.resourceId, recordId: this.entryId, userId: principal.id, target: input.target, range: input.range ?? null, quote: input.quote ?? '', body: input.body, parentId: input.parentId ?? null });
+                await this.know(cms, [principal.id]);
+                this.notes = [...this.notes.map(entry => entry.id === note.parentId ? { ...entry, updatedAt: note.createdAt } : entry), note];
+                tell({ kind: 'created', note, author: this.people.get(principal.id)! });
+                return note;
+            }
+            case 'edit': {
+                if (current(input.id).userId !== principal.id) throw new CmsError('CMS_FORBIDDEN', 'Only its author changes a note.');
+                const note = await cms.notes.edit(input.id, input.body);
+                if (!note) throw new CmsError('CMS_NOT_FOUND', 'The note no longer exists.');
+                this.notes = this.notes.map(entry => entry.id === note.id ? note : entry.id === note.parentId ? { ...entry, updatedAt: note.updatedAt } : entry);
+                tell({ kind: 'edited', note });
+                return note;
+            }
+            case 'resolve':
+            case 'reopen': {
+                if (current(input.id).parentId) throw new CmsError('CMS_VALIDATION', 'Resolve the thread, not a reply.');
+                const note = await cms.notes.setStatus(input.id, input.kind === 'resolve' ? 'resolved' : 'open', principal.id);
+                if (!note) throw new CmsError('CMS_NOT_FOUND', 'The note no longer exists.');
+                this.notes = this.notes.map(entry => entry.id === note.id ? note : entry);
+                tell({ kind: 'status', note });
+                return note;
+            }
+            case 'remove': {
+                const note = current(input.id);
+                if (note.userId !== principal.id && !hasPermission(principal, PERMISSIONS.manageUsers)) throw new CmsError('CMS_FORBIDDEN', 'Only its author or an administrator removes a note.');
+                await cms.notes.remove(note.id);
+                const ids = [note.id, ...this.notes.filter(entry => entry.parentId === note.id).map(entry => entry.id)];
+                this.notes = this.notes.filter(entry => !ids.includes(entry.id));
+                tell({ kind: 'removed', ids });
+                return null;
+            }
+            case 'move': {
+                // Only threads on a passage of this entry move, and only their roots carry a range.
+                const moves = input.moves.filter(move => { const note = this.notes.find(entry => entry.id === move.id); return !!note && !note.parentId && note.target.startsWith('text:'); });
+                if (!moves.length) return null;
+                await cms.notes.move(moves);
+                this.notes = this.notes.map(entry => { const move = moves.find(candidate => candidate.id === entry.id); return move ? { ...entry, range: move.range } : entry; });
+                tell({ kind: 'moved', moves: moves.map(move => ({ id: move.id, range: move.range })) });
+                return null;
+            }
+        }
     }
 
     @Server()
@@ -611,6 +712,7 @@ export class EntryRoom extends Cossack {
             },
             saved: async () => { await room.saved(room.peerId); },
             reload: async () => { await room.reload(); },
+            note: action => room.note(room.peerId, action),
         };
     }
 
@@ -637,6 +739,11 @@ export class EntryRoom extends Cossack {
     @OnEvent('left')
     private receiveLeft(peer: string) {
         this.forget([peer]);
+    }
+
+    @OnEvent('note')
+    private receiveNote(change: NoteChange) {
+        this.props.onNote(change);
     }
 
     /** Someone saved: everyone takes the saved values; the others hear who it was (the saver's own tab said "Saved." already). */

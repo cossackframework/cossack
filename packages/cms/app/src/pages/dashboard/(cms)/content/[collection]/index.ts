@@ -36,6 +36,8 @@ interface Row {
     authors: { id: string; name: string; avatar: string | null }[];
     /** Who has the entry open in its room right now. */
     editing: Someone[];
+    /** Open review notes on the entry. */
+    notes: number;
     locale: string;
     /** Every site language: this entry, its translation, or none yet. */
     languages: { code: string; label: string; id: string | null; status: string }[];
@@ -195,6 +197,7 @@ export default class EntriesPage extends Cossack {
             // Who is editing each entry now, from its room's draft row.
             const editing = await cms.drafts.editors(resource.id, records.map(record => record.id)).catch(() => new Map<string, string[]>());
             const editors = await cms.users.getMany([...new Set([...editing.values()].flat())]);
+            const noteCounts = await cms.notes.counts(resource.id, records.map(record => record.id)).catch(() => new Map<string, number>());
             const termIds = this.taxonomy ? records.flatMap(record => (record[this.taxonomy!.name] as string[] | undefined) ?? []) : [];
             const terms = await cms.taxonomies.getMany(termIds);
             const urls = collection ? await cms.entryUrls(collection, records) : new Map<string, string | null>();
@@ -214,6 +217,7 @@ export default class EntriesPage extends Cossack {
                     url: visible(record),
                     authors: entryAuthors(record).map(id => owners.get(id)).filter(user => user !== undefined).map(user => ({ id: user.id, name: user.name || user.email, avatar: user.avatar })), locale: typeof record.locale === 'string' ? record.locale : '',
                     editing: (editing.get(record.id) ?? []).map(id => editors.get(id)).filter(user => user !== undefined).map(user => ({ user: user.id, name: user.name || user.email, avatar: user.avatar, color: participantColor(user.id) })),
+                    notes: noteCounts.get(record.id) ?? 0,
                     languages: this.languages.map(({ code, label }) => {
                         const entry = translations.get(translationGroupOf(record))?.get(code);
                         return { code, label, id: entry?.id ?? null, status: entry ? String(entry.status ?? '') : '' };
@@ -610,6 +614,8 @@ export default class EntriesPage extends Cossack {
                             <a href=${`${base}/${row.id}`} class="font-medium text-foreground hover:text-primary no-underline">${row.title}</a>
                             ${row.status && row.status !== 'published' && ['all', 'mine'].includes(this.status) ? html` <span class="text-muted-foreground">— ${statusBadge(row.status)}</span>` : null}
                             ${row.editing.length ? html` <span class="ml-1 inline-flex align-middle">${avatarStack(row.editing, { size: 16, max: 3, label: __('Editing now') })}</span>` : null}
+                            ${row.notes ? html` <a href=${`${base}/${row.id}?notes=open`} class="ml-1 inline-flex items-center gap-1 rounded-full border border-amber-500/60 bg-amber-500/10 px-1.5 py-0.5 align-middle text-[10px] font-medium leading-none text-amber-700 no-underline hover:bg-amber-500/20 dark:text-amber-300"
+                                data-notes=${row.notes} title=${`${row.notes} ${row.notes === 1 ? __('open note') : __('open notes')}`} aria-label=${`${row.notes} ${row.notes === 1 ? __('open note on') : __('open notes on')} ${row.title}`}>${component(Icon, { entry: icon('notes'), size: 12 })}${row.notes}</a>` : null}
                             ${this.quickActions(row)}
                         </div>
                     </div>` },

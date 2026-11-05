@@ -23,7 +23,7 @@ export const HOST_TABLES = [
     'cms_preview_tokens', 'cms_autosaves', 'cms_file_variants', 'cms_redirects', 'cms_api_tokens', 'cms_webhooks', 'cms_webhook_deliveries',
     'cms_comments', 'cms_user_security', 'cms_passkeys', 'cms_auth_challenges', 'cms_areas', 'cms_form_sends', 'cms_form_mail', 'cms_form_results', 'cms_crawler_visits', 'cms_not_found', 'cms_cache',
     'cms_accounts', 'cms_sites', 'cms_site_domains', 'cms_handoffs', 'cms_session_sites', 'cms_memberships', 'cms_network', 'cossack_jobs', 'cossack_notifications',
-    'cms_drafts',
+    'cms_drafts', 'cms_notes', 'cms_note_mentions',
 ] as const;
 
 export const HOST_STEPS: readonly HostStep[] = [{
@@ -300,5 +300,20 @@ export const HOST_STEPS: readonly HostStep[] = [{
             logs TEXT NOT NULL, editors TEXT NOT NULL, editors_at INTEGER NOT NULL, at INTEGER NOT NULL)` },
         { rql: 'CREATE INDEX cms_drafts_editing ON cms_drafts (resource, editors_at)' },
         { rql: 'CREATE INDEX cms_drafts_at ON cms_drafts (at)' },
+    ],
+}, {
+    version: 21,
+    description: 'Notes: review comments on entries, fields, blocks and passages',
+    statements: [
+        // A thread is a root (parent_id NULL, carrying the status and the last activity) and its replies; the anchor is `target`, a passage adds its range and quote.
+        { rql: `CREATE TABLE cms_notes (id TEXT PRIMARY KEY, resource TEXT NOT NULL, record_id TEXT NOT NULL, parent_id TEXT, user_id TEXT NOT NULL, target TEXT NOT NULL,
+            text_range TEXT, quoted TEXT NOT NULL, body TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('open','resolved')), resolved_by TEXT, resolved_at INTEGER,
+            created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)` },
+        { rql: 'CREATE INDEX cms_notes_entry ON cms_notes (resource, record_id, status)' },
+        { rql: 'CREATE INDEX cms_notes_user ON cms_notes (user_id, created_at)' },
+        // Who a note mentions (or replies to), and when they opened the entry: "notes for you" and its count.
+        { rql: 'CREATE TABLE cms_note_mentions (note_id TEXT NOT NULL, thread_id TEXT NOT NULL, user_id TEXT NOT NULL, created_at INTEGER NOT NULL, seen_at INTEGER, PRIMARY KEY (note_id, user_id))' },
+        { rql: 'CREATE INDEX cms_note_mentions_user ON cms_note_mentions (user_id, seen_at)' },
+        { rql: 'CREATE INDEX cms_note_mentions_thread ON cms_note_mentions (thread_id)' },
     ],
 }];

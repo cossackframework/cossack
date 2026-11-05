@@ -8,7 +8,8 @@ plugin hosting. Publishing tools: scheduled entries, preview links, autosaves, r
 can compare and restore, automatic and managed redirects, per-entry SEO, resized image
 variants with crops and focal points, application passwords for the content API, signed
 webhooks, moderated comments, reusable patterns and translations. Several people edit one
-entry together through its room (live text, presence, a shared draft; `docs/cms/collaboration.md`). Forms are built from
+entry together through its room (live text, presence, a shared draft; `docs/cms/collaboration.md`) and leave
+review notes for each other on passages, blocks and fields (`docs/cms/notes.md`). Forms are built from
 input blocks with conditional logic, and each keeps its submissions in a table of its own,
 with notifications, webhooks and hooks like Gravity Forms'. Add it to an
 application with `cossack add cms`, which renders the shared `auth` and `dashboard` pages

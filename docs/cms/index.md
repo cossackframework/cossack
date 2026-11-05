@@ -29,6 +29,8 @@ puts a default theme in `src/plugins/default-theme/` for you to edit or copy. Se
   site, accounts shared across the network, and the network dashboard.
 - [Co-editing](/docs/cms/collaboration.md): several people in one entry, live text and
   presence through the entry's room, the shared draft, and the rules that merge changes.
+- [Notes](/docs/cms/notes.md): review notes on a passage, a block, a field or the entry,
+  mentions, the rail, resolving, and the publishing check.
 - [Block references](/docs/cms/block-references.md): blocks and bindings inside text, such
   as `{{ block core/button … /}}` and `{{ $site.title }}`.
 

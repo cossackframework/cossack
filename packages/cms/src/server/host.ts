@@ -44,6 +44,7 @@ import { CmsAccounts } from './accounts';
 import { CmsPreviews, type PreviewLink } from './previews';
 import { CmsAutosaves, type Autosave } from './autosaves';
 import { CmsDrafts } from './drafts';
+import { CmsNotes } from './notes';
 import { CmsRedirects } from './redirects';
 import { CmsApiTokens, type ApiTokenScope } from './api-tokens';
 import { CmsWebhooks } from './webhooks';
@@ -321,6 +322,8 @@ export class CmsHost {
     readonly autosaves: CmsAutosaves;
     /** Shared drafts of entries edited together, one per entry. */
     readonly drafts: CmsDrafts;
+    /** Editors' review notes on entries, fields, blocks and passages. */
+    readonly notes: CmsNotes;
     readonly redirects: CmsRedirects;
     readonly apiTokens: CmsApiTokens;
     readonly webhooks: CmsWebhooks;
@@ -487,6 +490,7 @@ export class CmsHost {
         this.previews = new CmsPreviews(this.db, { now: this.#now });
         this.autosaves = new CmsAutosaves(this.db, { now: this.#now });
         this.drafts = new CmsDrafts(this.db, { now: this.#now });
+        this.notes = new CmsNotes(this.db, { now: this.#now });
         this.files = options.storage ? new FileService(this.db, options.storage, { now: this.#now, ...(options.images ? { images: options.images } : {}), imageSettings: () => this.#imageSettings(), ...options.files }) : null;
         this.cache = new CmsCache(this.db, { now: this.#now });
         for (const module of modules) module.register?.({ hooks: this.hooks, settings: this.settings, taxonomies: this.taxonomies, collection: name => this.#collections.get(name), blocks: () => this.#blocks, now: this.#now });

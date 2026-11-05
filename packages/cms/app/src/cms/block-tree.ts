@@ -19,6 +19,7 @@ import type { MediaPreview } from './field-controls';
 import { blockIcon, blockIconColor, icon } from './icons';
 import { iconButton } from './ui';
 import { presenceChip, presenceOutline, type Someone } from './collab/presence';
+import { noteMarker } from './notes-rail';
 
 export type BlockTreeProps = {
     /** Page-unique prefix for control IDs. */
@@ -62,6 +63,12 @@ export type BlockTreeProps = {
     editing?: Record<string, readonly Someone[]>;
     /** A drag started (the block's ID) or ended (null), for the others' presence. */
     onDrag?(id: string | null): void;
+    /** Open notes on each block, by block ID, shown as a marker in its header that opens them. */
+    notes?: Record<string, number>;
+    /** Start a note on a block, from its header's button. */
+    onNote?(id: string): void;
+    /** Show a block's notes, from its marker. */
+    onNotes?(id: string): void;
 };
 
 /** Devices the hide toggles stand for, with their icons. */
@@ -475,6 +482,7 @@ export class BlockTree extends Cossack {
                     ${option?.field ? html` <code class="text-xs text-muted-foreground">${typeof block.data.name === 'string' && block.data.name ? block.data.name : fieldName(String(block.data.label ?? ''))}</code> ${component(Badge, { variant: 'outline' }, label)}` : null}
                     ${data ? html` ${component(Badge, { variant: 'outline' }, __('Data only'))}` : null}
                     ${here.length ? html` ${presenceChip(here, __('is here'))}` : null}
+                    ${this.props.notes?.[block._id] ? html` ${noteMarker(this.props.notes[block._id]!, label, () => this.props.onNotes?.(block._id))}` : null}
                     ${block.when ? html` ${component(Badge, { variant: 'outline' }, block.when.action === 'hide' ? __('Hidden if…') : __('Shown if…'))}` : null}
                     ${summary ? html`<span class="ml-2 text-muted-foreground">${summary}</span>` : null}
                     ${collapsed ? html`<span class="ml-2 text-muted-foreground">${held} ${held === 1 ? __('block') : __('blocks')}</span>` : null}
@@ -493,6 +501,7 @@ export class BlockTree extends Cossack {
                     ${iconButton(`${prefix}-out`, 'arrow-left', `${__('Move out')} ${label}`, () => this.shift(block._id, 'out'), { disabled: locked || !parent })}
                     ${iconButton(`${prefix}-in`, 'arrow-right', `${__('Move in')} ${label}`, () => this.shift(block._id, 'in', above?._id), { disabled: !canGoIn })}
                     ${option && this.props.onEdit && (option.fields.length > inlineFields.length || this.props.form || this.props.fieldGroup) ? iconButton(`${prefix}-edit`, 'pen', `${__('Edit')} ${label}`, () => this.props.onEdit!(block._id)) : null}
+                    ${this.props.onNote ? iconButton(`${prefix}-note`, 'chat-round-line', `${__('Add a note on')} ${label}`, () => this.props.onNote!(block._id)) : null}
                     ${this.props.lock || pinned ? null : iconButton(`${prefix}-remove`, 'trash-bin-trash', `${__('Remove')} ${label}`, () => { this.pendingRemove = block._id; }, { danger: true })}
                 </span>
             </header>

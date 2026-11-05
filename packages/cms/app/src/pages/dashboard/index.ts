@@ -33,6 +33,8 @@ export default class DashboardPage extends Cossack {
     /** Entries waiting for review, across collections, for editors. */
     @State() pending: Item[] = [];
     @State() pendingTotal = 0;
+    /** Open note threads the user started or is named in, newest activity first. */
+    @State() notesForMe: Item[] = [];
     /** Who signed in lately, for user managers. */
     @State() signIns: SignIn[] = [];
     @State() canSeeSignIns = false;
@@ -109,6 +111,22 @@ export default class DashboardPage extends Cossack {
         this.pending = pending.sort((a, b) => b.at - a.at).slice(0, 8);
         this.pendingTotal = pendingTotal;
         if (pendingTotal) waiting.push({ text: `${pendingTotal} ${pendingTotal === 1 ? __('entry is pending review.') : __('entries are pending review.')}`, href: '#pending-review' });
+        // Notes for you: open threads you started or were mentioned in, with the entry and the words they quote.
+        if (principal.kind === 'user') {
+            const threads = await cms.notes.forUser(principal.id, 8).catch(() => []);
+            const authors = await cms.users.getMany([...new Set(threads.map(note => note.userId))]);
+            const items: Item[] = [];
+            for (const note of threads) {
+                const [owner, name] = note.resource.split('/');
+                const record = await cms.resource(note.resource).get(note.recordId, context).catch(() => null);
+                if (!record) continue;
+                const author = authors.get(note.userId);
+                const excerpt = note.quote ? `“${note.quote.slice(0, 80)}”` : note.body.replace(/@\[([^\]]+)\]\([^)]+\)/g, '@$1').slice(0, 80);
+                items.push({ title: recordTitle(record, cms.resourceById(note.resource).titleField), href: `/dashboard/content/${owner === 'cms' ? name : `${owner}.${name}`}/${record.id}?notes=open`, at: note.updatedAt, meta: excerpt,
+                    ...(author ? { author: { name: author.name || author.email, avatar: author.avatar } } : {}) });
+            }
+            this.notesForMe = items;
+        }
         // Who signed in lately: sessions end at sign-out, so these are the accounts signed in now.
         this.canSeeSignIns = hasPermission(principal, PERMISSIONS.manageUsers);
         if (this.canSeeSignIns) {
@@ -176,6 +194,7 @@ export default class DashboardPage extends Cossack {
                             ${entry.note ? html`<dd class="text-xs text-muted-foreground">${entry.note}</dd>` : null}
                         </a>`)}
                     </dl>`, { id: 'box-glance' })}
+                    ${this.notesForMe.length ? html`<div id="notes-for-you">${box(__('Notes for you'), list(this.notesForMe, ''), { id: 'box-notes', extra: component(Badge, { variant: 'warning' }, String(this.notesForMe.length)) })}</div>` : null}
                     ${this.pendingTotal ? html`<div id="pending-review">${box(__('Waiting for review'), html`${list(this.pending, '')}
                         ${this.pendingTotal > this.pending.length ? html`<p class="mt-3 text-xs"><a href="/dashboard/content/posts?status=pending" class="text-primary hover:underline">${__('Show everything pending')}</a></p>` : null}`,
                         { id: 'box-pending', extra: component(Badge, { variant: 'warning' }, String(this.pendingTotal)) })}</div>` : null}

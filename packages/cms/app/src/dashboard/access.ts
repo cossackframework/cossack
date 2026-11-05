@@ -145,6 +145,11 @@ export async function dashboardStatus(c: Context): Promise<DashboardStatus[]> {
         pending += count;
     }
     if (pending) items.push({ id: 'pending-review', label: 'Pending review', href: `/dashboard/content/${first}?status=pending`, count: pending, tone: 'warning' });
+    // Notes that name the user, in entries they have not opened since.
+    if (principal.kind === 'user') {
+        const unseen = await cms.notes.unseen(principal.id).catch(() => 0);
+        if (unseen) items.push({ id: 'notes', label: 'Notes for you', href: '/dashboard#notes-for-you', count: unseen });
+    }
     if (can(PERMISSIONS.manageSubmissions) && cms.collections().some(collection => collection.name === 'forms')) {
         const fresh = await cms.forms.all().then(forms => cms.forms.inboxCounts(forms, principal)).then(counts => [...counts.values()].reduce((sum, count) => sum + count.fresh, 0)).catch(() => 0);
         if (fresh) items.push({ id: 'submissions', label: 'New submissions', href: '/dashboard/forms', count: fresh });

@@ -305,11 +305,24 @@ export async function saveEntry(cms: CmsHost, route: string, id: string | null, 
     if (view.publishable) {
         const current = typeof values.status === 'string' && ['draft', 'pending', 'scheduled', 'published'].includes(values.status) ? values.status : 'draft';
         input.status = intent === 'publish' ? 'published' : intent === 'draft' ? 'draft' : intent === 'trash' ? 'trash' : intent === 'restore' ? 'draft' : current;
+        if (id && input.status === 'published') await assertNotesResolved(cms, resource.id, id, principal);
     }
     const record = id ? await repository.update(id, input, { principal, expectedRevision: revision }) : await repository.create(input, { principal });
     // The saved entry replaces the editor's autosave.
     await cms.discardAutosave(resource.id, id ?? 'new', principal).catch(() => undefined);
     return record;
+}
+
+/**
+ * With "Open notes hold publishing" on (Settings → Writing), an entry that is not live yet cannot
+ * be published or scheduled while it has open notes; an entry already live keeps being updated.
+ */
+export async function assertNotesResolved(cms: CmsHost, resourceId: string, id: string, principal: Principal): Promise<void> {
+    if (!(await cms.settings.get('writing.requireResolvedNotes'))) return;
+    const current = await cms.resource(resourceId).get(id, { principal });
+    if (!current || current.status === 'published' || current.status === 'scheduled') return;
+    const open = (await cms.notes.counts(resourceId, [id])).get(id) ?? 0;
+    if (open) throw new CmsError('CMS_VALIDATION', open === 1 ? 'Resolve the open note before publishing.' : `Resolve the ${open} open notes before publishing.`, { fields: { status: 'Open notes hold publishing.' } });
 }
 
 /** Fields a copy of an entry does not take: its identity, its slug (derived again), its publication and its translation group. */

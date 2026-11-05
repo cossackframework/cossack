@@ -11,8 +11,10 @@ import { Placeholder } from '@tiptap/extensions';
 import { safeImageUrl, safeLinkUrl, type EmbeddedBlock, type RichTextDoc } from '@cossackframework/cms';
 import { blockOf, cmsBlock, richTextExtensions, type BlockView } from './rich-text-schema';
 import { CollabSession, collabPlugins, type Caret, type CollabOptions } from './collab/rich-text-collab.client';
+import { notesPlugin, setNotes, type NoteMark, type NoteMarkInput, type NotesPluginOptions } from './collab/rich-text-notes.client';
 
 export type { Caret, CollabOptions, CollabTransport, StepsResult } from './collab/rich-text-collab.client';
+export type { NoteMark, NoteMarkInput } from './collab/rich-text-notes.client';
 
 export type RichTextCommand =
     | 'paragraph' | 'heading2' | 'heading3' | 'heading4' | 'bold' | 'italic' | 'underline' | 'strike' | 'code'
@@ -38,6 +40,10 @@ export interface RichTextHandle {
     setContent(doc: RichTextDoc | null): void;
     /** The current selection, as ProseMirror positions. */
     selection(): { anchor: number; head: number };
+    /** The document's text between two positions. */
+    textBetween(from: number, to: number): string;
+    /** Place the notes on their passages (with `notes`); the plugin answers through `onMoved` with where each one sits. */
+    setNotes(inputs: readonly NoteMarkInput[], active: string | null): void;
     /** The editor's part in the room, with `collab`. */
     collab: CollabSession | null;
     focus(): void;
@@ -61,6 +67,8 @@ export interface RichTextOptions {
     onCaret?(anchor: number, head: number): void;
     /** Take part in the entry's room: the document comes from it and steps go through it. */
     collab?: CollabOptions;
+    /** Show notes on passages, and say when they move or are clicked. */
+    notes?: NotesPluginOptions;
 }
 
 /** The editor's card for an embedded block: the block's name and Edit and Remove buttons. */
@@ -144,6 +152,7 @@ export function mountRichText(element: HTMLElement, options: RichTextOptions): R
         for (const plugin of collabPlugins(options.collab)) editor.registerPlugin(plugin);
         session = new CollabSession(editor, options.collab);
     }
+    if (options.notes) editor.registerPlugin(notesPlugin(options.notes));
     const chain = () => editor.chain().focus();
     const find = (id: string): { position: number; size: number } | null => {
         let found: { position: number; size: number } | null = null;
@@ -229,6 +238,8 @@ export function mountRichText(element: HTMLElement, options: RichTextOptions): R
         },
         setContent(doc) { editor.commands.setContent(doc && doc.content.length ? doc as never : '', { emitUpdate: false }); },
         selection() { const { anchor, head } = editor.state.selection; return { anchor, head }; },
+        textBetween(from, to) { return editor.state.doc.textBetween(Math.max(0, from), Math.min(editor.state.doc.content.size, to), ' '); },
+        setNotes(inputs, active) { if (options.notes) setNotes(editor.view, inputs, active); },
         collab: session,
         focus() { editor.commands.focus(); },
         destroy() { session?.destroy(); editor.destroy(); },

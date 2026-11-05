@@ -5,8 +5,8 @@
 import { Client, ClientState, Component, Cossack } from '@cossackframework/core';
 import { component, html, type TemplateResult } from '@cossackframework/renderer';
 import { DropdownMenu, Icon } from '@cossackframework/ui';
-import type { EmbeddedBlock, RichTextDoc } from '@cossackframework/cms';
-import type { CollabTransport, RichTextCommand, RichTextHandle } from './rich-text.client';
+import type { EmbeddedBlock, NoteRange, RichTextDoc } from '@cossackframework/cms';
+import type { CollabTransport, NoteMark, NoteMarkInput, RichTextCommand, RichTextHandle } from './rich-text.client';
 import { BlockInserter, type BlockInserterProps } from './block-inserter';
 import type { BindingChoice } from './field-controls';
 import { icon } from './icons';
@@ -34,7 +34,22 @@ export type RichTextFieldProps = {
     bindings?: readonly BindingChoice[];
     /** Edit the document together in the entry's room: it comes from there, and every change goes through it. */
     collab?: RichTextCollabProps;
+    /** Notes on passages of this document: drawn as underlines, following the text as it changes. */
+    notes?: RichTextNotesProps;
+    /** Start a note: on the selected passage with its words, or without a range when nothing is selected. A toolbar button offers it. */
+    onNote?(range: NoteRange | null, quote: string): void;
 };
+
+export interface RichTextNotesProps {
+    /** The notes on this document, with their last known ranges and the words they quote. */
+    marks: readonly NoteMarkInput[];
+    /** The note open in the rail, drawn stronger. */
+    active: string | null;
+    /** A noted passage was clicked. */
+    onClick(id: string): void;
+    /** Where the notes sit now, after they were placed or the text moved; notes missing here could not be placed. */
+    onMoved(marks: readonly NoteMark[]): void;
+}
 
 export interface RichTextCollabProps {
     /** The document's path in the room (`richTextPath`). */
@@ -77,6 +92,8 @@ export class RichTextField extends Cossack {
     private collabRetryAt = 0;
     /** A mount is under way (the editor loads, the room answers): no second one starts meanwhile. */
     private busy = false;
+    /** The notes last placed, as JSON, so unchanged notes are not placed again on every render. */
+    private notesPlaced = '';
 
     /**
      * A value that changed outside the editor (a restored autosave, the entry as saved, a pattern
@@ -93,6 +110,7 @@ export class RichTextField extends Cossack {
             void this.connect(element);
             return;
         }
+        if (this.handle && this.ready) this.placeNotes();
         // In a room the document is the room's: it changes through steps alone.
         if (this.props.collab || !this.handle || !this.ready || this.props.value === this.heldValue) return;
         this.heldValue = this.props.value;
@@ -119,6 +137,7 @@ export class RichTextField extends Cossack {
             this.handle = mountRichText(this.surface, {
                 content: shared ? shared.doc : this.props.value, label: this.props.label, placeholder: this.props.placeholder ?? __('Start writing…'), className: SURFACE,
                 ...(collab && shared ? { collab: { transport: collab.transport, clientID: collab.clientID, version: shared.version }, onCaret: (anchor: number, head: number) => collab.onSelection(anchor, head) } : {}),
+                ...(this.props.notes ? { notes: { onClick: (id: string) => this.props.notes?.onClick(id), onMoved: (marks: readonly NoteMark[]) => this.props.notes?.onMoved(marks) } } : {}),
                 blockLabel: type => type === 'core/pattern' ? __('Synced pattern') : labels.get(type) ?? type,
                 blockSummary: block => block.type === 'core/pattern' ? this.props.patternTitles?.[String(block.data.pattern)] ?? __('Pattern')
                     : Object.values(block.data).find((value): value is string => typeof value === 'string' && value.trim() !== '') ?? '',
@@ -131,6 +150,8 @@ export class RichTextField extends Cossack {
             this.held = docKey(shared ? shared.doc : this.props.value);
             this.heldValue = shared ? shared.doc : this.props.value;
             this.ready = true;
+            this.notesPlaced = '';
+            this.placeNotes();
             // The page's values follow the room's document.
             if (shared && docKey(shared.doc) !== docKey(this.props.value)) this.props.onChange(shared.doc ?? { type: 'doc', content: [] });
         } catch (error) {
@@ -159,6 +180,28 @@ export class RichTextField extends Cossack {
     @Client()
     private run(command: RichTextCommand) {
         this.handle?.run(command);
+    }
+
+    /** Put the notes on their passages when they changed since last time. */
+    @Client()
+    private placeNotes() {
+        const notes = this.props.notes;
+        if (!notes || !this.handle) return;
+        const key = JSON.stringify([notes.marks, notes.active]);
+        if (key === this.notesPlaced) return;
+        this.notesPlaced = key;
+        this.handle.setNotes(notes.marks, notes.active);
+    }
+
+    /** A note on the selection: its range and words; without a selection, one on the document as a whole. */
+    @Client()
+    private note() {
+        if (!this.handle || !this.props.onNote) return;
+        const { anchor, head } = this.handle.selection();
+        const from = Math.min(anchor, head);
+        const to = Math.max(anchor, head);
+        if (from === to) this.props.onNote(null, '');
+        else this.props.onNote({ from, to }, this.handle.textBetween(from, to));
     }
 
     @Client()
@@ -213,6 +256,7 @@ export class RichTextField extends Cossack {
                 ${separator}
                 ${this.tool(__('Add media'), __('Add media'), () => this.props.onMedia())}
                 ${this.props.onPatterns ? this.tool(__('Patterns'), __('Insert a pattern'), () => this.props.onPatterns?.()) : null}
+                ${this.props.onNote ? this.tool(__('Note'), __('Add a note on the selection'), () => this.note()) : null}
                 ${this.props.bindings?.length ? component(DropdownMenu, { id: `${this.props.id}-bind`, side: 'bottom', align: 'end', 'aria-label': __('Show a field of the entry'), title: __('Show a field of the entry'),
                     disabled: !this.ready, class: 'inline-flex h-7 w-8 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground [&_svg]:size-4',
                     trigger: component(Icon, { entry: icon('database'), size: 16 }) }, html`

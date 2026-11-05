@@ -21,6 +21,8 @@ configured.
   first, ringed in each one's color; without a picture an avatar shows the person's initials. A layout tab shows the avatars of the editors on it, so a crowded entry
   reads at a glance. Hovering a stack names everyone. A tab that falls silent, through a closed
   laptop or a lost connection, is gone from the stacks and chips within half a minute.
+- **Notes.** Review notes on a passage, a block or a field travel through the same room, so
+  a note left by one editor shows for everyone at once; see [Notes](/docs/cms/notes.md).
 - **Where they are.** A field or block another editor is in is outlined in their color with a
   chip naming them: the title, a field in a group, a sidebar setting such as the status or a
   term, or a row of the search and sharing box; a block someone is dragging is outlined too.

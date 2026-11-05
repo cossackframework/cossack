@@ -1,7 +1,11 @@
+import { systemPrincipal } from '@cossackframework/cms';
 import { networkSite, type CmsHost, type CmsNetwork } from '@cossackframework/cms/server';
 
 /** Where the last scheduled run stopped among the added sites, in the network's state. */
 const CURSOR = 'maintenance.cursor';
+/** How many entries with notes one run checks, and where the next run continues (per process; starting over is harmless). */
+const NOTED_ENTRIES = 50;
+let notedCursor = 0;
 
 /**
  * The scheduled run: the main site, then the added sites in turn from where the last run
@@ -50,7 +54,21 @@ export async function runMaintenance(cms: CmsHost, options: { warm?: boolean } =
     await cms.security.purgeExpired();
     await cms.autosaves.purge();
     await cms.drafts.purge();
+    await purgeOrphanNotes(cms);
     await cms.traffic.prune();
     await cms.forms.maintain();
     await cms.files?.sweep();
+}
+
+/** Notes of entries that no longer exist go with them: a slice of the noted entries is checked per run, the next run takes the next slice. */
+async function purgeOrphanNotes(cms: CmsHost): Promise<void> {
+    const entries = await cms.notes.entries(NOTED_ENTRIES, notedCursor).catch(() => []);
+    notedCursor = entries.length < NOTED_ENTRIES ? 0 : notedCursor + entries.length;
+    const principal = systemPrincipal('maintenance');
+    for (const entry of entries) {
+        let exists = true;
+        // A resource the host no longer declares (a plugin turned off) keeps its notes for its return.
+        try { exists = (await cms.resource(entry.resource).get(entry.recordId, { principal })) !== null; } catch { exists = true; }
+        if (!exists) await cms.notes.purgeEntry(entry.resource, entry.recordId).catch(() => undefined);
+    }
 }

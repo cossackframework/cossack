@@ -113,6 +113,7 @@ export const writing: SettingsGroup = {
     fields: {
         defaultCategory: { ...field.string({ max: 80, default: '', label: 'Default post category', description: 'Posts saved without a category get this one.' }), source: 'categories' },
         defaultStatus: { ...field.enum(['draft', 'published'], { default: 'draft', label: 'Default status of new posts' }), choices: { draft: 'Draft', published: 'Published' } },
+        requireResolvedNotes: field.boolean({ default: false, label: 'Open notes hold publishing', description: 'An entry with open notes cannot be published or scheduled until they are resolved. Off, open notes are a warning in the editor\'s checks.' }),
     },
 };
 
@@ -257,6 +258,7 @@ export interface SiteSettings {
     'appearance.customCss': string;
     'writing.defaultCategory': string;
     'writing.defaultStatus': 'draft' | 'published';
+    'writing.requireResolvedNotes': boolean;
     'reading.showOnFront': 'posts' | 'page';
     'reading.pageOnFront': string;
     'reading.pageForPosts': string;

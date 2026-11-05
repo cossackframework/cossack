@@ -139,3 +139,8 @@ hr.cms-divider { height: var(--cms-divider-size); background: var(--cms-divider-
 
 /* A font size preset sits on the block's wrapper; a heading or quote block's own text takes it, not its default size. */
 [class*="cms-size-"] > :is(h1, h2, h3, h4, h5, h6), [class*="cms-size-"] > blockquote > p, [class*="cms-size-"] > figure > blockquote { font-size: inherit; }
+
+/* A field, block or passage a note was chosen for in the Notes rail. */
+.cms-note-flash { outline: 2px solid rgb(245 158 11); outline-offset: 2px; border-radius: 0.5rem; animation: cms-note-fade 2s ease-out forwards; }
+@keyframes cms-note-fade { 0%, 60% { outline-color: rgb(245 158 11); } 100% { outline-color: transparent; } }
+@media (prefers-reduced-motion: reduce) { .cms-note-flash { animation: none; } }
