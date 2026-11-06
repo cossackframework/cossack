@@ -40,6 +40,7 @@ const LOADERS = {
   docs: [() => import('./commands/docs.js'), 'docsCommand', 'docsHelp'],
   traces: [() => import('./commands/traces.js'), 'tracesCommand', 'tracesHelp'],
   'test-results': [() => import('./commands/test-results.js'), 'testResultsCommand', 'testResultsHelp'],
+  cms: [() => import('./commands/cms.js'), 'cmsCommand', 'cmsHelp'],
   // introspection
   inspect: [() => import('./commands/inspect.js'), 'inspectCommand', 'inspectHelp'],
   check: [() => import('./commands/inspect.js'), 'checkCommand', 'checkHelp'],
@@ -239,6 +240,8 @@ ${wrapList(FEATURES, 31)}
   docs                         Read offline installed-version API export and command catalogs.
   traces                       Read recorded development snapshots and timelines.
   test-results                 Read recorded test evidence and source freshness.
+  cms <command>                Manage a CMS site through its API: login, entries, notes,
+                               users, settings, terms, media, sites and MCP client setup.
   info                         Print system/environment info for bug reports.
   version (v)                  Print the CLI version.
 

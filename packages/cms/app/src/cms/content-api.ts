@@ -4,6 +4,7 @@
  * act as the signed-in user or the password's owner, otherwise as a visitor.
  */
 import type { Context } from 'hono';
+import { ClientVisibleError } from '@cossackframework/core';
 import type { Principal } from '@cossackframework/cms';
 import { flattenBlocks, isCmsError, isSameOriginPost, richTextBlocks, richTextHtml, systemPrincipal, type Block, type CollectionDefinition, type RecordShape, type RichTextDoc } from '@cossackframework/cms';
 import type { CmsHost } from '@cossackframework/cms/server';
@@ -51,10 +52,11 @@ export async function apiPatterns(cms: CmsHost, collection: CollectionDefinition
     return Object.fromEntries([...found].map(([id, record]) => [id, { title: String(record.title ?? ''), content: Array.isArray(record.content) ? record.content as Block[] : [] }]));
 }
 
-/** JSON for a CMS error, or rethrow anything else. */
+/** JSON for a CMS error (its status) or another error meant for people (400); anything else is rethrown. */
 export function apiError(c: Context, error: unknown): Response {
-    if (!isCmsError(error)) throw error;
-    return c.json({ error: error.message, code: error.code, ...(error.fields ? { fields: error.fields } : {}) }, error.status as 400 | 401 | 403 | 404 | 409 | 422 | 503);
+    if (isCmsError(error)) return c.json({ error: error.message, code: error.code, ...(error.fields ? { fields: error.fields } : {}) }, error.status as 400 | 401 | 403 | 404 | 409 | 422 | 503);
+    if (error instanceof ClientVisibleError) return c.json({ error: error.message, code: 'CMS_VALIDATION' }, 400);
+    throw error;
 }
 
 /** Visitors' answers can be cached briefly; signed-in answers are private. */
@@ -79,4 +81,27 @@ export async function writeBody(c: Context): Promise<Record<string, unknown> | R
         if (body && typeof body === 'object' && !Array.isArray(body)) return body as Record<string, unknown>;
     } catch { /* below */ }
     return c.json({ error: 'Send the fields as a JSON object.', code: 'CMS_VALIDATION' }, 400);
+}
+
+/**
+ * Answer a management operation: its result as JSON (204 when it returns nothing), or its error.
+ * Reads are private to the caller; writes need a signed-in user, the same-origin check for
+ * sessions, and a JSON object body, handed to `work`.
+ */
+export async function answer(c: Context, work: (body: Record<string, unknown>) => Promise<unknown>, options: { write?: boolean; status?: 200 | 201 } = {}): Promise<Response> {
+    let body: Record<string, unknown> = {};
+    if (options.write) {
+        const refused = writeAllowed(c);
+        if (refused) return refused;
+        if (!['DELETE', 'GET', 'HEAD'].includes(c.req.method) && c.req.header('content-length') !== '0' && c.req.header('content-type')) {
+            const parsed = await writeBody(c);
+            if (parsed instanceof Response) return parsed;
+            body = parsed;
+        }
+    }
+    c.header('cache-control', options.write ? 'no-store' : 'private, no-store');
+    try {
+        const data = await work(body);
+        return data === undefined ? c.body(null, 204) : c.json(data, options.status ?? 200);
+    } catch (error) { return apiError(c, error); }
 }

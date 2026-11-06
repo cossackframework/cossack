@@ -5,6 +5,7 @@ import { COSSACK_PACKAGES } from './installed-packages.js';
  * these definitions; lifecycle commands explicitly forward their raw argv.
  */
 import { CommandSpec } from './command-spec.js';
+import { cmsDiagnostics, cmsFlagDefinitions } from './cms/catalog.js';
 import {
   ADAPTERS, FEATURES, AUTH_METHODS, OAUTH_PROVIDERS, UI_THEMES,
   DASHBOARD_MODULES, DATABASE_PROVIDERS, PRESET_REGISTRY,
@@ -208,6 +209,8 @@ export const commandSpecs = {
     'force-file': str('Owned file to replace; repeat for multiple files.', { repeated: true }),
     'apply-template': bool('Apply template changes while preserving edited files.'),
   } }),
+  cms: new CommandSpec({ name: 'cms', globals: readonly, positionals: ['command', 'subcommand', 'arg', 'arg', 'arg', 'arg', 'arg', 'arg'], minPositionals: 1,
+    flags: cmsFlagDefinitions(), check: cmsDiagnostics }),
   image: new CommandSpec({ name: 'image', globals: ['dry-run', 'json', 'help'],
     positionals: ['subcommand'], minPositionals: 1, subcommands: { optimize: {} }, flags: {
       format: choices('Output format (default: webp).', ['webp', 'avif']),

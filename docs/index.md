@@ -56,6 +56,7 @@ description: 'Documentation for getting started with Cossack and learning its fe
 - [Settings](/docs/cms/settings.md)
 - [Languages](/docs/cms/languages.md)
 - [Block References](/docs/cms/block-references.md)
+- [Management API, CLI and MCP](/docs/cms/api.md)
 
 ## Session & State
 

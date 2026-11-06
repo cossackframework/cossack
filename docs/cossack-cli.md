@@ -566,6 +566,39 @@ See [Authentication](/docs/authentication.md) and [Social Login](/docs/oauth.md)
 
 ---
 
+## CMS management
+
+### `cossack cms <command>`
+
+Manage a running CMS site through its management API, as a signed-in user:
+
+```bash
+cossack cms login --url https://example.com        # email from --email or CMS_EMAIL, password from CMS_PASSWORD or a prompt
+cossack cms whoami
+cossack cms entries list posts --status draft --json
+cossack cms entries create posts --set title="Hello" --data @body.json
+cossack cms entries publish posts <id> --at 2026-12-01T09:00:00Z
+cossack cms notes add posts <id> --body "Shorter title?" --target field:title
+cossack cms users create --email grace@example.com --password … --role editor
+cossack cms settings set general --set siteTitle="My site"
+cossack cms sites create Blog --host blog.example.com
+cossack cms mcp                                    # the MCP client configuration for the same site
+```
+
+`login` creates an application password through a session and keeps it in
+`~/.config/cossack/cms-logins.json` (0600). The address comes from `--url`, `COSSACK_CMS_URL`,
+the project's `APP_URL`, then the current login; `COSSACK_CMS_TOKEN` and `COSSACK_CMS_SITE`
+override the login for CI. `--site <id>` acts on one site of a network through the network
+host. Writes take `--data '{…}'` (`@file`, `@-` for stdin) and `--set field=value`; deletes need
+`--yes`; nothing prompts under `--json`, whose `data` is the API's answer. Commands: `login`,
+`logout`, `whoami`, `mcp`, `collections`, `taxonomies`, `terms`, `entries`, `notes`, `users`,
+`roles`, `settings`, `media`, `sites`. Failures use `COSSACK_CMS_*` codes
+(`COSSACK_CMS_LOGIN_REQUIRED`, `COSSACK_CMS_FORBIDDEN`, `COSSACK_CMS_CONFLICT`,
+`COSSACK_CMS_INVALID`, …). The API, every command and the MCP tools are described in
+[Management API, CLI and MCP](./cms/api.md).
+
+---
+
 ## Localization
 
 ### `cossack lang`

@@ -33,6 +33,8 @@ puts a default theme in `src/plugins/default-theme/` for you to edit or copy. Se
   mentions, the rail, resolving, and the publishing check.
 - [Block references](/docs/cms/block-references.md): blocks and bindings inside text, such
   as `{{ block core/button … /}}` and `{{ $site.title }}`.
+- [Management API, CLI and MCP](/docs/cms/api.md): manage a site from a terminal or an
+  agent with `cossack cms`, the API under `/api/cms`, and the MCP server every site serves.
 
 The package `README.md` and `cossack docs --package @cossackframework/cms` cover the data
 contract (resources, repositories, collections, blocks) in more depth.

@@ -71,6 +71,7 @@ Run `cossack --help` to list all commands, or `cossack <command> --help` for com
 | `docs` | Read offline catalogs of installed package exports, declarations and guides. |
 | `traces` | Read recorded development snapshots and timelines. |
 | `test-results` | Read recorded test evidence and source freshness. |
+| `cms <command>` | Manage a running CMS site through its management API: `login`, `whoami`, `entries`, `notes`, `users`, `roles`, `settings`, `terms`, `media`, `sites` and `mcp` (MCP client setup). `--site <id>` acts on one site of a network. |
 | `upgrade [dir]` | Upgrade Cossack deps and report template drift. |
 | `info` | Print system/environment info for bug reports. |
 | `version` (`v`) | Print the CLI version. |

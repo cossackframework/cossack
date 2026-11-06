@@ -1,4 +1,6 @@
-import { auth, completeTwoFactor, beginTwoFactor, loginUser } from '../../../auth';
+import type { Context } from 'hono';
+import { isSameOriginPost } from '@cossackframework/cms';
+import { auth, completeTwoFactor, beginTwoFactor, loginUser, logout } from '../../../auth';
 
 /**
  * JSON sign-in for tools such as `cossack <plugin>:<command>`: `{ email, password }` answers
@@ -19,3 +21,11 @@ export const POST = auth.createLoginHandler({
         return 'user' in result ? result.user : Response.json({ error: result.error, twoFactorRequired: true }, { status: 401 });
     },
 });
+
+/** End the session the cookie names: `DELETE /api/auth/session`, same-origin, for tools that signed in to create an application password. */
+export const DELETE = async (c: Context) => {
+    if (!c.get('user')) return c.json({ error: 'No session.', code: 'CMS_UNAUTHENTICATED' }, 401);
+    if (!isSameOriginPost(c.req.raw)) return c.json({ error: 'Cross-site requests are not allowed.', code: 'CMS_FORBIDDEN' }, 403);
+    const { headers } = await logout(c);
+    return new Response(null, { status: 204, headers });
+};
