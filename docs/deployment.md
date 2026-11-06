@@ -180,8 +180,10 @@ pnpm exec cossack deploy --env staging
 Define `env.staging` in Wrangler first. Declare its variables and bindings
 explicitly because these settings do not inherit from the top-level configuration.
 For the minimal preset, a staging environment can use this configuration inside
-its generated Wrangler file. Keep the top-level SQLite migration. Provide a
-separate Worker name and repeat the coordinator binding:
+its generated Wrangler file. Keep the top-level SQLite migrations. Provide a
+separate Worker name and repeat both Durable Object bindings with the same
+classes as the top level; the deploy preflight reports
+`COSSACK_ENV_BINDING_NOT_INHERITED` for any binding the environment leaves out:
 
 ```jsonc
 "env": {
@@ -190,7 +192,10 @@ separate Worker name and repeat the coordinator binding:
     "vars": { "APP_URL": "https://staging.example.net", "APP_LOCALE": "en" },
     "secrets": { "required": ["APP_SECRET"] },
     "durable_objects": {
-      "bindings": [{ "name": "COSSACK_SSE", "class_name": "SseDurableObject" }]
+      "bindings": [
+        { "name": "COSSACK_SSE", "class_name": "SseDurableObject" },
+        { "name": "COSSACK_OBJECT", "class_name": "AppDurableObject" }
+      ]
     }
   }
 }

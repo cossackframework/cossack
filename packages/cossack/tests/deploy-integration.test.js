@@ -4,6 +4,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { scaffoldLinkedApp } from './fixtures/linked-app.js';
+import { useAppDurableObject } from './fixtures/generated-app.js';
 import { deployCommand } from '../src/commands/deploy.js';
 import { createTestHarness } from 'wrangler';
 import { readRpcStream } from '../../core/dist/index.js';
@@ -285,6 +286,10 @@ it('builds a generated staging app and validates deployment without uploading', 
   await writeWorkerOptimisticSocket(projectDir);
   await writeWorkerOptimisticSse(projectDir);
   await writeWorkerOptimisticStreams(projectDir);
+  // The generated app already binds COSSACK_OBJECT to AppDurableObject; point
+  // that binding and its migration at the fixture's subclass instead of adding
+  // a second binding or migration for the same name.
+  await useAppDurableObject(projectDir, 'SocketRecoveryObject');
   const configPath = path.join(projectDir, 'wrangler.jsonc');
   const config = JSON.parse(await fs.readFile(configPath, 'utf8'));
   config.env = { staging: {
@@ -293,12 +298,11 @@ it('builds a generated staging app and validates deployment without uploading', 
     // and this test does not upload or check account access.
     d1_databases: [{ binding: 'DB', database_name: 'stream-test-database',
       database_id: '12345678-1234-1234-1234-123456789012' }],
-    // Cloudflare environments do not inherit bindings; the coordinator must
-    // be re-declared for staging or the built Worker loses COSSACK_SSE.
-    durable_objects: { bindings: [{ name: 'COSSACK_SSE', class_name: 'SseDurableObject' },
-      {name:'COSSACK_OBJECT',class_name:'SocketRecoveryObject'}] },
+    // Cloudflare environments do not inherit bindings; both Durable Objects
+    // must be re-declared for staging, with the same classes as the top level,
+    // or the built Worker loses them and `cossack deploy` refuses the config.
+    durable_objects: { bindings: config.durable_objects.bindings },
   } };
-  config.migrations.push({tag:'v2',new_sqlite_classes:['SocketRecoveryObject']});
   await fs.writeFile(configPath, JSON.stringify(config));
   await fs.copyFile(path.join(projectDir, '.dev.vars'), path.join(projectDir, '.dev.vars.staging'));
   const log = vi.spyOn(console, 'log').mockImplementation(() => {});
