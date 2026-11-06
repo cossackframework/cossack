@@ -12,7 +12,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { installDevelopmentTraceBridge, TRACE_BRIDGE_MODULE } from './vite-development-traces.js';
 import { installPublicReloadPrivacy } from './vite-public-diagnostics.js';
 import { checkTemplatesForBuild, formatTemplateDiagnostic, startDevelopmentTemplateChecks } from './vite-template-diagnostics.js';
-import { clientOptimizedDependencies, linkedDependencies, linkedDependencyFolders, restartOnLinkedRebuilds, ssrOptimizedDependencies } from './vite-dependency-optimization.js';
+import { clientOptimizedDependencies, linkedDependenciesConfig, linkedDependencyFolders, restartOnLinkedRebuilds, ssrOptimizedDependencies, type LinkedDependency } from './vite-dependency-optimization.js';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { resolve, dirname, relative } from 'path';
 import { generateRoutes, ROUTES_MODULE_ID, ROUTES_SOURCE_PATH, ROUTE_GLOB_EXCLUDES } from './route-codegen.js';
@@ -127,7 +127,7 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
   let developmentBase = '/';
   let traceBridge: ReturnType<typeof installDevelopmentTraceBridge> | undefined;
   /** Linked packages Vite pre-bundles, watched while the dev server runs. */
-  let linkedFolders: { name: string; folder: string }[] = [];
+  let linkedFolders: LinkedDependency[] = [];
   if (options.markdownProcessor) {
     configuredMarkdownProcessor = options.markdownProcessor;
   }
@@ -210,15 +210,17 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
     // versions refuse to strip when Vite externalizes the transitive import.
     config(userConfig, env) {
       const include = clientOptimizedDependencies(import.meta.url);
-      // A pre-bundled linked package is rebuilt on every dev start: Vite's cache
-      // does not follow its sources, so the browser would keep an old copy of it.
+      // Vite keys its pre-bundle cache on the lockfile and the config, never on a linked
+      // package's files, and the browser keeps a bundle for good under that key's hash. An
+      // environment that bundles linked packages carries their fingerprint in its config, so
+      // a changed one is bundled again under a new address (see the helper).
       const root = userConfig.root ? resolve(userConfig.root) : process.cwd();
-      const force = (listed: readonly string[] | undefined) =>
-        env.command === 'serve' && linkedDependencies(root, listed ?? []).length > 0 ? { force: true } : {};
       const client = [...include, ...(userConfig.environments?.client?.optimizeDeps?.include ?? []), ...(userConfig.optimizeDeps?.include ?? [])];
       const ssr = [...ssrOptimizedDependencies(), ...(userConfig.environments?.ssr?.optimizeDeps?.include ?? []), ...(userConfig.ssr?.optimizeDeps?.include ?? [])];
+      const clientLinked = env.command === 'serve' ? linkedDependencyFolders(root, client) : [];
+      const ssrLinked = env.command === 'serve' ? linkedDependencyFolders(root, ssr) : [];
       // A running server watches them too: one rebuilt meanwhile restarts it (see configureServer).
-      linkedFolders = env.command === 'serve' ? linkedDependencyFolders(root, [...client, ...ssr]) : [];
+      linkedFolders = [...new Map([...clientLinked, ...ssrLinked].map(entry => [entry.folder, entry])).values()];
       return {
         ssr: {
           noExternal: [
@@ -234,12 +236,12 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
               // virtual modules and HMR when linked; see the helper for why
               // an installed framework also lists its devtools entry.
               include,
-              ...force(client),
+              ...linkedDependenciesConfig(clientLinked),
             },
           },
           ssr: {
             // CommonJS reached through installed packages is pre-bundled up front; see the helper.
-            optimizeDeps: { include: ssrOptimizedDependencies(), ...force(ssr) },
+            optimizeDeps: { include: ssrOptimizedDependencies(), ...linkedDependenciesConfig(ssrLinked) },
             resolve: {
               noExternal: [
                 '@cossackframework/framework',

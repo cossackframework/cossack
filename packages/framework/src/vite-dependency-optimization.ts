@@ -1,6 +1,8 @@
-import { existsSync, realpathSync, watch, type FSWatcher } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync, watch, type Dirent, type FSWatcher } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { DepOptimizationConfig } from 'vite';
 
 /**
  * Client entries Vite pre-bundles in development before the first request.
@@ -47,34 +49,69 @@ export function isInstalledPackage(moduleUrl: string): boolean {
     return fileURLToPath(moduleUrl).split(/[\\/]/).includes('node_modules');
 }
 
-/**
- * The listed packages whose real path is outside node_modules: workspace or `pnpm link`
- * packages that resolve to their sources. Vite keys its pre-bundle cache on the lockfile
- * and the config, never on a linked package's files, so a bundle of one is stale after
- * its sources change, and the browser reports a missing export until the cache is deleted.
- * The plugin sets `optimizeDeps.force` for an environment that lists one, so every dev
- * start re-bundles it. Subpath entries count by their package.
- */
-export function linkedDependencies(root: string, specifiers: readonly string[]): string[] {
-    const linked: string[] = [];
-    for (const name of new Set(specifiers.map(packageName))) {
-        const directory = packageDirectory(root, name);
-        if (directory && !directory.split(/[\\/]/).includes('node_modules')) linked.push(name);
-    }
-    return linked;
+/** A linked package Vite pre-bundles, and the folder its bundle is built from. */
+export interface LinkedDependency {
+    readonly name: string;
+    /** The package's `dist`, or its `src` when it has none. */
+    readonly folder: string;
 }
 
 /**
- * What a running dev server watches of its linked pre-bundled packages: each one's `dist`, or
- * its `src` when it has none. Forcing a re-bundle only helps at start: a package rebuilt while
- * the server runs keeps its old bundle, and the browser reports a missing export.
+ * The listed packages whose real path is outside node_modules (workspace or `pnpm link`
+ * packages, which resolve to their sources), and the linked packages those depend on: a
+ * bundle inlines every package of its graph that is not bundled on its own, so a rebuilt
+ * dependency changes it too. Subpath and nested (`a > b`) entries count by the package they
+ * name. The folders are what the plugin fingerprints and a running dev server watches.
  */
-export function linkedDependencyFolders(root: string, specifiers: readonly string[]): { name: string; folder: string }[] {
-    return linkedDependencies(root, specifiers).flatMap(name => {
-        const directory = packageDirectory(root, name);
-        const folder = directory && [join(directory, 'dist'), join(directory, 'src')].find(candidate => existsSync(candidate));
+export function linkedDependencyFolders(root: string, specifiers: readonly string[]): LinkedDependency[] {
+    const linked = new Map<string, string>();
+    const seen = new Set<string>();
+    const visit = (from: string, name: string) => {
+        if (seen.has(name)) return;
+        seen.add(name);
+        const directory = packageDirectory(from, name);
+        if (!directory || directory.split(/[\\/]/).includes('node_modules')) return;
+        linked.set(name, directory);
+        for (const dependency of packageDependencies(directory)) visit(directory, dependency);
+    };
+    for (const specifier of specifiers) visit(root, packageName(specifier));
+    return [...linked].flatMap(([name, directory]) => {
+        const folder = [join(directory, 'dist'), join(directory, 'src')].find(candidate => existsSync(candidate));
         return folder ? [{ name, folder }] : [];
     });
+}
+
+/**
+ * A fingerprint of the linked packages' files: their paths, sizes and modification times.
+ * Vite keys its pre-bundle cache on the lockfile and the config, never on a linked package's
+ * files, and the browser keeps a bundle for good under the hash of that key. A bundle
+ * rewritten under the same key (as `optimizeDeps.force` does) is never fetched again, so a
+ * changed export was missing until the browser's cache was cleared. With the fingerprint in
+ * the config, a changed package is bundled again under a new hash, which the browser fetches,
+ * and an unchanged one keeps its bundle.
+ */
+export function linkedDependencyFingerprint(folders: readonly LinkedDependency[]): string {
+    const hash = createHash('sha1');
+    for (const { name, folder } of [...folders].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
+        hash.update(`${name}\n`);
+        for (const file of listFiles(folder)) {
+            const stat = statSync(join(folder, file), { throwIfNoEntry: false });
+            if (stat) hash.update(`${file}:${stat.size}:${stat.mtimeMs}\n`);
+        }
+    }
+    return hash.digest('hex').slice(0, 16);
+}
+
+/** The identifier the fingerprint is defined as; no dependency mentions it, so the bundles do not change. */
+export const LINKED_PACKAGES_DEFINE = '__COSSACK_LINKED_PACKAGES__';
+
+/**
+ * The pre-bundle config of an environment that bundles linked packages: their fingerprint as
+ * a define in rolldown's transform options, which Vite hashes into its cache key.
+ */
+export function linkedDependenciesConfig(folders: readonly LinkedDependency[]): Pick<DepOptimizationConfig, 'rolldownOptions'> {
+    if (!folders.length) return {};
+    return { rolldownOptions: { transform: { define: { [LINKED_PACKAGES_DEFINE]: JSON.stringify(linkedDependencyFingerprint(folders)) } } } };
 }
 
 /** The part of a Vite dev server `restartOnLinkedRebuilds` uses. */
@@ -88,7 +125,7 @@ export interface RestartableServer {
  * have been quiet for `quietMs` after a change: a package build writes many files. Returns a
  * function that stops watching; the watchers never keep the process alive.
  */
-export function restartOnLinkedRebuilds(server: RestartableServer, folders: readonly { name: string; folder: string }[], quietMs = 1000): () => void {
+export function restartOnLinkedRebuilds(server: RestartableServer, folders: readonly LinkedDependency[], quietMs = 1000): () => void {
     const changed = new Set<string>();
     let timer: ReturnType<typeof setTimeout> | undefined;
     let stopped = false;
@@ -117,9 +154,11 @@ export function restartOnLinkedRebuilds(server: RestartableServer, folders: read
     };
 }
 
+/** The package a specifier names: without its subpath, and the last of a nested `a > b` entry. */
 function packageName(specifier: string): string {
-    const segments = specifier.split('/');
-    return specifier.startsWith('@') ? segments.slice(0, 2).join('/') : segments[0]!;
+    const bare = specifier.split(' > ').pop()!.trim();
+    const segments = bare.split('/');
+    return bare.startsWith('@') ? segments.slice(0, 2).join('/') : segments[0]!;
 }
 
 /** The real directory of the package as Node would find it from the root, walking up. */
@@ -131,4 +170,23 @@ function packageDirectory(root: string, name: string): string | undefined {
         }
         if (dirname(directory) === directory) return undefined;
     }
+}
+
+/** The packages a package's manifest depends on. */
+function packageDependencies(directory: string): string[] {
+    try {
+        const manifest = JSON.parse(readFileSync(join(directory, 'package.json'), 'utf8')) as Record<'dependencies' | 'peerDependencies' | 'optionalDependencies', Record<string, string> | undefined>;
+        return [...Object.keys(manifest.dependencies ?? {}), ...Object.keys(manifest.peerDependencies ?? {}), ...Object.keys(manifest.optionalDependencies ?? {})];
+    } catch { return []; }
+}
+
+/** Every file under the folder, in a fixed order, as paths relative to it; hidden entries and nested node_modules are left out. */
+function listFiles(folder: string, prefix = ''): string[] {
+    let entries: Dirent[];
+    try { entries = readdirSync(folder, { withFileTypes: true }); } catch { return []; }
+    return entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)).flatMap(entry => {
+        if (entry.name === 'node_modules' || entry.name.startsWith('.')) return [];
+        const path = prefix + entry.name;
+        return entry.isDirectory() ? listFiles(join(folder, entry.name), `${path}/`) : [path];
+    });
 }
