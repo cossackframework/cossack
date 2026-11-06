@@ -3,13 +3,13 @@
  * signed-in user may update the entry; drafts render like previews and save through the
  * dashboard editor's save, with its revision check.
  */
-import { CmsError, hasPermission, participantColor, PERMISSIONS, recordTitle, type Block, type CollectionDefinition, type EntryView, type Principal, type RecordShape } from '@cossackframework/cms';
+import { CmsError, flattenBlocks, hasPermission, participantColor, PERMISSIONS, recordTitle, richTextBlocks, type Block, type CollectionDefinition, type EntryView, type Principal, type RecordShape, type RichTextDoc } from '@cossackframework/cms';
 import type { FormRequest } from './site-forms';
 import type { CmsHost } from '@cossackframework/cms/server';
-import { editorView, entryInput, entryValues, findMedia, mediaPreviews, saveEntry } from './content';
-import { blocksInput, editorBlocks, type BlockOption, type EditorBlock, type EditorValues } from './editor';
+import { blockOptions, editorView, entryInput, entryValues, findMedia, mediaPreviews, saveEntry, sourceChoices } from './content';
+import { blocksInput, editorBlocks, type BlockOption, type EditorBlock, type EditorValues, type EditorView } from './editor';
 import { closedChooser } from './media-chooser';
-import { entryViews } from './site';
+import { activePresets, entryViews } from './site';
 import type { DraftBlock, SiteDocument, SiteDraft, SiteEditable } from './site-editor';
 
 /** The entry when the principal may update it, read as them; otherwise null. */
@@ -52,10 +52,65 @@ export async function siteDraft(cms: CmsHost, collection: CollectionDefinition, 
     const mentionable = me ? (await cms.users.list({ limit: 100 }).catch(() => ({ items: [] }))).items.filter(user => user.id !== me).map(user => ({ id: user.id, name: user.name || user.email })) : [];
     return {
         collection: collection.name, id: record.id, rev: record.rev, view, values, previews: await mediaPreviews(cms, values, view), references,
-        blocksField, bodyField, documents: await siteDocuments(cms, view.blocks, principal), changed: false, error: '', errors: {}, conflict: false, chooser: closedChooser(),
+        blocksField, bodyField, documents: await pageDocuments(cms, view, values, principal), changed: false, error: '', errors: {}, conflict: false, chooser: closedChooser(),
         notes, people: Object.fromEntries([...users.values()].map(user => [user.id, { user: user.id, name: user.name || user.email, avatar: user.avatar, color: participantColor(user.id) }])),
         me, admin: hasPermission(principal, PERMISSIONS.manageUsers), mentionable,
     };
+}
+
+/**
+ * A draft without an entry, for a page that is a list (the home page's latest posts, an archive,
+ * a term): the frame alone is edited, through the areas and the patterns on the page. Only for
+ * users who may change areas; null otherwise.
+ */
+export async function frameDraft(cms: CmsHost, principal: Principal): Promise<SiteDraft | null> {
+    if (principal.kind !== 'user' || !hasPermission(principal, PERMISSIONS.manageAppearance)) return null;
+    const view: EditorView = {
+        resource: '', route: '', label: '', singular: '', titleField: '', titleRequired: false, slug: false, publishable: false, hierarchical: false, path: null,
+        fields: [], taxonomies: [], blocks: await blockOptions(cms), presets: await activePresets(cms), template: [], groups: [], layout: { tabs: [], sidebar: [] }, collections: [], sources: await sourceChoices(cms),
+    };
+    return {
+        collection: '', id: '', rev: 0, view, values: {}, previews: {}, references: {}, blocksField: null, bodyField: null,
+        documents: await pageDocuments(cms, view, {}, principal), changed: false, error: '', errors: {}, conflict: false, chooser: closedChooser(),
+        notes: [], people: {}, me: principal.id, admin: hasPermission(principal, PERMISSIONS.manageUsers), mentionable: [],
+    };
+}
+
+/**
+ * The page's documents beside the entry: the active theme's areas, then the synced patterns the
+ * page shows, in the entry's blocks and rich text, in the areas and in the menus' panels.
+ */
+export async function pageDocuments(cms: CmsHost, view: EditorView, values: EditorValues, principal: Principal): Promise<SiteDocument[]> {
+    const areas = await siteDocuments(cms, view.blocks, principal);
+    const ids = new Set<string>();
+    const collect = (blocks: readonly Block[]) => { for (const block of flattenBlocks(blocks)) if (block.type === 'core/pattern' && typeof block.data.pattern === 'string' && block.data.pattern) ids.add(block.data.pattern); };
+    for (const field of view.fields) {
+        const value = values[field.name];
+        if (field.kind === 'blocks' && Array.isArray(value)) collect(value as Block[]);
+        if (field.kind === 'richtext') for (const doc of Array.isArray(value) ? value : [value]) if (doc && typeof doc === 'object') collect(richTextBlocks(doc as RichTextDoc));
+    }
+    for (const area of areas) collect(area.blocks as Block[]);
+    const locations = (await cms.menuLocations()).filter(location => location.active).map(location => location.name);
+    for (const location of locations) {
+        const items = await cms.menus.forLocation(location).catch(() => null);
+        const visit = (list: readonly { panel: string | null; children: readonly unknown[] }[]) => { for (const item of list) { if (item.panel) ids.add(item.panel); visit(item.children as never); } };
+        if (items) visit(items);
+    }
+    return [...areas, ...await patternDocuments(cms, [...ids], view.blocks, principal)];
+}
+
+/** Synced patterns as documents: their blocks as control values, editable when the user may update the pattern. */
+async function patternDocuments(cms: CmsHost, ids: readonly string[], options: readonly BlockOption[], principal: Principal): Promise<SiteDocument[]> {
+    if (!ids.length) return [];
+    const repository = cms.resource('cms/patterns');
+    let records: Map<string, RecordShape>;
+    try { records = await repository.getMany(ids.slice(0, 50), { principal }); }
+    catch (error) { if (error instanceof CmsError) return []; throw error; }
+    return ids.flatMap(id => {
+        const record = records.get(id);
+        if (!record || !Array.isArray(record.content)) return [];
+        return [{ key: `pattern:${id}`, kind: 'pattern' as const, name: id, label: recordTitle(record, 'title'), revision: record.rev, blocks: editorBlocks(record.content as EditorBlock[], options), editable: repository.canUpdate(record, principal), changed: false, error: '', conflict: false }];
+    });
 }
 
 /**
@@ -81,6 +136,11 @@ export async function saveDocuments(cms: CmsHost, documents: readonly SiteDocume
         const converted = blocksInput(document.blocks, types);
         if ('error' in converted) { result.push({ ...document, error: converted.error }); continue; }
         try {
+            if (document.kind === 'pattern') {
+                const record = await cms.resource('cms/patterns').update(document.name, { content: converted.value }, { principal, expectedRevision: document.revision });
+                result.push({ ...document, revision: record.rev, blocks: editorBlocks((record.content ?? []) as EditorBlock[], options), changed: false, error: '', conflict: false });
+                continue;
+            }
             const saved = await cms.areas.save(document.name, converted.value, { principal, expectedRevision: document.revision, known });
             result.push({ ...document, revision: saved.revision, blocks: editorBlocks(saved.blocks as EditorBlock[], options), changed: false, error: '', conflict: false });
         } catch (error) {
@@ -91,7 +151,7 @@ export async function saveDocuments(cms: CmsHost, documents: readonly SiteDocume
     return result;
 }
 
-/** The areas' blocks as the layout previews them, converted from the editor's control values; an area whose blocks do not convert keeps its saved ones. */
+/** Blocks as the site previews them, converted from the editor's control values, by area name or pattern ID; a list that does not convert keeps what is saved. */
 export function areaDraftBlocks(areas: readonly { name: string; blocks: EditorBlock[] }[], options: readonly BlockOption[]): Map<string, readonly Block[]> {
     const types = new Map(options.map(option => [option.name, option]));
     const drafts = new Map<string, readonly Block[]>();
@@ -102,12 +162,18 @@ export function areaDraftBlocks(areas: readonly { name: string; blocks: EditorBl
     return drafts;
 }
 
-/** The entry as the site shows it with the draft's values, like a preview, with its forms. Invalid values throw. */
-export async function draftEntry(cms: CmsHost, collection: CollectionDefinition, record: RecordShape, values: EditorValues, forms?: FormRequest): Promise<EntryView> {
+/** The editor's pattern drafts as the site previews them (`patternDrafts` of the views). */
+export function patternDraftBlocks(patterns: readonly { id: string; blocks: EditorBlock[] }[], options: readonly BlockOption[]): Map<string, readonly Block[]> {
+    return areaDraftBlocks(patterns.map(pattern => ({ name: pattern.id, blocks: pattern.blocks })), options);
+}
+
+/** The entry as the site shows it with the draft's values, like a preview, with its forms and the draft's patterns. Invalid values throw. */
+export async function draftEntry(cms: CmsHost, collection: CollectionDefinition, record: RecordShape, values: EditorValues, forms?: FormRequest, documents: readonly SiteDocument[] = [], options: readonly BlockOption[] = []): Promise<EntryView> {
     const input = await entryInput(cms, collection.name, values);
     // Typed tags are names until the save creates their terms; the preview keeps the saved ones.
     for (const name of Object.keys(input)) if (cms.resourceById(`cms/${collection.name}`).fields[name]?.taxonomy) delete input[name];
-    return (await entryViews(cms, collection, [{ ...record, ...input }], { full: true, ...(forms ? { forms } : {}) }))[0]!;
+    const patterns = documents.filter(document => document.kind === 'pattern' && document.changed);
+    return (await entryViews(cms, collection, [{ ...record, ...input }], { full: true, ...(forms ? { forms } : {}), ...(patterns.length ? { patternDrafts: patternDraftBlocks(patterns.map(pattern => ({ id: pattern.name, blocks: pattern.blocks })), options) } : {}) }))[0]!;
 }
 
 /** Save the draft over the revision it started from. A newer save makes a CMS_CONFLICT. */

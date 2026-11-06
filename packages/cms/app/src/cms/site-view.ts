@@ -194,7 +194,7 @@ export function themeHelpers(theme: SiteTheme, state: ThemeRenderState, isActive
     // In edit mode a block carries its ID; a field's rich text is one document, edited as a whole in the field's panel.
     const marked = (block: RenderedBlock) => block.field
         ? html`<div data-cms-edit="body" data-field=${block.field} style="display: contents">${render(block)}</div>`
-        : html`<div data-cms-edit="block" data-block-id=${block._id} data-cms-doc=${block.document ?? 'entry'} data-cms-locked=${ifDefined(block.locked ? '' : undefined)} style="display: contents">${render(block)}</div>`;
+        : html`<div data-cms-edit="block" data-block-id=${block.sourceId ?? block._id} data-cms-doc=${block.document ?? (block.pattern ? `pattern:${block.pattern}` : 'entry')} data-cms-locked=${ifDefined(block.locked ? '' : undefined)} style="display: contents">${render(block)}</div>`;
     const render = (block: RenderedBlock) => {
         // Data blocks hold values for themes and the API; nothing shows for them.
         if (block.dataOnly) return null;
@@ -214,9 +214,16 @@ export function themeHelpers(theme: SiteTheme, state: ThemeRenderState, isActive
     return helpers;
 }
 
-/** Rendered blocks, and the blocks inside them, as part of a Live Edit document: the markers name it, and a locked one selects nothing. */
-export function tagDocument(blocks: readonly RenderedBlock[], document: string, locked: boolean): RenderedBlock[] {
-    return blocks.map(block => ({ ...block, document, ...(locked ? { locked: true } : {}), ...(block.children ? { children: tagDocument(block.children, document, locked) } : {}) }));
+/**
+ * Rendered blocks, and the blocks inside them, as part of a Live Edit document: the markers name
+ * it, and a locked one selects nothing. A block expanded from a synced pattern belongs to the
+ * pattern's document instead, locked unless `patterns` says the user may change that pattern.
+ */
+export function tagDocument(blocks: readonly RenderedBlock[], document: string, locked: boolean, patterns?: ReadonlyMap<string, boolean>): RenderedBlock[] {
+    return blocks.map(block => {
+        const own = block.pattern ? { document: `pattern:${block.pattern}`, locked: patterns?.get(block.pattern) ?? true } : { document, locked };
+        return { ...block, document: own.document, ...(own.locked ? { locked: true } : {}), ...(block.children ? { children: tagDocument(block.children, document, locked, patterns) } : {}) };
+    });
 }
 
 /**

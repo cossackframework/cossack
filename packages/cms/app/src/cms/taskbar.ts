@@ -19,6 +19,8 @@ import { statusBadge } from './ui';
 export interface TaskbarPage {
     /** The entry shown, when the user may edit it; `inPlace` when the page opens its editor on `?edit`. */
     entry?: { collection: string; id: string; status: string; dashboard: string; inPlace: boolean } | null;
+    /** No entry of theirs, but the user may change the theme's areas: `?edit` opens the frame alone. */
+    frame?: boolean;
     /** What engines see on the page, for the SEO inspector. */
     seo?: SeoView | null;
 }

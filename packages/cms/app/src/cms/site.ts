@@ -140,7 +140,7 @@ export async function siteInfo(cms: CmsHost, locale?: string): Promise<SiteInfo>
  * primary location lists the top-level pages. Menus bind to the site and the signed-in user,
  * never to the entry shown, so a panel reads the same on every page.
  */
-export async function siteMenus(cms: CmsHost, theme: ThemeState, options: { locale?: string; user?: { name: string } | null; forms?: FormRequest; usage?: { user: boolean } } = {}): Promise<Record<string, readonly MenuItemView[]>> {
+export async function siteMenus(cms: CmsHost, theme: ThemeState, options: { locale?: string; user?: { name: string } | null; forms?: FormRequest; usage?: { user: boolean }; patternDrafts?: ReadonlyMap<string, readonly Block[]> } = {}): Promise<Record<string, readonly MenuItemView[]>> {
     const settings = await cms.settings.all();
     const languages = await cms.languages();
     const locale = options.locale ?? languages.default;
@@ -151,7 +151,7 @@ export async function siteMenus(cms: CmsHost, theme: ThemeState, options: { loca
     const scopes = bindingScopes(settings, { user: options.user ?? null });
     for (const location of locations) {
         const menu = await cms.menus.forLocation(location, languages.multilingual ? locale : undefined).catch(() => null);
-        if (menu) menus[location] = await menuViews(cms, menu, { scopes, locale, forms: options.forms, usage: options.usage });
+        if (menu) menus[location] = await menuViews(cms, menu, { scopes, locale, forms: options.forms, usage: options.usage, patternDrafts: options.patternDrafts });
         else if (location === 'primary') menus[location] = await pageMenu(cms, languages, locale);
     }
     return menus;
@@ -165,13 +165,13 @@ export async function contentMenus(cms: CmsHost, theme: ThemeState, blocks: read
 }
 
 /** The blocks of the theme's widget areas, rendered: the saved blocks, or the theme's defaults until the site saves its own; blocks of inactive plugins are left out. */
-export async function areaViews(cms: CmsHost, declared: readonly { name: string; defaults: readonly Block[] }[], forms?: FormRequest, scopes?: BindingScopes, usage?: { user: boolean }, drafts?: ReadonlyMap<string, readonly Block[]>): Promise<Record<string, RenderedBlock[]>> {
+export async function areaViews(cms: CmsHost, declared: readonly { name: string; defaults: readonly Block[] }[], forms?: FormRequest, scopes?: BindingScopes, usage?: { user: boolean }, drafts?: ReadonlyMap<string, readonly Block[]>, patternDrafts?: ReadonlyMap<string, readonly Block[]>): Promise<Record<string, RenderedBlock[]>> {
     if (!declared.length) return {};
     const saved = await cms.areas.all().catch(() => new Map<string, { blocks: readonly Block[] }>());
     const available = new Set((await cms.blocks()).map(block => block.name));
     const blocks = new Map(declared.map(area => [area.name, (drafts?.get(area.name) ?? saved.get(area.name)?.blocks ?? area.defaults).filter(block => available.has(block.type))]));
     const all = [...blocks.values()].flat() as Block[];
-    const patterns = await usedPatterns(cms, blockDocuments(all, cms.blockTypes), all);
+    const patterns = withPatternDrafts(await usedPatterns(cms, blockDocuments(all, cms.blockTypes), all), patternDrafts);
     const expanded = new Map([...blocks].map(([name, list]) => [name, expandPatterns(list as Block[], patterns)]));
     const ids = new Set<string>();
     for (const list of expanded.values()) for (const block of list) blockMediaIds(cms, block as { type: string; data: Record<string, unknown> }, ids);
@@ -288,7 +288,7 @@ async function pageMenu(cms: CmsHost, languages: SiteLanguages, locale: string):
  * groups attached to menu items, and its panel pattern renders like a widget area: expanded one
  * level, media resolved, latest entries filled, forms placed. A panel that is gone is null.
  */
-export async function menuViews(cms: CmsHost, items: readonly ResolvedMenuItem[], options: { scopes?: BindingScopes; locale?: string; forms?: FormRequest; usage?: { user: boolean } } = {}): Promise<MenuItemView[]> {
+export async function menuViews(cms: CmsHost, items: readonly ResolvedMenuItem[], options: { scopes?: BindingScopes; locale?: string; forms?: FormRequest; usage?: { user: boolean }; patternDrafts?: ReadonlyMap<string, readonly Block[]> } = {}): Promise<MenuItemView[]> {
     const all = flattenResolved(items);
     if (!all.length) return [];
     const settings = await cms.settings.all();
@@ -303,10 +303,13 @@ export async function menuViews(cms: CmsHost, items: readonly ResolvedMenuItem[]
         try {
             for (const [id, record] of await cms.resource('cms/patterns').getMany(panelIds, renderer)) if (Array.isArray(record.content)) panels.set(id, record.content as Block[]);
         } catch (error) { if (!isCmsError(error)) throw error; }
+        for (const id of panelIds) { const draft = options.patternDrafts?.get(id); if (draft) panels.set(id, [...draft]); }
+        // A panel's blocks are the pattern's own: marked as such, so Live Edit edits the pattern.
+        for (const [id, blocks] of panels) panels.set(id, blocks.map(block => fromPattern(block, id)));
     }
     const metaBlocks = all.flatMap(item => declarations.flatMap(([name, declaration]) => declaration.kind === 'blocks' && Array.isArray(item.meta[name]) ? item.meta[name] as Block[] : []));
     const stored = [...[...panels.values()].flat(), ...metaBlocks];
-    const patterns = await usedPatterns(cms, blockDocuments(stored, cms.blockTypes), stored);
+    const patterns = withPatternDrafts(await usedPatterns(cms, blockDocuments(stored, cms.blockTypes), stored), options.patternDrafts);
     const expanded = new Map([...panels].map(([id, blocks]) => [id, expandPatterns(blocks, patterns)]));
     const ids = new Set<string>();
     for (const list of expanded.values()) for (const block of list) blockMediaIds(cms, block, ids);
@@ -389,7 +392,7 @@ function markFirstImage(image: MediaView | null, content: readonly RenderedBlock
  * bindings read (`{{ $.price }}`, `{{ $site.title }}`). Markdown with block references renders
  * as `content.<field>`: its text runs and the referenced blocks, synced patterns expanded.
  */
-function renderedBlock(cms: CmsHost, block: { _id: string; type: string; data: Record<string, unknown>; layout?: RenderedBlock['layout']; style?: RenderedBlock['style']; when?: RenderedBlock['when']; children?: readonly unknown[] },
+function renderedBlock(cms: CmsHost, block: { _id: string; type: string; data: Record<string, unknown>; layout?: RenderedBlock['layout']; style?: RenderedBlock['style']; when?: RenderedBlock['when']; children?: readonly unknown[]; pattern?: string; sourceId?: string },
     files: ReadonlyMap<string, CmsFile>, richText?: (doc: RichTextDoc) => BodyPart[], scope?: BindingScopes, refs: { patterns?: ReadonlyMap<string, Block[]>; usage?: { user: boolean }; depth?: number } = {}): RenderedBlock {
     const html: Record<string, string> = {};
     const media: Record<string, MediaView> = {};
@@ -428,6 +431,7 @@ function renderedBlock(cms: CmsHost, block: { _id: string; type: string; data: R
     }
     const children = Array.isArray(block.children) ? (block.children as RenderedBlock[]).map(child => renderedBlock(cms, child, files, richText, scope, refs)) : undefined;
     return { _id: block._id, type: block.type, data, html, media, ...(Object.keys(content).length ? { content } : {}), ...(type && blockIsData(type) ? { dataOnly: true } : {}),
+        ...(block.pattern ? { pattern: block.pattern, sourceId: block.sourceId ?? block._id } : {}),
         ...(block.layout ? { layout: block.layout } : {}), ...(block.style ? { style: block.style } : {}), ...(block.when ? { when: block.when } : {}), ...(children ? { children } : {}) };
 }
 
@@ -468,15 +472,30 @@ async function usedPatterns(cms: CmsHost, docs: readonly RichTextDoc[], blocks: 
     }
 }
 
-/** Blocks with each Pattern block replaced by the pattern's blocks, their IDs prefixed so they stay distinct; patterns inside patterns are left out. */
+/**
+ * Blocks with each Pattern block replaced by the pattern's blocks, their IDs prefixed so they
+ * stay distinct; patterns inside patterns are left out. Each expanded block remembers the
+ * pattern and its own ID there (`pattern`, `sourceId`), so Live Edit edits the pattern.
+ */
 function expandPatterns(blocks: readonly Block[], patterns: ReadonlyMap<string, Block[]>): Block[] {
     return blocks.flatMap(block => {
         if (block.type === 'core/pattern') {
             const id = String(block.data.pattern ?? '');
-            return (patterns.get(id) ?? []).filter(inner => inner.type !== 'core/pattern').map(inner => prefixIds(inner, `${block._id}-`));
+            return (patterns.get(id) ?? []).filter(inner => inner.type !== 'core/pattern').map(inner => prefixIds(fromPattern(inner, id), `${block._id}-`));
         }
         return [block.children ? { ...block, children: expandPatterns(block.children, patterns) } : block];
     });
+}
+
+/** A pattern's block as a page shows it: marked with the pattern and its ID there, children too. */
+export function fromPattern(block: Block, pattern: string): Block {
+    return { ...block, pattern, sourceId: block._id, ...(block.children ? { children: block.children.map(child => fromPattern(child, pattern)) } : {}) } as Block;
+}
+
+/** The patterns a page uses, with the editor's drafts of them in place of what is saved. */
+function withPatternDrafts(patterns: Map<string, Block[]>, drafts?: ReadonlyMap<string, readonly Block[]>): Map<string, Block[]> {
+    for (const [id, blocks] of drafts ?? []) patterns.set(id, [...blocks]);
+    return patterns;
 }
 
 function prefixIds(block: Block, prefix: string): Block {
@@ -503,6 +522,8 @@ export interface EntryViewOptions {
     unlocked?: ReadonlySet<string>;
     /** The request, for the forms the entry places; without it they render nothing. */
     forms?: FormRequest;
+    /** Live Edit: the editor's drafts of synced patterns, in place of what is saved. */
+    patternDrafts?: ReadonlyMap<string, readonly Block[]>;
 }
 
 /** Fields a details list leaves out: core fields themes show on their own, and internal ones. */
@@ -619,7 +640,7 @@ export async function entryViews(cms: CmsHost, collection: CollectionDefinition,
         ...fields.filter(([, declaration]) => declaration.kind === 'blocks').flatMap(([name]) => Array.isArray(record[name]) ? blockDocuments(record[name] as Block[], cms.blockTypes) : []),
     ]) : [];
     const stored = (record: RecordShape) => blocksFields.flatMap(([name]) => Array.isArray(record[name]) ? record[name] as Block[] : []);
-    const patterns = await usedPatterns(cms, docs, options.full ? records.flatMap(stored) : []);
+    const patterns = withPatternDrafts(await usedPatterns(cms, docs, options.full ? records.flatMap(stored) : []), options.patternDrafts);
     /**
      * The content's plain text for an excerpt: every content field in order, 4,000 characters at most.
      * Bindings resolve against the entry alone: excerpts and descriptions are the same for every visitor.

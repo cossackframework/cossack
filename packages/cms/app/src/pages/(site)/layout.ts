@@ -1,10 +1,10 @@
 import { Client, ClientState, Cossack, Page, Server, State, server$, setRequestLocale, type HeadContext, type HeadTag, type HeadValue } from '@cossackframework/core';
 import { html } from '@cossackframework/renderer';
 import { hasPermission, PERMISSIONS, PLACEHOLDER_SCRIPT, usesUserBinding, type RenderedBlock, type SiteView, type ThemeData } from '@cossackframework/cms';
-import { areaViews, bindingScopes, languageLinks, resolvedOptions, siteView, themeData, themeState, type ThemeState } from '../../cms/site';
+import { areaViews, bindingScopes, languageLinks, resolvedOptions, siteMenus, siteView, themeData, themeState, type ThemeState } from '../../cms/site';
 import { blockOptions } from '../../cms/content';
-import { areaDraftBlocks } from '../../cms/site-editing';
-import { siteSession, type AreaDraft, type SiteEditingContext } from '../../cms/site-session';
+import { areaDraftBlocks, patternDraftBlocks } from '../../cms/site-editing';
+import { siteSession, type AreaDraft, type PatternDraft, type SiteEditingContext } from '../../cms/site-session';
 import { siteTheme, tagDocument, themeHelpers } from '../../cms/site-view';
 import { siteTaskbar } from '../../cms/site-taskbar';
 import { taskbar, type TaskbarView } from '../../cms/taskbar';
@@ -38,12 +38,12 @@ export default class SiteLayout extends Cossack {
     private unsubscribe: (() => void) | undefined;
     private sessionSeen = false;
     private previewTimer: ReturnType<typeof setTimeout> | undefined;
-    private pendingPreview: AreaDraft[] | null | undefined;
+    private pendingPreview: { areas: AreaDraft[]; patterns: PatternDraft[] } | null | undefined;
     private previewing = false;
 
     onMount() {
         this.unsubscribe = siteSession.subscribe(session => {
-            if (session) { this.sessionSeen = true; this.exited = false; this.queuePreview(session.areas); }
+            if (session) { this.sessionSeen = true; this.exited = false; this.queuePreview(session); }
             else if (this.sessionSeen) { this.sessionSeen = false; this.exited = true; this.queuePreview(null); }
         });
     }
@@ -55,8 +55,8 @@ export default class SiteLayout extends Cossack {
 
     /** Preview the areas from the drafts, one request at a time, a moment after the last change. */
     @Client()
-    private queuePreview(areas: AreaDraft[] | null) {
-        this.pendingPreview = areas;
+    private queuePreview(session: { areas: AreaDraft[]; patterns: PatternDraft[] } | null) {
+        this.pendingPreview = session;
         if (this.previewTimer) clearTimeout(this.previewTimer);
         this.previewTimer = setTimeout(() => { void this.runPreview(); }, 150);
     }
@@ -74,19 +74,27 @@ export default class SiteLayout extends Cossack {
         } finally { this.previewing = false; }
     }
 
-    /** The areas rendered from the editor's drafts, or from what is saved when the session ends. Only for users who may edit areas. */
+    /** The frame rendered from the editor's drafts (the areas, and the patterns the areas and menus show), or from what is saved when the session ends. */
     @Server()
-    async previewAreas(areas: AreaDraft[] | null) {
+    async previewAreas(session: { areas: AreaDraft[]; patterns: PatternDraft[] } | null) {
         const cms = this.c.get('cms');
         const principal = this.c.get('principal');
-        if (!hasPermission(principal, PERMISSIONS.manageAppearance)) return;
+        if (principal.kind !== 'user') return;
         const settings = await cms.settings.all();
         const info = cms.themes().find(entry => entry.name === this.theme.name);
-        const drafts = areas ? areaDraftBlocks(areas, await blockOptions(cms)) : undefined;
+        const options = session ? await blockOptions(cms) : [];
+        const user = this.user ? { name: this.user.name } : null;
+        // Areas change only for users who may edit them; a pattern previews for whoever edits it, in the areas and the menus' panels.
+        const drafts = session && hasPermission(principal, PERMISSIONS.manageAppearance) ? areaDraftBlocks(session.areas, options) : undefined;
+        const patternDrafts = session?.patterns.length ? patternDraftBlocks(session.patterns, options) : undefined;
         // Previews bind to the site and the user; the entry shown is the page's, not known here.
-        const rendered = await areaViews(cms, info?.areas ?? [], undefined, bindingScopes(settings, { user: this.user ? { name: this.user.name } : null }), undefined, drafts);
-        this.site = { ...this.site, areas: rendered };
+        const areas = await areaViews(cms, info?.areas ?? [], undefined, bindingScopes(settings, { user }), undefined, drafts, patternDrafts);
+        const menus = patternDrafts || this.patternsPreviewed ? await siteMenus(cms, this.theme, { locale: this.site.locale, user, patternDrafts }) : this.site.menus;
+        this.patternsPreviewed = Boolean(patternDrafts);
+        this.site = { ...this.site, areas, menus };
     }
+    /** The menus were rendered with pattern drafts: render them again when the drafts go. */
+    @State() patternsPreviewed = false;
 
     /**
      * Pages set their own titles; the site title is the fallback. The theme's head template
@@ -167,7 +175,8 @@ export default class SiteLayout extends Cossack {
         const theme = siteTheme(this.theme);
         // In edit mode every area block carries its document, and a lock when the user may not change areas.
         const editing = Boolean(this.editing) && !this.exited;
-        const areas: Record<string, readonly RenderedBlock[]> = editing ? Object.fromEntries(Object.entries(this.site.areas).map(([name, blocks]) => [name, tagDocument(blocks, `area:${name}`, !this.editing!.editable)])) : this.site.areas;
+        const patterns = editing ? new Map(this.editing!.patterns.map(pattern => [pattern.id, !pattern.editable])) : undefined;
+        const areas: Record<string, readonly RenderedBlock[]> = editing ? Object.fromEntries(Object.entries(this.site.areas).map(([name, blocks]) => [name, tagDocument(blocks, `area:${name}`, !this.editing!.editable, patterns)])) : this.site.areas;
         const site = editing ? { ...this.site, areas } : this.site;
         const frame = theme.layout(site, html`${this.children}`, themeHelpers(theme, { ...this.theme, data: { layout: this.data }, editing, languages: this.site.languages, menus: this.site.menus, site: this.site }, (path, exact) => this.isActive(path, exact)));
         return this.taskbar ? html`${frame}${taskbar(this.taskbar, { logout: () => this.doLogout(), error: this.logoutError })}` : frame;

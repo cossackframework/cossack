@@ -303,7 +303,10 @@ export interface RenderedBlock {
     readonly entries?: readonly EntryView[];
     /** A data block: it holds values for themes and the API and renders nothing. */
     readonly dataOnly?: boolean;
-    /** In edit mode: the document the block belongs to (`area:<name>`); the entry's blocks carry none. */
+    /** The synced pattern the block was expanded from, and its ID there: Live Edit addresses the pattern's own document through them. */
+    readonly pattern?: string;
+    readonly sourceId?: string;
+    /** In edit mode: the document the block belongs to (`area:<name>`, `pattern:<id>`); the entry's own blocks carry none. */
     readonly document?: string;
     /** In edit mode: the signed-in user may not change the block's document; it is marked but nothing in it selects. */
     readonly locked?: boolean;

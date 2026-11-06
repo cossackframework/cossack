@@ -2,14 +2,15 @@ import { Client, ClientState, Cossack, Page, Server, State, defineServerMiddlewa
 import { isTransportPath } from '@cossackframework/core/transport-routes';
 import { getCookie } from 'hono/cookie';
 import { component, html } from '@cossackframework/renderer';
-import { isCmsError, isSameOriginPost, type ArchiveView, type EntryView, type LanguageLink, type Note, type RecordShape, type ThemeData } from '@cossackframework/cms';
+import { hasPermission, isCmsError, isSameOriginPost, PERMISSIONS, type ArchiveView, type EntryView, type LanguageLink, type Note, type RecordShape, type ThemeData } from '@cossackframework/cms';
 import { archive, authorArchive, authorView, bindingScopes, commentResult, entryViews, homeView, isProtected, languageLinks, localePrefix, pageNumber, redirectFor, resolvePath, searchEntries, termArchive, themeData, themeState, unlockCookie, unlockToken, resolvedOptions, type Resolved, type ThemeState } from '../../../cms/site';
-import { archiveTemplate, entryTemplate, siteContent, siteTheme, themeHelpers, unavailable } from '../../../cms/site-view';
+import { archiveTemplate, entryTemplate, siteContent, siteTheme, tagDocument, themeHelpers, unavailable } from '../../../cms/site-view';
 import { authorSeo, entrySeo, homeSeo, listSeo } from '../../../cms/seo';
 import { emptySeo, seoHead, type SeoView } from '../../../cms/seo-head';
 import type { SiteDraft, SiteEditable } from '../../../cms/site-editor';
-import { draftEntry, draftMedia, editableRecord, saveDocuments, saveDraft, siteDraft, siteEditable } from '../../../cms/site-editing';
-import { siteSession } from '../../../cms/site-session';
+import { draftEntry, draftMedia, editableRecord, frameDraft, saveDocuments, saveDraft, siteDraft, siteEditable } from '../../../cms/site-editing';
+import { siteSession, type SiteEditingContext } from '../../../cms/site-session';
+import type { SiteDocument } from '../../../cms/site-editor';
 import { contentMenus, siteInfo, type SiteInfo } from '../../../cms/site';
 import type { MenuItemView } from '@cossackframework/cms';
 import { fieldErrors } from '../../../cms/content';
@@ -19,6 +20,15 @@ import { siteOrigin } from '../../../cms/seo';
 import type { EditorBlock, EditorValues } from '../../../cms/editor';
 import type { MediaPreview } from '../../../cms/field-controls';
 import type { MediaChooserState } from '../../../cms/media-chooser';
+
+/** What the layout needs of the draft's documents at render time, to mark the areas and the patterns in them. */
+function editingContext(documents: readonly SiteDocument[]): SiteEditingContext {
+    return {
+        areas: documents.filter(document => document.kind === 'area').map(document => ({ name: document.name, blocks: document.blocks })),
+        editable: documents.some(document => document.kind === 'area' && document.editable),
+        patterns: documents.filter(document => document.kind === 'pattern').map(document => ({ id: document.name, editable: document.editable })),
+    };
+}
 
 /** The site editor, loaded the first time an editor enters edit mode; visitors never load it. */
 let SiteEditor: typeof import('../../../cms/site-editor.client').SiteEditor | undefined;
@@ -98,6 +108,8 @@ export default class SitePath extends Cossack {
     @State() seo: SeoView = emptySeo();
     /** For a signed-in user who may update the entry: what `?edit` opens, and the taskbar's editor links. Null for others. */
     @State() editable: SiteEditable | null = null;
+    /** A list page whose frame (the theme's areas) the user may change: `?edit` opens the frame alone. */
+    @State() frameEditable = false;
     /** Edit mode: the entry's draft. `?edit` opens it. */
     @State() draft: SiteDraft | null = null;
     @ClientState() editorReady = false;
@@ -194,8 +206,14 @@ export default class SitePath extends Cossack {
                 if (this.editable) this.c.header('cache-control', 'private, no-store');
                 if (this.editable && this.c.req.query('edit') !== undefined) await this.startEditing();
             }
+            // A list page has no entry to edit, but its header and footer are the theme's areas: editable in place by whoever may change them.
+            this.frameEditable = !shown && (this.kind === 'home' || this.kind === 'list') && principal.kind === 'user' && hasPermission(principal, PERMISSIONS.manageAppearance);
+            if (this.frameEditable) {
+                this.c.header('cache-control', 'private, no-store');
+                if (this.c.req.query('edit') !== undefined) await this.startEditing();
+            }
             // The site taskbar shows the page's SEO and, for an entry the user may edit, its status and editor.
-            this.c.set('cms.taskbar', { seo: this.seo, entry: this.editable && shown
+            this.c.set('cms.taskbar', { seo: this.seo, frame: this.frameEditable, entry: this.editable && shown
                 ? { collection: this.editable.collection, id: this.editable.id, status: String(shown.record.status ?? ''), dashboard: this.editable.dashboard, inPlace: true } : null });
             // A binding to the signed-in user makes the page theirs alone.
             if (usage.user && viewOptions.user) this.c.header('cache-control', 'private, no-store');
@@ -246,10 +264,17 @@ export default class SitePath extends Cossack {
         const cms = this.c.get('cms');
         const editable = this.editable;
         const found = editable ? await editableRecord(cms, editable.collection, editable.id, this.c.get('principal')) : null;
-        if (!found) { this.editable = null; this.draft = null; return; }
+        if (!found) {
+            // A list page: the frame alone, for a user who may change the theme's areas.
+            const frame = this.frameEditable ? await frameDraft(cms, this.c.get('principal')) : null;
+            this.editable = null;
+            this.draft = frame;
+            if (frame) this.c.set('cms.editing', editingContext(frame.documents));
+            return;
+        }
         this.draft = await siteDraft(cms, found.collection, found.record, this.c.get('principal'));
         // The layout renders the areas with their markers from the first paint (`server$` in the layout reads this at render time).
-        this.c.set('cms.editing', { areas: this.draft.documents.map(document => ({ name: document.name, blocks: document.blocks })), editable: this.draft.documents.some(document => document.editable) });
+        this.c.set('cms.editing', editingContext(this.draft.documents));
         this.entry = await draftEntry(cms, found.collection, found.record, this.draft.values, this.formRequest());
         await this.refreshMenus();
     }
@@ -262,7 +287,7 @@ export default class SitePath extends Cossack {
         const found = draft ? await editableRecord(cms, draft.collection, draft.id, this.c.get('principal')) : null;
         if (!draft || !found) { this.draft = null; return; }
         try {
-            this.entry = await draftEntry(cms, found.collection, found.record, values, this.formRequest());
+            this.entry = await draftEntry(cms, found.collection, found.record, values, this.formRequest(), draft.documents, draft.view.blocks);
             await this.refreshMenus();
             this.draft = { ...draft, values, changed: true, error: '', errors: {} };
         } catch (error) {
@@ -277,6 +302,11 @@ export default class SitePath extends Cossack {
         const cms = this.c.get('cms');
         const principal = this.c.get('principal');
         const draft = this.draft;
+        if (draft && !draft.collection) {
+            // The frame alone: the documents are everything there is to save.
+            this.draft = { ...draft, documents: await saveDocuments(cms, draft.documents, draft.view.blocks, principal) };
+            return;
+        }
         const found = draft ? await editableRecord(cms, draft.collection, draft.id, principal) : null;
         if (!draft || !found) { this.draft = null; return; }
         // The areas save on their own, each over its revision; a conflict stays on its document and the others still save.
@@ -318,22 +348,28 @@ export default class SitePath extends Cossack {
     async searchDraftMedia(search: string) {
         const cms = this.c.get('cms');
         const draft = this.draft;
-        if (!draft || !await editableRecord(cms, draft.collection, draft.id, this.c.get('principal'))) return;
+        if (!draft || (draft.collection && !await editableRecord(cms, draft.collection, draft.id, this.c.get('principal')))) return;
         this.draft = { ...draft, chooser: { ...draft.chooser, search, items: await draftMedia(cms, search, this.c.get('principal'), draft.chooser.kind) } };
     }
 
-    /** A document's blocks changed: keep them, and let the layout preview the area. */
+    /** A document's blocks changed: keep them, let the layout preview the areas, and render the entry again for a pattern it shows. */
     @Client()
     changeDocument(key: string, blocks: EditorBlock[]) {
         if (!this.draft) return;
         this.draft = { ...this.draft, documents: this.draft.documents.map(document => document.key === key ? { ...document, blocks, changed: true, error: '' } : document) };
         this.shareDocuments();
+        // A pattern the entry shows: render the entry again from its draft. The frame alone has no entry to render.
+        if (key.startsWith('pattern:') && this.draft.collection) void this.changeDraft(this.draft.values, true);
     }
 
-    /** The areas' drafts, for the layout to preview them; null ends the session and shows the saved areas again. */
+    /** The areas' and patterns' drafts, for the layout to preview them; null ends the session and shows the saved frame again. */
     @Client()
     private shareDocuments() {
-        siteSession.set(this.draft ? { areas: this.draft.documents.map(document => ({ name: document.name, blocks: document.blocks })) } : null);
+        const documents = this.draft?.documents ?? [];
+        siteSession.set(this.draft ? {
+            areas: documents.filter(document => document.kind === 'area').map(document => ({ name: document.name, blocks: document.blocks })),
+            patterns: documents.filter(document => document.kind === 'pattern').map(document => ({ id: document.name, blocks: document.blocks })),
+        } : null);
     }
 
     /** Start again from the saved entry and areas, after a conflict. */
@@ -433,11 +469,16 @@ export default class SitePath extends Cossack {
         const helpers = themeHelpers(theme, { ...this.theme, data: { page: this.data }, editing: Boolean(this.draft), languages: this.languages, menus: this.menus, site: this.site ?? undefined }, (path, exact) => this.isActive(path, exact));
         if (this.kind === 'entry' && this.entry && this.locked) return siteContent(this.passwordForm(theme, helpers), this.theme);
         if (this.kind === 'entry' && this.entry) {
-            const page = siteContent(entryTemplate(theme, this.entry.collection, this.entry.template)(this.entry, helpers), this.theme);
+            // In edit mode the content's blocks carry their document: the entry's own, or a pattern's, locked when the user may not change it.
+            const entry = this.draft ? { ...this.entry, content: tagDocument(this.entry.content, 'entry', false, new Map(this.draft.documents.filter(document => document.kind === 'pattern').map(document => [document.name, !document.editable]))) } : this.entry;
+            const page = siteContent(entryTemplate(theme, entry.collection, entry.template)(entry, helpers), this.theme);
             // The editor sits outside the content root, which contains fixed elements; the taskbar is the layout's.
             return this.draft ? html`${page}${this.editor()}` : page;
         }
-        if (this.kind === 'home' || this.kind === 'list') return siteContent(archiveTemplate(theme, this.view)(this.view, helpers), this.theme);
+        if (this.kind === 'home' || this.kind === 'list') {
+            const page = siteContent(archiveTemplate(theme, this.view)(this.view, helpers), this.theme);
+            return this.draft ? html`${page}${this.editor()}` : page;
+        }
         if (this.kind === 'gone') return html`<section class="space-y-3 py-16 text-center">
             <h1 class="text-3xl font-bold text-foreground">${__('Page removed')}</h1>
             <p class="text-muted-foreground">${__('This page was removed and is not coming back.')}</p>

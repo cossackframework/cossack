@@ -353,6 +353,49 @@ describe.skipIf(!liveRomeDBTests())('CMS themes', () => {
       expect(new URL(tab.url()).searchParams.has('edit')).toBe(false);
       expect(errors).toEqual([]);
 
+      // A list page has no entry, but its frame is editable too: Live Edit on the archive opens the Blocks panel with the areas alone.
+      await tab.goto(server.origin + '/projects');
+      await tab.waitForFunction(() => window.__cossackReady === true);
+      await taskbar.getByRole('link', { name: 'Live Edit', exact: true }).click();
+      const frameBar = tab.getByRole('region', { name: 'Editing' });
+      await browserExpect(frameBar).toBeVisible();
+      await browserExpect(tab.locator('[data-site-doc="area:header"]')).toBeVisible();
+      await browserExpect(tab.locator('[data-site-doc="entry"]')).toHaveCount(0);
+      await browserExpect(frameBar.getByRole('button', { name: 'Entry', exact: true })).toHaveCount(0);
+      await frameBar.getByRole('button', { name: 'Exit', exact: true }).click();
+      await browserExpect(taskbar.getByRole('link', { name: 'Live Edit', exact: true })).toBeVisible();
+      expect(errors).toEqual([]);
+
+      // A synced pattern the page shows is a document too: a project built from a Pattern block shows the pattern's blocks,
+      // the pattern joins the Blocks panel, and editing a block inside it edits the pattern itself, everywhere it is used.
+      const promo = await web.action(EDITOR, 'save', [{ title: 'Promo', content: [{ _id: 'promo-text', type: 'core/paragraph', data: { text: 'Try the promo' } }], synced: true, starter: [] }, 'update', 0],
+        { params: { collection: 'patterns', id: 'new' }, state: { route: 'patterns', id: 'new' } });
+      expect(promo.id).toBeTruthy();
+      await project('Promo project', 'ACME', [{ _id: 'pat', type: 'core/pattern', data: { pattern: promo.id } }]);
+      await tab.goto(server.origin + '/projects/promo-project');
+      await tab.waitForFunction(() => window.__cossackReady === true);
+      await browserExpect(sections.getByText('Try the promo')).toBeVisible();
+      await taskbar.getByRole('link', { name: 'Live Edit', exact: true }).click();
+      const promoBar = tab.getByRole('region', { name: 'Editing' });
+      await promoBar.getByRole('button', { name: 'Blocks', exact: true }).click();
+      const promoDoc = tab.locator(`[data-site-doc="pattern:${promo.id}"]`);
+      await browserExpect(promoDoc).toBeVisible();
+      await browserExpect(promoDoc).toContainText('changes apply everywhere');
+      await sections.getByText('Try the promo').click();
+      const promoForm = tab.getByRole('dialog', { name: 'Edit Paragraph' });
+      await promoForm.getByRole('textbox', { name: 'Text' }).fill('Try the promo, edited in place');
+      await promoForm.getByRole('button', { name: 'Apply' }).click();
+      await browserExpect(sections.getByText('Try the promo, edited in place')).toBeVisible();
+      await browserExpect(promoBar.getByRole('status')).toHaveText('Unsaved changes');
+      await promoBar.getByRole('button', { name: 'Save', exact: true }).click();
+      await browserExpect(promoBar.getByRole('status')).toHaveText('No unsaved changes');
+      // The pattern's own record changed: its editor shows the new text at revision 2, and visitors see it on the page.
+      const promoEditor = await web.page(`/dashboard/content/patterns/${promo.id}`);
+      expect(promoEditor).toContain('Try the promo, edited in place');
+      expect(promoEditor).toMatch(/#2 · /);
+      expect(await visitor.page('/projects/promo-project')).toContain('Try the promo, edited in place');
+      expect(errors).toEqual([]);
+
       // Flat taxonomies in the public editor offer existing terms, keep selections visible,
       // and still create new tags. Each change must survive saving and reloading the page.
       const terms = await web.action('dashboard/(cms)/terms/[taxonomy]/index.ts', 'create',

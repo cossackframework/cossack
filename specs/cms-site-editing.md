@@ -2,7 +2,8 @@
 
 Builds on `specs/cms-themes.md` (widget areas, the front-end block editor), `specs/cms-layout.md`
 (containers), `specs/cms-taskbar.md` (where Live Edit starts) and `specs/cms-navigation.md` (the
-navigation block and `helpers.menu`). Not built yet.
+navigation block and `helpers.menu`). Built 2026-11-07 on `cms-foundation`; the guide is
+`docs/cms/site-editing.md`. See [Delivery](#delivery) for what was left out.
 
 The user's decisions (2026-11-06): **templates stay code**; the editable regions of a site are
 its widget areas, and a theme makes more of its layout editable by declaring more areas. The
@@ -107,3 +108,15 @@ bottom line are template HTML, so there is nothing to select.
   Edit fills it; a child theme's own `header` defaults replace the parent's.
 - In Chromium, clicking a block inside a synced pattern in the footer selects the pattern
   document, and saving changes it on another page too.
+
+## Delivery
+
+| Where | What | Tests |
+| --- | --- | --- |
+| CMS package | `ThemeAreaManifest` and `themeArea` (areas as `label` or `{ label, blocks }`, default blocks checked against the core types in `manifestProblems`), `ThemeInfo.areas[].defaults`, `cms.areaLocations()` with defaults, `cms.areas.reset`; `core/site-logo`, `core/search`, `core/group` `direction` and `justify`; `SearchOptions` and `ThemeHelpers.search`; `RenderedBlock.pattern`, `sourceId`, `document` and `locked` | `appearance-unit.test.ts`, live `themes.test.ts` |
+| CMS app | `areaViews` renders defaults, drafts and pattern drafts; `siteInfo`, `$site.year`; `searchForm`, `tagDocument` and markers with `data-cms-doc` and `data-cms-locked` in `cms/site-view.ts`; row groups, the logo and the search in `blocks.css`; Widgets shows defaults and resets; the default theme's `header` and `footer-bar` areas with their default blocks, four options removed; `SiteDocument` (areas and patterns) in the draft, `pageDocuments`, `saveDocuments`, `areaDraftBlocks`, `patternDraftBlocks`, `draftEntry` with pattern drafts; the shared `siteSession` store; the layout's `editing` context, `previewAreas` and markers at render; the editor's documents in the Blocks panel, locked documents, per-document conflicts | `menu-nav.test.ts`, `edit-markers.test.ts`, `generated-runtime-cms.test.js` (the default header and footer bar), `generated-runtime-cms-themes.test.js` (the header edited and saved in place; a pattern placed, edited in place and saved as the pattern) |
+| Docs | `docs/cms/site-editing.md` (new), `docs/cms/themes.md` (areas with defaults, site blocks, `helpers.search`), `docs/cms/languages.md`, `docs/cms/block-references.md`, the docs index | |
+
+Left out, as follow-ups: the Styles panel; menu and settings documents. The layout's previews
+bind to the site and the user, not to the entry shown, and place no forms. On a list page the
+frame is edited alone (`frameDraft`): no Entry or Text panel, no notes.

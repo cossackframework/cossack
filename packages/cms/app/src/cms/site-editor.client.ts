@@ -114,6 +114,8 @@ export class SiteEditor extends Cossack {
     private readonly onResize = () => this.placeBar();
 
     onMount() {
+        // The frame alone has no entry: its documents are the whole editor, so the Blocks panel opens at once.
+        if (!this.props.draft.collection) this.panel = 'blocks';
         this.style = document.createElement('style');
         this.style.textContent = STYLE;
         document.head.appendChild(this.style);
@@ -801,12 +803,12 @@ export class SiteEditor extends Cossack {
             class="rounded border border-border bg-background px-2 py-0.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer disabled:cursor-default disabled:opacity-40" @click=${run}>${label}</button>`;
     }
 
-    /** The page's documents in page order: the header, the entry's content, then the other areas. */
+    /** The page's documents in page order: the header, the entry's content, the patterns the page shows, then the other areas. */
     private documents(): { key: string; label: string; editable: boolean; document: SiteDocument | null }[] {
-        const areas = this.props.draft.documents;
-        const area = (document: SiteDocument) => ({ key: document.key, label: document.label, editable: document.editable, document });
+        const all = this.props.draft.documents;
+        const of = (document: SiteDocument) => ({ key: document.key, label: document.label, editable: document.editable, document });
         const entry = this.props.draft.blocksField ? [{ key: 'entry', label: __('Content'), editable: true, document: null }] : [];
-        return [...areas.filter(document => document.name === 'header').map(area), ...entry, ...areas.filter(document => document.name !== 'header').map(area)];
+        return [...all.filter(document => document.kind === 'area' && document.name === 'header').map(of), ...entry, ...all.filter(document => document.kind === 'pattern').map(of), ...all.filter(document => document.kind === 'area' && document.name !== 'header').map(of)];
     }
 
     private blocksPanel(): TemplateResult {
@@ -824,7 +826,8 @@ export class SiteEditor extends Cossack {
         const options = this.optionsFor(key);
         return html`<section class="space-y-3" data-site-doc=${key} aria-label=${label}>
             ${titled ? html`<h3 class="flex flex-wrap items-center gap-x-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">${label}
-                ${editable ? null : html`<span class="font-normal normal-case tracking-normal" data-locked>· ${__('Administrators edit this')}</span>`}
+                ${doc?.kind === 'pattern' ? html`<span class="font-normal normal-case tracking-normal">· ${__('Pattern: changes apply everywhere it is used')}</span>` : null}
+                ${editable ? null : html`<span class="font-normal normal-case tracking-normal" data-locked>· ${doc?.kind === 'pattern' ? __('You cannot change this pattern') : __('Administrators edit this')}</span>`}
                 ${doc?.changed ? html`<span class="font-normal normal-case tracking-normal">· ${__('Unsaved changes')}</span>` : null}</h3>` : null}
             ${doc?.error ? html`<p role="alert" class="flex flex-wrap items-center gap-2 text-xs text-destructive">${doc.error}
                 ${doc.conflict ? component(Button, { type: 'button', size: 'sm', variant: 'outline', '@click': () => this.props.onReload() }, __('Reload')) : null}</p>` : null}
@@ -958,12 +961,12 @@ export class SiteEditor extends Cossack {
         // In the taskbar's middle, between its start menu and its user menu (`placeBar`); the whole bottom edge without a taskbar.
         return html`<div role="region" aria-label=${__('Editing')} data-site-editor-bar class="fixed bottom-0 z-50 flex h-10 items-center gap-1 overflow-x-auto border-t border-border bg-background/95 px-2 text-foreground backdrop-blur md:border-t-0 md:bg-transparent md:backdrop-blur-none"
             style="left: var(--cms-taskbar-start, 0px); right: var(--cms-taskbar-end, 0px)">
-            ${tab('entry', __('Entry'))}
+            ${draft.collection ? tab('entry', __('Entry')) : null}
             ${draft.blocksField || draft.documents.length ? tab('blocks', __('Blocks')) : null}
             ${draft.bodyField ? tab('body', __('Text')) : null}
-            <button type="button" aria-pressed=${this.notesOpen ? 'true' : 'false'} data-notes-toggle=${this.openRoots().length}
+            ${draft.collection ? html`<button type="button" aria-pressed=${this.notesOpen ? 'true' : 'false'} data-notes-toggle=${this.openRoots().length}
                 class=${`rounded-full px-3 py-1.5 text-sm border-none cursor-pointer ${this.notesOpen ? 'bg-muted text-foreground' : 'bg-transparent text-muted-foreground hover:text-foreground'}`}
-                @click=${() => { this.notesOpen = !this.notesOpen; }}>${__('Notes')}${this.openRoots().length ? html` <span class="rounded-full bg-amber-500/15 px-1.5 text-xs font-medium text-amber-700 dark:text-amber-300">${this.openRoots().length}</span>` : null}</button>
+                @click=${() => { this.notesOpen = !this.notesOpen; }}>${__('Notes')}${this.openRoots().length ? html` <span class="rounded-full bg-amber-500/15 px-1.5 text-xs font-medium text-amber-700 dark:text-amber-300">${this.openRoots().length}</span>` : null}</button>` : null}
             <span class="flex items-center gap-0.5 border-l border-border pl-1" role="group" aria-label=${__('Preview width')}>${device('desktop')}${device('tablet')}${device('phone')}</span>
             <span role="status" class=${`px-2 text-xs ${draft.error && !draft.conflict ? 'text-destructive' : 'text-muted-foreground'}`}>${status}</span>
             ${draft.conflict ? html`<span role="alert" class="flex items-center gap-2 px-2 text-xs text-destructive">${__('Someone saved this entry since you started.')}

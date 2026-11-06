@@ -71,5 +71,6 @@ function pageContext(cms: CmsHost, principal: Principal, resolved: Resolved | { 
     } else if (kind === 'home' && can(PERMISSIONS.manageSettings)) {
         links.push({ label: 'Reading settings', href: '/dashboard/settings/reading', icon: icon('settings') });
     }
-    return { status: null, edit: null, links };
+    // A list page: the header and footer are still editable in place for whoever may change the theme's areas.
+    return { status: null, edit: page?.frame ? `${path}?edit` : null, links };
 }

@@ -19,14 +19,15 @@ export interface SiteEditable {
 }
 
 /**
- * A block list edited beside the entry: one of the theme's widget areas on the page, with its own
- * revision and permission. The entry's own blocks are the `entry` document.
+ * A block list edited beside the entry: one of the theme's widget areas on the page, or a synced
+ * pattern the page shows (in the content, an area or a menu panel), with its own revision and
+ * permission. The entry's own blocks are the `entry` document.
  */
 export interface SiteDocument {
-    /** `area:<name>`. */
+    /** `area:<name>` or `pattern:<id>`. */
     key: string;
-    kind: 'area';
-    /** The area's name. */
+    kind: 'area' | 'pattern';
+    /** The area's name, or the pattern's ID. */
     name: string;
     label: string;
     /** 0 until the site saves the area: the theme's default blocks show. */
