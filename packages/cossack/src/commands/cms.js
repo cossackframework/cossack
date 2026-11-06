@@ -34,7 +34,8 @@ Manage a CMS site through its API, as a signed-in user. Start with \`cossack cms
 for the address under ~/.config/cossack/. In a project, the address defaults to the APP_URL of .env.
 COSSACK_CMS_URL, COSSACK_CMS_TOKEN and COSSACK_CMS_SITE override the stored login, for CI.
 On a network, --site <id> acts on one site (site accounts sign in with --site too).
-Writes take --data '{"title":"Hello"}' (or @file, @- for stdin) and --set title=Hello; deletes need --yes.
+Writes take --data '{"title":"Hello"}' (or @file, @- for stdin) and --set title=Hello; deletes and resets need --yes.
+Menus, their locations and the theme's widget areas (menus, locations, areas) take the appearance permission.
 \`cossack cms mcp\` prints the configuration an MCP client needs for the same site.
 
 Commands:
@@ -70,7 +71,7 @@ async function send(client, request, cwd) {
   let body = request.body;
   if (request.rev) {
     const rev = request.rev.given ?? (await client.request('GET', request.rev.read)).data?.item?.rev;
-    if (!Number.isSafeInteger(rev) || rev < 1) throw coded('COSSACK_CMS_REVISION_UNKNOWN', 'Could not read the entry\'s current revision; pass --rev.');
+    if (!Number.isSafeInteger(rev) || rev < request.rev.min) throw coded('COSSACK_CMS_REVISION_UNKNOWN', 'Could not read the current revision; pass --rev.');
     if (request.rev.where === 'query') query.rev = rev; else body = { ...body, rev };
   }
   let form;

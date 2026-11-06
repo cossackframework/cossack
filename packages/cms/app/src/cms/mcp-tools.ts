@@ -29,6 +29,13 @@ const id = str('The entry ID.');
 const rev = int('The revision you read, so a change made meanwhile is not overwritten (409). Left out, the current revision.');
 const page = int('Page number, from 1.', { minimum: 1 });
 const perPage = int('Entries per page, 1 to 100.', { minimum: 1, maximum: 100 });
+const menuId = str('The menu ID (see list_menus).');
+const menuItems: JsonSchemaProperty = {
+    type: 'array', description: 'The menu\'s items, a tree. Each has kind (link, entry, archive, term or heading), label (empty uses the target\'s title), url (link), collection (entry, archive), entry (an entry ID), taxonomy and term (a term ID), description (a line under the link in a mega menu), panel (a synced pattern\'s ID shown beside the item\'s links: a mega menu), newTab, className, attributes, meta (the field groups\' values) and children. An item with heading children or a panel opens as a mega menu; others with children as a dropdown. id is optional and made when left out.',
+    items: { type: 'object', additionalProperties: true },
+};
+const menuLocations: JsonSchemaProperty = { type: 'array', description: 'Theme location names the menu shows in, such as ["primary"] (see list_menu_locations); the complete list.', items: { type: 'string' } };
+const areaName = str('The widget area\'s name, such as header (see list_widget_areas).');
 
 /** Query strings for an operation that reads request parameters. */
 function query(input: Input, names: readonly string[]): { [key: string]: string } {
@@ -225,6 +232,61 @@ export const cmsTools: readonly Tool[] = [
         async run(input, { c }) { return manage.mediaList(c, query(input, ['q', 'kind'])); },
     },
     {
+        name: 'list_menus', description: 'The site\'s navigation menus: ID, name, how many items and the theme locations each shows in.',
+        inputSchema: schema({}), annotations: READ,
+        async run(_input, { c }) { return manage.menusList(c); },
+    },
+    {
+        name: 'get_menu', description: 'One menu with its items tree (every item\'s id, kind, label, target, description, panel and children), its rev (needed to change it) and locations.',
+        inputSchema: schema({ id: menuId }, ['id']), annotations: READ,
+        async run(input, { c }) { return manage.menuRead(c, string(input.id)); },
+    },
+    {
+        name: 'create_menu', description: 'Create a menu from a name and its items, and show it at theme locations. For a mega menu, give a top-level item heading children (one column each, with links under them) and/or a panel: the ID of a synced pattern (an entry of the patterns collection) rendered beside its links.',
+        inputSchema: schema({ name: str('The menu\'s name, for the dashboard.'), items: menuItems, locations: menuLocations }, ['name']), annotations: WRITE,
+        async run(input, { c }) { return manage.menuCreate(c, input); },
+    },
+    {
+        name: 'update_menu', description: 'Rename a menu, replace its items (the whole tree: read it first with get_menu and send it back changed) or set exactly the locations it shows in. Send rev from get_menu so a change made meanwhile is not overwritten.',
+        inputSchema: schema({ id: menuId, name: str('A new name.'), items: menuItems, locations: menuLocations, rev }, ['id']), annotations: CHANGE,
+        async run(input, { c }) { return manage.menuUpdate(c, string(input.id), input); },
+    },
+    {
+        name: 'delete_menu', description: 'Delete a menu; the locations it held show no menu (primary then lists the top-level pages).',
+        inputSchema: schema({ id: menuId }, ['id']), annotations: DESTROY,
+        async run(input, { c }) { await manage.menuDelete(c, string(input.id)); return { deleted: true, id: input.id }; },
+    },
+    {
+        name: 'list_menu_locations', description: 'The themes\' menu locations (the active theme\'s first, such as primary and footer) and the menu shown at each.',
+        inputSchema: schema({}), annotations: READ,
+        async run(_input, { c }) { return manage.menuLocationsList(c); },
+    },
+    {
+        name: 'assign_menu_location', description: 'Show a menu at a theme location, replacing the one there; an empty menu shows none.',
+        inputSchema: schema({ location: str('The location name, such as primary.'), menu: str('The menu ID, or an empty string for no menu.') }, ['location', 'menu']), annotations: CHANGE,
+        async run(input, { c }) { return manage.menuLocationAssign(c, string(input.location), { menu: string(input.menu) || null }); },
+    },
+    {
+        name: 'list_widget_areas', description: 'The themes\' widget areas (header, footer, sidebars; the active theme\'s first) with the blocks each shows: the theme\'s defaults until the site saves its own (saved false, rev 0).',
+        inputSchema: schema({}), annotations: READ,
+        async run(_input, { c }) { return manage.areasList(c); },
+    },
+    {
+        name: 'get_widget_area', description: 'One widget area with its blocks and rev (0 while the theme\'s defaults show), to change and send back with update_widget_area.',
+        inputSchema: schema({ name: areaName }, ['name']), annotations: READ,
+        async run(input, { c }) { return manage.areaRead(c, string(input.name)); },
+    },
+    {
+        name: 'update_widget_area', description: 'Replace a widget area\'s blocks: the whole list ({ _id, type, data, children? }, such as core/site-logo, core/navigation with a location, core/search, core/group). Send rev from get_widget_area.',
+        inputSchema: schema({ name: areaName, blocks: { type: 'array', description: 'The area\'s blocks.', items: { type: 'object', additionalProperties: true } }, rev: int('The rev you read; 0 while the theme\'s defaults show.', { minimum: 0 }) }, ['name', 'blocks']), annotations: CHANGE,
+        async run(input, { c }) { return manage.areaUpdate(c, string(input.name), input); },
+    },
+    {
+        name: 'reset_widget_area', description: 'Forget a widget area\'s saved blocks: the theme\'s defaults show again.',
+        inputSchema: schema({ name: areaName }, ['name']), annotations: DESTROY,
+        async run(input, { c }) { await manage.areaReset(c, string(input.name)); return { reset: true, name: input.name }; },
+    },
+    {
         name: 'list_sites', description: 'The network\'s sites (network admins, on the network host): the main site first, then the added sites with their addresses and status. Reach another site by connecting with ?site=<id>.',
         inputSchema: schema({ q: str('Search names and addresses.'), status: str('active, archived or deleted.', { enum: ['active', 'archived', 'deleted'] }), page, perPage: int('Sites per page, 1 to 200.', { minimum: 1, maximum: 200 }) }), annotations: READ,
         async run(input, { c }) { return manage.sitesList(c, query(input, ['q', 'status', 'page', 'perPage'])); },
@@ -265,6 +327,8 @@ export async function siteInstructions(c: Context): Promise<string> {
         'Rich text fields are ProseMirror JSON documents ({ "type": "doc", "content": [...] }); content fields are block arrays ({ "_id", "type", "data" }). get_collection_schema gives the exact shapes.',
         'Taxonomy fields hold term IDs from list_terms. Media fields hold file IDs from list_media.',
         'Review notes live on entries (list_notes, add_note); resolving a thread uses update_note with status resolved.',
-        'Destructive tools (delete_*, set_site_status) are final or hard to undo: confirm intent before calling them.',
+        'Navigation: menus are trees of items shown at the theme\'s locations (list_menu_locations; primary is the header menu). Build one with create_menu and place it with locations or assign_menu_location. A mega menu is an item with heading children (columns) or a panel: a synced pattern (create_entry in patterns with synced true) shown beside its links.',
+        'The theme\'s header, footer and sidebars are widget areas of blocks (list_widget_areas, update_widget_area); the header\'s core/navigation block names the location it renders.',
+        'Destructive tools (delete_*, reset_widget_area, set_site_status) are final or hard to undo: confirm intent before calling them.',
     ].join('\n');
 }

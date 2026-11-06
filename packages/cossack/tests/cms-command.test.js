@@ -59,6 +59,18 @@ function fakeCms() {
       if (typeof body.siteTitle !== 'string') return json(422, { error: 'Some settings are invalid.', code: 'CMS_VALIDATION', fields: { siteTitle: 'must be text.' } });
       return json(200, { group: 'general', label: 'General', values: { siteTitle: body.siteTitle, postsPerPage: body.postsPerPage ?? 10 }, fields: [{ name: 'siteTitle', label: 'Site title' }] });
     }
+    // Appearance: one menu, two locations and one widget area that starts at revision 0.
+    if (url.pathname === '/api/cms/appearance/menus' && request.method === 'GET') return json(200, { items: [{ id: 'm1', name: 'Main', items: 3, locations: ['primary'], updatedAt: 1700000000000 }] });
+    if (url.pathname === '/api/cms/appearance/menus' && request.method === 'POST') return json(201, { item: { id: 'm2', rev: 1, locations: [], ...body } });
+    if (url.pathname === '/api/cms/appearance/menus/m1' && request.method === 'GET') return json(200, { item: { id: 'm1', name: 'Main', rev: 2, locations: ['primary'], items: [{ id: 'home', kind: 'link', label: 'Home', url: '/', children: [] }] } });
+    if (url.pathname === '/api/cms/appearance/menus/m1' && request.method === 'PATCH') return body.rev === 2 ? json(200, { item: { id: 'm1', ...body, rev: 3 } }) : json(409, { error: 'This menu changed since you opened it.', code: 'CMS_CONFLICT' });
+    if (url.pathname === '/api/cms/appearance/menus/m1' && request.method === 'DELETE') return json(204, undefined);
+    if (url.pathname === '/api/cms/appearance/locations' && request.method === 'GET') return json(200, { items: [{ name: 'primary', label: 'Primary menu', theme: 'default-theme', active: true, menu: 'm1' }, { name: 'footer', label: 'Footer menu', theme: 'default-theme', active: true, menu: null }] });
+    if (url.pathname === '/api/cms/appearance/locations/footer' && request.method === 'PATCH') return json(200, { item: { name: 'footer', label: 'Footer menu', theme: 'default-theme', active: true, menu: body.menu } });
+    if (url.pathname === '/api/cms/appearance/areas' && request.method === 'GET') return json(200, { items: [{ name: 'header', label: 'Header', theme: 'default-theme', active: true, rev: 0, saved: false, blocks: [{ _id: 'a', type: 'core/site-logo', data: {} }], defaults: [] }] });
+    if (url.pathname === '/api/cms/appearance/areas/header' && request.method === 'GET') return json(200, { item: { name: 'header', rev: 0, saved: false, blocks: [] } });
+    if (url.pathname === '/api/cms/appearance/areas/header' && request.method === 'PUT') return body.rev === 0 ? json(200, { item: { name: 'header', rev: 1, saved: true, blocks: body.blocks } }) : json(409, { error: 'These widgets changed.', code: 'CMS_CONFLICT' });
+    if (url.pathname === '/api/cms/appearance/areas/header' && request.method === 'DELETE') return json(204, undefined);
     if (url.pathname === '/api/cms/media' && request.method === 'POST') return json(201, { files: [{ id: 'f1', name: 'upload' }], contentType: request.headers['content-type'], part: /Content-Type: (\S+)/.exec(text)?.[1] ?? null, name: /filename="([^"]+)"/.exec(text)?.[1] ?? null });
     return json(404, { error: 'Not found.', code: 'CMS_NOT_FOUND' });
   });
@@ -246,6 +258,45 @@ describe('cossack cms commands', () => {
     expect(uploaded.result.data.contentType).toMatch(/^multipart\/form-data; boundary=/);
     // The part carries the file's name and a media type from its extension, which the CMS classes files by.
     expect(uploaded.result.data).toMatchObject({ part: 'image/png', name: 'pixel.png' });
+  });
+
+  it('manages menus, their locations and widget areas, reading a revision that may be 0', async () => {
+    const menus = await run(['menus', 'list']);
+    expect(menus.code).toBe(0);
+    expect(menus.stdout).toMatch(/ID  NAME  ITEMS  LOCATIONS  UPDATED\nm1  Main  3      primary    2023-11-14 22:13/);
+    const items = [{ kind: 'link', label: 'Products', url: '/products', panel: 'pat1', children: [{ kind: 'heading', label: 'By team', children: [{ kind: 'link', label: 'Sales', url: '/sales' }] }] }];
+    const created = await run(['menus', 'create', 'Header', '--location', 'primary', '--location', 'footer', '--data', JSON.stringify({ items }), '--json']);
+    expect(created.result).toMatchObject({ ok: true, data: { item: { id: 'm2', name: 'Header' } } });
+    expect(cms.requests.at(-1)).toMatchObject({ method: 'POST', path: '/api/cms/appearance/menus', body: { name: 'Header', items, locations: ['primary', 'footer'] } });
+    const renamed = await run(['menus', 'update', 'm1', '--name', 'Main menu', '--location', 'footer', '--json']);
+    expect(renamed.result).toMatchObject({ ok: true, data: { item: { rev: 3, name: 'Main menu' } } });
+    expect(cms.requests.slice(-2).map(request => `${request.method} ${request.path}`)).toEqual(['GET /api/cms/appearance/menus/m1', 'PATCH /api/cms/appearance/menus/m1']);
+    expect(cms.requests.at(-1).body).toEqual({ name: 'Main menu', locations: ['footer'], rev: 2 });
+    const stale = await run(['menus', 'update', 'm1', '--data', JSON.stringify({ items }), '--rev', '1', '--json']);
+    expect(stale.result).toMatchObject({ ok: false, diagnostics: [{ code: 'COSSACK_CMS_CONFLICT' }] });
+    expect((await run(['menus', 'delete', 'm1', '--json'])).result.diagnostics[0].code).toBe('COSSACK_CMS_CONFIRM_REQUIRED');
+    expect((await run(['menus', 'delete', 'm1', '--yes', '--json'])).result).toMatchObject({ ok: true, data: null });
+    const locations = await run(['locations', 'list']);
+    expect(locations.stdout).toMatch(/NAME     LABEL         THEME          ACTIVE  MENU\nprimary  Primary menu  default-theme  true    m1\nfooter   Footer menu   default-theme  true/);
+    await run(['locations', 'set', 'footer', 'm2', '--json']);
+    expect(cms.requests.at(-1)).toMatchObject({ method: 'PATCH', path: '/api/cms/appearance/locations/footer', body: { menu: 'm2' } });
+    const cleared = await run(['locations', 'clear', 'footer', '--json']);
+    expect(cleared.result.data.item.menu).toBeNull();
+    expect(cms.requests.at(-1).body).toEqual({ menu: null });
+    const areas = await run(['areas', 'list']);
+    expect(areas.stdout).toMatch(/NAME    LABEL   THEME          ACTIVE  REV  SAVED  BLOCKS\nheader  Header  default-theme  true    0    false  1/);
+    // An unsaved area has revision 0, which the read before a write accepts.
+    const blocks = [{ _id: 'logo', type: 'core/site-logo', data: { showTagline: true } }];
+    const saved = await run(['areas', 'set', 'header', '--data', JSON.stringify({ blocks }), '--json']);
+    expect(saved.result).toMatchObject({ ok: true, data: { item: { rev: 1, saved: true } } });
+    expect(cms.requests.slice(-2).map(request => `${request.method} ${request.path}`)).toEqual(['GET /api/cms/appearance/areas/header', 'PUT /api/cms/appearance/areas/header']);
+    expect(cms.requests.at(-1).body).toEqual({ blocks, rev: 0 });
+    const given = await run(['areas', 'set', 'header', '--data', JSON.stringify({ blocks }), '--rev', '4', '--json']);
+    expect(given.result).toMatchObject({ ok: false, diagnostics: [{ code: 'COSSACK_CMS_CONFLICT' }] });
+    expect(cms.requests.at(-1).body).toEqual({ blocks, rev: 4 });
+    expect((await run(['areas', 'reset', 'header', '--json'])).result.diagnostics[0].code).toBe('COSSACK_CMS_CONFIRM_REQUIRED');
+    expect((await run(['areas', 'reset', 'header', '--yes', '--json'])).result).toMatchObject({ ok: true, data: null });
+    expect(cms.requests.at(-1)).toMatchObject({ method: 'DELETE', path: '/api/cms/appearance/areas/header' });
   });
 
   it('prints the MCP client configuration for the stored login', async () => {

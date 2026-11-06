@@ -186,7 +186,10 @@ checked; a plugin's block among them is checked when its plugin is active, and l
 rendering while the plugin is inactive. A child theme's area entry replaces its parent's by
 name, defaults included.
 
-Editors change these areas in place too: see [Live Edit](/docs/cms/site-editing.md).
+Editors change these areas in place too: see [Live Edit](/docs/cms/site-editing.md). Scripts
+and agents replace an area's blocks whole through the management API (`cossack cms areas set
+header --data @header.json`, the `update_widget_area` MCP tool) and reset it to the defaults;
+see [Management API, CLI and MCP](/docs/cms/api.md).
 
 The **site blocks** are the twins of the helpers, so a header built from blocks has everything
 a template has: *Site logo* (`core/site-logo`: the logo from Settings → General or its own

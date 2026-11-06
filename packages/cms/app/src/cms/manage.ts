@@ -2,11 +2,13 @@
  * The management API's operations: what the REST routes under `/api/cms`, the MCP tools and
  * `cossack cms` do, written once. Each works on the request's site and principal and throws a
  * CmsError when it refuses, so every door answers alike (`apiError` turns them into JSON).
+ * Content, people, settings and terms first; the appearance (menus, their locations and the
+ * widget areas) at the end.
  */
 import type { Context } from 'hono';
 import {
-    BLOCK_ID, checkNoteRange, CmsError, CONTENT_STATUSES, findBlock, hasPermission, indexedRowField, isNetworkAdmin, MAIN_SITE, noteThreads, PERMISSIONS, recordSchema, recordTitle, richTextBlocks,
-    type Block, type FieldFilter, type Note, type NoteThread, type Principal, type RecordShape, type RichTextDoc,
+    BLOCK_ID, checkNoteRange, CmsError, CONTENT_STATUSES, findBlock, hasPermission, indexedRowField, isNetworkAdmin, MAIN_SITE, MENU_LIMITS, menuItemId, noteThreads, PERMISSIONS, recordSchema, recordTitle, richTextBlocks,
+    type Block, type FieldFilter, type MenuItem, type MenuShape, type Note, type NoteThread, type Principal, type RecordShape, type RichTextDoc,
 } from '@cossackframework/cms';
 import { networkSite, type ApiToken, type CmsHost, type NetworkSite, type SiteRecord } from '@cossackframework/cms/server';
 import { createApiToken, listApiTokens, manageableHere, NETWORK_ACCOUNT_LOCKED, revokeApiToken, type PublicUser } from '../auth';
@@ -59,11 +61,11 @@ function text(value: unknown, field: string, options: { max?: number; required?:
     return trimmed;
 }
 
-/** The revision a write expects: the one sent, or the current one when the client did not read first. */
-function expected(value: unknown, current: number): number {
+/** The revision a write expects: the one sent, or the current one when the client did not read first. Widget areas have revision 0 before their first save. */
+function expected(value: unknown, current: number, min = 1): number {
     if (value === undefined || value === null || value === '') return current;
     const parsed = typeof value === 'number' ? value : typeof value === 'string' ? Number(value.replaceAll('"', '')) : Number.NaN;
-    if (!Number.isSafeInteger(parsed) || parsed < 1) throw new CmsError('CMS_VALIDATION', 'rev is the revision you read, a positive integer.');
+    if (!Number.isSafeInteger(parsed) || parsed < min) throw new CmsError('CMS_VALIDATION', min === 0 ? 'rev is the revision you read, 0 before the first save.' : 'rev is the revision you read, a positive integer.');
     return parsed;
 }
 
@@ -754,4 +756,167 @@ export async function siteSetStatus(c: Context, id: string, status: unknown): Pr
     if (id === MAIN_SITE) throw new CmsError('CMS_VALIDATION', 'The main site cannot be archived or deleted.');
     if (!SITE_ID.test(id) || !(await network.sites.get(id))) throw new CmsError('CMS_NOT_FOUND', 'Site not found.');
     return siteView(c, await network.setSiteStatus(id, status, { principal: signedIn(c) }));
+}
+
+// --- Appearance: menus, their locations and the widget areas ----------------------------
+// What Appearance → Menus and Appearance → Widgets do, for the appearance permission. The
+// resolved menu visitors see at a location is `GET /api/cms/menus/<location>` (content-api).
+
+const APPEARANCE = 'Not allowed to manage the appearance.';
+
+export interface MenuLocationView { name: string; label: string; theme: string; active: boolean; /** The menu shown there, or null. */ menu: string | null }
+export interface MenuSummaryView { id: string; name: string; /** How many items, every level counted. */ items: number; locations: string[]; updatedAt: number }
+export interface MenuView { id: string; name: string; items: readonly MenuItem[]; rev: number; locations: string[]; createdAt: number; updatedAt: number }
+export interface AreaView {
+    name: string; label: string; theme: string; active: boolean;
+    /** 0 while the theme's default blocks show; a save needs it. */
+    rev: number;
+    /** The site saved its own blocks; otherwise `blocks` are the theme's defaults. */
+    saved: boolean;
+    blocks: readonly Block[];
+    defaults: readonly Block[];
+    updatedAt: number;
+}
+
+async function menuLocationNames(cms: CmsHost): Promise<string[]> {
+    return (await cms.menuLocations()).map(location => location.name);
+}
+
+async function menuView(cms: CmsHost, menu: MenuShape): Promise<MenuView> {
+    const assigned = await cms.menus.locations();
+    return { id: menu.id, name: menu.name, items: menu.items, rev: menu.revision, locations: [...assigned].filter(([, id]) => id === menu.id).map(([location]) => location), createdAt: menu.createdAt, updatedAt: menu.updatedAt };
+}
+
+async function menuOf(cms: CmsHost, id: string): Promise<MenuShape> {
+    const menu = await cms.menus.get(id);
+    if (!menu) throw new CmsError('CMS_NOT_FOUND', 'Menu not found.');
+    return menu;
+}
+
+/** Items as a client sends them: a tree whose items may leave out their IDs, labels and children; the host checks the rest. */
+function menuItems(value: unknown): MenuItem[] | undefined {
+    if (value === undefined) return undefined;
+    if (!Array.isArray(value)) throw new CmsError('CMS_VALIDATION', 'items is a list of menu items.', { fields: { items: 'must be a list.' } });
+    const fill = (list: unknown[]): MenuItem[] => list.map(item => {
+        if (!item || typeof item !== 'object' || Array.isArray(item)) return item as MenuItem;
+        const given = item as { [name: string]: unknown };
+        return {
+            ...given,
+            id: typeof given.id === 'string' && given.id ? given.id : menuItemId(),
+            label: typeof given.label === 'string' ? given.label : '',
+            children: Array.isArray(given.children) ? fill(given.children) : given.children === undefined ? [] : given.children,
+        } as MenuItem;
+    });
+    return fill(value);
+}
+
+/** Location names a menu should show in, checked against the themes' before anything is written. */
+async function wantedLocations(cms: CmsHost, value: unknown): Promise<{ locations: string[]; known: string[] } | null> {
+    if (value === undefined) return null;
+    const list = Array.isArray(value) ? value : [value];
+    if (!list.every(location => typeof location === 'string')) throw new CmsError('CMS_VALIDATION', 'locations is a list of menu location names.', { fields: { locations: 'must be a list of names.' } });
+    const known = await menuLocationNames(cms);
+    for (const location of list as string[]) if (!known.includes(location)) throw new CmsError('CMS_VALIDATION', `${location} is not a menu location of a theme; the locations are ${known.join(', ') || 'none'}.`, { fields: { locations: `${location} is not a location.` } });
+    return { locations: list as string[], known };
+}
+
+/** The themes' menu locations (the active theme's first) with the menu at each. */
+export async function menuLocationsList(c: Context): Promise<{ items: MenuLocationView[] }> {
+    allowed(c, PERMISSIONS.manageAppearance, APPEARANCE);
+    const cms = c.get('cms');
+    const [locations, assigned] = await Promise.all([cms.menuLocations(), cms.menus.locations()]);
+    return { items: locations.map(location => ({ ...location, menu: assigned.get(location.name) ?? null })) };
+}
+
+/** Show a menu at a location (`menu` an ID), or none (`menu` null or empty). */
+export async function menuLocationAssign(c: Context, location: string, input: Body): Promise<{ item: MenuLocationView }> {
+    const principal = allowed(c, PERMISSIONS.manageAppearance, APPEARANCE);
+    const cms = c.get('cms');
+    const menu = input.menu === undefined || input.menu === null || input.menu === '' ? null : input.menu;
+    if (menu !== null && typeof menu !== 'string') throw new CmsError('CMS_VALIDATION', 'menu is a menu ID, or null for none.', { fields: { menu: 'must be a menu ID.' } });
+    await cms.menus.assign(location, menu, { principal, known: await menuLocationNames(cms) });
+    const item = (await menuLocationsList(c)).items.find(entry => entry.name === location);
+    return { item: item ?? { name: location, label: location, theme: '', active: false, menu } };
+}
+
+export async function menusList(c: Context): Promise<{ items: MenuSummaryView[] }> {
+    allowed(c, PERMISSIONS.manageAppearance, APPEARANCE);
+    return { items: (await c.get('cms').menus.list()).map(menu => ({ id: menu.id, name: menu.name, items: menu.items, locations: [...menu.locations], updatedAt: menu.updatedAt })) };
+}
+
+export async function menuRead(c: Context, id: string): Promise<{ item: MenuView }> {
+    allowed(c, PERMISSIONS.manageAppearance, APPEARANCE);
+    const cms = c.get('cms');
+    return { item: await menuView(cms, await menuOf(cms, id)) };
+}
+
+/** A new menu from `{ name, items?, locations? }`; items may leave out their IDs. */
+export async function menuCreate(c: Context, input: Body): Promise<{ item: MenuView }> {
+    const principal = allowed(c, PERMISSIONS.manageAppearance, APPEARANCE);
+    const cms = c.get('cms');
+    const wanted = await wantedLocations(cms, input.locations);
+    const menu = await cms.menus.create({ name: text(input.name, 'name', { max: MENU_LIMITS.name }), items: menuItems(input.items) }, { principal });
+    if (wanted?.locations.length) await cms.menus.place(menu.id, wanted.locations, { principal, known: wanted.known });
+    return { item: await menuView(cms, menu) };
+}
+
+/**
+ * Rename a menu, replace its items (the whole tree) or move it to exactly the `locations`
+ * given. `rev` is the revision read; a stale one answers 409. Fields left out stay.
+ */
+export async function menuUpdate(c: Context, id: string, input: Body): Promise<{ item: MenuView }> {
+    const principal = allowed(c, PERMISSIONS.manageAppearance, APPEARANCE);
+    const cms = c.get('cms');
+    let menu = await menuOf(cms, id);
+    const wanted = await wantedLocations(cms, input.locations);
+    if (input.name !== undefined || input.items !== undefined) {
+        menu = await cms.menus.update(id, { name: input.name === undefined ? undefined : text(input.name, 'name', { max: MENU_LIMITS.name }), items: menuItems(input.items) }, { principal, expectedRevision: expected(input.rev, menu.revision) });
+    }
+    if (wanted) await cms.menus.place(menu.id, wanted.locations, { principal, known: wanted.known });
+    return { item: await menuView(cms, menu) };
+}
+
+/** Delete a menu; the locations it held show none. */
+export async function menuDelete(c: Context, id: string): Promise<void> {
+    const principal = allowed(c, PERMISSIONS.manageAppearance, APPEARANCE);
+    await c.get('cms').menus.delete(id, { principal });
+}
+
+async function areaViews(cms: CmsHost): Promise<AreaView[]> {
+    const [declared, saved] = await Promise.all([cms.areaLocations(), cms.areas.all()]);
+    return declared.map(area => {
+        const row = saved.get(area.name);
+        return { name: area.name, label: area.label, theme: area.theme, active: area.active, rev: row?.revision ?? 0, saved: !!row, blocks: row ? row.blocks : area.defaults, defaults: area.defaults, updatedAt: row?.updatedAt ?? 0 };
+    });
+}
+
+/** The themes' widget areas (the active theme's first) with the blocks each shows. */
+export async function areasList(c: Context): Promise<{ items: AreaView[] }> {
+    allowed(c, PERMISSIONS.manageAppearance, APPEARANCE);
+    return { items: await areaViews(c.get('cms')) };
+}
+
+export async function areaRead(c: Context, name: string): Promise<{ item: AreaView }> {
+    allowed(c, PERMISSIONS.manageAppearance, APPEARANCE);
+    const areas = await areaViews(c.get('cms'));
+    const item = areas.find(area => area.name === name);
+    if (!item) throw new CmsError('CMS_NOT_FOUND', `No widget area ${name}; the areas are ${areas.map(area => area.name).join(', ') || 'none'}.`);
+    return { item };
+}
+
+/** Replace an area's blocks (`{ blocks, rev? }`); `rev` is the revision read, 0 while the theme's defaults show. */
+export async function areaUpdate(c: Context, name: string, input: Body): Promise<{ item: AreaView }> {
+    const principal = allowed(c, PERMISSIONS.manageAppearance, APPEARANCE);
+    const cms = c.get('cms');
+    const known = (await cms.areaLocations()).map(area => area.name);
+    const current = await cms.areas.get(name);
+    await cms.areas.save(name, input.blocks, { principal, expectedRevision: expected(input.rev, current.revision, 0), known });
+    return areaRead(c, name);
+}
+
+/** Forget an area's saved blocks: the theme's defaults show again, and its revision is 0. */
+export async function areaReset(c: Context, name: string): Promise<void> {
+    const principal = allowed(c, PERMISSIONS.manageAppearance, APPEARANCE);
+    const cms = c.get('cms');
+    await cms.areas.reset(name, { principal, known: (await cms.areaLocations()).map(area => area.name) });
 }

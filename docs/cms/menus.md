@@ -121,6 +121,14 @@ in a footer area with the `inline` style is the usual footer menu.
 for `primary` and nothing elsewhere. Typed `fields` and the rendered `panel` are the same
 shapes themes get, so a headless client renders them with its own components.
 
+Menus are also managed from outside the dashboard, by people with the appearance permission:
+`GET|POST /api/cms/appearance/menus` and `GET|PATCH|DELETE /api/cms/appearance/menus/<id>` hold
+the stored trees (`{ name, items, locations, rev }`; items may leave out their IDs), and
+`/api/cms/appearance/locations` the themes' locations with the menu at each. The `cossack cms
+menus` and `locations` commands and the `create_menu`, `update_menu` and
+`assign_menu_location` MCP tools call them, so a script or an agent builds a mega menu from a
+JSON tree and places it at `primary`; see [Management API, CLI and MCP](/docs/cms/api.md).
+
 ## Hooks and languages
 
 A plugin adjusts or refuses a menu before it is saved with the `cms.menu.before-save` filter

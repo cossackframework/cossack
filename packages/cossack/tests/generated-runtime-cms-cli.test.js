@@ -145,6 +145,63 @@ describe.skipIf(!liveRomeDBTests())('generated CMS management', () => {
       const forged = await fetch(`${origin}/api/cms/me/tokens`, { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify({ name: 'more' }) });
       expect(forged.status).toBe(403);
 
+      // Appearance: a mega menu built from the CLI, its panel a synced pattern, shown at the theme's primary location.
+      const promo = await cli(['entries', 'create', 'patterns', '--set', 'title=Promo', '--data', JSON.stringify({ synced: true, content: [{ _id: 'promo-text', type: 'core/paragraph', data: { text: 'Try it free for 30 days' } }] })]);
+      expect(promo.data.item).toMatchObject({ title: 'Promo', synced: true });
+      const locations = await cli(['locations', 'list']);
+      expect(locations.data.items.map(location => location.name)).toEqual(expect.arrayContaining(['primary', 'footer']));
+      expect(locations.data.items.find(location => location.name === 'primary')).toMatchObject({ active: true, menu: null });
+      const megaItems = [
+        { kind: 'link', label: 'Products', url: '/products', description: 'Everything we make', panel: promo.data.item.id, children: [
+          { kind: 'heading', label: 'By team', children: [{ kind: 'link', label: 'Sales', url: '/sales', description: 'Close deals faster' }, { kind: 'link', label: 'Support', url: '/support' }] },
+          { kind: 'heading', label: 'By size', children: [{ kind: 'link', label: 'Startups', url: '/startups' }] },
+        ] },
+        { kind: 'archive', collection: 'posts' },
+      ];
+      const menu = await cli(['menus', 'create', 'Main', '--location', 'primary', '--data', JSON.stringify({ items: megaItems })]);
+      expect(menu.data.item).toMatchObject({ name: 'Main', rev: 1, locations: ['primary'] });
+      // IDs left out are made; the archive item's empty label uses the collection's label on the site.
+      expect(menu.data.item.items[0].children[0].children[1].id).toMatch(/^[A-Za-z0-9_-]{1,40}$/);
+      expect(menu.data.item.items[1]).toMatchObject({ kind: 'archive', collection: 'posts', label: '' });
+      const menuId = menu.data.item.id;
+      expect((await cli(['menus', 'list'])).data.items).toEqual([expect.objectContaining({ id: menuId, name: 'Main', items: 7, locations: ['primary'] })]);
+      expect((await cli(['menus', 'get', menuId])).data.item.items[0].children.map(item => item.label)).toEqual(['By team', 'By size']);
+      expect((await cli(['menus', 'update', menuId, '--name', 'Header'])).data.item).toMatchObject({ name: 'Header', rev: 2 });
+      await cli(['menus', 'update', menuId, '--name', 'Stale', '--rev', '1'], { failure: 'COSSACK_CMS_CONFLICT' });
+      await cli(['menus', 'create', 'Broken', '--data', JSON.stringify({ items: [{ kind: 'link', label: 'No URL' }] })], { failure: 'COSSACK_CMS_INVALID' });
+      await cli(['menus', 'create', 'Nowhere', '--location', 'sidebar-9'], { failure: 'COSSACK_CMS_INVALID' });
+      expect((await cli(['menus', 'list'])).data.items.map(entry => entry.name)).toEqual(['Header']);
+      const resolved = await (await fetch(`${origin}/api/cms/menus/primary`)).json();
+      expect(resolved).toMatchObject({ location: 'primary', assigned: true });
+      expect(resolved.items[0]).toMatchObject({ label: 'Products', url: '/products', description: 'Everything we make', panel: [expect.objectContaining({ type: 'core/paragraph' })] });
+      expect(resolved.items[0].children[0]).toMatchObject({ kind: 'heading', url: null, children: [expect.objectContaining({ label: 'Sales', description: 'Close deals faster' }), expect.anything()] });
+      expect(resolved.items[1]).toMatchObject({ label: 'Posts', url: '/posts' });
+      const home = await (await fetch(`${origin}/`)).text();
+      expect(home).toContain('class=cms-mega-box');
+      expect(home).toContain('Close deals faster');
+      expect(home).toContain('Try it free for 30 days');
+      // Widget areas: the header shows the theme's blocks until the site saves its own, which the API does at revision 0.
+      const header = await cli(['areas', 'get', 'header']);
+      expect(header.data.item).toMatchObject({ name: 'header', active: true, rev: 0, saved: false });
+      expect(header.data.item.blocks.length).toBeGreaterThan(0);
+      expect((await cli(['areas', 'list'])).data.items.map(area => area.name)).toEqual(expect.arrayContaining(['header', 'footer']));
+      const savedHeader = await cli(['areas', 'set', 'header', '--data', JSON.stringify({ blocks: [...header.data.item.blocks, { _id: 'header-note', type: 'core/paragraph', data: { text: 'Managed from the CLI' } }] })]);
+      expect(savedHeader.data.item).toMatchObject({ rev: 1, saved: true });
+      expect(await (await fetch(`${origin}/`)).text()).toContain('Managed from the CLI');
+      await cli(['areas', 'set', 'header', '--data', JSON.stringify({ blocks: [{ _id: 'bad', type: 'core/nope', data: {} }] })], { failure: 'COSSACK_CMS_INVALID' });
+      await cli(['areas', 'reset', 'header'], { failure: 'COSSACK_CMS_CONFIRM_REQUIRED' });
+      expect((await cli(['areas', 'reset', 'header', '--yes'])).data).toBeNull();
+      expect((await cli(['areas', 'get', 'header'])).data.item).toMatchObject({ rev: 0, saved: false });
+      expect(await (await fetch(`${origin}/`)).text()).not.toContain('Managed from the CLI');
+      expect((await cli(['locations', 'clear', 'primary'])).data.item.menu).toBeNull();
+      expect((await (await fetch(`${origin}/api/cms/menus/primary`)).json()).assigned).toBe(false);
+      expect((await cli(['locations', 'set', 'primary', menuId])).data.item.menu).toBe(menuId);
+      await cli(['locations', 'set', 'primary', 'no-such-menu'], { failure: 'COSSACK_CMS_NOT_FOUND' });
+      // A read-only password lists menus but cannot change them.
+      const readerFor = { env: { COSSACK_CMS_TOKEN: reader } };
+      expect((await cli(['menus', 'list'], readerFor)).data.items.map(entry => entry.id)).toEqual([menuId]);
+      await cli(['menus', 'update', menuId, '--name', 'Nope'], { ...readerFor, failure: 'COSSACK_CMS_FORBIDDEN' });
+
       // MCP: the official client against the site's endpoint, with the same password.
       const mcpConfig = await cli(['mcp']);
       expect(mcpConfig.data.config.mcpServers[mcpConfig.data.name]).toEqual({ type: 'http', url: `${origin}/api/cms/mcp`, headers: { Authorization: `Bearer ${token}` } });
@@ -158,7 +215,8 @@ describe.skipIf(!liveRomeDBTests())('generated CMS management', () => {
       expect(mcp.getServerVersion()).toMatchObject({ name: 'cossack-cms' });
       expect(mcp.getInstructions()).toContain('posts');
       const tools = await mcp.listTools();
-      expect(tools.tools.map(tool => tool.name)).toEqual(expect.arrayContaining(['get_site', 'list_entries', 'create_entry', 'publish_entry', 'add_note', 'update_settings', 'create_site']));
+      expect(tools.tools.map(tool => tool.name)).toEqual(expect.arrayContaining(['get_site', 'list_entries', 'create_entry', 'publish_entry', 'add_note', 'update_settings', 'create_site', 'create_menu', 'assign_menu_location', 'update_widget_area']));
+      expect(mcp.getInstructions()).toContain('mega menu');
       expect(tools.tools.find(tool => tool.name === 'delete_entry').annotations).toMatchObject({ destructiveHint: true, readOnlyHint: false });
       const site = await mcp.callTool({ name: 'get_site', arguments: {} });
       expect(site.isError).toBe(false);
@@ -173,6 +231,17 @@ describe.skipIf(!liveRomeDBTests())('generated CMS management', () => {
       expect(missing).toMatchObject({ isError: true, structuredContent: { code: 'CMS_NOT_FOUND' } });
       await expect(mcp.callTool({ name: 'update_entry', arguments: { collection: 'posts' } })).rejects.toThrow(/id is required/);
       expect((await cli(['entries', 'get', 'posts', 'from-mcp'])).data.item.title).toBe('From MCP');
+      // The menu the CLI built, read and changed over MCP: a second menu takes the footer, the header menu gains a column.
+      const menuOverMcp = await mcp.callTool({ name: 'get_menu', arguments: { id: menuId } });
+      expect(menuOverMcp.structuredContent.item).toMatchObject({ name: 'Header', rev: 2, locations: ['primary'] });
+      const footerMenu = await mcp.callTool({ name: 'create_menu', arguments: { name: 'Footer', items: [{ kind: 'link', label: 'Privacy', url: '/privacy' }], locations: ['footer'] } });
+      expect(footerMenu.structuredContent.item).toMatchObject({ name: 'Footer', locations: ['footer'] });
+      const grown = await mcp.callTool({ name: 'update_menu', arguments: { id: menuId, rev: 2, items: [{ ...menuOverMcp.structuredContent.item.items[0], children: [...menuOverMcp.structuredContent.item.items[0].children, { kind: 'heading', label: 'By industry', children: [{ kind: 'link', label: 'Retail', url: '/retail' }] }] }, ...menuOverMcp.structuredContent.item.items.slice(1)] } });
+      expect(grown.structuredContent.item.items[0].children.map(item => item.label)).toEqual(['By team', 'By size', 'By industry']);
+      expect((await mcp.callTool({ name: 'list_menu_locations', arguments: {} })).structuredContent.items).toEqual(expect.arrayContaining([expect.objectContaining({ name: 'primary', menu: menuId }), expect.objectContaining({ name: 'footer', menu: footerMenu.structuredContent.item.id })]));
+      const staleMenu = await mcp.callTool({ name: 'update_menu', arguments: { id: menuId, rev: 2, name: 'Stale' } });
+      expect(staleMenu).toMatchObject({ isError: true, structuredContent: { code: 'CMS_CONFLICT' } });
+      expect((await mcp.callTool({ name: 'list_widget_areas', arguments: {} })).structuredContent.items.find(area => area.name === 'header')).toMatchObject({ rev: 0, saved: false });
       // Read-only passwords see the reading tools; sessions and visitors are refused.
       const reading = await connect(reader);
       expect((await reading.listTools()).tools.every(tool => tool.annotations.readOnlyHint)).toBe(true);

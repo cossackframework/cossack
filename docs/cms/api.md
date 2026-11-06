@@ -7,7 +7,8 @@ description: 'Manage a CMS site from a terminal or an agent: the management API 
 
 A CMS site has three doors besides its dashboard, and they open with one key. The
 **management API** under `/api/cms/` does what the dashboard does: entries, publishing,
-revisions, notes, users, roles, settings, terms, media and, on a network, sites. The
+revisions, notes, users, roles, settings, terms, media, menus, widget areas and, on a network,
+sites. The
 **`cossack cms`** commands call it from a terminal or a script. The **MCP server** at
 `/api/cms/mcp` offers the same operations as tools to MCP clients such as Claude and Cursor.
 All three sign in with an application password and pick a site the same way.
@@ -68,6 +69,9 @@ cossack cms <command> [args] [--url …] [--site …] [--json]
 | `settings get [group]`, `settings set <group> --set field=value`, `settings export [--out file]`, `settings import --data @file` | Settings by group, or as the document Settings → Export writes. |
 | `taxonomies list`, `terms list\|get\|create\|update\|delete <taxonomy>` | Terms, with `--name`, `--slug`, `--parent`, `--description`. |
 | `media list [--q --kind image]`, `media upload <file…>` | The media library. |
+| `menus list\|get\|create\|update\|delete` | Navigation menus (the appearance permission): `menus create "Main" --location primary --data '{"items":[…]}'`; `update <id>` takes `--name`, `--data` (the whole items tree) and `--location` (the complete list). |
+| `locations list`, `locations set <location> <menuId>`, `locations clear <location>` | The themes' menu locations and the menu shown at each. |
+| `areas list\|get <name>`, `areas set <name> --data '{"blocks":[…]}'`, `areas reset <name> --yes` | The themes' widget areas (header, footer, sidebars): their blocks, replaced whole, or forgotten so the theme's defaults show again. |
 | `sites list\|get\|create\|archive\|restore\|delete` | A network's sites, for network admins on the network host: `sites create Blog --host blog.example.com [--admin email --language en --no-starter]`. |
 
 `--set` values that are JSON are parsed (`--set menuOrder=3`, `--set featured=true`,
@@ -82,7 +86,31 @@ cossack cms entries create posts --set title="Hello" --set status=draft --data @
 cossack cms entries publish posts 019a… --at 2026-12-01T09:00:00Z
 cossack cms notes add posts 019a… --body "Shorter title?" --target field:title
 cossack cms settings set general --set siteTitle="My site" --site blog
+cossack cms menus create "Main" --location primary --data @menu.json
 ```
+
+A menu's `items` is a tree; an item names its `kind` (`link`, `entry`, `archive`, `term` or
+`heading`), a `label` (empty uses the target's title), its target, and may carry a
+`description`, a `panel` (a synced pattern's ID, rendered beside its links) and `children`.
+IDs left out are made. A top-level item with heading children or a panel opens as a mega menu
+(see [Menus](/docs/cms/menus.md#mega-menus)); `menu.json` for one:
+
+```json
+{ "items": [
+  { "kind": "link", "label": "Products", "url": "/products", "description": "Everything we make", "panel": "<pattern id>", "children": [
+    { "kind": "heading", "label": "By team", "children": [
+      { "kind": "link", "label": "Sales", "url": "/sales", "description": "Close deals faster" },
+      { "kind": "link", "label": "Support", "url": "/support" } ] },
+    { "kind": "heading", "label": "By size", "children": [ { "kind": "link", "label": "Startups", "url": "/startups" } ] } ] },
+  { "kind": "archive", "collection": "posts" }
+] }
+```
+
+The panel's pattern is an entry of the `patterns` collection: `cossack cms entries create
+patterns --set title=Promo --set synced=true --data '{"content":[…]}'`. Widget areas take
+the same block shapes as content (`{ "_id", "type", "data", "children"? }`); `areas get header`
+shows the theme's default blocks with `rev` 0, and `areas set header --data @header.json`
+replaces them.
 
 ## The MCP server
 
@@ -106,7 +134,9 @@ The server's instructions tell the model what the site has. Its tools mirror the
 `add_note`, `update_note`, `delete_note`, `list_users`, `get_user`, `create_user`,
 `update_user`, `delete_user`, `list_roles`, `get_settings`, `update_settings`,
 `list_taxonomies`, `list_terms`, `create_term`, `update_term`, `delete_term`, `list_media`,
-`list_sites`, `get_network_site`, `create_site` and `set_site_status`. Each carries its input
+`list_menus`, `get_menu`, `create_menu`, `update_menu`, `delete_menu`, `list_menu_locations`,
+`assign_menu_location`, `list_widget_areas`, `get_widget_area`, `update_widget_area`,
+`reset_widget_area`, `list_sites`, `get_network_site`, `create_site` and `set_site_status`. Each carries its input
 schema and annotations (`readOnlyHint`, `destructiveHint`). A read-only password sees the
 reading tools only. A refusal or a validation problem comes back as an `isError` result with
 the API's `code`; wrong arguments are a JSON-RPC `-32602` error. The protocol revisions
@@ -138,6 +168,9 @@ application password. A CMS refusal answers `{ error, code, fields? }` with its 
 | `GET /settings`, `PUT /settings`, `GET\|PATCH /settings/<group>` | The settings document and its groups. |
 | `GET\|POST /terms/<taxonomy>`, `GET\|PATCH\|DELETE /terms/<taxonomy>/<id>` | Terms. |
 | `GET /media`, `POST /media` (multipart `file`) | The media library. |
+| `GET\|POST /appearance/menus`, `GET\|PATCH\|DELETE /appearance/menus/<id>` | Menus, for the appearance permission: `{ name, items, locations }`, `rev` on a change. `GET /menus/<location>` is the resolved menu visitors see. |
+| `GET /appearance/locations`, `PATCH /appearance/locations/<location>` `{ menu }` | The themes' menu locations and the menu at each (`menu` null for none). |
+| `GET /appearance/areas`, `GET\|PUT\|DELETE /appearance/areas/<name>` | Widget areas: `PUT` `{ blocks, rev }` replaces the blocks (`rev` 0 while the theme's defaults show), `DELETE` forgets them. |
 | `GET\|POST /network/sites`, `GET\|PATCH /network/sites/<id>` `{ status }` | Sites, for network admins on the network host. |
 | `POST /mcp` | The MCP server. |
 | `DELETE /api/auth/session` | Ends the session (same-origin), for tools that signed in to make a password. |
