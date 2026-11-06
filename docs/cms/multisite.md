@@ -91,6 +91,12 @@ own session back:
    role at that moment. Later requests to the site read only the site's database. The child
    session ends no later than the network session it came from.
 
+Opening an added site's dashboard without a session there goes through the same steps on its
+own, without the click: the site sends the visitor to the network with `auto=1`, and a network
+admin, or a member who is signed in on the network, arrives signed in. A visitor the network does
+not know, or who is not a member, comes back to the site's own sign-in, and the site does not try
+again for five minutes (the `cms_handoff_auto` cookie), so a site account signs in there as before.
+
 A network account's password does not sign in on an added site's own form. *Forgot password*
 there sends a member with a network account the network's reset link.
 

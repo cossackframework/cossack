@@ -97,11 +97,11 @@ export async function navigation(c: Context): Promise<DashboardModule[]> {
     // Network admins run the network from the network host; its settings are under Settings there.
     if (await showsNetwork(c, principal)) admin.push({ id: 'network', label: 'Network', href: '/dashboard/network', icon: icon('global'), authorization: 'authenticated', activeFor: '/dashboard/network',
         children: [['Home', ''], ['Sites', '/sites'], ['Users', '/users'], ['Plugins', '/plugins'], ['Themes', '/themes'], ['Updates', '/updates']].map(([label, path]) => ({ label: label!, href: `/dashboard/network${path}` })) });
-    // My sites: every site the account belongs to, when there is more than one.
+    // Sites: My sites (every site the account belongs to) and each site's dashboard, when there is more than one.
     if (principal.kind === 'user') {
         const sites = await networkFor(env).memberSites(principal.id).catch(() => []);
-        if (sites.length > 1) content.unshift({ id: 'my-sites', label: 'My sites', href: '/dashboard/my-sites', icon: icon('home-2'), authorization: 'authenticated',
-            children: sites.map(site => ({ label: site.name ?? 'Main site', href: `${(siteUrl(env, site) ?? '').replace(/\/$/, '')}/dashboard` })) });
+        if (sites.length > 1) content.unshift({ id: 'my-sites', label: 'Sites', href: '/dashboard/my-sites', icon: icon('home-2'), authorization: 'authenticated',
+            children: [{ label: 'My sites', href: '/dashboard/my-sites' }, ...sites.map(site => ({ label: site.name ?? 'Main site', href: `${(siteUrl(env, site) ?? '').replace(/\/$/, '')}/dashboard` }))] });
     }
     const account = registry.filter(module => module.placement === 'account');
     // The author profile follows the profile settings in the account menu.

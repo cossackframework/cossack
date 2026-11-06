@@ -6,7 +6,7 @@
 import type { StoragePresignedUpload, StorageProvider } from '@cossackframework/core/storage';
 import type { RomeDB, Value } from '@cossackframework/romedb';
 import { CmsError } from '../errors';
-import { declaredType, imageSize, matchesSignature, MEDIA_FILTER_EXCLUDES, MEDIA_FILTERS, mediaKind, sanitizeSvg, SVG_TYPE, type MediaKind } from '../media';
+import { declaredType, imageHasAlpha, imageSize, matchesSignature, MEDIA_FILTER_EXCLUDES, MEDIA_FILTERS, mediaKind, sanitizeSvg, SVG_TYPE, type MediaKind } from '../media';
 import { hasPermission, PERMISSIONS, principalId, type Principal } from '../permissions';
 import { containsPattern } from './users';
 import { IMAGE_WIDTHS, imageEditsProblems, transformable, variantRect, variantWidth, type ImageEdits } from '../images';
@@ -194,7 +194,8 @@ export class FileService {
 
     /**
      * Make the image's placeholder: the cropped image at 16 pixels wide as WebP, kept on the
-     * row as a `data:` URL. Files that are not images, and transformers that fail, leave none.
+     * row as a `data:` URL. Files that are not images, images with transparency (the blur would
+     * show through them once loaded) and transformers that fail leave none.
      */
     async #placeholder(file: CmsFile): Promise<CmsFile> {
         if (!this.#images || !transformable(file.contentType) || !file.width || !file.height) return file;
@@ -203,9 +204,15 @@ export class FileService {
         const height = Math.max(1, Math.round(width * rect.height / rect.width));
         const original = await this.#storage.get(`cms/files/${file.id}`);
         if (!original) return file;
+        const { head, body } = await peek(original.body, Math.min(HEAD_BYTES, original.size || HEAD_BYTES));
+        if (imageHasAlpha(file.contentType, head)) {
+            await body.cancel().catch(() => undefined);
+            if (file.placeholder) await this.#db.write([{ rql: "UPDATE cms_files SET placeholder = NULL WHERE id = $id AND status = 'ready'", params: { $id: file.id } }], WRITE);
+            return { ...file, placeholder: null };
+        }
         let placeholder: string;
         try {
-            const bytes = await this.#images.transform(original.body, { rect, source: { width: file.width, height: file.height }, width, height, format: 'webp', quality: 40 });
+            const bytes = await this.#images.transform(body, { rect, source: { width: file.width, height: file.height }, width, height, format: 'webp', quality: 40 });
             placeholder = `data:image/webp;base64,${base64(bytes)}`;
         } catch (error) {
             if (!this.#warned) console.warn('[cms] could not make image placeholders.', error);

@@ -19,7 +19,11 @@ bar as a status line.
   resolved path (`cms.site`), the user's navigation and the active plugins.
 - **Shape.** Full width, fixed to the bottom, 2.5rem, desktop and tablet only (`md:`); a spacer
   keeps the page's end visible. In edit mode the page marks its editor `data-site-editing` and
-  the bar hides itself (`body:has([data-site-editing])`): the editor's own bar takes over.
+  the bar keeps only its first item (the start menu, `[data-taskbar-start]`) and its last (the
+  user, `[data-taskbar-end]`); the middle items hide (`body:has([data-site-editing])`) and the
+  editor's controls take their place, between the two (`SiteEditor.placeBar` measures them into
+  `--cms-taskbar-start` and `--cms-taskbar-end`). Leaving edit mode shows the items again
+  (2026-11-06; before, the whole bar hid behind a floating pill of the editor's).
 - **Left: the start menu.** The site's logo and title open Dashboard and the user's navigation
   modules, the same `navigation(c)` the dashboard sidebar shows.
 - **Middle: the page's tools.** An entry the user may edit: its status, *Live Edit* (in place,

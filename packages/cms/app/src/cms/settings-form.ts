@@ -32,14 +32,20 @@ export async function settingsEditorSnapshot(cms: CmsHost, principal: Principal)
     }
 }
 
-/** The group's rows, with choices filled in, and the current values as control values. */
-export async function settingRows(cms: CmsHost, group: SettingsGroup, principal: Principal): Promise<{ rows: SettingRow[]; values: SettingValues }> {
+/** The choices read for each source (`roles`, `pages`, …), shared by every row of a page that lists them. */
+export type ChoiceCache = Map<string, Promise<SettingRow['choices']>>;
+
+/**
+ * The group's rows, with choices filled in, and the current values as control values. Pass one
+ * `cache` for every group of a page, so a source is read once however many fields list it.
+ */
+export async function settingRows(cms: CmsHost, group: SettingsGroup, principal: Principal, cache: ChoiceCache = new Map()): Promise<{ rows: SettingRow[]; values: SettingValues }> {
     const stored = await cms.settings.all();
     const rows: SettingRow[] = [];
     const values: SettingValues = {};
     for (const [name, declaration] of Object.entries(group.fields)) {
         rows.push({ name, namespace: group.id, label: declaration.label ?? name, description: declaration.description ?? '', kind: declaration.kind, min: declaration.min ?? null, max: declaration.max ?? null,
-            required: declaration.required === true, nullable: declaration.nullable === true, section: declaration.section ?? '', choices: await choices(cms, declaration, principal),
+            required: declaration.required === true, nullable: declaration.nullable === true, section: declaration.section ?? '', choices: await choicesOf(cms, declaration, principal, cache),
             ...(declaration.control ? { control: declaration.control } : declaration.source === 'media' ? { control: 'file' as const } : {}),
             ...(declaration.fileKinds ? { fileKinds: [...declaration.fileKinds] } : declaration.source === 'media' ? { fileKinds: ['image'] } : {}) });
         const value = stored[`${group.id}.${name}`];
@@ -48,9 +54,17 @@ export async function settingRows(cms: CmsHost, group: SettingsGroup, principal:
     return { rows, values };
 }
 
-async function choices(cms: CmsHost, declaration: SettingDeclaration, principal: Principal): Promise<SettingRow['choices']> {
-    if (declaration.control || declaration.source === 'media') return [];
-    if (declaration.kind === 'enum') return (declaration.values ?? []).map(value => ({ value, label: declaration.choices?.[value] ?? value }));
+function choicesOf(cms: CmsHost, declaration: SettingDeclaration, principal: Principal, cache: ChoiceCache): Promise<SettingRow['choices']> {
+    if (declaration.control || declaration.source === 'media') return Promise.resolve([]);
+    if (declaration.kind === 'enum') return Promise.resolve((declaration.values ?? []).map(value => ({ value, label: declaration.choices?.[value] ?? value })));
+    if (!declaration.source) return Promise.resolve([]);
+    let found = cache.get(declaration.source);
+    if (!found) { found = sourceChoices(cms, declaration, principal); cache.set(declaration.source, found); }
+    return found;
+}
+
+/** The choices a source offers: the site's roles, categories, published pages or the time zones. */
+async function sourceChoices(cms: CmsHost, declaration: SettingDeclaration, principal: Principal): Promise<SettingRow['choices']> {
     switch (declaration.source) {
         case 'roles': return (await cms.users.roles()).filter(role => role.id !== 'admin').map(role => ({ value: role.id, label: role.name }));
         case 'categories': return (await cms.taxonomies.tree('categories')).map(term => ({ value: term.id, label: `${'— '.repeat(term.depth)}${term.name}` }));

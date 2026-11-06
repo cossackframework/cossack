@@ -20,6 +20,18 @@ a theme cannot restyle and is an injection surface in a multi-user dashboard.
   presets; `align` is `left`, `center` or `right`. Core validates the shape and drops the
   properties a block does not support; it does not check that a slug is in the palette, since
   palettes change and a missing slug just falls back to the inherited value.
+- **A color may also be the block's own** (2026-11-06): `background` and `text` take a hex
+  color (`CUSTOM_COLOR`: `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`), rendered as it is with the
+  class `cms-bg-custom` or `cms-text-custom`. Hex is the whole of what is allowed: it cannot
+  carry a `url()` or a variable, so the injection argument against raw CSS does not apply. The
+  Style tab shows each color as a box with the current color's name; it opens a picker with the
+  palette (swatches, with None) and a custom color (the browser's picker, or a hex code).
+- **A block's ID can be chosen** (2026-11-06): Advanced gets *Block ID*, editing `_id` within
+  `BLOCK_ID` and unique in the field (`blockIdProblem`, with the field's other IDs passed as
+  `taken`). It applies when the field is left, not on each keystroke, since a new ID re-keys the
+  block; the panel follows the new ID. Themes and the API reach the block by it:
+  `{{ $.content#hero.title }}` in bindings, `GET /api/cms/content/<collection>/<entry>/blocks/hero`
+  in the management API. Notes anchored on the old ID stay with it.
 - **Supports are opt-out.** Every block gets color and spacing in its Style tab; text blocks
   also get typography; media blocks get spacing alone. Those defaults come from the block's
   category. A declaration narrows or widens them with

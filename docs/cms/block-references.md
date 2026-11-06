@@ -61,6 +61,10 @@ signed-in user. A path walks into objects and lists with dots, as in
 `{{ $.specs.0.name }}`.
 
 - `$` is empty where no entry is shown, such as a widget on an archive page.
+- A segment `field#id` picks a block of a blocks field by its ID, nested blocks included, and
+  stands for its data: `{{ $.content#hero.title }}` is the `title` of the block whose ID is
+  `hero`. Give a block an ID of your own under its Style tab → Advanced → Block ID; the
+  management API serves the same block at `GET /api/cms/content/<collection>/<entry>/blocks/hero`.
 - `$site` holds `title`, `tagline`, `logo` and `icon`.
 - `$user` holds `name`. It is empty for visitors. A signed-in user's page that reads `$user`
   is sent with `cache-control: private, no-store`.

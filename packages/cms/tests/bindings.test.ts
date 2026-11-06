@@ -23,6 +23,20 @@ describe('block bindings', () => {
         expect(bindingValue(entry, 'missing.deep')).toBeUndefined();
     });
 
+    it('reaches a block by its ID with field#id, nested blocks included', () => {
+        const content = [
+            { _id: 'intro', type: 'core/paragraph', data: { text: 'Hello' } },
+            { _id: 'wrap', type: 'core/group', data: {}, children: [{ _id: 'hero', type: 'core/heading', data: { text: 'Rockets', level: 2 } }] },
+        ];
+        const record = { ...entry, content };
+        expect(bindingValue(record, 'content#intro.text')).toBe('Hello');
+        expect(bindingValue(record, 'content#hero.text')).toBe('Rockets');
+        expect(bindingValue(record, 'content#hero.level')).toBe(2);
+        expect(bindingValue(record, 'content#missing.text')).toBeUndefined();
+        expect(bindingValue(record, 'title#intro')).toBeUndefined();
+        expect(resolveBindings('{{ $.content#hero.text }} at {{ $.price }}', { entry: record, site: {}, user: null })).toBe('Rockets at 19.5');
+    });
+
     it('renders values as text', () => {
         expect(bindingText(19.5)).toBe('19.5');
         expect(bindingText(true)).toBe('true');

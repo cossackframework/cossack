@@ -1,10 +1,10 @@
-import { Client, ClientState, Cossack, Inject, OnWindow, Page, PreventNavigation, Server, Shared, server$, type HeadValue } from '@cossackframework/core';
+import { Client, ClientState, Cossack, Inject, OnDocument, OnWindow, Page, PreventNavigation, Server, Shared, server$, type HeadValue } from '@cossackframework/core';
 import { Badge, Card, CardBody } from '@cossackframework/ui';
 import { component, html, repeat, type TemplateResult } from '@cossackframework/renderer';
 import { hasPermission, isCmsError, isNetworkAdmin, MAIN_SITE, PERMISSIONS, type SettingsDocument, type SettingsSection as SectionDeclaration } from '@cossackframework/cms';
 import { requireAny } from '../../../../cms/guards';
 import { SettingsDraft, settingsNavigation } from '../../../../cms/settings-draft';
-import { findSettingsMedia, settingControl, settingInput, settingRows, settingsEditorSnapshot, type SettingRow, type SettingValue, type SettingValues } from '../../../../cms/settings-form';
+import { findSettingsMedia, settingControl, settingInput, settingRows, settingsEditorSnapshot, type ChoiceCache, type SettingRow, type SettingValue, type SettingValues } from '../../../../cms/settings-form';
 import { filterSettingsLinks, settingsErrorSummary, settingsFrame, settingsLinks, type SettingsLink } from '../../../../cms/settings-nav';
 import { searchSettings, settingsSearchEntries, settingsSectionId, type SettingsSearchEntry } from '../../../../cms/settings-search';
 import { SettingsSection } from '../../../../cms/settings-section';
@@ -46,20 +46,24 @@ export default class SettingsPage extends Cossack {
     view: SettingsView = server$(async (): Promise<SettingsView> => {
         const cms = this.c.get('cms'), principal = this.c.get('principal');
         const origin = new URL(this.c.req.url).origin;
-        const status = await cms.status();
         const portable = new Set(cms.settings.catalog({ principal }).map(group => group.id));
-        const groups = await Promise.all(cms.settings.groups.filter(group => group.id !== 'languages' && (group.permission ?? PERMISSIONS.manageSettings) === PERMISSIONS.manageSettings).map(async group => ({
-            id: group.id, label: group.label, description: group.description ?? '', plugin: group.plugin ?? '',
-            active: status.plugins.find(plugin => plugin.name === group.plugin)?.active ?? false,
-            theme: cms.themes().some(theme => theme.name === group.plugin), portable: portable.has(group.id),
-            sections: group.sections ?? [], ...await settingRows(cms, group, principal),
-        })));
-        const snapshot = await settingsEditorSnapshot(cms, principal);
         const network = this.managesNetwork();
+        // The whole page in one round of reads: the groups share each choice source (roles, pages,
+        // categories are read once), and the plugin status, the snapshot and the other sections load alongside.
+        const choices: ChoiceCache = new Map();
+        const [status, snapshot, languages, networkData, rows] = await Promise.all([
+            cms.status(), settingsEditorSnapshot(cms, principal), loadLanguageSettings(cms, origin), network ? loadNetworkSettings(this.c.get('network')) : Promise.resolve(null),
+            Promise.all(cms.settings.groups.filter(group => group.id !== 'languages' && (group.permission ?? PERMISSIONS.manageSettings) === PERMISSIONS.manageSettings).map(async group => ({
+                id: group.id, label: group.label, description: group.description ?? '', plugin: group.plugin ?? '',
+                theme: cms.themes().some(theme => theme.name === group.plugin), portable: portable.has(group.id),
+                sections: group.sections ?? [], ...await settingRows(cms, group, principal, choices),
+            }))),
+        ]);
+        const groups: GroupView[] = rows.map(group => ({ ...group, active: status.plugins.find(plugin => plugin.name === group.plugin)?.active ?? false }));
         return { links: settingsLinks(cms, { network }), entries: settingsSearchEntries(cms, { network }), groups, snapshot: snapshot.document, invalid: snapshot.errors,
             canUpload: !!cms.files && hasPermission(principal, PERMISSIONS.upload),
             canBrowse: !!cms.files && [PERMISSIONS.upload, PERMISSIONS.manageMedia, PERMISSIONS.manageUsers].some(permission => hasPermission(principal, permission)),
-            languages: await loadLanguageSettings(cms, origin), permalinks: loadPermalinkSettings(cms, origin), network: network ? await loadNetworkSettings(this.c.get('network')) : null };
+            languages, permalinks: loadPermalinkSettings(cms, origin), network: networkData };
     }, { initial: { links: [], entries: [], groups: [], canUpload: false, canBrowse: false, snapshot: {}, invalid: {}, languages: null, permalinks: null, network: null } });
     @ClientState() message = '';
     @ClientState() error = '';
@@ -70,12 +74,13 @@ export default class SettingsPage extends Cossack {
     private unsubscribe?: () => void;
     private discards = 0;
     private sectionElements = new Map<string, Element>();
-    private resize?: ResizeObserver;
     private scrollFrame?: number;
-    private scrollJump = 0;
+    /** The section being scrolled to: kept under the toolbar until the page above it stops changing size, then let go. */
     private pendingTarget?: string;
-    private scrollQuiet?: ReturnType<typeof setTimeout>;
-    private scrollDeadline = 0;
+    private settleDeadline = 0;
+    private settleQuiet?: ReturnType<typeof setTimeout>;
+    private settle?: ResizeObserver;
+    private sectionsContainer?: Element;
 
     head(): HeadValue { return { title: __('Settings') }; }
 
@@ -94,54 +99,71 @@ export default class SettingsPage extends Cossack {
             if (this.draft.discards !== this.discards) { this.discards = this.draft.discards; this.error = ''; this.message = ''; this.errors = {}; }
             this.revision++; this.updateActiveSection();
         });
-        if (typeof ResizeObserver !== 'undefined') {
-            this.resize = new ResizeObserver(this.sectionsResized);
-            for (const element of this.sectionElements.values()) this.resize.observe(element);
-        }
         this.revealHash();
         this.updateActiveSection();
     }
 
-    onCleanup() { this.scrollJump++; clearTimeout(this.scrollQuiet); this.unsubscribe?.(); this.resize?.disconnect(); if (this.scrollFrame !== undefined) cancelAnimationFrame(this.scrollFrame); }
+    onCleanup() { this.pendingTarget = undefined; clearTimeout(this.settleQuiet); this.settle?.disconnect(); this.unsubscribe?.(); if (this.scrollFrame !== undefined) cancelAnimationFrame(this.scrollFrame); }
 
+    /** The user took over the scrolling: the section being scrolled to is let go. */
     @OnWindow('wheel')
     @OnWindow('touchstart')
     @OnWindow('pointerdown')
     @OnWindow('keydown')
     @Client()
-    cancelSectionJump() { this.scrollJump++; this.pendingTarget = undefined; clearTimeout(this.scrollQuiet); this.updateActiveSection(); }
-
-    @Client()
-    async scrollToSection(id: string) {
-        const jump = ++this.scrollJump;
-        this.pendingTarget = id;
-        this.scrollDeadline = performance.now() + 1500;
-        await this.requestUpdate();
-        if (jump === this.scrollJump) this.sectionsResized();
+    cancelSectionJump() {
+        if (!this.pendingTarget) return;
+        this.pendingTarget = undefined;
+        clearTimeout(this.settleQuiet);
+        this.updateActiveSection();
     }
 
+    /**
+     * Scroll a section under the toolbar. Every section is on the page at once, but the controls
+     * inside them render after their section connects (nested components), so the page above the
+     * section grows for a moment: the section is kept in place while the sections' container
+     * changes size, until it has been quiet for a moment, at most two seconds. A section that has
+     * not connected yet (the hash's, as the page arrives after a client navigation) is scrolled to
+     * when it does.
+     */
     @Client()
-    sectionsResized() {
-        if (this.pendingTarget) {
-            this.sectionElements.get(this.pendingTarget)?.scrollIntoView({ block: 'start', behavior: 'instant' });
-            clearTimeout(this.scrollQuiet);
-            // IntersectionObserver mounts controls after paint. Their descendants can
-            // resize later still, so wait for a quiet layout, bounded to 1.5 seconds.
-            this.scrollQuiet = setTimeout(() => {
-                this.pendingTarget = undefined;
-                this.updateActiveSection();
-            }, Math.max(0, Math.min(200, this.scrollDeadline - performance.now())));
-        }
+    async scrollToSection(id: string) {
+        this.pendingTarget = id;
+        this.settleDeadline = performance.now() + 2000;
+        await this.requestUpdate();
+        this.realign();
+    }
+
+    /** Put the pending section under the toolbar (again). */
+    @Client()
+    private realign() {
+        const element = this.pendingTarget ? this.sectionElements.get(this.pendingTarget) : undefined;
+        if (!element) return;
+        element.scrollIntoView({ block: 'start', behavior: 'instant' });
+        clearTimeout(this.settleQuiet);
+        this.settleQuiet = setTimeout(() => { this.pendingTarget = undefined; this.updateActiveSection(); }, Math.max(0, Math.min(150, this.settleDeadline - performance.now())));
         this.updateActiveSection();
+    }
+
+    /** The sections' container: its size changes while the page settles after a scroll. */
+    @Client()
+    trackContainer(element: Element | undefined) {
+        if (element === this.sectionsContainer) return;
+        this.settle?.disconnect();
+        this.sectionsContainer = element;
+        if (element && typeof ResizeObserver !== 'undefined') {
+            this.settle = new ResizeObserver(() => this.realign());
+            this.settle.observe(element);
+        }
     }
 
     @Client()
     trackSection(id: string, element: Element | undefined) {
         const previous = this.sectionElements.get(id);
         if (previous === element) return;
-        if (previous) this.resize?.unobserve(previous);
-        if (element) { this.sectionElements.set(id, element); this.resize?.observe(element); }
+        if (element) this.sectionElements.set(id, element);
         else this.sectionElements.delete(id);
+        if (element && this.pendingTarget === id) this.realign();
         this.updateActiveSection();
     }
 
@@ -163,16 +185,25 @@ export default class SettingsPage extends Cossack {
         });
     }
 
+    /**
+     * Scroll to the section the address names (`#settings-<group>`): on mount, when the address
+     * changes, and when a client navigation completes (`cossack:ready`): at mount the router has
+     * not committed the address yet, and its own scroll to the fragment lands before the sections'
+     * controls have rendered. The section is scrolled to when it connects (`trackSection`) and
+     * kept in place while the page settles.
+     */
     @OnWindow('hashchange')
+    @OnDocument('cossack:ready')
     @Client()
     async revealHash() {
         let anchor = window.location.hash.slice(1);
         try { anchor = decodeURIComponent(anchor); } catch { return; }
-        const link = this.view.links.find(link => settingsSectionId(link.id) === anchor);
-        if (link) {
-            this.target = link.id;
-            await this.scrollToSection(link.id);
-        }
+        if (!anchor.startsWith('settings-')) return;
+        let id = '';
+        try { id = decodeURIComponent(anchor.slice('settings-'.length)); } catch { return; }
+        if (!id) return;
+        this.target = id;
+        await this.scrollToSection(id);
     }
 
     @PreventNavigation()
@@ -294,7 +325,7 @@ export default class SettingsPage extends Cossack {
         const ordered = filterSettingsLinks(this.view.links, this.view.entries, this.draft.search);
         const permalinkErrors = Object.fromEntries(Object.entries(this.errors).filter(([key]) => key.startsWith('permalinks.')).map(([key, error]) => [key.slice(11), error]));
         const networkErrors = Object.fromEntries(Object.entries(this.errors).filter(([key]) => key.startsWith('network.')).map(([key, error]) => [key.slice(8), error]));
-        return settingsFrame(this.view.links, this.active, html`<div class="min-w-0 space-y-8">
+        return settingsFrame(this.view.links, this.active, html`<div class="min-w-0 space-y-8" ref=${this.trackContainer}>
             <form id="settings-actions" hidden @submit=${this.submit}></form>
             <div class="space-y-4">
                 ${this.draft.search.trim() ? html`<p role="status" data-settings-results class="text-sm text-muted-foreground">${matches.length ? matches.length === 1 ? __('1 setting found') : `${matches.length} ${__('settings found')}` : __('No settings match your search.')}</p>` : null}
@@ -314,7 +345,7 @@ export default class SettingsPage extends Cossack {
                     ${group?.description ? html`<p class="text-sm text-muted-foreground">${group.description}</p>` : null}
                     ${group?.plugin ? html`<p class="text-xs text-muted-foreground">${group.plugin}</p>` : null}
                     ${group?.theme ? html`<a href="/dashboard/appearance/customize" class="text-sm text-primary hover:underline">${__('Theme customization')}</a>` : null}</div>`;
-                return component(SettingsSection, { id: link.id, heading, count: keys.length, onConnect: this.trackSection, eager: !keys.length || link.id === this.target || link.id === ordered[0]?.id,
+                return component(SettingsSection, { id: link.id, heading, onConnect: this.trackSection,
                     content: () => link.id === 'languages' && this.view.languages ? component(LanguagesSettings, { draft: this.draft, initial: this.view.languages, fields: keys })
                         : link.id === 'permalinks' && this.view.permalinks ? component(PermalinksSettings, { draft: this.draft, initial: this.view.permalinks, fields: keys, errors: permalinkErrors })
                         : link.id === 'network' && this.view.network ? component(NetworkSettingsForm, { draft: this.draft, initial: this.view.network, fields: keys, errors: networkErrors })

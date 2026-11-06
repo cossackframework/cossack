@@ -1,13 +1,15 @@
 /**
  * The editor on the public site, loaded only in edit mode. Click a block to edit its fields
- * in a popover; click the body to edit it as one document in the rich text editor. The Blocks
- * panel shows the tree: drag a block, or use the arrow keys, to move it among its siblings
- * or into and out of containers; the Entry panel edits the title, slug, terms and other
- * fields. The device toggle narrows the content root. Changes stay in the page's draft until saved.
+ * in a sheet at the side, as the dashboard's editor does, with Apply and Cancel; click the body
+ * to edit it as one document in the rich text editor. The Blocks panel shows the tree: drag a
+ * block, or use the arrow keys, to move it among its siblings or into and out of containers;
+ * the Entry panel edits the title, slug, terms and other fields. The device toggle narrows the
+ * content root. The editor's controls sit in the middle of the site taskbar, between its start
+ * menu and its user menu. Changes stay in the page's draft until saved.
  */
 import { Client, ClientState, Component, Cossack } from '@cossackframework/core';
 import { component, html, type TemplateResult } from '@cossackframework/renderer';
-import { Button, Checkbox, Icon, MultiSelect } from '@cossackframework/ui';
+import { Button, Checkbox, Icon, MultiSelect, Sheet } from '@cossackframework/ui';
 import { blockId, BREAKPOINTS, findBlock, formatNoteTarget, insertBlock, noteBlock, noteThreads, parseNoteTarget, parseRichTextPath, placeBlocks, removeBlock, richTextPath, shiftBlock, updateBlock, type BlockMove, type BlockPlace, type Breakpoint, type EmbeddedBlock, type Note, type NoteRange, type NoteStatus, type RichTextDoc } from '@cossackframework/cms';
 import { blockDefaults, controlValue, editorInput, newBlock, type BlockOption, type EditorValues } from './editor';
 import { BREAKPOINT_DEVICES, blockSummary, declarationsOf, offeredIn } from './block-tree';
@@ -32,8 +34,8 @@ const STYLE = `
 [data-cms-edit][data-cms-selected] > * { outline: 2px solid var(--ring, #3b82f6); outline-offset: 4px; }
 `;
 
-/** A block's form: in a popover by the block, or in the Blocks panel when the theme does not show it. */
-interface BlockForm { id: string; values: Record<string, unknown>; style: StyleValues; tab: BlockTab; errors: Record<string, string>; top: number; left: number; docked: boolean }
+/** A block's form, in the sheet at the side of the page. */
+interface BlockForm { id: string; values: Record<string, unknown>; style: StyleValues; tab: BlockTab; errors: Record<string, string> }
 /** A block embedded in the body, edited from the rich text editor. */
 interface EmbeddedForm { id: string; type: string; values: Record<string, unknown>; errors: Record<string, string> }
 type ChooserTarget = { kind: 'block' | 'embedded' | 'entry'; field: string } | { kind: 'richtext'; /** The editor to insert into; the body's by default. */ editor?: string };
@@ -70,7 +72,7 @@ export class SiteEditor extends Cossack {
 
     private readonly onDocumentClick = (event: MouseEvent) => {
         const target = event.target as Element | null;
-        if (!target || this.root?.contains(target) || target.closest('[role="dialog"]')) return;
+        if (!target || this.root?.contains(target) || target.closest('dialog, [role="dialog"]')) return;
         // The nearest block of this page: blocks rendered from elsewhere, such as a form's inputs, are
         // marked too, so clicking one selects the block that shows them (the Form block).
         let marker = target.closest('[data-cms-edit]');
@@ -85,17 +87,17 @@ export class SiteEditor extends Cossack {
 
     private readonly onKey = (event: KeyboardEvent) => {
         if (event.key !== 'Escape' || event.defaultPrevented) return;
-        if (this.form) {
-            // Escape in a nested block's form selects its container.
-            const parent = this.places().find(place => place.block._id === this.form!.id)?.parent ?? null;
-            if (parent) this.edit(parent); else this.form = null;
-        } else if (this.embedded) this.embedded = null;
+        // A block's form is a dialog: its own cancel closes it (`closeForm`).
+        if (this.form) return;
+        if (this.embedded) this.embedded = null;
         else if (this.panel) this.panel = null;
     };
 
     private readonly onLeave = (event: BeforeUnloadEvent) => {
         if (this.props.draft.changed) event.preventDefault();
     };
+
+    private readonly onResize = () => this.placeBar();
 
     onMount() {
         this.style = document.createElement('style');
@@ -104,8 +106,10 @@ export class SiteEditor extends Cossack {
         document.addEventListener('click', this.onDocumentClick, true);
         document.addEventListener('keydown', this.onKey);
         window.addEventListener('beforeunload', this.onLeave);
-        this.observer = new MutationObserver(() => this.syncSelection());
+        window.addEventListener('resize', this.onResize);
+        this.observer = new MutationObserver(() => { this.syncSelection(); this.placeBar(); });
         this.observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-block-id'] });
+        this.placeBar();
     }
 
     onCleanup() {
@@ -114,8 +118,29 @@ export class SiteEditor extends Cossack {
         document.removeEventListener('click', this.onDocumentClick, true);
         document.removeEventListener('keydown', this.onKey);
         window.removeEventListener('beforeunload', this.onLeave);
+        window.removeEventListener('resize', this.onResize);
         for (const marker of document.querySelectorAll('[data-cms-selected]')) marker.removeAttribute('data-cms-selected');
         delete document.documentElement.dataset.cmsDevice;
+        document.documentElement.style.removeProperty('--cms-taskbar-start');
+        document.documentElement.style.removeProperty('--cms-taskbar-end');
+    }
+
+    /**
+     * Place the editing controls in the middle of the site taskbar: between its start menu and its
+     * user menu, which the bar keeps while editing (`taskbar.ts`). Without a taskbar (narrow
+     * screens show none) the controls span the bottom of the page.
+     */
+    @Client()
+    private placeBar() {
+        const bar = document.querySelector('[data-cms-taskbar]');
+        const start = bar?.querySelector('[data-taskbar-start]')?.getBoundingClientRect();
+        const end = bar?.querySelector('[data-taskbar-end]')?.getBoundingClientRect();
+        const shown = !!bar && getComputedStyle(bar).display !== 'none';
+        const left = shown && start?.width ? `${Math.round(start.right)}px` : '0px';
+        const right = shown && end?.width ? `${Math.max(0, Math.round(window.innerWidth - end.left))}px` : '0px';
+        const root = document.documentElement.style;
+        if (root.getPropertyValue('--cms-taskbar-start') !== left) root.setProperty('--cms-taskbar-start', left);
+        if (root.getPropertyValue('--cms-taskbar-end') !== right) root.setProperty('--cms-taskbar-end', right);
     }
 
     /**
@@ -189,21 +214,23 @@ export class SiteEditor extends Cossack {
 
     // --- Blocks ----------------------------------------------------------------------
 
+    /** Open a block's form in the sheet. */
     @Client()
-    private select(id: string, marker: Element | null) {
+    private select(id: string, _marker: Element | null = null) {
         const block = findBlock(this.blocks(), id);
         const option = block ? this.option(block.type) : undefined;
         if (!block || !option) return;
-        const rects = marker ? [...marker.children].map(child => child.getBoundingClientRect()).filter(rect => rect.width || rect.height) : [];
-        const width = Math.min(448, window.innerWidth - 16);
-        const bottom = rects.length ? Math.max(...rects.map(rect => rect.bottom)) : 0;
-        const left = rects.length ? Math.min(...rects.map(rect => rect.left)) : 0;
         this.form = {
-            id, errors: {}, docked: !rects.length, tab: this.form?.tab ?? 'general', style: styleValues(block),
+            id, errors: {}, tab: this.form?.tab ?? 'general', style: styleValues(block),
             values: Object.fromEntries(option.fields.map(field => [field.name, block.data[field.name] ?? controlValue(field, field.defaultValue)])),
-            top: Math.min(Math.max(bottom + 8, 8), Math.max(window.innerHeight - 320, 8)), left: Math.min(Math.max(left, 8), window.innerWidth - width - 8),
         };
-        if (!rects.length) this.panel = 'blocks';
+    }
+
+    /** Close the form; from a nested block's form, Escape selects its container instead. */
+    @Client()
+    private closeForm(toParent = false) {
+        const parent = toParent && this.form ? this.places().find(place => place.block._id === this.form!.id)?.parent ?? null : null;
+        if (parent) this.edit(parent); else this.form = null;
     }
 
     @Client()
@@ -231,7 +258,7 @@ export class SiteEditor extends Cossack {
         const errors = this.check(option, form.values);
         if (Object.keys(errors).length) { this.form = { ...form, errors }; return; }
         // Blocks keep control values, as the dashboard editor does; saving converts them.
-        this.setBlocks(updateBlock(this.blocks(), form.id, entry => withStyle({ ...entry, data: { ...form.values } }, form.style)));
+        this.setBlocks(updateBlock(this.blocks(), form.id, entry => withStyle({ ...entry, data: { ...form.values } }, form.style, this.otherIds(form.id))));
         this.form = null;
     }
 
@@ -618,28 +645,37 @@ export class SiteEditor extends Cossack {
 
     // --- Rendering -------------------------------------------------------------------------
 
-    private formCard(): TemplateResult | null {
+    /**
+     * The block's form in a sheet at the side, as the dashboard's block panel: a header with the
+     * block's name and its move and remove buttons, the settings scrolling between, and Cancel
+     * and Apply fixed at the bottom. Escape in a nested block's form selects its container.
+     */
+    private formSheet(): TemplateResult {
         const form = this.form;
         const block = form ? findBlock(this.blocks(), form.id) : undefined;
         const option = block ? this.option(block.type) : undefined;
-        if (!form || !block || !option) return null;
+        const open = !!form && !!block && !!option;
+        return component(Sheet, { id: 'site-editor-block', open, side: 'right', size: '30rem', 'aria-label': option ? `${__('Edit')} ${option.label}` : __('Block'),
+            onOpenChange: (next: boolean) => { if (!next) this.closeForm(true); } },
+            open ? this.formBody(form, block, option) : html``);
+    }
+
+    private formBody(form: BlockForm, block: DraftBlock, option: BlockOption): TemplateResult {
         const place = this.places().find(entry => entry.block._id === block._id)!;
         const siblings = place.parent ? findBlock(this.blocks(), place.parent)?.children ?? [] : this.blocks();
         const hide = block.layout?.hide ?? [];
-        const style = form.docked ? '' : `top: ${form.top}px; left: ${form.left}px; width: min(28rem, calc(100vw - 1rem)); max-height: min(32rem, calc(100vh - ${form.top}px - 5rem))`;
-        return html`<form role="dialog" aria-label=${`${__('Edit')} ${option.label}`} data-site-editor-form
-            class=${form.docked ? 'space-y-4 rounded-md border border-border bg-card p-3' : `${PANEL} rounded-lg`} style=${style} @submit=${(event: Event) => this.apply(event)}>
-            <div class=${form.docked ? 'space-y-4' : 'space-y-4 overflow-y-auto p-4'}>
-                <div class="flex items-center justify-between gap-2">
-                    <h2 class="text-sm font-semibold uppercase tracking-wide text-muted-foreground">${option.label}</h2>
-                    <span class="flex flex-wrap gap-1">
-                        ${this.iconButton('↑', __('Move up'), () => this.shift(block._id, 'up'), place.index === 0)}
-                        ${this.iconButton('↓', __('Move down'), () => this.shift(block._id, 'down'), place.index === siblings.length - 1)}
-                        ${this.iconButton('←', __('Move out of the container'), () => this.shift(block._id, 'out'), !place.parent)}
-                        ${this.iconButton('→', __('Move into the block above'), () => this.shift(block._id, 'in'), !this.canGoIn(block._id))}
-                        ${this.iconButton(trash(), `${__('Remove')} ${option.label}`, () => this.remove(block._id))}
-                    </span>
-                </div>
+        return html`<form data-site-editor-form class="flex h-full flex-col" @submit=${(event: Event) => this.apply(event)}>
+            <header class="flex items-center justify-between gap-2 border-b border-border px-5 py-4">
+                <h2 class="min-w-0 truncate text-base font-semibold text-foreground">${option.label}</h2>
+                <span class="flex flex-wrap gap-1">
+                    ${this.iconButton('↑', __('Move up'), () => this.shift(block._id, 'up'), place.index === 0)}
+                    ${this.iconButton('↓', __('Move down'), () => this.shift(block._id, 'down'), place.index === siblings.length - 1)}
+                    ${this.iconButton('←', __('Move out of the container'), () => this.shift(block._id, 'out'), !place.parent)}
+                    ${this.iconButton('→', __('Move into the block above'), () => this.shift(block._id, 'in'), !this.canGoIn(block._id))}
+                    ${this.iconButton(trash(), `${__('Remove')} ${option.label}`, () => this.remove(block._id))}
+                </span>
+            </header>
+            <div class="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
                 <div class="flex flex-wrap items-center gap-1 text-xs text-muted-foreground" role="group" aria-label=${__('Hide on')}>
                     <span>${__('Hide on')}</span>
                     ${BREAKPOINTS.map(breakpoint => {
@@ -651,7 +687,7 @@ export class SiteEditor extends Cossack {
                     })}
                 </div>
                 ${blockTabs(form.tab, tab => this.showFormTab(tab), `site-block-${block._id}`, {
-                    style: styleControls(form.style, option.supports, this.props.draft.view.presets, `site-block-${block._id}-style`, style => this.setFormStyle(style)),
+                    style: styleControls(form.style, option.supports, this.props.draft.view.presets, `site-block-${block._id}-style`, style => this.setFormStyle(style), { taken: this.otherIds(block._id) }),
                     general: option.fields.length ? html`
                     ${option.fields.filter(field => field.kind === 'richtext').map(field => html`<div class="space-y-1"><label class="block text-sm font-medium text-foreground" for=${`site-block-${block._id}-${field.name}`}>${field.label}</label>
                         ${component(RichTextField, { id: `site-block-${block._id}-${field.name}`, label: field.label, value: (form.values[field.name] as RichTextDoc | null) ?? null, blocks: [],
@@ -661,12 +697,17 @@ export class SiteEditor extends Cossack {
                     ${blockFields({ ...option, fields: option.fields.filter(field => field.kind !== 'richtext') }, form.values, (name, value) => this.setFormValue(name, value), `site-block-${block._id}`, name => this.media({ kind: 'block', field: name }), form.errors, [], this.props.draft.view.sources)}`
                     : html`<p class="text-sm text-muted-foreground">${__('This block has no settings.')}</p>`,
                 })}
-                <div class="flex justify-end gap-2">
-                    ${component(Button, { type: 'button', variant: 'outline', size: 'sm', '@click': () => { this.form = null; } }, __('Cancel'))}
-                    ${component(Button, { type: 'submit', size: 'sm' }, __('Apply'))}
-                </div>
             </div>
+            <footer class="flex items-center justify-end gap-2 border-t border-border px-5 py-3">
+                ${component(Button, { type: 'button', variant: 'outline', size: 'sm', '@click': () => this.closeForm() }, __('Cancel'))}
+                ${component(Button, { type: 'submit', size: 'sm' }, __('Apply'))}
+            </footer>
         </form>`;
+    }
+
+    /** The IDs of every other block in the field, which a custom block ID may not repeat. */
+    private otherIds(id: string): ReadonlySet<string> {
+        return new Set(this.places().map(place => place.block._id).filter(entry => entry !== id));
     }
 
     /** Whether the block can move into the sibling above it. */
@@ -714,7 +755,6 @@ export class SiteEditor extends Cossack {
                             ${option?.fields.length ? this.iconButton(__('Edit'), `${__('Edit')} ${this.label(block)}`, () => this.edit(block._id)) : null}
                             ${this.iconButton(trash(), `${__('Remove')} ${this.label(block)}`, () => this.remove(block._id))}
                         </div>
-                        ${this.form?.docked && this.form.id === block._id ? html`<div class="mt-1.5">${this.formCard()}</div>` : null}
                     </li>`;
                 })}
             </ol>` : html`<p class="rounded-md border border-dashed border-border p-4 text-center text-sm text-muted-foreground">${__('No blocks yet.')}</p>`}
@@ -788,11 +828,11 @@ export class SiteEditor extends Cossack {
         const titles = { entry: __('Entry'), blocks: __('Blocks'), body: __('Text') };
         const body = this.panel === 'entry' ? this.entryPanel() : this.panel === 'blocks' ? this.blocksPanel() : this.bodyPanel();
         // The open Notes rail takes the right edge: the panel sits beside it.
-        return html`<aside role="dialog" aria-label=${titles[this.panel]} class=${`${PANEL} bottom-20 right-4 top-4 w-[min(30rem,calc(100vw-2rem))] rounded-lg`} style=${this.notesOpen ? 'right: 27rem' : ''}>
+        return html`<aside role="dialog" aria-label=${titles[this.panel]} class=${`${PANEL} bottom-12 right-4 top-4 w-[min(30rem,calc(100vw-2rem))] rounded-lg`} style=${this.notesOpen ? 'right: 27rem' : ''}>
             <header class="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
                 <h2 class="text-base font-semibold">${titles[this.panel]}</h2>
                 ${this.panel === 'body' ? component(Button, { type: 'button', size: 'sm', '@click': () => this.closeBody() }, __('Done'))
-                    : component(Button, { type: 'button', variant: 'ghost', size: 'sm', '@click': () => { this.panel = null; this.form = this.form?.docked ? null : this.form; } }, __('Close'))}
+                    : component(Button, { type: 'button', variant: 'ghost', size: 'sm', '@click': () => { this.panel = null; } }, __('Close'))}
             </header>
             <div class="flex-1 overflow-y-auto p-4">${body}</div>
         </aside>`;
@@ -807,7 +847,9 @@ export class SiteEditor extends Cossack {
         const device = (name: Device) => html`<button type="button" aria-pressed=${this.device === name ? 'true' : 'false'} data-device=${name} title=${__(DEVICE_LABELS[name])}
             class=${`rounded-full px-2 py-1 text-xs border-none cursor-pointer ${this.device === name ? 'bg-muted text-foreground' : 'bg-transparent text-muted-foreground hover:text-foreground'}`}
             @click=${() => this.setDevice(name)}>${__(DEVICE_LABELS[name])}</button>`;
-        return html`<div role="region" aria-label=${__('Editing')} class="fixed bottom-4 left-1/2 z-50 flex max-w-[calc(100vw-1rem)] -translate-x-1/2 flex-wrap items-center gap-1 rounded-2xl border border-border bg-background/95 px-2 py-1.5 text-foreground shadow-lg backdrop-blur">
+        // In the taskbar's middle, between its start menu and its user menu (`placeBar`); the whole bottom edge without a taskbar.
+        return html`<div role="region" aria-label=${__('Editing')} data-site-editor-bar class="fixed bottom-0 z-50 flex h-10 items-center gap-1 overflow-x-auto border-t border-border bg-background/95 px-2 text-foreground backdrop-blur md:border-t-0 md:bg-transparent md:backdrop-blur-none"
+            style="left: var(--cms-taskbar-start, 0px); right: var(--cms-taskbar-end, 0px)">
             ${tab('entry', __('Entry'))}
             ${draft.blocksField ? tab('blocks', __('Blocks')) : null}
             ${draft.bodyField ? tab('body', __('Text')) : null}
@@ -832,7 +874,7 @@ export class SiteEditor extends Cossack {
     render() {
         return html`<div data-site-editor ref=${(element: Element) => { this.root = element as HTMLElement; }}>
             <p class="sr-only" aria-live="polite">${this.announcement}</p>
-            ${this.form && !this.form.docked ? this.formCard() : null}
+            ${this.formSheet()}
             ${this.sidePanel()}
             ${this.notesRailView()}
             ${this.bar()}

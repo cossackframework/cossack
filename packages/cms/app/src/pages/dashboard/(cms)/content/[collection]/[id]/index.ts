@@ -4,7 +4,7 @@ import { html, component, unsafeHTML, type TemplateResult } from '@cossackframew
 import { applyTreeOp, ARTICLE_TYPES, blockId, CORE_BLOCKS, entryAuthors, groupPeers, livePeers, patchKey, PendingKeys, richTextPath, parseRichTextPath, scalarKey, treeHash, treeOps, systemPrincipal, entryChecks, evaluateRule, fieldVisibility, findBlock, flattenBlocks, flattenGroupFields, formatBytes, hasPermission, isCmsError, languageName, mediaKind, recordSchema, recordTitle, renderSeoTemplate, richTextBlocks, TITLE_SEPARATORS, updateBlock, PERMISSIONS, participantColor, formatNoteTarget, noteBlock, noteField, noteThreads, parseNoteTarget, type Block, type BlockCondition, type Check, type EmbeddedBlock, type JsonSchema, type MediaKind, type Note, type NoteAction, type NoteRange, type NoteStatus, type NoteThread, type RecordShape, type RichTextDoc, type Participant, type PeerPresence, type PeerState, type TreeOp } from '@cossackframework/cms';
 import { blockPanel } from '../../../../../../cms/block-panel';
 import { describeBlockError } from '../../../../../../cms/block-errors';
-import { styleValues, withStyle, type BlockTab, type StyleValues } from '../../../../../../cms/style-controls';
+import { blockIdOf, styleValues, withStyle, type BlockTab, type StyleValues } from '../../../../../../cms/style-controls';
 import { renderMarkdown, type CmsHost } from '@cossackframework/cms/server';
 import { applyEntryJson, contentField, editorView, entryJson, entryValues, fieldErrors, mediaPreviews, parentOptions, patternBlocks, routeResource, saveEntry, termOptions, type MediaPreview, type SaveIntent } from '../../../../../../cms/content';
 import { blockDefaults, controlValue, editorBlocks, editorInput, entryUrl, suggestedSlug, type EditorBlock, type EditorField, type EditorValues, type EditorView, type TermOption } from '../../../../../../cms/editor';
@@ -13,7 +13,7 @@ import type { Caret, NoteMark } from '../../../../../../cms/rich-text.client';
 import { EntryRoom, type NoteChange, type RoomHandle, type RoomSnapshot } from '../../../../../../cms/collab/room';
 import { avatarStack, namesOf, onTab, presenceChip, presenceOutline, type Someone } from '../../../../../../cms/collab/presence';
 import { BlockTree, blockSummary } from '../../../../../../cms/block-tree';
-import { noteButton, noteMarker, notesRail, type NoteAnchorView, type NoteComposer } from '../../../../../../cms/notes-rail';
+import { inlineNoteTools, noteButton, noteMarker, notesRail, type NoteAnchorView, type NoteComposer } from '../../../../../../cms/notes-rail';
 import { bindingChoices, choicesControl, fieldControl, groupFields, multipleControl, type BindingChoice } from '../../../../../../cms/field-controls';
 import { chooserKind, MEDIA_ACCEPT, MEDIA_KIND_CHOICES, uploadFile } from '../../../../../../cms/media-chooser';
 import { FieldGroupView, plainBlocks, visibilityTypes, type RowPath } from '../../../../../../cms/field-group-view';
@@ -127,6 +127,8 @@ export default class EntryEditor extends Cossack {
     private self = '';
     /** This tab's changes the room has not echoed yet. */
     private pending = new PendingKeys();
+    /** Changes made before this tab joined the room, by field: kept over the room's first snapshot, then sent to it. */
+    private beforeJoin = new Map<string, { previous: unknown; value: unknown }>();
     private presenceTimer: ReturnType<typeof setTimeout> | undefined;
     private previewRefresh: ReturnType<typeof setTimeout> | undefined;
     /** This tab is telling the room about its own save: the room's "saved by" is not news here. */
@@ -370,7 +372,8 @@ export default class EntryEditor extends Cossack {
     @Client()
     private share(name: string, previous: unknown, value: unknown) {
         const room = this.room;
-        if (!room) return;
+        // Typed before the room was joined: the first snapshot keeps it, and sends it then.
+        if (!room) { this.beforeJoin.set(name, { previous: this.beforeJoin.get(name)?.previous ?? previous, value }); return; }
         const field = this.fieldOf(name);
         if (field?.kind === 'richtext' && !field.multiple) return;
         if (field?.kind === 'blocks') {
@@ -408,14 +411,21 @@ export default class EntryEditor extends Cossack {
         this.room = handle;
     }
 
-    /** The room's draft replaces the values, apart from fields this tab has changes in flight for. */
+    /**
+     * The room's draft replaces the values, apart from fields this tab has changes in flight for
+     * and, on the first snapshot, fields it changed before the room was joined, which go to the
+     * room now instead of being lost.
+     */
     @Client()
     private onSnapshot(snapshot: RoomSnapshot, options: { initial: boolean; resets: readonly string[] }) {
         const values = { ...this.values };
         const trees: string[] = [];
+        const early = options.initial ? new Map(this.beforeJoin) : new Map<string, { previous: unknown; value: unknown }>();
+        if (options.initial) this.beforeJoin.clear();
         for (const [name, value] of Object.entries(snapshot.values)) {
             const field = this.fieldOf(name);
             if (!options.initial && !this.pending.accepts(field?.kind === 'blocks' ? `tree:${name}` : scalarKey(name))) continue;
+            if (early.has(name)) continue;
             // A shared rich text document is the editor's own; the items of a multiple field come as a value.
             values[name] = value;
             if (field?.kind === 'blocks') trees.push(name);
@@ -426,7 +436,11 @@ export default class EntryEditor extends Cossack {
         // The room holds the notes while it lives: its list replaces what the page loaded.
         this.notes = snapshot.notes;
         this.noteAuthors = { ...this.noteAuthors, ...snapshot.people };
-        if (options.initial) { this.pending.clear(); this.announce({ tab: this.mode }); }
+        if (options.initial) {
+            this.pending.clear();
+            this.announce({ tab: this.mode });
+            for (const [name, change] of early) this.share(name, name in snapshot.values ? snapshot.values[name] : change.previous, values[name]);
+        }
         this.previewsSoon();
     }
 
@@ -820,11 +834,13 @@ export default class EntryEditor extends Cossack {
      * by their key (`status`, `parent`, a taxonomy's name) and the search box's by `seo.<key>`;
      * the resource's own fields have `fieldRow`, group fields the `FieldGroupView`.
      */
-    private tracked(field: string, body: TemplateResult, options: { label?: TemplateResult | null; class?: string } = {}): TemplateResult {
+    private tracked(field: string, body: TemplateResult, options: { label?: TemplateResult | null; class?: string; /** The control is one line of text: its note tools sit inside it, at the right. */ inline?: boolean } = {}): TemplateResult {
         const here = this.peersIn(field);
+        const tools = this.noteTools(field);
+        const inline = options.inline === true && tools !== null;
         return html`<div class=${`group ${options.class ?? 'space-y-1'}`} data-field=${field} style=${presenceOutline(here)}>
-            ${options.label ? html`<div class="flex items-center gap-2">${options.label}${this.noteTools(field)}</div>` : this.noteTools(field)}
-            ${here.length ? presenceChip(here, __('is here')) : null}${body}</div>`;
+            ${options.label ? html`<div class="flex items-center gap-3"><div class="min-w-0 flex-1">${options.label}</div>${inline ? null : tools}</div>` : inline ? null : tools}
+            ${here.length ? presenceChip(here, __('is here')) : null}${inline ? inlineNoteTools(body, tools) : body}</div>`;
     }
 
     /** Other users in each block, or dragging it, by block ID. */
@@ -1293,12 +1309,20 @@ export default class EntryEditor extends Cossack {
         }
         const fields = option.fields.filter(entry => entry.kind !== 'richtext');
         const { input, errors } = editorInput(fields, dialog.values);
-        this.blockDialog = { ...dialog, errors: { ...dialog.errors, ...errors } };
+        // A valid new ID under Advanced re-keys the block; the panel follows it.
+        const taken = this.otherBlockIds(dialog.field, dialog.id);
+        const id = blockIdOf({ _id: dialog.id }, dialog.style, taken);
+        this.blockDialog = { ...dialog, id, errors: { ...dialog.errors, ...errors } };
         // Rich text stays as it is in the tree; the panel's values replace the rest, and the condition follows the panel.
         this.set(dialog.field, updateBlock(this.blocks(dialog.field), dialog.id, block => {
             const { when: _previous, ...rest } = block;
-            return withStyle({ ...rest, ...(dialog.when ? { when: dialog.when } : {}), data: { ...Object.fromEntries(Object.entries(block.data).filter(([name]) => option.fields.find(entry => entry.name === name)?.kind === 'richtext')), ...input } }, dialog.style);
+            return withStyle({ ...rest, ...(dialog.when ? { when: dialog.when } : {}), data: { ...Object.fromEntries(Object.entries(block.data).filter(([name]) => option.fields.find(entry => entry.name === name)?.kind === 'richtext')), ...input } }, dialog.style, taken);
         }));
+    }
+
+    /** The IDs of a field's blocks apart from one, which a custom block ID may not repeat. */
+    private otherBlockIds(field: string, except: string): ReadonlySet<string> {
+        return new Set(flattenBlocks(this.blocks(field)).map(block => block._id).filter(id => id !== except));
     }
 
     /** Replace a synced pattern in the content with a copy of its blocks, which no longer follow the pattern. */
@@ -1677,10 +1701,14 @@ export default class EntryEditor extends Cossack {
         const shared = field.shared && this.languages.multilingual;
         const control = this.control(field, value, entry => this.set(field.name, entry), { field: field.name }, id);
         const here = this.peersIn(field.name);
+        const tools = this.noteTools(field.name);
+        // One line of text carries its note tools inside, as the title does; other controls show them beside the label.
+        const inline = tools !== null && field.kind === 'string' && !field.media && !field.multiple && !field.choicesFrom && !field.fields.length;
+        const shown = shared && this.sharedLocked ? html`<fieldset disabled class="contents">${control}</fieldset>` : control;
         return html`<div class="group space-y-1.5" data-shared=${shared ? 'true' : ''} data-field=${field.name} style=${presenceOutline(here)}>
-            ${field.kind === 'boolean' ? this.noteTools(field.name) : html`<div class="flex items-center gap-2"><label for=${id} class=${options.labelHidden ? 'sr-only' : 'block text-sm font-medium text-foreground'}>${field.label}${field.required ? html`<span class="text-destructive"> *</span>` : null}</label>${this.noteTools(field.name)}</div>`}
+            ${field.kind === 'boolean' ? tools : html`<div class="flex items-center gap-2"><label for=${id} class=${options.labelHidden ? 'sr-only' : 'block text-sm font-medium text-foreground'}>${field.label}${field.required ? html`<span class="text-destructive"> *</span>` : null}</label>${inline ? null : tools}</div>`}
             ${here.length ? presenceChip(here, __('is here')) : null}
-            ${shared && this.sharedLocked ? html`<fieldset disabled class="contents">${control}</fieldset>` : control}
+            ${inline ? inlineNoteTools(shown, tools) : shown}
             ${field.description && !(field.kind === 'text' && field.format === 'markdown') ? html`<p class="text-xs text-muted-foreground">${field.description}</p>` : null}
             ${shared ? html`<p class="text-xs text-muted-foreground">${this.sharedLocked ? __('Same in every language. You cannot edit every translation, so it is read-only here.') : __('Same in every language: saving copies it to the translations.')}</p>` : null}
             ${field.kind === 'blocks' ? null : this.errorFor(field.name)}
@@ -1777,7 +1805,7 @@ export default class EntryEditor extends Cossack {
         const text = (key: string, label: string, ideal: number, multiline = false) => this.tracked(`seo.${key}`,
             multiline ? component(Textarea, { id: `seo-${key}`, rows: 3, '.value': String(seo[key] ?? ''), '@input': (event: Event) => this.setGroup('seo', key, (event.target as HTMLTextAreaElement).value) })
                 : component(Input, { id: `seo-${key}`, '.value': String(seo[key] ?? ''), '@input': (event: Event) => this.setGroup('seo', key, (event.target as HTMLInputElement).value) }),
-            { label: html`<div class="flex items-center justify-between"><label for=${`seo-${key}`} class="block text-sm font-medium text-foreground">${label}</label>${counter(String(seo[key] ?? ''), ideal)}</div>` });
+            { label: html`<div class="flex items-center justify-between gap-3"><label for=${`seo-${key}`} class="block text-sm font-medium text-foreground">${label}</label>${counter(String(seo[key] ?? ''), ideal)}</div>`, inline: !multiline });
         const check = (key: string, label: string) => this.tracked(`seo.${key}`, html`<label class="flex items-center gap-2 text-sm text-foreground cursor-pointer">
             ${component(Checkbox, { checked: seo[key] === true, '@change': (event: Event) => this.setGroup('seo', key, (event.target as HTMLInputElement).checked) })} ${label}</label>`);
         const checks = this.checks();
@@ -1789,7 +1817,7 @@ export default class EntryEditor extends Cossack {
                 ${component(Textarea, { id: 'field-summary', rows: 3, '.value': String(this.values.summary ?? ''), '@input': (event: Event) => this.set('summary', (event.target as HTMLTextAreaElement).value) })}
                 <p class="text-xs text-muted-foreground">${__('Two or three sentences that answer what this is about. Shown first by the theme, quoted by answer engines, and the meta description when there is none.')}</p>
                 ${this.errorFor('summary')}`,
-                { label: html`<div class="flex items-center justify-between"><label for="field-summary" class="block text-sm font-medium text-foreground">${__('Summary')}</label>${counter(String(this.values.summary ?? ''), 300)}</div>` }) : null}
+                { label: html`<div class="flex items-center justify-between gap-3"><label for="field-summary" class="block text-sm font-medium text-foreground">${__('Summary')}</label>${counter(String(this.values.summary ?? ''), 300)}</div>` }) : null}
             <details class="rounded-md border border-border" ?open=${this.checksOpen} @toggle=${(event: Event) => { this.checksOpen = (event.target as HTMLDetailsElement).open; }}>
                 <summary class="flex cursor-pointer items-center gap-2 px-3 py-2 text-sm text-foreground">
                     <span class=${`inline-block size-2.5 rounded-full ${warnings ? 'bg-amber-500' : 'bg-emerald-500'}`} aria-hidden="true"></span>
@@ -1818,7 +1846,7 @@ export default class EntryEditor extends Cossack {
             </details>
             ${this.tracked('seo.canonical', html`${component(Input, { id: 'seo-canonical', placeholder: url, '.value': String(seo.canonical ?? ''), '@input': (event: Event) => this.setGroup('seo', 'canonical', (event.target as HTMLInputElement).value) })}
                 <p class="text-xs text-muted-foreground">${__('Only when this content first appeared at another address.')}</p>`,
-                { label: html`<label for="seo-canonical" class="block text-sm font-medium text-foreground">${__('Canonical URL')}</label>` })}
+                { label: html`<label for="seo-canonical" class="block text-sm font-medium text-foreground">${__('Canonical URL')}</label>`, inline: true })}
             ${check('noindex', __('Hide from search engines'))}
             ${check('cornerstone', __('Cornerstone content: one of the site\'s most important entries'))}
             ${this.linkSuggestions.length ? html`<div class="space-y-1">
@@ -1973,7 +2001,7 @@ export default class EntryEditor extends Cossack {
             id: 'entry-block', open: Boolean(dialog && option), option, tab: dialog?.tab ?? 'general', style: dialog?.style ?? styleValues({}), presets: this.view?.presets ?? { colors: [], fontSizes: [], spacing: [] },
             styleTab: dialog ? !dialog.embedded : false,
             // Focus in the panel counts as focus in the block; the others' presence there shows in the panel as in the tree.
-            ...(dialog && !dialog.embedded ? { block: dialog.id, field: dialog.field, editing: this.editingBlocks()[dialog.id] ?? [] } : {}),
+            ...(dialog && !dialog.embedded ? { block: dialog.id, field: dialog.field, editing: this.editingBlocks()[dialog.id] ?? [], taken: this.otherBlockIds(dialog.field, dialog.id) } : {}),
             onTab: tab => this.showDialogTab(tab), onStyle: style => this.setDialogStyle(style), onClose: () => { this.blockDialog = null; },
             general: dialog && option ? html`${fields.length ? fields.map(entry => {
                 const id = `block-${dialog.id}-${entry.name}`;

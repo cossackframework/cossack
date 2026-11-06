@@ -122,8 +122,8 @@ describe.skipIf(!liveRomeDBTests())('CMS unified settings', () => {
       await expect(visitor.action(JSON_PAGE, 'download', [])).rejects.toThrow();
       await expect(visitor.action(JSON_PAGE, 'apply', [{ general: { siteTitle: 'Anonymous edit' } }])).rejects.toThrow();
 
-      // The settings catalog is one scrolling page. Only visible sections create
-      // their controls, while the full catalog remains available to the menu/search.
+      // The settings catalog is one scrolling page with every section's controls on it, so the
+      // menu and the search reach any setting without loading more.
       browser = await chromium.launch({ headless: true });
       const context = await browser.newContext();
       await context.addCookies([...web.jar].map(([name, value]) => ({ name, value, url: server.origin })));
@@ -155,15 +155,15 @@ describe.skipIf(!liveRomeDBTests())('CMS unified settings', () => {
       await browserExpect(menu.getByRole('link', { name: 'JSON', exact: true })).toHaveCount(0);
       await browserExpect(menu.locator('[data-settings-menu-parent="plugins"] [data-settings-menu-group="plugin:newsletter"]')).toBeVisible();
       await browserExpect(menu.locator('[data-settings-menu-parent="plugins"] [data-settings-menu-group="plugin:receipts"]')).toBeVisible();
-      await browserExpect(section('plugin:newsletter')).toHaveAttribute('data-settings-loaded', 'false');
-      await browserExpect(newsletter.getByLabel('Sender name', { exact: true })).toHaveCount(0);
+      // Every section renders its controls at once: search matches and the menu's scrolling load nothing more.
+      await browserExpect(section('plugin:newsletter')).toHaveAttribute('data-settings-loaded', 'true');
+      await browserExpect(newsletter.getByLabel('Sender name', { exact: true })).toHaveValue('Configured while disabled');
       const totalSections = await tab.locator('[data-settings-section]').count();
-      expect(await tab.locator('[data-settings-loaded="true"]').count()).toBeLessThan(totalSections);
+      expect(await tab.locator('[data-settings-loaded="true"]').count()).toBe(totalSections);
       await tab.screenshot({ path: '/tmp/cossack-settings-unified.png', animations: 'disabled' });
 
-      // Scrolling mounts deferred sections without visiting another route.
+      // Scrolling reaches a section's controls without visiting another route.
       await section('plugin:receipts').scrollIntoViewIfNeeded();
-      await browserExpect(section('plugin:receipts')).toHaveAttribute('data-settings-loaded', 'true');
       await browserExpect(receipts.getByLabel('Sender name', { exact: true })).toHaveValue('Original sender');
       await browserExpect.poll(() => tab.evaluate(() => window.scrollY)).toBeGreaterThan(300);
       await browserExpect(search).toBeInViewport();

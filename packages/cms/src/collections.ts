@@ -32,6 +32,28 @@ export function languageName(code: string): string {
     } catch { return code; }
 }
 
+/** The region whose flag stands for a language that names none, such as `vi` → Vietnam. */
+const LANGUAGE_REGIONS: Readonly<Record<string, string>> = Object.freeze({
+    af: 'ZA', am: 'ET', ar: 'SA', az: 'AZ', be: 'BY', bg: 'BG', bn: 'BD', bs: 'BA', ca: 'ES', cs: 'CZ', cy: 'GB', da: 'DK', de: 'DE', el: 'GR', en: 'GB', es: 'ES', et: 'EE', eu: 'ES', fa: 'IR', fi: 'FI', fil: 'PH', fr: 'FR',
+    ga: 'IE', gl: 'ES', gu: 'IN', he: 'IL', hi: 'IN', hr: 'HR', hu: 'HU', hy: 'AM', id: 'ID', is: 'IS', it: 'IT', ja: 'JP', ka: 'GE', kk: 'KZ', km: 'KH', kn: 'IN', ko: 'KR', lo: 'LA', lt: 'LT', lv: 'LV', mk: 'MK', ml: 'IN', mn: 'MN',
+    mr: 'IN', ms: 'MY', mt: 'MT', my: 'MM', nb: 'NO', ne: 'NP', nl: 'NL', nn: 'NO', no: 'NO', pa: 'IN', pl: 'PL', pt: 'PT', ro: 'RO', ru: 'RU', si: 'LK', sk: 'SK', sl: 'SI', sq: 'AL', sr: 'RS', sv: 'SE', sw: 'KE', ta: 'IN', te: 'IN',
+    th: 'TH', tl: 'PH', tr: 'TR', uk: 'UA', ur: 'PK', uz: 'UZ', vi: 'VN', zh: 'CN',
+});
+/** Script subtags with a region of their own: traditional Chinese is Taiwan's. */
+const SCRIPT_REGIONS: Readonly<Record<string, string>> = Object.freeze({ hant: 'TW', hans: 'CN' });
+
+/**
+ * A flag emoji for a language code, such as 🇻🇳 for `vi`, 🇧🇷 for `pt-br` and 🇹🇼 for
+ * `zh-hant`: the code's own region when it names one, otherwise the region most speakers
+ * associate with the language. Empty for a language without one. Client-safe.
+ */
+export function languageFlag(code: string): string {
+    const [language = '', subtag = ''] = code.toLowerCase().split('-');
+    const region = /^[a-z]{2}$/.test(subtag) ? subtag.toUpperCase() : SCRIPT_REGIONS[subtag] ?? LANGUAGE_REGIONS[language] ?? '';
+    if (!region) return '';
+    return [...region].map(letter => String.fromCodePoint(0x1f1e6 + letter.charCodeAt(0) - 65)).join('');
+}
+
 /** An entry's search and sharing settings; each falls back to the entry's own values. */
 export const SEO_FIELDS = Object.freeze({
     title: field.string({ max: 200, label: 'SEO title' }),

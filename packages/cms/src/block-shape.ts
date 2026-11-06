@@ -2,8 +2,18 @@
  * The shape of stored blocks, shared by field validation and rich text documents, which embed
  * blocks. No imports, so both can use it.
  */
-const BLOCK_ID = /^[A-Za-z0-9_-]{1,40}$/;
+/** A block's `_id`: 1 to 40 letters, digits, `_` or `-`; generated, or chosen under the block's Advanced settings. */
+export const BLOCK_ID = /^[A-Za-z0-9_-]{1,40}$/;
 const BLOCK_TYPE = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\/[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
+/** A color of the block's own, beside the theme's presets: a hex color, which cannot carry anything but a color. */
+export const CUSTOM_COLOR = /^#(?:[0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
+
+/** Why a block ID an editor typed is refused: its shape, or another block of the field that has it. Undefined when fine. */
+export function blockIdProblem(id: string, taken?: ReadonlySet<string>): string | undefined {
+    if (!BLOCK_ID.test(id)) return 'A block ID is 1 to 40 letters, digits, _ or -.';
+    if (taken?.has(id)) return 'Another block of this field has this ID.';
+    return undefined;
+}
 
 /** How many blocks a field holds across its tree, and how deep they nest. */
 export const BLOCK_LIMITS = Object.freeze({ count: 200, depth: 4 });
@@ -81,15 +91,19 @@ export function blockLayoutProblem(value: unknown): string | undefined {
     return undefined;
 }
 
-/** The shape of a block's `style`: preset slugs per property, and an alignment. */
+/** The shape of a block's `style`: preset slugs per property (colors may be hex colors of the block's own), and an alignment. */
 export function blockStyleProblem(value: unknown): string | undefined {
     if (!value || typeof value !== 'object' || Array.isArray(value) || Object.getPrototypeOf(value) !== Object.prototype) return 'block style must be an object.';
     for (const [property, entry] of Object.entries(value)) {
         if (!Object.hasOwn(STYLE_PROPERTIES, property)) return `block style has no ${property}; it takes ${Object.keys(STYLE_PROPERTIES).join(', ')}.`;
         if (entry === undefined || entry === '') continue;
-        if (property === 'align' ? !(TEXT_ALIGNMENTS as readonly string[]).includes(entry as string) : typeof entry !== 'string' || entry.length > 40 || !PRESET_SLUG.test(entry)) {
-            return property === 'align' ? `block style.align is ${TEXT_ALIGNMENTS.join(', ')}.` : `block style.${property} is a preset slug.`;
+        if (property === 'align') {
+            if (!(TEXT_ALIGNMENTS as readonly string[]).includes(entry as string)) return `block style.align is ${TEXT_ALIGNMENTS.join(', ')}.`;
+            continue;
         }
+        const slug = typeof entry === 'string' && entry.length <= 40 && PRESET_SLUG.test(entry);
+        const color = STYLE_PROPERTIES[property as StyleProperty] === 'color';
+        if (!slug && !(color && typeof entry === 'string' && CUSTOM_COLOR.test(entry))) return color ? `block style.${property} is a preset slug or a hex color.` : `block style.${property} is a preset slug.`;
     }
     return undefined;
 }

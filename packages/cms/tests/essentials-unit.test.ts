@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-    blockAllowedIn, blockCategory, blockMedia, blockProblems, blocksShapeProblem, blockStyleAttributes, blockSupports, blockTreeProblem, checkComment, collectionProblems, collectionResource, compareRecords, contentBlocks, extendCollection, CORE_BLOCKS, customCssProblem, DEFAULT_PRESETS, diffWords,
-    field, findBlock, flattenBlocks, imageEditsProblems, imageSrcset, imageUrl, insertBlock, languageName, layerPresets, moveBlock, placeBlocks, posts, presetOverridesProblem, presetProblems, presetStyle, redirectPath, redirectProblems, removeBlock,
+    blockAllowedIn, blockCategory, blockIdProblem, blockMedia, blockProblems, blocksShapeProblem, blockStyleAttributes, blockSupports, blockTreeProblem, checkComment, collectionProblems, collectionResource, compareRecords, contentBlocks, extendCollection, CORE_BLOCKS, customCssProblem, DEFAULT_PRESETS, diffWords,
+    field, findBlock, flattenBlocks, imageEditsProblems, imageSrcset, imageUrl, insertBlock, languageFlag, languageName, layerPresets, moveBlock, placeBlocks, posts, presetOverridesProblem, presetProblems, presetStyle, redirectPath, redirectProblems, removeBlock,
     normalizeRichText, resolvePresets, richTextBlocks, shiftBlock, themeProblems, validateBlocks, validateValue, variantRect, variantWidth, webhookUrlProblem, BLOCK_CATEGORIES, FORM_BLOCKS, type Block,
 } from '../src/index';
 import { negotiateFormat } from '../src/server/images';
@@ -88,6 +88,13 @@ describe('essentials helpers', () => {
     it('names languages and groups blocks', () => {
         expect(languageName('fr')).toBe('Français');
         expect(languageName('not a code')).toBe('not a code');
+        // Flags: the code's own region, a script's, or the region most speakers associate with the language.
+        expect(languageFlag('vi')).toBe('🇻🇳');
+        expect(languageFlag('pt-br')).toBe('🇧🇷');
+        expect(languageFlag('pt')).toBe('🇵🇹');
+        expect(languageFlag('zh-hant')).toBe('🇹🇼');
+        expect(languageFlag('EN-us')).toBe('🇺🇸');
+        expect(languageFlag('eo')).toBe('');
         expect(CORE_BLOCKS.every(block => block.icon && block.category)).toBe(true);
         expect(blockCategory({})).toBe('widgets');
         const block = { name: 'acme/card', label: 'Card', fields: {} };
@@ -165,7 +172,16 @@ describe('essentials helpers', () => {
         expect(blockProblems({ name: 'acme/box', label: 'Box', fields: {}, supports: { border: true } as never })).toEqual(['block acme/box: supports has no border; it takes color, spacing, typography.']);
         expect(blockProblems({ name: 'acme/box', label: 'Box', fields: {}, supports: { color: ['shadow'] } as never })).toEqual(['block acme/box: supports.color is true, false or some of background, text.']);
         // The shape: slugs per property, an alignment, the anchor and class names.
-        expect(blocksShapeProblem([{ _id: 'a', type: 'core/divider', data: {}, style: { background: 'Brand' } }])).toBe('block style.background is a preset slug.');
+        expect(blocksShapeProblem([{ _id: 'a', type: 'core/divider', data: {}, style: { background: 'Brand' } }])).toBe('block style.background is a preset slug or a hex color.');
+        expect(blocksShapeProblem([{ _id: 'a', type: 'core/divider', data: {}, style: { padding: '#fff' } }])).toBe('block style.padding is a preset slug.');
+        // A color of the block's own is a hex color, which can carry nothing but a color.
+        expect(blocksShapeProblem([{ _id: 'a', type: 'core/divider', data: {}, style: { background: '#ABCDEF', text: '#0008' } }])).toBeUndefined();
+        expect(blocksShapeProblem([{ _id: 'a', type: 'core/divider', data: {}, style: { background: 'rgb(0,0,0)' } }])).toBe('block style.background is a preset slug or a hex color.');
+        expect(blockStyleAttributes({ style: { background: '#ABCDEF', text: '#0008' } })).toEqual({ className: 'cms-block cms-bg-custom cms-text-custom', id: '', nosnippet: false, style: 'background-color: #abcdef; color: #0008' });
+        // A block ID of the editor's choosing: its shape, and no other block of the field may have it.
+        expect(blockIdProblem('hero', new Set(['intro']))).toBeUndefined();
+        expect(blockIdProblem('intro', new Set(['intro']))).toBe('Another block of this field has this ID.');
+        expect(blockIdProblem('not valid!')).toBe('A block ID is 1 to 40 letters, digits, _ or -.');
         expect(blocksShapeProblem([{ _id: 'a', type: 'core/divider', data: {}, style: { align: 'justify' } }])).toBe('block style.align is left, center, right.');
         expect(blocksShapeProblem([{ _id: 'a', type: 'core/divider', data: {}, style: { shadow: 'x' } }])).toBe('block style has no shadow; it takes background, text, padding, margin, fontSize, align.');
         expect(blocksShapeProblem([{ _id: 'a', type: 'core/divider', data: {}, layout: { anchor: '1st' } }])).toContain('block layout.anchor is an HTML id');

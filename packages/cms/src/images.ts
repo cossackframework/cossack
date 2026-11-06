@@ -125,3 +125,11 @@ export function blurredPlaceholder(placeholder: string, width: number | null, he
 export function placeholderStyle(placeholder: string | null | undefined, width: number | null, height: number | null): string {
     return placeholder ? `background-image:${blurredPlaceholder(placeholder, width, height)};background-size:cover;background-repeat:no-repeat` : '';
 }
+
+/**
+ * A script for the site's head that drops an image's blurred placeholder once the image has
+ * loaded, so it never shows through transparent pixels or around an image that does not fill
+ * its box. Image `load` events do not bubble, so it listens in the capture phase, before any
+ * image in the document loads.
+ */
+export const PLACEHOLDER_SCRIPT = "addEventListener('load',function(e){var t=e.target;if(t&&t.tagName==='IMG'&&t.style.backgroundImage)t.style.backgroundImage=''},true)";

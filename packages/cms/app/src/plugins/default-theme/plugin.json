@@ -142,6 +142,41 @@
         "default": true,
         "label": "Show a search box in the header"
       },
+      "languages": {
+        "kind": "enum",
+        "values": [
+          "header",
+          "footer",
+          "both",
+          "none"
+        ],
+        "default": "header",
+        "label": "Language switcher",
+        "description": "Where the page's other languages are offered, on a site with several. A Language switcher block places one anywhere else.",
+        "choices": {
+          "header": "In the header",
+          "footer": "In the footer",
+          "both": "In the header and the footer",
+          "none": "Nowhere"
+        }
+      },
+      "languageStyle": {
+        "kind": "enum",
+        "values": [
+          "names",
+          "flags",
+          "flags-names",
+          "codes"
+        ],
+        "default": "names",
+        "label": "Show languages as",
+        "choices": {
+          "names": "Names (English, Tiếng Việt)",
+          "flags": "Flags",
+          "flags-names": "Flags and names",
+          "codes": "Codes (EN, VI)"
+        }
+      },
       "footerText": {
         "kind": "string",
         "max": 200,

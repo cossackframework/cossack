@@ -5,8 +5,8 @@
  */
 import type { Context } from 'hono';
 import {
-    checkNoteRange, CmsError, CONTENT_STATUSES, hasPermission, indexedRowField, isNetworkAdmin, MAIN_SITE, noteThreads, PERMISSIONS, recordSchema, recordTitle,
-    type FieldFilter, type Note, type NoteThread, type Principal, type RecordShape,
+    BLOCK_ID, checkNoteRange, CmsError, CONTENT_STATUSES, findBlock, hasPermission, indexedRowField, isNetworkAdmin, MAIN_SITE, noteThreads, PERMISSIONS, recordSchema, recordTitle, richTextBlocks,
+    type Block, type FieldFilter, type Note, type NoteThread, type Principal, type RecordShape, type RichTextDoc,
 } from '@cossackframework/cms';
 import { networkSite, type ApiToken, type CmsHost, type NetworkSite, type SiteRecord } from '@cossackframework/cms/server';
 import { createApiToken, listApiTokens, manageableHere, NETWORK_ACCOUNT_LOCKED, revokeApiToken, type PublicUser } from '../auth';
@@ -272,6 +272,28 @@ export async function entryRead(c: Context, name: string, key: string, options: 
     const translations = languages.multilingual ? Object.fromEntries(await Promise.all([...await cms.translations(collection, record, { principal })]
         .map(async ([code, entry]) => [code, { id: entry.id, url: (await cms.entryUrls(collection, [entry])).get(entry.id) ?? null }] as const))) : {};
     return { item: (await apiEntries(cms, collection, [record], options.html === true, principal))[0]!, patterns: await apiPatterns(cms, collection, [record]), translations };
+}
+
+/**
+ * One block of an entry by its `_id`, from any blocks field (nested blocks included) or embedded
+ * in a rich text field, with the field's name: `GET /api/cms/content/posts/<id>/blocks/hero`.
+ * Null when the entry or the block is not there.
+ */
+export async function entryBlock(c: Context, name: string, key: string, blockId: string): Promise<{ entry: { id: string; rev: unknown }; field: string; block: Block } | null> {
+    if (!BLOCK_ID.test(blockId)) return null;
+    const view = await entryRead(c, name, key);
+    if (!view) return null;
+    const { item } = view;
+    for (const [field, value] of Object.entries(item)) {
+        if (Array.isArray(value) && value.every(entry => entry && typeof entry === 'object' && typeof (entry as Block).type === 'string' && typeof (entry as Block)._id === 'string')) {
+            const block = findBlock(value as Block[], blockId);
+            if (block) return { entry: { id: item.id, rev: item.rev }, field, block };
+        } else if (value && typeof value === 'object' && (value as RichTextDoc).type === 'doc' && Array.isArray((value as RichTextDoc).content)) {
+            const block = richTextBlocks(value as RichTextDoc).find(entry => entry._id === blockId);
+            if (block) return { entry: { id: item.id, rev: item.rev }, field, block: { _id: block._id, type: block.type, data: block.data, ...(block.style ? { style: block.style } : {}) } };
+        }
+    }
+    return null;
 }
 
 export async function entryCreate(c: Context, name: string, fields: Body): Promise<{ item: ApiEntry }> {

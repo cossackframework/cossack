@@ -328,10 +328,19 @@ describe('content helpers', () => {
     });
 
     it('checks file signatures and reads image sizes', async () => {
-        const { imageSize, matchesSignature } = await import('../src/index');
+        const { imageHasAlpha, imageSize, matchesSignature } = await import('../src/index');
         const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, 0, 0, 1, 0, 0, 0, 0, 200]);
         expect(matchesSignature('image/png', png)).toBe(true);
         expect(imageSize('image/png', png)).toEqual({ width: 256, height: 200 });
+        // Transparency: an alpha color type (6), a tRNS chunk before the image data, or a WebP header flag; an opaque PNG and a JPEG have none.
+        const ihdr = (colorType: number, ...chunks: number[]) => new Uint8Array([...png, 8, colorType, 0, 0, 0, 0, 0, 0, 0, ...chunks]);
+        expect(imageHasAlpha('image/png', ihdr(6))).toBe(true);
+        expect(imageHasAlpha('image/png', ihdr(2, 0, 0, 0, 0, 0x49, 0x44, 0x41, 0x54))).toBe(false);
+        expect(imageHasAlpha('image/png', ihdr(3, 0, 0, 0, 1, 0x74, 0x52, 0x4e, 0x53, 0))).toBe(true);
+        const webp = (chunk: string, flags: number) => new Uint8Array([...new TextEncoder().encode('RIFF'), 0, 0, 0, 0, ...new TextEncoder().encode('WEBP'), ...new TextEncoder().encode(chunk), 10, 0, 0, 0, flags, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        expect(imageHasAlpha('image/webp', webp('VP8X', 0x10))).toBe(true);
+        expect(imageHasAlpha('image/webp', webp('VP8X', 0x02))).toBe(false);
+        expect(imageHasAlpha('image/jpeg', new Uint8Array([0xff, 0xd8, 0xff, 0xe0]))).toBe(false);
         expect(matchesSignature('image/png', new TextEncoder().encode('<svg onload=alert(1)>'))).toBe(false);
         const gif = new Uint8Array([...new TextEncoder().encode('GIF89a'), 3, 0, 2, 0]);
         expect(imageSize('image/gif', gif)).toEqual({ width: 3, height: 2 });

@@ -20,9 +20,9 @@ function memoryStorage(): StorageProvider & { objects: Map<string, Uint8Array> }
     };
 }
 
-/** A PNG header of the given size: enough for the signature check and dimensions. */
-function png(width: number, height: number): Uint8Array<ArrayBuffer> {
-    const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, 0, 0, 0, 0, 0, 0, 0, 0, 8, 6, 0, 0, 0]);
+/** A PNG header of the given size: enough for the signature check, the dimensions and the color type (truecolor, or with an alpha channel). */
+function png(width: number, height: number, options: { alpha?: boolean } = {}): Uint8Array<ArrayBuffer> {
+    const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, 0, 0, 0, 0, 0, 0, 0, 0, 8, options.alpha ? 6 : 2, 0, 0, 0]);
     new DataView(bytes.buffer).setUint32(16, width);
     new DataView(bytes.buffer).setUint32(20, height);
     return bytes;
@@ -575,6 +575,13 @@ describe.skipIf(!live)('scheduling, previews, revisions, redirects, tokens, webh
         await cms.files!.variant(file.id, { width: 4000 });
         expect(transforms.at(-1)).toMatchObject({ width: 2000, height: 2000 });
         await expect(cms.files!.setEdits(file.id, null, { principal: other })).rejects.toMatchObject({ code: 'CMS_FORBIDDEN' });
+        // An image with an alpha channel gets no placeholder: the blur would show through its transparent pixels.
+        const made = transforms.length;
+        const logo = png(500, 500, { alpha: true });
+        const clear = await cms.files!.upload({ name: 'logo.png', contentType: 'image/png', size: logo.length, body: new Response(logo).body! }, { principal: editor });
+        expect(clear.placeholder).toBeNull();
+        expect(transforms).toHaveLength(made);
+        expect((await cms.files!.setEdits(clear.id, { focus: { x: 0.2, y: 0.8 } }, { principal: editor })).placeholder).toBeNull();
     });
 
     it('scales down large uploads, resizes in the widths of Settings → Files and counts the library', async () => {

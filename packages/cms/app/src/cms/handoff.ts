@@ -16,8 +16,17 @@ import { siteUrl, type CmsBindings } from './index';
  *    after any sign-in, the next page continues the handoff.
  * 3. With one, the network issues a code bound to the site and the session, valid for a minute,
  *    and sends the visitor to `<site>/auth/handoff?code=…`, which trades it for a child session.
+ *
+ * A visitor who opens a site's dashboard without a session there goes through the same steps on
+ * their own, with `auto=1`: a network admin, or a member signed in on the network, arrives signed
+ * in without a click; anyone else comes back to the site's own sign-in, and the attempt is not
+ * repeated for a while (`cms_handoff_auto`), so a site account signs in there as before.
  */
 const HANDOFF_COOKIE = 'cms_handoff';
+/** Set by a site that started a handoff on its own: no second attempt until it expires. */
+const AUTO_COOKIE = 'cms_handoff_auto';
+/** The site paths a missing session starts a handoff for: the dashboard, which needs one. */
+const AUTO_PATHS = /^\/dashboard(?:\/|$)/;
 
 /** A path on the same site to go to afterwards; anything else is the dashboard. */
 function nextPath(value: string | null | undefined): string {
@@ -36,14 +45,18 @@ export async function handoff(c: Context, network: CmsNetwork, site: NetworkSite
     const env = c.env as CmsBindings;
     const url = new URL(c.req.url);
     if (site.id !== MAIN_SITE) {
-        if (url.pathname !== '/auth/handoff') return null;
-        if (url.searchParams.has('code')) return toSite(c, network, site);
-        // Sign in with a network account: on the network host, which hands the session back.
-        if (!env.APP_URL) return c.text('This network has no sign-in host: set APP_URL.', 404);
-        const target = new URL('/auth/handoff', env.APP_URL);
-        target.searchParams.set('site', site.id);
-        target.searchParams.set('next', nextPath(url.searchParams.get('next')));
-        return c.redirect(target.toString());
+        if (url.pathname === '/auth/handoff') {
+            if (url.searchParams.has('code')) return toSite(c, network, site);
+            // Sign in with a network account: on the network host, which hands the session back.
+            if (!env.APP_URL) return c.text('This network has no sign-in host: set APP_URL.', 404);
+            return c.redirect(toNetwork(env.APP_URL, site, nextPath(url.searchParams.get('next')), url.searchParams.get('auto') === '1'));
+        }
+        // The dashboard without a live session here: the network may have one, so ask it once before the site's sign-in shows.
+        if (env.APP_URL && c.req.method === 'GET' && AUTO_PATHS.test(url.pathname) && !getCookie(c, AUTO_COOKIE) && !(await siteSession(c))) {
+            setCookie(c, AUTO_COOKIE, '1', { path: '/', httpOnly: true, sameSite: 'Lax', maxAge: 300, secure: secure(c) });
+            return c.redirect(toNetwork(env.APP_URL, site, nextPath(url.pathname + url.search), true));
+        }
+        return null;
     }
     if (url.pathname === '/auth/handoff') return fromNetwork(c, network);
     // After signing in on the network host, continue the handoff the visitor came for.
@@ -56,23 +69,47 @@ export async function handoff(c: Context, network: CmsNetwork, site: NetworkSite
     return null;
 }
 
-/** On the network host: issue a code for the site, or sign in first. */
+/** The network's handoff address for a site: where the site sends a visitor to sign in, or to try their network session (`auto`). */
+function toNetwork(appUrl: string, site: Pick<NetworkSite, 'id'>, next: string, auto: boolean): string {
+    const target = new URL('/auth/handoff', appUrl);
+    target.searchParams.set('site', site.id);
+    target.searchParams.set('next', next);
+    if (auto) target.searchParams.set('auto', '1');
+    return target.toString();
+}
+
+/** Whether the request carries a live session of this site. */
+async function siteSession(c: Context): Promise<boolean> {
+    const id = getCookie(c, SESSION_COOKIE_NAME);
+    return !!id && !!(await authSessions.validate(id, c).catch(() => null));
+}
+
+/**
+ * On the network host: issue a code for the site, or sign in first. An attempt the site started
+ * on its own (`auto`) never shows the network's sign-in: without a session, or for an account
+ * that is not a member, the visitor goes back to the site's own sign-in.
+ */
 async function fromNetwork(c: Context, network: CmsNetwork): Promise<Response> {
+    const env = c.env as CmsBindings;
     const url = new URL(c.req.url);
     const id = url.searchParams.get('site') ?? '';
     const next = nextPath(url.searchParams.get('next'));
+    const auto = url.searchParams.get('auto') === '1';
     const record = await network.sites.get(id);
     if (!record || (record.status !== 'active' && record.status !== 'archived')) return c.text('No site at this address.', 404);
+    const site = networkSite(record);
+    const siteLogin = () => c.redirect(new URL('/auth/login', siteUrl(env, site)).toString());
     const session = await networkSession(c, network);
     if (!session) {
+        if (auto) return siteLogin();
         setCookie(c, HANDOFF_COOKIE, JSON.stringify({ site: id, next }), { path: '/', httpOnly: true, sameSite: 'Lax', maxAge: 600, secure: secure(c) });
         return c.redirect(url.searchParams.get('register') === '1' ? '/auth/register' : '/auth/login');
     }
     deleteCookie(c, HANDOFF_COOKIE, { path: '/' });
-    const site = networkSite(record);
     const account = await network.main.accounts.get(session.userId);
-    if (!account || account.status !== 'active') return c.redirect('/auth/login');
+    if (!account || account.status !== 'active') return auto ? siteLogin() : c.redirect('/auth/login');
     if (account.networkRole !== NETWORK_ADMIN && !(await network.hostOf(site).users.get(account.id))) {
+        if (auto) return siteLogin();
         return c.text(`Your account is not a member of ${record.name}. Ask its administrator to add you.`, 403);
     }
     const code = await network.handoffs.issue({ session: session.reference, user: account.id, site: site.id });
@@ -94,6 +131,7 @@ async function toSite(c: Context, network: CmsNetwork, site: NetworkSite): Promi
     c.set('cms.child', { parentId: handoff.session, networkRole: handoff.networkRole, expiresAt: handoff.expiresAt });
     const { headers } = await authSessions.create(handoff.user, c);
     headers.forEach((value, name) => c.header(name, value, { append: true }));
+    deleteCookie(c, AUTO_COOKIE, { path: '/' });
     return c.redirect(nextPath(url.searchParams.get('next')));
 }
 

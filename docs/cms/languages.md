@@ -136,6 +136,28 @@ are always translated.
   `/fr/category/news`, and lists that language's entries.
 - Site settings, such as the site title and tagline, have one value for every language.
 
+## Language switcher
+
+`site.languages` lists the page in each of the site's languages: `code`, `label` (the
+language's own name), `flag` (an emoji from `languageFlag(code)`: the code's region when it
+names one, as `pt-br` does, otherwise the region most speakers associate with the language, as
+`vi` does), `url` and `current`. Themes render them with `helpers.languages()`:
+
+```ts
+helpers.languages({ style: 'flags-names' });              // 🇬🇧 English · 🇻🇳 Tiếng Việt
+helpers.languages({ style: 'codes', layout: 'list' });     // EN, VI, one under the other
+```
+
+`style` is `names` (the default), `flags`, `flags-names` or `codes`; flags and codes keep the
+language's name for screen readers. `layout` is `inline` (a row) or `list` (a column). Each link
+carries `hreflang` and `lang`, and the current language `aria-current`.
+
+The default theme has two options under Appearance → Customize: *Language switcher* puts it in
+the header (the default), the footer, both or nowhere, and *Show languages as* picks the style.
+The **Language switcher** block (`core/languages`) renders the same links with its own style and
+layout, so editors place one in a widget area, a page or a pattern. On a site with one language
+nothing shows.
+
 ## Search engines and themes
 
 - Each page's head links its translations with `hreflang` alternates. The sitemaps list

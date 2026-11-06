@@ -3,7 +3,7 @@ import { SettingsSection } from '../src/cms/settings-section';
 
 function section(onConnect: (id: string, element: Element | undefined) => void) {
     const result = new SettingsSection();
-    result.props = { id: 'general', heading: null as never, content: () => null as never, count: 1, onConnect };
+    result.props = { id: 'general', heading: null as never, content: () => null as never, onConnect };
     return result;
 }
 

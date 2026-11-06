@@ -9,7 +9,7 @@
 import { field, slugify, validateValue, type FieldDeclaration } from './fields';
 import { richTextBlocks, richTextMedia, type RichTextDoc } from './richtext';
 
-export { blocksShapeProblem, blockLayoutProblem, blockStyleProblem, blockConditionProblem, BLOCK_LIMITS, BREAKPOINTS, STYLE_PROPERTIES, TEXT_ALIGNMENTS, PRESET_SLUG, INPUT_NAME, CONDITION_OPERATORS, CONDITION_LIMIT,
+export { blocksShapeProblem, blockLayoutProblem, blockStyleProblem, blockConditionProblem, blockIdProblem, BLOCK_ID, BLOCK_LIMITS, BREAKPOINTS, CUSTOM_COLOR, STYLE_PROPERTIES, TEXT_ALIGNMENTS, PRESET_SLUG, INPUT_NAME, CONDITION_OPERATORS, CONDITION_LIMIT,
     type Breakpoint, type StyleProperty, type ConditionOperator } from './block-shape';
 import { bindingProblem } from './bindings';
 import { hasBlockReference, parseBlockText, textBlocks } from './block-references';
@@ -306,6 +306,10 @@ const core: BlockDeclaration[] = [
         showImage: field.boolean({ default: true, label: 'Show the featured image' }),
         showDate: field.boolean({ default: true, label: 'Show the date' }),
     } },
+    { name: 'core/languages', inline: true, keywords: ['language', 'switcher', 'translations', 'locale', 'flags'], label: 'Language switcher', icon: 'global', category: 'widgets', description: 'The page in each of the site\'s languages, by name, flag or code. Shows nothing on a site with one language.', fields: {
+        style: field.enum(['names', 'flags', 'flags-names', 'codes'], { default: 'names', label: 'Show languages as', choices: { names: 'Names', flags: 'Flags', 'flags-names': 'Flags and names', codes: 'Codes' } }),
+        layout: field.enum(['inline', 'list'], { default: 'inline', label: 'Layout', choices: { inline: 'In a row', list: 'In a column' } }),
+    }, supports: { color: false, typography: ['align'] } },
     // Data: stored with the entry, shown nowhere. Themes read `entry.content` and the API returns them.
     { name: 'core/meta', keywords: ['metadata', 'data', 'key value'], label: 'Custom fields', icon: 'database', category: 'data', description: 'Named values stored with the entry for themes and integrations; nothing shows on the page.', fields: {
         fields: field.list('string', { label: 'Fields', description: 'Each as name: value.' }),

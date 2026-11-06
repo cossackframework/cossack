@@ -2,7 +2,7 @@ import { Client, ClientState, Cossack, Page, Server, State, defineServerMiddlewa
 import { isTransportPath } from '@cossackframework/core/transport-routes';
 import { getCookie } from 'hono/cookie';
 import { component, html } from '@cossackframework/renderer';
-import { isCmsError, isSameOriginPost, type ArchiveView, type EntryView, type Note, type RecordShape, type ThemeData } from '@cossackframework/cms';
+import { isCmsError, isSameOriginPost, type ArchiveView, type EntryView, type LanguageLink, type Note, type RecordShape, type ThemeData } from '@cossackframework/cms';
 import { archive, authorArchive, authorView, bindingScopes, commentResult, entryViews, homeView, isProtected, languageLinks, localePrefix, pageNumber, redirectFor, resolvePath, searchEntries, termArchive, themeData, themeState, unlockCookie, unlockToken, resolvedOptions, type Resolved, type ThemeState } from '../../../cms/site';
 import { archiveTemplate, entryTemplate, siteContent, siteTheme, themeHelpers, unavailable } from '../../../cms/site-view';
 import { authorSeo, entrySeo, homeSeo, listSeo } from '../../../cms/seo';
@@ -84,6 +84,8 @@ export default class SitePath extends Cossack {
     @State() wrongPassword = false;
     @State() view: ArchiveView = { kind: 'archive', collection: null, taxonomy: null, title: '', description: '', entries: [], paging: { page: 1, pages: 1, base: '/' }, query: '' };
     @State() theme: ThemeState = { name: null, options: {} };
+    /** The page in each of the site's languages, for `helpers.languages()` in the page's templates and blocks. */
+    @State() languages: LanguageLink[] = [];
     /** What the theme's loader for the page returned. */
     @State() data: ThemeData = {};
     @State() seo: SeoView = emptySeo();
@@ -117,6 +119,7 @@ export default class SitePath extends Cossack {
             }
             const settings = await cms.settings.all();
             const links = await languageLinks(cms, resolved);
+            this.languages = links;
             const usage = { user: false };
             const viewOptions = {
                 comment: commentResult(this.c.req.query('comment')), user: this.user ? { name: this.user.name } : null,
@@ -381,7 +384,7 @@ export default class SitePath extends Cossack {
     render() {
         if (this.kind === 'unavailable') return unavailable();
         const theme = siteTheme(this.theme);
-        const helpers = themeHelpers(theme, { ...this.theme, data: { page: this.data }, editing: Boolean(this.draft) }, (path, exact) => this.isActive(path, exact));
+        const helpers = themeHelpers(theme, { ...this.theme, data: { page: this.data }, editing: Boolean(this.draft), languages: this.languages }, (path, exact) => this.isActive(path, exact));
         if (this.kind === 'entry' && this.entry && this.locked) return siteContent(this.passwordForm(theme, helpers), this.theme);
         if (this.kind === 'entry' && this.entry) {
             const page = siteContent(entryTemplate(theme, this.entry.collection, this.entry.template)(this.entry, helpers), this.theme);

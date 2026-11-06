@@ -44,7 +44,9 @@ async function exercise(origin, routeIds, diagnostics) {
   contains(dashboard, 'At a glance');
   contains(dashboard, 'The Daily');
   // Roles are in the Users menu, not a menu of their own.
-  contains(dashboard, 'data-sidebar-value="module:users:/dashboard/roles/new"');
+  // Roles is one link in the Users menu; Add role lives on the Roles page.
+  contains(dashboard, 'data-sidebar-value="module:users:/dashboard/roles"');
+  lacks(dashboard, 'data-sidebar-value="module:users:/dashboard/roles/new"');
   lacks(dashboard, 'data-sidebar-value="module:roles"');
   contains(await web.page('/dashboard/users'), 'ada@example.com');
   contains(await web.page('/dashboard/roles'), 'Editor');
@@ -544,10 +546,12 @@ describe.skipIf(!liveRomeDBTests())('generated CMS application', () => {
       await taskbar.getByRole('link', { name: 'Live Edit', exact: true }).click();
       const editing = page.getByRole('region', { name: 'Editing' });
       await browserExpect(editing.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
-      await browserExpect(taskbar).toBeHidden();
+      // The taskbar keeps its start menu and user menu; the editing controls take its middle.
+      await browserExpect(taskbar).toBeVisible();
+      await browserExpect(taskbar.getByRole('link', { name: 'Live Edit', exact: true })).toBeHidden();
       expect(new URL(page.url()).search).toBe('?edit');
       await editing.getByRole('button', { name: 'Exit', exact: true }).click();
-      await browserExpect(taskbar).toBeVisible();
+      await browserExpect(taskbar.getByRole('link', { name: 'Live Edit', exact: true })).toBeVisible();
       expect(new URL(page.url()).search).toBe('');
 
       // Screen options, from the dashboard's taskbar: hide the Slug column and list one page per screen; a reload keeps both.
@@ -754,6 +758,20 @@ describe.skipIf(!liveRomeDBTests())('generated CMS application', () => {
         const blogOrigin = `http://blog.localhost:${devPort}`;
         const blogAdmin = browserless(blogOrigin, routeIds, () => output, { connect: '127.0.0.1' });
         contains(await blogAdmin.page('/auth/login'), 'data-network-sign-in');
+        // Opening the blog's dashboard without a session there asks the network first: the network admin's session
+        // signs them in without a click; a visitor the network does not know comes back to the blog's own sign-in, once.
+        const auto = new URL((await blogAdmin.request('/dashboard')).headers.get('location'));
+        expect(auto.toString()).toBe(`${origin}/auth/handoff?site=blog&next=%2Fdashboard&auto=1`);
+        const autoBack = new URL((await web.request(auto.pathname + auto.search)).headers.get('location'));
+        expect(`${autoBack.origin}${autoBack.pathname}`).toBe(`${blogOrigin}/auth/handoff`);
+        expect((await blogAdmin.request(autoBack.pathname + autoBack.search)).headers.get('location')).toBe('/dashboard');
+        expect((await blogAdmin.request('/dashboard')).status).toBe(200);
+        const stranger = browserless(blogOrigin, routeIds, () => output, { connect: '127.0.0.1' });
+        const strangerAuto = new URL((await stranger.request('/dashboard')).headers.get('location'));
+        expect(strangerAuto.searchParams.get('auto')).toBe('1');
+        const strangerOnNetwork = browserless(origin, routeIds, () => output, { connect: '127.0.0.1' });
+        expect((await strangerOnNetwork.request(strangerAuto.pathname + strangerAuto.search)).headers.get('location')).toBe(`${blogOrigin}/auth/login`);
+        expect((await stranger.request('/dashboard')).headers.get('location')).toBe('/auth/login');
         const toNetwork = new URL((await blogAdmin.request('/auth/handoff?next=/dashboard')).headers.get('location'));
         expect(toNetwork.toString()).toBe(`${origin}/auth/handoff?site=blog&next=%2Fdashboard`);
         const back = new URL((await web.request(toNetwork.pathname + toNetwork.search)).headers.get('location'));

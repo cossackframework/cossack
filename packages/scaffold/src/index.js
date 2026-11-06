@@ -62,7 +62,9 @@ const dependencyVersions = scaffoldPackage.scaffold?.dependencyVersions ?? {};
  * Packages rendered source imports in the browser. Vite cannot see page imports before a
  * page loads, so the generated config lists them for the first dependency bundle.
  */
-const CLIENT_DEPENDENCY = /^(?:@cossackframework\/solar-icons\/.+|@tiptap\/[^/]+|prosemirror-collab|@simplewebauthn\/browser|@cossackframework\/(?:ui|auth|cms|framework\/plugins|core\/transport-routes))$/;
+// `@tiptap/pm/<module>` subpaths are listed too: found one page at a time, Vite would bundle a second
+// ProseMirror beside TipTap's, and the editor fails until the browser reloads with the new bundle.
+const CLIENT_DEPENDENCY = /^(?:@cossackframework\/solar-icons\/.+|@tiptap\/[^/]+(?:\/[^/]+)?|prosemirror-collab|@simplewebauthn\/browser|@cossackframework\/(?:ui|auth|cms|framework\/plugins|core\/transport-routes))$/;
 
 /** Fill the client dependency list of vite.config.ts from the rendered source files. */
 export function withClientDependencies(viteConfig, files) {
@@ -1204,12 +1206,9 @@ function descriptor(module) {
       href: '/dashboard/roles',
       permission: 'admin',
       iconImport: "import { ShieldKeyholeIcon as iconSvg } from '@cossackframework/solar-icons/shield-keyhole/line';",
-      // Its links go in the Users menu; without the users module, Roles is a menu of its own.
+      // Its link goes in the Users menu, as "Roles"; without the users module, Roles is a link of its own.
+      // The Roles page itself offers Add role.
       parent: 'users',
-      children: [
-        ['All roles', '/dashboard/roles'],
-        ['Add role', '/dashboard/roles/new'],
-      ],
     },
   };
   const definition = definitions[module];

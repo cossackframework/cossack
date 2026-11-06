@@ -11,7 +11,7 @@ import { fieldProblems } from './fields';
 import { MENU_LOCATION, type MenuItemView } from './menus';
 import type { SettingDeclaration } from './settings';
 import { settingControlProblems } from './settings-controls';
-import { PRESET_SLUG, STYLE_PROPERTIES, TEXT_ALIGNMENTS, type StyleProperty } from './block-shape';
+import { CUSTOM_COLOR, PRESET_SLUG, STYLE_PROPERTIES, TEXT_ALIGNMENTS, type StyleProperty } from './block-shape';
 import type { BlockCondition, BlockLayout, BlockStyle, InputKind } from './blocks';
 import type { ChoiceOption, FormValue } from './form-builder';
 
@@ -190,10 +190,17 @@ export function blockStyleAttributes(block: { readonly style?: BlockStyle; reado
         const value = block.style?.[property];
         return typeof value === 'string' && PRESET_SLUG.test(value) && value.length <= 40 ? value : '';
     };
+    // A color is a preset's slug, rendered through its variable, or a hex color of the block's own, rendered as it is.
+    const custom = (property: 'background' | 'text') => {
+        const value = block.style?.[property];
+        return typeof value === 'string' && CUSTOM_COLOR.test(value) ? value.toLowerCase() : '';
+    };
     const background = slug('background');
     if (background) { classes.push(`cms-bg-${background}`); rules.push(`background-color: var(--cms-color-${background})`); }
+    else if (custom('background')) { classes.push('cms-bg-custom'); rules.push(`background-color: ${custom('background')}`); }
     const text = slug('text');
     if (text) { classes.push(`cms-text-${text}`); rules.push(`color: var(--cms-color-${text})`); }
+    else if (custom('text')) { classes.push('cms-text-custom'); rules.push(`color: ${custom('text')}`); }
     const padding = slug('padding');
     if (padding) { classes.push(`cms-p-${padding}`); rules.push(`padding: var(--cms-space-${padding})`); }
     const margin = slug('margin');
@@ -414,8 +421,24 @@ export interface LanguageLink {
     readonly code: string;
     /** The language's own name, such as `Français`. */
     readonly label: string;
+    /** A flag emoji for the language (`languageFlag`), or empty when it has none. */
+    readonly flag: string;
     readonly url: string;
     readonly current: boolean;
+}
+
+/** How a language switcher names each language: by name, flag, both, or code. */
+export const LANGUAGE_SWITCHER_STYLES = Object.freeze(['names', 'flags', 'flags-names', 'codes'] as const);
+export type LanguageSwitcherStyle = (typeof LANGUAGE_SWITCHER_STYLES)[number];
+
+/** What `helpers.languages()` renders: the page's other languages as links, in one of the styles. */
+export interface LanguageSwitcherOptions {
+    /** `names` by default. */
+    readonly style?: LanguageSwitcherStyle | string;
+    /** A row of links (`inline`, the default) or a column (`list`). */
+    readonly layout?: 'inline' | 'list' | string;
+    /** Class names for the `nav` element. */
+    readonly class?: string;
 }
 
 /** A reference field's target: an entry with its title and URL, or a record of another resource. */
@@ -581,6 +604,12 @@ export interface ThemeHelpers {
     isActive(url: string): boolean;
     /** The site's logo as an image named after the site, or null when none is set; `class` sizes it (default `h-10 w-auto`). */
     logo(site: SiteView, options?: { readonly class?: string }): TemplateResult | null;
+    /**
+     * The page in the site's other languages (`site.languages`) as a `nav` of links, named by
+     * language name, flag, both or code; null on a site with one language. The `core/languages`
+     * block renders the same, so editors place a switcher in widget areas and content.
+     */
+    languages(options?: LanguageSwitcherOptions): TemplateResult | null;
 }
 
 /** An entry template, from `templates/entry.ts` or `templates/entry-<collection>.ts`. */

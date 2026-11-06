@@ -4,7 +4,7 @@
  * from `init()` and hand the views to the theme's templates.
  */
 import {
-    ANONYMOUS, ARTICLE_TYPES, authorUrl, entryAuthors, blockDocuments, blockIsData, blocksPlain, editedSize, hasBlockReference, parseBlockText, PATTERN_REFERENCE, resolveBindings, resolveBlockBindings, textBlocks, usesUserBinding, type BindingScopes, type ParsedText, flattenBlocks, escapeHtml, formatSiteDate, formInputs, formSettings, imageSrcset, imageUrl, imageWidths, IMAGE_WIDTHS, isCmsError, languageName, mediaUrl, notificationRules, recordTitle, resolvePresets, richTextBlocks, richTextParts, richTextPlain, systemPrincipal, templateCandidates, transformable, urlList,
+    ANONYMOUS, ARTICLE_TYPES, authorUrl, entryAuthors, blockDocuments, blockIsData, blocksPlain, editedSize, hasBlockReference, parseBlockText, PATTERN_REFERENCE, resolveBindings, resolveBlockBindings, textBlocks, usesUserBinding, type BindingScopes, type ParsedText, flattenBlocks, escapeHtml, formatSiteDate, formInputs, formSettings, imageSrcset, imageUrl, imageWidths, IMAGE_WIDTHS, isCmsError, languageFlag, languageName, mediaUrl, notificationRules, recordTitle, resolvePresets, richTextBlocks, richTextParts, richTextPlain, systemPrincipal, templateCandidates, transformable, urlList,
     type AuthorView, type Block,
     type Principal, type TemplatePage, type ThemeData, type ThemePresets,
     type ArchiveView, type BodyPart, type CollectionDefinition, type CommentShape, type CommentView, type CommentsView, type EntryReference, type EntryView, type FieldDeclaration, type FieldFilter,
@@ -873,7 +873,7 @@ export async function languageLinks(cms: CmsHost, resolved: Resolved | { kind: '
     } else if (resolved.kind === 'author') {
         for (const code of languages.all) { const url = authorUrl(resolved.user.slug, localePrefix(languages, code)); if (url) urls.set(code, url); }
     }
-    return languages.all.map(code => ({ code, label: languageName(code), url: urls.get(code) ?? home(code), current: code === current }));
+    return languages.all.map(code => ({ code, label: languageName(code), flag: languageFlag(code), url: urls.get(code) ?? home(code), current: code === current }));
 }
 
 /**

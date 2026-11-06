@@ -76,6 +76,16 @@ export function noteButton(id: string, label: string, onClick: () => void, optio
         aria-label=${`${__('Add a note on')} ${label}`} title=${__('Add a note')} @click=${(event: Event) => { event.stopPropagation(); onClick(); }}>${component(Icon, { entry: icon('chat-round-line'), size: 14 })}</button>`;
 }
 
+/**
+ * A single line of text with its note tools inside, at the right end, as the title field shows
+ * them; without tools (a new entry) the control alone. Other kinds of fields keep the tools
+ * beside their label.
+ */
+export function inlineNoteTools(control: TemplateResult, tools: TemplateResult | null): TemplateResult {
+    if (!tools) return control;
+    return html`<div class="relative [&_input]:pr-14">${control}<span class="absolute right-2 top-[1.125rem] flex -translate-y-1/2 items-center">${tools}</span></div>`;
+}
+
 /** A note's text with its mentions shown as names. */
 export function noteBody(body: string): TemplateResult {
     return html`<p class="whitespace-pre-wrap break-words text-sm text-foreground">${noteParts(body).map(part => part.kind === 'mention'

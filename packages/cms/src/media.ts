@@ -103,6 +103,37 @@ export function matchesSignature(contentType: string, head: Uint8Array): boolean
     }
 }
 
+/**
+ * Whether an image can have transparent pixels, from its first bytes: a PNG with an alpha
+ * channel or a `tRNS` chunk before its image data, or a WebP whose header flags alpha. JPEG
+ * never does; other types are taken as opaque. A blurred placeholder behind such an image would
+ * show through it once it has loaded, so transparent images get none.
+ */
+export function imageHasAlpha(contentType: string, bytes: Uint8Array): boolean {
+    try {
+        const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+        if (contentType === 'image/png') {
+            if (bytes.length < 29 || ascii(bytes, 12, 4) !== 'IHDR') return false;
+            // The color type: 4 is grayscale with alpha, 6 is truecolor with alpha.
+            const colorType = bytes[25]!;
+            if (colorType === 4 || colorType === 6) return true;
+            for (let offset = 8; offset + 8 <= bytes.length;) {
+                const type = ascii(bytes, offset + 4, 4);
+                if (type === 'tRNS') return true;
+                if (type === 'IDAT' || type === 'IEND') return false;
+                offset += 12 + view.getUint32(offset);
+            }
+            return false;
+        }
+        if (contentType === 'image/webp' && bytes.length >= 30) {
+            const chunk = ascii(bytes, 12, 4);
+            if (chunk === 'VP8X') return (bytes[20]! & 0x10) !== 0;
+            if (chunk === 'VP8L') return ((view.getUint32(21, true) >>> 28) & 1) === 1;
+        }
+    } catch { /* truncated header */ }
+    return false;
+}
+
 /** Width and height of a PNG, GIF, JPEG or WebP image from its first bytes, or null. */
 export function imageSize(contentType: string, bytes: Uint8Array): { width: number; height: number } | null {
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);

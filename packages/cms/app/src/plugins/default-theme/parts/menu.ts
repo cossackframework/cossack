@@ -1,6 +1,6 @@
-/** Menus, the search box and the language switcher in the header and footer. */
+/** Menus and the search box in the header and footer. The language switcher is `helpers.languages()`. */
 import { html, type TemplateResult } from '@cossackframework/renderer';
-import type { LanguageLink, MenuItemView, ThemeHelpers } from '@cossackframework/cms';
+import type { MenuItemView, ThemeHelpers } from '@cossackframework/cms';
 
 /** A menu item's link, with the class names and attributes set under the item's Advanced tab. */
 export function link(item: MenuItemView, className: string, helpers: ThemeHelpers): TemplateResult {
@@ -38,12 +38,4 @@ export function searchBox(action: string, className = ''): TemplateResult {
         <input type="search" name="q" placeholder=${__('Search')} aria-label=${__('Search')}
             class="w-44 rounded-md border border-input bg-background px-3 py-1.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring">
     </form>`;
-}
-
-/** The current page in the site's other languages. */
-export function languageSwitcher(languages: readonly LanguageLink[]): TemplateResult | null {
-    if (languages.length < 2) return null;
-    return html`<nav aria-label=${__('Language')}><ul class="flex items-center gap-1 text-sm">${languages.map(language => html`<li>
-        <a href=${language.url} hreflang=${language.code} lang=${language.code} aria-current=${language.current ? 'true' : 'false'}
-            class=${`rounded px-2 py-1 no-underline ${language.current ? 'bg-muted font-medium text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>${language.label}</a></li>`)}</ul></nav>`;
 }

@@ -6,7 +6,7 @@
 import { component, html, ifDefined, unsafeHTML, type TemplateResult } from '@cossackframework/renderer';
 import { plugins } from '@cossackframework/framework/plugins';
 import { formBlock, inputBlock } from './form-view';
-import { archiveTemplate, assembleSiteTheme, blockStyleAttributes, entryTemplate, placeholderStyle, presetStyle, resolvePresets, siteThemeProblems, type ArchiveView, type EntryView, type MediaView, type MenuItemView, type RenderedBlock, type SiteTheme, type ThemeData, type ThemeHelpers, type ThemePresets } from '@cossackframework/cms';
+import { archiveTemplate, assembleSiteTheme, blockStyleAttributes, entryTemplate, placeholderStyle, presetStyle, resolvePresets, siteThemeProblems, type ArchiveView, type EntryView, type LanguageLink, type LanguageSwitcherOptions, type MediaView, type MenuItemView, type RenderedBlock, type SiteTheme, type ThemeData, type ThemeHelpers, type ThemePresets } from '@cossackframework/cms';
 
 export { archiveTemplate, entryTemplate };
 export type { ArchiveView, EntryView, MediaView, Paging, RenderedBlock, SiteView } from '@cossackframework/cms';
@@ -40,6 +40,31 @@ export interface ThemeRenderState {
      * it; visitors never get it.
      */
     readonly editing?: boolean;
+    /** The page in each of the site's languages, for `helpers.languages()`; empty on a site with one language. */
+    readonly languages?: readonly LanguageLink[];
+}
+
+/**
+ * The page's other languages as a `nav` of links: by name, flag, both or code, in a row or a
+ * column. Null on a site with one language. Themes render it through `helpers.languages()`, and
+ * the `core/languages` block places it in widget areas and content.
+ */
+export function languageSwitcher(languages: readonly LanguageLink[], options: LanguageSwitcherOptions = {}): TemplateResult | null {
+    if (languages.length < 2) return null;
+    const style = options.style === 'flags' || options.style === 'flags-names' || options.style === 'codes' ? options.style : 'names';
+    const list = options.layout === 'list';
+    const name = (language: LanguageLink) => {
+        const flag = language.flag ? html`<span aria-hidden="true">${language.flag}</span>` : null;
+        switch (style) {
+            case 'flags': return html`${flag ?? language.code.toUpperCase()}<span class="sr-only">${language.label}</span>`;
+            case 'flags-names': return html`${flag}${flag ? ' ' : ''}${language.label}`;
+            case 'codes': return html`<span aria-hidden="true">${language.code.toUpperCase()}</span><span class="sr-only">${language.label}</span>`;
+            default: return html`${language.label}`;
+        }
+    };
+    return html`<nav aria-label=${__('Language')} data-languages=${style} class=${options.class ?? ''}><ul class=${list ? 'flex flex-col gap-1 text-sm' : 'flex flex-wrap items-center gap-1 text-sm'}>${languages.map(language => html`<li>
+        <a href=${language.url} hreflang=${language.code} lang=${language.code} aria-current=${language.current ? 'true' : 'false'} title=${language.label}
+            class=${`inline-flex items-center gap-1 rounded px-2 py-1 no-underline ${language.current ? 'bg-muted font-medium text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>${name(language)}</a></li>`)}</ul></nav>`;
 }
 
 /** The helpers every template receives. `isActive` is the component's own: an exact path, or a prefix. */
@@ -53,6 +78,7 @@ export function themeHelpers(theme: SiteTheme, state: ThemeRenderState, isActive
         data: { layout: state.data?.layout ?? {}, page: state.data?.page ?? {} },
         asset: path => assets[path] ?? '',
         logo: (site, options = {}) => site.logo ? html`<img src=${site.logo} alt=${site.title} class=${`cms-site-logo object-contain ${options.class ?? 'h-10 w-auto'}`}>` : null,
+        languages: options => languageSwitcher(state.languages ?? [], options),
         isActive: url => {
             const path = url.replace(/[?#].*$/, '').replace(/(.)\/$/, '$1');
             if (!path.startsWith('/')) return false;
@@ -300,6 +326,7 @@ export function coreBlock(block: RenderedBlock, helpers: ThemeHelpers): Template
         }
         case 'core/definition': return html`<dl class="cms-definition my-6 rounded-lg border border-border p-4"><dt class="text-lg font-semibold">${text('term')}</dt><dd class=${`${PROSE} mt-1 [&_p]:my-1`}>${unsafeHTML(block.html.definition ?? '')}</dd></dl>`;
         case 'core/latest-entries': return latestEntries(block);
+        case 'core/languages': return helpers.languages({ style: text('style'), layout: text('layout') });
         case 'core/meta': return null;
         // Layout blocks: CSS grid from cms/blocks.css, responding to the content root's width.
         case 'core/group': return html`<div class="cms-group" data-align=${text('align') || 'full'}>${children.map(child => helpers.block(child))}</div>`;

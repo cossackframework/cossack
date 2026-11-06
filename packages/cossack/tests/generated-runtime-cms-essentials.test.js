@@ -114,14 +114,19 @@ async function essentials(origin, routeIds, diagnostics, { runtime }) {
   await web.action(EDITOR, 'revokePreviewLinks', [], { params: { collection: 'posts', id: scheduledId }, state: editorState });
   expect((await fetch(origin + previewPath)).status).toBe(404);
 
-  // Autosave: the editor posts changed values to the autosave API, and they come back when it opens.
+  // Autosave: the editor posts changed values to the autosave API. A new entry gets them back when it
+  // opens; a saved entry's room keeps its draft instead, so the API stores them but the editor offers nothing.
   const autosaved = await web.request(`/api/cms/content/posts/${pendingId}/autosave`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...post('Needs review, edited'), status: 'pending' }) });
   expect(autosaved.status).toBe(200);
   expect((await autosaved.json()).at).toEqual(expect.any(Number));
   expect((await web.request('/api/cms/content/posts/nope/autosave', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '[]' })).status).toBe(400);
-  contains(await web.page(`/dashboard/content/posts/${pendingId}`), 'There is an autosave of this entry');
-  const restored = await web.action(EDITOR, 'restoreAutosave', [], { params: { collection: 'posts', id: pendingId }, state: { ...editorState, id: pendingId } });
-  expect(restored.values.title).toBe('Needs review, edited');
+  lacks(await web.page(`/dashboard/content/posts/${pendingId}`), 'There is an autosave of this entry');
+  expect((await web.request('/api/cms/content/posts/new/autosave', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(post('Started, not saved')) })).status).toBe(200);
+  contains(await web.page('/dashboard/content/posts/new'), 'You have unsaved work from');
+  const restored = await web.action(EDITOR, 'restoreAutosave', [], { params: { collection: 'posts', id: 'new' }, state: { ...editorState, id: 'new' } });
+  expect(restored.values.title).toBe('Started, not saved');
+  await web.action(EDITOR, 'dismissAutosave', [], { params: { collection: 'posts', id: 'new' }, state: { ...editorState, id: 'new' } });
+  lacks(await web.page('/dashboard/content/posts/new'), 'You have unsaved work from');
 
   // Revisions: compare two versions word by word, then restore the first.
   const draftId = await save(web, 'posts', post('Versioned', { status: 'draft', content: richText(paragraph('The quick brown fox')) }));

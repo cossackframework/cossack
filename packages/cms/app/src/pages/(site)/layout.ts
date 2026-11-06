@@ -1,6 +1,6 @@
 import { Cossack, Page, Server, State, server$, setRequestLocale, type HeadContext, type HeadTag, type HeadValue } from '@cossackframework/core';
 import { html } from '@cossackframework/renderer';
-import { usesUserBinding, type SiteView, type ThemeData } from '@cossackframework/cms';
+import { PLACEHOLDER_SCRIPT, usesUserBinding, type SiteView, type ThemeData } from '@cossackframework/cms';
 import { bindingScopes, languageLinks, resolvedOptions, siteView, themeData, themeState, type ThemeState } from '../../cms/site';
 import { siteTheme, themeHelpers } from '../../cms/site-view';
 import { siteTaskbar } from '../../cms/site-taskbar';
@@ -31,7 +31,7 @@ export default class SiteLayout extends Cossack {
      */
     head(context: HeadContext): HeadValue {
         const theme = siteTheme(this.theme);
-        const contributed = theme.head?.(this.site, themeHelpers(theme, { ...this.theme, data: { layout: this.data } }, () => false)) ?? {};
+        const contributed = theme.head?.(this.site, themeHelpers(theme, { ...this.theme, data: { layout: this.data }, languages: this.site.languages }, () => false)) ?? {};
         const key = (tag: HeadTag) => String(tag.attributes?.name ?? tag.attributes?.property ?? '');
         const taken = new Set(context.meta.map(key).filter(Boolean));
         return {
@@ -45,8 +45,10 @@ export default class SiteLayout extends Cossack {
             ],
             links: [...(contributed.links ?? []), ...(this.site.blog ? [{ tag: 'link', attributes: { rel: 'alternate', type: 'application/rss+xml', title: this.site.title, href: '/feed' } }] : []), ...this.iconLinks()],
             ...(contributed.scripts ? { scripts: contributed.scripts } : {}),
-            // The site's Additional CSS, checked on save, after the theme's own tags.
-            tags: [...(contributed.tags ?? []), ...(this.theme.customCss ? [{ tag: 'style', attributes: { 'data-cms-custom-css': '' }, children: this.theme.customCss }] : [])],
+            // The site's Additional CSS, checked on save, after the theme's own tags; then the script that drops
+            // an image's blurred placeholder once it has loaded, so it never shows through transparent pixels.
+            tags: [...(contributed.tags ?? []), ...(this.theme.customCss ? [{ tag: 'style', attributes: { 'data-cms-custom-css': '' }, children: this.theme.customCss }] : []),
+                { tag: 'script', attributes: { 'data-cms-placeholders': '' }, children: PLACEHOLDER_SCRIPT }],
         };
     }
 
@@ -100,7 +102,7 @@ export default class SiteLayout extends Cossack {
 
     render() {
         const theme = siteTheme(this.theme);
-        const frame = theme.layout(this.site, html`${this.children}`, themeHelpers(theme, { ...this.theme, data: { layout: this.data } }, (path, exact) => this.isActive(path, exact)));
+        const frame = theme.layout(this.site, html`${this.children}`, themeHelpers(theme, { ...this.theme, data: { layout: this.data }, languages: this.site.languages }, (path, exact) => this.isActive(path, exact)));
         return this.taskbar ? html`${frame}${taskbar(this.taskbar, { logout: () => this.doLogout(), error: this.logoutError })}` : frame;
     }
 }

@@ -22,8 +22,8 @@ export interface BindingScopes {
     readonly user?: Readonly<Record<string, unknown>> | null;
 }
 
-/** Bindings inside text: `{{ $.a.b }}`, `{{ $site.title }}`; the scope is captured even when unknown, so it can be reported. */
-const INLINE = /\{\{\s*\$([a-z]*)\.([A-Za-z_][\w-]*(?:\.[\w-]+)*)\s*\}\}/g;
+/** Bindings inside text: `{{ $.a.b }}`, `{{ $site.title }}`, `{{ $.content#hero.title }}`; the scope is captured even when unknown, so it can be reported. */
+const INLINE = /\{\{\s*\$([a-z]*)\.([A-Za-z_][\w-]*(?:#[\w-]+)?(?:\.[\w-]+(?:#[\w-]+)?)*)\s*\}\}/g;
 
 /** Whether a value binds to anything at all, so a renderer knows to resolve it. */
 export function hasBinding(value: unknown): value is string {
@@ -52,16 +52,39 @@ export function bindingProblem(value: unknown): string | undefined {
     return unknown ? `{{ $${unknown.scope}.${unknown.path} }} reads an unknown scope: use $ (the entry), $site or $user.` : undefined;
 }
 
-/** The value at a dotted path of the scope; undefined when the path leads nowhere. */
+/**
+ * The value at a dotted path of the scope; undefined when the path leads nowhere. A segment
+ * `field#id` picks the block with that ID out of a blocks field, nested ones included, and
+ * stands for its data: `{{ $.content#hero.title }}` is the `title` of the block `hero`.
+ */
 export function bindingValue(scope: Readonly<Record<string, unknown>>, path: string): unknown {
     let current: unknown = scope;
     for (const part of path.split('.')) {
         if (current === null || current === undefined) return undefined;
+        const hash = part.indexOf('#');
+        if (hash > 0 && typeof current === 'object' && !Array.isArray(current)) {
+            const block = blockById((current as Record<string, unknown>)[part.slice(0, hash)], part.slice(hash + 1));
+            current = block ? block.data : undefined;
+            continue;
+        }
         if (Array.isArray(current)) { const index = Number(part); current = Number.isInteger(index) ? current[index] : undefined; continue; }
         if (typeof current !== 'object') return undefined;
         current = (current as Record<string, unknown>)[part];
     }
     return current;
+}
+
+/** The block with this `_id` in a blocks value, at any depth; undefined when the value holds none. */
+function blockById(value: unknown, id: string): { data: unknown } | undefined {
+    if (!Array.isArray(value)) return undefined;
+    for (const entry of value) {
+        if (!entry || typeof entry !== 'object') continue;
+        const block = entry as { _id?: unknown; data?: unknown; children?: unknown };
+        if (block._id === id) return { data: block.data };
+        const inner = blockById(block.children, id);
+        if (inner) return inner;
+    }
+    return undefined;
 }
 
 /**

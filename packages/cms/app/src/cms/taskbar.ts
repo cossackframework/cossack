@@ -48,7 +48,11 @@ export interface TaskbarView {
 }
 
 const ITEM = 'inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-sm text-muted-foreground no-underline hover:bg-muted hover:text-foreground [&_svg]:size-4';
-/** Hidden while the page's editor is open: its own bar takes over. */
+/**
+ * Hidden while the page's editor is open: the bar keeps its first item (the start menu) and its
+ * last (the user), and the editor's own controls take the middle (`SiteEditor.bar`, placed
+ * between `[data-taskbar-start]` and `[data-taskbar-end]`). Leaving edit mode shows them again.
+ */
 const EDITING = '[body:has([data-site-editing])_&]:hidden';
 const SEPARATOR = html`<span aria-hidden="true" class="mx-1 h-5 w-px bg-border"></span>`;
 
@@ -59,27 +63,31 @@ const barLink = (link: TaskbarLink) => html`<a href=${link.href} class=${ITEM}>$
 
 export function taskbar(view: TaskbarView, handlers: { logout(): void; error?: string }): TemplateResult {
     const { context } = view;
-    return html`<div aria-hidden="true" class=${`hidden h-10 md:block ${EDITING}`}></div>
-    <nav data-cms-taskbar aria-label=${__('Site taskbar')} class=${`fixed inset-x-0 bottom-0 z-40 hidden h-10 items-center gap-0.5 border-t border-border bg-background/95 px-2 text-foreground backdrop-blur md:flex ${EDITING}`}>
-        ${component(DropdownMenu, {
+    return html`<div aria-hidden="true" class="hidden h-10 md:block"></div>
+    <nav data-cms-taskbar aria-label=${__('Site taskbar')} class="fixed inset-x-0 bottom-0 z-40 hidden h-10 items-center gap-0.5 border-t border-border bg-background/95 px-2 text-foreground backdrop-blur md:flex">
+        <span data-taskbar-start class="inline-flex shrink-0">${component(DropdownMenu, {
             id: 'cms-taskbar-start', side: 'top', align: 'start', title: __('Dashboard'),
             trigger: html`<span class=${`${ITEM} font-medium text-foreground`}>
                 <img src=${view.site.logo} alt="" width="20" height="20" loading="eager" class="h-5 w-auto max-w-20 shrink-0 object-contain">
                 <span class="max-w-40 truncate">${view.site.title}</span></span>`,
-        }, html`${view.start.map(menuLink)}`)}
-        ${SEPARATOR}
-        ${context.status ? html`<span class="px-1 [&_span]:text-xs">${statusBadge(context.status)}</span>` : null}
-        ${context.edit ? html`<a href=${context.edit} class="inline-flex h-7 items-center rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground no-underline hover:opacity-90">${__('Live Edit')}</a>` : null}
-        ${context.links.map(barLink)}
-        ${view.seo?.title ? seoInspector(view.seo) : null}
+        }, html`${view.start.map(menuLink)}`)}</span>
+        <div class=${`contents ${EDITING}`}>
+            ${SEPARATOR}
+            ${context.status ? html`<span class="px-1 [&_span]:text-xs">${statusBadge(context.status)}</span>` : null}
+            ${context.edit ? html`<a href=${context.edit} class="inline-flex h-7 items-center rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground no-underline hover:opacity-90">${__('Live Edit')}</a>` : null}
+            ${context.links.map(barLink)}
+            ${view.seo?.title ? seoInspector(view.seo) : null}
+        </div>
         <span class="flex-1"></span>
-        ${handlers.error ? html`<p role="alert" class="px-2 text-xs text-destructive">${handlers.error}</p>` : null}
-        ${view.plugins.length ? html`${view.plugins.map(barLink)}${SEPARATOR}` : null}
-        ${view.create.length ? component(DropdownMenu, {
-            id: 'cms-taskbar-new', side: 'top', align: 'end',
-            trigger: html`<span class=${ITEM}>${component(Icon, { entry: icon('pen-new-square'), size: 16 })}${__('New')}</span>`,
-        }, html`${view.create.map(menuLink)}`) : null}
-        ${component(DropdownMenu, {
+        <div class=${`contents ${EDITING}`}>
+            ${handlers.error ? html`<p role="alert" class="px-2 text-xs text-destructive">${handlers.error}</p>` : null}
+            ${view.plugins.length ? html`${view.plugins.map(barLink)}${SEPARATOR}` : null}
+            ${view.create.length ? component(DropdownMenu, {
+                id: 'cms-taskbar-new', side: 'top', align: 'end',
+                trigger: html`<span class=${ITEM}>${component(Icon, { entry: icon('pen-new-square'), size: 16 })}${__('New')}</span>`,
+            }, html`${view.create.map(menuLink)}`) : null}
+        </div>
+        <span data-taskbar-end class="inline-flex shrink-0">${component(DropdownMenu, {
             id: 'cms-taskbar-user', side: 'top', align: 'end',
             trigger: html`<span class=${ITEM}>${component(Avatar, { src: view.user.avatar ?? undefined, alt: '', size: 24 })}<span class="max-w-40 truncate text-foreground">${view.user.name}</span></span>`,
         }, html`
@@ -92,7 +100,7 @@ export function taskbar(view: TaskbarView, handlers: { logout(): void; error?: s
             <div class="my-1 h-px bg-border"></div>
             <button type="button" role="menuitem" tabindex="-1" @click=${() => handlers.logout()}
                 class="flex w-full cursor-pointer items-center gap-2 rounded-sm border-none bg-transparent px-3 py-2 text-left text-sm text-destructive hover:bg-muted">${__('Log out')}</button>
-        `)}
+        `)}</span>
     </nav>`;
 }
 

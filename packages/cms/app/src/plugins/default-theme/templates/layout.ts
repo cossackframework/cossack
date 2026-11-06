@@ -8,8 +8,14 @@
  */
 import { html, type TemplateResult } from '@cossackframework/renderer';
 import { presetStyle, type SiteView, type ThemeHelpers } from '@cossackframework/cms';
-import { desktopMenu, languageSwitcher, link, mobileMenu, searchBox } from '../parts/menu';
+import { desktopMenu, link, mobileMenu, searchBox } from '../parts/menu';
 import { accentStyle, typographyCss, width } from '../parts/options';
+
+/** The language switcher where the Language switcher option puts it, in the style the Show languages as option picks. */
+function languages(helpers: ThemeHelpers, where: 'header' | 'footer'): TemplateResult | null {
+    const place = String(helpers.options.languages ?? 'header');
+    return place === where || place === 'both' ? helpers.languages({ style: String(helpers.options.languageStyle ?? 'names') }) : null;
+}
 
 export default function layout(site: SiteView, content: TemplateResult, helpers: ThemeHelpers): TemplateResult {
     // A blank canvas: the page's content alone, with the theme's colors and type but no header or footer.
@@ -35,7 +41,7 @@ export default function layout(site: SiteView, content: TemplateResult, helpers:
                 <div class="flex flex-1 flex-wrap items-center justify-end gap-x-6 gap-y-2">
                     ${primary.length ? html`<nav aria-label=${__('Primary')} class="contents">${desktopMenu(primary, helpers)}${mobileMenu(primary, helpers)}</nav>` : null}
                     ${helpers.options.showSearch === false ? null : searchBox(site.searchUrl, 'hidden sm:block')}
-                    ${languageSwitcher(site.languages)}
+                    ${languages(helpers, 'header')}
                 </div>
             </div>
         </header>
@@ -46,6 +52,7 @@ export default function layout(site: SiteView, content: TemplateResult, helpers:
             <div class=${`${frame} flex flex-col gap-4 py-8 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between`}>
                 ${footer.length ? html`<nav aria-label=${__('Footer')}><ul class="flex flex-wrap gap-x-5 gap-y-2">
                     ${footer.flatMap(item => [item, ...item.children]).map(item => html`<li>${link(item, 'no-underline', helpers)}</li>`)}</ul></nav>` : null}
+                ${languages(helpers, 'footer')}
                 <p class="flex flex-wrap items-center gap-x-3">
                     <span>${footerText}</span>
                     ${site.blog ? html`<a href="/feed" class="hover:text-foreground">RSS</a>` : null}

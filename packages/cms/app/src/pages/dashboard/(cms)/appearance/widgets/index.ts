@@ -1,7 +1,7 @@
 import { Client, Cossack, Page, Server, State, type HeadValue } from '@cossackframework/core';
 import { Badge, Button, Card, CardBody } from '@cossackframework/ui';
 import { component, html, type TemplateResult } from '@cossackframework/renderer';
-import { findBlock, hasPermission, isCmsError, PERMISSIONS, updateBlock, type RichTextDoc, type ThemePresets } from '@cossackframework/cms';
+import { findBlock, flattenBlocks, hasPermission, isCmsError, PERMISSIONS, updateBlock, type RichTextDoc, type ThemePresets } from '@cossackframework/cms';
 import { requireAny } from '../../../../../cms/guards';
 import { notice, pageHeader } from '../../../../../cms/ui';
 import { blockFilePreviews, blockOptions, findMedia, sourceChoices } from '../../../../../cms/content';
@@ -12,7 +12,7 @@ import { BlockTree } from '../../../../../cms/block-tree';
 import { blockPanel } from '../../../../../cms/block-panel';
 import { chooserKind, closedChooser, mediaChooser, uploadMedia, withFile, type MediaChooserState } from '../../../../../cms/media-chooser';
 import { activePresets } from '../../../../../cms/site';
-import { styleValues, withStyle, type BlockTab, type StyleValues } from '../../../../../cms/style-controls';
+import { blockIdOf, styleValues, withStyle, type BlockTab, type StyleValues } from '../../../../../cms/style-controls';
 
 interface AreaRow { name: string; label: string; theme: string; active: boolean; revision: number; blocks: EditorBlock[]; changed: boolean }
 /** The block being edited in the dialog: its fields' values on the General tab, its style on the Style tab. */
@@ -125,8 +125,15 @@ export default class WidgetsPage extends Cossack {
         if (!block || !option) return;
         const fields = option.fields.filter(field => field.kind !== 'richtext');
         const { input, errors } = editorInput(fields, dialog.values);
-        this.dialog = { ...dialog, errors: { ...dialog.errors, ...errors } };
-        this.change(dialog.area, updateBlock(this.blocksOf(dialog.area), dialog.id, entry => withStyle({ ...entry, data: { ...Object.fromEntries(Object.entries(entry.data).filter(([name]) => option.fields.find(field => field.name === name)?.kind === 'richtext')), ...input } }, dialog.style)));
+        // A valid new ID under Advanced re-keys the block; the panel follows it.
+        const taken = this.otherBlockIds(dialog.area, dialog.id);
+        this.dialog = { ...dialog, id: blockIdOf({ _id: dialog.id }, dialog.style, taken), errors: { ...dialog.errors, ...errors } };
+        this.change(dialog.area, updateBlock(this.blocksOf(dialog.area), dialog.id, entry => withStyle({ ...entry, data: { ...Object.fromEntries(Object.entries(entry.data).filter(([name]) => option.fields.find(field => field.name === name)?.kind === 'richtext')), ...input } }, dialog.style, taken)));
+    }
+
+    /** The IDs of an area's blocks apart from one, which a custom block ID may not repeat. */
+    private otherBlockIds(area: string, except: string): ReadonlySet<string> {
+        return new Set(flattenBlocks(this.blocksOf(area)).map(block => block._id).filter(id => id !== except));
     }
 
     @Server()
@@ -209,6 +216,7 @@ export default class WidgetsPage extends Cossack {
         const fields = option ? { ...option, fields: option.fields.filter(field => field.kind !== 'richtext') } : null;
         return blockPanel({
             id: 'widget-block', open: Boolean(dialog && option), option, tab: dialog?.tab ?? 'general', style: dialog?.style ?? styleValues({}), presets: this.presets,
+            ...(dialog ? { taken: this.otherBlockIds(dialog.area, dialog.id) } : {}),
             onTab: tab => this.showTab(tab), onStyle: style => this.setStyle(style), onClose: () => { this.dialog = null; },
             general: dialog && fields ? (fields.fields.length ? blockFields(fields, dialog.values, (name, value) => this.setValue(name, value), `widget-${dialog.area}-${dialog.id}`, media, dialog.errors, [], this.sources)
                 : html`<p class="text-sm text-muted-foreground">${__('This block has no settings.')}</p>`) : html``,

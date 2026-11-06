@@ -212,13 +212,21 @@ describe.skipIf(!liveRomeDBTests())('CMS themes', () => {
       expect(response.headers()['cache-control']).toContain('private');
       await tab.waitForFunction(() => window.__cossackReady === true);
       expect(scripts.some(url => url.endsWith(editorChunk)), 'the editor loads only in edit mode').toBe(false);
-      // The taskbar's Live Edit opens the editor at ?edit; the editor's own bar takes the taskbar's place.
+      // The taskbar's Live Edit opens the editor at ?edit; the editor's controls take the middle of the
+      // taskbar, between its start menu and its user menu, which stay where they are.
       const taskbar = tab.getByRole('navigation', { name: 'Site taskbar' });
       await browserExpect(taskbar).toBeVisible();
       await taskbar.getByRole('link', { name: 'Live Edit', exact: true }).click();
       const bar = tab.getByRole('region', { name: 'Editing' });
       await browserExpect(bar.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
-      await browserExpect(taskbar).toBeHidden();
+      await browserExpect(taskbar).toBeVisible();
+      await browserExpect(taskbar.getByRole('link', { name: 'Live Edit', exact: true })).toBeHidden();
+      await browserExpect(taskbar.locator('[data-taskbar-start]')).toBeVisible();
+      await browserExpect(taskbar.locator('[data-taskbar-end]')).toBeVisible();
+      await browserExpect.poll(async () => {
+        const [start, end, controls] = await Promise.all([taskbar.locator('[data-taskbar-start]').boundingBox(), taskbar.locator('[data-taskbar-end]').boundingBox(), bar.boundingBox()]);
+        return controls.x >= start.x + start.width - 1 && controls.x + controls.width <= end.x + 1 && Math.abs(controls.y - start.y) < 8;
+      }, { message: 'the editing controls sit between the start menu and the user menu' }).toBe(true);
       expect(new URL(tab.url()).searchParams.has('edit')).toBe(true);
       expect(scripts.some(url => url.endsWith(editorChunk))).toBe(true);
       const sections = tab.locator('[data-sections]');
@@ -266,10 +274,30 @@ describe.skipIf(!liveRomeDBTests())('CMS themes', () => {
       await sections.getByText('First section, edited on the site').click();
       const styled = tab.getByRole('dialog', { name: 'Edit Paragraph' });
       await styled.getByRole('tab', { name: 'Style' }).click();
+      // The color box opens a picker: the theme's palette as swatches, and a color of the block's own.
+      await styled.getByRole('button', { name: 'Background', exact: true }).click();
       await styled.getByRole('radiogroup', { name: 'Background' }).getByRole('radio', { name: 'Mine' }).click();
+      await browserExpect(styled.getByRole('button', { name: 'Background', exact: true })).toContainText('Mine');
       await styled.getByRole('button', { name: 'Apply' }).click();
       await browserExpect(sections.locator('.cms-block.cms-bg-custom-1')).toHaveCount(1);
       expect(await sections.locator('.cms-block.cms-bg-custom-1').evaluate(element => getComputedStyle(element).backgroundColor)).toBe('rgb(18, 52, 86)');
+      // A hex color of the block's own, and a block ID of the editor's choosing, from the same tab.
+      await sections.getByText('First section, edited on the site').click();
+      const own = tab.getByRole('dialog', { name: 'Edit Paragraph' });
+      await own.getByRole('tab', { name: 'Style' }).click();
+      await own.getByRole('button', { name: 'Text color', exact: true }).click();
+      await own.getByLabel('Text color: hex color', { exact: true }).fill('#ABCDEF');
+      await own.getByLabel('Text color: hex color', { exact: true }).press('Tab');
+      await browserExpect(own.getByRole('button', { name: 'Text color', exact: true })).toContainText('#abcdef');
+      // Escape closes the picker and leaves the sheet open.
+      await tab.keyboard.press('Escape');
+      await browserExpect(own).toBeVisible();
+      await own.locator('details').getByText('Advanced').click();
+      await own.getByLabel('Block ID', { exact: true }).fill('lead');
+      await own.getByLabel('Block ID', { exact: true }).press('Tab');
+      await own.getByRole('button', { name: 'Apply' }).click();
+      await browserExpect(sections.locator('[data-block-id="lead"] .cms-block.cms-bg-custom-1.cms-text-custom')).toHaveCount(1);
+      expect(await sections.locator('.cms-block.cms-text-custom').evaluate(element => getComputedStyle(element).color)).toBe('rgb(171, 205, 239)');
       // An edit in progress changes nothing for visitors.
       expect(visible(await (await visitor.request('/projects/rocket')).text())).toBe(visible(await (await visitor.request('/projects/rocket')).text()));
       expect(visible(await (await visitor.request('/projects/rocket')).text())).toBe(beforeEdit);
@@ -298,9 +326,10 @@ describe.skipIf(!liveRomeDBTests())('CMS themes', () => {
       await bar.getByRole('button', { name: 'Reload' }).click();
       await browserExpect(tab.getByRole('heading', { name: 'Rocket, renamed elsewhere' })).toBeVisible();
       await browserExpect(sections.getByText('First section, edited on the site')).toBeVisible();
-      // Leaving edit mode brings the taskbar back and drops ?edit from the address, so a reload shows the page.
+      // Leaving edit mode gives the taskbar its items back and drops ?edit from the address, so a reload shows the page.
       await bar.getByRole('button', { name: 'Exit', exact: true }).click();
       await browserExpect(taskbar).toBeVisible();
+      await browserExpect(taskbar.getByRole('link', { name: 'Live Edit', exact: true })).toBeVisible();
       expect(new URL(tab.url()).searchParams.has('edit')).toBe(false);
       expect(errors).toEqual([]);
 

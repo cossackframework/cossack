@@ -128,6 +128,7 @@ application password. A CMS refusal answers `{ error, code, fields? }` with its 
 | `GET /content/<collection>` | Entries: `status`, `q`, `term`, `locale`, `filter[field]`, `page`, `perPage`, `format=html`. |
 | `POST /content/<collection>` | Create. |
 | `GET /content/<collection>/<id\|slug>` | One entry (`?preview=<token>` for a preview link). |
+| `GET /content/<collection>/<id\|slug>/blocks/<blockId>` | One block of the entry by its ID (set under Style → Advanced → Block ID), nested blocks and blocks embedded in rich text included, with the field it sits in. |
 | `PATCH /content/<collection>/<id>` `{ rev, …fields }` | Change; `rev` (or `If-Match`) is the revision read, else 428; a stale one answers 409. |
 | `DELETE /content/<collection>/<id>?rev=` | Delete. |
 | `POST …/<id>/publish` `{ at?, rev? }`, `POST …/<id>/unpublish` `{ rev? }` | Publish or schedule (`at` in the future); back to a draft. `rev` left out means the current revision. |

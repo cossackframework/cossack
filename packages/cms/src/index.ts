@@ -27,9 +27,9 @@ export {
     fieldPlacement, editorBoxes, editorLayoutTypes, editorTabId, boxBlock, layoutBoxes, defaultEditorLayout, editorLayoutShapeProblem, editorLayoutProblems, resolveEditorLayout, boxFields,
     type EditorBox, type EditorBoxesInput, type EditorLayout, type EditorLayoutAddition, type ResolvedEditorLayout,
 } from './editor-layout';
-export { CONTENT_STATUSES, CORE_FIELDS, ENTRY_TEMPLATE, entryAuthors, FEATURE_FIELDS, RESERVED_FIELDS, LOCALE, SEO_FIELDS, collectionProblems, collectionResource, contentBlocks, entryUrl, extendCollection, languageName, orderedFields, posts, pages, translationGroupOf, type CollectionDefinition, type CollectionFeatures, type ContentStatus } from './collections';
-export { CORE_BLOCKS, BLOCK_CATEGORIES, BLOCK_NAME, BLOCK_LIMITS, FIELD_BLOCK_KINDS, FIELD_GROUP_LAYOUT, FIELD_GROUP_LIMIT, RESERVED_FIELD_NAMES, BREAKPOINTS, STYLE_PROPERTIES, TEXT_ALIGNMENTS, PRESET_SLUG, INPUT_KINDS, INPUT_NAME, CONDITION_OPERATORS, CONDITION_LIMIT, FORM_INPUT_LIMIT, RESERVED_INPUT_NAMES,
-    blockCategory, blockIsData, blockProblems, blocksShapeProblem, blockLayoutProblem, blockStyleProblem, blockConditionProblem, blockSupports, blockAllowedIn, validateBlocks, blockMedia, blockDocuments, blocksPlain, cloneBlocks, blockId, inputName,
+export { CONTENT_STATUSES, CORE_FIELDS, ENTRY_TEMPLATE, entryAuthors, FEATURE_FIELDS, RESERVED_FIELDS, LOCALE, SEO_FIELDS, collectionProblems, collectionResource, contentBlocks, entryUrl, extendCollection, languageFlag, languageName, orderedFields, posts, pages, translationGroupOf, type CollectionDefinition, type CollectionFeatures, type ContentStatus } from './collections';
+export { CORE_BLOCKS, BLOCK_CATEGORIES, BLOCK_ID, BLOCK_NAME, BLOCK_LIMITS, CUSTOM_COLOR, FIELD_BLOCK_KINDS, FIELD_GROUP_LAYOUT, FIELD_GROUP_LIMIT, RESERVED_FIELD_NAMES, BREAKPOINTS, STYLE_PROPERTIES, TEXT_ALIGNMENTS, PRESET_SLUG, INPUT_KINDS, INPUT_NAME, CONDITION_OPERATORS, CONDITION_LIMIT, FORM_INPUT_LIMIT, RESERVED_INPUT_NAMES,
+    blockCategory, blockIdProblem, blockIsData, blockProblems, blocksShapeProblem, blockLayoutProblem, blockStyleProblem, blockConditionProblem, blockSupports, blockAllowedIn, validateBlocks, blockMedia, blockDocuments, blocksPlain, cloneBlocks, blockId, inputName,
     flattenBlocks, placeBlocks, findBlock, HTML_BLOCK, htmlBlocks, htmlBlocksChanged, updateBlock, removeBlock, insertBlock, moveBlock, shiftBlock, blockTreeProblem,
     type Block, type BlockCategory, type BlockDeclaration, type BlockLayout, type BlockStyle, type BlockSupports, type BlockMove, type BlockPlace, type Breakpoint, type StyleProperty,
     type BlockCondition, type ConditionRule, type ConditionOperator, type InputKind, type FieldBlockKind, type ValidateBlocksOptions } from './blocks';
@@ -37,7 +37,7 @@ export { hasBinding, bindingPaths, bindingRefs, bindingValue, bindingText, bindi
 export { parseBlockText, hasBlockReference, textBlocks, PATTERN_REFERENCE, type TextPart, type ParsedText } from './block-references';
 export { formInput, formValue, recordTitle, isSameOriginPost, type FormInput, type SubmittedForm } from './forms';
 export { manifestProblems, validateManifest, requestedGrants, commandInput, isPluginPoint, pointOwner, providedPoints, ManifestError, HOST_SLOTS, type CmsPluginManifest, type PluginAuthor, type ProvidedPoint, type PluginCommand, type CommandOption, type SlotLink, type HostSlot } from './manifest';
-export { MEDIA_TYPES, AVATAR_TYPES, ARCHIVE_TYPES, SVG_TYPE, MEDIA_FILTERS, MEDIA_FILTER_EXCLUDES, mediaKind, mediaUrl, formatBytes, matchesSignature, imageSize, declaredType, sanitizeSvg, type MediaKind } from './media';
+export { MEDIA_TYPES, AVATAR_TYPES, ARCHIVE_TYPES, SVG_TYPE, MEDIA_FILTERS, MEDIA_FILTER_EXCLUDES, mediaKind, mediaUrl, formatBytes, matchesSignature, imageHasAlpha, imageSize, declaredType, sanitizeSvg, type MediaKind } from './media';
 export { taxonomyProblems, type TaxonomyDeclaration, type TermShape } from './taxonomy';
 export { general, media, appearance, writing, reading, discussion, seo, crawlers, indexnow, languages, DATE_FORMATS, TIME_FORMATS, TITLE_SEPARATORS, formatSiteDate, validTimeZone, type SettingsGroup, type SettingsSection, type SettingDeclaration, type SettingSource, type SettingControl, type SiteSettings } from './settings';
 export { validateSettingValue, settingControlProblems } from './settings-controls';
@@ -55,10 +55,10 @@ export {
 } from './richtext';
 export {
     themeProblems, siteThemeProblems, assembleSiteTheme, layerSiteThemes, entryTemplate, archiveTemplate, entryTemplateChoices, templateCandidates, pickTemplate, SPECIFIC_TEMPLATE,
-    PRESET_KINDS, DEFAULT_PRESETS, presetProblems, layerPresets, resolvePresets, presetOverridesProblem, presetStyle, blockStyleAttributes, customCssProblem,
+    PRESET_KINDS, DEFAULT_PRESETS, LANGUAGE_SWITCHER_STYLES, presetProblems, layerPresets, resolvePresets, presetOverridesProblem, presetStyle, blockStyleAttributes, customCssProblem,
     type Preset, type PresetKind, type ThemePresets, type PresetOverrides,
     type ThemeManifest, type SiteTheme, type ThemeSource, type EntryTemplate, type ArchiveTemplate, type TemplatePage, type ThemeData, type FieldView, type EntryReference, type ThemeHelpers, type SiteView, type EntryView, type ArchiveView, type AuthorView, type RenderedBlock, type RepeaterView, type ItemsView, type BodyPart, type MediaView, type TermLink, type Paging,
-    type EntryAuthor, type CommentView, type CommentsView, type CommentFormView, type LanguageLink, type FormView, type InputView,
+    type EntryAuthor, type CommentView, type CommentsView, type CommentFormView, type LanguageLink, type LanguageSwitcherOptions, type LanguageSwitcherStyle, type FormView, type InputView,
 } from './theme';
 export { diffWords, compareRecords, comparableValue, type DiffPart, type FieldChange } from './diff';
 export {
@@ -74,6 +74,6 @@ export { recordSchema, fieldSchema, type JsonSchema } from './schema-json';
 export { REDIRECT_STATUSES, REDIRECT_PATH, redirectPath, redirectProblems, type Redirect, type RedirectInput, type RedirectStatus } from './redirects';
 export { WEBHOOK_EVENTS, webhookUrlProblem, type Webhook, type WebhookDelivery, type WebhookEvent, type WebhookInput, type WebhookPayload } from './webhooks';
 export { COMMENT_STATUSES, checkComment, type CommentShape, type CommentRow, type CommentStatus } from './comments';
-export { IMAGE_WIDTHS, TRANSFORMABLE_TYPES, blurredPlaceholder, imageWidths, placeholderStyle, imageEditsProblems, editedSize, variantWidth, variantRect, transformable, imageUrl, imageSrcset, type ImageEdits, type ImageRect, type ImageSource } from './images';
+export { IMAGE_WIDTHS, PLACEHOLDER_SCRIPT, TRANSFORMABLE_TYPES, blurredPlaceholder, imageWidths, placeholderStyle, imageEditsProblems, editedSize, variantWidth, variantRect, transformable, imageUrl, imageSrcset, type ImageEdits, type ImageRect, type ImageSource } from './images';
 export { COLLAB_COLORS, PRESENCE_TIMEOUT, participantColor, livePeers, expiredPeers, groupPeers, checkPresence, PendingKeys, scalarKey, patchKey, richTextPath, parseRichTextPath, stableJson, treeOps, applyTreeOp, treeHash, StepLog, type PeerPresence, type PeerState, type Participant, type TreeOp, type TreeOpsOptions } from './collab';
 export { NOTE_STATUSES, NOTE_LIMITS, formatNoteTarget, parseNoteTarget, noteBlock, noteField, checkNoteBody, checkNoteRange, checkNoteQuote, checkNoteAction, mentionsIn, noteParts, notePlainText, noteMail, mentionToken, noteThreads, findQuote, type Note, type NoteAction, type NoteRange, type NoteStatus, type NoteTarget, type NoteThread } from './notes';
