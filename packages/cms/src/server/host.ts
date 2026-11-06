@@ -17,7 +17,7 @@ import type { CmsModule } from '../module';
 import { appearance, general, media, type SettingsGroup } from '../settings';
 import { pluginSettingsGroupId } from '../plugin-settings';
 import { assembleSiteTheme, entryTemplateChoices, layerPresets, siteThemeProblems, type ArchiveView, type SiteTheme, type EntryView, type SiteView, type ThemeData, type ThemeManifest, type ThemePresets } from '../theme';
-import type { MenuItem, MenuItemView } from '../menus';
+import type { MenuItem, ResolvedMenuItem } from '../menus';
 import { recordTitle } from '../forms';
 import type { RecordShape } from '../records';
 import { taxonomyProblems, type TaxonomyDeclaration, type TermShape } from '../taxonomy';
@@ -375,6 +375,8 @@ export class CmsHost {
     readonly #loaderTimeout: number;
     readonly #dataLimit: number;
     #activation: { at: number; state: Promise<Activation> } | undefined;
+    /** The active theme's field groups are being stored: `#refreshPlugins` runs again meanwhile and must not start over. */
+    #seedingTheme = false;
     #definitions: { at: number; state: Promise<void> } | undefined;
     #upgrading: Promise<void> | undefined;
     #installed = false;
@@ -548,12 +550,18 @@ export class CmsHost {
         return !collection.plugin || this.#activePlugins.has(collection.plugin);
     }
 
-    /** Which plugins are active, for the collections they ship. */
+    /** Which plugins are active, for the collections they ship; and the active theme's field groups, stored once the site is set up. */
     async #refreshPlugins(): Promise<void> {
         const state = await this.#state().catch(() => null);
         const active = new Set<string>();
         if (state) for (const plugin of this.#plugins.values()) if ((await this.#pluginStatus(plugin, state)).active) active.add(plugin.manifest.name);
         this.#activePlugins = active;
+        // A theme needs no grant, so nothing else would store the groups it ships. Storing them loads the definitions again, hence the guard.
+        if (state?.hostVersions.has(1) && !this.#seedingTheme) {
+            this.#seedingTheme = true;
+            try { await this.#seedThemeGroups(await this.activeTheme().catch(() => null)); }
+            finally { this.#seedingTheme = false; }
+        }
     }
 
     /** The module's definition of a built-in collection, without fields an administrator added. */
@@ -862,6 +870,15 @@ export class CmsHost {
         if (!theme) throw new CmsError('CMS_NOT_FOUND', `Unknown theme ${name}.`);
         if (theme.problems.length) throw new CmsError('CMS_VALIDATION', `${theme.label} cannot be used: ${theme.problems.join(' ')}`);
         await this.settings.update('appearance', { theme: name }, { principal });
+        await this.#seedThemeGroups(name);
+    }
+
+    /** The field groups the active theme and its parent ship: a theme needs no grant, so they are stored here, once (`#refreshPlugins`, `activateTheme`). */
+    async #seedThemeGroups(name: string | null): Promise<void> {
+        for (const plugin of this.#themeChain(name)) {
+            if (plugin.problems.length || !plugin.manifest.fieldGroups?.length || this.#groups.some(group => group.plugin === plugin.manifest.name)) continue;
+            await this.#seedFieldGroups(plugin, systemPrincipal('site')).catch(error => console.error(`[cms] could not add the field groups of ${plugin.manifest.name}`, error));
+        }
     }
 
     /**
@@ -1807,7 +1824,7 @@ export class CmsHost {
             }
             case 'taxonomy': return ['name', 'slug', 'description', 'parent', 'icon', 'path', 'depth', 'taxonomy'];
             case 'users': return ['email', 'name', 'avatar', 'status', 'roles', 'password', 'slug', ...Object.keys(AUTHOR_FIELDS)];
-            case 'menus': return ['label', 'kind', 'url', 'collection', 'entry', 'taxonomy', 'term', 'newTab', 'className', 'attributes', 'children'];
+            case 'menus': return ['label', 'kind', 'url', 'collection', 'entry', 'taxonomy', 'term', 'description', 'panel', 'newTab', 'className', 'attributes', 'children'];
         }
     }
 
@@ -1932,8 +1949,12 @@ export class CmsHost {
         });
     }
 
-    /** Menu items for visitors: entries, archives and terms get their current titles and URLs; items whose target is gone are left out, their children move up. */
-    async #resolveMenu(items: readonly MenuItem[], locale?: string): Promise<MenuItemView[]> {
+    /**
+     * Menu items for visitors: entries, archives and terms get their current titles and URLs;
+     * items whose target is gone are left out, their children move up. Headings keep no URL.
+     * Meta stays raw and the panel a pattern ID: the site renders them (`menuViews`).
+     */
+    async #resolveMenu(items: readonly MenuItem[], locale?: string): Promise<ResolvedMenuItem[]> {
         const languages = await this.languages();
         const translate = Boolean(locale && languages.multilingual);
         const entries = new Map<string, Set<string>>();
@@ -1972,10 +1993,11 @@ export class CmsHost {
             }
         };
         await visitArchives(items);
-        const resolve = (list: readonly MenuItem[]): MenuItemView[] => list.flatMap(item => {
+        const resolve = (list: readonly MenuItem[]): ResolvedMenuItem[] => list.flatMap(item => {
             const children = resolve(item.children);
             let target: { title: string; url: string | null } | undefined;
             if (item.kind === 'link') target = { title: item.label, url: item.url ?? null };
+            else if (item.kind === 'heading') target = { title: item.label, url: null };
             else if (item.kind === 'entry') target = found.get(`${item.collection}:${item.entry}`);
             else if (item.kind === 'archive') {
                 const collection = item.collection ? this.#collections.get(item.collection) : undefined;
@@ -1986,9 +2008,9 @@ export class CmsHost {
                 const taxonomy = term && term.taxonomy === item.taxonomy ? this.#taxonomies.get(term.taxonomy) : undefined;
                 target = term && taxonomy?.path ? { title: term.name, url: `${translate ? this.localePrefix(locale, languages) : ''}/${taxonomy.path}/${term.slug}` } : undefined;
             }
-            if (!target?.url) return children;
-            return [Object.freeze({ id: item.id, label: item.label || target.title, url: target.url, newTab: item.newTab === true, kind: item.kind,
-                className: item.className ?? '', attributes: Object.freeze({ ...item.attributes }), meta: Object.freeze({ ...item.meta }), children: Object.freeze(children) })];
+            if (!target || (!target.url && item.kind !== 'heading')) return children;
+            return [Object.freeze({ id: item.id, label: item.label || target.title, url: target.url, newTab: item.newTab === true, kind: item.kind, description: item.description ?? '',
+                className: item.className ?? '', attributes: Object.freeze({ ...item.attributes }), meta: Object.freeze({ ...item.meta }), panel: item.panel || null, children: Object.freeze(children) })];
         });
         return resolve(items);
     }

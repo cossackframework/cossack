@@ -38,7 +38,9 @@ const plugins: PluginRegistrationLike[] = [
         name: 'folio', version: '1.0.0', templates, module: { loaders: folioLoaders },
         manifest: { schemaVersion: 1, name: 'folio', version: '1.0.0', theme: { label: 'Folio', locations: { primary: 'Primary menu' }, areas: { footer: 'Footer widgets' },
             options: { accent: { kind: 'enum', values: ['blue', 'red'], default: 'blue', label: 'Accent' } },
-            presets: { colors: [{ slug: 'base', name: 'Base', value: '#ffffff' }, { slug: 'brand', name: 'Brand', value: '#2563eb' }] } }, permissions: { resources: { 'cms/posts': ['read'] } } },
+            presets: { colors: [{ slug: 'base', name: 'Base', value: '#ffffff' }, { slug: 'brand', name: 'Brand', value: '#2563eb' }] } }, permissions: { resources: { 'cms/posts': ['read'] } },
+            // A field group for menu items, stored when the theme is active even though the plugin itself is never granted.
+            fieldGroups: [{ id: 'folio-menu', title: 'Menu item details', targets: [{ kind: 'menus' }], blocks: [{ _id: 'badge', type: 'field/text', data: { name: 'badge', label: 'Badge', max: 20 } }] }] },
     },
     // Only a theme: active without a grant, so its loaders run, but it may read nothing.
     { name: 'plain', version: '1.0.0', templates: { ...templates, 'entry-wide': { default: noop }, 'entry-posts': { default: noop } }, module: { loaders: plainLoaders },
@@ -179,6 +181,23 @@ describe.skipIf(!live)('themes: loaders', () => {
         await cms.activateTheme('folio-dark', admin);
         expect(await cms.entryTemplates()).toEqual(['entry-dark']);
         await expect(cms.activateTheme('orphan', admin)).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
+    });
+
+    it('stores the field groups the active theme ships, without a grant', async () => {
+        // Folio was active by default when the host first loaded, so its group is stored; the plugin itself was never granted.
+        expect(cms.fieldGroupsFor({ kind: 'menus' }).map(group => group.id)).toEqual(['folio-menu']);
+        expect((await cms.fieldGroups.all()).find(group => group.id === 'folio-menu')).toMatchObject({ plugin: 'folio', title: 'Menu item details' });
+        // As an application starts: the host loads before setup, the site is set up, and the group is stored as the site loads next.
+        const fresh = await service.fresh();
+        try {
+            const other = createCMS({ db: fresh.db, modules: [contentModule], plugins });
+            await other.ready();
+            expect(other.fieldGroupsFor({ kind: 'menus' })).toEqual([]);
+            expect((await other.migrate()).failed).toBeUndefined();
+            // The setup page's call after migrating.
+            await other.ready({ force: true });
+            expect(other.fieldGroupsFor({ kind: 'menus' }).map(group => group.id)).toEqual(['folio-menu']);
+        } finally { await fresh.stop(); }
     });
 
     it('saves widget areas with a revision check', async () => {

@@ -139,5 +139,5 @@ Data contract:
 See the guides with `cossack docs --package @cossackframework/cms`, and the developer docs
 in `docs/cms/`: [overview](../../docs/cms/index.md), [plugins](../../docs/cms/plugins.md),
 [manifest](../../docs/cms/manifest.md), [hooks](../../docs/cms/hooks.md),
-[themes](../../docs/cms/themes.md), [settings](../../docs/cms/settings.md) and
-[languages](../../docs/cms/languages.md).
+[themes](../../docs/cms/themes.md), [menus](../../docs/cms/menus.md),
+[settings](../../docs/cms/settings.md) and [languages](../../docs/cms/languages.md).

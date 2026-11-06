@@ -46,7 +46,7 @@ export { parseSettingsDocument, checkSettingsDocument, stringifySettingsDocument
 export type { CmsModule, ModuleContext } from './module';
 export {
     MENU_LIMITS, MENU_LOCATION, MENU_ATTRIBUTE, menuProblems, normalizeMenu, menuSize, menuItemId, flattenMenu, buildMenu, subtreeEnd, dropDepths, moveRows, shiftRows, allowedMoves,
-    type MenuItem, type MenuItemKind, type MenuShape, type MenuItemView, type MenuRow, type MenuMove,
+    type MenuItem, type MenuItemKind, type MenuShape, type MenuItemView, type ResolvedMenuItem, type MenuRow, type MenuMove,
 } from './menus';
 export {
     RICH_TEXT_LIMITS, RICH_TEXT_NODES, RICH_TEXT_MARKS, checkRichText, richTextProblem, normalizeRichText, emptyRichText, richTextFromPlain, richTextEmpty, richTextPlain, richTextExcerpt, richTextBlocks, richTextMedia,
@@ -58,7 +58,7 @@ export {
     PRESET_KINDS, DEFAULT_PRESETS, LANGUAGE_SWITCHER_STYLES, presetProblems, layerPresets, resolvePresets, presetOverridesProblem, presetStyle, blockStyleAttributes, customCssProblem,
     type Preset, type PresetKind, type ThemePresets, type PresetOverrides,
     type ThemeManifest, type SiteTheme, type ThemeSource, type EntryTemplate, type ArchiveTemplate, type TemplatePage, type ThemeData, type FieldView, type EntryReference, type ThemeHelpers, type SiteView, type EntryView, type ArchiveView, type AuthorView, type RenderedBlock, type RepeaterView, type ItemsView, type BodyPart, type MediaView, type TermLink, type Paging,
-    type EntryAuthor, type CommentView, type CommentsView, type CommentFormView, type LanguageLink, type LanguageSwitcherOptions, type LanguageSwitcherStyle, type FormView, type InputView,
+    type EntryAuthor, type CommentView, type CommentsView, type CommentFormView, type LanguageLink, type LanguageSwitcherOptions, type MenuOptions, type MenuStyle, type LanguageSwitcherStyle, type FormView, type InputView,
 } from './theme';
 export { diffWords, compareRecords, comparableValue, type DiffPart, type FieldChange } from './diff';
 export {

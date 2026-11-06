@@ -67,6 +67,10 @@ describe.skipIf(!live)('themes, menus and rich text', () => {
                 { id: 'news', kind: 'term', label: '', taxonomy: 'categories', term: news.id, children: [] },
             ] },
             { id: 'gone', kind: 'term', label: 'Gone', taxonomy: 'tags', term: 'missing', children: [] },
+            // A mega menu item: a description, a panel pattern and a heading that groups links without a URL.
+            { id: 'products', kind: 'link', label: 'Products', url: '/products', description: 'Everything we make', panel: 'pattern_1', children: [
+                { id: 'teams', kind: 'heading', label: 'By team', children: [{ id: 'sales', kind: 'link', label: 'Sales', url: '/sales', children: [] }] },
+            ] },
         ];
         await expect(cms.menus.create({ name: 'Main', items }, { principal: editor })).rejects.toMatchObject({ code: 'CMS_FORBIDDEN' });
         await expect(cms.menus.create({ name: 'Main', items: [{ id: 'x', kind: 'link', label: 'X', url: 'javascript:alert(1)', children: [] }] }, { principal: admin })).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
@@ -76,14 +80,17 @@ describe.skipIf(!live)('themes, menus and rich text', () => {
         await expect(cms.menus.place(menu.id, ['nowhere'], { principal: admin, known: (await cms.menuLocations()).map(location => location.name) })).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
         await cms.menus.place(menu.id, ['primary', 'footer'], { principal: admin, known: ['primary', 'footer', 'sidebar'] });
         const resolved = await cms.menus.forLocation('primary');
-        const shape = (list: readonly { label: string; url: string; children: readonly unknown[] }[]): unknown => list.map(entry => [entry.label, entry.url, shape(entry.children as never)]);
+        const shape = (list: readonly { label: string; url: string | null; children: readonly unknown[] }[]): unknown => list.map(entry => [entry.label, entry.url, shape(entry.children as never)]);
         expect(shape(resolved!)).toEqual([
             ['Home', '/', []],
             ['About', '/about', [['Our team', '/about/team', []]]],
             // The draft is hidden; its published child moves up.
             ['Visible child', '/visible-child', []],
             ['Posts', '/posts', [['News', `/category/${news.slug}`, []]]],
+            ['Products', '/products', [['By team', null, [['Sales', '/sales', []]]]]],
         ]);
+        // Targets are resolved here; meta stays raw and the panel is still the pattern's ID, for the site to render.
+        expect(resolved![4]).toMatchObject({ kind: 'link', description: 'Everything we make', panel: 'pattern_1', meta: {}, children: [{ kind: 'heading', url: null, description: '', panel: null }] });
 
         // A renamed page shows its new title and URL; the menu stores only its ID.
         await pages.update(about.id, { title: 'About us', slug: 'about-us' }, { principal: admin, expectedRevision: about.rev });

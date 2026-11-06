@@ -58,6 +58,10 @@ pure functions over view data and never read the database. Every item below keep
 
 ## Front-end block editor
 
+Extended to widget areas, with the theme's default blocks, and to synced patterns in
+[cms-site-editing.md](cms-site-editing.md); menus grow panels and a navigation block in
+[cms-navigation.md](cms-navigation.md).
+
 - **Why it is possible.** Blocks are stored as JSON with ids and arrive on the page as
   `RenderedBlock` with `id`, `type`, `data` and rendered `html`; bodies are ProseMirror JSON.
   Edits write JSON back and the same template re-renders. There is no second representation.

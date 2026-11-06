@@ -252,7 +252,12 @@ async function exercise(origin, routeIds, diagnostics) {
   lacks(themed, 'role="search"');
   expect((await visitor.request('/dashboard/appearance')).headers.get('location')).toBe('/dashboard');
 
-  // Menus: a nested page, a category and a link in the primary location.
+  // Menus: a nested page, a category, a link and a mega menu (a heading column, a described link and a pattern panel) in the primary location.
+  const promo = await web.action(editor, 'save', [{ title: 'Promo', content: [{ _id: 'card', type: 'core/card', data: { title: 'Try it free', text: 'Start today.', url: '/signup', linkLabel: 'Sign up' } }], synced: true, starter: [] }, 'update', 0],
+    { params: { collection: 'patterns', id: 'new' }, state: { route: 'patterns', id: 'new' } });
+  expect(promo.id).toBeTruthy();
+  // The default theme ships a field group for menu items, stored without a grant.
+  contains(await web.page('/dashboard/field-groups'), 'Menu item details');
   const created2 = await web.action('dashboard/(cms)/appearance/menus/index.ts', 'create', ['Main menu']);
   expect(created2._cossack_redirect).toMatch(/^\/dashboard\/appearance\/menus\/[0-9a-f-]{36}$/);
   const menuId = created2._cossack_redirect.split('/').at(-1);
@@ -262,6 +267,9 @@ async function exercise(origin, routeIds, diagnostics) {
     { id: 'team', kind: 'entry', label: 'Meet the team', collection: 'pages', entry: teamId, depth: 1 },
     { id: 'news', kind: 'term', label: '', taxonomy: 'categories', term: news.id, depth: 0 },
     { id: 'docs', kind: 'link', label: 'Docs', url: 'https://example.com/docs', newTab: true, depth: 0 },
+    { id: 'products', kind: 'link', label: 'Products', url: '/products', description: 'Everything we make', panel: promo.id, depth: 0 },
+    { id: 'byteam', kind: 'heading', label: 'By team', depth: 1 },
+    { id: 'sales', kind: 'link', label: 'Sales', url: '/sales', description: 'Close deals faster', depth: 2 },
   ];
   const savedMenu = await web.action(menuEditor, 'save', ['Main menu', rows, 1, ['primary']], { params: { id: menuId }, state: { id: menuId } });
   expect(savedMenu.error).toBe('');
@@ -274,10 +282,19 @@ async function exercise(origin, routeIds, diagnostics) {
   contains(menuSite, 'Meet the team');
   contains(menuSite, 'href="/category/news"');
   contains(menuSite, 'href="https://example.com/docs"');
+  // The mega menu: the heading's column, the described link and the panel's card, drawn by helpers.menu (the HTML is minified: single-word attribute values lose their quotes).
+  contains(menuSite, 'class=cms-mega-box');
+  contains(menuSite, 'cms-mega-heading');
+  contains(menuSite, 'By team');
+  contains(menuSite, 'Close deals faster');
+  contains(menuSite, 'Try it free');
+  contains(menuSite, 'href="/sales"');
   const menuApi = await (await fetch(origin + '/api/cms/menus/primary')).json();
   expect(menuApi.items.map(item => [item.label, item.url, item.children.map(child => child.url)])).toEqual([
-    ['Home', '/home', ['/home/team']], ['News', '/category/news', []], ['Docs', 'https://example.com/docs', []],
+    ['Home', '/home', ['/home/team']], ['News', '/category/news', []], ['Docs', 'https://example.com/docs', []], ['Products', '/products', [null]],
   ]);
+  expect(menuApi.items[3]).toMatchObject({ kind: 'link', description: 'Everything we make', fields: {}, children: [{ kind: 'heading', url: null, children: [{ url: '/sales', description: 'Close deals faster' }] }] });
+  expect(menuApi.items[3].panel.map(block => block.type)).toEqual(['core/card']);
   contains(await web.page('/dashboard/appearance/menus'), 'Main menu');
 
   // The content API returns the content as blocks with rich text as JSON, or rendered on request.

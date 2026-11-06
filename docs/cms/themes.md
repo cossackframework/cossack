@@ -63,7 +63,7 @@ src/plugins/my-theme/
 | Field | Meaning |
 | --- | --- |
 | `label`, `description` | Shown under Appearance → Themes; 60 and 300 characters at most. |
-| `locations` | Up to 8 menu locations, `name: label`. Administrators assign menus to them; templates read `site.menus[location]`. |
+| `locations` | Up to 8 menu locations, `name: label`. Administrators assign menus to them; templates render one with `helpers.menu(location)` or read `site.menus[location]`. See [Menus](/docs/cms/menus.md). |
 | `areas` | Up to 8 widget areas, `name: label`. Their blocks are edited under Appearance → Widgets and arrive as `site.areas[area]`. |
 | `options` | Up to 16 settings shown under Appearance → Customize, of kind `string`, `text`, `enum` (`values`, `choices` for labels), `boolean`, `integer` or `number`, with `default`, `label`, `description` and the usual limits. Stored as settings `<plugin>.<option>`; templates read them as `helpers.options.<option>`, defaults applied. |
 | `presets` | The palette, font sizes and spacing steps blocks pick from: `colors` (up to 24), `fontSizes` (8) and `spacing` (8), each `{ slug, name, value }`. Missing kinds get defaults; the site adjusts colors under Customize. |
@@ -137,7 +137,7 @@ that export over the files, slot by slot.
 
 | View | What it carries |
 | --- | --- |
-| `SiteView` | `title`, `tagline`, `blog` (the posts page URL), `menus` by location (items with `label`, `url`, `newTab`, `children`, `className`, `attributes`, `meta`), `locale`, `languages` (the page in each language), `searchUrl`, `homeUrl`, `areas` (rendered blocks by widget area), and `template`, the entry's template name so a layout can leave out its frame, as the default theme does for `entry-blank`. |
+| `SiteView` | `title`, `tagline`, `blog` (the posts page URL), `menus` by location (`MenuItemView` items: `label`, `url`, null for a heading, `kind`, `newTab`, `description`, `className`, `attributes`, `fields`, the typed values of the field groups attached to menu items, `panel`, a mega menu's pattern rendered as blocks, and `children`), `locale`, `languages` (the page in each language), `searchUrl`, `homeUrl`, `areas` (rendered blocks by widget area), and `template`, the entry's template name so a layout can leave out its frame, as the default theme does for `entry-blank`. |
 | `EntryView` | `id`, `title`, `url`, `collection`, `kind` (the singular label), `date`, `authors` (each `name`, `url` of their author page or null, `avatar`; the main author first; empty outside article collections), `excerpt`, `content` (`RenderedBlock[]`), `image` (`MediaView`), `terms` by taxonomy, `fields` (every field by name as a typed `FieldView`: a scalar, a `MediaView`, an `EntryReference`, `TermLink[]`, `RenderedBlock[]` for blocks, rich text and Markdown, or, for a multiple field, the list of its kind's views), `details` (scalar fields as labelled text), `template`, `locale`, `comments` (`CommentsView`, or null) and `locked`. In lists, `content` is empty. A locked entry withholds its excerpt, content and fields. |
 | `ArchiveView` | `kind` (`home`, `archive`, `term`, `search`), `collection`, `taxonomy`, `title`, `description`, `entries`, `paging` (`page`, `pages`, `base`) and `query`. |
 | `LockedView` | `entry`, `action` (where the password form posts) and `error` after a wrong password. |
@@ -157,6 +157,7 @@ Every template receives `helpers`:
 | `block(blocks)` | Renders a block, or a list of blocks, through the theme's own renderer, a plugin's component or the core one. |
 | `content(parts)` | For block renderers: renders a block's rich text field (`block.content.<field>`), HTML runs and the blocks embedded in them. |
 | `isActive(url)` | Whether a URL is the current page or one of its ancestors, for menu styling. |
+| `menu(source, { style, label, class })` | A location's menu (`site.menus[location]`), or items given directly, as a `nav`: `dropdowns` (the default) is a header menu with dropdowns, mega panels under items with a panel or heading children, and a disclosure on small screens; `inline` one row for footers; `list` a tree for sidebars. Null for an empty menu. The `core/navigation` block renders the same, so editors place a menu in widget areas and content. See [Menus](/docs/cms/menus.md#in-themes). |
 | `languages({ style, layout, class })` | The page in the site's other languages (`site.languages`) as a `nav` of links, named by `names` (the default), `flags`, `flags-names` or `codes`, in a row (`inline`) or a column (`list`); null on a site with one language. The default theme's *Language switcher* option puts it in the header, the footer, both or nowhere, and *Show languages as* picks the style. The `core/languages` block renders the same, so editors place a switcher in widget areas and content. See [Languages](/docs/cms/languages.md#language-switcher). |
 | `logo(site, { class })` | The site's logo from Settings → General as an image with the site title as its alternative text; null when none is set. `site.logo` holds its URL. See [Settings](/docs/cms/settings.md#site-icon-app-icon-and-logo). |
 

@@ -1,12 +1,15 @@
 /**
  * Navigation menus: a tree of items saved as one document. Items link to a URL, an entry, a
- * collection archive or a term; entries and terms are stored by ID and resolved when the site
- * renders. Client-safe: the dashboard edits the tree with the helpers below, the host
- * validates it on save.
+ * collection archive or a term, or are a heading that groups the links under it; entries and
+ * terms are stored by ID and resolved when the site renders. An item may carry a description,
+ * a panel (a pattern the theme shows beside its links, for mega menus) and the values of the
+ * field groups attached to menu items. Client-safe: the dashboard edits the tree with the
+ * helpers below, the host validates it on save.
  */
 import { safeLinkUrl } from './richtext';
+import type { FieldView, RenderedBlock } from './theme';
 
-export type MenuItemKind = 'link' | 'entry' | 'archive' | 'term';
+export type MenuItemKind = 'link' | 'entry' | 'archive' | 'term' | 'heading';
 
 export interface MenuItem {
     /** Stable within the menu: 1-40 letters, digits, `_` or `-`. */
@@ -23,6 +26,10 @@ export interface MenuItem {
     /** term: the taxonomy and term ID. */
     readonly taxonomy?: string;
     readonly term?: string;
+    /** A line under the link in a mega menu panel; at most 300 characters. */
+    readonly description?: string;
+    /** The ID of a pattern shown beside the item's links, for a mega menu. */
+    readonly panel?: string;
     /** Open in a new tab. */
     readonly newTab?: boolean;
     /** Extra class names on the item's link, for the theme's stylesheet. */
@@ -43,20 +50,45 @@ export interface MenuShape {
     readonly updatedAt: number;
 }
 
-/** A resolved item, as the site and the content API show it. */
-export interface MenuItemView {
+/**
+ * An item the host resolved for visitors: entries, archives and terms have their current title
+ * and URL, items whose target is gone are left out. `meta` is still raw and `panel` a pattern
+ * ID; the site finishes them into a `MenuItemView`.
+ */
+export interface ResolvedMenuItem {
     readonly id: string;
     readonly label: string;
-    readonly url: string;
+    /** Null for a heading. */
+    readonly url: string | null;
     readonly newTab: boolean;
     readonly kind: MenuItemKind;
+    readonly description: string;
     readonly className: string;
     readonly attributes: { readonly [name: string]: string };
     readonly meta: { readonly [field: string]: unknown };
+    readonly panel: string | null;
+    readonly children: readonly ResolvedMenuItem[];
+}
+
+/** An item as the site and the content API show it: its fields typed and its panel rendered. */
+export interface MenuItemView {
+    readonly id: string;
+    readonly label: string;
+    /** Null for a heading, which groups the links under it. */
+    readonly url: string | null;
+    readonly newTab: boolean;
+    readonly kind: MenuItemKind;
+    readonly description: string;
+    readonly className: string;
+    readonly attributes: { readonly [name: string]: string };
+    /** The values of the field groups attached to menu items, typed like `EntryView.fields`. */
+    readonly fields: { readonly [name: string]: FieldView };
+    /** The item's panel pattern rendered, or null: render it with `helpers.block`. */
+    readonly panel: readonly RenderedBlock[] | null;
     readonly children: readonly MenuItemView[];
 }
 
-export const MENU_LIMITS = Object.freeze({ items: 300, depth: 5, label: 120, name: 80, className: 200, attributes: 10, attributeValue: 500 });
+export const MENU_LIMITS = Object.freeze({ items: 300, depth: 5, label: 120, description: 300, name: 80, className: 200, attributes: 10, attributeValue: 500 });
 /** Attribute names an item may set: lowercase, hyphenated, never an event handler or what the link already sets. */
 export const MENU_ATTRIBUTE = /^(?!on)[a-z][a-z0-9-]{0,60}$/;
 const FIXED_ATTRIBUTES = new Set(['href', 'class', 'target', 'style', 'srcdoc']);
@@ -65,7 +97,7 @@ export const MENU_LOCATION = /^[a-z][a-z0-9-]{0,31}$/;
 const ITEM_ID = /^[A-Za-z0-9_-]{1,40}$/;
 const NAME = /^[a-z][a-z0-9_]*$/;
 const RECORD_ID = /^[A-Za-z0-9_-]{1,80}$/;
-const KINDS = new Set(['link', 'entry', 'archive', 'term']);
+const KINDS = new Set(['link', 'entry', 'archive', 'term', 'heading']);
 
 /** Problems with a menu's items; empty when it can be saved. */
 export function menuProblems(items: unknown): string[] {
@@ -81,13 +113,15 @@ export function menuProblems(items: unknown): string[] {
             if (!item || typeof item !== 'object' || Array.isArray(item)) { problems.push(`Item ${count} must be an object.`); continue; }
             if (typeof item.id !== 'string' || !ITEM_ID.test(item.id) || ids.has(item.id)) problems.push(`${at} needs a distinct ID.`);
             else ids.add(item.id);
-            if (!KINDS.has(item.kind as string)) problems.push(`${at}: the kind is link, entry, archive or term.`);
+            if (!KINDS.has(item.kind as string)) problems.push(`${at}: the kind is link, entry, archive, term or heading.`);
             if (typeof item.label !== 'string' || [...item.label].length > MENU_LIMITS.label) problems.push(`${at}: labels are at most ${MENU_LIMITS.label} characters.`);
-            else if (item.kind === 'link' && !item.label.trim()) problems.push(`${at}: custom links need a label.`);
+            else if ((item.kind === 'link' || item.kind === 'heading') && !item.label.trim()) problems.push(`${at}: ${item.kind === 'link' ? 'custom links' : 'headings'} need a label.`);
             if (item.kind === 'link' && !safeLinkUrl(item.url)) problems.push(`${at}: the URL must start with https://, http://, /, #, mailto: or tel:.`);
             if ((item.kind === 'entry' || item.kind === 'archive') && (typeof item.collection !== 'string' || !NAME.test(item.collection))) problems.push(`${at} needs a collection.`);
             if (item.kind === 'entry' && (typeof item.entry !== 'string' || !RECORD_ID.test(item.entry))) problems.push(`${at} needs an entry.`);
             if (item.kind === 'term' && (typeof item.taxonomy !== 'string' || !/^[a-z][a-zA-Z0-9]{0,40}$/.test(item.taxonomy) || typeof item.term !== 'string' || !RECORD_ID.test(item.term))) problems.push(`${at} needs a term.`);
+            if (item.description !== undefined && (typeof item.description !== 'string' || [...item.description].length > MENU_LIMITS.description)) problems.push(`${at}: descriptions are at most ${MENU_LIMITS.description} characters.`);
+            if (item.panel !== undefined && item.panel !== '' && (typeof item.panel !== 'string' || !RECORD_ID.test(item.panel))) problems.push(`${at}: the panel is a pattern's ID.`);
             if (item.newTab !== undefined && typeof item.newTab !== 'boolean') problems.push(`${at}: newTab is true or false.`);
             if (item.className !== undefined && (typeof item.className !== 'string' || item.className.length > MENU_LIMITS.className)) problems.push(`${at}: class names are at most ${MENU_LIMITS.className} characters.`);
             if (item.attributes !== undefined) {
@@ -118,7 +152,9 @@ export function normalizeMenu(items: readonly MenuItem[]): MenuItem[] {
         ...(item.kind === 'entry' || item.kind === 'archive' ? { collection: item.collection } : {}),
         ...(item.kind === 'entry' ? { entry: item.entry } : {}),
         ...(item.kind === 'term' ? { taxonomy: item.taxonomy, term: item.term } : {}),
-        ...(item.newTab ? { newTab: true } : {}),
+        ...(item.description?.trim() ? { description: item.description.trim() } : {}),
+        ...(item.panel ? { panel: item.panel } : {}),
+        ...(item.newTab && item.kind !== 'heading' ? { newTab: true } : {}),
         ...(item.className?.trim() ? { className: item.className.trim().split(/\s+/).join(' ') } : {}),
         ...(item.attributes && Object.keys(item.attributes).length ? { attributes: Object.freeze(Object.fromEntries(Object.entries(item.attributes).map(([name, value]) => [name, value.trim()]))) } : {}),
         ...(item.meta && Object.keys(item.meta).length ? { meta: Object.freeze({ ...item.meta }) } : {}),

@@ -144,3 +144,53 @@ hr.cms-divider { height: var(--cms-divider-size); background: var(--cms-divider-
 .cms-note-flash { outline: 2px solid rgb(245 158 11); outline-offset: 2px; border-radius: 0.5rem; animation: cms-note-fade 2s ease-out forwards; }
 @keyframes cms-note-fade { 0%, 60% { outline-color: rgb(245 158 11); } 100% { outline-color: transparent; } }
 @media (prefers-reduced-motion: reduce) { .cms-note-flash { animation: none; } }
+
+/*
+ * Navigation, as `helpers.menu()` and the Navigation block render it: a header row whose
+ * dropdowns and mega panels open on hover, keyboard focus and while a block inside them is
+ * selected in Live Edit; a disclosure with the whole tree below 768px; one row for footers
+ * (`inline`); a tree for sidebars (`list`). Colors are the UI kit's variables, so a theme's
+ * accent applies; a theme restyles these classes in its own stylesheet.
+ */
+.cms-nav ul { list-style: none; margin: 0; padding: 0; }
+.cms-nav-list { display: flex; align-items: center; gap: 0.25rem 1.5rem; }
+.cms-nav-inline .cms-nav-list { flex-wrap: wrap; gap: 0.5rem 1.25rem; }
+.cms-nav-item { position: relative; }
+.cms-nav-link, .cms-nav-sublink, .cms-nav-treelink, .cms-mega-link { color: var(--muted-foreground); font-size: 0.875rem; text-decoration: none; }
+.cms-nav-link { display: inline-flex; align-items: center; gap: 0.25rem; padding-block: 0.5rem; }
+.cms-nav-has-sub > .cms-nav-link::after { content: ''; width: 0.4em; height: 0.4em; margin-left: 0.15em; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: translateY(-0.15em) rotate(45deg); opacity: 0.7; }
+a.cms-nav-link:hover, a.cms-nav-sublink:hover, a.cms-nav-treelink:hover, .cms-mega-link:hover { color: var(--foreground); }
+.cms-nav [aria-current="page"], .cms-nav-heading { color: var(--foreground); font-weight: 500; }
+.cms-nav-sub, .cms-mega { position: absolute; top: 100%; z-index: 20; visibility: hidden; opacity: 0; transition: opacity 150ms, visibility 150ms; }
+.cms-nav-item:hover > .cms-nav-sub, .cms-nav-item:focus-within > .cms-nav-sub, .cms-nav-item:has([data-cms-selected]) > .cms-nav-sub,
+.cms-nav-item:hover > .cms-mega, .cms-nav-item:focus-within > .cms-mega, .cms-nav-item:has([data-cms-selected]) > .cms-mega { visibility: visible; opacity: 1; }
+.cms-nav-sub { left: 0; min-width: 12rem; padding-top: 0.5rem; }
+.cms-nav-sub .cms-nav-sub { top: 0; left: 100%; padding-top: 0; padding-left: 0.25rem; }
+.cms-nav-sublist { border: 1px solid var(--border); border-radius: 0.5rem; background: var(--popover); color: var(--popover-foreground); padding: 0.25rem; box-shadow: 0 12px 32px -12px rgb(0 0 0 / 0.35); }
+.cms-nav-sublink { display: block; border-radius: 0.375rem; padding: 0.5rem 0.75rem; }
+a.cms-nav-sublink:hover { background: var(--muted); }
+.cms-mega { left: 50%; transform: translateX(-50%); width: max-content; min-width: 20rem; max-width: min(64rem, calc(100vw - 2rem)); padding-top: 0.5rem; text-align: left; }
+.cms-mega-box { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2rem; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--popover); color: var(--popover-foreground); padding: 1.5rem; box-shadow: 0 16px 40px -16px rgb(0 0 0 / 0.4); }
+.cms-mega[data-panel] .cms-mega-box { grid-template-columns: minmax(0, 1fr) minmax(14rem, 18rem); }
+.cms-mega[data-panel] .cms-mega-columns:empty + .cms-mega-panel { grid-column: 1 / -1; }
+.cms-mega-columns { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(11rem, 14rem); gap: 1.5rem; }
+.cms-mega-heading { margin: 0 0 0.5rem; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted-foreground); }
+.cms-mega-links { display: grid; gap: 0.125rem; }
+.cms-mega-link { display: flex; align-items: flex-start; gap: 0.625rem; border-radius: 0.5rem; padding: 0.5rem 0.625rem; }
+.cms-mega-link:hover { background: var(--muted); }
+.cms-nav-icon { flex: none; width: 1.25rem; height: 1.25rem; margin-top: 0.125rem; object-fit: contain; }
+.cms-mega-text { display: grid; gap: 0.125rem; min-width: 0; }
+.cms-nav-label { color: var(--foreground); font-weight: 500; }
+.cms-nav-description { font-size: 0.8125rem; line-height: 1.35; color: var(--muted-foreground); }
+.cms-nav-badge { display: inline-block; margin-left: 0.375rem; border-radius: 9999px; background: var(--primary); color: var(--primary-foreground); padding: 0.0625rem 0.5rem; font-size: 0.6875rem; font-weight: 600; line-height: 1.4; vertical-align: middle; }
+.cms-mega-panel { min-width: 0; font-size: 0.875rem; }
+.cms-mega-panel > * > :first-child, .cms-mega-panel .cms-card { margin-top: 0; }
+.cms-nav-tree { display: grid; gap: 0.125rem; }
+.cms-nav-tree ul { margin-left: 1rem; border-left: 1px solid var(--border); padding-left: 0.75rem; }
+.cms-nav-treelink { display: block; padding-block: 0.375rem; }
+.cms-nav-mobile { display: none; width: 100%; }
+.cms-nav-toggle { cursor: pointer; user-select: none; padding-block: 0.5rem; font-size: 0.875rem; font-weight: 500; color: var(--foreground); }
+@media (max-width: 767px) {
+    .cms-nav-dropdowns .cms-nav-list { display: none; }
+    .cms-nav-dropdowns .cms-nav-mobile { display: block; }
+}

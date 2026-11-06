@@ -79,7 +79,7 @@ export function sourceControl(field: EditorField, value: unknown, change: (value
     const current = typeof value === 'string' ? value : '';
     const choices = sources[field.choicesFrom as keyof SourceChoices] ?? [];
     const options = current && !choices.some(choice => choice.value === current) ? [{ value: current, label: `${current} (${__('not found')})` }, ...choices] : choices;
-    const placeholder = field.choicesFrom === 'forms' ? __('Search forms…') : field.choicesFrom === 'collections' ? __('Search collections…') : __('Search terms…');
+    const placeholder = field.choicesFrom === 'forms' ? __('Search forms…') : field.choicesFrom === 'collections' ? __('Search collections…') : field.choicesFrom === 'locations' ? __('Search menu locations…') : __('Search terms…');
     return html`<div class="flex items-start gap-1.5">
         <div class="min-w-0 flex-1">${component(Combobox, { id, options, value: current, placeholder, emptyLabel: __('Nothing matches.'), required: field.required,
             onValueChange: (next: string) => change(next) })}</div>

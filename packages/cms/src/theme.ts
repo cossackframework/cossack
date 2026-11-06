@@ -441,6 +441,24 @@ export interface LanguageSwitcherOptions {
     readonly class?: string;
 }
 
+/** How `helpers.menu()` lays a menu out. */
+export type MenuStyle = 'dropdowns' | 'inline' | 'list';
+
+/** What `helpers.menu()` renders: a menu's items in one of the styles. */
+export interface MenuOptions {
+    /**
+     * `dropdowns` (the default): a header menu, one row with dropdowns under items that have
+     * children, a mega panel under items with a panel or heading children, and a disclosure on
+     * small screens. `inline`: one row of links, for footers, children flattened. `list`: a
+     * column with the whole tree, for sidebars.
+     */
+    readonly style?: MenuStyle | string;
+    /** The `nav` element's accessible name; the location's label by default. */
+    readonly label?: string;
+    /** Class names for the `nav` element. */
+    readonly class?: string;
+}
+
 /** A reference field's target: an entry with its title and URL, or a record of another resource. */
 export interface EntryReference {
     readonly id: string;
@@ -610,6 +628,13 @@ export interface ThemeHelpers {
      * block renders the same, so editors place a switcher in widget areas and content.
      */
     languages(options?: LanguageSwitcherOptions): TemplateResult | null;
+    /**
+     * A menu as a `nav`: the one assigned to a location (`site.menus[location]`), or items given
+     * directly. Dropdowns, mega panels and the small-screen disclosure come from the core
+     * renderer, so a theme writes one line; the `core/navigation` block renders the same, so
+     * editors place a menu in widget areas and content. Null for an empty menu.
+     */
+    menu(source: string | readonly MenuItemView[], options?: MenuOptions): TemplateResult | null;
 }
 
 /** An entry template, from `templates/entry.ts` or `templates/entry-<collection>.ts`. */

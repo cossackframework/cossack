@@ -306,6 +306,11 @@ const core: BlockDeclaration[] = [
         showImage: field.boolean({ default: true, label: 'Show the featured image' }),
         showDate: field.boolean({ default: true, label: 'Show the date' }),
     } },
+    // A menu of the theme's locations, as `helpers.menu()` renders it: dropdowns and mega panels for a header, a row for a footer, a tree for a sidebar.
+    { name: 'core/navigation', inline: true, keywords: ['menu', 'nav', 'links', 'header', 'mega menu'], label: 'Navigation', icon: 'hamburger-menu', category: 'widgets', description: 'The menu assigned to one of the theme\'s locations.', fields: {
+        location: field.string({ required: true, max: 32, pattern: '[a-z][a-z0-9-]{0,31}', default: 'primary', choicesFrom: 'locations', label: 'Menu location', description: 'Appearance → Menus assigns a menu to each location.' }),
+        style: field.enum(['dropdowns', 'inline', 'list'], { default: 'dropdowns', label: 'Style', choices: { dropdowns: 'Header: dropdowns and mega panels', inline: 'One row of links', list: 'A list, for sidebars' } }),
+    }, supports: { color: false, typography: ['align'] } },
     { name: 'core/languages', inline: true, keywords: ['language', 'switcher', 'translations', 'locale', 'flags'], label: 'Language switcher', icon: 'global', category: 'widgets', description: 'The page in each of the site\'s languages, by name, flag or code. Shows nothing on a site with one language.', fields: {
         style: field.enum(['names', 'flags', 'flags-names', 'codes'], { default: 'names', label: 'Show languages as', choices: { names: 'Names', flags: 'Flags', 'flags-names': 'Flags and names', codes: 'Codes' } }),
         layout: field.enum(['inline', 'list'], { default: 'inline', label: 'Layout', choices: { inline: 'In a row', list: 'In a column' } }),

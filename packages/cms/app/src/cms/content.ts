@@ -15,7 +15,7 @@ export function routeResource(cms: CmsHost, route: string): { resource: Resource
     return { resource, collection: owner === 'cms' ? cms.collection(name!) : null };
 }
 
-/** What fields with `choicesFrom` choose from: the site's forms by title, its collections and its terms by taxonomy, 200 of each at most. */
+/** What fields with `choicesFrom` choose from: the site's forms by title, its collections, its terms by taxonomy (200 of each at most) and the themes' menu locations. */
 export async function sourceChoices(cms: CmsHost): Promise<SourceChoices> {
     const terms: SourceChoice[] = [];
     for (const declaration of cms.taxonomies.declarations) {
@@ -27,6 +27,7 @@ export async function sourceChoices(cms: CmsHost): Promise<SourceChoices> {
         forms: forms.map(form => ({ value: String(form.record.slug ?? ''), label: `${recordTitle(form.record, 'title')} (${String(form.record.slug ?? '')})` })).filter(choice => choice.value),
         collections: cms.collections().filter(entry => entry.publishable !== false && !entry.managed).map(entry => ({ value: entry.name, label: entry.label })),
         terms,
+        locations: (await cms.menuLocations()).map(location => ({ value: location.name, label: location.active ? location.label : `${location.label} (${location.theme})` })),
     };
 }
 

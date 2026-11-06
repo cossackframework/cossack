@@ -4,6 +4,8 @@ import { isCmsError, type EntryView, type RecordShape, type RenderedBlock, type 
 import { entryInput } from '../../../../../cms/content';
 import { entryViews, formPreviewBlock, siteView, themeData, themeState, type ThemeState } from '../../../../../cms/site';
 import { entryTemplate, siteContent, siteTheme, themeHelpers } from '../../../../../cms/site-view';
+import { contentMenus } from '../../../../../cms/site';
+import type { MenuItemView } from '@cossackframework/cms';
 
 /**
  * An entry as the site will show it, whatever its status. Its editors see their newest
@@ -12,6 +14,8 @@ import { entryTemplate, siteContent, siteTheme, themeHelpers } from '../../../..
 @Page({ transport: 'http' })
 export default class PreviewPage extends Cossack {
     @State() entry: EntryView | null = null;
+    /** The theme's menus, for Navigation blocks in the entry's content. */
+    @State() menus: Record<string, readonly MenuItemView[]> = {};
     /** A form's preview: the Form block alone, on the site's page layout. */
     @State() form: RenderedBlock | null = null;
     @State() title = '';
@@ -74,6 +78,7 @@ export default class PreviewPage extends Cossack {
                 return;
             }
             this.entry = (await entryViews(cms, collection, [record], { full: true, forms: { query: {}, principal, url: this.c.req.path } }))[0]!;
+            this.menus = await contentMenus(cms, this.theme, this.entry.content, { locale: this.entry.locale });
             this.data = await themeData(cms, this.theme, { kind: 'entry', collection: collection.name, template: this.entry.template }, this.entry, principal, this.entry.locale);
         } catch (error) {
             if (!isCmsError(error)) throw error;
@@ -100,7 +105,7 @@ export default class PreviewPage extends Cossack {
             <p class="text-muted-foreground">${__('The link expired, or you cannot edit this entry.')}</p>
         </section>`;
         const theme = siteTheme(this.theme);
-        const helpers = themeHelpers(theme, { ...this.theme, data: { page: this.data } }, (path, exact) => this.isActive(path, exact));
+        const helpers = themeHelpers(theme, { ...this.theme, data: { page: this.data }, menus: this.menus }, (path, exact) => this.isActive(path, exact));
         return html`${this.banner()}
             ${siteContent(entryTemplate(theme, this.entry.collection, this.entry.template)(this.entry, helpers), this.theme)}`;
     }

@@ -9,6 +9,8 @@ import { authorSeo, entrySeo, homeSeo, listSeo } from '../../../cms/seo';
 import { emptySeo, seoHead, type SeoView } from '../../../cms/seo-head';
 import type { SiteDraft, SiteEditable } from '../../../cms/site-editor';
 import { draftEntry, draftMedia, editableRecord, saveDraft, siteDraft, siteEditable } from '../../../cms/site-editing';
+import { contentMenus } from '../../../cms/site';
+import type { MenuItemView } from '@cossackframework/cms';
 import { fieldErrors } from '../../../cms/content';
 import { entryAsMarkdown, wantsMarkdown } from '../../../cms/machine';
 import { trackCrawler, trackNotFound } from '../../../cms/traffic';
@@ -86,6 +88,8 @@ export default class SitePath extends Cossack {
     @State() theme: ThemeState = { name: null, options: {} };
     /** The page in each of the site's languages, for `helpers.languages()` in the page's templates and blocks. */
     @State() languages: LanguageLink[] = [];
+    /** The theme's menus, for Navigation blocks in the entry's own content; empty when it has none. */
+    @State() menus: Record<string, readonly MenuItemView[]> = {};
     /** What the theme's loader for the page returned. */
     @State() data: ThemeData = {};
     @State() seo: SeoView = emptySeo();
@@ -178,6 +182,7 @@ export default class SitePath extends Cossack {
                 this.view = { ...this.view, kind: 'author', author, taxonomy: null, title: author.name, description: author.bio, ...await authorArchive(cms, resolved.user, page, base, resolved.locale) };
                 this.seo = await authorSeo(cms, this.c, { user: resolved.user, url: base, locale: resolved.locale, links, page });
             }
+            if (this.kind === 'entry' && this.entry) await this.refreshMenus();
             const principal = this.c.get('principal');
             if (shown && principal.kind === 'user') {
                 this.editable = await siteEditable(cms, shown.collection, shown.record.id, principal);
@@ -240,6 +245,7 @@ export default class SitePath extends Cossack {
         if (!found) { this.editable = null; this.draft = null; return; }
         this.draft = await siteDraft(cms, found.collection, found.record, this.c.get('principal'));
         this.entry = await draftEntry(cms, found.collection, found.record, this.draft.values, this.formRequest());
+        await this.refreshMenus();
     }
 
     /** Render the page from the draft's values. Invalid values keep the last rendering and show why. */
@@ -251,6 +257,7 @@ export default class SitePath extends Cossack {
         if (!draft || !found) { this.draft = null; return; }
         try {
             this.entry = await draftEntry(cms, found.collection, found.record, values, this.formRequest());
+            await this.refreshMenus();
             this.draft = { ...draft, values, changed: true, error: '', errors: {} };
         } catch (error) {
             if (!isCmsError(error)) throw error;
@@ -289,6 +296,11 @@ export default class SitePath extends Cossack {
     /** What the entry's forms need in edit mode, whose server methods run under /crpc: the editor and the entry's page. */
     private formRequest() {
         return { query: {}, principal: this.c.get('principal'), url: this.entry?.url ?? '/' };
+    }
+
+    /** The menus the entry's own Navigation blocks show; nothing when it has none. */
+    private async refreshMenus() {
+        this.menus = this.entry ? await contentMenus(this.c.get('cms'), this.theme, this.entry.content, { locale: this.entry.locale, user: this.user ? { name: this.user.name } : null, forms: this.formRequest() }) : {};
     }
 
     /** The media library, for the editor of this entry only. */
@@ -384,7 +396,7 @@ export default class SitePath extends Cossack {
     render() {
         if (this.kind === 'unavailable') return unavailable();
         const theme = siteTheme(this.theme);
-        const helpers = themeHelpers(theme, { ...this.theme, data: { page: this.data }, editing: Boolean(this.draft), languages: this.languages }, (path, exact) => this.isActive(path, exact));
+        const helpers = themeHelpers(theme, { ...this.theme, data: { page: this.data }, editing: Boolean(this.draft), languages: this.languages, menus: this.menus }, (path, exact) => this.isActive(path, exact));
         if (this.kind === 'entry' && this.entry && this.locked) return siteContent(this.passwordForm(theme, helpers), this.theme);
         if (this.kind === 'entry' && this.entry) {
             const page = siteContent(entryTemplate(theme, this.entry.collection, this.entry.template)(this.entry, helpers), this.theme);

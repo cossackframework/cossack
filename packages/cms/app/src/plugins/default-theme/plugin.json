@@ -8,6 +8,18 @@
   },
   "logo": "assets/logo.svg",
   "cover": "assets/cover.svg",
+  "fieldGroups": [
+    {
+      "id": "default-theme-menu",
+      "title": "Menu item details",
+      "description": "Shown with the link in a mega menu panel.",
+      "targets": [{ "kind": "menus" }],
+      "blocks": [
+        { "_id": "icon", "type": "field/media", "data": { "name": "icon", "label": "Icon", "description": "A small image or SVG from the library, shown before the link." } },
+        { "_id": "badge", "type": "field/text", "data": { "name": "badge", "label": "Badge", "max": 20, "description": "A short word after the link, such as New." } }
+      ]
+    }
+  ],
   "theme": {
     "label": "Cossack Default",
     "description": "A clean, readable theme: a header menu with dropdowns, a footer menu, search and an accent color.",

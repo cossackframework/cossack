@@ -6,7 +6,7 @@
 import { component, html, ifDefined, unsafeHTML, type TemplateResult } from '@cossackframework/renderer';
 import { plugins } from '@cossackframework/framework/plugins';
 import { formBlock, inputBlock } from './form-view';
-import { archiveTemplate, assembleSiteTheme, blockStyleAttributes, entryTemplate, placeholderStyle, presetStyle, resolvePresets, siteThemeProblems, type ArchiveView, type EntryView, type LanguageLink, type LanguageSwitcherOptions, type MediaView, type MenuItemView, type RenderedBlock, type SiteTheme, type ThemeData, type ThemeHelpers, type ThemePresets } from '@cossackframework/cms';
+import { archiveTemplate, assembleSiteTheme, blockStyleAttributes, entryTemplate, placeholderStyle, presetStyle, resolvePresets, siteThemeProblems, type ArchiveView, type EntryView, type LanguageLink, type LanguageSwitcherOptions, type MediaView, type MenuItemView, type MenuOptions, type RenderedBlock, type SiteTheme, type ThemeData, type ThemeHelpers, type ThemePresets } from '@cossackframework/cms';
 
 export { archiveTemplate, entryTemplate };
 export type { ArchiveView, EntryView, MediaView, Paging, RenderedBlock, SiteView } from '@cossackframework/cms';
@@ -42,6 +42,8 @@ export interface ThemeRenderState {
     readonly editing?: boolean;
     /** The page in each of the site's languages, for `helpers.languages()`; empty on a site with one language. */
     readonly languages?: readonly LanguageLink[];
+    /** The menus of the theme's locations, for `helpers.menu()` and the Navigation block. */
+    readonly menus?: { readonly [location: string]: readonly MenuItemView[] };
 }
 
 /**
@@ -67,6 +69,90 @@ export function languageSwitcher(languages: readonly LanguageLink[], options: La
             class=${`inline-flex items-center gap-1 rounded px-2 py-1 no-underline ${language.current ? 'bg-muted font-medium text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>${name(language)}</a></li>`)}</ul></nav>`;
 }
 
+/** A media field's view among typed fields, or null for anything else. */
+function mediaOf(value: unknown): MediaView | null {
+    return value && typeof value === 'object' && !Array.isArray(value) && 'contentType' in value && typeof (value as MediaView).url === 'string' ? value as MediaView : null;
+}
+
+/** A location's name as an accessible name, when the theme gives none: `primary` is “Primary”. */
+function locationLabel(location: string): string {
+    const words = location.replaceAll('-', ' ');
+    return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/**
+ * A menu as a `nav`, as `helpers.menu()` and the `core/navigation` block render it. `dropdowns`
+ * is a header menu: one row, a dropdown under an item with children, a mega panel under an item
+ * with a panel or heading children (one column per heading, links with their icon, description
+ * and badge from the field groups attached to menu items, the panel's blocks beside them), and a
+ * disclosure with the whole tree below 768px. `inline` is one row with children flattened, for
+ * footers; `list` the whole tree as nested lists, for sidebars. Panels and dropdowns open on
+ * hover, keyboard focus and while a block inside is selected in Live Edit (`cms/blocks.css`).
+ * Null without items. Themes restyle the `cms-nav-*` and `cms-mega-*` classes or draw their own.
+ */
+export function menuNav(items: readonly MenuItemView[], options: MenuOptions, helpers: Pick<ThemeHelpers, 'block' | 'isActive'>): TemplateResult | null {
+    if (!items.length) return null;
+    const style = options.style === 'inline' || options.style === 'list' ? options.style : 'dropdowns';
+    const label = options.label ?? __('Menu');
+    const className = `cms-nav cms-nav-${style}${options.class ? ` ${options.class}` : ''}`;
+    const badge = (item: MenuItemView) => typeof item.fields.badge === 'string' && item.fields.badge ? html` <span class="cms-nav-badge">${item.fields.badge}</span>` : null;
+    /** A heading is text; a link carries its class names, attributes and whether it is the current page. */
+    const link = (item: MenuItemView, kind: string): TemplateResult => {
+        if (item.url === null) return html`<span class=${`${kind} cms-nav-heading${item.className ? ` ${item.className}` : ''}`} ...=${item.attributes}>${item.label}${badge(item)}</span>`;
+        const active = helpers.isActive(item.url);
+        return html`<a href=${item.url} class=${`${kind}${item.className ? ` ${item.className}` : ''}`} aria-current=${ifDefined(active ? 'page' : undefined)}
+            target=${ifDefined(item.newTab ? '_blank' : undefined)} rel=${ifDefined(item.newTab ? 'noopener noreferrer' : undefined)} ...=${item.attributes}>${item.label}${badge(item)}</a>`;
+    };
+    const tree = (item: MenuItemView): TemplateResult => html`<li class="cms-nav-item">${link(item, 'cms-nav-treelink')}${item.children.length ? html`<ul>${item.children.map(tree)}</ul>` : null}</li>`;
+    if (style === 'list') return html`<nav class=${className} aria-label=${label}><ul class="cms-nav-tree">${items.map(tree)}</ul></nav>`;
+    if (style === 'inline') {
+        // One level flattened; a heading shows the links under it.
+        const flat = items.flatMap(item => item.url === null ? item.children.filter(child => child.url !== null) : [item, ...item.children.filter(child => child.url !== null)]);
+        return html`<nav class=${className} aria-label=${label}><ul class="cms-nav-list">${flat.map(item => html`<li class="cms-nav-item">${link(item, 'cms-nav-link')}</li>`)}</ul></nav>`;
+    }
+    const dropdown = (children: readonly MenuItemView[]): TemplateResult => html`<div class="cms-nav-sub"><ul class="cms-nav-sublist">
+        ${children.map(child => html`<li class="cms-nav-item">${link(child, 'cms-nav-sublink')}${child.children.length ? dropdown(child.children) : null}</li>`)}</ul></div>`;
+    const megaLink = (item: MenuItemView): TemplateResult => {
+        const icon = mediaOf(item.fields.icon);
+        return html`<a href=${item.url ?? '#'} class=${`cms-mega-link${item.className ? ` ${item.className}` : ''}`} aria-current=${ifDefined(item.url && helpers.isActive(item.url) ? 'page' : undefined)}
+            target=${ifDefined(item.newTab ? '_blank' : undefined)} rel=${ifDefined(item.newTab ? 'noopener noreferrer' : undefined)} ...=${item.attributes}>
+            ${icon ? html`<img class="cms-nav-icon" src=${icon.url} alt="" width="20" height="20" loading="lazy" decoding="async">` : null}
+            <span class="cms-mega-text"><span class="cms-nav-label">${item.label}${badge(item)}</span>${item.description ? html`<span class="cms-nav-description">${item.description}</span>` : null}</span></a>`;
+    };
+    /** Columns of a mega panel: the links before any heading in one, then one per heading. */
+    const megaColumns = (children: readonly MenuItemView[]): { heading: MenuItemView | null; links: MenuItemView[] }[] => {
+        const columns: { heading: MenuItemView | null; links: MenuItemView[] }[] = [];
+        for (const child of children) {
+            if (child.url === null) columns.push({ heading: child, links: child.children.filter(link => link.url !== null) });
+            else {
+                let loose = columns.find(column => column.heading === null);
+                if (!loose) columns.unshift(loose = { heading: null, links: [] });
+                loose.links.push(child);
+            }
+        }
+        return columns.filter(column => column.links.length || column.heading);
+    };
+    const mega = (item: MenuItemView): TemplateResult => {
+        const columns = megaColumns(item.children);
+        const panel = item.panel?.length ? item.panel : null;
+        return html`<div class="cms-mega" data-panel=${ifDefined(panel ? '' : undefined)}><div class="cms-mega-box">
+            ${columns.length ? html`<div class="cms-mega-columns">${columns.map(column => html`<div class="cms-mega-column">
+                ${column.heading ? html`<p class="cms-mega-heading">${column.heading.label}</p>` : null}
+                <ul class="cms-mega-links">${column.links.map(entry => html`<li>${megaLink(entry)}</li>`)}</ul></div>`)}</div>` : null}
+            ${panel ? html`<div class="cms-mega-panel cms-content">${helpers.block(panel)}</div>` : null}
+        </div></div>`;
+    };
+    const top = (item: MenuItemView): TemplateResult => {
+        const isMega = Boolean(item.panel?.length) || item.children.some(child => child.url === null);
+        const sub = isMega ? mega(item) : item.children.length ? dropdown(item.children) : null;
+        return html`<li class=${`cms-nav-item${sub ? ' cms-nav-has-sub' : ''}`} data-mega=${ifDefined(isMega ? '' : undefined)}>${link(item, 'cms-nav-link')}${sub}</li>`;
+    };
+    return html`<nav class=${className} aria-label=${label}>
+        <ul class="cms-nav-list">${items.map(top)}</ul>
+        <details class="cms-nav-mobile"><summary class="cms-nav-toggle">${__('Menu')}</summary><ul class="cms-nav-tree">${items.map(tree)}</ul></details>
+    </nav>`;
+}
+
 /** The helpers every template receives. `isActive` is the component's own: an exact path, or a prefix. */
 export function themeHelpers(theme: SiteTheme, state: ThemeRenderState, isActive: (path: string, exact: boolean) => boolean): ThemeHelpers {
     const assetsOf = (name: string | null | undefined) => name ? plugins.find(plugin => plugin.name === name)?.assets ?? {} : {};
@@ -79,6 +165,7 @@ export function themeHelpers(theme: SiteTheme, state: ThemeRenderState, isActive
         asset: path => assets[path] ?? '',
         logo: (site, options = {}) => site.logo ? html`<img src=${site.logo} alt=${site.title} class=${`cms-site-logo object-contain ${options.class ?? 'h-10 w-auto'}`}>` : null,
         languages: options => languageSwitcher(state.languages ?? [], options),
+        menu: (source, options = {}) => menuNav(typeof source === 'string' ? state.menus?.[source] ?? [] : source, { ...(typeof source === 'string' ? { label: locationLabel(source) } : {}), ...options }, helpers),
         isActive: url => {
             const path = url.replace(/[?#].*$/, '').replace(/(.)\/$/, '$1');
             if (!path.startsWith('/')) return false;
@@ -327,6 +414,7 @@ export function coreBlock(block: RenderedBlock, helpers: ThemeHelpers): Template
         case 'core/definition': return html`<dl class="cms-definition my-6 rounded-lg border border-border p-4"><dt class="text-lg font-semibold">${text('term')}</dt><dd class=${`${PROSE} mt-1 [&_p]:my-1`}>${unsafeHTML(block.html.definition ?? '')}</dd></dl>`;
         case 'core/latest-entries': return latestEntries(block);
         case 'core/languages': return helpers.languages({ style: text('style'), layout: text('layout') });
+        case 'core/navigation': return helpers.menu(text('location') || 'primary', { style: text('style') });
         case 'core/meta': return null;
         // Layout blocks: CSS grid from cms/blocks.css, responding to the content root's width.
         case 'core/group': return html`<div class="cms-group" data-align=${text('align') || 'full'}>${children.map(child => helpers.block(child))}</div>`;
@@ -359,10 +447,6 @@ export function unavailable(): TemplateResult {
     </section>`;
 }
 
-function menuList(items: readonly MenuItemView[]): TemplateResult {
-    return html`<ul>${items.map(item => html`<li><a href=${item.url} target=${item.newTab ? '_blank' : ''} rel=${item.newTab ? 'noopener' : ''}>${item.label}</a>${item.children.length ? menuList(item.children) : null}</li>`)}</ul>`;
-}
-
 const list = (view: ArchiveView) => html`<section>
     <h1>${view.title}</h1>
     ${view.entries.length ? html`<ul>${view.entries.map(entry => html`<li><a href=${entry.url ?? '#'}>${entry.title}</a> ${entry.date}</li>`)}</ul>` : html`<p>${__('Nothing here yet.')}</p>`}
@@ -371,8 +455,8 @@ const list = (view: ArchiveView) => html`<section>
 
 /** Plain templates for a site without a usable theme. Activate a theme under Appearance. */
 export const fallbackTheme: SiteTheme = {
-    layout: (site, content) => html`<div class="mx-auto max-w-3xl px-6 py-8 text-foreground">
-        <header><a href=${site.homeUrl}><strong>${site.title}</strong></a> ${site.tagline}<nav aria-label=${__('Site')}>${menuList(site.menus.primary ?? [])}</nav>
+    layout: (site, content, helpers) => html`<div class="mx-auto max-w-3xl px-6 py-8 text-foreground">
+        <header><a href=${site.homeUrl}><strong>${site.title}</strong></a> ${site.tagline}${helpers.menu('primary', { style: 'list', label: __('Site') })}
             ${site.languages.length > 1 ? html`<nav aria-label=${__('Language')}>${site.languages.map(language => html`<a href=${language.url} hreflang=${language.code}>${language.label}</a> `)}</nav>` : null}</header>
         <main>${content}</main>
     </div>`,

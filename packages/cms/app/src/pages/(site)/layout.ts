@@ -102,7 +102,7 @@ export default class SiteLayout extends Cossack {
 
     render() {
         const theme = siteTheme(this.theme);
-        const frame = theme.layout(this.site, html`${this.children}`, themeHelpers(theme, { ...this.theme, data: { layout: this.data }, languages: this.site.languages }, (path, exact) => this.isActive(path, exact)));
+        const frame = theme.layout(this.site, html`${this.children}`, themeHelpers(theme, { ...this.theme, data: { layout: this.data }, languages: this.site.languages, menus: this.site.menus }, (path, exact) => this.isActive(path, exact)));
         return this.taskbar ? html`${frame}${taskbar(this.taskbar, { logout: () => this.doLogout(), error: this.logoutError })}` : frame;
     }
 }

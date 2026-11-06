@@ -97,6 +97,13 @@ describe('menus', () => {
         expect(menuProblems([deep]).join(' ')).toMatch(/5 levels/);
         expect(menuProblems(Array.from({ length: 301 }, (_, index) => item(`i${index}`)))).toEqual([expect.stringMatching(/at most 300/)]);
         expect(normalizeMenu([{ ...item('n'), kind: 'term', taxonomy: 'tags', term: 't1', url: '/ignored', newTab: false }])).toEqual([{ id: 'n', kind: 'term', label: 'N', taxonomy: 'tags', term: 't1', children: [] }]);
+        // Headings group links without a URL; descriptions and panels (a pattern ID) are kept on any kind.
+        expect(menuProblems([{ id: 'h', kind: 'heading', label: 'Shop', children: [item('a')] }])).toEqual([]);
+        expect(menuProblems([{ id: 'h', kind: 'heading', label: ' ', children: [] }])).toEqual([expect.stringMatching(/headings need a label/)]);
+        expect(menuProblems([item('p', [], { panel: 'not an id!' })])).toEqual([expect.stringMatching(/panel is a pattern/)]);
+        expect(menuProblems([item('d', [], { description: 'x'.repeat(301) })])).toEqual([expect.stringMatching(/at most 300 characters/)]);
+        expect(normalizeMenu([{ ...item('m'), description: ' Under the link ', panel: 'pat_1', newTab: true }])[0]).toMatchObject({ description: 'Under the link', panel: 'pat_1', newTab: true });
+        expect(normalizeMenu([{ id: 'h', kind: 'heading', label: 'Shop', newTab: true, description: '', panel: '', children: [] }])).toEqual([{ id: 'h', kind: 'heading', label: 'Shop', children: [] }]);
     });
 
     it('flattens and rebuilds the tree', () => {

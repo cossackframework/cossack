@@ -1,6 +1,7 @@
 /**
- * The default site theme's frame: the header with menus, search and languages, the content,
- * and the footer. A theme is a plugin: `plugin.json` declares its menu locations and options,
+ * The default site theme's frame: the header with the primary menu (`helpers.menu` draws its
+ * dropdowns, mega panels and the small-screen disclosure), search and languages, the content,
+ * and the footer with its widgets and menu. A theme is a plugin: `plugin.json` declares its menu locations and options,
  * and each file in `templates/` default-exports one template (`layout`, `entry`, `archive`,
  * `home`, `search`, `not-found`, and narrower ones such as `entry-posts` or `term-category`).
  * Shared pieces live in `parts/`. Edit this theme, or copy the directory to
@@ -8,7 +9,7 @@
  */
 import { html, type TemplateResult } from '@cossackframework/renderer';
 import { presetStyle, type SiteView, type ThemeHelpers } from '@cossackframework/cms';
-import { desktopMenu, link, mobileMenu, searchBox } from '../parts/menu';
+import { searchBox } from '../parts/menu';
 import { accentStyle, typographyCss, width } from '../parts/options';
 
 /** The language switcher where the Language switcher option puts it, in the style the Show languages as option picks. */
@@ -23,8 +24,6 @@ export default function layout(site: SiteView, content: TemplateResult, helpers:
         <style data-theme-typography>${typographyCss(helpers)}</style>
         <main id="content">${content}</main>
     </div>`;
-    const primary = site.menus.primary ?? [];
-    const footer = site.menus.footer ?? [];
     const frame = `mx-auto w-full px-6 ${helpers.options.width === 'wide' ? 'max-w-6xl' : 'max-w-5xl'}`;
     const footerText = typeof helpers.options.footerText === 'string' && helpers.options.footerText.trim() ? helpers.options.footerText : `© ${new Date().getFullYear()} ${site.title}`;
     // The presets' variables sit on the root, so widget areas outside the content root resolve them too.
@@ -39,7 +38,7 @@ export default function layout(site: SiteView, content: TemplateResult, helpers:
                     ${site.tagline ? html`<span class="block text-sm text-muted-foreground">${site.tagline}</span>` : null}
                 </a>
                 <div class="flex flex-1 flex-wrap items-center justify-end gap-x-6 gap-y-2">
-                    ${primary.length ? html`<nav aria-label=${__('Primary')} class="contents">${desktopMenu(primary, helpers)}${mobileMenu(primary, helpers)}</nav>` : null}
+                    ${helpers.menu('primary', { label: __('Primary'), class: 'contents' })}
                     ${helpers.options.showSearch === false ? null : searchBox(site.searchUrl, 'hidden sm:block')}
                     ${languages(helpers, 'header')}
                 </div>
@@ -50,8 +49,7 @@ export default function layout(site: SiteView, content: TemplateResult, helpers:
             ${site.areas.footer?.length ? html`<div class=${`${frame} grid gap-8 border-b border-border py-8 text-sm sm:grid-cols-2 lg:grid-cols-3`}>
                 ${site.areas.footer.map(block => html`<div class="cms-content min-w-0">${helpers.block(block)}</div>`)}</div>` : null}
             <div class=${`${frame} flex flex-col gap-4 py-8 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between`}>
-                ${footer.length ? html`<nav aria-label=${__('Footer')}><ul class="flex flex-wrap gap-x-5 gap-y-2">
-                    ${footer.flatMap(item => [item, ...item.children]).map(item => html`<li>${link(item, 'no-underline', helpers)}</li>`)}</ul></nav>` : null}
+                ${helpers.menu('footer', { style: 'inline', label: __('Footer') })}
                 ${languages(helpers, 'footer')}
                 <p class="flex flex-wrap items-center gap-x-3">
                     <span>${footerText}</span>

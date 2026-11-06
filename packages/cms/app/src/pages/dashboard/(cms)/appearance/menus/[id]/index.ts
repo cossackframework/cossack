@@ -46,6 +46,7 @@ async function describe(cms: CmsHost, rows: readonly MenuRow[], principal: Princ
     const terms = await cms.taxonomies.getMany(rows.filter(row => row.kind === 'term' && row.term).map(row => row.term!));
     for (const row of rows) {
         if (row.kind === 'link') { targets[row.id] = { title: row.url ?? '', type: __('Custom link'), icon: 'link-round', draft: false, missing: false, edit: null }; continue; }
+        if (row.kind === 'heading') { targets[row.id] = { title: '', type: __('Heading'), icon: 'text-field', draft: false, missing: false, edit: null }; continue; }
         if (row.kind === 'archive') {
             const collection = cms.collections().find(entry => entry.name === row.collection);
             targets[row.id] = { title: collection?.label ?? row.collection ?? '', type: __('Archive'), icon: 'folder-with-files', draft: false, missing: !collection?.path, edit: null };
@@ -62,6 +63,14 @@ async function describe(cms: CmsHost, rows: readonly MenuRow[], principal: Princ
         targets[row.id] = { title: term?.name ?? __('Deleted term'), type: taxonomy?.singular ?? row.taxonomy ?? '', icon: term?.icon || (taxonomy?.hierarchical ? 'folder' : 'tag'), draft: false, missing: !term, edit: term ? `/dashboard/terms/${term.taxonomy}/${term.id}` : null };
     }
     return targets;
+}
+
+/** Synced patterns an item can show as its mega menu panel, by title. */
+async function syncedPatterns(cms: CmsHost, principal: Principal): Promise<{ id: string; title: string }[]> {
+    try {
+        const page = await cms.resource('cms/patterns').list({ where: { synced: true }, order: { field: 'title', direction: 'asc' }, limit: 200 }, { principal });
+        return page.records.map(record => ({ id: record.id, title: recordTitle(record, 'title') }));
+    } catch (error) { if (isCmsError(error)) return []; throw error; }
 }
 
 /** Collections and taxonomies with public URLs, each with recent entries or its terms. */
@@ -86,9 +95,12 @@ async function sources(cms: CmsHost, principal: Principal): Promise<Source[]> {
 }
 
 /**
- * The menu editor, laid out like WordPress: item sources on the left, the menu's structure on
- * the right. Drag an item by its handle (mouse, touch or pen); dragging sideways nests it. The
- * arrow keys on a handle and the buttons in each item move it too.
+ * The menu editor, laid out like WordPress: item sources on the left (entries, terms, custom
+ * links and headings), the menu's structure on the right. Drag an item by its handle (mouse,
+ * touch or pen); dragging sideways nests it. The arrow keys on a handle and the buttons in each
+ * item move it too. An item's General tab takes its label, URL, description and mega menu
+ * panel; Fields holds the field groups attached to menu items; Advanced its class names and
+ * attributes.
  */
 @Page({ transport: 'http', middlewares: [requireAny(PERMISSIONS.manageAppearance)] })
 export default class MenuEditor extends Cossack {
@@ -98,6 +110,8 @@ export default class MenuEditor extends Cossack {
     @State() rows: MenuRow[] = [];
     @State() targets: Record<string, Target> = {};
     @State() sources: Source[] = [];
+    /** Synced patterns, for an item's Mega menu panel select. */
+    @State() patterns: { id: string; title: string }[] = [];
     @State() locations: LocationChoice[] = [];
     /** Field groups attached to menu items; each row's `meta` holds their control values. */
     @State() fieldGroups: GroupsView = { groups: [], fields: [], options: [] };
@@ -108,6 +122,8 @@ export default class MenuEditor extends Cossack {
     @ClientState() selected: Record<string, string[]> = {};
     @ClientState() link = { url: '', label: '' };
     @ClientState() linkError = '';
+    @ClientState() heading = '';
+    @ClientState() headingError = '';
     @ClientState() open: string[] = [];
     /** The tab shown under each open item. */
     @ClientState() tabs: Record<string, ItemTab> = {};
@@ -139,6 +155,7 @@ export default class MenuEditor extends Cossack {
         this.rows = this.withMetaValues(flattenMenu(menu.items));
         this.targets = await describe(cms, this.rows, principal);
         this.sources = await sources(cms, principal);
+        this.patterns = await syncedPatterns(cms, principal);
         const assigned = await cms.menus.locations();
         this.locations = (await cms.menuLocations()).map(location => ({ ...location, checked: assigned.get(location.name) === menu.id }));
         this.message = this.c.req.query('saved') === '1' ? __('Menu saved.') : '';
@@ -190,6 +207,20 @@ export default class MenuEditor extends Cossack {
         this.link = { url: '', label: '' };
         this.linkError = '';
         this.changed(__('Link added to the menu.'));
+    }
+
+    /** A heading: a label without a URL that names a column of links in a mega menu. */
+    @Client()
+    addHeading(event: Event) {
+        event.preventDefault();
+        const label = this.heading.trim();
+        if (!label) { this.headingError = __('Enter the heading text.'); return; }
+        const id = menuItemId();
+        this.targets = { ...this.targets, [id]: { title: '', type: __('Heading'), icon: 'text-field', draft: false, missing: false, edit: null } };
+        this.rows = [...this.rows, { id, kind: 'heading', label, depth: 0 }];
+        this.heading = '';
+        this.headingError = '';
+        this.changed(__('Heading added to the menu.'));
     }
 
     @Server()
@@ -446,6 +477,36 @@ export default class MenuEditor extends Cossack {
         </details>`;
     }
 
+    private headingBox(): TemplateResult {
+        return html`<details class="rounded-lg border border-border bg-card">
+            <summary class="flex cursor-pointer select-none items-center gap-2 px-4 py-2.5 text-sm font-semibold text-foreground"><span class="inline-flex text-muted-foreground [&_svg]:size-4">${component(Icon, { entry: icon('text-field'), size: 16 })}</span>${__('Headings')}</summary>
+            <form class="space-y-3 border-t border-border p-4" @submit=${(event: Event) => this.addHeading(event)}>
+                <div class="space-y-1"><label for="heading-text" class="block text-xs font-medium text-foreground">${__('Heading text')}</label>
+                    <input id="heading-text" type="text" class=${CONTROL} maxlength=${MENU_LIMITS.label} .value=${this.heading} @input=${(event: Event) => { this.heading = (event.target as HTMLInputElement).value; }}></div>
+                <p class="text-xs text-muted-foreground">${__('Not a link: it names a column of links in a mega menu. Nest the links under it.')}</p>
+                ${this.headingError ? html`<p role="alert" class="text-xs text-destructive">${this.headingError}</p>` : null}
+                ${component(Button, { type: 'submit', size: 'sm', variant: 'outline' }, __('Add to menu'))}
+            </form>
+        </details>`;
+    }
+
+    /** The General tab's panel select: a synced pattern shown beside the item's links, which makes the item a mega menu. */
+    private panelControl(row: MenuRow, index: number): TemplateResult {
+        const missing = Boolean(row.panel) && !this.patterns.some(pattern => pattern.id === row.panel);
+        return html`<div class="space-y-1"><label for=${`panel-${row.id}`} class="block text-xs font-medium text-foreground">${__('Mega menu panel')}</label>
+            <div class="flex flex-wrap items-center gap-3">
+                <select id=${`panel-${row.id}`} class=${`${CONTROL} max-w-xs`} @change=${(event: Event) => this.setRow(index, { panel: (event.target as HTMLSelectElement).value || undefined })}>
+                    <option value="" ?selected=${!row.panel}>${__('None')}</option>
+                    ${this.patterns.map(pattern => html`<option value=${pattern.id} ?selected=${pattern.id === row.panel}>${pattern.title}</option>`)}
+                    ${missing ? html`<option value=${row.panel ?? ''} selected>${__('Missing pattern')}</option>` : null}
+                </select>
+                ${row.panel && !missing ? html`<a href=${`/dashboard/content/patterns/${row.panel}`} class="text-xs text-primary hover:underline" target="_blank" rel="noopener">${__('Edit pattern')}</a>`
+                    : html`<a href="/dashboard/content/patterns/new" class="text-xs text-primary hover:underline" target="_blank" rel="noopener">${__('New pattern')}</a>`}
+            </div>
+            <p class="text-xs text-muted-foreground">${__('A synced pattern shown beside this item’s links: a card, a call to action, latest posts. An item with a panel or a heading under it opens as a mega menu.')}</p>
+        </div>`;
+    }
+
     /** The Advanced tab: class names for the theme's stylesheet and extra attributes on the link. */
     /** Rows with their meta as control values, for the Fields tab. */
     private withMetaValues(rows: readonly MenuRow[]): MenuRow[] {
@@ -529,9 +590,13 @@ export default class MenuEditor extends Cossack {
                     ${row.kind === 'link' ? html`<div class="space-y-1"><label for=${`url-${row.id}`} class="block text-xs font-medium text-foreground">${__('URL')}</label>
                         <input id=${`url-${row.id}`} class=${CONTROL} .value=${row.url ?? ''} @input=${(event: Event) => this.setRow(index, { url: (event.target as HTMLInputElement).value.trim() })}></div>` : null}
                 </div>
-                <label class="flex items-center gap-2 text-sm text-foreground cursor-pointer">
-                    ${component(Checkbox, { checked: row.newTab === true, '@change': (event: Event) => this.setRow(index, { newTab: (event.target as HTMLInputElement).checked })})} ${__('Open link in a new tab')}</label>
-                ${row.kind !== 'link' && target ? html`<p class="text-xs text-muted-foreground">${__('Original')}: ${target.edit ? html`<a href=${target.edit} class="text-primary hover:underline">${target.title}</a>` : target.title}</p>` : null}
+                <div class="space-y-1"><label for=${`description-${row.id}`} class="block text-xs font-medium text-foreground">${__('Description')}</label>
+                    <input id=${`description-${row.id}`} class=${CONTROL} maxlength=${MENU_LIMITS.description} .value=${row.description ?? ''} placeholder=${__('Shown under the link in a mega menu')}
+                        @input=${(event: Event) => this.setRow(index, { description: (event.target as HTMLInputElement).value })}></div>
+                ${row.kind === 'heading' ? null : html`<label class="flex items-center gap-2 text-sm text-foreground cursor-pointer">
+                    ${component(Checkbox, { checked: row.newTab === true, '@change': (event: Event) => this.setRow(index, { newTab: (event.target as HTMLInputElement).checked })})} ${__('Open link in a new tab')}</label>`}
+                ${row.kind !== 'link' && row.kind !== 'heading' && target ? html`<p class="text-xs text-muted-foreground">${__('Original')}: ${target.edit ? html`<a href=${target.edit} class="text-primary hover:underline">${target.title}</a>` : target.title}</p>` : null}
+                ${this.panelControl(row, index)}
                         </div>` },
                         ...(this.fieldGroups.groups.length ? [{ value: 'fields', label: __('Fields'), content: this.fieldsTab(row, index) }] : []),
                         { value: 'advanced', label: __('Advanced'), content: this.advanced(row, index) },
@@ -559,6 +624,7 @@ export default class MenuEditor extends Cossack {
                     <h2 class="text-sm font-semibold text-foreground">${__('Add menu items')}</h2>
                     ${this.sources.map(source => this.sourceBox(source))}
                     ${this.linkBox()}
+                    ${this.headingBox()}
                 </aside>
                 <form class="min-w-0" @submit=${(event: Event) => this.submit(event)}>
                     ${component(Card, {}, component(CardBody, { class: 'space-y-5' }, html`

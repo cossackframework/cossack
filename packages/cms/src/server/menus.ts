@@ -2,11 +2,12 @@
  * Menus: one `cms_menus` row per menu, its items as a JSON tree with a revision. Saving is
  * one conditional UPDATE on the revision, so a stale editor writes nothing. Locations map
  * to menus in `cms_menu_locations`. Resolved menus are cached per isolate and dropped on
- * every write made here.
+ * every write made here. Items come back as `ResolvedMenuItem`: targets resolved, meta raw, the
+ * panel a pattern ID; the site renders them into `MenuItemView`.
  */
 import { ClientError, type RomeDB, type Statement } from '@cossackframework/romedb';
 import { CmsError } from '../errors';
-import { MENU_LIMITS, MENU_LOCATION, menuProblems, menuSize, normalizeMenu, type MenuItem, type MenuItemView, type MenuShape } from '../menus';
+import { MENU_LIMITS, MENU_LOCATION, menuProblems, menuSize, normalizeMenu, type MenuItem, type MenuShape, type ResolvedMenuItem } from '../menus';
 import { hasPermission, PERMISSIONS, principalId, type Principal } from '../permissions';
 import type { MenuWriteInput } from '../hooks';
 import { uuidv7 } from '@cossackframework/core';
@@ -21,7 +22,7 @@ export interface MenuSummary {
 
 export interface CmsMenusOptions {
     /** Items with entries and terms resolved for visitors; items whose target is gone are left out. */
-    readonly resolve: (items: readonly MenuItem[], locale?: string) => Promise<MenuItemView[]>;
+    readonly resolve: (items: readonly MenuItem[], locale?: string) => Promise<ResolvedMenuItem[]>;
     /** The `cms.menu.before-save` filter: plugins adjust or refuse the items before they are written. */
     readonly beforeSave?: (items: readonly MenuItem[], input: MenuWriteInput) => Promise<readonly MenuItem[]>;
     /** Each item's meta checked against the field groups attached to menu items. */
@@ -41,7 +42,7 @@ export class CmsMenus {
     readonly #checkMeta: CmsMenusOptions['checkMeta'];
     readonly #now: () => number;
     readonly #ttl: number;
-    #cache = new Map<string, { at: number; value: Promise<MenuItemView[] | null> }>();
+    #cache = new Map<string, { at: number; value: Promise<ResolvedMenuItem[] | null> }>();
 
     constructor(db: RomeDB, options: CmsMenusOptions) {
         this.#db = db;
@@ -162,7 +163,7 @@ export class CmsMenus {
      * The resolved menu at a location, or null when none is assigned. With a language, entry
      * items link to their translations in it. Cached.
      */
-    forLocation(location: string, locale?: string): Promise<MenuItemView[] | null> {
+    forLocation(location: string, locale?: string): Promise<ResolvedMenuItem[] | null> {
         const now = this.#now();
         const key = `${location}\n${locale ?? ''}`;
         const cached = this.#cache.get(key);
@@ -174,14 +175,14 @@ export class CmsMenus {
     }
 
     /** Resolve items for visitors, for previews. */
-    resolve(items: readonly MenuItem[]): Promise<MenuItemView[]> {
+    resolve(items: readonly MenuItem[]): Promise<ResolvedMenuItem[]> {
         return this.#resolve(items);
     }
 
     /** Forget resolved menus, for example after content they link to changed. */
     refresh(): void { this.#cache.clear(); }
 
-    async #read(location: string, locale?: string): Promise<MenuItemView[] | null> {
+    async #read(location: string, locale?: string): Promise<ResolvedMenuItem[] | null> {
         let row;
         try {
             const result = await this.#db.read([{ rql: `SELECT m.items FROM cms_menu_locations l JOIN cms_menus m ON m.id = l.menu_id WHERE l.location = $location`, params: { $location: location } }]);
