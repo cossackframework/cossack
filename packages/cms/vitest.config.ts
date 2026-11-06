@@ -1,7 +1,10 @@
 /// <reference types="vitest" />
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
+    // The DOM environment transforms the linked framework package, whose plugin registry imports the build's virtual module.
+    resolve: { alias: { 'virtual:cossack-plugins': fileURLToPath(new URL('./tests/stubs/cossack-plugins.ts', import.meta.url)) } },
     test: {
         include: ['tests/**/*.test.ts', 'app/tests/**/*.test.ts'],
         environment: 'node',

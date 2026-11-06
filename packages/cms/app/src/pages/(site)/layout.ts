@@ -5,7 +5,7 @@ import { areaViews, bindingScopes, languageLinks, resolvedOptions, siteMenus, si
 import { blockOptions } from '../../cms/content';
 import { areaDraftBlocks, patternDraftBlocks } from '../../cms/site-editing';
 import { siteSession, type AreaDraft, type PatternDraft, type SiteEditingContext } from '../../cms/site-session';
-import { siteTheme, tagDocument, themeHelpers } from '../../cms/site-view';
+import { closeMenusOnFollow, siteTheme, tagDocument, themeHelpers } from '../../cms/site-view';
 import { siteTaskbar } from '../../cms/site-taskbar';
 import { taskbar, type TaskbarView } from '../../cms/taskbar';
 import { logout } from '../../auth';
@@ -36,12 +36,15 @@ export default class SiteLayout extends Cossack {
     /** The browser left edit mode: the markers go, the saved areas show. */
     @ClientState() exited = false;
     private unsubscribe: (() => void) | undefined;
+    /** Stops closing the theme's menus after a followed link. */
+    private menusWatched: (() => void) | undefined;
     private sessionSeen = false;
     private previewTimer: ReturnType<typeof setTimeout> | undefined;
     private pendingPreview: { areas: AreaDraft[]; patterns: PatternDraft[] } | null | undefined;
     private previewing = false;
 
     onMount() {
+        this.menusWatched = closeMenusOnFollow();
         this.unsubscribe = siteSession.subscribe(session => {
             if (session) { this.sessionSeen = true; this.exited = false; this.queuePreview(session); }
             else if (this.sessionSeen) { this.sessionSeen = false; this.exited = true; this.queuePreview(null); }
@@ -50,6 +53,7 @@ export default class SiteLayout extends Cossack {
 
     onCleanup() {
         this.unsubscribe?.();
+        this.menusWatched?.();
         if (this.previewTimer) clearTimeout(this.previewTimer);
     }
 

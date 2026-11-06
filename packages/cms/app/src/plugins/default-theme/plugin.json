@@ -46,6 +46,7 @@
     "description": "A clean, readable theme: a header and footer built from blocks, a menu with dropdowns and mega panels, search and an accent color.",
     "locations": {
       "primary": "Primary menu",
+      "mobile": "Mobile menu",
       "footer": "Footer menu"
     },
     "areas": {
@@ -82,7 +83,8 @@
                     "type": "core/navigation",
                     "data": {
                       "location": "primary",
-                      "style": "dropdowns"
+                      "style": "dropdowns",
+                  "mobile": "mobile"
                     }
                   },
                   {

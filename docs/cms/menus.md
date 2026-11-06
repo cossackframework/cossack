@@ -80,7 +80,7 @@ three styles; it returns null for an empty menu.
 
 | Style | Renders |
 | --- | --- |
-| `dropdowns` (default) | A header menu: one row, a dropdown under an item with children, a mega panel under an item with a panel or heading children, and a disclosure with the whole tree below 768px. Dropdowns open on hover and keyboard focus. |
+| `dropdowns` (default) | A header menu: one row, a dropdown under an item with children, a mega panel under an item with a panel or heading children, and below the `collapse` width a hamburger button opening a drawer (see [Small screens](#small-screens)). Dropdowns open on hover and keyboard focus. |
 | `inline` | One row of links with children flattened, for footers. |
 | `list` | The whole tree as nested lists, for sidebars. |
 
@@ -102,19 +102,45 @@ attributes land on its link.
 
 All of them are CSS: opening is immediate, closing waits 80 ms so a pointer moving diagonally
 toward a panel does not make it flicker, and `prefers-reduced-motion` turns every preset into
-a switch. A theme tunes them through the `--cms-nav-duration`, `--cms-nav-ease`,
-`--cms-nav-offset` and `--cms-nav-close-delay` variables, on `.cms-nav` for the whole site or
-on one `nav` through `class`, and adds its own preset by passing another name, say `swing`,
-and styling `[data-motion="swing"] .cms-nav-sub, [data-motion="swing"] .cms-mega` (closed) in
-its stylesheet; the open state is `transform: none`, `opacity: 1`.
+a switch. Following a link closes the menu it is in, even though client-side navigation keeps
+the header on the page: the site layout drops the link's focus, closes the drawer and keeps
+the panel shut until the pointer leaves the item or focus returns (a modifier click or a
+new-tab link is left alone). A preset is the closed transform in `--cms-nav-closed`; a theme tunes them all
+through the `--cms-nav-duration`, `--cms-nav-ease`, `--cms-nav-offset` and
+`--cms-nav-close-delay` variables, on `.cms-nav` for the whole site or on one `nav` through
+`class`, and adds its own by passing another name, say `swing`, and setting
+`.cms-nav[data-motion="swing"] { --cms-nav-closed: rotateX(-20deg) }` in its stylesheet. The
+drawer on small screens enters the same way.
+
+## Small screens
+
+Below the `collapse` width (`md`, 768px, by default; `lg` folds at 1024px for tablets too) the
+row becomes a hamburger button, and the button opens a drawer under the header with the menu
+as a tree: a link with children folds, with its link still a link; a heading labels the group
+under it; panels are not shown. The drawer is positioned against the header, so give the
+header `position: relative` as the default theme does, and the page does not move.
+
+A phone rarely wants the desktop tree, so the drawer can show another menu: the theme
+declares a second location, `mobile` in the default theme, administrators assign a shorter
+menu to it under Appearance → Menus, and the template or block names it:
+
+```ts
+${helpers.menu('primary', { mobile: 'mobile', collapse: 'lg' })}
+```
+
+`mobile` takes a location name or items. While the location has no menu, the drawer shows
+the primary menu's own tree, so a site that never assigns one still works. Headless clients
+read the two locations separately, `GET /api/cms/menus/primary` and `/mobile`.
 
 ## The Navigation block
 
 The **Navigation** block renders a location through the same helper, so editors place a menu
 in widget areas (a footer, a sidebar) and in content. Its fields are the location, chosen from
-the themes' declared locations, the style, and the animation (the motions above; *Rise* by
-default). Under Appearance → Widgets a navigation block in a footer area with the `inline`
-style is the usual footer menu.
+the themes' declared locations, the style, the animation (the motions above; *Rise* by
+default), and for the header style the small-screen location (*Small screens*; empty shows
+the same menu) and the width the row collapses below. The default theme's header block names
+the `mobile` location. Under Appearance → Widgets a navigation block in a footer area with the
+`inline` style is the usual footer menu.
 
 ## API
 

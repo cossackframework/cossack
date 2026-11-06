@@ -554,6 +554,18 @@ describe.skipIf(!liveRomeDBTests())('generated CMS application', () => {
       await page.goto(server.origin + '/posts');
       const primary = page.locator('nav[aria-label="Primary"]');
       await browserExpect(primary.locator('li li a', { hasText: 'Team' }).first()).toHaveAttribute('href', '/team');
+      // Following a link in a dropdown closes it, although the client navigation keeps the header: the link loses focus and the pointer no longer opens it until it leaves.
+      const aboutItem = primary.locator('.cms-nav-list > .cms-nav-item', { hasText: 'About' });
+      const dropdown = aboutItem.locator('.cms-nav-sub');
+      await aboutItem.locator('> a').hover();
+      await browserExpect(dropdown).toBeVisible();
+      await dropdown.locator('a', { hasText: 'Team' }).click();
+      await page.waitForURL(server.origin + '/team');
+      await browserExpect(dropdown).toBeHidden();
+      expect(await page.evaluate(() => !!document.activeElement?.closest('nav'))).toBe(false);
+      await page.mouse.move(10, 400);
+      await aboutItem.locator('> a').hover();
+      await browserExpect(dropdown).toBeVisible();
 
       // A static front page is edited in place at /: the taskbar's Live Edit opens /?edit, Exit leaves it; Edit opens the dashboard's editor.
       expect((await web.action(SETTINGS, 'saveAll', [{ document: { reading: { showOnFront: 'page', pageOnFront: pageIds.About } }, languages: null, permalinks: null, groups: {} }]))._cossack_return.error).toBe('');

@@ -491,6 +491,15 @@ export interface MenuOptions {
      * `--cms-nav-duration`, `--cms-nav-ease` and `--cms-nav-offset` variables tune every preset.
      */
     readonly motion?: MenuMotion | string;
+    /**
+     * The menu shown in the hamburger drawer on small screens, as another location's name or
+     * as items, so phones get a shorter tree than the desktop row. Left out, or a location
+     * without a menu, the drawer shows this menu's own tree (headings become group labels;
+     * panels are not shown).
+     */
+    readonly mobile?: string | readonly MenuItemView[];
+    /** Below which width the row folds into the hamburger menu: `md` (768px, the default) or `lg` (1024px). */
+    readonly collapse?: 'md' | 'lg' | string;
     /** The `nav` element's accessible name; the location's label by default. */
     readonly label?: string;
     /** Class names for the `nav` element. */

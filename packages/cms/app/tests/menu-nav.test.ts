@@ -20,12 +20,32 @@ describe('helpers.menu', () => {
 
     it('draws a header menu with dropdowns and the small-screen disclosure', async () => {
         const markup = await render([item('home', 'Home', '/'), item('about', 'About', '/about', { children: [item('team', 'Team', '/about/team', { newTab: true, className: 'featured', attributes: { 'data-track': 'team' } })] })], { label: 'Primary' });
-        expect(markup).toContain('<nav class="cms-nav cms-nav-dropdowns" aria-label="Primary" data-motion="rise">');
+        expect(markup).toContain('<nav class="cms-nav cms-nav-dropdowns" aria-label="Primary" data-motion="rise" data-collapse="md">');
         expect(markup).toContain('cms-nav-has-sub');
         expect(markup).toContain('<div class="cms-nav-sub">');
         expect(markup).toMatch(/<a href="\/about\/team" class="cms-nav-sublink featured"[^>]*target="_blank"[^>]*data-track="team"/);
         expect(markup).toContain('<details class="cms-nav-mobile">');
         expect(markup).not.toContain('cms-mega');
+    });
+
+    it('opens a hamburger drawer on small screens: the mobile menu when given, else this one, groups folding', async () => {
+        const products = item('products', 'Products', '/products', { children: [item('teams', 'By team', null, { children: [item('sales', 'Sales', '/sales')] }), item('docs', 'Docs', '/docs')] });
+        const own = await render([products, item('about', 'About', '/about')]);
+        // The button is an icon with a hidden name; a link with children folds and stays a link; a heading labels its group.
+        expect(own).toContain('<summary class="cms-nav-toggle"><span class="cms-nav-burger" aria-hidden="true"></span><span class="cms-nav-toggle-label">Menu</span></summary>');
+        expect(own).toContain('<div class="cms-nav-drawer"><ul class="cms-nav-tree">');
+        expect(own).toMatch(/<details class="cms-nav-fold"><summary class="cms-nav-fold-row"><a href="\/products" class="cms-nav-treelink">Products<\/a><span class="cms-nav-caret" aria-hidden="true"><\/span><\/summary><ul>/);
+        expect(own).toContain('<span class="cms-nav-group-label">By team</span><ul><li><a href="/sales" class="cms-nav-treelink" aria-current="page">Sales</a></li></ul>');
+        expect(own).toContain('<li><a href="/about" class="cms-nav-treelink">About</a></li>');
+        const mobile = [item('m-home', 'Home', '/'), item('m-contact', 'Contact', '/contact')];
+        const separate = await render([products], { mobile, collapse: 'lg' });
+        const drawer = separate.slice(separate.indexOf('cms-nav-drawer'));
+        expect(drawer).toContain('href="/contact"');
+        expect(drawer).not.toContain('Products');
+        expect(separate).toContain('data-collapse="lg"');
+        // No mobile items, or a location name helpers.menu did not resolve: the menu's own tree.
+        expect((await render([products], { mobile: [] })).slice(0, 2000)).toContain('cms-nav-fold');
+        expect(await render([products], { mobile: 'mobile' })).toContain('cms-nav-fold');
     });
 
     it('opens a mega panel for an item with a panel or heading children', async () => {
@@ -49,12 +69,12 @@ describe('helpers.menu', () => {
         expect(markup).toContain('<span class="cms-nav-description">Close deals faster</span>');
         expect(markup).toContain('<div class="cms-mega-panel cms-content"><div class="panel-card">Try it free</div></div>');
         // The disclosure shows the heading as text, not a link.
-        expect(markup).toContain('<span class="cms-nav-treelink cms-nav-heading">By team</span>');
+        expect(markup).toContain('<span class="cms-nav-group-label">By team</span>');
     });
 
     it('names the opening motion on the nav, rise unless chosen, for the stylesheet and themes', async () => {
         const items = [item('about', 'About', '/about', { children: [item('team', 'Team', '/about/team')] })];
-        expect(await render(items)).toContain('<nav class="cms-nav cms-nav-dropdowns" aria-label="Menu" data-motion="rise">');
+        expect(await render(items)).toContain('<nav class="cms-nav cms-nav-dropdowns" aria-label="Menu" data-motion="rise" data-collapse="md">');
         expect(await render(items, { motion: 'scale' })).toContain('data-motion="scale"');
         expect(await render(items, { motion: '' })).toContain('data-motion="rise"');
         // A theme's own preset passes through; the row and list styles have nothing to open.

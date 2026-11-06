@@ -26,7 +26,7 @@ export default function layout(site: SiteView, content: TemplateResult, helpers:
     return html`<div class="flex min-h-screen flex-col bg-background text-foreground" style=${`${accentStyle(helpers)} ${presetStyle(helpers.presets)}`} data-theme="default-theme">
         <style data-theme-typography>${typographyCss(helpers)}</style>
         <a href="#content" class="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-background focus:px-3 focus:py-2 focus:shadow">${__('Skip to content')}</a>
-        <header class="border-b border-border">
+        <header class="relative border-b border-border">
             <div class=${`${frame} cms-content py-5`}>${helpers.block(site.areas.header ?? [])}</div>
         </header>
         <main id="content" class=${`mx-auto w-full flex-1 px-6 py-10 ${width(helpers)}`}>${content}</main>

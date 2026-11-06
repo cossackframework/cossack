@@ -47,7 +47,7 @@ src/plugins/my-theme/
   "theme": {
     "label": "My Theme",
     "description": "A clean, readable theme.",
-    "locations": { "primary": "Primary menu", "footer": "Footer menu" },
+    "locations": { "primary": "Primary menu", "mobile": "Mobile menu", "footer": "Footer menu" },
     "areas": {
       "header": { "label": "Header", "blocks": [
         { "_id": "row", "type": "core/group", "data": { "direction": "row", "justify": "between" }, "children": [
@@ -70,7 +70,7 @@ src/plugins/my-theme/
 | Field | Meaning |
 | --- | --- |
 | `label`, `description` | Shown under Appearance → Themes; 60 and 300 characters at most. |
-| `locations` | Up to 8 menu locations, `name: label`. Administrators assign menus to them; templates render one with `helpers.menu(location)` or read `site.menus[location]`. See [Menus](/docs/cms/menus.md). |
+| `locations` | Up to 8 menu locations, `name: label`. Administrators assign menus to them; templates render one with `helpers.menu(location)` or read `site.menus[location]`. A `mobile` location gives phones a shorter menu in the header's drawer. See [Menus](/docs/cms/menus.md). |
 | `areas` | Up to 8 widget areas, `name: label`, or `name: { label, blocks }` with the **default blocks** the site shows until it saves its own. Their blocks are edited under Appearance → Widgets and in place with Live Edit, and arrive rendered as `site.areas[area]`. See [Areas with defaults](#areas-with-defaults). |
 | `options` | Up to 16 settings shown under Appearance → Customize, of kind `string`, `text`, `enum` (`values`, `choices` for labels), `boolean`, `integer` or `number`, with `default`, `label`, `description` and the usual limits. Stored as settings `<plugin>.<option>`; templates read them as `helpers.options.<option>`, defaults applied. |
 | `presets` | The palette, font sizes and spacing steps blocks pick from: `colors` (up to 24), `fontSizes` (8) and `spacing` (8), each `{ slug, name, value }`. Missing kinds get defaults; the site adjusts colors under Customize. |
@@ -165,7 +165,7 @@ Every template receives `helpers`:
 | `block(blocks)` | Renders a block, or a list of blocks, through the theme's own renderer, a plugin's component or the core one. |
 | `content(parts)` | For block renderers: renders a block's rich text field (`block.content.<field>`), HTML runs and the blocks embedded in them. |
 | `isActive(url)` | Whether a URL is the current page or one of its ancestors, for menu styling. |
-| `menu(source, { style, motion, label, class })` | A location's menu (`site.menus[location]`), or items given directly, as a `nav`: `dropdowns` (the default) is a header menu with dropdowns, mega panels under items with a panel or heading children, and a disclosure on small screens; `inline` one row for footers; `list` a tree for sidebars. `motion` picks how they open (`rise`, `fade`, `scale`, `none`). Null for an empty menu. The `core/navigation` block renders the same, so editors place a menu in widget areas and content. See [Menus](/docs/cms/menus.md#in-themes). |
+| `menu(source, { style, mobile, collapse, motion, label, class })` | A location's menu (`site.menus[location]`), or items given directly, as a `nav`: `dropdowns` (the default) is a header menu with dropdowns, mega panels under items with a panel or heading children, and below the `collapse` width (`md` or `lg`) a hamburger drawer showing the `mobile` location's menu, or this one; `inline` one row for footers; `list` a tree for sidebars. `motion` picks how they open (`rise`, `fade`, `scale`, `none`). Null for an empty menu. The `core/navigation` block renders the same, so editors place a menu in widget areas and content. See [Menus](/docs/cms/menus.md#in-themes). |
 | `languages({ style, layout, class })` | The page in the site's other languages (`site.languages`) as a `nav` of links, named by `names` (the default), `flags`, `flags-names` or `codes`, in a row (`inline`) or a column (`list`); null on a site with one language. The default theme's *Language switcher* option puts it in the header, the footer, both or nowhere, and *Show languages as* picks the style. The `core/languages` block renders the same, so editors place a switcher in widget areas and content. See [Languages](/docs/cms/languages.md#language-switcher). |
 | `logo(site, { class })` | The site's logo from Settings → General as an image with the site title as its alternative text; null when none is set. `site.logo` holds its URL. See [Settings](/docs/cms/settings.md#site-icon-app-icon-and-logo). |
 

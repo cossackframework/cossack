@@ -97,8 +97,10 @@ function locationLabel(location: string): string {
  * A menu as a `nav`, as `helpers.menu()` and the `core/navigation` block render it. `dropdowns`
  * is a header menu: one row, a dropdown under an item with children, a mega panel under an item
  * with a panel or heading children (one column per heading, links with their icon, description
- * and badge from the field groups attached to menu items, the panel's blocks beside them), and a
- * disclosure with the whole tree below 768px. `inline` is one row with children flattened, for
+ * and badge from the field groups attached to menu items, the panel's blocks beside them), and
+ * below the `collapse` width (768px, or 1024px for `lg`) a hamburger button opening a drawer
+ * with a tree whose groups fold: the `mobile` items when given (another location's menu), else
+ * this menu's own. `inline` is one row with children flattened, for
  * footers; `list` the whole tree as nested lists, for sidebars. Panels and dropdowns open on
  * hover, keyboard focus and while a block inside is selected in Live Edit, with the motion the
  * `nav`'s `data-motion` names (`cms/blocks.css`: `rise` by default, `fade`, `scale`, `none`, or
@@ -109,6 +111,9 @@ export function menuNav(items: readonly MenuItemView[], options: MenuOptions, he
     if (!items.length) return null;
     const style = options.style === 'inline' || options.style === 'list' ? options.style : 'dropdowns';
     const motion = typeof options.motion === 'string' && options.motion.trim() ? options.motion.trim() : 'rise';
+    const collapse = options.collapse === 'lg' ? 'lg' : 'md';
+    // `helpers.menu` resolves a location name to items; a name reaching here, or no items, means this menu's own tree.
+    const mobileItems = Array.isArray(options.mobile) && options.mobile.length ? options.mobile : items;
     const label = options.label ?? __('Menu');
     const className = `cms-nav cms-nav-${style}${options.class ? ` ${options.class}` : ''}`;
     const badge = (item: MenuItemView) => typeof item.fields.badge === 'string' && item.fields.badge ? html` <span class="cms-nav-badge">${item.fields.badge}</span>` : null;
@@ -163,10 +168,52 @@ export function menuNav(items: readonly MenuItemView[], options: MenuOptions, he
         const sub = isMega ? mega(item) : item.children.length ? dropdown(item.children) : null;
         return html`<li class=${`cms-nav-item${sub ? ' cms-nav-has-sub' : ''}`} data-mega=${ifDefined(isMega ? '' : undefined)}>${link(item, 'cms-nav-link')}${sub}</li>`;
     };
-    return html`<nav class=${className} aria-label=${label} data-motion=${motion}>
+    /** The drawer's tree: a link with children folds (its link in the summary stays a link), a heading labels the group under it. */
+    const fold = (item: MenuItemView): TemplateResult => {
+        if (item.url === null) return html`<li class="cms-nav-group"><span class="cms-nav-group-label">${item.label}${badge(item)}</span><ul>${item.children.map(fold)}</ul></li>`;
+        if (!item.children.length) return html`<li>${link(item, 'cms-nav-treelink')}</li>`;
+        return html`<li class="cms-nav-group"><details class="cms-nav-fold"><summary class="cms-nav-fold-row">${link(item, 'cms-nav-treelink')}<span class="cms-nav-caret" aria-hidden="true"></span></summary><ul>${item.children.map(fold)}</ul></details></li>`;
+    };
+    return html`<nav class=${className} aria-label=${label} data-motion=${motion} data-collapse=${collapse}>
         <ul class="cms-nav-list">${items.map(top)}</ul>
-        <details class="cms-nav-mobile"><summary class="cms-nav-toggle">${__('Menu')}</summary><ul class="cms-nav-tree">${items.map(tree)}</ul></details>
+        <details class="cms-nav-mobile"><summary class="cms-nav-toggle"><span class="cms-nav-burger" aria-hidden="true"></span><span class="cms-nav-toggle-label">${__('Menu')}</span></summary>
+            <div class="cms-nav-drawer"><ul class="cms-nav-tree">${mobileItems.map(fold)}</ul></div></details>
     </nav>`;
+}
+
+/**
+ * Keeps a header menu closed once a link in it is followed. Client-side navigation keeps the
+ * layout, so the followed link would keep its focus and the pointer stay over the panel, and
+ * either holds a CSS-only menu open; the drawer is a `<details>` nothing closes. On a plain
+ * click of a link in a `cms-nav` (not a modifier click, not a new tab), the drawer and its folds
+ * close, the link loses focus, and the nav is marked `data-closed`, which the stylesheet reads
+ * to keep dropdowns and panels hidden until the pointer leaves the item or focus returns. A
+ * click in Live Edit, where it selects a block, is left alone. Returns the function that stops
+ * listening.
+ */
+export function closeMenusOnFollow(root: Document = document): () => void {
+    const onClick = (event: MouseEvent) => {
+        if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        const link = (event.target as Element | null)?.closest?.('a[href]');
+        const nav = link?.closest('nav.cms-nav');
+        if (!link || !nav || link.getAttribute('target') === '_blank' || link.closest('[data-cms-doc]')) return;
+        for (const details of nav.querySelectorAll<HTMLDetailsElement>('details[open]')) details.open = false;
+        (link as HTMLElement).blur();
+        nav.setAttribute('data-closed', '');
+    };
+    const onFocus = (event: FocusEvent) => { (event.target as Element | null)?.closest?.('nav.cms-nav[data-closed]')?.removeAttribute('data-closed'); };
+    const onPointerOut = (event: PointerEvent) => {
+        const item = (event.target as Element | null)?.closest?.('nav.cms-nav[data-closed] .cms-nav-list > .cms-nav-item');
+        if (item && !(event.relatedTarget instanceof Node && item.contains(event.relatedTarget))) item.closest('nav')?.removeAttribute('data-closed');
+    };
+    root.addEventListener('click', onClick);
+    root.addEventListener('focusin', onFocus);
+    root.addEventListener('pointerout', onPointerOut);
+    return () => {
+        root.removeEventListener('click', onClick);
+        root.removeEventListener('focusin', onFocus);
+        root.removeEventListener('pointerout', onPointerOut);
+    };
 }
 
 /** The helpers every template receives. `isActive` is the component's own: an exact path, or a prefix. */
@@ -181,7 +228,8 @@ export function themeHelpers(theme: SiteTheme, state: ThemeRenderState, isActive
         asset: path => assets[path] ?? '',
         logo: (site, options = {}) => site.logo ? html`<img src=${site.logo} alt=${site.title} class=${`cms-site-logo object-contain ${options.class ?? 'h-10 w-auto'}`}>` : null,
         languages: options => languageSwitcher(state.languages ?? [], options),
-        menu: (source, options = {}) => menuNav(typeof source === 'string' ? state.menus?.[source] ?? [] : source, { ...(typeof source === 'string' ? { label: locationLabel(source) } : {}), ...options }, helpers),
+        menu: (source, options = {}) => menuNav(typeof source === 'string' ? state.menus?.[source] ?? [] : source,
+            { ...(typeof source === 'string' ? { label: locationLabel(source) } : {}), ...options, ...(typeof options.mobile === 'string' ? { mobile: state.menus?.[options.mobile] ?? [] } : {}) }, helpers),
         search: options => searchForm(state.site?.searchUrl ?? '/search', options),
         isActive: url => {
             const path = url.replace(/[?#].*$/, '').replace(/(.)\/$/, '$1');
@@ -455,7 +503,7 @@ export function coreBlock(block: RenderedBlock, helpers: ThemeHelpers, state?: P
         case 'core/definition': return html`<dl class="cms-definition my-6 rounded-lg border border-border p-4"><dt class="text-lg font-semibold">${text('term')}</dt><dd class=${`${PROSE} mt-1 [&_p]:my-1`}>${unsafeHTML(block.html.definition ?? '')}</dd></dl>`;
         case 'core/latest-entries': return latestEntries(block);
         case 'core/languages': return helpers.languages({ style: text('style'), layout: text('layout') });
-        case 'core/navigation': return helpers.menu(text('location') || 'primary', { style: text('style'), motion: text('motion') });
+        case 'core/navigation': return helpers.menu(text('location') || 'primary', { style: text('style'), motion: text('motion'), mobile: text('mobile') || undefined, collapse: text('collapse') });
         case 'core/meta': return null;
         // Layout blocks: CSS grid from cms/blocks.css, responding to the content root's width.
         case 'core/group': return html`<div class="cms-group" data-align=${text('align') || 'full'} data-direction=${text('direction') || 'column'} data-justify=${text('justify') || 'start'}>${children.map(child => helpers.block(child))}</div>`;
