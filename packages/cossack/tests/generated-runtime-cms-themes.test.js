@@ -234,22 +234,26 @@ describe.skipIf(!liveRomeDBTests())('CMS themes', () => {
       // The overview is a field's rich text: marked as one document for the Text panel, not as a block.
       await browserExpect(sections.locator('[data-cms-edit="body"][data-field="overview"]')).toHaveCount(1);
 
-      // Reorder with the keyboard in the Blocks panel: the page follows.
+      // Reorder with the keyboard in the Blocks panel: the page follows. The panel lists the page's documents:
+      // the theme's header and footer areas around the entry's content, each its own tree.
       await bar.getByRole('button', { name: 'Blocks', exact: true }).click();
-      await tab.getByRole('button', { name: /^Move Paragraph\./ }).focus();
+      const content = tab.locator('[data-site-doc="entry"]');
+      await browserExpect(tab.locator('[data-site-doc="area:header"]')).toBeVisible();
+      await browserExpect(tab.locator('[data-site-doc="area:footer-bar"]')).toBeVisible();
+      await content.getByRole('button', { name: /^Move Paragraph\./ }).focus();
       await tab.keyboard.press('ArrowDown');
       await browserExpect(sections.locator('[data-cms-edit="block"]').first()).toHaveAttribute('data-block-id', 's2');
 
       // Layout on the page: add a group, move it above the first paragraph and move that
       // paragraph into it with the right arrow. The page shows the paragraph inside the group.
-      await tab.getByRole('button', { name: 'Add block', exact: true }).click();
+      await content.getByRole('button', { name: 'Add block', exact: true }).click();
       await tab.getByRole('button', { name: 'Group', exact: true }).click();
       // The new group's form opens once the page shows it; Escape closes it and keeps the panel.
       await browserExpect(tab.getByRole('dialog', { name: 'Edit Group' })).toBeVisible();
       await tab.keyboard.press('Escape');
       await browserExpect(tab.getByRole('dialog', { name: 'Edit Group' })).toHaveCount(0);
-      await browserExpect(tab.locator('[data-site-block]')).toHaveCount(3);
-      await tab.locator('[data-site-block] [data-handle]').last().focus();
+      await browserExpect(content.locator('[data-site-block]')).toHaveCount(3);
+      await content.locator('[data-site-block] [data-handle]').last().focus();
       await tab.keyboard.press('ArrowUp');
       await tab.locator('[data-site-block="s1"] [data-handle]').focus();
       await tab.keyboard.press('ArrowRight');
@@ -326,6 +330,22 @@ describe.skipIf(!liveRomeDBTests())('CMS themes', () => {
       await bar.getByRole('button', { name: 'Reload' }).click();
       await browserExpect(tab.getByRole('heading', { name: 'Rocket, renamed elsewhere' })).toBeVisible();
       await browserExpect(sections.getByText('First section, edited on the site')).toBeVisible();
+
+      // The frame is editable too: the header is a document of the theme's area, with the theme's default blocks
+      // until the site saves its own. Removing its search block in the panel changes the page before anything is
+      // saved; saving writes the area's first revision, and visitors see the header without search.
+      const header = tab.locator('[data-site-doc="area:header"]');
+      if (!(await header.isVisible())) await bar.getByRole('button', { name: 'Blocks', exact: true }).click();
+      await browserExpect(tab.locator('header form[role="search"]')).toHaveCount(1);
+      await browserExpect(tab.locator('header [data-cms-edit="block"][data-cms-doc="area:header"]').first()).toBeAttached();
+      await header.getByRole('button', { name: 'Remove Search', exact: true }).click();
+      await browserExpect(tab.locator('header form[role="search"]')).toHaveCount(0);
+      await browserExpect(bar.getByRole('status')).toHaveText('Unsaved changes');
+      await bar.getByRole('button', { name: 'Save', exact: true }).click();
+      await browserExpect(bar.getByRole('status')).toHaveText('No unsaved changes');
+      lacks(await visitor.page('/'), 'role=search');
+      expect((await web.action(widgets, 'load', [])).areas.find(area => area.name === 'header')).toMatchObject({ revision: 1, defaulted: false });
+      expect(errors).toEqual([]);
       // Leaving edit mode gives the taskbar its items back and drops ?edit from the address, so a reload shows the page.
       await bar.getByRole('button', { name: 'Exit', exact: true }).click();
       await browserExpect(taskbar).toBeVisible();

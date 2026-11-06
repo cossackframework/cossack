@@ -25,6 +25,8 @@ puts a default theme in `src/plugins/default-theme/` for you to edit or copy. Se
   themes and widget areas.
 - [Menus](/docs/cms/menus.md): the menu builder, headings and descriptions, field groups on
   items, mega menu panels, the Navigation block, `helpers.menu()` and the menus API.
+- [Live Edit](/docs/cms/site-editing.md): editing an entry and the theme's areas around it in
+  place, documents and their revisions, markers, and what stays code.
 - [Settings](/docs/cms/settings.md): reading and writing settings, declaring groups and
   subpages, discussions, and the site logo.
 - [Multisite](/docs/cms/multisite.md): many sites from one application, one database per

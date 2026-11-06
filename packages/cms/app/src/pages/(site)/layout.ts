@@ -1,8 +1,11 @@
-import { Cossack, Page, Server, State, server$, setRequestLocale, type HeadContext, type HeadTag, type HeadValue } from '@cossackframework/core';
+import { Client, ClientState, Cossack, Page, Server, State, server$, setRequestLocale, type HeadContext, type HeadTag, type HeadValue } from '@cossackframework/core';
 import { html } from '@cossackframework/renderer';
-import { PLACEHOLDER_SCRIPT, usesUserBinding, type SiteView, type ThemeData } from '@cossackframework/cms';
-import { bindingScopes, languageLinks, resolvedOptions, siteView, themeData, themeState, type ThemeState } from '../../cms/site';
-import { siteTheme, themeHelpers } from '../../cms/site-view';
+import { hasPermission, PERMISSIONS, PLACEHOLDER_SCRIPT, usesUserBinding, type RenderedBlock, type SiteView, type ThemeData } from '@cossackframework/cms';
+import { areaViews, bindingScopes, languageLinks, resolvedOptions, siteView, themeData, themeState, type ThemeState } from '../../cms/site';
+import { blockOptions } from '../../cms/content';
+import { areaDraftBlocks } from '../../cms/site-editing';
+import { siteSession, type AreaDraft, type SiteEditingContext } from '../../cms/site-session';
+import { siteTheme, tagDocument, themeHelpers } from '../../cms/site-view';
 import { siteTaskbar } from '../../cms/site-taskbar';
 import { taskbar, type TaskbarView } from '../../cms/taskbar';
 import { logout } from '../../auth';
@@ -24,6 +27,66 @@ export default class SiteLayout extends Cossack {
     @State() data: ThemeData = {};
     /** Settings → General: the site icon for tabs and the app icon for home screens, as URLs; empty for the application's own. */
     @State() icons: { favicon: string; appIcon: string } = { favicon: '', appIcon: '' };
+    /**
+     * Live Edit: the page's area documents at render time (`c.set('cms.editing')` in the page's
+     * init), so the areas render with their markers from the first paint. The page owns the
+     * entry; the frame is this layout's, which previews the areas from the shared session.
+     */
+    editing: SiteEditingContext | null = server$(() => this.c.get('cms.editing') ?? null, { initial: null });
+    /** The browser left edit mode: the markers go, the saved areas show. */
+    @ClientState() exited = false;
+    private unsubscribe: (() => void) | undefined;
+    private sessionSeen = false;
+    private previewTimer: ReturnType<typeof setTimeout> | undefined;
+    private pendingPreview: AreaDraft[] | null | undefined;
+    private previewing = false;
+
+    onMount() {
+        this.unsubscribe = siteSession.subscribe(session => {
+            if (session) { this.sessionSeen = true; this.exited = false; this.queuePreview(session.areas); }
+            else if (this.sessionSeen) { this.sessionSeen = false; this.exited = true; this.queuePreview(null); }
+        });
+    }
+
+    onCleanup() {
+        this.unsubscribe?.();
+        if (this.previewTimer) clearTimeout(this.previewTimer);
+    }
+
+    /** Preview the areas from the drafts, one request at a time, a moment after the last change. */
+    @Client()
+    private queuePreview(areas: AreaDraft[] | null) {
+        this.pendingPreview = areas;
+        if (this.previewTimer) clearTimeout(this.previewTimer);
+        this.previewTimer = setTimeout(() => { void this.runPreview(); }, 150);
+    }
+
+    @Client()
+    private async runPreview() {
+        if (this.previewing) return;
+        this.previewing = true;
+        try {
+            while (this.pendingPreview !== undefined) {
+                const next = this.pendingPreview;
+                this.pendingPreview = undefined;
+                await this.previewAreas(next);
+            }
+        } finally { this.previewing = false; }
+    }
+
+    /** The areas rendered from the editor's drafts, or from what is saved when the session ends. Only for users who may edit areas. */
+    @Server()
+    async previewAreas(areas: AreaDraft[] | null) {
+        const cms = this.c.get('cms');
+        const principal = this.c.get('principal');
+        if (!hasPermission(principal, PERMISSIONS.manageAppearance)) return;
+        const settings = await cms.settings.all();
+        const info = cms.themes().find(entry => entry.name === this.theme.name);
+        const drafts = areas ? areaDraftBlocks(areas, await blockOptions(cms)) : undefined;
+        // Previews bind to the site and the user; the entry shown is the page's, not known here.
+        const rendered = await areaViews(cms, info?.areas ?? [], undefined, bindingScopes(settings, { user: this.user ? { name: this.user.name } : null }), undefined, drafts);
+        this.site = { ...this.site, areas: rendered };
+    }
 
     /**
      * Pages set their own titles; the site title is the fallback. The theme's head template
@@ -102,7 +165,11 @@ export default class SiteLayout extends Cossack {
 
     render() {
         const theme = siteTheme(this.theme);
-        const frame = theme.layout(this.site, html`${this.children}`, themeHelpers(theme, { ...this.theme, data: { layout: this.data }, languages: this.site.languages, menus: this.site.menus, site: this.site }, (path, exact) => this.isActive(path, exact)));
+        // In edit mode every area block carries its document, and a lock when the user may not change areas.
+        const editing = Boolean(this.editing) && !this.exited;
+        const areas: Record<string, readonly RenderedBlock[]> = editing ? Object.fromEntries(Object.entries(this.site.areas).map(([name, blocks]) => [name, tagDocument(blocks, `area:${name}`, !this.editing!.editable)])) : this.site.areas;
+        const site = editing ? { ...this.site, areas } : this.site;
+        const frame = theme.layout(site, html`${this.children}`, themeHelpers(theme, { ...this.theme, data: { layout: this.data }, editing, languages: this.site.languages, menus: this.site.menus, site: this.site }, (path, exact) => this.isActive(path, exact)));
         return this.taskbar ? html`${frame}${taskbar(this.taskbar, { logout: () => this.doLogout(), error: this.logoutError })}` : frame;
     }
 }

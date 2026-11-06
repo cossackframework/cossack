@@ -18,7 +18,29 @@ export interface SiteEditable {
     dashboard: string;
 }
 
-/** The entry being edited on the site: control values as the dashboard editor keeps them. */
+/**
+ * A block list edited beside the entry: one of the theme's widget areas on the page, with its own
+ * revision and permission. The entry's own blocks are the `entry` document.
+ */
+export interface SiteDocument {
+    /** `area:<name>`. */
+    key: string;
+    kind: 'area';
+    /** The area's name. */
+    name: string;
+    label: string;
+    /** 0 until the site saves the area: the theme's default blocks show. */
+    revision: number;
+    blocks: EditorBlock[];
+    /** The user may change it (`cms:appearance` for an area). A locked document shows its markers, but nothing in it selects. */
+    editable: boolean;
+    changed: boolean;
+    error: string;
+    /** Someone saved the area since the draft started. */
+    conflict: boolean;
+}
+
+/** The entry being edited on the site: control values as the dashboard editor keeps them, and the page's areas beside it. */
 export interface SiteDraft {
     collection: string;
     id: string;
@@ -32,6 +54,8 @@ export interface SiteDraft {
     /** The entry's blocks field and rich text body, edited in place; null when it has none. */
     blocksField: string | null;
     bodyField: string | null;
+    /** The page's widget areas, each saved on its own. */
+    documents: SiteDocument[];
     /** Changes since the last save. */
     changed: boolean;
     error: string;
@@ -69,4 +93,6 @@ export type SiteEditorProps = {
     onPreviews(previews: Record<string, MediaPreview>): void;
     /** The notes changed through the API: keep them in the draft. */
     onNotes(notes: Note[]): void;
+    /** A document's blocks changed; the layout previews them. */
+    onDocumentChange(key: string, blocks: EditorBlock[]): void;
 };

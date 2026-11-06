@@ -194,7 +194,7 @@ export function themeHelpers(theme: SiteTheme, state: ThemeRenderState, isActive
     // In edit mode a block carries its ID; a field's rich text is one document, edited as a whole in the field's panel.
     const marked = (block: RenderedBlock) => block.field
         ? html`<div data-cms-edit="body" data-field=${block.field} style="display: contents">${render(block)}</div>`
-        : html`<div data-cms-edit="block" data-block-id=${block._id} style="display: contents">${render(block)}</div>`;
+        : html`<div data-cms-edit="block" data-block-id=${block._id} data-cms-doc=${block.document ?? 'entry'} data-cms-locked=${ifDefined(block.locked ? '' : undefined)} style="display: contents">${render(block)}</div>`;
     const render = (block: RenderedBlock) => {
         // Data blocks hold values for themes and the API; nothing shows for them.
         if (block.dataOnly) return null;
@@ -212,6 +212,11 @@ export function themeHelpers(theme: SiteTheme, state: ThemeRenderState, isActive
         return block.when ? html`<div data-cms-when=${block._id} ?data-hidden=${block.shown === false} style="display: contents">${sized}</div>` : sized;
     };
     return helpers;
+}
+
+/** Rendered blocks, and the blocks inside them, as part of a Live Edit document: the markers name it, and a locked one selects nothing. */
+export function tagDocument(blocks: readonly RenderedBlock[], document: string, locked: boolean): RenderedBlock[] {
+    return blocks.map(block => ({ ...block, document, ...(locked ? { locked: true } : {}), ...(block.children ? { children: tagDocument(block.children, document, locked) } : {}) }));
 }
 
 /**

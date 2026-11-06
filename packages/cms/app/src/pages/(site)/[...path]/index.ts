@@ -8,14 +8,15 @@ import { archiveTemplate, entryTemplate, siteContent, siteTheme, themeHelpers, u
 import { authorSeo, entrySeo, homeSeo, listSeo } from '../../../cms/seo';
 import { emptySeo, seoHead, type SeoView } from '../../../cms/seo-head';
 import type { SiteDraft, SiteEditable } from '../../../cms/site-editor';
-import { draftEntry, draftMedia, editableRecord, saveDraft, siteDraft, siteEditable } from '../../../cms/site-editing';
+import { draftEntry, draftMedia, editableRecord, saveDocuments, saveDraft, siteDraft, siteEditable } from '../../../cms/site-editing';
+import { siteSession } from '../../../cms/site-session';
 import { contentMenus, siteInfo, type SiteInfo } from '../../../cms/site';
 import type { MenuItemView } from '@cossackframework/cms';
 import { fieldErrors } from '../../../cms/content';
 import { entryAsMarkdown, wantsMarkdown } from '../../../cms/machine';
 import { trackCrawler, trackNotFound } from '../../../cms/traffic';
 import { siteOrigin } from '../../../cms/seo';
-import type { EditorValues } from '../../../cms/editor';
+import type { EditorBlock, EditorValues } from '../../../cms/editor';
 import type { MediaPreview } from '../../../cms/field-controls';
 import type { MediaChooserState } from '../../../cms/media-chooser';
 
@@ -247,6 +248,8 @@ export default class SitePath extends Cossack {
         const found = editable ? await editableRecord(cms, editable.collection, editable.id, this.c.get('principal')) : null;
         if (!found) { this.editable = null; this.draft = null; return; }
         this.draft = await siteDraft(cms, found.collection, found.record, this.c.get('principal'));
+        // The layout renders the areas with their markers from the first paint (`server$` in the layout reads this at render time).
+        this.c.set('cms.editing', { areas: this.draft.documents.map(document => ({ name: document.name, blocks: document.blocks })), editable: this.draft.documents.some(document => document.editable) });
         this.entry = await draftEntry(cms, found.collection, found.record, this.draft.values, this.formRequest());
         await this.refreshMenus();
     }
@@ -276,13 +279,17 @@ export default class SitePath extends Cossack {
         const draft = this.draft;
         const found = draft ? await editableRecord(cms, draft.collection, draft.id, principal) : null;
         if (!draft || !found) { this.draft = null; return; }
+        // The areas save on their own, each over its revision; a conflict stays on its document and the others still save.
+        const documents = await saveDocuments(cms, draft.documents, draft.view.blocks, principal);
+        if (!draft.changed) { this.draft = { ...draft, documents }; return; }
         try {
             const record = await saveDraft(cms, draft, values, principal);
-            this.draft = { ...await siteDraft(cms, found.collection, record, principal), chooser: draft.chooser };
+            this.draft = { ...await siteDraft(cms, found.collection, record, principal), chooser: draft.chooser, documents };
             this.entry = await draftEntry(cms, found.collection, record, this.draft.values, this.formRequest());
+            await this.refreshMenus();
         } catch (error) {
             if (!isCmsError(error)) throw error;
-            this.draft = { ...draft, values, conflict: error.code === 'CMS_CONFLICT', error: error.message, errors: fieldErrors(error) };
+            this.draft = { ...draft, values, documents, conflict: error.code === 'CMS_CONFLICT', error: error.message, errors: fieldErrors(error) };
         }
     }
 
@@ -315,9 +322,31 @@ export default class SitePath extends Cossack {
         this.draft = { ...draft, chooser: { ...draft.chooser, search, items: await draftMedia(cms, search, this.c.get('principal'), draft.chooser.kind) } };
     }
 
+    /** A document's blocks changed: keep them, and let the layout preview the area. */
+    @Client()
+    changeDocument(key: string, blocks: EditorBlock[]) {
+        if (!this.draft) return;
+        this.draft = { ...this.draft, documents: this.draft.documents.map(document => document.key === key ? { ...document, blocks, changed: true, error: '' } : document) };
+        this.shareDocuments();
+    }
+
+    /** The areas' drafts, for the layout to preview them; null ends the session and shows the saved areas again. */
+    @Client()
+    private shareDocuments() {
+        siteSession.set(this.draft ? { areas: this.draft.documents.map(document => ({ name: document.name, blocks: document.blocks })) } : null);
+    }
+
+    /** Start again from the saved entry and areas, after a conflict. */
+    @Client()
+    async reloadDraft() {
+        await this.startEditing();
+        this.shareDocuments();
+    }
+
     /** Leave edit mode, and drop `?edit` from the address so a reload shows the page, not the editor. */
     @Client()
     async exitEditing() {
+        siteSession.set(null);
         const url = new URL(window.location.href);
         if (url.searchParams.has('edit')) { url.searchParams.delete('edit'); window.history.replaceState(window.history.state, '', url); }
         await this.stopEditing();
@@ -364,6 +393,7 @@ export default class SitePath extends Cossack {
         this.saving = true;
         try { await this.saveDraft(this.draft.values); }
         finally { this.saving = false; }
+        this.shareDocuments();
     }
 
     @Client()
@@ -388,11 +418,12 @@ export default class SitePath extends Cossack {
         return html`<div data-site-editing ref=${(element: Element) => this.loadEditor(element)}>${this.editorReady && SiteEditor ? component(SiteEditor, {
             draft, saving: this.saving,
             onChange: (values: EditorValues, preview: boolean) => this.changeDraft(values, preview),
-            onSave: () => this.save(), onExit: () => this.exitEditing(), onReload: () => this.startEditing(),
+            onSave: () => this.save(), onExit: () => this.exitEditing(), onReload: () => this.reloadDraft(),
             onSearchMedia: (search: string) => this.searchDraftMedia(search),
             onChooser: (chooser: MediaChooserState) => this.setChooser(chooser),
             onPreviews: (previews: Record<string, MediaPreview>) => this.setPreviews(previews),
             onNotes: (notes: Note[]) => this.setNotes(notes),
+            onDocumentChange: (key: string, blocks: EditorBlock[]) => this.changeDocument(key, blocks),
         }) : html`<p role="status" class="fixed bottom-4 left-1/2 z-50 -translate-x-1/2 rounded-full border border-border bg-background px-4 py-2 text-sm text-muted-foreground shadow-lg">${__('Loading the editor…')}</p>`}</div>`;
     }
 

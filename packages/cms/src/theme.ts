@@ -303,6 +303,10 @@ export interface RenderedBlock {
     readonly entries?: readonly EntryView[];
     /** A data block: it holds values for themes and the API and renders nothing. */
     readonly dataOnly?: boolean;
+    /** In edit mode: the document the block belongs to (`area:<name>`); the entry's blocks carry none. */
+    readonly document?: string;
+    /** In edit mode: the signed-in user may not change the block's document; it is marked but nothing in it selects. */
+    readonly locked?: boolean;
     /** The rendered blocks a container holds. */
     readonly children?: readonly RenderedBlock[];
     /**

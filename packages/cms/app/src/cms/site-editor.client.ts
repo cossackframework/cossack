@@ -1,9 +1,11 @@
 /**
  * The editor on the public site, loaded only in edit mode. Click a block to edit its fields
  * in a sheet at the side, as the dashboard's editor does, with Apply and Cancel; click the body
- * to edit it as one document in the rich text editor. The Blocks panel shows the tree: drag a
- * block, or use the arrow keys, to move it among its siblings or into and out of containers;
- * the Entry panel edits the title, slug, terms and other fields. The device toggle narrows the
+ * to edit it as one document in the rich text editor. The Blocks panel shows the page's
+ * documents (the header, the entry's content, the footer areas), each a tree: drag a block, or
+ * use the arrow keys, to move it among its siblings or into and out of containers; a locked
+ * document (areas, for users without `cms:appearance`) is shown but selects nothing. The Entry
+ * panel edits the title, slug, terms and other fields. The device toggle narrows the
  * content root. The editor's controls sit in the middle of the site taskbar, between its start
  * menu and its user menu. Changes stay in the page's draft until saved.
  */
@@ -21,7 +23,7 @@ import { RichTextField, richTextEditors, type RichTextFieldProps } from './rich-
 import type { NoteMark } from './rich-text.client';
 import { noteButton, noteMarker, notesRail, type NoteAnchorView, type NoteComposer } from './notes-rail';
 import { BlockInserter } from './block-inserter';
-import { reorderBlocks, type DraftBlock, type SiteEditorProps } from './site-editor';
+import { reorderBlocks, type DraftBlock, type SiteDocument, type SiteEditorProps } from './site-editor';
 import { CONTROL } from './ui';
 
 const BODY_EDITOR = 'site-editor-body';
@@ -32,15 +34,19 @@ const STYLE = `
 [data-cms-edit] > * { cursor: pointer; }
 [data-cms-edit]:hover > * { outline: 2px dashed color-mix(in oklab, var(--ring, #3b82f6) 70%, transparent); outline-offset: 4px; }
 [data-cms-edit][data-cms-selected] > * { outline: 2px solid var(--ring, #3b82f6); outline-offset: 4px; }
+[data-cms-edit][data-cms-locked] > * { cursor: not-allowed; }
+[data-cms-edit][data-cms-locked]:hover > * { outline-style: dotted; outline-color: color-mix(in oklab, var(--muted-foreground, #64748b) 70%, transparent); }
 `;
 
 /** A block's form, in the sheet at the side of the page. */
-interface BlockForm { id: string; values: Record<string, unknown>; style: StyleValues; tab: BlockTab; errors: Record<string, string> }
+interface BlockForm { id: string; /** The document the block is in. */ doc: string; values: Record<string, unknown>; style: StyleValues; tab: BlockTab; errors: Record<string, string> }
 /** A block embedded in the body, edited from the rich text editor. */
 interface EmbeddedForm { id: string; type: string; values: Record<string, unknown>; errors: Record<string, string> }
 type ChooserTarget = { kind: 'block' | 'embedded' | 'entry'; field: string } | { kind: 'richtext'; /** The editor to insert into; the body's by default. */ editor?: string };
-interface Drag { from: number; to: number; y: number; depth: number; moved: boolean }
+interface Drag { /** The document whose list is dragged. */ doc: string; from: number; to: number; y: number; depth: number; moved: boolean }
 type Device = 'desktop' | 'tablet' | 'phone';
+/** A row of the Blocks panel, by document and block. */
+const rowKey = (doc: string, id: string) => `${doc}\u0000${id}`;
 const DEVICE_LABELS: { readonly [key in Device]: string } = { desktop: 'Desktop', tablet: 'Tablet', phone: 'Phone' };
 
 @Component()
@@ -52,6 +58,8 @@ export class SiteEditor extends Cossack {
     @ClientState() private drag: Drag | null = null;
     @ClientState() private announcement = '';
     @ClientState() private device: Device = 'desktop';
+    /** The document the block operations work on: `entry`, or an area's key. */
+    @ClientState() private doc = 'entry';
     // Notes: the rail and its state; the notes themselves live in the draft, written through the content API.
     @ClientState() private notesOpen = false;
     @ClientState() private notesFilter: NoteStatus = 'open';
@@ -63,7 +71,8 @@ export class SiteEditor extends Cossack {
     @ClientState() private detachedNotes: string[] = [];
     private chooserTarget: ChooserTarget | null = null;
     private root?: HTMLElement;
-    private list?: HTMLElement;
+    /** The Blocks panel's list of each document. */
+    private lists = new Map<string, HTMLElement>();
     private rows = new Map<string, HTMLElement>();
     private handles = new Map<string, HTMLElement>();
     private pointer: { id: number; x: number; y: number; tops: number[]; bottoms: number[] } | null = null;
@@ -74,15 +83,20 @@ export class SiteEditor extends Cossack {
         const target = event.target as Element | null;
         if (!target || this.root?.contains(target) || target.closest('dialog, [role="dialog"]')) return;
         // The nearest block of this page: blocks rendered from elsewhere, such as a form's inputs, are
-        // marked too, so clicking one selects the block that shows them (the Form block).
+        // marked too, so clicking one selects the block that shows them (the Form block). Each marker
+        // names its document: the entry, or a widget area.
+        const docOf = (node: Element) => node.getAttribute('data-cms-doc') ?? 'entry';
         let marker = target.closest('[data-cms-edit]');
-        while (marker && marker.getAttribute('data-cms-edit') === 'block' && !findBlock(this.blocks(), marker.getAttribute('data-block-id') ?? '')) marker = marker.parentElement?.closest('[data-cms-edit]') ?? null;
+        while (marker && marker.getAttribute('data-cms-edit') === 'block' && !findBlock(this.blocksOf(docOf(marker)), marker.getAttribute('data-block-id') ?? '')) marker = marker.parentElement?.closest('[data-cms-edit]') ?? null;
         if (!marker) return;
         // Links and buttons inside blocks do not navigate while editing.
         event.preventDefault();
         event.stopPropagation();
-        if (marker.getAttribute('data-cms-edit') === 'body') this.openPanel('body');
-        else this.select(marker.getAttribute('data-block-id') ?? '', marker);
+        if (marker.getAttribute('data-cms-edit') === 'body') { this.openPanel('body'); return; }
+        const key = docOf(marker);
+        if (!this.editableDoc(key)) { this.announcement = __('Only administrators edit this part of the site.'); return; }
+        this.doc = key;
+        this.select(marker.getAttribute('data-block-id') ?? '', marker);
     };
 
     private readonly onKey = (event: KeyboardEvent) => {
@@ -94,7 +108,7 @@ export class SiteEditor extends Cossack {
     };
 
     private readonly onLeave = (event: BeforeUnloadEvent) => {
-        if (this.props.draft.changed) event.preventDefault();
+        if (this.changed()) event.preventDefault();
     };
 
     private readonly onResize = () => this.placeBar();
@@ -150,8 +164,14 @@ export class SiteEditor extends Cossack {
      */
     @Client()
     private syncSelection() {
-        for (const marker of document.querySelectorAll('[data-cms-selected]')) if (marker.getAttribute('data-block-id') !== this.form?.id) marker.removeAttribute('data-cms-selected');
-        if (this.form) document.querySelector(`[data-cms-edit="block"][data-block-id="${CSS.escape(this.form.id)}"]`)?.setAttribute('data-cms-selected', '');
+        for (const marker of document.querySelectorAll('[data-cms-selected]')) if (marker.getAttribute('data-block-id') !== this.form?.id || (marker.getAttribute('data-cms-doc') ?? 'entry') !== this.form?.doc) marker.removeAttribute('data-cms-selected');
+        if (this.form) this.markerFor(this.form.id, this.form.doc)?.setAttribute('data-cms-selected', '');
+    }
+
+    /** A block's marker on the page, in its document. */
+    @Client()
+    private markerFor(id: string, doc = this.doc): Element | null {
+        return document.querySelector(`[data-cms-edit="block"][data-cms-doc="${CSS.escape(doc)}"][data-block-id="${CSS.escape(id)}"]`);
     }
 
     /**
@@ -159,10 +179,11 @@ export class SiteEditor extends Cossack {
      * draft's new values and the page's preview of them arrive after this component rendered.
      */
     private selectWhenShown(id: string, tries = 40) {
+        const doc = this.doc;
         setTimeout(() => {
-            const marker = document.querySelector(`[data-cms-edit="block"][data-block-id="${CSS.escape(id)}"]`);
-            if ((!findBlock(this.blocks(), id) || !marker) && tries > 0) { this.selectWhenShown(id, tries - 1); return; }
-            if (findBlock(this.blocks(), id)) this.select(id, marker);
+            const marker = this.markerFor(id, doc);
+            if ((!findBlock(this.blocksOf(doc), id) || !marker) && tries > 0) { this.selectWhenShown(id, tries - 1); return; }
+            if (findBlock(this.blocksOf(doc), id)) { this.doc = doc; this.select(id, marker); }
         }, 50);
     }
 
@@ -170,32 +191,81 @@ export class SiteEditor extends Cossack {
 
     private get values(): EditorValues { return this.props.draft.values; }
 
-    private blocks(): DraftBlock[] {
-        const field = this.props.draft.blocksField;
-        return field ? (this.values[field] as DraftBlock[] | undefined) ?? [] : [];
+    /** Unsaved changes anywhere: the entry or a document. */
+    @Client()
+    private changed(): boolean {
+        return this.props.draft.changed || this.props.draft.documents.some(document => document.changed);
     }
 
-    /** Every block of the tree in document order, with its depth, container and position. */
-    private places(): BlockPlace<DraftBlock>[] {
-        return placeBlocks(this.blocks());
+    @Client()
+    private documentOf(key: string): SiteDocument | undefined {
+        return this.props.draft.documents.find(document => document.key === key);
+    }
+
+    /** Whether the user may change a document: the entry always (they opened the editor), an area with `cms:appearance`. Reached from the page's click handler, so client-safe by decorator. */
+    @Client()
+    private editableDoc(key: string): boolean {
+        return key === 'entry' ? true : this.documentOf(key)?.editable === true;
+    }
+
+    /** A document's blocks: the entry's blocks field, or an area's. */
+    @Client()
+    private blocksOf(key: string): DraftBlock[] {
+        if (key === 'entry') {
+            const field = this.props.draft.blocksField;
+            return field ? (this.values[field] as DraftBlock[] | undefined) ?? [] : [];
+        }
+        return this.documentOf(key)?.blocks ?? [];
+    }
+
+    private blocks(): DraftBlock[] { return this.blocksOf(this.doc); }
+
+    /** Every block of a document's tree in order, with its depth, container and position. */
+    private placesOf(key: string): BlockPlace<DraftBlock>[] {
+        return placeBlocks(this.blocksOf(key));
+    }
+
+    private places(): BlockPlace<DraftBlock>[] { return this.placesOf(this.doc); }
+
+    /** The document holding a block; the current one when none does. */
+    @Client()
+    private docWith(id: string): string {
+        if (findBlock(this.blocksOf(this.doc), id)) return this.doc;
+        if (findBlock(this.blocksOf('entry'), id)) return 'entry';
+        return this.props.draft.documents.find(document => findBlock(document.blocks, id))?.key ?? this.doc;
     }
 
     private option(type: string): BlockOption | undefined {
         return this.props.draft.view.blocks.find(block => block.name === type);
     }
 
-    /** The block types the field allows at the top level. */
-    private allowed(): string[] {
+    /** The block types a document offers: the entry's field may limit them; areas take anything but synced patterns, as Widgets does. */
+    private optionsFor(key: string): BlockOption[] {
+        return key === 'entry' ? this.props.draft.view.blocks : this.props.draft.view.blocks.filter(block => block.name !== 'core/pattern');
+    }
+
+    /** The block types the document allows at the top level; empty for all. */
+    private allowedIn(key: string): string[] {
+        if (key !== 'entry') return [];
         const field = this.props.draft.view.fields.find(entry => entry.name === this.props.draft.blocksField);
         return field?.blocks ?? [];
     }
 
+    private allowed(): string[] { return this.allowedIn(this.doc); }
+
+    @Client()
+    private setBlocksOf(key: string, blocks: DraftBlock[], message = '') {
+        if (key === 'entry') {
+            const field = this.props.draft.blocksField;
+            if (!field) return;
+            this.props.onChange({ ...this.values, [field]: blocks }, true);
+        } else this.props.onDocumentChange(key, blocks);
+        if (message) this.announcement = message;
+    }
+
     @Client()
     private setBlocks(blocks: DraftBlock[], message = '') {
-        const field = this.props.draft.blocksField;
-        if (!field) return;
-        this.props.onChange({ ...this.values, [field]: blocks }, true);
-        if (message) this.announcement = message;
+        this.setBlocksOf(this.doc, blocks, message);
     }
 
     @Client()
@@ -217,11 +287,12 @@ export class SiteEditor extends Cossack {
     /** Open a block's form in the sheet. */
     @Client()
     private select(id: string, _marker: Element | null = null) {
+        this.doc = this.docWith(id);
         const block = findBlock(this.blocks(), id);
         const option = block ? this.option(block.type) : undefined;
         if (!block || !option) return;
         this.form = {
-            id, errors: {}, tab: this.form?.tab ?? 'general', style: styleValues(block),
+            id, doc: this.doc, errors: {}, tab: this.form?.tab ?? 'general', style: styleValues(block),
             values: Object.fromEntries(option.fields.map(field => [field.name, block.data[field.name] ?? controlValue(field, field.defaultValue)])),
         };
     }
@@ -252,13 +323,13 @@ export class SiteEditor extends Cossack {
     private apply(event: Event) {
         event.preventDefault();
         const form = this.form;
-        const block = form ? findBlock(this.blocks(), form.id) : undefined;
+        const block = form ? findBlock(this.blocksOf(form.doc), form.id) : undefined;
         const option = block ? this.option(block.type) : undefined;
         if (!form || !block || !option) return;
         const errors = this.check(option, form.values);
         if (Object.keys(errors).length) { this.form = { ...form, errors }; return; }
         // Blocks keep control values, as the dashboard editor does; saving converts them.
-        this.setBlocks(updateBlock(this.blocks(), form.id, entry => withStyle({ ...entry, data: { ...form.values } }, form.style, this.otherIds(form.id))));
+        this.setBlocksOf(form.doc, updateBlock(this.blocksOf(form.doc), form.id, entry => withStyle({ ...entry, data: { ...form.values } }, form.style, this.otherIds(form.id))));
         this.form = null;
     }
 
@@ -269,9 +340,10 @@ export class SiteEditor extends Cossack {
         return errors;
     }
 
-    /** Add a block at the end of the field, or inside a container. */
+    /** Add a block at the end of a document, or inside a container. */
     @Client()
-    private add(type: string, parent: string | null = null) {
+    private add(type: string, parent: string | null = null, key?: string) {
+        this.doc = parent ? this.docWith(parent) : key ?? this.doc;
         const option = this.option(type);
         const block = newBlock(type, this.props.draft.view.blocks, blockId);
         if (!option || !block) return;
@@ -290,16 +362,18 @@ export class SiteEditor extends Cossack {
 
     @Client()
     private shift(id: string, move: BlockMove) {
+        this.doc = this.docWith(id);
         const blocks = this.blocks();
         const block = findBlock(blocks, id);
         const next = shiftBlock(blocks, id, move, declarationsOf(this.props.draft.view.blocks));
         if (!block || next === blocks) return;
         this.setBlocks([...next], `${this.label(block)}: ${this.position(next, id)}`);
-        requestAnimationFrame(() => this.handles.get(block._id)?.focus());
+        requestAnimationFrame(() => this.handles.get(rowKey(this.doc, block._id))?.focus());
     }
 
     @Client()
     private toggleHide(id: string, breakpoint: Breakpoint) {
+        this.doc = this.docWith(id);
         const block = findBlock(this.blocks(), id);
         if (!block) return;
         const hide = block.layout?.hide ?? [];
@@ -310,9 +384,10 @@ export class SiteEditor extends Cossack {
 
     @Client()
     private remove(id: string) {
+        this.doc = this.docWith(id);
         const block = findBlock(this.blocks(), id);
         if (!block) return;
-        if (this.form?.id === id) this.form = null;
+        if (this.form?.id === id && this.form.doc === this.doc) this.form = null;
         this.setBlocks(removeBlock(this.blocks(), id), `${this.label(block)} ${__('removed.')}`);
     }
 
@@ -326,7 +401,8 @@ export class SiteEditor extends Cossack {
 
     @Client()
     private edit(id: string) {
-        const marker = document.querySelector(`[data-cms-edit="block"][data-block-id="${CSS.escape(id)}"]`);
+        this.doc = this.docWith(id);
+        const marker = this.markerFor(id);
         if (marker) marker.firstElementChild?.scrollIntoView({ block: 'center' });
         requestAnimationFrame(() => this.select(id, marker));
     }
@@ -334,25 +410,28 @@ export class SiteEditor extends Cossack {
     // --- Dragging, as the menu editor does: rows with depths; sideways changes the depth ---
 
     @Client()
-    private startDrag(event: PointerEvent, index: number) {
-        if (event.button !== 0 || !this.list) return;
+    private startDrag(event: PointerEvent, doc: string, index: number) {
+        const list = this.lists.get(doc);
+        if (event.button !== 0 || !list) return;
         event.preventDefault();
         (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
-        const top = this.list.getBoundingClientRect().top;
-        const places = this.places();
-        const rects = places.map(place => this.rows.get(place.block._id)?.getBoundingClientRect());
+        this.doc = doc;
+        const top = list.getBoundingClientRect().top;
+        const places = this.placesOf(doc);
+        const rects = places.map(place => this.rows.get(rowKey(doc, place.block._id))?.getBoundingClientRect());
         this.pointer = { id: event.pointerId, x: event.clientX, y: event.clientY, tops: rects.map(rect => (rect?.top ?? 0) - top), bottoms: rects.map(rect => (rect?.bottom ?? 0) - top) };
-        this.drag = { from: index, to: index, y: 0, depth: places[index]?.depth ?? 0, moved: false };
+        this.drag = { doc, from: index, to: index, y: 0, depth: places[index]?.depth ?? 0, moved: false };
     }
 
     @Client()
     private moveDrag(event: PointerEvent) {
         const pointer = this.pointer;
         const drag = this.drag;
-        if (!pointer || !drag || event.pointerId !== pointer.id || !this.list) return;
+        const list = drag ? this.lists.get(drag.doc) : undefined;
+        if (!pointer || !drag || event.pointerId !== pointer.id || !list) return;
         if (!drag.moved && Math.abs(event.clientY - pointer.y) < 4 && Math.abs(event.clientX - pointer.x) < 12) return;
-        const y = event.clientY - this.list.getBoundingClientRect().top;
-        const places = this.places();
+        const y = event.clientY - list.getBoundingClientRect().top;
+        const places = this.placesOf(drag.doc);
         // The subtree moves with its root: rows inside it are not drop targets.
         const size = placeBlocks([places[drag.from]!.block]).length;
         const rest = places.map((_, index) => index).filter(index => index < drag.from || index >= drag.from + size);
@@ -370,12 +449,13 @@ export class SiteEditor extends Cossack {
         this.pointer = null;
         this.drag = null;
         if (!drag?.moved) return;
-        const blocks = this.blocks();
-        const block = this.places()[drag.from]?.block;
+        const blocks = this.blocksOf(drag.doc);
+        const places = this.placesOf(drag.doc);
+        const block = places[drag.from]?.block;
         if (!block) return;
         const next = reorderBlocks(blocks, drag.from, drag.to, drag.depth, declarationsOf(this.props.draft.view.blocks));
-        if (placeBlocks(next).every((place, position) => place.block._id === blocks[position]?._id && place.depth === this.places()[position]?.depth)) return;
-        this.setBlocks(next, `${this.label(block)}: ${this.position(next, block._id)}`);
+        if (placeBlocks(next).every((place, position) => place.block._id === blocks[position]?._id && place.depth === places[position]?.depth)) return;
+        this.setBlocksOf(drag.doc, next, `${this.label(block)}: ${this.position(next, block._id)}`);
     }
 
     @Client()
@@ -705,14 +785,15 @@ export class SiteEditor extends Cossack {
         </form>`;
     }
 
-    /** The IDs of every other block in the field, which a custom block ID may not repeat. */
+    /** The IDs of every other block in the block's document, which a custom block ID may not repeat. */
     private otherIds(id: string): ReadonlySet<string> {
-        return new Set(this.places().map(place => place.block._id).filter(entry => entry !== id));
+        return new Set(this.placesOf(this.docWith(id)).map(place => place.block._id).filter(entry => entry !== id));
     }
 
     /** Whether the block can move into the sibling above it. */
     private canGoIn(id: string): boolean {
-        return shiftBlock(this.blocks(), id, 'in', declarationsOf(this.props.draft.view.blocks)) !== this.blocks();
+        const blocks = this.blocksOf(this.docWith(id));
+        return shiftBlock(blocks, id, 'in', declarationsOf(this.props.draft.view.blocks)) !== blocks;
     }
 
     private iconButton(label: string | TemplateResult, title: string, run: () => void, disabled = false): TemplateResult {
@@ -720,46 +801,71 @@ export class SiteEditor extends Cossack {
             class="rounded border border-border bg-background px-2 py-0.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer disabled:cursor-default disabled:opacity-40" @click=${run}>${label}</button>`;
     }
 
+    /** The page's documents in page order: the header, the entry's content, then the other areas. */
+    private documents(): { key: string; label: string; editable: boolean; document: SiteDocument | null }[] {
+        const areas = this.props.draft.documents;
+        const area = (document: SiteDocument) => ({ key: document.key, label: document.label, editable: document.editable, document });
+        const entry = this.props.draft.blocksField ? [{ key: 'entry', label: __('Content'), editable: true, document: null }] : [];
+        return [...areas.filter(document => document.name === 'header').map(area), ...entry, ...areas.filter(document => document.name !== 'header').map(area)];
+    }
+
     private blocksPanel(): TemplateResult {
-        const places = this.places();
-        const drag = this.drag;
-        const options = this.props.draft.view.blocks;
-        return html`<div class="space-y-3">
+        const documents = this.documents();
+        return html`<div class="space-y-5">
             <p id="site-blocks-help" class="text-xs text-muted-foreground">${__('Drag a block by its handle, sideways to change its container, or focus the handle and use the arrow keys: up and down among its siblings, right into the block above, left out of its container. Click a block on the page to edit it.')}</p>
-            ${places.length ? html`<ol class="relative space-y-1.5" aria-label=${__('Blocks')} ref=${(element: Element) => { this.list = element as HTMLElement; }}>
-                ${drag?.moved ? html`<li aria-hidden="true" class="pointer-events-none absolute right-0 h-0.5 rounded bg-primary" style=${`top: ${drag.y}px; left: ${drag.depth * 1.25}rem`}></li>` : null}
-                ${places.map((place, index) => {
-                    const block = place.block;
-                    const option = this.option(block.type);
-                    const hide = block.layout?.hide ?? [];
-                    const offered = option?.children ? offeredIn(options, option) : [];
-                    return html`<li class=${`transition-opacity ${drag?.moved && index >= drag.from && index < drag.from + placeBlocks([places[drag.from]!.block]).length ? 'opacity-40' : ''}`} data-site-block=${block._id} data-depth=${place.depth}
-                        style=${`padding-left: ${place.depth * 1.25}rem`} ref=${(element: Element) => { if (element) this.rows.set(block._id, element as HTMLElement); else this.rows.delete(block._id); }}>
-                        <div class="flex items-center gap-2 rounded-md border border-border bg-card px-2 py-1.5">
-                            <button type="button" class="flex h-8 w-6 shrink-0 cursor-grab touch-none items-center justify-center rounded border-none bg-transparent text-muted-foreground hover:bg-muted active:cursor-grabbing"
-                                aria-label=${`${__('Move')} ${this.label(block)}. ${__('Drag, or use the arrow keys.')}`} aria-describedby="site-blocks-help" data-handle
-                                ref=${(element: Element) => { if (element) this.handles.set(block._id, element as HTMLElement); else this.handles.delete(block._id); }}
-                                @pointerdown=${(event: PointerEvent) => this.startDrag(event, index)} @pointermove=${(event: PointerEvent) => this.moveDrag(event)}
-                                @pointerup=${(event: PointerEvent) => this.endDrag(event)} @pointercancel=${() => this.cancelDrag()} @lostpointercapture=${() => this.cancelDrag()}
-                                @keydown=${(event: KeyboardEvent) => this.handleKey(event, block._id)}>
-                                <svg aria-hidden="true" viewBox="0 0 10 16" class="h-4 w-2.5 fill-current"><circle cx="2" cy="2" r="1.5"/><circle cx="8" cy="2" r="1.5"/><circle cx="2" cy="8" r="1.5"/><circle cx="8" cy="8" r="1.5"/><circle cx="2" cy="14" r="1.5"/><circle cx="8" cy="14" r="1.5"/></svg>
-                            </button>
-                            <span class="min-w-0 flex-1">
-                                <span class="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">${this.label(block)}${hide.length ? html` <span class="normal-case tracking-normal" data-hidden-on=${hide.join(' ')}>· ${__('hidden on')} ${hide.map(entry => __(BREAKPOINT_DEVICES[entry].label)).join(', ')}</span>` : null}</span>
-                                <span class="block truncate text-sm">${this.summary(block)}</span>
-                            </span>
-                            ${offered.length && (option?.children?.max === null || (block.children ?? []).length < (option?.children?.max ?? 0))
-                                ? component(BlockInserter, { id: `site-editor-add-${block._id}`, blocks: offered, compact: true, onPick: (type: string) => this.add(type, block._id) }) : null}
-                            ${noteMarker(this.blockNoteCount(block._id), this.label(block), () => this.showBlockNotes(block._id))}
-                            ${this.props.draft.blocksField ? noteButton(`site-note-${block._id}`, this.label(block), () => this.startNote(formatNoteTarget({ kind: 'block', field: this.props.draft.blocksField!, block: block._id })), { always: true }) : null}
-                            ${option?.fields.length ? this.iconButton(__('Edit'), `${__('Edit')} ${this.label(block)}`, () => this.edit(block._id)) : null}
-                            ${this.iconButton(trash(), `${__('Remove')} ${this.label(block)}`, () => this.remove(block._id))}
-                        </div>
-                    </li>`;
-                })}
-            </ol>` : html`<p class="rounded-md border border-dashed border-border p-4 text-center text-sm text-muted-foreground">${__('No blocks yet.')}</p>`}
-            ${component(BlockInserter, { id: 'site-editor-blocks', blocks: offeredIn(options, null, this.allowed()), onPick: (type: string) => this.add(type) })}
+            ${documents.map(entry => this.documentSection(entry, documents.length > 1))}
         </div>`;
+    }
+
+    /** One document's tree, its inserter and, for an area, its save state. */
+    private documentSection({ key, label, editable, document: doc }: { key: string; label: string; editable: boolean; document: SiteDocument | null }, titled: boolean): TemplateResult {
+        const places = this.placesOf(key);
+        const drag = this.drag?.doc === key ? this.drag : null;
+        const options = this.optionsFor(key);
+        return html`<section class="space-y-3" data-site-doc=${key} aria-label=${label}>
+            ${titled ? html`<h3 class="flex flex-wrap items-center gap-x-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">${label}
+                ${editable ? null : html`<span class="font-normal normal-case tracking-normal" data-locked>· ${__('Administrators edit this')}</span>`}
+                ${doc?.changed ? html`<span class="font-normal normal-case tracking-normal">· ${__('Unsaved changes')}</span>` : null}</h3>` : null}
+            ${doc?.error ? html`<p role="alert" class="flex flex-wrap items-center gap-2 text-xs text-destructive">${doc.error}
+                ${doc.conflict ? component(Button, { type: 'button', size: 'sm', variant: 'outline', '@click': () => this.props.onReload() }, __('Reload')) : null}</p>` : null}
+            ${places.length ? html`<ol class="relative space-y-1.5" aria-label=${label} ref=${(element: Element) => { if (element) this.lists.set(key, element as HTMLElement); else this.lists.delete(key); }}>
+                ${drag?.moved ? html`<li aria-hidden="true" class="pointer-events-none absolute right-0 h-0.5 rounded bg-primary" style=${`top: ${drag.y}px; left: ${drag.depth * 1.25}rem`}></li>` : null}
+                ${places.map((place, index) => this.blockRow(key, place, index, places, drag, editable, options))}
+            </ol>` : html`<p class="rounded-md border border-dashed border-border p-4 text-center text-sm text-muted-foreground">${__('No blocks yet.')}</p>`}
+            ${editable ? component(BlockInserter, { id: `site-editor-blocks-${key.replace(':', '-')}`, blocks: offeredIn(options, null, this.allowedIn(key)), onPick: (type: string) => this.add(type, null, key) }) : null}
+        </section>`;
+    }
+
+    private blockRow(key: string, place: BlockPlace<DraftBlock>, index: number, places: readonly BlockPlace<DraftBlock>[], drag: Drag | null, editable: boolean, options: readonly BlockOption[]): TemplateResult {
+        const block = place.block;
+        const option = this.option(block.type);
+        const hide = block.layout?.hide ?? [];
+        const offered = option?.children ? offeredIn(options, option) : [];
+        const entry = key === 'entry';
+        const dragged = drag?.moved && index >= drag.from && index < drag.from + placeBlocks([places[drag.from]!.block]).length;
+        return html`<li class=${`transition-opacity ${dragged ? 'opacity-40' : ''}`} data-site-block=${block._id} data-depth=${place.depth}
+            style=${`padding-left: ${place.depth * 1.25}rem`} ref=${(element: Element) => { if (element) this.rows.set(rowKey(key, block._id), element as HTMLElement); else this.rows.delete(rowKey(key, block._id)); }}>
+            <div class="flex items-center gap-2 rounded-md border border-border bg-card px-2 py-1.5">
+                <button type="button" class="flex h-8 w-6 shrink-0 cursor-grab touch-none items-center justify-center rounded border-none bg-transparent text-muted-foreground hover:bg-muted active:cursor-grabbing disabled:cursor-default disabled:opacity-40"
+                    aria-label=${`${__('Move')} ${this.label(block)}. ${__('Drag, or use the arrow keys.')}`} aria-describedby="site-blocks-help" data-handle ?disabled=${!editable}
+                    ref=${(element: Element) => { if (element) this.handles.set(rowKey(key, block._id), element as HTMLElement); else this.handles.delete(rowKey(key, block._id)); }}
+                    @pointerdown=${(event: PointerEvent) => this.startDrag(event, key, index)} @pointermove=${(event: PointerEvent) => this.moveDrag(event)}
+                    @pointerup=${(event: PointerEvent) => this.endDrag(event)} @pointercancel=${() => this.cancelDrag()} @lostpointercapture=${() => this.cancelDrag()}
+                    @keydown=${(event: KeyboardEvent) => this.handleKey(event, block._id)}>
+                    <svg aria-hidden="true" viewBox="0 0 10 16" class="h-4 w-2.5 fill-current"><circle cx="2" cy="2" r="1.5"/><circle cx="8" cy="2" r="1.5"/><circle cx="2" cy="8" r="1.5"/><circle cx="8" cy="8" r="1.5"/><circle cx="2" cy="14" r="1.5"/><circle cx="8" cy="14" r="1.5"/></svg>
+                </button>
+                <span class="min-w-0 flex-1">
+                    <span class="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">${this.label(block)}${hide.length ? html` <span class="normal-case tracking-normal" data-hidden-on=${hide.join(' ')}>· ${__('hidden on')} ${hide.map(entry => __(BREAKPOINT_DEVICES[entry].label)).join(', ')}</span>` : null}</span>
+                    <span class="block truncate text-sm">${this.summary(block)}</span>
+                </span>
+                ${editable && offered.length && (option?.children?.max === null || (block.children ?? []).length < (option?.children?.max ?? 0))
+                    ? component(BlockInserter, { id: `site-editor-add-${key.replace(':', '-')}-${block._id}`, blocks: offered, compact: true, onPick: (type: string) => this.add(type, block._id) }) : null}
+                ${entry ? noteMarker(this.blockNoteCount(block._id), this.label(block), () => this.showBlockNotes(block._id)) : null}
+                ${entry && this.props.draft.blocksField ? noteButton(`site-note-${block._id}`, this.label(block), () => this.startNote(formatNoteTarget({ kind: 'block', field: this.props.draft.blocksField!, block: block._id })), { always: true }) : null}
+                ${editable && option?.fields.length ? this.iconButton(__('Edit'), `${__('Edit')} ${this.label(block)}`, () => this.edit(block._id)) : null}
+                ${editable ? this.iconButton(trash(), `${__('Remove')} ${this.label(block)}`, () => this.remove(block._id)) : null}
+            </div>
+        </li>`;
     }
 
     private entryPanel(): TemplateResult {
@@ -843,7 +949,9 @@ export class SiteEditor extends Cossack {
         const tab = (panel: 'entry' | 'blocks' | 'body', label: string) => html`<button type="button" aria-pressed=${this.panel === panel ? 'true' : 'false'}
             class=${`rounded-full px-3 py-1.5 text-sm border-none cursor-pointer ${this.panel === panel ? 'bg-muted text-foreground' : 'bg-transparent text-muted-foreground hover:text-foreground'}`}
             @click=${() => this.openPanel(panel)}>${label}</button>`;
-        const status = saving ? __('Saving…') : draft.conflict ? '' : draft.error ? draft.error : draft.changed ? __('Unsaved changes') : __('No unsaved changes');
+        const changed = this.changed();
+        const areaConflict = draft.documents.some(document => document.conflict);
+        const status = saving ? __('Saving…') : draft.conflict ? '' : draft.error ? draft.error : changed ? __('Unsaved changes') : __('No unsaved changes');
         const device = (name: Device) => html`<button type="button" aria-pressed=${this.device === name ? 'true' : 'false'} data-device=${name} title=${__(DEVICE_LABELS[name])}
             class=${`rounded-full px-2 py-1 text-xs border-none cursor-pointer ${this.device === name ? 'bg-muted text-foreground' : 'bg-transparent text-muted-foreground hover:text-foreground'}`}
             @click=${() => this.setDevice(name)}>${__(DEVICE_LABELS[name])}</button>`;
@@ -851,7 +959,7 @@ export class SiteEditor extends Cossack {
         return html`<div role="region" aria-label=${__('Editing')} data-site-editor-bar class="fixed bottom-0 z-50 flex h-10 items-center gap-1 overflow-x-auto border-t border-border bg-background/95 px-2 text-foreground backdrop-blur md:border-t-0 md:bg-transparent md:backdrop-blur-none"
             style="left: var(--cms-taskbar-start, 0px); right: var(--cms-taskbar-end, 0px)">
             ${tab('entry', __('Entry'))}
-            ${draft.blocksField ? tab('blocks', __('Blocks')) : null}
+            ${draft.blocksField || draft.documents.length ? tab('blocks', __('Blocks')) : null}
             ${draft.bodyField ? tab('body', __('Text')) : null}
             <button type="button" aria-pressed=${this.notesOpen ? 'true' : 'false'} data-notes-toggle=${this.openRoots().length}
                 class=${`rounded-full px-3 py-1.5 text-sm border-none cursor-pointer ${this.notesOpen ? 'bg-muted text-foreground' : 'bg-transparent text-muted-foreground hover:text-foreground'}`}
@@ -860,14 +968,15 @@ export class SiteEditor extends Cossack {
             <span role="status" class=${`px-2 text-xs ${draft.error && !draft.conflict ? 'text-destructive' : 'text-muted-foreground'}`}>${status}</span>
             ${draft.conflict ? html`<span role="alert" class="flex items-center gap-2 px-2 text-xs text-destructive">${__('Someone saved this entry since you started.')}
                 ${component(Button, { type: 'button', size: 'sm', variant: 'outline', '@click': () => this.props.onReload() }, __('Reload'))}</span>` : null}
+            ${!draft.conflict && areaConflict ? html`<span role="alert" class="px-2 text-xs text-destructive">${__('An area changed since you started: see the Blocks panel.')}</span>` : null}
             ${component(Button, { type: 'button', size: 'sm', variant: 'ghost', '@click': () => this.exit() }, __('Exit'))}
-            ${component(Button, { type: 'button', size: 'sm', disabled: saving || !draft.changed || draft.conflict, '@click': () => this.props.onSave() }, __('Save'))}
+            ${component(Button, { type: 'button', size: 'sm', disabled: saving || !changed || draft.conflict, '@click': () => this.props.onSave() }, __('Save'))}
         </div>`;
     }
 
     @Client()
     private exit() {
-        if (this.props.draft.changed && !window.confirm(__('Leave edit mode? Unsaved changes will be lost.'))) return;
+        if (this.changed() && !window.confirm(__('Leave edit mode? Unsaved changes will be lost.'))) return;
         this.props.onExit();
     }
 
