@@ -91,12 +91,30 @@ them in its own stylesheet, or draws the menu itself from `site.menus` as the fa
 does. The current page's link carries `aria-current="page"`. Each item's class names and
 attributes land on its link.
 
+`motion` chooses how dropdowns and mega panels open, as `data-motion` on the `nav`:
+
+| Motion | Opens |
+| --- | --- |
+| `rise` (default) | Fades in and lifts into place. |
+| `fade` | Fades in. |
+| `scale` | Grows from the top edge. |
+| `none` | Switches. |
+
+All of them are CSS: opening is immediate, closing waits 80 ms so a pointer moving diagonally
+toward a panel does not make it flicker, and `prefers-reduced-motion` turns every preset into
+a switch. A theme tunes them through the `--cms-nav-duration`, `--cms-nav-ease`,
+`--cms-nav-offset` and `--cms-nav-close-delay` variables, on `.cms-nav` for the whole site or
+on one `nav` through `class`, and adds its own preset by passing another name, say `swing`,
+and styling `[data-motion="swing"] .cms-nav-sub, [data-motion="swing"] .cms-mega` (closed) in
+its stylesheet; the open state is `transform: none`, `opacity: 1`.
+
 ## The Navigation block
 
 The **Navigation** block renders a location through the same helper, so editors place a menu
 in widget areas (a footer, a sidebar) and in content. Its fields are the location, chosen from
-the themes' declared locations, and the style. Under Appearance → Widgets a navigation block
-in a footer area with the `inline` style is the usual footer menu.
+the themes' declared locations, the style, and the animation (the motions above; *Rise* by
+default). Under Appearance → Widgets a navigation block in a footer area with the `inline`
+style is the usual footer menu.
 
 ## API
 

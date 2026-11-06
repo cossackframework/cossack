@@ -100,12 +100,15 @@ function locationLabel(location: string): string {
  * and badge from the field groups attached to menu items, the panel's blocks beside them), and a
  * disclosure with the whole tree below 768px. `inline` is one row with children flattened, for
  * footers; `list` the whole tree as nested lists, for sidebars. Panels and dropdowns open on
- * hover, keyboard focus and while a block inside is selected in Live Edit (`cms/blocks.css`).
- * Null without items. Themes restyle the `cms-nav-*` and `cms-mega-*` classes or draw their own.
+ * hover, keyboard focus and while a block inside is selected in Live Edit, with the motion the
+ * `nav`'s `data-motion` names (`cms/blocks.css`: `rise` by default, `fade`, `scale`, `none`, or
+ * a theme's own). Null without items. Themes restyle the `cms-nav-*` and `cms-mega-*` classes
+ * or draw their own.
  */
 export function menuNav(items: readonly MenuItemView[], options: MenuOptions, helpers: Pick<ThemeHelpers, 'block' | 'isActive'>): TemplateResult | null {
     if (!items.length) return null;
     const style = options.style === 'inline' || options.style === 'list' ? options.style : 'dropdowns';
+    const motion = typeof options.motion === 'string' && options.motion.trim() ? options.motion.trim() : 'rise';
     const label = options.label ?? __('Menu');
     const className = `cms-nav cms-nav-${style}${options.class ? ` ${options.class}` : ''}`;
     const badge = (item: MenuItemView) => typeof item.fields.badge === 'string' && item.fields.badge ? html` <span class="cms-nav-badge">${item.fields.badge}</span>` : null;
@@ -160,7 +163,7 @@ export function menuNav(items: readonly MenuItemView[], options: MenuOptions, he
         const sub = isMega ? mega(item) : item.children.length ? dropdown(item.children) : null;
         return html`<li class=${`cms-nav-item${sub ? ' cms-nav-has-sub' : ''}`} data-mega=${ifDefined(isMega ? '' : undefined)}>${link(item, 'cms-nav-link')}${sub}</li>`;
     };
-    return html`<nav class=${className} aria-label=${label}>
+    return html`<nav class=${className} aria-label=${label} data-motion=${motion}>
         <ul class="cms-nav-list">${items.map(top)}</ul>
         <details class="cms-nav-mobile"><summary class="cms-nav-toggle">${__('Menu')}</summary><ul class="cms-nav-tree">${items.map(tree)}</ul></details>
     </nav>`;
@@ -452,7 +455,7 @@ export function coreBlock(block: RenderedBlock, helpers: ThemeHelpers, state?: P
         case 'core/definition': return html`<dl class="cms-definition my-6 rounded-lg border border-border p-4"><dt class="text-lg font-semibold">${text('term')}</dt><dd class=${`${PROSE} mt-1 [&_p]:my-1`}>${unsafeHTML(block.html.definition ?? '')}</dd></dl>`;
         case 'core/latest-entries': return latestEntries(block);
         case 'core/languages': return helpers.languages({ style: text('style'), layout: text('layout') });
-        case 'core/navigation': return helpers.menu(text('location') || 'primary', { style: text('style') });
+        case 'core/navigation': return helpers.menu(text('location') || 'primary', { style: text('style'), motion: text('motion') });
         case 'core/meta': return null;
         // Layout blocks: CSS grid from cms/blocks.css, responding to the content root's width.
         case 'core/group': return html`<div class="cms-group" data-align=${text('align') || 'full'} data-direction=${text('direction') || 'column'} data-justify=${text('justify') || 'start'}>${children.map(child => helpers.block(child))}</div>`;

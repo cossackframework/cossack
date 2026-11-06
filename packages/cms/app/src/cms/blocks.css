@@ -171,15 +171,32 @@ hr.cms-divider { height: var(--cms-divider-size); background: var(--cms-divider-
 .cms-nav-has-sub > .cms-nav-link::after { content: ''; width: 0.4em; height: 0.4em; margin-left: 0.15em; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: translateY(-0.15em) rotate(45deg); opacity: 0.7; }
 a.cms-nav-link:hover, a.cms-nav-sublink:hover, a.cms-nav-treelink:hover, .cms-mega-link:hover { color: var(--foreground); }
 .cms-nav [aria-current="page"], .cms-nav-heading { color: var(--foreground); font-weight: 500; }
-.cms-nav-sub, .cms-mega { position: absolute; top: 100%; z-index: 20; visibility: hidden; opacity: 0; transition: opacity 150ms, visibility 150ms; }
+/*
+ * How dropdowns and mega panels open, chosen per menu by `data-motion` on the nav (the
+ * Navigation block's Animation field, or `helpers.menu(…, { motion })`): `rise` (the default)
+ * fades in and lifts by the offset, `fade` only fades, `scale` grows from the top edge, `none`
+ * switches. The variables tune every preset, on `.cms-nav` for the site or on one nav; a theme
+ * adds a preset of its own under `[data-motion="<name>"]`. Opening is immediate; closing waits
+ * the close delay, so a pointer moving diagonally toward a panel does not make it flicker.
+ */
+.cms-nav { --cms-nav-duration: 160ms; --cms-nav-ease: cubic-bezier(0.2, 0, 0, 1); --cms-nav-offset: 6px; --cms-nav-close-delay: 80ms; }
+.cms-nav-sub, .cms-mega { position: absolute; top: 100%; z-index: 20; visibility: hidden; opacity: 0; transform: translateY(var(--cms-nav-offset));
+    transition-property: opacity, transform, visibility;
+    transition-duration: var(--cms-nav-duration), var(--cms-nav-duration), 0s;
+    transition-timing-function: var(--cms-nav-ease), var(--cms-nav-ease), linear;
+    transition-delay: var(--cms-nav-close-delay), var(--cms-nav-close-delay), calc(var(--cms-nav-close-delay) + var(--cms-nav-duration)); }
+[data-motion="fade"] .cms-nav-sub, [data-motion="fade"] .cms-mega, [data-motion="none"] .cms-nav-sub, [data-motion="none"] .cms-mega { transform: none; }
+[data-motion="scale"] .cms-nav-sub, [data-motion="scale"] .cms-mega { transform: scale(0.96); transform-origin: top center; }
+.cms-nav[data-motion="none"] { --cms-nav-duration: 0s; }
 .cms-nav-item:hover > .cms-nav-sub, .cms-nav-item:focus-within > .cms-nav-sub, .cms-nav-item:has([data-cms-selected]) > .cms-nav-sub,
-.cms-nav-item:hover > .cms-mega, .cms-nav-item:focus-within > .cms-mega, .cms-nav-item:has([data-cms-selected]) > .cms-mega { visibility: visible; opacity: 1; }
+.cms-nav-item:hover > .cms-mega, .cms-nav-item:focus-within > .cms-mega, .cms-nav-item:has([data-cms-selected]) > .cms-mega { visibility: visible; opacity: 1; transform: none; transition-delay: 0s; }
+@media (prefers-reduced-motion: reduce) { .cms-nav { --cms-nav-duration: 0s; --cms-nav-offset: 0px; } }
 .cms-nav-sub { left: 0; min-width: 12rem; padding-top: 0.5rem; }
 .cms-nav-sub .cms-nav-sub { top: 0; left: 100%; padding-top: 0; padding-left: 0.25rem; }
 .cms-nav-sublist { border: 1px solid var(--border); border-radius: 0.5rem; background: var(--popover); color: var(--popover-foreground); padding: 0.25rem; box-shadow: 0 12px 32px -12px rgb(0 0 0 / 0.35); }
 .cms-nav-sublink { display: block; border-radius: 0.375rem; padding: 0.5rem 0.75rem; }
 a.cms-nav-sublink:hover { background: var(--muted); }
-.cms-mega { left: 50%; transform: translateX(-50%); width: max-content; min-width: 20rem; max-width: min(64rem, calc(100vw - 2rem)); padding-top: 0.5rem; text-align: left; }
+.cms-mega { left: 50%; translate: -50% 0; width: max-content; min-width: 20rem; max-width: min(64rem, calc(100vw - 2rem)); padding-top: 0.5rem; text-align: left; }
 .cms-mega-box { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2rem; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--popover); color: var(--popover-foreground); padding: 1.5rem; box-shadow: 0 16px 40px -16px rgb(0 0 0 / 0.4); }
 .cms-mega[data-panel] .cms-mega-box { grid-template-columns: minmax(0, 1fr) minmax(14rem, 18rem); }
 .cms-mega[data-panel] .cms-mega-columns:empty + .cms-mega-panel { grid-column: 1 / -1; }

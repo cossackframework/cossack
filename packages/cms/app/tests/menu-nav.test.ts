@@ -20,7 +20,7 @@ describe('helpers.menu', () => {
 
     it('draws a header menu with dropdowns and the small-screen disclosure', async () => {
         const markup = await render([item('home', 'Home', '/'), item('about', 'About', '/about', { children: [item('team', 'Team', '/about/team', { newTab: true, className: 'featured', attributes: { 'data-track': 'team' } })] })], { label: 'Primary' });
-        expect(markup).toContain('<nav class="cms-nav cms-nav-dropdowns" aria-label="Primary">');
+        expect(markup).toContain('<nav class="cms-nav cms-nav-dropdowns" aria-label="Primary" data-motion="rise">');
         expect(markup).toContain('cms-nav-has-sub');
         expect(markup).toContain('<div class="cms-nav-sub">');
         expect(markup).toMatch(/<a href="\/about\/team" class="cms-nav-sublink featured"[^>]*target="_blank"[^>]*data-track="team"/);
@@ -50,6 +50,17 @@ describe('helpers.menu', () => {
         expect(markup).toContain('<div class="cms-mega-panel cms-content"><div class="panel-card">Try it free</div></div>');
         // The disclosure shows the heading as text, not a link.
         expect(markup).toContain('<span class="cms-nav-treelink cms-nav-heading">By team</span>');
+    });
+
+    it('names the opening motion on the nav, rise unless chosen, for the stylesheet and themes', async () => {
+        const items = [item('about', 'About', '/about', { children: [item('team', 'Team', '/about/team')] })];
+        expect(await render(items)).toContain('<nav class="cms-nav cms-nav-dropdowns" aria-label="Menu" data-motion="rise">');
+        expect(await render(items, { motion: 'scale' })).toContain('data-motion="scale"');
+        expect(await render(items, { motion: '' })).toContain('data-motion="rise"');
+        // A theme's own preset passes through; the row and list styles have nothing to open.
+        expect(await render(items, { motion: 'swing' })).toContain('data-motion="swing"');
+        expect(await render(items, { style: 'inline', motion: 'scale' })).not.toContain('data-motion');
+        expect(await render(items, { style: 'list' })).not.toContain('data-motion');
     });
 
     it('flattens one level in a row and nests the whole tree in a list', async () => {

@@ -472,6 +472,9 @@ export interface LanguageSwitcherOptions {
 /** How `helpers.menu()` lays a menu out. */
 export type MenuStyle = 'dropdowns' | 'inline' | 'list';
 
+/** How a header menu's dropdowns and mega panels open: fade in and lift, fade, grow from the top edge, or switch. */
+export type MenuMotion = 'rise' | 'fade' | 'scale' | 'none';
+
 /** What `helpers.menu()` renders: a menu's items in one of the styles. */
 export interface MenuOptions {
     /**
@@ -481,6 +484,13 @@ export interface MenuOptions {
      * column with the whole tree, for sidebars.
      */
     readonly style?: MenuStyle | string;
+    /**
+     * How dropdowns and mega panels open, as `data-motion` on the `nav`: `rise` (the default)
+     * fades in and lifts, `fade` only fades, `scale` grows from the top edge, `none` switches.
+     * Another name is passed through for the theme's own stylesheet to style; the
+     * `--cms-nav-duration`, `--cms-nav-ease` and `--cms-nav-offset` variables tune every preset.
+     */
+    readonly motion?: MenuMotion | string;
     /** The `nav` element's accessible name; the location's label by default. */
     readonly label?: string;
     /** Class names for the `nav` element. */
