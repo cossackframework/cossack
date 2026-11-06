@@ -33,6 +33,35 @@ export function sharedApps() {
   afterAll(async () => { await Promise.all(parents.splice(0).map(root => fs.rm(root, { recursive: true, force: true }))); });
   return (adapter, features = [], options = {}) => project(adapter, features, options, parents);
 }
+/**
+ * The application Durable Object of a generated Cloudflare app. Every such app binds
+ * `COSSACK_OBJECT` to `AppDurableObject` with a `realtime-v1` migration (co-editing needs it), so
+ * a fixture keeps that binding, or points it at a class of its own by renaming the class in the
+ * binding and its migration. A second `COSSACK_OBJECT` binding fails wrangler's validation.
+ * Returns false for an app without wrangler.jsonc (Node).
+ */
+export async function useAppDurableObject(root, className = 'AppDurableObject') {
+  const configPath = path.join(root, 'wrangler.jsonc');
+  let config;
+  try { config = JSON.parse(await fs.readFile(configPath, 'utf8')); }
+  catch (error) { if (error.code !== 'ENOENT') throw error; return false; }
+  config.durable_objects ??= { bindings: [] };
+  config.migrations ??= [];
+  const binding = config.durable_objects.bindings.find(entry => entry.name === 'COSSACK_OBJECT');
+  if (binding) {
+    const previous = binding.class_name;
+    binding.class_name = className;
+    for (const migration of config.migrations) {
+      if (Array.isArray(migration.new_sqlite_classes)) migration.new_sqlite_classes = migration.new_sqlite_classes.map(name => name === previous ? className : name);
+    }
+  } else {
+    config.durable_objects.bindings.push({ name: 'COSSACK_OBJECT', class_name: className });
+    config.migrations.push({ tag: 'realtime-v1', new_sqlite_classes: [className] });
+  }
+  await fs.writeFile(configPath, JSON.stringify(config));
+  return true;
+}
+
 export const run = promisify(execFile);
 export const cossack = (root, args, options = {}) => run(process.execPath, [path.join(repository, 'packages/cossack/bin/cossack.js'), ...args],
   { cwd: root, timeout: 30000, maxBuffer: 1024 * 1024, ...options });

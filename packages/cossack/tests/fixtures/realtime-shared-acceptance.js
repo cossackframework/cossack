@@ -6,6 +6,7 @@ import path from 'node:path';
 import { expect } from 'vitest';
 import { expect as browserExpect } from '@playwright/test';
 import { WebSocket } from 'ws';
+import { useAppDurableObject } from './generated-app.js';
 
 const layoutPath = '/src/pages/(live)/layout.ts';
 const cartId = '/src/components/CartBadge.ts#CartBadge';
@@ -122,16 +123,8 @@ export async function writeRealtimeSharedAcceptance(root) {
     @Page({ transport: 'durable-object' })
     export default class EchoRoom extends Cossack { render() { return html\`<h1>Echo room</h1>\${component(Echo)}\`; } }
   `);
-  // Cloudflare: the application Durable Object hosts every realtime owner.
-  const configPath = path.join(root, 'wrangler.jsonc');
-  let config;
-  try { config = JSON.parse(await fs.readFile(configPath, 'utf8')); }
-  catch (error) { if (error.code !== 'ENOENT') throw error; }
-  if (config) {
-    config.durable_objects.bindings.push({ name: 'COSSACK_OBJECT', class_name: 'AppDurableObject' });
-    config.migrations.push({ tag: 'realtime-v2', new_sqlite_classes: ['AppDurableObject'] });
-    await fs.writeFile(configPath, JSON.stringify(config));
-  }
+  // Cloudflare: the application Durable Object the generated app binds hosts every realtime owner.
+  await useAppDurableObject(root);
 }
 
 async function initialState(origin, pathname, user) {

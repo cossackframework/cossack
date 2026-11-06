@@ -16,8 +16,10 @@ Cossack applications deploy to Cloudflare Workers using Wrangler.
 
 ### Configure
 
-The minimal Cloudflare preset writes `wrangler.jsonc` with `src/index.ts`,
-the `COSSACK_SSE` binding, and a SQLite Durable Object migration:
+The minimal Cloudflare preset writes `wrangler.jsonc` with `src/index.ts` and two SQLite
+Durable Objects with their migrations: `COSSACK_SSE`, which coordinates server-sent events,
+and `COSSACK_OBJECT`, the application object that hosts realtime pages, layouts and
+components (the `durable-object` transport, co-editing and WebSocket owners):
 
 ```jsonc
 {
@@ -26,9 +28,9 @@ the `COSSACK_SSE` binding, and a SQLite Durable Object migration:
   "compatibility_date": "2026-06-06",
   "compatibility_flags": ["nodejs_als", "enable_request_signal"],
   "durable_objects": {
-    "bindings": [{ "name": "COSSACK_SSE", "class_name": "SseDurableObject" }]
+    "bindings": [{ "name": "COSSACK_SSE", "class_name": "SseDurableObject" }, { "name": "COSSACK_OBJECT", "class_name": "AppDurableObject" }]
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["SseDurableObject"] }]
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["SseDurableObject"] }, { "tag": "realtime-v1", "new_sqlite_classes": ["AppDurableObject"] }]
 }
 ```
 
