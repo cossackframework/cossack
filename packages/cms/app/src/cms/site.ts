@@ -61,7 +61,7 @@ function referencedBlocks(cms: CmsHost, block: { type: string; data: Record<stri
 export function bindingScopes(settings: SiteSettings, options: { entry?: Readonly<Record<string, unknown>> | null; user?: { readonly name: string } | null } = {}): BindingScopes {
     return {
         entry: options.entry ?? null,
-        site: { title: settings['general.siteTitle'], tagline: settings['general.tagline'], logo: settings['general.logo'], icon: settings['general.favicon'] },
+        site: { title: settings['general.siteTitle'], tagline: settings['general.tagline'], logo: settings['general.logo'], icon: settings['general.favicon'], year: new Date().getFullYear() },
         user: options.user ?? null,
     };
 }
@@ -120,9 +120,19 @@ export async function siteView(cms: CmsHost, theme: ThemeState, options: { local
     return {
         title: settings['general.siteTitle'], tagline: settings['general.tagline'], logo: settings['general.logo'] || null, blog, menus, noindex: settings['reading.discourageSearchEngines'],
         locale, languages: options.languages ?? [], searchUrl: `${localePrefix(languages, locale)}/search`, homeUrl: localePrefix(languages, locale) || '/',
-        areas: await areaViews(cms, info?.areas.map(area => area.name) ?? [], options.forms, bindingScopes(settings, options), options.usage),
+        areas: await areaViews(cms, info?.areas ?? [], options.forms, bindingScopes(settings, options), options.usage),
         template: options.template ?? null,
     };
+}
+
+/** What the site logo and search blocks need of the site, in the page's language. */
+export interface SiteInfo { readonly title: string; readonly tagline: string; readonly logo: string | null; readonly homeUrl: string; readonly searchUrl: string }
+
+export async function siteInfo(cms: CmsHost, locale?: string): Promise<SiteInfo> {
+    const settings = await cms.settings.all();
+    const languages = await cms.languages();
+    const prefix = localePrefix(languages, locale ?? languages.default);
+    return { title: settings['general.siteTitle'], tagline: settings['general.tagline'], logo: settings['general.logo'] || null, homeUrl: prefix || '/', searchUrl: `${prefix}/search` };
 }
 
 /**
@@ -154,12 +164,12 @@ export async function contentMenus(cms: CmsHost, theme: ThemeState, blocks: read
     return found ? siteMenus(cms, theme, options) : {};
 }
 
-/** The blocks of the theme's widget areas, rendered; blocks of inactive plugins are left out. */
-async function areaViews(cms: CmsHost, names: readonly string[], forms?: FormRequest, scopes?: BindingScopes, usage?: { user: boolean }): Promise<Record<string, RenderedBlock[]>> {
-    if (!names.length) return {};
-    const saved = await cms.areas.all().catch(() => new Map<string, { blocks: readonly { id: string; type: string; data: Record<string, unknown> }[] }>());
+/** The blocks of the theme's widget areas, rendered: the saved blocks, or the theme's defaults until the site saves its own; blocks of inactive plugins are left out. */
+export async function areaViews(cms: CmsHost, declared: readonly { name: string; defaults: readonly Block[] }[], forms?: FormRequest, scopes?: BindingScopes, usage?: { user: boolean }, drafts?: ReadonlyMap<string, readonly Block[]>): Promise<Record<string, RenderedBlock[]>> {
+    if (!declared.length) return {};
+    const saved = await cms.areas.all().catch(() => new Map<string, { blocks: readonly Block[] }>());
     const available = new Set((await cms.blocks()).map(block => block.name));
-    const blocks = new Map(names.map(name => [name, (saved.get(name)?.blocks ?? []).filter(block => available.has(block.type))]));
+    const blocks = new Map(declared.map(area => [area.name, (drafts?.get(area.name) ?? saved.get(area.name)?.blocks ?? area.defaults).filter(block => available.has(block.type))]));
     const all = [...blocks.values()].flat() as Block[];
     const patterns = await usedPatterns(cms, blockDocuments(all, cms.blockTypes), all);
     const expanded = new Map([...blocks].map(([name, list]) => [name, expandPatterns(list as Block[], patterns)]));

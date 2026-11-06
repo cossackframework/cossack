@@ -14,7 +14,7 @@ import { chooserKind, closedChooser, mediaChooser, uploadMedia, withFile, type M
 import { activePresets } from '../../../../../cms/site';
 import { blockIdOf, styleValues, withStyle, type BlockTab, type StyleValues } from '../../../../../cms/style-controls';
 
-interface AreaRow { name: string; label: string; theme: string; active: boolean; revision: number; blocks: EditorBlock[]; changed: boolean }
+interface AreaRow { name: string; label: string; theme: string; active: boolean; revision: number; blocks: EditorBlock[]; changed: boolean; /** The theme's default blocks show: nothing is saved for this site yet. */ defaulted: boolean; hasDefaults: boolean }
 /** The block being edited in the dialog: its fields' values on the General tab, its style on the Style tab. */
 interface BlockDialog { area: string; id: string; values: Record<string, unknown>; style: StyleValues; tab: BlockTab; errors: Record<string, string> }
 
@@ -54,7 +54,8 @@ export default class WidgetsPage extends Cossack {
         this.sources = await sourceChoices(cms);
         this.areas = (await cms.areaLocations()).map(area => {
             const stored = saved.get(area.name);
-            return { ...area, revision: stored?.revision ?? 0, blocks: editorBlocks((stored?.blocks ?? []) as EditorBlock[], this.options), changed: false };
+            // Until the site saves an area, the theme's default blocks show, and saving stores them as they are then.
+            return { name: area.name, label: area.label, theme: area.theme, active: area.active, revision: stored?.revision ?? 0, blocks: editorBlocks((stored?.blocks ?? area.defaults) as EditorBlock[], this.options), changed: false, defaulted: !stored, hasDefaults: area.defaults.length > 0 };
         });
         this.previews = await blockFilePreviews(cms, this.areas.flatMap(area => area.blocks));
         this.presets = await activePresets(cms);
@@ -71,9 +72,26 @@ export default class WidgetsPage extends Cossack {
         try {
             const known = (await cms.areaLocations()).map(entry => entry.name);
             const saved = await cms.areas.save(name, converted.value, { principal: this.c.get('principal'), expectedRevision: area.revision, known });
-            this.areas = this.areas.map(entry => entry.name === name ? { ...entry, revision: saved.revision, blocks: editorBlocks(saved.blocks as EditorBlock[], this.options), changed: false } : entry);
+            this.areas = this.areas.map(entry => entry.name === name ? { ...entry, revision: saved.revision, blocks: editorBlocks(saved.blocks as EditorBlock[], this.options), changed: false, defaulted: false } : entry);
         } catch (error) {
             this.error = isCmsError(error) ? error.message : __('The widgets could not be saved.');
+        }
+    }
+
+    /** Forget what the site saved for an area: the theme's default blocks show again. */
+    @Server()
+    async reset(name: string) {
+        const cms = this.c.get('cms');
+        this.error = '';
+        this.message = '';
+        try {
+            const areas = await cms.areaLocations();
+            await cms.areas.reset(name, { principal: this.c.get('principal'), known: areas.map(entry => entry.name) });
+            const area = areas.find(entry => entry.name === name);
+            this.areas = this.areas.map(entry => entry.name === name ? { ...entry, revision: 0, blocks: editorBlocks((area?.defaults ?? []) as EditorBlock[], this.options), changed: false, defaulted: true } : entry);
+            this.message = __('The area shows the theme’s default blocks again.');
+        } catch (error) {
+            this.error = isCmsError(error) ? error.message : __('The widgets could not be reset.');
         }
     }
 
@@ -187,7 +205,9 @@ export default class WidgetsPage extends Cossack {
                 onChange: (blocks: EditorBlock[]) => this.change(area.name, blocks), onEdit: (id: string) => this.edit(area.name, id),
                 control: (field: EditorField, value: unknown, change: (value: unknown) => void, block: EditorBlock, id: string) => this.richText(area.name, block, field, value, change, id),
             })}
-            <div class="flex justify-end">
+            ${area.defaulted && area.hasDefaults ? html`<p class="text-xs text-muted-foreground">${__('These are the theme’s default blocks. Saving keeps them for this site, and the theme’s later changes to its defaults no longer apply here.')}</p>` : null}
+            <div class="flex flex-wrap items-center justify-end gap-2">
+                ${!area.defaulted && area.hasDefaults ? component(Button, { type: 'button', variant: 'outline', '@click': () => this.reset(area.name) }, __('Reset to the theme’s default')) : null}
                 ${component(Button, { type: 'button', disabled: !area.changed, '@click': () => this.submit(area.name) }, __('Save widgets'))}
             </div>`));
     }

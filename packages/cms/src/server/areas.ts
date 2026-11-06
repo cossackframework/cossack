@@ -77,6 +77,14 @@ export class CmsAreas {
         return this.get(name);
     }
 
+    /** Forget an area's saved blocks: the theme's defaults show again, and the revision is 0. */
+    async reset(name: string, context: { principal: Principal; known: readonly string[] }): Promise<void> {
+        if (!hasPermission(context.principal, PERMISSIONS.manageAppearance)) throw new CmsError(context.principal.kind === 'anonymous' ? 'CMS_UNAUTHENTICATED' : 'CMS_FORBIDDEN', 'Not allowed to manage widgets.');
+        if (typeof name !== 'string' || !MENU_LOCATION.test(name) || !context.known.includes(name)) throw new CmsError('CMS_VALIDATION', `${String(name)} is not a widget area of a theme.`);
+        try { await this.#db.write([{ rql: 'DELETE FROM cms_areas WHERE name = $name', params: { $name: name } }], WRITE); }
+        finally { this.#cache = undefined; }
+    }
+
     async #read(): Promise<Map<string, AreaShape>> {
         let rows: readonly (readonly unknown[])[] = [];
         try {

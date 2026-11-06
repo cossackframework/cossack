@@ -306,6 +306,17 @@ const core: BlockDeclaration[] = [
         showImage: field.boolean({ default: true, label: 'Show the featured image' }),
         showDate: field.boolean({ default: true, label: 'Show the date' }),
     } },
+    // Site blocks, the twins of helpers: a header or footer is built from them in a widget area.
+    { name: 'core/site-logo', inline: true, keywords: ['logo', 'brand', 'site title', 'home', 'header'], label: 'Site logo', icon: 'home-2', category: 'widgets', description: 'The site\'s logo, or its title, linked to the home page.', fields: {
+        image: field.media({ label: 'Image', description: 'Empty uses the logo from Settings → General.' }),
+        showTitle: field.boolean({ default: false, label: 'Show the site title', description: 'Beside the logo; the title shows on its own when there is no logo.' }),
+        showTagline: field.boolean({ default: false, label: 'Show the tagline' }),
+        size: field.enum(['small', 'medium', 'large'], { default: 'medium', label: 'Size' }),
+    }, supports: { color: false, typography: false } },
+    { name: 'core/search', inline: true, keywords: ['search', 'find', 'form', 'header'], label: 'Search', icon: 'magnifer', category: 'widgets', description: 'A search box that opens the site\'s search results.', fields: {
+        placeholder: field.string({ max: 80, label: 'Placeholder', description: 'Empty shows “Search”.' }),
+        style: field.enum(['box', 'icon'], { default: 'box', label: 'Style', choices: { box: 'A box', icon: 'A button that opens the box' } }),
+    }, supports: { color: false, typography: ['align'] } },
     // A menu of the theme's locations, as `helpers.menu()` renders it: dropdowns and mega panels for a header, a row for a footer, a tree for a sidebar.
     { name: 'core/navigation', inline: true, keywords: ['menu', 'nav', 'links', 'header', 'mega menu'], label: 'Navigation', icon: 'hamburger-menu', category: 'widgets', description: 'The menu assigned to one of the theme\'s locations.', fields: {
         location: field.string({ required: true, max: 32, pattern: '[a-z][a-z0-9-]{0,31}', default: 'primary', choicesFrom: 'locations', label: 'Menu location', description: 'Appearance → Menus assigns a menu to each location.' }),
@@ -321,8 +332,10 @@ const core: BlockDeclaration[] = [
     } },
     // Layout: containers that hold other blocks. They render as CSS grid and respond to the
     // width of the content they are in, so columns inside a column stack on their own.
-    { name: 'core/group', inline: true,  keywords: ['container', 'section', 'stack'], label: 'Group', icon: 'layers', category: 'design', description: 'A stack of blocks with one width.', fields: {
+    { name: 'core/group', inline: true,  keywords: ['container', 'section', 'stack', 'row'], label: 'Group', icon: 'layers', category: 'design', description: 'A stack of blocks with one width, or a row of them.', fields: {
         align: field.enum(['full', 'wide', 'center', 'left', 'right'], { default: 'full', label: 'Width', choices: { full: 'Full width', wide: 'Wide', center: 'Narrow, centered', left: 'Narrow, left', right: 'Narrow, right' } }),
+        direction: field.enum(['column', 'row'], { default: 'column', label: 'Direction', choices: { column: 'Stacked', row: 'In a row' } }),
+        justify: field.enum(['start', 'center', 'end', 'between'], { default: 'start', label: 'Justify', description: 'Where the blocks of a row sit.', choices: { start: 'Start', center: 'Center', end: 'End', between: 'Spread out' } }),
     }, children: {} },
     { name: 'core/columns', inline: true,  keywords: ['row', 'side by side', 'layout'], label: 'Columns', icon: 'widget-2', category: 'design', description: 'Blocks side by side; they stack on small screens.', fields: {
         gap: GAP,

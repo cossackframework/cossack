@@ -241,15 +241,18 @@ async function exercise(origin, routeIds, diagnostics) {
   expect(plugins).toMatch(/data-plugin="?default-theme/);
   contains(plugins, 'Manage in Appearance');
   const customize = 'dashboard/(cms)/appearance/customize/index.ts';
-  const customized = await web.action(customize, 'save', [{ accent: 'rose', width: 'wide', showSearch: false, footerText: 'Made with rockets', fontFamily: 'serif', baseSize: 'large', headingWeight: 'semibold' }, [], [], ''], { state: { theme: { name: 'default-theme', label: 'Cossack Default' } } });
+  const customized = await web.action(customize, 'save', [{ accent: 'rose', width: 'wide', fontFamily: 'serif', baseSize: 'large', headingWeight: 'semibold' }, [], [], ''], { state: { theme: { name: 'default-theme', label: 'Cossack Default' } } });
   expect(customized.error).toBe('');
   const themed = await visitor.page('/');
-  contains(themed, 'Made with rockets');
+  // The header and the footer bar are the theme's default blocks: a site logo, the menu, search, and a copyright line with the year.
+  contains(themed, 'class=cms-site-logo');
+  contains(themed, `© ${new Date().getFullYear()}`);
+  contains(themed, 'href="/feed"');
   contains(themed, '--primary: oklch(0.586');
   // The typography options render as a stylesheet in the head.
   expect(themed).toMatch(/<style data-theme-typography[^>]*>[^<]*html\s*\{\s*font-size:\s*18px;?\s*\}[^<]*font-weight:\s*600/);
   contains(themed, 'Georgia');
-  lacks(themed, 'role="search"');
+  contains(themed, 'role=search');
   expect((await visitor.request('/dashboard/appearance')).headers.get('location')).toBe('/dashboard');
 
   // Menus: a nested page, a category, a link and a mega menu (a heading column, a described link and a pattern panel) in the primary location.

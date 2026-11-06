@@ -13,22 +13,136 @@
       "id": "default-theme-menu",
       "title": "Menu item details",
       "description": "Shown with the link in a mega menu panel.",
-      "targets": [{ "kind": "menus" }],
+      "targets": [
+        {
+          "kind": "menus"
+        }
+      ],
       "blocks": [
-        { "_id": "icon", "type": "field/media", "data": { "name": "icon", "label": "Icon", "description": "A small image or SVG from the library, shown before the link." } },
-        { "_id": "badge", "type": "field/text", "data": { "name": "badge", "label": "Badge", "max": 20, "description": "A short word after the link, such as New." } }
+        {
+          "_id": "icon",
+          "type": "field/media",
+          "data": {
+            "name": "icon",
+            "label": "Icon",
+            "description": "A small image or SVG from the library, shown before the link."
+          }
+        },
+        {
+          "_id": "badge",
+          "type": "field/text",
+          "data": {
+            "name": "badge",
+            "label": "Badge",
+            "max": 20,
+            "description": "A short word after the link, such as New."
+          }
+        }
       ]
     }
   ],
   "theme": {
     "label": "Cossack Default",
-    "description": "A clean, readable theme: a header menu with dropdowns, a footer menu, search and an accent color.",
+    "description": "A clean, readable theme: a header and footer built from blocks, a menu with dropdowns and mega panels, search and an accent color.",
     "locations": {
       "primary": "Primary menu",
       "footer": "Footer menu"
     },
     "areas": {
-      "footer": "Footer widgets"
+      "header": {
+        "label": "Header",
+        "blocks": [
+          {
+            "_id": "header-row",
+            "type": "core/group",
+            "data": {
+              "align": "full",
+              "direction": "row",
+              "justify": "between"
+            },
+            "children": [
+              {
+                "_id": "header-logo",
+                "type": "core/site-logo",
+                "data": {
+                  "showTagline": true
+                }
+              },
+              {
+                "_id": "header-tools",
+                "type": "core/group",
+                "data": {
+                  "align": "full",
+                  "direction": "row",
+                  "justify": "end"
+                },
+                "children": [
+                  {
+                    "_id": "header-menu",
+                    "type": "core/navigation",
+                    "data": {
+                      "location": "primary",
+                      "style": "dropdowns"
+                    }
+                  },
+                  {
+                    "_id": "header-search",
+                    "type": "core/search",
+                    "data": {},
+                    "layout": {
+                      "hide": [
+                        "sm"
+                      ]
+                    }
+                  },
+                  {
+                    "_id": "header-languages",
+                    "type": "core/languages",
+                    "data": {}
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "footer": "Footer widgets",
+      "footer-bar": {
+        "label": "Footer bar",
+        "blocks": [
+          {
+            "_id": "footer-row",
+            "type": "core/group",
+            "data": {
+              "align": "full",
+              "direction": "row",
+              "justify": "between"
+            },
+            "children": [
+              {
+                "_id": "footer-menu",
+                "type": "core/navigation",
+                "data": {
+                  "location": "footer",
+                  "style": "inline"
+                }
+              },
+              {
+                "_id": "footer-languages",
+                "type": "core/languages",
+                "data": {}
+              },
+              {
+                "_id": "footer-text",
+                "type": "core/paragraph",
+                "data": {
+                  "text": "© {{ $site.year }} {{ $site.title }} · [RSS](/feed) · [Log in](/auth/login)"
+                }
+              }
+            ]
+          }
+        ]
+      }
     },
     "presets": {
       "colors": [
@@ -148,53 +262,6 @@
           "semibold": "Semibold",
           "bold": "Bold"
         }
-      },
-      "showSearch": {
-        "kind": "boolean",
-        "default": true,
-        "label": "Show a search box in the header"
-      },
-      "languages": {
-        "kind": "enum",
-        "values": [
-          "header",
-          "footer",
-          "both",
-          "none"
-        ],
-        "default": "header",
-        "label": "Language switcher",
-        "description": "Where the page's other languages are offered, on a site with several. A Language switcher block places one anywhere else.",
-        "choices": {
-          "header": "In the header",
-          "footer": "In the footer",
-          "both": "In the header and the footer",
-          "none": "Nowhere"
-        }
-      },
-      "languageStyle": {
-        "kind": "enum",
-        "values": [
-          "names",
-          "flags",
-          "flags-names",
-          "codes"
-        ],
-        "default": "names",
-        "label": "Show languages as",
-        "choices": {
-          "names": "Names (English, Tiếng Việt)",
-          "flags": "Flags",
-          "flags-names": "Flags and names",
-          "codes": "Codes (EN, VI)"
-        }
-      },
-      "footerText": {
-        "kind": "string",
-        "max": 200,
-        "default": "",
-        "label": "Footer text",
-        "description": "Shown instead of the copyright line when set."
       }
     }
   }

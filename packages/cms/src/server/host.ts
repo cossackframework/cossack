@@ -16,7 +16,7 @@ import { CmsError } from '../errors';
 import type { CmsModule } from '../module';
 import { appearance, general, media, type SettingsGroup } from '../settings';
 import { pluginSettingsGroupId } from '../plugin-settings';
-import { assembleSiteTheme, entryTemplateChoices, layerPresets, siteThemeProblems, type ArchiveView, type SiteTheme, type EntryView, type SiteView, type ThemeData, type ThemeManifest, type ThemePresets } from '../theme';
+import { assembleSiteTheme, entryTemplateChoices, layerPresets, siteThemeProblems, type ArchiveView, type SiteTheme, type EntryView, type SiteView, type ThemeData, type ThemeManifest, type ThemePresets , themeArea } from '../theme';
 import type { MenuItem, ResolvedMenuItem } from '../menus';
 import { recordTitle } from '../forms';
 import type { RecordShape } from '../records';
@@ -150,8 +150,8 @@ export interface ThemeInfo {
     /** From the plugin's manifest; null when it names none. */
     readonly author: PluginAuthorView | null;
     readonly locations: readonly { readonly name: string; readonly label: string }[];
-    /** Its widget areas, its parent's first. */
-    readonly areas: readonly { readonly name: string; readonly label: string }[];
+    /** Its widget areas, its parent's first, each with the blocks shown until the site saves its own. */
+    readonly areas: readonly { readonly name: string; readonly label: string; readonly defaults: readonly Block[] }[];
     /** The theme it extends, or null. */
     readonly parent: string | null;
     /** Image URLs from the plugin's assets, or null for the default artwork. */
@@ -960,10 +960,10 @@ export class CmsHost {
     }
 
     /** Widget areas of the active theme, then those only other themes declare. */
-    async areaLocations(): Promise<{ name: string; label: string; theme: string; active: boolean }[]> {
+    async areaLocations(): Promise<{ name: string; label: string; defaults: readonly Block[]; theme: string; active: boolean }[]> {
         const active = await this.activeTheme();
         const seen = new Set<string>();
-        const areas: { name: string; label: string; theme: string; active: boolean }[] = [];
+        const areas: { name: string; label: string; defaults: readonly Block[]; theme: string; active: boolean }[] = [];
         for (const theme of [...this.themes()].sort((a, b) => Number(b.name === active) - Number(a.name === active))) {
             if (theme.problems.length) continue;
             for (const area of theme.areas) {
@@ -1944,7 +1944,7 @@ export class CmsHost {
         return Object.freeze({
             name: plugin.registration.name, version: plugin.registration.version, ...authorOf(plugin),
             label: typeof manifest?.label === 'string' ? manifest.label : plugin.registration.name, description: typeof manifest?.description === 'string' ? manifest.description : '',
-            locations: named({ ...inherited?.locations, ...manifest?.locations }), areas: named({ ...inherited?.areas, ...manifest?.areas }),
+            locations: named({ ...inherited?.locations, ...manifest?.locations }), areas: Object.entries({ ...inherited?.areas, ...manifest?.areas }).map(([name, entry]) => themeArea(name, entry)),
             parent: inherited ? manifest.extends! : null, ...artwork(plugin), options, presets: layerPresets(inherited?.presets, manifest?.presets), problems,
         });
     }

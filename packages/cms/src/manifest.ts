@@ -3,7 +3,8 @@
  * package never executes during installation; the host trusts what the manifest declares
  * only after this check, the policy lints and an administrator's grant.
  */
-import { blockProblems, CORE_BLOCKS, type Block, type BlockDeclaration } from './blocks';
+import { blockProblems, CORE_BLOCKS, flattenBlocks, validateBlocks, type Block, type BlockDeclaration } from './blocks';
+import { blocksShapeProblem } from './block-shape';
 import { collectionProblems, LOCALE, type CollectionDefinition } from './collections';
 import { editorLayoutProblems, editorLayoutShapeProblem } from './editor-layout';
 import { FIELD_BLOCKS, fieldGroupProblems, type FieldGroup } from './field-groups';
@@ -255,7 +256,17 @@ export function manifestProblems(manifest: unknown): string[] {
             if (typeof link?.href !== 'string' || !link.href.startsWith('/') || link.href.startsWith('//')) problems.push(`ui.slots.${slot}: link ${String(link?.label)} needs a same-site path.`);
         }
     }
-    if (value.theme !== undefined) problems.push(...themeProblems(value.theme));
+    if (value.theme !== undefined) {
+        problems.push(...themeProblems(value.theme));
+        // An area's default blocks: checked like a saved area against the core types. A plugin's block is checked when its plugin is active, so here it only has to be a block.
+        for (const [area, entry] of Object.entries((value.theme as ThemeManifest | null)?.areas ?? {})) {
+            const blocks = entry && typeof entry === 'object' ? entry.blocks : undefined;
+            if (!Array.isArray(blocks) || blocksShapeProblem(blocks)) continue;
+            const types = new Map<string, BlockDeclaration>(CORE_BLOCKS.map(block => [block.name, block]));
+            for (const block of flattenBlocks(blocks)) if (!types.has(block.type)) types.set(block.type, { name: block.type, label: block.type, fields: {}, children: {} });
+            for (const [path, problem] of Object.entries(validateBlocks(blocks, types).errors)) problems.push(`theme.areas.${area}.blocks ${path} ${problem}`);
+        }
+    }
     if (value.author !== undefined) problems.push(...authorProblems(value.author));
     for (const key of ['logo', 'cover'] as const) {
         if (value[key] !== undefined && (typeof value[key] !== 'string' || !ARTWORK.test(value[key]))) problems.push(`${key} must name a PNG, JPEG, WebP, GIF, AVIF or SVG file in assets/, such as assets/${key}.png.`);

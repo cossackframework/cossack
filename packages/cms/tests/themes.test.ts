@@ -36,7 +36,7 @@ const projects = { name: 'projects', label: 'Projects', singular: 'Project', pat
 const plugins: PluginRegistrationLike[] = [
     {
         name: 'folio', version: '1.0.0', templates, module: { loaders: folioLoaders },
-        manifest: { schemaVersion: 1, name: 'folio', version: '1.0.0', theme: { label: 'Folio', locations: { primary: 'Primary menu' }, areas: { footer: 'Footer widgets' },
+        manifest: { schemaVersion: 1, name: 'folio', version: '1.0.0', theme: { label: 'Folio', locations: { primary: 'Primary menu' }, areas: { footer: 'Footer widgets', header: { label: 'Header', blocks: [{ _id: 'hi', type: 'core/paragraph', data: { text: 'Hi from Folio' } }] } },
             options: { accent: { kind: 'enum', values: ['blue', 'red'], default: 'blue', label: 'Accent' } },
             presets: { colors: [{ slug: 'base', name: 'Base', value: '#ffffff' }, { slug: 'brand', name: 'Brand', value: '#2563eb' }] } }, permissions: { resources: { 'cms/posts': ['read'] } },
             // A field group for menu items, stored when the theme is active even though the plugin itself is never granted.
@@ -166,7 +166,7 @@ describe.skipIf(!live)('themes: loaders', () => {
         const themes = new Map(cms.themes().map(theme => [theme.name, theme]));
         const child = themes.get('folio-dark')!;
         expect(child).toMatchObject({ parent: 'folio', problems: [], locations: [{ name: 'primary', label: 'Primary menu' }, { name: 'footer', label: 'Footer menu' }],
-            areas: [{ name: 'footer', label: 'Footer widgets' }, { name: 'sidebar', label: 'Sidebar' }] });
+            areas: [{ name: 'footer', label: 'Footer widgets', defaults: [] }, { name: 'header', label: 'Header', defaults: [{ _id: 'hi', type: 'core/paragraph' }] }, { name: 'sidebar', label: 'Sidebar', defaults: [] }] });
         // Its option values are its own, with its parent's options and its own.
         expect(child.options).toMatchObject({ id: 'folio-dark', fields: { accent: { kind: 'enum' }, tone: { kind: 'enum' } } });
         // Its presets layer over its parent's by slug.
@@ -202,18 +202,26 @@ describe.skipIf(!live)('themes: loaders', () => {
 
     it('saves widget areas with a revision check', async () => {
         const areas = await cms.areaLocations();
-        expect(areas.filter(area => area.active).map(area => area.name)).toEqual(['footer', 'sidebar']);
+        expect(areas.filter(area => area.active).map(area => area.name)).toEqual(['footer', 'header', 'sidebar']);
+        // The theme's defaults come with the area; the store itself holds nothing until the site saves.
+        expect(areas.find(area => area.name === 'header')).toMatchObject({ defaults: [{ _id: 'hi' }], theme: 'folio-dark', active: true });
         const known = areas.map(area => area.name);
+        const editor: Principal = { kind: 'user', id: 'editor-1', roles: ['editor'], permissions: ['cms:dashboard', 'cms/*'] };
         expect(await cms.areas.get('sidebar')).toMatchObject({ blocks: [], revision: 0 });
+        expect(await cms.areas.get('header')).toMatchObject({ blocks: [], revision: 0 });
         const blocks = [{ _id: 'hello', type: 'core/paragraph', data: { text: 'Hello **there**' } }, { _id: 'rule', type: 'core/divider', data: {} }];
         const saved = await cms.areas.save('sidebar', blocks, { principal: admin, expectedRevision: 0, known });
         expect(saved).toMatchObject({ name: 'sidebar', revision: 1, blocks: [{ _id: 'hello', type: 'core/paragraph' }, { _id: 'rule', type: 'core/divider' }] });
         await expect(cms.areas.save('sidebar', [], { principal: admin, expectedRevision: 0, known })).rejects.toMatchObject({ code: 'CMS_CONFLICT' });
         expect((await cms.areas.save('sidebar', blocks.slice(1), { principal: admin, expectedRevision: 1, known })).revision).toBe(2);
-        await expect(cms.areas.save('header', [], { principal: admin, expectedRevision: 0, known })).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
+        await expect(cms.areas.save('nowhere', [], { principal: admin, expectedRevision: 0, known })).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
+        // Resetting forgets the site's blocks: the defaults show again, with revision 0.
+        expect((await cms.areas.save('header', blocks, { principal: admin, expectedRevision: 0, known })).revision).toBe(1);
+        await expect(cms.areas.reset('header', { principal: editor, known })).rejects.toMatchObject({ code: 'CMS_FORBIDDEN' });
+        await cms.areas.reset('header', { principal: admin, known });
+        expect(await cms.areas.get('header')).toMatchObject({ blocks: [], revision: 0 });
         await expect(cms.areas.save('footer', [{ _id: 'x', type: 'core/nope', data: {} }], { principal: admin, expectedRevision: 0, known })).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
         await expect(cms.areas.save('footer', [{ id: 'x' }], { principal: admin, expectedRevision: 0, known })).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
-        const editor: Principal = { kind: 'user', id: 'editor-1', roles: ['editor'], permissions: ['cms:dashboard', 'cms/*'] };
         await expect(cms.areas.save('footer', [], { principal: editor, expectedRevision: 0, known })).rejects.toMatchObject({ code: 'CMS_FORBIDDEN' });
         expect([...(await cms.areas.all()).keys()]).toEqual(['sidebar']);
     });

@@ -152,11 +152,11 @@ helpers.languages({ style: 'codes', layout: 'list' });     // EN, VI, one under 
 language's name for screen readers. `layout` is `inline` (a row) or `list` (a column). Each link
 carries `hreflang` and `lang`, and the current language `aria-current`.
 
-The default theme has two options under Appearance → Customize: *Language switcher* puts it in
-the header (the default), the footer, both or nowhere, and *Show languages as* picks the style.
 The **Language switcher** block (`core/languages`) renders the same links with its own style and
-layout, so editors place one in a widget area, a page or a pattern. On a site with one language
-nothing shows.
+layout, so editors place one in a widget area, a page or a pattern. The default theme's header
+and footer bar are widget areas built from blocks, with a switcher in each by default: remove it,
+move it or change its style there, under Appearance → Widgets or in place with Live Edit. On a
+site with one language nothing shows.
 
 ## Search engines and themes
 

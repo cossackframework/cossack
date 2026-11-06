@@ -12,7 +12,8 @@ import { MENU_LOCATION, type MenuItemView } from './menus';
 import type { SettingDeclaration } from './settings';
 import { settingControlProblems } from './settings-controls';
 import { CUSTOM_COLOR, PRESET_SLUG, STYLE_PROPERTIES, TEXT_ALIGNMENTS, type StyleProperty } from './block-shape';
-import type { BlockCondition, BlockLayout, BlockStyle, InputKind } from './blocks';
+import type { Block, BlockCondition, BlockLayout, BlockStyle, InputKind } from './blocks';
+import { blocksShapeProblem } from './block-shape';
 import type { ChoiceOption, FormValue } from './form-builder';
 
 /** A named value blocks pick by slug: a color, a font size or a spacing step. */
@@ -32,6 +33,17 @@ export interface ThemePresets {
 export type PresetKind = keyof ThemePresets;
 export const PRESET_KINDS = Object.freeze(['colors', 'fontSizes', 'spacing'] as const);
 
+/** A widget area with the blocks the theme shows until the site saves its own. */
+export interface ThemeAreaManifest {
+    readonly label: string;
+    readonly blocks?: readonly Block[];
+}
+
+/** An area as a theme declares it, label and defaults apart: `name: label` has no defaults. */
+export function themeArea(name: string, entry: string | ThemeAreaManifest): { name: string; label: string; defaults: readonly Block[] } {
+    return typeof entry === 'string' ? { name, label: entry, defaults: [] } : { name, label: entry.label, defaults: entry.blocks ?? [] };
+}
+
 /** The `theme` field of a plugin manifest. */
 export interface ThemeManifest {
     readonly label: string;
@@ -46,8 +58,12 @@ export interface ThemeManifest {
      * values are its own.
      */
     readonly extends?: string;
-    /** Widget areas: block lists edited under Appearance → Widgets, such as `{ "sidebar": "Sidebar" }`. */
-    readonly areas?: { readonly [name: string]: string };
+    /**
+     * Widget areas: block lists edited under Appearance → Widgets and in Live Edit, such as
+     * `{ "sidebar": "Sidebar" }`. An area may carry default blocks, shown until the site saves
+     * its own: `{ "header": { "label": "Header", "blocks": [...] } }`.
+     */
+    readonly areas?: { readonly [name: string]: string | ThemeAreaManifest };
     /** The palette, font sizes and spacing steps blocks pick from; the site adjusts colors under Customize. */
     readonly presets?: ThemePresets;
 }
@@ -70,9 +86,14 @@ export function themeProblems(theme: unknown): string[] {
     if (value.extends !== undefined && (typeof value.extends !== 'string' || !/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(value.extends))) problems.push('theme.extends must name a theme plugin.');
     const areas = Object.entries(value.areas ?? {});
     if (areas.length > 8) problems.push('theme.areas: declare at most 8 widget areas.');
-    for (const [name, label] of areas) {
+    for (const [name, entry] of areas) {
         if (!MENU_LOCATION.test(name)) problems.push(`theme.areas: ${name} must be lowercase letters, digits and hyphens.`);
+        const label = typeof entry === 'string' ? entry : entry && typeof entry === 'object' && !Array.isArray(entry) ? entry.label : undefined;
         if (typeof label !== 'string' || !label.trim() || label.length > 60) problems.push(`theme.areas.${name} needs a label of at most 60 characters.`);
+        if (entry && typeof entry === 'object' && entry.blocks !== undefined) {
+            const shape = blocksShapeProblem(entry.blocks);
+            if (shape) problems.push(`theme.areas.${name}.blocks ${shape}`);
+        }
     }
     const options = Object.entries(value.options ?? {});
     if (options.length > 16) problems.push('theme.options: declare at most 16 options.');
@@ -459,6 +480,16 @@ export interface MenuOptions {
     readonly class?: string;
 }
 
+/** What `helpers.search()` renders. */
+export interface SearchOptions {
+    /** The box's placeholder and accessible name; “Search” by default. */
+    readonly placeholder?: string;
+    /** `box` (the default), or `icon`: a button that opens the box. */
+    readonly style?: 'box' | 'icon' | string;
+    /** Class names for the form. */
+    readonly class?: string;
+}
+
 /** A reference field's target: an entry with its title and URL, or a record of another resource. */
 export interface EntryReference {
     readonly id: string;
@@ -614,6 +645,11 @@ export interface ThemeHelpers {
     readonly data: { readonly layout: ThemeData; readonly page: ThemeData };
     /** The URL of a file in the theme's `assets/`, such as `asset('assets/theme.css')`; empty when it has none. */
     asset(path: string): string;
+    /**
+     * A search form posting to the site's search page in the page's language: a box, or a
+     * button that opens one (`style: 'icon'`). The `core/search` block renders the same.
+     */
+    search(options?: SearchOptions): TemplateResult;
     /** Rich text inside a block (`block.content.<field>`): HTML runs and embedded blocks. For block renderers; entry content is blocks. */
     content(parts: readonly BodyPart[]): TemplateResult;
     /** A block, or a list of them, through the theme's renderer, a plugin's component or the core one. */

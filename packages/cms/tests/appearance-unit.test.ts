@@ -225,6 +225,15 @@ describe('themes', () => {
         const files = (stems: string[]) => Object.fromEntries(stems.map(stem => [stem, { default: () => stem }]));
         expect(Object.keys(assembleSiteTheme({ templates: files(['entry']) }, { templates: files(['layout', 'entry', 'archive']) }) as object)).toEqual(['layout', 'entry', 'archive']);
         expect(themeProblems({ label: 'X', extends: 'Bad Name', areas: { Side: '' } })).toEqual(['theme.extends must name a theme plugin.', expect.stringMatching(/theme.areas: Side must be/), expect.stringMatching(/theme.areas.Side needs a label/)]);
+        // An area may carry default blocks: a label and a block list, checked as a saved area would be.
+        expect(themeProblems({ label: 'X', areas: { header: { label: 'Header', blocks: [{ _id: 'logo', type: 'core/site-logo', data: {} }] } } })).toEqual([]);
+        expect(themeProblems({ label: 'X', areas: { header: { label: 'Header', blocks: 'nope' } } })).toEqual([expect.stringMatching(/theme.areas.header.blocks must be a list/)]);
+        expect(themeProblems({ label: 'X', areas: { header: { blocks: [] } } })).toEqual([expect.stringMatching(/theme.areas.header needs a label/)]);
+        const themed = (areas: unknown) => manifestProblems({ schemaVersion: 1, name: 'paper', version: '1.0.0', theme: { label: 'Paper', areas } });
+        expect(themed({ header: { label: 'Header', blocks: [{ _id: 'row', type: 'core/group', data: { direction: 'row' }, children: [{ _id: 'menu', type: 'core/navigation', data: { location: 'primary' } }] }] } })).toEqual([]);
+        expect(themed({ header: { label: 'Header', blocks: [{ _id: 'h', type: 'core/heading', data: { text: 'Hi', level: 'h9' } }] } })).toEqual([expect.stringMatching(/theme.areas.header.blocks h.level/)]);
+        // A plugin's block is checked when its plugin is active; the manifest asks only that it be a block.
+        expect(themed({ header: { label: 'Header', blocks: [{ _id: 'x', type: 'shop/cart', data: { count: 3 } }] } })).toEqual([]);
     });
 
     it('takes the head template from templates/head.ts', () => {

@@ -10,7 +10,7 @@ values inside text. Both use `{{ }}`:
 
 ```text
 {{ $.price }}                                              a value of the entry shown
-{{ $site.title }}                                          a site setting
+{{ $site.title }}                                          a site setting (also tagline, logo, icon, year)
 {{ $user.name }}                                           the signed-in user
 {{ block core/button label="Buy" url="/cart" /}}           a block without a body
 {{ block core/button label="Buy {{ $.title }}" url="/" /}} a value in an attribute

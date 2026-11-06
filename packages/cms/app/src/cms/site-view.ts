@@ -6,7 +6,7 @@
 import { component, html, ifDefined, unsafeHTML, type TemplateResult } from '@cossackframework/renderer';
 import { plugins } from '@cossackframework/framework/plugins';
 import { formBlock, inputBlock } from './form-view';
-import { archiveTemplate, assembleSiteTheme, blockStyleAttributes, entryTemplate, placeholderStyle, presetStyle, resolvePresets, siteThemeProblems, type ArchiveView, type EntryView, type LanguageLink, type LanguageSwitcherOptions, type MediaView, type MenuItemView, type MenuOptions, type RenderedBlock, type SiteTheme, type ThemeData, type ThemeHelpers, type ThemePresets } from '@cossackframework/cms';
+import { archiveTemplate, assembleSiteTheme, blockStyleAttributes, entryTemplate, placeholderStyle, presetStyle, resolvePresets, siteThemeProblems, type ArchiveView, type EntryView, type LanguageLink, type LanguageSwitcherOptions, type MediaView, type MenuItemView, type MenuOptions, type RenderedBlock, type SearchOptions, type SiteTheme, type ThemeData, type ThemeHelpers, type ThemePresets } from '@cossackframework/cms';
 
 export { archiveTemplate, entryTemplate };
 export type { ArchiveView, EntryView, MediaView, Paging, RenderedBlock, SiteView } from '@cossackframework/cms';
@@ -44,6 +44,19 @@ export interface ThemeRenderState {
     readonly languages?: readonly LanguageLink[];
     /** The menus of the theme's locations, for `helpers.menu()` and the Navigation block. */
     readonly menus?: { readonly [location: string]: readonly MenuItemView[] };
+    /** The site's title, tagline, logo and URLs, for `helpers.search()` and the site logo block. */
+    readonly site?: { readonly title: string; readonly tagline: string; readonly logo: string | null; readonly homeUrl: string; readonly searchUrl: string };
+}
+
+/** A search form posting to the site's search page: a box, or a button that opens one. As `helpers.search()` and the `core/search` block render it. */
+export function searchForm(action: string, options: SearchOptions = {}): TemplateResult {
+    const placeholder = options.placeholder || __('Search');
+    const form = html`<form action=${action} method="get" role="search" class=${`cms-search${options.class ? ` ${options.class}` : ''}`}>
+        <input type="search" name="q" placeholder=${placeholder} aria-label=${placeholder} class="cms-search-input">
+    </form>`;
+    if (options.style !== 'icon') return form;
+    return html`<details class="cms-search-toggle"><summary class="cms-search-button" aria-label=${placeholder} title=${placeholder}>
+        <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></summary>${form}</details>`;
 }
 
 /**
@@ -166,6 +179,7 @@ export function themeHelpers(theme: SiteTheme, state: ThemeRenderState, isActive
         logo: (site, options = {}) => site.logo ? html`<img src=${site.logo} alt=${site.title} class=${`cms-site-logo object-contain ${options.class ?? 'h-10 w-auto'}`}>` : null,
         languages: options => languageSwitcher(state.languages ?? [], options),
         menu: (source, options = {}) => menuNav(typeof source === 'string' ? state.menus?.[source] ?? [] : source, { ...(typeof source === 'string' ? { label: locationLabel(source) } : {}), ...options }, helpers),
+        search: options => searchForm(state.site?.searchUrl ?? '/search', options),
         isActive: url => {
             const path = url.replace(/[?#].*$/, '').replace(/(.)\/$/, '$1');
             if (!path.startsWith('/')) return false;
@@ -184,7 +198,7 @@ export function themeHelpers(theme: SiteTheme, state: ThemeRenderState, isActive
     const render = (block: RenderedBlock) => {
         // Data blocks hold values for themes and the API; nothing shows for them.
         if (block.dataOnly) return null;
-        const rendered = theme.blocks?.[block.type]?.(block, helpers) ?? coreBlock(block, helpers);
+        const rendered = theme.blocks?.[block.type]?.(block, helpers) ?? coreBlock(block, helpers, state);
         // A styled block gets one wrapper: classes per property and the presets' variables inline.
         // A column's wrapper takes its grid placement, as cms/blocks.css places `.cms-column-box`.
         const attributes = blockStyleAttributes(block);
@@ -294,10 +308,22 @@ export function columnSpans(columns: readonly RenderedBlock[]): number[] {
 }
 
 /** A block of a core type, or of a plugin type through its `ui.ts` component. Unknown types render nothing. */
-export function coreBlock(block: RenderedBlock, helpers: ThemeHelpers): TemplateResult | null {
+export function coreBlock(block: RenderedBlock, helpers: ThemeHelpers, state?: Pick<ThemeRenderState, 'site'>): TemplateResult | null {
     const text = (name: string) => typeof block.data[name] === 'string' ? block.data[name] as string : '';
     const children = block.children ?? [];
     switch (block.type) {
+        // The site's logo (the block's own image, else Settings → General's) or its title, linked home.
+        case 'core/site-logo': {
+            const site = state?.site;
+            if (!site) return null;
+            const own = block.media[text('image')];
+            const showTitle = block.data.showTitle === true || (!own && !site.logo);
+            const picture = own ? image(own, 'cms-site-logo-image', '12rem') : site.logo ? html`<img src=${site.logo} alt=${showTitle ? '' : site.title} class="cms-site-logo-image">` : null;
+            return html`<a href=${site.homeUrl} class="cms-site-logo" data-size=${text('size') || 'medium'} rel="home">${picture}
+                ${showTitle || (block.data.showTagline === true && site.tagline) ? html`<span class="cms-site-logo-text">${showTitle ? html`<span class="cms-site-logo-title">${site.title}</span>` : null}
+                    ${block.data.showTagline === true && site.tagline ? html`<span class="cms-site-logo-tagline">${site.tagline}</span>` : null}</span>` : null}</a>`;
+        }
+        case 'core/search': return helpers.search({ placeholder: text('placeholder'), style: text('style') });
         // Text with block references renders its runs and blocks; the HTML alone otherwise.
         case 'core/paragraph': return block.content?.text ? helpers.content(block.content.text) : html`<div class=${PROSE}>${unsafeHTML(block.html.text ?? '')}</div>`;
         case 'core/heading': {
@@ -328,8 +354,8 @@ export function coreBlock(block: RenderedBlock, helpers: ThemeHelpers): Template
         // Saved only by people allowed to post HTML (`cms:html`), so it renders as written.
         case 'core/html': return html`${unsafeHTML(text('html'))}`;
         case 'core/code': return html`<pre class="my-4 overflow-x-auto rounded-md bg-muted p-4 text-sm"><code data-language=${text('language')}>${text('code')}</code></pre>`;
-        case 'core/button': return html`<p class="my-6"><a href=${safeLink(text('url'))}
-            class=${`inline-flex items-center rounded-md px-5 py-2.5 text-sm font-medium no-underline ${text('style') === 'outline' ? 'border border-border text-foreground hover:bg-muted' : 'bg-primary text-primary-foreground hover:opacity-90'}`}>${text('label')}</a></p>`;
+        case 'core/button': return html`<div class="cms-button my-6"><a href=${safeLink(text('url'))}
+            class=${`inline-flex items-center rounded-md px-5 py-2.5 text-sm font-medium no-underline ${text('style') === 'outline' ? 'border border-border text-foreground hover:bg-muted' : 'bg-primary text-primary-foreground hover:opacity-90'}`}>${text('label')}</a></div>`;
         case 'core/embed': {
             const src = embedUrl(text('url'));
             return src ? html`<figure class="my-6"><div class="aspect-video overflow-hidden rounded-lg bg-muted">
@@ -417,7 +443,7 @@ export function coreBlock(block: RenderedBlock, helpers: ThemeHelpers): Template
         case 'core/navigation': return helpers.menu(text('location') || 'primary', { style: text('style') });
         case 'core/meta': return null;
         // Layout blocks: CSS grid from cms/blocks.css, responding to the content root's width.
-        case 'core/group': return html`<div class="cms-group" data-align=${text('align') || 'full'}>${children.map(child => helpers.block(child))}</div>`;
+        case 'core/group': return html`<div class="cms-group" data-align=${text('align') || 'full'} data-direction=${text('direction') || 'column'} data-justify=${text('justify') || 'start'}>${children.map(child => helpers.block(child))}</div>`;
         case 'core/columns': {
             const spans = columnSpans(children);
             return html`<div class="cms-columns" data-gap=${text('gap') || 'medium'} data-stack=${text('stack') || 'mobile'}>${children.map((column, index) => helpers.block({ ...column, data: { ...column.data, span: spans[index] } }))}</div>`;

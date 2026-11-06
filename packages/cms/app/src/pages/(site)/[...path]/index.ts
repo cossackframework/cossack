@@ -9,7 +9,7 @@ import { authorSeo, entrySeo, homeSeo, listSeo } from '../../../cms/seo';
 import { emptySeo, seoHead, type SeoView } from '../../../cms/seo-head';
 import type { SiteDraft, SiteEditable } from '../../../cms/site-editor';
 import { draftEntry, draftMedia, editableRecord, saveDraft, siteDraft, siteEditable } from '../../../cms/site-editing';
-import { contentMenus } from '../../../cms/site';
+import { contentMenus, siteInfo, type SiteInfo } from '../../../cms/site';
 import type { MenuItemView } from '@cossackframework/cms';
 import { fieldErrors } from '../../../cms/content';
 import { entryAsMarkdown, wantsMarkdown } from '../../../cms/machine';
@@ -90,6 +90,8 @@ export default class SitePath extends Cossack {
     @State() languages: LanguageLink[] = [];
     /** The theme's menus, for Navigation blocks in the entry's own content; empty when it has none. */
     @State() menus: Record<string, readonly MenuItemView[]> = {};
+    /** The site's title, logo and URLs in the page's language, for site blocks in the content. */
+    @State() site: SiteInfo | null = null;
     /** What the theme's loader for the page returned. */
     @State() data: ThemeData = {};
     @State() seo: SeoView = emptySeo();
@@ -124,6 +126,7 @@ export default class SitePath extends Cossack {
             const settings = await cms.settings.all();
             const links = await languageLinks(cms, resolved);
             this.languages = links;
+            this.site = await siteInfo(cms, resolved.locale);
             const usage = { user: false };
             const viewOptions = {
                 comment: commentResult(this.c.req.query('comment')), user: this.user ? { name: this.user.name } : null,
@@ -396,7 +399,7 @@ export default class SitePath extends Cossack {
     render() {
         if (this.kind === 'unavailable') return unavailable();
         const theme = siteTheme(this.theme);
-        const helpers = themeHelpers(theme, { ...this.theme, data: { page: this.data }, editing: Boolean(this.draft), languages: this.languages, menus: this.menus }, (path, exact) => this.isActive(path, exact));
+        const helpers = themeHelpers(theme, { ...this.theme, data: { page: this.data }, editing: Boolean(this.draft), languages: this.languages, menus: this.menus, site: this.site ?? undefined }, (path, exact) => this.isActive(path, exact));
         if (this.kind === 'entry' && this.entry && this.locked) return siteContent(this.passwordForm(theme, helpers), this.theme);
         if (this.kind === 'entry' && this.entry) {
             const page = siteContent(entryTemplate(theme, this.entry.collection, this.entry.template)(this.entry, helpers), this.theme);

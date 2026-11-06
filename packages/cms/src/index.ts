@@ -57,8 +57,8 @@ export {
     themeProblems, siteThemeProblems, assembleSiteTheme, layerSiteThemes, entryTemplate, archiveTemplate, entryTemplateChoices, templateCandidates, pickTemplate, SPECIFIC_TEMPLATE,
     PRESET_KINDS, DEFAULT_PRESETS, LANGUAGE_SWITCHER_STYLES, presetProblems, layerPresets, resolvePresets, presetOverridesProblem, presetStyle, blockStyleAttributes, customCssProblem,
     type Preset, type PresetKind, type ThemePresets, type PresetOverrides,
-    type ThemeManifest, type SiteTheme, type ThemeSource, type EntryTemplate, type ArchiveTemplate, type TemplatePage, type ThemeData, type FieldView, type EntryReference, type ThemeHelpers, type SiteView, type EntryView, type ArchiveView, type AuthorView, type RenderedBlock, type RepeaterView, type ItemsView, type BodyPart, type MediaView, type TermLink, type Paging,
-    type EntryAuthor, type CommentView, type CommentsView, type CommentFormView, type LanguageLink, type LanguageSwitcherOptions, type MenuOptions, type MenuStyle, type LanguageSwitcherStyle, type FormView, type InputView,
+    type ThemeManifest, type ThemeAreaManifest, themeArea, type SiteTheme, type ThemeSource, type EntryTemplate, type ArchiveTemplate, type TemplatePage, type ThemeData, type FieldView, type EntryReference, type ThemeHelpers, type SiteView, type EntryView, type ArchiveView, type AuthorView, type RenderedBlock, type RepeaterView, type ItemsView, type BodyPart, type MediaView, type TermLink, type Paging,
+    type EntryAuthor, type CommentView, type CommentsView, type CommentFormView, type LanguageLink, type LanguageSwitcherOptions, type MenuOptions, type MenuStyle, type SearchOptions, type LanguageSwitcherStyle, type FormView, type InputView,
 } from './theme';
 export { diffWords, compareRecords, comparableValue, type DiffPart, type FieldChange } from './diff';
 export {

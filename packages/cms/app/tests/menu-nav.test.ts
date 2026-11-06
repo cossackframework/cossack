@@ -4,7 +4,7 @@ import type { MediaView, MenuItemView } from '@cossackframework/cms';
 // The site view reads the app's plugins for theme overrides; none here.
 vi.mock('virtual:cossack-plugins', () => ({ default: [] }));
 vi.stubGlobal('__', (value: string) => value);
-const { menuNav } = await import('../src/cms/site-view');
+const { menuNav, searchForm } = await import('../src/cms/site-view');
 const { html, renderToString } = await import('@cossackframework/renderer/server');
 
 const item = (id: string, label: string, url: string | null, extra: Partial<MenuItemView> = {}): MenuItemView =>
@@ -61,5 +61,15 @@ describe('helpers.menu', () => {
         const list = await render(items, { style: 'list' });
         expect(list).toContain('<ul class="cms-nav-tree">');
         expect(list).toContain('<ul><li class="cms-nav-item"><a href="/b"');
+    });
+});
+
+describe('helpers.search', () => {
+    it('renders a box, or a button that opens one', async () => {
+        const box = await renderToString(searchForm('/fr/search', { placeholder: 'Rechercher' }));
+        expect(box).toContain('<form action="/fr/search" method="get" role="search" class="cms-search">');
+        expect(box).toContain('placeholder="Rechercher" aria-label="Rechercher"');
+        const toggle = await renderToString(searchForm('/search', { style: 'icon' }));
+        expect(toggle).toContain('<details class="cms-search-toggle"><summary class="cms-search-button" aria-label="Search"');
     });
 });

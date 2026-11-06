@@ -48,10 +48,17 @@ src/plugins/my-theme/
     "label": "My Theme",
     "description": "A clean, readable theme.",
     "locations": { "primary": "Primary menu", "footer": "Footer menu" },
-    "areas": { "footer": "Footer widgets" },
+    "areas": {
+      "header": { "label": "Header", "blocks": [
+        { "_id": "row", "type": "core/group", "data": { "direction": "row", "justify": "between" }, "children": [
+          { "_id": "logo", "type": "core/site-logo", "data": {} },
+          { "_id": "menu", "type": "core/navigation", "data": { "location": "primary" } }
+        ] }
+      ] },
+      "footer": "Footer widgets"
+    },
     "options": {
-      "accent": { "kind": "enum", "values": ["blue", "rose"], "default": "blue", "label": "Accent color", "choices": { "blue": "Blue", "rose": "Rose" } },
-      "showSearch": { "kind": "boolean", "default": true, "label": "Show a search box" }
+      "accent": { "kind": "enum", "values": ["blue", "rose"], "default": "blue", "label": "Accent color", "choices": { "blue": "Blue", "rose": "Rose" } }
     },
     "presets": {
       "colors": [{ "slug": "primary", "name": "Primary", "value": "#2563eb" }]
@@ -64,7 +71,7 @@ src/plugins/my-theme/
 | --- | --- |
 | `label`, `description` | Shown under Appearance → Themes; 60 and 300 characters at most. |
 | `locations` | Up to 8 menu locations, `name: label`. Administrators assign menus to them; templates render one with `helpers.menu(location)` or read `site.menus[location]`. See [Menus](/docs/cms/menus.md). |
-| `areas` | Up to 8 widget areas, `name: label`. Their blocks are edited under Appearance → Widgets and arrive as `site.areas[area]`. |
+| `areas` | Up to 8 widget areas, `name: label`, or `name: { label, blocks }` with the **default blocks** the site shows until it saves its own. Their blocks are edited under Appearance → Widgets and in place with Live Edit, and arrive rendered as `site.areas[area]`. See [Areas with defaults](#areas-with-defaults). |
 | `options` | Up to 16 settings shown under Appearance → Customize, of kind `string`, `text`, `enum` (`values`, `choices` for labels), `boolean`, `integer` or `number`, with `default`, `label`, `description` and the usual limits. Stored as settings `<plugin>.<option>`; templates read them as `helpers.options.<option>`, defaults applied. |
 | `presets` | The palette, font sizes and spacing steps blocks pick from: `colors` (up to 24), `fontSizes` (8) and `spacing` (8), each `{ slug, name, value }`. Missing kinds get defaults; the site adjusts colors under Customize. |
 | `extends` | A parent theme's plugin name. See [Child themes](#child-themes). |
@@ -154,6 +161,7 @@ Every template receives `helpers`:
 | `presets` | The resolved presets; `presetStyle(helpers.presets)` from `@cossackframework/cms` renders them as CSS custom properties for the content root. |
 | `data.layout`, `data.page` | What the theme's loaders returned for the layout and for the page. Empty when there is no loader, or it failed. |
 | `asset(path)` | The URL of a file in the theme's `assets/`, such as `helpers.asset('assets/theme.css')`. Empty when the theme has none. |
+| `search({ placeholder, style, class })` | A search form posting to the site's search page in the page's language: a box, or with `style: 'icon'` a button that opens one. The `core/search` block renders the same. |
 | `block(blocks)` | Renders a block, or a list of blocks, through the theme's own renderer, a plugin's component or the core one. |
 | `content(parts)` | For block renderers: renders a block's rich text field (`block.content.<field>`), HTML runs and the blocks embedded in them. |
 | `isActive(url)` | Whether a URL is the current page or one of its ancestors, for menu styling. |
@@ -165,6 +173,28 @@ Render content through `helpers.block`. Besides the core renderers and plugin bl
 is what makes an entry editable on the public page for signed-in editors: the helper marks
 each block in edit mode, and a theme never learns about editing. A theme can replace core block renderers with a `blocks` map in its
 `ui.ts` `theme` export, keyed by block type.
+
+## Areas with defaults
+
+An area declared as `{ "label", "blocks" }` carries the blocks the site shows until it saves
+its own, so a theme's header or footer can be blocks from the first day and still be edited:
+under Appearance → Widgets, where the defaults show with *Reset to the theme's default* once
+the site has saved, and in place with Live Edit. The first save stores the blocks as they are
+then; the theme's later changes to its defaults no longer apply to that site. Default blocks
+have IDs like saved ones and are checked against the core block types when the manifest is
+checked; a plugin's block among them is checked when its plugin is active, and left out of the
+rendering while the plugin is inactive. A child theme's area entry replaces its parent's by
+name, defaults included.
+
+The **site blocks** are the twins of the helpers, so a header built from blocks has everything
+a template has: *Site logo* (`core/site-logo`: the logo from Settings → General or its own
+image, else the title, with the tagline, linked home), *Navigation* (`core/navigation`, see
+[Menus](/docs/cms/menus.md)), *Search* (`core/search`), *Language switcher* (`core/languages`)
+and *Button* (`core/button`). A *Group* with the `row` direction lays them out in one line,
+spread out or aligned to one end; its children keep their own width and wrap on narrow
+screens. The default theme's `header` and `footer-bar` areas are built this way; the layout
+template keeps the frame around them (the border, the content width, the skip link). The text
+of a footer line can read the site: `© {{ $site.year }} {{ $site.title }}`.
 
 ## Stylesheets and the head
 
