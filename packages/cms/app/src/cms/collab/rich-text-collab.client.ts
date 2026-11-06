@@ -53,7 +53,7 @@ function caretWidget(caret: Caret): HTMLElement {
         const style = document.createElement('style');
         style.id = 'cms-caret-style';
         style.textContent = CARET_STYLE;
-        document.head.append(style);
+        document.head.appendChild(style);
     }
     const span = document.createElement('span');
     span.className = 'cms-caret';

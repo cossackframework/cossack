@@ -75,15 +75,28 @@ database and code ready for a hard check, delivered as the Writing setting `requ
 - **Maintenance.** `purgeOrphanNotes` checks a slice of the noted entries per run
   (`cms.notes.entries(limit, offset)`, a per-process cursor) and purges the notes of entries that
   no longer exist; a resource the host no longer declares keeps its notes.
-- **Out of scope.** Email and push notifications; suggestions (tracked changes); notes on
-  settings, forms, field groups, menus and in Live Edit on the site; exports; assignment;
-  webhook events for notes.
+- **Announcing (follow-ups built 2026-11-05).** `announceNote` (`notes-announce.ts`) runs after
+  a note is created or a thread resolved, from the room and the API routes, without the caller
+  waiting: `note.created` and `note.resolved` go to webhooks of the entry's collection
+  (`WEBHOOK_EVENTS`, payload `note` plus `entry` `{ id, title, url }`, event IDs
+  `note:<id>:created` and `note:<id>:resolved:<at>`); and, with the Writing setting
+  `notesEmail` on (default) and `cms.mail` set (`createCMS({ mail })`, exposed with `mailFrom`
+  on the host), the people a new note names (`cms.notes.mentioned`) get `noteMail` (plain text,
+  mentions as `@Name`, the quote, a link to `?notes=open`). Plugin resources have no webhooks.
+- **Live Edit.** The site draft (`SiteDraft`) carries `notes`, `people`, `me`, `admin` and
+  `mentionable`; `SiteEditor` renders the same `notesRail` and `notesFor` marks in the body's
+  and a block form's rich text editors, with a Notes button in its bar and markers and add
+  buttons in the Blocks panel. The site has no room: writes go through the content API
+  (`fetch`, same-origin) and the page keeps the notes through `onNotes`; moved ranges are not
+  written back from the site.
+- **Out of scope.** Push notifications; suggestions (tracked changes); notes on settings, forms,
+  field groups and menus; exports; assignment.
 
 ## Delivery
 
 | Where | What | Tests |
 | --- | --- | --- |
-| CMS package | `notes.ts`, `server/notes.ts`, host step 21 and `HOST_TABLES`, `cms.notes`, the `writing.requireResolvedNotes` setting, exports | `notes-unit.test.ts`, live `notes.test.ts` |
-| CMS app | `collab/room.ts` (`note`, `NoteChange`, snapshot `notes`/`people`), `collab/rich-text-notes.client.ts`, `rich-text.client.ts` and `rich-text-field.ts` (`notes`, `onNote`), `block-tree.ts` (`notes`, `onNote`, `onNotes`), `notes-rail.ts`, the entry editor, the entries list, the dashboard home, `dashboard/access.ts`, `content.ts` (`assertNotesResolved`), `maintenance.ts`, `blocks.css` | `generated-runtime-cms-notes.test.js` (two Chromium users: a note on a selection seen live, a reply with a mention, the home card, resolve and reopen, typing before the passage, a save and a reload, the API) |
+| CMS package | `notes.ts` (with `noteMail`, `notePlainText`), `server/notes.ts` (with `mentioned`), host step 21 and `HOST_TABLES`, `cms.notes`, `cms.mail` and `cms.mailFrom`, the `writing.requireResolvedNotes` and `writing.notesEmail` settings, `WEBHOOK_EVENTS` `note.created` and `note.resolved`, exports | `notes-unit.test.ts`, live `notes.test.ts` |
+| CMS app | `collab/room.ts` (`note`, `NoteChange`, snapshot `notes`/`people`), `collab/rich-text-notes.client.ts`, `rich-text.client.ts` and `rich-text-field.ts` (`notes`, `onNote`), `block-tree.ts` (`notes`, `onNote`, `onNotes`), `notes-rail.ts`, `notes-announce.ts`, the entry editor, the entries list, the dashboard home, `dashboard/access.ts`, `content.ts` (`assertNotesResolved`), `maintenance.ts`, `blocks.css`, the webhooks tool's labels, Live Edit (`site-editor.ts`, `site-editing.ts`, `site-editor.client.ts`, the site page) | `generated-runtime-cms-notes.test.js` (two Chromium users: a note on a selection seen live, a reply with a mention, the home card, webhook deliveries, resolve and reopen, typing before the passage, a save and a reload, the API, the publish gate, Live Edit) |
 | API | `api/cms/content/[collection]/[entry]/notes.ts` (GET, POST), `api/cms/notes/[id].ts` (PATCH, DELETE) | the browser test |
 | Docs | `docs/cms/notes.md`, the docs index, the co-editing guide's pointer, `README.md`, `agent-docs.json` | |

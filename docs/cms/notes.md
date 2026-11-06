@@ -54,6 +54,26 @@ it is (the field's name, the block's name and summary, or the quoted words), its
   words quoted; the taskbar counts the ones in entries you have not opened since. Opening an
   entry marks its notes for you as seen.
 
+## Hearing of notes
+
+- **Email.** With *Email people a note names* on under Settings → Writing (it is on by default),
+  a person mentioned in a note, or whose thread is replied to, gets the note by email with the
+  words it quotes and a link to the entry's notes. Emails go out only when the application gave
+  the CMS a way to send mail (`createCMS({ mail })`); without one nothing is sent and nothing
+  fails.
+- **Webhooks.** Under Tools → Webhooks, the events *A note is left on an entry*
+  (`note.created`) and *A note is resolved* (`note.resolved`) post to a webhook for the entry's
+  collection. The payload carries the `note` and an `entry` with its `id`, `title` and the
+  dashboard `url` of its notes.
+
+## Notes on the site
+
+In Live Edit on the published page, the bar's *Notes* button opens the same rail: the threads,
+replies, resolving and the pen and trash icons work there too, and *Note* in a block's text
+toolbar leaves a note on the selected words. The site has no room, so these notes go through the
+content API; editors with the entry open in the dashboard see them when they next join its room,
+and the places of passages moved in Live Edit are not written back until the dashboard saves.
+
 ## Who may do what
 
 Everyone who may edit an entry reads its notes, leaves notes and replies, and resolves or

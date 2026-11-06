@@ -138,6 +138,13 @@ export class CmsNotes {
         if (statements.length) await this.#db.write(statements, WRITE);
     }
 
+    /** The people a note names: its body's mentions and, for a reply, the thread's earlier voices; never its author. */
+    async mentioned(noteId: string): Promise<string[]> {
+        if (!ID.test(noteId)) return [];
+        const result = await this.#db.read([{ rql: 'SELECT user_id FROM cms_note_mentions WHERE note_id = $id ORDER BY user_id', params: { $id: noteId } }]);
+        return result.results[0]!.rows.map(row => row[0] as string);
+    }
+
     /** Open threads per entry, for lists; entries without one are left out. */
     async counts(resource: string, recordIds: readonly string[]): Promise<Map<string, number>> {
         const ids = [...new Set(recordIds.filter(id => ID.test(id)))].slice(0, 100);

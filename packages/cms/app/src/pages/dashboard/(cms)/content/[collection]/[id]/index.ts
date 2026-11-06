@@ -247,7 +247,8 @@ export default class EntryEditor extends Cossack {
             if (!record && collection && collection.name !== 'patterns') await this.loadPatterns(collection.name, true);
             if (collection?.name === 'patterns') this.collectionChoices = cms.collections().filter(entry => entry.name !== 'patterns').map(entry => ({ name: entry.name, label: entry.label }));
             await this.loadPatternTitles();
-            this.message = this.c.req.query('saved') === '1' ? __('Saved.') : '';
+            const saved = this.c.req.query('saved');
+            this.message = saved === 'published' ? __('Published.') : saved === 'scheduled' ? __('Scheduled.') : saved === 'pending' ? __('Submitted for review.') : saved === '1' ? __('Saved.') : '';
             this.mode = tabFromQuery(this.c.req.query('tab'), this.editorTabs());
             if (this.mode === 'json' && record) this.json = await entryJson(cms, this.route, record);
         } catch (error) {
@@ -858,6 +859,9 @@ export default class EntryEditor extends Cossack {
 
     onMount() {
         this.autosaved = this.snapshot();
+        // The first save's outcome came in the address; shown, the address is the entry's alone, as a reload should not repeat it.
+        const url = new URL(window.location.href);
+        if (url.searchParams.has('saved')) { url.searchParams.delete('saved'); window.history.replaceState(window.history.state, '', url); }
         // A saved entry is edited in its room, whose draft replaces the autosave and the reload restore.
         if (this.id !== 'new') return;
         this.autosaveTimer = setInterval(() => { void this.autosaveTick(); }, 30_000);
@@ -1352,17 +1356,23 @@ export default class EntryEditor extends Cossack {
             this.autosaved = this.snapshot();
             void this.announceSaved();
             this.persistNoteMoves();
-            this.settleUrl();
+            void this.settleUrl();
         }
     }
 
-    /** After the first save, the editor opens at the entry's own address, where its room is. */
+    /**
+     * After the first save, the editor opens at the entry's own address, where its room is. The
+     * outcome travels as `saved`, so the page shows it again, and leaves the address once shown.
+     */
     @Client()
-    private settleUrl() {
+    private async settleUrl() {
         if (this.id === 'new' || !window.location.pathname.endsWith('/new')) return;
         const query = new URLSearchParams(window.location.search);
-        query.set('saved', '1');
-        void this.navigate(`/dashboard/content/${this.route}/${this.id}?${query}${window.location.hash}`, { history: 'replace' });
+        query.set('saved', this.message === __('Published.') ? 'published' : this.message === __('Scheduled.') ? 'scheduled' : this.message === __('Submitted for review.') ? 'pending' : '1');
+        await this.navigate(`/dashboard/content/${this.route}/${this.id}?${query}${window.location.hash}`, { history: 'replace' });
+        // The same page stays mounted through the navigation, so the address is settled here, not in `onMount`.
+        const url = new URL(window.location.href);
+        if (url.searchParams.has('saved')) { url.searchParams.delete('saved'); window.history.replaceState(window.history.state, '', url); }
     }
 
     @Server()

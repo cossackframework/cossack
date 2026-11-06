@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { checkNoteBody, checkNoteQuote, checkNoteRange, findQuote, formatNoteTarget, mentionsIn, mentionToken, noteBlock, noteField, noteParts, noteThreads, NOTE_LIMITS, parseNoteTarget, type Note } from '../src/notes';
+import { checkNoteBody, checkNoteQuote, checkNoteRange, findQuote, formatNoteTarget, mentionsIn, mentionToken, noteBlock, noteField, noteMail, noteParts, notePlainText, noteThreads, NOTE_LIMITS, parseNoteTarget, type Note } from '../src/notes';
 
 const note = (id: string, parentId: string | null, createdAt: number): Note => ({
     id, resource: 'cms/posts', recordId: 'p1', parentId, userId: 'ada', target: 'entry', range: null, quote: '', body: id, status: 'open', resolvedBy: null, resolvedAt: null, createdAt, updatedAt: createdAt,
@@ -63,6 +63,19 @@ describe('mentions', () => {
         expect(noteParts('plain')).toEqual([{ kind: 'text', text: 'plain' }]);
         expect(mentionsIn('@[Nobody](bad id) @plain @[x](ok_1)')).toEqual(['ok_1']);
         expect(mentionsIn(Array.from({ length: 30 }, (_, index) => `@[U](u${index})`).join(' '))).toHaveLength(NOTE_LIMITS.mentions);
+    });
+});
+
+describe('note emails', () => {
+    it('writes the note as plain text with its quote and a link, for a note and for a reply', () => {
+        const body = `Needs a source, ${mentionToken({ id: 'eve', name: 'Eve' })}.`;
+        expect(notePlainText(body)).toBe('Needs a source, @Eve.');
+        const mail = noteMail({ author: 'Ada', title: 'Shared post', body, quote: 'the cat', url: 'https://example.com/dashboard/content/posts/p1?notes=open', reply: false, site: 'Together' });
+        expect(mail.subject).toBe('Ada left you a note on “Shared post”');
+        expect(mail.text).toBe(['Ada left a note on “Shared post” (Together):', '', 'On “the cat”:', '', 'Needs a source, @Eve.', '', 'Open the entry\'s notes: https://example.com/dashboard/content/posts/p1?notes=open'].join('\n'));
+        const reply = noteMail({ author: 'Eve', title: '  ', body: 'Added one.', quote: '', url: 'https://example.com/x', reply: true, site: '' });
+        expect(reply.subject).toBe('Eve replied to a note on “an entry”');
+        expect(reply.text).not.toContain('On “');
     });
 });
 

@@ -1,17 +1,19 @@
 import type { Context } from 'hono';
-import { hasPermission, PERMISSIONS, type Note, type Principal } from '@cossackframework/cms';
+import { hasPermission, PERMISSIONS, recordTitle, type Note, type Principal, type RecordShape } from '@cossackframework/cms';
 import type { CmsHost } from '@cossackframework/cms/server';
 import { apiError, writeAllowed, writeBody } from '../../../../cms/content-api';
+import { announceNote } from '../../../../cms/notes-announce';
+import { siteOrigin } from '../../../../cms/seo';
 
-/** The note and whether the principal may edit its entry; a Response when not. */
-async function editable(c: Context, cms: CmsHost, principal: Principal): Promise<{ note: Note } | Response> {
+/** The note, its entry and whether the principal may edit that entry; a Response when not. */
+async function editable(c: Context, cms: CmsHost, principal: Principal): Promise<{ note: Note; record: RecordShape } | Response> {
     const note = await cms.notes.get(c.req.param('id') ?? '');
     if (!note) return c.json({ error: 'Note not found.', code: 'CMS_NOT_FOUND' }, 404);
     const repository = cms.resource(note.resource);
     const record = await repository.get(note.recordId, { principal });
     if (!record) return c.json({ error: 'Note not found.', code: 'CMS_NOT_FOUND' }, 404);
     if (principal.kind !== 'user' || !repository.canUpdate(record, principal)) return c.json({ error: 'Not allowed to change notes on this entry.', code: 'CMS_FORBIDDEN' }, 403);
-    return { note };
+    return { note, record };
 }
 
 /**
@@ -38,6 +40,13 @@ export const PATCH = async (c: Context) => {
             if (note.parentId) return c.json({ error: 'Resolve the thread, not a reply.', code: 'CMS_VALIDATION' }, 422);
             if (body.status !== 'open' && body.status !== 'resolved') return c.json({ error: 'status must be open or resolved.', code: 'CMS_VALIDATION' }, 422);
             note = (await cms.notes.setStatus(note.id, body.status, principal.id)) ?? note;
+            if (note.status === 'resolved') {
+                const [owner, name] = note.resource.split('/');
+                const author = await cms.users.get(principal.id).catch(() => null);
+                void announceNote(cms, { kind: 'resolved', note }, { origin: siteOrigin(c), route: owner === 'cms' ? name! : `${owner}.${name}`, collection: owner === 'cms' ? name! : null,
+                    title: recordTitle(found.record, cms.resourceById(note.resource).titleField), author: author?.name || author?.email || principal.id })
+                    .catch(error => console.warn('[cms] a note could not be announced', error));
+            }
         }
         c.header('cache-control', 'no-store');
         return c.json({ note });

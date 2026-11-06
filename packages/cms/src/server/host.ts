@@ -332,6 +332,10 @@ export class CmsHost {
     readonly comments: CmsComments;
     /** Forms' submissions: taking them, notifications, and handling them in the dashboard. */
     readonly forms: CmsForms;
+    /** Sends email, when the application gave one (`createCMS({ mail })`); null skips every email. */
+    readonly mail: CmsMail | null;
+    /** The sender of the emails the CMS sends. */
+    readonly mailFrom: string;
     /** Second factors and passkeys of network accounts, on the network database. */
     readonly security: CmsSecurity;
     /** Second factors and passkeys of site accounts; null on the main site. */
@@ -431,6 +435,8 @@ export class CmsHost {
         this.webhooks = new CmsWebhooks(this.db, { now: this.#now, fetch: this.#fetch });
         this.comments = new CmsComments(this.db, { now: this.#now });
         this.forms = new CmsForms(this, { ...(options.mail ? { mail: options.mail } : {}), ...(options.mailFrom ? { mailFrom: options.mailFrom } : {}) });
+        this.mail = options.mail ?? null;
+        this.mailFrom = options.mailFrom ?? 'no-reply@example.com';
         this.security = new CmsSecurity(this.network, { now: this.#now });
         this.siteSecurity = added ? new CmsSecurity(this.db, { now: this.#now }) : null;
         // Entry events become webhook deliveries; the outbox retries this until they are queued.

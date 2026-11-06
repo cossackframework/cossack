@@ -31,6 +31,8 @@ import type { EditorValues, EditorView } from '../editor';
 import { collabEditors } from '../rich-text-field';
 import type { CollabTransport, StepsResult } from '../rich-text.client';
 import { richTextSchema } from '../rich-text-schema';
+import { announceNote } from '../notes-announce';
+import { siteOrigin } from '../seo';
 import { avatarStack, type Someone } from './presence';
 
 const PEER = /^[A-Za-z0-9_-]{8,64}$/;
@@ -525,6 +527,11 @@ export class EntryRoom extends Cossack {
         if (typeof peer !== 'string' || !PEER.test(peer)) throw new CmsError('CMS_VALIDATION', 'Invalid peer.');
         const input = checkNoteAction(action);
         const tell = (change: NoteChange) => this.broadcastEvent('note', change);
+        // Webhooks and emails follow on their own; the tab is answered first.
+        const announce = (kind: 'created' | 'resolved', note: Note) => void announceNote(cms, { kind, note }, {
+            origin: siteOrigin(this.c), route: this.c.req.param('collection') ?? '', collection: this.resourceId.startsWith('cms/') ? this.resourceId.slice(4) : null,
+            title: String(this.values[this.view?.titleField ?? 'title'] ?? ''), author: this.people.get(principal.id)?.name ?? principal.id,
+        }).catch(error => console.warn('[cms] a note could not be announced', error));
         const current = (id: string) => {
             const note = this.notes.find(entry => entry.id === id);
             if (!note) throw new CmsError('CMS_NOT_FOUND', 'The note no longer exists.');
@@ -536,6 +543,7 @@ export class EntryRoom extends Cossack {
                 await this.know(cms, [principal.id]);
                 this.notes = [...this.notes.map(entry => entry.id === note.parentId ? { ...entry, updatedAt: note.createdAt } : entry), note];
                 tell({ kind: 'created', note, author: this.people.get(principal.id)! });
+                announce('created', note);
                 return note;
             }
             case 'edit': {
@@ -553,6 +561,7 @@ export class EntryRoom extends Cossack {
                 if (!note) throw new CmsError('CMS_NOT_FOUND', 'The note no longer exists.');
                 this.notes = this.notes.map(entry => entry.id === note.id ? note : entry);
                 tell({ kind: 'status', note });
+                if (note.status === 'resolved') announce('resolved', note);
                 return note;
             }
             case 'remove': {

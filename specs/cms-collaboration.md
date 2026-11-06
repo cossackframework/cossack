@@ -28,7 +28,10 @@ in the order it receives them, broadcasts it, and keeps the shared draft between
   `site:<site>:<collection>:<entry>`, guarded by `requireEntryEditor` (a dashboard user who may
   update the entry; the check is kept five seconds per user and entry, since it runs again for
   every frame to every peer). The page keeps HTTP for saving, uploads and the media library.
-  `/new` has no room: the first save navigates to the entry's address, which joins. The page
+  `/new` has no room: the first save navigates to the entry's address, which joins; the save's
+  outcome travels as `?saved=` (`1`, `published`, `scheduled`, `pending`) for the message, and
+  `settleUrl` drops it from the address once the navigation settled (the page stays mounted
+  through it; `onMount` drops it after a full load). The page
   receives its `RoomHandle` after the first successful join, since a socket call before the
   connection opens rejects; a rich text field that cannot fetch the room's document runs alone
   and mounts again on the room's document when the room comes up.

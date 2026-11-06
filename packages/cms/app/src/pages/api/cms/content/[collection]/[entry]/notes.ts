@@ -1,6 +1,8 @@
 import type { Context } from 'hono';
-import { checkNoteRange, noteThreads } from '@cossackframework/cms';
+import { checkNoteRange, noteThreads, recordTitle } from '@cossackframework/cms';
 import { apiError, writeAllowed, writeBody } from '../../../../../../cms/content-api';
+import { announceNote } from '../../../../../../cms/notes-announce';
+import { siteOrigin } from '../../../../../../cms/seo';
 
 /**
  * An entry's review notes: `GET /api/cms/content/posts/<id>/notes` answers its threads, each a
@@ -47,6 +49,9 @@ export const POST = async (c: Context) => {
             resource, recordId: id, userId: principal.id, body: String(body.body ?? ''),
             ...(typeof body.parentId === 'string' ? { parentId: body.parentId } : { target: typeof body.target === 'string' ? body.target : 'entry', range: checkNoteRange(body.range), quote: typeof body.quote === 'string' ? body.quote : '' }),
         });
+        const author = await cms.users.get(principal.id).catch(() => null);
+        void announceNote(cms, { kind: 'created', note }, { origin: siteOrigin(c), route: collection.name, collection: collection.name, title: recordTitle(record, cms.resourceById(resource).titleField), author: author?.name || author?.email || principal.id })
+            .catch(error => console.warn('[cms] a note could not be announced', error));
         c.header('cache-control', 'no-store');
         return c.json({ note }, 201);
     } catch (error) { return apiError(c, error); }

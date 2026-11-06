@@ -198,6 +198,26 @@ export function checkNoteAction(value: unknown): NoteAction {
     }
 }
 
+/** A body as plain text for an email: mentions become `@Name`. */
+export function notePlainText(body: string): string {
+    return noteParts(body).map(part => part.kind === 'mention' ? `@${part.name}` : part.text).join('');
+}
+
+/** The email to someone a note names: a new note on an entry, or a reply in their thread. */
+export function noteMail(input: { readonly author: string; readonly title: string; readonly body: string; readonly quote: string; readonly url: string; readonly reply: boolean; readonly site: string }): { subject: string; text: string } {
+    const title = input.title.trim() || 'an entry';
+    const subject = `${input.author} ${input.reply ? 'replied to a note on' : 'left you a note on'} “${title}”`.replace(/[\r\n]+/g, ' ').slice(0, 300);
+    const lines = [
+        `${input.author} ${input.reply ? 'replied to a note on' : 'left a note on'} “${title}”${input.site ? ` (${input.site})` : ''}:`,
+        '',
+        ...(input.quote ? [`On “${input.quote}”:`, ''] : []),
+        notePlainText(input.body),
+        '',
+        `Open the entry's notes: ${input.url}`,
+    ];
+    return { subject, text: lines.join('\n') };
+}
+
 /**
  * Where a quote sits in a text: the occurrence nearest `near`, or -1. Used to put a note back on
  * its words when the stored range no longer holds them.

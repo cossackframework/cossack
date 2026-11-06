@@ -15,6 +15,7 @@ afterEach(cleanupRoots);
 
 const EDITOR = 'dashboard/(cms)/content/[collection]/[id]/index.ts';
 const SETTINGS = 'dashboard/(cms)/settings/index.ts';
+const WEBHOOKS = 'dashboard/(cms)/tools/webhooks/index.ts';
 const SETUP = { code: 'setup-code-for-tests', siteTitle: 'Reviewed', name: 'Ada', email: 'ada@example.com', password: 'long password' };
 const doc = text => ({ type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text }] }] });
 
@@ -64,6 +65,11 @@ describe.skipIf(!liveRomeDBTests())('generated CMS notes', () => {
       const id = created.id;
       const url = `${origin}/dashboard/content/posts/${id}`;
       const notesApi = `/api/cms/content/posts/${id}/notes`;
+      // A webhook for the notes of every collection; its deliveries are queued as notes are left and resolved.
+      const hooked = await ada.action(WEBHOOKS, 'save', [{ id: '', name: 'Notes hook', url: `${origin}/hooks/notes`, events: ['note.created', 'note.resolved'], collections: [], active: true }]);
+      expect(hooked.error ?? '').toBe('');
+      const hookId = hooked.selected;
+      expect(hookId).toMatch(/\S/);
 
       browser = await chromium.launch({ headless: true });
       const adaPage = await open(browser, origin, ada, url, errors);
@@ -115,6 +121,9 @@ describe.skipIf(!liveRomeDBTests())('generated CMS notes', () => {
       // Eve resolves: the underline and the count go for Ada; reopening brings them back.
       await evePage.locator('[data-note-thread] button:has-text("Resolve")').click();
       await browserExpect(adaPage.locator('[data-notes-toggle]')).toHaveAttribute('data-notes-toggle', '0', { timeout: 10_000 });
+      // The webhook has a delivery queued for the note and one for the reply, and one for the resolution.
+      await browserExpect.poll(async () => (await ada.action(WEBHOOKS, 'load', [hookId])).deliveries.map(delivery => delivery.event).sort(), { timeout: 10_000 })
+        .toEqual(['note.created', 'note.created', 'note.resolved']);
       await browserExpect(adaPage.locator('[data-block-tree-item="rt"] .cms-note')).toHaveCount(0);
       await evePage.locator('[data-notes-rail] [role="tab"]:has-text("Resolved")').click();
       await evePage.locator('[data-note-thread][data-status="resolved"] button:has-text("Reopen")').click();
@@ -164,6 +173,24 @@ describe.skipIf(!liveRomeDBTests())('generated CMS notes', () => {
       const published = await ada.action(EDITOR, 'save', [{ ...values, title: entry.title, content: entry.content, status: 'published' }, 'publish', entry.rev], { params: { collection: 'posts', id }, state: { route: 'posts', id } });
       expect(published.error ?? '').toBe('');
       expect(published.savedStatus).toBe('published');
+
+      // Live Edit on the published page: the bar's Notes opens the same threads, and a reply written there goes through the API.
+      const live = (await (await ada.request(`/api/cms/content/posts/${id}`)).json()).item.url;
+      expect(live, 'the published entry has a URL').toMatch(/\S/);
+      const sitePage = await open(browser, origin, ada, `${/^https?:/.test(live) ? live : origin + live}?edit`, errors);
+      await browserExpect(sitePage.locator('[data-site-editor] [data-notes-toggle]')).toHaveAttribute('data-notes-toggle', '0', { timeout: 30_000 });
+      await sitePage.locator('[data-site-editor] [data-notes-toggle]').click();
+      await sitePage.locator('[data-notes-rail] [role="tab"]:has-text("Resolved")').click();
+      await browserExpect(sitePage.locator('[data-notes-rail] [data-note-thread]')).toContainText('Needs a source, please.');
+      await sitePage.locator('[data-note-thread] button:has-text("Reopen")').click();
+      await browserExpect(sitePage.locator('[data-site-editor] [data-notes-toggle]')).toHaveAttribute('data-notes-toggle', '1', { timeout: 10_000 });
+      await sitePage.locator('[data-notes-rail] [role="tab"]:has-text("Open")').click();
+      await sitePage.locator('[data-note-thread] button:has-text("Reply")').click();
+      await sitePage.locator('#site-notes-composer').fill('Seen on the site.');
+      await sitePage.locator('[data-note-composer] button[type="submit"]').click();
+      await browserExpect(sitePage.locator('[data-notes-rail] [data-note-thread] [data-note]')).toHaveCount(3, { timeout: 10_000 });
+      const afterSite = (await (await ada.request(notesApi)).json()).threads;
+      expect(afterSite[0].replies.map(reply => reply.body)).toEqual(expect.arrayContaining(['Seen on the site.']));
       expect(errors, errors.join('\n')).toEqual([]);
     } catch (error) {
       console.log('page errors:', errors.join('\n'));

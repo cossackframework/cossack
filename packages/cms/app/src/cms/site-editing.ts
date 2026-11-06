@@ -3,7 +3,7 @@
  * signed-in user may update the entry; drafts render like previews and save through the
  * dashboard editor's save, with its revision check.
  */
-import { CmsError, recordTitle, type CollectionDefinition, type EntryView, type Principal, type RecordShape } from '@cossackframework/cms';
+import { CmsError, hasPermission, participantColor, PERMISSIONS, recordTitle, type CollectionDefinition, type EntryView, type Principal, type RecordShape } from '@cossackframework/cms';
 import type { FormRequest } from './site-forms';
 import type { CmsHost } from '@cossackframework/cms/server';
 import { editorView, entryInput, entryValues, findMedia, mediaPreviews, saveEntry } from './content';
@@ -45,9 +45,16 @@ export async function siteDraft(cms: CmsHost, collection: CollectionDefinition, 
         const target = cms.resourceById(field.target);
         references[field.name] = page.records.filter(entry => entry.id !== record.id).map(entry => ({ id: entry.id, title: recordTitle(entry, target.titleField) }));
     }
+    // The entry's notes, with who wrote them, and who a new note could mention.
+    const me = principal.kind === 'user' ? principal.id : '';
+    const notes = await cms.notes.forEntry(`cms/${collection.name}`, record.id).catch(() => []);
+    const users = await cms.users.getMany([...new Set([me, ...notes.map(note => note.userId)].filter(Boolean))]);
+    const mentionable = me ? (await cms.users.list({ limit: 100 }).catch(() => ({ items: [] }))).items.filter(user => user.id !== me).map(user => ({ id: user.id, name: user.name || user.email })) : [];
     return {
         collection: collection.name, id: record.id, rev: record.rev, view, values, previews: await mediaPreviews(cms, values, view), references,
         blocksField, bodyField, changed: false, error: '', errors: {}, conflict: false, chooser: closedChooser(),
+        notes, people: Object.fromEntries([...users.values()].map(user => [user.id, { user: user.id, name: user.name || user.email, avatar: user.avatar, color: participantColor(user.id) }])),
+        me, admin: hasPermission(principal, PERMISSIONS.manageUsers), mentionable,
     };
 }
 

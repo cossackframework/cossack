@@ -48,7 +48,7 @@ function ensureStyle(): void {
     const style = document.createElement('style');
     style.id = 'cms-note-style';
     style.textContent = NOTE_STYLE;
-    document.head.append(style);
+    document.head.appendChild(style);
 }
 
 /** The document's text with, for each character, the position it sits at. */

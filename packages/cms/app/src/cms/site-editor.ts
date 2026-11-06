@@ -4,6 +4,8 @@
  * `site-editor.client.ts`, loaded only in edit mode, and the bar that opens it is the site
  * taskbar (`taskbar.ts`).
  */
+import type { Note } from '@cossackframework/cms';
+import type { Someone } from './collab/presence';
 import type { EditorBlock, EditorValues, EditorView } from './editor';
 import type { MediaPreview } from './field-controls';
 import type { MediaChooserState } from './media-chooser';
@@ -37,6 +39,13 @@ export interface SiteDraft {
     /** Someone else saved the entry since the draft started. */
     conflict: boolean;
     chooser: MediaChooserState;
+    /** The entry's review notes, and who they name; written through the content API, since the site has no room. */
+    notes: Note[];
+    people: Record<string, Someone>;
+    /** The editor's user ID, and whether they remove anyone's notes. */
+    me: string;
+    admin: boolean;
+    mentionable: { id: string; name: string }[];
 }
 
 /** A block as the draft holds it: data as control values, nested blocks under a container. */
@@ -58,4 +67,6 @@ export type SiteEditorProps = {
     onSearchMedia(search: string): void;
     onChooser(state: MediaChooserState): void;
     onPreviews(previews: Record<string, MediaPreview>): void;
+    /** The notes changed through the API: keep them in the draft. */
+    onNotes(notes: Note[]): void;
 };

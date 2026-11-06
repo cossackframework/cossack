@@ -2,7 +2,7 @@ import { Client, ClientState, Cossack, Page, Server, State, defineServerMiddlewa
 import { isTransportPath } from '@cossackframework/core/transport-routes';
 import { getCookie } from 'hono/cookie';
 import { component, html } from '@cossackframework/renderer';
-import { isCmsError, isSameOriginPost, type ArchiveView, type EntryView, type RecordShape, type ThemeData } from '@cossackframework/cms';
+import { isCmsError, isSameOriginPost, type ArchiveView, type EntryView, type Note, type RecordShape, type ThemeData } from '@cossackframework/cms';
 import { archive, authorArchive, authorView, bindingScopes, commentResult, entryViews, homeView, isProtected, languageLinks, localePrefix, pageNumber, redirectFor, resolvePath, searchEntries, termArchive, themeData, themeState, unlockCookie, unlockToken, resolvedOptions, type Resolved, type ThemeState } from '../../../cms/site';
 import { archiveTemplate, entryTemplate, siteContent, siteTheme, themeHelpers, unavailable } from '../../../cms/site-view';
 import { authorSeo, entrySeo, homeSeo, listSeo } from '../../../cms/seo';
@@ -358,6 +358,11 @@ export default class SitePath extends Cossack {
         if (this.draft) this.draft = { ...this.draft, previews };
     }
 
+    @Client()
+    setNotes(notes: Note[]) {
+        if (this.draft) this.draft = { ...this.draft, notes };
+    }
+
     /** Edit mode: the editor, once its code is loaded. `data-site-editing` hides the site taskbar meanwhile. */
     private editor() {
         const draft = this.draft;
@@ -369,6 +374,7 @@ export default class SitePath extends Cossack {
             onSearchMedia: (search: string) => this.searchDraftMedia(search),
             onChooser: (chooser: MediaChooserState) => this.setChooser(chooser),
             onPreviews: (previews: Record<string, MediaPreview>) => this.setPreviews(previews),
+            onNotes: (notes: Note[]) => this.setNotes(notes),
         }) : html`<p role="status" class="fixed bottom-4 left-1/2 z-50 -translate-x-1/2 rounded-full border border-border bg-background px-4 py-2 text-sm text-muted-foreground shadow-lg">${__('Loading the editor…')}</p>`}</div>`;
     }
 

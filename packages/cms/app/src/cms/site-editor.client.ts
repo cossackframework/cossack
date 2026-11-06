@@ -8,14 +8,16 @@
 import { Client, ClientState, Component, Cossack } from '@cossackframework/core';
 import { component, html, type TemplateResult } from '@cossackframework/renderer';
 import { Button, Checkbox, Icon, MultiSelect } from '@cossackframework/ui';
-import { blockId, BREAKPOINTS, findBlock, insertBlock, placeBlocks, removeBlock, shiftBlock, updateBlock, type BlockMove, type BlockPlace, type Breakpoint, type EmbeddedBlock, type RichTextDoc } from '@cossackframework/cms';
+import { blockId, BREAKPOINTS, findBlock, formatNoteTarget, insertBlock, noteBlock, noteThreads, parseNoteTarget, parseRichTextPath, placeBlocks, removeBlock, richTextPath, shiftBlock, updateBlock, type BlockMove, type BlockPlace, type Breakpoint, type EmbeddedBlock, type Note, type NoteRange, type NoteStatus, type RichTextDoc } from '@cossackframework/cms';
 import { blockDefaults, controlValue, editorInput, newBlock, type BlockOption, type EditorValues } from './editor';
-import { BREAKPOINT_DEVICES, declarationsOf, offeredIn } from './block-tree';
+import { BREAKPOINT_DEVICES, blockSummary, declarationsOf, offeredIn } from './block-tree';
 import { icon } from './icons';
 import { blockFields, fieldControl, type MediaHooks, type MediaPreview } from './field-controls';
 import { blockTabs, styleControls, styleValues, withStyle, type BlockTab, type StyleValues } from './style-controls';
 import { chooserKind, mediaChooser, uploadMedia, withFile } from './media-chooser';
-import { RichTextField, richTextEditors } from './rich-text-field';
+import { RichTextField, richTextEditors, type RichTextFieldProps } from './rich-text-field';
+import type { NoteMark } from './rich-text.client';
+import { noteButton, noteMarker, notesRail, type NoteAnchorView, type NoteComposer } from './notes-rail';
 import { BlockInserter } from './block-inserter';
 import { reorderBlocks, type DraftBlock, type SiteEditorProps } from './site-editor';
 import { CONTROL } from './ui';
@@ -48,6 +50,15 @@ export class SiteEditor extends Cossack {
     @ClientState() private drag: Drag | null = null;
     @ClientState() private announcement = '';
     @ClientState() private device: Device = 'desktop';
+    // Notes: the rail and its state; the notes themselves live in the draft, written through the content API.
+    @ClientState() private notesOpen = false;
+    @ClientState() private notesFilter: NoteStatus = 'open';
+    @ClientState() private composer: NoteComposer | null = null;
+    @ClientState() private editingNote: { id: string; body: string } | null = null;
+    @ClientState() private activeNote: string | null = null;
+    @ClientState() private notesBusy = false;
+    @ClientState() private notesError = '';
+    @ClientState() private detachedNotes: string[] = [];
     private chooserTarget: ChooserTarget | null = null;
     private root?: HTMLElement;
     private list?: HTMLElement;
@@ -406,6 +417,157 @@ export class SiteEditor extends Cossack {
         this.embedded = null;
     }
 
+    // --- Notes: review threads, through the content API (the site has no room) -------------
+
+    private openRoots(): Note[] {
+        return this.props.draft.notes.filter(note => !note.parentId && note.status === 'open');
+    }
+
+    /** Open threads on a block, counting the passages inside it. */
+    private blockNoteCount(id: string): number {
+        return this.openRoots().filter(note => { const target = parseNoteTarget(note.target); return !!target && noteBlock(target)?.block === id; }).length;
+    }
+
+    private fieldLabel(name: string): string {
+        const { view } = this.props.draft;
+        return view.fields.find(field => field.name === name)?.label ?? view.taxonomies.find(taxonomy => taxonomy.name === name)?.label ?? name;
+    }
+
+    /** The notes of a rich text document, for its editor, and the toolbar's Note. */
+    private notesFor(path: string): Partial<Pick<RichTextFieldProps, 'notes' | 'onNote'>> {
+        const marks = this.props.draft.notes.filter(note => !note.parentId && note.status === 'open' && note.target === `text:${path}`).map(note => ({ id: note.id, range: note.range, quote: note.quote }));
+        return {
+            notes: { marks, active: this.activeNote, onClick: (id: string) => this.selectNote(id), onMoved: (placed: readonly NoteMark[]) => this.onNotesPlaced(path, placed) },
+            onNote: (range: NoteRange | null, quote: string) => {
+                const parsed = parseRichTextPath(path);
+                const whole = parsed?.block ? formatNoteTarget({ kind: 'block', field: parsed.field, block: parsed.block.id }) : formatNoteTarget({ kind: 'field', field: parsed?.field ?? path });
+                this.startNote(range ? `text:${path}` : whole, range, quote);
+            },
+        };
+    }
+
+    @Client()
+    private onNotesPlaced(path: string, placed: readonly NoteMark[]) {
+        const found = new Set(placed.map(mark => mark.id));
+        const here = (id: string) => this.props.draft.notes.find(note => note.id === id)?.target === `text:${path}`;
+        const detached = this.props.draft.notes.filter(note => !note.parentId && note.status === 'open' && here(note.id) && !found.has(note.id)).map(note => note.id);
+        const next = [...this.detachedNotes.filter(id => !here(id)), ...detached].sort();
+        if (next.join() !== [...this.detachedNotes].sort().join()) this.detachedNotes = next;
+    }
+
+    private noteAnchor(root: Note): NoteAnchorView {
+        const target = parseNoteTarget(root.target);
+        if (!target || target.kind === 'entry') return { label: __('This entry'), quote: '', detached: false };
+        if (target.kind === 'field') return { label: this.fieldLabel(target.field), quote: '', detached: false };
+        const at = noteBlock(target);
+        if (!at) return { label: this.fieldLabel(target.kind === 'text' ? target.path : ''), quote: root.quote, detached: this.detachedNotes.includes(root.id) };
+        const block = findBlock(this.blocks(), at.block);
+        const option = block ? this.option(block.type) : undefined;
+        const label = block ? option?.label ?? block.type : __('A removed block');
+        const summary = block ? blockSummary(block, this.props.draft.previews, option) : '';
+        if (target.kind === 'block') return { label: summary ? `${label}: ${summary}` : label, quote: '', detached: !block };
+        return { label, quote: root.quote, detached: !block || this.detachedNotes.includes(root.id) };
+    }
+
+    @Client()
+    private startNote(target: string, range: NoteRange | null = null, quote = '') {
+        this.composer = { target, range, quote, parentId: null, body: '' };
+        this.editingNote = null;
+        this.activeNote = null;
+        this.notesFilter = 'open';
+        this.notesError = '';
+        this.notesOpen = true;
+    }
+
+    @Client()
+    private selectNote(id: string) {
+        const root = this.props.draft.notes.find(note => note.id === id);
+        this.activeNote = id;
+        if (root) this.notesFilter = root.status;
+        this.notesOpen = true;
+        const target = root ? parseNoteTarget(root.target) : null;
+        const block = target ? noteBlock(target) : null;
+        if (block) document.querySelector(`[data-cms-edit="block"][data-block-id="${CSS.escape(block.block)}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }
+
+    /** Open the rail on a block's notes, the first open thread there chosen. */
+    @Client()
+    private showBlockNotes(id: string) {
+        const first = this.openRoots().find(note => { const target = parseNoteTarget(note.target); return !!target && noteBlock(target)?.block === id; });
+        this.notesFilter = 'open';
+        this.notesOpen = true;
+        if (first) this.activeNote = first.id;
+    }
+
+    private notesPath(): string {
+        return `/api/cms/content/${this.props.draft.collection}/${this.props.draft.id}/notes`;
+    }
+
+    /** A call to the content API as the signed-in editor; the answer's JSON, or its error as a message. */
+    private async noteRequest<T>(method: string, path: string, body?: unknown): Promise<T> {
+        const response = await fetch(path, { method, credentials: 'same-origin', headers: { 'content-type': 'application/json' }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+        if (response.status === 204) return undefined as T;
+        const data = await response.json().catch(() => ({})) as T & { error?: string };
+        if (!response.ok) throw new Error(data.error || __('The note could not be saved.'));
+        return data;
+    }
+
+    @Client()
+    private async postNote() {
+        const composer = this.composer;
+        if (!composer || !composer.body.trim()) return;
+        this.notesBusy = true;
+        this.notesError = '';
+        try {
+            const { note } = await this.noteRequest<{ note: Note }>('POST', this.notesPath(), composer.parentId
+                ? { parentId: composer.parentId, body: composer.body } : { target: composer.target, range: composer.range, quote: composer.quote, body: composer.body });
+            this.composer = null;
+            this.props.onNotes([...this.props.draft.notes.map(entry => entry.id === note.parentId ? { ...entry, updatedAt: note.createdAt } : entry), note]);
+            this.activeNote = note.parentId ?? note.id;
+        } catch (error) { this.notesError = (error as Error).message; }
+        finally { this.notesBusy = false; }
+    }
+
+    /** Change a note's text or a thread's status; the answer replaces the note. */
+    @Client()
+    private async patchNote(id: string, body: { body?: string; status?: NoteStatus }) {
+        this.notesBusy = true;
+        this.notesError = '';
+        try {
+            const { note } = await this.noteRequest<{ note: Note }>('PATCH', `/api/cms/notes/${id}`, body);
+            this.props.onNotes(this.props.draft.notes.map(entry => entry.id === note.id ? note : entry));
+            if (this.editingNote?.id === id) this.editingNote = null;
+        } catch (error) { this.notesError = (error as Error).message; }
+        finally { this.notesBusy = false; }
+    }
+
+    @Client()
+    private async removeNote(id: string) {
+        const note = this.props.draft.notes.find(entry => entry.id === id);
+        if (!note || !window.confirm(note.parentId ? __('Remove this reply?') : __('Remove this thread and its replies?'))) return;
+        this.notesBusy = true;
+        this.notesError = '';
+        try {
+            await this.noteRequest<undefined>('DELETE', `/api/cms/notes/${id}`);
+            this.props.onNotes(this.props.draft.notes.filter(entry => entry.id !== id && entry.parentId !== id));
+            if (this.activeNote === id) this.activeNote = null;
+        } catch (error) { this.notesError = (error as Error).message; }
+        finally { this.notesBusy = false; }
+    }
+
+    private notesRailView(): TemplateResult | null {
+        const { draft } = this.props;
+        return notesRail({
+            id: 'site-notes', open: this.notesOpen, threads: noteThreads(draft.notes), filter: this.notesFilter, people: draft.people, me: draft.me, admin: draft.admin,
+            active: this.activeNote, composer: this.composer, editing: this.editingNote, mentionable: draft.mentionable, busy: this.notesBusy, error: this.notesError,
+            anchor: root => this.noteAnchor(root),
+            onClose: () => { this.notesOpen = false; }, onFilter: filter => { this.notesFilter = filter; }, onSelect: id => this.selectNote(id),
+            onCompose: composer => { this.composer = composer; }, onSubmit: () => { void this.postNote(); },
+            onEdit: editing => { this.editingNote = editing; }, onSaveEdit: () => { if (this.editingNote?.body.trim()) void this.patchNote(this.editingNote.id, { body: this.editingNote.body }); },
+            onResolve: id => { void this.patchNote(id, { status: 'resolved' }); }, onReopen: id => { void this.patchNote(id, { status: 'open' }); }, onRemove: id => { void this.removeNote(id); },
+        });
+    }
+
     // --- Media -----------------------------------------------------------------------------
 
     @Client()
@@ -494,7 +656,8 @@ export class SiteEditor extends Cossack {
                     ${option.fields.filter(field => field.kind === 'richtext').map(field => html`<div class="space-y-1"><label class="block text-sm font-medium text-foreground" for=${`site-block-${block._id}-${field.name}`}>${field.label}</label>
                         ${component(RichTextField, { id: `site-block-${block._id}-${field.name}`, label: field.label, value: (form.values[field.name] as RichTextDoc | null) ?? null, blocks: [],
                             onChange: (doc: RichTextDoc) => this.setFormValue(field.name, doc), onMedia: () => this.openChooser({ kind: 'richtext', editor: `site-block-${block._id}-${field.name}` }, false),
-                            onInsertBlock: () => undefined, onEditBlock: () => undefined })}</div>`)}
+                            onInsertBlock: () => undefined, onEditBlock: () => undefined,
+                            ...(this.props.draft.blocksField ? this.notesFor(richTextPath(this.props.draft.blocksField, { id: block._id, key: field.name })) : {}) })}</div>`)}
                     ${blockFields({ ...option, fields: option.fields.filter(field => field.kind !== 'richtext') }, form.values, (name, value) => this.setFormValue(name, value), `site-block-${block._id}`, name => this.media({ kind: 'block', field: name }), form.errors, [], this.props.draft.view.sources)}`
                     : html`<p class="text-sm text-muted-foreground">${__('This block has no settings.')}</p>`,
                 })}
@@ -546,6 +709,8 @@ export class SiteEditor extends Cossack {
                             </span>
                             ${offered.length && (option?.children?.max === null || (block.children ?? []).length < (option?.children?.max ?? 0))
                                 ? component(BlockInserter, { id: `site-editor-add-${block._id}`, blocks: offered, compact: true, onPick: (type: string) => this.add(type, block._id) }) : null}
+                            ${noteMarker(this.blockNoteCount(block._id), this.label(block), () => this.showBlockNotes(block._id))}
+                            ${this.props.draft.blocksField ? noteButton(`site-note-${block._id}`, this.label(block), () => this.startNote(formatNoteTarget({ kind: 'block', field: this.props.draft.blocksField!, block: block._id })), { always: true }) : null}
                             ${option?.fields.length ? this.iconButton(__('Edit'), `${__('Edit')} ${this.label(block)}`, () => this.edit(block._id)) : null}
                             ${this.iconButton(trash(), `${__('Remove')} ${this.label(block)}`, () => this.remove(block._id))}
                         </div>
@@ -605,6 +770,7 @@ export class SiteEditor extends Cossack {
                 onMedia: () => this.openChooser({ kind: 'richtext' }, false),
                 onInsertBlock: (type: string) => this.insertEmbedded(type),
                 onEditBlock: (block: EmbeddedBlock) => this.editEmbedded(block),
+                ...this.notesFor(richTextPath(field.name)),
             })}
             ${form && option ? html`<form class="space-y-3 rounded-md border border-border bg-card p-3" @submit=${(event: Event) => this.applyEmbedded(event)}>
                 <h3 class="text-sm font-semibold">${option.label}</h3>
@@ -621,7 +787,8 @@ export class SiteEditor extends Cossack {
         if (!this.panel) return null;
         const titles = { entry: __('Entry'), blocks: __('Blocks'), body: __('Text') };
         const body = this.panel === 'entry' ? this.entryPanel() : this.panel === 'blocks' ? this.blocksPanel() : this.bodyPanel();
-        return html`<aside role="dialog" aria-label=${titles[this.panel]} class=${`${PANEL} bottom-20 right-4 top-4 w-[min(30rem,calc(100vw-2rem))] rounded-lg`}>
+        // The open Notes rail takes the right edge: the panel sits beside it.
+        return html`<aside role="dialog" aria-label=${titles[this.panel]} class=${`${PANEL} bottom-20 right-4 top-4 w-[min(30rem,calc(100vw-2rem))] rounded-lg`} style=${this.notesOpen ? 'right: 27rem' : ''}>
             <header class="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
                 <h2 class="text-base font-semibold">${titles[this.panel]}</h2>
                 ${this.panel === 'body' ? component(Button, { type: 'button', size: 'sm', '@click': () => this.closeBody() }, __('Done'))
@@ -644,6 +811,9 @@ export class SiteEditor extends Cossack {
             ${tab('entry', __('Entry'))}
             ${draft.blocksField ? tab('blocks', __('Blocks')) : null}
             ${draft.bodyField ? tab('body', __('Text')) : null}
+            <button type="button" aria-pressed=${this.notesOpen ? 'true' : 'false'} data-notes-toggle=${this.openRoots().length}
+                class=${`rounded-full px-3 py-1.5 text-sm border-none cursor-pointer ${this.notesOpen ? 'bg-muted text-foreground' : 'bg-transparent text-muted-foreground hover:text-foreground'}`}
+                @click=${() => { this.notesOpen = !this.notesOpen; }}>${__('Notes')}${this.openRoots().length ? html` <span class="rounded-full bg-amber-500/15 px-1.5 text-xs font-medium text-amber-700 dark:text-amber-300">${this.openRoots().length}</span>` : null}</button>
             <span class="flex items-center gap-0.5 border-l border-border pl-1" role="group" aria-label=${__('Preview width')}>${device('desktop')}${device('tablet')}${device('phone')}</span>
             <span role="status" class=${`px-2 text-xs ${draft.error && !draft.conflict ? 'text-destructive' : 'text-muted-foreground'}`}>${status}</span>
             ${draft.conflict ? html`<span role="alert" class="flex items-center gap-2 px-2 text-xs text-destructive">${__('Someone saved this entry since you started.')}
@@ -664,6 +834,7 @@ export class SiteEditor extends Cossack {
             <p class="sr-only" aria-live="polite">${this.announcement}</p>
             ${this.form && !this.form.docked ? this.formCard() : null}
             ${this.sidePanel()}
+            ${this.notesRailView()}
             ${this.bar()}
             ${mediaChooser(this.props.draft.chooser, {
                 search: text => this.props.onSearchMedia(text), filter: kind => this.filterMedia(kind), choose: file => this.choose(file), upload: event => this.upload(event),

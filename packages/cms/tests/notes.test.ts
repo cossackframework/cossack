@@ -24,6 +24,8 @@ describe.skipIf(!live)('notes', () => {
         expect(reply).toMatchObject({ parentId: root.id, target: 'text:content:b1.text', range: null, quote: '', status: 'open', createdAt: clock });
         expect((await cms.notes.get(root.id))!.updatedAt).toBe(clock);
         // The root's author hears of the reply; the reply's author of their own mention does not.
+        expect(await cms.notes.mentioned(root.id)).toEqual(['eve']);
+        expect(await cms.notes.mentioned(reply.id)).toEqual(['ada']);
         expect((await cms.notes.forUser('ada')).map(note => note.id)).toEqual([root.id]);
         expect((await cms.notes.forUser('eve')).map(note => note.id)).toEqual([root.id]);
         expect(await cms.notes.unseen('ada')).toBe(1);
