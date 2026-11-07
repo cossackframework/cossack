@@ -2,7 +2,7 @@
   "name": "cossack",
   "version": "0.9.0",
   "type": "module",
-  "description": "The Cossack Framework CLI \u2014 scaffolding, code generation, lifecycle, and upgrades for Cossack projects.",
+  "description": "The Cossack Framework CLI — scaffolding, code generation, lifecycle, and upgrades for Cossack projects.",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -34,14 +34,14 @@
     "prompts": "^2.4.2",
     "tsx": "^4.23.0",
     "typescript-api": "npm:typescript@6.0.3",
-    "vite": "^8.1.4",
+    "vite": "^8.1.6",
     "zod": "^4.6.5"
   },
   "devDependencies": {
     "@jridgewell/trace-mapping": "0.3.31",
     "@modelcontextprotocol/client": "^2.3.0",
     "@playwright/test": "^1.61.1",
-    "vitest": "^4.1.11",
+    "vitest": "^4.1.12",
     "yaml": "^2.9.0"
   },
   "engines": {
@@ -52,6 +52,7 @@
       "types": "./src/vitest-reporter.d.ts",
       "import": "./src/vitest-reporter.js"
     },
+    "./plugin-policy": "./src/plugin-policy.js",
     "./package.json": "./package.json",
     "./src/*": "./src/*",
     "./bin/*": "./bin/*"

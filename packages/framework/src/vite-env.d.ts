@@ -32,6 +32,8 @@ declare module 'virtual:cossack-pages' {
     layouts: Record<string, LayoutModule | LayoutModuleLoader>;
     loadings: Record<string, LoadingModule | undefined>;
     components: Record<string, ComponentModule>;
+    /** Route key -> rendered plugin whose `pages/` the page or layout comes from. */
+    owners?: Record<string, string>;
   }
 
   const registry: CossackPagesRegistry;
@@ -70,6 +72,13 @@ declare module 'virtual:cossack-config' {
   export const requirements: import('./config-requirements').ConfigRequirementCollection;
   export const environment: string | null;
   export default configs;
+}
+
+declare module 'virtual:cossack-plugins' {
+  /** Rendered plugins from `src/plugins/<name>/plugin.json`, sorted by name. */
+  const plugins: readonly import('./plugin-registry').PluginRegistration[];
+  export { plugins };
+  export default plugins;
 }
 
 declare module 'virtual:cossack-realtime-components' {

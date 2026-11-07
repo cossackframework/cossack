@@ -1,16 +1,17 @@
 import { Cossack, Page, Store, State, Validate, Client, Server, storeRules } from '@cossackframework/core';
-import { Card, CardBody, CardHeader, Field, Input, Button, Checkbox, Form, toast } from '@cossackframework/ui';
+import { Card, CardBody, CardHeader, Field, Input, Button, Checkbox, Form } from '@cossackframework/ui';
+import { notice } from '../../../../dashboard/page';
 import { html, component, bind } from '@cossackframework/renderer';
-import { guard } from '../../../../services/rbac';
+import { requireRoleManager } from '../../../../services/rbac';
 import { createRole } from '../../../../services/roles';
-import { PERMISSIONS, type Permission } from '../../../../lib/permissions';
+import { PERMISSIONS, permissionLabel, type Permission } from '../../../../lib/permissions';
 
 interface NewRoleForm {
     name: string;
     permissions: Permission[];
 }
 
-@Page({ transport: 'http', middlewares: [guard.requireRole('admin')] })
+@Page({ transport: 'http', middlewares: [requireRoleManager] })
 export default class NewRolePage extends Cossack {
     @Store()
     @Validate({
@@ -40,7 +41,6 @@ export default class NewRolePage extends Cossack {
             await this.create(this.form.name, this.form.permissions);
         } catch (e: any) {
             this.error = e?.message || __('Could not create role');
-            toast.error(this.error);
         }
     }
 
@@ -57,6 +57,7 @@ export default class NewRolePage extends Cossack {
                     <h1 class="text-2xl font-bold text-foreground">${__('New role')}</h1>
                     <p class="mt-1 text-sm text-muted-foreground">${__('Define a role and the permissions it grants.')}</p>
                 </div>
+                ${this.error ? notice(this.error, 'error') : null}
 
                 ${component(Card, {}, html`
                     ${component(CardHeader, {}, html`<h2 class="text-base font-semibold text-foreground">${__('Details')}</h2>`)}
@@ -78,7 +79,8 @@ export default class NewRolePage extends Cossack {
                                                 '@change': (e: any) => this.togglePermission(perm, e.target.checked),
                                             })}
                                             <span>
-                                                <span class="block text-sm text-foreground font-mono">${perm}</span>
+                                                <span class="block text-sm text-foreground">${__(permissionLabel(perm))}</span>
+                                                <span class="block text-xs text-muted-foreground font-mono">${perm}</span>
                                             </span>
                                         </label>
                                     `)}

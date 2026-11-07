@@ -5,7 +5,11 @@ import { Cossack, Component } from "@cossackframework/core";
 export type CardProps = GlobalAttributes<HTMLDivElement> & {
     /** Adds a hover lift effect (shadow + slight translate). */
     hoverable?: boolean;
-    /** Padding on the Card root only; slots retain their own padding. */
+    /**
+     * Padding on the Card root, for content passed without slots. Defaults to none: the
+     * `CardHeader`, `CardBody` and `CardFooter` slots pad themselves, and a body or footer
+     * following another slot drops its top padding, so a card's inset is the same on every side.
+     */
     padding?: "none" | "sm" | "default" | "lg";
 }
 
@@ -19,15 +23,15 @@ const PADDINGS: Record<NonNullable<CardProps["padding"]>, string> = {
 /**
  * Cossack UI Card — surface container with optional header/footer slots.
  *
- * Compose with `CardHeader`, `CardBody`, `CardFooter`, or just pass content:
- *   `<${Card} hoverable><h3>Title</h3><p>Body</p></${Card}>`.
+ * Compose with `CardHeader`, `CardBody`, `CardFooter`, or pass content with a `padding`:
+ *   `<${Card} hoverable padding="default"><h3>Title</h3><p>Body</p></${Card}>`.
  */
 @Component()
 export class Card extends Cossack {
     declare props: CardProps;
 
     render() {
-        const { hoverable = false, padding = "default", ...rest } = this.props;
+        const { hoverable = false, padding = "none", ...rest } = this.props;
         if (!Object.hasOwn(PADDINGS, padding)) throw new Error("Card padding must be none, sm, default or lg.");
 
         const classes = classMap({
@@ -70,7 +74,7 @@ export class CardBody extends Cossack {
 
     render() {
         return html`
-            <div class="cs-card-body p-6 pt-0" ...=${this.props}>
+            <div class="cs-card-body p-6 [.cs-card-header+&]:pt-0" ...=${this.props}>
                 ${this.children}
             </div>
         `;
@@ -84,7 +88,7 @@ export class CardFooter extends Cossack {
 
     render() {
         return html`
-            <div class="cs-card-footer flex items-center p-6 pt-0" ...=${this.props}>
+            <div class="cs-card-footer flex items-center p-6 [.cs-card-header+&]:pt-0 [.cs-card-body+&]:pt-0" ...=${this.props}>
                 ${this.children}
             </div>
         `;

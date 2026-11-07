@@ -141,6 +141,7 @@ cross-origin origins.
 | `CORS_EXPOSE_HEADERS` | empty | Response headers exposed to browser code |
 | `CORS_CREDENTIALS` | `false` | Permit credentialed browser requests |
 | `CORS_MAX_AGE` | `86400` | Browser preflight cache duration in seconds |
+| `CORS_PATHS` | empty | Paths outside `/api` the built-in CORS also covers, such as `/webhooks` or `/feed.xml`. An entry covers that path and everything below it. |
 
 CSV values are trimmed and empty entries discarded. Methods are normalized to
 uppercase, and trailing slashes on exact origins are ignored. Supported origins

@@ -1,0 +1,2247 @@
+import { Cossack, Page, State, ClientState, Server, Client, On, OnWindow, PreventNavigation, type HeadValue } from '@cossackframework/core';
+import { Avatar, Button, Checkbox, Combobox, Icon, Input, Modal, NativeSelect, Textarea, CodeEditor, Tabs } from '@cossackframework/ui';
+import { html, component, unsafeHTML, type TemplateResult } from '@cossackframework/renderer';
+import { applyTreeOp, ARTICLE_TYPES, blockId, CORE_BLOCKS, entryAuthors, groupPeers, livePeers, patchKey, PendingKeys, richTextPath, parseRichTextPath, scalarKey, treeHash, treeOps, systemPrincipal, entryChecks, evaluateRule, fieldVisibility, findBlock, flattenBlocks, flattenGroupFields, formatBytes, hasPermission, isCmsError, languageName, mediaKind, recordSchema, recordTitle, renderSeoTemplate, richTextBlocks, TITLE_SEPARATORS, updateBlock, PERMISSIONS, participantColor, formatNoteTarget, noteBlock, noteField, noteThreads, parseNoteTarget, type Block, type BlockCondition, type Check, type EmbeddedBlock, type JsonSchema, type MediaKind, type Note, type NoteAction, type NoteRange, type NoteStatus, type NoteThread, type RecordShape, type RichTextDoc, type Participant, type PeerPresence, type PeerState, type TreeOp } from '@cossackframework/cms';
+import { blockPanel } from '../../../../../../cms/block-panel';
+import { describeBlockError } from '../../../../../../cms/block-errors';
+import { blockIdOf, styleValues, withStyle, type BlockTab, type StyleValues } from '../../../../../../cms/style-controls';
+import { renderMarkdown, type CmsHost } from '@cossackframework/cms/server';
+import { applyEntryJson, contentField, editorView, entryJson, entryValues, fieldErrors, mediaPreviews, parentOptions, patternBlocks, routeResource, saveEntry, termOptions, type MediaPreview, type SaveIntent } from '../../../../../../cms/content';
+import { blockDefaults, controlValue, editorBlocks, editorInput, entryUrl, suggestedSlug, type EditorBlock, type EditorField, type EditorValues, type EditorView, type TermOption } from '../../../../../../cms/editor';
+import { collabEditors, RichTextField, richTextEditors, type RichTextFieldProps } from '../../../../../../cms/rich-text-field';
+import type { Caret, NoteMark } from '../../../../../../cms/rich-text.client';
+import { EntryRoom, type NoteChange, type RoomHandle, type RoomSnapshot } from '../../../../../../cms/collab/room';
+import { avatarStack, namesOf, onTab, presenceChip, presenceOutline, type Someone } from '../../../../../../cms/collab/presence';
+import { BlockTree, blockSummary } from '../../../../../../cms/block-tree';
+import { inlineNoteTools, noteButton, noteMarker, notesRail, type NoteAnchorView, type NoteComposer } from '../../../../../../cms/notes-rail';
+import { bindingChoices, choicesControl, fieldControl, groupFields, multipleControl, type BindingChoice } from '../../../../../../cms/field-controls';
+import { chooserKind, MEDIA_ACCEPT, MEDIA_KIND_CHOICES, uploadFile } from '../../../../../../cms/media-chooser';
+import { FieldGroupView, plainBlocks, visibilityTypes, type RowPath } from '../../../../../../cms/field-group-view';
+import { box, CONTROL, countBadge, iconButton, linkButton, notice, rememberTab, shortDate, STATUS_LABELS, statusBadge, tabFromQuery } from '../../../../../../cms/ui';
+import { editorLayoutView } from '../../../../../../cms/editor-layout-view';
+import { ICONS, icon } from '../../../../../../cms/icons';
+import { boxFields, layoutBoxes } from '@cossackframework/cms';
+import { conditionControl, conditionFields } from '../../../../../../cms/condition-control';
+import { notificationRulesControl } from '../../../../../../cms/notification-rules';
+import { siteOrigin } from '../../../../../../cms/seo';
+
+type MediaTarget = { field: string; block?: string; key?: string; multiple?: boolean; insert?: boolean; richText?: boolean; dialog?: boolean; group?: boolean; /** The rich text editor to insert into, when it is not the field's own. */ editor?: string;
+    /** The file goes to the panel's Style tab: the block's background image or video. */ style?: 'image' | 'video';
+    /** The kind of file the library opens on: the field's first declared kind; images when absent. */ fileKind?: string;
+    /** The rows the value sits in, from the top down: `key` is then a field of the innermost row. */ rows?: RowPath };
+/** Field block kinds whose values read as text, as editor field kinds, for the binding picker. */
+const BINDABLE_FIELD_BLOCKS: Record<string, EditorField['kind']> = { text: 'string', textarea: 'text', markdown: 'text', number: 'number', integer: 'integer', boolean: 'boolean', choice: 'enum', date: 'datetime' };
+
+/** A block being edited in the side panel: one of a blocks field's tree, or one embedded in a rich text field. */
+interface BlockDialog { field: string; id: string; type: string; values: Record<string, unknown>; errors: Record<string, string>; embedded: boolean; tab: BlockTab; style: StyleValues; /** In a form: when the block shows. */ when?: BlockCondition; /** An embedded block's rich text editor, when it is not the field's own (rich text inside a block). */ editor?: string }
+
+/** A translation of the entry, or a language it has none in yet. */
+interface TranslationLink { code: string; label: string; id: string | null; title: string; status: string }
+
+/**
+ * The entry editor for every collection and resource. A new entry is `/new`. The title drives
+ * the slug until the slug is edited; the Publish box's status select and button set the status,
+ * and a future publication time schedules the entry. Changed values are autosaved every 30
+ * seconds through the autosave API, which touches no state here, and offered back when the
+ * editor opens. A reload (the browser's, or the dev server's) keeps unsaved values in session
+ * storage and puts them back without asking.
+ */
+@Page({ transport: 'http' })
+export default class EntryEditor extends Cossack {
+    @State() route = '';
+    @State() id = 'new';
+    @State() view: EditorView | null = null;
+    @State() values: EditorValues = {};
+    @State() rev = 0;
+    @State() meta = { createdAt: 0, updatedAt: 0, author: '', url: '' as string | null };
+    @State() slugTouched = false;
+    @State() editingSlug = false;
+    @State() errors: Record<string, string> = {};
+    @State() message = '';
+    @State() error = '';
+    @State() saving = false;
+    @State() revisions: { revision: number; at: number; actor: string }[] = [];
+    @State() parents: TermOption[] = [];
+    @State() references: Record<string, { id: string; title: string }[]> = {};
+    @State() previews: Record<string, MediaPreview> = {};
+    @State() tabs: Record<string, 'write' | 'preview'> = {};
+    /** The editor's view: one of the layout's tabs, or `json`, the entry as the API answers it. */
+    @State() mode = 'edit';
+    @State() json = '';
+    /** The entry's JSON Schema, for the JSON tab's completion and linting. */
+    @State() schema: JsonSchema | null = null;
+    @State() jsonDirty = false;
+    @State() rendered: Record<string, string> = {};
+    @State() picker: { open: boolean; target: MediaTarget | null; search: string; kind: string; items: (MediaPreview & { size: string; name: string })[] } = { open: false, target: null, search: '', kind: '', items: [] };
+    /** Why files of the last upload in the media picker failed, shown in the picker. */
+    @State() pickerErrors: string[] = [];
+    @State() termDrafts: Record<string, { name: string; parent: string }> = {};
+    @State() tagDrafts: Record<string, string> = {};
+    @State() canManageTerms = false;
+    /** The entry's authors and, for people who edit others' entries, who else can be one: a user's name and picture by ID. */
+    @State() people: { id: string; name: string; avatar: string | null }[] = [];
+    @State() chooseAuthors = false;
+    @State() blockDialog: BlockDialog | null = null;
+    /** The saved status, which the Publish button's label depends on. */
+    @State() savedStatus = '';
+    @State() comments = false;
+    /** The active theme's templates an editor can choose for this entry, such as `entry-wide`. */
+    @State() templates: string[] = [];
+    @State() languages: { multilingual: boolean; options: { code: string; label: string }[] } = { multilingual: false, options: [] };
+    @State() translations: TranslationLink[] = [];
+    /** Fields the same in every language are read-only: the user cannot update every translation. */
+    @State() sharedLocked = false;
+    /** What the search preview needs: the site, the separator and the templates that apply to this collection. */
+    @State() seo = { origin: '', siteTitle: '', tagline: '', separator: '–', titleTemplate: '%title% %sep% %site%', descriptionTemplate: '%excerpt%', collection: '', article: false, summary: false };
+    /** Entries of the site related to this one's title, to link to. */
+    @State() linkSuggestions: { title: string; url: string; collection: string }[] = [];
+    @ClientState() checksOpen = false;
+    @State() previewLink = '';
+    @State() previewLinks = 0;
+    /** A newer autosave than the saved entry, offered for restore. */
+    @State() autosaveOffer: { at: number } | null = null;
+    @State() autosavedAt = 0;
+    @State() patternChoices: { id: string; title: string; synced: boolean }[] = [];
+    @State() patternTitles: Record<string, string> = {};
+    /** For patterns: the collections whose new entries can start from one. */
+    @State() collectionChoices: { name: string; label: string }[] = [];
+    @State() patternPicker: { open: boolean; field: string; starter: boolean } = { open: false, field: '', starter: false };
+    /** Changes since the last autosave. */
+    @ClientState() dirty = false;
+    /** Changes since the last save. */
+    @ClientState() unsaved = false;
+    private autosaveTimer: ReturnType<typeof setInterval> | undefined;
+    /** The values as last loaded, saved or autosaved, so an unchanged editor sends nothing. */
+    private autosaved = '';
+    private autosaving = false;
+    /** The last editorial checks and the values and blocks they were made from. */
+    private checked: { key: unknown[]; checks: Check[] } | null = null;
+    /** What each hidden tab last showed, and the tab that was open then. */
+    private hiddenTabs = new Map<string, { active: string; content: TemplateResult }>();
+    // --- Co-editing: a saved entry is edited in its room, with everyone who has it open ---------
+    /** The room, once this tab joined it. */
+    @ClientState() room: RoomHandle | null = null;
+    /** Everyone in the room, this tab included. */
+    @ClientState() peers: PeerState[] = [];
+    @ClientState() roomStatus = { connected: false, dirty: false, diverged: false, oversized: false };
+    /** This tab's ID in the room. */
+    private self = '';
+    /** This tab's changes the room has not echoed yet. */
+    private pending = new PendingKeys();
+    /** Changes made before this tab joined the room, by field: kept over the room's first snapshot, then sent to it. */
+    private beforeJoin = new Map<string, { previous: unknown; value: unknown }>();
+    private presenceTimer: ReturnType<typeof setTimeout> | undefined;
+    private previewRefresh: ReturnType<typeof setTimeout> | undefined;
+    /** This tab is telling the room about its own save: the room's "saved by" is not news here. */
+    private savingSelf = false;
+    // --- Notes: review threads on the entry, its fields, blocks and passages, through the room ---
+    @State() notes: Note[] = [];
+    /** Who the notes name, by user ID. */
+    @State() noteAuthors: Record<string, Someone> = {};
+    /** People a note can mention: the site's users but the viewer. */
+    @State() mentionable: { id: string; name: string }[] = [];
+    /** The viewer's user ID: their own notes can be changed and removed. */
+    @State() meId = '';
+    /** The viewer removes anyone's notes (user administrators). */
+    @State() canRemoveNotes = false;
+    /** Open notes keep the entry from being published (Settings → Writing). */
+    @State() notesGate = false;
+    /** The rail is open; `?notes=open` opens it on arrival, from the lists' markers and the home card. */
+    @State() notesOpen = false;
+    @ClientState() notesFilter: NoteStatus = 'open';
+    @ClientState() composer: NoteComposer | null = null;
+    @ClientState() editingNote: { id: string; body: string } | null = null;
+    /** The thread chosen in the rail, highlighted there and in the content. */
+    @ClientState() activeNote: string | null = null;
+    /** A note waiting for the viewer to confirm its removal. */
+    @ClientState() noteRemoval: string | null = null;
+    @ClientState() notesBusy = false;
+    @ClientState() notesError = '';
+    /** Text notes whose words the editor could not find: shown on their block or field instead. */
+    @ClientState() detachedNotes: string[] = [];
+    /** Where text notes sit now in the open editors, by note ID, for writing back after a save. */
+    private noteRanges = new Map<string, NoteRange>();
+
+    head(): HeadValue {
+        const title = this.view ? (this.id === 'new' ? `${__('New')} ${this.view.singular.toLowerCase()}` : `${__('Edit')} ${this.view.singular.toLowerCase()}`) : __('Editor');
+        return { title };
+    }
+
+    async init() {
+        this.route = this.c.req.param('collection') ?? '';
+        this.id = this.c.req.param('id') ?? 'new';
+        const cms = this.c.get('cms');
+        const principal = this.c.get('principal');
+        try {
+            const view = await editorView(cms, this.route);
+            const { resource } = routeResource(cms, this.route);
+            const record = this.id === 'new' ? null : await cms.resource(resource.id).get(this.id, { principal });
+            if (this.id !== 'new' && !record) { this.error = __('This entry does not exist or you cannot edit it.'); this.c.status(404); return; }
+            if (!record && evaluateRule(resource.access.create, principal) === 'deny') { this.error = __('You cannot create entries here.'); this.c.status(403); return; }
+            this.view = view;
+            this.schema = recordSchema(resource);
+            this.values = await entryValues(cms, view, record);
+            // A new entry starts from the collection's content template.
+            const content = contentField(view);
+            if (!record && content && view.template.length && !this.blocks(content).length) this.values = { ...this.values, [content]: view.template };
+            if (!record && view.publishable && view.resource === 'cms/posts') {
+                this.values = { ...this.values, status: await cms.settings.get('writing.defaultStatus') };
+            }
+            this.slugTouched = Boolean(record);
+            this.canManageTerms = evaluateRule({ permission: 'cms:terms' }, principal) === 'allow';
+            this.previews = await mediaPreviews(cms, this.values, view);
+            if (view.hierarchical) this.parents = await parentOptions(cms, resource.id, record?.id ?? null, principal);
+            for (const field of view.fields.filter(entry => entry.kind === 'reference' && entry.target !== resource.id)) {
+                const page = await cms.resource(field.target).list({ limit: 100 }, { principal }).catch(() => ({ records: [] }));
+                const target = cms.resourceById(field.target);
+                this.references = { ...this.references, [field.name]: page.records.map(entry => ({ id: entry.id, title: recordTitle(entry, target.titleField) })) };
+            }
+            const collection = resource.owner === 'cms' ? cms.collection(resource.name) : null;
+            // Off under Settings → Discussion: the entry's switch hides with the comments.
+            this.comments = Boolean(collection?.comments) && await cms.settings.get('discussion.enabled');
+            if (resource.fields.template) this.templates = await cms.entryTemplates();
+            if (resource.fields.authors) {
+                // Only people who edit others' entries choose authors; others see who they are.
+                this.chooseAuthors = evaluateRule(resource.access.update, principal) === 'allow';
+                const current = record ? entryAuthors(record) : principal.kind === 'user' ? [principal.id] : [];
+                const known = await cms.users.getMany(current);
+                const others = this.chooseAuthors ? (await cms.users.list({ limit: 100 })).items : [];
+                this.people = [...current.map(id => known.get(id)).filter(user => user !== undefined), ...others.filter(user => !current.includes(user.id))]
+                    .map(user => ({ id: user.id, name: user.name || user.email, avatar: user.avatar }));
+            }
+            if (record) {
+                this.rev = record.rev;
+                this.savedStatus = String(record.status ?? '');
+                const authors = entryAuthors(record).map(id => this.people.find(person => person.id === id)?.name).filter(Boolean).join(', ');
+                this.meta = { createdAt: record.createdAt, updatedAt: record.updatedAt, author: authors, url: collection ? (await cms.entryUrls(collection, [record])).get(record.id) ?? null : null };
+                if (this.meta.url && view.publishable && record.status !== 'published') this.meta = { ...this.meta, url: null };
+                await this.loadRevisions(record.id);
+                if (view.path !== null || view.route === 'forms') this.previewLinks = await cms.previews.count(resource.id, record.id).catch(() => 0);
+            }
+            // The entry's notes, with who wrote them; opening the entry marks the viewer's mentions seen.
+            if (record && principal.kind === 'user') {
+                this.meId = principal.id;
+                this.canRemoveNotes = hasPermission(principal, PERMISSIONS.manageUsers);
+                this.notes = await cms.notes.forEntry(resource.id, record.id).catch(() => []);
+                const authors = await cms.users.getMany([...new Set([principal.id, ...this.notes.map(note => note.userId)])]);
+                this.noteAuthors = Object.fromEntries([...authors.values()].map(user => [user.id, { user: user.id, name: user.name || user.email, avatar: user.avatar, color: participantColor(user.id) }]));
+                this.mentionable = (await cms.users.list({ limit: 100 }).catch(() => ({ items: [] }))).items.filter(user => user.id !== principal.id).map(user => ({ id: user.id, name: user.name || user.email }));
+                this.notesGate = await cms.settings.get('writing.requireResolvedNotes');
+                this.notesOpen = this.c.req.query('notes') === 'open';
+                await cms.notes.markSeen(principal.id, resource.id, record.id).catch(() => undefined);
+            }
+            const settings = await cms.settings.all();
+            this.seo = {
+                origin: siteOrigin(this.c), siteTitle: settings['general.siteTitle'], tagline: settings['general.tagline'], separator: TITLE_SEPARATORS[settings['seo.titleSeparator']] ?? '–', collection: collection?.label ?? '',
+                titleTemplate: collection?.seoTemplates?.title || settings['seo.entryTitle'], descriptionTemplate: collection?.seoTemplates?.description || settings['seo.entryDescription'],
+                article: ARTICLE_TYPES.has(collection?.schema?.type ?? 'WebPage'), summary: Boolean(resource.fields.summary),
+            };
+            if (collection && typeof collection.path === 'string' && record) await this.loadLinkSuggestions(String(record.title ?? ''), record.id);
+            const languages = await cms.languages();
+            this.languages = { multilingual: languages.multilingual, options: languages.all.map(code => ({ code, label: languageName(code) })) };
+            if (collection && languages.multilingual) {
+                const locale = this.c.req.query('locale');
+                if (!record && locale && languages.all.includes(locale)) this.values = { ...this.values, locale };
+                if (record) await this.loadTranslations(collection.name, record.id);
+            }
+            // Unsaved work on a new entry from a closed tab or a crash; a saved entry's room keeps its draft instead.
+            const autosave = await cms.latestAutosave(resource.id, this.id, principal).catch(() => null);
+            if (autosave && !record) this.autosaveOffer = { at: autosave.at };
+            if (!record && collection && collection.name !== 'patterns') await this.loadPatterns(collection.name, true);
+            if (collection?.name === 'patterns') this.collectionChoices = cms.collections().filter(entry => entry.name !== 'patterns').map(entry => ({ name: entry.name, label: entry.label }));
+            await this.loadPatternTitles();
+            const saved = this.c.req.query('saved');
+            this.message = saved === 'published' ? __('Published.') : saved === 'scheduled' ? __('Scheduled.') : saved === 'pending' ? __('Submitted for review.') : saved === '1' ? __('Saved.') : '';
+            this.mode = tabFromQuery(this.c.req.query('tab'), this.editorTabs());
+            if (this.mode === 'json' && record) this.json = await entryJson(cms, this.route, record);
+        } catch (error) {
+            this.error = isCmsError(error) ? error.message : __('The editor could not be loaded.');
+            if (isCmsError(error, 'CMS_NOT_FOUND')) this.c.status(404);
+        }
+    }
+
+    private async loadRevisions(id: string) {
+        const cms = this.c.get('cms');
+        const resource = cms.resourceById(this.resourceId());
+        const revisions = resource.revisions ? await cms.resource(resource.id).revisions(id, { principal: this.c.get('principal') }, { limit: 10 }).catch(() => []) : [];
+        const actors = await cms.users.getMany(revisions.map(entry => entry.actor ?? '').filter(Boolean));
+        this.revisions = revisions.map(entry => ({ revision: entry.revision, at: entry.at, actor: actors.get(entry.actor ?? '')?.name ?? entry.actor ?? '' }));
+    }
+
+    private async loadTranslations(collectionName: string, id: string) {
+        const cms = this.c.get('cms');
+        const principal = this.c.get('principal');
+        const record = await cms.resource(`cms/${collectionName}`).get(id, { principal });
+        if (!record) return;
+        const found = await cms.translations(cms.collection(collectionName), record, { principal });
+        if (Object.values(cms.resourceById(`cms/${collectionName}`).fields).some(field => field.translatable === false)) {
+            // Every translation counts, also the ones this user cannot read.
+            const others = [...(await cms.translations(cms.collection(collectionName), record, { principal: systemPrincipal('translations') })).values()].filter(entry => entry.id !== record.id).map(entry => entry.id);
+            this.sharedLocked = others.length > 0 && (await cms.resource(`cms/${collectionName}`).updatable(others, { principal })).size < others.length;
+        }
+        this.translations = this.languages.options.map(option => {
+            const entry = found.get(option.code);
+            return { code: option.code, label: option.label, id: entry?.id ?? null, title: entry ? recordTitle(entry, 'title') : '', status: String(entry?.status ?? '') };
+        });
+    }
+
+    /** Titles of the synced patterns the entry's content and rich text use, for their blocks. */
+    private async loadPatternTitles() {
+        const ids = Object.values(this.values).flatMap(value => value && typeof value === 'object' && (value as RichTextDoc).type === 'doc'
+            ? richTextBlocks(value as RichTextDoc).filter(block => block.type === 'core/pattern').map(block => String(block.data.pattern))
+            : Array.isArray(value) && value.every(entry => entry && typeof entry === 'object' && 'type' in entry) ? flattenBlocks(value as Block[]).filter(block => block.type === 'core/pattern').map(block => String(block.data.pattern)) : []);
+        if (!ids.length) return;
+        const found = await this.c.get('cms').resource('cms/patterns').getMany(ids, { principal: this.c.get('principal') }).catch(() => new Map<string, RecordShape>());
+        this.patternTitles = { ...this.patternTitles, ...Object.fromEntries([...found].map(([id, record]) => [id, recordTitle(record, 'title')])) };
+    }
+
+    /** Patterns to insert, or with `starter`, those offered as this collection's starting layouts. */
+    private async loadPatterns(collectionName: string, starter: boolean) {
+        const cms = this.c.get('cms');
+        const page = await cms.resource('cms/patterns').list({ order: { field: 'title', direction: 'asc' }, limit: 100 }, { principal: this.c.get('principal') }).catch(() => ({ records: [] }));
+        this.patternChoices = page.records.filter(record => !starter || (Array.isArray(record.starter) && record.starter.includes(collectionName)))
+            .map(record => ({ id: record.id, title: recordTitle(record, 'title'), synced: record.synced !== false }));
+        if (starter && this.patternChoices.length) this.patternPicker = { open: true, field: '', starter: true };
+    }
+
+    // --- Editing ---------------------------------------------------------------
+
+    @Client()
+    set(name: string, value: unknown) {
+        const previous = this.values[name];
+        this.values = { ...this.values, [name]: value };
+        this.dirty = true;
+        this.unsaved = true;
+        if (this.errors[name]) this.errors = Object.fromEntries(Object.entries(this.errors).filter(([key]) => key !== name));
+        this.share(name, previous, value);
+    }
+
+    @Client()
+    setTitle(value: string) {
+        const title = this.view?.titleField || 'title';
+        const previous = this.values;
+        this.values = { ...this.values, [title]: value, ...(this.view?.slug && !this.slugTouched ? { slug: suggestedSlug(value) } : {}) };
+        this.dirty = true;
+        this.unsaved = true;
+        if (this.errors[title]) this.errors = Object.fromEntries(Object.entries(this.errors).filter(([key]) => key !== title));
+        this.share(title, previous[title], value);
+        if (this.values.slug !== previous.slug) this.share('slug', previous.slug, this.values.slug);
+    }
+
+    /** A field of a group, such as the SEO title. */
+    @Client()
+    setGroup(name: string, key: string, value: unknown) {
+        this.set(name, { ...((this.values[name] as Record<string, unknown> | undefined) ?? {}), [key]: value });
+    }
+
+    /** The value of a row's field, through the rows above it. */
+    private rowValue(field: string, rows: RowPath, key: string): unknown {
+        let current: unknown = this.values[field];
+        for (const [index, row] of rows.entries()) {
+            const list = Array.isArray(current) ? current as Record<string, unknown>[] : [];
+            const found = list.find(entry => entry._id === row.id);
+            if (!found) return undefined;
+            current = index === rows.length - 1 ? found[key] : found[rows[index + 1]!.field];
+        }
+        return current;
+    }
+
+    /** Set a row's field through the rows above it; the rows are copied on the way down. */
+    @Client()
+    setRowValue(field: string, rows: RowPath, key: string, value: unknown) {
+        const update = (list: unknown, depth: number): unknown => {
+            const entries = Array.isArray(list) ? list as Record<string, unknown>[] : [];
+            const row = rows[depth]!;
+            return entries.map(entry => entry._id !== row.id ? entry : depth === rows.length - 1 ? { ...entry, [key]: value } : { ...entry, [rows[depth + 1]!.field]: update(entry[rows[depth + 1]!.field], depth + 1) });
+        };
+        this.set(field, update(this.values[field], 0));
+    }
+
+    // --- Co-editing --------------------------------------------------------------
+
+    /** The field a value belongs to; undefined for the editor's own keys (title, slug, status…), which are scalars. */
+    private fieldOf(name: string): EditorField | undefined {
+        return this.view?.fields.find(field => field.name === name);
+    }
+
+    /** Rich text keys of a block type: their documents travel as steps, not as patches. */
+    private richKeys(type: string): string[] {
+        return this.view?.blocks.find(block => block.name === type)?.fields.filter(field => field.kind === 'richtext').map(field => field.name) ?? [];
+    }
+
+    /** Send a change to the room: a blocks field as ops by block, a rich text field not at all (its steps went already), anything else as a value. */
+    @Client()
+    private share(name: string, previous: unknown, value: unknown) {
+        const room = this.room;
+        // Typed before the room was joined: the first snapshot keeps it, and sends it then.
+        if (!room) { this.beforeJoin.set(name, { previous: this.beforeJoin.get(name)?.previous ?? previous, value }); return; }
+        const field = this.fieldOf(name);
+        if (field?.kind === 'richtext' && !field.multiple) return;
+        if (field?.kind === 'blocks') {
+            const before = Array.isArray(previous) ? previous as EditorBlock[] : [];
+            const after = Array.isArray(value) ? value as EditorBlock[] : [];
+            for (const op of treeOps(name, before, after, { skip: (type, key) => this.richKeys(type).includes(key) })) {
+                const key = op.kind === 'patch' ? patchKey(name, op.id, op.path) : `tree:${name}`;
+                this.pending.sent(key);
+                room.tree(op).then(result => { if (!result.applied) { this.pending.settled(key); void this.resyncBlocks(name); } })
+                    .catch(() => this.pending.settled(key));
+            }
+            return;
+        }
+        const key = scalarKey(name);
+        this.pending.sent(key);
+        room.set(name, value).then(result => { if (!result.applied) this.pending.settled(key); }).catch(() => this.pending.settled(key));
+    }
+
+    /** The room's tree of a blocks field replaces this editor's: after a dropped op, or a hash that differs. */
+    @Client()
+    private async resyncBlocks(name: string) {
+        const room = this.room;
+        if (!room) return;
+        try {
+            const { blocks } = await room.blocks(name);
+            this.values = { ...this.values, [name]: blocks as EditorBlock[] };
+            this.followDialog(name);
+            this.previewsSoon();
+        } catch { /* the next snapshot brings it */ }
+    }
+
+    @Client()
+    private onRoomReady(handle: RoomHandle) {
+        this.self = handle.peer;
+        this.room = handle;
+    }
+
+    /**
+     * The room's draft replaces the values, apart from fields this tab has changes in flight for
+     * and, on the first snapshot, fields it changed before the room was joined, which go to the
+     * room now instead of being lost.
+     */
+    @Client()
+    private onSnapshot(snapshot: RoomSnapshot, options: { initial: boolean; resets: readonly string[] }) {
+        const values = { ...this.values };
+        const trees: string[] = [];
+        const early = options.initial ? new Map(this.beforeJoin) : new Map<string, { previous: unknown; value: unknown }>();
+        if (options.initial) this.beforeJoin.clear();
+        for (const [name, value] of Object.entries(snapshot.values)) {
+            const field = this.fieldOf(name);
+            if (!options.initial && !this.pending.accepts(field?.kind === 'blocks' ? `tree:${name}` : scalarKey(name))) continue;
+            if (early.has(name)) continue;
+            // A shared rich text document is the editor's own; the items of a multiple field come as a value.
+            values[name] = value;
+            if (field?.kind === 'blocks') trees.push(name);
+        }
+        this.values = values;
+        for (const name of trees) this.followDialog(name);
+        this.rev = snapshot.rev;
+        // The room holds the notes while it lives: its list replaces what the page loaded.
+        this.notes = snapshot.notes;
+        this.noteAuthors = { ...this.noteAuthors, ...snapshot.people };
+        if (options.initial) {
+            this.pending.clear();
+            this.announce({ tab: this.mode });
+            for (const [name, change] of early) this.share(name, name in snapshot.values ? snapshot.values[name] : change.previous, values[name]);
+        }
+        this.previewsSoon();
+    }
+
+    @Client()
+    private onRemoteSet(peer: string, name: string, value: unknown) {
+        const key = scalarKey(name);
+        if (peer === this.self) { this.pending.settled(key); return; }
+        if (!this.pending.accepts(key)) return;
+        this.values = { ...this.values, [name]: value };
+        if (this.fieldOf(name)?.media) this.previewsSoon();
+    }
+
+    @Client()
+    private onRemoteTree(peer: string, op: TreeOp, hash: string) {
+        const name = op.field;
+        const key = op.kind === 'patch' ? patchKey(name, op.id, op.path) : `tree:${name}`;
+        if (peer === this.self) {
+            this.pending.settled(key);
+            if (this.pending.accepts(`tree:${name}`) && treeHash(this.blocks(name)) !== hash) void this.resyncBlocks(name);
+            return;
+        }
+        if (!this.pending.accepts(key)) return;
+        const next = applyTreeOp(this.blocks(name), op) as EditorBlock[] | null;
+        if (!next) { void this.resyncBlocks(name); return; }
+        this.values = { ...this.values, [name]: next };
+        this.followDialog(name, op);
+        if (this.pending.accepts(`tree:${name}`) && treeHash(next) !== hash) void this.resyncBlocks(name);
+        this.previewsSoon();
+    }
+
+    /** Who is in the room; the others' selections become carets in the rich text documents they are in. */
+    @Client()
+    private onPeers(peers: readonly PeerState[], self: string) {
+        this.self = self;
+        this.peers = livePeers(peers, Date.now());
+        const me = this.myUser();
+        const carets = new Map<string, Caret[]>();
+        for (const peer of this.peers) {
+            const selection = peer.presence.selection;
+            if (peer.peer === self || peer.user === me || !selection) continue;
+            carets.set(selection.path, [...carets.get(selection.path) ?? [], { peer: peer.peer, name: peer.name, color: peer.color, anchor: selection.anchor, head: selection.head }]);
+        }
+        for (const [path, editor] of collabEditors) editor.collab?.setCarets(carets.get(path) ?? []);
+    }
+
+    @Client()
+    private onRoomStatus(status: { connected: boolean; dirty: boolean; diverged: boolean; oversized: boolean }) {
+        this.roomStatus = status;
+        if (status.connected) this.unsaved = status.dirty;
+    }
+
+    @Client()
+    private onRemoteSaved(by: string, rev: number) {
+        this.rev = rev;
+        this.unsaved = false;
+        this.dirty = false;
+        if (!this.savingSelf) this.message = `${by} ${__('saved this entry.')}`;
+    }
+
+    /** Tell the room this tab saved; the others hear who did, this tab keeps its own notice. */
+    @Client()
+    private async announceSaved() {
+        const room = this.room;
+        if (!room) return;
+        this.savingSelf = true;
+        try { await room.saved(); } catch { /* the next join brings the room's draft */ }
+        finally { this.savingSelf = false; }
+    }
+
+    /** Where this tab is, for the others. */
+    @Client()
+    private announce(state: PeerPresence) {
+        this.room?.presence(state);
+    }
+
+    @Client()
+    private announceSelection(path: string, anchor: number, head: number) {
+        if (this.presenceTimer) clearTimeout(this.presenceTimer);
+        this.presenceTimer = setTimeout(() => this.announce({ selection: { path, anchor, head } }), 100);
+    }
+
+    /** Focus moved: the field (`data-field`) and the block (`data-block-tree-item`, or the side panel's `data-block-sheet`) around it. */
+    @On('focusin')
+    @Client()
+    private trackFocus(event: FocusEvent) {
+        if (!this.room) return;
+        const target = event.target instanceof Element ? event.target : null;
+        const field = target?.closest('[data-field]')?.getAttribute('data-field') || undefined;
+        const block = (target?.closest('[data-block-tree-item]')?.getAttribute('data-block-tree-item') || target?.closest('[data-block-sheet]')?.getAttribute('data-block-sheet')) || undefined;
+        this.announce({ field, block });
+    }
+
+    /**
+     * The side panel shows its block as the room has it: a remote patch changes that one key (what this
+     * tab types in the others stays), a replaced tree brings the whole block, and a removed block closes it.
+     */
+    @Client()
+    private followDialog(field: string, op?: TreeOp) {
+        const dialog = this.blockDialog;
+        if (!dialog || dialog.embedded || dialog.field !== field) return;
+        if (op && (op.kind === 'insert' || op.kind === 'move' || op.id !== dialog.id)) return;
+        const block = findBlock(this.blocks(field), dialog.id);
+        if (!block) { this.blockDialog = null; return; }
+        const option = this.view?.blocks.find(entry => entry.name === block.type);
+        if (!option) return;
+        const valueOf = (entry: EditorField) => block.data[entry.name] ?? controlValue(entry, entry.defaultValue);
+        const { when: _previous, ...rest } = dialog;
+        if (op?.kind === 'patch') {
+            if (op.path.startsWith('data.')) {
+                const entry = option.fields.find(candidate => candidate.name === op.path.slice(5));
+                if (entry && entry.kind !== 'richtext') this.blockDialog = { ...dialog, values: { ...dialog.values, [entry.name]: valueOf(entry) }, errors: { ...dialog.errors, [entry.name]: '' } };
+            } else if (op.path === 'style' || op.path === 'layout') this.blockDialog = { ...dialog, style: styleValues(block) };
+            else if (op.path === 'when') this.blockDialog = block.when ? { ...rest, when: block.when } : rest;
+            return;
+        }
+        this.blockDialog = { ...rest, style: styleValues(block), ...(block.when ? { when: block.when } : {}),
+            values: Object.fromEntries(option.fields.filter(entry => entry.kind !== 'richtext').map(entry => [entry.name, valueOf(entry)])) };
+    }
+
+    // --- Notes ---------------------------------------------------------------------------------
+
+    /** Open threads: the roots still waiting for review. */
+    private openRoots(): Note[] {
+        return this.notes.filter(note => !note.parentId && note.status === 'open');
+    }
+
+    /** Open threads on a field, counting those on its blocks and passages. */
+    private fieldNoteCount(field: string): number {
+        return this.openRoots().filter(note => { const target = parseNoteTarget(note.target); return !!target && noteField(target) === field; }).length;
+    }
+
+    /** Open threads by block ID in a blocks field, counting the passages inside each block. */
+    private blockNoteCounts(field: string): Record<string, number> {
+        const counts: Record<string, number> = {};
+        for (const note of this.openRoots()) {
+            const target = parseNoteTarget(note.target);
+            const block = target ? noteBlock(target) : null;
+            if (block && block.field === field) counts[block.block] = (counts[block.block] ?? 0) + 1;
+        }
+        return counts;
+    }
+
+    /** A field's name in words: its label, a taxonomy's, or a sidebar key's. */
+    private fieldLabel(name: string): string {
+        return this.fieldOf(name)?.label ?? this.view?.taxonomies.find(taxonomy => taxonomy.name === name)?.label ?? __(SIDEBAR_LABELS[name] ?? name);
+    }
+
+    /** The marker and the add button beside a field's label; nothing on a new entry, which has no room yet. */
+    private noteTools(field: string, options: { always?: boolean } = {}): TemplateResult | null {
+        if (this.id === 'new') return null;
+        const label = this.fieldLabel(field);
+        return html`<span class="ml-auto inline-flex items-center gap-1">
+            ${noteMarker(this.fieldNoteCount(field), label, () => this.showNotes({ field }))}
+            ${noteButton(`note-${field.replace(/[^a-zA-Z0-9_-]/g, '-')}`, label, () => this.startNote(formatNoteTarget({ kind: 'field', field })), options)}</span>`;
+    }
+
+    /** The notes of a rich text document, for its editor: their last known places and the words they quote; and the toolbar's Note. */
+    private notesFor(path: string | null): Partial<Pick<RichTextFieldProps, 'notes' | 'onNote'>> {
+        if (!path || this.id === 'new') return {};
+        const marks = this.notes.filter(note => !note.parentId && note.status === 'open' && note.target === `text:${path}`).map(note => ({ id: note.id, range: note.range, quote: note.quote }));
+        return {
+            notes: { marks, active: this.activeNote, onClick: (id: string) => this.selectNote(id, { reveal: false }), onMoved: (placed: readonly NoteMark[]) => this.onNotesPlaced(path, placed) },
+            // Without a passage, the note goes on the document's block, or on the field.
+            onNote: (range: NoteRange | null, quote: string) => {
+                const parsed = parseRichTextPath(path);
+                const whole = parsed?.block ? formatNoteTarget({ kind: 'block', field: parsed.field, block: parsed.block.id }) : formatNoteTarget({ kind: 'field', field: parsed?.field ?? path });
+                this.startNote(range ? `text:${path}` : whole, range, quote);
+            },
+        };
+    }
+
+    /** Where a document's notes sit now; those the editor could not place are detached. */
+    @Client()
+    private onNotesPlaced(path: string, placed: readonly NoteMark[]) {
+        const found = new Set<string>();
+        for (const mark of placed) { this.noteRanges.set(mark.id, { from: mark.from, to: mark.to }); found.add(mark.id); }
+        const here = (id: string) => this.notes.find(note => note.id === id)?.target === `text:${path}`;
+        const detached = this.notes.filter(note => !note.parentId && note.status === 'open' && here(note.id) && !found.has(note.id)).map(note => note.id);
+        const next = [...this.detachedNotes.filter(id => !here(id)), ...detached].sort();
+        if (next.join() !== [...this.detachedNotes].sort().join()) this.detachedNotes = next;
+    }
+
+    /** Where a thread sits, in words, for the rail. */
+    private noteAnchor(root: Note): NoteAnchorView {
+        const target = parseNoteTarget(root.target);
+        if (!target || target.kind === 'entry') return { label: __('This entry'), quote: '', detached: false };
+        if (target.kind === 'field') return { label: this.fieldLabel(target.field), quote: '', detached: false };
+        const at = noteBlock(target);
+        if (!at) return { label: this.fieldLabel(target.kind === 'text' ? target.path : ''), quote: root.quote, detached: this.detachedNotes.includes(root.id) };
+        const block = findBlock(this.blocks(at.field), at.block);
+        const option = block ? this.view?.blocks.find(entry => entry.name === block.type) : undefined;
+        const label = block ? option?.label ?? block.type : __('A removed block');
+        const summary = block ? blockSummary(block, this.previews, option) : '';
+        if (target.kind === 'block') return { label: summary ? `${label}: ${summary}` : label, quote: '', detached: !block };
+        return { label, quote: root.quote, detached: !block || this.detachedNotes.includes(root.id) };
+    }
+
+    @Client()
+    private startNote(target: string, range: NoteRange | null = null, quote = '') {
+        this.composer = { target, range, quote, parentId: null, body: '' };
+        this.editingNote = null;
+        this.activeNote = null;
+        this.notesFilter = 'open';
+        this.notesError = '';
+        this.notesOpen = true;
+    }
+
+    /** Open the rail on the notes of a field or a block: the first open thread there is chosen. */
+    @Client()
+    private showNotes(where: { field?: string; block?: string }) {
+        const first = this.openRoots().find(note => {
+            const target = parseNoteTarget(note.target);
+            if (!target) return false;
+            return where.block ? noteBlock(target)?.block === where.block : noteField(target) === where.field;
+        });
+        this.notesFilter = 'open';
+        this.notesOpen = true;
+        if (first) this.activeNote = first.id;
+    }
+
+    /** Choose a thread: the rail opens on it and the entry scrolls to where it sits. */
+    @Client()
+    private selectNote(id: string, options: { reveal?: boolean } = {}) {
+        const root = this.notes.find(note => note.id === id);
+        this.activeNote = id;
+        this.notesOpen = true;
+        if (root) this.notesFilter = root.status;
+        if (root && options.reveal !== false) void this.revealNote(root);
+    }
+
+    /** Scroll to a thread's place, on its tab, and flash it. */
+    @Client()
+    private async revealNote(root: Note) {
+        const target = parseNoteTarget(root.target);
+        if (!target || target.kind === 'entry') return;
+        const field = noteField(target);
+        const tab = field ? this.tabOf(field) : null;
+        if (tab && tab !== this.mode) { await this.showMode(tab); await new Promise(resolve => setTimeout(resolve, 50)); }
+        const block = noteBlock(target);
+        const element = document.querySelector<HTMLElement>(`.cms-note[data-note="${root.id}"]`)
+            ?? (block ? document.querySelector<HTMLElement>(`[data-block-tree-item="${block.block}"]`) : null)
+            ?? (field ? document.querySelector<HTMLElement>(`[data-field="${field}"]`) : null);
+        if (!element) return;
+        element.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        element.classList.add('cms-note-flash');
+        setTimeout(() => element.classList.remove('cms-note-flash'), 2000);
+    }
+
+    @Client()
+    private async postNote() {
+        const composer = this.composer;
+        if (!composer || !this.room || !composer.body.trim()) return;
+        this.notesBusy = true;
+        this.notesError = '';
+        try {
+            const note = await this.room.note({ kind: 'create', target: composer.target, range: composer.range, quote: composer.quote, body: composer.body, parentId: composer.parentId });
+            this.composer = null;
+            if (note) {
+                this.applyNote({ kind: 'created', note, author: this.noteAuthors[note.userId] ?? { user: note.userId, name: __('You'), avatar: null, color: participantColor(note.userId) } });
+                this.activeNote = note.parentId ?? note.id;
+            }
+        } catch (error) { this.notesError = (error as Error).message || __('The note could not be saved.'); }
+        finally { this.notesBusy = false; }
+    }
+
+    @Client()
+    private async noteAction(action: NoteAction) {
+        if (!this.room) return;
+        this.notesBusy = true;
+        this.notesError = '';
+        try { await this.room.note(action); }
+        catch (error) { this.notesError = (error as Error).message || __('The note could not be changed.'); }
+        finally { this.notesBusy = false; }
+    }
+
+    @Client()
+    private async saveNoteEdit() {
+        const editing = this.editingNote;
+        if (!editing || !editing.body.trim()) return;
+        await this.noteAction({ kind: 'edit', id: editing.id, body: editing.body });
+        if (!this.notesError) this.editingNote = null;
+    }
+
+    /** A note change from the room, or this tab's own, applied once. */
+    @Client()
+    private applyNote(change: NoteChange) {
+        switch (change.kind) {
+            case 'created':
+                if (this.notes.some(note => note.id === change.note.id)) return;
+                this.noteAuthors = { ...this.noteAuthors, [change.author.user]: change.author };
+                this.notes = [...this.notes.map(note => note.id === change.note.parentId ? { ...note, updatedAt: change.note.createdAt } : note), change.note];
+                return;
+            case 'edited':
+            case 'status':
+                this.notes = this.notes.map(note => note.id === change.note.id ? change.note : note);
+                return;
+            case 'removed': {
+                const gone = new Set(change.ids);
+                this.notes = this.notes.filter(note => !gone.has(note.id));
+                for (const id of gone) this.noteRanges.delete(id);
+                if (this.activeNote && gone.has(this.activeNote)) this.activeNote = null;
+                if (this.composer?.parentId && gone.has(this.composer.parentId)) this.composer = null;
+                if (this.editingNote && gone.has(this.editingNote.id)) this.editingNote = null;
+                return;
+            }
+            case 'moved':
+                this.notes = this.notes.map(note => { const move = change.moves.find(entry => entry.id === note.id); return move ? { ...note, range: move.range } : note; });
+                return;
+        }
+    }
+
+    /** After a save, the places of the passages that moved are written back, so a reload finds them. */
+    @Client()
+    private persistNoteMoves() {
+        if (!this.room) return;
+        const moves = this.notes.filter(note => !note.parentId && note.target.startsWith('text:')).flatMap(note => {
+            const live = this.noteRanges.get(note.id);
+            return live && (live.from !== note.range?.from || live.to !== note.range?.to) ? [{ id: note.id, range: live }] : [];
+        });
+        if (moves.length) void this.room.note({ kind: 'move', moves }).catch(() => undefined);
+    }
+
+    private notesRailView(): TemplateResult | null {
+        if (this.id === 'new') return null;
+        return notesRail({
+            id: 'entry-notes', open: this.notesOpen, threads: noteThreads(this.notes), filter: this.notesFilter, people: this.noteAuthors, me: this.meId, admin: this.canRemoveNotes,
+            active: this.activeNote, composer: this.composer, editing: this.editingNote, mentionable: this.mentionable, busy: this.notesBusy, error: this.notesError,
+            anchor: root => this.noteAnchor(root),
+            onClose: () => { this.notesOpen = false; }, onFilter: filter => { this.notesFilter = filter; }, onSelect: id => this.selectNote(id),
+            onCompose: composer => { this.composer = composer; }, onSubmit: () => { void this.postNote(); },
+            onEdit: editing => { this.editingNote = editing; }, onSaveEdit: () => { void this.saveNoteEdit(); },
+            onResolve: id => { void this.noteAction({ kind: 'resolve', id }); }, onReopen: id => { void this.noteAction({ kind: 'reopen', id }); }, onRemove: id => { this.noteRemoval = id; },
+        });
+    }
+
+    private noteRemovalModal(): TemplateResult {
+        const note = this.noteRemoval ? this.notes.find(entry => entry.id === this.noteRemoval) : undefined;
+        return component(Modal, { open: !!note, size: 'max-w-md', 'aria-label': __('Remove note'), onOpenChange: (open: boolean) => { if (!open) this.noteRemoval = null; } }, note ? html`
+            <div class="space-y-4">
+                <h2 class="text-lg font-semibold text-foreground">${note.parentId ? __('Remove this reply?') : __('Remove this thread?')}</h2>
+                <p class="text-sm text-muted-foreground">${note.parentId ? __('The reply is deleted for everyone.') : __('The note and its replies are deleted for everyone.')}</p>
+                <div class="flex justify-end gap-2">
+                    ${component(Button, { type: 'button', variant: 'outline', '@click': () => { this.noteRemoval = null; } }, __('Cancel'))}
+                    ${component(Button, { type: 'button', variant: 'destructive', '@click': () => { this.noteRemoval = null; void this.noteAction({ kind: 'remove', id: note.id }); } }, __('Remove'))}
+                </div>
+            </div>` : html``);
+    }
+
+    /** The header's Notes button: opens the rail, with the count of open threads. */
+    private notesToggle(): TemplateResult | null {
+        if (this.id === 'new') return null;
+        const open = this.openRoots().length;
+        return html`<button type="button" class=${`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-sm cursor-pointer [&_svg]:size-4 ${this.notesOpen ? 'border-amber-500 bg-amber-500/10 text-foreground' : 'border-border bg-background text-foreground hover:bg-muted'}`}
+            aria-pressed=${this.notesOpen ? 'true' : 'false'} data-notes-toggle=${open} @click=${() => { this.notesOpen = !this.notesOpen; }}>
+            ${component(Icon, { entry: icon('notes'), size: 16 })}${__('Notes')}${open ? html`<span class="rounded-full bg-amber-500/15 px-1.5 text-xs font-medium text-amber-700 dark:text-amber-300">${open}</span>` : null}</button>`;
+    }
+
+    /** Media previews follow the values, a little after they changed. */
+    @Client()
+    private previewsSoon() {
+        if (this.previewRefresh) return;
+        this.previewRefresh = setTimeout(() => { this.previewRefresh = undefined; void this.refreshPreviews(this.values); }, 500);
+    }
+
+    /** Whether a field is one rich text document the room holds (a multiple field travels as one value). */
+    private sharedRichText(name: string): boolean {
+        const field = this.fieldOf(name);
+        return field?.kind === 'richtext' && !field.multiple;
+    }
+
+    /** The rich text editor's part in the room, for a document at `path`. */
+    private collabFor(path: string | null): { collab?: RichTextFieldProps['collab'] } {
+        const room = this.room;
+        if (!room || !path) return {};
+        return { collab: { path, clientID: this.self, transport: room.transport(path), onSelection: (anchor: number, head: number) => this.announceSelection(path, anchor, head) } };
+    }
+
+    private myUser(): string {
+        return this.peers.find(peer => peer.peer === this.self)?.user ?? '';
+    }
+
+    /** Other users whose focus is in a field of the entry, by its presence anchor (not in a block). */
+    private peersIn(field: string): Someone[] {
+        const me = this.myUser();
+        return this.peers.filter(peer => peer.user !== me && peer.presence.field === field && !peer.presence.block);
+    }
+
+    /**
+     * A row around one synced control, named for presence (`data-field`) and, when another editor
+     * is in it, outlined in their color with a chip under its label. The sidebar's rows are named
+     * by their key (`status`, `parent`, a taxonomy's name) and the search box's by `seo.<key>`;
+     * the resource's own fields have `fieldRow`, group fields the `FieldGroupView`.
+     */
+    private tracked(field: string, body: TemplateResult, options: { label?: TemplateResult | null; class?: string; /** The control is one line of text: its note tools sit inside it, at the right. */ inline?: boolean } = {}): TemplateResult {
+        const here = this.peersIn(field);
+        const tools = this.noteTools(field);
+        const inline = options.inline === true && tools !== null;
+        return html`<div class=${`group ${options.class ?? 'space-y-1'}`} data-field=${field} style=${presenceOutline(here)}>
+            ${options.label ? html`<div class="flex items-center gap-3"><div class="min-w-0 flex-1">${options.label}</div>${inline ? null : tools}</div>` : inline ? null : tools}
+            ${here.length ? presenceChip(here, __('is here')) : null}${inline ? inlineNoteTools(body, tools) : body}</div>`;
+    }
+
+    /** Other users in each block, or dragging it, by block ID. */
+    private editingBlocks(): Record<string, Someone[]> {
+        const me = this.myUser();
+        const result: Record<string, Someone[]> = {};
+        for (const peer of this.peers) {
+            if (peer.user === me) continue;
+            for (const id of [peer.presence.block, peer.presence.dragging]) if (id) (result[id] ??= []).push(peer);
+        }
+        return result;
+    }
+
+    private participants(): Participant[] {
+        return groupPeers(this.peers);
+    }
+
+    private roomProps(): EntryRoom['props'] {
+        return {
+            onReady: (handle: RoomHandle) => this.onRoomReady(handle),
+            onSnapshot: (snapshot: RoomSnapshot, options: { initial: boolean; resets: readonly string[] }) => this.onSnapshot(snapshot, options),
+            onSet: (peer: string, field: string, value: unknown) => this.onRemoteSet(peer, field, value),
+            onTree: (peer: string, op: TreeOp, hash: string) => this.onRemoteTree(peer, op, hash),
+            onPeers: (peers: readonly PeerState[], self: string) => this.onPeers(peers, self),
+            onSaved: (by: string, rev: number) => this.onRemoteSaved(by, rev),
+            onNote: (change: NoteChange) => this.applyNote(change),
+            onStatus: (status: { connected: boolean; dirty: boolean; diverged: boolean; oversized: boolean }) => this.onRoomStatus(status),
+        };
+    }
+
+    // --- Autosave ----------------------------------------------------------------
+
+    onMount() {
+        this.autosaved = this.snapshot();
+        // The first save's outcome came in the address; shown, the address is the entry's alone, as a reload should not repeat it.
+        const url = new URL(window.location.href);
+        if (url.searchParams.has('saved')) { url.searchParams.delete('saved'); window.history.replaceState(window.history.state, '', url); }
+        // A saved entry is edited in its room, whose draft replaces the autosave and the reload restore.
+        if (this.id !== 'new') return;
+        this.autosaveTimer = setInterval(() => { void this.autosaveTick(); }, 30_000);
+        this.recoverDraft();
+    }
+
+    onCleanup() {
+        if (this.autosaveTimer) clearInterval(this.autosaveTimer);
+        if (this.presenceTimer) clearTimeout(this.presenceTimer);
+        if (this.previewRefresh) clearTimeout(this.previewRefresh);
+    }
+
+    /** Where unsaved values wait out a reload: one key per editor URL. */
+    private draftKey(): string {
+        return `cms:draft:${window.location.pathname}`;
+    }
+
+    /** Before a reload or a close, unsaved values go to session storage; a saved editor leaves nothing. */
+    @OnWindow('beforeunload')
+    keepDraft() {
+        try {
+            if (this.unsaved && this.view && !this.room) window.sessionStorage.setItem(this.draftKey(), JSON.stringify({ at: Date.now(), values: this.values }));
+            else window.sessionStorage.removeItem(this.draftKey());
+        } catch { /* storage may be unavailable; the autosave still has the draft */ }
+    }
+
+    /** After a reload, recent unsaved values come straight back; the autosave stays as the fallback. */
+    @Client()
+    private recoverDraft() {
+        let stored: { at?: number; values?: EditorValues } | null = null;
+        try {
+            const raw = window.sessionStorage.getItem(this.draftKey());
+            window.sessionStorage.removeItem(this.draftKey());
+            stored = raw ? JSON.parse(raw) as { at?: number; values?: EditorValues } : null;
+        } catch { return; }
+        if (!stored?.values || typeof stored.values !== 'object' || typeof stored.at !== 'number' || Date.now() - stored.at > 15 * 60_000) return;
+        this.values = { ...this.values, ...stored.values };
+        this.unsaved = true;
+        this.dirty = true;
+        this.autosaveOffer = null;
+        this.message = __('Your unsaved changes were kept through the reload. Save to keep them.');
+        void this.refreshPreviews(this.values);
+    }
+
+    /** Published entries of the site whose text matches the title: candidates for internal links, this entry left out. */
+    @Server()
+    async loadLinkSuggestions(title: string, exclude: string) {
+        const cms = this.c.get('cms');
+        const query = title.replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/).filter(word => word.length > 2).slice(0, 8).join(' ');
+        if (!query) { this.linkSuggestions = []; return; }
+        const found: { title: string; url: string; collection: string }[] = [];
+        for (const collection of cms.collections()) {
+            if (typeof collection.path !== 'string' || found.length >= 8) continue;
+            const resource = cms.resourceById(`cms/${collection.name}`);
+            if (!Object.values(resource.fields).some(field => field.search)) continue;
+            try {
+                const records = (await cms.resource(resource.id).search(query, { limit: 6, ...(collection.publishable === false ? {} : { where: { status: 'published' } }) }, { principal: this.c.get('principal') })).filter(record => record.id !== exclude);
+                const urls = await cms.entryUrls(collection, records);
+                for (const record of records) if (urls.get(record.id)) found.push({ title: recordTitle(record, 'title'), url: urls.get(record.id)!, collection: collection.singular });
+            } catch (error) { if (!isCmsError(error)) throw error; }
+        }
+        this.linkSuggestions = found.slice(0, 8);
+    }
+
+    /** Previews of the media the recovered values name. */
+    @Server()
+    async refreshPreviews(values: EditorValues) {
+        const cms = this.c.get('cms');
+        this.previews = await mediaPreviews(cms, values, this.view ?? await editorView(cms, this.route));
+    }
+
+    /** The values as the autosave stores them; a control that cannot be serialized counts as unchanged. */
+    private snapshot(): string {
+        try { return JSON.stringify(this.values); } catch { return this.autosaved; }
+    }
+
+    /**
+     * Store the values when they changed since the last load, save or autosave. A plain request
+     * to the autosave API, not a server method: nothing of this page's state comes back, so the
+     * editor keeps its focus, selection and any keystrokes in flight.
+     */
+    @Client()
+    async autosaveTick() {
+        if (this.saving || this.autosaving || !this.view) return;
+        const snapshot = this.snapshot();
+        if (snapshot === this.autosaved) { this.dirty = false; return; }
+        this.autosaving = true;
+        try {
+            const response = await fetch(`/api/cms/content/${this.route}/${this.id}/autosave`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: snapshot, credentials: 'same-origin' });
+            if (!response.ok) throw new Error(`autosave ${response.status}`);
+            const { at } = await response.json() as { at: number };
+            this.autosaved = snapshot;
+            this.dirty = false;
+            this.autosavedAt = at;
+        } catch (error) {
+            console.warn('[cms] the draft could not be autosaved', error);
+        } finally { this.autosaving = false; }
+    }
+
+    /** The resource this editor's route names, read on the server. */
+    private resourceId(): string {
+        return routeResource(this.c.get('cms'), this.route).resource.id;
+    }
+
+    @Server()
+    async storeAutosave(values: EditorValues) {
+        this.autosavedAt = await this.c.get('cms').autosave(this.resourceId(), this.id, this.c.get('principal'), values);
+    }
+
+    /** Restore the autosave; the restored values are what is stored, so the next tick sends nothing. */
+    @Client()
+    async restore() {
+        await this.restoreAutosave();
+        this.autosaved = this.snapshot();
+        this.unsaved = true;
+    }
+
+    @Server()
+    async restoreAutosave() {
+        const cms = this.c.get('cms');
+        const autosave = await cms.latestAutosave(this.resourceId(), this.id, this.c.get('principal'));
+        if (autosave?.data && typeof autosave.data === 'object' && !Array.isArray(autosave.data)) {
+            this.values = { ...this.values, ...(autosave.data as EditorValues) };
+            this.previews = await mediaPreviews(cms, this.values, await editorView(cms, this.route));
+            this.message = __('The autosave is restored. Save to keep it.');
+        }
+        this.autosaveOffer = null;
+    }
+
+    @Server()
+    async dismissAutosave() {
+        await this.c.get('cms').discardAutosave(this.resourceId(), this.id, this.c.get('principal'));
+        this.autosaveOffer = null;
+    }
+
+    /** Leaving with unsaved changes asks first; they stay in the autosave either way. In a connected room the draft is kept there, so no prompt. */
+    @PreventNavigation()
+    @Client()
+    confirmLeave(): boolean {
+        return this.unsaved && !this.roomStatus.connected && !window.confirm(__('Leave the editor? Your latest changes are not saved.'));
+    }
+
+    // --- Previews ------------------------------------------------------------------
+
+    /** Open the preview with the current changes: they are autosaved first. */
+    @Client()
+    async openPreview() {
+        if (!this.view || this.id === 'new') return;
+        const preview = window.open('about:blank', '_blank');
+        try {
+            await this.storeAutosave(this.values);
+            this.dirty = false;
+            this.autosaved = this.snapshot();
+            if (preview) preview.location.href = `/preview/${this.view.route}/${this.id}`;
+        } catch { preview?.close(); this.message = ''; this.error = __('The preview could not be prepared.'); }
+    }
+
+    @Server()
+    async createPreviewLink() {
+        const cms = this.c.get('cms');
+        try {
+            const link = await cms.createPreviewLink(this.resourceId(), this.id, this.c.get('principal'));
+            this.previewLink = `${siteOrigin(this.c)}/preview/${this.route}/${this.id}?token=${link.token}`;
+            this.previewLinks = await cms.previews.count(this.resourceId(), this.id);
+        } catch (error) { this.error = isCmsError(error) ? error.message : __('The link could not be created.'); }
+    }
+
+    @Server()
+    async revokePreviewLinks() {
+        const cms = this.c.get('cms');
+        await cms.revokePreviewLinks(this.resourceId(), this.id, this.c.get('principal'));
+        this.previewLink = '';
+        this.previewLinks = 0;
+    }
+
+    @Client()
+    async copyPreviewLink() {
+        this.message = '';
+        this.error = '';
+        try { await navigator.clipboard.writeText(this.previewLink); this.message = __('Link copied.'); }
+        catch { this.error = __('Copy the link from the box.'); }
+    }
+
+    // --- Translations --------------------------------------------------------------
+
+    /** Open the entry's translation in a language, starting it as a draft copy when there is none. */
+    @Server()
+    async translate(locale: string) {
+        const cms = this.c.get('cms');
+        try {
+            const translation = await cms.translateEntry(this.route, this.id, locale, this.c.get('principal'));
+            return this.redirect(`/dashboard/content/${this.route}/${translation.id}`);
+        } catch (error) { this.error = isCmsError(error) ? error.message : __('The translation could not be started.'); }
+    }
+
+    // --- Patterns ------------------------------------------------------------------
+
+    @Client()
+    async openPatterns(field: string) {
+        this.patternPicker = { open: true, field, starter: false };
+        await this.findPatterns();
+    }
+
+    @Server()
+    async findPatterns() {
+        await this.loadPatterns(this.route, false);
+    }
+
+    /** Insert a pattern: synced ones as a reference that follows the pattern, others as a copy. */
+    /** Add a pattern to the content: a synced one as a Pattern block, otherwise a copy of its blocks. A starting layout replaces the content. */
+    @Client()
+    async insertPattern(id: string, copy: boolean) {
+        const picker = this.patternPicker;
+        this.patternPicker = { open: false, field: '', starter: false };
+        const choice = this.patternChoices.find(entry => entry.id === id);
+        const view = this.view;
+        if (!choice || !view) return;
+        const field = picker.starter ? contentField(view) ?? '' : picker.field;
+        const content = await this.patternContent(id);
+        if (!field || !content) return;
+        this.patternTitles = { ...this.patternTitles, [id]: choice.title };
+        const added: EditorBlock[] = choice.synced && !copy ? [{ _id: blockId(), type: 'core/pattern', data: { pattern: id } }] : editorBlocks(content as EditorBlock[], view.blocks);
+        this.set(field, picker.starter ? added : [...this.blocks(field), ...added]);
+    }
+
+    @Server()
+    async patternContent(id: string): Promise<Block[] | null> {
+        return patternBlocks(this.c.get('cms'), id, this.c.get('principal'));
+    }
+
+    @Client()
+    setSlug(value: string) {
+        this.slugTouched = true;
+        this.set('slug', value.toLowerCase().replace(/\s+/g, '-'));
+    }
+
+    @Client()
+    toggleTerm(taxonomy: string, id: string, checked: boolean) {
+        const current = (this.values[taxonomy] as string[] | undefined) ?? [];
+        this.set(taxonomy, checked ? [...new Set([...current, id])] : current.filter(entry => entry !== id));
+    }
+
+    @Client()
+    addTags(taxonomy: string) {
+        const names = (this.tagDrafts[taxonomy] ?? '').split(',').map(name => name.trim()).filter(Boolean);
+        const current = (this.values[taxonomy] as string[] | undefined) ?? [];
+        const known = new Set(current.map(name => name.toLowerCase()));
+        this.set(taxonomy, [...current, ...names.filter(name => !known.has(name.toLowerCase()))]);
+        this.tagDrafts = { ...this.tagDrafts, [taxonomy]: '' };
+    }
+
+    @Client()
+    removeTag(taxonomy: string, name: string) {
+        this.set(taxonomy, ((this.values[taxonomy] as string[] | undefined) ?? []).filter(entry => entry !== name));
+    }
+
+    /** Tabs and previews are kept by the editor's ID, so a block's Markdown in the panel previews its own text, not an entry field's. */
+    @Client()
+    async showTab(id: string, tab: 'write' | 'preview', text: string) {
+        this.tabs = { ...this.tabs, [id]: tab };
+        if (tab === 'preview') await this.preview(id, text);
+    }
+
+    @Server()
+    async preview(id: string, text: string) {
+        this.rendered = { ...this.rendered, [id]: renderMarkdown(text.slice(0, 200_000)) };
+    }
+
+    /** Wrap the selection of the Markdown editor `id` (its text is `text`) in `before` and `after`. */
+    @Client()
+    format(id: string, text: string, change: (value: string) => void, before: string, after = '', placeholder = '') {
+        const element = document.getElementById(id) as HTMLTextAreaElement | null;
+        const start = element?.selectionStart ?? text.length;
+        const end = element?.selectionEnd ?? text.length;
+        const selected = text.slice(start, end) || placeholder;
+        change(`${text.slice(0, start)}${before}${selected}${after}${text.slice(end)}`);
+        requestAnimationFrame(() => { element?.focus(); element?.setSelectionRange(start + before.length, start + before.length + selected.length); });
+    }
+
+    // --- Blocks ----------------------------------------------------------------
+
+    private blocks(field: string): EditorBlock[] {
+        return (this.values[field] as EditorBlock[] | undefined) ?? [];
+    }
+
+    @Client()
+    setBlock(field: string, id: string, key: string, value: unknown) {
+        this.set(field, updateBlock(this.blocks(field), id, block => ({ ...block, data: { ...block.data, [key]: value } })));
+    }
+
+    // --- Media -----------------------------------------------------------------
+
+    @Client()
+    async openPicker(target: MediaTarget) {
+        this.picker = { ...this.picker, open: true, target, kind: target.fileKind ?? 'image' };
+        this.pickerErrors = [];
+        await this.findMedia(this.picker.search, this.picker.kind);
+    }
+
+    @Client()
+    closePicker() {
+        this.picker = { ...this.picker, open: false, target: null };
+    }
+
+    @Server()
+    async findMedia(search: string, kind: string) {
+        const files = this.c.get('cms').files;
+        if (!files) { this.picker = { ...this.picker, items: [] }; return; }
+        const page = await files.list({ search: search.slice(0, 100), limit: 40, ...(kind ? { kind: kind as MediaKind } : {}) });
+        this.picker = { ...this.picker, search, kind, items: page.items.map(file => ({ id: file.id, url: `/media/${file.id}/${encodeURIComponent(file.name)}`, title: file.title, alt: file.alt,
+            contentType: file.contentType, width: file.width, height: file.height, size: formatBytes(file.size), name: file.name })) };
+    }
+
+    @Client()
+    choose(file: MediaPreview) {
+        const target = this.picker.target;
+        if (!target) return;
+        this.previews = { ...this.previews, [file.id]: file };
+        if (target.style) {
+            if (this.blockDialog) this.setDialogStyle({ ...this.blockDialog.style, style: { ...this.blockDialog.style.style, [target.style]: file.id } });
+        } else if (target.richText) {
+            const editor = richTextEditors.get(target.editor ?? `field-${target.field}`);
+            if (mediaKind(file.contentType) === 'image') editor?.insertImage({ src: file.url, alt: file.alt || file.title, mediaId: file.id });
+            else editor?.insertLink(file.title || __('Download'), file.url);
+        } else if (target.group && target.key) {
+            this.setGroup(target.field, target.key, file.id);
+        } else if (target.rows?.length && target.key) {
+            const current = this.rowValue(target.field, target.rows, target.key);
+            this.setRowValue(target.field, target.rows, target.key, target.multiple ? [...new Set([...(Array.isArray(current) ? current as string[] : []), file.id])] : file.id);
+        } else if (target.insert) {
+            const markdown = mediaKind(file.contentType) === 'image' ? `![${file.alt || file.title}](${file.url})` : `[${file.title}](${file.url})`;
+            if (target.dialog && target.key && this.blockDialog) this.format(target.editor ?? '', String(this.blockDialog.values[target.key] ?? ''), value => this.setDialogValue(target.key!, value), `${markdown}\n`);
+            else this.format(target.editor ?? `field-${target.field}`, String(this.values[target.field] ?? ''), value => this.set(target.field, value), `${markdown}\n`);
+        } else if (target.dialog && target.key && this.blockDialog) {
+            const current = this.blockDialog.values[target.key];
+            this.setDialogValue(target.key, target.multiple ? [...new Set([...(Array.isArray(current) ? current as string[] : []), file.id])] : file.id);
+        } else if (target.block !== undefined && target.key) {
+            const current = findBlock(this.blocks(target.field), target.block)?.data[target.key];
+            this.setBlock(target.field, target.block, target.key, target.multiple ? [...new Set([...(Array.isArray(current) ? current : []), file.id])] : file.id);
+        } else {
+            const current = this.values[target.field];
+            this.set(target.field, target.multiple ? [...new Set([...(Array.isArray(current) ? current as string[] : []), file.id])] : file.id);
+        }
+        if (!target.multiple) this.closePicker();
+    }
+
+    @Client()
+    async uploadInPicker(event: Event) {
+        const input = event.currentTarget as HTMLInputElement;
+        const files = [...(input.files ?? [])];
+        this.pickerErrors = [];
+        for (const file of files) {
+            try { this.choose(await uploadFile(file)); }
+            catch (error) { this.pickerErrors = [...this.pickerErrors, (error as Error).message || __('The upload failed.')]; }
+        }
+        input.value = '';
+        await this.findMedia('', this.picker.kind);
+    }
+
+    // --- Blocks in rich text ---------------------------------------------------
+
+    @Client()
+    insertRichBlock(field: string, type: string, editorId?: string) {
+        const option = this.view?.blocks.find(block => block.name === type);
+        const editor = richTextEditors.get(editorId ?? `field-${field}`);
+        if (!option || !editor) return;
+        const values = blockDefaults(option);
+        const block: EmbeddedBlock = { _id: blockId(), type, data: editorInput(option.fields, values).input };
+        editor.insertBlock(block);
+        if (option.fields.length) this.blockDialog = { field, id: block._id, type, values, errors: {}, embedded: true, tab: 'general', style: styleValues({}), ...(editorId ? { editor: editorId } : {}) };
+    }
+
+    @Client()
+    editRichBlock(field: string, block: EmbeddedBlock, editorId?: string) {
+        const empty = { tab: 'general' as const, style: styleValues({}), ...(editorId ? { editor: editorId } : {}) };
+        if (block.type === 'core/pattern') { this.blockDialog = { field, id: block._id, type: block.type, values: { pattern: block.data.pattern }, errors: {}, embedded: true, ...empty }; return; }
+        const option = this.view?.blocks.find(entry => entry.name === block.type);
+        if (!option) { this.message = ''; this.error = __('This block type is no longer available.'); return; }
+        this.blockDialog = { field, id: block._id, type: block.type, errors: {}, embedded: true, ...empty,
+            values: Object.fromEntries(option.fields.map(entry => [entry.name, controlValue(entry, block.data[entry.name] ?? entry.defaultValue)])) };
+    }
+
+    /** Open a block of a blocks field in the side panel: its settings on the General tab, its style on the Style tab. */
+    @Client()
+    editTreeBlock(field: string, id: string) {
+        const block = findBlock(this.blocks(field), id);
+        const option = this.view?.blocks.find(entry => entry.name === block?.type);
+        if (block?.type === 'core/pattern') { this.blockDialog = { field, id, type: block.type, values: { pattern: block.data.pattern }, errors: {}, embedded: false, tab: 'general', style: styleValues({}) }; return; }
+        if (!block || !option) return;
+        this.blockDialog = { field, id, type: block.type, errors: {}, embedded: false, tab: 'general', style: styleValues(block), ...(block.when ? { when: block.when } : {}),
+            values: Object.fromEntries(option.fields.filter(entry => entry.kind !== 'richtext').map(entry => [entry.name, block.data[entry.name] ?? controlValue(entry, entry.defaultValue)])) };
+    }
+
+    @Client()
+    setDialogValue(name: string, value: unknown) {
+        if (!this.blockDialog) return;
+        this.applyBlockDialog({ ...this.blockDialog, values: { ...this.blockDialog.values, [name]: value }, errors: { ...this.blockDialog.errors, [name]: '' } });
+    }
+
+    @Client()
+    setDialogStyle(style: StyleValues) {
+        if (this.blockDialog) this.applyBlockDialog({ ...this.blockDialog, style });
+    }
+
+    @Client()
+    setDialogCondition(when: BlockCondition | null) {
+        if (!this.blockDialog) return;
+        const { when: _previous, ...rest } = this.blockDialog;
+        this.applyBlockDialog(when ? { ...rest, when } : rest);
+    }
+
+    @Client()
+    showDialogTab(tab: BlockTab) {
+        if (this.blockDialog) this.blockDialog = { ...this.blockDialog, tab };
+    }
+
+    /**
+     * The panel's state goes into its block at once: an embedded block back into its rich text,
+     * a tree block into its field with its style and condition. A value its field cannot take
+     * stays in the panel with its message; saving checks what is required.
+     */
+    @Client()
+    applyBlockDialog(dialog: BlockDialog) {
+        const option = this.view?.blocks.find(block => block.name === dialog.type);
+        if (!option) return;
+        if (dialog.embedded) {
+            const { input, errors } = editorInput(option.fields, dialog.values);
+            this.blockDialog = { ...dialog, errors: { ...dialog.errors, ...errors } };
+            richTextEditors.get(dialog.editor ?? `field-${dialog.field}`)?.updateBlock(dialog.id, input);
+            return;
+        }
+        const fields = option.fields.filter(entry => entry.kind !== 'richtext');
+        const { input, errors } = editorInput(fields, dialog.values);
+        // A valid new ID under Advanced re-keys the block; the panel follows it.
+        const taken = this.otherBlockIds(dialog.field, dialog.id);
+        const id = blockIdOf({ _id: dialog.id }, dialog.style, taken);
+        this.blockDialog = { ...dialog, id, errors: { ...dialog.errors, ...errors } };
+        // Rich text stays as it is in the tree; the panel's values replace the rest, and the condition follows the panel.
+        this.set(dialog.field, updateBlock(this.blocks(dialog.field), dialog.id, block => {
+            const { when: _previous, ...rest } = block;
+            return withStyle({ ...rest, ...(dialog.when ? { when: dialog.when } : {}), data: { ...Object.fromEntries(Object.entries(block.data).filter(([name]) => option.fields.find(entry => entry.name === name)?.kind === 'richtext')), ...input } }, dialog.style, taken);
+        }));
+    }
+
+    /** The IDs of a field's blocks apart from one, which a custom block ID may not repeat. */
+    private otherBlockIds(field: string, except: string): ReadonlySet<string> {
+        return new Set(flattenBlocks(this.blocks(field)).map(block => block._id).filter(id => id !== except));
+    }
+
+    /** Replace a synced pattern in the content with a copy of its blocks, which no longer follow the pattern. */
+    @Client()
+    async detachPattern() {
+        const dialog = this.blockDialog;
+        if (!dialog || dialog.embedded || !this.view) return;
+        this.blockDialog = null;
+        const content = await this.patternContent(String(dialog.values.pattern ?? ''));
+        if (!content) return;
+        const copy = editorBlocks(content as EditorBlock[], this.view.blocks);
+        const replace = (blocks: EditorBlock[]): EditorBlock[] => blocks.flatMap(block => block._id === dialog.id ? copy : [block.children ? { ...block, children: replace(block.children) } : block]);
+        this.set(dialog.field, replace(this.blocks(dialog.field)));
+    }
+
+    // --- Terms -----------------------------------------------------------------
+
+    @Server()
+    async addTerm(taxonomy: string, name: string, parent: string) {
+        const cms = this.c.get('cms');
+        try {
+            const term = await cms.taxonomies.create(taxonomy, { name, parent: parent || null }, { principal: this.c.get('principal') });
+            this.view = this.view ? { ...this.view, taxonomies: await Promise.all(this.view.taxonomies.map(async entry => entry.name === taxonomy ? { ...entry, terms: await termOptions(cms, taxonomy) } : entry)) } : this.view;
+            this.values = { ...this.values, [taxonomy]: [...((this.values[taxonomy] as string[] | undefined) ?? []), term.id] };
+            this.termDrafts = { ...this.termDrafts, [taxonomy]: { name: '', parent: '' } };
+        } catch (error) {
+            this.error = isCmsError(error) ? error.message : __('The term could not be added.');
+        }
+    }
+
+    // --- Saving ----------------------------------------------------------------
+
+    @Client()
+    async submit(intent: SaveIntent) {
+        // A blank title is caught here, before the request; the server refuses it too.
+        const title = this.view?.titleField ?? '';
+        if (this.view?.titleRequired && intent !== 'trash' && !String(this.values[title] ?? '').trim()) {
+            this.errors = { ...this.errors, [title]: __('Enter a title.') };
+            this.message = '';
+            this.error = __('Enter a title before saving.');
+            document.getElementById('field-title')?.focus();
+            return;
+        }
+        this.saving = true;
+        this.error = '';
+        this.message = '';
+        // In a room, save what everyone wrote: the room's draft, apart from this tab's changes still on their way.
+        if (this.room) { try { this.onSnapshot(await this.room.fresh(), { initial: false, resets: [] }); } catch { /* save what this tab holds */ } }
+        try { await this.save(this.values, intent, this.rev); }
+        finally { this.saving = false; }
+        if (this.error) this.revealErrorTab();
+        else {
+            this.dirty = false;
+            this.unsaved = false;
+            this.autosaved = this.snapshot();
+            void this.announceSaved();
+            this.persistNoteMoves();
+            void this.settleUrl();
+        }
+    }
+
+    /**
+     * After the first save, the editor opens at the entry's own address, where its room is. The
+     * outcome travels as `saved`, so the page shows it again, and leaves the address once shown.
+     */
+    @Client()
+    private async settleUrl() {
+        if (this.id === 'new' || !window.location.pathname.endsWith('/new')) return;
+        const query = new URLSearchParams(window.location.search);
+        query.set('saved', this.message === __('Published.') ? 'published' : this.message === __('Scheduled.') ? 'scheduled' : this.message === __('Submitted for review.') ? 'pending' : '1');
+        await this.navigate(`/dashboard/content/${this.route}/${this.id}?${query}${window.location.hash}`, { history: 'replace' });
+        // The same page stays mounted through the navigation, so the address is settled here, not in `onMount`.
+        const url = new URL(window.location.href);
+        if (url.searchParams.has('saved')) { url.searchParams.delete('saved'); window.history.replaceState(window.history.state, '', url); }
+    }
+
+    @Server()
+    async save(values: EditorValues, intent: SaveIntent, rev: number) {
+        const cms = this.c.get('cms');
+        this.errors = {};
+        try {
+            const record = await saveEntry(cms, this.route, this.id === 'new' ? null : this.id, values, intent, rev, this.c.get('principal'));
+            // A new entry becomes this editor's entry: the page stays, and the browser's URL follows.
+            if (this.id === 'new') this.id = record.id;
+            await this.refreshSaved(cms, record, intent);
+        } catch (error) {
+            this.errors = fieldErrors(error);
+            this.error = isCmsError(error) ? error.message : __('The entry could not be saved.');
+        }
+    }
+
+
+    /** What the editor shows after a write: the saved values, the status, the URL and the revisions. */
+    private async refreshSaved(cms: CmsHost, record: RecordShape, intent: SaveIntent) {
+        this.rev = record.rev;
+        const view = this.view ?? await editorView(cms, this.route);
+        const before = this.savedStatus;
+        this.savedStatus = String(record.status ?? '');
+        this.values = await entryValues(cms, view, record);
+        this.previews = await mediaPreviews(cms, this.values, view);
+        const collection = cms.resourceById(view.resource).owner === 'cms' ? cms.collection(cms.resourceById(view.resource).name) : null;
+        const url = collection ? (await cms.entryUrls(collection, [record])).get(record.id) ?? null : null;
+        this.meta = { ...this.meta, updatedAt: record.updatedAt, url: view.publishable && record.status !== 'published' ? null : url };
+        this.autosaveOffer = null;
+        this.message = intent === 'trash' ? __('Moved to the trash.') : intent === 'restore' ? __('Restored as a draft.')
+            : record.status === 'scheduled' ? __('Scheduled.') : record.status === 'published' && before !== 'published' ? __('Published.')
+            : record.status === 'pending' && before !== 'pending' ? __('Submitted for review.') : __('Saved.');
+        await this.loadRevisions(record.id);
+        if (this.mode === 'json' || this.json) { this.json = await entryJson(cms, this.route, record); this.jsonDirty = false; }
+    }
+
+    @Server()
+    async loadJson() {
+        const cms = this.c.get('cms');
+        try {
+            const { resource } = routeResource(cms, this.route);
+            const record = await cms.resource(resource.id).get(this.id, { principal: this.c.get('principal') });
+            if (!record) { this.error = __('This entry does not exist or you cannot read it.'); return; }
+            this.json = await entryJson(cms, this.route, record);
+            this.jsonDirty = false;
+        } catch (error) {
+            this.error = isCmsError(error) ? error.message : __('The entry could not be loaded.');
+        }
+    }
+
+    @Server()
+    async applyJson(text: string, rev: number) {
+        const cms = this.c.get('cms');
+        this.errors = {};
+        this.error = '';
+        try {
+            const record = await applyEntryJson(cms, this.route, this.id, text, rev, this.c.get('principal'));
+            await this.refreshSaved(cms, record, 'update');
+        } catch (error) {
+            this.errors = fieldErrors(error);
+            this.error = isCmsError(error) ? error.message : __('The entry could not be saved.');
+        }
+    }
+
+    /** The tabs this entry has: the layout's, then JSON for a saved entry. */
+    private editorTabs(): string[] {
+        return [...(this.view?.layout.tabs.map(tab => tab.id) ?? ['edit']), ...(this.id !== 'new' ? ['json'] : [])];
+    }
+
+    /** The tab a field's box is on, so an error can open it; null for the sidebar's boxes, which every tab shows. */
+    private tabOf(name: string): string | null {
+        const view = this.view;
+        if (!view) return null;
+        const groups = view.groups.map(group => ({ id: group.id, blocks: plainBlocks(group.blocks) }));
+        for (const tab of view.layout.tabs) for (const entry of layoutBoxes(plainBlocks(tab.blocks))) if (boxFields(entry.id, groups).includes(name)) return tab.id;
+        for (const entry of layoutBoxes(plainBlocks(view.layout.sidebar))) if (boxFields(entry.id, groups).includes(name)) return null;
+        return view.layout.tabs[0]?.id ?? 'edit';
+    }
+
+    /** How many of the errors sit on a tab's own boxes. */
+    private errorsOn(tab: string): number {
+        return Object.keys(this.errors).filter(name => this.tabOf(name) === tab).length;
+    }
+
+    /** After a refused save, open the tab that holds the first error when the open tab has none. */
+    @Client()
+    private revealErrorTab() {
+        if (this.errorsOn(this.mode)) return;
+        const tabs = this.editorTabs();
+        const target = Object.keys(this.errors).map(name => this.tabOf(name)).find((tab): tab is string => tab !== null && tabs.includes(tab));
+        if (target && target !== this.mode) void this.showMode(target);
+    }
+
+    @Client()
+    async showMode(mode: string) {
+        if (mode === this.mode) return;
+        this.mode = mode;
+        this.announce({ tab: mode });
+        rememberTab(mode, this.editorTabs());
+        if (mode === 'json' && !this.jsonDirty) await this.loadJson();
+    }
+
+    @Client()
+    async submitJson() {
+        this.saving = true;
+        this.message = '';
+        try { await this.applyJson(this.json, this.rev); }
+        finally { this.saving = false; }
+        if (!this.error) { this.dirty = false; this.unsaved = false; this.autosaved = this.snapshot(); void this.announceSaved(); if (!this.message) this.message = __('Saved.'); }
+    }
+
+    private jsonPanel(): TemplateResult {
+        return html`<div class="space-y-3">
+            <p class="text-sm text-muted-foreground">${__('The entry as the content API answers it. Fields such as id, rev and url are read-only; everything else is saved as a PATCH would be, with the same checks.')}</p>
+            ${Object.keys(this.errors).length ? html`<ul role="alert" class="space-y-1 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">${Object.entries(this.errors).map(([name, message]) => html`<li><code class="text-xs">${name}</code> ${this.describe(message)}</li>`)}</ul>` : null}
+            ${component(CodeEditor, { id: 'field-json', value: this.json, language: 'json', label: __('Entry JSON'), ...(this.schema ? { schema: this.schema } : {}), class: 'min-h-[24rem] rounded-md border border-input bg-background shadow-xs focus-within:border-ring focus-within:ring-ring/50 focus-within:ring-[3px]',
+                onChange: (value: string) => { this.json = value; this.jsonDirty = true; this.dirty = true; } })}
+            <div class="flex items-center gap-2">
+                ${component(Button, { type: 'button', size: 'sm', disabled: this.saving || !this.jsonDirty, '@click': () => this.submitJson() }, __('Apply JSON'))}
+                ${component(Button, { type: 'button', size: 'sm', variant: 'outline', disabled: this.saving, '@click': () => this.loadJson() }, __('Reload'))}
+            </div>
+        </div>`;
+    }
+
+    // --- Rendering -------------------------------------------------------------
+
+    private errorFor(name: string): TemplateResult | null {
+        return this.errors[name] ? html`<p role="alert" class="text-xs text-destructive">${this.describe(this.errors[name]!)}</p>` : null;
+    }
+
+    /** A message naming a block by its ID, said with the block's name instead. */
+    private describe(message: string): string {
+        const view = this.view;
+        if (!view) return message;
+        return describeBlockError(message, view.fields.filter(field => field.kind === 'blocks').flatMap(field => this.blocks(field.name)), view.blocks);
+    }
+
+    private mediaControl(target: MediaTarget, value: unknown, label: string): TemplateResult {
+        const ids = Array.isArray(value) ? value as string[] : typeof value === 'string' && value ? [value] : [];
+        const remove = (id: string) => target.group && target.key ? this.setGroup(target.field, target.key, null)
+            : target.rows?.length && target.key ? this.setRowValue(target.field, target.rows, target.key, target.multiple ? ids.filter(entry => entry !== id) : null)
+            : target.dialog && target.key ? this.setDialogValue(target.key, target.multiple ? ids.filter(entry => entry !== id) : null)
+            : target.block !== undefined && target.key
+            ? this.setBlock(target.field, target.block, target.key, target.multiple ? ids.filter(entry => entry !== id) : null)
+            : this.set(target.field, target.multiple ? ids.filter(entry => entry !== id) : null);
+        return html`<div class="space-y-2">
+            ${ids.length ? html`<div class=${target.multiple ? 'grid grid-cols-3 gap-2' : ''}>${ids.map(id => {
+                const file = this.previews[id];
+                return html`<figure class="group relative overflow-hidden rounded-md border border-border bg-muted">
+                    ${file && mediaKind(file.contentType) === 'image'
+                        ? html`<img src=${file.url} alt=${file.alt} class="aspect-video w-full object-cover" loading="lazy">`
+                        : file && mediaKind(file.contentType) === 'video' ? html`<video src=${file.url} class="aspect-video w-full bg-black" controls preload="metadata"></video>`
+                        : file && mediaKind(file.contentType) === 'audio' ? html`<div class="space-y-1 p-3"><p class="truncate text-xs text-muted-foreground">${file.title || file.alt}</p><audio src=${file.url} class="w-full" controls preload="metadata"></audio></div>`
+                        : html`<p class="p-3 text-xs text-muted-foreground">${file?.title ?? id}</p>`}
+                    <button type="button" class="absolute right-1 top-1 rounded bg-background/90 px-2 py-0.5 text-xs text-destructive border border-border cursor-pointer"
+                        @click=${() => remove(id)} aria-label=${`${__('Remove')} ${file?.title ?? ''}`}>${__('Remove')}</button>
+                </figure>`;
+            })}</div>` : null}
+            ${component(Button, { type: 'button', variant: 'outline', size: 'sm', '@click': () => this.openPicker(target) },
+                ids.length && !target.multiple ? `${__('Replace')} ${label.toLowerCase()}` : `${__('Choose')} ${label.toLowerCase()}`)}
+        </div>`;
+    }
+
+    private control(field: EditorField, value: unknown, change: (value: unknown) => void, target: MediaTarget, id: string): TemplateResult {
+        // A pattern's starting layouts: the collections, one checkbox each.
+        if (this.view?.route === 'patterns' && field.name === 'starter' && target.block === undefined) {
+            const chosen = Array.isArray(value) ? value.map(String) : [];
+            return html`<div id=${id} class="space-y-1.5">${this.collectionChoices.map(choice => html`<label class="flex items-center gap-2 text-sm text-foreground cursor-pointer">
+                ${component(Checkbox, { checked: chosen.includes(choice.name), '@change': (event: Event) => change((event.target as HTMLInputElement).checked
+                    ? [...new Set([...chosen, choice.name])] : chosen.filter(name => name !== choice.name)) })} ${choice.label}</label>`)}</div>`;
+        }
+        // A multiple field: this editor's control for the kind, once per item; a multiple choice is checkboxes and a gallery the media control.
+        if (field.multiple && !field.media) {
+            if (field.kind === 'enum') return choicesControl(field, value, change, id);
+            return multipleControl(field, value, change, id, (item, itemChange, itemId) => this.control({ ...field, multiple: false }, item, itemChange, target, itemId));
+        }
+        // A group of an entry (a form's settings): its subfields with this editor's controls, media and Markdown included.
+        if (field.kind === 'json' && field.fields.length && target.block === undefined && !target.group) {
+            return groupFields(field, value, change, id, (sub, subValue, subChange, subId) => this.control(sub, subValue, subChange, { field: target.field, group: true, key: sub.name }, subId));
+        }
+        // A form's notifications: a list of emails, not JSON.
+        if (this.view?.route === 'forms' && field.name === 'notifications' && target.block === undefined) {
+            return notificationRulesControl(String(value ?? ''), conditionFields(this.blocks('body'), this.view.blocks), id, change);
+        }
+        switch (field.kind) {
+            // Rows outside a layout (a plugin resource's): the group view renders them with this editor's controls.
+            case 'rows': return component(FieldGroupView, {
+                id, blocks: [{ _id: field.name, type: 'field/repeater', data: { name: field.name, label: field.label } }], options: this.view?.blocks ?? [], fields: [field], values: { [field.name]: value },
+                onChange: (_name: string, next: unknown) => change(next), hidden: new Set<string>(),
+                // The field's row around this control shows who is in the field itself; the view shows who is in each row's controls.
+                presence: (anchor: string) => anchor === field.name ? [] : this.peersIn(anchor),
+                control: (sub: EditorField, subValue: unknown, subChange: (value: unknown) => void, rows: RowPath, subId: string) => this.control(sub, subValue, subChange, { field: target.field, rows, key: sub.name }, subId),
+            });
+            case 'text': if (field.format === 'markdown' && target.block === undefined) return this.markdownControl(field, value, change, id, target); break;
+            case 'blocks': return this.blocksControl(field);
+            // Rich text inside a block, or one item of a multiple field: its own editor for the picker and its blocks; inside the
+            // side panel (a block embedded in rich text) it takes no blocks, as the panel cannot open a second one.
+            // In a room, a block's rich text and the entry's own rich text fields are edited together; the side panel's and a list's items are not.
+            case 'richtext': {
+                // The document's path in the room, when it is shared there: notes sit on shared documents alone.
+                const shared = target.block !== undefined || id !== field.name
+                    ? target.dialog || target.rows || target.group ? null : target.block !== undefined ? richTextPath(target.field, { id: target.block, key: target.key ?? field.name })
+                        : id === `field-${field.name}` && this.sharedRichText(field.name) ? richTextPath(field.name) : null
+                    : this.sharedRichText(field.name) ? richTextPath(field.name) : null;
+                if (target.block !== undefined || id !== field.name) return component(RichTextField, {
+                    id, label: field.label, value: (value as RichTextDoc | null) ?? null, blocks: target.dialog ? [] : this.richTextBlocks(field), onChange: (doc: RichTextDoc) => change(doc),
+                    onMedia: () => this.openPicker({ field: target.field, richText: true, editor: id }),
+                    onInsertBlock: (type: string) => this.insertRichBlock(target.field, type, id), onEditBlock: (block: EmbeddedBlock) => this.editRichBlock(target.field, block, id),
+                    bindings: this.bindings(), patternTitles: this.patternTitles,
+                    ...this.collabFor(shared), ...this.notesFor(shared),
+                });
+                return component(RichTextField, {
+                    id, label: field.label, value: (value as RichTextDoc | null) ?? null,
+                    blocks: this.richTextBlocks(field), bindings: this.bindings(),
+                    onChange: (doc: RichTextDoc) => change(doc),
+                    onMedia: () => this.openPicker({ field: field.name, richText: true }),
+                    onInsertBlock: (type: string) => this.insertRichBlock(field.name, type),
+                    onEditBlock: (block: EmbeddedBlock) => this.editRichBlock(field.name, block),
+                    patternTitles: this.patternTitles,
+                    ...this.collabFor(shared), ...this.notesFor(shared),
+                });
+            }
+            // Media files open this editor's picker, which knows where the chosen file goes.
+            default: if (field.media && field.kind === 'string') return this.mediaControl({ ...target, multiple: field.multiple, fileKind: chooserKind(field) }, value, field.label);
+        }
+        return fieldControl(field, value, change, id, { options: this.references[field.name] ?? [], ...(this.view ? { sources: this.view.sources } : {}), ...(target.block !== undefined && !field.media ? { bindings: this.bindings() } : {}),
+            ...(target.dialog && this.blockDialog ? { language: String(this.blockDialog.values.language ?? '') } : {}) }) ?? html``;
+    }
+
+    /** The block types a rich text field can embed. */
+    private richTextBlocks(field: EditorField) {
+        return (this.view?.blocks ?? []).filter(block => block.name !== 'core/pattern' && !block.input && block.category !== 'data' && (!field.blocks.length || field.blocks.includes(block.name)));
+    }
+
+    /** The entry's fields a block's text may show (`{{ $.price }}`): the collection's and its field groups', apart from blocks and rich text. */
+    private bindings(): BindingChoice[] {
+        const view = this.view;
+        if (!view) return [];
+        const grouped = flattenGroupFields(plainBlocks(view.groups.flatMap(group => group.blocks)))
+            .flatMap(block => {
+                const kind = BINDABLE_FIELD_BLOCKS[block.type.replace(/^field\//, '')];
+                const name = String(block.data.name ?? '');
+                return kind && name ? [{ name, label: String(block.data.label ?? name), kind, media: false }] : [];
+            });
+        const own = view.fields.filter(field => !grouped.some(entry => entry.name === field.name));
+        return bindingChoices([...own, ...grouped]);
+    }
+
+    private markdownControl(field: EditorField, value: unknown, change: (value: unknown) => void, id: string, target: MediaTarget): TemplateResult {
+        const tab = this.tabs[id] ?? 'write';
+        const text = String(value ?? '');
+        const wrap = (before: string, after: string, placeholder: string) => this.format(id, text, next => change(next), before, after, placeholder);
+        const tool = (label: string, title: string, run: () => void) => html`<button type="button" title=${title} aria-label=${title}
+            class="rounded px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground border-none bg-transparent cursor-pointer" @click=${run}>${label}</button>`;
+        return component(Tabs, {
+            id: `${id}-editor`, label: `${field.label} ${__('editor')}`, value: tab, variant: 'underline',
+            class: 'rounded-lg border border-border bg-card [&>.cs-tabs__panel]:mt-0',
+            listProps: { class: 'w-full' }, onValueChange: (entry: string) => this.showTab(id, entry === 'preview' ? 'preview' : 'write', text),
+            items: [
+                { value: 'write', label: __('Write'), content: html`
+                <div class="flex flex-wrap items-center gap-0.5 border-b border-border px-2 py-1.5" role="toolbar" aria-label=${__('Formatting')}>
+                    ${tool('B', __('Bold'), () => wrap('**', '**', __('bold text')))}
+                    ${tool('I', __('Italic'), () => wrap('_', '_', __('italic text')))}
+                    ${tool('H2', __('Heading'), () => wrap('\n## ', '\n', __('Heading')))}
+                    ${tool('“ ”', __('Quote'), () => wrap('\n> ', '\n', __('Quote')))}
+                    ${tool('• List', __('Bulleted list'), () => wrap('\n- ', '\n', __('Item')))}
+                    ${tool('</>', __('Code'), () => wrap('`', '`', 'code'))}
+                    ${tool(__('Link'), __('Link'), () => wrap('[', '](https://)', __('link text')))}
+                    ${tool(__('Add media'), __('Add media'), () => this.openPicker({ ...target, insert: true, editor: id }))}
+                </div>
+                <textarea id=${id} class="block min-h-[22rem] w-full resize-y rounded-b-lg border-0 bg-transparent p-4 font-mono text-sm leading-6 text-foreground focus:outline-none"
+                    .value=${String(value ?? '')} @input=${(event: Event) => change((event.target as HTMLTextAreaElement).value)}
+                    aria-describedby=${`${id}-hint`}></textarea>
+                <p id=${`${id}-hint`} class="border-t border-border px-4 py-2 text-xs text-muted-foreground">${__('Markdown: **bold**, _italic_, ## headings, - lists, [links](https://example.com). Blocks: {{ block core/button label="Buy" url="/cart" /}}; values: {{ $.price }}, {{ $site.title }}.')}</p>` },
+                { value: 'preview', label: __('Preview'), content: html`<div class="cms-prose min-h-[22rem] p-4">${this.rendered[id] ? unsafeHTML(this.rendered[id]!) : html`<p class="text-muted-foreground">${__('Nothing to preview.')}</p>`}</div>` },
+            ],
+        });
+    }
+
+    private blocksControl(field: EditorField): TemplateResult {
+        return html`<div class="space-y-3">
+            ${component(BlockTree, {
+                // Every block opens in the panel; in a form, with its conditional logic.
+                id: `field-${field.name}`, blocks: this.blocks(field.name), options: this.view?.blocks ?? [], allowed: field.blocks, form: field.form, error: this.errors[field.name] ?? '',
+                onEdit: (id: string) => this.editTreeBlock(field.name, id), lock: this.view?.templateLock,
+                // Patterns go into the content; not into forms, and not into patterns.
+                ...(field.form || this.view?.route === 'patterns' ? {} : { onPatterns: () => this.openPatterns(field.name) }),
+                onChange: (blocks: EditorBlock[]) => this.set(field.name, blocks),
+                control: (entry: EditorField, value: unknown, change: (value: unknown) => void, block: EditorBlock, id: string) => this.control(entry, value, change, { field: field.name, block: block._id, key: entry.name }, id),
+                editing: this.editingBlocks(), onDrag: (id: string | null) => this.announce({ dragging: id ?? undefined }),
+                ...(this.id === 'new' ? {} : { notes: this.blockNoteCounts(field.name), onNote: (id: string) => this.startNote(formatNoteTarget({ kind: 'block', field: field.name, block: id })), onNotes: (id: string) => this.showNotes({ block: id }) }),
+            })}
+            ${this.errorFor(field.name)}
+        </div>`;
+    }
+
+    /** A field with its label, help and error; inside a box titled by the label, the label is for screen readers alone. */
+    private fieldRow(field: EditorField, options: { labelHidden?: boolean } = {}): TemplateResult {
+        const id = `field-${field.name}`;
+        const value = this.values[field.name];
+        const shared = field.shared && this.languages.multilingual;
+        const control = this.control(field, value, entry => this.set(field.name, entry), { field: field.name }, id);
+        const here = this.peersIn(field.name);
+        const tools = this.noteTools(field.name);
+        // One line of text carries its note tools inside, as the title does; other controls show them beside the label.
+        const inline = tools !== null && field.kind === 'string' && !field.media && !field.multiple && !field.choicesFrom && !field.fields.length;
+        const shown = shared && this.sharedLocked ? html`<fieldset disabled class="contents">${control}</fieldset>` : control;
+        return html`<div class="group space-y-1.5" data-shared=${shared ? 'true' : ''} data-field=${field.name} style=${presenceOutline(here)}>
+            ${field.kind === 'boolean' ? tools : html`<div class="flex items-center gap-2"><label for=${id} class=${options.labelHidden ? 'sr-only' : 'block text-sm font-medium text-foreground'}>${field.label}${field.required ? html`<span class="text-destructive"> *</span>` : null}</label>${inline ? null : tools}</div>`}
+            ${here.length ? presenceChip(here, __('is here')) : null}
+            ${inline ? inlineNoteTools(shown, tools) : shown}
+            ${field.description && !(field.kind === 'text' && field.format === 'markdown') ? html`<p class="text-xs text-muted-foreground">${field.description}</p>` : null}
+            ${shared ? html`<p class="text-xs text-muted-foreground">${this.sharedLocked ? __('Same in every language. You cannot edit every translation, so it is read-only here.') : __('Same in every language: saving copies it to the translations.')}</p>` : null}
+            ${field.kind === 'blocks' ? null : this.errorFor(field.name)}
+        </div>`;
+    }
+
+    private publishBox(view: EditorView): TemplateResult {
+        const status = String(this.values.status ?? 'draft');
+        const isNew = this.id === 'new';
+        const live = this.savedStatus === 'published' || this.savedStatus === 'scheduled';
+        const at = typeof this.values.publishedAt === 'string' && this.values.publishedAt ? Date.parse(`${this.values.publishedAt}Z`) : NaN;
+        const future = Number.isFinite(at) && at > Date.now();
+        const button = (label: string, intent: SaveIntent, variant: 'default' | 'outline' = 'default') =>
+            component(Button, { type: 'button', variant, size: 'sm', disabled: this.saving, '@click': () => this.submit(intent) }, label);
+        const primary = !view.publishable ? button(isNew ? __('Save') : __('Update'), 'update')
+            : status === 'trash' ? button(__('Restore'), 'restore')
+            : live && (status === 'published' || status === 'scheduled') ? button(future ? __('Update schedule') : __('Update'), 'update')
+            : status === 'published' || status === 'scheduled' ? button(future ? __('Schedule') : __('Publish'), 'update')
+            : status === 'pending' ? button(__('Submit for review'), 'update')
+            : button(__('Save draft'), 'update');
+        const selectable = ['draft', 'pending', 'published'] as const;
+        return box(view.publishable ? __('Publish') : __('Save'), html`
+            ${view.publishable && status !== 'trash' ? this.tracked('status', component(NativeSelect, { id: 'field-status', size: 'sm', '@change': (event: Event) => this.set('status', (event.target as HTMLSelectElement).value) }, html`
+                    ${selectable.map(value => html`<option value=${value} ?selected=${(status === 'scheduled' ? 'published' : status) === value}>${value === 'published' && future ? __('Scheduled') : __(STATUS_LABELS[value])}</option>`)}`),
+                { label: html`<label for="field-status" class="block text-xs font-medium text-foreground">${__('Status')}</label>` })
+            : view.publishable ? html`<p class="flex items-center gap-2 text-sm text-muted-foreground">${__('Status')}: ${statusBadge(status)}</p>` : null}
+            ${view.publishable ? this.tracked('publishedAt', html`
+                ${component(Input, { id: 'field-publishedAt', type: 'datetime-local', size: 'sm', '.value': String(this.values.publishedAt ?? ''), '@input': (event: Event) => this.set('publishedAt', (event.target as HTMLInputElement).value) })}
+                <p class="text-xs text-muted-foreground">${future && (status === 'published' || status === 'scheduled') ? __('Goes live at this time.') : __('Leave empty to publish immediately.')}</p>
+                ${this.errorFor('publishedAt')}`,
+                { label: html`<label for="field-publishedAt" class="block text-xs font-medium text-foreground">${live && !future ? __('Published on (UTC)') : __('Publish on (UTC)')}</label>` }) : null}
+            ${!isNew && (view.path !== null || view.route === 'forms') ? html`<div class="space-y-2 border-t border-border pt-3">
+                <div class="flex flex-wrap items-center gap-2">
+                    ${component(Button, { type: 'button', variant: 'outline', size: 'sm', '@click': () => this.openPreview() }, __('Preview'))}
+                    ${status !== 'published' ? component(Button, { type: 'button', variant: 'ghost', size: 'sm', '@click': () => this.createPreviewLink() }, __('Get preview link')) : null}
+                </div>
+                ${this.previewLink ? html`<div class="flex gap-1"><input readonly aria-label=${__('Preview link')} class=${`${CONTROL} py-1 text-xs`} .value=${this.previewLink}
+                    @focus=${(event: Event) => (event.target as HTMLInputElement).select()}>${component(Button, { type: 'button', size: 'sm', variant: 'outline', '@click': () => this.copyPreviewLink() }, __('Copy'))}</div>
+                    <p class="text-xs text-muted-foreground">${__('Anyone with the link can see this entry for 7 days.')}</p>` : null}
+                ${this.previewLinks ? html`<p class="text-xs text-muted-foreground">${this.previewLinks} ${this.previewLinks === 1 ? __('preview link is active.') : __('preview links are active.')}
+                    <button type="button" class="text-destructive hover:underline bg-transparent border-none p-0 cursor-pointer" @click=${() => this.revokePreviewLinks()}>${__('Revoke')}</button></p>` : null}
+            </div>` : null}
+            ${isNew ? null : html`<dl class="space-y-0.5 text-xs text-muted-foreground">
+                ${this.meta.author && !this.values.authors ? html`<div>${__('Author')}: <span class="text-foreground">${this.meta.author}</span></div>` : null}
+                <div>${__('Last modified')}: ${shortDate(this.meta.updatedAt)}</div>
+                <div>${__('Revision')} #${this.rev}</div>
+            </dl>`}
+            ${this.autosavedAt ? html`<p class="text-xs text-muted-foreground" aria-live="polite">${__('Draft autosaved at')} ${shortDate(this.autosavedAt)}</p>` : null}
+            <div class="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
+                ${view.publishable && !isNew && status !== 'trash'
+                    ? html`<button type="button" class="text-sm text-destructive hover:underline bg-transparent border-none p-0 cursor-pointer" @click=${() => this.submit('trash')}>${__('Move to trash')}</button>`
+                    : html`<span></span>`}
+                <span class="flex flex-wrap gap-2">${primary}</span>
+            </div>`, { id: 'publish-box' });
+    }
+
+    /** The editorial checks over the current values; plugin blocks are read by their text fields. */
+    private checks(): Check[] {
+        const seo = (this.values.seo as Record<string, unknown> | undefined) ?? {};
+        const blocks = Object.entries(this.values).flatMap(([name, value]) => this.view?.fields.find(field => field.name === name)?.kind === 'blocks' && Array.isArray(value) ? value as Block[] : []);
+        let host = '';
+        try { host = new URL(this.seo.origin).host; } catch { /* no origin yet */ }
+        const input = { title: String(this.values.title ?? ''), seoTitle: String(seo.title ?? ''), description: String(seo.description ?? ''), summary: String(this.values.summary ?? ''), host, article: this.seo.article };
+        // Reading the content walks every block's text: typing in another field reuses the last result.
+        const openNotes = this.openRoots().length;
+        const key = [...Object.values(input), ...blocks, openNotes, this.notesGate];
+        if (this.checked && this.checked.key.length === key.length && this.checked.key.every((part, index) => part === key[index])) return this.checked.checks;
+        // Open notes are a soft check; with the Writing setting on, they hold publishing, and the check says so.
+        const notes: Check[] = openNotes ? [{ id: 'notes', status: 'warn', message: this.notesGate
+            ? (openNotes === 1 ? __('1 open note holds this entry back from publishing.') : `${openNotes} ${__('open notes hold this entry back from publishing.')}`)
+            : (openNotes === 1 ? __('1 open note is waiting for review.') : `${openNotes} ${__('open notes are waiting for review.')}`) }] : [];
+        const checks = [...entryChecks({ ...input, blocks, types: new Map(CORE_BLOCKS.map(block => [block.name, block])) }), ...notes];
+        this.checked = { key, checks };
+        return checks;
+    }
+
+    @Client()
+    async copyLink(url: string) {
+        this.message = '';
+        this.error = '';
+        try { await navigator.clipboard.writeText(`${this.seo.origin}${url}`); this.message = __('Link copied.'); }
+        catch { this.error = __('The link could not be copied.'); }
+    }
+
+    /** Search title, description and image, with a preview of the search result. */
+    private seoBox(): TemplateResult {
+        const seo = (this.values.seo as Record<string, unknown> | undefined) ?? {};
+        const variables = { title: String(seo.title ?? '') || String(this.values.title ?? ''), sep: this.seo.separator, site: this.seo.siteTitle, tagline: this.seo.tagline, excerpt: String(seo.description ?? '') || String(this.values.excerpt ?? ''), author: this.meta.author, collection: this.seo.collection };
+        const title = renderSeoTemplate(this.seo.titleTemplate, variables);
+        const description = String(seo.description ?? '') || renderSeoTemplate(this.seo.descriptionTemplate, variables);
+        const url = `${this.seo.origin}${this.meta.url ?? (this.view?.path !== null ? entryUrl(this.view?.path, [String(this.values.slug ?? '') || 'slug']) ?? '' : '')}`;
+        const counter = (text: string, ideal: number) => html`<span class=${`text-xs ${[...text].length > ideal ? 'text-amber-600' : 'text-muted-foreground'}`}>${[...text].length} / ${ideal}</span>`;
+        // Each key is its own presence anchor (`seo.description`), so the chip sits on the row someone else is in.
+        const text = (key: string, label: string, ideal: number, multiline = false) => this.tracked(`seo.${key}`,
+            multiline ? component(Textarea, { id: `seo-${key}`, rows: 3, '.value': String(seo[key] ?? ''), '@input': (event: Event) => this.setGroup('seo', key, (event.target as HTMLTextAreaElement).value) })
+                : component(Input, { id: `seo-${key}`, '.value': String(seo[key] ?? ''), '@input': (event: Event) => this.setGroup('seo', key, (event.target as HTMLInputElement).value) }),
+            { label: html`<div class="flex items-center justify-between gap-3"><label for=${`seo-${key}`} class="block text-sm font-medium text-foreground">${label}</label>${counter(String(seo[key] ?? ''), ideal)}</div>`, inline: !multiline });
+        const check = (key: string, label: string) => this.tracked(`seo.${key}`, html`<label class="flex items-center gap-2 text-sm text-foreground cursor-pointer">
+            ${component(Checkbox, { checked: seo[key] === true, '@change': (event: Event) => this.setGroup('seo', key, (event.target as HTMLInputElement).checked) })} ${label}</label>`);
+        const checks = this.checks();
+        const tone = (status: Check['status']) => status === 'ok' ? 'bg-emerald-500' : status === 'warn' ? 'bg-amber-500' : 'bg-sky-500';
+        const warnings = checks.filter(check => check.status === 'warn').length;
+        return html`<section aria-labelledby="seo-title-heading" class="space-y-4 rounded-lg border border-border bg-card p-4">
+            <h2 id="seo-title-heading" class="text-sm font-semibold text-foreground">${__('Search and sharing')}</h2>
+            ${this.seo.summary ? this.tracked('summary', html`
+                ${component(Textarea, { id: 'field-summary', rows: 3, '.value': String(this.values.summary ?? ''), '@input': (event: Event) => this.set('summary', (event.target as HTMLTextAreaElement).value) })}
+                <p class="text-xs text-muted-foreground">${__('Two or three sentences that answer what this is about. Shown first by the theme, quoted by answer engines, and the meta description when there is none.')}</p>
+                ${this.errorFor('summary')}`,
+                { label: html`<div class="flex items-center justify-between gap-3"><label for="field-summary" class="block text-sm font-medium text-foreground">${__('Summary')}</label>${counter(String(this.values.summary ?? ''), 300)}</div>` }) : null}
+            <details class="rounded-md border border-border" ?open=${this.checksOpen} @toggle=${(event: Event) => { this.checksOpen = (event.target as HTMLDetailsElement).open; }}>
+                <summary class="flex cursor-pointer items-center gap-2 px-3 py-2 text-sm text-foreground">
+                    <span class=${`inline-block size-2.5 rounded-full ${warnings ? 'bg-amber-500' : 'bg-emerald-500'}`} aria-hidden="true"></span>
+                    ${__('Readiness for search and answer engines')}${warnings ? html` <span class="text-muted-foreground">(${warnings} ${warnings === 1 ? __('warning') : __('warnings')})</span>` : null}</summary>
+                <ul class="space-y-1.5 border-t border-border px-3 py-2 text-sm">${checks.map(check => html`<li class="flex items-start gap-2"><span class=${`mt-1.5 inline-block size-2 shrink-0 rounded-full ${tone(check.status)}`} aria-hidden="true"></span><span class="text-muted-foreground">${__(check.message)}</span></li>`)}</ul>
+            </details>
+            <div class="rounded-md border border-border bg-background p-3" aria-label=${__('Search result preview')}>
+                <p class="truncate text-xs text-emerald-700 dark:text-emerald-400">${url}</p>
+                <p class="truncate text-base text-blue-700 dark:text-blue-400">${title || __('Add a title')}</p>
+                <p class="line-clamp-2 text-sm text-muted-foreground">${description || __('Search engines show a part of the content when there is no description.')}</p>
+            </div>
+            ${text('title', __('SEO title'), 60)}
+            ${text('description', __('Meta description'), 155, true)}
+            <details class="space-y-3 text-sm">
+                <summary class="cursor-pointer text-muted-foreground">${__('Sharing on social networks')}</summary>
+                <div class="rounded-md border border-border bg-background p-3" aria-label=${__('Shared link preview')}>
+                    <p class="text-xs uppercase text-muted-foreground">${new URL(this.seo.origin || 'http://localhost').host}</p>
+                    <p class="truncate font-semibold text-foreground">${String(seo.socialTitle ?? '') || String(seo.title ?? '') || String(this.values.title ?? '') || __('Add a title')}</p>
+                    <p class="line-clamp-2 text-muted-foreground">${String(seo.socialDescription ?? '') || description}</p>
+                </div>
+                ${text('socialTitle', __('Social title'), 70)}
+                ${text('socialDescription', __('Social description'), 200, true)}
+                ${this.tracked('seo.image', html`${this.mediaControl({ field: 'seo', key: 'image', group: true }, seo.image ?? null, __('Image'))}
+                    <p class="text-xs text-muted-foreground">${__('Shown when the entry is shared. Defaults to the featured image. 1200 × 630 pixels suits every network.')}</p>`,
+                    { label: html`<span class="block text-sm font-medium text-foreground">${__('Social image')}</span>` })}
+            </details>
+            ${this.tracked('seo.canonical', html`${component(Input, { id: 'seo-canonical', placeholder: url, '.value': String(seo.canonical ?? ''), '@input': (event: Event) => this.setGroup('seo', 'canonical', (event.target as HTMLInputElement).value) })}
+                <p class="text-xs text-muted-foreground">${__('Only when this content first appeared at another address.')}</p>`,
+                { label: html`<label for="seo-canonical" class="block text-sm font-medium text-foreground">${__('Canonical URL')}</label>`, inline: true })}
+            ${check('noindex', __('Hide from search engines'))}
+            ${check('cornerstone', __('Cornerstone content: one of the site\'s most important entries'))}
+            ${this.linkSuggestions.length ? html`<div class="space-y-1">
+                <p class="text-sm font-medium text-foreground">${__('Related entries to link to')}</p>
+                <ul class="space-y-1 text-sm">${this.linkSuggestions.map(entry => html`<li class="flex items-center justify-between gap-2">
+                    <a href=${entry.url} target="_blank" rel="noopener" class="truncate text-primary hover:underline" title=${entry.title}>${entry.title}</a>
+                    <button type="button" class="shrink-0 text-xs text-muted-foreground hover:text-foreground bg-transparent border-none p-0 cursor-pointer" @click=${() => this.copyLink(entry.url)}>${__('Copy link')}</button></li>`)}</ul>
+                <p class="text-xs text-muted-foreground">${__('Internal links help engines find and rank related entries.')}</p>
+            </div>` : null}
+            <details class="space-y-3 text-sm">
+                <summary class="cursor-pointer text-muted-foreground">${__('Snippets and AI answers')}</summary>
+                ${check('nosnippet', __('No snippets: engines show the title only and do not quote the page in AI answers'))}
+                ${seo.nosnippet === true ? null : this.tracked('seo.maxSnippet', html`
+                    ${component(Input, { id: 'seo-maxSnippet', type: 'number', min: 0, size: 'sm', placeholder: __('No limit'), '.value': seo.maxSnippet === undefined || seo.maxSnippet === null ? '' : String(seo.maxSnippet), '@input': (event: Event) => { const value = (event.target as HTMLInputElement).value; this.setGroup('seo', 'maxSnippet', value === '' ? null : Number(value)); } })}
+                    <p class="text-xs text-muted-foreground">${__('max-snippet: how much of the text results and AI Overviews may quote.')}</p>`,
+                    { label: html`<label for="seo-maxSnippet" class="block text-sm font-medium text-foreground">${__('Longest quote, in characters')}</label>` })}
+                ${check('noarchive', __('No cached copy (Bing: also keeps the page out of Copilot training)'))}
+            </details>
+            ${this.errorFor('seo')}
+        </section>`;
+    }
+
+    /** The entry's language and its translations. */
+    private languagesBox(view: EditorView): TemplateResult {
+        const current = String(this.values.locale ?? '');
+        return box(__('Languages'), html`
+            ${this.id === 'new' ? html`<div class="space-y-1">
+                <label for="field-locale" class="block text-xs font-medium text-foreground">${__('Language')}</label>
+                ${component(NativeSelect, { id: 'field-locale', size: 'sm', '@change': (event: Event) => this.set('locale', (event.target as HTMLSelectElement).value) }, html`
+                    ${this.languages.options.map(option => html`<option value=${option.code} ?selected=${option.code === current}>${option.label}</option>`)}`)}
+            </div>` : html`<p class="text-sm text-foreground">${__('Language')}: <strong>${this.languages.options.find(option => option.code === current)?.label ?? current}</strong></p>
+                <ul class="space-y-1.5 text-sm">${this.translations.filter(entry => entry.code !== current).map(entry => html`<li class="flex items-center justify-between gap-2">
+                    <span class="text-muted-foreground">${entry.label}</span>
+                    ${entry.id ? html`<a href=${`/dashboard/content/${view.route}/${entry.id}`} class="truncate text-primary hover:underline" title=${entry.title}>${__('Edit')}${entry.status && entry.status !== 'published' ? ` (${__(STATUS_LABELS[entry.status] ?? entry.status)})` : ''}</a>`
+                        : html`<button type="button" class="text-primary hover:underline bg-transparent border-none p-0 cursor-pointer" @click=${() => this.translate(entry.code)}>+ ${__('Translate')}</button>`}
+                </li>`)}</ul>`}`);
+    }
+
+    private taxonomyBox(taxonomy: EditorView['taxonomies'][number]): TemplateResult {
+        const selected = (this.values[taxonomy.name] as string[] | undefined) ?? [];
+        if (!taxonomy.hierarchical) {
+            const suggestions = taxonomy.terms.filter(term => !selected.some(name => name.toLowerCase() === term.name.toLowerCase())).slice(0, 12);
+            // The box is one anchor: focus in its input, its terms or its new-term form counts as being in the taxonomy.
+            return box(taxonomy.label, this.tracked(taxonomy.name, html`
+                <div class="flex gap-2">
+                    <input id=${`tags-${taxonomy.name}`} class=${CONTROL} list=${`tags-${taxonomy.name}-list`} placeholder=${__('Separate with commas')}
+                        .value=${this.tagDrafts[taxonomy.name] ?? ''} aria-label=${`${__('Add')} ${taxonomy.label.toLowerCase()}`}
+                        @input=${(event: Event) => { this.tagDrafts = { ...this.tagDrafts, [taxonomy.name]: (event.target as HTMLInputElement).value }; }}
+                        @keydown=${(event: KeyboardEvent) => { if (event.key === 'Enter') { event.preventDefault(); this.addTags(taxonomy.name); } }}>
+                    ${component(Button, { type: 'button', size: 'sm', variant: 'outline', '@click': () => this.addTags(taxonomy.name) }, __('Add'))}
+                </div>
+                <datalist id=${`tags-${taxonomy.name}-list`}>${taxonomy.terms.map(term => html`<option value=${term.name}></option>`)}</datalist>
+                ${selected.length ? html`<ul class="flex flex-wrap gap-1.5">${selected.map(name => html`<li class="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-0.5 text-xs text-foreground">
+                    ${name}<button type="button" class="text-muted-foreground hover:text-destructive bg-transparent border-none cursor-pointer" aria-label=${`${__('Remove')} ${name}`} @click=${() => this.removeTag(taxonomy.name, name)}>×</button></li>`)}</ul>` : null}
+                ${suggestions.length ? html`<p class="text-xs text-muted-foreground">${__('Choose from')}: ${suggestions.map((term, index) => html`${index ? ', ' : ''}<button type="button" class="text-primary hover:underline bg-transparent border-none p-0 cursor-pointer"
+                    @click=${() => this.set(taxonomy.name, [...selected, term.name])}>${term.name}</button>`)}</p>` : null}
+                ${this.errorFor(taxonomy.name)}`, { class: 'space-y-3' }));
+        }
+        const draft = this.termDrafts[taxonomy.name] ?? { name: '', parent: '' };
+        return box(taxonomy.label, this.tracked(taxonomy.name, html`
+            <div class="max-h-56 space-y-1 overflow-y-auto">
+                ${taxonomy.terms.length ? taxonomy.terms.map(term => html`<label class="flex items-center gap-2 text-sm text-foreground cursor-pointer" style=${`padding-left: ${term.depth * 1.25}rem`}>
+                    ${component(Checkbox, { checked: selected.includes(term.id), '@change': (event: Event) => this.toggleTerm(taxonomy.name, term.id, (event.target as HTMLInputElement).checked) })} ${term.name}</label>`)
+                    : html`<p class="text-xs text-muted-foreground">${__('None yet.')}</p>`}
+            </div>
+            ${this.canManageTerms ? html`<details class="text-sm">
+                <summary class="cursor-pointer text-primary">+ ${__('New')} ${taxonomy.singular.toLowerCase()}</summary>
+                <div class="mt-2 space-y-2">
+                    <input class=${CONTROL} aria-label=${`${__('New')} ${taxonomy.singular.toLowerCase()}`} .value=${draft.name}
+                        @input=${(event: Event) => { this.termDrafts = { ...this.termDrafts, [taxonomy.name]: { ...draft, name: (event.target as HTMLInputElement).value } }; }}>
+                    <select class=${CONTROL} aria-label=${__('Parent')} @change=${(event: Event) => { this.termDrafts = { ...this.termDrafts, [taxonomy.name]: { ...draft, parent: (event.target as HTMLSelectElement).value } }; }}>
+                        <option value="">— ${__('Parent')} —</option>
+                        ${taxonomy.terms.map(term => html`<option value=${term.id} ?selected=${draft.parent === term.id}>${'— '.repeat(term.depth)}${term.name}</option>`)}
+                    </select>
+                    ${component(Button, { type: 'button', size: 'sm', variant: 'outline', disabled: !draft.name.trim(), '@click': () => this.addTerm(taxonomy.name, draft.name, draft.parent) }, `${__('New')} ${taxonomy.singular.toLowerCase()}`)}
+                </div>
+            </details>` : null}
+            ${this.errorFor(taxonomy.name)}`, { class: 'space-y-3' }));
+    }
+
+    private pickerModal(): TemplateResult {
+        const target = this.picker.target;
+        return component(Modal, { open: this.picker.open, size: 'max-w-4xl', 'aria-label': __('Media library'), onOpenChange: (open: boolean) => { if (!open) this.closePicker(); } }, html`
+            <div class="space-y-4">
+                <div class="flex items-center justify-between gap-3">
+                    <h2 class="text-lg font-semibold text-foreground">${target?.insert ? __('Add media') : __('Choose media')}</h2>
+                    ${component(Button, { type: 'button', variant: 'ghost', size: 'sm', '@click': () => this.closePicker() }, __('Close'))}
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                    <input type="search" class=${`${CONTROL} max-w-xs`} placeholder=${__('Search media')} aria-label=${__('Search media')} .value=${this.picker.search}
+                        @change=${(event: Event) => this.findMedia((event.target as HTMLInputElement).value, this.picker.kind)}>
+                    <select class=${`${CONTROL} max-w-[10rem]`} aria-label=${__('Media type')} @change=${(event: Event) => this.findMedia(this.picker.search, (event.target as HTMLSelectElement).value)}>
+                        ${MEDIA_KIND_CHOICES.map(choice => html`<option value=${choice.value} ?selected=${this.picker.kind === choice.value}>${__(choice.label)}</option>`)}
+                    </select>
+                    <label class="inline-flex cursor-pointer items-center rounded-md border border-border px-3 py-2 text-sm text-foreground hover:bg-muted">
+                        ${__('Upload files')}<input type="file" multiple accept=${this.picker.kind === 'image' ? 'image/*' : MEDIA_ACCEPT} class="sr-only" @change=${(event: Event) => this.uploadInPicker(event)}>
+                    </label>
+                </div>
+                ${this.pickerErrors.map(error => notice(error, 'error'))}
+                <ul class="grid max-h-[60vh] grid-cols-2 gap-3 overflow-y-auto sm:grid-cols-4">
+                    ${this.picker.items.map(file => html`<li>
+                        <button type="button" class="w-full overflow-hidden rounded-md border border-border bg-muted text-left hover:ring-2 hover:ring-ring cursor-pointer p-0" @click=${() => this.choose(file)}>
+                            ${mediaKind(file.contentType) === 'image' ? html`<img src=${file.url} alt=${file.alt} class="aspect-square w-full object-cover" loading="lazy">`
+                                : html`<span class="flex aspect-square items-center justify-center p-2 text-xs text-muted-foreground">${file.name}</span>`}
+                            <span class="block truncate bg-card px-2 py-1 text-xs text-foreground">${file.title || file.name} · ${file.size}</span>
+                        </button>
+                    </li>`)}
+                </ul>
+                ${this.picker.items.length ? null : html`<p class="text-sm text-muted-foreground">${__('No media found. Upload files to add them.')}</p>`}
+            </div>`);
+    }
+
+    /** Patterns to insert, or a new entry's starting layouts. */
+    private patternModal(): TemplateResult {
+        const picker = this.patternPicker;
+        const close = () => { this.patternPicker = { open: false, field: '', starter: false }; };
+        return component(Modal, { open: picker.open, size: 'max-w-2xl', 'aria-label': __('Patterns'), onOpenChange: (open: boolean) => { if (!open) close(); } }, html`
+            <div class="space-y-4">
+                <div class="flex items-center justify-between gap-3">
+                    <h2 class="text-lg font-semibold text-foreground">${picker.starter ? __('Start from a pattern') : __('Insert a pattern')}</h2>
+                    ${component(Button, { type: 'button', variant: 'ghost', size: 'sm', '@click': close }, picker.starter ? __('Start blank') : __('Close'))}
+                </div>
+                ${this.patternChoices.length ? html`<ul class="divide-y divide-border rounded-md border border-border">${this.patternChoices.map(choice => html`<li class="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
+                    <span class="min-w-0"><span class="block truncate text-sm font-medium text-foreground">${choice.title}</span>
+                        <span class="text-xs text-muted-foreground">${choice.synced ? __('Synced: edits to the pattern show here too') : __('Inserted as a copy')}</span></span>
+                    <span class="flex gap-2">
+                        ${component(Button, { type: 'button', size: 'sm', '@click': () => this.insertPattern(choice.id, false) }, picker.starter ? __('Use') : __('Insert'))}
+                        ${choice.synced ? component(Button, { type: 'button', size: 'sm', variant: 'outline', '@click': () => this.insertPattern(choice.id, true) }, __('Insert a copy')) : null}
+                    </span></li>`)}</ul>`
+                    : html`<p class="text-sm text-muted-foreground">${__('No patterns yet.')} <a href="/dashboard/content/patterns/new" class="text-primary hover:underline">${__('Create a pattern')}</a></p>`}
+            </div>`);
+    }
+
+    private blockDialogModal(): TemplateResult | null {
+        const dialog = this.blockDialog;
+        if (dialog?.type === 'core/pattern') {
+            const id = String(dialog.values.pattern ?? '');
+            return component(Modal, { open: true, size: 'max-w-lg', 'aria-label': __('Synced pattern'), onOpenChange: (open: boolean) => { if (!open) this.blockDialog = null; } }, html`
+                <div class="space-y-4">
+                    <h2 class="text-lg font-semibold text-foreground">${this.patternTitles[id] ?? __('Synced pattern')}</h2>
+                    <p class="text-sm text-muted-foreground">${__('This pattern shows its current content wherever it is used. Edit the pattern to change it everywhere, or detach it to change it only here.')}</p>
+                    <div class="flex flex-wrap justify-end gap-2">
+                        <a href=${`/dashboard/content/patterns/${id}`} target="_blank" rel="noopener" class="inline-flex items-center rounded-md border border-border px-3 py-1.5 text-sm text-foreground no-underline hover:bg-muted">${__('Edit pattern')} ↗</a>
+                        ${dialog.embedded ? null : component(Button, { type: 'button', variant: 'outline', '@click': () => this.detachPattern() }, __('Detach'))}
+                        ${component(Button, { type: 'button', '@click': () => { this.blockDialog = null; } }, __('Done'))}
+                    </div>
+                </div>`);
+        }
+        const option = this.view?.blocks.find(block => block.name === dialog?.type) ?? null;
+        const fields = dialog && option ? option.fields.filter(entry => dialog.embedded || entry.kind !== 'richtext') : [];
+        return blockPanel({
+            id: 'entry-block', open: Boolean(dialog && option), option, tab: dialog?.tab ?? 'general', style: dialog?.style ?? styleValues({}), presets: this.view?.presets ?? { colors: [], gradients: [], fontSizes: [], spacing: [] },
+            styleTab: dialog ? !dialog.embedded : false,
+            // Focus in the panel counts as focus in the block; the others' presence there shows in the panel as in the tree.
+            ...(dialog && !dialog.embedded ? { block: dialog.id, field: dialog.field, editing: this.editingBlocks()[dialog.id] ?? [], taken: this.otherBlockIds(dialog.field, dialog.id) } : {}),
+            ...(dialog ? { media: { previews: this.previews, choose: (property: 'image' | 'video') => this.openPicker({ field: dialog.field, dialog: true, style: property, fileKind: property }) } } : {}),
+            onTab: tab => this.showDialogTab(tab), onStyle: style => this.setDialogStyle(style), onClose: () => { this.blockDialog = null; },
+            general: dialog && option ? html`${fields.length ? fields.map(entry => {
+                const id = `block-${dialog.id}-${entry.name}`;
+                return html`<div class="space-y-1">
+                    ${entry.kind === 'boolean' ? null : html`<label for=${id} class="block text-sm font-medium text-foreground">${entry.label}${entry.required ? ' *' : ''}</label>`}
+                    ${this.control(entry, dialog.values[entry.name], value => this.setDialogValue(entry.name, value), { field: dialog.field, key: entry.name, dialog: true }, id)}
+                    ${entry.description ? html`<p class="text-xs text-muted-foreground">${entry.description}</p>` : null}
+                    ${dialog.errors[entry.name] ? html`<p role="alert" class="text-xs text-destructive">${entry.label} ${dialog.errors[entry.name]}</p>` : null}
+                </div>`;
+            }) : html`<p class="text-sm text-muted-foreground">${__('This block has no settings.')}</p>`}
+            ${!dialog.embedded && this.view?.fields.find(entry => entry.name === dialog.field)?.form
+                ? conditionControl(dialog.when, conditionFields(this.blocks(dialog.field), this.view.blocks, dialog.id), `block-${dialog.id}`, when => this.setDialogCondition(when ?? null))
+                : null}` : html``,
+        });
+    }
+
+    /** The theme template for this entry, when the active theme offers more than its default. */
+    templateBox(): TemplateResult | null {
+        const current = String(this.values.template ?? '');
+        if (!this.templates.length && !current) return null;
+        // A template the active theme no longer has stays listed, so saving keeps it.
+        const choices = current && !this.templates.includes(current) ? [...this.templates, current] : this.templates;
+        const label = (name: string) => name.slice('entry-'.length).replace(/[-_]+/g, ' ').replace(/^./, letter => letter.toUpperCase());
+        return box(__('Template'), this.tracked('template', html`
+            <select id="field-template" class=${CONTROL} @change=${(event: Event) => this.set('template', (event.target as HTMLSelectElement).value)}>
+                <option value="" ?selected=${!current}>${__('Default template')}</option>
+                ${choices.map(name => html`<option value=${name} ?selected=${name === current}>${label(name)}${this.templates.includes(name) ? '' : ` (${__('not in the active theme')})`}</option>`)}
+            </select>
+            ${this.errorFor('template')}`, { label: html`<label for="field-template" class="sr-only">${__('Template')}</label>` }));
+    }
+
+    /** The blocks the conditions hide, computed once per render for every group box. */
+    private hidden: ReadonlySet<string> = new Set();
+
+    private groupBox(group: EditorView['groups'][number]): TemplateResult {
+        const view = this.view!;
+        const body = component(FieldGroupView, {
+            id: `group-${group.id}`, blocks: group.blocks, options: view.blocks, fields: view.fields, values: this.values, hidden: this.hidden, errors: this.errors,
+            onChange: (name: string, value: unknown) => this.set(name, value), presence: (anchor: string) => this.peersIn(anchor),
+            control: (field: EditorField, value: unknown, change: (value: unknown) => void, rows: RowPath, controlId: string) =>
+                this.control(field, value, change, rows.length ? { field: rows[0]!.field, rows, key: field.name } : { field: field.name }, controlId),
+        });
+        return box(group.title, html`${group.description ? html`<p class="text-xs text-muted-foreground">${group.description}</p>` : null}${body}`, { id: `group-${group.id}-title` });
+    }
+
+    private attributesBox(): TemplateResult {
+        return box(__('Attributes'), html`
+            ${this.tracked('parent', html`
+                <select id="field-parent" class=${CONTROL} @change=${(event: Event) => this.set('parent', (event.target as HTMLSelectElement).value)}>
+                    <option value="" ?selected=${!this.values.parent}>(${__('no parent')})</option>
+                    ${this.parents.map(option => html`<option value=${option.id} ?selected=${option.id === this.values.parent}>${'— '.repeat(option.depth)}${option.name}</option>`)}
+                </select>
+                ${this.errorFor('parent')}`, { label: html`<label for="field-parent" class="block text-xs font-medium text-foreground">${__('Parent')}</label>` })}
+            ${this.tracked('menuOrder', component(Input, { id: 'field-menuOrder', type: 'number', size: 'sm', '.value': String(this.values.menuOrder ?? '0'), '@input': (event: Event) => this.set('menuOrder', (event.target as HTMLInputElement).value) }),
+                { label: html`<label for="field-menuOrder" class="block text-xs font-medium text-foreground">${__('Order')}</label>` })}`, { id: 'box-attributes' });
+    }
+
+    /**
+     * The Authors box: who wrote the entry, the first its main author, as Git co-authors. People
+     * who edit others' entries add, remove and reorder them; a new entry starts with its creator.
+     */
+    private authorsBox(): TemplateResult {
+        const ids = Array.isArray(this.values.authors) ? (this.values.authors as string[]) : [];
+        // A new entry's creator, loaded first, is its author until others are added.
+        const shown = ids.length ? ids : this.id === 'new' && this.people[0] ? [this.people[0].id] : [];
+        const person = (id: string) => this.people.find(entry => entry.id === id) ?? { id, name: __('Unknown user'), avatar: null };
+        const set = (next: string[]) => this.set('authors', next);
+        const choices = this.people.filter(entry => !shown.includes(entry.id)).map(entry => ({ value: entry.id, label: entry.name }));
+        return box(__('Authors'), this.tracked('authors', html`<ul class="space-y-1.5" data-authors>${shown.map((id, index) => html`<li class="flex items-center gap-2 text-sm">
+                ${component(Avatar, { src: person(id).avatar ?? undefined, alt: person(id).name, size: 24 })}
+                <span class="min-w-0 flex-1 truncate text-foreground">${person(id).name}${index === 0 && shown.length > 1 ? html` <span class="text-xs text-muted-foreground">${__('main')}</span>` : null}</span>
+                ${this.chooseAuthors && index > 0 ? iconButton(`author-${id}-up`, 'arrow-up', `${__('Make main author')} ${person(id).name}`, () => set([id, ...shown.filter(entry => entry !== id)])) : null}
+                ${this.chooseAuthors && shown.length > 1 ? iconButton(`author-${id}-remove`, 'close-circle', `${__('Remove')} ${person(id).name}`, () => set(shown.filter(entry => entry !== id)), { danger: true }) : null}
+            </li>`)}</ul>
+            ${this.chooseAuthors && choices.length ? component(Combobox, { id: 'field-authors-add', options: choices, value: '', placeholder: __('Add an author…'), emptyLabel: __('Nobody matches.'),
+                onValueChange: (value: string) => { if (value) set([...shown, value]); } }) : null}`, { class: 'space-y-3' }), { id: 'box-authors' });
+    }
+
+    private discussionBox(view: EditorView): TemplateResult {
+        return box(__('Discussion'), html`${this.tracked('commentsOpen', html`<label class="flex items-center gap-2 text-sm text-foreground cursor-pointer">
+            ${component(Checkbox, { id: 'field-commentsOpen', checked: this.values.commentsOpen !== false, '@change': (event: Event) => this.set('commentsOpen', (event.target as HTMLInputElement).checked) })} ${__('Allow comments')}</label>`)}
+            ${this.id === 'new' ? null : html`<a href=${`/dashboard/comments?collection=${view.route}&entry=${this.id}`} class="text-xs text-primary hover:underline">${__('Comments on this entry')}</a>`}`, { id: 'box-discussion' });
+    }
+
+    private revisionsBox(view: EditorView): TemplateResult {
+        return box(__('Revisions'), html`<ol class="space-y-1 text-xs text-muted-foreground">
+            ${this.revisions.map(entry => html`<li>#${entry.revision} · ${shortDate(entry.at)}${entry.actor ? html` · <span class="text-foreground">${entry.actor}</span>` : null}</li>`)}
+        </ol>
+        ${this.revisions.length > 1 ? html`<a href=${`/dashboard/content/${view.route}/${this.id}/revisions`} class="text-sm text-primary hover:underline">${__('Compare and restore')}</a>` : null}`, { id: 'box-revisions' });
+    }
+
+    /**
+     * One of the layout's boxes, by ID; nothing when this entry does not have it (a monolingual
+     * site has no Languages box, a new entry no revisions). Blocks fields such as the content stand
+     * on their own; every other field is a box titled by its label.
+     */
+    private boxView(id: string): TemplateResult | null {
+        const view = this.view!;
+        if (id.startsWith('field:')) {
+            const field = view.fields.find(entry => entry.name === id.slice('field:'.length));
+            if (!field) return null;
+            if (field.kind === 'blocks') return this.fieldRow(field);
+            // A checkbox says its help text, or Yes, since the box's title is the label.
+            const inner = field.kind === 'boolean' ? { ...field, label: field.description || __('Yes'), description: '' } : field;
+            return box(field.label, this.fieldRow(inner, { labelHidden: true }), { id: `box-field-${field.name}` });
+        }
+        if (id.startsWith('group:')) {
+            const group = view.groups.find(entry => entry.id === id.slice('group:'.length));
+            return group ? this.groupBox(group) : null;
+        }
+        if (id.startsWith('taxonomy:')) {
+            const taxonomy = view.taxonomies.find(entry => entry.name === id.slice('taxonomy:'.length));
+            return taxonomy ? this.taxonomyBox(taxonomy) : null;
+        }
+        switch (id) {
+            case 'seo': return view.path !== null && this.values.seo !== undefined ? this.seoBox() : null;
+            case 'attributes': return view.hierarchical ? this.attributesBox() : null;
+            case 'authors': return this.values.authors !== undefined ? this.authorsBox() : null;
+            case 'languages': return this.languages.multilingual && this.values.locale !== undefined && view.resource.startsWith('cms/') ? this.languagesBox(view) : null;
+            case 'template': return this.templateBox();
+            case 'discussion': return this.comments ? this.discussionBox(view) : null;
+            case 'revisions': return this.revisions.length ? this.revisionsBox(view) : null;
+            default: return null;
+        }
+    }
+
+    render() {
+        const view = this.view;
+        if (!view) return html`<div class="space-y-4">${notice(this.error || __('Loading…'), this.error ? 'error' : 'info')}${linkButton(__('Back'), `/dashboard/content/${this.route}`, 'outline')}</div>`;
+        const titleField = view.titleField;
+        this.hidden = fieldVisibility(plainBlocks(view.groups.flatMap(group => group.blocks)), visibilityTypes(view.blocks), this.values).hidden;
+        const tabs = this.editorTabs();
+        // A hidden tab keeps what it showed until another tab opens: the renderer leaves the same
+        // template as it is, so typing in one tab renders that tab alone.
+        const active = tabs.includes(this.mode) ? this.mode : tabs[0];
+        const shown = (id: string, content: () => TemplateResult) => {
+            if (id === active) { this.hiddenTabs.delete(id); return content(); }
+            const kept = this.hiddenTabs.get(id);
+            if (kept?.active === active) return kept.content;
+            const fresh = content();
+            this.hiddenTabs.set(id, { active, content: fresh });
+            return fresh;
+        };
+        const tabLabel = (id: string) => id === 'json' ? 'JSON' : __(view.layout.tabs.find(tab => tab.id === id)?.label || id);
+        // A tab's icon, when it names one of the dashboard's.
+        const tabIcon = (id: string) => {
+            const entry = ICONS[view.layout.tabs.find(tab => tab.id === id)?.icon ?? ''];
+            return entry ? html`<span class="mr-1.5 inline-flex align-middle [&_svg]:size-4" aria-hidden="true">${component(Icon, { entry, size: 16 })}</span>` : null;
+        };
+        const base = `/dashboard/content/${view.route}`;
+        // Who else is on each tab, for the tab labels.
+        const participants = this.participants();
+        const me = this.myUser();
+        // Forms have no URL: their slug names them where the Form block places them.
+        const form = view.route === 'forms';
+        const permalink = view.slug ? form ? String(this.values.slug ?? '') || '…' : entryUrl(view.path, [String(this.values.slug ?? '') || '…']) : null;
+        // The open Notes rail takes the right of the screen: the editor makes room for it, so the sidebar's boxes and Save stay reachable.
+        return html`<div class=${`space-y-6 ${this.notesOpen ? 'lg:pr-[26rem]' : ''}`}>
+            <div class="flex flex-wrap items-center justify-between gap-3">
+                <div class="flex items-center gap-3">
+                    <h1 class="text-2xl font-bold text-foreground">${this.id === 'new' ? `${__('New')} ${view.singular.toLowerCase()}` : `${__('Edit')} ${view.singular.toLowerCase()}`}</h1>
+                    ${this.id === 'new' ? null : linkButton(__('New'), `${base}/new`, 'outline')}
+                </div>
+                <div class="flex items-center gap-3 text-sm">
+                    ${this.id !== 'new' ? component(EntryRoom, this.roomProps()) : null}
+                    ${this.notesToggle()}
+                    ${this.room && !this.roomStatus.connected ? html`<span role="status" class="text-xs text-muted-foreground">${__('Reconnecting…')}</span>` : null}
+                    ${this.meta.url ? html`<a href=${this.meta.url} class="text-primary hover:underline" target="_blank" rel="noopener">${__('View')} ${view.singular.toLowerCase()} ↗</a>` : null}
+                    ${form && this.id !== 'new' ? html`<a href=${`/dashboard/forms/${this.id}/submissions`} class="text-primary hover:underline">${__('Submissions')}</a>` : null}
+                    <a href=${form ? '/dashboard/forms' : base} class="text-muted-foreground hover:text-foreground">← ${__('All')} ${view.label.toLowerCase()}</a>
+                </div>
+            </div>
+            ${this.message ? notice(this.message, 'success') : null}
+            ${this.error ? notice(this.describe(this.error), 'error') : null}
+            ${this.roomStatus.diverged ? html`<div role="status" class="flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-foreground">
+                <span>${__('This entry was changed outside the editor. The draft here no longer starts from the saved entry.')}</span>
+                ${component(Button, { type: 'button', size: 'sm', '@click': () => { void this.room?.reload(); } }, __('Reload the draft from the entry'))}
+            </div>` : null}
+            ${this.roomStatus.oversized ? notice(__('The draft is too large to be kept between sessions. Save soon, or shorten it.'), 'warning') : null}
+            ${this.autosaveOffer ? html`<div role="status" class="flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-foreground">
+                <span>${this.id === 'new' ? __('You have unsaved work from') : __('There is an autosave of this entry that is newer than the version below, from')} ${shortDate(this.autosaveOffer.at)}.</span>
+                <span class="flex gap-2">${component(Button, { type: 'button', size: 'sm', '@click': () => this.restore() }, __('Restore the autosave'))}
+                    ${component(Button, { type: 'button', size: 'sm', variant: 'ghost', '@click': () => this.dismissAutosave() }, __('Dismiss'))}</span>
+            </div>` : null}
+            <div class=${`grid gap-x-6 ${this.mode === 'json' ? '' : 'lg:grid-cols-[minmax(0,1fr)_20rem]'}`}>
+                ${component(Tabs, {
+                    id: 'entry', label: __('Editor view'), value: this.mode, variant: 'underline', class: 'contents [&>.cs-tabs__panel]:min-w-0',
+                    listProps: { class: `col-span-full w-full flex-wrap [&>[data-value=json]]:ms-auto ${tabs.length > 1 ? '' : 'hidden'}` },
+                    onValueChange: (mode: string) => this.showMode(mode),
+                    items: [...view.layout.tabs.map((tab, index) => ({
+                        value: tab.id, ariaLabel: `${tabLabel(tab.id)}${this.errorsOn(tab.id) ? ` (${this.errorsOn(tab.id)})` : ''}${onTab(participants, tab.id, me).length ? `. ${__('Here')}: ${namesOf(onTab(participants, tab.id, me))}` : ''}`,
+                        label: html`<span class=${this.errorsOn(tab.id) ? 'text-destructive' : ''}>${tabIcon(tab.id)}${tabLabel(tab.id)}${this.errorsOn(tab.id) ? countBadge(this.errorsOn(tab.id)) : null}${onTab(participants, tab.id, me).length ? html`<span class="ml-1.5 inline-flex align-middle">${avatarStack(onTab(participants, tab.id, me), { size: 16, max: 3, label: `${tabLabel(tab.id)}: ${__('here')}` })}</span>` : null}</span>`,
+                        content: shown(tab.id, () => html`<div class="space-y-5">
+                    ${index === 0 && titleField ? html`<div class="group space-y-1" data-field=${titleField} style=${presenceOutline(this.peersIn(titleField))}>
+                        ${this.peersIn(titleField).length ? presenceChip(this.peersIn(titleField), __('is here')) : null}
+                        <label for="field-title" class="sr-only">${__('Title')}</label>
+                        <div class="relative">
+                        <input id="field-title" class=${`w-full rounded-lg border bg-background px-4 py-3 pr-20 text-xl font-semibold text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring ${this.errors[titleField] ? 'border-destructive' : 'border-input'}`}
+                            placeholder=${__('Add title')} .value=${String(this.values[titleField] ?? '')} @input=${(event: Event) => this.setTitle((event.target as HTMLInputElement).value)}
+                            ?required=${view.titleRequired} aria-invalid=${this.errors[titleField] ? 'true' : 'false'} aria-describedby=${this.errors[titleField] ? 'field-title-error' : undefined}>
+                        <span class="absolute right-3 top-1/2 -translate-y-1/2">${this.noteTools(titleField)}</span>
+                        </div>
+                        ${this.errors[titleField] ? html`<p id="field-title-error" role="alert" class="text-xs text-destructive">${this.errors[titleField]}</p>` : null}
+                    </div>` : null}
+                    ${index === 0 && permalink !== null ? html`<div class="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                        <span>${form ? __('Slug') : __('Permalink')}:</span>
+                        ${this.editingSlug ? html`<input id="field-slug" class=${`${CONTROL} max-w-xs py-1`} aria-label=${__('Slug')} .value=${String(this.values.slug ?? '')}
+                                @input=${(event: Event) => this.setSlug((event.target as HTMLInputElement).value)}>
+                            ${component(Button, { type: 'button', size: 'sm', variant: 'outline', '@click': () => { this.editingSlug = false; } }, __('OK'))}`
+                            : html`<code class="rounded bg-muted px-1.5 py-0.5 text-foreground">${permalink}</code>
+                            <button type="button" class="text-primary hover:underline bg-transparent border-none p-0 cursor-pointer" @click=${() => { this.editingSlug = true; }}>${__('Edit')}</button>`}
+                        <span class="sr-only" aria-live="polite">${String(this.values.slug ?? '')}</span>
+                        ${form ? html`<span class="basis-full text-xs">${__('Place the form on a page with the Form block and this slug.')}</span>` : null}
+                        ${this.errorFor('slug')}
+                    </div>` : null}
+                    ${editorLayoutView(tab.blocks, id => this.boxView(id))}
+                        </div>`),
+                    })), ...(tabs.includes('json') ? [{ value: 'json', label: 'JSON', content: this.mode === 'json' ? this.jsonPanel() : null }] : [])],
+                })}
+                <aside class=${`mt-4 space-y-4 ${this.mode === 'json' ? 'hidden' : ''}`}>
+                    ${this.publishBox(view)}
+                    ${editorLayoutView(view.layout.sidebar, id => this.boxView(id), { sidebar: true })}
+                </aside>
+            </div>
+            ${this.pickerModal()}
+            ${this.blockDialogModal()}
+            ${this.patternModal()}
+            ${this.notesRailView()}
+            ${this.noteRemovalModal()}
+        </div>`;
+    }
+}
+
+/** The sidebar's keys in words, for note anchors on them. */
+const SIDEBAR_LABELS: Record<string, string> = {
+    status: 'Status', publishedAt: 'Publish date', parent: 'Parent', menuOrder: 'Order', template: 'Template', authors: 'Authors', commentsOpen: 'Discussion', summary: 'Summary',
+    'seo.title': 'SEO title', 'seo.description': 'Meta description', 'seo.socialTitle': 'Social title', 'seo.socialDescription': 'Social description', 'seo.image': 'Social image',
+    'seo.canonical': 'Canonical URL', 'seo.noindex': 'Hide from search engines', 'seo.cornerstone': 'Cornerstone content', 'seo.nosnippet': 'No snippets', 'seo.maxSnippet': 'Longest quote', 'seo.noarchive': 'No cached copy',
+};

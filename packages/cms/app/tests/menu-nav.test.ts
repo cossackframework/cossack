@@ -1,0 +1,106 @@
+import { describe, expect, it, vi } from 'vitest';
+import type { MediaView, MenuItemView } from '@cossackframework/cms';
+
+// The site view reads the app's plugins for theme overrides; none here.
+vi.mock('virtual:cossack-plugins', () => ({ default: [] }));
+vi.stubGlobal('__', (value: string) => value);
+const { menuNav, searchForm } = await import('../src/cms/site-view');
+const { html, renderToString } = await import('@cossackframework/renderer/server');
+
+const item = (id: string, label: string, url: string | null, extra: Partial<MenuItemView> = {}): MenuItemView =>
+    ({ id, label, url, kind: url === null ? 'heading' : 'link', newTab: false, description: '', className: '', attributes: {}, fields: {}, panel: null, children: [], ...extra });
+const icon: MediaView = { url: '/media/rocket.svg', alt: '', width: 20, height: 20, contentType: 'image/svg+xml', caption: '', srcset: '', wideSrcset: '', sizes: '', placeholder: null, priority: false };
+const helpers = { block: () => html`<div class="panel-card">Try it free</div>`, isActive: (url: string) => url === '/sales' };
+const render = (items: readonly MenuItemView[], options = {}) => renderToString(menuNav(items, options, helpers)!);
+
+describe('helpers.menu', () => {
+    it('renders nothing for an empty menu', () => {
+        expect(menuNav([], {}, helpers)).toBeNull();
+    });
+
+    it('draws a header menu with dropdowns and the small-screen disclosure', async () => {
+        const markup = await render([item('home', 'Home', '/'), item('about', 'About', '/about', { children: [item('team', 'Team', '/about/team', { newTab: true, className: 'featured', attributes: { 'data-track': 'team' } })] })], { label: 'Primary' });
+        expect(markup).toContain('<nav class="cms-nav cms-nav-dropdowns" aria-label="Primary" data-motion="rise" data-collapse="md">');
+        expect(markup).toContain('cms-nav-has-sub');
+        expect(markup).toContain('<div class="cms-nav-sub">');
+        expect(markup).toMatch(/<a href="\/about\/team" class="cms-nav-sublink featured"[^>]*target="_blank"[^>]*data-track="team"/);
+        expect(markup).toContain('<details class="cms-nav-mobile">');
+        expect(markup).not.toContain('cms-mega');
+    });
+
+    it('opens a hamburger drawer on small screens: the mobile menu when given, else this one, groups folding', async () => {
+        const products = item('products', 'Products', '/products', { children: [item('teams', 'By team', null, { children: [item('sales', 'Sales', '/sales')] }), item('docs', 'Docs', '/docs')] });
+        const own = await render([products, item('about', 'About', '/about')]);
+        // The button is an icon with a hidden name; a link with children folds and stays a link; a heading labels its group.
+        expect(own).toContain('<summary class="cms-nav-toggle"><span class="cms-nav-burger" aria-hidden="true"></span><span class="cms-nav-toggle-label">Menu</span></summary>');
+        expect(own).toContain('<div class="cms-nav-drawer"><ul class="cms-nav-tree">');
+        expect(own).toMatch(/<details class="cms-nav-fold"><summary class="cms-nav-fold-row"><a href="\/products" class="cms-nav-treelink">Products<\/a><span class="cms-nav-caret" aria-hidden="true"><\/span><\/summary><ul>/);
+        expect(own).toContain('<span class="cms-nav-group-label">By team</span><ul><li><a href="/sales" class="cms-nav-treelink" aria-current="page">Sales</a></li></ul>');
+        expect(own).toContain('<li><a href="/about" class="cms-nav-treelink">About</a></li>');
+        const mobile = [item('m-home', 'Home', '/'), item('m-contact', 'Contact', '/contact')];
+        const separate = await render([products], { mobile, collapse: 'lg' });
+        const drawer = separate.slice(separate.indexOf('cms-nav-drawer'));
+        expect(drawer).toContain('href="/contact"');
+        expect(drawer).not.toContain('Products');
+        expect(separate).toContain('data-collapse="lg"');
+        // No mobile items, or a location name helpers.menu did not resolve: the menu's own tree.
+        expect((await render([products], { mobile: [] })).slice(0, 2000)).toContain('cms-nav-fold');
+        expect(await render([products], { mobile: 'mobile' })).toContain('cms-nav-fold');
+    });
+
+    it('opens a mega panel for an item with a panel or heading children', async () => {
+        const products = item('products', 'Products', '/products', {
+            description: 'Everything we make',
+            panel: [{ _id: 'card', type: 'core/card', data: {}, html: {}, media: {} }],
+            children: [
+                item('loose', 'Overview', '/overview'),
+                item('teams', 'By team', null, { children: [item('sales', 'Sales', '/sales', { description: 'Close deals faster', fields: { badge: 'New', icon } })] }),
+            ],
+        });
+        const markup = await render([products]);
+        expect(markup).toContain('data-mega');
+        expect(markup).toContain('<div class="cms-mega" data-panel=""><div class="cms-mega-box">');
+        // The loose link's column first, then the heading's.
+        expect(markup.indexOf('/overview')).toBeLessThan(markup.indexOf('cms-mega-heading'));
+        expect(markup).toContain('<p class="cms-mega-heading">By team</p>');
+        expect(markup).toMatch(/<a href="\/sales" class="cms-mega-link" aria-current="page">/);
+        expect(markup).toContain('<img class="cms-nav-icon" src="/media/rocket.svg"');
+        expect(markup).toContain('<span class="cms-nav-badge">New</span>');
+        expect(markup).toContain('<span class="cms-nav-description">Close deals faster</span>');
+        expect(markup).toContain('<div class="cms-mega-panel cms-content"><div class="panel-card">Try it free</div></div>');
+        // The disclosure shows the heading as text, not a link.
+        expect(markup).toContain('<span class="cms-nav-group-label">By team</span>');
+    });
+
+    it('names the opening motion on the nav, rise unless chosen, for the stylesheet and themes', async () => {
+        const items = [item('about', 'About', '/about', { children: [item('team', 'Team', '/about/team')] })];
+        expect(await render(items)).toContain('<nav class="cms-nav cms-nav-dropdowns" aria-label="Menu" data-motion="rise" data-collapse="md">');
+        expect(await render(items, { motion: 'scale' })).toContain('data-motion="scale"');
+        expect(await render(items, { motion: '' })).toContain('data-motion="rise"');
+        // A theme's own preset passes through; the row and list styles have nothing to open.
+        expect(await render(items, { motion: 'swing' })).toContain('data-motion="swing"');
+        expect(await render(items, { style: 'inline', motion: 'scale' })).not.toContain('data-motion');
+        expect(await render(items, { style: 'list' })).not.toContain('data-motion');
+    });
+
+    it('flattens one level in a row and nests the whole tree in a list', async () => {
+        const items = [item('a', 'A', '/a', { children: [item('b', 'B', '/b')] }), item('h', 'Heading', null, { children: [item('c', 'C', '/c')] })];
+        const inline = await render(items, { style: 'inline', label: 'Footer' });
+        expect(inline).toContain('class="cms-nav cms-nav-inline" aria-label="Footer"');
+        expect(inline.match(/<li class="cms-nav-item">/g)).toHaveLength(3);
+        expect(inline).not.toContain('Heading');
+        const list = await render(items, { style: 'list' });
+        expect(list).toContain('<ul class="cms-nav-tree">');
+        expect(list).toContain('<ul><li class="cms-nav-item"><a href="/b"');
+    });
+});
+
+describe('helpers.search', () => {
+    it('renders a box, or a button that opens one', async () => {
+        const box = await renderToString(searchForm('/fr/search', { placeholder: 'Rechercher' }));
+        expect(box).toContain('<form action="/fr/search" method="get" role="search" class="cms-search">');
+        expect(box).toContain('placeholder="Rechercher" aria-label="Rechercher"');
+        const toggle = await renderToString(searchForm('/search', { style: 'icon' }));
+        expect(toggle).toContain('<details class="cms-search-toggle"><summary class="cms-search-button" aria-label="Search"');
+    });
+});

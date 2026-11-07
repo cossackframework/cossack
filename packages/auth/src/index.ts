@@ -51,3 +51,9 @@ export {
     type ResourceAuthorizationCode, type ResourcePolicy, type ResourcePolicyOptions,
     type ResourcePolicyContext, type ResourceLookupContext,
 } from './authz/resource-policy';
+
+// Second factors: authenticator-app codes and recovery codes. Passkeys: `@cossackframework/auth/passkeys`.
+export {
+    base32Encode, base32Decode, generateTotpSecret, totpUri, totpStep, totpCode, verifyTotp, generateRecoveryCodes, normalizeRecoveryCode, hashRecoveryCode,
+    type TotpOptions,
+} from './two-factor';

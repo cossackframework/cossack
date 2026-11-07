@@ -57,6 +57,7 @@ Run `cossack --help` to list all commands, or `cossack <command> --help` for com
 | `delete <type> <name>` (`d`) | Delete a generated file/folder. |
 | `add <feature>` | Add a feature and its prerequisites (see the feature list below). |
 | `remove <feature>` | Remove a feature and anything that depends on it. |
+| `plugins <list\|check\|upgrade\|remove>` | Manage plugins rendered into `src/plugins/<name>/`. Render one with `add plugin <directory\|tarball\|npm package>`; packages are read as data and never executed. |
 | `adapter <node\|cloudflare>` | Switch the active runtime adapter. |
 | `lang <sub>` | Manage localization catalogs (`publish`, `add <locale>`, `extract`, `check`, `types`). |
 | `migration <sub>` (`migrate`) | Manage model-first ORM migrations (`generate`, `snapshot`, `squash`, `up`, `down`, `status`, `rehash`, `check`, `baseline`, `plan`). |
@@ -70,6 +71,7 @@ Run `cossack --help` to list all commands, or `cossack <command> --help` for com
 | `docs` | Read offline catalogs of installed package exports, declarations and guides. |
 | `traces` | Read recorded development snapshots and timelines. |
 | `test-results` | Read recorded test evidence and source freshness. |
+| `cms <command>` | Manage a running CMS site through its management API: `login`, `whoami`, `entries`, `notes`, `users`, `roles`, `settings`, `terms`, `media`, `sites` and `mcp` (MCP client setup). `--site <id>` acts on one site of a network. |
 | `upgrade [dir]` | Upgrade Cossack deps and report template drift. |
 | `info` | Print system/environment info for bug reports. |
 | `version` (`v`) | Print the CLI version. |
@@ -137,8 +139,8 @@ re-renders only the installed capabilities.
 Available presets are `minimal`, `database`, `auth`, and `full-stack`.
 Composable features are `ui`, `database`, `studio`, `auth`, `dashboard`,
 `markdown`, `examples`, `desktop`, `resource`, `mutation`, `scoped-service`,
-`protected-route`, `jobs`, `turnstile`, `schedules`, `notifications`, and
-`workflows`. `cossack add` installs missing prerequisites first: for example,
+`protected-route`, `jobs`, `turnstile`, `schedules`, `notifications`,
+`workflows`, and `cms`. `cossack add` installs missing prerequisites first: for example,
 `studio` requires `database`, `auth` requires `ui` and `database`, and
 `examples` requires both `ui` and `markdown`. `cossack --help` and
 `cossack add --help` print the list from the scaffold registry.

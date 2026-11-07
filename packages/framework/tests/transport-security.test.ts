@@ -64,6 +64,16 @@ describe('transport security boundary', () => {
         expect(response.headers.get('X-Cossack-Request-Id')).not.toBe(id);
     });
 
+    it('runs the action after a guard that returns next()', async () => {
+        // `return next()` resolves to Hono's Context; it must not replace the response.
+        const guard = vi.fn((_c: any, next: () => Promise<void>) => next());
+        const { app, action } = appFor({ ...ctx, getMiddlewares: () => [guard] });
+        const response = await app.request('/crpc', { method: 'POST', headers: { origin: 'http://localhost' }, body: JSON.stringify(rpc) });
+        expect(response.status).toBe(200);
+        expect(await response.text()).toBe('executed');
+        expect(action).toHaveBeenCalledOnce();
+    });
+
     it('allows same-origin RPC and explicit allowed origins', async () => {
         for (const [origin, allowedOrigins] of [['http://localhost', undefined], ['https://trusted.example', ['https://trusted.example']]] as const) {
             const { app, action } = appFor({ ...ctx, allowedOrigins: allowedOrigins ? [...allowedOrigins] : undefined });

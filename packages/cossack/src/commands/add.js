@@ -12,6 +12,10 @@ export async function addCommand(args, ctx) {
   return runWithSpec(spec, args, ctx, async () => {
     ctx.out = createCommandOutput(ctx);
   const [feature, componentName] = args;
+  if (feature === 'plugin') {
+    const { addPluginCommand } = await import('./plugins.js');
+    return addPluginCommand(componentName, ctx);
+  }
   if (!feature || !FEATURES.includes(feature)) {
     throw Object.assign(
       new Error(`Unknown feature: ${feature}. Available features: ${FEATURES.join(', ')}`),
@@ -119,6 +123,7 @@ export async function addCommand(args, ctx) {
 
 export function addHelp() {
   return commandSpecs.add.help(`cossack add <${FEATURES.join('|')}> [component]
+cossack add plugin <directory|tarball.tgz|npm-package>
 
 Add a feature to an existing project. Missing prerequisites are added too
 (for example, auth also adds ui and database). The project's scaffold
@@ -129,6 +134,10 @@ planned changes without writing.
 
 \`cossack add ui <component>\` adds the ui feature when it is missing and
 copies one UI component into src/components/ui/.
+
+\`cossack add plugin <source>\` renders a plugin package into
+src/plugins/<name>/ (see \`cossack plugins --help\`). The package is read as
+data and never executed.
 
 Run \`pnpm install\` afterwards to install new dependencies. Features that
 include the database also need \`cossack migration up\`.`);

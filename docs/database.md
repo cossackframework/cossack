@@ -59,6 +59,41 @@ export class User extends BaseEntity {
 Properties can use camel case while `name` preserves an existing snake-case
 physical column.
 
+### Soft delete
+
+A `@DeleteDateColumn()` turns deletes into timestamps. Reads then hide rows whose
+delete date is set, and the delete operations stamp the column instead of
+removing the row:
+
+```ts
+@Entity({ tableName: 'posts' })
+export class Post extends BaseEntity {
+  @PrimaryGeneratedColumn() declare id: number;
+  @Column({ type: 'varchar' }) declare title: string;
+  @DeleteDateColumn() declare deletedAt: Date | null;
+}
+
+await Post.delete({ id: 1 });                 // sets deleted_at
+await post.remove();                          // same, for a loaded entity
+await Post.find();                            // live rows only
+await Post.find({ withDeleted: true });       // every row
+await Post.count({ title: 'x' }, { withDeleted: true });
+await Post.query().withDeleted().getMany();
+await Post.find({ where: { deletedAt: IsNotNull() }, withDeleted: true }); // the trash
+await Post.restore({ id: 1 });                // clears deleted_at
+await post.restore();
+await Post.delete({ id: 1 }, { force: true }); // removes the row
+await post.remove({ force: true });
+await Post.deleteAll({ force: true });
+```
+
+`Post.softDelete(where)` is the explicit form of `delete()` and only touches live
+rows; `restore(where)` only touches soft-deleted rows. Both reject an empty
+`where`, and both throw on an entity without a `@DeleteDateColumn()`.
+Relation loading (`relations: [...]`) skips soft-deleted children. `update()` and
+`updateAll()` do not filter: name `deletedAt: IsNull()` in `where` to limit them
+to live rows. `IsNull()` and `IsNotNull()` fit any nullable column without a cast.
+
 ## Runtime middleware
 
 ```ts

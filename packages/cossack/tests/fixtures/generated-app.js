@@ -10,6 +10,7 @@ import { promisify } from 'node:util';
 import { createLinkedApp, repository } from './linked-app.js';
 
 export { repository };
+export const CMS_EDITOR_PACKAGES = ['@tiptap/core', '@tiptap/pm', '@tiptap/starter-kit', '@tiptap/extension-document', '@tiptap/extension-image', '@tiptap/extension-text-align', '@tiptap/extensions', 'prosemirror-collab'];
 const roots = [];
 /** Removes `parent` in the next cleanupRoots(), for tests that create their own temp app. */
 export function trackRoot(parent) { roots.push(parent); }
@@ -18,8 +19,11 @@ export async function cleanupRoots() { await Promise.all(roots.splice(0).map(roo
 // Generated apps are copied from a cached scaffold+linked base (see fixtures/linked-app.js).
 // `owner` collects parents to remove: per test by default, or a describe-level list for shared apps.
 export async function project(adapter, features = [], options = {}, owner = roots) {
-  const { parent, root } = await createLinkedApp({ adapter, features, options, prefix: 'cossack-runtime-build-',
-    install: features.includes('dashboard') ? ['@cossackframework/solar-icons'] : [] });
+  const { parent, root } = await createLinkedApp({ adapter, features, options, prefix: 'cossack-runtime-build-', install: [
+    ...(features.includes('dashboard') || features.includes('cms') ? ['@cossackframework/solar-icons'] : []),
+    // The CMS editor's TipTap packages are not repository dependencies.
+    ...(features.includes('cms') ? CMS_EDITOR_PACKAGES : []),
+  ] });
   owner.push(parent);
   return root;
 }
@@ -29,6 +33,35 @@ export function sharedApps() {
   afterAll(async () => { await Promise.all(parents.splice(0).map(root => fs.rm(root, { recursive: true, force: true }))); });
   return (adapter, features = [], options = {}) => project(adapter, features, options, parents);
 }
+/**
+ * The application Durable Object of a generated Cloudflare app. Every such app binds
+ * `COSSACK_OBJECT` to `AppDurableObject` with a `realtime-v1` migration (co-editing needs it), so
+ * a fixture keeps that binding, or points it at a class of its own by renaming the class in the
+ * binding and its migration. A second `COSSACK_OBJECT` binding fails wrangler's validation.
+ * Returns false for an app without wrangler.jsonc (Node).
+ */
+export async function useAppDurableObject(root, className = 'AppDurableObject') {
+  const configPath = path.join(root, 'wrangler.jsonc');
+  let config;
+  try { config = JSON.parse(await fs.readFile(configPath, 'utf8')); }
+  catch (error) { if (error.code !== 'ENOENT') throw error; return false; }
+  config.durable_objects ??= { bindings: [] };
+  config.migrations ??= [];
+  const binding = config.durable_objects.bindings.find(entry => entry.name === 'COSSACK_OBJECT');
+  if (binding) {
+    const previous = binding.class_name;
+    binding.class_name = className;
+    for (const migration of config.migrations) {
+      if (Array.isArray(migration.new_sqlite_classes)) migration.new_sqlite_classes = migration.new_sqlite_classes.map(name => name === previous ? className : name);
+    }
+  } else {
+    config.durable_objects.bindings.push({ name: 'COSSACK_OBJECT', class_name: className });
+    config.migrations.push({ tag: 'realtime-v1', new_sqlite_classes: [className] });
+  }
+  await fs.writeFile(configPath, JSON.stringify(config));
+  return true;
+}
+
 export const run = promisify(execFile);
 export const cossack = (root, args, options = {}) => run(process.execPath, [path.join(repository, 'packages/cossack/bin/cossack.js'), ...args],
   { cwd: root, timeout: 30000, maxBuffer: 1024 * 1024, ...options });

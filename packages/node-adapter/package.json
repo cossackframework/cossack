@@ -43,21 +43,21 @@
   },
   "dependencies": {
     "@cossackframework/core": "workspace:*",
+    "@hono/node-server": "^2.1.0",
     "nodemailer": "^10.0.6",
-    "ws": ">=8.21.0",
-    "@hono/node-server": "^2.1.0"
+    "ws": ">=8.21.0"
   },
   "devDependencies": {
     "@types/nodemailer": "^8.0.1",
     "@types/ws": "^8.18.0",
     "hono": "^4.13.7",
     "typescript": "^7.0.2",
-    "vite": "^8.1.4",
-    "vitest": "^4.1.11"
+    "vite": "^8.1.6",
+    "vitest": "^4.1.12"
   },
   "peerDependencies": {
     "hono": "^4.13.7",
-    "vite": "^8.1.4"
+    "vite": "^8.1.6"
   },
   "peerDependenciesMeta": {
     "vite": {

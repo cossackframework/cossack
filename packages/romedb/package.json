@@ -1,0 +1,55 @@
+{
+  "name": "@cossackframework/romedb",
+  "version": "0.9.0",
+  "type": "module",
+  "description": "RomeDB request bindings for Cossack on Workers and Node.js, on RomeDB's own client",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cossackframework/cossack",
+    "directory": "packages/romedb"
+  },
+  "main": "src/index.ts",
+  "files": [
+    "src",
+    "agent-docs.json"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "test": "vitest"
+  },
+  "dependencies": {
+    "@romedb/client": "0.2.15"
+  },
+  "devDependencies": {
+    "@romedb/node": "0.2.15",
+    "@types/node": "^22.19.0",
+    "vitest": "^4.1.12"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./values": "./src/values-entry.ts",
+    "./node": "./src/node.ts",
+    "./cloudflare": "./src/cloudflare.ts",
+    "./testing": "./src/testing.ts",
+    "./dev": {
+      "types": "./src/dev.d.ts",
+      "default": "./src/dev.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "peerDependencies": {
+    "@romedb/node": "0.2.15",
+    "vite": "*"
+  },
+  "peerDependenciesMeta": {
+    "@romedb/node": {
+      "optional": true
+    },
+    "vite": {
+      "optional": true
+    }
+  }
+}

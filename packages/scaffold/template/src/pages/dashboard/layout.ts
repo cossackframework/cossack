@@ -7,7 +7,9 @@ import { SunIcon as sunIconSvg } from '@cossackframework/solar-icons/sun/line';
 import { MoonIcon as moonIconSvg } from '@cossackframework/solar-icons/moon/line';
 import { AltArrowRightIcon as chevronIconSvg } from '@cossackframework/solar-icons/alt-arrow-right/line';
 import { Logout3Icon as logoutIconSvg } from '@cossackframework/solar-icons/logout-3/line';
-import { dashboardModules } from '../../dashboard/registry';
+import { dashboardStatus, navigation } from '../../dashboard/access';
+import { siteLogo, siteName } from '../../brand';
+import type { DashboardModule, DashboardStatus } from '../../dashboard/types';
 import { logout } from '../../auth';
 import { requireDashboardUser } from '../../middlewares/auth';
 import { themeStore } from '@/stores.client';
@@ -20,42 +22,40 @@ const logoutIcon = { line: logoutIconSvg };
 
 /**
  * Dashboard layout: sidebar nav + user menu + theme toggle, shared by every
- * /dashboard/* page. Installed dashboard modules describe their own icons,
- * destinations, submenu links, and whether they belong in navigation or the
- * account menu.
+ * /dashboard/* page. src/dashboard/access.ts decides which modules the user
+ * sees; each describes its icon, destination, submenu links, and whether it
+ * belongs in navigation or the account menu.
  *
- * Theme state here mirrors the App component: both manipulate the same
- * `<html>.dark` class + cookie, so the toggle stays consistent
- * regardless of which one rendered it.
+ * A page with navigation of its own (a secondary sidebar) marks its root
+ * `data-subnav`: the main area then drops its padding, so the page's
+ * navigation sits against the sidebar and runs to the footer.
+ *
+ * The theme toggle writes the same `cs-theme` cookie and themeStore the App
+ * component applies to `<html>.dark`, and draws itself from that class.
+ *
+ * The taskbar along the bottom (desktop and tablet) opens the site, shows what
+ * waits for the user (`dashboardStatus` in src/dashboard/access.ts, a `server$`
+ * resource so it is fresh on every navigation) and holds the Screen options and
+ * Help buttons, which open the `#screen-options` and `#screen-help` popovers a
+ * screen renders with `screenOptions()` and `screenHelp()` from src/dashboard/page.ts.
  */
 @Page({ transport: 'http', middlewares: [requireDashboardUser] })
 export default class DashboardLayout extends Cossack {
-    appName = server$(() => config('app.name'), { initial: 'My App' });
-    @State() theme: 'light' | 'dark' = 'dark';
+    appName = server$(() => siteName(), { initial: 'My App' });
+    appLogo = server$(() => siteLogo(), { initial: '/logo.svg' });
+    /** What waits for the user, with counts, for the taskbar. */
+    statuses: DashboardStatus[] = server$(() => dashboardStatus(this.c), { initial: [] });
     /** Sidebar collapsed state. Seeded from the cookie at SSR (via this.c) and
      *  re-read client-side in onMount; persists across client navigations. */
     @State() sidebarCollapsed = false;
-    @State() isAdmin = false;
+    /** Navigation the signed-in user may open, resolved on the server. */
+    @State() modules: DashboardModule[] = [];
     @State() logoutError = '';
     @State() account: { name: string; email: string; avatar: string | null } = {
         name: '',
         email: '',
         avatar: null,
     };
-
-    private _themeUnsub?: () => void;
-
-    onCleanup() {
-        this._themeUnsub?.();
-    }
-
-    onMount() {
-        // Keep the toggle icon in sync with the global themeStore (so toggling
-        // from any page updates this layout's icon too).
-        this._themeUnsub = themeStore.subscribe((value) => {
-            this.theme = value;
-        });
-    }
 
     @Client()
     toggleTheme() {
@@ -89,7 +89,7 @@ export default class DashboardLayout extends Cossack {
 
     async init() {
         const user = this.user;
-        this.isAdmin = !!user?.roles?.some((r) => r.name === 'admin');
+        if (this.c) this.modules = await navigation(this.c);
         this.account = {
             name: user?.name ?? '',
             email: user?.email ?? '',
@@ -99,23 +99,17 @@ export default class DashboardLayout extends Cossack {
         this.sidebarCollapsed = this.c
             ? getCookie(this.c, 'cs-sidebar-collapsed') === 'true'
             : this.sidebarCollapsed;
-
-        // A valid cookie lets SSR render the matching toggle icon. With no
-        // cookie, root.ts resolves the system preference before first paint
-        // and the themeStore subscription synchronizes this state on mount.
-        const savedTheme = this.c ? getCookie(this.c, 'cs-theme') : undefined;
-        if (savedTheme === 'light' || savedTheme === 'dark') {
-            this.theme = savedTheme;
-        }
     }
 
     render(): TemplateResult {
         const iconClass = 'inline-flex items-center justify-center [&_svg]:size-4';
-        const availableModules = dashboardModules.filter((module) =>
-            module.authorization !== 'admin' || this.isAdmin,
-        );
+        // The theme icons: only one shows, so `hidden` must not share the element with `inline-flex`.
+        const themeIcon = 'items-center justify-center [&_svg]:size-4';
+        const availableModules = this.modules;
+        // A module with a parent the user also sees is listed inside the parent's menu.
+        const nested = (module: DashboardModule) => !!module.parent && availableModules.some((other) => other.id === module.parent);
         const navigationModules = availableModules.filter(
-            (module) => module.placement !== 'account',
+            (module) => module.placement !== 'account' && !nested(module),
         );
         const accountModules = availableModules.filter(
             (module) => module.placement === 'account',
@@ -132,52 +126,64 @@ export default class DashboardLayout extends Cossack {
                 const item = {
                     value: `module:${module.id}`,
                     label: __(module.label), href: module.href, icon: module.icon,
-                    active: this.isActive(module.href),
+                    active: module.activeFor ? this.isActive(module.activeFor, false) : this.isActive(module.href),
                 };
-                return module.children?.length ? {
-                    ...item,
-                    children: module.children.map((child) => ({
+                const children = [
+                    ...(module.children ?? []),
+                    ...availableModules.filter((other) => other.parent === module.id && nested(other))
+                        .flatMap((other) => other.children?.length ? other.children : [{ label: other.label, href: other.href }]),
+                ];
+                if (!children.length) return item;
+                // A group lists its own page as a link too; leave it out when a child already opens it.
+                const { href: _href, active: _active, ...group } = item;
+                return {
+                    ...(children.some((child) => child.href === module.href) ? group : item),
+                    children: children.map((child) => ({
                         value: `module:${module.id}:${child.href}`,
                         label: __(child.label), href: child.href,
                         active: this.isActive(child.href),
                     })),
-                } : item;
+                };
             }),
         ];
 
+        const statusTone = (tone: DashboardStatus['tone']) => tone === 'error' ? 'text-destructive' : tone === 'warning' ? 'text-warning-text' : 'text-muted-foreground';
+        const taskbarButton = 'hidden h-7 cursor-pointer items-center gap-1 rounded-md border-none bg-transparent px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground';
         return html`
-            <div class="flex min-h-screen bg-background">
+            <div class="group/dashboard flex min-h-screen bg-background">
                 ${component(Sidebar, {
                     id: 'dashboard-navigation', label: __('Dashboard navigation'),
                     expandLabel: __('Expand navigation'), collapseLabel: __('Collapse navigation'),
                     title: this.appName,
-                    brand: html`<a href="/dashboard" class="flex items-center gap-2 no-underline group-[.is-collapsed]:hidden" aria-label=${__('Dashboard')}>
-                        ${Image({ src: '/logo.svg', alt: '', width: 24, height: 24, loading: 'eager', class: 'size-6 shrink-0' })}
+                    // The brand opens the site itself, as WordPress's admin bar does; Dashboard is the first navigation item.
+                    brand: html`<a href="/" class="flex items-center gap-2 no-underline group-[.is-collapsed]:hidden" aria-label=${__('View site')} title=${__('View site')}>
+                        ${Image({ src: this.appLogo, alt: '', width: 24, height: 24, loading: 'eager', class: 'h-6 w-auto max-w-24 shrink-0 object-contain' })}
                         <span class="text-sm font-semibold text-foreground truncate">${this.appName}</span>
                     </a>
-                    <a href="/dashboard" class="hidden group-[.is-collapsed]:flex items-center justify-center" aria-label=${__('Dashboard')}>
-                        ${Image({ src: '/logo.svg', alt: '', width: 24, height: 24, loading: 'eager', class: 'size-6' })}
+                    <a href="/" class="hidden group-[.is-collapsed]:flex items-center justify-center" aria-label=${__('View site')} title=${__('View site')}>
+                        ${Image({ src: this.appLogo, alt: '', width: 24, height: 24, loading: 'eager', class: 'size-6 object-contain' })}
                     </a>`,
                     width: '248px',
                     collapsible: 'icon',
                     collapsed: this.sidebarCollapsed,
                     onCollapsedChange: () => this.onToggleSidebar(),
                     items: items,
+                    // The toggle renders both modes and the .dark class on <html> shows the current
+                    // one (sun in light mode, moon in dark mode), so the server's markup matches
+                    // before the cookie or system theme is known. A click switches to the other.
                     footer: html`
                         <div class="flex items-center gap-1">
                             <button
                                 type="button"
                                 @click=${() => this.toggleTheme()}
                                 class="flex-1 flex items-center justify-center gap-2 px-2 py-1.5 rounded-md text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground cursor-pointer border-none bg-transparent group-[.is-collapsed]:px-0"
-                                title=${this.theme === 'dark' ? __('Switch to light mode') : __('Switch to dark mode')}
-                                aria-label=${__('Toggle theme')}
+                                title=${__('Switch between light and dark mode')}
+                                aria-label=${__('Switch between light and dark mode')}
                             >
-                                <span class=${iconClass}>
-                                    ${this.theme === 'dark'
-                                        ? component(Icon, { entry: sunIcon, size: 16 })
-                                        : component(Icon, { entry: moonIcon, size: 16 })}
-                                </span>
-                                <span class="group-[.is-collapsed]:hidden">${this.theme === 'dark' ? __('Light') : __('Dark')}</span>
+                                <span class=${`${themeIcon} inline-flex dark:hidden`}>${component(Icon, { entry: sunIcon, size: 16 })}</span>
+                                <span class=${`${themeIcon} hidden dark:inline-flex`}>${component(Icon, { entry: moonIcon, size: 16 })}</span>
+                                <span class="group-[.is-collapsed]:hidden dark:hidden">${__('Light mode')}</span>
+                                <span class="hidden group-[.is-collapsed]:hidden dark:inline">${__('Dark mode')}</span>
                             </button>
                         </div>
                         <div class="h-px bg-border my-1 group-[.is-collapsed]:hidden"></div>
@@ -221,13 +227,23 @@ export default class DashboardLayout extends Cossack {
                         `)}
                     `,
                 })}
-                <div class="flex-1 min-w-0 flex flex-col overflow-x-hidden">
-                    <main class="flex-1 p-6 sm:p-8 overflow-x-hidden">
+                <div class="flex-1 min-w-0 flex flex-col">
+                    <main class="flex-1 p-6 sm:p-8 overflow-x-hidden has-[[data-settings-toolbar]]:overflow-visible has-[[data-subnav]]:grid has-[[data-subnav]]:grid-cols-1 has-[[data-subnav]]:p-0">
                         ${this.logoutError ? html`<p role="alert" class="mb-4 text-sm text-destructive">${this.logoutError}</p>` : null}
                         ${this.children}
                     </main>
-                    <footer class="border-t border-border px-6 sm:px-8 py-4 text-xs text-muted-foreground">
-                        &copy; ${new Date().getFullYear()} ${this.appName}. ${__('All rights reserved.')}
+                    <footer data-dashboard-taskbar aria-label=${__('Dashboard taskbar')} class="sticky bottom-0 z-30 hidden h-10 items-center gap-1 border-t border-border bg-background/95 px-3 text-xs text-muted-foreground backdrop-blur md:flex">
+                        <a href="/" class="inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-foreground no-underline hover:bg-muted" title=${__('View site')}>
+                            ${Image({ src: this.appLogo, alt: '', width: 16, height: 16, loading: 'eager', class: 'h-4 w-auto max-w-16 shrink-0 object-contain' })}
+                            <span class="max-w-40 truncate">${this.appName}</span>
+                        </a>
+                        <span aria-hidden="true" class="mx-1 h-4 w-px bg-border"></span>
+                        ${this.statuses.map((item) => html`<a href=${item.href} data-status=${item.id} class=${`inline-flex h-7 items-center gap-1.5 rounded-md px-2 no-underline hover:bg-muted hover:text-foreground ${statusTone(item.tone)}`}>
+                            ${__(item.label)}${item.count !== undefined ? html`<span class="rounded-full bg-muted px-1.5 py-px text-[0.7rem] font-semibold tabular-nums text-foreground">${item.count}</span>` : null}</a>`)}
+                        <span class="flex-1"></span>
+                        <button type="button" popovertarget="screen-options" class=${`${taskbarButton} group-has-[#screen-options]/dashboard:inline-flex`}>${__('Screen options')}</button>
+                        <button type="button" popovertarget="screen-help" class=${`${taskbarButton} group-has-[#screen-help]/dashboard:inline-flex`}>${__('Help')}</button>
+                        <span class="px-2">&copy; ${new Date().getFullYear()} ${this.appName}</span>
                     </footer>
                 </div>
             </div>

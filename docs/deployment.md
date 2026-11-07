@@ -16,8 +16,10 @@ Cossack applications deploy to Cloudflare Workers using Wrangler.
 
 ### Configure
 
-The minimal Cloudflare preset writes `wrangler.jsonc` with `src/index.ts`,
-the `COSSACK_SSE` binding, and a SQLite Durable Object migration:
+The minimal Cloudflare preset writes `wrangler.jsonc` with `src/index.ts` and two SQLite
+Durable Objects with their migrations: `COSSACK_SSE`, which coordinates server-sent events,
+and `COSSACK_OBJECT`, the application object that hosts realtime pages, layouts and
+components (the `durable-object` transport, co-editing and WebSocket owners):
 
 ```jsonc
 {
@@ -26,9 +28,9 @@ the `COSSACK_SSE` binding, and a SQLite Durable Object migration:
   "compatibility_date": "2026-06-06",
   "compatibility_flags": ["nodejs_als", "enable_request_signal"],
   "durable_objects": {
-    "bindings": [{ "name": "COSSACK_SSE", "class_name": "SseDurableObject" }]
+    "bindings": [{ "name": "COSSACK_SSE", "class_name": "SseDurableObject" }, { "name": "COSSACK_OBJECT", "class_name": "AppDurableObject" }]
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["SseDurableObject"] }]
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["SseDurableObject"] }, { "tag": "realtime-v1", "new_sqlite_classes": ["AppDurableObject"] }]
 }
 ```
 
@@ -91,6 +93,10 @@ when two versions serve traffic at once, during a gradual deployment, or after a
 rollback. A browser can then request a file from a version that does not have
 it, and keep that `404` for a year. Deploy in one step, keep each visitor on one
 version during a rollout, or shorten that rule's `max-age`.
+
+HTML is not cached by Cloudflare unless a cache rule says so. A CMS site sends `Cache-Control`
+and `Cache-Tag` headers on every anonymous page and purges Cloudflare when content changes,
+given `CLOUDFLARE_API_TOKEN`; see [CMS Cache](/docs/cms/cache.md) for the one rule to add.
 
 `cossack check cloudflare` and deploy preflight accept `run_worker_first: true`
 or exactly `["/*", "!/assets/*"]`. They reject any other value, because it lets
@@ -178,8 +184,10 @@ pnpm exec cossack deploy --env staging
 Define `env.staging` in Wrangler first. Declare its variables and bindings
 explicitly because these settings do not inherit from the top-level configuration.
 For the minimal preset, a staging environment can use this configuration inside
-its generated Wrangler file. Keep the top-level SQLite migration. Provide a
-separate Worker name and repeat the coordinator binding:
+its generated Wrangler file. Keep the top-level SQLite migrations. Provide a
+separate Worker name and repeat both Durable Object bindings with the same
+classes as the top level; the deploy preflight reports
+`COSSACK_ENV_BINDING_NOT_INHERITED` for any binding the environment leaves out:
 
 ```jsonc
 "env": {
@@ -188,7 +196,10 @@ separate Worker name and repeat the coordinator binding:
     "vars": { "APP_URL": "https://staging.example.net", "APP_LOCALE": "en" },
     "secrets": { "required": ["APP_SECRET"] },
     "durable_objects": {
-      "bindings": [{ "name": "COSSACK_SSE", "class_name": "SseDurableObject" }]
+      "bindings": [
+        { "name": "COSSACK_SSE", "class_name": "SseDurableObject" },
+        { "name": "COSSACK_OBJECT", "class_name": "AppDurableObject" }
+      ]
     }
   }
 }

@@ -45,11 +45,30 @@ export function resolveNearestSpecialPage(pageFilePath: string, pageKeys: readon
   return null;
 }
 
-export function classifyRoute(pattern: string): 'page' | 'api' | '404' | 'error' {
+export type RouteKind = 'page' | 'api' | '404' | 'error';
+
+/**
+ * Classify a route by its public pattern alone: boundaries by their last segment,
+ * `/api` and everything below it as endpoints, the rest as pages. Unknown URLs and
+ * request paths have no module, so this is all they can use. A discovered module
+ * is classified with {@link classifyRouteModule}, which also knows its shape.
+ */
+export function classifyRoute(pattern: string): RouteKind {
   if (pattern.endsWith('/404')) return '404';
   if (pattern.endsWith('/error')) return 'error';
   if (pattern === '/api' || pattern.startsWith('/api/')) return 'api';
   return 'page';
+}
+
+/**
+ * Classify a discovered route module. Boundaries follow their pattern. An HTTP
+ * endpoint (`api`) is any module under `/api`, and a functional handler module (a
+ * default function, `defineApi()` or `GET`/`POST`… exports) at any other path,
+ * such as `/webhooks/crm` or `/feed.xml`. Component modules elsewhere are pages.
+ */
+export function classifyRouteModule(pattern: string, functionalHandler: boolean): RouteKind {
+  const kind = classifyRoute(pattern);
+  return kind === 'page' && functionalHandler ? 'api' : kind;
 }
 
 /** Substitute both ordinary and catch-all static parameters without replacement-string expansion. */
@@ -443,6 +462,10 @@ export interface RoutesManifest {
   filePathToId: Record<string, string>;
   /** Structural facts only. Source decorators and executable policies are not inferred here. */
   routes: RouteDescriptor[];
+  /** Route keys of functional HTTP handler modules outside `/api`, classified by their syntax. */
+  handlers?: string[];
+  /** Route key to real source path, for plugin pages rendered under `src/plugins/<name>/pages`. */
+  sources?: Record<string, string>;
 }
 
 export interface RouteDescriptor {
@@ -451,7 +474,8 @@ export interface RouteDescriptor {
   pattern: string;
   filePath: string;
   routeId: string;
-  kind: 'page' | 'api' | '404' | 'error';
+  /** `api` is an HTTP endpoint: a module under `/api`, or a functional handler module at any path. */
+  kind: RouteKind;
   addressable: boolean;
   parameters: RouteParameter[];
   /** Source layout ancestry. Functional HTTP handlers do not execute component layouts. */
@@ -460,23 +484,33 @@ export interface RouteDescriptor {
   notFoundBoundary: string | null;
 }
 
+export interface RoutesManifestOptions {
+  /**
+   * Route keys of page modules whose syntax is a functional HTTP handler rather
+   * than a component (see `route-codegen`). They are endpoints at any path.
+   */
+  handlers?: Iterable<string>;
+}
+
 /**
  * Build a serializable {@link RoutesManifest} from computed maps, suitable for
  * writing to disk by the Vite plugin and consuming by the SSG CLI.
  */
-export function buildRoutesManifest(pageKeys: string[], layoutKeys: string[], maps: RouteIdMaps): RoutesManifest {
+export function buildRoutesManifest(pageKeys: string[], layoutKeys: string[], maps: RouteIdMaps, options: RoutesManifestOptions = {}): RoutesManifest {
   const filePathToId: Record<string, string> = {};
   for (const [path, id] of maps.routePathToIdMap.entries()) {
     filePathToId[path] = id;
   }
+  const handlers = new Set(options.handlers ?? []);
   return {
     appRouteId: APP_ROUTE_ID,
     pageKeys: resolvePageRouteFiles(pageKeys),
     layoutKeys: [...layoutKeys].sort(),
     filePathToId,
+    ...(handlers.size ? { handlers: [...handlers].sort() } : {}),
     routes: resolvePageRouteFiles(pageKeys).map(filePath => {
       const pattern = filePathToHttpRoute(filePath);
-      const kind = classifyRoute(pattern);
+      const kind = classifyRouteModule(pattern, handlers.has(filePath));
       return {
         name: filePathToRoutePath(filePath), pattern, filePath,
         routeId: filePathToId[filePath]!, kind,

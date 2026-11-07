@@ -89,6 +89,11 @@ export async function listRoles(options: ListRolesOptions = {}): Promise<RoleDet
   return { items, total, page: safePage, pageSize: safeSize };
 }
 
+/** The role new accounts get. Accounts start without one; assign roles on the user screen. */
+export async function defaultRole(): Promise<RoleDetail | null> {
+  return null;
+}
+
 export async function getRole(id: string): Promise<RoleDetail | null> {
   const role = await Role.findOne({ where: { id } });
   return role ? toDetail(role) : null;

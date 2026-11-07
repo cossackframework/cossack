@@ -1,8 +1,10 @@
 import { Cossack, Page, State, ClientStore, Validate, Client, Server, storeRules, isClientVisibleError } from '@cossackframework/core';
 import { Field, Input, PasswordInput, Button, Alert } from '@cossackframework/ui';
 import { html, component, bind } from '@cossackframework/renderer';
-import { authSessions, registerUser } from '../../../auth';
+import { authSessions, registerUser, registrationOpen } from '../../../auth';
 import { registerInput, type RegisterInput } from '../../../auth-input';
+
+const REGISTRATION_MESSAGES = new Set(['An account with this email already exists.', 'Registration is closed on this site.']);
 
 interface RegisterForm {
     name: string;
@@ -23,6 +25,11 @@ export default class RegisterPage extends Cossack {
     form: RegisterForm = { name: '', email: '', password: '' };
 
     @State() error = '';
+    @State() closed = false;
+
+    async init() {
+        this.closed = !(await registrationOpen());
+    }
 
     @Client()
     async handleSubmit(event: Event) {
@@ -47,13 +54,22 @@ export default class RegisterPage extends Cossack {
             headers.forEach((value, key) => this.c.header(key, value));
             this.redirect(config('auth.redirectAfterLogin'));
         } catch (error) {
-            this.error = isClientVisibleError(error) && error.message === 'An account with this email already exists.'
-                ? 'An account with this email already exists.'
+            // Only known, safe messages reach the page; anything else stays generic.
+            this.error = isClientVisibleError(error) && REGISTRATION_MESSAGES.has(error.message)
+                ? error.message
                 : 'Could not create the account. Try again or sign in.';
         }
     }
 
     render() {
+        if (this.closed) return html`
+            <h3 class="mb-3 text-xl font-semibold text-foreground">${__('Register')}</h3>
+            ${component(Alert, {}, __('Registration is closed on this site.'))}
+            <p class="mt-6 text-center text-sm text-muted-foreground">
+                ${__('Already have an account?')}
+                <a href="/auth/login" class="text-primary font-medium hover:underline">${__('Login')}</a>
+            </p>
+        `;
         return html`
             <h3 class="mb-6 text-xl font-semibold text-foreground">${__('Register')}</h3>
             <form @submit="${(e: Event) => this.handleSubmit(e)}" class="space-y-4">

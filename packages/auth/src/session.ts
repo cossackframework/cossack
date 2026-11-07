@@ -31,7 +31,11 @@ export interface AuthProvider<User> {
 export type SessionCreator<User> = (user: User, c: Context) => Promise<{ headers: Headers }>;
 
 export type LoginHandlerOptions<User> = {
-    validateCredentials: (credentials: any, c: Context) => Promise<User | null>;
+    /**
+     * The user for these credentials, null to refuse them, or a `Response` to answer with
+     * instead, such as a request for a second-factor code.
+     */
+    validateCredentials: (credentials: any, c: Context) => Promise<User | null | Response>;
     /**
      * Per-call session creator. Overrides any `createSession` configured on
      * the {@link AuthProvider} for this login handler. Omit to use the provider.
@@ -201,6 +205,7 @@ export function createAuth<User>(provider: AuthProvider<User>): AuthKit<User> {
             if (!user) {
                 return c.json({ error: 'Invalid credentials' }, 401);
             }
+            if (user instanceof Response) return user;
 
             const sessionCreator = loginOptions.createSession ?? provider.createSession;
             if (!sessionCreator) {

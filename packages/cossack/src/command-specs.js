@@ -5,6 +5,7 @@ import { COSSACK_PACKAGES } from './installed-packages.js';
  * these definitions; lifecycle commands explicitly forward their raw argv.
  */
 import { CommandSpec } from './command-spec.js';
+import { cmsDiagnostics, cmsFlagDefinitions } from './cms/catalog.js';
 import {
   ADAPTERS, FEATURES, AUTH_METHODS, OAUTH_PROVIDERS, UI_THEMES,
   DASHBOARD_MODULES, DATABASE_PROVIDERS, PRESET_REGISTRY,
@@ -108,9 +109,18 @@ export const commandSpecs = {
       features: { ...list('Dashboard modules, comma separated.', DASHBOARD_MODULES), when: ['dashboard'] }, yes,
     }, check: (args, flags) => [
       ...providerDiagnostics(args, flags),
-      ...(args[1] && args[0] !== 'ui' ? [{ code: 'COSSACK_ARGUMENT_UNEXPECTED', severity: 'error',
-        message: 'A component argument is only supported by add ui.' }] : []),
+      ...(args[1] && args[0] !== 'ui' && args[0] !== 'plugin' ? [{ code: 'COSSACK_ARGUMENT_UNEXPECTED', severity: 'error',
+        message: 'A second argument is only supported by add ui <component> and add plugin <source>.' }] : []),
+      ...(args[0] === 'plugin' && !args[1] ? [{ code: 'COSSACK_ARGUMENT_MISSING', severity: 'error',
+        message: 'add plugin needs a package directory, .tgz tarball or npm package.' }] : []),
     ] }),
+  plugins: new CommandSpec({ name: 'plugins', globals: mutations, positionals: ['subcommand', 'name'], minPositionals: 1,
+    subcommands: {
+      list: { positionals: [] },
+      check: { positionals: ['name'] },
+      upgrade: { positionals: ['name'], minPositionals: 1, flags: { source: str('Render from this package directory, tarball or npm package instead of the recorded source.') } },
+      remove: { positionals: ['name'], minPositionals: 1 },
+    } }),
   remove: new CommandSpec({ name: 'remove', globals: mutations, positionals: ['feature'],
     minPositionals: 1, flags: { yes } }),
   adapter: new CommandSpec({ name: 'adapter', globals: mutations, positionals: ['adapter'],
@@ -199,6 +209,8 @@ export const commandSpecs = {
     'force-file': str('Owned file to replace; repeat for multiple files.', { repeated: true }),
     'apply-template': bool('Apply template changes while preserving edited files.'),
   } }),
+  cms: new CommandSpec({ name: 'cms', globals: readonly, positionals: ['command', 'subcommand', 'arg', 'arg', 'arg', 'arg', 'arg', 'arg'], minPositionals: 1,
+    flags: cmsFlagDefinitions(), check: cmsDiagnostics }),
   image: new CommandSpec({ name: 'image', globals: ['dry-run', 'json', 'help'],
     positionals: ['subcommand'], minPositionals: 1, subcommands: { optimize: {} }, flags: {
       format: choices('Output format (default: webp).', ['webp', 'avif']),

@@ -16,5 +16,6 @@ export type RegisterInput = InputOf<typeof registerInput>;
 export const resetRequestInput = input.object({ email });
 export type ResetRequestInput = InputOf<typeof resetRequestInput>;
 
-export const resetPasswordInput = input.object({ token: input.string({ required: true, maxLength: 191 }), password });
+// The confirmation is checked against the password by the action, which says which one is wrong.
+export const resetPasswordInput = input.object({ token: input.string({ required: true, maxLength: 191 }), password, confirm: input.string({ required: true, maxLength: 1024 }) });
 export type ResetPasswordInput = InputOf<typeof resetPasswordInput>;

@@ -2,7 +2,7 @@ import { builtinModules } from 'node:module';
 import { checkCapabilityRequirements } from '@cossackframework/core/runtime-capabilities';
 
 export const ADAPTERS = ['cloudflare', 'node'];
-export const FEATURES = ['ui', 'database', 'studio', 'auth', 'dashboard', 'markdown', 'examples', 'desktop', 'resource', 'mutation', 'scoped-service', 'protected-route', 'jobs', 'turnstile', 'schedules', 'notifications', 'workflows'];
+export const FEATURES = ['ui', 'database', 'studio', 'auth', 'dashboard', 'markdown', 'examples', 'desktop', 'resource', 'mutation', 'scoped-service', 'protected-route', 'jobs', 'turnstile', 'schedules', 'notifications', 'workflows', 'cms'];
 export const AUTH_METHODS = ['credentials', 'oauth'];
 export const OAUTH_PROVIDERS = ['github', 'google', 'gitlab', 'facebook', 'microsoft'];
 export const UI_THEMES = ['default', 'neutral', 'zinc', 'stone', 'gray', 'slate', 'blue', 'green', 'red'];
@@ -44,7 +44,23 @@ export const FEATURE_REGISTRY = {
   schedules: { requires: ['jobs'] },
   notifications: { requires: ['jobs'] },
   workflows: { requires: [] },
+  // RomeDB CMS: content, media, taxonomies, settings and plugins in the shared dashboard.
+  // With cms, auth keeps users and sessions in RomeDB, so it no longer needs database.
+  cms: { requires: ['ui', 'auth', 'dashboard'] },
 };
+
+/** Features that cannot be selected together, with the reason. */
+export const FEATURE_CONFLICTS = [];
+
+/** Where auth keeps users, roles and sessions: the CMS (RomeDB) or the ORM (`database`). */
+export function authStore(features) {
+  return features.includes('cms') ? 'cms' : 'database';
+}
+
+function requirementsOf(feature, requested) {
+  if (feature === 'auth' && authStore(requested) === 'cms') return ['ui'];
+  return FEATURE_REGISTRY[feature].requires;
+}
 
 export const PRESET_REGISTRY = {
   minimal: { features: [] },
@@ -91,7 +107,7 @@ export function resolveFeatures(explicit) {
   assertKnown(requested, FEATURES, 'feature');
   const resolved = new Set();
   const visit = (feature) => {
-    for (const dependency of FEATURE_REGISTRY[feature].requires) visit(dependency);
+    for (const dependency of requirementsOf(feature, requested)) visit(dependency);
     resolved.add(feature);
   };
   for (const feature of requested) visit(feature);
@@ -136,6 +152,9 @@ export function resolveRecipe(options = {}) {
   );
   assertKnown(optionFeatures, FEATURES, 'feature');
   const resolvedFeatures = resolveFeatures(explicitFeatures);
+  for (const conflict of FEATURE_CONFLICTS) {
+    if (conflict.features.every(feature => resolvedFeatures.includes(feature))) throw new Error(conflict.reason);
+  }
 
   const database = options.database ??
     (adapter === 'cloudflare' ? 'd1' : 'sqlite');
@@ -156,6 +175,9 @@ export function resolveRecipe(options = {}) {
   }
   if (resolvedFeatures.includes('auth') && authMethods.includes('oauth') && oauth.length === 0) {
     throw new Error(`OAuth authentication requires at least one provider: ${OAUTH_PROVIDERS.join(', ')}`);
+  }
+  if (authStore(resolvedFeatures) === 'cms' && (authMethods.includes('oauth') || oauth.length)) {
+    throw new Error('OAuth sign-in is not available with the cms feature yet. Use --auth-methods credentials.');
   }
   if (!authMethods.includes('oauth') && oauth.length) {
     throw new Error('OAuth providers were configured but the oauth auth method is not enabled');
@@ -209,6 +231,7 @@ export function recipeCapabilityRequirements(recipe, target = 'web') {
   if (recipe.resolvedFeatures.includes('jobs')) add('jobs/cloudflare-queues', { cloudflareBindings: ['JOBS', 'JOB_STATE'] });
   if (recipe.resolvedFeatures.includes('schedules')) add('schedules/cloudflare-cron', { cloudflareBindings: ['JOBS', 'JOB_STATE'] });
   if (recipe.resolvedFeatures.includes('notifications')) add('notifications/cloudflare-email', { cloudflareBindings: ['EMAIL', 'JOB_STATE'] });
+  if (recipe.resolvedFeatures.includes('cms')) add('cms', { transports: ['http'], ...(recipe.adapter === 'cloudflare' ? { cloudflareBindings: ['ROMEDB_PENDING', 'MEDIA'] } : { filesystem: true }) });
   if (recipe.resolvedFeatures.includes('resource')) add('resource', { transports: ['http'] });
   if (recipe.resolvedFeatures.includes('mutation')) add('mutation', { transports: ['http'] });
   if (recipe.resolvedFeatures.includes('scoped-service')) add('scoped-service', { transports: ['http'] });

@@ -58,6 +58,10 @@ Read command help before a mutation. Prefer inspection and supported dry runs to
 learn what an action will change. Never treat a successful local configuration
 check as proof that remote credentials, bindings or deployment are ready.
 
+To manage a running CMS site (entries, publishing, notes, users, settings, sites), use
+`pnpm exec cossack cms <command> --json` after `cossack cms login --url <address>`; `cossack cms
+--help` lists the commands, and `cossack cms mcp` prints the site's MCP server configuration.
+
 For an MCP host, start `cossack-mcp --project /absolute/path/to/app`. Use
 `inspect_project` for static facts and `read_documentation` for this offline
 catalog. `read_test_results` reads stored test evidence through the same service as

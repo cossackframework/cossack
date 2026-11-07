@@ -39,6 +39,9 @@ export class Tabs extends Cossack {
     private root?: HTMLDivElement;
     private indicator?: HTMLSpanElement;
     private resize?: ResizeObserver;
+    /** The list and tabs the observer watches, and what the indicator was last placed for: a render that changes neither reads no layout. */
+    private observed: Element[] = [];
+    private placed = '';
     private focusRepair?: Element;
     private pointerTrigger?: HTMLButtonElement;
     private generation = 0;
@@ -83,9 +86,14 @@ export class Tabs extends Cossack {
             if (generation !== this.generation || !root.isConnected) return;
             this.root = root;
             this.resize ??= new ResizeObserver(() => this.updateIndicator());
-            this.resize.disconnect();
-            if (this.tablistRef.value) this.resize.observe(this.tablistRef.value);
-            for (const button of this.buttons()) this.resize.observe(button);
+            // A resize of the list or a tab moves the indicator, so they are watched again only when they changed.
+            const elements = [...(this.tablistRef.value ? [this.tablistRef.value] : []), ...this.buttons()];
+            const watched = elements.length === this.observed.length && elements.every((element, index) => element === this.observed[index]);
+            if (!watched) {
+                this.resize.disconnect();
+                for (const element of elements) this.resize.observe(element);
+                this.observed = elements;
+            }
             const previous = this.focusRepair; this.focusRepair = undefined;
             if (previous && (root.ownerDocument.activeElement === previous || root.ownerDocument.activeElement === root.ownerDocument.body)) {
                 const buttons = this.buttons();
@@ -95,15 +103,20 @@ export class Tabs extends Cossack {
                 const button = retained ?? buttons.find(button => button.dataset.value === this.current() && !button.matches(':disabled'));
                 (button ?? this.tablistRef.value)?.focus({ preventScroll: true });
             }
-            this.updateIndicator();
+            // Placing it reads the tab's offsets, which lays out the page: a render that only changed a panel skips it.
+            if (!watched || this.placed !== this.placement()) this.updateIndicator();
         });
     }
+    // Direction moves the tabs without resizing them, which the observer would not see.
+    private placement() { return `${this.current()}|${this.props.variant}|${this.props.orientation}|${String(this.props.dir)}`; }
     private updateIndicator() {
         const list = this.tablistRef.value, indicator = this.indicator;
+        this.placed = '';
         if (!list?.isConnected || !indicator?.isConnected) return;
         const active = this.buttons().find(button => button.dataset.value === this.current());
         indicator.hidden = !active;
         if (!active) return;
+        this.placed = this.placement();
         const underline = this.props.variant === 'underline', vertical = this.props.orientation === 'vertical';
         const paint = underline ? 'background:var(--color-primary, #2563eb);border-radius:1px;' : 'background:var(--color-background, #fff);border-radius:0.25rem;box-shadow:0 1px 2px rgb(0 0 0 / 0.06);';
         if (vertical) {
@@ -156,5 +169,5 @@ export class Tabs extends Cossack {
             </div>`)}
         </div>`;
     }
-    onCleanup() { this.generation++; this.resize?.disconnect(); this.resize = undefined; this.root = undefined; this.indicator = undefined; this.focusRepair = undefined; this.pointerTrigger = undefined; this.tablistRef.value = undefined; }
+    onCleanup() { this.generation++; this.resize?.disconnect(); this.resize = undefined; this.observed = []; this.placed = ''; this.root = undefined; this.indicator = undefined; this.focusRepair = undefined; this.pointerTrigger = undefined; this.tablistRef.value = undefined; }
 }

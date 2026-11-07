@@ -530,6 +530,23 @@ export async function setLocale(locale: string): Promise<void> {
 }
 
 /**
+ * Switches the current request's locale on the server, such as to the language of
+ * the content a route found: `/fr/a-propos` renders in French whatever the visitor's
+ * cookie says. Call it before rendering. `__()` reads that locale's catalog and falls
+ * back to the default; a locale without a catalog still becomes `<html lang>`. The
+ * `cossack_locale` cookie is not touched, and the client follows the page.
+ */
+export function setRequestLocale(locale: string): void {
+    const store = requestStore();
+    if (!store) throw new Error('[Cossack] setRequestLocale() runs on the server, during a request.');
+    const code = String(locale).trim();
+    if (!/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/.test(code)) throw new Error(`[Cossack] "${locale}" is not a locale code.`);
+    const known = store.catalogs ? Object.keys(store.catalogs).find(value => value.toLowerCase() === code.toLowerCase()) : undefined;
+    store.locale = known ?? code;
+    store.messages = (known && store.catalogs?.[known]) || {};
+}
+
+/**
  * Translates a key for the current locale.
  *
  * - Looks up `key` in the current locale's catalog; on miss, falls back to the

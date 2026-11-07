@@ -1,0 +1,506 @@
+/*
+ * Layout blocks: group, columns and grid, as cms/site-view.ts renders them. They respond to
+ * the width of the content root they are in (`.cms-content`, a container), not the viewport,
+ * so columns inside a column stack on their own and the site editor's device toggle only
+ * narrows the root. Breakpoints: sm below 640px, md below 1024px, lg from there. A theme
+ * overrides these in its own stylesheet.
+ */
+.cms-content { container-type: inline-size; }
+
+/*
+ * The constrained layout. The theme's root sets the measures (`--cms-content`, `--cms-wide`,
+ * `--cms-narrow`, `--cms-gutter`); `helpers.layout` renders a blocks root as `.cms-layout` and
+ * each block in an item at the content measure, or the width its Width field asks for. A
+ * full-width group renders its children as items too, so a band holds a column of text and a
+ * wide child stays wide. Items are query containers: columns respond to the width they have.
+ * `.cms-measure` is for a theme's own parts (titles, lists, forms). A block with a padding
+ * preset holds its own gutter, so nothing inside it adds the page's.
+ */
+/* `width: 100%`: inside a grid (a full-width group), an item with auto margins would otherwise size to its content, which size containment makes nothing. */
+.cms-item { container-type: inline-size; width: 100%; max-width: min(var(--cms-content, 48rem), 100% - 2 * var(--cms-gutter, 1.5rem)); margin-inline: auto; }
+.cms-item[data-align="wide"] { max-width: min(var(--cms-wide, 72rem), 100% - 2 * var(--cms-gutter, 1.5rem)); }
+.cms-item[data-align="full"] { max-width: none; }
+.cms-item[data-align="center"], .cms-item[data-align="left"], .cms-item[data-align="right"] { max-width: min(var(--cms-narrow, 40rem), 100% - 2 * var(--cms-gutter, 1.5rem)); }
+.cms-item[data-align="left"] { margin-inline: max(var(--cms-gutter, 1.5rem), (100% - var(--cms-content, 48rem)) / 2) auto; }
+.cms-item[data-align="right"] { margin-inline: auto max(var(--cms-gutter, 1.5rem), (100% - var(--cms-content, 48rem)) / 2); }
+.cms-measure { max-width: min(var(--cms-content, 48rem), 100% - 2 * var(--cms-gutter, 1.5rem)); margin-inline: auto; }
+.cms-measure-wide { max-width: min(var(--cms-wide, 72rem), 100% - 2 * var(--cms-gutter, 1.5rem)); margin-inline: auto; }
+.cms-measure .cms-measure, .cms-measure .cms-measure-wide { max-width: none; }
+.cms-padded { --cms-gutter: 0px; }
+
+.cms-group, .cms-columns, .cms-grid { --cms-gap: 1.5rem; display: grid; gap: var(--cms-gap); }
+[data-gap="none"] { --cms-gap: 0; }
+[data-gap="small"] { --cms-gap: 0.75rem; }
+[data-gap="large"] { --cms-gap: 3rem; }
+
+/* A group's width where nothing constrains it (inside a content-width group, a column); its styled wrapper carries the same `data-align`. */
+.cms-group[data-align="wide"], .cms-block[data-align="wide"] { max-width: var(--cms-wide, 72rem); margin-inline: auto; }
+.cms-group[data-align="center"], .cms-block[data-align="center"] { max-width: var(--cms-narrow, 40rem); margin-inline: auto; }
+.cms-group[data-align="left"], .cms-block[data-align="left"] { max-width: var(--cms-narrow, 40rem); margin-inline-end: auto; }
+.cms-group[data-align="right"], .cms-block[data-align="right"] { max-width: var(--cms-narrow, 40rem); margin-inline-start: auto; }
+/* A band: a full-width group at least this tall, its blocks placed in the height. */
+.cms-group[data-height="short"] { min-height: 16rem; }
+.cms-group[data-height="medium"] { min-height: 28rem; }
+.cms-group[data-height="tall"] { min-height: 40rem; }
+.cms-group[data-height="screen"] { min-height: 100vh; min-height: 100svh; }
+.cms-group[data-valign="center"] { align-content: center; }
+.cms-group[data-valign="bottom"] { align-content: end; }
+
+/* A row group: a header or a footer bar built from blocks. Children keep their own width; the row wraps on narrow screens. */
+.cms-group[data-direction="row"] { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1.5rem; }
+/* A full-width row lays its row within the content measure, so a header band's logo and menu line up with the page. */
+.cms-group[data-direction="row"][data-align="full"] { padding-inline: max(var(--cms-gutter, 1.5rem), (100% - var(--cms-content, 48rem)) / 2); }
+.cms-group[data-direction="row"][data-justify="center"] { justify-content: center; }
+.cms-group[data-direction="row"][data-justify="end"] { justify-content: flex-end; }
+.cms-group[data-direction="row"][data-justify="between"] { justify-content: space-between; }
+.cms-group[data-direction="row"] > * { min-width: 0; }
+.cms-group[data-direction="row"] :is(.cms-button, .cms-card, .cms-prose p, figure, .cms-group[data-direction="row"]) { margin-block: 0; }
+.cms-group[data-direction="row"] .cms-group[data-direction="row"] { flex: 1 1 auto; }
+
+/*
+ * Columns: twelve tracks. A column, or the wrapper of a styled column (`.cms-column-box`), is
+ * the grid item. Stacking is a custom property the columns block sets and its columns inherit,
+ * so edit markers and wrappers between them change nothing, and nested columns keep their own.
+ */
+.cms-columns { grid-template-columns: repeat(12, minmax(0, 1fr)); --cms-stack-sm: initial; --cms-stack-md: initial; }
+.cms-columns[data-stack="mobile"] { --cms-stack-sm: 12; }
+.cms-columns[data-stack="tablet"] { --cms-stack-sm: 12; --cms-stack-md: 12; }
+.cms-column, .cms-column-box { grid-column: span var(--cms-span, 12); min-width: 0; }
+.cms-column { display: flex; flex-direction: column; }
+.cms-column-box { display: flex; flex-direction: column; }
+.cms-column-box > .cms-column { flex: 1; }
+.cms-column[data-valign="center"] { justify-content: center; }
+.cms-column[data-valign="bottom"] { justify-content: flex-end; }
+.cms-column > :first-child { margin-top: 0; }
+
+/* A styled block's wrapper: `blockStyleAttributes` sets its colors, spacing, size and alignment inline through the presets' variables. */
+.cms-block { min-width: 0; }
+.cms-block > :first-child { margin-top: 0; }
+.cms-block > :last-child { margin-bottom: 0; }
+/*
+ * The advanced background of a container. The wrapper's own background is the image under a
+ * gradient; a video sits over it, the overlay (`--cms-overlay`) over both, and the content on
+ * top: the wrapper is a stacking context, so the negative layers stay inside it.
+ */
+.cms-block.cms-has-overlay, .cms-block.cms-has-video { position: relative; isolation: isolate; }
+.cms-has-overlay::before { content: ''; position: absolute; inset: 0; z-index: -1; background: var(--cms-overlay); pointer-events: none; }
+.cms-bg-video { position: absolute; inset: 0; z-index: -2; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
+.cms-block > .cms-bg-video + * { margin-top: 0; }
+@media (prefers-reduced-motion: reduce) {
+    .cms-bg-video { display: none; }
+}
+
+.cms-grid { grid-template-columns: repeat(var(--cms-cols-lg, 3), minmax(0, 1fr)); }
+
+@container (width >= 1024px) {
+    [data-hide~="lg"] { display: none; }
+}
+@container (640px <= width < 1024px) {
+    [data-hide~="md"] { display: none; }
+}
+@container (width < 1024px) {
+    .cms-grid { grid-template-columns: repeat(var(--cms-cols-md, 2), minmax(0, 1fr)); }
+    .cms-column, .cms-column-box { grid-column: span var(--cms-stack-md, var(--cms-span, 12)); }
+}
+@container (width < 640px) {
+    [data-hide~="sm"] { display: none; }
+    .cms-grid { grid-template-columns: repeat(var(--cms-cols-sm, 1), minmax(0, 1fr)); }
+    .cms-column, .cms-column-box { grid-column: span var(--cms-stack-sm, var(--cms-span, 12)); }
+}
+
+/* The site editor's device toggle narrows the content root; nothing else changes. */
+html[data-cms-device="tablet"] .cms-content { max-width: 48rem; margin-inline: auto; }
+html[data-cms-device="phone"] .cms-content { max-width: 24rem; margin-inline: auto; }
+
+/* The editors' "Add block" button: a slowly turning rainbow border, so it stands out among the controls. */
+@property --cms-angle { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
+.cms-add-block {
+    border: 1px solid transparent;
+    background: linear-gradient(var(--background), var(--background)) padding-box,
+        conic-gradient(from var(--cms-angle), #f472b6, #fb923c, #facc15, #4ade80, #22d3ee, #818cf8, #c084fc, #f472b6) border-box;
+    animation: cms-rainbow 6s linear infinite;
+}
+.cms-add-block:hover { background: linear-gradient(var(--muted), var(--muted)) padding-box,
+    conic-gradient(from var(--cms-angle), #f472b6, #fb923c, #facc15, #4ade80, #22d3ee, #818cf8, #c084fc, #f472b6) border-box; }
+@keyframes cms-rainbow { to { --cms-angle: 360deg; } }
+@media (prefers-reduced-motion: reduce) { .cms-add-block { animation: none; } }
+
+/*
+ * Forms (cms/form-view.ts). A block whose condition hides it stays in the HTML with
+ * `data-hidden`; without JavaScript every block shows and the server applies the conditions.
+ * The trap field is off screen for people and left in the page for bots.
+ */
+@media (scripting: enabled) {
+  .cms-form [data-cms-when][data-hidden] { display: none !important; }
+}
+.cms-form-trap { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
+
+/*
+ * Dividers (core/divider): a line of a thickness and length, a palette color or a CSS color,
+ * with text in the middle if asked; or a vertical line between things in a row.
+ */
+.cms-divider { --cms-divider-size: 1px; border: 0; margin-block: 2rem; margin-inline: auto; }
+.cms-divider[data-thickness="medium"] { --cms-divider-size: 2px; }
+.cms-divider[data-thickness="thick"] { --cms-divider-size: 4px; }
+.cms-divider[data-width="wide"] { width: 75%; }
+.cms-divider[data-width="narrow"] { width: 25%; }
+hr.cms-divider { height: var(--cms-divider-size); background: var(--cms-divider-color, var(--border)); }
+.cms-divider-text { display: flex; align-items: center; gap: 1rem; color: var(--muted-foreground); font-size: 0.875rem; }
+.cms-divider-text::before, .cms-divider-text::after { content: ''; flex: 1; height: var(--cms-divider-size); background: var(--cms-divider-color, var(--border)); }
+.cms-divider-vertical { width: var(--cms-divider-size); min-height: 4rem; align-self: stretch; margin-block: 0; margin-inline: 1rem; background: var(--cms-divider-color, var(--border)); }
+.cms-divider-vertical[data-width="wide"] { min-height: 8rem; width: var(--cms-divider-size); }
+.cms-divider-vertical[data-width="full"] { min-height: 100%; width: var(--cms-divider-size); }
+
+/* Cards (core/card): the image above, left of or right of the text. */
+.cms-card { display: grid; overflow: hidden; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--card); margin-block: 1.5rem; }
+.cms-card-media { min-height: 0; }
+.cms-card-media img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.cms-card[data-layout="top"] .cms-card-media img { aspect-ratio: 16 / 9; }
+.cms-card-body { padding: 1.25rem; }
+@container (width >= 640px) {
+    .cms-card[data-layout="left"], .cms-card[data-layout="right"] { grid-template-columns: 2fr 3fr; }
+    .cms-card[data-layout="right"] .cms-card-media { order: 2; }
+}
+
+/* Carousels (core/carousel): a scroll-snapping track; carousel.client.ts adds arrows, dots and autoplay. */
+.cms-carousel { position: relative; }
+.cms-carousel-track { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; scroll-behavior: smooth; gap: 0; border-radius: 0.75rem; background: var(--muted); scrollbar-width: none; }
+.cms-carousel-track::-webkit-scrollbar { display: none; }
+.cms-carousel-slide { position: relative; flex: 0 0 100%; margin: 0; scroll-snap-align: start; }
+.cms-carousel-image { display: block; width: 100%; height: 100%; object-fit: cover; }
+.cms-carousel[data-aspect="video"] .cms-carousel-image { aspect-ratio: 16 / 9; }
+.cms-carousel[data-aspect="wide"] .cms-carousel-image { aspect-ratio: 21 / 9; }
+.cms-carousel[data-aspect="square"] .cms-carousel-image { aspect-ratio: 1; }
+.cms-carousel-caption { position: absolute; inset-inline: 0; bottom: 0; padding: 0.5rem 1rem; background: color-mix(in oklab, black 55%, transparent); color: white; font-size: 0.875rem; }
+.cms-carousel-arrow { position: absolute; top: 50%; translate: 0 -50%; display: none; width: 2.5rem; height: 2.5rem; border: 0; border-radius: 9999px; background: color-mix(in oklab, var(--background) 85%, transparent); color: var(--foreground); font-size: 1.5rem; line-height: 1; cursor: pointer; box-shadow: 0 1px 3px rgb(0 0 0 / 0.2); }
+.cms-carousel-prev { left: 0.75rem; }
+.cms-carousel-next { right: 0.75rem; }
+.cms-carousel-dots { display: none; justify-content: center; gap: 0.5rem; margin-top: 0.75rem; }
+.cms-carousel-dots button { width: 0.625rem; height: 0.625rem; padding: 0; border: 0; border-radius: 9999px; background: var(--border); cursor: pointer; }
+.cms-carousel-dots button[aria-selected="true"] { background: var(--primary); }
+.cms-carousel[data-enhanced] .cms-carousel-arrow, .cms-carousel[data-enhanced] .cms-carousel-dots { display: flex; align-items: center; justify-content: center; }
+@media (prefers-reduced-motion: reduce) { .cms-carousel-track { scroll-behavior: auto; } }
+
+/* A block the editor's validation message names flashes a few times so it is found in a long tree. */
+.cms-block-error { animation: cms-block-flash 0.6s ease-in-out 4; }
+@keyframes cms-block-flash {
+    0%, 100% { box-shadow: 0 0 0 0 transparent; }
+    50% { box-shadow: 0 0 0 4px color-mix(in oklab, var(--destructive) 45%, transparent); }
+}
+@media (prefers-reduced-motion: reduce) { .cms-block-error { animation: none; } }
+
+/* A font size preset sits on the block's wrapper; a heading or quote block's own text takes it, not its default size. */
+[class*="cms-size-"] > :is(h1, h2, h3, h4, h5, h6), [class*="cms-size-"] > blockquote > p, [class*="cms-size-"] > figure > blockquote { font-size: inherit; }
+
+/* A field, block or passage a note was chosen for in the Notes rail. */
+.cms-note-flash { outline: 2px solid rgb(245 158 11); outline-offset: 2px; border-radius: 0.5rem; animation: cms-note-fade 2s ease-out forwards; }
+@keyframes cms-note-fade { 0%, 60% { outline-color: rgb(245 158 11); } 100% { outline-color: transparent; } }
+@media (prefers-reduced-motion: reduce) { .cms-note-flash { animation: none; } }
+
+/*
+ * Navigation, as `helpers.menu()` and the Navigation block render it: a header row whose
+ * dropdowns and mega panels open on hover, keyboard focus and while a block inside them is
+ * selected in Live Edit; a disclosure with the whole tree below 768px; one row for footers
+ * (`inline`); a tree for sidebars (`list`). Colors are the UI kit's variables, so a theme's
+ * accent applies; a theme restyles these classes in its own stylesheet.
+ */
+.cms-nav ul { list-style: none; margin: 0; padding: 0; }
+.cms-nav-list { display: flex; align-items: center; gap: 0.25rem 1.5rem; }
+.cms-nav-inline .cms-nav-list { flex-wrap: wrap; gap: 0.5rem 1.25rem; }
+.cms-nav-item { position: relative; }
+.cms-nav-link, .cms-nav-sublink, .cms-nav-treelink, .cms-mega-link { color: var(--muted-foreground); font-size: 0.875rem; text-decoration: none; }
+.cms-nav-link { display: inline-flex; align-items: center; gap: 0.25rem; padding-block: 0.5rem; }
+.cms-nav-has-sub > .cms-nav-link::after { content: ''; width: 0.4em; height: 0.4em; margin-left: 0.15em; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: translateY(-0.15em) rotate(45deg); opacity: 0.7; }
+a.cms-nav-link:hover, a.cms-nav-sublink:hover, a.cms-nav-treelink:hover, .cms-mega-link:hover { color: var(--foreground); }
+.cms-nav [aria-current="page"], .cms-nav-heading { color: var(--foreground); font-weight: 500; }
+/*
+ * How dropdowns, mega panels and the drawer open, chosen per menu by `data-motion` on the nav
+ * (the Navigation block's Animation field, or `helpers.menu(…, { motion })`): `rise` (the
+ * default) fades in and lifts by the offset, `fade` only fades, `scale` grows from the top edge,
+ * `none` switches. A preset is the closed transform in `--cms-nav-closed`; the other variables
+ * tune them all, on `.cms-nav` for the site or on one nav, and a theme adds a preset of its own
+ * by setting `--cms-nav-closed` under `.cms-nav[data-motion="<name>"]`. Opening is immediate;
+ * closing waits the close delay, so a pointer moving diagonally toward a panel does not flicker.
+ */
+.cms-nav { --cms-nav-duration: 160ms; --cms-nav-ease: cubic-bezier(0.2, 0, 0, 1); --cms-nav-offset: 6px; --cms-nav-close-delay: 80ms; --cms-nav-closed: translateY(var(--cms-nav-offset)); }
+.cms-nav[data-motion="fade"], .cms-nav[data-motion="none"] { --cms-nav-closed: none; }
+.cms-nav[data-motion="scale"] { --cms-nav-closed: scale(0.96); }
+.cms-nav[data-motion="none"] { --cms-nav-duration: 0s; }
+.cms-nav-sub, .cms-mega { position: absolute; top: 100%; z-index: 20; visibility: hidden; opacity: 0; transform: var(--cms-nav-closed); transform-origin: top center;
+    transition-property: opacity, transform, visibility;
+    transition-duration: var(--cms-nav-duration), var(--cms-nav-duration), 0s;
+    transition-timing-function: var(--cms-nav-ease), var(--cms-nav-ease), linear;
+    transition-delay: var(--cms-nav-close-delay), var(--cms-nav-close-delay), calc(var(--cms-nav-close-delay) + var(--cms-nav-duration)); }
+.cms-nav-item:hover > .cms-nav-sub, .cms-nav-item:focus-within > .cms-nav-sub, .cms-nav-item:has([data-cms-selected]) > .cms-nav-sub,
+.cms-nav-item:hover > .cms-mega, .cms-nav-item:focus-within > .cms-mega, .cms-nav-item:has([data-cms-selected]) > .cms-mega { visibility: visible; opacity: 1; transform: none; transition-delay: 0s; }
+@media (prefers-reduced-motion: reduce) { .cms-nav { --cms-nav-duration: 0s; --cms-nav-offset: 0px; } }
+/* Marked closed once a link in it was followed (`closeMenusOnFollow`), until the pointer leaves the item or focus returns. */
+.cms-nav[data-closed] .cms-nav-item > .cms-nav-sub, .cms-nav[data-closed] .cms-nav-item > .cms-mega { visibility: hidden; opacity: 0; transform: var(--cms-nav-closed); transition-delay: 0s; }
+.cms-nav-sub { left: 0; min-width: 12rem; padding-top: 0.5rem; }
+.cms-nav-sub .cms-nav-sub { top: 0; left: 100%; padding-top: 0; padding-left: 0.25rem; }
+.cms-nav-sublist { border: 1px solid var(--border); border-radius: 0.5rem; background: var(--popover); color: var(--popover-foreground); padding: 0.25rem; box-shadow: 0 12px 32px -12px rgb(0 0 0 / 0.35); }
+.cms-nav-sublink { display: block; border-radius: 0.375rem; padding: 0.5rem 0.75rem; }
+a.cms-nav-sublink:hover { background: var(--muted); }
+.cms-mega { left: 50%; translate: -50% 0; width: max-content; min-width: 20rem; max-width: min(64rem, calc(100vw - 2rem)); padding-top: 0.5rem; text-align: left; }
+.cms-mega-box { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2rem; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--popover); color: var(--popover-foreground); padding: 1.5rem; box-shadow: 0 16px 40px -16px rgb(0 0 0 / 0.4); }
+.cms-mega[data-panel] .cms-mega-box { grid-template-columns: minmax(0, 1fr) minmax(14rem, 18rem); }
+.cms-mega[data-panel] .cms-mega-columns:empty + .cms-mega-panel { grid-column: 1 / -1; }
+.cms-mega-columns { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(11rem, 14rem); gap: 1.5rem; }
+.cms-mega-heading { margin: 0 0 0.5rem; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted-foreground); }
+.cms-mega-links { display: grid; gap: 0.125rem; }
+.cms-mega-link { display: flex; align-items: flex-start; gap: 0.625rem; border-radius: 0.5rem; padding: 0.5rem 0.625rem; }
+.cms-mega-link:hover { background: var(--muted); }
+.cms-nav-icon { flex: none; width: 1.25rem; height: 1.25rem; margin-top: 0.125rem; object-fit: contain; }
+.cms-mega-text { display: grid; gap: 0.125rem; min-width: 0; }
+.cms-nav-label { color: var(--foreground); font-weight: 500; }
+.cms-nav-description { font-size: 0.8125rem; line-height: 1.35; color: var(--muted-foreground); }
+.cms-nav-badge { display: inline-block; margin-left: 0.375rem; border-radius: 9999px; background: var(--primary); color: var(--primary-foreground); padding: 0.0625rem 0.5rem; font-size: 0.6875rem; font-weight: 600; line-height: 1.4; vertical-align: middle; }
+.cms-mega-panel { min-width: 0; font-size: 0.875rem; }
+.cms-mega-panel > * > :first-child, .cms-mega-panel .cms-card { margin-top: 0; }
+.cms-nav-tree { display: grid; gap: 0.125rem; }
+.cms-nav-tree ul { margin-left: 1rem; border-left: 1px solid var(--border); padding-left: 0.75rem; }
+.cms-nav-treelink { display: block; padding-block: 0.375rem; }
+/*
+ * The hamburger menu below the collapse width: a button in the row, and a drawer with the tree
+ * under it, groups folding. The drawer is positioned against the nearest positioned ancestor
+ * (give the header `position: relative` so it spans the header), full width, at the height it
+ * would have in flow, so the page does not move; it enters with the menu's motion where
+ * `@starting-style` is supported and shows at once elsewhere.
+ */
+.cms-nav-mobile { display: none; }
+.cms-nav-toggle { display: inline-flex; align-items: center; justify-content: center; width: 2.5rem; height: 2.5rem; border-radius: 0.5rem; cursor: pointer; user-select: none; list-style: none; color: var(--foreground); }
+.cms-nav-toggle::-webkit-details-marker { display: none; }
+.cms-nav-toggle:hover { background: var(--muted); }
+.cms-nav-toggle-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.cms-nav-burger { position: relative; display: block; width: 1.125rem; height: 2px; border-radius: 1px; background: currentColor; transition: background var(--cms-nav-duration) var(--cms-nav-ease); }
+.cms-nav-burger::before, .cms-nav-burger::after { content: ''; position: absolute; left: 0; width: 100%; height: 2px; border-radius: 1px; background: currentColor; transition: transform var(--cms-nav-duration) var(--cms-nav-ease), top var(--cms-nav-duration) var(--cms-nav-ease); }
+.cms-nav-burger::before { top: -6px; }
+.cms-nav-burger::after { top: 6px; }
+.cms-nav-mobile[open] .cms-nav-burger { background: transparent; }
+.cms-nav-mobile[open] .cms-nav-burger::before { top: 0; transform: rotate(45deg); }
+.cms-nav-mobile[open] .cms-nav-burger::after { top: 0; transform: rotate(-45deg); }
+.cms-nav-drawer { position: absolute; left: 0; right: 0; z-index: 30; margin-top: 0.5rem; max-height: calc(100vh - 6rem); overflow-y: auto; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); background: var(--popover); color: var(--popover-foreground); padding: 0.5rem 1.5rem 1rem; box-shadow: 0 24px 48px -24px rgb(0 0 0 / 0.4); transform-origin: top center;
+    transition: opacity var(--cms-nav-duration) var(--cms-nav-ease), transform var(--cms-nav-duration) var(--cms-nav-ease); }
+@starting-style { .cms-nav-mobile[open] > .cms-nav-drawer { opacity: 0; transform: var(--cms-nav-closed); } }
+.cms-nav-drawer .cms-nav-tree { gap: 0; }
+.cms-nav-drawer .cms-nav-tree ul { margin-left: 0; border-left: 0; padding-left: 1rem; }
+.cms-nav-drawer .cms-nav-treelink { padding-block: 0.625rem; font-size: 1rem; color: var(--foreground); }
+.cms-nav-drawer .cms-nav-group > ul { padding-bottom: 0.25rem; }
+.cms-nav-group-label { display: block; padding: 0.75rem 0 0.25rem; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted-foreground); }
+.cms-nav-fold-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; list-style: none; cursor: pointer; }
+.cms-nav-fold-row::-webkit-details-marker { display: none; }
+.cms-nav-fold-row > .cms-nav-treelink { flex: 1; }
+.cms-nav-caret { flex: none; width: 0.5em; height: 0.5em; margin-right: 0.5rem; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: translateY(-0.15em) rotate(45deg); opacity: 0.7; transition: transform var(--cms-nav-duration) var(--cms-nav-ease); }
+.cms-nav-fold[open] > .cms-nav-fold-row .cms-nav-caret { transform: translateY(0.15em) rotate(225deg); }
+@media (max-width: 767px) {
+    .cms-nav-dropdowns .cms-nav-list { display: none; }
+    .cms-nav-dropdowns .cms-nav-mobile { display: block; }
+}
+@media (max-width: 1023px) {
+    .cms-nav-dropdowns[data-collapse="lg"] .cms-nav-list { display: none; }
+    .cms-nav-dropdowns[data-collapse="lg"] .cms-nav-mobile { display: block; }
+}
+
+/* The site logo block: the logo, or the site title, linked home. */
+.cms-site-logo { display: inline-flex; align-items: center; gap: 0.75rem; color: var(--foreground); text-decoration: none; }
+.cms-site-logo-image { display: block; width: auto; height: 2.5rem; max-width: 12rem; object-fit: contain; }
+.cms-site-logo[data-size="small"] .cms-site-logo-image { height: 1.75rem; }
+.cms-site-logo[data-size="large"] .cms-site-logo-image { height: 3.5rem; max-width: 16rem; }
+.cms-site-logo-text { display: grid; }
+.cms-site-logo-title { font-size: 1.25rem; font-weight: 700; line-height: 1.3; }
+.cms-site-logo[data-size="small"] .cms-site-logo-title { font-size: 1rem; }
+.cms-site-logo[data-size="large"] .cms-site-logo-title { font-size: 1.5rem; }
+.cms-site-logo-tagline { font-size: 0.875rem; font-weight: 400; color: var(--muted-foreground); }
+
+/* The search block and `helpers.search()`: a box, or a button that opens one. */
+.cms-search-input { width: 11rem; max-width: 100%; border: 1px solid var(--input, var(--border)); border-radius: 0.375rem; background: var(--background); padding: 0.375rem 0.75rem; font-size: 0.875rem; color: var(--foreground); }
+.cms-search-input:focus { outline: 2px solid var(--ring); outline-offset: 1px; }
+.cms-search-toggle { position: relative; }
+.cms-search-toggle > summary { list-style: none; cursor: pointer; display: inline-flex; width: 2.25rem; height: 2.25rem; align-items: center; justify-content: center; border-radius: 0.375rem; color: var(--muted-foreground); }
+.cms-search-toggle > summary::-webkit-details-marker { display: none; }
+.cms-search-toggle > summary:hover { background: var(--muted); color: var(--foreground); }
+.cms-search-toggle[open] > .cms-search { position: absolute; right: 0; top: 100%; z-index: 20; margin-top: 0.5rem; padding: 0.5rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--popover); box-shadow: 0 12px 32px -12px rgb(0 0 0 / 0.35); }
+
+/*
+ * Section blocks: the leaf widgets of page builders (cms/site-view.ts). Icons are inline SVGs
+ * of the site icon set, colored by `currentColor`; `--cms-brand` carries a network's color.
+ */
+.cms-icon { display: inline-block; flex: none; vertical-align: middle; }
+
+/* Spacer (core/spacer): empty height. */
+.cms-spacer { height: 2rem; }
+.cms-spacer[data-size="small"] { height: 1rem; }
+.cms-spacer[data-size="large"] { height: 4rem; }
+.cms-spacer[data-size="huge"] { height: 8rem; }
+
+/* Tabs (core/tabs): one panel at a time once tabs.client.ts runs; every panel under its title otherwise. The first panel is active from the server. */
+.cms-tablist { display: flex; flex-wrap: wrap; gap: 0.25rem; border-bottom: 1px solid var(--border); }
+.cms-tab { display: inline-flex; align-items: center; gap: 0.375rem; margin-bottom: -1px; padding: 0.5rem 0.875rem; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--muted-foreground); font: inherit; font-size: 0.9375rem; font-weight: 500; cursor: pointer; }
+.cms-tab:hover { color: var(--foreground); }
+.cms-tab[aria-selected="true"] { color: var(--foreground); border-bottom-color: var(--primary); }
+.cms-tabpanel { padding-top: 1rem; }
+.cms-tabpanel:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-radius: 0.25rem; }
+.cms-tabpanel-title { display: none; margin: 1.5rem 0 0.5rem; font-size: 1.125rem; font-weight: 600; }
+.cms-tabs[data-enhanced] .cms-tabpanel:not([data-active]) { display: none; }
+@media (scripting: enabled) { .cms-tabpanel:not([data-active]) { display: none; } }
+@media (scripting: none) { .cms-tablist { display: none; } .cms-tabpanel-title { display: block; } }
+
+/* Accordion (core/accordion): native details; a `name` shared by the sections keeps one open when the block asks. */
+.cms-accordion { border-top: 1px solid var(--border); }
+.cms-accordion-item { border-bottom: 1px solid var(--border); }
+.cms-accordion-summary { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.875rem 0; font-weight: 600; cursor: pointer; list-style: none; }
+.cms-accordion-summary::-webkit-details-marker { display: none; }
+.cms-accordion-caret { flex: none; width: 0.5rem; height: 0.5rem; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; rotate: 45deg; transition: rotate 0.15s ease; color: var(--muted-foreground); }
+.cms-accordion-item[open] .cms-accordion-caret { rotate: 225deg; }
+.cms-accordion-body { padding-bottom: 1rem; }
+.cms-accordion-body > :first-child { margin-top: 0; }
+
+/* Cards (core/card) with an icon, or without a box. */
+.cms-card[data-style="plain"] { border: 0; border-radius: 0; background: none; }
+.cms-card[data-style="plain"] .cms-card-body { padding: 0; }
+.cms-card-icon { display: inline-flex; margin-bottom: 0.75rem; color: var(--primary); }
+.cms-card-icon .cms-icon { width: 2rem; height: 2rem; }
+
+/* Icon list (core/icon-list): an icon before each item, in one to three columns. */
+.cms-icon-list { display: grid; grid-template-columns: repeat(var(--cms-icon-columns, 1), minmax(0, 1fr)); gap: 0.5rem 1.5rem; margin-block: 1rem; padding: 0; list-style: none; }
+.cms-icon-item { display: flex; align-items: flex-start; gap: 0.625rem; line-height: 1.5; }
+.cms-icon-item-icon { width: 1.25rem; height: 1.25rem; margin-top: 0.2em; color: var(--primary); }
+.cms-icon-list[data-size="small"] { font-size: 0.875rem; }
+.cms-icon-list[data-size="small"] .cms-icon-item-icon { width: 1rem; height: 1rem; }
+.cms-icon-list[data-size="large"] { font-size: 1.125rem; }
+.cms-icon-list[data-size="large"] .cms-icon-item-icon { width: 1.5rem; height: 1.5rem; }
+@container (width < 640px) { .cms-icon-list { grid-template-columns: 1fr; } }
+
+/* Testimonial (core/testimonial): the quote, then who said it, with their photo and stars. */
+.cms-testimonial { display: flex; flex-direction: column; gap: 0.75rem; margin-inline: 0; padding: 1.5rem; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--card); }
+.cms-testimonial-quote { margin: 0; border: 0; padding: 0; font-size: 1.0625rem; }
+.cms-testimonial-author { display: flex; align-items: center; gap: 0.75rem; }
+.cms-testimonial-avatar { width: 3rem; height: 3rem; border-radius: 9999px; object-fit: cover; }
+.cms-testimonial-name { font-weight: 600; }
+.cms-testimonial-name a { color: inherit; text-decoration: none; }
+.cms-testimonial-role { font-size: 0.875rem; color: var(--muted-foreground); }
+.cms-rating { display: inline-flex; gap: 0.125rem; font-size: 1.125rem; line-height: 1; letter-spacing: 0.05em; }
+.cms-rating-star { color: var(--border); }
+.cms-rating-star[data-filled="true"] { color: rgb(245 158 11); }
+
+/* Stat (core/stat): a big number; stat.client.ts counts it up. */
+.cms-stat { text-align: center; }
+.cms-stat-value { margin: 0; font-size: 2.75rem; font-weight: 700; line-height: 1.1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; color: var(--primary); }
+.cms-stat-prefix, .cms-stat-suffix { font-size: 0.6em; font-weight: 600; }
+.cms-stat-label { margin: 0.5rem 0 0; font-size: 0.9375rem; color: var(--muted-foreground); }
+
+/* Pricing plan (core/pricing): one plan; the highlighted one stands out. Plans sit side by side in Columns. */
+.cms-pricing { position: relative; display: flex; flex-direction: column; gap: 0.75rem; height: 100%; padding: 1.5rem; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--card); }
+.cms-pricing[data-highlighted="true"] { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }
+.cms-pricing-badge { position: absolute; top: -0.75rem; left: 1.5rem; padding: 0.125rem 0.625rem; border-radius: 9999px; background: var(--primary); color: var(--primary-foreground); font-size: 0.75rem; font-weight: 600; }
+.cms-pricing-name { margin: 0; font-size: 1.125rem; font-weight: 600; }
+.cms-pricing-price { margin: 0; }
+.cms-pricing-amount { font-size: 2.25rem; font-weight: 700; letter-spacing: -0.02em; }
+.cms-pricing-period { color: var(--muted-foreground); }
+.cms-pricing-description { margin: 0; color: var(--muted-foreground); font-size: 0.9375rem; }
+.cms-pricing-features { display: flex; flex-direction: column; gap: 0.5rem; margin: 0; padding: 0; list-style: none; font-size: 0.9375rem; }
+.cms-pricing-features li { display: flex; align-items: flex-start; gap: 0.5rem; }
+.cms-pricing-features .cms-icon { margin-top: 0.2em; color: var(--primary); }
+.cms-pricing-action { margin: auto 0 0; padding-top: 0.5rem; }
+.cms-pricing-action a { width: 100%; }
+
+/* Social links (core/social-links): the networks' icons as buttons or plain icons, in the brand's color on hover. */
+.cms-social { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-block: 1rem; padding: 0; list-style: none; --cms-social-size: 2.5rem; --cms-social-icon: 1.25rem; }
+.cms-social[data-size="small"] { --cms-social-size: 2rem; --cms-social-icon: 1rem; }
+.cms-social[data-size="large"] { --cms-social-size: 3rem; --cms-social-icon: 1.5rem; }
+.cms-social-link { display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; min-width: var(--cms-social-size); height: var(--cms-social-size); color: inherit; text-decoration: none; transition: background-color 0.15s ease, color 0.15s ease; }
+.cms-social-icon { width: var(--cms-social-icon); height: var(--cms-social-icon); flex: none; }
+.cms-social[data-shape="round"] .cms-social-link, .cms-social[data-shape="square"] .cms-social-link { background: var(--muted); color: var(--foreground); }
+.cms-social[data-shape="round"] .cms-social-link { border-radius: 9999px; }
+.cms-social[data-shape="square"] .cms-social-link { border-radius: 0.5rem; }
+.cms-social[data-shape="round"] .cms-social-link:hover, .cms-social[data-shape="square"] .cms-social-link:hover { background: var(--cms-brand, var(--primary)); color: white; }
+.cms-social[data-shape="plain"] .cms-social-link { height: auto; min-width: 0; }
+.cms-social[data-shape="plain"] .cms-social-link:hover { color: var(--cms-brand, var(--primary)); }
+.cms-social[data-labels="true"] .cms-social-link { padding-inline: 0.875rem; }
+.cms-social-label { font-size: 0.875rem; font-weight: 500; }
+.cms-align-center .cms-social { justify-content: center; }
+.cms-align-right .cms-social { justify-content: flex-end; }
+
+/* Map (core/map): an iframe from Google Maps or OpenStreetMap at a height. */
+.cms-map { margin-inline: 0; }
+.cms-map-frame { display: block; width: 100%; height: 24rem; border: 0; border-radius: 0.75rem; background: var(--muted); }
+.cms-map[data-height="short"] .cms-map-frame { height: 16rem; }
+.cms-map[data-height="tall"] .cms-map-frame { height: 32rem; }
+.cms-map-caption { margin-top: 0.5rem; font-size: 0.875rem; color: var(--muted-foreground); text-align: center; }
+
+/* Slides (core/slide): a carousel of blocks; the slide fills its frame and places its blocks in the height. Its background comes from the Style tab. */
+/* A grid of one cell: the slide's styled wrapper, or the slide itself, stretches to the frame even with edit markers (`display: contents`) between them. */
+.cms-carousel-blockslide { display: grid; }
+.cms-carousel[data-aspect="video"] .cms-carousel-blockslide { aspect-ratio: 16 / 9; }
+.cms-carousel[data-aspect="wide"] .cms-carousel-blockslide { aspect-ratio: 21 / 9; }
+.cms-carousel[data-aspect="square"] .cms-carousel-blockslide { aspect-ratio: 1; }
+.cms-carousel-blockslide .cms-block { display: flex; flex-direction: column; min-width: 0; }
+.cms-carousel-blockslide .cms-block > .cms-slide { flex: 1; }
+.cms-slide { display: flex; flex-direction: column; justify-content: center; gap: 0.5rem; height: 100%; padding: 2rem; }
+.cms-slide[data-valign="top"] { justify-content: flex-start; }
+.cms-slide[data-valign="bottom"] { justify-content: flex-end; }
+.cms-slide > :first-child { margin-top: 0; }
+.cms-slide > :last-child { margin-bottom: 0; }
+
+/* Logos (core/gallery, layout logos): whole images at one height, grey until hovered. */
+.cms-logos { display: grid; grid-template-columns: repeat(var(--cms-logo-columns, 3), minmax(0, 1fr)); gap: 1.5rem 2rem; align-items: center; }
+.cms-logo { display: flex; align-items: center; justify-content: center; height: 3.5rem; }
+.cms-logo-image { max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; filter: grayscale(1); opacity: 0.7; transition: filter 0.2s ease, opacity 0.2s ease; }
+.cms-logo:hover .cms-logo-image { filter: none; opacity: 1; }
+@container (width < 640px) { .cms-logos { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* Notice (core/notice): a message set apart by a color, with an icon. */
+.cms-notice { display: flex; gap: 0.75rem; padding: 1rem 1.25rem; border: 1px solid var(--cms-notice-color); border-left-width: 4px; border-radius: 0.5rem; background: color-mix(in oklab, var(--cms-notice-color) 8%, var(--background)); --cms-notice-color: var(--primary); }
+.cms-notice[data-kind="success"] { --cms-notice-color: rgb(22 163 74); }
+.cms-notice[data-kind="warning"] { --cms-notice-color: rgb(217 119 6); }
+.cms-notice[data-kind="danger"] { --cms-notice-color: var(--destructive); }
+.cms-notice-icon { width: 1.25rem; height: 1.25rem; margin-top: 0.125rem; color: var(--cms-notice-color); }
+.cms-notice-body { min-width: 0; flex: 1; }
+.cms-notice-title { margin: 0 0 0.25rem; font-weight: 600; }
+
+/* Countdown (core/countdown): big units in a row; countdown.client.ts ticks them and shows the end. */
+.cms-countdown { text-align: center; }
+.cms-countdown-label { margin: 0 0 0.75rem; font-weight: 500; color: var(--muted-foreground); }
+.cms-countdown-units { display: flex; flex-wrap: wrap; justify-content: center; gap: 1rem; }
+.cms-countdown-unit { display: flex; flex-direction: column; align-items: center; min-width: 4.5rem; padding: 0.75rem 0.5rem; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--card); }
+.cms-countdown-value { font-size: 2rem; font-weight: 700; line-height: 1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.cms-countdown-name { margin-top: 0.375rem; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted-foreground); }
+.cms-countdown-done { margin: 0; font-size: 1.25rem; font-weight: 600; }
+
+/* Table of contents (core/toc): the entry's headings, indented by level. */
+.cms-toc { padding: 1rem 1.25rem; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--muted); }
+.cms-toc-title { margin: 0 0 0.5rem; font-size: 0.875rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted-foreground); }
+.cms-toc-list { margin: 0; padding: 0; list-style: none; font-size: 0.9375rem; }
+ol.cms-toc-list { counter-reset: cms-toc; }
+ol.cms-toc-list > .cms-toc-item::before { counter-increment: cms-toc; content: counter(cms-toc) ". "; color: var(--muted-foreground); }
+.cms-toc-item { padding: 0.2rem 0; }
+.cms-toc-item[data-level="3"] { padding-left: 1.25rem; }
+.cms-toc-item[data-level="4"] { padding-left: 2.5rem; font-size: 0.875rem; }
+.cms-toc-item a { color: inherit; text-decoration: none; }
+.cms-toc-item a:hover { color: var(--primary); text-decoration: underline; }
+
+/* Share buttons (core/share): round buttons in the networks' colors on hover; the copy button says Copied for a moment. */
+.cms-share { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; }
+.cms-share-label { font-size: 0.875rem; font-weight: 500; color: var(--muted-foreground); }
+.cms-share-list { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0; padding: 0; list-style: none; }
+.cms-share-link { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; min-width: 2.5rem; height: 2.5rem; padding: 0; border: 0; border-radius: 9999px; background: var(--muted); color: var(--foreground); font: inherit; font-size: 0.875rem; font-weight: 500; text-decoration: none; cursor: pointer; transition: background-color 0.15s ease, color 0.15s ease; }
+.cms-share-link:hover { background: var(--cms-brand, var(--primary)); color: white; }
+.cms-share-icon { width: 1.125rem; height: 1.125rem; flex: none; }
+.cms-share[data-style="labels"] .cms-share-link { padding-inline: 0.875rem; }
+.cms-share-copied { position: absolute; bottom: calc(100% + 0.375rem); left: 50%; translate: -50% 0; padding: 0.125rem 0.5rem; border-radius: 0.25rem; background: var(--foreground); color: var(--background); font-size: 0.75rem; white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity 0.15s ease; }
+.cms-share-link[data-copied] .cms-share-copied { opacity: 1; }
+.cms-align-center .cms-share { justify-content: center; }
+.cms-align-right .cms-share { justify-content: flex-end; }
+
+/* Breadcrumbs (core/breadcrumbs, helpers.breadcrumbs): the way to the page, with a separator between steps. */
+.cms-breadcrumbs { font-size: 0.875rem; color: var(--muted-foreground); }
+.cms-breadcrumbs-list { display: flex; flex-wrap: wrap; align-items: center; gap: 0.375rem; margin: 0; padding: 0; list-style: none; }
+.cms-breadcrumb { display: inline-flex; align-items: center; gap: 0.375rem; }
+.cms-breadcrumb + .cms-breadcrumb::before { content: '›'; color: var(--border); }
+.cms-breadcrumbs[data-separator="slash"] .cms-breadcrumb + .cms-breadcrumb::before { content: '/'; }
+.cms-breadcrumbs[data-separator="arrow"] .cms-breadcrumb + .cms-breadcrumb::before { content: '→'; }
+.cms-breadcrumb a { color: inherit; text-decoration: none; }
+.cms-breadcrumb a:hover { color: var(--foreground); text-decoration: underline; }
+.cms-breadcrumb [aria-current="page"] { color: var(--foreground); font-weight: 500; }
+.cms-align-center .cms-breadcrumbs-list { justify-content: center; }
+.cms-align-right .cms-breadcrumbs-list { justify-content: flex-end; }

@@ -189,7 +189,8 @@ describe('recipe resolution', () => {
       expect(layout).toContain('component(DropdownMenu');
       expect(layout).toContain('collapsible:');
       expect(layout).toContain('accountModules.map');
-      expect(layout).toContain('dashboardModules');
+      expect(layout).toContain('await navigation(this.c)');
+      expect(files.has('src/dashboard/access.ts')).toBe(true);
     }
     expect(files.has('src/pages/(public)/index.ts'))
       .toBe(recipe.resolvedFeatures.includes('examples'));
@@ -245,7 +246,7 @@ describe('recipe resolution', () => {
         .toMatch(/noExternal:\s*\[[\s\S]*'@cossackframework\/ui'[\s\S]*'@cossackframework\/solar-icons'/);
     }
     expect(files.get('vite.config.ts').content.toString())
-      .toContain("ignored: ['**/.wrangler/**']");
+      .toContain("ignored: ['**/.wrangler/**', '**/storage/**', '**/.cossack/*-pending/**']");
     expect(files.get('vite.config.ts').content.toString())
       .toContain("path.resolve(import.meta.dirname, './src')");
     expect(files.get('vite.config.ts').content.toString())
@@ -460,9 +461,13 @@ describe('composition', () => {
       const descriptor = files.get(`src/dashboard/modules/${module}.ts`).content.toString();
       expect(descriptor).toContain('@cossackframework/solar-icons/');
       expect(descriptor).toContain('icon,');
-      if (module === 'users' || module === 'roles') {
+      if (module === 'users') {
         expect(descriptor).toContain('children:');
         expect(descriptor).toContain(`/dashboard/${module}/new`);
+      } else if (module === 'roles') {
+        // Roles is a link of the Users menu; its page offers Add role itself.
+        expect(descriptor).toContain("parent: 'users'");
+        expect(descriptor).not.toContain('children:');
       } else {
         expect(descriptor).toContain("placement: 'account'");
       }
@@ -542,6 +547,15 @@ describe('composition', () => {
     );
     expect(files.get('src/style.css').content.toString())
       .toContain('@cossackframework/ui/theme/themes/green.css');
+  });
+
+  it('imports the CMS block styles only with the cms feature', async () => {
+    const plain = await renderRecipe(resolveRecipe({ preset: 'minimal', features: ['ui'] }));
+    expect(plain.get('src/style.css').content.toString()).not.toContain('./cms/blocks.css');
+    expect(plain.has('src/cms/blocks.css')).toBe(false);
+    const cms = await renderRecipe(resolveRecipe({ adapter: 'node', preset: 'minimal', features: ['cms'] }));
+    expect(cms.get('src/style.css').content.toString()).toContain('@import "./cms/blocks.css";');
+    expect(cms.has('src/cms/blocks.css')).toBe(true);
   });
 
   it('supports credentials, OAuth, or both authentication methods', async () => {

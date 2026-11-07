@@ -97,6 +97,26 @@ The handler makes sure again that the signature, expiry, operation, upload metad
 The URL targets your application endpoint. It does not expose bucket credentials or promise a direct provider upload.
 Use `fetch(url, { method: 'PUT', body: file, signal })` in the browser. Cancel the request through its signal.
 
+## Browser uploads of any size
+
+`presignedUpload` answers where the browser should PUT a file. When the provider can sign
+(the S3 provider, which also covers R2 through its S3 API), the URL is the bucket's own and
+the upload never passes through the application, so request body limits do not apply. The
+local provider and an R2 binding cannot sign, so the same call answers the signed
+application endpoint above. One call serves every environment, development included.
+
+```typescript
+const upload = await storage.presignedUpload(context, key, { expiresIn: 3600, size: file.size, contentType: file.type });
+// In the browser: fetch(upload.url, { method: upload.method, headers: upload.headers, body: file })
+```
+
+Send the returned headers exactly: the content type and length are part of the signature.
+Metadata travels in the URL. Create the `S3Client` with `requestChecksumCalculation:
+'WHEN_REQUIRED'`; otherwise the SDK signs a checksum of the empty body it was given and the
+bucket refuses the real one. The bucket needs a CORS rule that allows PUT from the site's
+origin. After the PUT, check the object with `head` before trusting it: a presigned upload
+is not a completed one.
+
 ## RPC uploads
 
 An HTTP server method can receive a `File` through the framework's multipart RPC transport.

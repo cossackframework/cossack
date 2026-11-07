@@ -74,7 +74,7 @@ export function createAssetsMiddleware(ctx: RouterContext): MiddlewareHandler {
         return;
       }
       const result = await middleware(context, () => dispatch(position + 1));
-      if (result) c.res = result;
+      if (result instanceof Response) c.res = result;
     };
     try {
       await dispatch(0);

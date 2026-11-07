@@ -30,6 +30,7 @@ const LOADERS = {
   delete: [() => import('./commands/delete.js'), 'deleteCommand', 'deleteHelp'],
   add: [() => import('./commands/add.js'), 'addCommand', 'addHelp'],
   remove: [() => import('./commands/remove.js'), 'removeCommand', 'removeHelp'],
+  plugins: [() => import('./commands/plugins.js'), 'pluginsCommand', 'pluginsHelp'],
   adapter: [() => import('./commands/adapter.js'), 'adapterCommand', 'adapterHelp'],
   lang: [() => import('./commands/lang.js'), 'langCommand', 'langHelp'],
   migration: [() => import('./commands/migration.js'), 'migrationCommand', 'migrationHelp'],
@@ -39,6 +40,7 @@ const LOADERS = {
   docs: [() => import('./commands/docs.js'), 'docsCommand', 'docsHelp'],
   traces: [() => import('./commands/traces.js'), 'tracesCommand', 'tracesHelp'],
   'test-results': [() => import('./commands/test-results.js'), 'testResultsCommand', 'testResultsHelp'],
+  cms: [() => import('./commands/cms.js'), 'cmsCommand', 'cmsHelp'],
   // introspection
   inspect: [() => import('./commands/inspect.js'), 'inspectCommand', 'inspectHelp'],
   check: [() => import('./commands/inspect.js'), 'checkCommand', 'checkHelp'],
@@ -103,6 +105,12 @@ export async function dispatch(argv) {
   }
 
   const command = resolveCommand(raw);
+  if (!command && raw?.includes(':')) {
+    // `cossack <plugin>:<command>`: declared by a rendered plugin manifest.
+    const { findPluginCommand, runPluginCommand } = await import('./plugin-commands.js');
+    const found = await findPluginCommand(raw);
+    if (found) return runPluginCommand(raw, rest, found);
+  }
   if (!command) {
     if (requestsJSON(rest)) {
       return commandFailure({ flags: { json: true } }, raw ?? 'cossack', 'COSSACK_COMMAND_UNKNOWN',
@@ -232,6 +240,8 @@ ${wrapList(FEATURES, 31)}
   docs                         Read offline installed-version API export and command catalogs.
   traces                       Read recorded development snapshots and timelines.
   test-results                 Read recorded test evidence and source freshness.
+  cms <command>                Manage a CMS site through its API: login, entries, notes,
+                               users, settings, terms, media, sites and MCP client setup.
   info                         Print system/environment info for bug reports.
   version (v)                  Print the CLI version.
 

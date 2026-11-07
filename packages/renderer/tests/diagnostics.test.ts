@@ -102,7 +102,8 @@ export const c = component(Button, {}, \`<b>Save</b>\`);
   }, 60_000);
 });
 
-describe('template completions', () => {
+// The first completion loads the fixture's whole program, which takes seconds on a busy machine.
+describe('template completions', { timeout: 60_000 }, () => {
   /** Completion names where `|` is, in a virtual file of the fixture program. */
   const complete = (body: string) => {
     const text = `import { html, svg } from '@cossackframework/renderer';\nimport { Card } from './components';\nexport const v = ${body.replace('|', '')};\n`;

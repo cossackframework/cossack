@@ -1,8 +1,10 @@
 import { Cossack, Page, State, ClientStore, Validate, Client, Server, storeRules } from '@cossackframework/core';
 import { Field, Input, PasswordInput, Button, Alert } from '@cossackframework/ui';
 import { html, component, bind } from '@cossackframework/renderer';
-import { authSessions, loginUser } from '../../../auth';
+import { setCookie } from 'hono/cookie';
+import { authSessions, beginTwoFactor, completePasskeySignIn, loginUser, passkeySignIn, registrationOpen, twoFactorAvailable, TWO_FACTOR_COOKIE } from '../../../auth';
 import { loginInput, type LoginInput } from '../../../auth-input';
+import { usePasskey } from '../../../passkeys.client';
 
 interface LoginForm {
     email: string;
@@ -22,6 +24,14 @@ export default class LoginPage extends Cossack {
     form: LoginForm = { email: '', password: '' };
 
     @State() error = '';
+    @State() canRegister = true;
+    /** The auth store supports passkeys. */
+    @State() passkeys = false;
+
+    async init() {
+        this.canRegister = await registrationOpen();
+        this.passkeys = twoFactorAvailable;
+    }
 
     @Client()
     async handleSubmit(event: Event) {
@@ -44,12 +54,47 @@ export default class LoginPage extends Cossack {
         try {
             const user = await loginUser(email, password);
             if (!user) { this.error = 'Invalid credentials'; return; }
+            // With an authenticator app, the password only starts the sign-in.
+            const pending = await beginTwoFactor(user.id);
+            if (pending) {
+                setCookie(this.c, TWO_FACTOR_COOKIE, pending, { path: '/auth', httpOnly: true, sameSite: 'Lax', maxAge: 300, secure: new URL(this.c.req.url).protocol === 'https:' });
+                this.redirect('/auth/two-factor');
+                return;
+            }
             const { headers } = await authSessions.create(user.id, this.c);
             headers.forEach((value, key) => this.c.header(key, value));
             this.redirect(config('auth.redirectAfterLogin'));
         } catch {
             this.error = 'Could not sign in. Try again.';
         }
+    }
+
+    /** Sign in with a passkey: no password and no code. */
+    @Client()
+    async signInWithPasskey() {
+        this.error = '';
+        try {
+            const { challenge, options } = await this.passkeyOptions();
+            const response = await usePasskey(options);
+            await this.passkeyLogin(challenge, response);
+        } catch (error) {
+            if ((error as Error)?.name === 'NotAllowedError') return;
+            this.error = (error as Error)?.message || 'The passkey sign-in did not work.';
+        }
+    }
+
+    @Server()
+    async passkeyOptions() {
+        return passkeySignIn(this.c);
+    }
+
+    @Server()
+    async passkeyLogin(challenge: string, response: unknown) {
+        const user = await completePasskeySignIn(this.c, challenge, response as never);
+        if (!user) { this.error = 'This passkey is not recognised.'; return; }
+        const { headers } = await authSessions.create(user.id, this.c);
+        headers.forEach((value, key) => this.c.header(key, value));
+        this.redirect(config('auth.redirectAfterLogin'));
     }
 
     render() {
@@ -66,7 +111,11 @@ export default class LoginPage extends Cossack {
                 ${this.error ? component(Alert, { variant: 'destructive' }, this.error) : null}
                 ${component(Button, { type: 'submit', block: true }, __('Sign In'))}
             </form>
-            <p class="mt-6 text-center text-sm text-muted-foreground">
+            ${this.passkeys ? html`<div class="mt-4 space-y-4">
+                <p class="flex items-center gap-3 text-xs uppercase text-muted-foreground"><span class="h-px flex-1 bg-border"></span>${__('or')}<span class="h-px flex-1 bg-border"></span></p>
+                ${component(Button, { type: 'button', variant: 'outline', block: true, '@click': () => this.signInWithPasskey() }, __('Sign in with a passkey'))}
+            </div>` : null}
+            <p class="mt-6 text-center text-sm text-muted-foreground" ?hidden=${!this.canRegister}>
                 ${__("Don't have an account?")}
                 <a href="/auth/register" class="text-primary font-medium hover:underline">${__('Register')}</a>
             </p>

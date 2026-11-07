@@ -231,10 +231,48 @@ const assignChildId = (instance: CossackElement): void => {
   } while (parent._liveChildIds.has(id));
   instance._id = id;
   parent._liveChildIds.set(id, instance);
+  recordChildSlot(parent);
 };
 
 const advanceChildCounter = (instance: CossackElement): void => {
-  if (instance.__parent) instance.__parent._childCounter++;
+  if (!instance.__parent) return;
+  instance.__parent._childCounter++;
+  recordChildSlot(instance.__parent);
+};
+
+/** Child slots, by parent, that the subtree being updated takes: one per component it renders. */
+type ChildSlots = Map<CossackElement, number>;
+let recording: { slots: ChildSlots | null } | null = null;
+const recordChildSlot = (parent: CossackElement, count = 1): void => {
+  if (!recording) return;
+  const slots = recording.slots ??= new Map();
+  slots.set(parent, (slots.get(parent) ?? 0) + count);
+};
+
+/** Update a subtree and return the child slots it took, for a later render that leaves it as it is. */
+const recordChildSlots = (update: () => void): ChildSlots | null => {
+  const outer = recording;
+  const frame: { slots: ChildSlots | null } = { slots: null };
+  recording = frame;
+  try { update(); }
+  finally {
+    recording = outer;
+    if (frame.slots) for (const [parent, count] of frame.slots) recordChildSlot(parent, count);
+  }
+  return frame.slots;
+};
+
+/**
+ * A subtree left as it is takes the same slots its components would on an
+ * update, so a component that renders after it numbers as it would after a
+ * full render (and as SSR and RPC target reconstruction number it).
+ */
+const replayChildSlots = (slots: ChildSlots | null): void => {
+  if (!slots) return;
+  for (const [parent, count] of slots) {
+    parent._childCounter += count;
+    recordChildSlot(parent, count);
+  }
 };
 
 const releaseChildId = (instance: CossackElement): void => {
@@ -1007,6 +1045,15 @@ class NodePart implements Part {
   // Cache for nested template result updates
   private _cachedTemplateIdentity: object | null = null;
   private _cachedParts: Part[] | null = null;
+  // The unsafeHTML string this part's nodes were parsed from: an update with
+  // the same string leaves them in place instead of parsing it again.
+  private _unsafeHTML: string | undefined = undefined;
+  // The template result this part last applied, and the child slots its
+  // components took. A result is a snapshot of its values: the same object
+  // again (a `guard()` whose deps did not change, a template kept from an
+  // earlier render) leaves the subtree as it is, components included.
+  private _committed: TemplateResult | undefined = undefined;
+  private _committedSlots: ChildSlots | null = null;
   // Tracked key for the `key()` directive
   private _key: unknown = undefined;
   private _keySet = false;
@@ -1047,11 +1094,17 @@ class NodePart implements Part {
 
   update(value: unknown) {
     value = unwrapNodeValue(value);
+    const committed = this._committed;
+    this._committed = undefined;
     try {
       if (!(value instanceof CacheResult) && !(value instanceof GuardResult)) this._cacheDrafts.clear();
       if (this._hydrating) {
         this._hydrating = false;
-        this._hydrateValue(value);
+        if (isTemplateResult(value)) {
+          const template = value;
+          this._committedSlots = recordChildSlots(() => this._hydrateValue(template));
+          this._committed = template;
+        } else this._hydrateValue(value);
         return;
       }
       // `guard`: resolve to its (possibly cached) inner value before any other
@@ -1061,7 +1114,14 @@ class NodePart implements Part {
       if (value instanceof GuardResult) {
         value = this._resolveGuard(value);
         if (!(value instanceof CacheResult)) this._cacheDrafts.clear();
+      } else if (this._guardHasDeps) {
+        // The memo belongs to consecutive guards: a guard after another value starts over.
+        this._guardHasDeps = false;
+        this._guardDeps = null;
+        this._guardValue = undefined;
       }
+      // Every other kind of value replaces the nodes an unsafeHTML string left.
+      if (!isUnsafeHTML(value)) this._unsafeHTML = undefined;
       // `cache`: keep previously-rendered template subtrees alive across swaps so
       // toggling back to a cached template reattaches its DOM/parts rather than
       // rebuilding. Non-template values are unwrapped and handled normally.
@@ -1118,6 +1178,16 @@ class NodePart implements Part {
         this.updateKey(value);
       } else if (Array.isArray(value)) {
         this.updateArray(value);
+      } else if (isTemplateResult(value)) {
+        if (value === committed && !fromCache && this._draft === undefined && this._cachedParts
+          && this._cachedTemplateIdentity === templateIdentity(value) && this.startNode.parentNode) {
+          this._committed = value;
+          replayChildSlots(this._committedSlots);
+          return;
+        }
+        const template = value;
+        this._committedSlots = recordChildSlots(() => this.updateNode(template));
+        this._committed = template;
       } else {
         this.updateNode(value);
       }
@@ -1240,7 +1310,10 @@ class NodePart implements Part {
       // string the client has). Keep it; a future update with a different
       // value rebuilds via updateNode. If the part is unexpectedly empty,
       // fall through to a rebuild.
-      if (this.startNode.nextSibling !== this.endNode) return;
+      if (this.startNode.nextSibling !== this.endNode) {
+        this._unsafeHTML = value.value;
+        return;
+      }
       this.clear();
       this._clearTemplateCache();
       this.updateNode(value);
@@ -1776,6 +1849,7 @@ class NodePart implements Part {
       : recovery ?? undefined;
     if (!this.startNode.parentNode) return;
     value = unwrapNodeValue(value);
+    if (!isUnsafeHTML(value)) this._unsafeHTML = undefined;
     if (isTemplateResult(value)) {
       // Check if we have a cached template with the same strings
       if (this._cachedTemplateIdentity === templateIdentity(value) && this._cachedParts) {
@@ -1801,8 +1875,11 @@ class NodePart implements Part {
         }
       }
     } else if (isUnsafeHTML(value)) {
+      // The same string again, such as an icon's artwork on every render: its nodes stay.
+      if (this._unsafeHTML === value.value && this.startNode.nextSibling !== this.endNode) return;
       this._clearTemplateCache();
       this.clear();
+      this._unsafeHTML = value.value;
       const parent = this.startNode.parentNode!;
       const owner = this.startNode.ownerDocument!;
       if (parent instanceof Element && parent.namespaceURI === 'http://www.w3.org/2000/svg'
@@ -1963,6 +2040,10 @@ class SpreadGroup {
   // or null for a bound one. A spread key overrides a static attribute; when
   // the key is dropped, the static value comes back, as SSR renders it.
   private templateAttributes = new Map<string, string | null>();
+  // What the last commit left on each spread attribute: its text, or null when
+  // removed. A key whose value is the same again writes nothing, since an
+  // unchanged setAttribute still queues a mutation record and restyles.
+  private writtenAttributes = new Map<string, string | null>();
 
   /** Called while compiling, with the template's own element. */
   constructor(public element: Element) {
@@ -2065,29 +2146,22 @@ class SpreadGroup {
           (this.element as any)[propName] = val;
         }
       } else if (key.startsWith('?')) {
-        if (val !== nothing && val) this.element.setAttribute(key.slice(1), '');
-        else this.element.removeAttribute(key.slice(1));
+        this.writeAttribute(key.slice(1), val !== nothing && val ? '' : null);
       } else if (val === nothing || val === null || val === undefined || typeof val === 'function') {
         // Functions never become attributes; their source must not leak into
         // the DOM (SSR renders nothing for them either).
-        this.element.removeAttribute(key);
+        this.writeAttribute(key, null);
       } else if (val instanceof IfDefinedResult) {
         // `ifDefined` via the spread (e.g. component(El, { href: ifDefined(url) })):
         // drop only on undefined; render every other value (incl. false/null) as a
         // literal attribute string, mirroring the AttributePart path. Checked
         // before the `typeof val === 'boolean'` branch so `false` renders as
         // "false".
-        if (val.value === undefined) {
-          this.element.removeAttribute(key);
-        } else {
-          this.element.setAttribute(key, String(val.value));
-        }
+        this.writeAttribute(key, val.value === undefined ? null : String(val.value));
       } else if (typeof val === 'boolean') {
-        const serialized = serializeBooleanAttribute(key, val);
-        if (serialized === null) this.element.removeAttribute(key);
-        else this.element.setAttribute(key, serialized);
+        this.writeAttribute(key, serializeBooleanAttribute(key, val));
       } else {
-        this.element.setAttribute(key, String(val));
+        this.writeAttribute(key, String(val));
       }
     }
     // Merge with the element's own classes instead of overwriting them.
@@ -2095,8 +2169,17 @@ class SpreadGroup {
     this.previousEntries = entries;
   }
 
+  /** Set the attribute, or remove it for null, unless the last commit left it so. */
+  private writeAttribute(name: string, next: string | null) {
+    if (this.writtenAttributes.has(name) && this.writtenAttributes.get(name) === next) return;
+    this.writtenAttributes.set(name, next);
+    if (next === null) this.element.removeAttribute(name);
+    else this.element.setAttribute(name, next);
+  }
+
   /** Give a dropped key's attribute back to the template. */
   private resetAttribute(name: string) {
+    this.writtenAttributes.delete(name);
     const value = this.templateAttributes.get(name.toLowerCase());
     if (typeof value === 'string') this.element.setAttribute(name, value);
     else this.element.removeAttribute(name);
@@ -2149,6 +2232,9 @@ class SpreadGroup {
    * the added tokens so a later update or removal only touches those.
    */
   private applySpreadClass(tokens: string[]) {
+    // The same tokens as the last render are on the element already: a rewrite
+    // of the class attribute puts them back through reapplyClasses.
+    if (tokens.length === this.spreadClasses.length && tokens.every((cls, index) => cls === this.spreadClasses[index])) return;
     // Remove the tokens from the previous render, then add the new ones.
     for (const cls of this.spreadClasses) {
       this.element.classList.remove(cls);
@@ -2311,6 +2397,11 @@ class AttributePart implements Part {
   // semantics where `live()` switches the comparison source.
   private lastFormValue: unknown = undefined;
   private lastFormKind: 'value' | 'checked' | null = null;
+  // The attribute text the last commit wrote, or null when it removed the
+  // attribute; undefined before the first commit, which always writes. A
+  // render with the same value writes nothing: an unchanged setAttribute still
+  // queues a mutation record and restyles the element.
+  private writtenAttribute: string | null | undefined = undefined;
   // Two-way binding (`bind()`) state: the writeback listener is attached once
   // and reuses this stored closure so re-renders don't pile up duplicates. We
   // also track which component/field the closure writes to so a re-render with
@@ -2349,6 +2440,13 @@ class AttributePart implements Part {
   ) {}
   update(value: unknown) {
     this.commit(value);
+  }
+  /** Set the attribute, or remove it for null, unless the last commit left it so. */
+  private writeAttribute(name: string, domName: string, next: string | null) {
+    if (next === this.writtenAttribute) return;
+    this.writtenAttribute = next;
+    if (next === null) this.element.removeAttribute(domName);
+    else this.element.setAttribute(name, next);
     // Rewriting `class` drops the tokens a spread on this element added.
     if (this.name === 'class') reapplySpreadClasses(this.element);
   }
@@ -2366,10 +2464,10 @@ class AttributePart implements Part {
         this.lastFormValue = undefined;
         this.element.removeAttribute(this.domName);
       } else if (this.name.startsWith('?')) {
-        this.element.removeAttribute(this.name.slice(1));
-        this.element.removeAttribute(this.domName);
+        this.writeAttribute(this.name.slice(1), this.name.slice(1), null);
+        if (this.element.hasAttribute(this.domName)) this.element.removeAttribute(this.domName);
       } else {
-        this.element.removeAttribute(this.domName);
+        this.writeAttribute(this.name, this.domName, null);
       }
       return;
     }
@@ -2494,26 +2592,19 @@ class AttributePart implements Part {
       if (this.element.hasAttribute(this.domName)) this.element.removeAttribute(this.domName);
     } else if (this.name.startsWith('?')) {
       const attrName = this.name.slice(1);
-      if (value) this.element.setAttribute(attrName, '');
-      else this.element.removeAttribute(attrName);
+      this.writeAttribute(attrName, attrName, value ? '' : null);
       if (this.element.hasAttribute(this.domName)) this.element.removeAttribute(this.domName);
     } else if (isIfDefined) {
       // `ifDefined`: drop only on `undefined`; render everything else (incl.
       // false/null/0/'') as a literal attribute string. Must be checked before
       // the `typeof value === 'boolean'` branch so `false` renders as "false".
-      if (value === undefined) {
-        this.element.removeAttribute(this.domName);
-      } else {
-        this.element.setAttribute(this.name, String(value));
-      }
+      this.writeAttribute(this.name, this.domName, value === undefined ? null : String(value));
     } else if (value === null || value === undefined) {
-      this.element.removeAttribute(this.domName);
+      this.writeAttribute(this.name, this.domName, null);
     } else if (typeof value === 'boolean') {
-      const serialized = serializeBooleanAttribute(this.name, value);
-      if (serialized === null) this.element.removeAttribute(this.domName);
-      else this.element.setAttribute(this.name, serialized);
+      this.writeAttribute(this.name, this.domName, serializeBooleanAttribute(this.name, value));
     } else {
-      this.element.setAttribute(this.name, attributeValueText(value));
+      this.writeAttribute(this.name, this.domName, attributeValueText(value));
     }
   }
 

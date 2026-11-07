@@ -123,7 +123,8 @@ export function protectTransport(ctx: RouterContext): MiddlewareHandler {
             const middleware = middlewares[position];
             if (!middleware) return next();
             const response = await middleware(guarded, () => dispatch(position + 1));
-            if (response) c.res = response;
+            // `return next()` resolves to the Context, not a Response; only a Response replaces the reply.
+            if (response instanceof Response) c.res = response;
         };
         await dispatch(0);
         const location = c.res.headers.get('Location');

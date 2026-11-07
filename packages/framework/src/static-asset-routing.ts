@@ -8,7 +8,7 @@
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { ASSETS_RUN_WORKER_FIRST, STATIC_ASSET_DIRECTORY, isStaticAssetFile } from '@cossackframework/core/static-assets';
-import { scanPagesDir } from './route-codegen.js';
+import { scanPageSources } from './plugin-sources.js';
 import { classifyRoute, filePathToHttpRoute } from './route-ids.js';
 
 export interface StaticAssetNamespaceDiagnostic {
@@ -36,9 +36,9 @@ export interface StaticAssetNamespaceOptions {
 
 const namespace = `/${STATIC_ASSET_DIRECTORY}`;
 
-/** Addressable facts for the routes under `src/pages`, for checks that run without a manifest. */
+/** Addressable facts for the routes under `src/pages` and plugin pages, for checks that run without a manifest. */
 export function discoverRouteFacts(root: string, includeMarkdown: boolean): StaticAssetRouteFact[] {
-  return scanPagesDir(path.join(root, 'src/pages'), includeMarkdown).pageKeys.flatMap(filePath => {
+  return scanPageSources(root, includeMarkdown).pageKeys.flatMap(filePath => {
     // Unsupported patterns fail route generation with their own diagnostic.
     try {
       const pattern = filePathToHttpRoute(filePath);

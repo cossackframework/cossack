@@ -26,6 +26,9 @@ export { Alert, type AlertProps } from "./components/Alert";
 export { Modal, type ModalProps } from "./components/Modal";
 export { Accordion, type AccordionProps } from "./components/Accordion";
 export { Textarea, type TextareaProps } from "./components/Textarea";
+export { CodeEditor, type CodeEditorProps } from "./components/CodeEditor";
+export { ColorPicker, type ColorPickerProps } from "./components/ColorPicker";
+export { IconPicker, type IconPickerProps, type IconPickerSource } from "./components/IconPicker";
 export { Checkbox, type CheckboxProps } from "./components/Checkbox";
 export { Switch, type SwitchProps } from "./components/Switch";
 export { Spinner, type SpinnerProps } from "./components/Spinner";
@@ -34,6 +37,7 @@ export { AvatarGroup, type AvatarGroupProps, type AvatarGroupItem } from "./comp
 export { Separator, type SeparatorProps } from "./components/Separator";
 export { Skeleton, type SkeletonProps, type SkeletonDimension } from "./components/Skeleton";
 export { Progress, type ProgressProps } from "./components/Progress";
+export { SegmentBar, type SegmentBarItem, type SegmentBarProps } from "./components/SegmentBar";
 export { Tabs, type TabsProps, type TabsItem, type TabsListProps } from "./components/Tabs";
 export { Tooltip, type TooltipProps } from "./components/Tooltip";
 export { Popover, type PopoverProps, type PopoverContentProps } from "./components/Popover";

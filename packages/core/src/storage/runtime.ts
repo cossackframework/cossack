@@ -1,4 +1,4 @@
-import { StorageError, type StorageAuthorizer, type StorageMetadata, type StorageObject, type StorageOperation, type StorageProvider, type StoragePutOptions, type StorageReadOptions, type StorageProgress } from './contracts';
+import { StorageError, type StorageAuthorizer, type StorageMetadata, type StorageObject, type StorageOperation, type StoragePresignedUpload, type StorageProvider, type StoragePutOptions, type StorageReadOptions, type StorageProgress } from './contracts';
 
 export function validateStorageKey(key: string): void {
     if (typeof key !== 'string' || !key || key.length > 1024 || /[\\\x00-\x1f\x7f]/.test(key)
@@ -128,6 +128,21 @@ export class Storage<Context> {
         if (payload.length > 16384) throw new StorageError('COSSACK_STORAGE_ACCESS_INVALID', 'Signed access metadata is too large.');
         const signature = encode(new Uint8Array(await crypto.subtle.sign('HMAC', await signing.key, encoder.encode(signing.endpoint.href + '\n' + payload))));
         const url = new URL(signing.endpoint); url.searchParams.set('access', payload + '.' + signature); return url.href;
+    }
+    /**
+     * Where the browser PUTs an upload: the provider's own presigned URL when it can sign
+     * (R2 and S3 through their S3 API), otherwise the application endpoint of {@link signedUrl}.
+     * One call for every environment: a local directory in development falls back to the endpoint.
+     */
+    async presignedUpload(context: Context, key: string, options: StorageAccessOptions & { size: number }): Promise<StoragePresignedUpload> {
+        const provider = this.#options.provider;
+        if (typeof provider.presign === 'function') {
+            if (!Number.isInteger(options.expiresIn) || options.expiresIn < 1 || options.expiresIn > 86400) throw new StorageError('COSSACK_STORAGE_ACCESS_INVALID', 'Signed access must expire within one day.');
+            const checked = this.upload({ size: options.size, contentType: options.contentType, customMetadata: options.customMetadata });
+            await this.allowed(context, 'put', key);
+            return this.operation(() => provider.presign!(key, { size: checked.size, contentType: checked.contentType, customMetadata: checked.customMetadata, expiresIn: options.expiresIn }));
+        }
+        return { url: await this.signedUrl(context, key, 'put', options), method: 'PUT', headers: {} };
     }
     async handleSignedRequest(context: Context, request: Request): Promise<Response> {
         try {

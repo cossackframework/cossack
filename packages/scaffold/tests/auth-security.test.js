@@ -54,6 +54,7 @@ function generatedSessionsPage(files, api) {
   new Function('require', 'module', 'exports', code)(name => {
     if (name === '@cossackframework/core') return { Cossack: class {}, Page: () => () => {}, State: () => () => {}, Server: () => () => {} };
     if (name === '../../../auth') return api;
+    if (name === '../../../dashboard/session-list') return { sessionTable: () => null };
     if (name === 'hono/cookie') return { getCookie: c => c?.cookie };
     if (name === '@cossackframework/ui' || name.startsWith('@cossackframework/solar-icons/')) return {};
     if (name === '@cossackframework/renderer') return {};
@@ -74,8 +75,11 @@ function generatedFormPage(files, name, api) {
     if (name === '@cossackframework/core') return { Cossack: class {}, isClientVisibleError, ClientVisibleError, storeRules: v => v,
       Page: decorator, State: decorator, ClientState: decorator, ClientStore: decorator,
       Validate: decorator, Client: decorator, Server: decorator };
-    if (name === '../../../auth') return api;
+    // Accounts without a second factor sign in after the password.
+    if (name === '../../../auth') return { beginTwoFactor: async () => null, twoFactorAvailable: false, TWO_FACTOR_COOKIE: 'two_factor', ...api };
     if (name === '../../../auth-input') return schemaModule.exports;
+    if (name === '../../../passkeys.client') return { usePasskey: vi.fn() };
+    if (name === 'hono/cookie') return { setCookie: vi.fn(), getCookie: vi.fn(), deleteCookie: vi.fn() };
     if (name === '@cossackframework/ui' || name === '@cossackframework/renderer') return {};
     throw new Error(`Unexpected form dependency: ${name}`);
   }, module, module.exports);
@@ -232,12 +236,20 @@ describe('generated auth security', () => {
   it.each([
     ['login', 'login', { email: 'valid@example.test', password: 'valid-password' }, 'loginUser', 'Could not sign in. Try again.'],
     ['register', 'register', { name: '', email: 'valid@example.test', password: 'valid-password' }, 'registerUser', 'Could not create the account. Try again or sign in.'],
-    ['reset-password', 'doReset', { token: 'token', password: 'valid-password' }, 'resetPassword', 'Could not reset the password. Request a new reset link.'],
+    ['reset-password', 'doReset', { token: 'token', password: 'valid-password', confirm: 'valid-password' }, 'resetPassword', 'Could not reset the password. Request a new reset link.'],
   ])('redacts storage failures in the actual generated %s method', async (name, method, submitted, helper, message) => {
     const { files } = await generatedAuth();
     const page = generatedFormPage(files, name, { [helper]: vi.fn().mockRejectedValue(new Error('PRIVATE_DATABASE')) });
     await page[method](submitted);
     expect(page.error).toBe(message); expect(page.c.header).not.toHaveBeenCalled(); expect(page.redirect).not.toHaveBeenCalled();
+  });
+
+  it('refuses a reset whose confirmation differs before touching credentials', async () => {
+    const { files } = await generatedAuth();
+    const resetPassword = vi.fn();
+    const page = generatedFormPage(files, 'reset-password', { resetPassword });
+    await page.doReset({ token: 'token', password: 'valid-password', confirm: 'valid-passwort' });
+    expect(page.error).toBe('The passwords do not match'); expect(resetPassword).not.toHaveBeenCalled(); expect(page.redirect).not.toHaveBeenCalled();
   });
 
   it('only preserves the known duplicate account error and does not copy arbitrary visible errors', async () => {

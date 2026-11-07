@@ -84,6 +84,9 @@ it.each([
   expect(reasons).toContain('Functional HTTP handlers use HTTP routing');
   expect(reasons).not.toContain('No @Page');
   expect(reasons).not.toContain('set by the @Page decorator');
+  // A functional handler outside /api is an endpoint at its own path, not a page missing its component.
   await fs.writeFile(path.join(root, 'src/pages/not-api.ts'), source);
-  expect(await checkCommand(['routes'], ctx)).toBe(1);
+  expect(await checkCommand(['routes'], ctx)).toBe(0);
+  const endpoint = JSON.parse(output.mock.calls.at(-1)[0]).data.routes.find(route => route.filePath === '/src/pages/not-api.ts');
+  expect(endpoint).toMatchObject({ route: '/not-api', kind: 'api', routeStyle: 'http-handlers', layouts: [] });
 });

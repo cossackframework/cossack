@@ -1,6 +1,6 @@
 # Service Providers : Decision Record (Not Adopted)
 
-Status: Accepted. Do not add this feature. Revisit this decision if a trigger in [When to revisit](#when-to-revisit) occurs.
+Status: Accepted. Do not add this feature. Reopened 2026-10-16 for CMS plugins (trigger 2); the decision stands, see [Plugins](#plugins-reopened-2026-10-16).
 
 This document records why Cossack does not use Laravel-style Service Providers. It explains how existing Cossack features handle the same work. Use it when you work on the framework.
 
@@ -95,6 +95,21 @@ Reopen this decision if either of these becomes true:
 2. Third-party package ecosystem. Real installable Cossack packages exist and need a self-registration contract. A package must wire its own DI bindings, middleware, and types without manual edits.
 
 Until then, a Service Provider system adds abstraction without solving a concrete problem.
+
+---
+
+## Plugins (reopened 2026-10-16)
+
+Installable plugins now exist: `cossack add plugin` renders a package into
+`src/plugins/<name>/`. They self-register without a provider layer:
+
+- Discovery is build-time globbing of rendered source, like `src/pages`: plugin pages,
+  layouts, catalogs (`<plugin>::key`), configuration (`<plugin>::<file>`) and
+  middleware (after the application's) join the existing mechanisms.
+- One static registry, `virtual:cossack-plugins`, lists manifests and each plugin's
+  optional `server.ts` (server only) and `ui.ts`. Nothing scans packages at runtime.
+- Hosts such as the CMS call a plugin's `register(context)` with a context limited to its
+  manifest. There is no global container, deferred provider or boot order to manage.
 
 ---
 
