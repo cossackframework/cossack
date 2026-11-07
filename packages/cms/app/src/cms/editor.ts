@@ -28,6 +28,10 @@ export interface EditorField {
     maxItems: number | null;
     addLabel: string;
     media: boolean;
+    /** string: one of the site icons, chosen with the icon picker. */
+    icon: boolean;
+    /** string: a profile URL whose network's icon the site shows. */
+    brand: boolean;
     /** media: the kinds of file the chooser lists first; images when the field names none. */
     kinds: string[];
     /** string: where its choices come from (forms, collections, terms); empty for free text. */
@@ -163,7 +167,7 @@ export function editorField(name: string, declaration: FieldDeclaration & { choi
         format: declaration.format ?? 'plain', language: declaration.language ?? '',
         choices: (declaration.values ?? []).map(value => ({ value, label: declaration.choices?.[value] ?? value })),
         multiple: declaration.multiple === true, minItems: declaration.minItems ?? null, maxItems: declaration.maxItems ?? null, addLabel: declaration.addLabel ?? '',
-        media: declaration.media === true, kinds: [...(declaration.kinds ?? [])], choicesFrom: declaration.choicesFrom ?? '', target: declaration.target ?? '', blocks: [...(declaration.blocks ?? [])], form: declaration.form === true,
+        media: declaration.media === true, icon: declaration.icon === true, brand: declaration.brand === true, kinds: [...(declaration.kinds ?? [])], choicesFrom: declaration.choicesFrom ?? '', target: declaration.target ?? '', blocks: [...(declaration.blocks ?? [])], form: declaration.form === true,
         min: declaration.min ?? null, max: declaration.max ?? null, defaultValue: declaration.default ?? null,
         fields: Object.entries(declaration.fields ?? {}).map(([sub, nested]) => editorField(sub, nested)),
     };
@@ -340,6 +344,11 @@ export function newBlock(type: string, options: readonly BlockOption[], id: () =
     if (!option) return null;
     const block: EditorBlock = { _id: id(), type, data: blockDefaults(option), ...(option.children ? { children: [] } : {}) };
     if (type === 'core/columns') block.children = [1, 2].flatMap(() => newBlock('core/column', options, id) ?? []);
+    // Containers of named items start with a few, named, so the block shows something at once.
+    const seed = (child: string, labels: readonly string[], field: string) => labels.flatMap(label => { const item = newBlock(child, options, id); return item ? [{ ...item, data: { ...item.data, [field]: label } }] : []; });
+    if (type === 'core/tabs') block.children = seed('core/tab', ['Tab 1', 'Tab 2'], 'label');
+    if (type === 'core/accordion') block.children = seed('core/accordion-item', ['Section 1', 'Section 2'], 'label');
+    if (type === 'core/icon-list') block.children = seed('core/icon-item', ['First point', 'Second point', 'Third point'], 'text');
     return block;
 }
 

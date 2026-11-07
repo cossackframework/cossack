@@ -60,6 +60,10 @@ export {
     type ThemeManifest, type ThemeAreaManifest, themeArea, type SiteTheme, type ThemeSource, type EntryTemplate, type ArchiveTemplate, type TemplatePage, type ThemeData, type FieldView, type EntryReference, type ThemeHelpers, type SiteView, type EntryView, type ArchiveView, type AuthorView, type RenderedBlock, type RepeaterView, type ItemsView, type BodyPart, type MediaView, type TermLink, type Paging,
     type EntryAuthor, type CommentView, type CommentsView, type CommentFormView, type LanguageLink, type LanguageSwitcherOptions, type MenuOptions, type MenuStyle, type MenuMotion, type SearchOptions, type LanguageSwitcherStyle, type FormView, type InputView,
 } from './theme';
+export type { BrandIcon, BreadcrumbView, HeadingView } from './theme';
+export { SHARE_NETWORKS, SHARE_BRAND_URLS, type ShareNetwork } from './blocks';
+export { ICON_NAME, SITE_ICON_NAMES, SITE_ICON_SET } from './icons';
+export { MAP_EMBED_URL } from './blocks';
 export { diffWords, compareRecords, comparableValue, type DiffPart, type FieldChange } from './diff';
 export {
     SCHEMA_TYPES, SCHEMA_TYPE_LABELS, SCHEMA_PROPERTIES, ARTICLE_TYPES, SEO_TEMPLATE_VARIABLES, SEO_TEMPLATE_DEFAULTS, AUTHOR_FIELDS,

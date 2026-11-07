@@ -320,3 +320,187 @@ a.cms-nav-sublink:hover { background: var(--muted); }
 .cms-search-toggle > summary::-webkit-details-marker { display: none; }
 .cms-search-toggle > summary:hover { background: var(--muted); color: var(--foreground); }
 .cms-search-toggle[open] > .cms-search { position: absolute; right: 0; top: 100%; z-index: 20; margin-top: 0.5rem; padding: 0.5rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--popover); box-shadow: 0 12px 32px -12px rgb(0 0 0 / 0.35); }
+
+/*
+ * Section blocks: the leaf widgets of page builders (cms/site-view.ts). Icons are inline SVGs
+ * of the site icon set, colored by `currentColor`; `--cms-brand` carries a network's color.
+ */
+.cms-icon { display: inline-block; flex: none; vertical-align: middle; }
+
+/* Spacer (core/spacer): empty height. */
+.cms-spacer { height: 2rem; }
+.cms-spacer[data-size="small"] { height: 1rem; }
+.cms-spacer[data-size="large"] { height: 4rem; }
+.cms-spacer[data-size="huge"] { height: 8rem; }
+
+/* Tabs (core/tabs): one panel at a time once tabs.client.ts runs; every panel under its title otherwise. The first panel is active from the server. */
+.cms-tablist { display: flex; flex-wrap: wrap; gap: 0.25rem; border-bottom: 1px solid var(--border); }
+.cms-tab { display: inline-flex; align-items: center; gap: 0.375rem; margin-bottom: -1px; padding: 0.5rem 0.875rem; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--muted-foreground); font: inherit; font-size: 0.9375rem; font-weight: 500; cursor: pointer; }
+.cms-tab:hover { color: var(--foreground); }
+.cms-tab[aria-selected="true"] { color: var(--foreground); border-bottom-color: var(--primary); }
+.cms-tabpanel { padding-top: 1rem; }
+.cms-tabpanel:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-radius: 0.25rem; }
+.cms-tabpanel-title { display: none; margin: 1.5rem 0 0.5rem; font-size: 1.125rem; font-weight: 600; }
+.cms-tabs[data-enhanced] .cms-tabpanel:not([data-active]) { display: none; }
+@media (scripting: enabled) { .cms-tabpanel:not([data-active]) { display: none; } }
+@media (scripting: none) { .cms-tablist { display: none; } .cms-tabpanel-title { display: block; } }
+
+/* Accordion (core/accordion): native details; a `name` shared by the sections keeps one open when the block asks. */
+.cms-accordion { border-top: 1px solid var(--border); }
+.cms-accordion-item { border-bottom: 1px solid var(--border); }
+.cms-accordion-summary { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.875rem 0; font-weight: 600; cursor: pointer; list-style: none; }
+.cms-accordion-summary::-webkit-details-marker { display: none; }
+.cms-accordion-caret { flex: none; width: 0.5rem; height: 0.5rem; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; rotate: 45deg; transition: rotate 0.15s ease; color: var(--muted-foreground); }
+.cms-accordion-item[open] .cms-accordion-caret { rotate: 225deg; }
+.cms-accordion-body { padding-bottom: 1rem; }
+.cms-accordion-body > :first-child { margin-top: 0; }
+
+/* Cards (core/card) with an icon, or without a box. */
+.cms-card[data-style="plain"] { border: 0; border-radius: 0; background: none; }
+.cms-card[data-style="plain"] .cms-card-body { padding: 0; }
+.cms-card-icon { display: inline-flex; margin-bottom: 0.75rem; color: var(--primary); }
+.cms-card-icon .cms-icon { width: 2rem; height: 2rem; }
+
+/* Icon list (core/icon-list): an icon before each item, in one to three columns. */
+.cms-icon-list { display: grid; grid-template-columns: repeat(var(--cms-icon-columns, 1), minmax(0, 1fr)); gap: 0.5rem 1.5rem; margin-block: 1rem; padding: 0; list-style: none; }
+.cms-icon-item { display: flex; align-items: flex-start; gap: 0.625rem; line-height: 1.5; }
+.cms-icon-item-icon { width: 1.25rem; height: 1.25rem; margin-top: 0.2em; color: var(--primary); }
+.cms-icon-list[data-size="small"] { font-size: 0.875rem; }
+.cms-icon-list[data-size="small"] .cms-icon-item-icon { width: 1rem; height: 1rem; }
+.cms-icon-list[data-size="large"] { font-size: 1.125rem; }
+.cms-icon-list[data-size="large"] .cms-icon-item-icon { width: 1.5rem; height: 1.5rem; }
+@container (width < 640px) { .cms-icon-list { grid-template-columns: 1fr; } }
+
+/* Testimonial (core/testimonial): the quote, then who said it, with their photo and stars. */
+.cms-testimonial { display: flex; flex-direction: column; gap: 0.75rem; margin-inline: 0; padding: 1.5rem; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--card); }
+.cms-testimonial-quote { margin: 0; border: 0; padding: 0; font-size: 1.0625rem; }
+.cms-testimonial-author { display: flex; align-items: center; gap: 0.75rem; }
+.cms-testimonial-avatar { width: 3rem; height: 3rem; border-radius: 9999px; object-fit: cover; }
+.cms-testimonial-name { font-weight: 600; }
+.cms-testimonial-name a { color: inherit; text-decoration: none; }
+.cms-testimonial-role { font-size: 0.875rem; color: var(--muted-foreground); }
+.cms-rating { display: inline-flex; gap: 0.125rem; font-size: 1.125rem; line-height: 1; letter-spacing: 0.05em; }
+.cms-rating-star { color: var(--border); }
+.cms-rating-star[data-filled="true"] { color: rgb(245 158 11); }
+
+/* Stat (core/stat): a big number; stat.client.ts counts it up. */
+.cms-stat { text-align: center; }
+.cms-stat-value { margin: 0; font-size: 2.75rem; font-weight: 700; line-height: 1.1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; color: var(--primary); }
+.cms-stat-prefix, .cms-stat-suffix { font-size: 0.6em; font-weight: 600; }
+.cms-stat-label { margin: 0.5rem 0 0; font-size: 0.9375rem; color: var(--muted-foreground); }
+
+/* Pricing plan (core/pricing): one plan; the highlighted one stands out. Plans sit side by side in Columns. */
+.cms-pricing { position: relative; display: flex; flex-direction: column; gap: 0.75rem; height: 100%; padding: 1.5rem; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--card); }
+.cms-pricing[data-highlighted="true"] { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }
+.cms-pricing-badge { position: absolute; top: -0.75rem; left: 1.5rem; padding: 0.125rem 0.625rem; border-radius: 9999px; background: var(--primary); color: var(--primary-foreground); font-size: 0.75rem; font-weight: 600; }
+.cms-pricing-name { margin: 0; font-size: 1.125rem; font-weight: 600; }
+.cms-pricing-price { margin: 0; }
+.cms-pricing-amount { font-size: 2.25rem; font-weight: 700; letter-spacing: -0.02em; }
+.cms-pricing-period { color: var(--muted-foreground); }
+.cms-pricing-description { margin: 0; color: var(--muted-foreground); font-size: 0.9375rem; }
+.cms-pricing-features { display: flex; flex-direction: column; gap: 0.5rem; margin: 0; padding: 0; list-style: none; font-size: 0.9375rem; }
+.cms-pricing-features li { display: flex; align-items: flex-start; gap: 0.5rem; }
+.cms-pricing-features .cms-icon { margin-top: 0.2em; color: var(--primary); }
+.cms-pricing-action { margin: auto 0 0; padding-top: 0.5rem; }
+.cms-pricing-action a { width: 100%; }
+
+/* Social links (core/social-links): the networks' icons as buttons or plain icons, in the brand's color on hover. */
+.cms-social { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-block: 1rem; padding: 0; list-style: none; --cms-social-size: 2.5rem; --cms-social-icon: 1.25rem; }
+.cms-social[data-size="small"] { --cms-social-size: 2rem; --cms-social-icon: 1rem; }
+.cms-social[data-size="large"] { --cms-social-size: 3rem; --cms-social-icon: 1.5rem; }
+.cms-social-link { display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; min-width: var(--cms-social-size); height: var(--cms-social-size); color: inherit; text-decoration: none; transition: background-color 0.15s ease, color 0.15s ease; }
+.cms-social-icon { width: var(--cms-social-icon); height: var(--cms-social-icon); flex: none; }
+.cms-social[data-shape="round"] .cms-social-link, .cms-social[data-shape="square"] .cms-social-link { background: var(--muted); color: var(--foreground); }
+.cms-social[data-shape="round"] .cms-social-link { border-radius: 9999px; }
+.cms-social[data-shape="square"] .cms-social-link { border-radius: 0.5rem; }
+.cms-social[data-shape="round"] .cms-social-link:hover, .cms-social[data-shape="square"] .cms-social-link:hover { background: var(--cms-brand, var(--primary)); color: white; }
+.cms-social[data-shape="plain"] .cms-social-link { height: auto; min-width: 0; }
+.cms-social[data-shape="plain"] .cms-social-link:hover { color: var(--cms-brand, var(--primary)); }
+.cms-social[data-labels="true"] .cms-social-link { padding-inline: 0.875rem; }
+.cms-social-label { font-size: 0.875rem; font-weight: 500; }
+.cms-align-center .cms-social { justify-content: center; }
+.cms-align-right .cms-social { justify-content: flex-end; }
+
+/* Map (core/map): an iframe from Google Maps or OpenStreetMap at a height. */
+.cms-map { margin-inline: 0; }
+.cms-map-frame { display: block; width: 100%; height: 24rem; border: 0; border-radius: 0.75rem; background: var(--muted); }
+.cms-map[data-height="short"] .cms-map-frame { height: 16rem; }
+.cms-map[data-height="tall"] .cms-map-frame { height: 32rem; }
+.cms-map-caption { margin-top: 0.5rem; font-size: 0.875rem; color: var(--muted-foreground); text-align: center; }
+
+/* Slides (core/slide): a carousel of blocks; the slide fills its frame and places its blocks in the height. Its background comes from the Style tab. */
+/* A grid of one cell: the slide's styled wrapper, or the slide itself, stretches to the frame even with edit markers (`display: contents`) between them. */
+.cms-carousel-blockslide { display: grid; }
+.cms-carousel[data-aspect="video"] .cms-carousel-blockslide { aspect-ratio: 16 / 9; }
+.cms-carousel[data-aspect="wide"] .cms-carousel-blockslide { aspect-ratio: 21 / 9; }
+.cms-carousel[data-aspect="square"] .cms-carousel-blockslide { aspect-ratio: 1; }
+.cms-carousel-blockslide .cms-block { display: flex; flex-direction: column; min-width: 0; }
+.cms-carousel-blockslide .cms-block > .cms-slide { flex: 1; }
+.cms-slide { display: flex; flex-direction: column; justify-content: center; gap: 0.5rem; height: 100%; padding: 2rem; }
+.cms-slide[data-valign="top"] { justify-content: flex-start; }
+.cms-slide[data-valign="bottom"] { justify-content: flex-end; }
+.cms-slide > :first-child { margin-top: 0; }
+.cms-slide > :last-child { margin-bottom: 0; }
+
+/* Logos (core/gallery, layout logos): whole images at one height, grey until hovered. */
+.cms-logos { display: grid; grid-template-columns: repeat(var(--cms-logo-columns, 3), minmax(0, 1fr)); gap: 1.5rem 2rem; align-items: center; }
+.cms-logo { display: flex; align-items: center; justify-content: center; height: 3.5rem; }
+.cms-logo-image { max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; filter: grayscale(1); opacity: 0.7; transition: filter 0.2s ease, opacity 0.2s ease; }
+.cms-logo:hover .cms-logo-image { filter: none; opacity: 1; }
+@container (width < 640px) { .cms-logos { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* Notice (core/notice): a message set apart by a color, with an icon. */
+.cms-notice { display: flex; gap: 0.75rem; padding: 1rem 1.25rem; border: 1px solid var(--cms-notice-color); border-left-width: 4px; border-radius: 0.5rem; background: color-mix(in oklab, var(--cms-notice-color) 8%, var(--background)); --cms-notice-color: var(--primary); }
+.cms-notice[data-kind="success"] { --cms-notice-color: rgb(22 163 74); }
+.cms-notice[data-kind="warning"] { --cms-notice-color: rgb(217 119 6); }
+.cms-notice[data-kind="danger"] { --cms-notice-color: var(--destructive); }
+.cms-notice-icon { width: 1.25rem; height: 1.25rem; margin-top: 0.125rem; color: var(--cms-notice-color); }
+.cms-notice-body { min-width: 0; flex: 1; }
+.cms-notice-title { margin: 0 0 0.25rem; font-weight: 600; }
+
+/* Countdown (core/countdown): big units in a row; countdown.client.ts ticks them and shows the end. */
+.cms-countdown { text-align: center; }
+.cms-countdown-label { margin: 0 0 0.75rem; font-weight: 500; color: var(--muted-foreground); }
+.cms-countdown-units { display: flex; flex-wrap: wrap; justify-content: center; gap: 1rem; }
+.cms-countdown-unit { display: flex; flex-direction: column; align-items: center; min-width: 4.5rem; padding: 0.75rem 0.5rem; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--card); }
+.cms-countdown-value { font-size: 2rem; font-weight: 700; line-height: 1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.cms-countdown-name { margin-top: 0.375rem; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted-foreground); }
+.cms-countdown-done { margin: 0; font-size: 1.25rem; font-weight: 600; }
+
+/* Table of contents (core/toc): the entry's headings, indented by level. */
+.cms-toc { padding: 1rem 1.25rem; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--muted); }
+.cms-toc-title { margin: 0 0 0.5rem; font-size: 0.875rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted-foreground); }
+.cms-toc-list { margin: 0; padding: 0; list-style: none; font-size: 0.9375rem; }
+ol.cms-toc-list { counter-reset: cms-toc; }
+ol.cms-toc-list > .cms-toc-item::before { counter-increment: cms-toc; content: counter(cms-toc) ". "; color: var(--muted-foreground); }
+.cms-toc-item { padding: 0.2rem 0; }
+.cms-toc-item[data-level="3"] { padding-left: 1.25rem; }
+.cms-toc-item[data-level="4"] { padding-left: 2.5rem; font-size: 0.875rem; }
+.cms-toc-item a { color: inherit; text-decoration: none; }
+.cms-toc-item a:hover { color: var(--primary); text-decoration: underline; }
+
+/* Share buttons (core/share): round buttons in the networks' colors on hover; the copy button says Copied for a moment. */
+.cms-share { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; }
+.cms-share-label { font-size: 0.875rem; font-weight: 500; color: var(--muted-foreground); }
+.cms-share-list { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0; padding: 0; list-style: none; }
+.cms-share-link { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; min-width: 2.5rem; height: 2.5rem; padding: 0; border: 0; border-radius: 9999px; background: var(--muted); color: var(--foreground); font: inherit; font-size: 0.875rem; font-weight: 500; text-decoration: none; cursor: pointer; transition: background-color 0.15s ease, color 0.15s ease; }
+.cms-share-link:hover { background: var(--cms-brand, var(--primary)); color: white; }
+.cms-share-icon { width: 1.125rem; height: 1.125rem; flex: none; }
+.cms-share[data-style="labels"] .cms-share-link { padding-inline: 0.875rem; }
+.cms-share-copied { position: absolute; bottom: calc(100% + 0.375rem); left: 50%; translate: -50% 0; padding: 0.125rem 0.5rem; border-radius: 0.25rem; background: var(--foreground); color: var(--background); font-size: 0.75rem; white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity 0.15s ease; }
+.cms-share-link[data-copied] .cms-share-copied { opacity: 1; }
+.cms-align-center .cms-share { justify-content: center; }
+.cms-align-right .cms-share { justify-content: flex-end; }
+
+/* Breadcrumbs (core/breadcrumbs, helpers.breadcrumbs): the way to the page, with a separator between steps. */
+.cms-breadcrumbs { font-size: 0.875rem; color: var(--muted-foreground); }
+.cms-breadcrumbs-list { display: flex; flex-wrap: wrap; align-items: center; gap: 0.375rem; margin: 0; padding: 0; list-style: none; }
+.cms-breadcrumb { display: inline-flex; align-items: center; gap: 0.375rem; }
+.cms-breadcrumb + .cms-breadcrumb::before { content: '›'; color: var(--border); }
+.cms-breadcrumbs[data-separator="slash"] .cms-breadcrumb + .cms-breadcrumb::before { content: '/'; }
+.cms-breadcrumbs[data-separator="arrow"] .cms-breadcrumb + .cms-breadcrumb::before { content: '→'; }
+.cms-breadcrumb a { color: inherit; text-decoration: none; }
+.cms-breadcrumb a:hover { color: var(--foreground); text-decoration: underline; }
+.cms-breadcrumb [aria-current="page"] { color: var(--foreground); font-weight: 500; }
+.cms-align-center .cms-breadcrumbs-list { justify-content: center; }
+.cms-align-right .cms-breadcrumbs-list { justify-content: flex-end; }

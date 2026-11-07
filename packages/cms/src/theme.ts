@@ -357,6 +357,13 @@ export interface TermLink {
 }
 
 /** A block with its Markdown fields rendered and its media resolved. */
+/** A brand's icon, as Simple Icons draws it: a 24×24 path and the brand's color. */
+export interface BrandIcon {
+    readonly title: string;
+    readonly path: string;
+    readonly hex: string;
+}
+
 export interface RenderedBlock {
     readonly _id: string;
     readonly type: string;
@@ -365,6 +372,8 @@ export interface RenderedBlock {
     readonly html: { readonly [field: string]: string };
     /** Media the block uses, by file ID. */
     readonly media: { readonly [id: string]: MediaView };
+    /** The icons of the networks the block's `brand` fields link to, by URL; absent for URLs of no known network. */
+    readonly icons?: { readonly [url: string]: BrandIcon };
     /** How the block shows: `hide` lists the container widths it is hidden at; `anchor` and `className` go on its wrapper. */
     readonly layout?: BlockLayout;
     /** Preset slugs the block's wrapper renders as classes and custom properties; see `blockStyleAttributes`. */
@@ -383,6 +392,8 @@ export interface RenderedBlock {
     readonly content?: { readonly [field: string]: readonly BodyPart[] };
     /** `core/latest-entries`: the entries it lists. */
     readonly entries?: readonly EntryView[];
+    /** `core/toc`: the headings of the entry's content, anchored. */
+    readonly headings?: readonly HeadingView[];
     /** A data block: it holds values for themes and the API and renders nothing. */
     readonly dataOnly?: boolean;
     /** The synced pattern the block was expanded from, and its ID there: Live Edit addresses the pattern's own document through them. */
@@ -735,6 +746,23 @@ export interface SiteView {
     readonly areas: { readonly [area: string]: readonly RenderedBlock[] };
     /** The template of the entry shown, such as `entry-blank`, so a layout can leave out its frame; null elsewhere. */
     readonly template: string | null;
+    /** The page's own absolute URL, for sharing. */
+    readonly url: string;
+    /** The way to the page: home, the section, the parents, then the page itself without a URL. */
+    readonly breadcrumbs: readonly BreadcrumbView[];
+}
+
+/** One step of a page's breadcrumbs; the current page has no `url`. */
+export interface BreadcrumbView {
+    readonly label: string;
+    readonly url: string | null;
+}
+
+/** A heading of an entry's content, for `core/toc`: its anchor, text and level (2, 3 or 4). */
+export interface HeadingView {
+    readonly id: string;
+    readonly text: string;
+    readonly level: number;
 }
 
 /** Plain JSON a theme's loaders return. */
@@ -753,6 +781,17 @@ export interface ThemeHelpers {
     readonly data: { readonly layout: ThemeData; readonly page: ThemeData };
     /** The URL of a file in the theme's `assets/`, such as `asset('assets/theme.css')`; empty when it has none. */
     asset(path: string): string;
+    /**
+     * One of the site icons (`SITE_ICON_NAMES`) as an inline SVG, sized by `class` (default
+     * `size-5`) and decorative unless `label` names it. Null for a name outside the set.
+     */
+    icon(name: string, options?: { readonly class?: string; readonly label?: string }): TemplateResult | null;
+    /**
+     * The page's breadcrumbs (`site.breadcrumbs`) as a `nav` of links, the current page last
+     * without one; null on the home page. `separator` is `chevron` (the default), `slash` or
+     * `arrow`; `home: false` leaves Home out. The `core/breadcrumbs` block renders the same.
+     */
+    breadcrumbs(site: SiteView, options?: { readonly class?: string; readonly separator?: string; readonly home?: boolean }): TemplateResult | null;
     /**
      * A search form posting to the site's search page in the page's language: a box, or a
      * button that opens one (`style: 'icon'`). The `core/search` block renders the same.

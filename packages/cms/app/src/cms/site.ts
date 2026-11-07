@@ -4,15 +4,16 @@
  * from `init()` and hand the views to the theme's templates.
  */
 import {
-    ANONYMOUS, ARTICLE_TYPES, authorUrl, entryAuthors, blockDocuments, blockIsData, blocksPlain, editedSize, fieldGroupDeclarations, hasBlockReference, parseBlockText, PATTERN_REFERENCE, resolveBindings, resolveBlockBindings, textBlocks, usesUserBinding, type BindingScopes, type ParsedText, flattenBlocks, escapeHtml, formatSiteDate, formInputs, formSettings, imageSrcset, imageUrl, imageWidths, IMAGE_WIDTHS, isCmsError, languageFlag, languageName, mediaUrl, notificationRules, recordTitle, resolvePresets, richTextBlocks, richTextParts, richTextPlain, systemPrincipal, templateCandidates, transformable, urlList,
+    ANONYMOUS, ARTICLE_TYPES, authorUrl, entryAuthors, blockDocuments, SHARE_BRAND_URLS, blockIsData, blocksPlain, editedSize, fieldGroupDeclarations, hasBlockReference, parseBlockText, PATTERN_REFERENCE, resolveBindings, resolveBlockBindings, textBlocks, usesUserBinding, type BindingScopes, type ParsedText, flattenBlocks, escapeHtml, formatSiteDate, formInputs, formSettings, imageSrcset, imageUrl, imageWidths, IMAGE_WIDTHS, isCmsError, languageFlag, languageName, mediaUrl, notificationRules, recordTitle, resolvePresets, richTextBlocks, richTextParts, richTextPlain, systemPrincipal, templateCandidates, transformable, urlList,
     type AuthorView, type Block,
     type Principal, type TemplatePage, type ThemeData, type ThemePresets,
-    type ArchiveView, type BodyPart, type CollectionDefinition, type CommentShape, type CommentView, type CommentsView, type EntryReference, type EntryView, type FieldDeclaration, type FieldFilter,
-    type FieldView, type LanguageLink, type MediaView, type MenuItemView, type RecordShape, type RenderedBlock, type ResolvedMenuItem, type RichTextDoc, type SiteSettings, type SiteView, type TermLink, type TermShape,
+    type ArchiveView, type BodyPart, type BrandIcon, type CollectionDefinition, type CommentShape, type CommentView, type CommentsView, type EntryReference, type EntryView, type FieldDeclaration, type FieldFilter,
+    type BreadcrumbView, type FieldView, type LanguageLink, type MediaView, type MenuItemView, type RecordShape, type RenderedBlock, type ResolvedMenuItem, type RichTextDoc, type SiteSettings, type SiteView, type TermLink, type TermShape,
 } from '@cossackframework/cms';
-import { excerptOf, renderMarkdown, type CmsFile, type CmsHost, type CmsUser, type LoadedForm, type SiteLanguages } from '@cossackframework/cms/server';
+import { brandIcon, excerptOf, renderMarkdown, type CmsFile, type CmsHost, type CmsUser, type LoadedForm, type SiteLanguages } from '@cossackframework/cms/server';
 import type { FormView } from '@cossackframework/cms';
 import { formView, type FormRequest } from './site-forms';
+import { withHeadingAnchors } from './headings';
 
 /** The active theme, the theme it extends, its option values and presets, which every site page renders with. */
 export interface ThemeState {
@@ -108,7 +109,8 @@ function localeWhere(languages: SiteLanguages, locale: string): { [field: string
 }
 
 /** The layout's data: site title, tagline, the menus of the active theme's locations and the language links. */
-export async function siteView(cms: CmsHost, theme: ThemeState, options: { locale?: string; languages?: readonly LanguageLink[]; forms?: FormRequest; template?: string | null; entry?: RecordShape | null; user?: { name: string } | null; usage?: { user: boolean } } = {}): Promise<SiteView & { noindex: boolean }> {
+export async function siteView(cms: CmsHost, theme: ThemeState, options: { locale?: string; languages?: readonly LanguageLink[]; forms?: FormRequest; template?: string | null; entry?: RecordShape | null; user?: { name: string } | null; usage?: { user: boolean };
+    /** The page's absolute URL, for sharing. */ url?: string; /** The page resolved, for its breadcrumbs. */ page?: Resolved | { kind: string; locale: string } } = {}): Promise<SiteView & { noindex: boolean }> {
     const settings = await cms.settings.all();
     useImageSettings(cms, settings);
     const languages = await cms.languages();
@@ -122,17 +124,67 @@ export async function siteView(cms: CmsHost, theme: ThemeState, options: { local
         locale, languages: options.languages ?? [], searchUrl: `${localePrefix(languages, locale)}/search`, homeUrl: localePrefix(languages, locale) || '/',
         areas: await areaViews(cms, info?.areas ?? [], options.forms, bindingScopes(settings, options), options.usage),
         template: options.template ?? null,
+        url: options.url ?? '',
+        breadcrumbs: await breadcrumbTrail(cms, options.page, languages, locale),
     };
 }
 
-/** What the site logo and search blocks need of the site, in the page's language. */
-export interface SiteInfo { readonly title: string; readonly tagline: string; readonly logo: string | null; readonly homeUrl: string; readonly searchUrl: string }
+/**
+ * The way to a page: Home (the language's), then an entry's collection archive and ancestors, a
+ * term's ancestors, or the archive, search or author page, and last the page itself without a
+ * URL. The `core/breadcrumbs` block and `helpers.breadcrumbs` draw it; the SEO graph has its own.
+ */
+async function breadcrumbTrail(cms: CmsHost, page: Resolved | { kind: string; locale: string } | undefined, languages: SiteLanguages, locale: string): Promise<BreadcrumbView[]> {
+    const prefix = localePrefix(languages, locale);
+    const home: BreadcrumbView = { label: __('Home'), url: prefix || '/' };
+    if (!page || page.kind === 'home') return [{ label: home.label, url: null }];
+    const crumbs: BreadcrumbView[] = [home];
+    const resolved = page as Resolved;
+    switch (resolved.kind) {
+        case 'entry': {
+            const archive = resolved.collection.hierarchical ? null : await cms.archiveUrl(resolved.collection, locale).catch(() => null);
+            if (archive && archive !== home.url) crumbs.push({ label: resolved.collection.label, url: archive });
+            if (resolved.collection.hierarchical) for (const ancestor of await entryAncestors(cms, resolved.collection, resolved.record)) crumbs.push({ label: ancestor.name, url: ancestor.url });
+            crumbs.push({ label: recordTitle(resolved.record, 'title'), url: null });
+            break;
+        }
+        case 'archive': crumbs.push({ label: resolved.collection.label, url: null }); break;
+        case 'term': {
+            const taxonomy = cms.taxonomies.declaration(resolved.term.taxonomy);
+            for (const ancestor of resolved.ancestors) crumbs.push({ label: ancestor.name, url: taxonomy.path ? `${prefix}/${taxonomy.path}/${ancestor.slug}` : null });
+            crumbs.push({ label: resolved.term.name, url: null });
+            break;
+        }
+        case 'search': crumbs.push({ label: __('Search'), url: null }); break;
+        case 'author': crumbs.push({ label: resolved.user.name, url: null }); break;
+        default: break;
+    }
+    return crumbs;
+}
 
-export async function siteInfo(cms: CmsHost, locale?: string): Promise<SiteInfo> {
+/** Ancestors of a nested entry, top first, each with its URL; the SEO graph's breadcrumbs use it too. */
+export async function entryAncestors(cms: CmsHost, collection: CollectionDefinition, record: RecordShape): Promise<{ name: string; url: string }[]> {
+    const chain: RecordShape[] = [];
+    let parent = typeof record.parent === 'string' ? record.parent : null;
+    for (let depth = 0; parent && depth < 8; depth++) {
+        const found = (await cms.resource(`cms/${collection.name}`).getMany([parent], { principal: { kind: 'anonymous' } })).get(parent);
+        if (!found) break;
+        chain.unshift(found);
+        parent = typeof found.parent === 'string' ? found.parent : null;
+    }
+    const urls = await cms.entryUrls(collection, chain);
+    return chain.flatMap(entry => urls.get(entry.id) ? [{ name: String(entry.title ?? ''), url: urls.get(entry.id)! }] : []);
+}
+
+/** What the site blocks need of the site and the page, in the page's language: the logo and search blocks, the share buttons (`url`) and the breadcrumbs. */
+export interface SiteInfo { readonly title: string; readonly tagline: string; readonly logo: string | null; readonly homeUrl: string; readonly searchUrl: string; readonly url: string; readonly breadcrumbs: readonly BreadcrumbView[] }
+
+export async function siteInfo(cms: CmsHost, locale?: string, page: { /** The page's absolute URL. */ url?: string; /** The page resolved, for its breadcrumbs. */ page?: Resolved | { kind: string; locale: string } } = {}): Promise<SiteInfo> {
     const settings = await cms.settings.all();
     const languages = await cms.languages();
     const prefix = localePrefix(languages, locale ?? languages.default);
-    return { title: settings['general.siteTitle'], tagline: settings['general.tagline'], logo: settings['general.logo'] || null, homeUrl: prefix || '/', searchUrl: `${prefix}/search` };
+    return { title: settings['general.siteTitle'], tagline: settings['general.tagline'], logo: settings['general.logo'] || null, homeUrl: prefix || '/', searchUrl: `${prefix}/search`,
+        url: page.url ?? '', breadcrumbs: await breadcrumbTrail(cms, page.page, languages, locale ?? languages.default) };
 }
 
 /**
@@ -396,6 +448,7 @@ function renderedBlock(cms: CmsHost, block: { _id: string; type: string; data: R
     files: ReadonlyMap<string, CmsFile>, richText?: (doc: RichTextDoc) => BodyPart[], scope?: BindingScopes, refs: { patterns?: ReadonlyMap<string, Block[]>; usage?: { user: boolean }; depth?: number } = {}): RenderedBlock {
     const html: Record<string, string> = {};
     const media: Record<string, MediaView> = {};
+    const icons: Record<string, BrandIcon> = {};
     const content: Record<string, BodyPart[]> = {};
     const resizes = imageOptions(cms);
     const type = cms.blockTypes.get(block.type);
@@ -428,6 +481,17 @@ function renderedBlock(cms: CmsHost, block: { _id: string; type: string; data: R
             const view = mediaView(files.get(id as string), resizes);
             if (view) media[id as string] = view;
         }
+        // The networks a brand field links to, resolved here so the page ships only the icons it shows.
+        for (const url of declaration.brand ? (Array.isArray(entry) ? entry : [entry]) : []) {
+            const brand = typeof url === 'string' ? brandIcon(url) : null;
+            if (brand) icons[url as string] = brand;
+        }
+    }
+    // Share buttons name networks, not URLs: each gets its network's icon, by name.
+    if (block.type === 'core/share') for (const network of Array.isArray(data.networks) ? data.networks as string[] : []) {
+        const brand = SHARE_BRAND_URLS[network as keyof typeof SHARE_BRAND_URLS];
+        const icon = brand ? brandIcon(brand) : null;
+        if (icon) icons[network] = icon;
     }
     // The files a container's background shows, resolved like a media field's.
     for (const id of [block.style?.image, block.style?.video]) {
@@ -435,7 +499,7 @@ function renderedBlock(cms: CmsHost, block: { _id: string; type: string; data: R
         if (view) media[id as string] = view;
     }
     const children = Array.isArray(block.children) ? (block.children as RenderedBlock[]).map(child => renderedBlock(cms, child, files, richText, scope, refs)) : undefined;
-    return { _id: block._id, type: block.type, data, html, media, ...(Object.keys(content).length ? { content } : {}), ...(type && blockIsData(type) ? { dataOnly: true } : {}),
+    return { _id: block._id, type: block.type, data, html, media, ...(Object.keys(icons).length ? { icons } : {}), ...(Object.keys(content).length ? { content } : {}), ...(type && blockIsData(type) ? { dataOnly: true } : {}),
         ...(block.pattern ? { pattern: block.pattern, sourceId: block.sourceId ?? block._id } : {}),
         ...(block.layout ? { layout: block.layout } : {}), ...(block.style ? { style: block.style } : {}), ...(block.when ? { when: block.when } : {}), ...(children ? { children } : {}) };
 }
@@ -708,8 +772,8 @@ export async function entryViews(cms: CmsHost, collection: CollectionDefinition,
             const view = fieldViewOf(name, declaration, record[name], locale, record, context);
             if (view !== undefined) typed[name] = view;
         }
-        // Each content field is rendered once, for `content` and for `fields`.
-        const content = options.full && !locked ? contentFields.flatMap(([name]) => (typed[name] as readonly RenderedBlock[] | null | undefined) ?? []) : [];
+        // Each content field is rendered once, for `content` and for `fields`; the headings get anchors and a table of contents its list.
+        const content = options.full && !locked ? withHeadingAnchors(contentFields.flatMap(([name]) => (typed[name] as readonly RenderedBlock[] | null | undefined) ?? [])) : [];
         const details = options.full ? fields.filter(([name, declaration]) => !NOT_DETAILS.has(name) && !declaration.taxonomy && !declaration.media
             && !['text', 'blocks', 'richtext', 'json', 'reference', 'vector', 'bigint'].includes(declaration.kind) && typed[name] !== null && typed[name] !== undefined && typed[name] !== '' && !(Array.isArray(typed[name]) && !(typed[name] as unknown[]).length))
             .map(([name, declaration]) => ({ label: declaration.label ?? name, value: displayValue(declaration.kind, typed[name], settings) })) : [];

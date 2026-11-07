@@ -1,5 +1,6 @@
 /** Icons for collections and dashboard sections. Collections choose one by name in the builder. */
 import type { IconEntry } from '@cossackframework/solar-icons/types';
+import { SITE_ICONS } from './site-icons';
 import { DocumentTextIcon } from '@cossackframework/solar-icons/document-text/line';
 import { NotebookIcon } from '@cossackframework/solar-icons/notebook/line';
 import { BoxIcon } from '@cossackframework/solar-icons/box/line';
@@ -119,6 +120,7 @@ import { GiftIcon } from '@cossackframework/solar-icons/gift/line';
 import { RocketIcon } from '@cossackframework/solar-icons/rocket/line';
 
 export const ICONS: Readonly<Record<string, IconEntry>> = Object.freeze({
+    ...SITE_ICONS,
     'align-left': { line: AlignLeftIcon },
     'align-horizontal-center': { line: AlignHorizontalCenterIcon },
     'align-right': { line: AlignRightIcon },

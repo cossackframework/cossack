@@ -80,7 +80,7 @@ export default class PreviewPage extends Cossack {
             }
             this.entry = (await entryViews(cms, collection, [record], { full: true, forms: { query: {}, principal, url: this.c.req.path } }))[0]!;
             this.menus = await contentMenus(cms, this.theme, this.entry.content, { locale: this.entry.locale });
-            this.site = await siteInfo(cms, this.entry.locale);
+            this.site = await siteInfo(cms, this.entry.locale, { url: this.c.req.url, page: { kind: 'entry', collection, record, locale: this.entry.locale } });
             this.data = await themeData(cms, this.theme, { kind: 'entry', collection: collection.name, template: this.entry.template }, this.entry, principal, this.entry.locale);
         } catch (error) {
             if (!isCmsError(error)) throw error;

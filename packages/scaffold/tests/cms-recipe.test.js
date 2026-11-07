@@ -45,7 +45,7 @@ describe('cms recipe', () => {
     for (const rel of ['src/plugins/default-theme/plugin.json', 'src/plugins/default-theme/templates/layout.ts', 'src/plugins/default-theme/templates/entry.ts', 'src/plugins/default-theme/templates/archive.ts', 'src/plugins/default-theme/parts/comments.ts', 'src/cms/rich-text.client.ts', 'src/pages/dashboard/(cms)/appearance/menus/[id]/index.ts',
       'src/pages/api/cms/content/[collection]/index.ts', 'src/pages/api/cms/menus/[location].ts'])
       expect(files.has(rel), rel).toBe(true);
-    expect(JSON.parse(text(files, 'src/plugins/default-theme/plugin.json')).theme.locations).toEqual({ primary: 'Primary menu', footer: 'Footer menu' });
+    expect(JSON.parse(text(files, 'src/plugins/default-theme/plugin.json')).theme.locations).toEqual({ primary: 'Primary menu', mobile: 'Mobile menu', footer: 'Footer menu' });
     expect(JSON.parse(text(files, 'src/plugins/default-theme/plugin.json'))).toMatchObject({ logo: 'assets/logo.svg', cover: 'assets/cover.svg' });
     for (const rel of ['src/plugins/default-theme/assets/logo.svg', 'src/plugins/default-theme/assets/cover.svg', 'src/dashboard/avatar-field.ts']) expect(files.has(rel), rel).toBe(true);
     const pkg = JSON.parse(text(files, 'package.json'));
@@ -139,6 +139,14 @@ describe('cms recipe', () => {
     ]);
     expect(withClientDependencies("      // @cossack:client-dependencies\n      include: [],", synthetic))
       .toBe("      // @cossack:client-dependencies\n      include: [\n        '@cossackframework/solar-icons/star/line',\n        '@tiptap/core',\n      ],");
+    // The Worker's list gets the icon subpaths and the editor's packages, never the framework's own (one copy of each).
+    const both = new Map([...synthetic, ['src/c.ts', source("import { ui } from '@cossackframework/ui';\nimport { plugins } from '@cossackframework/framework/plugins';")]]);
+    expect(withClientDependencies("      // @cossack:server-dependencies\n      ...([] as string[]),\n      '@cossackframework/renderer > parse5',", both))
+      .toBe("      // @cossack:server-dependencies\n      '@cossackframework/solar-icons/star/line',\n      '@tiptap/core',\n      '@cossackframework/renderer > parse5',");
+    expect(withClientDependencies("      // @cossack:server-dependencies\n      ...([] as string[]),\n      'x',", new Map())).toBe("      // @cossack:server-dependencies\n      'x',");
+    const rendered = text(files, 'vite.config.ts');
+    expect(rendered.slice(rendered.indexOf('@cossack:server-dependencies'), rendered.indexOf('parse5'))).toContain("'@cossackframework/solar-icons/palette-2/line'");
+    expect(rendered.slice(rendered.indexOf('@cossack:server-dependencies'), rendered.indexOf('parse5'))).not.toContain("'@cossackframework/ui'");
     expect(text(await renderRecipe(resolveRecipe({ adapter: 'node', preset: 'minimal', features: [] })), 'vite.config.ts')).toContain('// @cossack:client-dependencies\n        include: [],');
   });
 

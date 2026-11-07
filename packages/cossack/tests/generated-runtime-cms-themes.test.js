@@ -150,7 +150,19 @@ describe.skipIf(!liveRomeDBTests())('CMS themes', () => {
         { _id: 'right', type: 'core/column', data: { span: '', verticalAlign: 'top' }, layout: { hide: ['sm'] }, children: [{ _id: 'rp', type: 'core/paragraph', data: { text: 'Right column' }, style: { text: 'primary', align: 'center' }, layout: { className: 'lead' } }] },
       ] },
       // A full-width band: a gradient from the core presets with an overlay, its paragraph kept at the content measure.
-      { _id: 'band', type: 'core/group', data: { align: 'full', height: 'short', valign: 'center' }, style: { gradient: 'dusk', overlay: '#000000', overlayOpacity: 20, padding: 'large' }, children: [{ _id: 'bp', type: 'core/paragraph', data: { text: 'In the band' } }] }]);
+      { _id: 'band', type: 'core/group', data: { align: 'full', height: 'short', valign: 'center' }, style: { gradient: 'dusk', overlay: '#000000', overlayOpacity: 20, padding: 'large' }, children: [{ _id: 'bp', type: 'core/paragraph', data: { text: 'In the band' } }] },
+      // Section blocks: tabs with the first panel active, a stat with its number kept for the count-up, social links whose icons the server resolved.
+      { _id: 'tabs', type: 'core/tabs', data: {}, children: [
+        { _id: 't1', type: 'core/tab', data: { label: 'Plans', icon: 'tag' }, children: [{ _id: 'plan', type: 'core/pricing', data: { name: 'Pro', price: '$29', period: 'per month', features: ['Everything'], buttonLabel: 'Start', buttonUrl: '/start', highlighted: true } }] },
+        { _id: 't2', type: 'core/tab', data: { label: 'Numbers' }, children: [{ _id: 'stat', type: 'core/stat', data: { value: '1,250', suffix: '+', label: 'Customers' } }] },
+      ] },
+      { _id: 'social', type: 'core/social-links', data: { links: ['https://x.com/acme', 'mailto:hi@acme.test'], size: 'small', shape: 'round' } },
+      // A table of contents of the entry's headings (anchored by the server), share buttons for the page, and its breadcrumbs.
+      { _id: 'toc', type: 'core/toc', data: { title: 'Contents', depth: 'h3' } },
+      { _id: 'h-one', type: 'core/heading', data: { text: 'Section one', level: 'h2' } },
+      { _id: 'h-two', type: 'core/heading', data: { text: 'Section two', level: 'h3' }, layout: { anchor: 'two' } },
+      { _id: 'share', type: 'core/share', data: { networks: ['facebook', 'copy'], label: 'Share', style: 'icons' } },
+      { _id: 'crumbs', type: 'core/breadcrumbs', data: { home: true, separator: 'chevron' } }]);
       const layoutHtml = visible(await visitor.page('/projects/layout'));
       expect(layoutHtml).toMatch(/class="?cms-content"?/);
       expect(layoutHtml).toMatch(/class="?cms-columns"? data-gap="?small"? data-stack="?mobile/);
@@ -170,6 +182,20 @@ describe.skipIf(!liveRomeDBTests())('CMS themes', () => {
       expect(layoutHtml).toMatch(/class="?cms-block cms-text-primary cms-align-center lead"? style="?color: ?var\(--cms-color-primary\); ?text-align: ?center/);
       expect(layoutHtml).toMatch(/--cms-color-primary: ?#2563eb/);
       expect(layoutHtml).toMatch(/--cms-space-large: ?3rem/);
+      // Section blocks render through the core renderers, their icons inline: the site icon on the tab, the brand icon the server resolved for X, the site's letter icon for the email link.
+      expect(layoutHtml).toMatch(/<div class="?cms-tablist"? role="?tablist"?><button type="?button"? role="?tab"? class="?cms-tab"? id="?tabs-tab-1"? aria-controls="?tabs-panel-1"? aria-selected="?true"? tabindex="?0"?><svg[^>]*class="?cms-icon size-4"?/);
+      expect(layoutHtml).toMatch(/<section class="?cms-tabpanel"? role="?tabpanel"? id="?tabs-panel-1"? aria-labelledby="?tabs-tab-1"? data-active(?:="")? tabindex="?0"?>/);
+      expect(layoutHtml).toMatch(/class="?cms-pricing my-6"? data-highlighted="?true"?/);
+      expect(layoutHtml).toMatch(/class="?cms-stat-number"? data-value="?1,250"?>1,250</);
+      expect(layoutHtml).toMatch(/<a class="?cms-social-link"? href="?https:\/\/x\.com\/acme"? style="?--cms-brand: ?#000000"? title="?X"? aria-label="?X"? rel="?me noopener"? target="?_blank"?><svg[^>]*fill="?currentColor"?[^>]*><path d="?M[0-9.]/);
+      expect(layoutHtml).toMatch(/href="?mailto:hi@acme\.test"? title="?Email"? aria-label="?Email"?><svg[^>]*class="?cms-icon cms-social-icon"?/);
+      // The server anchored the headings (one from its text, one as written) and filled the table of contents; the share links carry the page's own address; the breadcrumbs end at the page.
+      expect(layoutHtml).toMatch(/<div class="?cms-block"? id="?section-one"?><h2/);
+      // Every heading of the entry is listed, the column's "Left heading" first; a heading's own anchor (`two`) is kept.
+      expect(layoutHtml).toMatch(/<ul class="?cms-toc-list"?><li class="?cms-toc-item"? data-level="?3"?><a href="?#left-heading"?>Left heading<\/a><\/li><li class="?cms-toc-item"? data-level="?2"?><a href="?#section-one"?>Section one<\/a><\/li><li class="?cms-toc-item"? data-level="?3"?><a href="?#two"?>Section two<\/a><\/li><\/ul>/);
+      expect(layoutHtml).toMatch(/<a class="?cms-share-link"? href="?https:\/\/www\.facebook\.com\/sharer\/sharer\.php\?u=http%3A%2F%2F[^"\s>]*%2Fprojects%2Flayout"? data-network="?facebook"? style="?--cms-brand: ?#[0-9A-Fa-f]{6}"?/);
+      expect(layoutHtml).toMatch(/<button type="?button"? class="?cms-share-link"? data-network="?copy"? data-url="?http:\/\/[^"\s>]*\/projects\/layout"?/);
+      expect(layoutHtml).toMatch(/<nav class="?cms-breadcrumbs"? aria-label="?Breadcrumb"? data-separator="?chevron"?><ol class="?cms-breadcrumbs-list"?><li class="?cms-breadcrumb"?><a href="?\/"?>Home<\/a><\/li>[\s\S]*?<li class="?cms-breadcrumb"?><span aria-current="?page"?>Layout<\/span><\/li><\/ol><\/nav>/);
       // The layout rules ship in the application stylesheet, as container queries.
       const appCss = [...layoutHtml.matchAll(/<link rel="?stylesheet"? href="?([^"\s>]+\.css)/g)].map(match => match[1]).find(href => !href.includes('portfolio'));
       expect(appCss, 'application stylesheet').toBeTruthy();

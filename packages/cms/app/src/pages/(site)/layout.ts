@@ -21,7 +21,7 @@ export default class SiteLayout extends Cossack {
     /** The signed-in user's taskbar; null for visitors, whose pages carry no trace of it. */
     taskbar: TaskbarView | null = server$(() => siteTaskbar(this.c, this.user), { initial: null });
     @State() logoutError = '';
-    @State() site: SiteView & { noindex: boolean } = { title: '', tagline: '', logo: null, blog: null, menus: {}, noindex: false, locale: 'en', languages: [], searchUrl: '/search', homeUrl: '/', areas: {}, template: null };
+    @State() site: SiteView & { noindex: boolean } = { title: '', tagline: '', logo: null, blog: null, menus: {}, noindex: false, locale: 'en', languages: [], searchUrl: '/search', homeUrl: '/', areas: {}, template: null, url: '', breadcrumbs: [] };
     @State() theme: ThemeState = { name: null, options: {} };
     /** What the theme's `layout` loader returned. */
     @State() data: ThemeData = {};
@@ -169,7 +169,7 @@ export default class SiteLayout extends Cossack {
             const user = this.user ? { name: this.user.name } : null;
             const usage = { user: Object.values(this.theme.options).some(value => usesUserBinding(value)) };
             this.theme = { ...this.theme, options: resolvedOptions(this.theme.options, bindingScopes(settings, { entry, user })) };
-            this.site = await siteView(cms, this.theme, { locale: page.locale, languages: await languageLinks(cms, page), template, entry, user, usage, forms: { query: this.c.req.query(), principal: this.c.get('principal'), url: this.c.req.path } });
+            this.site = await siteView(cms, this.theme, { locale: page.locale, languages: await languageLinks(cms, page), template, entry, user, usage, url: this.c.req.url, page, forms: { query: this.c.req.query(), principal: this.c.get('principal'), url: this.c.req.path } });
             if (usage.user && user) this.c.header('cache-control', 'private, no-store');
             this.data = await themeData(cms, this.theme, 'layout', this.site, this.c.get('principal'), page.locale);
         } catch { this.site = { ...this.site, title: config('app.name') }; }

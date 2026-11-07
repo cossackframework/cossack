@@ -76,9 +76,16 @@ export function withClientDependencies(viteConfig, files) {
     for (const [, specifier] of source.matchAll(/\bimport\(\s*'([^']+)'\s*\)/g)) if (CLIENT_DEPENDENCY.test(specifier)) found.add(specifier);
   }
   const list = [...found].sort();
-  return viteConfig.replace(/(\/\/ @cossack:client-dependencies\n)(\s*)include: \[\],/, (_, marker, indent) =>
-    `${marker}${indent}include: [${list.length ? `\n${list.map(name => `${indent}  '${name}',`).join('\n')}\n${indent}` : ''}],`);
+  // The Worker evaluates the whole server entry at start, so the same icon subpaths and editor packages
+  // are pre-bundled there too; the framework's own packages keep their one copy and stay off that list.
+  const server = list.filter(name => SERVER_DEPENDENCY.test(name));
+  return viteConfig
+    .replace(/(\/\/ @cossack:client-dependencies\n)(\s*)include: \[\],/, (_, marker, indent) =>
+      `${marker}${indent}include: [${list.length ? `\n${list.map(name => `${indent}  '${name}',`).join('\n')}\n${indent}` : ''}],`)
+    .replace(/(\/\/ @cossack:server-dependencies\n)(\s*)\.\.\.\(\[\] as string\[\]\),/, (_, marker, indent) =>
+      `${marker}${server.map(name => `${indent}'${name}',`).join('\n')}`.replace(/\n$/, ''));
 }
+const SERVER_DEPENDENCY = /^(?:@cossackframework\/solar-icons\/.+|@tiptap\/[^/]+(?:\/[^/]+)?|prosemirror-collab)$/;
 
 const TIPTAP_PACKAGES = ['@tiptap/core', '@tiptap/pm', '@tiptap/starter-kit', '@tiptap/extension-document', '@tiptap/extension-image', '@tiptap/extension-text-align', '@tiptap/extensions', 'prosemirror-collab'];
 function dependencyVersion(name) {

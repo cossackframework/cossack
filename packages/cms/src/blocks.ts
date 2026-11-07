@@ -13,6 +13,7 @@ export { blocksShapeProblem, blockLayoutProblem, blockStyleProblem, styleValuePr
     type Breakpoint, type StyleProperty, type ConditionOperator } from './block-shape';
 import { bindingProblem } from './bindings';
 import { hasBlockReference, parseBlockText, textBlocks } from './block-references';
+import { ICON_NAME } from './icons';
 import { BLOCK_LIMITS, BREAKPOINTS, INPUT_NAME, STYLE_PROPERTIES, TEXT_ALIGNMENTS, styleValueProblem, type Breakpoint, type ConditionOperator, type StyleProperty } from './block-shape';
 
 /**
@@ -198,7 +199,15 @@ export function blockSupports(declaration: Pick<BlockDeclaration, 'category' | '
 }
 
 export const BLOCK_NAME = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\/[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
-const ICON_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+/** Where `core/share` can send a page, in the order the block offers them. */
+export const SHARE_NETWORKS = Object.freeze(['facebook', 'x', 'linkedin', 'whatsapp', 'telegram', 'reddit', 'pinterest', 'bluesky', 'threads', 'email', 'copy'] as const);
+export type ShareNetwork = (typeof SHARE_NETWORKS)[number];
+/** A URL of each network's own, which the server resolves into its brand icon for the share block. */
+export const SHARE_BRAND_URLS: Readonly<Partial<Record<ShareNetwork, string>>> = Object.freeze({
+    facebook: 'https://facebook.com', x: 'https://x.com', linkedin: 'https://linkedin.com', whatsapp: 'https://whatsapp.com', telegram: 'https://t.me', reddit: 'https://reddit.com', pinterest: 'https://pinterest.com', bluesky: 'https://bsky.app', threads: 'https://threads.net',
+});
+/** An embed URL a map block may show: Google Maps or OpenStreetMap, as their Share → Embed dialogs give it. */
+export const MAP_EMBED_URL = /^https:\/\/(?:(?:www\.)?google\.[a-z]{2,3}(?:\.[a-z]{2})?\/maps\/embed\?|maps\.google\.[a-z]{2,3}(?:\.[a-z]{2})?\/maps\?|(?:www\.)?openstreetmap\.org\/export\/embed\.html\?)\S*$/;
 /** Field kinds a block can hold. Nesting is through `children`, not fields. */
 const BLOCK_FIELD_KINDS = new Set(['string', 'text', 'enum', 'integer', 'number', 'boolean', 'datetime', 'json', 'richtext']);
 const LINK = '(?:https?://|/|mailto:|tel:|#)\\S*';
@@ -222,9 +231,10 @@ const core: BlockDeclaration[] = [
         link: field.string({ max: 2048, pattern: '(?:https?://|/)\\S*', label: 'Link' }),
         align: WIDTH,
     } },
-    { name: 'core/gallery', inline: true,  keywords: ['images', 'photos'], label: 'Gallery', icon: 'gallery-wide', category: 'media', fields: {
+    { name: 'core/gallery', inline: true,  keywords: ['images', 'photos', 'logos', 'clients', 'partners'], label: 'Gallery', icon: 'gallery-wide', category: 'media', fields: {
         images: field.gallery({ label: 'Images' }),
         columns: field.integer({ default: 3, min: 1, max: 6, label: 'Columns' }),
+        layout: field.enum(['grid', 'logos'], { default: 'grid', label: 'Layout', choices: { grid: 'Square tiles', logos: 'Logos: whole images at one height' } }),
         align: WIDTH,
     } },
     { name: 'core/quote', inline: true, body: 'text',  keywords: ['blockquote', 'citation'], label: 'Quote', icon: 'chat-round-line', category: 'text', fields: {
@@ -306,22 +316,28 @@ const core: BlockDeclaration[] = [
         term: field.string({ required: true, max: 200, label: 'Term' }),
         definition: field.text({ required: true, max: 2000, format: 'markdown', label: 'Definition' }),
     } },
-    { name: 'core/card', inline: true,  keywords: ['box', 'tile'], label: 'Card', icon: 'card', category: 'design', description: 'An image with a title, text and a link, in a box.', fields: {
+    { name: 'core/card', inline: true,  keywords: ['box', 'tile', 'icon box', 'image box', 'feature', 'service', 'team member'], label: 'Card', icon: 'card', category: 'design', description: 'An image or an icon with a title, text and a link, in a box or plain.', fields: {
         image: field.media({ label: 'Image' }),
+        icon: field.icon({ label: 'Icon', description: 'Shown above the title when there is no image.' }),
+        style: field.enum(['boxed', 'plain'], { default: 'boxed', label: 'Style', choices: { boxed: 'In a box', plain: 'Plain' } }),
         title: field.string({ max: 200, label: 'Title' }),
         text: field.text({ max: 5000, format: 'markdown', label: 'Text' }),
         url: field.string({ max: 2048, pattern: LINK, label: 'Link' }),
         linkLabel: field.string({ max: 80, label: 'Link text', description: 'Empty links the title and the image.' }),
         layout: field.enum(['top', 'left', 'right'], { default: 'top', label: 'Image position', choices: { top: 'Above the text', left: 'Left of the text', right: 'Right of the text' } }),
     } },
-    { name: 'core/carousel', keywords: ['slider', 'slideshow'], label: 'Carousel', icon: 'posts-carousel-horizontal', category: 'media', description: 'Images one at a time, with arrows and dots; swipe on touch screens.', fields: {
+    // A carousel shows its images, or slides of blocks when it holds any: the hero slider of page builders.
+    { name: 'core/carousel', keywords: ['slider', 'slideshow', 'slides', 'hero slider'], label: 'Carousel', icon: 'posts-carousel-horizontal', category: 'media', description: 'Images, or slides of blocks, one at a time, with arrows and dots; swipe on touch screens.', fields: {
         images: field.gallery({ label: 'Images' }),
         aspect: field.enum(['video', 'wide', 'square', 'auto'], { default: 'video', label: 'Shape', choices: { video: '16:9', wide: '21:9', square: 'Square', auto: 'As uploaded' } }),
         autoplay: field.boolean({ default: false, label: 'Play automatically' }),
         interval: field.integer({ default: 5, min: 2, max: 30, label: 'Seconds per image' }),
         captions: field.boolean({ default: true, label: 'Show captions' }),
         align: WIDTH,
-    } },
+    }, children: { allowed: ['core/slide'], max: 12 } },
+    { name: 'core/slide', label: 'Slide', icon: 'gallery-wide', category: 'media', parent: ['core/carousel'], description: 'One slide of a carousel: any blocks over a background from its Style tab.', fields: {
+        valign: field.enum(['top', 'center', 'bottom'], { default: 'center', label: 'Vertical alignment' }),
+    }, children: {}, supports: { background: true } },
     { name: 'core/latest-entries', inline: true,  keywords: ['posts', 'recent', 'query', 'loop'], label: 'Latest entries', icon: 'list-arrow-down', category: 'widgets', description: 'The newest published entries of a collection, kept up to date.', fields: {
         collection: field.string({ required: true, max: 40, pattern: '[a-z][a-z0-9_]*', default: 'posts', choicesFrom: 'collections', label: 'Collection' }),
         count: field.integer({ default: 5, min: 1, max: 24, label: 'How many' }),
@@ -359,6 +375,92 @@ const core: BlockDeclaration[] = [
     { name: 'core/meta', keywords: ['metadata', 'data', 'key value'], label: 'Custom fields', icon: 'database', category: 'data', description: 'Named values stored with the entry for themes and integrations; nothing shows on the page.', fields: {
         fields: field.list('string', { label: 'Fields', description: 'Each as name: value.' }),
     } },
+    // Section blocks: what page builders ship as widgets, as leaf blocks placed in columns and grids.
+    { name: 'core/spacer', keywords: ['space', 'gap', 'whitespace', 'margin', 'empty'], label: 'Spacer', icon: 'sort-vertical', category: 'design', description: 'Empty space between blocks.', fields: {
+        size: field.enum(['small', 'medium', 'large', 'huge'], { default: 'medium', label: 'Height', choices: { small: 'Small', medium: 'Medium', large: 'Large', huge: 'Huge' } }),
+    }, supports: { color: false, spacing: false, typography: false } },
+    { name: 'core/accordion', keywords: ['toggle', 'collapse', 'expand', 'details', 'faq'], label: 'Accordion', icon: 'list-down', category: 'design', description: 'Sections that open and close, each holding any blocks.', fields: {
+        single: field.boolean({ default: false, label: 'Open one at a time', description: 'Opening a section closes the others.' }),
+    }, children: { allowed: ['core/accordion-item'], max: 30 } },
+    { name: 'core/accordion-item', label: 'Section', icon: 'list-down', category: 'design', parent: ['core/accordion'], fields: {
+        label: field.string({ required: true, max: 200, label: 'Title' }),
+        open: field.boolean({ default: false, label: 'Open at first' }),
+    }, children: {} },
+    { name: 'core/icon-list', keywords: ['features', 'checklist', 'bullets', 'icons', 'benefits'], label: 'Icon list', icon: 'checklist', category: 'text', description: 'A list with an icon before each item.', fields: {
+        size: field.enum(['small', 'medium', 'large'], { default: 'medium', label: 'Size' }),
+        columns: field.integer({ default: 1, min: 1, max: 3, label: 'Columns' }),
+    }, children: { allowed: ['core/icon-item'], max: 50 } },
+    { name: 'core/icon-item', inline: true, body: 'text', label: 'Item', icon: 'check-circle', category: 'text', parent: ['core/icon-list'], fields: {
+        icon: field.icon({ default: 'check-circle', label: 'Icon' }),
+        text: field.string({ required: true, max: 300, label: 'Text' }),
+        url: field.string({ max: 2048, pattern: LINK, label: 'Link' }),
+    } },
+    { name: 'core/testimonial', inline: true, body: 'text', keywords: ['review', 'quote', 'customer', 'rating', 'stars'], label: 'Testimonial', icon: 'chat-round-dots', category: 'widgets', description: 'What someone said, with their name, role, photo and a star rating.', fields: {
+        text: field.text({ required: true, max: 2000, format: 'markdown', label: 'Quote' }),
+        name: field.string({ required: true, max: 120, label: 'Name' }),
+        role: field.string({ max: 160, label: 'Role', description: 'Such as a job title and a company.' }),
+        avatar: field.media({ label: 'Photo' }),
+        rating: field.integer({ default: 0, min: 0, max: 5, label: 'Stars', description: '0 shows no rating.' }),
+        url: field.string({ max: 2048, pattern: '(?:https?://\\S*)?', label: 'Source URL', description: 'Where the words were published, if anywhere.' }),
+    } },
+    { name: 'core/stat', inline: true, body: 'label', keywords: ['counter', 'number', 'statistic', 'figure', 'count up', 'metric'], label: 'Stat', icon: 'graph', category: 'widgets', description: 'A big number with a label; it counts up as it scrolls into view.', fields: {
+        value: field.string({ required: true, max: 24, pattern: '[0-9][0-9., ]*', label: 'Number', description: 'Digits, with . , or spaces between them.' }),
+        prefix: field.string({ max: 12, label: 'Before', description: 'Such as $ or +.' }),
+        suffix: field.string({ max: 12, label: 'After', description: 'Such as % or k.' }),
+        label: field.string({ max: 120, label: 'Label' }),
+        animate: field.boolean({ default: true, label: 'Count up', description: 'Counts from zero when the block scrolls into view.' }),
+    } },
+    { name: 'core/pricing', inline: true, body: 'name', keywords: ['price', 'plan', 'tier', 'subscription', 'pricing table'], label: 'Pricing plan', icon: 'tag', category: 'widgets', description: 'One plan of a pricing table: its price, features and button. Put plans side by side in Columns.', fields: {
+        name: field.string({ required: true, max: 80, label: 'Plan' }),
+        price: field.string({ required: true, max: 24, label: 'Price', description: 'Such as $29 or Free.' }),
+        period: field.string({ max: 40, label: 'Period', description: 'Such as per month.' }),
+        description: field.string({ max: 300, label: 'Description' }),
+        features: field.list('string', { max: 200, label: 'Features', description: 'What the plan includes.' }),
+        buttonLabel: field.string({ max: 80, label: 'Button text' }),
+        buttonUrl: field.string({ max: 2048, pattern: LINK, label: 'Button link' }),
+        highlighted: field.boolean({ default: false, label: 'Highlight', description: 'The recommended plan stands out.' }),
+        badge: field.string({ max: 40, label: 'Badge', description: 'Such as Most popular.' }),
+    } },
+    { name: 'core/social-links', keywords: ['social', 'follow', 'facebook', 'instagram', 'x', 'linkedin', 'youtube', 'tiktok', 'icons'], label: 'Social links', icon: 'share', category: 'widgets', description: 'Links to your profiles, shown as the networks\' icons.', fields: {
+        links: field.list('string', { max: 2048, pattern: '(?:https?://|mailto:|tel:)\\S*', brand: true, label: 'Links', description: 'A profile URL per item; the icon comes from the address. mailto: and tel: links work too.' }),
+        size: field.enum(['small', 'medium', 'large'], { default: 'medium', label: 'Size' }),
+        shape: field.enum(['round', 'square', 'plain'], { default: 'round', label: 'Shape', choices: { round: 'Round buttons', square: 'Square buttons', plain: 'Icons only' } }),
+        labels: field.boolean({ default: false, label: 'Show names' }),
+    }, supports: { typography: ['align'] } },
+    { name: 'core/map', inline: true, keywords: ['google maps', 'openstreetmap', 'location', 'address', 'directions'], label: 'Map', icon: 'map', category: 'embeds', description: 'A map of an address from Google Maps, or an embed from Google Maps or OpenStreetMap. It loads from their servers.', fields: {
+        address: field.string({ max: 300, label: 'Address', description: 'A place or an address Google Maps finds; empty shows the embed URL.' }),
+        url: field.string({ max: 4096, pattern: `(?:${MAP_EMBED_URL.source.slice(1, -1)})?`, label: 'Embed URL', description: 'The src of the iframe Google Maps or OpenStreetMap give under Share → Embed a map.' }),
+        zoom: field.integer({ default: 14, min: 1, max: 20, label: 'Zoom', description: 'For an address: 1 shows the world, 20 a building.' }),
+        height: field.enum(['short', 'medium', 'tall'], { default: 'medium', label: 'Height' }),
+        caption: field.string({ max: 300, label: 'Caption' }),
+        align: WIDTH,
+    }, supports: { color: false } },
+    { name: 'core/notice', inline: true, body: 'text', keywords: ['alert', 'callout', 'message box', 'warning', 'info', 'tip', 'note'], label: 'Notice', icon: 'info-circle', category: 'text', description: 'A short message set apart: a tip, a success, a warning or an error.', fields: {
+        kind: field.enum(['info', 'success', 'warning', 'danger'], { default: 'info', label: 'Kind', choices: { info: 'Information', success: 'Success', warning: 'Warning', danger: 'Error' } }),
+        title: field.string({ max: 120, label: 'Title' }),
+        text: field.text({ required: true, max: 2000, format: 'markdown', label: 'Text' }),
+        showIcon: field.boolean({ default: true, label: 'Show the icon' }),
+    } },
+    { name: 'core/countdown', keywords: ['timer', 'launch', 'sale', 'event', 'deadline'], label: 'Countdown', icon: 'hourglass', category: 'widgets', description: 'Days, hours, minutes and seconds left until a moment.', fields: {
+        until: field.datetime({ required: true, label: 'Counts down to' }),
+        label: field.string({ max: 160, label: 'Label', description: 'Shown above the numbers.' }),
+        done: field.string({ max: 200, label: 'When it ends', description: 'Shown in place of the numbers once the moment has passed.' }),
+        seconds: field.boolean({ default: true, label: 'Show seconds' }),
+    } },
+    { name: 'core/toc', keywords: ['table of contents', 'contents', 'outline', 'jump links', 'anchors'], label: 'Table of contents', icon: 'list-arrow-down', category: 'text', description: 'Links to the headings of this entry, kept up to date.', fields: {
+        title: field.string({ max: 80, default: 'Contents', label: 'Title' }),
+        depth: field.enum(['h2', 'h3', 'h4'], { default: 'h3', label: 'Down to', choices: { h2: 'Main headings', h3: 'Sub-headings too', h4: 'Every heading' } }),
+        numbered: field.boolean({ default: false, label: 'Numbered' }),
+    } },
+    { name: 'core/share', keywords: ['share', 'social', 'facebook', 'x', 'linkedin', 'whatsapp', 'email', 'copy link'], label: 'Share buttons', icon: 'share', category: 'widgets', description: 'Buttons that share this page on social networks, by email, or copy its address.', fields: {
+        networks: field.enum([...SHARE_NETWORKS], { multiple: true, default: ['facebook', 'x', 'linkedin', 'email', 'copy'], label: 'Networks', choices: { facebook: 'Facebook', x: 'X', linkedin: 'LinkedIn', whatsapp: 'WhatsApp', telegram: 'Telegram', reddit: 'Reddit', pinterest: 'Pinterest', bluesky: 'Bluesky', threads: 'Threads', email: 'Email', copy: 'Copy link' } }),
+        label: field.string({ max: 60, default: 'Share', label: 'Label', description: 'Shown before the buttons; empty for none.' }),
+        style: field.enum(['icons', 'labels'], { default: 'icons', label: 'Style', choices: { icons: 'Icons', labels: 'Icons with names' } }),
+    }, supports: { typography: ['align'] } },
+    { name: 'core/breadcrumbs', inline: true, keywords: ['trail', 'path', 'navigation', 'where am i'], label: 'Breadcrumbs', icon: 'structure', category: 'widgets', description: 'The way to this page: home, the section, the parents.', fields: {
+        home: field.boolean({ default: true, label: 'Show Home' }),
+        separator: field.enum(['chevron', 'slash', 'arrow'], { default: 'chevron', label: 'Separator', choices: { chevron: '›', slash: '/', arrow: '→' } }),
+    }, supports: { color: false, typography: ['align'] } },
     // Layout: containers that hold other blocks. They render as CSS grid and respond to the
     // width of the content they are in, so columns inside a column stack on their own.
     // A group is also the section and the hero: a full-width band with a background from its Style
@@ -390,7 +492,7 @@ const core: BlockDeclaration[] = [
     { name: 'core/tabs', keywords: ['panels'], label: 'Tabs', icon: 'window-frame', category: 'design', description: 'Panels shown one at a time.', fields: {}, children: { allowed: ['core/tab'], max: 12 } },
     { name: 'core/tab', label: 'Tab', icon: 'tuning-square', category: 'design', parent: ['core/tabs'], fields: {
         label: field.string({ required: true, max: 80, label: 'Label' }),
-        icon: field.string({ max: 60, pattern: '[a-z0-9]+(?:-[a-z0-9]+)*', label: 'Icon', description: 'A Solar icon name, such as settings.' }),
+        icon: field.icon({ label: 'Icon' }),
     }, children: {} },
     // A synced pattern: the site renders the pattern's current content in its place.
     { name: 'core/pattern', label: 'Pattern', icon: 'widget-add', category: 'design', description: 'A synced pattern.', fields: {

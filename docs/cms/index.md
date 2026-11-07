@@ -35,6 +35,8 @@ puts a default theme in `src/plugins/default-theme/` for you to edit or copy. Se
   presence through the entry's room, the shared draft, and the rules that merge changes.
 - [Notes](/docs/cms/notes.md): review notes on a passage, a block, a field or the entry,
   mentions, the rail, resolving, and the publishing check.
+- [Blocks](/docs/cms/blocks.md): the core block library, sections built from it, the site
+  icons, and blocks a theme or plugin adds.
 - [Block references](/docs/cms/block-references.md): blocks and bindings inside text, such
   as `{{ block core/button … /}}` and `{{ $site.title }}`.
 - [Management API, CLI and MCP](/docs/cms/api.md): manage a site from a terminal or an

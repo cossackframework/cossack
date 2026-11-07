@@ -461,9 +461,13 @@ describe('composition', () => {
       const descriptor = files.get(`src/dashboard/modules/${module}.ts`).content.toString();
       expect(descriptor).toContain('@cossackframework/solar-icons/');
       expect(descriptor).toContain('icon,');
-      if (module === 'users' || module === 'roles') {
+      if (module === 'users') {
         expect(descriptor).toContain('children:');
         expect(descriptor).toContain(`/dashboard/${module}/new`);
+      } else if (module === 'roles') {
+        // Roles is a link of the Users menu; its page offers Add role itself.
+        expect(descriptor).toContain("parent: 'users'");
+        expect(descriptor).not.toContain('children:');
       } else {
         expect(descriptor).toContain("placement: 'account'");
       }

@@ -9,6 +9,7 @@
   },
   "scripts": {
     "sync": "node scripts/sync.mjs",
+    "icons": "node scripts/site-icons.mjs",
     "dev": "node scripts/start.mjs",
     "build": "node scripts/sync.mjs && vite build && vite build --ssr src/index.ts --outDir dist/server",
     "start": "node --env-file-if-exists=.env dist/server/index.js",

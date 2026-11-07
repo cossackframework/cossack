@@ -6,7 +6,8 @@
 import { component, html, ifDefined, unsafeHTML, type TemplateResult } from '@cossackframework/renderer';
 import { plugins } from '@cossackframework/framework/plugins';
 import { formBlock, inputBlock } from './form-view';
-import { archiveTemplate, assembleSiteTheme, blockStyleAttributes, entryTemplate, placeholderStyle, presetStyle, resolvePresets, siteThemeProblems, type ArchiveView, type EntryView, type LanguageLink, type LanguageSwitcherOptions, type MediaView, type MenuItemView, type MenuOptions, type RenderedBlock, type SearchOptions, type SiteTheme, type ThemeData, type ThemeHelpers, type ThemePresets } from '@cossackframework/cms';
+import { SITE_ICONS } from './site-icons';
+import { archiveTemplate, assembleSiteTheme, blockStyleAttributes, entryTemplate, MAP_EMBED_URL, SHARE_NETWORKS, type BreadcrumbView, type ShareNetwork, placeholderStyle, presetStyle, resolvePresets, siteThemeProblems, type ArchiveView, type EntryView, type LanguageLink, type LanguageSwitcherOptions, type MediaView, type MenuItemView, type MenuOptions, type RenderedBlock, type SearchOptions, type SiteTheme, type ThemeData, type ThemeHelpers, type ThemePresets } from '@cossackframework/cms';
 
 export { archiveTemplate, entryTemplate };
 export type { ArchiveView, EntryView, MediaView, Paging, RenderedBlock, SiteView } from '@cossackframework/cms';
@@ -45,7 +46,7 @@ export interface ThemeRenderState {
     /** The menus of the theme's locations, for `helpers.menu()` and the Navigation block. */
     readonly menus?: { readonly [location: string]: readonly MenuItemView[] };
     /** The site's title, tagline, logo and URLs, for `helpers.search()` and the site logo block. */
-    readonly site?: { readonly title: string; readonly tagline: string; readonly logo: string | null; readonly homeUrl: string; readonly searchUrl: string };
+    readonly site?: { readonly title: string; readonly tagline: string; readonly logo: string | null; readonly homeUrl: string; readonly searchUrl: string; readonly url?: string; readonly breadcrumbs?: readonly BreadcrumbView[] };
 }
 
 /** A search form posting to the site's search page: a box, or a button that opens one. As `helpers.search()` and the `core/search` block render it. */
@@ -226,6 +227,8 @@ export function themeHelpers(theme: SiteTheme, state: ThemeRenderState, isActive
         presets: state.presets ?? resolvePresets(undefined),
         data: { layout: state.data?.layout ?? {}, page: state.data?.page ?? {} },
         asset: path => assets[path] ?? '',
+        icon: (name, options = {}) => siteIcon(name, options),
+        breadcrumbs: (site, options = {}) => breadcrumbTrail(site.breadcrumbs, options),
         logo: (site, options = {}) => site.logo ? html`<img src=${site.logo} alt=${site.title} class=${`cms-site-logo object-contain ${options.class ?? 'h-10 w-auto'}`}>` : null,
         languages: options => languageSwitcher(state.languages ?? [], options),
         menu: (source, options = {}) => menuNav(typeof source === 'string' ? state.menus?.[source] ?? [] : source,
@@ -356,6 +359,88 @@ function enhanceCarousel(element: Element | undefined): void {
     void import('./carousel.client').then(module => module.enhanceCarousel(element as HTMLElement)).catch(() => undefined);
 }
 
+/** The tabs' browser part: the buttons switch panels, the arrow keys move between them. Every panel shows without it. */
+function enhanceTabs(element: Element | undefined): void {
+    if (!element || typeof window === 'undefined') return;
+    void import('./tabs.client').then(module => module.enhanceTabs(element as HTMLElement)).catch(() => undefined);
+}
+
+/** The stat's browser part: the number counts up as it scrolls into view. */
+function enhanceStat(element: Element | undefined): void {
+    if (!element || typeof window === 'undefined') return;
+    void import('./stat.client').then(module => module.enhanceStat(element as HTMLElement)).catch(() => undefined);
+}
+
+/** The countdown's browser part: the units tick every second. */
+function enhanceCountdown(element: Element | undefined): void {
+    if (!element || typeof window === 'undefined') return;
+    void import('./countdown.client').then(module => module.enhanceCountdown(element as HTMLElement)).catch(() => undefined);
+}
+
+/** The share buttons' browser part: copying the address, opening networks in a small window. */
+function enhanceShare(element: Element | undefined): void {
+    if (!element || typeof window === 'undefined') return;
+    void import('./share.client').then(module => module.enhanceShare(element as HTMLElement)).catch(() => undefined);
+}
+
+const SEPARATORS: Readonly<Record<string, string>> = { chevron: '›', slash: '/', arrow: '→' };
+
+/** A page's breadcrumbs as a `nav`: links, then the page itself; null for a trail of one. `helpers.breadcrumbs` and the block render this. */
+export function breadcrumbTrail(crumbs: readonly BreadcrumbView[] | undefined, options: { readonly class?: string; readonly separator?: string; readonly home?: boolean } = {}): TemplateResult | null {
+    const shown = options.home === false ? (crumbs ?? []).slice(1) : crumbs ?? [];
+    if (shown.length < (options.home === false ? 1 : 2)) return null;
+    const separator = SEPARATORS[options.separator ?? ''] ? options.separator! : 'chevron';
+    return html`<nav class=${`cms-breadcrumbs${options.class ? ` ${options.class}` : ''}`} aria-label=${__('Breadcrumb')} data-separator=${separator}><ol class="cms-breadcrumbs-list">${shown.map(crumb => html`<li class="cms-breadcrumb">${crumb.url
+        ? html`<a href=${crumb.url}>${crumb.label}</a>` : html`<span aria-current="page">${crumb.label}</span>`}</li>`)}</ol></nav>`;
+}
+
+const SHARE_NAMES: Readonly<Record<ShareNetwork, string>> = { facebook: 'Facebook', x: 'X', linkedin: 'LinkedIn', whatsapp: 'WhatsApp', telegram: 'Telegram', reddit: 'Reddit', pinterest: 'Pinterest', bluesky: 'Bluesky', threads: 'Threads', email: 'Email', copy: 'Copy link' };
+
+/** Where a network's share intent takes a page, with its title; null for the copy button. */
+export function shareUrl(network: ShareNetwork, url: string, title: string): string | null {
+    const u = encodeURIComponent(url);
+    const t = encodeURIComponent(title);
+    switch (network) {
+        case 'facebook': return `https://www.facebook.com/sharer/sharer.php?u=${u}`;
+        case 'x': return `https://x.com/intent/post?url=${u}&text=${t}`;
+        case 'linkedin': return `https://www.linkedin.com/sharing/share-offsite/?url=${u}`;
+        case 'whatsapp': return `https://wa.me/?text=${encodeURIComponent(`${title} ${url}`.trim())}`;
+        case 'telegram': return `https://t.me/share/url?url=${u}&text=${t}`;
+        case 'reddit': return `https://www.reddit.com/submit?url=${u}&title=${t}`;
+        case 'pinterest': return `https://pinterest.com/pin/create/button/?url=${u}&description=${t}`;
+        case 'bluesky': return `https://bsky.app/intent/compose?text=${encodeURIComponent(`${title} ${url}`.trim())}`;
+        case 'threads': return `https://www.threads.net/intent/post?text=${encodeURIComponent(`${title} ${url}`.trim())}`;
+        case 'email': return `mailto:?subject=${t}&body=${u}`;
+        case 'copy': return null;
+    }
+}
+
+/** An accordion that opens one section at a time: its sections share a `name`, which the browser keeps exclusive. */
+function enhanceAccordion(element: Element | undefined): void {
+    if (!(element instanceof HTMLElement) || element.dataset.single !== 'true') return;
+    for (const details of element.querySelectorAll<HTMLDetailsElement>('details.cms-accordion-item')) details.name = `${element.id || 'cms-accordion'}-${element.dataset.group ?? ''}`;
+}
+
+/**
+ * One of the site icons (`SITE_ICON_NAMES`) as an inline SVG: `class` sizes it (default
+ * `size-5`), and it is decorative unless `label` names it. Null for a name outside the set, so a
+ * theme can fall back. `helpers.icon` is this.
+ */
+export function siteIcon(name: string, options: { readonly class?: string; readonly label?: string } = {}): TemplateResult | null {
+    const artwork = SITE_ICONS[name]?.line;
+    if (!artwork) return null;
+    const label = options.label?.trim();
+    return html`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" class=${`cms-icon ${options.class ?? 'size-5'}`} focusable="false"
+        role=${ifDefined(label ? 'img' : undefined)} aria-label=${ifDefined(label || undefined)} aria-hidden=${ifDefined(label ? undefined : 'true')}>${unsafeHTML(artwork)}</svg>`;
+}
+
+/** What a social link is called when no network is known: Email, Phone, or the site's host. */
+function socialTitle(url: string): string {
+    if (url.startsWith('mailto:')) return __('Email');
+    if (url.startsWith('tel:')) return __('Phone');
+    try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return url; }
+}
+
 /** `core/latest-entries`: the entries as a list with excerpts, a grid of cards or titles alone. */
 function latestEntries(block: RenderedBlock): TemplateResult {
     const entries = block.entries ?? [];
@@ -429,6 +514,8 @@ export function coreBlock(block: RenderedBlock, helpers: ThemeHelpers, state?: P
         case 'core/gallery': {
             const ids = Array.isArray(block.data.images) ? block.data.images as string[] : [];
             const columns = Math.min(Math.max(Number(block.data.columns) || 3, 1), 6);
+            // Logos: whole images at one height, grey until hovered, as a wall of clients or partners.
+            if (text('layout') === 'logos') return html`<div class="cms-logos my-6" style=${`--cms-logo-columns: ${columns}`}>${ids.map(id => block.media[id] ? html`<div class="cms-logo">${image(block.media[id], 'cms-logo-image', `${Math.round(100 / columns)}vw`)}</div>` : null)}</div>`;
             return html`<div class="my-6 grid gap-3" style=${`grid-template-columns: repeat(${columns}, minmax(0, 1fr))`}>
                 ${ids.map(id => image(block.media[id], 'aspect-square w-full rounded-md object-cover', `(min-width: 768px) ${Math.round(768 / columns)}px, ${Math.round(100 / columns)}vw`))}</div>`;
         }
@@ -485,9 +572,12 @@ export function coreBlock(block: RenderedBlock, helpers: ThemeHelpers, state?: P
             const title = text('title');
             const picture = media ? image(media, 'h-full w-full object-cover') : null;
             const framed = picture ? html`<div class="cms-card-media">${url && !text('linkLabel') ? html`<a href=${safeLink(url)}>${picture}</a>` : picture}</div>` : null;
-            return html`<div class="cms-card" data-layout=${media ? text('layout') || 'top' : 'none'}>
+            // An icon stands in for the image: the icon box and the feature of page builders.
+            const glyph = !media && text('icon') ? siteIcon(text('icon'), { class: 'size-8' }) : null;
+            return html`<div class="cms-card" data-layout=${media ? text('layout') || 'top' : 'none'} data-style=${text('style') === 'plain' ? 'plain' : 'boxed'}>
                 ${framed}
                 <div class="cms-card-body">
+                    ${glyph ? html`<div class="cms-card-icon">${glyph}</div>` : null}
                     ${title ? html`<h3 class="text-lg font-semibold">${url && !text('linkLabel') ? html`<a href=${safeLink(url)} class="no-underline hover:text-primary">${title}</a>` : title}</h3>` : null}
                     ${block.html.text ? html`<div class=${`${PROSE} text-sm [&_p]:my-2`}>${unsafeHTML(block.html.text)}</div>` : null}
                     ${url && text('linkLabel') ? html`<p class="mt-3"><a href=${safeLink(url)} class="text-sm font-medium text-primary hover:underline">${text('linkLabel')} →</a></p>` : null}
@@ -495,20 +585,27 @@ export function coreBlock(block: RenderedBlock, helpers: ThemeHelpers, state?: P
             </div>`;
         }
         case 'core/carousel': {
-            const ids = Array.isArray(block.data.images) ? (block.data.images as string[]).filter(id => block.media[id]) : [];
-            if (!ids.length) return null;
+            // Slides of blocks when the carousel holds any, else its images.
+            const slides = children.filter(child => child.type === 'core/slide');
+            const ids = slides.length ? [] : Array.isArray(block.data.images) ? (block.data.images as string[]).filter(id => block.media[id]) : [];
+            const count = slides.length || ids.length;
+            if (!count) return null;
             const captions = block.data.captions !== false;
-            return html`<div class="cms-carousel my-6" data-aspect=${text('aspect') || 'video'} data-autoplay=${block.data.autoplay === true ? 'true' : 'false'} data-interval=${String(Math.min(Math.max(Number(block.data.interval) || 5, 2), 30))}
-                role="region" aria-roledescription="carousel" aria-label=${__('Image carousel')} ref=${enhanceCarousel}>
-                <div class="cms-carousel-track" tabindex="0">${ids.map((id, index) => html`<figure class="cms-carousel-slide" id=${`${block._id}-slide-${index + 1}`} aria-roledescription="slide" aria-label=${`${index + 1} / ${ids.length}`}>
+            const items = slides.length
+                ? slides.map((slide, index) => html`<div class="cms-carousel-slide cms-carousel-blockslide" id=${`${block._id}-slide-${index + 1}`} aria-roledescription="slide" aria-label=${`${index + 1} / ${count}`}>${helpers.block(slide)}</div>`)
+                : ids.map((id, index) => html`<figure class="cms-carousel-slide" id=${`${block._id}-slide-${index + 1}`} aria-roledescription="slide" aria-label=${`${index + 1} / ${count}`}>
                     ${image(block.media[id], 'cms-carousel-image', '(min-width: 1024px) 1024px, 100vw')}
                     ${captions && block.media[id]?.caption ? html`<figcaption class="cms-carousel-caption">${block.media[id]!.caption}</figcaption>` : null}
-                </figure>`)}</div>
-                ${ids.length > 1 ? html`<button type="button" class="cms-carousel-arrow cms-carousel-prev" data-direction="-1" aria-label=${__('Previous image')}>‹</button>
-                    <button type="button" class="cms-carousel-arrow cms-carousel-next" data-direction="1" aria-label=${__('Next image')}>›</button>
-                    <div class="cms-carousel-dots" role="tablist">${ids.map((_, index) => html`<button type="button" role="tab" aria-label=${`${__('Image')} ${index + 1}`} aria-selected=${index === 0 ? 'true' : 'false'} data-index=${String(index)}></button>`)}</div>` : null}
+                </figure>`);
+            return html`<div class="cms-carousel my-6" data-aspect=${text('aspect') || 'video'} data-autoplay=${block.data.autoplay === true ? 'true' : 'false'} data-interval=${String(Math.min(Math.max(Number(block.data.interval) || 5, 2), 30))}
+                role="region" aria-roledescription="carousel" aria-label=${slides.length ? __('Slides') : __('Image carousel')} ref=${enhanceCarousel}>
+                <div class="cms-carousel-track" tabindex="0">${items}</div>
+                ${count > 1 ? html`<button type="button" class="cms-carousel-arrow cms-carousel-prev" data-direction="-1" aria-label=${__('Previous')}>‹</button>
+                    <button type="button" class="cms-carousel-arrow cms-carousel-next" data-direction="1" aria-label=${__('Next')}>›</button>
+                    <div class="cms-carousel-dots" role="tablist">${Array.from({ length: count }, (_, index) => html`<button type="button" role="tab" aria-label=${`${__('Slide')} ${index + 1}`} aria-selected=${index === 0 ? 'true' : 'false'} data-index=${String(index)}></button>`)}</div>` : null}
             </div>`;
         }
+        case 'core/slide': return html`<div class="cms-slide" data-valign=${text('valign') || 'center'}>${children.map(child => helpers.block(child))}</div>`;
         case 'core/answer': return html`<aside class="cms-answer my-6 rounded-lg border border-border bg-muted/40 p-4" aria-label=${text('label') || __('Quick answer')}>
             ${text('label') ? html`<p class="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">${text('label')}</p>` : null}
             <div class=${`${PROSE} text-lg [&_p]:my-2`}>${block.content?.text ? helpers.content(block.content.text) : unsafeHTML(block.html.text ?? '')}</div></aside>`;
@@ -530,7 +627,139 @@ export function coreBlock(block: RenderedBlock, helpers: ThemeHelpers, state?: P
         case 'core/languages': return helpers.languages({ style: text('style'), layout: text('layout') });
         case 'core/navigation': return helpers.menu(text('location') || 'primary', { style: text('style'), motion: text('motion'), mobile: text('mobile') || undefined, collapse: text('collapse') });
         case 'core/meta': return null;
+        // Section blocks: the leaf widgets of page builders, placed in columns and grids.
+        case 'core/spacer': return html`<div class="cms-spacer" data-size=${text('size') || 'medium'} aria-hidden="true"></div>`;
+        case 'core/tabs': {
+            const tabs = children.filter(child => child.type === 'core/tab');
+            if (!tabs.length) return null;
+            // The first panel is active before any script runs; without scripting every panel shows under its title (cms/blocks.css).
+            return html`<div class="cms-tabs my-6" ref=${enhanceTabs}>
+                <div class="cms-tablist" role="tablist">${tabs.map((tab, index) => html`<button type="button" role="tab" class="cms-tab" id=${`${block._id}-tab-${index + 1}`} aria-controls=${`${block._id}-panel-${index + 1}`} aria-selected=${index === 0 ? 'true' : 'false'} tabindex=${index === 0 ? 0 : -1}>${siteIcon(typeof tab.data.icon === 'string' ? tab.data.icon : '', { class: 'size-4' })}<span>${typeof tab.data.label === 'string' ? tab.data.label : ''}</span></button>`)}</div>
+                ${tabs.map((tab, index) => html`<section class="cms-tabpanel" role="tabpanel" id=${`${block._id}-panel-${index + 1}`} aria-labelledby=${`${block._id}-tab-${index + 1}`} data-active=${ifDefined(index === 0 ? '' : undefined)} tabindex="0">
+                    <h3 class="cms-tabpanel-title">${typeof tab.data.label === 'string' ? tab.data.label : ''}</h3>${helpers.block(tab)}</section>`)}
+            </div>`;
+        }
+        case 'core/tab': return html`<div class="cms-tab-content">${children.map(child => helpers.block(child))}</div>`;
+        case 'core/accordion': return html`<div class="cms-accordion my-6" id=${`${block._id}-accordion`} data-single=${block.data.single === true ? 'true' : 'false'} ref=${enhanceAccordion}>${children.map(child => helpers.block(child))}</div>`;
+        case 'core/accordion-item': return html`<details class="cms-accordion-item" ?open=${block.data.open === true}>
+            <summary class="cms-accordion-summary">${text('label')}<span class="cms-accordion-caret" aria-hidden="true"></span></summary>
+            <div class="cms-accordion-body">${children.map(child => helpers.block(child))}</div></details>`;
+        case 'core/icon-list': return html`<ul class="cms-icon-list my-4" data-size=${text('size') || 'medium'} style=${`--cms-icon-columns: ${Math.min(Math.max(Number(block.data.columns) || 1, 1), 3)}`}>${children.map(child => helpers.block(child))}</ul>`;
+        case 'core/icon-item': {
+            const url = text('url');
+            return html`<li class="cms-icon-item">${siteIcon(text('icon') || 'check-circle', { class: 'cms-icon-item-icon' }) ?? siteIcon('check-circle', { class: 'cms-icon-item-icon' })}${url ? html`<a href=${safeLink(url)}>${text('text')}</a>` : html`<span>${text('text')}</span>`}</li>`;
+        }
+        case 'core/testimonial': {
+            const avatar = block.media[text('avatar')];
+            const rating = Math.min(Math.max(Math.round(Number(block.data.rating) || 0), 0), 5);
+            const url = text('url');
+            return html`<figure class="cms-testimonial my-6">
+                ${rating ? html`<div class="cms-rating" role="img" aria-label=${`${rating} / 5`}>${[1, 2, 3, 4, 5].map(star => html`<span class="cms-rating-star" data-filled=${star <= rating ? 'true' : 'false'}>★</span>`)}</div>` : null}
+                <blockquote class="cms-testimonial-quote">${block.html.text ? html`<div class=${`${PROSE} [&_p]:my-1`}>${unsafeHTML(block.html.text)}</div>` : text('text')}</blockquote>
+                <figcaption class="cms-testimonial-author">${avatar ? image(avatar, 'cms-testimonial-avatar', '48px') : null}
+                    <div><div class="cms-testimonial-name">${url ? html`<a href=${safeLink(url)} rel="noopener">${text('name')}</a>` : text('name')}</div>${text('role') ? html`<div class="cms-testimonial-role">${text('role')}</div>` : null}</div></figcaption>
+            </figure>`;
+        }
+        case 'core/stat': return html`<div class="cms-stat my-6" data-animate=${block.data.animate === false ? 'false' : 'true'} ref=${enhanceStat}>
+            <p class="cms-stat-value">${text('prefix') ? html`<span class="cms-stat-prefix">${text('prefix')}</span>` : null}<span class="cms-stat-number" data-value=${text('value')}>${text('value')}</span>${text('suffix') ? html`<span class="cms-stat-suffix">${text('suffix')}</span>` : null}</p>
+            ${text('label') ? html`<p class="cms-stat-label">${text('label')}</p>` : null}</div>`;
+        case 'core/pricing': {
+            const features = Array.isArray(block.data.features) ? (block.data.features as unknown[]).filter((entry): entry is string => typeof entry === 'string' && entry.trim() !== '') : [];
+            const url = text('buttonUrl');
+            const label = text('buttonLabel');
+            return html`<div class="cms-pricing my-6" data-highlighted=${block.data.highlighted === true ? 'true' : 'false'}>
+                ${text('badge') ? html`<span class="cms-pricing-badge">${text('badge')}</span>` : null}
+                <h3 class="cms-pricing-name">${text('name')}</h3>
+                <p class="cms-pricing-price"><span class="cms-pricing-amount">${text('price')}</span>${text('period') ? html` <span class="cms-pricing-period">${text('period')}</span>` : null}</p>
+                ${text('description') ? html`<p class="cms-pricing-description">${text('description')}</p>` : null}
+                ${features.length ? html`<ul class="cms-pricing-features">${features.map(feature => html`<li>${siteIcon('check-circle', { class: 'size-4' })}<span>${feature}</span></li>`)}</ul>` : null}
+                ${url && label ? html`<p class="cms-pricing-action"><a href=${safeLink(url)} class=${`inline-flex items-center justify-center rounded-md px-5 py-2.5 text-sm font-medium no-underline ${block.data.highlighted === true ? 'bg-primary text-primary-foreground hover:opacity-90' : 'border border-border text-foreground hover:bg-muted'}`}>${label}</a></p>` : null}
+            </div>`;
+        }
+        case 'core/social-links': {
+            const links = Array.isArray(block.data.links) ? (block.data.links as unknown[]).filter((entry): entry is string => typeof entry === 'string' && entry.trim() !== '') : [];
+            if (!links.length) return null;
+            const labels = block.data.labels === true;
+            return html`<ul class="cms-social my-4" data-size=${text('size') || 'medium'} data-shape=${text('shape') || 'round'} data-labels=${labels ? 'true' : 'false'}>${links.map(url => {
+                const brand = block.icons?.[url];
+                const title = brand?.title ?? socialTitle(url);
+                const glyph = brand ? html`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="cms-social-icon" aria-hidden="true" focusable="false"><path d=${brand.path}></path></svg>`
+                    : siteIcon(url.startsWith('mailto:') ? 'letter' : url.startsWith('tel:') ? 'phone' : 'link', { class: 'cms-social-icon' });
+                const external = /^https?:/.test(url);
+                return html`<li><a class="cms-social-link" href=${safeLink(url)} style=${ifDefined(brand ? `--cms-brand: #${brand.hex}` : undefined)} title=${title} aria-label=${ifDefined(labels ? undefined : title)}
+                    rel=${ifDefined(external ? 'me noopener' : undefined)} target=${ifDefined(external ? '_blank' : undefined)}>${glyph}${labels ? html`<span class="cms-social-label">${title}</span>` : null}</a></li>`;
+            })}</ul>`;
+        }
+        case 'core/map': {
+            // An address is looked up by Google Maps; an embed URL is shown as given, checked again here before it reaches an iframe.
+            const address = text('address').trim();
+            const given = text('url').trim();
+            const zoom = Math.min(Math.max(Math.round(Number(block.data.zoom) || 14), 1), 20);
+            const src = address ? `https://maps.google.com/maps?q=${encodeURIComponent(address)}&z=${zoom}&output=embed` : MAP_EMBED_URL.test(given) ? given : '';
+            if (!src) return null;
+            const caption = text('caption');
+            return html`<figure class="cms-map my-6" data-height=${text('height') || 'medium'}>
+                <iframe class="cms-map-frame" src=${src} title=${caption || address || __('Map')} loading="lazy" referrerpolicy="no-referrer-when-downgrade" allowfullscreen></iframe>
+                ${caption ? html`<figcaption class="cms-map-caption">${caption}</figcaption>` : null}
+            </figure>`;
+        }
         // Layout blocks: CSS grid from cms/blocks.css, responding to the content root's width.
+        case 'core/notice': {
+            const kind = ['success', 'warning', 'danger'].includes(text('kind')) ? text('kind') : 'info';
+            const glyph = block.data.showIcon === false ? null : siteIcon(({ info: 'info-circle', success: 'check-circle', warning: 'danger-triangle', danger: 'close-circle' } as Record<string, string>)[kind]!, { class: 'cms-notice-icon' });
+            return html`<aside class="cms-notice my-6" data-kind=${kind} role="note">${glyph}<div class="cms-notice-body">${text('title') ? html`<p class="cms-notice-title">${text('title')}</p>` : null}${block.html.text ? html`<div class=${`${PROSE} text-sm [&_p]:my-1`}>${unsafeHTML(block.html.text)}</div>` : text('text')}</div></aside>`;
+        }
+        case 'core/countdown': {
+            // The server writes the first values; countdown.client.ts keeps them ticking and shows the end.
+            const until = Number(block.data.until);
+            if (!Number.isFinite(until) || until <= 0) return null;
+            const left = Math.max(0, Math.floor((until - Date.now()) / 1000));
+            const seconds = block.data.seconds !== false;
+            const units: [string, number, string][] = [['days', Math.floor(left / 86_400), __('Days')], ['hours', Math.floor((left % 86_400) / 3600), __('Hours')], ['minutes', Math.floor((left % 3600) / 60), __('Minutes')], ...(seconds ? [['seconds', left % 60, __('Seconds')] as [string, number, string]] : [])];
+            const over = left <= 0;
+            return html`<div class="cms-countdown my-6" data-until=${String(until)} ref=${enhanceCountdown}>
+                ${text('label') ? html`<p class="cms-countdown-label">${text('label')}</p>` : null}
+                <div class="cms-countdown-units" ?hidden=${over}>${units.map(([unit, value, name]) => html`<div class="cms-countdown-unit"><span class="cms-countdown-value" data-unit=${unit}>${unit === 'days' ? String(value) : String(value).padStart(2, '0')}</span><span class="cms-countdown-name">${name}</span></div>`)}</div>
+                <p class="cms-countdown-done" ?hidden=${!over}>${text('done')}</p>
+            </div>`;
+        }
+        case 'core/toc': {
+            const deepest = ({ h2: 2, h3: 3, h4: 4 } as Record<string, number>)[text('depth')] ?? 3;
+            const headings = (block.headings ?? []).filter(heading => heading.level <= deepest);
+            if (!headings.length) return null;
+            const title = text('title');
+            const items = headings.map(heading => html`<li class="cms-toc-item" data-level=${String(heading.level)}><a href=${`#${heading.id}`}>${heading.text}</a></li>`);
+            return html`<nav class="cms-toc my-6" aria-labelledby=${ifDefined(title ? `${block._id}-title` : undefined)} aria-label=${ifDefined(title ? undefined : __('Table of contents'))}>
+                ${title ? html`<p class="cms-toc-title" id=${`${block._id}-title`}>${title}</p>` : null}
+                ${block.data.numbered === true ? html`<ol class="cms-toc-list">${items}</ol>` : html`<ul class="cms-toc-list">${items}</ul>`}</nav>`;
+        }
+        case 'core/share': {
+            const chosen = (Array.isArray(block.data.networks) ? block.data.networks as unknown[] : []).filter((entry): entry is ShareNetwork => (SHARE_NETWORKS as readonly string[]).includes(entry as string));
+            const url = state?.site?.url ?? '';
+            if (!chosen.length) return null;
+            const crumbs = state?.site?.breadcrumbs ?? [];
+            const title = crumbs.at(-1)?.label || state?.site?.title || '';
+            const labels = text('style') === 'labels';
+            const glyph = (network: ShareNetwork) => {
+                const brand = block.icons?.[network];
+                if (brand) return html`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="cms-share-icon" aria-hidden="true" focusable="false"><path d=${brand.path}></path></svg>`;
+                return siteIcon(network === 'email' ? 'letter' : network === 'copy' ? 'link' : 'share', { class: 'cms-share-icon' });
+            };
+            return html`<div class="cms-share my-6" data-style=${labels ? 'labels' : 'icons'} ref=${enhanceShare}>
+                ${text('label') ? html`<span class="cms-share-label">${text('label')}</span>` : null}
+                <ul class="cms-share-list">${chosen.map(network => {
+                    const name = block.icons?.[network]?.title ?? (network === 'email' ? __('Email') : network === 'copy' ? __('Copy link') : SHARE_NAMES[network]);
+                    const target = shareUrl(network, url, title);
+                    const brand = block.icons?.[network];
+                    const inner = html`${glyph(network)}${labels ? html`<span class="cms-share-name">${name}</span>` : null}`;
+                    return html`<li>${target === null
+                        ? html`<button type="button" class="cms-share-link" data-network="copy" data-url=${url} title=${name} aria-label=${ifDefined(labels ? undefined : name)}>${inner}<span class="cms-share-copied" aria-live="polite">${__('Copied')}</span></button>`
+                        : html`<a class="cms-share-link" href=${target} data-network=${network} style=${ifDefined(brand ? `--cms-brand: #${brand.hex}` : undefined)} title=${name} aria-label=${ifDefined(labels ? undefined : name)}
+                            rel=${ifDefined(network === 'email' ? undefined : 'noopener')} target=${ifDefined(network === 'email' ? undefined : '_blank')}>${inner}</a>`}</li>`;
+                })}</ul>
+            </div>`;
+        }
+        case 'core/breadcrumbs': return breadcrumbTrail(state?.site?.breadcrumbs, { separator: text('separator'), home: block.data.home !== false });
         case 'core/group': {
             // A full-width stack keeps its children at the content measure, as the page's layout does; a full row lays its row within it (cms/blocks.css).
             const align = alignOf(block);

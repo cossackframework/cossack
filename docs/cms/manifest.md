@@ -222,7 +222,7 @@ placed, so moving a plugin's tab holds.
 
 | Field | Meaning |
 | --- | --- |
-| `fields` | The block's data, validated on every write like resource fields. |
+| `fields` | The block's data, validated on every write like resource fields: at most 16 of kinds `string`, `text`, `enum`, `integer`, `number`, `boolean`, `datetime`, `json` and `richtext`. On a string, `media: true` holds a file, `icon: true` one of the site icons, `brand: true` a profile URL whose network's icon the server adds to the rendered block. See [Blocks](/docs/cms/blocks.md#blocks-from-a-theme-or-plugin). |
 | `icon` | A Solar icon name for the block picker. |
 | `category` | The picker's group: `text`, `media`, `design`, `widgets`, `embeds`, `data`, `form` or `field`. Default `widgets`. |
 | `keywords` | Other words the picker's search finds the block by. |

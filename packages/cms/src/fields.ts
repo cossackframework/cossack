@@ -1,4 +1,5 @@
 import { richTextProblem } from './richtext';
+import { SITE_ICON_SET } from './icons';
 
 /**
  * Field kinds of a resource declaration. Each kind maps to one RomeDB field type and
@@ -79,6 +80,10 @@ export interface FieldDeclaration {
     readonly kinds?: readonly FieldMediaKind[];
     /** string: the editor offers a choice of the site's forms (the value is a slug), collections (a name) or terms (an ID). */
     readonly choicesFrom?: ChoiceSource;
+    /** string: the name of one of the site icons (`SITE_ICON_NAMES`), chosen with the icon picker and checked on write. */
+    readonly icon?: boolean;
+    /** string: the URL of a profile on a social network; the host adds the network's icon to the rendered block's `icons`, by URL. */
+    readonly brand?: boolean;
     /** blocks, richtext: the block types allowed; all when omitted. */
     readonly blocks?: readonly string[];
     /** blocks: the field holds a form, so input blocks and conditions are allowed in it. */
@@ -144,6 +149,8 @@ export const field = {
     terms: (taxonomy: string, options: Omit<Options, 'default'> = {}): FieldDeclaration => ({ kind: 'string', multiple: true, taxonomy, index: true, ...options }),
     /** A media file ID; with `multiple`, several. */
     media: (options: Options = {}): FieldDeclaration => ({ kind: 'string', max: 80, media: true, nullable: true, ...options }),
+    /** One of the site icons by name (`SITE_ICON_NAMES`). */
+    icon: (options: Options = {}): FieldDeclaration => ({ kind: 'string', max: 60, pattern: '(?:[a-z0-9]+(?:-[a-z0-9]+)*)?', icon: true, ...options }),
     /** Several media file IDs. */
     gallery: (options: Options = {}): FieldDeclaration => ({ kind: 'string', max: 80, media: true, multiple: true, ...options }),
     /** An ordered list of content blocks, optionally limited to some block types. */
@@ -243,6 +250,8 @@ export function fieldProblems(name: string, declaration: FieldDeclaration, depth
     if (declaration.media !== undefined && (kind !== 'string' || typeof declaration.media !== 'boolean')) problems.push(`${at}: media applies to string fields.`);
     if (declaration.kinds !== undefined && (!declaration.media || !Array.isArray(declaration.kinds) || !declaration.kinds.length || declaration.kinds.some(entry => !(FIELD_MEDIA_KINDS as readonly string[]).includes(entry)))) problems.push(`${at}: kinds applies to media fields and lists ${FIELD_MEDIA_KINDS.join(', ')}.`);
     if (declaration.choicesFrom !== undefined && (kind !== 'string' || declaration.media || !(CHOICE_SOURCES as readonly string[]).includes(declaration.choicesFrom))) problems.push(`${at}: choicesFrom applies to string fields and is ${CHOICE_SOURCES.join(', ')}.`);
+    if (declaration.icon !== undefined && (kind !== 'string' || typeof declaration.icon !== 'boolean' || declaration.media)) problems.push(`${at}: icon applies to string fields.`);
+    if (declaration.brand !== undefined && (kind !== 'string' || typeof declaration.brand !== 'boolean' || declaration.media)) problems.push(`${at}: brand applies to string fields.`);
     if (declaration.format !== undefined && (kind !== 'text' || !['plain', 'markdown', 'code'].includes(declaration.format))) problems.push(`${at}: format applies to text fields and is plain, markdown or code.`);
     if (declaration.language !== undefined && (declaration.format !== 'code' || typeof declaration.language !== 'string' || !/^[a-z0-9+#-]{1,40}$/.test(declaration.language))) problems.push(`${at}: language applies to code fields and names a language, such as html.`);
     if (kind === 'rows') {
@@ -332,6 +341,7 @@ export function validateValue(name: string, declaration: FieldDeclaration, value
             if (declaration.max !== undefined && length > declaration.max) return `must be at most ${declaration.max} characters.`;
             if (declaration.min !== undefined && length < declaration.min) return `must be at least ${declaration.min} characters.`;
             if (declaration.pattern !== undefined && !new RegExp(`^(?:${declaration.pattern})$`, 'u').test(value)) return 'has an invalid format.';
+            if (declaration.icon && value && !SITE_ICON_SET.has(value)) return 'is not one of the site icons.';
             return undefined;
         }
         case 'enum': return typeof value === 'string' && declaration.values!.includes(value) ? undefined : `must be one of ${declaration.values!.join(', ')}.`;

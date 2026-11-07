@@ -11,7 +11,7 @@ import {
 } from '@cossackframework/cms';
 import type { CmsFile, CmsHost, CmsUser } from '@cossackframework/cms/server';
 import type { SeoView } from './seo-head';
-import { isProtected, localePrefix } from './site';
+import { entryAncestors as ancestors, isProtected, localePrefix } from './site';
 
 /** The site's address: `APP_URL` when set, otherwise the request's origin. */
 export function siteOrigin(c: Context): string {
@@ -104,20 +104,6 @@ async function breadcrumbs(cms: CmsHost, origin: string, collection: CollectionD
     if (archive && archive !== (prefix || '/')) crumbs.push({ name: collection.label, url: absolute(origin, archive) });
     if (collection.hierarchical) for (const ancestor of await ancestors(cms, collection, record)) crumbs.push({ name: ancestor.name, url: absolute(origin, ancestor.url) });
     return crumbs;
-}
-
-/** Ancestors of a nested entry, top first. */
-async function ancestors(cms: CmsHost, collection: CollectionDefinition, record: RecordShape): Promise<{ name: string; url: string }[]> {
-    const chain: RecordShape[] = [];
-    let parent = typeof record.parent === 'string' ? record.parent : null;
-    for (let depth = 0; parent && depth < 8; depth++) {
-        const found = (await cms.resource(`cms/${collection.name}`).getMany([parent], { principal: { kind: 'anonymous' } })).get(parent);
-        if (!found) break;
-        chain.unshift(found);
-        parent = typeof found.parent === 'string' ? found.parent : null;
-    }
-    const urls = await cms.entryUrls(collection, chain);
-    return chain.flatMap(entry => urls.get(entry.id) ? [{ name: String(entry.title ?? ''), url: urls.get(entry.id)! }] : []);
 }
 
 /** The collection's mapped schema properties of a record, media resolved to absolute URLs. */

@@ -21,6 +21,7 @@ export { CmsCache, type CacheEntry } from './cache';
 export { CmsTaxonomies, freeSlug, type TermUsage, type TermInput } from './taxonomies';
 export { CmsSettings } from './site-settings';
 export { renderMarkdown, excerptOf } from './markdown';
+export { brandIcon } from './brands';
 export { createCmsAuth, type CmsAuth, type CmsAuthOptions, type CmsRequestUser } from './auth';
 export {
     createAuthSessionStore, createOAuthStateStore, createSessionStore, createJobStore, createNotificationStore,

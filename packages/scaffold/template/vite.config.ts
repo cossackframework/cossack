@@ -118,8 +118,14 @@ export default defineConfig(({ mode, command }) => ({
       // graphs one module at a time on every cold start. Route API handlers and
       // page inspectors load these entries after the initial scan; include them
       // here so late discovery does not replace the SSR cache under the worker.
+      // The server dependencies the rendered pages import (icon subpaths, the
+      // editor's packages) are listed by the scaffold for the same reason: found
+      // one wave at a time, each wave bundles again and reloads the worker.
       optimizeDeps: {
         include: [
+          // @cossack:server-dependencies
+          ...([] as string[]),
+          '@cossackframework/renderer > parse5',
           '@cossackframework/ui',
           '@cossackframework/auth',
           '@cossackframework/database',
