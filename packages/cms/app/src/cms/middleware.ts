@@ -1,6 +1,6 @@
 import type { Context, MiddlewareHandler } from 'hono';
 import { getCookie } from 'hono/cookie';
-import { getSupportedLocales, LOCALE_COOKIE_NAME, setRequestLocale } from '@cossackframework/core';
+import { enforceRateLimit, getClientIp, getSupportedLocales, LOCALE_COOKIE_NAME, setRequestLocale } from '@cossackframework/core';
 import { ANONYMOUS, type Principal } from '@cossackframework/cms';
 import { MAIN, MAIN_SITE, networkSite, type SiteResolution } from '@cossackframework/cms/server';
 import { cmsFor, networkFor, type CmsBindings } from './index';
@@ -71,6 +71,7 @@ export const cmsMiddleware: MiddlewareHandler = async (c, next) => {
     }
     const writes = cms.outboxWrites;
     await next();
+    securityHeaders(c, url);
     const now = Date.now();
     if (cms.outboxWrites !== writes) later(c, cms.outbox.dispatch({ limit: 10 }).then(() => cms.webhooks.dispatch({ limit: 10 })));
     if (now - (lastMaintenance.get(found.site.database) ?? 0) > 60_000) {
@@ -78,6 +79,20 @@ export const cmsMiddleware: MiddlewareHandler = async (c, next) => {
         later(c, runMaintenance(cms, { warm: false }));
     }
 };
+
+/**
+ * Headers every response carries unless the route set its own: no MIME sniffing, a tight
+ * referrer, no framing by other sites (Live Edit frames the site from its own origin), and HSTS
+ * over https. A Content-Security-Policy is left to the deployment: pages inline their hydration
+ * state, so a policy needs the deployment's nonces or hashes.
+ */
+function securityHeaders(c: Context, url: URL): void {
+    const headers = c.res.headers;
+    if (!headers.has('x-content-type-options')) c.header('x-content-type-options', 'nosniff');
+    if (!headers.has('referrer-policy')) c.header('referrer-policy', 'strict-origin-when-cross-origin');
+    if (!headers.has('x-frame-options') && !headers.has('content-security-policy')) c.header('x-frame-options', 'SAMEORIGIN');
+    if (url.protocol === 'https:' && !headers.has('strict-transport-security')) c.header('strict-transport-security', 'max-age=31536000');
+}
 
 /**
  * After auth: the request principal is the signed-in user's, or anonymous. Under /api/, an
@@ -96,8 +111,18 @@ export const cmsPrincipal: MiddlewareHandler = async (c, next) => {
         c.set('cms.token', true);
         c.set('cms.tokenScope', token.scope);
     }
+    if (c.req.path === '/api' || c.req.path.startsWith('/api/')) {
+        // One budget per caller for the whole API, counted in the framework's rate-limit store (per isolate unless a shared store is configured).
+        const principal = c.get('principal');
+        const limited = await enforceRateLimit(c, 'cms-api', { window: 60_000, max: principal.kind === 'anonymous' ? API_LIMITS.anonymous : API_LIMITS.signedIn,
+            key: () => principal.kind === 'user' ? `user:${principal.id}` : `ip:${getClientIp(c)}`, message: 'Too many requests. Slow down and try again in a minute.' });
+        if (limited) return limited;
+    }
     await next();
 };
+
+/** API requests per minute per caller: a signed-in user or application password, or an anonymous address. */
+export const API_LIMITS = Object.freeze({ anonymous: 120, signedIn: 600 });
 
 /** The site an API request names, if any: the `X-Cossack-Site` header, or `?site=` on the MCP endpoint, whose clients set a URL. */
 function requestedSite(c: Context, url: URL): string | null {

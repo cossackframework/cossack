@@ -5,7 +5,8 @@
 import { generateRecoveryCodes, generateTotpSecret, hashRecoveryCode, verifyTotp } from '@cossackframework/auth';
 import type { RomeDB, Value } from '@cossackframework/romedb';
 import { CmsError } from '../errors';
-import { randomToken } from './tokens';
+import { randomToken, sha256Hex } from './tokens';
+import { CmsCache } from './cache';
 
 export interface PasskeyInfo {
     readonly id: string;
@@ -37,14 +38,63 @@ const WRITE = { kind: 'cms.security', retryConflicts: 5 } as const;
 const PASSKEY_COLUMNS = 'id, user_id, name, public_key, counter, transports, device_type, backed_up, created_at, last_used_at';
 /** Wrong codes a pending sign-in allows. */
 export const SIGN_IN_ATTEMPTS = 5;
+/**
+ * Failed password sign-ins are counted per email and per client address for a window; past the
+ * limit the sign-in is refused until the window ends, whether or not the account exists.
+ */
+export const SIGN_IN_LOCK = Object.freeze({ windowMs: 15 * 60_000, perEmail: 5, perAddress: 20 });
+/** Password reset requests per email and per address in an hour; beyond them nothing is sent. */
+export const RESET_REQUESTS = Object.freeze({ windowMs: 60 * 60_000, perEmail: 3, perAddress: 10 });
+interface Attempts { readonly count: number; readonly until: number }
 
 export class CmsSecurity {
     readonly #db: RomeDB;
     readonly #now: () => number;
 
+    readonly #cache: CmsCache;
+
     constructor(db: RomeDB, options: { now?: () => number } = {}) {
         this.#db = db;
         this.#now = options.now ?? Date.now;
+        this.#cache = new CmsCache(db, { now: this.#now });
+    }
+
+    /** Whether a password sign-in may be tried: neither the email nor the address is locked. */
+    async signInAllowed(email: string, address: string): Promise<{ ok: true } | { ok: false; retryAfterMs: number }> {
+        const [byEmail, byAddress] = await this.#cache.getMany<Attempts>([await emailKey(email), addressKey(address)]);
+        const now = this.#now();
+        const locked = [byEmail && byEmail.count >= SIGN_IN_LOCK.perEmail ? byEmail : null, byAddress && byAddress.count >= SIGN_IN_LOCK.perAddress ? byAddress : null]
+            .filter((entry): entry is Attempts => !!entry && entry.until > now);
+        if (!locked.length) return { ok: true };
+        return { ok: false, retryAfterMs: Math.max(...locked.map(entry => entry.until - now)) };
+    }
+
+    /** A wrong password: one more failure for the email and the address. */
+    async signInFailed(email: string, address: string): Promise<void> {
+        await this.#count(await emailKey(email), SIGN_IN_LOCK.windowMs);
+        await this.#count(addressKey(address), SIGN_IN_LOCK.windowMs);
+    }
+
+    /** A right password: the email's failures are forgotten; the address keeps its count. */
+    async signInSucceeded(email: string): Promise<void> {
+        await this.#cache.delete(await emailKey(email));
+    }
+
+    /**
+     * Count an attempt of `kind` (such as `reset`) for a key within a window; false past `max`.
+     * The attempt is counted either way, so a flood keeps the gate shut until the window ends.
+     */
+    async attempt(kind: string, key: string, max: number, windowMs: number): Promise<boolean> {
+        const count = await this.#count(`attempt:${kind}:${key.replace(/[^\x21-\x7e]/g, '-').slice(0, 120)}`, windowMs);
+        return count <= max;
+    }
+
+    async #count(key: string, windowMs: number): Promise<number> {
+        const now = this.#now();
+        const current = await this.#cache.get<Attempts>(key);
+        const next: Attempts = current && current.until > now ? { count: current.count + 1, until: current.until } : { count: 1, until: now + windowMs };
+        await this.#cache.set(key, next, next.until - now);
+        return next.count;
     }
 
     async status(userId: string): Promise<SecurityStatus> {
@@ -235,4 +285,14 @@ function passkeyOf(row: readonly Value[]): StoredPasskeyRow {
         transports: row[5] ? JSON.parse(row[5] as string) as string[] : null, deviceType: row[6] as string | null, backedUp: Number(row[7] as bigint) === 1,
         createdAt: Number(row[8] as bigint), lastUsedAt: row[9] === null ? null : Number(row[9] as bigint),
     });
+}
+
+/** The sign-in counter of an email: hashed, lower-cased. */
+async function emailKey(email: string): Promise<string> {
+    return `signin:e:${await sha256Hex(email.trim().toLowerCase())}`;
+}
+
+/** The sign-in counter of a client address. */
+function addressKey(address: string): string {
+    return `signin:a:${(address || 'unknown').replace(/[^\x21-\x7e]/g, '-').slice(0, 100)}`;
 }

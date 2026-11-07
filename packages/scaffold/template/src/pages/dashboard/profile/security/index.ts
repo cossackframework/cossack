@@ -140,10 +140,10 @@ export default class SecurityPage extends Cossack {
 
     /** Returns whether the password was created; the form keeps its values otherwise. */
     @Server()
-    async addToken(name: string, scope: 'read' | 'write'): Promise<boolean> {
+    async addToken(name: string, scope: 'read' | 'write', expiresInDays: number): Promise<boolean> {
         this.error = '';
         try {
-            this.newToken = await createApiToken(this.user!.id, name, scope === 'read' ? 'read' : 'write');
+            this.newToken = await createApiToken(this.user!.id, name, scope === 'read' ? 'read' : 'write', expiresInDays);
             await this.load();
             return true;
         } catch (error) {
@@ -241,7 +241,7 @@ export default class SecurityPage extends Cossack {
             ${this.tokensAvailable ? component(Card, {}, html`${component(CardHeader, {}, html`<h2 class="text-base font-semibold text-foreground">${__('Application passwords')}</h2>
                 <p class="text-sm text-muted-foreground">${__('Let apps and scripts use the content API as you: send the password as Authorization: Bearer. Revoke one to cut off its app.')}</p>`)}
                 ${component(CardBody, {}, component(AppPasswords, { tokens: this.tokens, newToken: this.newToken,
-                    onAdd: (name: string, scope: 'read' | 'write') => this.addToken(name, scope), onRevoke: (id: string) => this.deleteToken(id) }))}`) : null}
+                    onAdd: (name: string, scope: 'read' | 'write', expiresInDays: number) => this.addToken(name, scope, expiresInDays), onRevoke: (id: string) => this.deleteToken(id) }))}`) : null}
         </div>`;
     }
 }

@@ -12,9 +12,9 @@ import {
     passkeyAuthenticationOptions, passkeyRegistrationOptions, verifyPasskeyAuthentication, verifyPasskeyRegistration,
     type AuthenticationResponseJSON, type PasskeyConfig, type PublicKeyCredentialCreationOptionsJSON, type PublicKeyCredentialRequestOptionsJSON, type RegistrationResponseJSON,
 } from '@cossackframework/auth/passkeys';
-import { ClientVisibleError, getRequestContext } from '@cossackframework/core';
+import { ClientVisibleError, getClientIp, getRequestContext } from '@cossackframework/core';
 import { ANONYMOUS, hasPermission, isCmsError, isNetworkAdmin, PERMISSIONS, type Principal } from '@cossackframework/cms';
-import { MAIN_SITE, type ApiToken, type CmsHost, type CmsMember, type SecurityStatus as AccountSecurity } from '@cossackframework/cms/server';
+import { MAIN_SITE, RESET_REQUESTS, type ApiToken, type CmsHost, type CmsMember, type SecurityStatus as AccountSecurity } from '@cossackframework/cms/server';
 import { renderSVG } from 'uqr';
 import { currentCms, networkFor, type CmsBindings } from './cms/index';
 import { handoffSite } from './cms/handoff';
@@ -133,9 +133,33 @@ export const auth = createAuth<PublicUser>({
  * site's own accounts on an added site. Network accounts reach an added site through the
  * network's sign-in (`/auth/handoff`).
  */
-export async function loginUser(email: string, password: string): Promise<PublicUser | null> {
-  const account = await cms().signIn.accounts.verifier.verify(email, password);
-  return account && account.status === 'active' ? member(account.id) : null;
+export async function loginUser(email: string, password: string, address = clientAddress()): Promise<PublicUser | null> {
+  const host = cms();
+  const allowed = await host.security.signInAllowed(email, address);
+  if (!allowed.ok) throw new SignInLockedError(allowed.retryAfterMs);
+  const account = await host.signIn.accounts.verifier.verify(email, password);
+  if (!account || account.status !== 'active') {
+    await host.security.signInFailed(email, address);
+    return null;
+  }
+  await host.security.signInSucceeded(email);
+  return member(account.id);
+}
+
+/** Too many wrong passwords for the email or from the address: the sign-in is refused for a while. */
+export class SignInLockedError extends ClientVisibleError {
+  readonly retryAfterMs: number;
+  constructor(retryAfterMs: number) {
+    super(`Too many sign-in attempts. Try again in ${Math.max(1, Math.ceil(retryAfterMs / 60_000))} minutes.`);
+    this.name = 'SignInLockedError';
+    this.retryAfterMs = retryAfterMs;
+  }
+}
+
+/** The client's address for sign-in and reset counters: the proxy header the deployment trusts, else the socket's. */
+function clientAddress(): string {
+  const c = getRequestContext();
+  return c ? getClientIp(c) : 'unknown';
 }
 
 /** Whether this is the user's current password, before they change it: their site account's, or their network account's. */
@@ -414,9 +438,10 @@ export async function listApiTokens(userId: string): Promise<ApiToken[]> {
 }
 
 /** A new application password; the token is shown once. A network account's work on every site it belongs to. */
-export async function createApiToken(userId: string, name: string, scope: 'read' | 'write'): Promise<string> {
+export async function createApiToken(userId: string, name: string, scope: 'read' | 'write', expiresInDays: number | null = null): Promise<string> {
   await requireManageable(userId);
-  try { return (await (await storesOf(userId)).apiTokens.create(userId, { name, scope })).token; }
+  const expiresAt = expiresInDays && expiresInDays > 0 ? Date.now() + Math.trunc(expiresInDays) * 86_400_000 : null;
+  try { return (await (await storesOf(userId)).apiTokens.create(userId, { name, scope, expiresAt })).token; }
   catch (error) { throw isCmsError(error) ? new ClientVisibleError(error.message) : error; }
 }
 
@@ -433,6 +458,11 @@ export async function revokeApiToken(userId: string, id: string): Promise<void> 
  */
 export async function requestPasswordReset(email: string, resetBaseUrl: string): Promise<void> {
   const host = cms();
+  // A flood of requests for one email or from one address sends nothing after the first few.
+  const address = clientAddress();
+  const byEmail = await host.security.attempt('reset', `e:${email.trim().toLowerCase()}`, RESET_REQUESTS.perEmail, RESET_REQUESTS.windowMs);
+  const byAddress = await host.security.attempt('reset', `a:${address}`, RESET_REQUESTS.perAddress, RESET_REQUESTS.windowMs);
+  if (!byEmail || !byAddress) return;
   let reset = await host.signIn.accounts.createPasswordReset(email);
   if (!reset && host.siteAccounts && (await host.users.findByEmail(email).catch(() => null))?.account === 'network') {
     const network = env('APP_URL', '');
@@ -442,7 +472,10 @@ export async function requestPasswordReset(email: string, resetBaseUrl: string):
   if (!reset) return; // do NOT leak whether the email exists
   const from = env('MAIL_FROM', 'no-reply@example.com');
   const emailBinding = binding<{ send: (m: unknown) => Promise<unknown> }>('EMAIL');
-  if (!emailBinding) return;
+  if (!emailBinding) {
+    console.warn('[cms] A password reset was requested, but no email sender is configured (an EMAIL binding, or SMTP_HOST on Node): the link was not sent.');
+    return;
+  }
   const resetUrl = `${resetBaseUrl.replace(/\/$/, '')}/auth/reset-password?token=${reset.token}`;
   const html = `<p>We received a request to reset your password.</p><p><a href="${resetUrl}">Reset password</a></p><p>This link expires in 1 hour.</p>`;
   const text = `Reset your password: ${resetUrl}`;

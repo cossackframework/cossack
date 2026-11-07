@@ -68,6 +68,16 @@ const post = (title, extra = {}) => ({ title, slug: '', excerpt: '', content: ri
 async function essentials(origin, routeIds, diagnostics, { runtime, cloudflare = null }) {
   const web = browserless(origin, routeIds, diagnostics);
   expect((await web.post('/auth/setup', SETUP)).headers.get('location')).toBe('/dashboard');
+  // Every response carries the security headers; five wrong passwords lock the email for a while.
+  const home = await web.request('/');
+  expect([home.headers.get('x-content-type-options'), home.headers.get('x-frame-options'), home.headers.get('referrer-policy')]).toEqual(['nosniff', 'SAMEORIGIN', 'strict-origin-when-cross-origin']);
+  const guess = () => fetch(`${origin}/api/auth/session`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'nobody@example.com', password: 'wrong password' }) });
+  for (let i = 0; i < 5; i++) expect((await guess()).status).toBe(401);
+  const lockedOut = await guess();
+  expect(lockedOut.status).toBe(429);
+  expect((await lockedOut.json()).error).toMatch(/Too many sign-in attempts/);
+  // Without a mail sender, Health says so (the Workers run binds a fake sender for form notifications).
+  if (runtime === 'node') contains(await web.page('/dashboard/tools/health'), 'No email sender');
   // Setup added the starter content: a first post in Uncategorized, and a Contact page with its form.
   contains(await web.page('/posts/hello-world'), 'This is your first post');
   contains(await web.page('/category/uncategorized'), 'Hello World!');
@@ -421,10 +431,11 @@ async function essentials(origin, routeIds, diagnostics, { runtime, cloudflare =
   // An administrator issues an application password for Eve from her user screen; it acts as Eve.
   const eveId = (await (await web.request('/dashboard/users?search=eve')).text()).match(/\/dashboard\/users\/(?!new\b)([A-Za-z0-9_-]{8,})/)[1];
   const userScreen = 'dashboard/users/[id]/index.ts';
-  const issued = await web.action(userScreen, 'addToken', ['Eve build', 'read'], { params: { id: eveId } });
+  const issued = await web.action(userScreen, 'addToken', ['Eve build', 'read', 30], { params: { id: eveId } });
   expect(issued._cossack_return).toBe(true);
   expect(issued.newToken).toMatch(/^cms_/);
   expect(issued.tokens.map(entry => entry.name)).toEqual(['Eve build']);
+  expect(issued.tokens[0].expiresAt).toBeGreaterThan(Date.now() + 29 * 86_400_000);
   expect((await fetch(`${origin}/api/cms/content/posts/${pendingId}`, { headers: { authorization: `Bearer ${issued.newToken}` } })).status).toBe(200);
   const revoked = await web.action(userScreen, 'deleteToken', [issued.tokens[0].id], { params: { id: eveId } });
   expect(revoked.tokens).toEqual([]);

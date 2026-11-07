@@ -136,14 +136,18 @@ export async function tokensList(c: Context): Promise<{ items: ApiToken[] }> {
 }
 
 /** A new application password for the signed-in session; `token` is shown once. Passwords do not make passwords. */
-export async function tokenCreate(c: Context, input: Body): Promise<{ token: string; id: string; name: string; scope: 'read' | 'write' }> {
+export async function tokenCreate(c: Context, input: Body): Promise<{ token: string; id: string; name: string; scope: 'read' | 'write'; expiresAt: number | null }> {
     const principal = signedIn(c);
     if (c.get('cms.token')) throw new CmsError('CMS_FORBIDDEN', 'Create application passwords from a signed-in session.');
     const name = text(input.name, 'name', { max: 80 });
     const scope = input.scope === undefined ? 'write' : input.scope;
     if (scope !== 'read' && scope !== 'write') throw new CmsError('CMS_VALIDATION', 'scope is read or write.');
-    const token = await createApiToken(principal.id, name, scope);
-    return { token, id: token.slice(4, 20), name, scope };
+    // Days until it expires; absent or null means never.
+    const days = input.expiresInDays === undefined || input.expiresInDays === null ? null : integer(input.expiresInDays, 0, 1, 3650);
+    if (days === 0) throw new CmsError('CMS_VALIDATION', 'expiresInDays is 1 to 3650.');
+    const token = await createApiToken(principal.id, name, scope, days);
+    const record = (await listApiTokens(principal.id)).find(entry => entry.id === token.slice(4, 20));
+    return { token, id: token.slice(4, 20), name, scope, expiresAt: record?.expiresAt ?? null };
 }
 
 export async function tokenRevoke(c: Context, id: string): Promise<void> {

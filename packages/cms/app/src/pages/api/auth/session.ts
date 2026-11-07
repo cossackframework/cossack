@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
 import { isSameOriginPost } from '@cossackframework/cms';
-import { auth, completeTwoFactor, beginTwoFactor, loginUser, logout } from '../../../auth';
+import { auth, completeTwoFactor, beginTwoFactor, loginUser, logout, SignInLockedError } from '../../../auth';
 
 /**
  * JSON sign-in for tools such as `cossack <plugin>:<command>`: `{ email, password }` answers
@@ -12,7 +12,12 @@ export const POST = auth.createLoginHandler({
     validateCredentials: async credentials => {
         const { email, password, code } = credentials as { email?: unknown; password?: unknown; code?: unknown };
         if (typeof email !== 'string' || typeof password !== 'string') return null;
-        const user = await loginUser(email, password);
+        let user: Awaited<ReturnType<typeof loginUser>>;
+        try { user = await loginUser(email, password); }
+        catch (error) {
+            if (!(error instanceof SignInLockedError)) throw error;
+            return Response.json({ error: error.message, code: 'CMS_RATE_LIMITED' }, { status: 429, headers: { 'retry-after': String(Math.ceil(error.retryAfterMs / 1000)) } });
+        }
         if (!user) return null;
         const pending = await beginTwoFactor(user.id);
         if (!pending) return user;

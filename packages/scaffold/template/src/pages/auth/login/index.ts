@@ -64,8 +64,9 @@ export default class LoginPage extends Cossack {
             const { headers } = await authSessions.create(user.id, this.c);
             headers.forEach((value, key) => this.c.header(key, value));
             this.redirect(config('auth.redirectAfterLogin'));
-        } catch {
-            this.error = 'Could not sign in. Try again.';
+        } catch (error) {
+            // A lock (too many wrong passwords) is the one failure the visitor is told about; see SignInLockedError in auth.ts.
+            this.error = (error as Error)?.name === 'SignInLockedError' ? (error as Error).message : 'Could not sign in. Try again.';
         }
     }
 

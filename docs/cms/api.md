@@ -24,7 +24,8 @@ cossack cms login --url https://example.com
 
 `login` asks for the email and password (or reads `CMS_EMAIL` and `CMS_PASSWORD`), takes a
 second-factor code with `--code`, signs in, creates an application password named after the
-machine (`--name` renames it; `--scope read` makes a read-only one), ends the session and keeps
+machine (`--name` renames it; `--scope read` makes a read-only one; `--expires 90` ends it after
+ninety days), ends the session and keeps
 the password in `~/.config/cossack/cms-logins.json`, readable by you alone. `--token cms_…`
 stores a password made in the dashboard instead. `cossack cms logout` revokes and forgets it.
 
@@ -154,7 +155,7 @@ application password. A CMS refusal answers `{ error, code, fields? }` with its 
 | Method and path | Does |
 | --- | --- |
 | `GET /me` | The user, roles, permissions, site, password scope and network state. |
-| `GET /me/tokens`, `POST /me/tokens` `{ name, scope }`, `DELETE /me/tokens/<id>` | Application passwords; `POST` needs a session (a password cannot make one) and answers the token once. |
+| `GET /me/tokens`, `POST /me/tokens` `{ name, scope, expiresInDays? }`, `DELETE /me/tokens/<id>` | Application passwords; `POST` needs a session (a password cannot make one) and answers the token once; `expiresInDays` (1 to 3650) ends it on its own. |
 | `GET /collections`, `GET /schema/<collection>`, `GET /taxonomies` | Content types with fields; a JSON Schema; taxonomies. |
 | `GET /content/<collection>` | Entries: `status`, `q`, `term`, `locale`, `filter[field]`, `page`, `perPage`, `format=html`. |
 | `POST /content/<collection>` | Create. |

@@ -135,11 +135,11 @@ export default class EditUserPage extends Cossack {
 
     /** An administrator's password for another user acts as that user. Returns whether it was created. */
     @Server()
-    async addToken(name: string, scope: 'read' | 'write'): Promise<boolean> {
+    async addToken(name: string, scope: 'read' | 'write', expiresInDays: number): Promise<boolean> {
         const id = this.accessOwner();
         this.tokensError = '';
         try {
-            this.newToken = await createApiToken(id, name, scope === 'read' ? 'read' : 'write');
+            this.newToken = await createApiToken(id, name, scope === 'read' ? 'read' : 'write', expiresInDays);
             this.tokens = await listApiTokens(id);
             return true;
         } catch (error) {
@@ -423,7 +423,7 @@ export default class EditUserPage extends Cossack {
                 ${component(CardBody, { class: 'space-y-3' }, html`
                     ${this.tokensError ? html`<p role="alert" class="text-sm text-destructive">${this.tokensError}</p>` : null}
                     ${component(AppPasswords, { tokens: this.tokens, newToken: this.newToken,
-                        onAdd: (name: string, scope: 'read' | 'write') => this.addToken(name, scope), onRevoke: (tokenId: string) => this.deleteToken(tokenId) })}`)}
+                        onAdd: (name: string, scope: 'read' | 'write', expiresInDays: number) => this.addToken(name, scope, expiresInDays), onRevoke: (tokenId: string) => this.deleteToken(tokenId) })}`)}
             `)}
         </div>`;
 

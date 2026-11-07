@@ -48,7 +48,7 @@ export async function loginCommand({ flags, env = process.env, cwd = process.cwd
     }
     if (!cookie) throw coded('COSSACK_CMS_SIGN_IN_FAILED', 'Sign-in gave no session.');
     name ||= `cossack CLI (${os.hostname()})`;
-    const created = await session.request('POST', '/api/cms/me/tokens', { body: { name, scope }, cookie });
+    const created = await session.request('POST', '/api/cms/me/tokens', { body: { name, scope, ...(flags.expires ? { expiresInDays: Number(flags.expires) } : {}) }, cookie });
     token = created.data.token;
     // The session did its job; the application password signs in from now on.
     await session.request('DELETE', '/api/auth/session', { cookie }).catch(() => undefined);

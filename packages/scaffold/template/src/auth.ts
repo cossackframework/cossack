@@ -337,7 +337,7 @@ export async function removePasskey(_userId: string, _id: string): Promise<void>
 export async function passkeySignIn(_c: Context): Promise<{ challenge: string; options: unknown }> { throw unavailable(); }
 export async function completePasskeySignIn(_c: Context, _challengeId: string, _response: unknown): Promise<PublicUser | null> { return null; }
 export async function listApiTokens(_userId: string): Promise<ApiToken[]> { return []; }
-export async function createApiToken(_userId: string, _name: string, _scope: 'read' | 'write'): Promise<string> { throw new ClientVisibleError('Application passwords are not available on this site.'); }
+export async function createApiToken(_userId: string, _name: string, _scope: 'read' | 'write', _expiresInDays: number | null = null): Promise<string> { throw new ClientVisibleError('Application passwords are not available on this site.'); }
 export async function revokeApiToken(_userId: string, _id: string): Promise<void> {}
 
 

@@ -13,7 +13,8 @@ export type AppPasswordsProps = {
     /** The password just created; it is shown once. */
     newToken: string;
     /** Resolves to false when the password was not created, keeping the form. */
-    onAdd(name: string, scope: 'read' | 'write'): unknown;
+    /** `expiresInDays` is 0 for a password that never expires. */
+    onAdd(name: string, scope: 'read' | 'write', expiresInDays: number): unknown;
     onRevoke(id: string): unknown;
 };
 
@@ -24,6 +25,8 @@ export class AppPasswords extends Cossack {
     declare props: AppPasswordsProps;
     @ClientState() private name = '';
     @ClientState() private scope: 'read' | 'write' = 'write';
+    /** Days until the password expires, as the select's value; '0' is never. */
+    @ClientState() private expires = '0';
     /** Whether Copy worked: the button says so, or the box asks to copy by hand. */
     @ClientState() private copied: 'yes' | 'no' | '' = '';
 
@@ -32,9 +35,10 @@ export class AppPasswords extends Cossack {
         event.preventDefault();
         const name = this.name.trim();
         if (!name) return;
-        if ((await this.props.onAdd(name, this.scope)) === false) return;
+        if ((await this.props.onAdd(name, this.scope, Number(this.expires))) === false) return;
         this.name = '';
         this.scope = 'write';
+        this.expires = '0';
     }
 
     @Client()
@@ -56,11 +60,13 @@ export class AppPasswords extends Cossack {
                     '.value': this.name, '@input': (event: Event) => { this.name = (event.target as HTMLInputElement).value; } }) })}
                 ${component(Field, { label: __('Access'), for: 'token-scope', control: attributes => component(NativeSelect, { ...attributes, '@change': (event: Event) => { this.scope = (event.target as HTMLSelectElement).value === 'read' ? 'read' : 'write'; } }, html`
                     <option value="write" ?selected=${this.scope === 'write'}>${__('Read and write')}</option><option value="read" ?selected=${this.scope === 'read'}>${__('Read only')}</option>`) })}
+                ${component(Field, { label: __('Expires'), for: 'token-expires', control: attributes => component(NativeSelect, { ...attributes, '@change': (event: Event) => { this.expires = (event.target as HTMLSelectElement).value; } }, html`
+                    ${[['0', __('Never')], ['30', __('In 30 days')], ['90', __('In 90 days')], ['365', __('In a year')]].map(([value, label]) => html`<option value=${value} ?selected=${this.expires === value}>${label}</option>`)}`) })}
                 ${component(Button, { type: 'submit', disabled: !this.name.trim() }, __('Add application password'))}
             </form>
             ${this.props.tokens.length ? html`<ul class="divide-y divide-border rounded-md border border-border">${this.props.tokens.map(token => html`<li class="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-sm" data-token=${token.name}>
                 <span><span class="font-medium text-foreground">${token.name}</span> ${component(Badge, { variant: 'secondary' }, token.scope === 'read' ? __('Read only') : __('Read and write'))}
-                    <span class="block text-xs text-muted-foreground">${__('created')} ${date(token.createdAt)} · ${__('last used')} ${date(token.lastUsedAt)}</span></span>
+                    <span class="block text-xs text-muted-foreground">${__('created')} ${date(token.createdAt)} · ${__('last used')} ${date(token.lastUsedAt)}${token.expiresAt ? ` · ${__('expires')} ${date(token.expiresAt)}` : ''}</span></span>
                 <button type="button" class="text-xs text-destructive hover:underline bg-transparent border-none p-0 cursor-pointer" @click=${() => this.props.onRevoke(token.id)}>${__('Revoke')}</button>
             </li>`)}</ul>` : html`<p class="text-sm text-muted-foreground">${__('No application passwords yet.')}</p>`}
         </div>`;

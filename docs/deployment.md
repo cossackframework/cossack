@@ -341,6 +341,22 @@ Activating DNS, certificates, and routes needs a real deployment in your account
 
 ---
 
+## Headers every response carries
+
+On both runtimes the CMS adds `X-Content-Type-Options: nosniff`,
+`Referrer-Policy: strict-origin-when-cross-origin` and `X-Frame-Options: SAMEORIGIN` to every
+response that did not set them, and `Strict-Transport-Security: max-age=31536000` over https.
+Live Edit frames the site from its own origin, so it keeps working; a site that must be embedded
+elsewhere removes the frame header in front of the application. No `Content-Security-Policy` is
+sent: pages inline their hydration state, so a policy needs nonces or hashes that only the
+deployment can add (a Cloudflare Transform Rule, or a proxy).
+
+Password sign-ins are refused for fifteen minutes after five wrong passwords for an email or
+twenty from one address, password reset emails stop after three requests for an email in an hour,
+and the API answers 429 past 600 requests a minute for a signed-in caller or 120 for an anonymous
+one. The counters live in the framework's rate-limit store, per isolate unless a shared store is
+configured; the sign-in and reset counters are in the database.
+
 ## Node.js
 
 For Node.js deployments, see the [Adapters guide](./adapters.md).
