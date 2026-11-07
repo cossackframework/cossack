@@ -263,7 +263,7 @@ export class RichTextField extends Cossack {
                     <p class="px-2 py-1.5 text-xs text-muted-foreground">${__('Show the value of')}</p>
                     ${this.props.bindings.map(choice => html`<button type="button" role="menuitem" tabindex="-1" class="flex w-full items-center justify-between gap-3 rounded-sm px-2 py-1.5 text-left text-sm text-foreground hover:bg-muted cursor-pointer border-none bg-transparent"
                         @click=${() => this.bind(choice.name)}><span class="truncate">${choice.label}</span><code class="shrink-0 text-xs text-muted-foreground">{{ $.${choice.name} }}</code></button>`)}`) : null}
-                ${this.props.blocks.length ? component(BlockInserter, { id: `${this.props.id}-blocks`, blocks: this.props.blocks, disabled: !this.ready, compact: true,
+                ${this.props.blocks.length ? component(BlockInserter, { id: `${this.props.id}-blocks`, blocks: this.props.blocks, disabled: !this.ready, compact: true, plain: true,
                     onPick: (name: string) => this.props.onInsertBlock(name) }) : null}
             </div>
             ${this.linkOpen ? html`<form class="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2" @submit=${(event: Event) => this.applyLink(event)}>

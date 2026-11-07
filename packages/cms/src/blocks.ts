@@ -64,6 +64,11 @@ export interface BlockDeclaration {
     readonly parent?: readonly string[];
     /** The Style tab's controls; the category decides when absent. See `blockSupports`. */
     readonly supports?: BlockSupports;
+    /**
+     * Shapes of the block the inserter offers as entries of their own, each starting with its
+     * `data` over the defaults: a Hero is a Group set full width, tall and centered. At most 12.
+     */
+    readonly variations?: readonly BlockVariation[];
     /** The block can be referenced inside text: `{{ block <name> … }}` (see `parseBlockText`). */
     readonly inline?: boolean;
     /** The text field a reference's body fills, such as `label` for a button: `{{ block core/button }}Buy{{ /block }}`. Containers take their body as children instead. */
@@ -79,6 +84,20 @@ export interface BlockDeclaration {
      */
     readonly field?: { readonly kind: FieldBlockKind };
 }
+
+/** A preset shape of a block type, offered in the inserter under its own name and icon. */
+export interface BlockVariation {
+    /** Lowercase letters, digits and hyphens; distinct within the type. */
+    readonly name: string;
+    readonly label: string;
+    readonly description?: string;
+    /** A Solar icon name for the picker; the type's when absent. */
+    readonly icon?: string;
+    readonly keywords?: readonly string[];
+    /** Field values the new block starts with, over the type's defaults. */
+    readonly data: { readonly [field: string]: unknown };
+}
+const VARIATION_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 /** The builder's field types, one field block each. */
 export const FIELD_BLOCK_KINDS = Object.freeze(['text', 'textarea', 'markdown', 'number', 'integer', 'boolean', 'date', 'choice', 'media', 'reference', 'blocks', 'json', 'repeater'] as const);
@@ -236,7 +255,9 @@ const core: BlockDeclaration[] = [
         columns: field.integer({ default: 3, min: 1, max: 6, label: 'Columns' }),
         layout: field.enum(['grid', 'logos'], { default: 'grid', label: 'Layout', choices: { grid: 'Square tiles', logos: 'Logos: whole images at one height' } }),
         align: WIDTH,
-    } },
+    }, variations: [
+        { name: 'logos', label: 'Logo wall', description: 'Whole images at one height, grey until hovered: clients, partners, press.', icon: 'buildings', keywords: ['clients', 'partners', 'brands'], data: { layout: 'logos', columns: 4 } },
+    ] },
     { name: 'core/quote', inline: true, body: 'text',  keywords: ['blockquote', 'citation'], label: 'Quote', icon: 'chat-round-line', category: 'text', fields: {
         text: field.text({ required: true, max: 2000, label: 'Quote' }),
         citation: field.string({ max: 200, label: 'Citation' }),
@@ -325,7 +346,9 @@ const core: BlockDeclaration[] = [
         url: field.string({ max: 2048, pattern: LINK, label: 'Link' }),
         linkLabel: field.string({ max: 80, label: 'Link text', description: 'Empty links the title and the image.' }),
         layout: field.enum(['top', 'left', 'right'], { default: 'top', label: 'Image position', choices: { top: 'Above the text', left: 'Left of the text', right: 'Right of the text' } }),
-    } },
+    }, variations: [
+        { name: 'icon-box', label: 'Icon box', description: 'An icon, a title and text, without a box.', icon: 'star', keywords: ['feature', 'service', 'benefit'], data: { style: 'plain', icon: 'star' } },
+    ] },
     // A carousel shows its images, or slides of blocks when it holds any: the hero slider of page builders.
     { name: 'core/carousel', keywords: ['slider', 'slideshow', 'slides', 'hero slider'], label: 'Carousel', icon: 'posts-carousel-horizontal', category: 'media', description: 'Images, or slides of blocks, one at a time, with arrows and dots; swipe on touch screens.', fields: {
         images: field.gallery({ label: 'Images' }),
@@ -347,7 +370,9 @@ const core: BlockDeclaration[] = [
         columns: field.integer({ default: 3, min: 1, max: 4, label: 'Columns', description: 'For the grid.' }),
         showImage: field.boolean({ default: true, label: 'Show the featured image' }),
         showDate: field.boolean({ default: true, label: 'Show the date' }),
-    } },
+    }, variations: [
+        { name: 'cards', label: 'Entry cards', description: 'The newest entries as a grid of cards with their images.', icon: 'card', keywords: ['posts', 'grid'], data: { layout: 'grid', columns: 3, count: 6 } },
+    ] },
     // Site blocks, the twins of helpers: a header or footer is built from them in a widget area.
     { name: 'core/site-logo', inline: true, keywords: ['logo', 'brand', 'site title', 'home', 'header'], label: 'Site logo', icon: 'home-2', category: 'widgets', description: 'The site\'s logo, or its title, linked to the home page.', fields: {
         image: field.media({ label: 'Image', description: 'Empty uses the logo from Settings → General.' }),
@@ -471,7 +496,10 @@ const core: BlockDeclaration[] = [
         justify: field.enum(['start', 'center', 'end', 'between'], { default: 'start', label: 'Justify', description: 'Where the blocks of a row sit.', choices: { start: 'Start', center: 'Center', end: 'End', between: 'Spread out' } }),
         height: field.enum(['auto', 'short', 'medium', 'tall', 'screen'], { default: 'auto', label: 'Height', description: 'At least this tall, for banners and heroes.', choices: { auto: 'Fits the blocks', short: 'Short', medium: 'Medium', tall: 'Tall', screen: 'The whole screen' } }),
         valign: field.enum(['top', 'center', 'bottom'], { default: 'top', label: 'Vertical alignment', description: 'Where the blocks sit when the group is taller than them.' }),
-    }, children: {}, supports: { background: true } },
+    }, children: {}, supports: { background: true }, variations: [
+        { name: 'hero', label: 'Hero', description: 'A band across the page, at least medium tall, its blocks centered. Give it a background under Style.', icon: 'gallery-wide', keywords: ['cover', 'banner', 'jumbotron', 'call to action'], data: { align: 'full', height: 'medium', valign: 'center' } },
+        { name: 'row', label: 'Row', description: 'Blocks side by side in one line, spread out.', icon: 'widget-2', keywords: ['inline', 'toolbar', 'buttons'], data: { direction: 'row', justify: 'between' } },
+    ] },
     { name: 'core/columns', inline: true,  keywords: ['row', 'side by side', 'layout'], label: 'Columns', icon: 'widget-2', category: 'design', description: 'Blocks side by side; they stack on small screens.', fields: {
         gap: GAP,
         stack: field.enum(['mobile', 'tablet', 'never'], { default: 'mobile', label: 'Stack', choices: { mobile: 'On phones', tablet: 'On phones and tablets', never: 'Never' } }),
@@ -544,6 +572,25 @@ export function blockProblems(declaration: BlockDeclaration, owner?: string): st
     }
     if (declaration?.parent !== undefined && (!Array.isArray(declaration.parent) || !declaration.parent.length || !declaration.parent.every(name => typeof name === 'string' && BLOCK_NAME.test(name)))) {
         problems.push(`${at}: parent lists block names.`);
+    }
+    const variations = declaration?.variations;
+    if (variations !== undefined) {
+        if (!Array.isArray(variations) || variations.length > 12) problems.push(`${at}: variations lists at most 12 variations.`);
+        else {
+            const names = new Set<string>();
+            for (const variation of variations) {
+                const label = `${at}: variation ${String(variation?.name)}`;
+                if (!variation || typeof variation !== 'object' || typeof variation.name !== 'string' || !VARIATION_NAME.test(variation.name) || variation.name.length > 40) { problems.push(`${at}: variations are named in lowercase with hyphens.`); continue; }
+                if (names.has(variation.name)) problems.push(`${label} is declared twice.`);
+                names.add(variation.name);
+                if (typeof variation.label !== 'string' || !variation.label.trim() || variation.label.length > 80) problems.push(`${label}: needs a label of at most 80 characters.`);
+                if (variation.description !== undefined && (typeof variation.description !== 'string' || variation.description.length > 300)) problems.push(`${label}: the description is at most 300 characters.`);
+                if (variation.icon !== undefined && (typeof variation.icon !== 'string' || !ICON_NAME.test(variation.icon) || variation.icon.length > 60)) problems.push(`${label}: icons are Solar icon names.`);
+                if (variation.keywords !== undefined && (!Array.isArray(variation.keywords) || variation.keywords.length > 12 || variation.keywords.some((word: unknown) => typeof word !== 'string' || !word.trim() || word.length > 40))) problems.push(`${label}: keywords are at most 12 words of at most 40 characters.`);
+                if (!variation.data || typeof variation.data !== 'object' || Array.isArray(variation.data)) problems.push(`${label}: data is an object of field values.`);
+                else for (const field of Object.keys(variation.data)) if (!declaration.fields || !Object.hasOwn(declaration.fields, field)) problems.push(`${label}: data names ${field}, which is not a field of the block.`);
+            }
+        }
     }
     const supports = declaration?.supports;
     if (supports !== undefined) {

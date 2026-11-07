@@ -345,10 +345,10 @@ export class SiteEditor extends Cossack {
 
     /** Add a block at the end of a document, or inside a container. */
     @Client()
-    private add(type: string, parent: string | null = null, key?: string) {
+    private add(type: string, parent: string | null = null, key?: string, variation?: string) {
         this.doc = parent ? this.docWith(parent) : key ?? this.doc;
         const option = this.option(type);
-        const block = newBlock(type, this.props.draft.view.blocks, blockId);
+        const block = newBlock(type, this.props.draft.view.blocks, blockId, variation);
         if (!option || !block) return;
         this.setBlocks(insertBlock(this.blocks(), parent, block), `${option.label} ${__('added.')}`);
         this.selectWhenShown(block._id);
@@ -839,7 +839,7 @@ export class SiteEditor extends Cossack {
                 ${drag?.moved ? html`<li aria-hidden="true" class="pointer-events-none absolute right-0 h-0.5 rounded bg-primary" style=${`top: ${drag.y}px; left: ${drag.depth * 1.25}rem`}></li>` : null}
                 ${places.map((place, index) => this.blockRow(key, place, index, places, drag, editable, options))}
             </ol>` : html`<p class="rounded-md border border-dashed border-border p-4 text-center text-sm text-muted-foreground">${__('No blocks yet.')}</p>`}
-            ${editable ? component(BlockInserter, { id: `site-editor-blocks-${key.replace(':', '-')}`, blocks: offeredIn(options, null, this.allowedIn(key)), onPick: (type: string) => this.add(type, null, key) }) : null}
+            ${editable ? component(BlockInserter, { id: `site-editor-blocks-${key.replace(':', '-')}`, blocks: offeredIn(options, null, this.allowedIn(key)), onPick: (type: string, variation?: string) => this.add(type, null, key, variation) }) : null}
         </section>`;
     }
 
@@ -866,7 +866,7 @@ export class SiteEditor extends Cossack {
                     <span class="block truncate text-sm">${this.summary(block)}</span>
                 </span>
                 ${editable && offered.length && (option?.children?.max === null || (block.children ?? []).length < (option?.children?.max ?? 0))
-                    ? component(BlockInserter, { id: `site-editor-add-${key.replace(':', '-')}-${block._id}`, blocks: offered, compact: true, onPick: (type: string) => this.add(type, block._id) }) : null}
+                    ? component(BlockInserter, { id: `site-editor-add-${key.replace(':', '-')}-${block._id}`, blocks: offered, compact: true, onPick: (type: string, variation?: string) => this.add(type, block._id, undefined, variation) }) : null}
                 ${entry ? noteMarker(this.blockNoteCount(block._id), this.label(block), () => this.showBlockNotes(block._id)) : null}
                 ${entry && this.props.draft.blocksField ? noteButton(`site-note-${block._id}`, this.label(block), () => this.startNote(formatNoteTarget({ kind: 'block', field: this.props.draft.blocksField!, block: block._id })), { always: true }) : null}
                 ${editable && option?.fields.length ? this.iconButton(__('Edit'), `${__('Edit')} ${this.label(block)}`, () => this.edit(block._id)) : null}

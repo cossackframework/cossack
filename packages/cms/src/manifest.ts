@@ -79,6 +79,12 @@ export interface CmsPluginManifest {
      */
     readonly fieldGroups?: readonly Omit<FieldGroup, 'plugin'>[];
     /**
+     * Patterns the plugin ships: sections of core blocks and its own, offered in the pattern
+     * picker and as starting layouts. Stored once as `<plugin>-<slug>` when the plugin is
+     * granted or the theme activated; a pattern the site already has is left as it is.
+     */
+    readonly patterns?: readonly ManifestPattern[];
+    /**
      * Tabs and sidebar boxes the plugin adds to a collection's entry editor while it is active:
      * a partial editor layout per collection, its own or another's. Tab IDs are prefixed with the
      * plugin's name; a layout the administrator saved keeps a tab it already placed.
@@ -135,7 +141,20 @@ export interface CmsPluginManifest {
 export const HOST_SLOTS = Object.freeze(['dashboard.nav', 'dashboard.overview', 'dashboard.taskbar', 'site.taskbar'] as const);
 export type HostSlot = (typeof HOST_SLOTS)[number];
 
-const KNOWN_FIELDS = new Set(['schemaVersion', 'name', 'version', 'description', 'author', 'authorUrl', 'compatibility', 'dependencies', 'resources', 'collections', 'blocks', 'fieldGroups', 'editor', 'hooks', 'permissions', 'ui', 'provides', 'commands', 'settings', 'theme', 'logo', 'cover', 'translations', 'package', 'source']);
+/** A pattern a plugin ships, stored as `<plugin>-<slug>` in the patterns collection. */
+export interface ManifestPattern {
+    /** 1 to 40 lowercase letters, digits and hyphens. */
+    readonly slug: string;
+    readonly title: string;
+    /** Changes to the stored pattern show everywhere it is used. Off by default: editors get a copy to change. */
+    readonly synced?: boolean;
+    /** Collections whose new entries may start from the pattern. */
+    readonly starter?: readonly string[];
+    readonly blocks: readonly Block[];
+}
+const PATTERN_SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+const KNOWN_FIELDS = new Set(['schemaVersion', 'name', 'version', 'description', 'author', 'authorUrl', 'compatibility', 'dependencies', 'resources', 'collections', 'blocks', 'fieldGroups', 'patterns', 'editor', 'hooks', 'permissions', 'ui', 'provides', 'commands', 'settings', 'theme', 'logo', 'cover', 'translations', 'package', 'source']);
 const COLLECTION_NAME = /^[a-z][a-zA-Z0-9_]{0,40}$/;
 const ARTWORK = /^assets\/[A-Za-z0-9][A-Za-z0-9._-]{0,80}\.(?:png|jpe?g|webp|gif|avif|svg)$/;
 const HOST = /^(?:\*\.)?(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$|^localhost$/;
@@ -208,6 +227,25 @@ export function manifestProblems(manifest: unknown): string[] {
         for (const problem of fieldGroupProblems(group as FieldGroup, groupTypes).problems) problems.push(`field group ${id}: ${problem}`);
         if (groupIds.has(id)) problems.push(`field group ${id} is declared twice.`);
         groupIds.add(id);
+    }
+    // Patterns hold core blocks and the plugin's own; the host checks them against every active type when it stores them.
+    const patternTypes = new Map([...CORE_BLOCKS, ...(Array.isArray(value.blocks) ? value.blocks as BlockDeclaration[] : [])].filter(block => block && typeof block.name === 'string').map(block => [block.name, block]));
+    const patternSlugs = new Set<string>();
+    const patterns = Array.isArray(value.patterns) ? value.patterns : value.patterns === undefined ? [] : [null];
+    if (patterns.length > 24) problems.push('patterns lists at most 24 patterns.');
+    for (const [index, pattern] of patterns.entries()) {
+        if (!pattern || typeof pattern !== 'object') { problems.push(`patterns[${index}] must be a pattern.`); continue; }
+        const slug = String(pattern.slug);
+        if (typeof pattern.slug !== 'string' || !PATTERN_SLUG.test(pattern.slug) || pattern.slug.length > 40) problems.push(`patterns[${index}]: slug is 1 to 40 lowercase letters, digits and hyphens.`);
+        else if (patternSlugs.has(slug)) problems.push(`pattern ${slug} is declared twice.`);
+        patternSlugs.add(slug);
+        if (typeof pattern.title !== 'string' || !pattern.title.trim() || pattern.title.length > 120) problems.push(`pattern ${slug}: needs a title of at most 120 characters.`);
+        if (pattern.synced !== undefined && typeof pattern.synced !== 'boolean') problems.push(`pattern ${slug}: synced is on or off.`);
+        if (pattern.starter !== undefined && (!Array.isArray(pattern.starter) || !pattern.starter.every((entry: unknown) => typeof entry === 'string' && COLLECTION_NAME.test(entry)))) problems.push(`pattern ${slug}: starter lists collection names.`);
+        const shape = blocksShapeProblem(pattern.blocks);
+        if (shape) { problems.push(`pattern ${slug}: blocks ${shape}`); continue; }
+        if (!(pattern.blocks as unknown[]).length) problems.push(`pattern ${slug}: needs at least one block.`);
+        for (const [path, error] of Object.entries(validateBlocks(pattern.blocks as Block[], patternTypes).errors)) problems.push(`pattern ${slug}: block ${path} ${error}`);
     }
     const editorCollections = new Set<string>();
     for (const [index, entry] of (Array.isArray(value.editor) ? value.editor : value.editor === undefined ? [] : [null]).entries()) {

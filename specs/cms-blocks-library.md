@@ -42,6 +42,13 @@ WordPress.com's 2021 block ranking (Paragraph, Image, Heading, List, Spacer, Sep
   before it reaches an iframe. The block says so in its description.
 - **Containers of named items start filled.** New Tabs, Accordion and Icon list blocks get two
   or three named children so they show at once; Columns already started with two.
+- **Authors get three doors** (phase 3). A manifest ships `patterns` (stored as `<plugin>-<slug>`
+  on grant or theme activation, never overwriting the site's copy; a start adds a theme's
+  patterns only while the site has none of them, so a deleted one stays deleted); a plugin's
+  `ui.ts` exports `head` for the tags its blocks need, merged under the theme's; a declaration
+  lists `variations`, preset shapes the inserter offers as entries of their own, which `newBlock`
+  starts from (Hero and Row for the Group, Icon box for the Card, Logo wall, Entry cards). Rich
+  text embeds a block by its type alone (`plain` inserter).
 
 ## Order
 
@@ -69,3 +76,4 @@ WordPress.com's 2021 block ranking (Paragraph, Image, Heading, List, Spacer, Sep
 | --- | --- | --- |
 | Wave 1 (2026-11-07) | `SITE_ICON_NAMES`, `field.icon()` and `brand`, `MAP_EMBED_URL`, `brandIcon` (`simple-icons`), `RenderedBlock.icons`, `ThemeHelpers.icon`; ten declarations and renderers (`core/spacer`, `core/accordion`, `core/accordion-item`, `core/icon-list`, `core/icon-item`, `core/testimonial`, `core/stat`, `core/pricing`, `core/social-links`, `core/map`), Tabs on the site, Card `icon` and `style`; `site-icons.ts`, `tabs.client.ts`, `stat.client.ts`, the icon picker for icon fields, seeded containers; `docs/cms/blocks.md` | `section-blocks.test.ts` (package and app), `site-icons.test.ts`, `generated-runtime-cms-themes.test.js` (tabs, a stat and social links through a generated application) |
 | Wave 2 (2026-11-07) | `core/slide` inside `core/carousel`, the Gallery's `logos` layout, `core/notice`, `core/countdown` (`countdown.client.ts`), `core/toc` with `withHeadingAnchors` (`headings.ts`: anchors on every heading, kept distinct, the list on the block), `core/share` (`shareUrl`, `share.client.ts`, brand icons by network through `SHARE_BRAND_URLS`), `core/breadcrumbs` and `helpers.breadcrumbs` over `SiteView.breadcrumbs` and `SiteView.url`, built by the site layout from the resolved page (`entryAncestors` shared with the SEO graph) | `page-blocks.test.ts` (package and app), `headings.test.ts`, `generated-runtime-cms-themes.test.js` (anchored headings, the table of contents, share links with the page's address, breadcrumbs) |
+| Phase 3 (2026-11-07) | `ManifestPattern` and `manifestProblems` checks, `#seedPatterns` on grant, theme activation and start; `PluginHead`, `activePluginNames`, `ThemeState.plugins`, `pluginHeads` merged by the site layout; `BlockVariation` on declarations with `blockProblems` checks, `BlockOption.variations`, the inserter's variation entries and `plain` mode, `newBlock(type, options, id, variation)`, core variations; docs in `manifest.md`, `plugins.md`, `themes.md`, `blocks.md` | `blocks-authoring.test.ts`, `variations.test.ts`, `generated-runtime-cms-plugins.test.js` (the fixture's pattern is stored on grant and its head tag reaches the site) |

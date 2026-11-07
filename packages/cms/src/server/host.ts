@@ -870,14 +870,16 @@ export class CmsHost {
         if (!theme) throw new CmsError('CMS_NOT_FOUND', `Unknown theme ${name}.`);
         if (theme.problems.length) throw new CmsError('CMS_VALIDATION', `${theme.label} cannot be used: ${theme.problems.join(' ')}`);
         await this.settings.update('appearance', { theme: name }, { principal });
-        await this.#seedThemeGroups(name);
+        await this.#seedThemeGroups(name, { activation: true });
     }
 
     /** The field groups the active theme and its parent ship: a theme needs no grant, so they are stored here, once (`#refreshPlugins`, `activateTheme`). */
-    async #seedThemeGroups(name: string | null): Promise<void> {
+    async #seedThemeGroups(name: string | null, options: { activation?: boolean } = {}): Promise<void> {
         for (const plugin of this.#themeChain(name)) {
-            if (plugin.problems.length || !plugin.manifest.fieldGroups?.length || this.#groups.some(group => group.plugin === plugin.manifest.name)) continue;
-            await this.#seedFieldGroups(plugin, systemPrincipal('site')).catch(error => console.error(`[cms] could not add the field groups of ${plugin.manifest.name}`, error));
+            if (plugin.problems.length) continue;
+            if (plugin.manifest.fieldGroups?.length && !this.#groups.some(group => group.plugin === plugin.manifest.name)) await this.#seedFieldGroups(plugin, systemPrincipal('site')).catch(error => console.error(`[cms] could not add the field groups of ${plugin.manifest.name}`, error));
+            // At a start, the theme's patterns are added only when the site has none of them: a deleted one stays deleted.
+            await this.#seedPatterns(plugin, systemPrincipal('site'), { onlyIfNone: !options.activation }).catch(error => console.error(`[cms] could not add the patterns of ${plugin.manifest.name}`, error));
         }
     }
 
@@ -1479,6 +1481,11 @@ export class CmsHost {
         return { resources, plugins };
     }
 
+    /** The names of the plugins active on this site, themes included, as of the last refresh. */
+    activePluginNames(): readonly string[] {
+        return [...this.#activePlugins];
+    }
+
     async pluginActive(name: string): Promise<boolean> {
         const plugin = this.#plugins.get(name);
         return plugin ? (await this.#pluginStatus(plugin, await this.#state())).active : false;
@@ -1506,7 +1513,27 @@ export class CmsHost {
         this.#activation = undefined;
         await this.#refreshPlugins();
         await this.#seedFieldGroups(plugin, principal);
+        await this.#seedPatterns(plugin, principal);
         return this.#pluginStatus(plugin, await this.#state());
+    }
+
+    /**
+     * Store the patterns a plugin's manifest ships, as `<plugin>-<slug>`: sections a theme or a
+     * plugin offers in the pattern picker. A pattern the site already has is left as it is, edited
+     * or not; with `onlyIfNone`, nothing is added while the site has any of them, so a pattern it
+     * deleted stays deleted across starts and comes back with the plugin's next grant or activation.
+     */
+    async #seedPatterns(plugin: HostedPlugin, principal: Principal, options: { onlyIfNone?: boolean } = {}): Promise<void> {
+        const declared = plugin.manifest.patterns ?? [];
+        if (!declared.length || !this.#collections.has('patterns')) return;
+        const repository = this.resource('cms/patterns');
+        const ids = declared.map(pattern => `${plugin.manifest.name}-${pattern.slug}`);
+        const existing = await repository.getMany(ids, { principal });
+        if (options.onlyIfNone && existing.size) return;
+        for (const [index, pattern] of declared.entries()) {
+            if (existing.has(ids[index]!)) continue;
+            await repository.create({ title: pattern.title, content: pattern.blocks, synced: pattern.synced === true, starter: [...(pattern.starter ?? [])] }, { principal, id: ids[index]! });
+        }
     }
 
     /**
@@ -1691,8 +1718,8 @@ export class CmsHost {
         }
         // And gets the field groups its manifest ships, once, as a site admin's grant would store them.
         for (const plugin of networkActive) {
-            if (!plugin.manifest.fieldGroups?.length || this.#groups.some(group => group.plugin === plugin.manifest.name)) continue;
-            await this.#seedFieldGroups(plugin, systemPrincipal('network')).catch(error => console.error(`[cms] could not add the field groups of ${plugin.manifest.name}`, error));
+            if (plugin.manifest.fieldGroups?.length && !this.#groups.some(group => group.plugin === plugin.manifest.name)) await this.#seedFieldGroups(plugin, systemPrincipal('network')).catch(error => console.error(`[cms] could not add the field groups of ${plugin.manifest.name}`, error));
+            await this.#seedPatterns(plugin, systemPrincipal('network'), { onlyIfNone: true }).catch(error => console.error(`[cms] could not add the patterns of ${plugin.manifest.name}`, error));
         }
     }
 

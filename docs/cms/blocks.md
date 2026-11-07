@@ -121,8 +121,18 @@ What the host does for the block:
   block inside text; `body` names the field a reference's body fills.
 - **Behaviour.** The component hydrates on the site like any Cossack component: a `@Client()`
   method, a `ref` or `onMount()` adds what a script must do. Keep the page useful without it.
-- **Styles.** Tailwind classes in `ui.ts` are built with the application; a theme adds its own
-  stylesheet through `templates/head.ts`; `layout.className` reaches every block's wrapper.
+- **Styles.** Tailwind classes in `ui.ts` are built with the application; a plugin links a
+  stylesheet of its own through a `head` export of `ui.ts` (`(site, helpers, plugin) => HeadValue`,
+  with `plugin.asset('assets/blocks.css')` for its URL), a theme through `templates/head.ts`;
+  `layout.className` reaches every block's wrapper.
+- **Variations.** `variations` on a declaration offers preset shapes of the block in the
+  inserter, each with its own label, icon and `data` over the defaults: the core Group offers
+  Hero and Row, the Card an Icon box, the Gallery a Logo wall, Latest entries Entry cards.
+- **Patterns.** The manifest's `patterns` ship sections built from core blocks and the plugin's
+  own, stored in the patterns collection when the plugin is granted or the theme activated and
+  offered in the pattern picker, with `starter` as starting layouts. That is where a hero, a
+  call to action, a pricing row or a team grid belongs: a composition, not a block type. See
+  [the manifest](/docs/cms/manifest.md#patterns).
 - **The editor** offers the type in every inserter while the plugin is active, with the generic
   field form in the dashboard and in the Live Edit panel; a theme may instead replace a core
   renderer through the `blocks` map of its `theme` export.

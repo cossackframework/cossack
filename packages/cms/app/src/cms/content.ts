@@ -186,7 +186,8 @@ export function optionsOf(types: ReadonlyMap<string, BlockDeclaration>): BlockOp
 export function blockOption(block: BlockDeclaration): BlockOption {
     return { name: block.name, label: block.label, description: block.description ?? '', icon: block.icon ?? '',
         category: blockCategory(block), fields: editorFields(block.fields, []), ...(block.body ? { body: block.body } : {}),
-        children: block.children ? { allowed: [...(block.children.allowed ?? [])], max: block.children.max ?? null } : null, parent: [...(block.parent ?? [])], supports: [...blockSupports(block)], field: block.field?.kind ?? '', input: Boolean(block.input), keywords: [...(block.keywords ?? [])], common: block.common === true };
+        children: block.children ? { allowed: [...(block.children.allowed ?? [])], max: block.children.max ?? null } : null, parent: [...(block.parent ?? [])], supports: [...blockSupports(block)], field: block.field?.kind ?? '', input: Boolean(block.input), keywords: [...(block.keywords ?? [])], common: block.common === true,
+        variations: (block.variations ?? []).map(variation => ({ name: variation.name, label: variation.label, description: variation.description ?? '', icon: variation.icon ?? block.icon ?? '', keywords: [...(variation.keywords ?? [])], data: { ...variation.data } })) };
 }
 
 /** Previews of files by ID; missing files are left out. */

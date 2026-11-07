@@ -752,6 +752,13 @@ export interface SiteView {
     readonly breadcrumbs: readonly BreadcrumbView[];
 }
 
+/**
+ * A plugin's `ui.ts` `head` export: tags for the document head of every site page while the
+ * plugin is active, merged under the theme's and the page's own. `plugin.asset(path)` is the
+ * URL of a file in the plugin's `assets/`, for a stylesheet its blocks need.
+ */
+export type PluginHead = (site: SiteView, helpers: ThemeHelpers, plugin: { readonly asset: (path: string) => string }) => HeadValue;
+
 /** One step of a page's breadcrumbs; the current page has no `url`. */
 export interface BreadcrumbView {
     readonly label: string;

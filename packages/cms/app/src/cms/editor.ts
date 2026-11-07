@@ -84,7 +84,11 @@ export interface BlockOption {
     keywords: string[];
     /** Offered in forms and field groups too. */
     common: boolean;
+    /** Preset shapes of the block the inserter offers as entries of their own; `newBlock` starts a block from one. */
+    variations: BlockVariationOption[];
 }
+
+export interface BlockVariationOption { name: string; label: string; description: string; icon: string; keywords: string[]; data: Record<string, unknown> }
 
 /** A field group attached to the entry's collection, as the editor shows it: a box of its layout. */
 export interface EditorGroup {
@@ -339,10 +343,12 @@ export function blockDefaults(block: BlockOption): Record<string, unknown> {
 }
 
 /** A new block of a type: defaults, and for columns two columns to start with. */
-export function newBlock(type: string, options: readonly BlockOption[], id: () => string): EditorBlock | null {
+export function newBlock(type: string, options: readonly BlockOption[], id: () => string, variation?: string): EditorBlock | null {
     const option = options.find(entry => entry.name === type);
     if (!option) return null;
-    const block: EditorBlock = { _id: id(), type, data: blockDefaults(option), ...(option.children ? { children: [] } : {}) };
+    // A variation starts the block with its values over the defaults.
+    const preset = variation ? option.variations.find(entry => entry.name === variation)?.data ?? {} : {};
+    const block: EditorBlock = { _id: id(), type, data: { ...blockDefaults(option), ...preset }, ...(option.children ? { children: [] } : {}) };
     if (type === 'core/columns') block.children = [1, 2].flatMap(() => newBlock('core/column', options, id) ?? []);
     // Containers of named items start with a few, named, so the block shows something at once.
     const seed = (child: string, labels: readonly string[], field: string) => labels.flatMap(label => { const item = newBlock(child, options, id); return item ? [{ ...item, data: { ...item.data, [field]: label } }] : []; });

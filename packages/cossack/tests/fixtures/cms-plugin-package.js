@@ -22,6 +22,8 @@ export function deskManifest(version, overrides = {}) {
       access: { read: 'authenticated', create: 'authenticated', update: { any: ['owner', { permission: 'support-desk/tickets:update' }] }, delete: { permission: 'support-desk/tickets:delete' } },
     }],
     blocks: [{ name: 'support-desk/contact', label: 'Support contact', fields: { email: { kind: 'string', required: true, max: 120, label: 'Email' } } }],
+    // A pattern of a core block and the plugin's own, stored when the plugin is granted.
+    patterns: [{ slug: 'contact-card', title: 'Contact card', blocks: [{ _id: 'h', type: 'core/heading', data: { text: 'Talk to us', level: 'h2' } }, { _id: 'c', type: 'support-desk/contact', data: { email: 'help@example.com' } }] }],
     // A field group for posts, stored when the plugin is granted, and a Support tab holding it while the plugin is active.
     fieldGroups: [{ id: 'support-desk-support', title: 'Support', targets: [{ kind: 'collection', name: 'posts' }],
       blocks: [{ _id: 'priority', type: 'field/choice', data: { label: 'Priority', name: 'supportPriority', choices: ['low', 'high'] } }] }],
@@ -77,6 +79,7 @@ export default class SupportDesk extends Cossack {
 }
 `,
   'ui.ts': `import { Component, Cossack } from '@cossackframework/core';
+import type { PluginHead } from '@cossackframework/cms';
 import { html } from '@cossackframework/renderer';
 
 @Component()
@@ -100,6 +103,9 @@ export const slots = { 'dashboard.overview': [SupportWidget] };
 
 /** Block renderers by block name. */
 export const blocks = { contact: SupportContact };
+
+/** Tags for the head of every site page while the plugin is active. */
+export const head: PluginHead = (site, helpers, plugin) => ({ meta: [{ tag: 'meta', attributes: { name: 'support-desk', content: plugin.asset('assets/none.css') || 'on' } }] });
 `,
 };
 

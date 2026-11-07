@@ -24,6 +24,8 @@ export interface ThemeState {
     presets?: Required<ThemePresets>;
     /** The site's Additional CSS, already checked. */
     customCss?: string;
+    /** Active plugins apart from the theme and its parent: their `ui.ts` `head` runs on the site. */
+    plugins?: readonly string[];
 }
 
 const visitor = { principal: ANONYMOUS };
@@ -77,7 +79,8 @@ export async function themeState(cms: CmsHost): Promise<ThemeState> {
     const theme = cms.themes().find(entry => entry.name === name);
     const settings = await cms.settings.all();
     const options = Object.fromEntries(Object.keys(theme?.options?.fields ?? {}).map(option => [option, settings[`${name}.${option}`]]));
-    return { name, parent: theme?.parent ?? null, options, presets: resolvePresets(theme?.presets, name ? settings['appearance.presets']?.[name] : null), customCss: settings['appearance.customCss'] ?? '' };
+    return { name, parent: theme?.parent ?? null, options, presets: resolvePresets(theme?.presets, name ? settings['appearance.presets']?.[name] : null), customCss: settings['appearance.customCss'] ?? '',
+        plugins: cms.activePluginNames().filter(entry => entry !== name && entry !== theme?.parent) };
 }
 
 /** The active theme's presets with the site's changes, for the editors' Style tab. */

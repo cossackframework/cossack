@@ -61,7 +61,8 @@ export {
     type EntryAuthor, type CommentView, type CommentsView, type CommentFormView, type LanguageLink, type LanguageSwitcherOptions, type MenuOptions, type MenuStyle, type MenuMotion, type SearchOptions, type LanguageSwitcherStyle, type FormView, type InputView,
 } from './theme';
 export type { BrandIcon, BreadcrumbView, HeadingView } from './theme';
-export { SHARE_NETWORKS, SHARE_BRAND_URLS, type ShareNetwork } from './blocks';
+export { SHARE_NETWORKS, SHARE_BRAND_URLS, type ShareNetwork, type BlockVariation } from './blocks';
+export type { PluginHead } from './theme';
 export { ICON_NAME, SITE_ICON_NAMES, SITE_ICON_SET } from './icons';
 export { MAP_EMBED_URL } from './blocks';
 export { diffWords, compareRecords, comparableValue, type DiffPart, type FieldChange } from './diff';

@@ -78,7 +78,7 @@ export class EditorLayoutEditor extends Cossack {
     private treeOptions(): BlockOption[] {
         return [...this.props.options, {
             name: 'editor/sidebar', label: __('Sidebar'), description: __('Beside every tab, under the Publish box.'), icon: 'sidebar-minimalistic', category: 'design', fields: [],
-            children: { allowed: [...EDITOR_LAYOUT_INSIDE], max: null }, parent: [], supports: [], input: false, field: '', keywords: [], common: false,
+            children: { allowed: [...EDITOR_LAYOUT_INSIDE], max: null }, parent: [], supports: [], input: false, field: '', keywords: [], common: false, variations: [],
         }];
     }
 

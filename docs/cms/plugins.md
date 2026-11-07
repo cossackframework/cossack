@@ -184,6 +184,10 @@ export const blocks = { contact: SupportContact };
   keyed by `contact` or by the full name. The site renders it with the props `block`
   (the `RenderedBlock`: `id`, `type`, `data`, `children`) and `helpers` (the theme
   helpers). A block type is offered in the editor only while its plugin is active.
+- `head` (a `PluginHead`) adds tags to the document head of every site page while the plugin
+  is active, under the theme's and the page's own: `(site, helpers, plugin) => HeadValue`, where
+  `plugin.asset(path)` is the URL of a file in the plugin's `assets/`, such as a stylesheet its
+  blocks need. A page's meta of the same name wins.
 
 ### `pages/`
 

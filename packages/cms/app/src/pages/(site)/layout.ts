@@ -5,7 +5,7 @@ import { areaViews, bindingScopes, languageLinks, resolvedOptions, siteMenus, si
 import { blockOptions } from '../../cms/content';
 import { areaDraftBlocks, patternDraftBlocks } from '../../cms/site-editing';
 import { siteSession, type AreaDraft, type PatternDraft, type SiteEditingContext } from '../../cms/site-session';
-import { closeMenusOnFollow, siteTheme, tagDocument, themeHelpers } from '../../cms/site-view';
+import { closeMenusOnFollow, pluginHeads, siteTheme, tagDocument, themeHelpers } from '../../cms/site-view';
 import { siteTaskbar } from '../../cms/site-taskbar';
 import { taskbar, type TaskbarView } from '../../cms/taskbar';
 import { logout } from '../../auth';
@@ -106,20 +106,24 @@ export default class SiteLayout extends Cossack {
      */
     head(context: HeadContext): HeadValue {
         const theme = siteTheme(this.theme);
-        const contributed = theme.head?.(this.site, themeHelpers(theme, { ...this.theme, data: { layout: this.data }, languages: this.site.languages }, () => false)) ?? {};
+        const helpers = themeHelpers(theme, { ...this.theme, data: { layout: this.data }, languages: this.site.languages }, () => false);
+        const contributed = theme.head?.(this.site, helpers) ?? {};
+        // Active plugins add their tags under the theme's: a stylesheet for their blocks, say.
+        const added = pluginHeads(this.theme, this.site, helpers);
         const key = (tag: HeadTag) => String(tag.attributes?.name ?? tag.attributes?.property ?? '');
         const taken = new Set(context.meta.map(key).filter(Boolean));
+        const scripts = [...(contributed.scripts ?? []), ...added.flatMap(head => head.scripts ?? [])];
         return {
             title: context.title || contributed.title || this.site.title,
             ...(contributed.description && !context.description ? { description: contributed.description } : {}),
             ...(contributed.image && !context.image ? { image: contributed.image } : {}),
             meta: [
-                ...(contributed.meta ?? []).filter(tag => !taken.has(key(tag))),
+                ...[...(contributed.meta ?? []), ...added.flatMap(head => head.meta ?? [])].filter(tag => !taken.has(key(tag))),
                 ...(this.site.noindex ? [{ tag: 'meta', attributes: { name: 'robots', content: 'noindex, nofollow' } }] : []),
                 { tag: 'meta', attributes: { property: 'og:site_name', content: this.site.title } },
             ],
-            links: [...(contributed.links ?? []), ...(this.site.blog ? [{ tag: 'link', attributes: { rel: 'alternate', type: 'application/rss+xml', title: this.site.title, href: '/feed' } }] : []), ...this.iconLinks()],
-            ...(contributed.scripts ? { scripts: contributed.scripts } : {}),
+            links: [...(contributed.links ?? []), ...added.flatMap(head => head.links ?? []), ...(this.site.blog ? [{ tag: 'link', attributes: { rel: 'alternate', type: 'application/rss+xml', title: this.site.title, href: '/feed' } }] : []), ...this.iconLinks()],
+            ...(scripts.length ? { scripts } : {}),
             // The site's Additional CSS, checked on save, after the theme's own tags; then the script that drops
             // an image's blurred placeholder once it has loaded, so it never shows through transparent pixels.
             tags: [...(contributed.tags ?? []), ...(this.theme.customCss ? [{ tag: 'style', attributes: { 'data-cms-custom-css': '' }, children: this.theme.customCss }] : []),

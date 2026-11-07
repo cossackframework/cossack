@@ -4,10 +4,11 @@
  * Markdown and rich text already rendered to escaped HTML.
  */
 import { component, html, ifDefined, unsafeHTML, type TemplateResult } from '@cossackframework/renderer';
+import type { HeadValue } from '@cossackframework/core';
 import { plugins } from '@cossackframework/framework/plugins';
 import { formBlock, inputBlock } from './form-view';
 import { SITE_ICONS } from './site-icons';
-import { archiveTemplate, assembleSiteTheme, blockStyleAttributes, entryTemplate, MAP_EMBED_URL, SHARE_NETWORKS, type BreadcrumbView, type ShareNetwork, placeholderStyle, presetStyle, resolvePresets, siteThemeProblems, type ArchiveView, type EntryView, type LanguageLink, type LanguageSwitcherOptions, type MediaView, type MenuItemView, type MenuOptions, type RenderedBlock, type SearchOptions, type SiteTheme, type ThemeData, type ThemeHelpers, type ThemePresets } from '@cossackframework/cms';
+import { archiveTemplate, assembleSiteTheme, blockStyleAttributes, entryTemplate, MAP_EMBED_URL, SHARE_NETWORKS, type BreadcrumbView, type PluginHead, type ShareNetwork, type SiteView, placeholderStyle, presetStyle, resolvePresets, siteThemeProblems, type ArchiveView, type EntryView, type LanguageLink, type LanguageSwitcherOptions, type MediaView, type MenuItemView, type MenuOptions, type RenderedBlock, type SearchOptions, type SiteTheme, type ThemeData, type ThemeHelpers, type ThemePresets } from '@cossackframework/cms';
 
 export { archiveTemplate, entryTemplate };
 export type { ArchiveView, EntryView, MediaView, Paging, RenderedBlock, SiteView } from '@cossackframework/cms';
@@ -45,6 +46,8 @@ export interface ThemeRenderState {
     readonly languages?: readonly LanguageLink[];
     /** The menus of the theme's locations, for `helpers.menu()` and the Navigation block. */
     readonly menus?: { readonly [location: string]: readonly MenuItemView[] };
+    /** Active plugins apart from the theme chain, whose `ui.ts` `head` adds tags to every site page (`pluginHeads`). */
+    readonly plugins?: readonly string[];
     /** The site's title, tagline, logo and URLs, for `helpers.search()` and the site logo block. */
     readonly site?: { readonly title: string; readonly tagline: string; readonly logo: string | null; readonly homeUrl: string; readonly searchUrl: string; readonly url?: string; readonly breadcrumbs?: readonly BreadcrumbView[] };
 }
@@ -215,6 +218,21 @@ export function closeMenusOnFollow(root: Document = document): () => void {
         root.removeEventListener('focusin', onFocus);
         root.removeEventListener('pointerout', onPointerOut);
     };
+}
+
+/**
+ * What active plugins add to the document head: each `ui.ts` `head` export, called with the site,
+ * the helpers and the plugin's own `asset()`. A hook that throws adds nothing.
+ */
+export function pluginHeads(state: Pick<ThemeRenderState, 'plugins'>, site: SiteView, helpers: ThemeHelpers): HeadValue[] {
+    const heads: HeadValue[] = [];
+    for (const name of state.plugins ?? []) {
+        const plugin = plugins.find(entry => entry.name === name);
+        const head = (plugin?.ui as { head?: unknown } | null | undefined)?.head;
+        if (typeof head !== 'function') continue;
+        try { heads.push((head as PluginHead)(site, helpers, { asset: path => plugin!.assets[path] ?? '' })); } catch { /* a broken hook adds nothing */ }
+    }
+    return heads;
 }
 
 /** The helpers every template receives. `isActive` is the component's own: an exact path, or a prefix. */

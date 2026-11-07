@@ -91,7 +91,11 @@ describe.skipIf(!liveRomeDBTests())('CMS plugin trust', () => {
       // Setup seeds a Contact page already, so this one has its own name.
       await web.action(editor, 'save', [{ title: 'Help desk', slug: '', status: 'draft', publishedAt: '', content: [], excerpt: '', showInMenu: true, featuredImage: '', parent: '', menuOrder: '0',
         sections: [{ _id: 'c1', type: 'support-desk/contact', data: { email: 'help@example.com' } }] }, 'publish', 0], { params: { collection: 'pages', id: 'new' }, state: { route: 'pages', id: 'new' } });
-      contains(await web.page('/help-desk'), 'Write to help@example.com');
+      const helpDesk = await web.page('/help-desk');
+      contains(helpDesk, 'Write to help@example.com');
+      // The plugin's head hook adds its tag to every site page; the pattern its manifest ships was stored when it was granted.
+      expect(helpDesk).toMatch(/<meta name="?support-desk"? content="?on"?[^>]*>/);
+      contains(await web.page('/dashboard/content/patterns'), 'Contact card');
 
       // The plugin command runs in the application as the signed-in user.
       const env = { ...process.env, CMS_PASSWORD: 'long password' };

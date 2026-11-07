@@ -190,6 +190,25 @@ cannot detach them, and they stay, with their fields' values, while the plugin i
 }]
 ```
 
+## `patterns`
+
+Patterns the plugin ships: sections of core blocks and its own, offered in the pattern picker
+and, with `starter`, as starting layouts of a collection's new entries. Each is stored in the
+patterns collection as `<plugin>-<slug>` when the plugin is granted or the theme activated; a
+pattern the site already has, edited or not, is left as it is, and one the site deleted stays
+deleted until the plugin's next grant or activation. `synced` is off by default, so editors get
+a copy to change. Up to 24.
+
+```json
+"patterns": [{
+  "slug": "pricing-row", "title": "Pricing row", "starter": ["pages"],
+  "blocks": [{ "_id": "cols", "type": "core/columns", "data": {}, "children": [
+    { "_id": "c1", "type": "core/column", "data": {}, "children": [{ "_id": "p1", "type": "core/pricing", "data": { "name": "Free", "price": "$0" } }] },
+    { "_id": "c2", "type": "core/column", "data": {}, "children": [{ "_id": "p2", "type": "core/pricing", "data": { "name": "Pro", "price": "$29", "highlighted": true } }] }
+  ] }]
+}]
+```
+
 ## `editor`
 
 Tabs and sidebar boxes the plugin adds to a collection's entry editor while it is active,
@@ -230,6 +249,7 @@ placed, so moving a plugin's tab holds.
 | `children` | `{ allowed?, max? }`: the block holds other blocks. |
 | `parent` | Types the block goes inside only, as a column goes inside columns. |
 | `supports` | `color`, `spacing`, `typography`, `background`: what the Style tab offers, over the category's defaults. `background: true` adds the advanced background (gradient, image, overlay, video) a container gets; see [Backgrounds](/docs/cms/themes.md#backgrounds). |
+| `variations` | Up to 12 preset shapes offered in the inserter as entries of their own: `{ name, label, description?, icon?, keywords?, data }`, each starting the block with its `data` over the defaults. |
 | `input` | `{ kind }`: the block is a form input collecting one value under its `name` field. |
 | `field` | `{ kind }`: the block is a field of a field group. |
 

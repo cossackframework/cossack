@@ -205,6 +205,16 @@ row with a padding preset, so a background set on its Style tab becomes a band a
 while the logo and the menu stay in line with the content. The text of a footer line can read
 the site: `© {{ $site.year }} {{ $site.title }}`.
 
+## Patterns a theme ships
+
+The sections page builders sell as widgets are compositions here: a hero is a full-width
+*Group* with a height, a vertical alignment and a background holding a heading, text and a
+button; a pricing row is *Columns* of *Pricing plans*. A theme ships them through the
+manifest's top-level `patterns` ([the manifest](/docs/cms/manifest.md#patterns)): each is
+stored in the patterns collection as `<theme>-<slug>` when the theme is activated, offered in
+the pattern picker and, with `starter`, as a starting layout for a collection's new entries.
+The site then owns its copy: a pattern it edited or deleted is left alone.
+
 ## Widths and full-width sections
 
 Nothing in a template frames the blocks: the width is the block's, the measures are the

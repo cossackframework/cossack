@@ -220,8 +220,8 @@ export class BlockTree extends Cossack {
     }
 
     @Client()
-    private add(parent: string | null, type: string) {
-        const block = newBlock(type, this.props.options, blockId);
+    private add(parent: string | null, type: string, variation?: string) {
+        const block = newBlock(type, this.props.options, blockId, variation);
         if (!block) return;
         this.collapsed = { ...this.collapsed, [block._id]: false };
         this.props.onChange(insertBlock(this.props.blocks, parent, block));
@@ -522,7 +522,7 @@ export class BlockTree extends Cossack {
             ${blocks.length ? blocks.map((block, index) => this.section(block, index, blocks, parent, depth))
                 : html`<p class="rounded-md border border-dashed border-border p-3 text-center text-sm text-muted-foreground">${parent ? __('Empty. Add a block below.') : __('No blocks yet. Add the first one below.')}</p>`}
             ${offered.length && !full && !this.props.lock ? html`<div class="flex flex-wrap items-center gap-2">
-                ${component(BlockInserter, { id: `${this.props.id}-add-${parent?._id ?? 'top'}`, blocks: offered, compact: depth > 0, onPick: (type: string) => this.add(parent?._id ?? null, type) })}
+                ${component(BlockInserter, { id: `${this.props.id}-add-${parent?._id ?? 'top'}`, blocks: offered, compact: depth > 0, onPick: (type: string, variation?: string) => this.add(parent?._id ?? null, type, variation) })}
                 ${!parent && this.props.onPatterns ? html`<button type="button" class="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-background px-3 text-sm font-medium text-foreground hover:bg-muted cursor-pointer [&_svg]:size-4"
                     @click=${() => this.props.onPatterns!()}>${component(Icon, { entry: icon('widget-add'), size: 16 })}${__('Patterns')}</button>` : null}
             </div>` : null}
