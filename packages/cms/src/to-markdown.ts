@@ -56,6 +56,7 @@ function nodeMarkdown(node: RichTextNode, depth: number, context: MarkdownContex
             return `\`\`\`${language}\n${(node.content ?? []).map(child => child.text ?? '').join('')}\n\`\`\``;
         }
         case 'horizontalRule': return '---';
+        case 'table': return tableMarkdown(node, depth, context);
         case 'image': {
             const mediaId = typeof node.attrs?.mediaId === 'string' ? node.attrs.mediaId : null;
             const src = (mediaId ? context.media(mediaId) : null) ?? node.attrs?.src;
@@ -103,6 +104,16 @@ export function blocksMarkdown(blocks: readonly Block[], types: ReadonlyMap<stri
             case 'core/quote': return `${text('text').split('\n').map(line => `> ${line}`).join('\n')}${text('citation') ? `\n>\n> — ${text('citation')}` : ''}`;
             case 'core/list': return (Array.isArray(data.items) ? data.items as string[] : []).map((item, index) => `${data.ordered ? `${index + 1}. ` : '- '}${resolve(String(item))}`).join('\n');
             case 'core/code': return `\`\`\`${raw('language')}\n${raw('code')}\n\`\`\``;
+            case 'core/table': {
+                const rows = raw('rows').split('\n').map(line => line.trim()).filter(Boolean).map(line => line.replace(/^\||\|$/g, '').split('|').map(cell => cell.trim()));
+                if (!rows.length) return '';
+                const width = Math.max(...rows.map(row => row.length));
+                const line = (cells: string[]) => `| ${Array.from({ length: width }, (_, index) => cells[index] ?? '').join(' | ')} |`;
+                const header = data.header !== false;
+                const body = header ? rows.slice(1) : rows;
+                return [line(header ? rows[0]! : Array.from({ length: width }, () => '')), `| ${Array.from({ length: width }, () => '---').join(' | ')} |`, ...body.map(line)].join('\n');
+            }
+            case 'core/file': { const url = media(raw('file')); return url ? `[${escapeText(text('label') || 'Download')}](${url})` : ''; }
             case 'core/image': { const url = media(raw('image')); return url ? `![${escapeText(alt(raw('image')) || text('caption'))}](${url})${text('caption') ? `\n\n*${text('caption')}*` : ''}` : ''; }
             case 'core/gallery': return (Array.isArray(data.images) ? data.images as string[] : []).map(id => { const url = media(id); return url ? `![${escapeText(alt(id))}](${url})` : ''; }).filter(Boolean).join('\n\n');
             case 'core/button': return `[${text('label')}](${text('url')})`;
@@ -155,4 +166,14 @@ export function entryMarkdown(input: EntryMarkdownInput): string {
         ...(input.terms ?? []).filter(group => group.terms.length).map(group => `${group.label.toLowerCase().replace(/[^a-z0-9]+/g, '_')}: [${group.terms.map(quote).join(', ')}]`),
     ];
     return `---\n${header.join('\n')}\n---\n\n# ${input.title}\n\n${input.description ? `${input.description}\n\n` : ''}${input.body}\n`;
+}
+
+/** A table as GFM when every cell is one paragraph; cells of several blocks join their lines with spaces. The first row is the header. */
+function tableMarkdown(node: RichTextNode, depth: number, context: MarkdownContext): string {
+    const rows = (node.content ?? []).map(row => (row.content ?? []).map(cell =>
+        (cell.content ?? []).map(child => nodeMarkdown(child, depth, context)).filter(Boolean).join(' ').replace(/\s*\n\s*/g, ' ').replace(/\|/g, '\\|').trim()));
+    if (!rows.length) return '';
+    const width = Math.max(...rows.map(row => row.length));
+    const line = (cells: readonly string[]) => `| ${Array.from({ length: width }, (_, index) => cells[index] ?? '').join(' | ')} |`;
+    return [line(rows[0]!), `| ${Array.from({ length: width }, () => '---').join(' | ')} |`, ...rows.slice(1).map(line)].join('\n');
 }

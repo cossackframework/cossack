@@ -64,7 +64,7 @@ export default class CollectionBuilder extends Cossack {
     @State() previews: Record<string, MediaPreview> = {};
     @State() presets: Required<ThemePresets> = { colors: [], gradients: [], fontSizes: [], spacing: [] };
     /** What template blocks' form, collection and term fields choose from. */
-    @State() sources: SourceChoices = { forms: [], collections: [], terms: [], locations: [] };
+    @State() sources: SourceChoices = { forms: [], collections: [], terms: [], locations: [], authors: [] };
     @State() dialog: BlockDialog | null = null;
     @State() chooser: MediaChooserState = closedChooser();
     @State() tab: (typeof TABS)[number] = 'general';

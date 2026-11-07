@@ -2,7 +2,7 @@ import { Cossack, Page, State, ClientState, Store, Validate, Client, Server, sto
 import { Card, CardBody, CardHeader, Field, Input, Button, Avatar, Form, NativeSelect } from '@cossackframework/ui';
 import { notice } from '../../../dashboard/page';
 import { html, component, bind } from '@cossackframework/renderer';
-import { avatarUploads, updateUserProfile, uploadAvatar } from '../../../auth';
+import { avatarUploads, deleteOwnAccount, updateUserProfile, uploadAvatar } from '../../../auth';
 import { avatarField } from '../../../dashboard/avatar-field';
 
 /** A language's name in itself, such as Français or Tiếng Việt. */
@@ -130,6 +130,29 @@ export default class ProfilePage extends Cossack {
         await updateUserProfile(this.user!.id, { name, avatar: avatar || null });
     }
 
+    @ClientState() deletePassword = '';
+    @State() deleteError = '';
+
+    @Client()
+    async confirmDelete(event: Event) {
+        event.preventDefault();
+        if (!this.deletePassword || !window.confirm(__('Delete your account for good? This cannot be undone.'))) return;
+        await this.deleteAccount(this.deletePassword);
+    }
+
+    /** Ends every session and deletes the account; the browser lands on the home page signed out. */
+    @Server()
+    async deleteAccount(password: string) {
+        this.deleteError = '';
+        try {
+            const { headers } = await deleteOwnAccount(this.c, this.user!.id, password);
+            headers.forEach((value, key) => this.c.header(key, value));
+            this.redirect('/');
+        } catch (error) {
+            this.deleteError = (error as Error).message || __('The account could not be deleted.');
+        }
+    }
+
     render() {
         return html`
             <div class="space-y-8 max-w-2xl">
@@ -176,6 +199,16 @@ export default class ProfilePage extends Cossack {
                         control: attributes => component(NativeSelect, { ...attributes, '@change': (event: Event) => this.chooseLanguage(event) }, html`
                             ${this.languages.map(language => html`<option value=${language.code} ?selected=${language.code === this.language}>${language.label}</option>`)}`) }))}
                 `) : null}
+                ${component(Card, {}, html`
+                    ${component(CardHeader, {}, html`<h2 class="text-base font-semibold text-destructive">${__('Delete your account')}</h2>
+                        <p class="text-sm text-muted-foreground">${__('Your account and its sessions go for good. What you published stays, without you as its author.')}</p>`)}
+                    ${component(CardBody, {}, html`<form class="flex flex-wrap items-end gap-3" @submit=${(event: Event) => this.confirmDelete(event)}>
+                        ${component(Field, { label: __('Your password'), for: 'delete-password', control: attributes => component(Input, { ...attributes, type: 'password', autocomplete: 'current-password', required: true,
+                            '.value': this.deletePassword, '@input': (event: Event) => { this.deletePassword = (event.target as HTMLInputElement).value; } }) })}
+                        ${component(Button, { type: 'submit', variant: 'destructive' }, __('Delete my account'))}
+                        ${this.deleteError ? html`<p role="alert" class="w-full text-sm text-destructive">${this.deleteError}</p>` : null}
+                    </form>`)}
+                `)}
             </div>
         `;
     }

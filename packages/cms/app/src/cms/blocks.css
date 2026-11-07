@@ -504,3 +504,40 @@ ol.cms-toc-list > .cms-toc-item::before { counter-increment: cms-toc; content: c
 .cms-breadcrumb [aria-current="page"] { color: var(--foreground); font-weight: 500; }
 .cms-align-center .cms-breadcrumbs-list { justify-content: center; }
 .cms-align-right .cms-breadcrumbs-list { justify-content: flex-end; }
+
+/* Tables from rich text and the Table block: scroll sideways on small screens, a ruled grid, a tinted header row. */
+.cms-table { overflow-x: auto; }
+.cms-table table { width: 100%; border-collapse: collapse; font-size: 0.9375rem; line-height: 1.4; }
+.cms-table th, .cms-table td { border: 1px solid var(--color-border, #e5e7eb); padding: 0.5rem 0.75rem; text-align: start; vertical-align: top; }
+.cms-table th { background: var(--color-muted, #f3f4f6); font-weight: 600; }
+.cms-table td > :first-child, .cms-table th > :first-child { margin-top: 0; }
+.cms-table td > :last-child, .cms-table th > :last-child { margin-bottom: 0; }
+.rich-text-surface .cms-table .selectedCell::after { content: ''; position: absolute; inset: 0; background: rgb(59 130 246 / 0.15); pointer-events: none; }
+.rich-text-surface .cms-table td, .rich-text-surface .cms-table th { position: relative; min-width: 3rem; }
+
+/* Code tokens: comment, string, number, keyword, type, function, attribute, tag, operator, inserted, deleted. */
+.cms-code .tok-c { color: #6b7280; font-style: italic; }
+.cms-code .tok-s { color: #0f7b5f; }
+.cms-code .tok-n { color: #b45309; }
+.cms-code .tok-k { color: #9333ea; }
+.cms-code .tok-t { color: #1d4ed8; }
+.cms-code .tok-f { color: #2563eb; }
+.cms-code .tok-a { color: #a16207; }
+.cms-code .tok-g { color: #dc2626; }
+.cms-code .tok-o { color: #4b5563; }
+.cms-code .tok-i { color: #15803d; }
+.cms-code .tok-d { color: #b91c1c; }
+.dark .cms-code .tok-c { color: #9ca3af; }
+.dark .cms-code .tok-s { color: #6ee7b7; }
+.dark .cms-code .tok-n { color: #fdba74; }
+.dark .cms-code .tok-k { color: #d8b4fe; }
+.dark .cms-code .tok-t { color: #93c5fd; }
+.dark .cms-code .tok-f { color: #bfdbfe; }
+.dark .cms-code .tok-a { color: #fde68a; }
+.dark .cms-code .tok-g { color: #fca5a5; }
+.dark .cms-code .tok-o { color: #d1d5db; }
+.dark .cms-code .tok-i { color: #86efac; }
+.dark .cms-code .tok-d { color: #fca5a5; }
+
+/* Languages written right to left read right to left; the page's `lang` says which. */
+html:lang(ar), html:lang(he), html:lang(fa), html:lang(ur), html:lang(ps), html:lang(yi), html:lang(ckb), html:lang(dv), html:lang(syr), html:lang(ug) { direction: rtl; }

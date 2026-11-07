@@ -30,7 +30,7 @@ export default class WidgetsPage extends Cossack {
     @State() previews: Record<string, MediaPreview> = {};
     @State() presets: Required<ThemePresets> = { colors: [], gradients: [], fontSizes: [], spacing: [] };
     /** What widgets' form, collection and term fields choose from. */
-    @State() sources: SourceChoices = { forms: [], collections: [], terms: [], locations: [] };
+    @State() sources: SourceChoices = { forms: [], collections: [], terms: [], locations: [], authors: [] };
     @State() dialog: BlockDialog | null = null;
     @State() chooser: MediaChooserState = closedChooser();
     @State() error = '';

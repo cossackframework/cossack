@@ -243,7 +243,7 @@ export async function areaViews(cms: CmsHost, declared: readonly { name: string;
  * Give each `core/latest-entries` block among these its entries: the newest published entries
  * of the collection it names, with the term it asks for, as list views (no bodies).
  */
-async function withLatest(cms: CmsHost, blocks: readonly RenderedBlock[], locale?: string): Promise<void> {
+async function withLatest(cms: CmsHost, blocks: readonly RenderedBlock[], locale?: string, options: { exclude?: string } = {}): Promise<void> {
     const found: RenderedBlock[] = [];
     walkBlocks(blocks, block => { if (block.type === 'core/latest-entries') found.push(block); });
     const languages = found.length ? await cms.languages() : null;
@@ -262,8 +262,17 @@ async function withLatest(cms: CmsHost, blocks: readonly RenderedBlock[], locale
                 if (!field) { (block as { entries?: readonly EntryView[] }).entries = []; continue; }
                 where[field] = { containsAny: (await cms.taxonomies.subtree(term)).slice(0, 50) };
             }
-            const page = await cms.resource(`cms/${collection.name}`).list({ where, order, limit: count }, visitor);
-            (block as { entries?: readonly EntryView[] }).entries = await entryViews(cms, collection, page.records);
+            const resource = cms.resourceById(`cms/${collection.name}`);
+            const author = typeof block.data.author === 'string' && block.data.author && 'authors' in resource.fields ? block.data.author : '';
+            if (author) where.authors = { contains: author };
+            const offset = Math.min(Math.max(Math.trunc(Number(block.data.offset) || 0), 0), 100);
+            const exclude = block.data.excludeCurrent !== false && options.exclude ? options.exclude : '';
+            const stickyFirst = block.data.stickyFirst === true && 'sticky' in resource.fields;
+            // The page reads a few more than it shows: the entry being shown is left out, and sticky entries move to the front.
+            const page = await cms.resource(`cms/${collection.name}`).list({ where, order, limit: Math.min(count + offset + (exclude ? 1 : 0) + (stickyFirst ? 10 : 0), 100) }, visitor);
+            let records = page.records.filter(record => record.id !== exclude);
+            if (stickyFirst) records = [...records.filter(record => record.sticky === true), ...records.filter(record => record.sticky !== true)];
+            (block as { entries?: readonly EntryView[] }).entries = await entryViews(cms, collection, records.slice(offset, offset + count));
         } catch (error) { if (!isCmsError(error)) throw error; }
     }
 }
@@ -423,7 +432,7 @@ export function mediaView(file: CmsFile | undefined, imageOptions: ImageOptions)
     const { widths } = imageOptions;
     const url = variants && file.edits?.crop && size ? imageUrl(source, { width: Math.min(size.width, widths[widths.length - 1]!) }) : mediaUrl(file);
     return {
-        url, alt: file.alt, width: size?.width ?? file.width, height: size?.height ?? file.height, contentType: file.contentType, caption: file.caption,
+        url, alt: file.alt, width: size?.width ?? file.width, height: size?.height ?? file.height, contentType: file.contentType, name: file.name, size: file.size, caption: file.caption,
         srcset: variants ? imageSrcset(source, { widths }) : '', wideSrcset: variants ? imageSrcset(source, { aspect: 16 / 9, widths }) : '',
         placeholder: imageOptions.placeholder ? file.placeholder : null, sizes: imageOptions.sizes, focus: file.edits?.focus ?? null,
     };
@@ -696,6 +705,12 @@ function fieldViewOf(name: string, declaration: FieldDeclaration, value: unknown
 }
 
 /** Views of entries: content rendered with its blocks, patterns and media, authors, URLs, term links, typed fields and comments. */
+/** Minutes to read a text at 200 words a minute: at least 1 when there are words, 0 when there are none. */
+export function readingTime(text: string): number {
+    const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+    return words ? Math.max(1, Math.round(words / 200)) : 0;
+}
+
 export async function entryViews(cms: CmsHost, collection: CollectionDefinition, records: readonly RecordShape[], options: EntryViewOptions = {}): Promise<EntryView[]> {
     const resource = cms.resourceById(`cms/${collection.name}`);
     const settings = await cms.settings.all();
@@ -785,6 +800,7 @@ export async function entryViews(cms: CmsHost, collection: CollectionDefinition,
             id: record.id, title: recordTitle(record, 'title'), url: urls.get(record.id) ?? null, collection: collection.name, kind: collection.singular,
             date: typeof record.publishedAt === 'number' ? formatSiteDate(record.publishedAt, settings) : '',
             updated: collection.publishable === false ? '' : formatSiteDate(record.updatedAt, settings),
+            readingTime: locked ? 0 : readingTime(contentPlain(record)),
             authors: articles ? entryAuthors(record).map(id => owners.get(id)).filter(user => user !== undefined)
                 .map(user => ({ name: user.name, url: settings['seo.authorPages'] ? authorUrl(user.slug, localePrefix(languages, locale)) : null, avatar: user.avatar })) : [],
             excerpt: locked ? '' : excerptField && record.excerpt ? String(record.excerpt) : typeof record.summary === 'string' && record.summary ? excerptOf(record.summary, 40) : excerptOf(contentPlain(record), 40),
@@ -804,7 +820,7 @@ export async function entryViews(cms: CmsHost, collection: CollectionDefinition,
         });
         if (options.full) {
             await withForms(cms, content, options.forms);
-            await withLatest(cms, content, locale);
+            await withLatest(cms, content, locale, { exclude: record.id });
         }
     }
     return views;
@@ -1105,6 +1121,17 @@ export async function homeView(cms: CmsHost, locale: string, page: number, optio
     }
     const result = await archive(cms, cms.collection('posts'), page, { base: localePrefix(languages, locale) || '/', locale });
     return { page: null, record: null, view: { title: settings['general.siteTitle'], description: settings['general.tagline'], collection: 'posts', ...result } };
+}
+
+/** The page Settings → Reading shows for missing addresses, in the language, as a full entry view; null when none is chosen, unpublished or absent. */
+export async function notFoundPage(cms: CmsHost, locale: string): Promise<EntryView | null> {
+    const id = String((await cms.settings.get('reading.notFoundPage').catch(() => '')) ?? '');
+    if (!id || !cms.collections().some(collection => collection.name === 'pages')) return null;
+    const languages = await cms.languages();
+    let record = await cms.resource('cms/pages').get(id, visitor).catch(() => null);
+    if (record && languages.multilingual && (record.locale ?? languages.default) !== locale) record = (await cms.translations(cms.collection('pages'), record)).get(locale) ?? null;
+    if (!record || record.status !== 'published') return null;
+    return (await entryViews(cms, cms.collection('pages'), [record], { full: true }))[0] ?? null;
 }
 
 export function pageNumber(value: string | undefined): number {

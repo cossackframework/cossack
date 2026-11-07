@@ -126,6 +126,27 @@ export class Outbox {
         return inserted;
     }
 
+    /** Events the dispatcher gave up on: delivered, with the plugins that never took them kept in `plugins`. Newest first. */
+    async deadLettered(options: { limit?: number } = {}): Promise<{ id: string; topic: string; attempts: number; at: number; plugins: string[] }[]> {
+        const result = await this.#db.read([{ rql: 'SELECT id, topic, attempts, delivered_at, pending_plugins FROM cms_outbox WHERE delivered_at IS NOT NULL AND pending_plugins IS NOT NULL ORDER BY delivered_at DESC, id LIMIT $limit', params: { $limit: Math.min(Math.max(options.limit ?? 50, 1), 500) } }]);
+        return result.results[0]!.rows.map(row => ({ id: row[0] as string, topic: row[1] as string, attempts: Number(row[2] as bigint), at: Number(row[3] as bigint), plugins: JSON.parse(row[4] as string) as string[] }));
+    }
+
+    /** Queue a waiting or dead-lettered event again, now, for the plugins that still need it. */
+    async retry(id: string): Promise<boolean> {
+        const result = await this.#db.write([{
+            rql: 'UPDATE cms_outbox SET delivered_at = NULL, attempts = 0, available_at = $now, lease_token = NULL, lease_until = 0 WHERE id = $id AND (delivered_at IS NULL OR pending_plugins IS NOT NULL)',
+            params: { $id: id, $now: this.#now() },
+        }], { kind: 'cms.outbox', retryConflicts: 5 });
+        return result.results[0]!.affected === 1n;
+    }
+
+    /** Drop an event nobody will take. */
+    async remove(id: string): Promise<boolean> {
+        const result = await this.#db.write([{ rql: 'DELETE FROM cms_outbox WHERE id = $id AND (delivered_at IS NULL OR pending_plugins IS NOT NULL)', params: { $id: id } }], { kind: 'cms.outbox', retryConflicts: 5 });
+        return result.results[0]!.affected === 1n;
+    }
+
     /** Events still waiting, oldest first. */
     async pending(options: { limit?: number } = {}): Promise<{ id: string; topic: string; attempts: number; availableAt: number; plugins: string[] | null }[]> {
         const result = await this.#db.read([{ rql: 'SELECT id, topic, attempts, available_at, pending_plugins FROM cms_outbox WHERE delivered_at IS NULL ORDER BY created_at, id LIMIT $limit', params: { $limit: options.limit ?? 50 } }]);

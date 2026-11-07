@@ -1,3 +1,4 @@
+import { highlightCode } from './highlight';
 import { blockLayoutProblem, blockStyleProblem, blocksShapeProblem } from './block-shape';
 
 /**
@@ -40,7 +41,7 @@ export const RICH_TEXT_LIMITS = Object.freeze({ bytes: 512 * 1024, nodes: 20_000
 
 /** Node types by where they may appear. `cmsBlock` is allowed only at the top level. */
 export const RICH_TEXT_NODES = Object.freeze({
-    block: ['paragraph', 'heading', 'blockquote', 'bulletList', 'orderedList', 'codeBlock', 'horizontalRule', 'image'] as const,
+    block: ['paragraph', 'heading', 'blockquote', 'bulletList', 'orderedList', 'codeBlock', 'horizontalRule', 'image', 'table'] as const,
     inline: ['text', 'hardBreak'] as const,
     top: ['cmsBlock'] as const,
 });
@@ -64,6 +65,12 @@ export function safeImageUrl(url: unknown): url is string {
 
 const INVALID = Symbol('invalid');
 type AttributeCheck = (value: unknown) => unknown;
+const span: AttributeCheck = value => Number.isInteger(value) && (value as number) >= 1 && (value as number) <= 100 ? value : INVALID;
+/** A table cell: how many columns and rows it spans, and the column widths the editor dragged. */
+const TABLE_CELL_ATTRIBUTES: { readonly [name: string]: AttributeCheck } = {
+    colspan: span, rowspan: span,
+    colwidth: value => Array.isArray(value) && value.length <= 100 && value.every(width => Number.isInteger(width) && (width as number) > 0 && (width as number) <= 10_000) ? value : INVALID,
+};
 const text = (max: number): AttributeCheck => value => typeof value === 'string' && [...value].length <= max ? value : INVALID;
 const align: AttributeCheck = value => typeof value === 'string' && ALIGNMENTS.has(value) ? value : INVALID;
 
@@ -73,6 +80,7 @@ const NODE_ATTRIBUTES: { readonly [type: string]: { readonly [name: string]: Att
     heading: { level: value => Number.isInteger(value) && (value as number) >= 1 && (value as number) <= 6 ? value : INVALID, textAlign: align },
     orderedList: { start: value => Number.isSafeInteger(value) && (value as number) >= 0 && (value as number) <= 1_000_000 ? value : INVALID },
     codeBlock: { language: value => typeof value === 'string' && LANGUAGE.test(value) ? value : INVALID },
+    tableCell: TABLE_CELL_ATTRIBUTES, tableHeader: TABLE_CELL_ATTRIBUTES,
     image: { src: value => safeImageUrl(value) ? value : INVALID, alt: text(500), title: text(300), mediaId: value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,80}$/.test(value) ? value : INVALID },
     cmsBlock: {
         _id: value => typeof value === 'string' && BLOCK_ID.test(value) ? value : INVALID,
@@ -89,9 +97,10 @@ const MARK_ATTRIBUTES: { readonly [type: string]: { readonly [name: string]: Att
 };
 
 /** What each node holds. */
-const CONTENT: { readonly [type: string]: 'block' | 'inline' | 'text' | 'items' | 'none' } = {
+const CONTENT: { readonly [type: string]: 'block' | 'inline' | 'text' | 'items' | 'rows' | 'cells' | 'none' } = {
     paragraph: 'inline', heading: 'inline', blockquote: 'block', bulletList: 'items', orderedList: 'items', listItem: 'block',
     codeBlock: 'text', horizontalRule: 'none', image: 'none', hardBreak: 'none', cmsBlock: 'none',
+    table: 'rows', tableRow: 'cells', tableCell: 'block', tableHeader: 'block',
 };
 
 type Checked = { doc: RichTextDoc } | { error: string };
@@ -128,7 +137,7 @@ export function normalizeRichText(value: unknown): RichTextDoc {
 
 class RichTextError extends Error {}
 
-function checkContent(value: unknown, context: 'top' | 'block' | 'inline' | 'text' | 'items' | 'none', path: string, depth: number, state: { nodes: number }): RichTextNode[] {
+function checkContent(value: unknown, context: 'top' | 'block' | 'inline' | 'text' | 'items' | 'rows' | 'cells' | 'none', path: string, depth: number, state: { nodes: number }): RichTextNode[] {
     if (value === undefined) return [];
     if (!Array.isArray(value)) throw new RichTextError(`${path} must be a list of nodes.`);
     if (context === 'none' && value.length) throw new RichTextError(`${path} must be empty.`);
@@ -136,7 +145,7 @@ function checkContent(value: unknown, context: 'top' | 'block' | 'inline' | 'tex
     return value.map((node, index) => checkNode(node, context, `${path}[${index}]`, depth, state));
 }
 
-function checkNode(value: unknown, context: 'top' | 'block' | 'inline' | 'text' | 'items' | 'none', path: string, depth: number, state: { nodes: number }): RichTextNode {
+function checkNode(value: unknown, context: 'top' | 'block' | 'inline' | 'text' | 'items' | 'rows' | 'cells' | 'none', path: string, depth: number, state: { nodes: number }): RichTextNode {
     if (++state.nodes > RICH_TEXT_LIMITS.nodes) throw new RichTextError(`must have at most ${RICH_TEXT_LIMITS.nodes} nodes.`);
     if (!isPlainObject(value) || typeof value.type !== 'string') throw new RichTextError(`${path} must be a node.`);
     const type = value.type;
@@ -144,7 +153,9 @@ function checkNode(value: unknown, context: 'top' | 'block' | 'inline' | 'text' 
         : context === 'block' ? RICH_TEXT_NODES.block
         : context === 'inline' ? RICH_TEXT_NODES.inline
         : context === 'text' ? ['text']
-        : context === 'items' ? ['listItem'] : [];
+        : context === 'items' ? ['listItem']
+        : context === 'rows' ? ['tableRow']
+        : context === 'cells' ? ['tableCell', 'tableHeader'] : [];
     if (!(allowed as readonly string[]).includes(type)) throw new RichTextError(`${path}: ${type} is not allowed here.`);
     if (type === 'text') {
         if (typeof value.text !== 'string' || !value.text || [...value.text].length > RICH_TEXT_LIMITS.text) throw new RichTextError(`${path} must hold 1-${RICH_TEXT_LIMITS.text} characters.`);
@@ -156,7 +167,7 @@ function checkNode(value: unknown, context: 'top' | 'block' | 'inline' | 'text' 
     const attrs = checkAttributes(type, value.attrs, `${path}.attrs`, NODE_ATTRIBUTES[type] ?? {});
     for (const name of REQUIRED_ATTRIBUTES[type] ?? []) if (attrs[name] === undefined) throw new RichTextError(`${path}.attrs.${name} is required.`);
     const content = checkContent(value.content, CONTENT[type] ?? 'none', `${path}.content`, depth + 1, state);
-    if ((type === 'bulletList' || type === 'orderedList' || type === 'listItem' || type === 'blockquote') && !content.length) throw new RichTextError(`${path} must not be empty.`);
+    if ((type === 'bulletList' || type === 'orderedList' || type === 'listItem' || type === 'blockquote' || type === 'table' || type === 'tableRow') && !content.length) throw new RichTextError(`${path} must not be empty.`);
     return Object.freeze({ type, ...(Object.keys(attrs).length ? { attrs: Object.freeze(attrs) } : {}), ...(content.length ? { content: Object.freeze(content) } : {}) });
 }
 
@@ -362,10 +373,19 @@ function nodeHtml(node: RichTextNode, options: RichTextRenderOptions): string {
         }
         case 'listItem': return `<li>${children()}</li>`;
         case 'codeBlock': {
-            const language = typeof node.attrs?.language === 'string' && LANGUAGE.test(node.attrs.language) ? ` class="language-${node.attrs.language}"` : '';
-            return `<pre><code${language}>${(node.content ?? []).map(child => escapeHtml(child.text ?? '')).join('')}</code></pre>`;
+            const language = typeof node.attrs?.language === 'string' && LANGUAGE.test(node.attrs.language) ? node.attrs.language : '';
+            const code = (node.content ?? []).map(child => child.text ?? '').join('');
+            return `<pre class="cms-code"><code${language ? ` class="language-${language}"` : ''}>${highlightCode(code, language)}</code></pre>`;
         }
         case 'horizontalRule': return '<hr>';
+        case 'table': return `<div class="cms-table"><table>${children()}</table></div>`;
+        case 'tableRow': return `<tr>${children()}</tr>`;
+        case 'tableCell': case 'tableHeader': {
+            const tag = node.type === 'tableHeader' ? 'th' : 'td';
+            const colspan = Number.isInteger(node.attrs?.colspan) && node.attrs!.colspan !== 1 ? ` colspan="${node.attrs!.colspan as number}"` : '';
+            const rowspan = Number.isInteger(node.attrs?.rowspan) && node.attrs!.rowspan !== 1 ? ` rowspan="${node.attrs!.rowspan as number}"` : '';
+            return `<${tag}${colspan}${rowspan}>${children()}</${tag}>`;
+        }
         case 'image': {
             const mediaId = typeof node.attrs?.mediaId === 'string' ? node.attrs.mediaId : null;
             const info = mediaId && options.media ? options.media(mediaId) : undefined;

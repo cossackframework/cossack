@@ -58,9 +58,13 @@ export function fieldControl(field: EditorField, value: unknown, change: (value:
             ${field.choices.map(choice => html`<option value=${choice.value} ?selected=${choice.value === value}>${choice.label}</option>`)}`);
         case 'integer': case 'number': return input('number');
         case 'datetime': return input('datetime-local');
-        case 'reference': return component(NativeSelect, { id, '@change': (event: Event) => change((event.target as HTMLSelectElement).value) }, html`
-            <option value="" ?selected=${!value}>—</option>
-            ${(extra.options ?? []).map(option => html`<option value=${option.id} ?selected=${option.id === value}>${option.title}</option>`)}`);
+        // A reference: a searchable list of the target's entries by title; the stored value is the entry ID.
+        case 'reference': {
+            const options = (extra.options ?? []).map(option => ({ value: option.id, label: option.title }));
+            const current = typeof value === 'string' ? value : '';
+            if (current && !options.some(option => option.value === current)) options.unshift({ value: current, label: `${current} (${__('not in the list')})` });
+            return component(Combobox, { id, options, value: current, placeholder: __('Type to search…'), emptyLabel: __('No entry matches.'), required: field.required, onValueChange: (next: string) => change(next) });
+        }
         case 'json': return field.fields.length
             ? groupFields(field, value, change, id, (sub, subValue, subChange, subId) => fieldControl(sub, subValue, subChange, subId, extra) ?? html``)
             : textarea(6, 'font-mono text-xs');

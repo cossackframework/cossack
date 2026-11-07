@@ -20,3 +20,24 @@ export async function dashboardStatus(_c: Context): Promise<DashboardStatus[]> {
 }
 
 export { siteName } from '../brand';
+
+/**
+ * Where the command palette (Ctrl/Cmd+K) can go: every module and child link of the navigation,
+ * grouped by module. The CMS adds its screens the same way through its own navigation.
+ */
+export async function dashboardSearch(c: Context): Promise<{ id: string; label: string; group: string; href: string }[]> {
+    const modules = await navigation(c);
+    const seen = new Set<string>();
+    const commands: { id: string; label: string; group: string; href: string }[] = [];
+    const add = (label: string, group: string, href: string) => {
+        if (seen.has(href)) return;
+        seen.add(href);
+        commands.push({ id: href, label, group, href });
+    };
+    add('Dashboard', 'Dashboard', '/dashboard');
+    for (const module of modules) {
+        add(module.label, module.placement === 'account' ? 'Account' : module.label, module.href);
+        for (const child of module.children ?? []) add(`${module.label}: ${child.label}`, module.label, child.href);
+    }
+    return commands;
+}

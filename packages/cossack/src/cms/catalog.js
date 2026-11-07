@@ -19,6 +19,9 @@ export const CMS_FLAGS = {
   name: str('A name: the application password\'s (login), the MCP server\'s (mcp), a term\'s, a user\'s or a menu\'s.'),
   scope: str('What the application password may do (login; default: write).', { choices: ['read', 'write'] }),
   expires: str('Days until the application password expires (login; default: never).'),
+  'dry-run': bool('Report what an import would do without writing (import).'),
+  posts: str('The collection WordPress posts go to (import; default: posts).'),
+  pages: str('The collection WordPress pages go to (import; default: pages).'),
   status: str('A status: entries (draft, pending, scheduled, published, trash, any), notes (open, resolved), users (active, disabled), sites (active, archived, deleted).'),
   q: str('Search words.'),
   page: str('Page number, from 1.'),
@@ -65,6 +68,7 @@ const WRITE = Object.freeze({ write: true });
  */
 export const CMS_COMMANDS = [
   { noun: 'login', verb: null, summary: 'Sign in and store an application password for this address (and site).', positionals: [], flags: ['email', 'code', 'token', 'name', 'scope', 'expires'] },
+  { noun: 'import', verb: 'wxr', summary: 'Import a WordPress export (WXR): categories, tags, posts and pages, with redirects from old permalinks.', positionals: ['file'], flags: ['dry-run', 'posts', 'pages'] },
   { noun: 'logout', verb: null, summary: 'Revoke the stored application password and forget the login.', positionals: [], flags: [] },
   { noun: 'whoami', verb: null, summary: 'Who the stored password acts as, on which site.', positionals: [], flags: [] },
   { noun: 'mcp', verb: null, summary: 'Print the MCP client configuration for this site: its URL and the stored password.', positionals: [], flags: ['format', 'name'] },

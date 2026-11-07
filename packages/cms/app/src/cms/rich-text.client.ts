@@ -18,7 +18,8 @@ export type { NoteMark, NoteMarkInput } from './collab/rich-text-notes.client';
 
 export type RichTextCommand =
     | 'paragraph' | 'heading2' | 'heading3' | 'heading4' | 'bold' | 'italic' | 'underline' | 'strike' | 'code'
-    | 'bulletList' | 'orderedList' | 'blockquote' | 'codeBlock' | 'horizontalRule' | 'alignLeft' | 'alignCenter' | 'alignRight' | 'undo' | 'redo' | 'unlink';
+    | 'bulletList' | 'orderedList' | 'blockquote' | 'codeBlock' | 'horizontalRule' | 'alignLeft' | 'alignCenter' | 'alignRight' | 'undo' | 'redo' | 'unlink'
+    | 'table' | 'tableRowAfter' | 'tableColumnAfter' | 'tableDeleteRow' | 'tableDeleteColumn' | 'tableDelete' | 'tableHeaderRow';
 
 export interface RichTextHandle {
     run(command: RichTextCommand): void;
@@ -131,7 +132,7 @@ function blockCard(options: RichTextOptions): BlockView {
 
 export function mountRichText(element: HTMLElement, options: RichTextOptions): RichTextHandle {
     const active = (editor: Editor) => [
-        ...(['bold', 'italic', 'underline', 'strike', 'code', 'bulletList', 'orderedList', 'blockquote', 'codeBlock', 'link'] as const).filter(name => editor.isActive(name)),
+        ...(['bold', 'italic', 'underline', 'strike', 'code', 'bulletList', 'orderedList', 'blockquote', 'codeBlock', 'link', 'table'] as const).filter(name => editor.isActive(name)),
         ...([2, 3, 4] as const).filter(level => editor.isActive('heading', { level })).map(level => `heading${level}`),
         ...(['center', 'right'] as const).filter(align => editor.isActive({ textAlign: align })).map(align => `align${align[0]!.toUpperCase()}${align.slice(1)}`),
     ];
@@ -186,6 +187,13 @@ export function mountRichText(element: HTMLElement, options: RichTextOptions): R
                 undo: () => chain().undo().run(),
                 redo: () => chain().redo().run(),
                 unlink: () => chain().extendMarkRange('link').unsetLink().run(),
+                table: () => chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(),
+                tableRowAfter: () => chain().addRowAfter().run(),
+                tableColumnAfter: () => chain().addColumnAfter().run(),
+                tableDeleteRow: () => chain().deleteRow().run(),
+                tableDeleteColumn: () => chain().deleteColumn().run(),
+                tableDelete: () => chain().deleteTable().run(),
+                tableHeaderRow: () => chain().toggleHeaderRow().run(),
             };
             run[command]();
         },

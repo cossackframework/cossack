@@ -52,6 +52,8 @@ export interface PublicUser {
   avatar: string | null;
   meta: Record<string, unknown> | null;
   roles: RoleAssignment[];
+  /** Set by `registerUser` when the account waits for the email's confirmation link instead of signing in. */
+  verification?: 'sent';
 }
 
 function publicUser(u: User, roles: RoleAssignment[] = []): PublicUser {
@@ -519,3 +521,13 @@ export async function revokeAllUserSessions(c: Context, keepCurrent = false): Pr
 
 /** The session cookie name, exported so pages/middleware can read it. */
 export const SESSION_COOKIE_NAME = SESSION_COOKIE;
+
+/** A person deletes their own account: the password confirms it, every session ends, and the row goes. Returns the headers that clear the browser's session. */
+export async function deleteOwnAccount(c: Context, userId: string, password: string): Promise<{ headers: Headers }> {
+  if (!(await passwordMatches(userId, password))) throw new ClientVisibleError('The password is not right.');
+  await revokeSessionsOf(c, userId);
+  const { headers } = await logout(c);
+  await sql`DELETE FROM user_roles WHERE user_id = ${userId}`;
+  await User.delete({ id: userId });
+  return { headers };
+}

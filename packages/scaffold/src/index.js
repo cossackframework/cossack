@@ -87,7 +87,7 @@ export function withClientDependencies(viteConfig, files) {
 }
 const SERVER_DEPENDENCY = /^(?:@cossackframework\/solar-icons\/.+|@tiptap\/[^/]+(?:\/[^/]+)?|prosemirror-collab)$/;
 
-const TIPTAP_PACKAGES = ['@tiptap/core', '@tiptap/pm', '@tiptap/starter-kit', '@tiptap/extension-document', '@tiptap/extension-image', '@tiptap/extension-text-align', '@tiptap/extensions', 'prosemirror-collab'];
+const TIPTAP_PACKAGES = ['@tiptap/core', '@tiptap/pm', '@tiptap/starter-kit', '@tiptap/extension-document', '@tiptap/extension-image', '@tiptap/extension-table', '@tiptap/extension-text-align', '@tiptap/extensions', 'prosemirror-collab'];
 function dependencyVersion(name) {
   const version = dependencyVersions[name];
   if (typeof version !== 'string' || version.length === 0) {

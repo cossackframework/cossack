@@ -8,7 +8,7 @@ import type { HeadValue } from '@cossackframework/core';
 import { plugins } from '@cossackframework/framework/plugins';
 import { formBlock, inputBlock } from './form-view';
 import { SITE_ICONS } from './site-icons';
-import { archiveTemplate, assembleSiteTheme, blockStyleAttributes, entryTemplate, MAP_EMBED_URL, SHARE_NETWORKS, type BreadcrumbView, type PluginHead, type ShareNetwork, type SiteView, placeholderStyle, presetStyle, resolvePresets, siteThemeProblems, type ArchiveView, type EntryView, type LanguageLink, type LanguageSwitcherOptions, type MediaView, type MenuItemView, type MenuOptions, type RenderedBlock, type SearchOptions, type SiteTheme, type ThemeData, type ThemeHelpers, type ThemePresets } from '@cossackframework/cms';
+import { archiveTemplate, assembleSiteTheme, blockStyleAttributes, entryTemplate, MAP_EMBED_URL, SHARE_NETWORKS, type BreadcrumbView, type PluginHead, type ShareNetwork, type SiteView, placeholderStyle, presetStyle, resolvePresets, siteThemeProblems, type ArchiveView, type EntryView, type LanguageLink, type LanguageSwitcherOptions, type MediaView, type MenuItemView, type MenuOptions, type RenderedBlock, type SearchOptions, type SiteTheme, type ThemeData, type ThemeHelpers, type ThemePresets, highlightCode, formatBytes } from '@cossackframework/cms';
 
 export { archiveTemplate, entryTemplate };
 export type { ArchiveView, EntryView, MediaView, Paging, RenderedBlock, SiteView } from '@cossackframework/cms';
@@ -354,11 +354,37 @@ function preloadOf(value: string): 'metadata' | 'auto' | 'none' {
 }
 
 /** YouTube and Vimeo URLs as their privacy-respecting embed URLs. */
-export function embedUrl(url: string): string | null {
-    const youtube = /^https:\/\/(?:www\.)?(?:youtube\.com\/watch\?v=|youtu\.be\/)([A-Za-z0-9_-]{6,20})/.exec(url);
-    if (youtube) return `https://www.youtube-nocookie.com/embed/${youtube[1]}`;
-    const vimeo = /^https:\/\/(?:www\.)?vimeo\.com\/(\d{1,15})/.exec(url);
-    return vimeo ? `https://player.vimeo.com/video/${vimeo[1]}` : null;
+export interface Embed { readonly src: string; readonly title: string; readonly aspect: 'video' | 'tall' | 'wide' | 'short' }
+
+/**
+ * The provider's player or card for a page address, with the shape it is shown in: 16:9 for
+ * videos, pens and designs; tall for posts; wide for playlists and albums; short for one track.
+ * Each is a fixed URL on the provider's own embed host, so a page never loads what the address
+ * said and no request is made to find out.
+ */
+export function embedUrl(url: string): Embed | null {
+    const match = (pattern: RegExp) => pattern.exec(url);
+    let found = match(/^https:\/\/(?:www\.|m\.)?(?:youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/|live\/|embed\/)|youtu\.be\/)([A-Za-z0-9_-]{6,20})/);
+    if (found) return { src: `https://www.youtube-nocookie.com/embed/${found[1]}`, title: 'YouTube video', aspect: 'video' };
+    found = match(/^https:\/\/(?:www\.|player\.)?vimeo\.com\/(?:video\/)?(\d{1,15})/);
+    if (found) return { src: `https://player.vimeo.com/video/${found[1]}`, title: 'Vimeo video', aspect: 'video' };
+    found = match(/^https:\/\/(?:www\.|mobile\.)?(?:x|twitter)\.com\/[A-Za-z0-9_]{1,30}\/status\/(\d{1,30})/);
+    if (found) return { src: `https://platform.twitter.com/embed/Tweet.html?id=${found[1]}&dnt=true`, title: 'Post on X', aspect: 'tall' };
+    found = match(/^https:\/\/(?:www\.)?instagram\.com\/(?:p|reel|reels)\/([A-Za-z0-9_-]{5,40})/);
+    if (found) return { src: `https://www.instagram.com/p/${found[1]}/embed/`, title: 'Instagram post', aspect: 'tall' };
+    found = match(/^https:\/\/(?:www\.|m\.)?tiktok\.com\/@[\w.-]{1,40}\/video\/(\d{5,30})/);
+    if (found) return { src: `https://www.tiktok.com/embed/v2/${found[1]}`, title: 'TikTok video', aspect: 'tall' };
+    found = match(/^https:\/\/open\.spotify\.com\/(?:intl-[a-z]{2}\/)?(track|album|playlist|episode|show|artist)\/([A-Za-z0-9]{10,40})/);
+    if (found) return { src: `https://open.spotify.com/embed/${found[1]}/${found[2]}`, title: `Spotify ${found[1]}`, aspect: found[1] === 'track' || found[1] === 'episode' ? 'short' : 'wide' };
+    found = match(/^https:\/\/(?:www\.|m\.)?soundcloud\.com\/[\w-]{1,60}\/[\w-]{1,120}/);
+    if (found) return { src: `https://w.soundcloud.com/player/?url=${encodeURIComponent(found[0])}&visual=false&show_comments=false`, title: 'SoundCloud track', aspect: 'short' };
+    found = match(/^https:\/\/codepen\.io\/([\w-]{1,60})\/(?:pen|full|details)\/([A-Za-z]{5,20})/);
+    if (found) return { src: `https://codepen.io/${found[1]}/embed/${found[2]}?default-tab=result`, title: 'CodePen', aspect: 'video' };
+    found = match(/^https:\/\/(?:www\.)?figma\.com\/(?:file|design|proto|board|slides)\/[A-Za-z0-9]{5,60}[^\s]*/);
+    if (found) return { src: `https://www.figma.com/embed?embed_host=cossack&url=${encodeURIComponent(found[0])}`, title: 'Figma design', aspect: 'video' };
+    found = match(/^https:\/\/(?:www\.)?loom\.com\/(?:share|embed)\/([a-f0-9]{20,40})/);
+    if (found) return { src: `https://www.loom.com/embed/${found[1]}`, title: 'Loom video', aspect: 'video' };
+    return null;
 }
 
 function safeLink(url: unknown): string {
@@ -546,14 +572,35 @@ export function coreBlock(block: RenderedBlock, helpers: ThemeHelpers, state?: P
         }
         // Saved only by people allowed to post HTML (`cms:html`), so it renders as written.
         case 'core/html': return html`${unsafeHTML(text('html'))}`;
-        case 'core/code': return html`<pre class="my-4 overflow-x-auto rounded-md bg-muted p-4 text-sm"><code data-language=${text('language')}>${text('code')}</code></pre>`;
+        case 'core/code': return html`<pre class="cms-code my-4 overflow-x-auto rounded-md bg-muted p-4 text-sm"><code data-language=${text('language')}>${unsafeHTML(highlightCode(text('code'), text('language')))}</code></pre>`;
+        case 'core/table': {
+            const rows = text('rows').split('\n').map(line => line.trim()).filter(Boolean).map(line => line.replace(/^\||\|$/g, '').split('|').map(cell => cell.trim()));
+            if (!rows.length) return null;
+            const width = Math.max(...rows.map(row => row.length));
+            const header = block.data.header !== false;
+            const cells = (row: string[], tag: 'th' | 'td') => Array.from({ length: width }, (_, index) => tag === 'th' ? html`<th scope="col">${row[index] ?? ''}</th>` : html`<td>${row[index] ?? ''}</td>`);
+            return html`<figure class="cms-table my-6"><table>
+                ${header ? html`<thead><tr>${cells(rows[0]!, 'th')}</tr></thead>` : null}
+                <tbody>${(header ? rows.slice(1) : rows).map(row => html`<tr>${cells(row, 'td')}</tr>`)}</tbody></table>
+                ${text('caption') ? html`<figcaption class="mt-2 text-center text-sm text-muted-foreground">${text('caption')}</figcaption>` : null}</figure>`;
+        }
+        case 'core/file': {
+            const media = block.media[text('file')];
+            if (!media) return null;
+            const label = text('label') || media.name;
+            const kind = media.contentType.split('/').pop()?.toUpperCase().replace(/^VND\..*?\./, '').slice(0, 12) ?? '';
+            return html`<p class="cms-file my-4"><a href=${media.url} ?download=${block.data.download !== false} class="inline-flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm font-medium no-underline hover:bg-muted">
+                <span aria-hidden="true">⬇</span><span>${label}</span>${block.data.showSize !== false ? html`<span class="text-xs text-muted-foreground">${kind} · ${formatBytes(media.size)}</span>` : null}</a></p>`;
+        }
         case 'core/button': return html`<div class="cms-button my-6"><a href=${safeLink(text('url'))}
             class=${`inline-flex items-center rounded-md px-5 py-2.5 text-sm font-medium no-underline ${text('style') === 'outline' ? 'border border-border text-foreground hover:bg-muted' : 'bg-primary text-primary-foreground hover:opacity-90'}`}>${text('label')}</a></div>`;
         case 'core/embed': {
-            const src = embedUrl(text('url'));
-            return src ? html`<figure class="my-6"><div class="aspect-video overflow-hidden rounded-lg bg-muted">
-                <iframe src=${src} title=${text('caption') || 'Video'} class="h-full w-full" loading="lazy" allow="encrypted-media; picture-in-picture" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe></div>
-                ${text('caption') ? html`<figcaption class="mt-2 text-center text-sm text-muted-foreground">${text('caption')}</figcaption>` : null}</figure>` : null;
+            const embed = embedUrl(text('url'));
+            if (!embed) return null;
+            const shape = embed.aspect === 'video' ? 'aspect-video' : embed.aspect === 'wide' ? 'h-[352px]' : embed.aspect === 'short' ? 'h-[166px]' : 'h-[650px] max-w-[550px] mx-auto';
+            return html`<figure class="my-6"><div class=${`${shape} overflow-hidden rounded-lg bg-muted`}>
+                <iframe src=${embed.src} title=${text('caption') || embed.title} class="h-full w-full" loading="lazy" allow="encrypted-media; picture-in-picture; clipboard-write" allowfullscreen referrerpolicy="strict-origin-when-cross-origin" sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-presentation"></iframe></div>
+                ${text('caption') ? html`<figcaption class="mt-2 text-center text-sm text-muted-foreground">${text('caption')}</figcaption>` : null}</figure>`;
         }
         case 'core/video': {
             const media = block.media[text('video')];

@@ -8,8 +8,7 @@
 import type { Context } from 'hono';
 import {
     BLOCK_ID, checkNoteRange, CmsError, CONTENT_STATUSES, findBlock, hasPermission, indexedRowField, isNetworkAdmin, MAIN_SITE, MENU_LIMITS, menuItemId, noteThreads, PERMISSIONS, recordSchema, recordTitle, richTextBlocks,
-    type Block, type FieldFilter, type MenuItem, type MenuShape, type Note, type NoteThread, type Principal, type RecordShape, type RichTextDoc,
-} from '@cossackframework/cms';
+    type Block, type FieldFilter, type MenuItem, type MenuShape, type Note, type NoteThread, type Principal, type RecordShape, type RichTextDoc, redirectProblems, type Redirect, type RedirectStatus } from '@cossackframework/cms';
 import { networkSite, type ApiToken, type CmsHost, type NetworkSite, type SiteRecord } from '@cossackframework/cms/server';
 import { createApiToken, listApiTokens, manageableHere, NETWORK_ACCOUNT_LOCKED, revokeApiToken, type PublicUser } from '../auth';
 import { canAssignRoles, canManageUser } from '../services/rbac';
@@ -646,6 +645,26 @@ export async function cachePurge(c: Context, input: Body): Promise<{ event: Cach
 
 export function taxonomiesList(c: Context): { items: { name: string; label: string; singular: string; hierarchical: boolean; path: string | null; builtin: boolean }[] } {
     return { items: c.get('cms').taxonomies.declarations.map(taxonomy => ({ name: taxonomy.name, label: taxonomy.label, singular: taxonomy.singular, hierarchical: taxonomy.hierarchical, path: taxonomy.path ?? null, builtin: taxonomy.builtin === true })) };
+}
+
+/** Redirects, newest first: `GET /api/cms/redirects?q=old&page=1&perPage=50`. */
+export async function redirectsList(c: Context, query: Query): Promise<{ items: Redirect[]; total: number }> {
+    const principal = signedIn(c);
+    if (!hasPermission(principal, PERMISSIONS.manageRedirects)) throw new CmsError('CMS_FORBIDDEN', 'Not allowed to manage redirects.');
+    const perPage = integer(query.perPage, 50, 1, 200);
+    const page = integer(query.page, 1, 1, 10_000);
+    return c.get('cms').redirects.list({ ...(typeof query.q === 'string' && query.q ? { search: query.q } : {}), limit: perPage, offset: (page - 1) * perPage });
+}
+
+/** A redirect: `POST /api/cms/redirects` with `{ source, target, status?, note? }`; `source` is a path, `target` a path or URL. */
+export async function redirectCreate(c: Context, input: Body): Promise<{ item: Redirect }> {
+    const principal = signedIn(c);
+    if (!hasPermission(principal, PERMISSIONS.manageRedirects)) throw new CmsError('CMS_FORBIDDEN', 'Not allowed to manage redirects.');
+    const problems = redirectProblems(input as never);
+    if (problems.length) throw new CmsError('CMS_VALIDATION', problems.join(' '));
+    const item = await c.get('cms').redirects.save({ source: text(input.source, 'source', { max: 500 }), target: text(input.target, 'target', { max: 2000 }),
+        ...(input.status !== undefined ? { status: Number(input.status) as RedirectStatus } : {}), ...(typeof input.note === 'string' ? { note: input.note.slice(0, 500) } : {}) }, { by: principal.kind === 'user' ? principal.id : null });
+    return { item };
 }
 
 export async function termsList(c: Context, taxonomy: string, query: Query) {

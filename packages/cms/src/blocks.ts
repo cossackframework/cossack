@@ -20,6 +20,9 @@ import { BLOCK_LIMITS, BREAKPOINTS, INPUT_NAME, STYLE_PROPERTIES, TEXT_ALIGNMENT
  * What a form input collects, which decides how its value is checked and stored: text of a
  * kind, a number, a yes or no, a `YYYY-MM-DD` date, one of the block's options or several.
  */
+/** Providers an Embed block takes a page address from; `embedUrl` in the application turns each into the provider's player or card. */
+export const EMBED_URL = /^https:\/\/(?:(?:www\.|m\.|mobile\.)?(?:youtube\.com|youtu\.be|vimeo\.com|x\.com|twitter\.com|instagram\.com|tiktok\.com|codepen\.io|loom\.com|figma\.com|soundcloud\.com)|open\.spotify\.com|player\.vimeo\.com)\/\S+$/;
+
 export const INPUT_KINDS = Object.freeze(['string', 'text', 'email', 'url', 'phone', 'number', 'boolean', 'date', 'choice', 'choices', 'rows'] as const);
 export type InputKind = (typeof INPUT_KINDS)[number];
 
@@ -270,6 +273,18 @@ const core: BlockDeclaration[] = [
         code: field.text({ required: true, max: 20_000, format: 'code', label: 'Code' }),
         language: field.string({ max: 40, pattern: '[a-z0-9+#-]*', label: 'Language', description: 'Such as html, css, js, ts, json, python or bash.' }),
     } },
+    { name: 'core/table', keywords: ['grid', 'rows', 'columns', 'data', 'comparison'], label: 'Table', icon: 'widget-2', category: 'text', description: 'Rows of cells: one row per line, cells separated by |. The first row can be the header.', fields: {
+        rows: field.text({ required: true, max: 20_000, label: 'Rows', description: 'One row per line; separate cells with |. Markdown inline formatting is kept as text.' }),
+        header: field.boolean({ default: true, label: 'First row is the header' }),
+        caption: field.string({ max: 300, label: 'Caption' }),
+        align: WIDTH,
+    } },
+    { name: 'core/file', inline: true, keywords: ['download', 'pdf', 'attachment', 'document'], label: 'File', icon: 'file-text', category: 'media', description: 'A file from the library as a download link, with its type and size.', fields: {
+        file: field.media({ required: true, nullable: false, label: 'File' }),
+        label: field.string({ max: 200, label: 'Label', description: 'Empty shows the file\'s name.' }),
+        showSize: field.boolean({ default: true, label: 'Show the type and size' }),
+        download: field.boolean({ default: true, label: 'Download rather than open' }),
+    } },
     { name: 'core/html', keywords: ['code', 'embed', 'iframe', 'script', 'widget'], label: 'Custom HTML', icon: 'code-square', category: 'embeds', description: 'HTML of your own, shown on the page as it is. Only people allowed to post HTML can add or change it.', fields: {
         html: field.text({ required: true, max: 100_000, format: 'code', language: 'html', label: 'HTML' }),
     } },
@@ -278,8 +293,9 @@ const core: BlockDeclaration[] = [
         url: field.string({ required: true, max: 2048, pattern: '(?:https?://|/|mailto:)\\S*', label: 'URL' }),
         style: field.enum(['primary', 'outline'], { default: 'primary', label: 'Style' }),
     } },
-    { name: 'core/embed', inline: true,  keywords: ['youtube', 'vimeo', 'video'], label: 'Video embed', icon: 'play-circle', category: 'embeds', description: 'A YouTube or Vimeo video.', fields: {
-        url: field.string({ required: true, max: 2048, pattern: 'https://(?:www\\.)?(?:youtube\\.com/watch\\?v=|youtu\\.be/|vimeo\\.com/)\\S+', label: 'Video URL' }),
+    { name: 'core/embed', inline: true,  keywords: ['youtube', 'vimeo', 'video', 'tweet', 'x', 'instagram', 'tiktok', 'spotify', 'soundcloud', 'codepen', 'figma', 'loom'], label: 'Embed', icon: 'play-circle', category: 'embeds',
+        description: 'A post, video, track, pen or design from YouTube, Vimeo, X, Instagram, TikTok, Spotify, SoundCloud, CodePen, Figma or Loom, from its address; it loads from their servers.', fields: {
+        url: field.string({ required: true, max: 2048, pattern: EMBED_URL.source, label: 'URL', description: 'The page\'s address on the provider, such as https://www.youtube.com/watch?v=… or https://x.com/…/status/….' }),
         caption: field.string({ max: 300, label: 'Caption' }),
         align: WIDTH,
     } },
@@ -370,6 +386,10 @@ const core: BlockDeclaration[] = [
         columns: field.integer({ default: 3, min: 1, max: 4, label: 'Columns', description: 'For the grid.' }),
         showImage: field.boolean({ default: true, label: 'Show the featured image' }),
         showDate: field.boolean({ default: true, label: 'Show the date' }),
+        author: field.string({ max: 80, pattern: '[A-Za-z0-9_-]*', choicesFrom: 'authors', label: 'Only by the author', description: 'Entries that name this author; empty shows every author\'s.' }),
+        offset: field.integer({ default: 0, min: 0, max: 100, label: 'Skip the first', description: 'Leaves out this many entries, for a second list that continues the first.' }),
+        excludeCurrent: field.boolean({ default: true, label: 'Leave out the entry being shown' }),
+        stickyFirst: field.boolean({ default: false, label: 'Sticky entries first' }),
     }, variations: [
         { name: 'cards', label: 'Entry cards', description: 'The newest entries as a grid of cards with their images.', icon: 'card', keywords: ['posts', 'grid'], data: { layout: 'grid', columns: 3, count: 6 } },
     ] },

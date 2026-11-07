@@ -57,6 +57,7 @@ export async function runMaintenance(cms: CmsHost, options: { warm?: boolean } =
     await cms.drafts.purge();
     await purgeOrphanNotes(cms);
     await cms.traffic.prune();
+    await cms.audit.prune();
     await cms.forms.maintain();
     await cms.files?.sweep();
 }

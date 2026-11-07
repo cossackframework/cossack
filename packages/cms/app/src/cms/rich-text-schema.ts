@@ -10,6 +10,7 @@ import type { Schema } from '@tiptap/pm/model';
 import { Document } from '@tiptap/extension-document';
 import { Image } from '@tiptap/extension-image';
 import { TextAlign } from '@tiptap/extension-text-align';
+import { TableKit } from '@tiptap/extension-table';
 import { StarterKit } from '@tiptap/starter-kit';
 import { safeImageUrl, safeLinkUrl, type EmbeddedBlock } from '@cossackframework/cms';
 
@@ -76,6 +77,8 @@ export function richTextExtensions(block = cmsBlock()): Extensions {
         }),
         TextAlign.configure({ types: ['heading', 'paragraph'], alignments: ['left', 'center', 'right'] }),
         MediaImage.configure({ inline: false, allowBase64: false }),
+        // Tables: rows of header and body cells, each holding blocks; the site renders them with `richTextHtml`.
+        TableKit.configure({ table: { resizable: false, HTMLAttributes: { class: 'cms-table' } } }),
         block,
     ];
 }

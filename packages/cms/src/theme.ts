@@ -334,6 +334,9 @@ export interface MediaView {
     readonly width: number | null;
     readonly height: number | null;
     readonly contentType: string;
+    /** The file's name as uploaded, and its size in bytes. */
+    readonly name: string;
+    readonly size: number;
     readonly caption: string;
     /** Resized variants for `<img srcset>`; empty when the image is served as uploaded. */
     readonly srcset: string;
@@ -649,6 +652,8 @@ export interface EntryView {
     readonly authors: readonly EntryAuthor[];
     /** When the entry was last changed, in the site's format; empty for unpublishable collections. */
     readonly updated: string;
+    /** Minutes to read the content at 200 words a minute, at least 1; 0 when there is no content. */
+    readonly readingTime: number;
     readonly excerpt: string;
     /** The answer up front, from the entry's summary field; empty when none. Themes show it before the content. */
     readonly summary: string;

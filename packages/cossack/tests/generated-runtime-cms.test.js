@@ -169,7 +169,7 @@ async function exercise(origin, routeIds, diagnostics) {
   // Settings change the site title, registration and the home page.
   const visitor = browserless(origin, routeIds, diagnostics);
   contains(await visitor.page('/auth/register'), 'Registration is closed');
-  expect((await web.action(SETTINGS, 'saveAll', [{ document: { general: { siteTitle: 'Rocket News', usersCanRegister: true } }, languages: null, permalinks: null, groups: {} }]))._cossack_return.error).toBe('');
+  expect((await web.action(SETTINGS, 'saveAll', [{ document: { general: { siteTitle: 'Rocket News', usersCanRegister: true, verifyEmail: false } }, languages: null, permalinks: null, groups: {} }]))._cossack_return.error).toBe('');
   contains(await visitor.page('/'), 'Rocket News');
   lacks(await visitor.page('/auth/register'), 'Registration is closed');
   const registered = await visitor.action('auth/register/index.ts', 'register', [{ name: 'Bob', email: 'bob@example.com', password: 'another password' }]);
@@ -620,7 +620,8 @@ describe.skipIf(!liveRomeDBTests())('generated CMS application', () => {
       await page.getByRole('button', { name: 'Create field group' }).click();
       await page.waitForURL(/\/dashboard\/field-groups\/event-details/);
       await ready();
-      await browserExpect(page.getByLabel('Events', { exact: true })).toBeChecked();
+      // The command palette lists Events too; the checkbox is the one that must be checked.
+      await browserExpect(page.getByRole('checkbox', { name: 'Events', exact: true })).toBeChecked();
       await page.getByRole('button', { name: 'Add block', exact: true }).first().click();
       const picker = page.getByRole('dialog', { name: 'Blocks' });
       await picker.getByLabel('Search blocks').fill('text');

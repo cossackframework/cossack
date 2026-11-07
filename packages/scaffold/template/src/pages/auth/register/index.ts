@@ -25,6 +25,8 @@ export default class RegisterPage extends Cossack {
     form: RegisterForm = { name: '', email: '', password: '' };
 
     @State() error = '';
+    /** The confirmation email went out; no session yet. */
+    @State() sent = false;
     @State() closed = false;
 
     async init() {
@@ -50,6 +52,7 @@ export default class RegisterPage extends Cossack {
         this.error = '';
         try {
             const user = await registerUser(email, password, name || undefined);
+            if (user.verification === 'sent') { this.sent = true; return; }
             const { headers } = await authSessions.create(user.id, this.c);
             headers.forEach((value, key) => this.c.header(key, value));
             this.redirect(config('auth.redirectAfterLogin'));
@@ -62,6 +65,11 @@ export default class RegisterPage extends Cossack {
     }
 
     render() {
+        if (this.sent) return html`
+            <h3 class="mb-3 text-xl font-semibold text-foreground">${__('Check your email')}</h3>
+            ${component(Alert, {}, __('We sent you a link to confirm your email address. Open it to finish creating your account; it works for two days.'))}
+            <p class="mt-6 text-center text-sm text-muted-foreground"><a href="/auth/login" class="text-primary font-medium hover:underline">${__('Back to sign in')}</a></p>
+        `;
         if (this.closed) return html`
             <h3 class="mb-3 text-xl font-semibold text-foreground">${__('Register')}</h3>
             ${component(Alert, {}, __('Registration is closed on this site.'))}

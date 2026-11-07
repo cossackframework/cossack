@@ -39,6 +39,7 @@ export { CmsIndexNow, INDEXNOW_ENDPOINT, INDEXNOW_KEY, type IndexNowOptions } fr
 export { CmsPurge, PurgeError, type CachePurger, type CmsPurgeOptions, type PurgeContext, type PurgeRecord } from './purge';
 export { pluginCapabilities, pluginMetaKey, JOB_NAME, type PluginFiles, type PluginMail, type PluginJobs, type PluginJobContext, type PluginJobHandler, type PluginUsers, type PluginUser, type PluginCache, type PluginSecrets, type PluginCapabilities, type CapabilityHost } from './capabilities';
 export { CmsSchedules, SCHEDULE_GRACE_MS, type DueSchedule, type ScheduleRow } from './schedules';
+export { CmsAudit, AUDIT_RETENTION_MS, type AuditEntry, type AuditQuery } from './audit';
 export { cloudflarePurger, zoneCandidates, CLOUDFLARE_API, type CloudflarePurgerOptions } from './cloudflare';
 export { CmsTraffic, type CrawlerVisits, type NotFoundRow, type VisitKind } from './traffic';
 export { CmsComments, type CommentListOptions } from './comments';

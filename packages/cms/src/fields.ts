@@ -193,7 +193,7 @@ export const TAXONOMY_NAME = /^[a-z][a-zA-Z0-9]{0,40}$/;
 export const FIELD_MEDIA_KINDS = Object.freeze(['image', 'video', 'audio', 'document', 'archive'] as const);
 export type FieldMediaKind = typeof FIELD_MEDIA_KINDS[number];
 /** What a string field's choice can come from. */
-export const CHOICE_SOURCES = Object.freeze(['forms', 'collections', 'terms', 'locations'] as const);
+export const CHOICE_SOURCES = Object.freeze(['forms', 'collections', 'terms', 'locations', 'authors'] as const);
 export type ChoiceSource = typeof CHOICE_SOURCES[number];
 const ENUM_VALUE = /^[A-Za-z0-9_.-]{1,64}$/;
 const MAX_SAFE = Number.MAX_SAFE_INTEGER;

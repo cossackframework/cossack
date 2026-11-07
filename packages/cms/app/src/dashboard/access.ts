@@ -34,6 +34,8 @@ export async function navigation(c: Context): Promise<DashboardModule[]> {
         }
         content.push({ id: `collection-${collection.name}`, label: collection.label, href: base, icon: icon(collection.icon), authorization: 'authenticated', children });
     }
+    // The month's published and scheduled entries of every collection the user may see.
+    if (content.length) content.push({ id: 'calendar', label: 'Calendar', href: '/dashboard/calendar', icon: icon('calendar'), authorization: 'authenticated' });
     if (can(PERMISSIONS.upload) || can(PERMISSIONS.manageMedia)) {
         // Media follows posts, as in WordPress.
         content.splice(Math.min(1, content.length), 0, { id: 'media', label: 'Files', href: '/dashboard/media', icon: icon('folder-with-files'), authorization: 'authenticated',
@@ -89,6 +91,7 @@ export async function navigation(c: Context): Promise<DashboardModule[]> {
         ...(can(PERMISSIONS.manageSchema) ? [{ label: 'Schema', href: '/dashboard/tools/schema' }] : []),
         ...(can(PERMISSIONS.manageSettings) ? [{ label: 'Export', href: '/dashboard/tools/export' }] : []),
         ...(can(PERMISSIONS.manageSettings) ? [{ label: 'Cache', href: '/dashboard/tools/cache' }] : []),
+        ...(can(PERMISSIONS.manageSettings) ? [{ label: 'Jobs', href: '/dashboard/tools/jobs' }, { label: 'Activity', href: '/dashboard/tools/activity' }, { label: 'Find and replace', href: '/dashboard/tools/replace' }] : []),
     ];
     if (tools.length) admin.push({ id: 'tools', label: 'Tools', href: tools[0]!.href, icon: icon('tuning-2'), authorization: 'authenticated', children: tools });
     // Settings has its own navigation beside its pages, so the sidebar holds one link.
@@ -174,3 +177,24 @@ export async function dashboardStatus(c: Context): Promise<DashboardStatus[]> {
 }
 
 export { siteName } from '../brand';
+
+/**
+ * Where the command palette (Ctrl/Cmd+K) can go: every module and child link of the navigation,
+ * grouped by module. The CMS adds its screens the same way through its own navigation.
+ */
+export async function dashboardSearch(c: Context): Promise<{ id: string; label: string; group: string; href: string }[]> {
+    const modules = await navigation(c);
+    const seen = new Set<string>();
+    const commands: { id: string; label: string; group: string; href: string }[] = [];
+    const add = (label: string, group: string, href: string) => {
+        if (seen.has(href)) return;
+        seen.add(href);
+        commands.push({ id: href, label, group, href });
+    };
+    add('Dashboard', 'Dashboard', '/dashboard');
+    for (const module of modules) {
+        add(module.label, module.placement === 'account' ? 'Account' : module.label, module.href);
+        for (const child of module.children ?? []) add(`${module.label}: ${child.label}`, module.label, child.href);
+    }
+    return commands;
+}

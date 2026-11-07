@@ -22,6 +22,12 @@ one under Profile → Application passwords, or let the CLI make it:
 cossack cms login --url https://example.com
 ```
 
+`import wxr <file>` reads a WordPress export: categories and tags become terms (parents first),
+posts and pages become entries (their HTML as a Custom HTML block, plain text as paragraphs;
+`--posts` and `--pages` name other collections), and a permalink that differs from the new address
+becomes a redirect. `--dry-run` reports without writing. Attachments and comments are counted and
+left: upload the media and update links; comments have no endpoint yet.
+
 `login` asks for the email and password (or reads `CMS_EMAIL` and `CMS_PASSWORD`), takes a
 second-factor code with `--code`, signs in, creates an application password named after the
 machine (`--name` renames it; `--scope read` makes a read-only one; `--expires 90` ends it after
@@ -155,6 +161,7 @@ application password. A CMS refusal answers `{ error, code, fields? }` with its 
 | Method and path | Does |
 | --- | --- |
 | `GET /me` | The user, roles, permissions, site, password scope and network state. |
+| `GET /redirects?q=&page=&perPage=`, `POST /redirects` `{ source, target, status?, note? }` | Redirects, for the redirects permission; `source` is a path, `target` a path or URL, `status` 301, 302, 307, 308 or 410. |
 | `GET /me/tokens`, `POST /me/tokens` `{ name, scope, expiresInDays? }`, `DELETE /me/tokens/<id>` | Application passwords; `POST` needs a session (a password cannot make one) and answers the token once; `expiresInDays` (1 to 3650) ends it on its own. |
 | `GET /collections`, `GET /schema/<collection>`, `GET /taxonomies` | Content types with fields; a JSON Schema; taxonomies. |
 | `GET /content/<collection>` | Entries: `status`, `q`, `term`, `locale`, `filter[field]`, `page`, `perPage`, `format=html`. |

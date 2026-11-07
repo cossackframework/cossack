@@ -63,11 +63,15 @@ export const general: SettingsGroup = {
         tagline: field.string({ max: 200, default: 'Just another Cossack site', label: 'Tagline', description: 'In a few words, explain what this site is about.' }),
         adminEmail: field.string({ max: 254, default: '', pattern: '(?:[^\\s@]+@[^\\s@]+)?', label: 'Administration email address', description: 'Used for administration notices.' }),
         usersCanRegister: field.boolean({ default: false, label: 'Anyone can register' }),
+        verifyEmail: field.boolean({ default: true, label: 'New registrants confirm their email address', description: 'The account is active once the link in the email is opened. Without an email sender, accounts are active at once.' }),
         defaultRole: { ...field.string({ max: 80, default: 'subscriber', label: 'New user default role' }), source: 'roles' },
         timezone: { ...field.string({ max: 64, default: 'UTC', label: 'Timezone' }), source: 'timezones' },
         dateFormat: { ...field.enum(Object.keys(DATE_FORMATS), { default: 'long', label: 'Date format' }), choices: DATE_FORMATS },
         timeFormat: { ...field.enum(Object.keys(TIME_FORMATS), { default: '12h', label: 'Time format' }), choices: TIME_FORMATS },
         weekStartsOn: { ...field.enum(['sunday', 'monday', 'saturday'], { default: 'monday', label: 'Week starts on' }), choices: { sunday: 'Sunday', monday: 'Monday', saturday: 'Saturday' } },
+        maintenance: { ...field.enum(['off', 'maintenance', 'soon'], { default: 'off', label: 'Maintenance mode', description: 'Visitors see a holding page with status 503 while people who can use the dashboard see the site. Search engines keep the pages indexed.' }),
+            choices: { off: 'Off: the site is public', maintenance: 'Maintenance: back soon', soon: 'Coming soon: not launched yet' } },
+        maintenanceMessage: field.text({ max: 2000, default: '', label: 'Holding page message', description: 'Shown under the site title; empty uses a sentence for the mode.' }),
         requireTwoFactor: field.boolean({ default: false, label: 'Require two-step sign-in for everyone who can use the dashboard', description: 'They add an authenticator app or a passkey before they can continue.' }),
         favicon: { ...field.string({ max: 2000, default: '', pattern: '(?:https?://[^\\s]+|/[^\\s]*)?', label: 'Site icon', description: 'Shown in browser tabs and bookmarks: an SVG or a square PNG from the library.' }), source: 'media' },
         appIcon: { ...field.string({ max: 2000, default: '', pattern: '(?:https?://[^\\s]+|/[^\\s]*)?', label: 'App icon', description: 'For home screens and the web app manifest: a square PNG of at least 512 pixels from the library; it is resized as needed.' }), source: 'media' },
@@ -132,6 +136,7 @@ export const reading: SettingsGroup = {
         feedItems: field.integer({ default: 10, min: 1, max: 100, label: 'Syndication feeds show the most recent' }),
         feedContent: { ...field.enum(['excerpt', 'full'], { default: 'excerpt', label: 'For each post in a feed, include' }), choices: { excerpt: 'Excerpt', full: 'Full text' } },
         discourageSearchEngines: field.boolean({ default: false, label: 'Discourage search engines from indexing this site' }),
+        notFoundPage: { ...field.string({ max: 80, default: '', label: 'Page for missing addresses', description: 'A published page shown, with status 404, when an address has no page; empty shows the theme\'s own.' }), source: 'pages' },
     },
 };
 
@@ -252,12 +257,15 @@ export interface SiteSettings {
     'general.tagline': string;
     'general.adminEmail': string;
     'general.usersCanRegister': boolean;
+    'general.verifyEmail': boolean;
     'general.defaultRole': string;
     'general.timezone': string;
     'general.dateFormat': keyof typeof DATE_FORMATS;
     'general.timeFormat': keyof typeof TIME_FORMATS;
     'general.weekStartsOn': 'sunday' | 'monday' | 'saturday';
     'general.requireTwoFactor': boolean;
+    'general.maintenance': 'off' | 'maintenance' | 'soon';
+    'general.maintenanceMessage': string;
     'general.favicon': string;
     'general.appIcon': string;
     'general.logo': string;
@@ -282,6 +290,7 @@ export interface SiteSettings {
     'reading.feedItems': number;
     'reading.feedContent': 'excerpt' | 'full';
     'reading.discourageSearchEngines': boolean;
+    'reading.notFoundPage': string;
     'discussion.enabled': boolean;
     'discussion.defaultOpen': boolean;
     'discussion.requireNameEmail': boolean;

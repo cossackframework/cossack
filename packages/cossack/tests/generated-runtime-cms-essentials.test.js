@@ -78,6 +78,51 @@ async function essentials(origin, routeIds, diagnostics, { runtime, cloudflare =
   expect((await lockedOut.json()).error).toMatch(/Too many sign-in attempts/);
   // Without a mail sender, Health says so (the Workers run binds a fake sender for form notifications).
   if (runtime === 'node') contains(await web.page('/dashboard/tools/health'), 'No email sender');
+  // The new tools and the calendar render for an administrator.
+  contains(await web.page('/dashboard/tools/jobs'), 'Nothing is waiting.');
+  contains(await web.page('/dashboard/tools/activity'), 'data-testid=activity');
+  contains(await web.page('/dashboard/calendar'), 'data-testid=calendar');
+  contains(await web.page('/dashboard/tools/replace'), 'Find and replace');
+  // Feeds: RSS, Atom and JSON of the posts, with the starter post; an unknown collection is a 404.
+  const atom = await web.request('/feed/atom');
+  expect(atom.headers.get('content-type')).toContain('application/atom+xml');
+  expect(await atom.text()).toContain('<feed xmlns="http://www.w3.org/2005/Atom">');
+  const jsonFeed = await (await web.request('/feed/json')).json();
+  expect(jsonFeed.version).toBe('https://jsonfeed.org/version/1.1');
+  expect(jsonFeed.items.map(item => item.title)).toContain('Hello World!');
+  expect((await web.request('/feed/nothing-here')).status).toBe(404);
+  // A page of blocks the library gained: a table, an embed, highlighted code, and the reading time on the entry.
+  const tourPage = { title: 'Blocks tour', slug: 'blocks-tour', status: 'draft', publishedAt: '', excerpt: '', showInMenu: false, featuredImage: '', parent: '', menuOrder: '0', content: [
+    { _id: 't', type: 'core/table', data: { rows: 'Name | Size\nAlpha | 1 MB\nBeta | 2 MB', header: true, caption: 'Two files' } },
+    { _id: 'e', type: 'core/embed', data: { url: 'https://x.com/cossack/status/1234567890123456789', caption: 'A post' } },
+    { _id: 'c', type: 'core/code', data: { code: 'const answer = 42; // why', language: 'ts' } },
+    { _id: 'p', type: 'core/paragraph', data: { text: Array.from({ length: 420 }, () => 'word').join(' ') } },
+  ] };
+  const tourSaved = await web.action(EDITOR, 'save', [tourPage, 'publish', 0], { params: { collection: 'pages', id: 'new' }, state: { route: 'pages', id: 'new' } });
+  expect(tourSaved.error).toBe('');
+  const tour = await web.page('/blocks-tour');
+  contains(tour, '<th scope=col>Name</th>');
+  contains(tour, 'Two files');
+  contains(tour, 'platform.twitter.com/embed/Tweet.html?id=1234567890123456789');
+  contains(tour, '<span class="tok-k">const</span>');
+  contains(tour, '2 min read');
+  // Settings → Reading names a page for missing addresses: served with status 404 and noindex.
+  expect((await web.action(SETTINGS, 'saveAll', [{ document: { reading: { notFoundPage: tourSaved.id } }, languages: null, permalinks: null, groups: {} }]))._cossack_return.error).toBe('');
+  const anonymous = () => browserless(origin, routeIds, diagnostics);
+  const missing = await anonymous().request('/no-such-page-anywhere');
+  expect(missing.status).toBe(404);
+  const missingHtml = await missing.text();
+  contains(missingHtml, 'Blocks tour');
+  expect(missingHtml).toMatch(/<meta name=robots content=noindex/);
+  expect((await web.action(SETTINGS, 'saveAll', [{ document: { reading: { notFoundPage: '' } }, languages: null, permalinks: null, groups: {} }]))._cossack_return.error).toBe('');
+  // Maintenance mode: visitors get a 503 holding page; people with dashboard access see the site.
+  expect((await web.action(SETTINGS, 'saveAll', [{ document: { general: { maintenance: 'soon' } }, languages: null, permalinks: null, groups: {} }]))._cossack_return.error).toBe('');
+  const held = await anonymous().request('/');
+  expect([held.status, held.headers.get('retry-after')]).toEqual([503, '3600']);
+  contains(await held.text(), 'Coming soon');
+  expect((await web.request('/')).status).toBe(200);
+  expect((await web.action(SETTINGS, 'saveAll', [{ document: { general: { maintenance: 'off' } }, languages: null, permalinks: null, groups: {} }]))._cossack_return.error).toBe('');
+  expect((await anonymous().request('/')).status).toBe(200);
   // Setup added the starter content: a first post in Uncategorized, and a Contact page with its form.
   contains(await web.page('/posts/hello-world'), 'This is your first post');
   contains(await web.page('/category/uncategorized'), 'Hello World!');

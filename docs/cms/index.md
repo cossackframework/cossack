@@ -44,6 +44,16 @@ puts a default theme in `src/plugins/default-theme/` for you to edit or copy. Se
 - [Cache](/docs/cms/cache.md): what the site tells the caches in front of it, how changes
   purge Cloudflare or another CDN, and the Cache tool.
 
+Tools under the dashboard's Tools menu: Health (search and answer engines, crawler visits, 404s),
+Links, Redirects, Webhooks, Schema, Export, Cache, Jobs (the outbox: what waits, what failed for
+good, plugin schedules), Activity (the audit trail of writes) and Find and replace (a phrase across
+a collection, previewed first). Content → Calendar lists the month's published and scheduled
+entries. Settings → Reading names a page for missing addresses (served with status 404); Settings
+→ General has a maintenance or coming-soon mode (visitors get a 503 holding page, people with
+dashboard access see the site) and asks new registrants to confirm their email when the site can
+send one. New users can be invited by email instead of given a password; people can delete their
+own account from Profile. Ctrl/Cmd+K opens a palette of every dashboard screen.
+
 The package `README.md` and `cossack docs --package @cossackframework/cms` cover the data
 contract (resources, repositories, collections, blocks) in more depth.
 

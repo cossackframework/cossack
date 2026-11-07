@@ -1,7 +1,7 @@
 import type { Context, MiddlewareHandler } from 'hono';
 import { getCookie } from 'hono/cookie';
 import { enforceRateLimit, getClientIp, getSupportedLocales, LOCALE_COOKIE_NAME, setRequestLocale } from '@cossackframework/core';
-import { ANONYMOUS, type Principal } from '@cossackframework/cms';
+import { ANONYMOUS, hasPermission, PERMISSIONS, type Principal } from '@cossackframework/cms';
 import { MAIN, MAIN_SITE, networkSite, type SiteResolution } from '@cossackframework/cms/server';
 import { cmsFor, networkFor, type CmsBindings } from './index';
 import { handoff } from './handoff';
@@ -111,6 +111,14 @@ export const cmsPrincipal: MiddlewareHandler = async (c, next) => {
         c.set('cms.token', true);
         c.set('cms.tokenScope', token.scope);
     }
+    // Maintenance or coming-soon mode: visitors without dashboard access get a holding page with status 503; the dashboard, sign-in, the API and assets keep answering.
+    if (!HOLDING_EXEMPT.test(c.req.path) && !hasPermission(c.get('principal'), PERMISSIONS.dashboard)) {
+        const mode = await c.get('cms').settings.get('general.maintenance').catch(() => 'off') as 'off' | 'maintenance' | 'soon';
+        if (mode !== 'off') {
+            const settings = await c.get('cms').settings.all();
+            return c.html(holdingPage(mode, settings['general.siteTitle'], settings['general.maintenanceMessage']), 503, { 'retry-after': '3600', 'cache-control': 'private, no-store' });
+        }
+    }
     if (c.req.path === '/api' || c.req.path.startsWith('/api/')) {
         // One budget per caller for the whole API, counted in the framework's rate-limit store (per isolate unless a shared store is configured).
         const principal = c.get('principal');
@@ -120,6 +128,19 @@ export const cmsPrincipal: MiddlewareHandler = async (c, next) => {
     }
     await next();
 };
+
+/** Paths the holding page never covers: the dashboard, sign-in, the API, the framework's own routes, assets and media. */
+const HOLDING_EXEMPT = /^\/(?:dashboard|auth|api|crpc|sse|assets|media|_cossack|\.well-known|favicon\.ico|manifest\.webmanifest|robots\.txt)(?:\/|$)/;
+
+/** The holding page of maintenance and coming-soon mode: the site's title, the message, no script, no theme (the theme may be what is being worked on). */
+export function holdingPage(mode: 'maintenance' | 'soon', title: string, message: string): string {
+    const esc = (value: string) => value.replace(/[<>&"]/g, character => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' })[character]!);
+    const heading = mode === 'soon' ? 'Coming soon' : 'Down for maintenance';
+    const text = message.trim() || (mode === 'soon' ? 'This site has not launched yet. Check back soon.' : 'This site is being worked on and will be back shortly.');
+    return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>${esc(heading)} · ${esc(title)}</title>`
+        + '<style>body{margin:0;min-height:100vh;display:grid;place-items:center;font:16px/1.5 system-ui,sans-serif;background:#f8fafc;color:#0f172a}main{max-width:36rem;padding:2rem;text-align:center}h1{font-size:1.75rem;margin:0 0 .5rem}p{margin:.5rem 0;white-space:pre-line;color:#475569}.site{font-size:.875rem;letter-spacing:.05em;text-transform:uppercase;color:#64748b}@media(prefers-color-scheme:dark){body{background:#0b1220;color:#e2e8f0}p{color:#94a3b8}}</style></head>'
+        + `<body><main><p class="site">${esc(title)}</p><h1>${esc(heading)}</h1><p>${esc(text)}</p></main></body></html>`;
+}
 
 /** API requests per minute per caller: a signed-in user or application password, or an anonymous address. */
 export const API_LIMITS = Object.freeze({ anonymous: 120, signedIn: 600 });

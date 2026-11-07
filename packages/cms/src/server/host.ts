@@ -56,6 +56,7 @@ import { afterCommit, commentBeforeSave, formSubmitted, menuBeforeSave, pluginJo
 import { CmsForms, type CmsMail } from './forms';
 import { pluginCapabilities, type PluginCache, type PluginFiles, type PluginJobs, type PluginMail, type PluginSecrets, type PluginUsers } from './capabilities';
 import { CmsSchedules, type DueSchedule } from './schedules';
+import { CmsAudit } from './audit';
 import { CmsComments } from './comments';
 import { CmsSecurity } from './security';
 import type { ImageTransformer } from './images';
@@ -359,6 +360,8 @@ export class CmsHost {
     readonly mailFrom: string;
     /** Plugin schedules: `tick()` from maintenance queues the due occurrences as jobs. */
     readonly schedules: CmsSchedules;
+    /** The audit trail of writes, for Tools → Activity. */
+    readonly audit: CmsAudit;
     readonly #secrets: (name: string) => string | undefined;
     /** Second factors and passkeys of network accounts, on the network database. */
     readonly security: CmsSecurity;
@@ -529,6 +532,7 @@ export class CmsHost {
         this.files = options.storage ? new FileService(this.db, options.storage, { now: this.#now, ...(options.images ? { images: options.images } : {}), imageSettings: () => this.#imageSettings(), changed: () => this.#purgeSite('media'), ...options.files }) : null;
         this.cache = new CmsCache(this.db, { now: this.#now });
         this.#secrets = options.secrets ?? (() => undefined);
+        this.audit = new CmsAudit(this.db, { now: this.#now });
         this.schedules = new CmsSchedules(this.db, { outbox: this.outbox, now: this.#now, schedules: () => this.#dueSchedules(), queued: () => this.outboxWritten() });
         this.purge = new CmsPurge({ outbox: this.outbox, hooks: this.hooks, cache: this.cache, site: this.site, purgers: options.purgers ?? [], now: this.#now, queued: () => this.outboxWritten() });
         for (const module of modules) module.register?.({ hooks: this.hooks, settings: this.settings, taxonomies: this.taxonomies, collection: name => this.#collections.get(name), blocks: () => this.#blocks, now: this.#now });

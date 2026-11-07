@@ -252,6 +252,8 @@ export class RichTextField extends Cossack {
                 ${this.tool('⇤', __('Align left'), 'alignLeft', '')}${this.tool('↔', __('Align center'), 'alignCenter')}${this.tool('⇥', __('Align right'), 'alignRight')}
                 ${separator}
                 ${this.tool(__('Link'), __('Insert or edit link'), () => this.openLink(), 'link')}${this.tool('—', __('Horizontal line'), 'horizontalRule', '')}
+                ${this.tool('⊞', __('Insert a table'), 'table')}
+                ${this.active.includes('table') ? html`${this.tool('+⇣', __('Add a row below'), 'tableRowAfter', '')}${this.tool('+⇢', __('Add a column to the right'), 'tableColumnAfter', '')}${this.tool('−⇣', __('Delete the row'), 'tableDeleteRow', '')}${this.tool('−⇢', __('Delete the column'), 'tableDeleteColumn', '')}${this.tool('H', __('Toggle the header row'), 'tableHeaderRow', '')}${this.tool('⌫⊞', __('Delete the table'), 'tableDelete', '')}` : null}
                 ${this.tool('↶', __('Undo'), 'undo', '')}${this.tool('↷', __('Redo'), 'redo', '')}
                 ${separator}
                 ${this.tool(__('Add media'), __('Add media'), () => this.props.onMedia())}

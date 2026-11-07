@@ -27,6 +27,8 @@ export async function sourceChoices(cms: CmsHost): Promise<SourceChoices> {
         forms: forms.map(form => ({ value: String(form.record.slug ?? ''), label: `${recordTitle(form.record, 'title')} (${String(form.record.slug ?? '')})` })).filter(choice => choice.value),
         collections: cms.collections().filter(entry => entry.publishable !== false && !entry.managed).map(entry => ({ value: entry.name, label: entry.label })),
         terms,
+        // The site's authors (people who wrote something), for blocks that list one author's entries.
+        authors: (await cms.users.authors({ limit: 200 }).catch(() => [])).map(user => ({ value: user.id, label: user.name || user.email })),
         locations: (await cms.menuLocations()).map(location => ({ value: location.name, label: location.active ? location.label : `${location.label} (${location.theme})` })),
     };
 }

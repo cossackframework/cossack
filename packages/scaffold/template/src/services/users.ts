@@ -44,7 +44,10 @@ export interface ListUsersResult {
 
 export interface CreateUserInput {
   email: string;
-  password: string;
+  /** Required unless `invite` is set. */
+  password?: string;
+  /** Invitations need an email sender, which the CMS provides; here they are refused. */
+  invite?: boolean;
   name?: string;
   /** Roles chosen by someone who may assign them; otherwise none. */
   roleIds?: string[];
@@ -171,6 +174,7 @@ export async function getUser(id: string): Promise<UserDetail | null> {
 }
 
 export async function createUser(input: CreateUserInput): Promise<PublicUser> {
+  if (!input.password) throw new ClientVisibleError('Set a password: this site cannot send invitations.');
   if (await User.exists({ email: input.email })) {
     throw new ClientVisibleError('An account with this email already exists.');
   }

@@ -1,5 +1,6 @@
 import { Cossack, Page, Server, State, Client, Image, server$ } from '@cossackframework/core';
 import { Sidebar, DropdownMenu, Avatar, Icon, type SidebarItem } from '@cossackframework/ui';
+import { CommandPalette, type CommandItem } from '@cossackframework/ui/blocks';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
 import { getCookie } from 'hono/cookie';
 import { Widget2Icon as dashboardIconSvg } from '@cossackframework/solar-icons/widget-2/line';
@@ -7,7 +8,7 @@ import { SunIcon as sunIconSvg } from '@cossackframework/solar-icons/sun/line';
 import { MoonIcon as moonIconSvg } from '@cossackframework/solar-icons/moon/line';
 import { AltArrowRightIcon as chevronIconSvg } from '@cossackframework/solar-icons/alt-arrow-right/line';
 import { Logout3Icon as logoutIconSvg } from '@cossackframework/solar-icons/logout-3/line';
-import { dashboardStatus, navigation } from '../../dashboard/access';
+import { dashboardSearch, dashboardStatus, navigation } from '../../dashboard/access';
 import { siteLogo, siteName } from '../../brand';
 import type { DashboardModule, DashboardStatus } from '../../dashboard/types';
 import { logout } from '../../auth';
@@ -50,6 +51,8 @@ export default class DashboardLayout extends Cossack {
     @State() sidebarCollapsed = false;
     /** Navigation the signed-in user may open, resolved on the server. */
     @State() modules: DashboardModule[] = [];
+    /** Where Ctrl/Cmd+K can go: every screen of the navigation, resolved with it. */
+    @State() commands: { id: string; label: string; group: string; href: string }[] = [];
     @State() logoutError = '';
     @State() account: { name: string; email: string; avatar: string | null } = {
         name: '',
@@ -67,6 +70,13 @@ export default class DashboardLayout extends Cossack {
     /** Flip the sidebar collapsed state and persist to a cookie so the next
      *  SSR render paints the correct state (no flash). The @State update drives
      *  the Sidebar re-render (controlled component). */
+    /** Open the screen a palette entry names; the palette's ids are the hrefs. */
+    @Client()
+    go(id: string) {
+        const found = this.commands.find((entry) => entry.id === id);
+        if (found) window.location.assign(found.href);
+    }
+
     @Client()
     onToggleSidebar() {
         this.sidebarCollapsed = !this.sidebarCollapsed;
@@ -89,7 +99,10 @@ export default class DashboardLayout extends Cossack {
 
     async init() {
         const user = this.user;
-        if (this.c) this.modules = await navigation(this.c);
+        if (this.c) {
+            this.modules = await navigation(this.c);
+            this.commands = await dashboardSearch(this.c);
+        }
         this.account = {
             name: user?.name ?? '',
             email: user?.email ?? '',
@@ -228,6 +241,8 @@ export default class DashboardLayout extends Cossack {
                     `,
                 })}
                 <div class="flex-1 min-w-0 flex flex-col">
+                    ${component(CommandPalette, { id: 'dashboard-commands', label: __('Go to'), placeholder: __('Type a screen name…'), shortcut: true,
+                        commands: this.commands.map((entry): CommandItem => ({ id: entry.id, label: entry.label, group: entry.group })), onSelect: (id: string) => this.go(id) })}
                     <main class="flex-1 p-6 sm:p-8 overflow-x-hidden has-[[data-settings-toolbar]]:overflow-visible has-[[data-subnav]]:grid has-[[data-subnav]]:grid-cols-1 has-[[data-subnav]]:p-0">
                         ${this.logoutError ? html`<p role="alert" class="mb-4 text-sm text-destructive">${this.logoutError}</p>` : null}
                         ${this.children}

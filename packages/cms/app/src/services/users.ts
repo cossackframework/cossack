@@ -1,6 +1,6 @@
 import { ClientVisibleError, getRequestContext } from '@cossackframework/core';
 import { isCmsError, systemPrincipal } from '@cossackframework/cms';
-import { MAIN_SITE, type CmsUser } from '@cossackframework/cms/server';
+import { MAIN_SITE, randomToken, type CmsHost, type CmsUser } from '@cossackframework/cms/server';
 import { currentCms, networkFor, type CmsBindings } from '../cms/index';
 import { manageableHere, NETWORK_ACCOUNT_LOCKED, type PublicUser, type RoleAssignment } from '../auth';
 
@@ -38,7 +38,10 @@ export interface ListUsersResult {
 
 export interface CreateUserInput {
   email: string;
-  password: string;
+  /** Required unless `invite` is set. */
+  password?: string;
+  /** Send an invitation: the account starts with a random password and an email with a link to set one, good for seven days. */
+  invite?: boolean;
   name?: string;
   /** Roles chosen by someone who may assign them; otherwise the default role. */
   roleIds?: string[];
@@ -90,8 +93,24 @@ export async function createUser(input: CreateUserInput): Promise<Omit<PublicUse
     const role = await cms.settings.get('general.defaultRole');
     roles = role && (await cms.users.role(role)) ? [role] : [];
   }
-  const user = await visible(cms.users.create({ email: input.email, password: input.password, name: input.name?.trim() || input.email.split('@')[0]!, roles }));
+  if (!input.invite && !input.password) throw new ClientVisibleError('Set a password or send an invitation.');
+  if (input.invite && !cms.mail) throw new ClientVisibleError('No email sender is configured, so invitations cannot be sent. Set a password instead.');
+  const password = input.invite ? randomToken(32) : input.password!;
+  const user = await visible(cms.users.create({ email: input.email, password, name: input.name?.trim() || input.email.split('@')[0]!, roles }));
+  if (input.invite) await sendInvitation(cms, user.email, user.name);
   return { ...summary(user), meta: null };
+}
+
+/** The invitation: a link to set a password, good for seven days, from the site's sender. */
+async function sendInvitation(cms: CmsHost, email: string, name: string): Promise<void> {
+  const reset = await cms.signIn.accounts.createPasswordReset(email, { ttlMs: 7 * 24 * 60 * 60_000 });
+  if (!reset || !cms.mail) return;
+  const c = getRequestContext();
+  const origin = env('APP_URL', '') || (c ? new URL(c.req.url).origin : '');
+  const title = await cms.settings.get('general.siteTitle').catch(() => '');
+  const link = `${origin.replace(/\/$/, '')}/auth/reset-password?token=${reset.token}`;
+  await cms.mail.send({ to: email, from: cms.mailFrom, subject: `You are invited to ${title || 'the site'}`,
+    text: `Hello ${name || email},\n\nAn account was made for you on ${title || origin}. Set your password here within seven days:\n${link}\n\nIf you were not expecting this, ignore this email.` });
 }
 
 /** A network account on an added site keeps its name, email and picture unless the person or a network admin changes them. */

@@ -89,7 +89,7 @@ describe('block bindings', () => {
             { type: 'codeBlock', content: [{ type: 'text', text: '{{ $.price }}' }] },
         ] };
         const text = (value: string) => resolveBindings(value, { entry: { ...entry, title: '<Rocket>' } });
-        expect(richTextHtml(doc, { text })).toBe('<p>Only 19.5 for <strong>&lt;Rocket&gt;</strong><code> {{ $.title }}</code></p><pre><code>{{ $.price }}</code></pre>');
+        expect(richTextHtml(doc, { text })).toBe('<p>Only 19.5 for <strong>&lt;Rocket&gt;</strong><code> {{ $.title }}</code></p><pre class="cms-code"><code>{{ $.price }}</code></pre>');
         expect(richTextHtml(doc)).toContain('Only {{ $.price }} for');
     });
 });

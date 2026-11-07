@@ -14,7 +14,7 @@ import {
 } from '@cossackframework/auth/passkeys';
 import { ClientVisibleError, getClientIp, getRequestContext } from '@cossackframework/core';
 import { ANONYMOUS, hasPermission, isCmsError, isNetworkAdmin, PERMISSIONS, type Principal } from '@cossackframework/cms';
-import { MAIN_SITE, RESET_REQUESTS, type ApiToken, type CmsHost, type CmsMember, type SecurityStatus as AccountSecurity } from '@cossackframework/cms/server';
+import { MAIN_SITE, randomToken, RESET_REQUESTS, sha256Hex, type ApiToken, type CmsHost, type CmsMember, type SecurityStatus as AccountSecurity } from '@cossackframework/cms/server';
 import { renderSVG } from 'uqr';
 import { currentCms, networkFor, type CmsBindings } from './cms/index';
 import { handoffSite } from './cms/handoff';
@@ -39,6 +39,8 @@ export interface PublicUser {
   roles: RoleAssignment[];
   /** What this user may do in the CMS, for repositories and permission checks. */
   principal: Principal;
+  /** Set by `registerUser` when the account waits for the email's confirmation link instead of signing in. */
+  verification?: 'sent';
 }
 
 declare module '@cossackframework/core' {
@@ -220,6 +222,12 @@ export async function registerUser(email: string, password: string, name?: strin
   const roles = role && (await host.users.role(role)) ? [role] : [];
   try {
     const user = await host.users.create({ email, password, name: name?.trim() || email.split('@')[0]!, roles, ...(site ? { network: true } : {}) });
+    // With a sender and Settings → General asking for it, the account waits for the email's link; the handoff flow signs in on the network host and skips it.
+    if (!site && host.mail && await host.settings.get('general.verifyEmail').catch(() => true)) {
+      await host.users.setStatus(user.id, 'disabled');
+      await sendVerification(host, user.id, user.email, user.name);
+      return { id: user.id, email: user.email, name: user.name, avatar: user.avatar, meta: null, roles: [], principal: ANONYMOUS, verification: 'sent' };
+    }
     // The network host signs the account in; the handoff then takes it to its site.
     return site ? { id: user.id, email: user.email, name: user.name, avatar: user.avatar, meta: null, roles: [], principal: ANONYMOUS } : (await member(user.id))!;
   } catch (error) {
@@ -562,3 +570,50 @@ export async function revokeAllUserSessions(c: Context, keepCurrent = false): Pr
 
 /** The session cookie name, exported so pages/middleware can read it. */
 export const SESSION_COOKIE_NAME = SESSION_COOKIE;
+
+/**
+ * A person deletes their own account: the password confirms it, the site's only administrator
+ * may not, every session ends, and the account goes with its memberships. Returns the headers
+ * that clear the browser's session.
+ */
+export async function deleteOwnAccount(c: Context, userId: string, password: string): Promise<{ headers: Headers }> {
+  if (!(await passwordMatches(userId, password))) throw new ClientVisibleError('The password is not right.');
+  const host = cms();
+  const me = await host.users.get(userId);
+  if (!me) throw new ClientVisibleError('The account was not found.');
+  if (me.permissions.includes('*')) {
+    const admins = await host.users.list({ role: 'admin', limit: 2 });
+    if (admins.total <= 1) throw new ClientVisibleError('You are the only administrator. Make someone else an administrator first.');
+  }
+  await revokeSessionsOf(c, userId);
+  const { headers } = await logout(c);
+  await host.users.delete(userId);
+  return { headers };
+}
+
+/** How long a confirmation link lives. */
+const VERIFICATION_TTL_MS = 48 * 60 * 60_000;
+
+/** Send the confirmation link; the token's hash in the cache names the account until it is opened or two days pass. */
+async function sendVerification(host: CmsHost, userId: string, email: string, name: string): Promise<void> {
+  if (!host.mail) return;
+  const token = randomToken(32);
+  await host.cache.set(`verify:${await sha256Hex(token)}`, { user: userId }, VERIFICATION_TTL_MS);
+  const c = getRequestContext();
+  const origin = env('APP_URL', '') || (c ? new URL(c.req.url).origin : '');
+  const title = await host.settings.get('general.siteTitle').catch(() => '');
+  await host.mail.send({ to: email, from: host.mailFrom, subject: `Confirm your email for ${title || 'the site'}`,
+    text: `Hello ${name || email},\n\nConfirm your email address to finish creating your account on ${title || origin}:\n${origin.replace(/\/$/, '')}/auth/verify?token=${token}\n\nThe link works for two days. If you did not register, ignore this email.` });
+}
+
+/** Open a confirmation link: the account becomes active and the token is spent. Returns the user ID, or null for an unknown or expired link. */
+export async function verifyEmail(token: string): Promise<string | null> {
+  if (!/^[A-Za-z0-9_-]{20,128}$/.test(token)) return null;
+  const host = cms();
+  const key = `verify:${await sha256Hex(token)}`;
+  const found = await host.cache.get<{ user: string }>(key);
+  if (!found?.user) return null;
+  await host.cache.delete(key);
+  await host.users.setStatus(found.user, 'active');
+  return found.user;
+}

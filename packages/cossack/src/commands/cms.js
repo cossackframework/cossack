@@ -12,6 +12,7 @@ import { CMS_COMMANDS, findCommand, NOUNS } from '../cms/catalog.js';
 import { createClient, resolveTarget } from '../cms/client.js';
 import { readBody } from '../cms/input.js';
 import { loginCommand, logoutCommand, mcpCommand, whoamiCommand } from '../cms/login.js';
+import { importWxrCommand } from '../cms/import-wxr.js';
 import { mimeType } from '../cms/mime.js';
 import { formatJson, formatTable } from '../cms/output.js';
 
@@ -54,6 +55,7 @@ export async function cmsCommand(args, ctx) {
     if (noun === 'logout') return logoutCommand(options);
     if (noun === 'whoami') return whoamiCommand(options);
     if (noun === 'mcp') return mcpCommand(options);
+    if (noun === 'import') return importWxrCommand({ ...options, positionals: rest });
     const label = `cms ${noun} ${command.verb}`;
     if (command.destructive && ctx.flags.yes !== true) throw coded('COSSACK_CMS_CONFIRM_REQUIRED', `${label} is permanent: add --yes to confirm.`);
     const body = command.write ? await readBody(ctx.flags, { cwd: ctx.cwd }) : undefined;

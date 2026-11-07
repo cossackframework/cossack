@@ -12,6 +12,8 @@ interface NewUserForm {
     email: string;
     password: string;
     roleIds: string[];
+    /** Send an invitation with a link to set the password instead of setting one here. */
+    invite: boolean;
 }
 
 /**
@@ -24,11 +26,11 @@ export default class NewUserPage extends Cossack {
     @Validate({
         rules: storeRules<NewUserForm>({
             email: { required: true, email: true, message: 'Enter a valid email' },
-            password: { required: true, minLength: 8, message: 'Password must be at least 8 characters' },
+            password: { minLength: 8, message: 'Password must be at least 8 characters' },
         }),
         config: { trigger: 'all', runOn: 'both' }
     })
-    form: NewUserForm = { name: '', email: '', password: '', roleIds: [] };
+    form: NewUserForm = { name: '', email: '', password: '', roleIds: [], invite: false };
 
     @State() error = '';
     @State() canAssignRoles = false;
@@ -56,18 +58,19 @@ export default class NewUserPage extends Cossack {
         this.error = '';
         const ok = await this.validateAll();
         if (!ok) return;
+        if (!this.form.invite && !this.form.password) { this.error = __('Enter a password, or send an invitation.'); return; }
         try {
-            await this.create(this.form.name, this.form.email, this.form.password, this.form.roleIds);
+            await this.create(this.form.name, this.form.email, this.form.invite ? '' : this.form.password, this.form.roleIds, this.form.invite);
         } catch (e: any) {
             this.error = e?.message || __('Could not create user');
         }
     }
 
     @Server()
-    async create(name: string, email: string, password: string, roleIds: string[]) {
+    async create(name: string, email: string, password: string, roleIds: string[], invite: boolean) {
         // Roles from the form count only for a role manager; others get the default role.
         const chosen = canAssignRoles(this.user as PublicUser | undefined) ? roleIds : undefined;
-        await createUser({ email, password, name: name || undefined, ...(chosen ? { roleIds: chosen } : {}) });
+        await createUser({ email, ...(invite ? { invite: true } : { password }), name: name || undefined, ...(chosen ? { roleIds: chosen } : {}) });
         this.redirect('/dashboard/users');
     }
 
@@ -91,7 +94,11 @@ export default class NewUserPage extends Cossack {
                                 control: attributes => component(Input, { ...attributes, type: 'text', '.value': bind(this.form, 'name') }) })}
                             ${component(Field, { label: __('Email'), for: 'email', error: this.getError('form.email'),
                                 control: attributes => component(Input, { ...attributes, type: 'email', placeholder: 'user@example.com', variant: this.hasError('form.email') ? 'error' : 'default', '.value': bind(this.form, 'email') }) })}
-                            ${component(Field, { label: __('Password'), for: 'password', error: this.getError('form.password'),
+                            <label class="flex items-center gap-3 cursor-pointer">
+                                ${component(Checkbox, { checked: this.form.invite, '@change': (e: Event) => { this.form.invite = (e.target as HTMLInputElement).checked; } })}
+                                <span class="text-sm text-foreground">${__('Send an invitation email with a link to set the password')}</span>
+                            </label>
+                            ${this.form.invite ? null : component(Field, { label: __('Password'), for: 'password', error: this.getError('form.password'),
                                 control: attributes => component(PasswordInput, { ...attributes, value: this.form.password, onValueChange: (v: string) => this.form.password = v }) })}
                             ${this.canAssignRoles ? html`<fieldset class="space-y-2">
                                 <legend class="mb-1 text-sm font-medium text-foreground">${__('Roles')}</legend>

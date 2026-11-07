@@ -192,7 +192,7 @@ export default class EntryEditor extends Cossack {
             this.previews = await mediaPreviews(cms, this.values, view);
             if (view.hierarchical) this.parents = await parentOptions(cms, resource.id, record?.id ?? null, principal);
             for (const field of view.fields.filter(entry => entry.kind === 'reference' && entry.target !== resource.id)) {
-                const page = await cms.resource(field.target).list({ limit: 100 }, { principal }).catch(() => ({ records: [] }));
+                const page = await cms.resource(field.target).list({ limit: 200, order: { field: 'updatedAt', direction: 'desc' } }, { principal }).catch(() => ({ records: [] }));
                 const target = cms.resourceById(field.target);
                 this.references = { ...this.references, [field.name]: page.records.map(entry => ({ id: entry.id, title: recordTitle(entry, target.titleField) })) };
             }

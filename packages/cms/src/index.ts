@@ -32,7 +32,7 @@ export { CORE_BLOCKS, BLOCK_CATEGORIES, BLOCK_ID, BLOCK_NAME, BLOCK_LIMITS, CUST
     blockCategory, blockIdProblem, blockIsData, blockProblems, blocksShapeProblem, blockLayoutProblem, blockStyleProblem, styleValueProblem, blockConditionProblem, blockSupports, blockAllowedIn, validateBlocks, blockMedia, blockDocuments, blocksPlain, cloneBlocks, blockId, inputName,
     flattenBlocks, placeBlocks, findBlock, HTML_BLOCK, htmlBlocks, htmlBlocksChanged, updateBlock, removeBlock, insertBlock, moveBlock, shiftBlock, blockTreeProblem,
     type Block, type BlockCategory, type BlockDeclaration, type BlockLayout, type BlockStyle, type BlockSupports, type BlockMove, type BlockPlace, type Breakpoint, type StyleProperty,
-    type BlockCondition, type ConditionRule, type ConditionOperator, type InputKind, type FieldBlockKind, type ValidateBlocksOptions } from './blocks';
+    type BlockCondition, type ConditionRule, type ConditionOperator, type InputKind, type FieldBlockKind, type ValidateBlocksOptions, EMBED_URL } from './blocks';
 export { hasBinding, bindingPaths, bindingRefs, bindingValue, bindingText, bindingProblem, usesUserBinding, resolveBindings, resolveBlockBindings, withBinding, BINDING_SCOPES, type BindingScope, type BindingScopes } from './bindings';
 export { parseBlockText, hasBlockReference, textBlocks, PATTERN_REFERENCE, type TextPart, type ParsedText } from './block-references';
 export { formInput, formValue, recordTitle, isSameOriginPost, type FormInput, type SubmittedForm } from './forms';
@@ -85,3 +85,4 @@ export { NOTE_STATUSES, NOTE_LIMITS, formatNoteTarget, parseNoteTarget, noteBloc
 
 export { CACHE_HOLDS, cacheControl, cacheHoldSeconds, cacheTags, cacheTagHeader, type CacheHold } from './cache';
 export { parseCron, nextCronTime, cronProblem, type CronFields } from './cron';
+export { highlightCode, highlightLanguage, HIGHLIGHT_LANGUAGES, type TokenClass } from './highlight';

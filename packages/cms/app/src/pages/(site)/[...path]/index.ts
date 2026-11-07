@@ -4,7 +4,7 @@ import { getCookie } from 'hono/cookie';
 import { component, html } from '@cossackframework/renderer';
 import { hasPermission, isCmsError, isSameOriginPost, PERMISSIONS, type ArchiveView, type EntryView, type LanguageLink, type Note, type RecordShape, type ThemeData } from '@cossackframework/cms';
 import type { CmsHost } from '@cossackframework/cms/server';
-import { archive, authorArchive, authorView, bindingScopes, commentResult, entryViews, homeView, isProtected, languageLinks, localePrefix, pageNumber, redirectFor, resolvePath, searchEntries, termArchive, themeData, themeState, unlockCookie, unlockToken, resolvedOptions, type Resolved, type ThemeState } from '../../../cms/site';
+import { archive, authorArchive, authorView, bindingScopes, commentResult, entryViews, homeView, isProtected, languageLinks, localePrefix, pageNumber, redirectFor, resolvePath, searchEntries, termArchive, themeData, themeState, unlockCookie, unlockToken, resolvedOptions, type Resolved, type ThemeState, notFoundPage } from '../../../cms/site';
 import { archiveTemplate, entryTemplate, siteContent, siteTheme, tagDocument, themeHelpers, unavailable } from '../../../cms/site-view';
 import { authorSeo, entrySeo, homeSeo, listSeo } from '../../../cms/seo';
 import { emptySeo, seoHead, type SeoView } from '../../../cms/seo-head';
@@ -97,6 +97,8 @@ export const resolveSitePath = defineServerMiddleware(async (c, next) => {
 export default class SitePath extends Cossack {
     @State() kind: 'entry' | 'list' | 'home' | 'none' | 'gone' | 'unavailable' = 'none';
     @State() entry: EntryView | null = null;
+    /** The entry is the page Settings → Reading shows for missing addresses: status 404, no indexing. */
+    @State() notFound = false;
     /** A protected entry this visitor has not unlocked: the password form shows instead of the content. */
     @State() locked = false;
     @State() wrongPassword = false;
@@ -121,6 +123,7 @@ export default class SitePath extends Cossack {
     @ClientState() saving = false;
 
     head(): HeadValue {
+        if (this.notFound) return { title: this.entry?.title ?? __('Page not found'), meta: [{ tag: 'meta', attributes: { name: 'robots', content: 'noindex' } }] };
         if (this.seo.title) return seoHead(this.seo);
         // Before setup the site is unavailable: the layout's site title, kept out of search results.
         if (this.kind === 'unavailable') return { meta: [{ tag: 'meta', attributes: { name: 'robots', content: 'noindex' } }] };
@@ -138,7 +141,16 @@ export default class SitePath extends Cossack {
             if (resolved.kind === 'gone') { this.kind = 'gone'; this.c.status(410); await applyCacheHeaders(this.c, cms, [], { max: 60 }); return; }
             if (resolved.kind === 'none' || resolved.kind === 'redirect') {
                 this.c.status(404);
-                this.data = await themeData(cms, this.theme, { kind: 'not-found' }, this.view, this.c.get('principal'), resolved.kind === 'none' ? resolved.locale : undefined);
+                const locale = resolved.kind === 'none' ? resolved.locale : undefined;
+                // Settings → Reading may choose a page for missing addresses: it renders as an entry, with status 404 and no indexing.
+                const chosen = await notFoundPage(cms, locale ?? (await cms.languages()).default);
+                if (chosen) {
+                    this.kind = 'entry';
+                    this.entry = chosen;
+                    this.notFound = true;
+                    this.site = await siteInfo(cms, locale ?? (await cms.languages()).default, { url: this.c.req.url });
+                    this.data = await themeData(cms, this.theme, { kind: 'entry', collection: chosen.collection, template: chosen.template }, chosen, this.c.get('principal'), locale);
+                } else this.data = await themeData(cms, this.theme, { kind: 'not-found' }, this.view, this.c.get('principal'), locale);
                 // A page may appear here later: held a minute, and purged with the site.
                 await applyCacheHeaders(this.c, cms, [], { max: 60 });
                 return;
