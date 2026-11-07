@@ -302,7 +302,8 @@ export function blocksInput(raw: readonly EditorBlock[], types: ReadonlyMap<stri
             if (value.value !== undefined && value.value !== null && value.value !== '') data[entry.name] = value.value;
         }
         const layout = blockLayoutInput(block.layout);
-        const style = Object.fromEntries(Object.entries(block.style ?? {}).filter(([, value]) => typeof value === 'string' && value)) as BlockStyle;
+        // Slugs, colors and media IDs are strings; the advanced background also has flags and an opacity. An empty value or an off flag is no value.
+        const style = Object.fromEntries(Object.entries(block.style ?? {}).filter(([, value]) => value !== undefined && value !== null && value !== '' && value !== false)) as BlockStyle;
         const children = Array.isArray(block.children) ? blocksInput(block.children, types) : undefined;
         if (children && 'error' in children) return children;
         const when = conditionInput(block.when);

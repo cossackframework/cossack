@@ -51,7 +51,7 @@ export default function project(entry: EntryView, helpers: ThemeHelpers): Templa
         <h1>\${entry.title}</h1>
         <p data-client>\${String(entry.fields.client ?? '')}</p>
         <p data-year>\${String(entry.fields.year ?? '')}</p>
-        <div data-sections>\${helpers.block(entry.content)}</div>
+        <div data-sections>\${helpers.layout(entry.content)}</div>
         <aside><h2>Related projects</h2><ul data-related>\${related.map(item => html\`<li><a href=\${item.url}>\${item.title}</a></li>\`)}</ul></aside>
     </article>\`;
 }

@@ -4,7 +4,7 @@ import type { ArchiveView } from '@cossackframework/cms';
 import { list } from '../parts/list';
 
 export default function search(view: ArchiveView): TemplateResult {
-    return html`<div class="space-y-8">
+    return html`<div class="cms-measure space-y-8">
         <form method="get" action="" role="search" class="flex gap-2">
             <input type="search" name="q" .value=${view.query} aria-label=${__('Search')} placeholder=${__('Search')}
                 class="flex-1 rounded-md border border-input bg-background px-4 py-2 text-base focus:outline-none focus:ring-2 focus:ring-ring">

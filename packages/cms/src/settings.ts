@@ -255,7 +255,7 @@ export interface SiteSettings {
     'media.sizes': string;
     'media.eagerFirstImage': boolean;
     'appearance.theme': string;
-    'appearance.presets': { readonly [theme: string]: { readonly colors?: { readonly [slug: string]: string }; readonly custom?: readonly { slug: string; name: string; value: string }[] } } | null;
+    'appearance.presets': { readonly [theme: string]: { readonly colors?: { readonly [slug: string]: string }; readonly custom?: readonly { slug: string; name: string; value: string }[]; readonly gradients?: { readonly [slug: string]: string }; readonly customGradients?: readonly { slug: string; name: string; value: string }[] } } | null;
     'appearance.customCss': string;
     'writing.defaultCategory': string;
     'writing.defaultStatus': 'draft' | 'published';

@@ -42,7 +42,8 @@ const STYLE = `
 interface BlockForm { id: string; /** The document the block is in. */ doc: string; values: Record<string, unknown>; style: StyleValues; tab: BlockTab; errors: Record<string, string> }
 /** A block embedded in the body, edited from the rich text editor. */
 interface EmbeddedForm { id: string; type: string; values: Record<string, unknown>; errors: Record<string, string> }
-type ChooserTarget = { kind: 'block' | 'embedded' | 'entry'; field: string } | { kind: 'richtext'; /** The editor to insert into; the body's by default. */ editor?: string };
+type ChooserTarget = { kind: 'block' | 'embedded' | 'entry'; field: string } | { kind: 'richtext'; /** The editor to insert into; the body's by default. */ editor?: string }
+    | { kind: 'style'; /** The block form's background image or video. */ property: 'image' | 'video' };
 interface Drag { /** The document whose list is dragged. */ doc: string; from: number; to: number; y: number; depth: number; moved: boolean }
 type Device = 'desktop' | 'tablet' | 'phone';
 /** A row of the Blocks panel, by document and block. */
@@ -689,6 +690,7 @@ export class SiteEditor extends Cossack {
     /** The kind of file a target's field asks for first: its declared kinds, images otherwise. */
     private fileKind(target: ChooserTarget): string {
         if (target.kind === 'richtext') return 'image';
+        if (target.kind === 'style') return target.property;
         const type = target.kind === 'entry' ? null : target.kind === 'embedded' ? this.embedded?.type : this.form ? findBlock(this.blocks(), this.form.id)?.type : undefined;
         const fields = target.kind === 'entry' ? this.props.draft.view.fields : type ? this.option(type)?.fields ?? [] : [];
         return chooserKind(fields.find(field => field.name === target.field));
@@ -712,6 +714,7 @@ export class SiteEditor extends Cossack {
         this.props.onPreviews({ ...this.props.draft.previews, [file.id]: file });
         if (target.kind === 'richtext') richTextEditors.get(target.editor ?? BODY_EDITOR)?.insertImage({ src: file.url, alt: file.alt || file.title, mediaId: file.id });
         else if (target.kind === 'block' && this.form) this.setFormValue(target.field, withFile(this.form.values[target.field], file.id, chooser.multiple));
+        else if (target.kind === 'style' && this.form) this.setFormStyle({ ...this.form.style, style: { ...this.form.style.style, [target.property]: file.id } });
         else if (target.kind === 'embedded' && this.embedded) this.setEmbeddedValue(target.field, withFile(this.embedded.values[target.field], file.id, chooser.multiple));
         else if (target.kind === 'entry') this.setValue(target.field, withFile(this.values[target.field], file.id, chooser.multiple));
         if (!chooser.multiple) this.props.onChooser({ ...chooser, open: false });
@@ -769,7 +772,8 @@ export class SiteEditor extends Cossack {
                     })}
                 </div>
                 ${blockTabs(form.tab, tab => this.showFormTab(tab), `site-block-${block._id}`, {
-                    style: styleControls(form.style, option.supports, this.props.draft.view.presets, `site-block-${block._id}-style`, style => this.setFormStyle(style), { taken: this.otherIds(block._id) }),
+                    style: styleControls(form.style, option.supports, this.props.draft.view.presets, `site-block-${block._id}-style`, style => this.setFormStyle(style),
+                        { taken: this.otherIds(block._id), media: { previews: this.props.draft.previews, choose: property => this.openChooser({ kind: 'style', property }, false) } }),
                     general: option.fields.length ? html`
                     ${option.fields.filter(field => field.kind === 'richtext').map(field => html`<div class="space-y-1"><label class="block text-sm font-medium text-foreground" for=${`site-block-${block._id}-${field.name}`}>${field.label}</label>
                         ${component(RichTextField, { id: `site-block-${block._id}-${field.name}`, label: field.label, value: (form.values[field.name] as RichTextDoc | null) ?? null, blocks: [],

@@ -6,13 +6,13 @@ import { requireAny } from '../../../../../cms/guards';
 import { findSettingsMedia, settingControl, settingInput, settingRows, type SettingRow, type SettingValues } from '../../../../../cms/settings-form';
 import { linkButton, notice, pageHeader } from '../../../../../cms/ui';
 
-/** A palette color as the screen edits it: the theme's value, and the site's when changed. */
+/** A palette color or a gradient as the screen edits it: the theme's value, and the site's when changed. */
 interface ColorRow { slug: string; name: string; value: string; themeValue: string }
 
 /**
- * The active theme's options, such as its accent color; its palette, which blocks' Style tabs
- * pick from, with the site's own colors; and the site's Additional CSS. Options save as
- * settings named after the theme; the palette changes and the CSS as Appearance settings.
+ * The active theme's options, such as its accent color; its palette and gradients, which
+ * blocks' Style tabs pick from, with the site's own; and the site's Additional CSS. Options
+ * save as settings named after the theme; the preset changes and the CSS as Appearance settings.
  */
 @Page({ transport: 'http', middlewares: [requireAny(PERMISSIONS.manageAppearance)] })
 export default class CustomizePage extends Cossack {
@@ -21,6 +21,8 @@ export default class CustomizePage extends Cossack {
     @State() values: SettingValues = {};
     @State() colors: ColorRow[] = [];
     @State() custom: Preset[] = [];
+    @State() gradients: ColorRow[] = [];
+    @State() customGradients: Preset[] = [];
     @State() customCss = '';
     @State() errors: Record<string, string> = {};
     @State() error = '';
@@ -46,10 +48,36 @@ export default class CustomizePage extends Cossack {
         if (theme.options) ({ rows: this.rows, values: this.values } = await settingRows(cms, theme.options, this.c.get('principal')));
         const settings = await cms.settings.all();
         const overrides = settings['appearance.presets']?.[theme.name] ?? null;
-        const themeColors = resolvePresets(theme.presets).colors;
-        this.colors = themeColors.map(color => ({ slug: color.slug, name: color.name, themeValue: color.value, value: overrides?.colors?.[color.slug] ?? color.value }));
-        this.custom = (overrides?.custom ?? []).filter(color => !themeColors.some(entry => entry.slug === color.slug)).map(color => ({ ...color }));
+        const themePresets = resolvePresets(theme.presets);
+        this.colors = themePresets.colors.map(color => ({ slug: color.slug, name: color.name, themeValue: color.value, value: overrides?.colors?.[color.slug] ?? color.value }));
+        this.custom = (overrides?.custom ?? []).filter(color => !themePresets.colors.some(entry => entry.slug === color.slug)).map(color => ({ ...color }));
+        this.gradients = themePresets.gradients.map(gradient => ({ slug: gradient.slug, name: gradient.name, themeValue: gradient.value, value: overrides?.gradients?.[gradient.slug] ?? gradient.value }));
+        this.customGradients = (overrides?.customGradients ?? []).filter(gradient => !themePresets.gradients.some(entry => entry.slug === gradient.slug)).map(gradient => ({ ...gradient }));
         this.customCss = settings['appearance.customCss'] ?? '';
+    }
+
+    @Client()
+    setGradient(slug: string, value: string) {
+        this.gradients = this.gradients.map(gradient => gradient.slug === slug ? { ...gradient, value } : gradient);
+    }
+
+    @Client()
+    setCustomGradient(index: number, patch: Partial<Preset>) {
+        this.customGradients = this.customGradients.map((gradient, at) => at === index ? { ...gradient, ...patch } : gradient);
+    }
+
+    /** A new gradient of the site's own, named once like a custom color. */
+    @Client()
+    addCustomGradient() {
+        const taken = new Set([...this.gradients, ...this.customGradients].map(gradient => gradient.slug));
+        let index = this.customGradients.length + 1;
+        while (taken.has(`gradient-${index}`)) index += 1;
+        this.customGradients = [...this.customGradients, { slug: `gradient-${index}`, name: `${__('Gradient')} ${index}`, value: 'linear-gradient(135deg, #2563eb 0%, #7c3aed 100%)' }];
+    }
+
+    @Client()
+    removeCustomGradient(index: number) {
+        this.customGradients = this.customGradients.filter((_, at) => at !== index);
     }
 
     @Client()
@@ -86,7 +114,8 @@ export default class CustomizePage extends Cossack {
         event.preventDefault();
         this.mediaEpoch++;
         this.message = '';
-        await this.save(this.values, this.colors.map(color => ({ slug: color.slug, value: color.value })), this.custom, this.customCss);
+        await this.save(this.values, this.colors.map(color => ({ slug: color.slug, value: color.value })), this.custom, this.customCss,
+            this.gradients.map(gradient => ({ slug: gradient.slug, value: gradient.value })), this.customGradients);
         if (!this.error) this.message = __('Your changes are live.');
     }
 
@@ -96,25 +125,32 @@ export default class CustomizePage extends Cossack {
     }
 
     @Server()
-    async save(values: SettingValues, colors: { slug: string; value: string }[] = [], custom: Preset[] = [], customCss?: string) {
+    async save(values: SettingValues, colors: { slug: string; value: string }[] = [], custom: Preset[] = [], customCss?: string, gradients: { slug: string; value: string }[] = [], customGradients: Preset[] = []) {
         this.error = '';
         this.errors = {};
         const cms = this.c.get('cms');
         const theme = cms.themes().find(entry => entry.name === this.theme.name);
         if (!theme) { this.error = __('No theme is active.'); return; }
-        // The palette: only values that differ from the theme's are kept, so a theme update reaches untouched colors.
-        const themeColors = resolvePresets(theme.presets).colors;
-        const changed = Object.fromEntries(colors.filter(color => {
-            const original = themeColors.find(entry => entry.slug === color.slug);
-            return original && color.value.trim() && color.value.trim() !== original.value;
-        }).map(color => [color.slug, color.value.trim()]));
-        const added = custom.map(color => {
-            const slug = /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(color.slug) ? color.slug : slugify(color.name) || 'custom';
-            return { slug, name: color.name.trim(), value: color.value.trim() };
+        // The palette and the gradients: only values that differ from the theme's are kept, so a theme update reaches untouched ones.
+        const themePresets = resolvePresets(theme.presets);
+        const changes = (kind: 'colors' | 'gradients', list: { slug: string; value: string }[]) => Object.fromEntries(list.filter(entry => {
+            const original = themePresets[kind].find(preset => preset.slug === entry.slug);
+            return original && entry.value.trim() && entry.value.trim() !== original.value;
+        }).map(entry => [entry.slug, entry.value.trim()]));
+        const additions = (list: Preset[], fallback: string) => list.map(preset => {
+            const slug = /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(preset.slug) ? preset.slug : slugify(preset.name) || fallback;
+            return { slug, name: preset.name.trim(), value: preset.value.trim() };
         });
-        const overrides = { ...(Object.keys(changed).length ? { colors: changed } : {}), ...(added.length ? { custom: added } : {}) };
-        const presetProblem = presetOverridesProblem(overrides);
-        if (presetProblem) { this.errors = { colors: presetProblem }; this.error = __('Some colors are invalid.'); return; }
+        const changed = changes('colors', colors);
+        const added = additions(custom, 'custom');
+        const changedGradients = changes('gradients', gradients);
+        const addedGradients = additions(customGradients, 'gradient');
+        const overrides = { ...(Object.keys(changed).length ? { colors: changed } : {}), ...(added.length ? { custom: added } : {}),
+            ...(Object.keys(changedGradients).length ? { gradients: changedGradients } : {}), ...(addedGradients.length ? { customGradients: addedGradients } : {}) };
+        const colorProblem = presetOverridesProblem({ ...(overrides.colors ? { colors: overrides.colors } : {}), ...(overrides.custom ? { custom: overrides.custom } : {}) });
+        if (colorProblem) { this.errors = { colors: colorProblem }; this.error = __('Some colors are invalid.'); return; }
+        const gradientProblem = presetOverridesProblem({ ...(overrides.gradients ? { gradients: overrides.gradients } : {}), ...(overrides.customGradients ? { customGradients: overrides.customGradients } : {}) });
+        if (gradientProblem) { this.errors = { gradients: gradientProblem }; this.error = __('Some gradients are invalid.'); return; }
         const cssProblem = customCss === undefined ? undefined : customCssProblem(customCss);
         if (cssProblem) { this.errors = { customCss: cssProblem }; this.error = cssProblem; return; }
         if (theme.options) {
@@ -146,6 +182,34 @@ export default class CustomizePage extends Cossack {
             ${changed ? html`<button type="button" class="border-none bg-transparent text-xs text-muted-foreground hover:text-foreground cursor-pointer" @click=${() => change({ value: color.themeValue! })}>${__('Reset')}</button>` : null}
             ${remove ? html`<button type="button" class="border-none bg-transparent text-xs text-destructive hover:underline cursor-pointer" @click=${remove}>${__('Remove')}</button>` : null}
         </li>`;
+    }
+
+    /** A gradient: its swatch, its name (editable for the site's own), its CSS value, and Reset or Remove. */
+    private gradientRow(gradient: Preset & { themeValue?: string }, change: (patch: Partial<Preset>) => void, remove?: () => void): TemplateResult {
+        const changed = gradient.themeValue !== undefined && gradient.value !== gradient.themeValue;
+        return html`<li class="flex flex-wrap items-center gap-2" data-gradient=${gradient.slug}>
+            <span aria-hidden="true" class="inline-block h-8 w-14 shrink-0 rounded border border-border" style=${`background: ${gradient.value}`}></span>
+            ${remove ? component(Input, { type: 'text', class: 'w-36', maxlength: 40, '.value': gradient.name, 'aria-label': __('Name'), '@input': (event: Event) => change({ name: (event.target as HTMLInputElement).value }) })
+                : html`<span class="w-36 text-sm font-medium text-foreground">${gradient.name}</span>`}
+            ${component(Input, { type: 'text', class: 'min-w-0 flex-1 font-mono text-xs', maxlength: 400, '.value': gradient.value, 'aria-label': `${gradient.name} ${__('value')}`, '@input': (event: Event) => change({ value: (event.target as HTMLInputElement).value }) })}
+            ${changed ? html`<button type="button" class="border-none bg-transparent text-xs text-muted-foreground hover:text-foreground cursor-pointer" @click=${() => change({ value: gradient.themeValue! })}>${__('Reset')}</button>` : null}
+            ${remove ? html`<button type="button" class="border-none bg-transparent text-xs text-destructive hover:underline cursor-pointer" @click=${remove}>${__('Remove')}</button>` : null}
+        </li>`;
+    }
+
+    private gradientsSection(): TemplateResult {
+        return html`<section class="space-y-3" aria-labelledby="customize-gradients">
+            <div>
+                <h2 id="customize-gradients" class="text-sm font-semibold text-foreground">${__('Gradients')}</h2>
+                <p class="text-xs text-muted-foreground">${__('Backgrounds for groups, columns and grids, under Advanced background on their Style tab. A CSS gradient, which may use the palette: linear-gradient(135deg, var(--cms-color-primary), #7c3aed).')}</p>
+            </div>
+            ${this.gradients.length || this.customGradients.length ? html`<ul class="space-y-2">
+                ${this.gradients.map(gradient => this.gradientRow(gradient, patch => this.setGradient(gradient.slug, patch.value ?? gradient.value)))}
+                ${this.customGradients.map((gradient, index) => this.gradientRow(gradient, patch => this.setCustomGradient(index, patch), () => this.removeCustomGradient(index)))}
+            </ul>` : null}
+            ${this.errors.gradients ? html`<p role="alert" class="text-xs text-destructive">${this.errors.gradients}</p>` : null}
+            ${this.customGradients.length < 12 ? component(Button, { type: 'button', variant: 'outline', size: 'sm', '@click': () => this.addCustomGradient() }, __('Add gradient')) : null}
+        </section>`;
     }
 
     private colorsSection(): TemplateResult {
@@ -189,6 +253,7 @@ export default class CustomizePage extends Cossack {
                     } : undefined))}
                 </section>` : null}
                 ${this.colorsSection()}
+                ${this.gradientsSection()}
                 ${this.cssSection()}
                 <div>${component(Button, { type: 'submit' }, __('Publish changes'))}</div>
             </form>`))}

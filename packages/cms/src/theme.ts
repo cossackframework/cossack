@@ -11,27 +11,29 @@ import { fieldProblems } from './fields';
 import { MENU_LOCATION, type MenuItemView } from './menus';
 import type { SettingDeclaration } from './settings';
 import { settingControlProblems } from './settings-controls';
-import { CUSTOM_COLOR, PRESET_SLUG, STYLE_PROPERTIES, TEXT_ALIGNMENTS, type StyleProperty } from './block-shape';
+import { BACKGROUND_SIZES, CUSTOM_COLOR, PRESET_SLUG, STYLE_PROPERTIES, TEXT_ALIGNMENTS, type StyleProperty } from './block-shape';
 import type { Block, BlockCondition, BlockLayout, BlockStyle, InputKind } from './blocks';
 import { blocksShapeProblem } from './block-shape';
 import type { ChoiceOption, FormValue } from './form-builder';
 
-/** A named value blocks pick by slug: a color, a font size or a spacing step. */
+/** A named value blocks pick by slug: a color, a gradient, a font size or a spacing step. */
 export interface Preset {
     readonly slug: string;
     readonly name: string;
-    /** A CSS color, or a CSS length for sizes and spacing. */
+    /** A CSS color, a CSS gradient, or a CSS length for sizes and spacing. */
     readonly value: string;
 }
 
 /** The presets a theme offers the Style tab. Absent kinds take `DEFAULT_PRESETS`. */
 export interface ThemePresets {
     readonly colors?: readonly Preset[];
+    /** CSS gradients (`linear-gradient(...)`, radial or conic), for container backgrounds. */
+    readonly gradients?: readonly Preset[];
     readonly fontSizes?: readonly Preset[];
     readonly spacing?: readonly Preset[];
 }
 export type PresetKind = keyof ThemePresets;
-export const PRESET_KINDS = Object.freeze(['colors', 'fontSizes', 'spacing'] as const);
+export const PRESET_KINDS = Object.freeze(['colors', 'gradients', 'fontSizes', 'spacing'] as const);
 
 /** A widget area with the blocks the theme shows until the site saves its own. */
 export interface ThemeAreaManifest {
@@ -113,11 +115,22 @@ export function themeProblems(theme: unknown): string[] {
 const COLOR_VALUE = /^(?:#[0-9a-f]{3,8}|[a-z]{3,30}|(?:rgb|rgba|hsl|hsla|hwb|lab|lch|oklab|oklch|color)\([^()]{1,60}\))$/i;
 /** A CSS length, or `clamp()`, `min()`, `max()` and `calc()` of lengths. */
 const LENGTH_VALUE = /^(?:-?\d*\.?\d+(?:px|rem|em|%|vw|vh|ch|cqi|cqw)?|(?:clamp|min|max|calc)\([-+*/\d.\s,%a-z]{1,60}\))$/i;
-const PRESET_LIMITS: Readonly<Record<PresetKind, number>> = { colors: 24, fontSizes: 8, spacing: 8 };
+/** A CSS gradient: one gradient function over colors, stops and angles; it may read the palette's variables, never a `url()`. */
+export const GRADIENT_VALUE = /^(?:repeating-)?(?:linear|radial|conic)-gradient\((?:[^()]|\([^()]*\))*\)$/i;
+const PRESET_LIMITS: Readonly<Record<PresetKind, number>> = { colors: 24, gradients: 12, fontSizes: 8, spacing: 8 };
+const PRESET_VALUE_NAMES: Readonly<Record<PresetKind, string>> = { colors: 'color', gradients: 'gradient', fontSizes: 'length', spacing: 'length' };
 
-/** Problems with presets, as a manifest declares them or as the site's custom colors; empty when valid. */
+/** Whether a preset's value fits its kind: a color, a gradient or a length. */
+function presetValueOk(kind: PresetKind, value: string): boolean {
+    const text = value.trim();
+    if (kind === 'colors') return COLOR_VALUE.test(text);
+    if (kind === 'gradients') return text.length <= 400 && GRADIENT_VALUE.test(text) && !/url\s*\(/i.test(text);
+    return LENGTH_VALUE.test(text);
+}
+
+/** Problems with presets, as a manifest declares them or as the site's custom colors and gradients; empty when valid. */
 export function presetProblems(presets: unknown): string[] {
-    if (!presets || typeof presets !== 'object' || Array.isArray(presets)) return ['presets is an object of colors, fontSizes and spacing.'];
+    if (!presets || typeof presets !== 'object' || Array.isArray(presets)) return ['presets is an object of colors, gradients, fontSizes and spacing.'];
     const problems: string[] = [];
     for (const [kind, list] of Object.entries(presets)) {
         if (!(PRESET_KINDS as readonly string[]).includes(kind)) { problems.push(`${kind} is not a preset kind; use ${PRESET_KINDS.join(', ')}.`); continue; }
@@ -130,15 +143,20 @@ export function presetProblems(presets: unknown): string[] {
             if (slugs.has(entry.slug)) problems.push(`${at} is listed twice.`);
             slugs.add(entry.slug);
             if (typeof entry.name !== 'string' || !entry.name.trim() || entry.name.length > 40) problems.push(`${at} needs a name of at most 40 characters.`);
-            if (typeof entry.value !== 'string' || !(kind === 'colors' ? COLOR_VALUE : LENGTH_VALUE).test(entry.value.trim())) problems.push(`${at} needs a CSS ${kind === 'colors' ? 'color' : 'length'}.`);
+            if (typeof entry.value !== 'string' || !presetValueOk(kind as PresetKind, entry.value)) problems.push(`${at} needs a CSS ${PRESET_VALUE_NAMES[kind as PresetKind]}.`);
         }
     }
     return problems;
 }
 
-/** What a theme without its own gets: no palette, five font sizes and five spacing steps. */
+/** What a theme without its own gets: no palette, six gradients, five font sizes and five spacing steps. */
 export const DEFAULT_PRESETS: ThemePresets = Object.freeze({
     colors: Object.freeze([]),
+    gradients: Object.freeze([
+        { slug: 'dusk', name: 'Dusk', value: 'linear-gradient(135deg, #1e3a8a 0%, #7c3aed 100%)' }, { slug: 'sunrise', name: 'Sunrise', value: 'linear-gradient(135deg, #f97316 0%, #ec4899 100%)' },
+        { slug: 'meadow', name: 'Meadow', value: 'linear-gradient(135deg, #059669 0%, #84cc16 100%)' }, { slug: 'ocean', name: 'Ocean', value: 'linear-gradient(180deg, #0ea5e9 0%, #1e40af 100%)' },
+        { slug: 'graphite', name: 'Graphite', value: 'linear-gradient(135deg, #111827 0%, #4b5563 100%)' }, { slug: 'fog', name: 'Fog', value: 'linear-gradient(180deg, #f8fafc 0%, #e2e8f0 100%)' },
+    ]),
     fontSizes: Object.freeze([
         { slug: 'small', name: 'Small', value: '0.875rem' }, { slug: 'medium', name: 'Medium', value: '1rem' }, { slug: 'large', name: 'Large', value: '1.25rem' },
         { slug: 'x-large', name: 'Extra large', value: '1.5rem' }, { slug: 'xx-large', name: 'Huge', value: '2.25rem' },
@@ -164,38 +182,44 @@ export function layerPresets(base: ThemePresets | undefined, top: ThemePresets |
     return result;
 }
 
-/** The site's changes to the active theme's palette: new values by slug, and colors it added. */
+/** The site's changes to the active theme's palette and gradients: new values by slug, and colors and gradients it added. */
 export interface PresetOverrides {
     readonly colors?: { readonly [slug: string]: string };
     readonly custom?: readonly Preset[];
+    readonly gradients?: { readonly [slug: string]: string };
+    readonly customGradients?: readonly Preset[];
 }
 
 /** A problem with `appearance.presets` entries, which are overrides keyed by theme; undefined when valid. */
 export function presetOverridesProblem(value: unknown): string | undefined {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return 'Preset overrides are an object.';
-    const { colors, custom } = value as PresetOverrides;
-    if (colors !== undefined) {
-        if (!colors || typeof colors !== 'object' || Array.isArray(colors)) return 'colors maps slugs to colors.';
-        for (const [slug, color] of Object.entries(colors)) {
-            if (!PRESET_SLUG.test(slug) || typeof color !== 'string' || !COLOR_VALUE.test(color.trim())) return `${slug} needs a CSS color.`;
+    const { colors, custom, gradients, customGradients } = value as PresetOverrides;
+    for (const [kind, map] of [['colors', colors], ['gradients', gradients]] as const) {
+        if (map === undefined) continue;
+        if (!map || typeof map !== 'object' || Array.isArray(map)) return `${kind} maps slugs to ${kind}.`;
+        for (const [slug, entry] of Object.entries(map)) {
+            if (!PRESET_SLUG.test(slug) || typeof entry !== 'string' || !presetValueOk(kind, entry)) return `${slug} needs a CSS ${PRESET_VALUE_NAMES[kind]}.`;
         }
     }
-    if (custom !== undefined) {
-        const problems = presetProblems({ colors: custom });
-        if (problems.length) return problems[0]!.replace(/^colors[.:]?\s?/, '');
+    for (const [kind, list] of [['colors', custom], ['gradients', customGradients]] as const) {
+        if (list === undefined) continue;
+        const problems = presetProblems({ [kind]: list });
+        if (problems.length) return problems[0]!.replace(new RegExp(`^${kind}[.:]?\\s?`), '');
     }
     return undefined;
 }
 
-/** The presets blocks pick from: the theme's over the defaults, with the site's color changes and additions. */
+/** The presets blocks pick from: the theme's over the defaults, with the site's changes to colors and gradients and its additions. */
 export function resolvePresets(theme: ThemePresets | undefined, overrides?: PresetOverrides | null): Required<ThemePresets> {
     const layered = layerPresets(DEFAULT_PRESETS, theme);
-    const colors = (layered.colors ?? []).map(preset => overrides?.colors?.[preset.slug] ? { ...preset, value: overrides.colors[preset.slug]! } : preset);
-    const custom = (overrides?.custom ?? []).filter(preset => !colors.some(entry => entry.slug === preset.slug));
-    return { colors: [...colors, ...custom], fontSizes: layered.fontSizes ?? [], spacing: layered.spacing ?? [] };
+    const adjusted = (kind: 'colors' | 'gradients', changes: { readonly [slug: string]: string } | undefined, added: readonly Preset[] | undefined) => {
+        const own = (layered[kind] ?? []).map(preset => changes?.[preset.slug] ? { ...preset, value: changes[preset.slug]! } : preset);
+        return [...own, ...(added ?? []).filter(preset => !own.some(entry => entry.slug === preset.slug))];
+    };
+    return { colors: adjusted('colors', overrides?.colors, overrides?.custom), gradients: adjusted('gradients', overrides?.gradients, overrides?.customGradients), fontSizes: layered.fontSizes ?? [], spacing: layered.spacing ?? [] };
 }
 
-const PRESET_VARIABLES: Readonly<Record<PresetKind, string>> = { colors: '--cms-color', fontSizes: '--cms-size', spacing: '--cms-space' };
+const PRESET_VARIABLES: Readonly<Record<PresetKind, string>> = { colors: '--cms-color', gradients: '--cms-gradient', fontSizes: '--cms-size', spacing: '--cms-space' };
 
 /** The presets as custom properties for an inline `style`, such as `--cms-color-brand: #0f172a;`. */
 export function presetStyle(presets: ThemePresets | undefined): string {
@@ -203,8 +227,39 @@ export function presetStyle(presets: ThemePresets | undefined): string {
     return PRESET_KINDS.flatMap(kind => (presets[kind] ?? []).map(preset => `${PRESET_VARIABLES[kind]}-${preset.slug}: ${preset.value.trim()};`)).join(' ');
 }
 
-/** What a styled block's wrapper carries: classes per property, the `id`, and inline properties through the presets' variables. Null for an unstyled block. */
-export function blockStyleAttributes(block: { readonly style?: BlockStyle; readonly layout?: BlockLayout }): { className: string; style: string; id: string; nosnippet: boolean } | null {
+/** What a styled block's wrapper carries; see `blockStyleAttributes`. */
+export interface BlockStyleAttributes {
+    className: string;
+    style: string;
+    id: string;
+    nosnippet: boolean;
+    /** The video behind the block, when its style names one the block's media resolved; the renderer places the element. */
+    video?: MediaView;
+}
+
+/**
+ * The URL a background image loads from: the largest resized variant up to 2560 pixels, or the
+ * file as uploaded when it has none. Quotes and parentheses are escaped for `url("...")`.
+ */
+export function backgroundImageUrl(media: Pick<MediaView, 'url' | 'srcset'>): string {
+    let best: { url: string; width: number } | null = null;
+    for (const candidate of media.srcset.split(',')) {
+        const [url, size] = candidate.trim().split(/\s+/);
+        const width = Number.parseInt(size ?? '', 10);
+        if (!url || !Number.isFinite(width) || width > 2560) continue;
+        if (!best || width > best.width) best = { url, width };
+    }
+    return (best?.url ?? media.url).replace(/["'()\\\s]/g, character => encodeURIComponent(character));
+}
+
+/**
+ * What a styled block's wrapper carries: classes per property, the `id`, and inline properties
+ * through the presets' variables. A container's advanced background renders as layers (a
+ * gradient over an image from the block's resolved media, positioned at its focal point), an
+ * overlay as the `--cms-overlay` color the stylesheet paints over them, and a video as a
+ * `MediaView` for the renderer. Null for an unstyled block.
+ */
+export function blockStyleAttributes(block: { readonly style?: BlockStyle; readonly layout?: BlockLayout; readonly media?: { readonly [id: string]: MediaView } }): BlockStyleAttributes | null {
     const classes: string[] = [];
     const rules: string[] = [];
     const slug = (property: StyleProperty) => {
@@ -212,7 +267,7 @@ export function blockStyleAttributes(block: { readonly style?: BlockStyle; reado
         return typeof value === 'string' && PRESET_SLUG.test(value) && value.length <= 40 ? value : '';
     };
     // A color is a preset's slug, rendered through its variable, or a hex color of the block's own, rendered as it is.
-    const custom = (property: 'background' | 'text') => {
+    const custom = (property: 'background' | 'text' | 'overlay') => {
         const value = block.style?.[property];
         return typeof value === 'string' && CUSTOM_COLOR.test(value) ? value.toLowerCase() : '';
     };
@@ -223,18 +278,43 @@ export function blockStyleAttributes(block: { readonly style?: BlockStyle; reado
     if (text) { classes.push(`cms-text-${text}`); rules.push(`color: var(--cms-color-${text})`); }
     else if (custom('text')) { classes.push('cms-text-custom'); rules.push(`color: ${custom('text')}`); }
     const padding = slug('padding');
-    if (padding) { classes.push(`cms-p-${padding}`); rules.push(`padding: var(--cms-space-${padding})`); }
+    // A padded block holds its own gutter: `cms-padded` zeroes `--cms-gutter` for its content (cms/blocks.css).
+    if (padding) { classes.push(`cms-p-${padding}`, 'cms-padded'); rules.push(`padding: var(--cms-space-${padding})`); }
     const margin = slug('margin');
     if (margin) { classes.push(`cms-m-${margin}`); rules.push(`margin-block: var(--cms-space-${margin})`); }
     const fontSize = slug('fontSize');
     if (fontSize) { classes.push(`cms-size-${fontSize}`); rules.push(`font-size: var(--cms-size-${fontSize})`); }
     const align = block.style?.align;
     if (align && (TEXT_ALIGNMENTS as readonly string[]).includes(align)) { classes.push(`cms-align-${align}`); rules.push(`text-align: ${align}`); }
+    // The advanced background: layers from the top down, a gradient over an image.
+    const layers: string[] = [];
+    const gradient = slug('gradient');
+    if (gradient) { classes.push(`cms-gradient-${gradient}`); layers.push(`var(--cms-gradient-${gradient})`); }
+    const image = typeof block.style?.image === 'string' ? block.media?.[block.style.image] : undefined;
+    if (image && image.contentType.startsWith('image/')) {
+        classes.push('cms-has-image');
+        layers.push(`url("${backgroundImageUrl(image)}")`);
+        const size = block.style?.imageSize;
+        rules.push(`background-size: ${size && (BACKGROUND_SIZES as readonly string[]).includes(size) ? size : 'cover'}`);
+        const focus = image.focus;
+        rules.push(`background-position: ${focus ? `${Math.round(focus.x * 100)}% ${Math.round(focus.y * 100)}%` : '50% 50%'}`);
+        rules.push(`background-repeat: ${block.style?.imageRepeat === true ? 'repeat' : 'no-repeat'}`);
+        if (block.style?.imageFixed === true) rules.push('background-attachment: fixed');
+    }
+    if (layers.length) rules.push(`background-image: ${layers.join(', ')}`);
+    const overlay = slug('overlay') ? `var(--cms-color-${slug('overlay')})` : custom('overlay');
+    if (overlay) {
+        const opacity = typeof block.style?.overlayOpacity === 'number' ? Math.min(Math.max(Math.round(block.style.overlayOpacity), 0), 100) : 50;
+        classes.push('cms-has-overlay');
+        rules.push(`--cms-overlay: color-mix(in srgb, ${overlay} ${opacity}%, transparent)`);
+    }
+    const video = typeof block.style?.video === 'string' ? block.media?.[block.style.video] : undefined;
+    if (video && video.contentType.startsWith('video/')) classes.push('cms-has-video');
     const extra = (block.layout?.className ?? '').trim().split(/\s+/).filter(name => /^-?[_A-Za-z][\w-]*$/.test(name));
     const id = /^[A-Za-z][\w-]{0,59}$/.test(block.layout?.anchor ?? '') ? block.layout!.anchor! : '';
     const nosnippet = block.layout?.nosnippet === true;
     if (!classes.length && !extra.length && !id && !nosnippet) return null;
-    return { className: ['cms-block', ...classes, ...extra].join(' '), style: rules.join('; '), id, nosnippet };
+    return { className: ['cms-block', ...classes, ...extra].join(' '), style: rules.join('; '), id, nosnippet, ...(video && video.contentType.startsWith('video/') ? { video } : {}) };
 }
 
 /** Why a site's Additional CSS is refused: it may not load other resources or run scripts. Undefined when fine. */
@@ -265,6 +345,8 @@ export interface MediaView {
     readonly sizes: string;
     /** The page's first image: load it at once, with high priority (`loading="eager" fetchpriority="high"`). */
     readonly priority?: boolean;
+    /** The point to keep in view when the image fills a shape, 0 to 1 each way, from the library's focal point edit; null when none is set. */
+    readonly focus?: { readonly x: number; readonly y: number } | null;
 }
 
 export interface TermLink {
@@ -680,6 +762,14 @@ export interface ThemeHelpers {
     content(parts: readonly BodyPart[]): TemplateResult;
     /** A block, or a list of them, through the theme's renderer, a plugin's component or the core one. */
     block(block: RenderedBlock | readonly RenderedBlock[]): TemplateResult | null;
+    /**
+     * A list of blocks as the page's constrained layout (`div.cms-layout`): each block in an
+     * item at the content measure, or the wide, full or narrow one its Width field asks for, so
+     * a full-width group makes a band across the page while the text keeps the column. For the
+     * blocks root of a template and for widget areas that span the page; `block` renders a list
+     * that has its own width, such as a footer cell.
+     */
+    layout(blocks: readonly RenderedBlock[], options?: { readonly class?: string }): TemplateResult;
     /** Whether a URL is the current page or one of its ancestors. */
     isActive(url: string): boolean;
     /** The site's logo as an image named after the site, or null when none is set; `class` sizes it (default `h-10 w-auto`). */

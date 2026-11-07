@@ -26,6 +26,7 @@ import { notificationRulesControl } from '../../../../../../cms/notification-rul
 import { siteOrigin } from '../../../../../../cms/seo';
 
 type MediaTarget = { field: string; block?: string; key?: string; multiple?: boolean; insert?: boolean; richText?: boolean; dialog?: boolean; group?: boolean; /** The rich text editor to insert into, when it is not the field's own. */ editor?: string;
+    /** The file goes to the panel's Style tab: the block's background image or video. */ style?: 'image' | 'video';
     /** The kind of file the library opens on: the field's first declared kind; images when absent. */ fileKind?: string;
     /** The rows the value sits in, from the top down: `key` is then a field of the innermost row. */ rows?: RowPath };
 /** Field block kinds whose values read as text, as editor field kinds, for the binding picker. */
@@ -1196,7 +1197,9 @@ export default class EntryEditor extends Cossack {
         const target = this.picker.target;
         if (!target) return;
         this.previews = { ...this.previews, [file.id]: file };
-        if (target.richText) {
+        if (target.style) {
+            if (this.blockDialog) this.setDialogStyle({ ...this.blockDialog.style, style: { ...this.blockDialog.style.style, [target.style]: file.id } });
+        } else if (target.richText) {
             const editor = richTextEditors.get(target.editor ?? `field-${target.field}`);
             if (mediaKind(file.contentType) === 'image') editor?.insertImage({ src: file.url, alt: file.alt || file.title, mediaId: file.id });
             else editor?.insertLink(file.title || __('Download'), file.url);
@@ -1998,10 +2001,11 @@ export default class EntryEditor extends Cossack {
         const option = this.view?.blocks.find(block => block.name === dialog?.type) ?? null;
         const fields = dialog && option ? option.fields.filter(entry => dialog.embedded || entry.kind !== 'richtext') : [];
         return blockPanel({
-            id: 'entry-block', open: Boolean(dialog && option), option, tab: dialog?.tab ?? 'general', style: dialog?.style ?? styleValues({}), presets: this.view?.presets ?? { colors: [], fontSizes: [], spacing: [] },
+            id: 'entry-block', open: Boolean(dialog && option), option, tab: dialog?.tab ?? 'general', style: dialog?.style ?? styleValues({}), presets: this.view?.presets ?? { colors: [], gradients: [], fontSizes: [], spacing: [] },
             styleTab: dialog ? !dialog.embedded : false,
             // Focus in the panel counts as focus in the block; the others' presence there shows in the panel as in the tree.
             ...(dialog && !dialog.embedded ? { block: dialog.id, field: dialog.field, editing: this.editingBlocks()[dialog.id] ?? [], taken: this.otherBlockIds(dialog.field, dialog.id) } : {}),
+            ...(dialog ? { media: { previews: this.previews, choose: (property: 'image' | 'video') => this.openPicker({ field: dialog.field, dialog: true, style: property, fileKind: property }) } } : {}),
             onTab: tab => this.showDialogTab(tab), onStyle: style => this.setDialogStyle(style), onClose: () => { this.blockDialog = null; },
             general: dialog && option ? html`${fields.length ? fields.map(entry => {
                 const id = `block-${dialog.id}-${entry.name}`;

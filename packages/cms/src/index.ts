@@ -28,8 +28,8 @@ export {
     type EditorBox, type EditorBoxesInput, type EditorLayout, type EditorLayoutAddition, type ResolvedEditorLayout,
 } from './editor-layout';
 export { CONTENT_STATUSES, CORE_FIELDS, ENTRY_TEMPLATE, entryAuthors, FEATURE_FIELDS, RESERVED_FIELDS, LOCALE, SEO_FIELDS, collectionProblems, collectionResource, contentBlocks, entryUrl, extendCollection, languageFlag, languageName, orderedFields, posts, pages, translationGroupOf, type CollectionDefinition, type CollectionFeatures, type ContentStatus } from './collections';
-export { CORE_BLOCKS, BLOCK_CATEGORIES, BLOCK_ID, BLOCK_NAME, BLOCK_LIMITS, CUSTOM_COLOR, FIELD_BLOCK_KINDS, FIELD_GROUP_LAYOUT, FIELD_GROUP_LIMIT, RESERVED_FIELD_NAMES, BREAKPOINTS, STYLE_PROPERTIES, TEXT_ALIGNMENTS, PRESET_SLUG, INPUT_KINDS, INPUT_NAME, CONDITION_OPERATORS, CONDITION_LIMIT, FORM_INPUT_LIMIT, RESERVED_INPUT_NAMES,
-    blockCategory, blockIdProblem, blockIsData, blockProblems, blocksShapeProblem, blockLayoutProblem, blockStyleProblem, blockConditionProblem, blockSupports, blockAllowedIn, validateBlocks, blockMedia, blockDocuments, blocksPlain, cloneBlocks, blockId, inputName,
+export { CORE_BLOCKS, BLOCK_CATEGORIES, BLOCK_ID, BLOCK_NAME, BLOCK_LIMITS, CUSTOM_COLOR, MEDIA_ID, BACKGROUND_SIZES, FIELD_BLOCK_KINDS, FIELD_GROUP_LAYOUT, FIELD_GROUP_LIMIT, RESERVED_FIELD_NAMES, BREAKPOINTS, STYLE_PROPERTIES, TEXT_ALIGNMENTS, PRESET_SLUG, INPUT_KINDS, INPUT_NAME, CONDITION_OPERATORS, CONDITION_LIMIT, FORM_INPUT_LIMIT, RESERVED_INPUT_NAMES,
+    blockCategory, blockIdProblem, blockIsData, blockProblems, blocksShapeProblem, blockLayoutProblem, blockStyleProblem, styleValueProblem, blockConditionProblem, blockSupports, blockAllowedIn, validateBlocks, blockMedia, blockDocuments, blocksPlain, cloneBlocks, blockId, inputName,
     flattenBlocks, placeBlocks, findBlock, HTML_BLOCK, htmlBlocks, htmlBlocksChanged, updateBlock, removeBlock, insertBlock, moveBlock, shiftBlock, blockTreeProblem,
     type Block, type BlockCategory, type BlockDeclaration, type BlockLayout, type BlockStyle, type BlockSupports, type BlockMove, type BlockPlace, type Breakpoint, type StyleProperty,
     type BlockCondition, type ConditionRule, type ConditionOperator, type InputKind, type FieldBlockKind, type ValidateBlocksOptions } from './blocks';
@@ -55,8 +55,8 @@ export {
 } from './richtext';
 export {
     themeProblems, siteThemeProblems, assembleSiteTheme, layerSiteThemes, entryTemplate, archiveTemplate, entryTemplateChoices, templateCandidates, pickTemplate, SPECIFIC_TEMPLATE,
-    PRESET_KINDS, DEFAULT_PRESETS, LANGUAGE_SWITCHER_STYLES, presetProblems, layerPresets, resolvePresets, presetOverridesProblem, presetStyle, blockStyleAttributes, customCssProblem,
-    type Preset, type PresetKind, type ThemePresets, type PresetOverrides,
+    PRESET_KINDS, DEFAULT_PRESETS, GRADIENT_VALUE, LANGUAGE_SWITCHER_STYLES, presetProblems, layerPresets, resolvePresets, presetOverridesProblem, presetStyle, blockStyleAttributes, backgroundImageUrl, customCssProblem,
+    type Preset, type PresetKind, type ThemePresets, type PresetOverrides, type BlockStyleAttributes,
     type ThemeManifest, type ThemeAreaManifest, themeArea, type SiteTheme, type ThemeSource, type EntryTemplate, type ArchiveTemplate, type TemplatePage, type ThemeData, type FieldView, type EntryReference, type ThemeHelpers, type SiteView, type EntryView, type ArchiveView, type AuthorView, type RenderedBlock, type RepeaterView, type ItemsView, type BodyPart, type MediaView, type TermLink, type Paging,
     type EntryAuthor, type CommentView, type CommentsView, type CommentFormView, type LanguageLink, type LanguageSwitcherOptions, type MenuOptions, type MenuStyle, type MenuMotion, type SearchOptions, type LanguageSwitcherStyle, type FormView, type InputView,
 } from './theme';

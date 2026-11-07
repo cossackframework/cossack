@@ -44,6 +44,24 @@ second representation the themes spec forbids.
   Patterns hold columns, so they become section templates.
 - **Templates stay code.** User layout is blocks inside a template's slots; a theme's
   template is not editable on the site.
+- **Constrained layout** (2026-11-07). The frame moves from the template to the blocks, as in
+  block themes: a template renders its blocks root with `helpers.layout(blocks)`, which wraps
+  each top-level block in `div.cms-item[data-align]`, a real box at the content measure
+  (`max-width: min(var(--cms-content), 100% - 2 * var(--cms-gutter))`, centered), the wide
+  measure for `wide`, none for `full`, and the narrow measure at the content column's edge for
+  `center`, `left` and `right`. The item is a query container, so columns keep responding to
+  the width they have. The theme's root sets the measures (`--cms-content`, `--cms-wide`,
+  `--cms-narrow`, `--cms-gutter`; the default theme from its width option) and uses
+  `.cms-measure` for its own parts (titles, lists, forms). A full-width group renders its
+  children as items too, so a band holds content-width text and a wide child stays wide; a
+  full-width row lays its row within the measure through `padding-inline`. A block with a
+  padding preset (`cms-padded`) zeroes the gutter for its content, so gutters never double.
+  The Width field (`align`) defaults to `content`; `core/columns`, `core/grid`, `core/image`,
+  `core/gallery`, `core/carousel`, `core/video` and `core/embed` take it too. A group also
+  takes `height` (`short`, `medium`, `tall`, `screen`) and `valign`, for heroes. Rejected: the
+  negative-margin viewport trick (scrollbars, and the device toggle narrows the content root,
+  not the window); per-child `max-width` selectors (the `display: contents` markers sit between
+  a root and its blocks, so the renderer wraps instead).
 
 ## Order
 
@@ -72,3 +90,4 @@ second representation the themes spec forbids.
 | CMS package | `Block.children` and `Block.layout` (`BlockLayout`, `BREAKPOINTS`, `BLOCK_LIMITS`); `BlockDeclaration.children` and `parent`; `core/group`, `core/columns`, `core/column`, `core/grid`; `blocksShapeProblem` and `validateBlocks` over the tree (`blockAllowedIn`); `blockMedia` over the tree; rich text `cmsBlock` nodes with `layout` and `children`; `EmbeddedBlock` and `RenderedBlock` carry them; tree helpers `flattenBlocks`, `placeBlocks`, `findBlock`, `updateBlock`, `insertBlock`, `moveBlock`, `shiftBlock`, `blockTreeProblem`; enum `choices` labels | `essentials-unit.test.ts` (rules, shape, limits, helpers, rich text); `themes.test.ts` (an area saves columns with a hidden column and rejects a stray column) |
 | Scaffold | `cms/blocks.css` (grid layouts, `@container` ranges, `data-hide`, the device toggle) imported by `style.css`; `siteContent` wraps every site page's content in the container root, the default theme's footer cells too; `helpers.block` recurses and marks hidden blocks; `coreBlock` renders the containers (`columnSpans`); `BlockTree` (`cms/block-tree.ts`) edits nested blocks in the entry editor and Widgets, with hide toggles and in/out moves; `EditorBlock`, `blocksInput`, `editorBlocks`, `newBlock` (columns start with two); the site editor's panel shows depths, drags sideways to change containers, moves with the arrow keys, selects a container with Escape, toggles hiding and switches the preview width | Recipe tests; `generated-runtime-cms-themes.test.js` |
 | Generated app | A project with columns renders `cms-columns` with spans 4 and 8 and a `data-hide="sm"` column; in Chromium an editor adds a group, moves a paragraph into it with the right arrow, narrows the content root to a phone and saves; visitors see the group | `generated-runtime-cms-themes.test.js` |
+| Constrained layout (2026-11-07) | `ThemeHelpers.layout`, `layoutItem` and `alignOf` in `site-view.ts`; `cms-layout`, `cms-item`, `cms-measure`, the measure variables, full rows, `cms-padded`, group heights in `blocks.css`; the Width field on media and layout blocks, `height` and `valign` on groups; the default theme's templates without a frame, its header and footer rows as padded full-width groups, its width option as measures | `layout.test.ts` (items, full groups, rows, heights); `essentials-unit.test.ts`; `generated-runtime-cms-themes.test.js` (a full-width group spans the page, its children keep the measure) |

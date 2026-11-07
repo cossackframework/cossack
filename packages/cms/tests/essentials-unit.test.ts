@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-    blockAllowedIn, blockCategory, blockIdProblem, blockMedia, blockProblems, blocksShapeProblem, blockStyleAttributes, blockSupports, blockTreeProblem, checkComment, collectionProblems, collectionResource, compareRecords, contentBlocks, extendCollection, CORE_BLOCKS, customCssProblem, DEFAULT_PRESETS, diffWords,
+    backgroundImageUrl, blockAllowedIn, blockCategory, blockIdProblem, blockMedia, blockProblems, blocksShapeProblem, blockStyleAttributes, blockSupports, blockTreeProblem, checkComment, collectionProblems, collectionResource, compareRecords, contentBlocks, extendCollection, CORE_BLOCKS, customCssProblem, DEFAULT_PRESETS, diffWords,
     field, findBlock, flattenBlocks, imageEditsProblems, imageSrcset, imageUrl, insertBlock, languageFlag, languageName, layerPresets, moveBlock, placeBlocks, posts, presetOverridesProblem, presetProblems, presetStyle, redirectPath, redirectProblems, removeBlock,
     normalizeRichText, resolvePresets, richTextBlocks, shiftBlock, themeProblems, validateBlocks, validateValue, variantRect, variantWidth, webhookUrlProblem, BLOCK_CATEGORIES, FORM_BLOCKS, type Block,
 } from '../src/index';
@@ -114,7 +114,7 @@ describe('essentials helpers', () => {
         ] };
         const checked = validateBlocks([columns], types);
         expect(checked.errors).toEqual({});
-        expect(checked.blocks[0]).toEqual({ _id: 'cols', type: 'core/columns', data: { gap: 'medium', stack: 'mobile' }, children: [
+        expect(checked.blocks[0]).toEqual({ _id: 'cols', type: 'core/columns', data: { gap: 'medium', stack: 'mobile', align: 'content' }, children: [
             { _id: 'a', type: 'core/column', data: { span: 4, verticalAlign: 'top' }, children: [{ _id: 'h', type: 'core/heading', data: { text: 'Left', level: 'h2' } }] },
             { _id: 'b', type: 'core/column', data: { verticalAlign: 'top' }, layout: { hide: ['sm'] }, children: [] },
         ] });
@@ -134,6 +134,8 @@ describe('essentials helpers', () => {
         expect(blocksShapeProblem([{ _id: 'a', type: 'core/divider', data: {}, layout: { hide: ['xl'] } }])).toBe('block layout.hide lists sm, md, lg.');
         expect(blocksShapeProblem([{ _id: 'a', type: 'core/group', data: {}, children: 'no' }])).toBe('block children must be a list of blocks.');
         expect(blockMedia([{ _id: 'g', type: 'core/group', data: {}, children: [{ _id: 'i', type: 'core/image', data: { image: 'file-1' } }] }], types)).toEqual(['file-1']);
+        // A container's background image and video are its media too.
+        expect(blockMedia([{ _id: 'g', type: 'core/group', data: {}, style: { image: 'file-2', video: 'file-3' }, children: [] }], types)).toEqual(['file-2', 'file-3']);
         // The tree helpers editors use.
         const tree: Block[] = [columns, { _id: 'p', type: 'core/paragraph', data: { text: 'After' } }];
         expect(flattenBlocks(tree).map(block => block._id)).toEqual(['cols', 'a', 'h', 'b', 'p']);
@@ -169,7 +171,11 @@ describe('essentials helpers', () => {
         expect(blockSupports({})).toEqual(['background', 'text', 'padding', 'margin']);
         expect(blockSupports({ category: 'design', supports: { color: false, typography: ['align'], spacing: ['padding'] } })).toEqual(['padding', 'align']);
         expect(blockProblems({ name: 'acme/box', label: 'Box', fields: {}, supports: { color: ['background'], typography: true } })).toEqual([]);
-        expect(blockProblems({ name: 'acme/box', label: 'Box', fields: {}, supports: { border: true } as never })).toEqual(['block acme/box: supports has no border; it takes color, spacing, typography.']);
+        expect(blockProblems({ name: 'acme/box', label: 'Box', fields: {}, supports: { border: true } as never })).toEqual(['block acme/box: supports has no border; it takes color, spacing, typography, background.']);
+        // The advanced background is off unless a type asks for it, as the core containers do.
+        expect(blockSupports({ category: 'design' })).toEqual(['background', 'text', 'padding', 'margin']);
+        expect(blockSupports(CORE_BLOCKS.find(block => block.name === 'core/group')!)).toEqual(['background', 'text', 'padding', 'margin', 'gradient', 'image', 'imageSize', 'imageRepeat', 'imageFixed', 'overlay', 'overlayOpacity', 'video']);
+        expect(blockSupports({ category: 'design', supports: { background: ['gradient'] } })).toEqual(['background', 'text', 'padding', 'margin', 'gradient']);
         expect(blockProblems({ name: 'acme/box', label: 'Box', fields: {}, supports: { color: ['shadow'] } as never })).toEqual(['block acme/box: supports.color is true, false or some of background, text.']);
         // The shape: slugs per property, an alignment, the anchor and class names.
         expect(blocksShapeProblem([{ _id: 'a', type: 'core/divider', data: {}, style: { background: 'Brand' } }])).toBe('block style.background is a preset slug or a hex color.');
@@ -183,7 +189,14 @@ describe('essentials helpers', () => {
         expect(blockIdProblem('intro', new Set(['intro']))).toBe('Another block of this field has this ID.');
         expect(blockIdProblem('not valid!')).toBe('A block ID is 1 to 40 letters, digits, _ or -.');
         expect(blocksShapeProblem([{ _id: 'a', type: 'core/divider', data: {}, style: { align: 'justify' } }])).toBe('block style.align is left, center, right.');
-        expect(blocksShapeProblem([{ _id: 'a', type: 'core/divider', data: {}, style: { shadow: 'x' } }])).toBe('block style has no shadow; it takes background, text, padding, margin, fontSize, align.');
+        expect(blocksShapeProblem([{ _id: 'a', type: 'core/divider', data: {}, style: { shadow: 'x' } }])).toBe('block style has no shadow; it takes background, text, padding, margin, fontSize, align, gradient, image, imageSize, imageRepeat, imageFixed, overlay, overlayOpacity, video.');
+        // The advanced background: a gradient slug, media IDs, a size, flags, an overlay color and its opacity.
+        expect(blocksShapeProblem([{ _id: 'a', type: 'core/group', data: {}, style: { gradient: 'dusk', image: 'file_1', imageSize: 'contain', imageRepeat: true, imageFixed: false, overlay: '#000', overlayOpacity: 40, video: 'clip-1' } }])).toBeUndefined();
+        expect(blocksShapeProblem([{ _id: 'a', type: 'core/group', data: {}, style: { image: 'not valid!' } }])).toBe('block style.image is a media file ID.');
+        expect(blocksShapeProblem([{ _id: 'a', type: 'core/group', data: {}, style: { imageSize: 'stretch' } }])).toBe('block style.imageSize is cover, contain, auto.');
+        expect(blocksShapeProblem([{ _id: 'a', type: 'core/group', data: {}, style: { imageFixed: 'yes' } }])).toBe('block style.imageFixed is on or off.');
+        expect(blocksShapeProblem([{ _id: 'a', type: 'core/group', data: {}, style: { overlayOpacity: 120 } }])).toBe('block style.overlayOpacity is a whole number from 0 to 100.');
+        expect(blocksShapeProblem([{ _id: 'a', type: 'core/group', data: {}, style: { overlay: 'rgb(0 0 0)' } }])).toBe('block style.overlay is a preset slug or a hex color.');
         expect(blocksShapeProblem([{ _id: 'a', type: 'core/divider', data: {}, layout: { anchor: '1st' } }])).toContain('block layout.anchor is an HTML id');
         expect(blocksShapeProblem([{ _id: 'a', type: 'core/divider', data: {}, layout: { className: 'ok bad!' } }])).toContain('block layout.className lists class names');
         expect(blocksShapeProblem([{ _id: 'a', type: 'core/divider', data: {}, style: { padding: 'large', align: 'center' }, layout: { anchor: 'top', className: 'hero  wide' } }])).toBeUndefined();
@@ -194,19 +207,40 @@ describe('essentials helpers', () => {
         ], types);
         expect(checked.errors).toEqual({});
         expect(checked.blocks[0]).toEqual({ _id: 'p', type: 'core/paragraph', data: { text: 'Hi' }, style: { background: 'brand', align: 'center' }, layout: { anchor: 'intro', className: 'a b' } });
-        expect(checked.blocks[1]).toEqual({ _id: 'i', type: 'core/image', data: { image: 'f1' }, style: { padding: 'large' } });
-        // The wrapper's attributes: classes per property, the variables inline, the anchor and class names.
+        expect(checked.blocks[1]).toEqual({ _id: 'i', type: 'core/image', data: { image: 'f1', align: 'content' }, style: { padding: 'large' } });
+        // A container keeps its advanced background; off flags and a paragraph's background image go.
+        const container = validateBlocks([
+            { _id: 'g', type: 'core/group', data: {}, style: { gradient: 'dusk', image: 'file_1', imageRepeat: false, imageFixed: true, overlay: 'brand', overlayOpacity: 30, video: 'clip-1' }, children: [] },
+            { _id: 'q', type: 'core/paragraph', data: { text: 'Hi' }, style: { image: 'file_1', background: 'brand' } },
+        ], types);
+        expect(container.errors).toEqual({});
+        expect(container.blocks[0]!.style).toEqual({ gradient: 'dusk', image: 'file_1', imageFixed: true, overlay: 'brand', overlayOpacity: 30, video: 'clip-1' });
+        expect(container.blocks[1]!.style).toEqual({ background: 'brand' });
+        // The wrapper's attributes: classes per property, the variables inline, the anchor and class names; a padded block holds its own gutter.
         expect(blockStyleAttributes({ style: { background: 'brand', text: 'light', padding: 'large', margin: 'none', fontSize: 'x-large', align: 'center' }, layout: { anchor: 'intro', className: 'hero' } })).toEqual({
-            className: 'cms-block cms-bg-brand cms-text-light cms-p-large cms-m-none cms-size-x-large cms-align-center hero', id: 'intro', nosnippet: false,
+            className: 'cms-block cms-bg-brand cms-text-light cms-p-large cms-padded cms-m-none cms-size-x-large cms-align-center hero', id: 'intro', nosnippet: false,
             style: 'background-color: var(--cms-color-brand); color: var(--cms-color-light); padding: var(--cms-space-large); margin-block: var(--cms-space-none); font-size: var(--cms-size-x-large); text-align: center',
         });
         expect(blockStyleAttributes({ style: {}, layout: { hide: ['sm'] } })).toBeNull();
         expect(blockStyleAttributes({ style: { background: 'bad slug' } })).toBeNull();
+        // The advanced background: a gradient over the image's largest variant at its focal point, the overlay's variable, the video for the renderer.
+        const picture = { url: '/media/f1/sea.jpg', alt: '', width: 4000, height: 3000, contentType: 'image/jpeg', caption: '', srcset: '/media/f1/sea.jpg?w=640 640w, /media/f1/sea.jpg?w=1920 1920w, /media/f1/sea.jpg?w=4000 4000w', wideSrcset: '', placeholder: null, sizes: '', focus: { x: 0.25, y: 0.8 } };
+        const clip = { url: '/media/v1/loop.mp4', alt: '', width: null, height: null, contentType: 'video/mp4', caption: '', srcset: '', wideSrcset: '', placeholder: null, sizes: '' };
+        const band = blockStyleAttributes({ style: { gradient: 'dusk', image: 'f1', imageFixed: true, overlay: 'brand', overlayOpacity: 30, video: 'v1' }, media: { f1: picture, v1: clip } });
+        expect(band).toEqual({ className: 'cms-block cms-gradient-dusk cms-has-image cms-has-overlay cms-has-video', id: '', nosnippet: false, video: clip,
+            style: 'background-size: cover; background-position: 25% 80%; background-repeat: no-repeat; background-attachment: fixed; background-image: var(--cms-gradient-dusk), url("/media/f1/sea.jpg?w=1920"); --cms-overlay: color-mix(in srgb, var(--cms-color-brand) 30%, transparent)' });
+        // Without its media, an image or a video is nothing; a hex overlay renders as it is at half opacity.
+        expect(blockStyleAttributes({ style: { image: 'f1', video: 'v1', overlay: '#000' } })).toEqual({ className: 'cms-block cms-has-overlay', id: '', nosnippet: false, style: '--cms-overlay: color-mix(in srgb, #000 50%, transparent)' });
+        expect(backgroundImageUrl({ url: '/media/f1/a b.jpg', srcset: '' })).toBe('/media/f1/a%20b.jpg');
         // Presets: the manifest's checks, the defaults, layering, the site's overrides, the variables.
         expect(presetProblems({ colors: [{ slug: 'brand', name: 'Brand', value: '#0f172a' }, { slug: 'glow', name: 'Glow', value: 'oklch(0.7 0.1 200)' }], spacing: [{ slug: 'tight', name: 'Tight', value: 'clamp(0.5rem, 2vw, 1rem)' }] })).toEqual([]);
         expect(presetProblems({ colors: [{ slug: 'Brand', name: 'Brand', value: '#fff' }] })).toEqual(['colors: slugs are lowercase letters, digits and hyphens.']);
         expect(presetProblems({ colors: [{ slug: 'brand', name: 'Brand', value: 'url(x)' }, { slug: 'brand', name: 'Again', value: '#fff' }] })).toEqual(['colors.brand needs a CSS color.', 'colors.brand is listed twice.']);
-        expect(presetProblems({ shadows: [] })).toEqual(['shadows is not a preset kind; use colors, fontSizes, spacing.']);
+        expect(presetProblems({ shadows: [] })).toEqual(['shadows is not a preset kind; use colors, gradients, fontSizes, spacing.']);
+        // Gradients: one gradient function, which may read the palette, never a url().
+        expect(presetProblems({ gradients: [{ slug: 'brand', name: 'Brand', value: 'linear-gradient(135deg, var(--cms-color-primary) 0%, rgb(124 58 237) 100%)' }] })).toEqual([]);
+        expect(presetProblems({ gradients: [{ slug: 'bad', name: 'Bad', value: 'url(x)' }, { slug: 'worse', name: 'Worse', value: 'linear-gradient(red, url(x))' }] })).toEqual(['gradients.bad needs a CSS gradient.', 'gradients.worse needs a CSS gradient.']);
+        expect(DEFAULT_PRESETS.gradients!.map(preset => preset.slug)).toEqual(['dusk', 'sunrise', 'meadow', 'ocean', 'graphite', 'fog']);
         expect(presetProblems({ fontSizes: [{ slug: 'big', name: 'Big', value: '2rem; color: red' }] })).toEqual(['fontSizes.big needs a CSS length.']);
         expect(themeProblems({ label: 'T', presets: { colors: [{ slug: 'x', name: '', value: '#fff' }] } })).toEqual(['theme.presets: colors.x needs a name of at most 40 characters.']);
         const layered = layerPresets({ colors: [{ slug: 'base', name: 'Base', value: '#fff' }, { slug: 'brand', name: 'Brand', value: '#00f' }] }, { colors: [{ slug: 'brand', name: 'Brand', value: '#f00' }] });
@@ -216,6 +250,13 @@ describe('essentials helpers', () => {
         expect(resolved.colors).toEqual([{ slug: 'brand', name: 'Brand', value: '#0a0' }, { slug: 'mine', name: 'Mine', value: '#123' }]);
         expect(resolved.fontSizes).toEqual(DEFAULT_PRESETS.fontSizes);
         expect(resolved.spacing.map(preset => preset.slug)).toEqual(['none', 'small', 'medium', 'large', 'x-large']);
+        expect(resolved.gradients).toEqual(DEFAULT_PRESETS.gradients);
+        // The site changes a gradient and adds its own, like colors.
+        const gradients = resolvePresets({ gradients: [{ slug: 'brand', name: 'Brand', value: 'linear-gradient(red, blue)' }] }, { gradients: { brand: 'linear-gradient(red, green)' }, customGradients: [{ slug: 'mine', name: 'Mine', value: 'radial-gradient(#fff, #000)' }] }).gradients;
+        expect(gradients.map(preset => [preset.slug, preset.value])).toEqual([['brand', 'linear-gradient(red, green)'], ['dusk', DEFAULT_PRESETS.gradients![0]!.value], ['sunrise', DEFAULT_PRESETS.gradients![1]!.value], ['meadow', DEFAULT_PRESETS.gradients![2]!.value], ['ocean', DEFAULT_PRESETS.gradients![3]!.value], ['graphite', DEFAULT_PRESETS.gradients![4]!.value], ['fog', DEFAULT_PRESETS.gradients![5]!.value], ['mine', 'radial-gradient(#fff, #000)']]);
+        expect(presetOverridesProblem({ gradients: { brand: 'url(x)' } })).toBe('brand needs a CSS gradient.');
+        expect(presetOverridesProblem({ customGradients: [{ slug: 'ok', name: 'Ok', value: '#fff' }] })).toBe('ok needs a CSS gradient.');
+        expect(presetStyle({ gradients: [{ slug: 'dusk', name: 'Dusk', value: 'linear-gradient(red, blue)' }] })).toBe('--cms-gradient-dusk: linear-gradient(red, blue);');
         expect(presetOverridesProblem({ colors: { brand: '#0a0' } })).toBeUndefined();
         expect(presetOverridesProblem({ colors: { brand: 'url(x)' } })).toBe('brand needs a CSS color.');
         expect(presetOverridesProblem({ custom: [{ slug: 'ok', name: 'Ok', value: 'nope!' }] })).toBe('ok needs a CSS color.');

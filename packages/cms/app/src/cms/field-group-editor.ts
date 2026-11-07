@@ -95,7 +95,7 @@ export class FieldGroupEditor extends Cossack {
                 control: () => null,
             })}
             ${blockPanel({
-                id: prefix, open: Boolean(dialog && option), option, tab: 'general', style: styleValues({}), presets: { colors: [], fontSizes: [], spacing: [] }, styleTab: false,
+                id: prefix, open: Boolean(dialog && option), option, tab: 'general', style: styleValues({}), presets: { colors: [], gradients: [], fontSizes: [], spacing: [] }, styleTab: false,
                 onTab: () => undefined, onStyle: () => undefined, onClose: () => { this.dialog = null; },
                 general: dialog && option ? html`
                     ${option.fields.length ? blockFields(option, dialog.values, (name, value) => this.setValue(name, value), `${prefix}-${dialog.id}`, () => ({ previews: {}, choose: () => undefined }), dialog.errors)

@@ -370,7 +370,7 @@ export function mediaView(file: CmsFile | undefined, imageOptions: ImageOptions)
     return {
         url, alt: file.alt, width: size?.width ?? file.width, height: size?.height ?? file.height, contentType: file.contentType, caption: file.caption,
         srcset: variants ? imageSrcset(source, { widths }) : '', wideSrcset: variants ? imageSrcset(source, { aspect: 16 / 9, widths }) : '',
-        placeholder: imageOptions.placeholder ? file.placeholder : null, sizes: imageOptions.sizes,
+        placeholder: imageOptions.placeholder ? file.placeholder : null, sizes: imageOptions.sizes, focus: file.edits?.focus ?? null,
     };
 }
 
@@ -429,13 +429,19 @@ function renderedBlock(cms: CmsHost, block: { _id: string; type: string; data: R
             if (view) media[id as string] = view;
         }
     }
+    // The files a container's background shows, resolved like a media field's.
+    for (const id of [block.style?.image, block.style?.video]) {
+        const view = typeof id === 'string' && id ? mediaView(files.get(id), resizes) : null;
+        if (view) media[id as string] = view;
+    }
     const children = Array.isArray(block.children) ? (block.children as RenderedBlock[]).map(child => renderedBlock(cms, child, files, richText, scope, refs)) : undefined;
     return { _id: block._id, type: block.type, data, html, media, ...(Object.keys(content).length ? { content } : {}), ...(type && blockIsData(type) ? { dataOnly: true } : {}),
         ...(block.pattern ? { pattern: block.pattern, sourceId: block.sourceId ?? block._id } : {}),
         ...(block.layout ? { layout: block.layout } : {}), ...(block.style ? { style: block.style } : {}), ...(block.when ? { when: block.when } : {}), ...(children ? { children } : {}) };
 }
 
-function blockMediaIds(cms: CmsHost, block: { type: string; data: Record<string, unknown>; children?: readonly unknown[] }, into: Set<string>): void {
+function blockMediaIds(cms: CmsHost, block: { type: string; data: Record<string, unknown>; style?: RenderedBlock['style']; children?: readonly unknown[] }, into: Set<string>): void {
+    for (const id of [block.style?.image, block.style?.video]) if (typeof id === 'string' && id) into.add(id);
     for (const [key, declaration] of Object.entries(cms.blockTypes.get(block.type)?.fields ?? {})) {
         const entry = block.data[key];
         if (declaration.media && typeof entry === 'string') into.add(entry);

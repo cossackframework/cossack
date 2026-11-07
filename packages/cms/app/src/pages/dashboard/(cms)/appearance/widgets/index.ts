@@ -28,7 +28,7 @@ export default class WidgetsPage extends Cossack {
     @State() areas: AreaRow[] = [];
     @State() options: BlockOption[] = [];
     @State() previews: Record<string, MediaPreview> = {};
-    @State() presets: Required<ThemePresets> = { colors: [], fontSizes: [], spacing: [] };
+    @State() presets: Required<ThemePresets> = { colors: [], gradients: [], fontSizes: [], spacing: [] };
     /** What widgets' form, collection and term fields choose from. */
     @State() sources: SourceChoices = { forms: [], collections: [], terms: [], locations: [] };
     @State() dialog: BlockDialog | null = null;
@@ -175,6 +175,13 @@ export default class WidgetsPage extends Cossack {
     @Client()
     choose(file: MediaPreview) {
         this.previews = { ...this.previews, [file.id]: file };
+        if (this.chooser.field.startsWith('\u0002')) {
+            // A background image or video from the panel's Style tab.
+            const property = this.chooser.field.slice(1) as 'image' | 'video';
+            if (this.dialog) this.setStyle({ ...this.dialog.style, style: { ...this.dialog.style.style, [property]: file.id } });
+            this.chooser = { ...this.chooser, open: false };
+            return;
+        }
         if (this.chooser.field.includes('\u0000')) {
             // An image for the rich text of a block in the tree.
             const editor = this.chooser.field.split('\u0000')[3] ?? '';
@@ -237,6 +244,7 @@ export default class WidgetsPage extends Cossack {
         return blockPanel({
             id: 'widget-block', open: Boolean(dialog && option), option, tab: dialog?.tab ?? 'general', style: dialog?.style ?? styleValues({}), presets: this.presets,
             ...(dialog ? { taken: this.otherBlockIds(dialog.area, dialog.id) } : {}),
+            media: { previews: this.previews, choose: property => this.openChooser(`\u0002${property}`, false, property) },
             onTab: tab => this.showTab(tab), onStyle: style => this.setStyle(style), onClose: () => { this.dialog = null; },
             general: dialog && fields ? (fields.fields.length ? blockFields(fields, dialog.values, (name, value) => this.setValue(name, value), `widget-${dialog.area}-${dialog.id}`, media, dialog.errors, [], this.sources)
                 : html`<p class="text-sm text-muted-foreground">${__('This block has no settings.')}</p>`) : html``,

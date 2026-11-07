@@ -1,4 +1,4 @@
-/** The theme's options as classes and styles: accent color, content width and typography. */
+/** The theme's options as styles: accent color, the content measures and typography. */
 import type { ThemeHelpers } from '@cossackframework/cms';
 
 /** Accent colors as the UI kit's primary tokens, light and dark. */
@@ -9,9 +9,13 @@ const ACCENTS: Record<string, [string, string] | undefined> = {
     rose: ['oklch(0.586 0.253 17.585)', 'oklch(0.985 0 0)'],
     amber: ['oklch(0.769 0.188 70.08)', 'oklch(0.205 0 0)'],
 };
-const WIDTHS: Record<string, string> = { narrow: 'max-w-3xl', wide: 'max-w-5xl' };
+/** The measures by width option: the content column, the wide measure and the gutter blocks keep from the edges (`cms-item`, `cms-measure`). */
+const MEASURES: Record<string, string> = {
+    narrow: '--cms-content: 48rem; --cms-wide: 72rem; --cms-gutter: 1.5rem;',
+    wide: '--cms-content: 64rem; --cms-wide: 80rem; --cms-gutter: 1.5rem;',
+};
 
-export const width = (helpers: ThemeHelpers) => WIDTHS[String(helpers.options.width)] ?? WIDTHS.narrow!;
+export const measureStyle = (helpers: ThemeHelpers) => MEASURES[String(helpers.options.width)] ?? MEASURES.narrow!;
 
 export function accentStyle(helpers: ThemeHelpers): string {
     const accent = ACCENTS[String(helpers.options.accent)];

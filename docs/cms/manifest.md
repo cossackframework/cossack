@@ -229,7 +229,7 @@ placed, so moving a plugin's tab holds.
 | `common` | Offered everywhere blocks go, forms and field groups included. |
 | `children` | `{ allowed?, max? }`: the block holds other blocks. |
 | `parent` | Types the block goes inside only, as a column goes inside columns. |
-| `supports` | `color`, `spacing`, `typography`: what the Style tab offers, over the category's defaults. |
+| `supports` | `color`, `spacing`, `typography`, `background`: what the Style tab offers, over the category's defaults. `background: true` adds the advanced background (gradient, image, overlay, video) a container gets; see [Backgrounds](/docs/cms/themes.md#backgrounds). |
 | `input` | `{ kind }`: the block is a form input collecting one value under its `name` field. |
 | `field` | `{ kind }`: the block is a field of a field group. |
 

@@ -231,7 +231,10 @@ export async function mediaPreviews(cms: CmsHost, values: EditorValues, view: Ed
             if (field.media && Array.isArray(value)) for (const id of value) if (typeof id === 'string') ids.add(id);
             if (field.kind === 'richtext' && value && typeof value === 'object') for (const id of richTextMedia(value as RichTextDoc)) ids.add(id);
             if (field.kind === 'blocks' && Array.isArray(value)) {
-                for (const block of flattenBlocks(value as EditorBlock[])) collect(view.blocks.find(option => option.name === block.type)?.fields ?? [], block.data ?? {});
+                for (const block of flattenBlocks(value as EditorBlock[])) {
+                    collect(view.blocks.find(option => option.name === block.type)?.fields ?? [], block.data ?? {});
+                    for (const id of [block.style?.image, block.style?.video]) if (typeof id === 'string' && id) ids.add(id);
+                }
             }
         }
     };

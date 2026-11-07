@@ -329,6 +329,7 @@ export async function siteInstructions(c: Context): Promise<string> {
         'Review notes live on entries (list_notes, add_note); resolving a thread uses update_note with status resolved.',
         'Navigation: menus are trees of items shown at the theme\'s locations (list_menu_locations; primary is the header menu). Build one with create_menu and place it with locations or assign_menu_location. A mega menu is an item with heading children (columns) or a panel: a synced pattern (create_entry in patterns with synced true) shown beside its links.',
         'The theme\'s header, footer and sidebars are widget areas of blocks (list_widget_areas, update_widget_area); the header\'s core/navigation block names the location it renders.',
+        'Layout: blocks sit in the content column unless their data.align is wide or full; a core/group with align full is a band across the page whose children keep the column (data.height short|medium|tall|screen and data.valign center make a hero). A block\'s style holds preset slugs (background, text, padding, margin, fontSize) or hex colors; containers also take gradient (a gradients preset slug), image (a media ID, with imageSize, imageRepeat, imageFixed), overlay (a color) with overlayOpacity 0-100, and video (a media ID).',
         'Destructive tools (delete_*, reset_widget_area, set_site_status) are final or hard to undo: confirm intent before calling them.',
     ].join('\n');
 }

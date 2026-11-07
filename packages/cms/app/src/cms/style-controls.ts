@@ -1,13 +1,16 @@
 /**
  * A block's Style tab, shared by the entry editor, Appearance → Widgets and the editor on the
  * public site: colors from the theme's palette or a color of the block's own, spacing and font
- * size from its presets, text alignment, and under Advanced the block's ID, HTML anchor and class
- * names. Values are preset slugs (or hex colors); `blockStyleAttributes` renders them. Client-safe.
+ * size from its presets, text alignment, for containers an advanced background (a gradient
+ * preset, an image or a video from the library, an overlay), and under Advanced the block's ID,
+ * HTML anchor and class names. Values are preset slugs (or hex colors, media IDs and flags);
+ * `blockStyleAttributes` renders them. Client-safe.
  */
 import { component, html, type TemplateResult } from '@cossackframework/renderer';
 import { ColorPicker, Icon, Input, NativeSelect, Popover, Tabs } from '@cossackframework/ui';
-import { blockIdProblem, CUSTOM_COLOR, TEXT_ALIGNMENTS, type BlockStyle, type Preset, type StyleProperty, type ThemePresets } from '@cossackframework/cms';
+import { BACKGROUND_SIZES, blockIdProblem, CUSTOM_COLOR, TEXT_ALIGNMENTS, type BlockStyle, type Preset, type StyleProperty, type ThemePresets } from '@cossackframework/cms';
 import type { EditorBlock } from './editor';
+import { mediaControl, type MediaPreview } from './field-controls';
 import { icon } from './icons';
 
 export type BlockTab = 'general' | 'style';
@@ -20,10 +23,18 @@ export interface StyleValues {
     id?: string;
 }
 
+/** Media for the advanced background: previews of the files, and the screen's chooser for the image or the video. */
+export interface StyleMediaHooks {
+    previews: Record<string, MediaPreview>;
+    choose(property: 'image' | 'video'): void;
+}
+
 /** What the Style tab needs to know besides the values. */
 export interface StyleControlOptions {
     /** The IDs of the field's other blocks, which the block's ID may not repeat. Without it the ID control stays out. */
     taken?: ReadonlySet<string>;
+    /** How a background image or video is chosen. Without it those two controls stay out. */
+    media?: StyleMediaHooks;
 }
 
 /** The style values of a block as editors hold it. */
@@ -39,7 +50,8 @@ export function blockIdOf(block: { _id: string }, values: StyleValues, taken?: R
 
 /** A block with the Style tab's values applied, its hide list kept; `taken` lets a new ID through only when no other block has it. */
 export function withStyle<T extends Pick<EditorBlock, 'style' | 'layout'> & { _id: string }>(block: T, values: StyleValues, taken?: ReadonlySet<string>): T {
-    const style = Object.fromEntries(Object.entries(values.style).filter(([, value]) => typeof value === 'string' && value)) as BlockStyle;
+    // An empty value, an off flag or a cleared choice is no value.
+    const style = Object.fromEntries(Object.entries(values.style).filter(([, value]) => value !== undefined && value !== null && value !== '' && value !== false)) as BlockStyle;
     const anchor = values.layout.anchor?.trim() ?? '';
     const className = values.layout.className?.trim() ?? '';
     const { anchor: _anchor, className: _className, nosnippet: _nosnippet, ...rest } = block.layout ?? {};
@@ -50,6 +62,7 @@ const ALIGN_ICONS: Record<(typeof TEXT_ALIGNMENTS)[number], string> = { left: 'a
 const ALIGN_LABELS: Record<(typeof TEXT_ALIGNMENTS)[number], string> = { left: 'Align left', center: 'Align center', right: 'Align right' };
 /** The swatch of no color: a slash. */
 const NONE = 'background: linear-gradient(135deg, transparent 45%, var(--destructive) 45%, var(--destructive) 55%, transparent 55%)';
+const SIZE_LABELS: Record<(typeof BACKGROUND_SIZES)[number], string> = { cover: 'Fill the block', contain: 'Fit inside', auto: 'As uploaded' };
 
 /** The two tabs over a block's settings. */
 export function blockTabs(active: BlockTab, pick: (tab: BlockTab) => void, idPrefix: string, content: Record<BlockTab, TemplateResult>): TemplateResult {
@@ -69,9 +82,9 @@ export function blockTabs(active: BlockTab, pick: (tab: BlockTab) => void, idPre
  */
 export function styleControls(values: StyleValues, supports: readonly StyleProperty[], presets: Required<ThemePresets>, idPrefix: string, change: (values: StyleValues) => void, options: StyleControlOptions = {}): TemplateResult {
     const has = (property: StyleProperty) => supports.includes(property);
-    const set = (property: StyleProperty, value: string) => change({ ...values, style: { ...values.style, [property]: value || undefined } });
+    const set = (property: StyleProperty, value: unknown) => change({ ...values, style: { ...values.style, [property]: value === '' || value === false || value === null ? undefined : value } as BlockStyle });
     const setLayout = (key: 'anchor' | 'className', value: string) => change({ ...values, layout: { ...values.layout, [key]: value } });
-    const colors = (property: 'background' | 'text', label: string) => colorControl(`${idPrefix}-${property}`, label, presets.colors, values.style[property] ?? '', value => set(property, value));
+    const colors = (property: 'background' | 'text' | 'overlay', label: string) => colorControl(`${idPrefix}-${property}`, label, presets.colors, values.style[property] ?? '', value => set(property, value));
     const select = (property: 'padding' | 'margin' | 'fontSize', label: string, options: readonly Preset[]) => {
         const id = `${idPrefix}-${property}`;
         return html`<div class="min-w-0 space-y-1">
@@ -92,6 +105,7 @@ export function styleControls(values: StyleValues, supports: readonly StylePrope
     return html`<div class="space-y-3" data-style-controls>
         ${!supports.length ? html`<p class="text-sm text-muted-foreground">${__('This block has no style settings.')}</p>` : null}
         ${has('background') ? colors('background', __('Background')) : null}
+        ${(['gradient', 'image', 'video', 'overlay'] as const).some(has) ? advancedBackground(values.style, supports, presets, idPrefix, set, colors, options.media) : null}
         ${has('text') ? colors('text', __('Text color')) : null}
         ${short.length ? html`<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">${short}</div>` : null}
         <details class="rounded-md border border-border">
@@ -121,6 +135,67 @@ export function styleControls(values: StyleValues, supports: readonly StylePrope
                 </label>
             </div>
         </details>
+    </div>`;
+}
+
+/**
+ * The advanced background of a container, folded under the background color: a gradient preset
+ * over an image from the library (how it fills, repeats and scrolls), a video behind the blocks,
+ * and an overlay color at an opacity over them. Open while any of them is set. The image and the
+ * video need the screen's media chooser.
+ */
+function advancedBackground(style: BlockStyle, supports: readonly StyleProperty[], presets: Required<ThemePresets>, idPrefix: string, set: (property: StyleProperty, value: unknown) => void,
+    colors: (property: 'overlay', label: string) => TemplateResult, media: StyleMediaHooks | undefined): TemplateResult {
+    const has = (property: StyleProperty) => supports.includes(property);
+    const checkbox = (property: 'imageRepeat' | 'imageFixed', label: string) => html`<label class="flex items-center gap-2 text-xs text-foreground cursor-pointer">
+        <input type="checkbox" .checked=${style[property] === true} @change=${(event: Event) => set(property, (event.target as HTMLInputElement).checked)}> ${label}</label>`;
+    const picker = (property: 'image' | 'video', label: string) => mediaControl(style[property] ?? '', value => set(property, typeof value === 'string' ? value : ''), label, false, { previews: media!.previews, choose: () => media!.choose(property) });
+    const opacity = typeof style.overlayOpacity === 'number' ? style.overlayOpacity : 50;
+    return html`<details class="rounded-md border border-border" data-advanced-background ?open=${Boolean(style.gradient || style.image || style.video || style.overlay)}>
+        <summary class="cursor-pointer px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground">${__('Advanced background')}</summary>
+        <div class="space-y-3 border-t border-border p-3">
+            ${has('gradient') ? gradientControl(`${idPrefix}-gradient`, presets.gradients, style.gradient ?? '', value => set('gradient', value)) : null}
+            ${has('image') && media ? html`<div class="space-y-2">
+                <span class="block text-xs font-medium text-foreground">${__('Image')}</span>
+                ${picker('image', __('Image'))}
+                ${style.image ? html`<div class="grid gap-3 sm:grid-cols-2">
+                    <div class="min-w-0 space-y-1">
+                        <label for=${`${idPrefix}-image-size`} class="block text-xs font-medium text-foreground">${__('Fill')}</label>
+                        ${component(NativeSelect, { id: `${idPrefix}-image-size`, '@change': (event: Event) => set('imageSize', (event.target as HTMLSelectElement).value) }, html`
+                            ${BACKGROUND_SIZES.map(size => html`<option value=${size} ?selected=${(style.imageSize ?? 'cover') === size}>${__(SIZE_LABELS[size])}</option>`)}`)}
+                    </div>
+                    <div class="space-y-1.5 self-end">${checkbox('imageRepeat', __('Repeat'))}${checkbox('imageFixed', __('Fixed while scrolling (parallax)'))}</div>
+                </div>
+                <p class="text-xs text-muted-foreground">${__('Placed at the focal point set in the media library. Fixed keeps the image in place as the page scrolls; iPhones and iPads ignore it.')}</p>` : null}
+            </div>` : null}
+            ${has('video') && media ? html`<div class="space-y-2">
+                <span class="block text-xs font-medium text-foreground">${__('Video')}</span>
+                ${picker('video', __('Video'))}
+                <p class="text-xs text-muted-foreground">${__('Plays muted in a loop behind the blocks, with the image as its poster. Every visitor downloads it: keep it short and compressed.')}</p>
+            </div>` : null}
+            ${has('overlay') ? html`<div class="grid gap-3 sm:grid-cols-2">
+                ${colors('overlay', __('Overlay'))}
+                ${style.overlay ? html`<div class="min-w-0 space-y-1">
+                    <label for=${`${idPrefix}-overlay-opacity`} class="block text-xs font-medium text-foreground">${__('Overlay opacity')}: ${opacity}%</label>
+                    <input id=${`${idPrefix}-overlay-opacity`} type="range" min="0" max="100" step="5" .value=${String(opacity)} class="block w-full" @input=${(event: Event) => set('overlayOpacity', Number((event.target as HTMLInputElement).value))}>
+                </div>` : null}
+            </div>
+            <p class="text-xs text-muted-foreground">${__('A color over the image or video, so the text stays readable.')}</p>` : null}
+        </div>
+    </details>`;
+}
+
+/** A gradient from the theme's presets, with a swatch of the chosen one. */
+function gradientControl(id: string, gradients: readonly Preset[], value: string, set: (value: string) => void): TemplateResult {
+    const current = gradients.find(entry => entry.slug === value);
+    return html`<div class="min-w-0 space-y-1" data-gradient-control>
+        <label for=${id} class="block text-xs font-medium text-foreground">${__('Gradient')}</label>
+        <div class="flex items-center gap-2">
+            <span aria-hidden="true" class="inline-block h-8 w-12 shrink-0 rounded border border-border" style=${current ? `background: ${current.value}` : NONE}></span>
+            <div class="min-w-0 flex-1">${component(NativeSelect, { id, '@change': (event: Event) => set((event.target as HTMLSelectElement).value) }, html`
+                <option value="" ?selected=${!value}>${__('None')}</option>
+                ${gradients.map(preset => html`<option value=${preset.slug} ?selected=${preset.slug === value}>${preset.name}</option>`)}`)}</div>
+        </div>
     </div>`;
 }
 

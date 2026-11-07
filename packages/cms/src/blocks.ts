@@ -9,11 +9,11 @@
 import { field, slugify, validateValue, type FieldDeclaration } from './fields';
 import { richTextBlocks, richTextMedia, type RichTextDoc } from './richtext';
 
-export { blocksShapeProblem, blockLayoutProblem, blockStyleProblem, blockConditionProblem, blockIdProblem, BLOCK_ID, BLOCK_LIMITS, BREAKPOINTS, CUSTOM_COLOR, STYLE_PROPERTIES, TEXT_ALIGNMENTS, PRESET_SLUG, INPUT_NAME, CONDITION_OPERATORS, CONDITION_LIMIT,
+export { blocksShapeProblem, blockLayoutProblem, blockStyleProblem, styleValueProblem, blockConditionProblem, blockIdProblem, BLOCK_ID, BLOCK_LIMITS, BREAKPOINTS, CUSTOM_COLOR, MEDIA_ID, BACKGROUND_SIZES, STYLE_PROPERTIES, TEXT_ALIGNMENTS, PRESET_SLUG, INPUT_NAME, CONDITION_OPERATORS, CONDITION_LIMIT,
     type Breakpoint, type StyleProperty, type ConditionOperator } from './block-shape';
 import { bindingProblem } from './bindings';
 import { hasBlockReference, parseBlockText, textBlocks } from './block-references';
-import { BLOCK_LIMITS, BREAKPOINTS, INPUT_NAME, STYLE_PROPERTIES, TEXT_ALIGNMENTS, type Breakpoint, type ConditionOperator, type StyleProperty } from './block-shape';
+import { BLOCK_LIMITS, BREAKPOINTS, INPUT_NAME, STYLE_PROPERTIES, TEXT_ALIGNMENTS, styleValueProblem, type Breakpoint, type ConditionOperator, type StyleProperty } from './block-shape';
 
 /**
  * What a form input collects, which decides how its value is checked and stored: text of a
@@ -35,6 +35,8 @@ export interface BlockSupports {
     readonly color?: boolean | readonly ('background' | 'text')[];
     readonly spacing?: boolean | readonly ('padding' | 'margin')[];
     readonly typography?: boolean | readonly ('fontSize' | 'align')[];
+    /** The advanced background (gradient, image, overlay, video); off unless a type says so, as the core containers do. */
+    readonly background?: boolean | readonly ('gradient' | 'image' | 'imageSize' | 'imageRepeat' | 'imageFixed' | 'overlay' | 'overlayOpacity' | 'video')[];
 }
 
 export interface BlockDeclaration {
@@ -108,7 +110,12 @@ export interface BlockLayout {
     readonly nosnippet?: boolean;
 }
 
-/** A block's style: slugs of the theme's presets, and a text alignment. Rendered as classes and custom properties. */
+/**
+ * A block's style: slugs of the theme's presets (colors may be hex colors of the block's own),
+ * a text alignment, and for containers an advanced background: a gradient preset, an image
+ * from the library with how it fills, repeats and scrolls, an overlay color at an opacity, and
+ * a video from the library. Rendered as classes and custom properties by `blockStyleAttributes`.
+ */
 export interface BlockStyle {
     readonly background?: string;
     readonly text?: string;
@@ -116,6 +123,18 @@ export interface BlockStyle {
     readonly margin?: string;
     readonly fontSize?: string;
     readonly align?: (typeof TEXT_ALIGNMENTS)[number];
+    readonly gradient?: string;
+    /** A media file ID. */
+    readonly image?: string;
+    readonly imageSize?: 'cover' | 'contain' | 'auto';
+    readonly imageRepeat?: boolean;
+    /** The image stays put while the page scrolls (`background-attachment: fixed`), a parallax-like effect. */
+    readonly imageFixed?: boolean;
+    readonly overlay?: string;
+    /** 0 to 100; 50 when an overlay names none. */
+    readonly overlayOpacity?: number;
+    /** A media file ID of a video, played muted in a loop behind the block. */
+    readonly video?: string;
 }
 
 export interface Block {
@@ -157,18 +176,18 @@ export function blockIsData(declaration: Pick<BlockDeclaration, 'category'>): bo
     return blockCategory(declaration) === 'data';
 }
 
-const SUPPORT_KINDS = Object.freeze({ color: ['background', 'text'], spacing: ['padding', 'margin'], typography: ['fontSize', 'align'] } as const);
+const SUPPORT_KINDS = Object.freeze({ color: ['background', 'text'], spacing: ['padding', 'margin'], typography: ['fontSize', 'align'], background: ['gradient', 'image', 'imageSize', 'imageRepeat', 'imageFixed', 'overlay', 'overlayOpacity', 'video'] } as const);
 type SupportKind = keyof typeof SUPPORT_KINDS;
 
 /**
  * The style properties a block type offers: its `supports` over the category's defaults.
  * Text blocks get color, spacing and typography; media blocks spacing alone; the rest
- * color and spacing.
+ * color and spacing. The advanced background is off unless the type asks for it.
  */
 export function blockSupports(declaration: Pick<BlockDeclaration, 'category' | 'supports'>): readonly StyleProperty[] {
     const category = blockCategory(declaration);
     if (category === 'data' || category === 'field') return [];
-    const defaults: Record<SupportKind, boolean> = { color: category !== 'media', spacing: true, typography: category === 'text' };
+    const defaults: Record<SupportKind, boolean> = { color: category !== 'media', spacing: true, typography: category === 'text', background: false };
     const properties: StyleProperty[] = [];
     for (const kind of Object.keys(SUPPORT_KINDS) as SupportKind[]) {
         const support = declaration.supports?.[kind] ?? defaults[kind];
@@ -185,6 +204,8 @@ const BLOCK_FIELD_KINDS = new Set(['string', 'text', 'enum', 'integer', 'number'
 const LINK = '(?:https?://|/|mailto:|tel:|#)\\S*';
 
 const GAP = field.enum(['none', 'small', 'medium', 'large'], { default: 'medium', label: 'Gap' });
+/** How wide a block is where the theme constrains blocks (the content, a full-width group): see `cms-item` in `cms/blocks.css`. */
+const WIDTH = field.enum(['content', 'wide', 'full'], { default: 'content', label: 'Width', choices: { content: 'Content width', wide: 'Wide', full: 'Full width' } });
 
 /** Built-in block types. */
 const core: BlockDeclaration[] = [
@@ -199,10 +220,12 @@ const core: BlockDeclaration[] = [
         image: field.media({ required: true, nullable: false, label: 'Image' }),
         caption: field.string({ max: 300, label: 'Caption' }),
         link: field.string({ max: 2048, pattern: '(?:https?://|/)\\S*', label: 'Link' }),
+        align: WIDTH,
     } },
     { name: 'core/gallery', inline: true,  keywords: ['images', 'photos'], label: 'Gallery', icon: 'gallery-wide', category: 'media', fields: {
         images: field.gallery({ label: 'Images' }),
         columns: field.integer({ default: 3, min: 1, max: 6, label: 'Columns' }),
+        align: WIDTH,
     } },
     { name: 'core/quote', inline: true, body: 'text',  keywords: ['blockquote', 'citation'], label: 'Quote', icon: 'chat-round-line', category: 'text', fields: {
         text: field.text({ required: true, max: 2000, label: 'Quote' }),
@@ -227,12 +250,14 @@ const core: BlockDeclaration[] = [
     { name: 'core/embed', inline: true,  keywords: ['youtube', 'vimeo', 'video'], label: 'Video embed', icon: 'play-circle', category: 'embeds', description: 'A YouTube or Vimeo video.', fields: {
         url: field.string({ required: true, max: 2048, pattern: 'https://(?:www\\.)?(?:youtube\\.com/watch\\?v=|youtu\\.be/|vimeo\\.com/)\\S+', label: 'Video URL' }),
         caption: field.string({ max: 300, label: 'Caption' }),
+        align: WIDTH,
     } },
     { name: 'core/video', inline: true,  keywords: ['movie', 'film', 'mp4', 'player'], label: 'Video', icon: 'video-frame', category: 'media', description: 'A video file from the library, with the browser\'s player.', fields: {
         video: field.media({ required: true, nullable: false, kinds: ['video'], label: 'Video', description: 'An MP4 or WebM file from the library.' }),
         poster: field.media({ label: 'Poster', description: 'The image shown before the video plays.' }),
         caption: field.string({ max: 300, label: 'Caption' }),
         captions: field.media({ kinds: ['document'], label: 'Captions', description: 'A WebVTT (.vtt) file of subtitles.' }),
+        align: WIDTH,
         autoplay: field.boolean({ default: false, label: 'Autoplay', description: 'Starts muted, as browsers require.' }),
         loop: field.boolean({ default: false, label: 'Loop' }),
         muted: field.boolean({ default: false, label: 'Muted' }),
@@ -295,6 +320,7 @@ const core: BlockDeclaration[] = [
         autoplay: field.boolean({ default: false, label: 'Play automatically' }),
         interval: field.integer({ default: 5, min: 2, max: 30, label: 'Seconds per image' }),
         captions: field.boolean({ default: true, label: 'Show captions' }),
+        align: WIDTH,
     } },
     { name: 'core/latest-entries', inline: true,  keywords: ['posts', 'recent', 'query', 'loop'], label: 'Latest entries', icon: 'list-arrow-down', category: 'widgets', description: 'The newest published entries of a collection, kept up to date.', fields: {
         collection: field.string({ required: true, max: 40, pattern: '[a-z][a-z0-9_]*', default: 'posts', choicesFrom: 'collections', label: 'Collection' }),
@@ -335,25 +361,31 @@ const core: BlockDeclaration[] = [
     } },
     // Layout: containers that hold other blocks. They render as CSS grid and respond to the
     // width of the content they are in, so columns inside a column stack on their own.
-    { name: 'core/group', inline: true,  keywords: ['container', 'section', 'stack', 'row'], label: 'Group', icon: 'layers', category: 'design', description: 'A stack of blocks with one width, or a row of them.', fields: {
-        align: field.enum(['full', 'wide', 'center', 'left', 'right'], { default: 'full', label: 'Width', choices: { full: 'Full width', wide: 'Wide', center: 'Narrow, centered', left: 'Narrow, left', right: 'Narrow, right' } }),
+    // A group is also the section and the hero: a full-width band with a background from its Style
+    // tab keeps its children at the content width, and a height with a vertical alignment centers them.
+    { name: 'core/group', inline: true,  keywords: ['container', 'section', 'stack', 'row', 'hero', 'banner'], label: 'Group', icon: 'layers', category: 'design', description: 'A stack of blocks with one width, or a row of them. Full width makes a band across the page.', fields: {
+        align: field.enum(['content', 'wide', 'full', 'center', 'left', 'right'], { default: 'content', label: 'Width', description: 'Full width spans the page; the blocks inside keep the content width.', choices: { content: 'Content width', wide: 'Wide', full: 'Full width', center: 'Narrow, centered', left: 'Narrow, left', right: 'Narrow, right' } }),
         direction: field.enum(['column', 'row'], { default: 'column', label: 'Direction', choices: { column: 'Stacked', row: 'In a row' } }),
         justify: field.enum(['start', 'center', 'end', 'between'], { default: 'start', label: 'Justify', description: 'Where the blocks of a row sit.', choices: { start: 'Start', center: 'Center', end: 'End', between: 'Spread out' } }),
-    }, children: {} },
+        height: field.enum(['auto', 'short', 'medium', 'tall', 'screen'], { default: 'auto', label: 'Height', description: 'At least this tall, for banners and heroes.', choices: { auto: 'Fits the blocks', short: 'Short', medium: 'Medium', tall: 'Tall', screen: 'The whole screen' } }),
+        valign: field.enum(['top', 'center', 'bottom'], { default: 'top', label: 'Vertical alignment', description: 'Where the blocks sit when the group is taller than them.' }),
+    }, children: {}, supports: { background: true } },
     { name: 'core/columns', inline: true,  keywords: ['row', 'side by side', 'layout'], label: 'Columns', icon: 'widget-2', category: 'design', description: 'Blocks side by side; they stack on small screens.', fields: {
         gap: GAP,
         stack: field.enum(['mobile', 'tablet', 'never'], { default: 'mobile', label: 'Stack', choices: { mobile: 'On phones', tablet: 'On phones and tablets', never: 'Never' } }),
-    }, children: { allowed: ['core/column'], max: 6 } },
+        align: WIDTH,
+    }, children: { allowed: ['core/column'], max: 6 }, supports: { background: true } },
     { name: 'core/column', inline: true,  label: 'Column', icon: 'widget', category: 'design', parent: ['core/columns'], fields: {
         span: field.integer({ min: 1, max: 12, label: 'Width', description: 'Out of 12; empty shares the space equally.' }),
         verticalAlign: field.enum(['top', 'center', 'bottom'], { default: 'top', label: 'Vertical alignment' }),
-    }, children: {} },
+    }, children: {}, supports: { background: true } },
     { name: 'core/grid', inline: true,  keywords: ['cells', 'layout'], label: 'Grid', icon: 'widget-3', category: 'design', description: 'Blocks in equal cells.', fields: {
         columns: field.integer({ default: 3, min: 1, max: 6, label: 'Columns' }),
         columnsMd: field.integer({ default: 2, min: 1, max: 6, label: 'Columns on tablets' }),
         columnsSm: field.integer({ default: 1, min: 1, max: 6, label: 'Columns on phones' }),
         gap: GAP,
-    }, children: { max: 24 } },
+        align: WIDTH,
+    }, children: { max: 24 }, supports: { background: true } },
     // Tabs: one panel shown at a time. In a field group they are the dashboard's tabs.
     { name: 'core/tabs', keywords: ['panels'], label: 'Tabs', icon: 'window-frame', category: 'design', description: 'Panels shown one at a time.', fields: {}, children: { allowed: ['core/tab'], max: 12 } },
     { name: 'core/tab', label: 'Tab', icon: 'tuning-square', category: 'design', parent: ['core/tabs'], fields: {
@@ -670,20 +702,22 @@ function blockLayoutOf(block: Block): BlockLayout | undefined {
     return Object.keys(layout).length ? Object.freeze(layout) : undefined;
 }
 
-/** A block's `style` with the properties its type supports; undefined when none is set. */
+/** A block's `style` with the properties its type supports and values that fit them; an off flag or an empty value is left out. Undefined when none is set. */
 function blockStyleOf(block: Block, supports: readonly StyleProperty[]): BlockStyle | undefined {
-    const style: Record<string, string> = {};
+    const style: Record<string, unknown> = {};
     for (const property of supports) {
         const value = block.style?.[property];
-        if (typeof value === 'string' && value) style[property] = value;
+        if (value === undefined || value === null || value === '' || value === false) continue;
+        if (!styleValueProblem(property, value)) style[property] = value;
     }
     return Object.keys(style).length ? Object.freeze(style) as BlockStyle : undefined;
 }
 
-/** Media file IDs referenced by blocks, nested ones and rich text inside them included, for existence checks. */
+/** Media file IDs referenced by blocks, nested ones and rich text inside them included, and the files their style shows, for existence checks. */
 export function blockMedia(blocks: readonly Block[], types: ReadonlyMap<string, BlockDeclaration>): string[] {
     const ids: string[] = [];
     for (const block of flattenBlocks(blocks)) {
+        for (const id of [block.style?.image, block.style?.video]) if (typeof id === 'string' && id) ids.push(id);
         for (const [name, declaration] of Object.entries(types.get(block.type)?.fields ?? {})) {
             const value = block.data[name];
             if (declaration.kind === 'richtext') {

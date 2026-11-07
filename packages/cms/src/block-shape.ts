@@ -20,10 +20,21 @@ export const BLOCK_LIMITS = Object.freeze({ count: 200, depth: 4 });
 /** Container widths blocks respond to: `sm` below 640px, `md` below 1024px, `lg` from there. */
 export const BREAKPOINTS = Object.freeze(['sm', 'md', 'lg'] as const);
 export type Breakpoint = (typeof BREAKPOINTS)[number];
-/** Style properties every block may carry, outside its type's data, and the preset kind each takes. */
-export const STYLE_PROPERTIES = Object.freeze({ background: 'color', text: 'color', padding: 'spacing', margin: 'spacing', fontSize: 'typography', align: 'typography' } as const);
+/**
+ * Style properties every block may carry, outside its type's data, and the support kind each
+ * belongs to. The `background` kind is the advanced background of containers: a gradient
+ * preset, an image or a video from the library, and an overlay over them.
+ */
+export const STYLE_PROPERTIES = Object.freeze({
+    background: 'color', text: 'color', padding: 'spacing', margin: 'spacing', fontSize: 'typography', align: 'typography',
+    gradient: 'background', image: 'background', imageSize: 'background', imageRepeat: 'background', imageFixed: 'background', overlay: 'background', overlayOpacity: 'background', video: 'background',
+} as const);
 export type StyleProperty = keyof typeof STYLE_PROPERTIES;
 export const TEXT_ALIGNMENTS = Object.freeze(['left', 'center', 'right'] as const);
+/** How a background image fills its block. */
+export const BACKGROUND_SIZES = Object.freeze(['cover', 'contain', 'auto'] as const);
+/** A media file's ID, as `style.image` and `style.video` hold it. */
+export const MEDIA_ID = /^[A-Za-z0-9_-]{1,80}$/;
 /** A preset's slug: lowercase letters, digits and hyphens. */
 export const PRESET_SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const ANCHOR = /^[A-Za-z][\w-]{0,59}$/;
@@ -91,19 +102,32 @@ export function blockLayoutProblem(value: unknown): string | undefined {
     return undefined;
 }
 
-/** The shape of a block's `style`: preset slugs per property (colors may be hex colors of the block's own), and an alignment. */
+/**
+ * Why a value does not fit a style property; undefined when it does. Colors and the overlay
+ * are preset slugs or hex colors, the image and the video media file IDs, sizes and
+ * alignments one of their words, the image flags on or off, the overlay's opacity 0 to 100.
+ */
+export function styleValueProblem(property: StyleProperty, value: unknown): string | undefined {
+    const slug = typeof value === 'string' && value.length <= 40 && PRESET_SLUG.test(value);
+    switch (property) {
+        case 'align': return (TEXT_ALIGNMENTS as readonly string[]).includes(value as string) ? undefined : `block style.align is ${TEXT_ALIGNMENTS.join(', ')}.`;
+        case 'background': case 'text': case 'overlay': return slug || (typeof value === 'string' && CUSTOM_COLOR.test(value)) ? undefined : `block style.${property} is a preset slug or a hex color.`;
+        case 'image': case 'video': return typeof value === 'string' && MEDIA_ID.test(value) ? undefined : `block style.${property} is a media file ID.`;
+        case 'imageSize': return (BACKGROUND_SIZES as readonly string[]).includes(value as string) ? undefined : `block style.imageSize is ${BACKGROUND_SIZES.join(', ')}.`;
+        case 'imageRepeat': case 'imageFixed': return typeof value === 'boolean' ? undefined : `block style.${property} is on or off.`;
+        case 'overlayOpacity': return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 100 ? undefined : 'block style.overlayOpacity is a whole number from 0 to 100.';
+        default: return slug ? undefined : `block style.${property} is a preset slug.`;
+    }
+}
+
+/** The shape of a block's `style`: preset slugs per property (colors may be hex colors of the block's own), an alignment, and the advanced background. */
 export function blockStyleProblem(value: unknown): string | undefined {
     if (!value || typeof value !== 'object' || Array.isArray(value) || Object.getPrototypeOf(value) !== Object.prototype) return 'block style must be an object.';
     for (const [property, entry] of Object.entries(value)) {
         if (!Object.hasOwn(STYLE_PROPERTIES, property)) return `block style has no ${property}; it takes ${Object.keys(STYLE_PROPERTIES).join(', ')}.`;
         if (entry === undefined || entry === '') continue;
-        if (property === 'align') {
-            if (!(TEXT_ALIGNMENTS as readonly string[]).includes(entry as string)) return `block style.align is ${TEXT_ALIGNMENTS.join(', ')}.`;
-            continue;
-        }
-        const slug = typeof entry === 'string' && entry.length <= 40 && PRESET_SLUG.test(entry);
-        const color = STYLE_PROPERTIES[property as StyleProperty] === 'color';
-        if (!slug && !(color && typeof entry === 'string' && CUSTOM_COLOR.test(entry))) return color ? `block style.${property} is a preset slug or a hex color.` : `block style.${property} is a preset slug.`;
+        const problem = styleValueProblem(property as StyleProperty, entry);
+        if (problem) return problem;
     }
     return undefined;
 }

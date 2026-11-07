@@ -233,7 +233,7 @@ describe.skipIf(!live)('themes: loaders', () => {
             { _id: 'right', type: 'core/column', data: {}, layout: { hide: ['sm'] }, children: [] },
         ] }];
         const saved = await cms.areas.save('footer', blocks, { principal: admin, expectedRevision: 0, known });
-        const expected = [{ _id: 'cols', type: 'core/columns', data: { gap: 'small', stack: 'mobile' }, children: [
+        const expected = [{ _id: 'cols', type: 'core/columns', data: { gap: 'small', stack: 'mobile', align: 'content' }, children: [
             { _id: 'left', type: 'core/column', data: { span: 4, verticalAlign: 'top' }, children: [{ _id: 'h', type: 'core/heading', data: { text: 'Left', level: 'h2' } }] },
             { _id: 'right', type: 'core/column', data: { verticalAlign: 'top' }, layout: { hide: ['sm'] }, children: [] },
         ] }];

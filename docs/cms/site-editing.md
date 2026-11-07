@@ -8,9 +8,11 @@ description: 'Edit an entry and the site around it in place: documents, markers,
 Signed-in editors see **Live Edit** in the site taskbar on an entry they may change, and
 administrators on every list page too (the home page's latest posts, an archive, a term), for
 the frame around it. It opens the page at `?edit`: blocks become clickable, a sheet at the side
-edits the selected block's fields and style, the Blocks panel shows the page's trees, the Entry
-panel its title, slug and terms, and the Text panel its rich text body. Changes stay in a draft
-until Save; visitors never see the markers or the editor's code.
+edits the selected block's fields and style (a group's Width makes it a band across the page;
+its Advanced background takes a gradient, an image, a video and an overlay, see
+[Backgrounds](/docs/cms/themes.md#backgrounds)), the Blocks panel shows the page's trees, the
+Entry panel its title, slug and terms, and the Text panel its rich text body. Changes stay in a
+draft until Save; visitors never see the markers or the editor's code.
 
 ## Documents
 

@@ -251,7 +251,7 @@ export class EditorLayoutEditor extends Cossack {
                     `)}`)}
             </aside>
             ${blockPanel({
-                id: prefix, open: Boolean(dialog && option), option, tab: 'general', style: styleValues({}), presets: { colors: [], fontSizes: [], spacing: [] }, styleTab: false,
+                id: prefix, open: Boolean(dialog && option), option, tab: 'general', style: styleValues({}), presets: { colors: [], gradients: [], fontSizes: [], spacing: [] }, styleTab: false,
                 onTab: () => undefined, onStyle: () => undefined, onClose: () => { this.dialog = null; },
                 general: general(),
             })}

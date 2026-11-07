@@ -26,7 +26,7 @@ function pagination(paging: Paging): TemplateResult | null {
 }
 
 export function list(view: ArchiveView, empty: string): TemplateResult {
-    return html`<div class="space-y-10">
+    return html`<div class="cms-measure space-y-10">
         ${view.entries.length ? view.entries.map(card) : html`<p class="py-10 text-center text-muted-foreground">${empty}</p>`}
         ${pagination(view.paging)}
     </div>`;

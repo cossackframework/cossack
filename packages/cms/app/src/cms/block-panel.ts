@@ -10,7 +10,7 @@ import type { ThemePresets } from '@cossackframework/cms';
 import type { BlockOption } from './editor';
 import { blockIcon, blockIconColor } from './icons';
 import { presenceChip, type Someone } from './collab/presence';
-import { blockTabs, styleControls, type BlockTab, type StyleValues } from './style-controls';
+import { blockTabs, styleControls, type BlockTab, type StyleMediaHooks, type StyleValues } from './style-controls';
 
 export interface BlockPanelProps {
     /** Page-unique prefix for control IDs. */
@@ -33,6 +33,8 @@ export interface BlockPanelProps {
     editing?: readonly Someone[];
     /** The IDs of the field's other blocks: with them, Advanced offers the block's ID, which may not repeat one. */
     taken?: ReadonlySet<string>;
+    /** The screen's media chooser for a background image or video; without it those controls stay out. */
+    media?: StyleMediaHooks;
     onTab(tab: BlockTab): void;
     onStyle(values: StyleValues): void;
     onClose(): void;
@@ -55,7 +57,7 @@ export function blockPanel(props: BlockPanelProps): TemplateResult {
             <div class="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
                 ${withStyle ? blockTabs(props.tab, tab => props.onTab(tab), `${props.id}-settings`, {
                     general: props.general,
-                    style: styleControls(props.style, option.supports, props.presets, `${props.id}-panel-style`, values => props.onStyle(values), props.taken ? { taken: props.taken } : {}),
+                    style: styleControls(props.style, option.supports, props.presets, `${props.id}-panel-style`, values => props.onStyle(values), { ...(props.taken ? { taken: props.taken } : {}), ...(props.media ? { media: props.media } : {}) }),
                 }) : props.general}
             </div>
             <footer class="flex items-center justify-between gap-2 border-t border-border px-5 py-3">

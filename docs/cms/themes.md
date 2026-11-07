@@ -73,7 +73,7 @@ src/plugins/my-theme/
 | `locations` | Up to 8 menu locations, `name: label`. Administrators assign menus to them; templates render one with `helpers.menu(location)` or read `site.menus[location]`. A `mobile` location gives phones a shorter menu in the header's drawer. See [Menus](/docs/cms/menus.md). |
 | `areas` | Up to 8 widget areas, `name: label`, or `name: { label, blocks }` with the **default blocks** the site shows until it saves its own. Their blocks are edited under Appearance → Widgets and in place with Live Edit, and arrive rendered as `site.areas[area]`. See [Areas with defaults](#areas-with-defaults). |
 | `options` | Up to 16 settings shown under Appearance → Customize, of kind `string`, `text`, `enum` (`values`, `choices` for labels), `boolean`, `integer` or `number`, with `default`, `label`, `description` and the usual limits. Stored as settings `<plugin>.<option>`; templates read them as `helpers.options.<option>`, defaults applied. |
-| `presets` | The palette, font sizes and spacing steps blocks pick from: `colors` (up to 24), `fontSizes` (8) and `spacing` (8), each `{ slug, name, value }`. Missing kinds get defaults; the site adjusts colors under Customize. |
+| `presets` | The palette, gradients, font sizes and spacing steps blocks pick from: `colors` (up to 24), `gradients` (12, CSS gradients that may read the palette's variables), `fontSizes` (8) and `spacing` (8), each `{ slug, name, value }`. Missing kinds get defaults; the site adjusts colors and gradients under Customize. |
 | `extends` | A parent theme's plugin name. See [Child themes](#child-themes). |
 
 A manifest with a `theme` field and nothing that needs a grant (no resources, hooks,
@@ -163,6 +163,7 @@ Every template receives `helpers`:
 | `asset(path)` | The URL of a file in the theme's `assets/`, such as `helpers.asset('assets/theme.css')`. Empty when the theme has none. |
 | `search({ placeholder, style, class })` | A search form posting to the site's search page in the page's language: a box, or with `style: 'icon'` a button that opens one. The `core/search` block renders the same. |
 | `block(blocks)` | Renders a block, or a list of blocks, through the theme's own renderer, a plugin's component or the core one. |
+| `layout(blocks, { class })` | Renders a list of blocks as the page's constrained layout: each block in an item at the content measure, or the width its Width field asks for, so a full-width group makes a band across the page. For a template's blocks root and for areas that span the page. See [Widths and full-width sections](#widths-and-full-width-sections). |
 | `content(parts)` | For block renderers: renders a block's rich text field (`block.content.<field>`), HTML runs and the blocks embedded in them. |
 | `isActive(url)` | Whether a URL is the current page or one of its ancestors, for menu styling. |
 | `menu(source, { style, mobile, collapse, motion, label, class })` | A location's menu (`site.menus[location]`), or items given directly, as a `nav`: `dropdowns` (the default) is a header menu with dropdowns, mega panels under items with a panel or heading children, and below the `collapse` width (`md` or `lg`) a hamburger drawer showing the `mobile` location's menu, or this one; `inline` one row for footers; `list` a tree for sidebars. `motion` picks how they open (`rise`, `fade`, `scale`, `none`). Null for an empty menu. The `core/navigation` block renders the same, so editors place a menu in widget areas and content. See [Menus](/docs/cms/menus.md#in-themes). |
@@ -197,9 +198,57 @@ image, else the title, with the tagline, linked home), *Navigation* (`core/navig
 [Menus](/docs/cms/menus.md)), *Search* (`core/search`), *Language switcher* (`core/languages`)
 and *Button* (`core/button`). A *Group* with the `row` direction lays them out in one line,
 spread out or aligned to one end; its children keep their own width and wrap on narrow
-screens. The default theme's `header` and `footer-bar` areas are built this way; the layout
-template keeps the frame around them (the border, the content width, the skip link). The text
-of a footer line can read the site: `© {{ $site.year }} {{ $site.title }}`.
+screens. The default theme's `header` and `footer-bar` areas are built this way: a full-width
+row with a padding preset, so a background set on its Style tab becomes a band across the page
+while the logo and the menu stay in line with the content. The text of a footer line can read
+the site: `© {{ $site.year }} {{ $site.title }}`.
+
+## Widths and full-width sections
+
+Nothing in a template frames the blocks: the width is the block's, the measures are the
+theme's. The theme's root sets them as custom properties, and `cms/blocks.css` uses them:
+
+| Property | Meaning | Default |
+| --- | --- | --- |
+| `--cms-content` | The content column, where text reads well. | `48rem` |
+| `--cms-wide` | The wide measure, for images and columns that may spill past the text. | `72rem` |
+| `--cms-narrow` | The narrow measure of a group aligned left, center or right. | `40rem` |
+| `--cms-gutter` | What blocks keep from the edges on small screens. | `1.5rem` |
+
+The default theme sets the first two from its *Content width* option (48/72 rem, or 64/80 rem
+for *Wide*). A template renders its blocks root with `helpers.layout(entry.content)`, which
+wraps each block in `div.cms-item[data-align]`: a box at the content measure, `wide` or `full`
+when the block's **Width** field says so (groups, columns, grids, images, galleries, carousels,
+videos and embeds have one), or the narrow measure at the content column's edge for a group
+aligned `center`, `left` or `right`. The item is also the query container the block responds
+to, so columns stack by the width they have. For its own parts (titles, lists, forms) a theme
+uses the `cms-measure` class (`cms-measure-wide` for the wide measure); nested measures do
+nothing. A **full-width group** renders its children as items too: a band with a background
+holds a column of text, and a wide child inside it stays wide. A full-width row (the header)
+lays its row within the content measure instead. A block with a padding preset holds its own
+gutter, so nothing inside it adds the page's. Groups also take a *Height* (short, medium,
+tall, the whole screen) and a *Vertical alignment*, so a group with a background, a height and
+centered blocks is a hero: there is no separate cover block. The default theme's layout shows
+the whole arrangement: a full-width header and footer, `cms-measure` on the entry's title and
+meta, `helpers.layout` for the content.
+
+## Backgrounds
+
+Every block's Style tab sets a background color from the palette, or one of the block's own.
+Containers (`core/group`, `core/columns`, `core/column`, `core/grid`, and a plugin's block with
+`supports: { background: true }`) also get **Advanced background**: a gradient from the theme's
+`gradients` presets (six core defaults; Customize changes them and adds the site's own), an
+image from the media library (filling, fitting or as uploaded; repeating; *Fixed while
+scrolling* for the parallax-like `background-attachment: fixed`, which iPhones and iPads
+ignore), a video from the library (muted, looping, behind the blocks, the image as its poster;
+hidden for visitors who ask for reduced motion), and an overlay color at an opacity over them,
+so text stays readable. The image sits at the focal point set in the library. Stored values are
+slugs, media IDs and flags, never CSS: `blockStyleAttributes` renders the layers from the
+block's resolved media (`style.image`, `style.video` count as the block's media), the overlay as
+the `--cms-overlay` variable a `::before` layer paints, and the video as a `<video
+class="cms-bg-video">` the renderer places first in the wrapper. A theme restyles the
+`cms-has-image`, `cms-has-overlay`, `cms-has-video` and `cms-gradient-<slug>` classes. Videos
+and fixed backgrounds cost bandwidth and battery; the controls say so, and the site decides.
 
 ## Stylesheets and the head
 

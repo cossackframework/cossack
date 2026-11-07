@@ -55,9 +55,26 @@ a theme cannot restyle and is an injection surface in a multi-user dashboard.
   `appearance.customCss` (20 KB) and checked: no `@import`, `url()`, `expression()`,
   `behavior`, `-moz-binding` or `</style`. It renders in the site's head. There is no
   per-block CSS; `className` and the theme's stylesheet cover those cases.
-- **Skipped on purpose.** Borders, shadows, gradients, font families, line height, and
-  per-breakpoint style overrides. Each would be another preset kind over the same storage,
-  added when a theme needs it.
+- **Skipped on purpose.** Borders, shadows, font families, line height, and per-breakpoint
+  style overrides. Each would be another preset kind over the same storage, added when a
+  theme needs it.
+- **Backgrounds beyond a color** (2026-11-07), for containers (`core/group`, `core/columns`,
+  `core/column`, `core/grid`; a type opts in with `supports: { background: true }`). The
+  Style tab's Background gains an *Advanced background* group: a gradient (a new preset kind,
+  `gradients`, `--cms-gradient-<slug>`, six core defaults, adjustable and extendable under
+  Customize like colors), an image from the library (`style.image`, a media ID; `imageSize`
+  cover, contain or auto; `imageRepeat`; `imageFixed` for the fixed, parallax-like
+  attachment), an overlay (`overlay`, a palette slug or hex, with `overlayOpacity` 0–100,
+  drawn by a `::before` layer so it sits over a video too) and a video from the library
+  (`style.video`, a muted looping `<video>` the renderer places behind the content, the image
+  as its poster). The renderer builds `url()` from the media ID and the largest resized
+  variant, positioned at the image's focal point, so no CSS is stored and the no-`url()` rule
+  holds. Videos and fixed backgrounds cost bandwidth and are weak on phones (iOS ignores
+  `background-attachment: fixed`); the controls say so and the site owner decides. Users who
+  ask for reduced motion get the poster instead of the video. Media IDs in `style` count as
+  block media (`blockMedia`), so existence checks, usage and exports see them. A separate
+  Cover block was rejected: a group with a background, a height and a vertical alignment is
+  one.
 
 ## Order
 
@@ -89,3 +106,4 @@ a theme cannot restyle and is an injection surface in a multi-user dashboard.
 | CMS package | `Block.style` (`BlockStyle`, `STYLE_PROPERTIES`, `TEXT_ALIGNMENTS`), `layout.anchor` and `layout.className` (`blockLayoutProblem`, `blockStyleProblem`); `BlockDeclaration.supports` with category defaults (`blockSupports`); `validateBlocks` keeps supported style properties and the layout extras; rich text `cmsBlock` nodes carry `style`; `ThemeManifest.presets` (`ThemePresets`, `Preset`, `presetProblems`, `DEFAULT_PRESETS`, `layerPresets`, `resolvePresets`, `presetOverridesProblem`); `blockStyleAttributes`, `presetStyle`, `customCssProblem`; `appearance.presets` and `appearance.customCss` settings; `ThemeInfo.presets` | `essentials-unit.test.ts` (shape, supports, validation, presets, attributes, CSS check); `themes.test.ts` (an area saves a styled block, drops an unsupported property, a child theme layers presets) |
 | Scaffold | `cms/style-controls.ts` (color swatches, spacing and size selects, alignment, Advanced); `BlockTree` tabs; Widgets dialog and site editor popover tabs; `themeState.presets` and `customCss`; `siteContent` custom properties and `helpers.presets`; the wrapper in `site-view.ts`; `blocks.css` inherited stacking; Customize Colors and Additional CSS; Blocks screen lists supports; the default theme's palette | Recipe tests; `generated-runtime-cms-themes.test.js` |
 | Generated app | A project with a styled column renders the wrapper, classes and custom properties; Customize overrides the palette; the site editor applies a background from the Style tab | `generated-runtime-cms-themes.test.js` |
+| Backgrounds (2026-11-07) | `STYLE_PROPERTIES` gains the `background` kind (`gradient`, `image`, `imageSize`, `imageRepeat`, `imageFixed`, `overlay`, `overlayOpacity`, `video`), `BlockSupports.background`, `styleValueProblem`, `MEDIA_ID`, `BACKGROUND_SIZES`; `gradients` presets (`GRADIENT_VALUE`, defaults, layering, `PresetOverrides.gradients` and `customGradients`); `MediaView.focus`; `blockStyleAttributes` with media (layers, position, attachment, the overlay variable, the video); `blockMedia` and the app's media collection read `style`; the renderer's `<video class="cms-bg-video">`; `blocks.css` overlay and video layers; the Style tab's Advanced background with media choosing in the entry editor, Widgets and Live Edit; Customize Gradients | `essentials-unit.test.ts`; `layout.test.ts`; `generated-runtime-cms-themes.test.js` (a gradient band and an image background with an overlay) |

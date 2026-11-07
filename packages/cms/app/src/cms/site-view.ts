@@ -240,6 +240,7 @@ export function themeHelpers(theme: SiteTheme, state: ThemeRenderState, isActive
             const list: readonly RenderedBlock[] = Array.isArray(input) ? input as readonly RenderedBlock[] : [input as RenderedBlock];
             return html`${list.map(block => state.editing ? marked(block) : render(block))}`;
         },
+        layout: (blocks, options = {}) => html`<div class=${`cms-layout${options.class ? ` ${options.class}` : ''}`}>${blocks.map(block => layoutItem(block, helpers))}</div>`,
         content: parts => html`${parts.map(part => part.kind === 'html' ? html`<div class=${PROSE}>${unsafeHTML(part.html)}</div>` : render(part.block))}`,
     };
     // In edit mode a block carries its ID; a field's rich text is one document, edited as a whole in the field's panel.
@@ -252,10 +253,16 @@ export function themeHelpers(theme: SiteTheme, state: ThemeRenderState, isActive
         const rendered = theme.blocks?.[block.type]?.(block, helpers) ?? coreBlock(block, helpers, state);
         // A styled block gets one wrapper: classes per property and the presets' variables inline.
         // A column's wrapper takes its grid placement, as cms/blocks.css places `.cms-column-box`.
+        // A group's wrapper carries its alignment too, so a narrow group's background is as narrow as the group.
+        // A video plays behind the content, muted and looping, with the background image as its poster; the overlay paints over both (cms/blocks.css).
         const attributes = blockStyleAttributes(block);
         const column = block.type === 'core/column';
+        const video = attributes?.video;
+        const poster = typeof block.style?.image === 'string' ? block.media[block.style.image]?.url : undefined;
         const styled = attributes ? html`<div class=${column ? `${attributes.className} cms-column-box` : attributes.className} id=${ifDefined(attributes.id || undefined)} data-nosnippet=${ifDefined(attributes.nosnippet ? '' : undefined)}
-            style=${ifDefined([attributes.style, column ? `--cms-span: ${columnSpan(block)}` : ''].filter(Boolean).join('; ') || undefined)}>${rendered}</div>` : rendered;
+            data-align=${ifDefined(block.type === 'core/group' ? alignOf(block) : undefined)}
+            style=${ifDefined([attributes.style, column ? `--cms-span: ${columnSpan(block)}` : ''].filter(Boolean).join('; ') || undefined)}>${video
+                ? html`<video class="cms-bg-video" src=${video.url} poster=${ifDefined(poster)} autoplay muted loop playsinline disablepictureinpicture preload="auto" aria-hidden="true" tabindex="-1"></video>` : null}${rendered}</div>` : rendered;
         // A hidden block stays in the HTML; the stylesheet drops it at those container widths.
         const hide = block.layout?.hide ?? [];
         const sized = hide.length ? html`<div data-hide=${hide.join(' ')} style="display: contents">${styled}</div>` : styled;
@@ -275,6 +282,24 @@ export function tagDocument(blocks: readonly RenderedBlock[], document: string, 
         const own = block.pattern ? { document: `pattern:${block.pattern}`, locked: patterns?.get(block.pattern) ?? true } : { document, locked };
         return { ...block, document: own.document, ...(own.locked ? { locked: true } : {}), ...(block.children ? { children: tagDocument(block.children, document, locked, patterns) } : {}) };
     });
+}
+
+const ALIGNMENTS: ReadonlySet<string> = new Set(['content', 'wide', 'full', 'center', 'left', 'right']);
+
+/** A block's width where the layout constrains blocks: its Width field (`align`), `content` without one. */
+export function alignOf(block: Pick<RenderedBlock, 'data'>): string {
+    const align = block.data.align;
+    return typeof align === 'string' && ALIGNMENTS.has(align) ? align : 'content';
+}
+
+/**
+ * A block as an item of a constrained layout: a box at the content measure, or the wide, full
+ * or narrow one its Width field asks for (`cms-item` in cms/blocks.css), which is also the
+ * query container the block responds to. `helpers.layout` wraps a template's blocks root in
+ * them; a full-width group wraps its children.
+ */
+export function layoutItem(block: RenderedBlock, helpers: Pick<ThemeHelpers, 'block'>): TemplateResult {
+    return html`<div class="cms-item" data-align=${alignOf(block)}>${helpers.block(block)}</div>`;
 }
 
 /**
@@ -506,7 +531,16 @@ export function coreBlock(block: RenderedBlock, helpers: ThemeHelpers, state?: P
         case 'core/navigation': return helpers.menu(text('location') || 'primary', { style: text('style'), motion: text('motion'), mobile: text('mobile') || undefined, collapse: text('collapse') });
         case 'core/meta': return null;
         // Layout blocks: CSS grid from cms/blocks.css, responding to the content root's width.
-        case 'core/group': return html`<div class="cms-group" data-align=${text('align') || 'full'} data-direction=${text('direction') || 'column'} data-justify=${text('justify') || 'start'}>${children.map(child => helpers.block(child))}</div>`;
+        case 'core/group': {
+            // A full-width stack keeps its children at the content measure, as the page's layout does; a full row lays its row within it (cms/blocks.css).
+            const align = alignOf(block);
+            const direction = text('direction') || 'column';
+            const height = text('height');
+            const valign = text('valign');
+            const inner = align === 'full' && direction !== 'row' ? children.map(child => layoutItem(child, helpers)) : children.map(child => helpers.block(child));
+            return html`<div class="cms-group" data-align=${align} data-direction=${direction} data-justify=${text('justify') || 'start'}
+                data-height=${ifDefined(height && height !== 'auto' ? height : undefined)} data-valign=${ifDefined(valign && valign !== 'top' ? valign : undefined)}>${inner}</div>`;
+        }
         case 'core/columns': {
             const spans = columnSpans(children);
             return html`<div class="cms-columns" data-gap=${text('gap') || 'medium'} data-stack=${text('stack') || 'mobile'}>${children.map((column, index) => helpers.block({ ...column, data: { ...column.data, span: spans[index] } }))}</div>`;

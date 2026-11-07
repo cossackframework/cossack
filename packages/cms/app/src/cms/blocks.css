@@ -7,18 +7,49 @@
  */
 .cms-content { container-type: inline-size; }
 
+/*
+ * The constrained layout. The theme's root sets the measures (`--cms-content`, `--cms-wide`,
+ * `--cms-narrow`, `--cms-gutter`); `helpers.layout` renders a blocks root as `.cms-layout` and
+ * each block in an item at the content measure, or the width its Width field asks for. A
+ * full-width group renders its children as items too, so a band holds a column of text and a
+ * wide child stays wide. Items are query containers: columns respond to the width they have.
+ * `.cms-measure` is for a theme's own parts (titles, lists, forms). A block with a padding
+ * preset holds its own gutter, so nothing inside it adds the page's.
+ */
+/* `width: 100%`: inside a grid (a full-width group), an item with auto margins would otherwise size to its content, which size containment makes nothing. */
+.cms-item { container-type: inline-size; width: 100%; max-width: min(var(--cms-content, 48rem), 100% - 2 * var(--cms-gutter, 1.5rem)); margin-inline: auto; }
+.cms-item[data-align="wide"] { max-width: min(var(--cms-wide, 72rem), 100% - 2 * var(--cms-gutter, 1.5rem)); }
+.cms-item[data-align="full"] { max-width: none; }
+.cms-item[data-align="center"], .cms-item[data-align="left"], .cms-item[data-align="right"] { max-width: min(var(--cms-narrow, 40rem), 100% - 2 * var(--cms-gutter, 1.5rem)); }
+.cms-item[data-align="left"] { margin-inline: max(var(--cms-gutter, 1.5rem), (100% - var(--cms-content, 48rem)) / 2) auto; }
+.cms-item[data-align="right"] { margin-inline: auto max(var(--cms-gutter, 1.5rem), (100% - var(--cms-content, 48rem)) / 2); }
+.cms-measure { max-width: min(var(--cms-content, 48rem), 100% - 2 * var(--cms-gutter, 1.5rem)); margin-inline: auto; }
+.cms-measure-wide { max-width: min(var(--cms-wide, 72rem), 100% - 2 * var(--cms-gutter, 1.5rem)); margin-inline: auto; }
+.cms-measure .cms-measure, .cms-measure .cms-measure-wide { max-width: none; }
+.cms-padded { --cms-gutter: 0px; }
+
 .cms-group, .cms-columns, .cms-grid { --cms-gap: 1.5rem; display: grid; gap: var(--cms-gap); }
 [data-gap="none"] { --cms-gap: 0; }
 [data-gap="small"] { --cms-gap: 0.75rem; }
 [data-gap="large"] { --cms-gap: 3rem; }
 
-.cms-group[data-align="wide"] { max-width: var(--cms-wide, 72rem); margin-inline: auto; }
-.cms-group[data-align="center"] { max-width: var(--cms-narrow, 40rem); margin-inline: auto; }
-.cms-group[data-align="left"] { max-width: var(--cms-narrow, 40rem); margin-inline-end: auto; }
-.cms-group[data-align="right"] { max-width: var(--cms-narrow, 40rem); margin-inline-start: auto; }
+/* A group's width where nothing constrains it (inside a content-width group, a column); its styled wrapper carries the same `data-align`. */
+.cms-group[data-align="wide"], .cms-block[data-align="wide"] { max-width: var(--cms-wide, 72rem); margin-inline: auto; }
+.cms-group[data-align="center"], .cms-block[data-align="center"] { max-width: var(--cms-narrow, 40rem); margin-inline: auto; }
+.cms-group[data-align="left"], .cms-block[data-align="left"] { max-width: var(--cms-narrow, 40rem); margin-inline-end: auto; }
+.cms-group[data-align="right"], .cms-block[data-align="right"] { max-width: var(--cms-narrow, 40rem); margin-inline-start: auto; }
+/* A band: a full-width group at least this tall, its blocks placed in the height. */
+.cms-group[data-height="short"] { min-height: 16rem; }
+.cms-group[data-height="medium"] { min-height: 28rem; }
+.cms-group[data-height="tall"] { min-height: 40rem; }
+.cms-group[data-height="screen"] { min-height: 100vh; min-height: 100svh; }
+.cms-group[data-valign="center"] { align-content: center; }
+.cms-group[data-valign="bottom"] { align-content: end; }
 
 /* A row group: a header or a footer bar built from blocks. Children keep their own width; the row wraps on narrow screens. */
 .cms-group[data-direction="row"] { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1.5rem; }
+/* A full-width row lays its row within the content measure, so a header band's logo and menu line up with the page. */
+.cms-group[data-direction="row"][data-align="full"] { padding-inline: max(var(--cms-gutter, 1.5rem), (100% - var(--cms-content, 48rem)) / 2); }
 .cms-group[data-direction="row"][data-justify="center"] { justify-content: center; }
 .cms-group[data-direction="row"][data-justify="end"] { justify-content: flex-end; }
 .cms-group[data-direction="row"][data-justify="between"] { justify-content: space-between; }
@@ -46,6 +77,18 @@
 .cms-block { min-width: 0; }
 .cms-block > :first-child { margin-top: 0; }
 .cms-block > :last-child { margin-bottom: 0; }
+/*
+ * The advanced background of a container. The wrapper's own background is the image under a
+ * gradient; a video sits over it, the overlay (`--cms-overlay`) over both, and the content on
+ * top: the wrapper is a stacking context, so the negative layers stay inside it.
+ */
+.cms-block.cms-has-overlay, .cms-block.cms-has-video { position: relative; isolation: isolate; }
+.cms-has-overlay::before { content: ''; position: absolute; inset: 0; z-index: -1; background: var(--cms-overlay); pointer-events: none; }
+.cms-bg-video { position: absolute; inset: 0; z-index: -2; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
+.cms-block > .cms-bg-video + * { margin-top: 0; }
+@media (prefers-reduced-motion: reduce) {
+    .cms-bg-video { display: none; }
+}
 
 .cms-grid { grid-template-columns: repeat(var(--cms-cols-lg, 3), minmax(0, 1fr)); }
 

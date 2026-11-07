@@ -8,7 +8,8 @@ import { requireAny } from '../../../../cms/guards';
 import { blockIcon, blockIconColor } from '../../../../cms/icons';
 import { pageHeader } from '../../../../cms/ui';
 
-const STYLE_LABELS = { background: 'background', text: 'text color', padding: 'padding', margin: 'margin', fontSize: 'font size', align: 'alignment' } as const;
+/** The Style tab's properties as words; the advanced background's details fold into their main property. */
+const STYLE_LABELS: Record<string, string> = { background: 'background', text: 'text color', padding: 'padding', margin: 'margin', fontSize: 'font size', align: 'alignment', gradient: 'gradient', image: 'background image', overlay: 'overlay', video: 'background video' };
 
 interface BlockRow { name: string; label: string; description: string; keywords: string[]; icon: string; category: BlockCategory; plugin: string; fields: { name: string; label: string; type: string; required: boolean }[]; holds: string; parent: string; style: string }
 
@@ -30,7 +31,7 @@ export default class BlocksPage extends Cossack {
                 type: FIELD_TYPES.find(option => option.type === typeOf(declaration))?.label ?? declaration.kind })),
             holds: block.children ? (block.children.allowed?.length ? block.children.allowed.join(', ') : __('any block')) + (block.children.max ? ` (${__('at most')} ${block.children.max})` : '') : '',
             parent: block.parent?.join(', ') ?? '',
-            style: blockSupports(block).map(property => STYLE_LABELS[property]).join(', '),
+            style: blockSupports(block).map(property => STYLE_LABELS[property]).filter(Boolean).join(', '),
         }));
     }
 

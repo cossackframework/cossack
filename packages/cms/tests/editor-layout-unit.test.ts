@@ -75,7 +75,7 @@ describe('editor layout validation', () => {
         const checked = editorLayoutProblems(layout);
         expect(checked.problems).toEqual([]);
         expect(checked.layout.tabs[1]!.children![0]!.data).toEqual({ title: 'Warehouse', description: 'Counted weekly.' });
-        expect(checked.layout.tabs[0]!.children![1]!.data).toEqual({ gap: 'medium', stack: 'mobile' });
+        expect(checked.layout.tabs[0]!.children![1]!.data).toEqual({ gap: 'medium', stack: 'mobile', align: 'content' });
         expect(collectionProblems({ ...products, editor: layout })).toEqual([]);
     });
 
