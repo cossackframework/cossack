@@ -1,4 +1,5 @@
 import { Cossack, Page } from '@cossackframework/core';
+import { cacheHeaders } from '../../../cms/cache';
 
 /**
  * The web app manifest: the site's name and its app icon from Settings → General, resized
@@ -23,6 +24,6 @@ export default class Manifest extends Cossack {
         ] : resizable ? [192, 512].map(size => ({ src: `${icon}?w=${size}&h=${size}`, sizes: `${size}x${size}`, type: 'image/png', purpose: 'any maskable' }))
             : [{ src: icon, sizes: 'any', purpose: 'any maskable' }];
         const manifest = { name, short_name: name.slice(0, 30), start_url: '/', display: 'standalone', background_color: '#ffffff', theme_color: '#ffffff', icons };
-        return new Response(JSON.stringify(manifest), { headers: { 'content-type': 'application/manifest+json', 'cache-control': 'public, max-age=3600' } });
+        return new Response(JSON.stringify(manifest), { headers: { 'content-type': 'application/manifest+json', ...await cacheHeaders(cms, []) } });
     }
 }

@@ -1,4 +1,5 @@
 import { Client, ClientState, Cossack, Page, Server, State, server$, setRequestLocale, type HeadContext, type HeadTag, type HeadValue } from '@cossackframework/core';
+import { listedCollections } from '../../cms/cache';
 import { html } from '@cossackframework/renderer';
 import { hasPermission, PERMISSIONS, PLACEHOLDER_SCRIPT, usesUserBinding, type RenderedBlock, type SiteView, type ThemeData } from '@cossackframework/cms';
 import { areaViews, bindingScopes, languageLinks, resolvedOptions, siteMenus, siteView, themeData, themeState, type ThemeState } from '../../cms/site';
@@ -176,6 +177,8 @@ export default class SiteLayout extends Cossack {
             this.site = await siteView(cms, this.theme, { locale: page.locale, languages: await languageLinks(cms, page), template, entry, user, usage, url: this.c.req.url, page, forms: { query: this.c.req.query(), principal: this.c.get('principal'), url: this.c.req.path } });
             if (usage.user && user) this.c.header('cache-control', 'private, no-store');
             this.data = await themeData(cms, this.theme, 'layout', this.site, this.c.get('principal'), page.locale);
+            // A Latest entries block in a widget area puts the collection on every page: the page adds these to its cache tags.
+            this.c.set('cms.cacheTags', [...listedCollections(Object.values(this.site.areas).flat())].map(name => cms.purge.tag.collection(name)));
         } catch { this.site = { ...this.site, title: config('app.name') }; }
     }
 

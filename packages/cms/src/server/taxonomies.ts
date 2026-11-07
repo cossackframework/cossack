@@ -53,6 +53,7 @@ export class CmsTaxonomies {
     readonly #slugChanged: ((taxonomy: TaxonomyDeclaration, from: string, to: string, guard: { rql: string; params: { [key: string]: Value } }) => Statement[]) | undefined;
     readonly #beforeSave: ((draft: TermDraft, input: TermWriteInput) => Promise<TermDraft>) | undefined;
     readonly #checkMeta: ((taxonomy: string) => MetaCheck) | undefined;
+    readonly #changed: (() => void | Promise<void>) | undefined;
 
     constructor(db: RomeDB, options: {
         /** Current declarations: built-in and those defined in the dashboard. */
@@ -66,6 +67,8 @@ export class CmsTaxonomies {
         beforeSave?: (draft: TermDraft, input: TermWriteInput) => Promise<TermDraft>;
         /** The meta check for a taxonomy's field groups. */
         checkMeta?: (taxonomy: string) => MetaCheck;
+        /** Called after a committed change, for the host to purge the site's pages: terms show on entries and in menus. */
+        changed?: () => void | Promise<void>;
         now?: () => number;
     }) {
         this.#db = db;
@@ -76,6 +79,7 @@ export class CmsTaxonomies {
         this.#slugChanged = options.slugChanged;
         this.#beforeSave = options.beforeSave;
         this.#checkMeta = options.checkMeta;
+        this.#changed = options.changed;
     }
 
     get declarations(): readonly TaxonomyDeclaration[] { return [...this.#taxonomies().values()]; }
@@ -344,8 +348,11 @@ export class CmsTaxonomies {
     }
 
     async #write(statements: Statement[]) {
-        try { return await this.#db.write(statements, WRITE); }
-        catch (error) {
+        try {
+            const result = await this.#db.write(statements, WRITE);
+            await this.#changed?.();
+            return result;
+        } catch (error) {
             if (error instanceof ClientError && error.outcome === 'rolled-back' && /UNIQUE|constraint/i.test(error.message)) throw new CmsError('CMS_CONFLICT', 'A term with this slug already exists.', { fields: { slug: 'is taken.' } });
             throw error;
         }

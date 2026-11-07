@@ -4,6 +4,7 @@ import { siteOrigin } from '../../../../cms/seo';
 import registry from 'virtual:cossack-pages';
 import { sitemapUrls, staticPages, xmlEscape } from '../../../../cms/sitemaps';
 import { trackCrawler } from '../../../../cms/traffic';
+import { cacheHeaders } from '../../../../cms/cache';
 
 /** One sitemap: `/sitemaps/posts-1.xml` for entries, `/sitemaps/terms-categories.xml` for a taxonomy's archives. */
 @Page({ transport: 'http' })
@@ -23,7 +24,7 @@ export default class Sitemap extends Cossack {
                 + (entry.image ? `<image:image><image:loc>${xmlEscape(`${origin}${entry.image}`)}</image:loc></image:image>` : '')
                 + (entry.news ? `<news:news><news:publication><news:name>${siteName}</news:name><news:language>${xmlEscape(entry.news.language)}</news:language></news:publication><news:publication_date>${new Date(entry.news.publishedAt).toISOString()}</news:publication_date><news:title>${xmlEscape(entry.news.title)}</news:title></news:news>` : '')
                 + '</url>').join('')}</urlset>\n`;
-            return new Response(xml, { headers: { 'content-type': 'application/xml; charset=utf-8', 'cache-control': 'public, max-age=600' } });
+            return new Response(xml, { headers: { 'content-type': 'application/xml; charset=utf-8', ...await cacheHeaders(cms, []) } });
         } catch (error) {
             if (!isCmsError(error)) throw error;
             return new Response('Not found', { status: error.code === 'CMS_UNAVAILABLE' ? 503 : 404 });

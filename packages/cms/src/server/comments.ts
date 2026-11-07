@@ -24,9 +24,13 @@ export class CmsComments {
     readonly #db: RomeDB;
     readonly #now: () => number;
 
-    constructor(db: RomeDB, options: { now?: () => number } = {}) {
+    /** Called after a committed change with the entries whose comments changed, for the host to purge their pages. */
+    readonly #changed: ((entries: readonly { resource: string; recordId: string }[]) => void | Promise<void>) | undefined;
+
+    constructor(db: RomeDB, options: { now?: () => number; changed?: (entries: readonly { resource: string; recordId: string }[]) => void | Promise<void> } = {}) {
         this.#db = db;
         this.#now = options.now ?? Date.now;
+        this.#changed = options.changed;
     }
 
     async get(id: string): Promise<CommentShape | null> {
@@ -104,6 +108,7 @@ export class CmsComments {
 
     async create(row: Omit<CommentRow, 'createdAt' | 'updatedAt'>): Promise<CommentShape> {
         await this.#db.write([this.insert(row)], WRITE);
+        if (row.status === 'approved') await this.#changed?.([{ resource: row.resource, recordId: row.recordId }]);
         return (await this.get(row.id))!;
     }
 
@@ -113,7 +118,9 @@ export class CmsComments {
         const wanted = [...new Set(ids.filter(id => ID.test(id)))].slice(0, 100);
         if (!wanted.length) return 0;
         const list = inList('c', wanted);
+        const entries = this.#changed ? await this.#entriesOf(list) : [];
         const result = await this.#db.write([{ rql: `UPDATE cms_comments SET status = $status, updated_at = $now WHERE id IN ${list.rql}`, params: { $status: status, $now: this.#now(), ...list.params } }], WRITE);
+        if (entries.length) await this.#changed?.(entries);
         return Number(result.results[0]!.affected);
     }
 
@@ -129,6 +136,7 @@ export class CmsComments {
             rql: 'UPDATE cms_comments SET content = $content, author_name = $name, author_email = $email, author_url = $url, updated_at = $now WHERE id = $id',
             params: { $content: next.content, $name: next.authorName, $email: next.authorEmail.toLowerCase(), $url: next.authorUrl, $now: this.#now(), $id: id },
         }], WRITE);
+        if (current.status === 'approved') await this.#changed?.([{ resource: current.resource, recordId: current.recordId }]);
         return (await this.get(id))!;
     }
 
@@ -142,6 +150,13 @@ export class CmsComments {
             statements.push({ rql: 'DELETE FROM cms_comments WHERE id = $id', params: { $id: comment.id } });
         }
         for (let index = 0; index < statements.length; index += 30) await this.#db.write(statements.slice(index, index + 30), WRITE);
+        await this.#changed?.(comments.filter(comment => comment.status === 'approved').map(comment => ({ resource: comment.resource, recordId: comment.recordId })));
+    }
+
+    /** The entries of these comments, for a purge. */
+    async #entriesOf(list: { rql: string; params: { [name: string]: Value } }): Promise<{ resource: string; recordId: string }[]> {
+        const result = await this.#db.read([{ rql: `SELECT DISTINCT resource, record_id FROM cms_comments WHERE id IN ${list.rql}`, params: list.params }]);
+        return result.results[0]!.rows.map(([resource, recordId]) => ({ resource: resource as string, recordId: recordId as string }));
     }
 
     /** Delete an entry's comments, after the entry is deleted. */

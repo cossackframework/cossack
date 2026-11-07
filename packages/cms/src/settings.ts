@@ -2,6 +2,7 @@
  * Site settings, declared as groups of fields. Declarations are data and client-safe; the
  * host stores one row per key and validates writes against these declarations.
  */
+import { CACHE_HOLDS, type CacheHold } from './cache';
 import { field, type FieldDeclaration, type FieldMediaKind } from './fields';
 import { SEO_TEMPLATE_DEFAULTS } from './seo';
 
@@ -219,6 +220,19 @@ export const indexnow: SettingsGroup = {
     },
 };
 
+/** Cache: how long the caches in front of the site may hold its pages. Purging is the host's `purge` service and Tools → Cache. */
+export const cache: SettingsGroup = {
+    id: 'cache',
+    json: true,
+    icon: 'bolt',
+    label: 'Cache',
+    description: 'How long a cache in front of the site, such as Cloudflare with a cache-everything rule, may hold a page. Changes purge the pages they touch once a purger is set up (CLOUDFLARE_API_TOKEN); Tools → Cache shows purges and purges everything.',
+    fields: {
+        hold: { ...field.enum(CACHE_HOLDS, { default: 'auto', label: 'Hold pages' }),
+            choices: { auto: 'Automatic: five minutes, or a day once a purger is set up', none: 'Do not hold pages', minute: 'A minute', hour: 'An hour', day: 'A day', week: 'A week' } },
+    },
+};
+
 /** The site's languages: others under `/<code>/`, the default one too when `urls` is `all`. */
 export const languages: SettingsGroup = {
     id: 'languages',
@@ -305,6 +319,7 @@ export interface SiteSettings {
     'crawlers.contentSignals': boolean;
     'indexnow.enabled': boolean;
     'indexnow.key': string;
+    'cache.hold': CacheHold;
     'languages.default': string;
     'languages.others': string;
     'languages.urls': 'hide-default' | 'all';

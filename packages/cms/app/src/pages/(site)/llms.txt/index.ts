@@ -3,6 +3,7 @@ import { isCmsError } from '@cossackframework/cms';
 import { llmsTxt } from '../../../cms/machine';
 import { siteOrigin } from '../../../cms/seo';
 import { trackCrawler } from '../../../cms/traffic';
+import { cacheHeaders } from '../../../cms/cache';
 
 /** `/llms.txt`: the site for AI assistants, as Settings → SEO allows. Off with the site hidden from search engines. */
 @Page({ transport: 'http' })
@@ -13,7 +14,7 @@ export default class LlmsTxt extends Cossack {
             const settings = await cms.settings.all();
             if (!settings['seo.llmsTxt'] || settings['reading.discourageSearchEngines']) return new Response('Not found', { status: 404 });
             trackCrawler(this.c, 'llms');
-            return new Response(await llmsTxt(cms, siteOrigin(this.c)), { headers: { 'content-type': 'text/markdown; charset=utf-8', 'cache-control': 'public, max-age=3600' } });
+            return new Response(await llmsTxt(cms, siteOrigin(this.c)), { headers: { 'content-type': 'text/markdown; charset=utf-8', ...await cacheHeaders(cms, cms.collections().filter(collection => typeof collection.path === 'string').map(collection => cms.purge.tag.collection(collection.name))) } });
         } catch (error) {
             if (!isCmsError(error, 'CMS_UNAVAILABLE')) throw error;
             return new Response('Not available yet', { status: 503 });

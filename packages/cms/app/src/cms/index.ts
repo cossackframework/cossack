@@ -1,6 +1,6 @@
 import { createRomeDB } from '@cossackframework/romedb';
 import { getRequestContext } from '@cossackframework/core';
-import { cmsReconcilers, CmsNetwork, createCMS, MAIN_SITE, prefixedStorage, type CmsHost, type NetworkSite } from '@cossackframework/cms/server';
+import { cloudflarePurger, cmsReconcilers, CmsNetwork, createCMS, MAIN_SITE, prefixedStorage, type CachePurger, type CmsHost, type NetworkSite } from '@cossackframework/cms/server';
 import type { Principal } from '@cossackframework/cms';
 import { plugins } from '@cossackframework/framework/plugins';
 import { modules, resources } from './resources';
@@ -14,6 +14,12 @@ export interface CmsBindings extends DatabaseBindings, PendingBindings, MediaBin
     EMAIL?: { send(message: { to: string; from: string; subject: string; text: string; replyTo?: string }): Promise<unknown> };
     /** The sender of form notifications. */
     MAIL_FROM?: string;
+    /** Purges the Cloudflare cache when pages change: a token with Zone → Cache Purge, and Zone → Zone Read unless the zone ID is given. */
+    CLOUDFLARE_API_TOKEN?: string;
+    /** The zone to purge; without it, the zone is looked up by each site's host. */
+    CLOUDFLARE_ZONE_ID?: string;
+    /** The Cloudflare API's base URL, for tests. */
+    CLOUDFLARE_API_URL?: string;
 }
 
 declare module 'hono' {
@@ -24,6 +30,8 @@ declare module 'hono' {
         /** The network the site belongs to; `enabled()` says whether it serves added sites. */
         network: CmsNetwork;
         principal: Principal;
+        /** Cache tags the site layout adds to every page: the collections its widget areas list. */
+        'cms.cacheTags'?: readonly string[];
     }
 }
 
@@ -57,11 +65,22 @@ export function networkFor(env: CmsBindings): CmsNetwork {
                 ...(mail ? { mail: { send: message => mail.send(message) }, mailFrom: env.MAIL_FROM || 'no-reply@example.com' } : {}),
                 // Ending a network session ends the child sessions sites made from it.
                 sessionsEnded: ended => network.endSessions(ended),
+                purgers: purgers(env, site),
             }),
         });
         current = { key, network };
     }
     return current.network;
+}
+
+/** The caches in front of a site that its changes purge: Cloudflare's, when the application has a token for it. */
+function purgers(env: CmsBindings, site: NetworkSite): CachePurger[] {
+    const token = env.CLOUDFLARE_API_TOKEN?.trim();
+    if (!token) return [];
+    return [cloudflarePurger({
+        token, ...(env.CLOUDFLARE_ZONE_ID ? { zoneId: env.CLOUDFLARE_ZONE_ID } : {}), ...(env.CLOUDFLARE_API_URL ? { api: env.CLOUDFLARE_API_URL } : {}),
+        hosts: () => { const host = urlOf(siteUrl(env, site))?.hostname; return host ? [host] : []; },
+    })];
 }
 
 /** The main site's host. A request's own site is `c.get('cms')`. */

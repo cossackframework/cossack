@@ -14,7 +14,7 @@ import { AUTHOR_FIELDS, collectionSeoProblems } from '../seo';
 import { CmsFieldGroups } from './field-groups';
 import { CmsError } from '../errors';
 import type { CmsModule } from '../module';
-import { appearance, general, media, type SettingsGroup } from '../settings';
+import { appearance, cache as cacheGroup, general, media, type SettingsGroup } from '../settings';
 import { pluginSettingsGroupId } from '../plugin-settings';
 import { assembleSiteTheme, entryTemplateChoices, layerPresets, siteThemeProblems, type ArchiveView, type SiteTheme, type EntryView, type SiteView, type ThemeData, type ThemeManifest, type ThemePresets , themeArea } from '../theme';
 import type { MenuItem, ResolvedMenuItem } from '../menus';
@@ -49,6 +49,7 @@ import { CmsRedirects } from './redirects';
 import { CmsApiTokens, type ApiTokenScope } from './api-tokens';
 import { CmsWebhooks } from './webhooks';
 import { CmsIndexNow } from './indexnow';
+import { CmsPurge, type CachePurger } from './purge';
 import { CmsTraffic } from './traffic';
 import type { WebhookEvent } from '../webhooks';
 import { afterCommit, commentBeforeSave, formSubmitted, menuBeforeSave, termBeforeSave, type FormSubmittedEvent, type ResourceEvent, type WriteActor } from '../hooks';
@@ -103,6 +104,8 @@ export interface CmsOptions {
     readonly fetch?: typeof globalThis.fetch;
     /** The site's public origin, such as `https://example.com` (`APP_URL`), for IndexNow pings. */
     readonly siteUrl?: string | (() => string | undefined);
+    /** The caches in front of the site that changes purge: the Cloudflare purger, or another CDN's. Plugins add theirs as `cms.cache.purge` handlers. */
+    readonly purgers?: readonly CachePurger[];
     /** Object storage for media: R2 on Workers, S3 or a local directory on Node. Without it, `files` is null. */
     readonly storage?: StorageProvider;
     readonly files?: FileServiceOptions;
@@ -328,6 +331,8 @@ export class CmsHost {
     readonly apiTokens: CmsApiTokens;
     readonly webhooks: CmsWebhooks;
     readonly indexnow: CmsIndexNow;
+    /** Purges of the caches in front of the site, queued by changes and sent from the outbox. */
+    readonly purge: CmsPurge;
     readonly traffic: CmsTraffic;
     readonly comments: CmsComments;
     /** Forms' submissions: taking them, notifications, and handling them in the dashboard. */
@@ -430,12 +435,12 @@ export class CmsHost {
         // A site account's sessions are this site's: ending them ends nothing elsewhere.
         this.siteAccounts = added ? new CmsAccounts(this.db, { now: this.#now, sessionsEnded: async ended => { if ('user' in ended) await this.authSessions.revokeAllForUser(ended.user, ended.except); } }) : null;
         this.users = new CmsUsers(this.db, { accounts: this.accounts, ...(this.siteAccounts ? { siteAccounts: this.siteAccounts } : {}), ...(options.site ? { site: options.site } : {}), now: this.#now, checkMeta: (meta, previous) => this.#checkMeta({ kind: 'users' }, meta, previous) });
-        this.redirects = new CmsRedirects(this.db, { now: this.#now });
+        this.redirects = new CmsRedirects(this.db, { now: this.#now, changed: () => this.#purgeSite('redirects') });
         this.traffic = new CmsTraffic(this.db, { now: this.#now });
         this.apiTokens = new CmsApiTokens(this.network, { now: this.#now });
         this.siteApiTokens = added ? new CmsApiTokens(this.db, { now: this.#now }) : null;
         this.webhooks = new CmsWebhooks(this.db, { now: this.#now, fetch: this.#fetch });
-        this.comments = new CmsComments(this.db, { now: this.#now });
+        this.comments = new CmsComments(this.db, { now: this.#now, changed: entries => this.#purgeLater('comments', { tags: entries.filter(entry => entry.resource.startsWith('cms/')).map(entry => this.purge.tag.entry(entry.resource.slice(4), entry.recordId)) }) });
         this.forms = new CmsForms(this, { ...(options.mail ? { mail: options.mail } : {}), ...(options.mailFrom ? { mailFrom: options.mailFrom } : {}) });
         this.mail = options.mail ?? null;
         this.mailFrom = options.mailFrom ?? 'no-reply@example.com';
@@ -445,6 +450,8 @@ export class CmsHost {
         this.hooks.addAction(afterCommit, event => this.#queueWebhooks(event), { plugin: 'cms' });
         // Published, changed and unpublished entries are pinged to IndexNow; a failed ping retries with the outbox.
         this.hooks.addAction(afterCommit, event => this.#pingIndexNow(event), { plugin: 'cms' });
+        // A changed page is purged from the caches in front of the site; the purge itself runs from the outbox too. Its own owner, so a retry of another handler does not queue it twice.
+        this.hooks.addAction(afterCommit, event => this.#queuePurge(event), { plugin: 'cms-cache' });
         // A saved form brings its submissions table up to date; a deleted one takes its table along.
         this.hooks.addAction(afterCommit, async event => {
             if (event.resource !== 'cms/forms') return;
@@ -472,11 +479,12 @@ export class CmsHost {
             }),
             // A term archive keeps answering at its old slug.
             slugChanged: (taxonomy, from, to, guard) => taxonomy.path ? this.redirects.automatic(`/${taxonomy.path}/${from}`, `/${taxonomy.path}/${to}`, { guard: guard.rql, params: guard.params }) : [],
+            changed: () => this.#purgeSite('terms'),
         });
         for (const resource of this.#static.values()) for (const [name, declaration] of Object.entries(resource.fields)) {
             if (declaration.taxonomy && !this.#builtinTaxonomies.has(declaration.taxonomy)) throw new Error(`${resource.id}.${name} uses taxonomy ${declaration.taxonomy}, which no module declares.`);
         }
-        const groups = [general, media, appearance, ...modules.flatMap(module => module.settings ?? []), ...(options.settings ?? [])];
+        const groups = [general, media, appearance, cacheGroup, ...modules.flatMap(module => module.settings ?? []), ...(options.settings ?? [])];
         for (const group of groups) {
             if (group.plugin !== undefined || group.id.startsWith('plugin:')) throw new Error('Plugin settings namespaces and ownership are assigned by the CMS host.');
         }
@@ -491,16 +499,17 @@ export class CmsHost {
             if (theme.options && !theme.problems.length) groups.push(theme.options);
             this.#themes.set(theme.name, theme);
         }
-        this.settings = new CmsSettings(this.db, groups, { now: this.#now });
+        this.settings = new CmsSettings(this.db, groups, { now: this.#now, changed: () => this.#purgeSite('settings') });
         this.indexnow = new CmsIndexNow(this.settings, { now: this.#now, fetch: this.#fetch, siteUrl: typeof options.siteUrl === 'function' ? options.siteUrl : () => options.siteUrl as string | undefined });
-        this.menus = new CmsMenus(this.db, { now: this.#now, checkMeta: (meta, previous) => this.#checkMeta({ kind: 'menus' }, meta, previous), resolve: (items, locale) => this.#resolveMenu(items, locale), beforeSave: (items, input) => this.hooks.applyFilters(menuBeforeSave, items, input) });
-        this.areas = new CmsAreas(this.db, { now: this.#now, check: blocks => this.#checkBlocks(blocks) });
+        this.menus = new CmsMenus(this.db, { now: this.#now, checkMeta: (meta, previous) => this.#checkMeta({ kind: 'menus' }, meta, previous), resolve: (items, locale) => this.#resolveMenu(items, locale), beforeSave: (items, input) => this.hooks.applyFilters(menuBeforeSave, items, input), changed: () => this.#purgeSite('menus') });
+        this.areas = new CmsAreas(this.db, { now: this.#now, check: blocks => this.#checkBlocks(blocks), changed: () => this.#purgeSite('areas') });
         this.previews = new CmsPreviews(this.db, { now: this.#now });
         this.autosaves = new CmsAutosaves(this.db, { now: this.#now });
         this.drafts = new CmsDrafts(this.db, { now: this.#now });
         this.notes = new CmsNotes(this.db, { now: this.#now });
-        this.files = options.storage ? new FileService(this.db, options.storage, { now: this.#now, ...(options.images ? { images: options.images } : {}), imageSettings: () => this.#imageSettings(), ...options.files }) : null;
+        this.files = options.storage ? new FileService(this.db, options.storage, { now: this.#now, ...(options.images ? { images: options.images } : {}), imageSettings: () => this.#imageSettings(), changed: () => this.#purgeSite('media'), ...options.files }) : null;
         this.cache = new CmsCache(this.db, { now: this.#now });
+        this.purge = new CmsPurge({ outbox: this.outbox, hooks: this.hooks, cache: this.cache, site: this.site, purgers: options.purgers ?? [], now: this.#now, queued: () => this.outboxWritten() });
         for (const module of modules) module.register?.({ hooks: this.hooks, settings: this.settings, taxonomies: this.taxonomies, collection: name => this.#collections.get(name), blocks: () => this.#blocks, now: this.#now });
         for (const plugin of this.#plugins.values()) this.#registerPlugin(plugin);
         if (!options.hooks) this.hooks.freeze();
@@ -817,6 +826,56 @@ export class CmsHost {
             form: { id: event.form.id, slug: event.form.slug, title: event.form.title },
             submission: { id: submission.id, status: submission.status, values: submission.values, meta: submission.meta, user: submission.user, createdAt: submission.createdAt, stored: event.stored },
         });
+    }
+
+    /**
+     * Purge what an entry event changed: its page and the lists of its collection, or the whole
+     * site when a menu names the entry. Drafts and private collections show on no page. Other
+     * resources of the CMS (patterns, forms) may show anywhere, so they purge the site. A plugin's
+     * resources purge nothing: the plugin knows which pages show them (`cms.purge.queue`).
+     */
+    async #queuePurge(event: ResourceEvent): Promise<void> {
+        if (!event.resource.startsWith('cms/')) return;
+        const name = event.resource.slice(4);
+        const collection = this.#collections.get(name);
+        if (!collection) {
+            await this.purge.everything(name);
+            return;
+        }
+        const publishable = collection.publishable !== false;
+        const shown = publishable ? event.previousStatus === 'published' || event.record?.status === 'published' : collection.visibility === 'public';
+        if (!shown) return;
+        if (event.topic !== 'resource.created' && await this.#menusName(name, event.id)) {
+            await this.purge.everything(`entry:${name}`);
+            return;
+        }
+        const origin = this.indexnow.origin();
+        const url = event.record && origin ? (await this.entryUrls(collection, [event.record])).get(event.record.id) : undefined;
+        await this.purge.queue(`entry:${name}`, {
+            tags: [this.purge.tag.entry(name, event.id), this.purge.tag.collection(name)],
+            urls: url ? [`${origin}${url}`, `${origin}${url}${url.includes('?') ? '&' : '?'}format=md`] : [],
+        });
+    }
+
+    /** Whether a menu item links to the entry, whose title or address then shows on every page. */
+    async #menusName(collection: string, id: string): Promise<boolean> {
+        const names = (items: readonly MenuItem[]): boolean => items.some(item => (item.kind === 'entry' && item.collection === collection && item.entry === id) || names(item.children));
+        for (const summary of await this.menus.list()) {
+            const menu = await this.menus.get(summary.id);
+            if (menu && names(menu.items)) return true;
+        }
+        return false;
+    }
+
+    /** Queue a purge of every page after a change that may show anywhere; a failure to queue is logged, never the save's. */
+    #purgeSite(reason: string): Promise<void> {
+        return this.#purgeLater(reason, {});
+    }
+
+    async #purgeLater(reason: string, input: { tags?: readonly string[]; urls?: readonly string[] }): Promise<void> {
+        if (input.tags && !input.tags.length && !input.urls?.length) return;
+        try { await this.purge.queue(reason, input); }
+        catch (error) { console.error(`[cms] could not queue a cache purge (${reason})`, error); }
     }
 
     async #pingIndexNow(event: ResourceEvent): Promise<void> {
@@ -1512,6 +1571,7 @@ export class CmsHost {
         ], { kind: 'cms.grants', retryConflicts: 5 });
         this.#activation = undefined;
         await this.#refreshPlugins();
+        await this.#purgeSite('plugins');
         await this.#seedFieldGroups(plugin, principal);
         await this.#seedPatterns(plugin, principal);
         return this.#pluginStatus(plugin, await this.#state());
@@ -1569,6 +1629,7 @@ export class CmsHost {
         await this.db.write([{ rql: 'DELETE FROM cms_grants WHERE subject = $subject', params: { $subject: `plugin:${name}` } }], { kind: 'cms.grants', retryConflicts: 5 });
         this.#activation = undefined;
         await this.#refreshPlugins();
+        await this.#purgeSite('plugins');
     }
 
     /** Commands plugin manifests declare. */

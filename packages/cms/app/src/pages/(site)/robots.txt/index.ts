@@ -2,6 +2,7 @@ import { Cossack, Page } from '@cossackframework/core';
 import { robotsTxtLines } from '@cossackframework/cms';
 import { siteOrigin } from '../../../cms/seo';
 import { trackCrawler } from '../../../cms/traffic';
+import { cacheHeaders } from '../../../cms/cache';
 
 /**
  * robots.txt: keeps crawlers out of the dashboard, the API, sign-in, previews and the IndexNow
@@ -23,6 +24,6 @@ export default class Robots extends Cossack {
         } catch { /* before setup: the defaults */ }
         trackCrawler(this.c, 'robots');
         const lines = robotsTxtLines({ hidden, crawlers, extra, sitemapUrl: `${siteOrigin(this.c)}/sitemap.xml` });
-        return new Response(`${lines.join('\n')}\n`, { headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'public, max-age=3600' } });
+        return new Response(`${lines.join('\n')}\n`, { headers: { 'content-type': 'text/plain; charset=utf-8', ...await cacheHeaders(cms, []) } });
     }
 }

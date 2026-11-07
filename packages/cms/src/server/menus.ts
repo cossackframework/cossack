@@ -29,6 +29,8 @@ export interface CmsMenusOptions {
     readonly checkMeta?: (meta: unknown, previous: { readonly [field: string]: unknown } | null) => Promise<{ readonly [field: string]: unknown }>;
     readonly now?: () => number;
     readonly ttlMs?: number;
+    /** Called after a committed change, for the host to purge the site's pages. */
+    readonly changed?: () => void | Promise<void>;
 }
 
 const ID = /^[A-Za-z0-9_-]{1,80}$/;
@@ -40,6 +42,7 @@ export class CmsMenus {
     readonly #resolve: CmsMenusOptions['resolve'];
     readonly #beforeSave: CmsMenusOptions['beforeSave'];
     readonly #checkMeta: CmsMenusOptions['checkMeta'];
+    readonly #changed: CmsMenusOptions['changed'];
     readonly #now: () => number;
     readonly #ttl: number;
     #cache = new Map<string, { at: number; value: Promise<ResolvedMenuItem[] | null> }>();
@@ -49,6 +52,7 @@ export class CmsMenus {
         this.#resolve = options.resolve;
         this.#beforeSave = options.beforeSave;
         this.#checkMeta = options.checkMeta;
+        this.#changed = options.changed;
         this.#now = options.now ?? Date.now;
         this.#ttl = options.ttlMs ?? 30_000;
     }
@@ -206,7 +210,9 @@ export class CmsMenus {
 
     async #write(statements: Statement[]) {
         try {
-            return await this.#db.write(statements, WRITE);
+            const result = await this.#db.write(statements, WRITE);
+            await this.#changed?.();
+            return result;
         } catch (error) {
             if (error instanceof ClientError && error.outcome === 'rolled-back' && /UNIQUE|constraint/i.test(error.message)) throw new CmsError('CMS_CONFLICT', 'Another menu has this name.', { fields: { name: 'is taken.' } });
             throw error;

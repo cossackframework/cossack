@@ -35,6 +35,21 @@ async function receiver() {
   return { url: `http://127.0.0.1:${server.address().port}/hook`, deliveries, close: () => new Promise(resolve => server.close(resolve)) };
 }
 
+/** A stand-in for Cloudflare's API: records the purge requests and answers success. */
+async function cloudflareStub() {
+  const purges = [];
+  const server = http.createServer((request, response) => {
+    let body = '';
+    request.on('data', chunk => { body += chunk; });
+    request.on('end', () => {
+      purges.push({ method: request.method, path: request.url, authorization: request.headers.authorization, body: body ? JSON.parse(body) : null });
+      response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ success: true, errors: [], result: { id: 'zone-1' } }));
+    });
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  return { url: `http://127.0.0.1:${server.address().port}/client/v4`, purges, close: () => new Promise(resolve => server.close(resolve)) };
+}
+
 /** Save an entry through the editor's server method; returns the new entry's ID. */
 async function save(web, collection, values, id = 'new', rev = 0) {
   const result = await web.action(EDITOR, 'save', [values, 'update', rev], { params: { collection, id }, state: { route: collection, id } });
@@ -50,7 +65,7 @@ async function save(web, collection, values, id = 'new', rev = 0) {
 const richText = (...content) => [{ _id: 'rt', type: 'core/richtext', data: { text: doc(...content) } }];
 const post = (title, extra = {}) => ({ title, slug: '', excerpt: '', content: richText(paragraph(`${title} body`)), status: 'published', publishedAt: '', sticky: false, featuredImage: '', categories: [], tags: [], ...extra });
 
-async function essentials(origin, routeIds, diagnostics, { runtime }) {
+async function essentials(origin, routeIds, diagnostics, { runtime, cloudflare = null }) {
   const web = browserless(origin, routeIds, diagnostics);
   expect((await web.post('/auth/setup', SETUP)).headers.get('location')).toBe('/dashboard');
   // Setup added the starter content: a first post in Uncategorized, and a Contact page with its form.
@@ -79,6 +94,9 @@ async function essentials(origin, routeIds, diagnostics, { runtime }) {
   expect(right.headers.get('location')).toBe('/posts/members-only');
   expect(right.headers.get('set-cookie')).toMatch(new RegExp(`^cms_unlock_${secretId}=[0-9a-f]{64}; Path=/posts/members-only;`));
   contains(await locked.page('/posts/members-only'), 'Members only body');
+  // The unlocked page depends on the cookie, which shared caches ignore: never held, nor the locked one.
+  expect((await locked.request('/posts/members-only')).headers.get('cache-control')).toBe('private, no-store');
+  expect((await visitorOf().request('/posts/members-only')).headers.get('cache-control')).toBe('private, no-store');
   // The editor reads it without the password; the API keeps the content and the password from visitors.
   contains(await web.page('/posts/members-only'), 'Members only body');
   const secretItem = (await (await fetch(`${origin}/api/cms/content/posts/${secretId}`)).json()).item;
@@ -208,6 +226,18 @@ async function essentials(origin, routeIds, diagnostics, { runtime }) {
   expect((await fetch(`${origin}/posts/search-friendly?format=md`)).headers.get('content-type')).toContain('text/markdown');
   expect(seoPage).toMatch(/<link rel="?alternate"? type="?text\/markdown"?/);
   expect((await fetch(`${origin}/posts/search-friendly`)).headers.get('vary')).toContain('Accept');
+  // Caches in front of the site: anonymous pages say how long they may be held (a day once a purger is configured) and what they show.
+  const hold = cloudflare ? 86400 : 300;
+  const cachedPage = await fetch(`${origin}/posts/search-friendly`);
+  expect(cachedPage.headers.get('cache-control')).toBe(`public, max-age=0, s-maxage=${hold}, stale-while-revalidate=60`);
+  expect(cachedPage.headers.get('cache-tag')).toMatch(/^cms:main,cms:main:e:posts:[0-9a-f-]{36},cms:main:c:posts/);
+  expect((await fetch(`${origin}/`)).headers.get('cache-tag')).toContain('cms:main:c:posts');
+  expect((await fetch(`${origin}/feed`)).headers.get('cache-tag')).toBe('cms:main,cms:main:c:posts');
+  expect((await fetch(`${origin}/nowhere-at-all`)).headers.get('cache-control')).toBe('public, max-age=0, s-maxage=60, stale-while-revalidate=60');
+  // Markdown chosen by Accept is never stored (caches key by URL and ignore Vary); the ?format=md address is; an editor's page is theirs.
+  expect(markdown.headers.get('cache-control')).toBe('private, no-store');
+  expect((await fetch(`${origin}/posts/search-friendly?format=md`)).headers.get('cache-control')).toBe(`public, max-age=0, s-maxage=${hold}, stale-while-revalidate=60`);
+  expect((await web.request('/posts/search-friendly')).headers.get('cache-control')).toBe('private, no-store');
   // Tools: Health reads crawler visits and missing pages, Links finds orphans, the SEO editor lists entries.
   await fetch(`${origin}/posts/search-friendly`, { headers: { 'user-agent': 'Mozilla/5.0 (compatible; GPTBot/1.2; +https://openai.com/gptbot)' } });
   await fetch(`${origin}/nowhere-to-be-found`);
@@ -355,6 +385,7 @@ async function essentials(origin, routeIds, diagnostics, { runtime }) {
 
   // Webhooks need a receiver the runtime can reach: this process, from Node.
   if (runtime === 'node') await webhooks(web);
+  if (cloudflare) await purges(web, cloudflare);
 
   // Two-step sign-in: an authenticator app, then sign-in asks for its code.
   const setupApp = await web.action(security, 'beginSetup', []);
@@ -441,6 +472,29 @@ async function webhooks(web) {
   } finally { await hook.close(); }
 }
 
+/** Changes purge Cloudflare through its API: a published post by its tags and addresses, a setting by the site's tag; the Cache tool and the API purge on demand. */
+async function purges(web, cloudflare) {
+  cloudflare.purges.length = 0;
+  const id = await save(web, 'posts', post('Purge me'));
+  await expect.poll(() => cloudflare.purges.some(purge => purge.body?.tags?.includes(`cms:main:e:posts:${id}`)), { timeout: 20_000 }).toBe(true);
+  expect(cloudflare.purges.find(purge => purge.body?.tags?.includes(`cms:main:e:posts:${id}`))).toMatchObject({ method: 'POST', path: '/client/v4/zones/zone-1/purge_cache', authorization: 'Bearer test-token', body: { tags: [`cms:main:e:posts:${id}`, 'cms:main:c:posts'] } });
+  await expect.poll(() => cloudflare.purges.some(purge => purge.body?.files?.some(url => url.endsWith('/posts/purge-me'))), { timeout: 20_000 }).toBe(true);
+  cloudflare.purges.length = 0;
+  expect((await web.action(SETTINGS, 'saveAll', [{ document: { crawlers: { contentSignals: false } }, languages: null, permalinks: null, groups: {} }]))._cossack_return.error).toBe('');
+  await expect.poll(() => cloudflare.purges.some(purge => JSON.stringify(purge.body) === '{"tags":["cms:main"]}'), { timeout: 20_000 }).toBe(true);
+  // Tools → Cache shows the purger, the hold and the purges; Purge everything runs one at once.
+  const tool = await web.page('/dashboard/tools/cache');
+  contains(tool, 'cloudflare');
+  contains(tool, 'Pages may be held for 1 day');
+  cloudflare.purges.length = 0;
+  expect((await web.post('/dashboard/tools/cache', { action: 'purge' })).headers.get('location')).toBe('/dashboard/tools/cache');
+  contains(await web.page('/dashboard/tools/cache'), 'Purged every page of the site.');
+  expect(cloudflare.purges.map(purge => purge.body)).toEqual([{ tags: ['cms:main'] }]);
+  // The API purges the tags given and answers each purger's result.
+  const api = await (await web.request('/api/cms/cache/purge', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ tags: ['cms:main:c:posts'] }) })).json();
+  expect(api.results).toEqual([expect.objectContaining({ purger: 'cloudflare', ok: true, tags: ['cms:main:c:posts'] })]);
+}
+
 describe.skipIf(!liveRomeDBTests())('generated CMS essentials', () => {
   let service;
   beforeAll(async () => { service = await startRomeDBService(); }, 30_000);
@@ -451,11 +505,13 @@ describe.skipIf(!liveRomeDBTests())('generated CMS essentials', () => {
     await vite(root, []);
     await vite(root, ['--ssr', 'src/index.ts', '--outDir', 'dist/server']);
     const routeIds = JSON.parse(await fs.readFile(path.join(root, 'dist/client/cossack-routes.json'), 'utf8')).filePathToId;
+    const cloudflare = await cloudflareStub();
     const server = await productionServer(root, { APP_SECRET: 'generated-cms-test-secret-0123456789abcdef', ROMEDB_URL: service.url, ROMEDB_TOKEN: service.token,
-      CMS_SETUP_CODE: 'setup-code-for-tests', ROMEDB_PENDING_DIR: path.join(root, '.cossack/romedb-pending'), MEDIA_DIR: path.join(root, 'storage/media') });
+      CMS_SETUP_CODE: 'setup-code-for-tests', ROMEDB_PENDING_DIR: path.join(root, '.cossack/romedb-pending'), MEDIA_DIR: path.join(root, 'storage/media'),
+      CLOUDFLARE_API_TOKEN: 'test-token', CLOUDFLARE_ZONE_ID: 'zone-1', CLOUDFLARE_API_URL: cloudflare.url });
     try {
-      await essentials(server.origin, routeIds, () => server.diagnostics(), { runtime: 'node' });
-    } finally { await server.close(); }
+      await essentials(server.origin, routeIds, () => server.diagnostics(), { runtime: 'node', cloudflare });
+    } finally { await server.close(); await cloudflare.close(); }
   }, 600_000);
 
   it('runs the essentials on Cloudflare Workers with the Images binding', async () => {

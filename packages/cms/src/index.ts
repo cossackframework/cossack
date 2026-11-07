@@ -9,8 +9,8 @@ export {
 } from './field-groups';
 export { ANONYMOUS, PERMISSIONS, DEFAULT_ROLES, NETWORK_ADMIN, MAIN_SITE, isNetworkAdmin, systemPrincipal, userPrincipal, hasPermission, permissionMatches, evaluateRule, ruleScope, principalId, type Principal, type RecordScope } from './permissions';
 export { CmsError, isCmsError, type CmsErrorCode } from './errors';
-export { beforeWrite, afterCommit, formValidate, formBeforeSubmit, formPrefill, formConfirmation, formNotification, formSubmitted, termBeforeSave, commentBeforeSave, menuBeforeSave, entryActions, entryColumns, bulkActions, ENTRY_ACTION_IDS, EXTENSION_POINTS,
-    type BeforeWriteInput, type Draft, type ResourceEvent, type WriteActor, type FormRef, type SubmissionContext, type FormErrors, type FormConfirmation, type FormEmail, type FormSubmittedEvent,
+export { beforeWrite, afterCommit, cachePurge, formValidate, formBeforeSubmit, formPrefill, formConfirmation, formNotification, formSubmitted, termBeforeSave, commentBeforeSave, menuBeforeSave, entryActions, entryColumns, bulkActions, ENTRY_ACTION_IDS, EXTENSION_POINTS,
+    type BeforeWriteInput, type Draft, type ResourceEvent, type CachePurgeEvent, type WriteActor, type FormRef, type SubmissionContext, type FormErrors, type FormConfirmation, type FormEmail, type FormSubmittedEvent,
     type TermDraft, type TermWriteInput, type CommentDraft, type CommentWriteInput, type MenuWriteInput, type EntryAction, type BuiltinEntryAction, type EntryColumn, type EntryListInput } from './hooks';
 export type { RecordShape, RecordPage, RevisionShape, FieldFilter, ListFilter, ListOptions } from './records';
 export { contentModule, categories, tags, patterns } from './modules/content';
@@ -39,7 +39,7 @@ export { formInput, formValue, recordTitle, isSameOriginPost, type FormInput, ty
 export { manifestProblems, validateManifest, requestedGrants, commandInput, isPluginPoint, pointOwner, providedPoints, ManifestError, HOST_SLOTS, type CmsPluginManifest, type PluginAuthor, type ProvidedPoint, type PluginCommand, type CommandOption, type SlotLink, type HostSlot } from './manifest';
 export { MEDIA_TYPES, AVATAR_TYPES, ARCHIVE_TYPES, SVG_TYPE, MEDIA_FILTERS, MEDIA_FILTER_EXCLUDES, mediaKind, mediaUrl, formatBytes, matchesSignature, imageHasAlpha, imageSize, declaredType, sanitizeSvg, type MediaKind } from './media';
 export { taxonomyProblems, type TaxonomyDeclaration, type TermShape } from './taxonomy';
-export { general, media, appearance, writing, reading, discussion, seo, crawlers, indexnow, languages, DATE_FORMATS, TIME_FORMATS, TITLE_SEPARATORS, formatSiteDate, validTimeZone, type SettingsGroup, type SettingsSection, type SettingDeclaration, type SettingSource, type SettingControl, type SiteSettings } from './settings';
+export { general, media, appearance, writing, reading, discussion, seo, crawlers, indexnow, cache, languages, DATE_FORMATS, TIME_FORMATS, TITLE_SEPARATORS, formatSiteDate, validTimeZone, type SettingsGroup, type SettingsSection, type SettingDeclaration, type SettingSource, type SettingControl, type SiteSettings } from './settings';
 export { validateSettingValue, settingControlProblems } from './settings-controls';
 export { pluginSettingsProblems, pluginSettingsGroupId, PLUGIN_SETTINGS_LIMITS, type PluginSettingsDeclaration, type PluginSettingDeclaration } from './plugin-settings';
 export { parseSettingsDocument, checkSettingsDocument, stringifySettingsDocument, settingsJsonSchema, isPortableSetting, SETTINGS_DOCUMENT_MAX_BYTES, SETTINGS_DOCUMENT_MAX_FIELDS, type SettingsValue, type SettingsDocument } from './settings-document';
@@ -82,3 +82,5 @@ export { COMMENT_STATUSES, checkComment, type CommentShape, type CommentRow, typ
 export { IMAGE_WIDTHS, PLACEHOLDER_SCRIPT, TRANSFORMABLE_TYPES, blurredPlaceholder, imageWidths, placeholderStyle, imageEditsProblems, editedSize, variantWidth, variantRect, transformable, imageUrl, imageSrcset, type ImageEdits, type ImageRect, type ImageSource } from './images';
 export { COLLAB_COLORS, PRESENCE_TIMEOUT, participantColor, livePeers, expiredPeers, groupPeers, checkPresence, PendingKeys, scalarKey, patchKey, richTextPath, parseRichTextPath, stableJson, treeOps, applyTreeOp, treeHash, StepLog, type PeerPresence, type PeerState, type Participant, type TreeOp, type TreeOpsOptions } from './collab';
 export { NOTE_STATUSES, NOTE_LIMITS, formatNoteTarget, parseNoteTarget, noteBlock, noteField, checkNoteBody, checkNoteRange, checkNoteQuote, checkNoteAction, mentionsIn, noteParts, notePlainText, noteMail, mentionToken, noteThreads, findQuote, type Note, type NoteAction, type NoteRange, type NoteStatus, type NoteTarget, type NoteThread } from './notes';
+
+export { CACHE_HOLDS, cacheControl, cacheHoldSeconds, cacheTags, cacheTagHeader, type CacheHold } from './cache';

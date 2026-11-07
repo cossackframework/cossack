@@ -94,6 +94,10 @@ rollback. A browser can then request a file from a version that does not have
 it, and keep that `404` for a year. Deploy in one step, keep each visitor on one
 version during a rollout, or shorten that rule's `max-age`.
 
+HTML is not cached by Cloudflare unless a cache rule says so. A CMS site sends `Cache-Control`
+and `Cache-Tag` headers on every anonymous page and purges Cloudflare when content changes,
+given `CLOUDFLARE_API_TOKEN`; see [CMS Cache](/docs/cms/cache.md) for the one rule to add.
+
 `cossack check cloudflare` and deploy preflight accept `run_worker_first: true`
 or exactly `["/*", "!/assets/*"]`. They reject any other value, because it lets
 Cloudflare serve `public/` files before your policies run. They also reject a

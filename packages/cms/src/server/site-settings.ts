@@ -20,12 +20,15 @@ export class CmsSettings {
     readonly #groups = new Map<string, SettingsGroup>();
     readonly #now: () => number;
     readonly #ttl: number;
+    /** Called after a committed change, for the host to purge the site's pages. */
+    readonly #changed: (() => void | Promise<void>) | undefined;
     #cache: { at: number; values: Promise<Stored> } | undefined;
 
-    constructor(db: RomeDB, groups: readonly SettingsGroup[], options: { now?: () => number; ttlMs?: number } = {}) {
+    constructor(db: RomeDB, groups: readonly SettingsGroup[], options: { now?: () => number; ttlMs?: number; changed?: () => void | Promise<void> } = {}) {
         this.#db = db;
         this.#now = options.now ?? Date.now;
         this.#ttl = options.ttlMs ?? 30_000;
+        this.#changed = options.changed;
         for (const group of groups) {
             const plugin = group.plugin;
             const valid = plugin !== undefined
@@ -201,6 +204,7 @@ export class CmsSettings {
             throw error;
         }
         this.refresh();
+        await this.#changed?.();
     }
 
     async #read(): Promise<Stored> {

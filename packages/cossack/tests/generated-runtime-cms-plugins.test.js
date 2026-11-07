@@ -93,6 +93,8 @@ describe.skipIf(!liveRomeDBTests())('CMS plugin trust', () => {
         sections: [{ _id: 'c1', type: 'support-desk/contact', data: { email: 'help@example.com' } }] }, 'publish', 0], { params: { collection: 'pages', id: 'new' }, state: { route: 'pages', id: 'new' } });
       const helpDesk = await web.page('/help-desk');
       contains(helpDesk, 'Write to help@example.com');
+      // Publishing the page purged the caches in front of the site; the plugin's handler for the purge action saw it.
+      await expect.poll(() => /\[support-desk\] purge entry:pages cms:main:e:pages:[0-9a-f-]{36} cms:main:c:pages/.test(server.diagnostics()), { timeout: 20_000 }).toBe(true);
       // The plugin's head hook adds its tag to every site page; the pattern its manifest ships was stored when it was granted.
       expect(helpDesk).toMatch(/<meta name="?support-desk"? content="?on"?[^>]*>/);
       contains(await web.page('/dashboard/content/patterns'), 'Contact card');

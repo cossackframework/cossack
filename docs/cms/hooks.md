@@ -71,6 +71,7 @@ run after commit from the outbox and can be delivered more than once, so use the
 | --- | --- | --- | --- |
 | `cms.resource.before-write` (`beforeWrite`) | filter | 2 s | Value: the `Draft` of field values about to be written. Input: `resource`, `action` (`create`, `update`), `id` (null on create), `previous` record, `actor`. Throw to reject. |
 | `cms.resource.after-commit` (`afterCommit`) | action, outbox | 10 s | `ResourceEvent`: `eventId`, `topic` (`resource.created`, `resource.updated`, `resource.deleted`), `resource`, `id`, `revision`, `actor`, `at`, the public `record` after the write (null after delete), `previousStatus`. |
+| `cms.cache.purge` (`cachePurge`) | action, outbox | 15 s | `CachePurgeEvent`: `eventId`, `topic: 'cache.purge'`, `at`, `site`, `reason`, the `tags` and absolute `urls` of the pages a change touched (the site's tag alone means every page). Handlers purge a cache; throw to retry. See [Cache](/docs/cms/cache.md). |
 
 `actor` everywhere is a `WriteActor`: `{ kind: 'user' | 'system' | 'anonymous', id }`.
 

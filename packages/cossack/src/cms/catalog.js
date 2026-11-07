@@ -48,6 +48,8 @@ export const CMS_FLAGS = {
   parent: str('A term\'s parent ID; empty for the top level.'),
   description: str('A term\'s description.'),
   'no-starter': bool('Add no starter content to a new site (sites create).'),
+  tag: str('A cache tag to purge, such as cms:main:c:posts; repeat for several (cache purge).', { repeated: true }),
+  path: str('A page to purge, by URL; repeat for several (cache purge).', { repeated: true }),
   yes: bool('Confirm a delete.', { aliases: ['y'] }),
 };
 
@@ -151,6 +153,10 @@ export const CMS_COMMANDS = [
     request: () => ({ method: 'GET', path: '/api/cms/settings' }), raw: data => data.document },
   { noun: 'settings', verb: 'import', summary: 'Apply a settings document from --data @file.', positionals: [], flags: ['data'], ...WRITE,
     request: (_args, _flags, body) => ({ method: 'PUT', path: '/api/cms/settings', body }) },
+
+  { noun: 'cache', verb: 'purge', summary: 'Purge the caches in front of the site: every page, or --tag and --path.', positionals: [], flags: ['tag', 'path'], ...WRITE,
+    request: (_args, flags) => ({ method: 'POST', path: '/api/cms/cache/purge', body: { ...(flags.tag ? { tags: list(flags.tag) } : {}), ...(flags.path ? { urls: list(flags.path) } : {}) } }),
+    table: { rows: data => data.results.map(result => ({ purger: result.purger, ok: result.ok ? 'yes' : 'no', tags: result.tags.join(' '), message: result.message })), columns: ['purger', 'ok', 'tags', 'message'] } },
 
   { noun: 'menus', verb: 'list', summary: 'The navigation menus and where they show.', positionals: [], flags: [],
     request: () => ({ method: 'GET', path: '/api/cms/appearance/menus' }), table: { rows: data => data.items, columns: ['id', 'name', 'items', { name: 'locations', value: row => row.locations.join(' ') }, { name: 'updated', value: row => when(row.updatedAt) }] } },

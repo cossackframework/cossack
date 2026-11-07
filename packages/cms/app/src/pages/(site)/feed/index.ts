@@ -3,6 +3,7 @@ import { ANONYMOUS, blocksPlain, entryUrl, isCmsError, recordTitle, richTextExce
 import { renderMarkdown, excerptOf } from '@cossackframework/cms/server';
 import { blocksHtml } from '../../../cms/content';
 import { trackCrawler } from '../../../cms/traffic';
+import { cacheHeaders } from '../../../cms/cache';
 
 const escape = (text: string) => text.replace(/[<>&'"]/g, character => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' })[character]!);
 
@@ -33,7 +34,7 @@ export default class Feed extends Cossack {
             });
             const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<rss version="2.0"><channel><title>${escape(settings['general.siteTitle'])}</title><link>${escape(origin)}/</link>`
                 + `<description>${escape(settings['general.tagline'])}</description>${items.join('')}</channel></rss>\n`;
-            return new Response(xml, { headers: { 'content-type': 'application/rss+xml; charset=utf-8', 'cache-control': 'public, max-age=300' } });
+            return new Response(xml, { headers: { 'content-type': 'application/rss+xml; charset=utf-8', ...await cacheHeaders(cms, [cms.purge.tag.collection('posts')]) } });
         } catch (error) {
             if (!isCmsError(error, 'CMS_UNAVAILABLE')) throw error;
             return new Response('Not available yet', { status: 503 });

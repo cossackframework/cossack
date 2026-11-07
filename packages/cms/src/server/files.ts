@@ -39,6 +39,8 @@ export interface FileServiceOptions {
     now?: () => number;
     /** Largest accepted file. Default: no limit beyond what the caller passes. */
     maxBytes?: number;
+    /** Called after a file's details change or a file is deleted, for the host to purge the pages that show it. */
+    changed?: () => void | Promise<void>;
     /** Content types accepted. Default: every type. */
     contentTypes?: readonly string[];
     /** How long an unfinished upload or delete may wait before `sweep()` resolves it. Default 15 minutes. */
@@ -100,6 +102,7 @@ export class FileService {
     readonly #storage: StorageProvider;
     readonly #now: () => number;
     readonly #maxBytes: number;
+    readonly #changed: (() => void | Promise<void>) | undefined;
     readonly #types: readonly string[] | null;
     readonly #staleMs: number;
     readonly #presignSeconds: number;
@@ -111,6 +114,7 @@ export class FileService {
         this.#db = db;
         this.#storage = storage;
         this.#now = options.now ?? Date.now;
+        this.#changed = options.changed;
         this.#maxBytes = options.maxBytes ?? Number.MAX_SAFE_INTEGER;
         this.#types = options.contentTypes ?? null;
         this.#staleMs = options.staleMs ?? 15 * 60_000;
@@ -445,6 +449,7 @@ export class FileService {
         const next = checkMetadata({ title: patch.title ?? file.title, alt: patch.alt ?? file.alt, caption: patch.caption ?? file.caption, description: patch.description ?? file.description });
         await this.#db.write([{ rql: "UPDATE cms_files SET title = $title, alt = $alt, caption = $caption, description = $description, updated_at = $now WHERE id = $id AND status = 'ready'",
             params: { ...prefixed(next), $now: this.#now(), $id: id } }], WRITE);
+        await this.#changed?.();
         return (await this.get(id))!;
     }
 
@@ -463,6 +468,7 @@ export class FileService {
         const marked = await this.#db.write([{ rql: "UPDATE cms_files SET status = 'deleting', updated_at = $now WHERE id = $id AND status = 'ready'", params: { $id: id, $now: this.#now() } }], WRITE);
         if (marked.results[0]!.affected !== 1n) throw new CmsError('CMS_CONFLICT', 'The file is already being deleted.');
         await this.#finishDelete(id);
+        await this.#changed?.();
     }
 
     /** Resolve interrupted work: stale pending uploads are removed; stale deletes are completed. */

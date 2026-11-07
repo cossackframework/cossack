@@ -55,6 +55,7 @@ function fakeCms() {
     if (url.pathname === '/api/cms/content/posts/p1' && request.method === 'DELETE') return json(url.searchParams.get('rev') === String(entries.p1.rev) ? 204 : 409, undefined);
     if (url.pathname === '/api/cms/content/posts/p1/publish') return json(200, { item: { ...entries.p1, status: body.at ? 'scheduled' : 'published', publishedAt: body.at ?? 1700000001000 } });
     if (url.pathname === '/api/cms/content/posts/p1/notes' && request.method === 'POST') return json(201, { note: { id: 'n1', ...body } });
+    if (url.pathname === '/api/cms/cache/purge' && request.method === 'POST') return json(200, { event: { eventId: 'e1', tags: body.tags ?? ['cms:main'], urls: body.urls ?? [] }, purgers: ['cloudflare'], results: [{ at: 1700000000000, eventId: 'e1', purger: 'cloudflare', reason: 'manual', tags: body.tags ?? ['cms:main'], urls: body.urls ?? [], ok: true, message: '' }] });
     if (url.pathname === '/api/cms/settings/general' && request.method === 'PATCH') {
       if (typeof body.siteTitle !== 'string') return json(422, { error: 'Some settings are invalid.', code: 'CMS_VALIDATION', fields: { siteTitle: 'must be text.' } });
       return json(200, { group: 'general', label: 'General', values: { siteTitle: body.siteTitle, postsPerPage: body.postsPerPage ?? 10 }, fields: [{ name: 'siteTitle', label: 'Site title' }] });
@@ -208,6 +209,16 @@ describe('cossack cms commands', () => {
     await fs.writeFile(file, JSON.stringify({ title: 'From a file' }));
     await run(['entries', 'update', 'posts', 'p1', '--data', `@${file}`, '--json']);
     expect(cms.requests.at(-1).body).toEqual({ title: 'From a file', rev: 4 });
+  });
+
+  it('purges the caches in front of the site: every page, or the tags and pages given', async () => {
+    const all = await run(['cache', 'purge']);
+    expect(all.code).toBe(0);
+    expect(cms.requests.at(-1)).toMatchObject({ method: 'POST', path: '/api/cms/cache/purge', body: {} });
+    expect(all.stdout).toMatch(/cloudflare\s+yes\s+cms:main/);
+    const narrow = await run(['cache', 'purge', '--tag', 'cms:main:c:posts', '--tag', 'cms:main:c:pages', '--path', 'https://example.com/', '--json']);
+    expect(narrow.result).toMatchObject({ ok: true, data: { purgers: ['cloudflare'] } });
+    expect(cms.requests.at(-1).body).toEqual({ tags: ['cms:main:c:posts', 'cms:main:c:pages'], urls: ['https://example.com/'] });
   });
 
   it('publishes, schedules, adds notes, changes settings and reports field problems', async () => {

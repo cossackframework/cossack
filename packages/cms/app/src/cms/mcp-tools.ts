@@ -18,6 +18,7 @@ const str = (description: string, extra: Partial<JsonSchemaProperty> = {}): Json
 const int = (description: string, extra: Partial<JsonSchemaProperty> = {}): JsonSchemaProperty => ({ type: 'integer', description, ...extra });
 const bool = (description: string): JsonSchemaProperty => ({ type: 'boolean', description });
 const obj = (description: string): JsonSchemaProperty => ({ type: 'object', description, additionalProperties: true });
+const strings = (description: string): JsonSchemaProperty => ({ type: 'array', description, items: { type: 'string' } } as JsonSchemaProperty);
 const schema = (properties: { [name: string]: JsonSchemaProperty }, required: string[] = []): JsonSchema => ({ type: 'object', properties, ...(required.length ? { required } : {}), additionalProperties: false });
 const READ = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } as const;
 const WRITE = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false } as const;
@@ -200,6 +201,11 @@ export const cmsTools: readonly Tool[] = [
         name: 'update_settings', description: 'Change some fields of a settings group; the others keep their values. Read the group first for its field names and kinds.',
         inputSchema: schema({ group: str('The settings group ID.'), values: obj('Field values, such as { "siteTitle": "My site" }.') }, ['group', 'values']), annotations: CHANGE,
         async run(input, { c }) { return manage.settingsUpdate(c, string(input.group), fields(input.values)); },
+    },
+    {
+        name: 'purge_cache', description: 'Purge the caches in front of the site (Cloudflare, or a plugin\'s CDN): every page, or the cache tags and URLs given. Changes made through the CMS purge their own pages; use this after a change made outside it.',
+        inputSchema: schema({ tags: strings('Cache tags to purge, such as cms:main:c:posts; none means every page.'), urls: strings('Page URLs to purge.') }), annotations: CHANGE,
+        async run(input, { c }) { return manage.cachePurge(c, { tags: input.tags, urls: input.urls }); },
     },
     {
         name: 'list_taxonomies', description: 'The taxonomies (categories, tags and others) with whether their terms nest.',

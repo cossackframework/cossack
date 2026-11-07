@@ -41,6 +41,8 @@ puts a default theme in `src/plugins/default-theme/` for you to edit or copy. Se
   as `{{ block core/button … /}}` and `{{ $site.title }}`.
 - [Management API, CLI and MCP](/docs/cms/api.md): manage a site from a terminal or an
   agent with `cossack cms`, the API under `/api/cms`, and the MCP server every site serves.
+- [Cache](/docs/cms/cache.md): what the site tells the caches in front of it, how changes
+  purge Cloudflare or another CDN, and the Cache tool.
 
 The package `README.md` and `cossack docs --package @cossackframework/cms` cover the data
 contract (resources, repositories, collections, blocks) in more depth.

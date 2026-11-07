@@ -3,6 +3,7 @@ import { isTransportPath } from '@cossackframework/core/transport-routes';
 import { getCookie } from 'hono/cookie';
 import { component, html } from '@cossackframework/renderer';
 import { hasPermission, isCmsError, isSameOriginPost, PERMISSIONS, type ArchiveView, type EntryView, type LanguageLink, type Note, type RecordShape, type ThemeData } from '@cossackframework/cms';
+import type { CmsHost } from '@cossackframework/cms/server';
 import { archive, authorArchive, authorView, bindingScopes, commentResult, entryViews, homeView, isProtected, languageLinks, localePrefix, pageNumber, redirectFor, resolvePath, searchEntries, termArchive, themeData, themeState, unlockCookie, unlockToken, resolvedOptions, type Resolved, type ThemeState } from '../../../cms/site';
 import { archiveTemplate, entryTemplate, siteContent, siteTheme, tagDocument, themeHelpers, unavailable } from '../../../cms/site-view';
 import { authorSeo, entrySeo, homeSeo, listSeo } from '../../../cms/seo';
@@ -15,6 +16,7 @@ import { contentMenus, siteInfo, type SiteInfo } from '../../../cms/site';
 import type { MenuItemView } from '@cossackframework/cms';
 import { fieldErrors } from '../../../cms/content';
 import { entryAsMarkdown, wantsMarkdown } from '../../../cms/machine';
+import { applyCacheHeaders, cacheHeaders, listedCollections } from '../../../cms/cache';
 import { trackCrawler, trackNotFound } from '../../../cms/traffic';
 import { siteOrigin } from '../../../cms/seo';
 import type { EditorBlock, EditorValues } from '../../../cms/editor';
@@ -67,7 +69,10 @@ export const resolveSitePath = defineServerMiddleware(async (c, next) => {
             if (isProtected(resolved.record)) return c.text('This entry is password protected.', 403);
             trackCrawler(c, 'markdown');
             const url = (await cms.entryUrls(resolved.collection, [resolved.record])).get(resolved.record.id) ?? c.req.path;
-            return c.body(await entryAsMarkdown(cms, resolved.collection, resolved.record, url, siteOrigin(c)), 200, { 'content-type': 'text/markdown; charset=utf-8', 'cache-control': 'public, max-age=300', 'x-robots-tag': 'noindex' });
+            // Caches key HTML by URL and ignore Vary: Markdown chosen by Accept is never stored; `?format=md` is the address to cache.
+            const addressed = /^(?:md|markdown)$/.test(c.req.query('format') ?? '');
+            const headers = addressed ? await cacheHeaders(cms, [cms.purge.tag.entry(resolved.collection.name, resolved.record.id), cms.purge.tag.collection(resolved.collection.name)]) : { 'cache-control': 'private, no-store' };
+            return c.body(await entryAsMarkdown(cms, resolved.collection, resolved.record, url, siteOrigin(c)), 200, { 'content-type': 'text/markdown; charset=utf-8', ...headers, 'x-robots-tag': 'noindex' });
         }
     }
     if (!post) {
@@ -130,10 +135,12 @@ export default class SitePath extends Cossack {
         try {
             this.theme = await themeState(cms);
             if (resolved.kind === 'unavailable') { this.kind = 'unavailable'; this.c.status(503); return; }
-            if (resolved.kind === 'gone') { this.kind = 'gone'; this.c.status(410); return; }
+            if (resolved.kind === 'gone') { this.kind = 'gone'; this.c.status(410); await applyCacheHeaders(this.c, cms, [], { max: 60 }); return; }
             if (resolved.kind === 'none' || resolved.kind === 'redirect') {
                 this.c.status(404);
                 this.data = await themeData(cms, this.theme, { kind: 'not-found' }, this.view, this.c.get('principal'), resolved.kind === 'none' ? resolved.locale : undefined);
+                // A page may appear here later: held a minute, and purged with the site.
+                await applyCacheHeaders(this.c, cms, [], { max: 60 });
                 return;
             }
             const settings = await cms.settings.all();
@@ -180,7 +187,8 @@ export default class SitePath extends Cossack {
                     || (this.c.get('principal').kind === 'user' && cms.resource(`cms/${resolved.collection.name}`).canUpdate(resolved.record, this.c.get('principal'))));
                 this.locked = isProtected(resolved.record) && !unlocked;
                 this.wrongPassword = this.c.req.query('password') === 'wrong';
-                if (this.locked) this.c.header('cache-control', 'private, no-store');
+                // The page depends on the password cookie, which shared caches ignore: never stored, locked or unlocked.
+                if (isProtected(resolved.record)) this.c.header('cache-control', 'private, no-store');
                 this.entry = (await entryViews(cms, resolved.collection, [resolved.record], { ...viewOptions, full: true, ...(unlocked ? { unlocked: new Set([resolved.record.id]) } : {}) }))[0]!;
                 this.seo = await entrySeo(cms, this.c, resolved.collection, resolved.record, this.entry, links);
             } else if (resolved.kind === 'archive') {
@@ -219,11 +227,33 @@ export default class SitePath extends Cossack {
             if (usage.user && viewOptions.user) this.c.header('cache-control', 'private, no-store');
             if (this.kind === 'entry' && this.entry) this.data = await themeData(cms, this.theme, { kind: 'entry', collection: this.entry.collection, template: this.entry.template }, this.entry, principal, resolved.locale);
             else if (this.kind === 'home' || this.kind === 'list') this.data = await themeData(cms, this.theme, this.view, this.view, principal, resolved.locale);
+            await applyCacheHeaders(this.c, cms, this.cacheTags(cms, resolved, shown));
         } catch (error) {
             if (!isCmsError(error, 'CMS_UNAVAILABLE')) throw error;
             this.kind = 'unavailable';
             this.c.status(503);
         }
+    }
+
+    /**
+     * What the page shows, for its `Cache-Tag` header: the entry, the collections it lists (lists
+     * and feeds of a collection, the Latest entries blocks of the entry and of the theme's areas,
+     * which the layout noted) and the term, so a change purges the pages that showed it.
+     */
+    private cacheTags(cms: CmsHost, resolved: Resolved, shown: { collection: string; record: RecordShape } | null): string[] {
+        const { tag } = cms.purge;
+        const tags = [...(this.c.get('cms.cacheTags') ?? [])];
+        const listed = (collections: Iterable<string>) => { for (const name of collections) tags.push(tag.collection(name)); };
+        if (shown) tags.push(tag.entry(shown.collection, shown.record.id), tag.collection(shown.collection));
+        if (this.entry) listed(listedCollections(this.entry.content));
+        if (resolved.kind === 'home' || resolved.kind === 'search' || resolved.kind === 'author') listed(cms.collections().filter(collection => typeof collection.path === 'string').map(collection => collection.name));
+        if (resolved.kind === 'archive') listed([resolved.collection.name]);
+        if (this.kind === 'list' && this.view.collection) listed([this.view.collection]);
+        if (resolved.kind === 'term') {
+            tags.push(tag.term(resolved.term.taxonomy, resolved.term.slug));
+            listed(cms.taxonomies.usage(resolved.term.taxonomy).map(usage => usage.resource).filter(resource => resource.startsWith('cms/')).map(resource => resource.slice(4)));
+        }
+        return tags;
     }
 
     /** A visitor's password for a protected entry: right, and a cookie remembers it; wrong, and the form says so. */

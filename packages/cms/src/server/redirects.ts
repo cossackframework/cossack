@@ -16,10 +16,13 @@ export class CmsRedirects {
     readonly #db: RomeDB;
     readonly #now: () => number;
     #prefixes: { at: number; rules: Promise<Redirect[]> } | undefined;
+    /** Called after a committed change: a redirect's source may be a cached page or a cached 404. */
+    readonly #changed: (() => void | Promise<void>) | undefined;
 
-    constructor(db: RomeDB, options: { now?: () => number } = {}) {
+    constructor(db: RomeDB, options: { now?: () => number; changed?: () => void | Promise<void> } = {}) {
         this.#db = db;
         this.#now = options.now ?? Date.now;
+        this.#changed = options.changed;
     }
 
     async list(options: { search?: string; kind?: 'auto' | 'manual'; offset?: number; limit?: number } = {}): Promise<{ items: Redirect[]; total: number }> {
@@ -67,12 +70,14 @@ export class CmsRedirects {
             throw error;
         }
         this.#prefixes = undefined;
+        await this.#changed?.();
         return (await this.get(id))!;
     }
 
     async delete(id: string): Promise<void> {
         await this.#db.write([{ rql: 'DELETE FROM cms_redirects WHERE id = $id', params: { $id: id } }], WRITE);
         this.#prefixes = undefined;
+        await this.#changed?.();
     }
 
     /**
@@ -141,6 +146,7 @@ export class CmsRedirects {
         const statements = pairs.flatMap(pair => this.automatic(pair.from, pair.to, { by, ...(pair.prefix ? { prefix: true } : {}) }));
         for (let index = 0; index < statements.length; index += 30) await this.#db.write(statements.slice(index, index + 30), WRITE);
         this.#prefixes = undefined;
+        await this.#changed?.();
     }
 
     #prefixRules(): Promise<Redirect[]> {

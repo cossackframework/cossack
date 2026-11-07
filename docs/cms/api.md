@@ -67,6 +67,7 @@ cossack cms <command> [args] [--url …] [--site …] [--json]
 | `notes list [<collection> <id>]`, `notes add <collection> <id> --body …`, `notes resolve\|reopen\|edit\|delete <noteId>` | Review notes on an entry, or across the site (`--status open`). `--target field:title` anchors a thread; `--reply-to` replies. |
 | `users list\|get\|create\|update\|delete`, `roles list` | Users with `--email`, `--password`, `--name`, `--role` (repeat; the complete list), `--status`. |
 | `settings get [group]`, `settings set <group> --set field=value`, `settings export [--out file]`, `settings import --data @file` | Settings by group, or as the document Settings → Export writes. |
+| `cache purge [--tag <tag>] [--path <url>]` | Purge the caches in front of the site: every page, or the tags and URLs given (see [Cache](/docs/cms/cache.md)). |
 | `taxonomies list`, `terms list\|get\|create\|update\|delete <taxonomy>` | Terms, with `--name`, `--slug`, `--parent`, `--description`. |
 | `media list [--q --kind image]`, `media upload <file…>` | The media library. |
 | `menus list\|get\|create\|update\|delete` | Navigation menus (the appearance permission): `menus create "Main" --location primary --data '{"items":[…]}'`; `update <id>` takes `--name`, `--data` (the whole items tree) and `--location` (the complete list). |
@@ -132,7 +133,7 @@ The server's instructions tell the model what the site has. Its tools mirror the
 `create_entry`, `update_entry`, `delete_entry`, `publish_entry`, `unpublish_entry`,
 `set_entry_status`, `list_revisions`, `get_revision`, `restore_revision`, `list_notes`,
 `add_note`, `update_note`, `delete_note`, `list_users`, `get_user`, `create_user`,
-`update_user`, `delete_user`, `list_roles`, `get_settings`, `update_settings`,
+`update_user`, `delete_user`, `list_roles`, `get_settings`, `update_settings`, `purge_cache`,
 `list_taxonomies`, `list_terms`, `create_term`, `update_term`, `delete_term`, `list_media`,
 `list_menus`, `get_menu`, `create_menu`, `update_menu`, `delete_menu`, `list_menu_locations`,
 `assign_menu_location`, `list_widget_areas`, `get_widget_area`, `update_widget_area`,
@@ -166,6 +167,7 @@ application password. A CMS refusal answers `{ error, code, fields? }` with its 
 | `GET …/<id>/notes`, `POST …/<id>/notes`, `PATCH /notes/<noteId>`, `DELETE /notes/<noteId>`, `GET /notes?status=open` | Notes (see [Notes](/docs/cms/notes.md)); the last lists entries with notes across the site. |
 | `GET /users`, `POST /users`, `GET\|PATCH\|DELETE /users/<id>`, `GET /roles` | Users (`cms:users`; roles for role managers). |
 | `GET /settings`, `PUT /settings`, `GET\|PATCH /settings/<group>` | The settings document and its groups. |
+| `POST /cache/purge` `{ tags?, urls? }` | Purge the caches in front of the site (the settings permission): every page, or the tags and URLs given; answers each purger's result. |
 | `GET\|POST /terms/<taxonomy>`, `GET\|PATCH\|DELETE /terms/<taxonomy>/<id>` | Terms. |
 | `GET /media`, `POST /media` (multipart `file`) | The media library. |
 | `GET\|POST /appearance/menus`, `GET\|PATCH\|DELETE /appearance/menus/<id>` | Menus, for the appearance permission: `{ name, items, locations }`, `rev` on a change. `GET /menus/<location>` is the resolved menu visitors see. |

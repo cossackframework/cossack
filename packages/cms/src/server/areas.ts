@@ -23,6 +23,8 @@ export interface CmsAreasOptions {
     readonly check: (blocks: unknown) => Promise<Block[]>;
     readonly now?: () => number;
     readonly ttlMs?: number;
+    /** Called after a committed change, for the host to purge the site's pages. */
+    readonly changed?: () => void | Promise<void>;
 }
 
 const WRITE = { kind: 'cms.areas' } as const;
@@ -30,6 +32,7 @@ const WRITE = { kind: 'cms.areas' } as const;
 export class CmsAreas {
     readonly #db: RomeDB;
     readonly #check: CmsAreasOptions['check'];
+    readonly #changed: CmsAreasOptions['changed'];
     readonly #now: () => number;
     readonly #ttl: number;
     #cache: { at: number; value: Promise<Map<string, AreaShape>> } | undefined;
@@ -37,6 +40,7 @@ export class CmsAreas {
     constructor(db: RomeDB, options: CmsAreasOptions) {
         this.#db = db;
         this.#check = options.check;
+        this.#changed = options.changed;
         this.#now = options.now ?? Date.now;
         this.#ttl = options.ttlMs ?? 30_000;
     }
@@ -74,6 +78,7 @@ export class CmsAreas {
         } finally {
             this.#cache = undefined;
         }
+        await this.#changed?.();
         return this.get(name);
     }
 
@@ -83,6 +88,7 @@ export class CmsAreas {
         if (typeof name !== 'string' || !MENU_LOCATION.test(name) || !context.known.includes(name)) throw new CmsError('CMS_VALIDATION', `${String(name)} is not a widget area of a theme.`);
         try { await this.#db.write([{ rql: 'DELETE FROM cms_areas WHERE name = $name', params: { $name: name } }], WRITE); }
         finally { this.#cache = undefined; }
+        await this.#changed?.();
     }
 
     async #read(): Promise<Map<string, AreaShape>> {

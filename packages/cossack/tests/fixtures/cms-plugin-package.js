@@ -28,19 +28,21 @@ export function deskManifest(version, overrides = {}) {
     fieldGroups: [{ id: 'support-desk-support', title: 'Support', targets: [{ kind: 'collection', name: 'posts' }],
       blocks: [{ _id: 'priority', type: 'field/choice', data: { label: 'Priority', name: 'supportPriority', choices: ['low', 'high'] } }] }],
     editor: [{ collection: 'posts', tabs: [{ _id: 'support', type: 'editor/tab', data: { label: 'Support' }, children: [{ _id: 'box', type: 'editor/box', data: { box: 'group:support-desk-support' } }] }] }],
-    hooks: [{ point: 'cms.resource.before-write', version: 1 }],
+    hooks: [{ point: 'cms.resource.before-write', version: 1 }, { point: 'cms.cache.purge', version: 1 }],
     permissions: { resources: { 'cms/posts': ['read'] }, define: ['support-desk:triage'] },
     ui: { slots: { 'dashboard.nav': [{ label: 'Support', href: '/dashboard/support' }] } },
     commands: [{ name: 'close-all', description: 'Close every open ticket.', permission: 'support-desk:triage', options: { reason: { type: 'string', description: 'Why the tickets close.' } } }],
   };
 }
 
-const server = (extra = '') => `import { beforeWrite } from '@cossackframework/cms';
+const server = (extra = '') => `import { beforeWrite, cachePurge } from '@cossackframework/cms';
 import type { PluginContext } from '@cossackframework/cms/server';
 
 export function register(context: PluginContext) {
   context.hooks.addFilter(beforeWrite, (draft, { input }) =>
     input.resource === 'support-desk/tickets' && typeof draft.subject === 'string' ? { ...draft, subject: draft.subject.trim() } : draft);
+  // A purger for another CDN: the same events the application's purgers get.
+  context.hooks.addAction(cachePurge, event => { console.log(\`[support-desk] purge \${event.reason} \${event.tags.join(' ')}\`); });
   context.commands.add('close-all', async (input, { principal }) => {
     const tickets = context.cms.resource('support-desk/tickets');
     const page = await tickets.list({ where: { status: 'open' }, limit: 100 }, { principal });

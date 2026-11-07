@@ -50,6 +50,28 @@ export interface ResourceEvent {
 /** After-commit work, run from the outbox. Deliveries can repeat. */
 export const afterCommit = defineAction<ResourceEvent>('cms.resource.after-commit', { version: 1, timeoutMs: 10_000 });
 
+/** A purge of the caches in front of the site: the tags and URLs of the pages a change touched. */
+export interface CachePurgeEvent {
+    /** Outbox ID, stable across repeated deliveries: use it as the idempotency key. */
+    readonly eventId: string;
+    readonly topic: 'cache.purge';
+    readonly at: number;
+    /** The site whose pages changed: `main`, or the registry ID. */
+    readonly site: string;
+    /** What changed: `entry:<collection>`, `settings`, `menus`, `comments`, `manual`, and so on. */
+    readonly reason: string;
+    /** `Cache-Tag` values to purge; the site's tag alone (`cms:<site>`) means every page of the site. */
+    readonly tags: readonly string[];
+    /** Absolute URLs to purge, for caches without tags. */
+    readonly urls: readonly string[];
+}
+
+/**
+ * Purge the caches in front of the site, run from the outbox. Handlers are purgers: the
+ * Cloudflare one the application adds, and a plugin's for another CDN. Deliveries can repeat.
+ */
+export const cachePurge = defineAction<CachePurgeEvent>('cms.cache.purge', { version: 1, timeoutMs: 15_000 });
+
 // --- Forms ----------------------------------------------------------------------------
 
 /** The form a hook runs for. */
@@ -219,5 +241,5 @@ export const entryColumns = defineFilter<readonly EntryColumn[], EntryListInput 
 /** Actions offered for the selected entries of a list, after the built-in ones. */
 export const bulkActions = defineFilter<readonly EntryAction[], EntryListInput>('cms.dashboard.bulk-actions', { version: 1, timeoutMs: 1_000 });
 
-export const EXTENSION_POINTS = Object.freeze([beforeWrite, afterCommit, formValidate, formBeforeSubmit, formPrefill, formConfirmation, formNotification, formSubmitted,
+export const EXTENSION_POINTS = Object.freeze([beforeWrite, afterCommit, cachePurge, formValidate, formBeforeSubmit, formPrefill, formConfirmation, formNotification, formSubmitted,
     termBeforeSave, commentBeforeSave, menuBeforeSave, entryActions, entryColumns, bulkActions]);

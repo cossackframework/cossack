@@ -19,6 +19,8 @@ import { assertNotesResolved, findMedia, routeResource } from './content';
 import { siteUrl, type CmsBindings } from './index';
 import { announceNote } from './notes-announce';
 import { siteOrigin } from './seo';
+import type { CachePurgeEvent } from '@cossackframework/cms';
+import type { PurgeRecord } from '@cossackframework/cms/server';
 
 /** Query parameters, as Hono hands them over. */
 export type Query = { readonly [key: string]: string | undefined };
@@ -613,6 +615,27 @@ export async function settingsUpdate(c: Context, group: string, values: Body): P
 /** Apply a settings document (`{ group: { field: value } }`), as Settings → Import does. */
 export async function settingsApply(c: Context, document: unknown): Promise<{ document: Record<string, Record<string, unknown>> }> {
     return { document: await c.get('cms').settings.applyDocument(document, { principal: signedIn(c) }) };
+}
+
+// --- Cache ----------------------------------------------------------------------
+
+/**
+ * Purge the caches in front of the site: the tags and URLs given, or every page. The purge is
+ * queued like any other and the outbox run at once, so the answer carries each purger's result;
+ * a purger that failed retries from the outbox.
+ */
+export async function cachePurge(c: Context, input: Body): Promise<{ event: CachePurgeEvent; purgers: string[]; results: PurgeRecord[] }> {
+    const cms = c.get('cms');
+    const principal = signedIn(c);
+    if (!hasPermission(principal, PERMISSIONS.manageSettings)) throw new CmsError('CMS_FORBIDDEN', 'Not allowed to purge the cache.');
+    const strings = (value: unknown, name: string): string[] => {
+        if (value === undefined || value === null) return [];
+        if (!Array.isArray(value) || value.some(item => typeof item !== 'string') || value.length > 500) throw new CmsError('CMS_VALIDATION', `${name} must be a list of up to 500 strings.`, { fields: { [name]: 'is invalid.' } });
+        return value as string[];
+    };
+    const event = await cms.purge.queue('manual', { tags: strings(input.tags, 'tags'), urls: strings(input.urls, 'urls') });
+    await cms.outbox.dispatch({ limit: 10 });
+    return { event, purgers: cms.purge.purgers.map(purger => purger.name), results: cms.purge.recent.filter(record => record.eventId === event.eventId) };
 }
 
 // --- Taxonomies and terms --------------------------------------------------------
