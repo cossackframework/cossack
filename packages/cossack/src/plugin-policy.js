@@ -17,7 +17,7 @@ import path from 'node:path';
 
 /** CMS extension points by their exported binding name in `@cossackframework/cms`. */
 export const EXTENSION_POINT_EXPORTS = Object.freeze({
-  beforeWrite: 'cms.resource.before-write', afterCommit: 'cms.resource.after-commit', cachePurge: 'cms.cache.purge',
+  beforeWrite: 'cms.resource.before-write', afterCommit: 'cms.resource.after-commit', cachePurge: 'cms.cache.purge', paymentEvent: 'cms.payment.event',
   formValidate: 'cms.form.validate', formBeforeSubmit: 'cms.form.before-submit', formPrefill: 'cms.form.prefill',
   formConfirmation: 'cms.form.confirmation', formNotification: 'cms.form.notification', formSubmitted: 'cms.form.submitted',
   termBeforeSave: 'cms.term.before-save', commentBeforeSave: 'cms.comment.before-save', menuBeforeSave: 'cms.menu.before-save',
@@ -46,7 +46,7 @@ export function lintPlugin({ manifest, files, parse }) {
   const hooks = new Set((manifest?.hooks ?? []).map(hook => hook.point));
   // Capabilities the manifest asks for; a context member used without its permission is a lint error, as the host would refuse it.
   const permissions = manifest?.permissions ?? {};
-  const capabilities = { files: permissions.files === true, mail: permissions.mail === true, jobs: permissions.jobs === true, cache: permissions.cache === true,
+  const capabilities = { files: permissions.files === true, mail: permissions.mail === true, jobs: permissions.jobs === true, cache: permissions.cache === true, ai: permissions.ai === true, payments: permissions.payments === true,
     users: Array.isArray(permissions.users) && permissions.users.length > 0, secrets: Array.isArray(permissions.secrets) && permissions.secrets.length > 0 };
   const secrets = new Set(Array.isArray(permissions.secrets) ? permissions.secrets : []);
   const ownPermission = permission => [...own].some(id => ['*', 'read', 'create', 'update', 'delete'].some(action => permission === `${id}:${action}`));

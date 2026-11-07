@@ -4,7 +4,7 @@ import { pluginCapabilities, pluginMetaKey, type CapabilityHost } from '../src/s
 
 const base: CmsPluginManifest = { schemaVersion: 1, name: 'desk', version: '1.0.0' };
 const full: CmsPluginManifest = { ...base,
-    permissions: { files: true, mail: true, jobs: true, cache: true, users: ['read', 'write'], secrets: ['STRIPE_SECRET_KEY'] },
+    permissions: { files: true, mail: true, jobs: true, cache: true, ai: true, payments: true, users: ['read', 'write'], secrets: ['STRIPE_SECRET_KEY'] },
     schedules: [{ name: 'digest', cron: '0 8 * * *', description: 'The morning digest.' }],
 };
 const problems = (manifest: unknown) => manifestProblems(manifest).join(' ');
@@ -12,9 +12,9 @@ const problems = (manifest: unknown) => manifestProblems(manifest).join(' ');
 describe('capability declarations', () => {
     it('accepts every capability and lists the grants', () => {
         expect(manifestProblems(full)).toEqual([]);
-        expect(requestedGrants(full)).toEqual(['capability:cache', 'capability:files', 'capability:jobs', 'capability:mail', 'secret:STRIPE_SECRET_KEY', 'users:read', 'users:write']);
+        expect(requestedGrants(full)).toEqual(['capability:ai', 'capability:cache', 'capability:files', 'capability:jobs', 'capability:mail', 'capability:payments', 'secret:STRIPE_SECRET_KEY', 'users:read', 'users:write']);
         expect(requestedGrants(base)).toEqual([]);
-        expect(CAPABILITIES).toEqual(['files', 'mail', 'jobs', 'cache']);
+        expect(CAPABILITIES).toEqual(['files', 'mail', 'jobs', 'cache', 'ai', 'payments']);
     });
 
     it('checks the shapes', () => {
@@ -56,7 +56,7 @@ describe('capabilities without a database', () => {
         name: 'desk', manifest: full,
         allowed: async (grant, what) => { if (!allow) throw Object.assign(new Error(`not granted ${what}`), { code: 'CMS_FORBIDDEN', grant }); },
         files: null, mail: { send: async message => { sent.push(message); } }, mailFrom: 'site@example.com',
-        users: {} as never, cache: {} as never,
+        users: {} as never, cache: {} as never, ai: null, payments: null,
         outbox: { enqueue: async (topic: string, event: { eventId: string }, options: unknown) => { queued.push({ topic, event, options }); return true; } } as never,
         secrets: name => ({ STRIPE_SECRET_KEY: 'sk_test' })[name], now: () => 1_000_000, queued: () => undefined,
         ...overrides,
@@ -103,6 +103,21 @@ describe('capabilities without a database', () => {
         await expect(secrets.get('ROMEDB_TOKEN')).rejects.toMatchObject({ code: 'CMS_FORBIDDEN' });
         allow = false;
         await expect(secrets.get('STRIPE_SECRET_KEY')).rejects.toMatchObject({ grant: 'secret:STRIPE_SECRET_KEY' });
+        allow = true;
+    });
+
+    it('serves the AI and payments providers the application has, and says when it has none', async () => {
+        const none = pluginCapabilities(host());
+        await expect(none.ai.complete({ prompt: 'hi' })).rejects.toMatchObject({ code: 'CMS_UNAVAILABLE' });
+        await expect(none.payments.checkout({ successUrl: 'https://s.test/a', cancelUrl: 'https://s.test/b', priceId: 'p' })).rejects.toMatchObject({ code: 'CMS_UNAVAILABLE' });
+        expect(none.payments.provider).toBeNull();
+        const some = pluginCapabilities(host({ ai: { name: 'fake', complete: async request => `echo:${request.prompt}` }, payments: { name: 'fake-pay', checkout: async input => ({ id: 'c1', url: `https://pay.test/${input.reference ?? 'x'}` }), webhook: async () => null } }));
+        expect(await some.ai.complete({ prompt: 'hi' })).toBe('echo:hi');
+        expect(some.payments.provider).toBe('fake-pay');
+        expect(await some.payments.checkout({ successUrl: 'https://s.test/a', cancelUrl: 'https://s.test/b', priceId: 'p', reference: 'o1' })).toEqual({ id: 'c1', url: 'https://pay.test/o1' });
+        allow = false;
+        await expect(some.ai.complete({ prompt: 'hi' })).rejects.toMatchObject({ grant: 'capability:ai' });
+        await expect(some.payments.checkout({ successUrl: 'https://s.test/a', cancelUrl: 'https://s.test/b', priceId: 'p' })).rejects.toMatchObject({ grant: 'capability:payments' });
         allow = true;
     });
 

@@ -1,7 +1,7 @@
-import { Cossack, Page, State, ClientState, Server, Client, On, OnWindow, PreventNavigation, type HeadValue } from '@cossackframework/core';
+import { Cossack, Page, State, ClientState, Server, Client, On, OnWindow, PreventNavigation, type HeadValue, ClientVisibleError } from '@cossackframework/core';
 import { Avatar, Button, Checkbox, Combobox, Icon, Input, Modal, NativeSelect, Textarea, CodeEditor, Tabs } from '@cossackframework/ui';
 import { html, component, unsafeHTML, type TemplateResult } from '@cossackframework/renderer';
-import { applyTreeOp, ARTICLE_TYPES, blockId, CORE_BLOCKS, entryAuthors, groupPeers, livePeers, patchKey, PendingKeys, richTextPath, parseRichTextPath, scalarKey, treeHash, treeOps, systemPrincipal, entryChecks, evaluateRule, fieldVisibility, findBlock, flattenBlocks, flattenGroupFields, formatBytes, hasPermission, isCmsError, languageName, mediaKind, recordSchema, recordTitle, renderSeoTemplate, richTextBlocks, TITLE_SEPARATORS, updateBlock, PERMISSIONS, participantColor, formatNoteTarget, noteBlock, noteField, noteThreads, parseNoteTarget, type Block, type BlockCondition, type Check, type EmbeddedBlock, type JsonSchema, type MediaKind, type Note, type NoteAction, type NoteRange, type NoteStatus, type NoteThread, type RecordShape, type RichTextDoc, type Participant, type PeerPresence, type PeerState, type TreeOp } from '@cossackframework/cms';
+import { applyTreeOp, ARTICLE_TYPES, blockId, CORE_BLOCKS, entryAuthors, groupPeers, livePeers, patchKey, PendingKeys, richTextPath, parseRichTextPath, scalarKey, treeHash, treeOps, systemPrincipal, entryChecks, evaluateRule, fieldVisibility, findBlock, flattenBlocks, flattenGroupFields, formatBytes, hasPermission, isCmsError, languageName, mediaKind, recordSchema, recordTitle, renderSeoTemplate, richTextBlocks, TITLE_SEPARATORS, updateBlock, PERMISSIONS, participantColor, formatNoteTarget, noteBlock, noteField, noteThreads, parseNoteTarget, type Block, type BlockCondition, type Check, type EmbeddedBlock, type JsonSchema, type MediaKind, type Note, type NoteAction, type NoteRange, type NoteStatus, type NoteThread, type RecordShape, type RichTextDoc, type Participant, type PeerPresence, type PeerState, type TreeOp, blocksPlain, richTextPlain } from '@cossackframework/cms';
 import { blockPanel } from '../../../../../../cms/block-panel';
 import { describeBlockError } from '../../../../../../cms/block-errors';
 import { blockIdOf, styleValues, withStyle, type BlockTab, type StyleValues } from '../../../../../../cms/style-controls';
@@ -52,6 +52,10 @@ export default class EntryEditor extends Cossack {
     @State() id = 'new';
     @State() view: EditorView | null = null;
     @State() values: EditorValues = {};
+    /** The application has an AI provider: the Assistant box offers suggestions. */
+    @State() assistant = false;
+    @State() assistantBusy = '';
+    @State() assistantError = '';
     @State() rev = 0;
     @State() meta = { createdAt: 0, updatedAt: 0, author: '', url: '' as string | null };
     @State() slugTouched = false;
@@ -171,6 +175,7 @@ export default class EntryEditor extends Cossack {
         this.route = this.c.req.param('collection') ?? '';
         this.id = this.c.req.param('id') ?? 'new';
         const cms = this.c.get('cms');
+        this.assistant = cms.ai !== null;
         const principal = this.c.get('principal');
         try {
             const view = await editorView(cms, this.route);
@@ -1797,6 +1802,50 @@ export default class EntryEditor extends Cossack {
     }
 
     /** Search title, description and image, with a preview of the search result. */
+    /** The Assistant box: the model suggests a title, an excerpt or a summary from the content; the person keeps or edits it. */
+    private assistantBox(): TemplateResult {
+        const button = (kind: 'title' | 'excerpt' | 'summary', label: string, shown: boolean) => shown ? html`<button type="button" class="rounded-md border border-border bg-background px-2.5 py-1 text-xs text-foreground hover:bg-muted disabled:opacity-50" ?disabled=${Boolean(this.assistantBusy)} @click=${() => this.ask(kind)}>${this.assistantBusy === kind ? __('Thinking…') : label}</button>` : null;
+        return box(__('Assistant'), html`<div class="space-y-2">
+            <p class="text-xs text-muted-foreground">${__('Suggestions from the content, written into the field for you to edit.')}</p>
+            <div class="flex flex-wrap gap-2">${button('title', __('Suggest a title'), this.values.title !== undefined)}${button('excerpt', __('Suggest an excerpt'), this.values.excerpt !== undefined)}${button('summary', __('Suggest a summary'), this.values.summary !== undefined)}</div>
+            ${this.assistantError ? html`<p role="alert" class="text-xs text-destructive">${this.assistantError}</p>` : null}
+        </div>`, { id: 'box-assistant' });
+    }
+
+    @Client()
+    async ask(kind: 'title' | 'excerpt' | 'summary') {
+        this.assistantBusy = kind;
+        this.assistantError = '';
+        try {
+            const text = await this.suggest(kind, this.values);
+            if (text) this.set(kind, text);
+        } catch (error) {
+            this.assistantError = (error as Error).message || __('No suggestion came back.');
+        } finally { this.assistantBusy = ''; }
+    }
+
+    /** Ask the application's model for one field, from the entry's text as it stands in the editor. */
+    @Server()
+    async suggest(kind: 'title' | 'excerpt' | 'summary', values: EditorValues): Promise<string> {
+        const cms = this.c.get('cms');
+        if (!cms.ai) throw new ClientVisibleError(__('The application has no AI provider.'));
+        if (!['title', 'excerpt', 'summary'].includes(kind)) throw new ClientVisibleError(__('Unknown suggestion.'));
+        const parts: string[] = [];
+        for (const [name, value] of Object.entries(values)) {
+            if (name === kind || parts.join(' ').length > 12_000) continue;
+            if (typeof value === 'string' && ['title', 'excerpt', 'summary'].includes(name) && value.trim()) parts.push(`${name}: ${value.trim()}`);
+            else if (Array.isArray(value) && value.length && typeof value[0] === 'object' && value[0] && 'type' in (value[0] as object)) parts.push(blocksPlain(value as Block[], cms.blockTypes, doc => richTextPlain(doc), 12_000));
+            else if (value && typeof value === 'object' && (value as { type?: string }).type === 'doc') parts.push(richTextPlain(value as RichTextDoc, 12_000));
+        }
+        const content = parts.join('\n\n').trim().slice(0, 12_000);
+        if (!content) throw new ClientVisibleError(__('Write some content first.'));
+        const ask = kind === 'title' ? 'Write one title of at most 70 characters for this content. Answer with the title alone.'
+            : kind === 'excerpt' ? 'Write a one-sentence excerpt of at most 160 characters that invites reading this content. Answer with the sentence alone.'
+            : 'Write a summary of two or three sentences that answers what this content is about, for readers and answer engines. Answer with the summary alone.';
+        const answer = await cms.ai.complete({ system: 'You write for a website. Answer in the language of the content, plainly, with no quotation marks, labels or Markdown.', prompt: `${ask}\n\nContent:\n${content}`, maxTokens: 300 });
+        return answer.replace(/^["'“”‘’\s]+|["'“”‘’\s]+$/g, '').replace(/^(?:Title|Excerpt|Summary):\s*/i, '').slice(0, kind === 'title' ? 200 : 2000);
+    }
+
     private seoBox(): TemplateResult {
         const seo = (this.values.seo as Record<string, unknown> | undefined) ?? {};
         const variables = { title: String(seo.title ?? '') || String(this.values.title ?? ''), sep: this.seo.separator, site: this.seo.siteTitle, tagline: this.seo.tagline, excerpt: String(seo.description ?? '') || String(this.values.excerpt ?? ''), author: this.meta.author, collection: this.seo.collection };
@@ -2128,6 +2177,7 @@ export default class EntryEditor extends Cossack {
             case 'template': return this.templateBox();
             case 'discussion': return this.comments ? this.discussionBox(view) : null;
             case 'revisions': return this.revisions.length ? this.revisionsBox(view) : null;
+            case 'assistant': return this.assistant ? this.assistantBox() : null;
             default: return null;
         }
     }

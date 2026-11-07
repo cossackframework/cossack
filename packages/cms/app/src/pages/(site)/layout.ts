@@ -9,6 +9,9 @@ import { siteSession, type AreaDraft, type PatternDraft, type SiteEditingContext
 import { closeMenusOnFollow, pluginHeads, siteTheme, tagDocument, themeHelpers } from '../../cms/site-view';
 import { siteTaskbar } from '../../cms/site-taskbar';
 import { taskbar, type TaskbarView } from '../../cms/taskbar';
+
+/** Sends one view per page to the site, unless the browser asks not to be tracked; nothing is stored in the browser. */
+const BEACON_SCRIPT = "if(navigator.doNotTrack!=='1'&&!navigator.globalPrivacyControl){try{var b=JSON.stringify({p:location.pathname,r:document.referrer});if(!(navigator.sendBeacon&&navigator.sendBeacon('/api/cms/beacon',new Blob([b],{type:'application/json'}))))fetch('/api/cms/beacon',{method:'POST',headers:{'content-type':'application/json'},body:b,keepalive:true}).catch(function(){})}catch(e){}}";
 import { logout } from '../../auth';
 
 /**
@@ -22,6 +25,8 @@ export default class SiteLayout extends Cossack {
     /** The signed-in user's taskbar; null for visitors, whose pages carry no trace of it. */
     taskbar: TaskbarView | null = server$(() => siteTaskbar(this.c, this.user), { initial: null });
     @State() logoutError = '';
+    /** Settings → Analytics: whether the page sends the site's beacon, and Cloudflare's token. */
+    @State() analytics: { beacon: boolean; cloudflareToken: string } = { beacon: false, cloudflareToken: '' };
     @State() site: SiteView & { noindex: boolean } = { title: '', tagline: '', logo: null, blog: null, menus: {}, noindex: false, locale: 'en', languages: [], searchUrl: '/search', homeUrl: '/', areas: {}, template: null, url: '', breadcrumbs: [] };
     @State() theme: ThemeState = { name: null, options: {} };
     /** What the theme's `layout` loader returned. */
@@ -128,7 +133,10 @@ export default class SiteLayout extends Cossack {
             // The site's Additional CSS, checked on save, after the theme's own tags; then the script that drops
             // an image's blurred placeholder once it has loaded, so it never shows through transparent pixels.
             tags: [...(contributed.tags ?? []), ...(this.theme.customCss ? [{ tag: 'style', attributes: { 'data-cms-custom-css': '' }, children: this.theme.customCss }] : []),
-                { tag: 'script', attributes: { 'data-cms-placeholders': '' }, children: PLACEHOLDER_SCRIPT }],
+                { tag: 'script', attributes: { 'data-cms-placeholders': '' }, children: PLACEHOLDER_SCRIPT },
+                // The site's own beacon (Settings → Analytics), and Cloudflare's when a token is set. Signed-in dashboard users are not counted.
+                ...(this.analytics.beacon ? [{ tag: 'script', attributes: { 'data-cms-beacon': '' }, children: BEACON_SCRIPT }] : []),
+                ...(this.analytics.cloudflareToken ? [{ tag: 'script', attributes: { defer: '', src: 'https://static.cloudflareinsights.com/beacon.min.js', 'data-cf-beacon': JSON.stringify({ token: this.analytics.cloudflareToken }) }, children: '' }] : [])],
         };
     }
 
@@ -177,6 +185,7 @@ export default class SiteLayout extends Cossack {
             this.site = await siteView(cms, this.theme, { locale: page.locale, languages: await languageLinks(cms, page), template, entry, user, usage, url: this.c.req.url, page, forms: { query: this.c.req.query(), principal: this.c.get('principal'), url: this.c.req.path } });
             if (usage.user && user) this.c.header('cache-control', 'private, no-store');
             this.data = await themeData(cms, this.theme, 'layout', this.site, this.c.get('principal'), page.locale);
+            this.analytics = { beacon: settings['analytics.enabled'] !== false && !user, cloudflareToken: settings['analytics.cloudflareToken'] || '' };
             // A Latest entries block in a widget area puts the collection on every page: the page adds these to its cache tags.
             this.c.set('cms.cacheTags', [...listedCollections(Object.values(this.site.areas).flat())].map(name => cms.purge.tag.collection(name)));
         } catch { this.site = { ...this.site, title: config('app.name') }; }

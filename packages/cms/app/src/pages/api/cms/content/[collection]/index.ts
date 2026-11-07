@@ -7,7 +7,8 @@ import { entriesList, entryCreate } from '../../../../../cms/manage';
  * entries, newest first; signed-in readers add `status=draft` (or `pending`, `scheduled`,
  * `published`, `trash`, `any`). `term=categories:news` lists a term's entries, including those of
  * terms below it; `q` searches; `locale=fr` lists one language's entries; `filter[field]=value`
- * matches a field; `format=html` adds rendered rich text beside the JSON documents.
+ * matches a field; `sort=publishedAt:asc` orders by a scalar field; `fields=title,slug,excerpt` keeps
+ * only those fields (and `id`, `url`); `format=html` adds rendered rich text beside the JSON documents.
  */
 export const GET = (c: Context) => answer(c, async () => {
     const page = await entriesList(c, c.req.param('collection') ?? '', c.req.query());

@@ -1,6 +1,7 @@
 import { createRomeDB } from '@cossackframework/romedb';
 import { getRequestContext } from '@cossackframework/core';
-import { cloudflarePurger, cmsReconcilers, CmsNetwork, createCMS, MAIN_SITE, prefixedStorage, type CachePurger, type CmsHost, type NetworkSite } from '@cossackframework/cms/server';
+import { cloudflarePurger, cmsReconcilers, CmsNetwork, createCMS, MAIN_SITE, prefixedStorage, stripePayments, type CachePurger, type CmsHost, type NetworkSite } from '@cossackframework/cms/server';
+import { aiProvider, type AiBindings } from './ai';
 import type { Principal } from '@cossackframework/cms';
 import { plugins } from '@cossackframework/framework/plugins';
 import { modules, resources } from './resources';
@@ -8,7 +9,12 @@ import { databaseConnection, siteDatabase, siteDirectory, type DatabaseBindings 
 import { pendingWrites, type PendingBindings } from './pending';
 import { imageTransformer, mediaStorage, type MediaBindings } from './media';
 
-export interface CmsBindings extends DatabaseBindings, PendingBindings, MediaBindings {
+export interface CmsBindings extends DatabaseBindings, PendingBindings, MediaBindings, AiBindings {
+    /** Stripe as the payments provider: the secret key, and the webhook endpoint's signing secret. */
+    STRIPE_SECRET_KEY?: string;
+    STRIPE_WEBHOOK_SECRET?: string;
+    /** Stripe's API base, for tests. */
+    STRIPE_API_URL?: string;
     APP_URL?: string;
     /** Sends form notifications: Cloudflare's Email Service binding, or any `{ send(message) }`. */
     EMAIL?: { send(message: { to: string; from: string; subject: string; text: string; replyTo?: string }): Promise<unknown> };
@@ -49,6 +55,8 @@ export function networkFor(env: CmsBindings): CmsNetwork {
         const storage = mediaStorage(env);
         const images = imageTransformer(env);
         const mail = env.EMAIL;
+        const ai = aiProvider(env);
+        const payments = env.STRIPE_SECRET_KEY?.trim() ? stripePayments({ secretKey: env.STRIPE_SECRET_KEY.trim(), ...(env.STRIPE_WEBHOOK_SECRET ? { webhookSecret: env.STRIPE_WEBHOOK_SECRET } : {}), ...(env.STRIPE_API_URL ? { api: env.STRIPE_API_URL } : {}) }) : null;
         const multisite = siteDatabase(env, MAIN_SITE) !== null;
         const directory = siteDirectory(env);
         const network: CmsNetwork = new CmsNetwork({
@@ -66,6 +74,8 @@ export function networkFor(env: CmsBindings): CmsNetwork {
                 // Ending a network session ends the child sessions sites made from it.
                 sessionsEnded: ended => network.endSessions(ended),
                 purgers: purgers(env, site),
+                ...(ai ? { ai } : {}),
+                ...(payments ? { payments } : {}),
                 // Bindings a plugin's manifest names in permissions.secrets; strings only, read when asked.
                 secrets: name => { const value = (env as Record<string, unknown>)[name]; return typeof value === 'string' ? value : undefined; },
             }),

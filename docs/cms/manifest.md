@@ -296,7 +296,7 @@ payload changes; `timeoutMs` (1 to 600,000, default 5,000) is the per-handler de
   "resources": { "cms/posts": ["read"], "cms/pages": ["read", "update"] },
   "network": ["api.example.com", "*.stripe.com"],
   "define": ["support-desk:triage"],
-  "files": true, "mail": true, "jobs": true, "cache": true,
+  "files": true, "mail": true, "jobs": true, "cache": true, "ai": true, "payments": true,
   "users": ["read", "write"],
   "secrets": ["STRIPE_SECRET_KEY"]
 }
@@ -311,6 +311,8 @@ payload changes; `timeoutMs` (1 to 600,000, default 5,000) is the per-handler de
 | `mail` | Email from the site's sender, through `context.mail`. Grant `capability:mail`. |
 | `jobs` | Work queued for later and the manifest's `schedules`, through `context.jobs`. Grant `capability:jobs`. |
 | `cache` | A namespace in the site's cache, through `context.cache`. Grant `capability:cache`. |
+| `ai` | The application's AI provider (Anthropic or Workers AI, from its bindings), through `context.ai.complete()`. Grant `capability:ai`. |
+| `payments` | Checkouts with the application's payments provider (Stripe built in) through `context.payments.checkout()`; the results arrive as `cms.payment.event`, which the plugin lists in `hooks`. Grant `capability:payments`. |
 | `users` | The site's members through `context.users`: `read` lists them with their emails and roles; `write` creates members and keeps the plugin's own meta on them. Grants `users:read`, `users:write`. |
 | `secrets` | Names of the application's bindings the plugin reads through `context.secrets`, such as `STRIPE_SECRET_KEY`: upper-case names outside the host's own (`ROMEDB_*`, `APP_*`, `CMS_*`, `CLOUDFLARE_*`, `SMTP_*`, `S3_*`, `TURNSTILE_*`, `OAUTH_*`, `COSSACK_*`, `MAIL_FROM`, `EMAIL`, `AI`). Grant `secret:<NAME>` each. |
 

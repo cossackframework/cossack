@@ -46,13 +46,18 @@ puts a default theme in `src/plugins/default-theme/` for you to edit or copy. Se
 
 Tools under the dashboard's Tools menu: Health (search and answer engines, crawler visits, 404s),
 Links, Redirects, Webhooks, Schema, Export, Cache, Jobs (the outbox: what waits, what failed for
-good, plugin schedules), Activity (the audit trail of writes) and Find and replace (a phrase across
-a collection, previewed first). Content → Calendar lists the month's published and scheduled
+good, plugin schedules), Activity (the audit trail of writes), Find and replace (a phrase across
+a collection, previewed first), Analytics (page views and visitors from the site's cookieless
+beacon, Settings → Analytics) and Automations (when an entry is published, a form is submitted or a
+payment completes, send an email or post to a URL). Content → Calendar lists the month's published and scheduled
 entries. Settings → Reading names a page for missing addresses (served with status 404); Settings
 → General has a maintenance or coming-soon mode (visitors get a 503 holding page, people with
 dashboard access see the site) and asks new registrants to confirm their email when the site can
 send one. New users can be invited by email instead of given a password; people can delete their
-own account from Profile. Ctrl/Cmd+K opens a palette of every dashboard screen.
+own account from Profile, and sign in with a one-time link emailed from the sign-in page. Ctrl/Cmd+K
+opens a palette of every dashboard screen. The entry editor's Assistant box suggests a title, an
+excerpt or a summary when the application has an AI provider (`ANTHROPIC_API_KEY`, or a Workers AI
+binding `AI`).
 
 The package `README.md` and `cossack docs --package @cossackframework/cms` cover the data
 contract (resources, repositories, collections, blocks) in more depth.
@@ -114,6 +119,7 @@ per plugin.
 | Arrange an entry editor | Declare `editor` in the manifest: tabs and sidebar boxes added to a collection's editor while the plugin is active. |
 | Add dashboard pages | Put pages under `pages/dashboard/...` in the plugin; link them from the `dashboard.nav` slot. |
 | Add an operator command | Declare `commands` in the manifest; handle them with `context.commands.add()`. |
+| Take payments or ask a model | Ask for `payments` or `ai` in `permissions`; `context.payments.checkout()` and `context.ai.complete()`; handle `cms.payment.event`. The application configures Stripe (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`) and Anthropic or Workers AI (`ANTHROPIC_API_KEY`, or the `AI` binding). |
 | Store files, send email, run work later or on a schedule, read members, cache, hold a key | Ask in the manifest's `permissions` (`files`, `mail`, `jobs`, `users`, `cache`, `secrets`) and `schedules`; use `context.files`, `mail`, `jobs`, `users`, `cache`, `secrets`. See [Capabilities](/docs/cms/plugins.md#capabilities). |
 | Ship a site design | A plugin with a `theme` field and `templates/`; see [Themes](/docs/cms/themes.md). |
 | Let other plugins extend yours | Declare `provides` in the manifest and invoke the points from your code. |

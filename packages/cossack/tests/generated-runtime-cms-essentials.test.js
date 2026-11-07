@@ -123,6 +123,17 @@ async function essentials(origin, routeIds, diagnostics, { runtime, cloudflare =
   expect((await web.request('/')).status).toBe(200);
   expect((await web.action(SETTINGS, 'saveAll', [{ document: { general: { maintenance: 'off' } }, languages: null, permalinks: null, groups: {} }]))._cossack_return.error).toBe('');
   expect((await anonymous().request('/')).status).toBe(200);
+  // Field selection and sorting on the content API; the beacon counts a view; the newest tools render; Health names the missing AI provider.
+  const sorted = await (await web.request('/api/cms/content/pages?sort=title:asc&fields=title&perPage=50')).json();
+  expect(sorted.items.length).toBeGreaterThan(1);
+  expect(sorted.items.every(item => Object.keys(item).sort().join() === 'id,title,url')).toBe(true);
+  expect(sorted.items.map(item => item.title)).toEqual([...sorted.items.map(item => item.title)].sort((a, b) => a.localeCompare(b)));
+  expect((await fetch(`${origin}/api/cms/beacon`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ p: '/blocks-tour', r: 'https://news.example/x' }) })).status).toBe(204);
+  contains(await web.page('/dashboard/tools/analytics'), 'data-testid=analytics-views');
+  contains(await web.page('/dashboard/tools/automations'), 'No automations yet');
+  expect((await web.request('/api/cms/webhooks')).status).toBe(200);
+  expect((await web.request('/api/cms/comments/queue')).status).toBe(200);
+  if (runtime === 'node') contains(await web.page('/dashboard/tools/health'), 'No AI provider');
   // Setup added the starter content: a first post in Uncategorized, and a Contact page with its form.
   contains(await web.page('/posts/hello-world'), 'This is your first post');
   contains(await web.page('/category/uncategorized'), 'Hello World!');

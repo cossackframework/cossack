@@ -91,6 +91,28 @@ export interface PluginJobEvent {
 /** Internal: the host routes each event to its plugin's handler. Not an extension point plugins declare. */
 export const pluginJob = defineAction<PluginJobEvent>('cms.plugin.job', { version: 1, timeoutMs: 60_000 });
 
+/** A payment provider's webhook, verified and normalized; delivered from the outbox, so handlers key on `eventId`. */
+export interface PaymentEvent {
+    readonly eventId: string;
+    readonly topic: 'payment.event';
+    readonly at: number;
+    readonly provider: string;
+    readonly type: 'checkout.completed' | 'payment.succeeded' | 'payment.failed' | 'subscription.updated' | 'subscription.cancelled' | 'refund';
+    /** The provider's own event type, such as `checkout.session.completed`. */
+    readonly providerType: string;
+    readonly checkoutId: string | null;
+    /** The plugin's key for the order, as given to `checkout()`. */
+    readonly reference: string | null;
+    readonly customerEmail: string | null;
+    /** In the currency's minor unit. */
+    readonly amount: number | null;
+    readonly currency: string | null;
+    readonly metadata: { readonly [key: string]: string };
+    /** The provider's object as sent, for what the normalized fields leave out. */
+    readonly object: unknown;
+}
+export const paymentEvent = defineAction<PaymentEvent>('cms.payment.event', { version: 1, timeoutMs: 15_000 });
+
 // --- Forms ----------------------------------------------------------------------------
 
 /** The form a hook runs for. */
@@ -260,5 +282,5 @@ export const entryColumns = defineFilter<readonly EntryColumn[], EntryListInput 
 /** Actions offered for the selected entries of a list, after the built-in ones. */
 export const bulkActions = defineFilter<readonly EntryAction[], EntryListInput>('cms.dashboard.bulk-actions', { version: 1, timeoutMs: 1_000 });
 
-export const EXTENSION_POINTS = Object.freeze([beforeWrite, afterCommit, cachePurge, formValidate, formBeforeSubmit, formPrefill, formConfirmation, formNotification, formSubmitted,
+export const EXTENSION_POINTS = Object.freeze([beforeWrite, afterCommit, cachePurge, paymentEvent, formValidate, formBeforeSubmit, formPrefill, formConfirmation, formNotification, formSubmitted,
     termBeforeSave, commentBeforeSave, menuBeforeSave, entryActions, entryColumns, bulkActions]);

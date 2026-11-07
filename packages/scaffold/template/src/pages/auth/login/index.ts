@@ -2,7 +2,7 @@ import { Cossack, Page, State, ClientStore, Validate, Client, Server, storeRules
 import { Field, Input, PasswordInput, Button, Alert } from '@cossackframework/ui';
 import { html, component, bind } from '@cossackframework/renderer';
 import { setCookie } from 'hono/cookie';
-import { authSessions, beginTwoFactor, completePasskeySignIn, loginUser, passkeySignIn, registrationOpen, twoFactorAvailable, TWO_FACTOR_COOKIE } from '../../../auth';
+import { authSessions, beginTwoFactor, completePasskeySignIn, loginUser, passkeySignIn, registrationOpen, requestMagicLink, twoFactorAvailable, TWO_FACTOR_COOKIE } from '../../../auth';
 import { loginInput, type LoginInput } from '../../../auth-input';
 import { usePasskey } from '../../../passkeys.client';
 
@@ -27,6 +27,8 @@ export default class LoginPage extends Cossack {
     @State() canRegister = true;
     /** The auth store supports passkeys. */
     @State() passkeys = false;
+    /** A sign-in link was requested: the page says to check the email, whatever the address. */
+    @State() linkSent = false;
 
     async init() {
         this.canRegister = await registrationOpen();
@@ -70,6 +72,21 @@ export default class LoginPage extends Cossack {
         }
     }
 
+    @Client()
+    async emailLink(event: Event) {
+        event.preventDefault();
+        if (!this.form.email) { this.error = __('Enter your email first.'); return; }
+        await this.sendLink(this.form.email);
+    }
+
+    /** Email a one-time sign-in link; the answer is the same whether the account exists. */
+    @Server()
+    async sendLink(email: string) {
+        this.error = '';
+        try { await requestMagicLink(String(email).trim().toLowerCase().slice(0, 254), new URL(this.c.req.url).origin); } catch { /* the page says the same either way */ }
+        this.linkSent = true;
+    }
+
     /** Sign in with a passkey: no password and no code. */
     @Client()
     async signInWithPasskey() {
@@ -106,9 +123,11 @@ export default class LoginPage extends Cossack {
                     control: attributes => component(Input, { ...attributes, type: 'email', placeholder: 'user@example.com', variant: this.hasError('form.email') ? 'error' : 'default', '.value': bind(this.form, 'email') }) })}
                 ${component(Field, { label: __('Password'), for: 'password', error: this.getError('form.password'),
                     control: attributes => component(PasswordInput, { ...attributes, value: this.form.password, onValueChange: (v: string) => this.form.password = v }) })}
-                <div class="text-right">
-                    <a href="/auth/forgot-password" class="text-sm text-primary hover:underline">${__('Forgot password?')}</a>
+                <div class="flex items-center justify-between gap-3 text-sm">
+                    <button type="button" class="text-primary hover:underline bg-transparent border-none p-0 cursor-pointer" @click=${(e: Event) => this.emailLink(e)}>${__('Email me a sign-in link')}</button>
+                    <a href="/auth/forgot-password" class="text-primary hover:underline">${__('Forgot password?')}</a>
                 </div>
+                ${this.linkSent ? component(Alert, {}, __('If an account exists for that email, a sign-in link is on its way. It works once, for fifteen minutes.')) : null}
                 ${this.error ? component(Alert, { variant: 'destructive' }, this.error) : null}
                 ${component(Button, { type: 'submit', block: true }, __('Sign In'))}
             </form>

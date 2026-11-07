@@ -15,7 +15,7 @@ describe.skipIf(!live)('plugin capabilities', () => {
     let context: PluginContext;
     const manifest = {
         schemaVersion: 1, name: 'desk', version: '1.0.0',
-        permissions: { files: true, mail: true, jobs: true, cache: true, users: ['read', 'write'], secrets: ['STRIPE_SECRET_KEY'] },
+        permissions: { files: true, mail: true, jobs: true, cache: true, ai: true, payments: true, users: ['read', 'write'], secrets: ['STRIPE_SECRET_KEY'] },
         schedules: [{ name: 'heartbeat', cron: '*/5 * * * *' }],
     };
     const plugin = () => ({
@@ -34,6 +34,8 @@ describe.skipIf(!live)('plugin capabilities', () => {
         db: service.database(), plugins: [plugin()], storage: memoryStorage(), now: () => clock,
         mail: { send: async message => { sent.push(message); } }, mailFrom: 'site@example.com',
         secrets: name => ({ STRIPE_SECRET_KEY: 'sk_test_123' })[name],
+        ai: { name: 'fake', complete: async request => `echo:${request.prompt}` },
+        payments: { name: 'fake-pay', checkout: async input => ({ id: 'c1', url: `https://pay.test/${input.reference ?? ''}` }), webhook: async () => null },
     });
 
     beforeAll(async () => {
@@ -69,6 +71,9 @@ describe.skipIf(!live)('plugin capabilities', () => {
 
         await context.mail.send({ to: 'ada@example.com', subject: 'Ticket closed', text: 'Done.' });
         expect(sent).toEqual([{ to: 'ada@example.com', from: 'site@example.com', subject: 'Ticket closed', text: 'Done.' }]);
+        expect(await context.ai.complete({ prompt: 'hello' })).toBe('echo:hello');
+        expect(context.payments.provider).toBe('fake-pay');
+        expect((await context.payments.checkout({ successUrl: 'https://s.test/a', cancelUrl: 'https://s.test/b', priceId: 'price_1', reference: 'o1' })).url).toBe('https://pay.test/o1');
     });
 
     it('stores files the plugin owns in the library', async () => {

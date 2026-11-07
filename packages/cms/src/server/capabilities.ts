@@ -15,6 +15,8 @@ import type { CmsFile, FileMetadata, FileService } from './files';
 import type { CmsMail } from './forms';
 import type { Outbox } from './outbox';
 import type { CmsUser, CmsUsers } from './users';
+import type { AiProvider, AiRequest } from './ai';
+import type { Checkout, CheckoutInput, PaymentsProvider } from './payments';
 
 export interface PluginFiles {
     /** Store a file the plugin owns in the media library; a stream needs its `size`. */
@@ -89,6 +91,18 @@ export interface PluginCache {
     remember<T>(key: string, ttlMs: number, compute: () => Promise<T>): Promise<T>;
 }
 
+export interface PluginAi {
+    /** The application's model answers the prompt; `CMS_UNAVAILABLE` when the application has no provider. */
+    complete(request: AiRequest): Promise<string>;
+}
+
+export interface PluginPayments {
+    /** Start a checkout with the application's provider; the result arrives as a `cms.payment.event` action. */
+    checkout(input: CheckoutInput): Promise<Checkout>;
+    /** The provider's name, or null when the application has none. */
+    readonly provider: string | null;
+}
+
 export interface PluginSecrets {
     /** The binding's value, or undefined when the application has none. The name must be in `permissions.secrets`. */
     get(name: string): Promise<string | undefined>;
@@ -101,6 +115,8 @@ export interface PluginCapabilities {
     readonly users: PluginUsers;
     readonly cache: PluginCache;
     readonly secrets: PluginSecrets;
+    readonly ai: PluginAi;
+    readonly payments: PluginPayments;
     /** Run the plugin's handler for one of its job events; throws so the outbox retries. */
     runJob(event: PluginJobEvent, context: { signal?: AbortSignal }): Promise<void>;
 }
@@ -118,6 +134,8 @@ export interface CapabilityHost {
     readonly cache: CmsCache;
     readonly outbox: Outbox;
     readonly secrets: (name: string) => string | undefined;
+    readonly ai: AiProvider | null;
+    readonly payments: PaymentsProvider | null;
     readonly now: () => number;
     /** An outbox row was added: dispatch after the request. */
     readonly queued: () => void;
@@ -280,6 +298,22 @@ export function pluginCapabilities(host: CapabilityHost): PluginCapabilities {
         },
     };
 
+    const ai: PluginAi = {
+        complete: async request => {
+            await host.allowed('capability:ai', 'the AI provider');
+            if (!host.ai) throw new CmsError('CMS_UNAVAILABLE', 'The application has no AI provider.');
+            return host.ai.complete(request);
+        },
+    };
+    const payments: PluginPayments = {
+        get provider() { return host.payments?.name ?? null; },
+        checkout: async input => {
+            await host.allowed('capability:payments', 'payments');
+            if (!host.payments) throw new CmsError('CMS_UNAVAILABLE', 'The application has no payments provider.');
+            return host.payments.checkout(input);
+        },
+    };
+
     const runJob = async (event: PluginJobEvent, context: { signal?: AbortSignal }): Promise<void> => {
         // Inactive or revoked: the outbox retries and gives up in its own time.
         await host.allowed('capability:jobs', 'jobs');
@@ -288,5 +322,5 @@ export function pluginCapabilities(host: CapabilityHost): PluginCapabilities {
         await handler(event.payload, { principal, scheduledAt: event.scheduledAt, ...(context.signal ? { signal: context.signal } : {}) });
     };
 
-    return Object.freeze({ files, mail, jobs, users, cache, secrets, runJob });
+    return Object.freeze({ files, mail, jobs, users, cache, secrets, ai, payments, runJob });
 }

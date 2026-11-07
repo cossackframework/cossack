@@ -617,3 +617,37 @@ export async function verifyEmail(token: string): Promise<string | null> {
   await host.users.setStatus(found.user, 'active');
   return found.user;
 }
+
+/** How long a sign-in link lives. */
+const MAGIC_LINK_TTL_MS = 15 * 60_000;
+
+/**
+ * Email a one-time sign-in link to an active account. Nothing says whether the email exists; a
+ * flood for one address or from one client stops after a few. Without a mail sender, nothing is sent.
+ */
+export async function requestMagicLink(email: string, origin: string): Promise<void> {
+  const host = cms();
+  const address = clientAddress();
+  const allowedEmail = await host.security.attempt('magic', `e:${email.trim().toLowerCase()}`, RESET_REQUESTS.perEmail, RESET_REQUESTS.windowMs);
+  const allowedAddress = await host.security.attempt('magic', `a:${address}`, RESET_REQUESTS.perAddress, RESET_REQUESTS.windowMs);
+  if (!allowedEmail || !allowedAddress || !host.mail) return;
+  const account = await host.signIn.accounts.findByEmail(email).catch(() => null);
+  if (!account || account.status !== 'active') return;
+  const token = randomToken(32);
+  await host.cache.set(`magic:${await sha256Hex(token)}`, { user: account.id }, MAGIC_LINK_TTL_MS);
+  const title = await host.settings.get('general.siteTitle').catch(() => '');
+  await host.mail.send({ to: account.email, from: host.mailFrom, subject: `Sign in to ${title || 'the site'}`,
+    text: `Open this link to sign in; it works once, for fifteen minutes:\n${(env('APP_URL', '') || origin).replace(/\/$/, '')}/auth/magic?token=${token}\n\nIf you did not ask for it, ignore this email.` });
+}
+
+/** Spend a sign-in link: the account's ID, or null for a link that is unknown, spent or expired. */
+export async function consumeMagicLink(token: string): Promise<string | null> {
+  if (!/^[A-Za-z0-9_-]{20,128}$/.test(token)) return null;
+  const host = cms();
+  const key = `magic:${await sha256Hex(token)}`;
+  const found = await host.cache.get<{ user: string }>(key);
+  if (!found?.user) return null;
+  await host.cache.delete(key);
+  const account = await host.signIn.accounts.get(found.user).catch(() => null);
+  return account && account.status === 'active' ? account.id : null;
+}

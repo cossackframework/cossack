@@ -9,8 +9,8 @@ export {
 } from './field-groups';
 export { ANONYMOUS, PERMISSIONS, DEFAULT_ROLES, NETWORK_ADMIN, MAIN_SITE, isNetworkAdmin, systemPrincipal, userPrincipal, hasPermission, permissionMatches, evaluateRule, ruleScope, principalId, type Principal, type RecordScope } from './permissions';
 export { CmsError, isCmsError, type CmsErrorCode } from './errors';
-export { beforeWrite, afterCommit, cachePurge, pluginJob, formValidate, formBeforeSubmit, formPrefill, formConfirmation, formNotification, formSubmitted, termBeforeSave, commentBeforeSave, menuBeforeSave, entryActions, entryColumns, bulkActions, ENTRY_ACTION_IDS, EXTENSION_POINTS,
-    type BeforeWriteInput, type Draft, type ResourceEvent, type CachePurgeEvent, type PluginJobEvent, type WriteActor, type FormRef, type SubmissionContext, type FormErrors, type FormConfirmation, type FormEmail, type FormSubmittedEvent,
+export { beforeWrite, afterCommit, cachePurge, pluginJob, paymentEvent, formValidate, formBeforeSubmit, formPrefill, formConfirmation, formNotification, formSubmitted, termBeforeSave, commentBeforeSave, menuBeforeSave, entryActions, entryColumns, bulkActions, ENTRY_ACTION_IDS, EXTENSION_POINTS,
+    type BeforeWriteInput, type Draft, type ResourceEvent, type CachePurgeEvent, type PluginJobEvent, type PaymentEvent, type WriteActor, type FormRef, type SubmissionContext, type FormErrors, type FormConfirmation, type FormEmail, type FormSubmittedEvent,
     type TermDraft, type TermWriteInput, type CommentDraft, type CommentWriteInput, type MenuWriteInput, type EntryAction, type BuiltinEntryAction, type EntryColumn, type EntryListInput } from './hooks';
 export type { RecordShape, RecordPage, RevisionShape, FieldFilter, ListFilter, ListOptions } from './records';
 export { contentModule, categories, tags, patterns } from './modules/content';
@@ -86,3 +86,4 @@ export { NOTE_STATUSES, NOTE_LIMITS, formatNoteTarget, parseNoteTarget, noteBloc
 export { CACHE_HOLDS, cacheControl, cacheHoldSeconds, cacheTags, cacheTagHeader, type CacheHold } from './cache';
 export { parseCron, nextCronTime, cronProblem, type CronFields } from './cron';
 export { highlightCode, highlightLanguage, HIGHLIGHT_LANGUAGES, type TokenClass } from './highlight';
+export { AUTOMATION_EVENTS, AUTOMATION_EVENT_LABELS, automationProblems, automationMatches, renderAutomationTemplate, type Automation, type AutomationAction, type AutomationConditions, type AutomationEvent, type AutomationInput } from './automations';

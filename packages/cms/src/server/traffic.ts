@@ -5,6 +5,7 @@
  */
 import { ClientError, type RomeDB } from '@cossackframework/romedb';
 import { crawlerOf } from '../seo';
+import { sha256Hex } from './tokens';
 
 export type VisitKind = 'entry' | 'archive' | 'home' | 'term' | 'author' | 'search' | 'markdown' | 'llms' | 'sitemap' | 'robots' | 'feed' | 'not-found' | 'other';
 
@@ -15,6 +16,15 @@ export interface CrawlerVisits {
     readonly byKind: { readonly [kind: string]: number };
     /** The last day with a visit, as `YYYY-MM-DD`. */
     readonly lastDay: string;
+}
+
+/** Page views over a period: by day, the top pages, the referring sites, and the totals. */
+export interface ViewsReport {
+    readonly days: readonly { readonly day: string; readonly views: number; readonly visitors: number }[];
+    readonly pages: readonly { readonly path: string; readonly views: number }[];
+    readonly referrers: readonly { readonly host: string; readonly count: number }[];
+    readonly views: number;
+    readonly visitors: number;
 }
 
 export interface NotFoundRow {
@@ -54,6 +64,47 @@ export class CmsTraffic {
             params: { $day: day, $agent: crawler.agent, $group: crawler.group, $kind: kind },
         }], WRITE).catch(swallowMissing);
         return true;
+    }
+
+    /**
+     * Count a page view from the beacon: the path's views for the day, the day's visitor once (the
+     * hash of address, browser and day, so no row names a person or lasts past the day), and the
+     * referring host when it is another site. Paths that are not pages are ignored.
+     */
+    async recordView(input: { path: string; referrer: string; visitor: string; origin: string }): Promise<boolean> {
+        const path = input.path.replace(/[?#].*$/, '');
+        if (!PATH.test(path) || NOISE.test(path) || /^\/(?:dashboard|auth|api)(?:\/|$)/.test(path)) return false;
+        const day = new Date(this.#now()).toISOString().slice(0, 10);
+        const hash = (await sha256Hex(`${day}|${input.visitor}`)).slice(0, 32);
+        let host = '';
+        try { const url = new URL(input.referrer); if (url.origin !== input.origin && /^https?:$/.test(url.protocol)) host = url.hostname.replace(/^www\./, '').slice(0, 120); } catch { /* no referrer */ }
+        await this.#db.write([
+            { rql: 'INSERT INTO cms_views (day, path, views) VALUES ($day, $path, 1) ON CONFLICT (day, path) DO UPDATE SET views = views + 1', params: { $day: day, $path: path } },
+            { rql: 'INSERT INTO cms_visitors (day, hash) VALUES ($day, $hash) ON CONFLICT (day, hash) DO NOTHING', params: { $day: day, $hash: hash } },
+            ...(host ? [{ rql: 'INSERT INTO cms_referrers (day, host, count) VALUES ($day, $host, 1) ON CONFLICT (day, host) DO UPDATE SET count = count + 1', params: { $day: day, $host: host } }] : []),
+        ], WRITE).catch(swallowMissing);
+        return true;
+    }
+
+    /** Views and visitors by day over the last `days`, the top pages and referrers of that period. */
+    async views(days = 30): Promise<ViewsReport> {
+        const since = new Date(this.#now() - (days - 1) * 86_400_000).toISOString().slice(0, 10);
+        const result = await this.#db.read([
+            { rql: 'SELECT day, sum(views) FROM cms_views WHERE day >= $since GROUP BY day ORDER BY day LIMIT 400', params: { $since: since } },
+            { rql: 'SELECT day, count(*) FROM cms_visitors WHERE day >= $since GROUP BY day ORDER BY day LIMIT 400', params: { $since: since } },
+            { rql: 'SELECT path, sum(views) AS total FROM cms_views WHERE day >= $since GROUP BY path ORDER BY total DESC LIMIT 20', params: { $since: since } },
+            { rql: 'SELECT host, sum(count) AS total FROM cms_referrers WHERE day >= $since GROUP BY host ORDER BY total DESC LIMIT 20', params: { $since: since } },
+        ]).catch(error => { swallowMissing(error); return null; });
+        if (!result) return { days: [], pages: [], referrers: [], views: 0, visitors: 0 };
+        const visitors = new Map(result.results[1]!.rows.map(row => [row[0] as string, Number(row[1] as bigint)]));
+        const byDay = result.results[0]!.rows.map(row => ({ day: row[0] as string, views: Number(row[1] as bigint), visitors: visitors.get(row[0] as string) ?? 0 }));
+        return {
+            days: byDay,
+            pages: result.results[2]!.rows.map(row => ({ path: row[0] as string, views: Number(row[1] as bigint) })),
+            referrers: result.results[3]!.rows.map(row => ({ host: row[0] as string, count: Number(row[1] as bigint) })),
+            views: byDay.reduce((sum, day) => sum + day.views, 0),
+            visitors: [...visitors.values()].reduce((sum, count) => sum + count, 0),
+        };
     }
 
     /** Visits per crawler over the last `days`, most active first. */
@@ -99,6 +150,13 @@ export class CmsTraffic {
 
     /** Drop visit rows older than 90 days and rarely hit missing paths older than 30 days. */
     async prune(): Promise<void> {
+        const views = new Date(this.#now() - 365 * 86_400_000).toISOString().slice(0, 10);
+        const visitors = new Date(this.#now() - 8 * 86_400_000).toISOString().slice(0, 10);
+        await this.#db.write([
+            { rql: 'DELETE FROM cms_views WHERE day < $day', params: { $day: views } },
+            { rql: 'DELETE FROM cms_referrers WHERE day < $day', params: { $day: views } },
+            { rql: 'DELETE FROM cms_visitors WHERE day < $day', params: { $day: visitors } },
+        ], WRITE).catch(swallowMissing);
         const now = this.#now();
         const day = new Date(now - 90 * 86_400_000).toISOString().slice(0, 10);
         const old = await this.#db.read([

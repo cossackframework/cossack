@@ -203,6 +203,31 @@ export const cmsTools: readonly Tool[] = [
         async run(input, { c }) { return manage.settingsUpdate(c, string(input.group), fields(input.values)); },
     },
     {
+        name: 'list_webhooks', description: 'The site\'s webhooks: what URL each posts to, for which events and collections, and whether it is active.',
+        inputSchema: schema({}), annotations: READ,
+        async run(_input, { c }) { return manage.webhooksList(c); },
+    },
+    {
+        name: 'create_webhook', description: 'Add a webhook. events: entry.created, entry.updated, entry.published, entry.unpublished, entry.deleted, form.submitted, note.created, note.resolved. The answer carries the signing secret once.',
+        inputSchema: schema({ name: str('A name for the webhook.'), url: str('The https URL to post to.'), events: strings('The events it receives.'), collections: strings('Only these collections; none means every collection.'), active: bool('Whether it posts; default true.') }, ['name', 'url', 'events']), annotations: CHANGE,
+        async run(input, { c }) { return manage.webhookCreate(c, input); },
+    },
+    {
+        name: 'delete_webhook', description: 'Remove a webhook and its delivery log.',
+        inputSchema: schema({ id: str('The webhook ID.') }, ['id']), annotations: DESTROY,
+        async run(input, { c }) { await manage.webhookDelete(c, string(input.id)); return { deleted: true }; },
+    },
+    {
+        name: 'list_comments', description: 'Comments by status, pending (the moderation queue) by default, newest first.',
+        inputSchema: schema({ status: str('pending, approved, spam or trash.'), q: str('Search words.'), page, perPage: int('Comments per page, 1 to 200.', { minimum: 1, maximum: 200 }) }), annotations: READ,
+        async run(input, { c }) { return manage.commentsQueue(c, query(input, ['status', 'q', 'page', 'perPage'])); },
+    },
+    {
+        name: 'moderate_comment', description: 'Approve a comment, hold it as pending, mark it as spam or trash it.',
+        inputSchema: schema({ id: str('The comment ID.'), status: str('approved, pending, spam or trash.') }, ['id', 'status']), annotations: CHANGE,
+        async run(input, { c }) { return manage.commentModerate(c, string(input.id), { status: input.status }); },
+    },
+    {
         name: 'purge_cache', description: 'Purge the caches in front of the site (Cloudflare, or a plugin\'s CDN): every page, or the cache tags and URLs given. Changes made through the CMS purge their own pages; use this after a change made outside it.',
         inputSchema: schema({ tags: strings('Cache tags to purge, such as cms:main:c:posts; none means every page.'), urls: strings('Page URLs to purge.') }), annotations: CHANGE,
         async run(input, { c }) { return manage.cachePurge(c, { tags: input.tags, urls: input.urls }); },

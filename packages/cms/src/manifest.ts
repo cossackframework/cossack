@@ -33,7 +33,7 @@ export interface PluginCommand {
 /** What `permissions.users` lets a plugin do with the site's members. */
 export type UserAction = 'read' | 'write';
 /** Capabilities a manifest switches on in `permissions`; each is the grant `capability:<name>`. */
-export const CAPABILITIES = Object.freeze(['files', 'mail', 'jobs', 'cache'] as const);
+export const CAPABILITIES = Object.freeze(['files', 'mail', 'jobs', 'cache', 'ai', 'payments'] as const);
 export type Capability = (typeof CAPABILITIES)[number];
 /** A job the clock queues: `cron` is five UTC fields as Cloudflare reads them (1 = Sunday); `name` is the job handler. */
 export interface PluginSchedule {
@@ -129,6 +129,10 @@ export interface CmsPluginManifest {
         readonly jobs?: boolean;
         /** A namespace in the site's cache, through `context.cache`. */
         readonly cache?: boolean;
+        /** The application's AI provider, through `context.ai`. */
+        readonly ai?: boolean;
+        /** Checkouts with the application's payments provider, through `context.payments`; `cms.payment.event` brings the results. */
+        readonly payments?: boolean;
         /** The site's members through `context.users`: `read` them; `write` creates members and keeps the plugin's meta on them. */
         readonly users?: readonly UserAction[];
         /** Names of the application's bindings the plugin reads through `context.secrets`, such as `STRIPE_SECRET_KEY`. */

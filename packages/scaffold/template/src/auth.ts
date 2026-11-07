@@ -531,3 +531,6 @@ export async function deleteOwnAccount(c: Context, userId: string, password: str
   await User.delete({ id: userId });
   return { headers };
 }
+
+/** Sign-in links need the CMS's mail and cache; here the request is accepted and nothing is sent. */
+export async function requestMagicLink(_email: string, _origin: string): Promise<void> {}

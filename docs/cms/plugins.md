@@ -122,7 +122,7 @@ The `PluginContext` holds:
 | `settings.get(name)`, `settings.all()` | Read the active plugin's declared settings, with defaults, as detached values. |
 | `cms.resource(id)` | A repository (`get`, `list`, `search`, `create`, `update`, `delete`) for the plugin's own resources and the ones it is granted. |
 | `fetch` | `fetch` limited to the hosts in `permissions.network`. |
-| `files`, `mail`, `jobs`, `users`, `cache`, `secrets` | The [capabilities](#capabilities) the manifest's `permissions` ask for. |
+| `files`, `mail`, `jobs`, `users`, `cache`, `secrets`, `ai`, `payments` | The [capabilities](#capabilities) the manifest's `permissions` ask for. |
 
 A theme's `server.ts` exports `loaders` instead of, or beside, `register`; see
 [Themes](/docs/cms/themes.md#loaders).
@@ -165,6 +165,8 @@ export function register(context: PluginContext) {
 | `users.create({ email, name, password?, roles? })`, `setMeta(id, value)` | A new member with assignable roles only: roles whose every permission is the plugin's own (`<plugin>:<name>` or `<plugin>/<resource>:<action>`), or none, such as `subscriber`; a JSON value kept with the member under the plugin's key, null removes it. |
 | `cache.get`, `set(key, value, ttlMs?)`, `delete`, `remember(key, ttlMs, compute)` | The site's cache under `plugin:<name>:`; keys up to 150 characters. |
 | `secrets.get(name)` | A binding named in `permissions.secrets`, or undefined when the application has none; the name is a string literal the policy lint checks. |
+| `ai.complete({ system?, prompt, maxTokens? })` | The application's model answers; `CMS_UNAVAILABLE` when it has none (`ANTHROPIC_API_KEY`, or a Workers AI binding `AI`). Prompts are capped at 60,000 characters and answers at 4,000 tokens. |
+| `payments.checkout({ amount, currency, description } or { priceId }, successUrl, cancelUrl, customerEmail?, reference?, metadata? })`, `payments.provider` | A checkout with the application's provider (`STRIPE_SECRET_KEY`); the buyer goes to `url`. The result comes back as a `cms.payment.event` action with the `reference`, delivered from the outbox. |
 
 Realtime needs no capability: a plugin's own realtime component
 (`@Component({ transport: 'durable-object' })` in its `components/` or `pages/`) runs as the

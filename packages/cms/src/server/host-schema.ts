@@ -23,7 +23,7 @@ export const HOST_TABLES = [
     'cms_preview_tokens', 'cms_autosaves', 'cms_file_variants', 'cms_redirects', 'cms_api_tokens', 'cms_webhooks', 'cms_webhook_deliveries',
     'cms_comments', 'cms_user_security', 'cms_passkeys', 'cms_auth_challenges', 'cms_areas', 'cms_form_sends', 'cms_form_mail', 'cms_form_results', 'cms_crawler_visits', 'cms_not_found', 'cms_cache',
     'cms_accounts', 'cms_sites', 'cms_site_domains', 'cms_handoffs', 'cms_session_sites', 'cms_memberships', 'cms_network', 'cossack_jobs', 'cossack_notifications',
-    'cms_drafts', 'cms_notes', 'cms_note_mentions', 'cms_schedules',
+    'cms_drafts', 'cms_notes', 'cms_note_mentions', 'cms_schedules', 'cms_views', 'cms_visitors', 'cms_referrers', 'cms_automations',
 ] as const;
 
 export const HOST_STEPS: readonly HostStep[] = [{
@@ -323,5 +323,21 @@ export const HOST_STEPS: readonly HostStep[] = [{
         // One row per declared schedule of a hosted plugin: the next occurrence, claimed by a conditional update when due.
         { rql: 'CREATE TABLE cms_schedules (id TEXT PRIMARY KEY, plugin TEXT NOT NULL, name TEXT NOT NULL, cron TEXT NOT NULL, next_at INTEGER NOT NULL, last_at INTEGER, updated_at INTEGER NOT NULL)' },
         { rql: 'CREATE INDEX cms_schedules_due ON cms_schedules (next_at)' },
+    ],
+}, {
+    version: 23,
+    description: 'Page views: views per day and path, visitors per day, referrers per day',
+    statements: [
+        { rql: 'CREATE TABLE cms_views (day TEXT NOT NULL, path TEXT NOT NULL, views INTEGER NOT NULL, PRIMARY KEY (day, path))' },
+        // A visitor is a hash of address, browser and day; the row proves they were counted once.
+        { rql: 'CREATE TABLE cms_visitors (day TEXT NOT NULL, hash TEXT NOT NULL, PRIMARY KEY (day, hash))' },
+        { rql: 'CREATE TABLE cms_referrers (day TEXT NOT NULL, host TEXT NOT NULL, count INTEGER NOT NULL, PRIMARY KEY (day, host))' },
+    ],
+}, {
+    version: 24,
+    description: 'Automations: when an event happens, send an email or post to a URL',
+    statements: [
+        { rql: `CREATE TABLE cms_automations (id TEXT PRIMARY KEY, name TEXT NOT NULL, event TEXT NOT NULL, conditions TEXT NOT NULL, action TEXT NOT NULL, active INTEGER NOT NULL,
+            runs INTEGER NOT NULL, last_run_at INTEGER, last_error TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)` },
     ],
 }];

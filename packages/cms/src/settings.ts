@@ -239,6 +239,19 @@ export const cache: SettingsGroup = {
 };
 
 /** The site's languages: others under `/<code>/`, the default one too when `urls` is `all`. */
+/** Page views: the site's own cookieless beacon, and Cloudflare Web Analytics beside it. */
+export const analytics: SettingsGroup = {
+    id: 'analytics',
+    json: true,
+    icon: 'chart',
+    label: 'Analytics',
+    description: 'Page views and visitors counted by the site itself, without cookies, shown under Tools → Analytics.',
+    fields: {
+        enabled: field.boolean({ default: true, label: 'Count page views', description: 'A small script sends each page view to the site. A day\'s visitor is a hash of the address, the browser and the day; nothing names the person. Browsers asking not to be tracked are left out.' }),
+        cloudflareToken: field.string({ max: 80, default: '', pattern: '[A-Za-z0-9]*', label: 'Cloudflare Web Analytics token', description: 'Adds Cloudflare\'s beacon script with this token; leave empty for none.' }),
+    },
+};
+
 export const languages: SettingsGroup = {
     id: 'languages',
     icon: 'global',
@@ -291,6 +304,8 @@ export interface SiteSettings {
     'reading.feedContent': 'excerpt' | 'full';
     'reading.discourageSearchEngines': boolean;
     'reading.notFoundPage': string;
+    'analytics.enabled': boolean;
+    'analytics.cloudflareToken': string;
     'discussion.enabled': boolean;
     'discussion.defaultOpen': boolean;
     'discussion.requireNameEmail': boolean;

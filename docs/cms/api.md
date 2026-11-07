@@ -22,6 +22,9 @@ one under Profile → Application passwords, or let the CLI make it:
 cossack cms login --url https://example.com
 ```
 
+The MCP server adds `list_webhooks`, `create_webhook`, `delete_webhook`, `list_comments` and
+`moderate_comment` for the same operations.
+
 `import wxr <file>` reads a WordPress export: categories and tags become terms (parents first),
 posts and pages become entries (their HTML as a Custom HTML block, plain text as paragraphs;
 `--posts` and `--pages` name other collections), and a permalink that differs from the new address
@@ -161,6 +164,10 @@ application password. A CMS refusal answers `{ error, code, fields? }` with its 
 | Method and path | Does |
 | --- | --- |
 | `GET /me` | The user, roles, permissions, site, password scope and network state. |
+| `GET /webhooks`, `POST /webhooks` `{ name, url, events, collections?, active? }`, `DELETE /webhooks/<id>` | Webhooks, for the webhooks permission; the answer to `POST` carries the signing secret once. |
+| `GET /comments/queue?status=&q=&page=&perPage=`, `PATCH /comments/<id>` `{ status }`, `DELETE /comments/<id>` | The moderation queue (pending by default), approving, holding, marking as spam, trashing or deleting a comment, for the comments permission. |
+| `POST /beacon` `{ p, r }` | The site's page-view beacon (Settings → Analytics); always 204. |
+| `POST /payments/webhook` | The payments provider's webhook, signed by the provider; a known event becomes `cms.payment.event`. |
 | `GET /redirects?q=&page=&perPage=`, `POST /redirects` `{ source, target, status?, note? }` | Redirects, for the redirects permission; `source` is a path, `target` a path or URL, `status` 301, 302, 307, 308 or 410. |
 | `GET /me/tokens`, `POST /me/tokens` `{ name, scope, expiresInDays? }`, `DELETE /me/tokens/<id>` | Application passwords; `POST` needs a session (a password cannot make one) and answers the token once; `expiresInDays` (1 to 3650) ends it on its own. |
 | `GET /collections`, `GET /schema/<collection>`, `GET /taxonomies` | Content types with fields; a JSON Schema; taxonomies. |

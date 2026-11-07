@@ -14,7 +14,7 @@ import { AUTHOR_FIELDS, collectionSeoProblems } from '../seo';
 import { CmsFieldGroups } from './field-groups';
 import { CmsError } from '../errors';
 import type { CmsModule } from '../module';
-import { appearance, cache as cacheGroup, general, media, type SettingsGroup } from '../settings';
+import { analytics as analyticsGroup, appearance, cache as cacheGroup, general, media, type SettingsGroup } from '../settings';
 import { pluginSettingsGroupId } from '../plugin-settings';
 import { assembleSiteTheme, entryTemplateChoices, layerPresets, siteThemeProblems, type ArchiveView, type SiteTheme, type EntryView, type SiteView, type ThemeData, type ThemeManifest, type ThemePresets , themeArea } from '../theme';
 import type { MenuItem, ResolvedMenuItem } from '../menus';
@@ -52,11 +52,15 @@ import { CmsIndexNow } from './indexnow';
 import { CmsPurge, type CachePurger } from './purge';
 import { CmsTraffic } from './traffic';
 import type { WebhookEvent } from '../webhooks';
-import { afterCommit, commentBeforeSave, formSubmitted, menuBeforeSave, pluginJob, termBeforeSave, type FormSubmittedEvent, type ResourceEvent, type WriteActor } from '../hooks';
+import { afterCommit, commentBeforeSave, formSubmitted, menuBeforeSave, pluginJob, termBeforeSave, type FormSubmittedEvent, type ResourceEvent, type WriteActor, paymentEvent } from '../hooks';
 import { CmsForms, type CmsMail } from './forms';
-import { pluginCapabilities, type PluginCache, type PluginFiles, type PluginJobs, type PluginMail, type PluginSecrets, type PluginUsers } from './capabilities';
+import { pluginCapabilities, type PluginAi, type PluginCache, type PluginFiles, type PluginJobs, type PluginMail, type PluginPayments, type PluginSecrets, type PluginUsers } from './capabilities';
 import { CmsSchedules, type DueSchedule } from './schedules';
 import { CmsAudit } from './audit';
+import type { AiProvider } from './ai';
+import type { PaymentsProvider } from './payments';
+import type { PaymentEvent } from '../hooks';
+import { CmsAutomations } from './automations';
 import { CmsComments } from './comments';
 import { CmsSecurity } from './security';
 import type { ImageTransformer } from './images';
@@ -135,6 +139,10 @@ export interface CmsOptions {
     readonly mailFrom?: string;
     /** Bindings plugins name in `permissions.secrets`, read when a granted plugin asks (`context.secrets.get`). Default: none. */
     readonly secrets?: (name: string) => string | undefined;
+    /** The AI provider for the editor's assistant and plugins with `ai`; none without it. */
+    readonly ai?: AiProvider;
+    /** The payments provider for plugins with `payments`; its webhooks come through `receivePayment()`. */
+    readonly payments?: PaymentsProvider;
 }
 
 /** The site's languages: the others under `/<code>/`, and the default one too when `prefixDefault`. */
@@ -223,6 +231,10 @@ export interface PluginContext {
     readonly cache: PluginCache;
     /** The bindings named in `permissions.secrets`. */
     readonly secrets: PluginSecrets;
+    /** The application's AI provider; needs `permissions.ai`. */
+    readonly ai: PluginAi;
+    /** Checkouts with the application's payments provider; needs `permissions.payments`. */
+    readonly payments: PluginPayments;
 }
 
 export interface PluginCms {
@@ -362,6 +374,12 @@ export class CmsHost {
     readonly schedules: CmsSchedules;
     /** The audit trail of writes, for Tools → Activity. */
     readonly audit: CmsAudit;
+    /** The application's AI provider, or null. */
+    readonly ai: AiProvider | null;
+    /** The application's payments provider, or null. */
+    readonly payments: PaymentsProvider | null;
+    /** Automations: emails and webhooks run from the site's events (Tools → Automations). */
+    readonly automations: CmsAutomations;
     readonly #secrets: (name: string) => string | undefined;
     /** Second factors and passkeys of network accounts, on the network database. */
     readonly security: CmsSecurity;
@@ -474,6 +492,10 @@ export class CmsHost {
         this.hooks.addAction(afterCommit, event => this.#pingIndexNow(event), { plugin: 'cms' });
         // A changed page is purged from the caches in front of the site; the purge itself runs from the outbox too. Its own owner, so a retry of another handler does not queue it twice.
         this.hooks.addAction(afterCommit, event => this.#queuePurge(event), { plugin: 'cms-cache' });
+        // Automations run from the same events, under their own name, so their retries are theirs alone.
+        this.hooks.addAction(afterCommit, event => this.#automate(event), { plugin: 'cms-automations' });
+        this.hooks.addAction(formSubmitted, async event => { await this.automations.run('form.submitted', { form: event.form.slug, formTitle: event.form.title, submission: event.submission.id, values: event.submission.values, origin: event.origin ?? '' }); }, { plugin: 'cms-automations' });
+        this.hooks.addAction(paymentEvent, async event => { if (event.type === 'checkout.completed' || event.type === 'payment.succeeded') await this.automations.run('payment.completed', { ...event, customerEmail: event.customerEmail ?? '', reference: event.reference ?? '', amount: event.amount ?? '', currency: event.currency ?? '' }); }, { plugin: 'cms-automations' });
         // A saved form brings its submissions table up to date; a deleted one takes its table along.
         this.hooks.addAction(afterCommit, async event => {
             if (event.resource !== 'cms/forms') return;
@@ -506,7 +528,7 @@ export class CmsHost {
         for (const resource of this.#static.values()) for (const [name, declaration] of Object.entries(resource.fields)) {
             if (declaration.taxonomy && !this.#builtinTaxonomies.has(declaration.taxonomy)) throw new Error(`${resource.id}.${name} uses taxonomy ${declaration.taxonomy}, which no module declares.`);
         }
-        const groups = [general, media, appearance, cacheGroup, ...modules.flatMap(module => module.settings ?? []), ...(options.settings ?? [])];
+        const groups = [general, media, appearance, cacheGroup, analyticsGroup, ...modules.flatMap(module => module.settings ?? []), ...(options.settings ?? [])];
         for (const group of groups) {
             if (group.plugin !== undefined || group.id.startsWith('plugin:')) throw new Error('Plugin settings namespaces and ownership are assigned by the CMS host.');
         }
@@ -533,6 +555,9 @@ export class CmsHost {
         this.cache = new CmsCache(this.db, { now: this.#now });
         this.#secrets = options.secrets ?? (() => undefined);
         this.audit = new CmsAudit(this.db, { now: this.#now });
+        this.ai = options.ai ?? null;
+        this.payments = options.payments ?? null;
+        this.automations = new CmsAutomations(this.db, { mail: this.mail, mailFrom: this.mailFrom, fetch: this.#fetch, now: this.#now });
         this.schedules = new CmsSchedules(this.db, { outbox: this.outbox, now: this.#now, schedules: () => this.#dueSchedules(), queued: () => this.outboxWritten() });
         this.purge = new CmsPurge({ outbox: this.outbox, hooks: this.hooks, cache: this.cache, site: this.site, purgers: options.purgers ?? [], now: this.#now, queued: () => this.outboxWritten() });
         for (const module of modules) module.register?.({ hooks: this.hooks, settings: this.settings, taxonomies: this.taxonomies, collection: name => this.#collections.get(name), blocks: () => this.#blocks, now: this.#now });
@@ -2186,7 +2211,7 @@ export class CmsHost {
             if (!this.#granted(name, await this.#state()).has(grant)) throw new CmsError('CMS_FORBIDDEN', `Plugin ${name} is not granted ${what}.`);
         };
         const capabilities = pluginCapabilities({ name, manifest: plugin.manifest, allowed, files: this.files, mail: this.mail, mailFrom: this.mailFrom, users: this.users, cache: this.cache,
-            outbox: this.outbox, secrets: this.#secrets, now: this.#now, queued: () => this.outboxWritten() });
+            outbox: this.outbox, secrets: this.#secrets, ai: this.ai, payments: this.payments, now: this.#now, queued: () => this.outboxWritten() });
         // The plugin's jobs, queued or scheduled, run its handlers; other plugins' events pass by.
         this.hooks.addAction(pluginJob, async (event, ctx) => { if (event.plugin === name) await capabilities.runJob(event, { signal: ctx.signal }); }, { plugin: name });
         const context: PluginContext = {
@@ -2233,6 +2258,8 @@ export class CmsHost {
             users: capabilities.users,
             cache: capabilities.cache,
             secrets: capabilities.secrets,
+            ai: capabilities.ai,
+            payments: capabilities.payments,
             settings: {
                 get: async field => {
                     if (!(await active())) throw new CmsError('CMS_UNAVAILABLE', `Plugin ${name} is not active.`);
@@ -2279,6 +2306,34 @@ export class CmsHost {
         if (missing.length && network === 'network') return { ...base, active: false, reason: `Needs the network's grant for ${missing.join(', ')}.`, missing };
         if (missing.length) return { ...base, active: false, reason: granted.size ? `Needs a new grant for ${missing.join(', ')}.` : 'Not enabled.', missing };
         return { ...base, active: true, missing: [] };
+    }
+
+    /**
+     * A payments webhook: the provider verifies the request and names the event; a known event is
+     * queued as `cms.payment.event` for plugins and delivered from the outbox, so a handler that
+     * fails is retried. Returns the event, or null for one the CMS does not relay. Throws
+     * `CMS_FORBIDDEN` for a bad signature and `CMS_UNAVAILABLE` without a provider.
+     */
+    async receivePayment(request: Request): Promise<PaymentEvent | null> {
+        if (!this.payments) throw new CmsError('CMS_UNAVAILABLE', 'The application has no payments provider.');
+        const event = await this.payments.webhook(request);
+        if (!event) return null;
+        if (await this.outbox.enqueue('payment.event', event, { ignoreDuplicate: true })) this.outboxWritten();
+        return event;
+    }
+
+    /** An entry's event as the automations see it: created, updated or deleted, and published when it just went live. */
+    async #automate(event: ResourceEvent): Promise<void> {
+        if (!event.resource.startsWith('cms/')) return;
+        const name = event.resource.slice('cms/'.length);
+        const collection = this.#collections.get(name);
+        if (!collection) return;
+        const record = event.record;
+        const path = record ? (await this.entryUrls(collection, [record]).catch(() => new Map<string, string | null>())).get(record.id) ?? '' : '';
+        const origin = this.indexnow.origin() ?? '';
+        const vars = { collection: name, collectionLabel: collection.label, id: event.id, title: record ? recordTitle(record, 'title') : '', status: record?.status ?? '', path, url: path ? `${origin}${path}` : '', actor: event.actor.id, record };
+        await this.automations.run(event.topic === 'resource.deleted' ? 'entry.deleted' : event.topic === 'resource.created' ? 'entry.created' : 'entry.updated', vars);
+        if (collection.publishable !== false && event.topic !== 'resource.deleted' && record?.status === 'published' && event.previousStatus !== 'published') await this.automations.run('entry.published', vars);
     }
 
     /** The schedules of active plugins that hold the jobs grant, for the clock. */

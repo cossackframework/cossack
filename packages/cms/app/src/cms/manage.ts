@@ -8,7 +8,7 @@
 import type { Context } from 'hono';
 import {
     BLOCK_ID, checkNoteRange, CmsError, CONTENT_STATUSES, findBlock, hasPermission, indexedRowField, isNetworkAdmin, MAIN_SITE, MENU_LIMITS, menuItemId, noteThreads, PERMISSIONS, recordSchema, recordTitle, richTextBlocks,
-    type Block, type FieldFilter, type MenuItem, type MenuShape, type Note, type NoteThread, type Principal, type RecordShape, type RichTextDoc, redirectProblems, type Redirect, type RedirectStatus } from '@cossackframework/cms';
+    type Block, type FieldFilter, type MenuItem, type MenuShape, type Note, type NoteThread, type Principal, type RecordShape, type RichTextDoc, redirectProblems, type Redirect, type RedirectStatus, type FieldDeclaration, WEBHOOK_EVENTS, COMMENT_STATUSES, type Webhook, type CommentShape, type CommentStatus } from '@cossackframework/cms';
 import { networkSite, type ApiToken, type CmsHost, type NetworkSite, type SiteRecord } from '@cossackframework/cms/server';
 import { createApiToken, listApiTokens, manageableHere, NETWORK_ACCOUNT_LOCKED, revokeApiToken, type PublicUser } from '../auth';
 import { canAssignRoles, canManageUser } from '../services/rbac';
@@ -243,13 +243,33 @@ export async function entriesList(c: Context, name: string, query: Query): Promi
         const records = await repository.search(q, { limit: perPage, where }, { principal });
         return { items: await apiEntries(cms, collection, records, html, principal), page: 1, pages: 1, total: records.length };
     }
-    const order = !publishable ? { field: 'title', direction: 'asc' as const }
-        : where.status === 'published' ? { field: 'publishedAt', direction: 'desc' as const } : { field: 'updatedAt', direction: 'desc' as const };
+    // `sort=publishedAt:asc`, `sort=title`: a scalar field of the collection; the default follows what is listed.
+    const order = sortOf(query.sort, fields) ?? (!publishable ? { field: 'title', direction: 'asc' as const }
+        : where.status === 'published' ? { field: 'publishedAt', direction: 'desc' as const } : { field: 'updatedAt', direction: 'desc' as const });
     const [list, total] = await Promise.all([
         repository.list({ where, order, limit: perPage, offset: Math.min((page - 1) * perPage, 10_000) }, { principal }),
         repository.count({ where }, { principal }),
     ]);
-    return { items: await apiEntries(cms, collection, list.records, html, principal), page, pages: Math.max(1, Math.ceil(total / perPage)), total };
+    const items = await apiEntries(cms, collection, list.records, html, principal);
+    return { items: pickFields(items, query.fields), page, pages: Math.max(1, Math.ceil(total / perPage)), total };
+}
+
+/** `sort=field` or `sort=field:desc` on a scalar field the collection declares; null for none, an error for a field it cannot sort on. */
+function sortOf(sort: string | undefined, fields: { readonly [name: string]: FieldDeclaration }): { field: string; direction: 'asc' | 'desc' } | null {
+    if (!sort) return null;
+    const [field, direction = 'asc'] = sort.split(':', 2);
+    const declaration = field ? fields[field] : undefined;
+    if (!declaration || declaration.multiple || !['string', 'integer', 'number', 'datetime', 'boolean', 'enum'].includes(declaration.kind) || declaration.kind === 'string' && declaration.media) throw new CmsError('CMS_VALIDATION', `Cannot sort on ${String(field)}.`);
+    if (direction !== 'asc' && direction !== 'desc') throw new CmsError('CMS_VALIDATION', 'sort takes field or field:asc or field:desc.');
+    return { field: field!, direction };
+}
+
+/** `fields=title,slug,excerpt`: only those fields of each item, always with id and url. */
+function pickFields<T extends { id: string; url: string | null }>(items: T[], fields: string | undefined): T[] {
+    if (!fields) return items;
+    const wanted = new Set(fields.split(',').map(name => name.trim()).filter(Boolean));
+    if (!wanted.size || wanted.size > 50) return items;
+    return items.map(item => Object.fromEntries(Object.entries(item).filter(([key]) => key === 'id' || key === 'url' || wanted.has(key))) as T);
 }
 
 export interface EntryView { item: ApiEntry; patterns: Record<string, { title: string; content: readonly unknown[] }>; translations: Record<string, { id: string; url: string | null }> }
@@ -645,6 +665,59 @@ export async function cachePurge(c: Context, input: Body): Promise<{ event: Cach
 
 export function taxonomiesList(c: Context): { items: { name: string; label: string; singular: string; hierarchical: boolean; path: string | null; builtin: boolean }[] } {
     return { items: c.get('cms').taxonomies.declarations.map(taxonomy => ({ name: taxonomy.name, label: taxonomy.label, singular: taxonomy.singular, hierarchical: taxonomy.hierarchical, path: taxonomy.path ?? null, builtin: taxonomy.builtin === true })) };
+}
+
+/** The site's webhooks: `GET /api/cms/webhooks`. Needs the webhooks permission. */
+export async function webhooksList(c: Context): Promise<{ items: Webhook[] }> {
+    if (!hasPermission(signedIn(c), PERMISSIONS.manageWebhooks)) throw new CmsError('CMS_FORBIDDEN', 'Not allowed to manage webhooks.');
+    return { items: await c.get('cms').webhooks.list() };
+}
+
+/** A new webhook: `POST /api/cms/webhooks` with `{ name, url, events, collections?, active? }`; the answer carries the signing `secret` once. */
+export async function webhookCreate(c: Context, input: Body): Promise<{ item: Webhook }> {
+    const principal = signedIn(c);
+    if (!hasPermission(principal, PERMISSIONS.manageWebhooks)) throw new CmsError('CMS_FORBIDDEN', 'Not allowed to manage webhooks.');
+    const events = Array.isArray(input.events) ? input.events.filter((event): event is string => typeof event === 'string') : [];
+    if (!events.length || events.some(event => !(WEBHOOK_EVENTS as readonly string[]).includes(event))) throw new CmsError('CMS_VALIDATION', `events lists one or more of ${WEBHOOK_EVENTS.join(', ')}.`);
+    const collections = Array.isArray(input.collections) ? input.collections.filter((name): name is string => typeof name === 'string') : [];
+    const item = await c.get('cms').webhooks.save({ name: text(input.name, 'name', { max: 120 }), url: text(input.url, 'url', { max: 2000 }), events, collections, active: input.active !== false }, { by: principal.kind === 'user' ? principal.id : null });
+    return { item };
+}
+
+export async function webhookDelete(c: Context, id: string): Promise<void> {
+    if (!hasPermission(signedIn(c), PERMISSIONS.manageWebhooks)) throw new CmsError('CMS_FORBIDDEN', 'Not allowed to manage webhooks.');
+    const cms = c.get('cms');
+    if (!(await cms.webhooks.get(id))) throw new CmsError('CMS_NOT_FOUND', 'Webhook not found.');
+    await cms.webhooks.delete(id);
+}
+
+/** The moderation queue: `GET /api/cms/comments/queue?status=pending&page=1&perPage=50`. Needs the comments permission. */
+export async function commentsQueue(c: Context, query: Query): Promise<{ items: CommentShape[]; total: number; page: number; pages: number }> {
+    if (!hasPermission(signedIn(c), PERMISSIONS.moderateComments)) throw new CmsError('CMS_FORBIDDEN', 'Not allowed to moderate comments.');
+    const status = query.status ?? 'pending';
+    if (!(COMMENT_STATUSES as readonly string[]).includes(status)) throw new CmsError('CMS_VALIDATION', `status is one of ${COMMENT_STATUSES.join(', ')}.`);
+    const perPage = integer(query.perPage, 50, 1, 200);
+    const page = integer(query.page, 1, 1, 10_000);
+    const result = await c.get('cms').comments.list({ status: status as CommentStatus, limit: perPage, offset: (page - 1) * perPage, ...(typeof query.q === 'string' && query.q ? { search: query.q } : {}) });
+    return { ...result, page, pages: Math.max(1, Math.ceil(result.total / perPage)) };
+}
+
+/** Approve, hold, mark as spam or trash a comment: `PATCH /api/cms/comments/<id>` with `{ status }`. */
+export async function commentModerate(c: Context, id: string, input: Body): Promise<{ item: CommentShape }> {
+    if (!hasPermission(signedIn(c), PERMISSIONS.moderateComments)) throw new CmsError('CMS_FORBIDDEN', 'Not allowed to moderate comments.');
+    const cms = c.get('cms');
+    const current = await cms.comments.get(id);
+    if (!current) throw new CmsError('CMS_NOT_FOUND', 'Comment not found.');
+    if (!(COMMENT_STATUSES as readonly string[]).includes(input.status as string)) throw new CmsError('CMS_VALIDATION', `status is one of ${COMMENT_STATUSES.join(', ')}.`);
+    await cms.comments.setStatus([id], input.status as CommentStatus);
+    return { item: (await cms.comments.get(id))! };
+}
+
+export async function commentDelete(c: Context, id: string): Promise<void> {
+    if (!hasPermission(signedIn(c), PERMISSIONS.moderateComments)) throw new CmsError('CMS_FORBIDDEN', 'Not allowed to moderate comments.');
+    const cms = c.get('cms');
+    if (!(await cms.comments.get(id))) throw new CmsError('CMS_NOT_FOUND', 'Comment not found.');
+    await cms.comments.delete([id]);
 }
 
 /** Redirects, newest first: `GET /api/cms/redirects?q=old&page=1&perPage=50`. */

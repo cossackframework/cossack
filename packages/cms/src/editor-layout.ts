@@ -33,6 +33,7 @@ export const EDITOR_OWN_BOXES: readonly { readonly id: string; readonly label: s
     { id: 'template', label: 'Template', placement: 'sidebar', note: 'Shown when the active theme offers templates for entries.' },
     { id: 'discussion', label: 'Discussion', placement: 'sidebar', note: 'Shown when comments are on.' },
     { id: 'revisions', label: 'Revisions', placement: 'sidebar', note: 'Shown once the entry has revisions.' },
+    { id: 'assistant', label: 'Assistant', placement: 'sidebar', note: 'Shown when the application has an AI provider.' },
 ]);
 
 export interface EditorBox {
