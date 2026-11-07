@@ -23,7 +23,7 @@ export const HOST_TABLES = [
     'cms_preview_tokens', 'cms_autosaves', 'cms_file_variants', 'cms_redirects', 'cms_api_tokens', 'cms_webhooks', 'cms_webhook_deliveries',
     'cms_comments', 'cms_user_security', 'cms_passkeys', 'cms_auth_challenges', 'cms_areas', 'cms_form_sends', 'cms_form_mail', 'cms_form_results', 'cms_crawler_visits', 'cms_not_found', 'cms_cache',
     'cms_accounts', 'cms_sites', 'cms_site_domains', 'cms_handoffs', 'cms_session_sites', 'cms_memberships', 'cms_network', 'cossack_jobs', 'cossack_notifications',
-    'cms_drafts', 'cms_notes', 'cms_note_mentions',
+    'cms_drafts', 'cms_notes', 'cms_note_mentions', 'cms_schedules',
 ] as const;
 
 export const HOST_STEPS: readonly HostStep[] = [{
@@ -315,5 +315,13 @@ export const HOST_STEPS: readonly HostStep[] = [{
         { rql: 'CREATE TABLE cms_note_mentions (note_id TEXT NOT NULL, thread_id TEXT NOT NULL, user_id TEXT NOT NULL, created_at INTEGER NOT NULL, seen_at INTEGER, PRIMARY KEY (note_id, user_id))' },
         { rql: 'CREATE INDEX cms_note_mentions_user ON cms_note_mentions (user_id, seen_at)' },
         { rql: 'CREATE INDEX cms_note_mentions_thread ON cms_note_mentions (thread_id)' },
+    ],
+}, {
+    version: 22,
+    description: 'Plugin schedules: the next time of each declared schedule',
+    statements: [
+        // One row per declared schedule of a hosted plugin: the next occurrence, claimed by a conditional update when due.
+        { rql: 'CREATE TABLE cms_schedules (id TEXT PRIMARY KEY, plugin TEXT NOT NULL, name TEXT NOT NULL, cron TEXT NOT NULL, next_at INTEGER NOT NULL, last_at INTEGER, updated_at INTEGER NOT NULL)' },
+        { rql: 'CREATE INDEX cms_schedules_due ON cms_schedules (next_at)' },
     ],
 }];

@@ -17,7 +17,7 @@ import path from 'node:path';
 
 /** CMS extension points by their exported binding name in `@cossackframework/cms`. */
 export const EXTENSION_POINT_EXPORTS = Object.freeze({
-  beforeWrite: 'cms.resource.before-write', afterCommit: 'cms.resource.after-commit',
+  beforeWrite: 'cms.resource.before-write', afterCommit: 'cms.resource.after-commit', cachePurge: 'cms.cache.purge',
   formValidate: 'cms.form.validate', formBeforeSubmit: 'cms.form.before-submit', formPrefill: 'cms.form.prefill',
   formConfirmation: 'cms.form.confirmation', formNotification: 'cms.form.notification', formSubmitted: 'cms.form.submitted',
   termBeforeSave: 'cms.term.before-save', commentBeforeSave: 'cms.comment.before-save', menuBeforeSave: 'cms.menu.before-save',
@@ -44,6 +44,11 @@ export function lintPlugin({ manifest, files, parse }) {
   const defined = new Set(manifest?.permissions?.define ?? []);
   const hosts = manifest?.permissions?.network ?? [];
   const hooks = new Set((manifest?.hooks ?? []).map(hook => hook.point));
+  // Capabilities the manifest asks for; a context member used without its permission is a lint error, as the host would refuse it.
+  const permissions = manifest?.permissions ?? {};
+  const capabilities = { files: permissions.files === true, mail: permissions.mail === true, jobs: permissions.jobs === true, cache: permissions.cache === true,
+    users: Array.isArray(permissions.users) && permissions.users.length > 0, secrets: Array.isArray(permissions.secrets) && permissions.secrets.length > 0 };
+  const secrets = new Set(Array.isArray(permissions.secrets) ? permissions.secrets : []);
   const ownPermission = permission => [...own].some(id => ['*', 'read', 'create', 'update', 'delete'].some(action => permission === `${id}:${action}`));
   const knownPermission = permission => defined.has(permission) || HOST_PERMISSIONS.includes(permission) || ownPermission(permission);
 
@@ -110,6 +115,9 @@ export function lintPlugin({ manifest, files, parse }) {
             fail('COSSACK_PLUGIN_RAW_QUERY', `Plugins do not call the database binding (db.${propertyName(parent)}). Use context.cms repositories.`, node);
           }
           if (property && SECRET.test(property) && isEnvObject(node.object)) fail('COSSACK_PLUGIN_SECRET', `Plugins do not read host secrets (${property}).`, node);
+          if (node.object?.type === 'Identifier' && node.object.name === 'context' && property && Object.hasOwn(capabilities, property) && !capabilities[property]) {
+            fail('COSSACK_PLUGIN_PERMISSION', `context.${property} needs permissions.${property} in the manifest.`, node);
+          }
           if (property === 'env' && node.object?.type === 'Identifier' && node.object.name === 'process') fail('COSSACK_PLUGIN_SECRET', 'Plugins do not read process.env. Declare configuration in src/plugins/<name>/config.', node);
           break;
         }
@@ -150,6 +158,11 @@ export function lintPlugin({ manifest, files, parse }) {
             const id = stringValue(first);
             if (id === undefined) fail('COSSACK_PLUGIN_PERMISSION', 'Name resources with string literals so they can be checked against the manifest.', node);
             else if (/^[a-z][a-z0-9-]*\/[a-z][a-z0-9_]*$/.test(id) && !own.has(id) && !granted.has(id)) fail('COSSACK_PLUGIN_PERMISSION', `${id} is not one of the plugin's resources or in permissions.resources.`, node);
+          }
+          if (method === 'get' && isCapabilityOf(node.callee.object, 'secrets')) {
+            const secret = stringValue(first);
+            if (secret === undefined) fail('COSSACK_PLUGIN_SECRET', 'Name secrets with string literals so they can be checked against permissions.secrets.', node);
+            else if (!secrets.has(secret)) fail('COSSACK_PLUGIN_SECRET', `${secret} is not in permissions.secrets.`, node);
           }
           if ((method === 'addFilter' || method === 'addAction') && first?.type === 'Identifier' && points.has(first.name)) {
             const point = points.get(first.name);
@@ -244,6 +257,11 @@ function walk(node, visit, parent = null) {
     if (key === 'parent' || key === 'loc' || key === 'range') continue;
     if (value && typeof value === 'object') walk(value, visit, typeof node.type === 'string' ? node : parent);
   }
+}
+
+/** `context.<name>`: a capability of the plugin context. */
+function isCapabilityOf(node, name) {
+  return !!node && (node.type === 'MemberExpression' || node.type === 'StaticMemberExpression') && propertyName(node) === name && node.object?.type === 'Identifier' && node.object.name === 'context';
 }
 
 function propertyName(node) {

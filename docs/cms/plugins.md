@@ -122,9 +122,54 @@ The `PluginContext` holds:
 | `settings.get(name)`, `settings.all()` | Read the active plugin's declared settings, with defaults, as detached values. |
 | `cms.resource(id)` | A repository (`get`, `list`, `search`, `create`, `update`, `delete`) for the plugin's own resources and the ones it is granted. |
 | `fetch` | `fetch` limited to the hosts in `permissions.network`. |
+| `files`, `mail`, `jobs`, `users`, `cache`, `secrets` | The [capabilities](#capabilities) the manifest's `permissions` ask for. |
 
 A theme's `server.ts` exports `loaders` instead of, or beside, `register`; see
 [Themes](/docs/cms/themes.md#loaders).
+
+#### Capabilities
+
+Beyond its data, a plugin asks for what it needs in the manifest's `permissions` (see
+[the manifest](/docs/cms/manifest.md#permissions)); each becomes a grant the administrator
+gives with the rest. Every context carries every member, and each call checks the grant:
+`CMS_FORBIDDEN` when it is not held, `CMS_UNAVAILABLE` while the plugin is inactive or the site
+lacks the service (no file storage, no mail sender).
+
+```ts
+export function register(context: PluginContext) {
+  // Jobs: name handlers here; queue them from hooks, commands or pages.
+  context.jobs.handle('notify', async (payload: { ticket: string }, { principal }) => {
+    const ticket = await context.cms.resource('support-desk/tickets').get(payload.ticket, { principal });
+    const owner = ticket && await context.users.get(String(ticket.owner));
+    if (owner) await context.mail.send({ to: owner.email, subject: 'Your ticket was updated', text: `See ${ticket.subject}.` });
+  });
+  // The manifest's schedule "digest" runs this handler at its cron times.
+  context.jobs.handle('digest', async (_payload, { scheduledAt }) => {
+    const open = await context.cache.remember('open-count', 60_000, () => countOpen(context));
+    const report = await context.files.upload({ name: `digest-${scheduledAt}.txt`, contentType: 'text/plain', body: `${open} open tickets` });
+    console.log(context.files.url(report));
+  });
+  context.hooks.addAction(afterCommit, async event => {
+    if (event.resource === 'support-desk/tickets') await context.jobs.enqueue('notify', { ticket: event.recordId }, { key: `${event.recordId}:${event.revision}`, delayMs: 60_000 });
+  });
+}
+```
+
+| Member | What it does |
+| --- | --- |
+| `files.upload({ name, contentType, body, size?, title?, alt? })`, `get`, `open`, `list`, `update`, `delete`, `url(file)` | Files in the media library owned by `plugin:<name>`, shown there like any upload. `body` is a stream (with `size`), bytes or a string. The plugin changes and deletes its own files and reads any. |
+| `mail.send({ to, subject, text, replyTo? })` | One plain-text email from the site's sender (`MAIL_FROM`); one recipient, a subject up to 200 characters, text up to 100 KB. |
+| `jobs.handle(name, handler)` | Names a handler at `register()`. The handler gets the payload and `{ principal, scheduledAt, signal }`; `principal` is the system principal `plugin:<name>`, so repositories accept it. A thrown error retries the job with the outbox's backoff, up to ten attempts. |
+| `jobs.enqueue(name, payload?, { at?, delayMs?, key? })` | Queues a job for now, for a time or after a delay (within a year), as an outbox row; JSON payloads up to 64 KB. A `key` queues once: the same key again returns false. |
+| `users.get(id)`, `findByEmail`, `list({ search, role, limit, offset })` | Members as the plugin sees them: id, email, name, slug, avatar, status, roles, and the plugin's own `meta`. |
+| `users.create({ email, name, password?, roles? })`, `setMeta(id, value)` | A new member with assignable roles only: roles whose every permission is the plugin's own (`<plugin>:<name>` or `<plugin>/<resource>:<action>`), or none, such as `subscriber`; a JSON value kept with the member under the plugin's key, null removes it. |
+| `cache.get`, `set(key, value, ttlMs?)`, `delete`, `remember(key, ttlMs, compute)` | The site's cache under `plugin:<name>:`; keys up to 150 characters. |
+| `secrets.get(name)` | A binding named in `permissions.secrets`, or undefined when the application has none; the name is a string literal the policy lint checks. |
+
+Realtime needs no capability: a plugin's own realtime component
+(`@Component({ transport: 'durable-object' })` in its `components/` or `pages/`) runs as the
+CMS's own co-editing room does, because plugin files are application source. Cron triggers of
+the application stay the application's; a plugin's clock is `schedules`.
 
 Declare a `settings` object in the manifest to receive a generated form under Settings →
 Plugins. Its fields use the scalar kinds `string`, `text`, `boolean`, `integer`, `number`,

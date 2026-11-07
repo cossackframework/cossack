@@ -29,7 +29,9 @@ export function deskManifest(version, overrides = {}) {
       blocks: [{ _id: 'priority', type: 'field/choice', data: { label: 'Priority', name: 'supportPriority', choices: ['low', 'high'] } }] }],
     editor: [{ collection: 'posts', tabs: [{ _id: 'support', type: 'editor/tab', data: { label: 'Support' }, children: [{ _id: 'box', type: 'editor/box', data: { box: 'group:support-desk-support' } }] }] }],
     hooks: [{ point: 'cms.resource.before-write', version: 1 }, { point: 'cms.cache.purge', version: 1 }],
-    permissions: { resources: { 'cms/posts': ['read'] }, define: ['support-desk:triage'] },
+    // Capabilities beyond its data: jobs (and the schedule below), the cache and mail; granted with the rest.
+    permissions: { resources: { 'cms/posts': ['read'] }, define: ['support-desk:triage'], jobs: true, cache: true, mail: true },
+    schedules: [{ name: 'heartbeat', cron: '* * * * *', description: 'Logs that the desk is alive.' }],
     ui: { slots: { 'dashboard.nav': [{ label: 'Support', href: '/dashboard/support' }] } },
     commands: [{ name: 'close-all', description: 'Close every open ticket.', permission: 'support-desk:triage', options: { reason: { type: 'string', description: 'Why the tickets close.' } } }],
   };
@@ -43,10 +45,17 @@ export function register(context: PluginContext) {
     input.resource === 'support-desk/tickets' && typeof draft.subject === 'string' ? { ...draft, subject: draft.subject.trim() } : draft);
   // A purger for another CDN: the same events the application's purgers get.
   context.hooks.addAction(cachePurge, event => { console.log(\`[support-desk] purge \${event.reason} \${event.tags.join(' ')}\`); });
+  // Jobs: queued by the command below, and by the clock through the manifest's schedule.
+  context.jobs.handle('notify', async payload => {
+    await context.cache.set('last-close', payload, 60_000);
+    console.log(\`[support-desk] job notify \${JSON.stringify(payload)}\`);
+  });
+  context.jobs.handle('heartbeat', (_payload, { scheduledAt }) => { console.log(\`[support-desk] heartbeat \${scheduledAt}\`); });
   context.commands.add('close-all', async (input, { principal }) => {
     const tickets = context.cms.resource('support-desk/tickets');
     const page = await tickets.list({ where: { status: 'open' }, limit: 100 }, { principal });
     for (const ticket of page.records) await tickets.update(ticket.id, { status: 'closed' }, { principal, expectedRevision: ticket.rev });
+    await context.jobs.enqueue('notify', { closed: page.records.length }, { key: \`close-all-\${page.records.length}\` });
     return { closed: page.records.length, reason: input.reason ?? null };
   });
 ${extra}}

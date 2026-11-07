@@ -108,6 +108,8 @@ describe.skipIf(!liveRomeDBTests())('CMS plugin trust', () => {
         .catch(error => { throw new Error(`${error.message}\n${error.stdout}\n${error.stderr}`); })).stdout);
       expect(ran).toMatchObject({ ok: true, command: 'support-desk:close-all', data: { result: { closed: 2, reason: 'resolved' } } });
       contains(await web.page('/dashboard/support'), 'Open tickets: 0');
+      // The command queued a job through the plugin's jobs capability; the outbox ran it after the request.
+      await expect.poll(() => server.diagnostics().includes('[support-desk] job notify {"closed":2}'), { timeout: 20_000 }).toBe(true);
       const denied = await cossack(root, ['support-desk:close-all', '--url', server.origin, '--email', 'ada@example.com'], { env: { ...env, CMS_PASSWORD: 'wrong password' } }).catch(error => error);
       expect(denied.stderr).toContain('Sign-in failed');
     } finally { await server.close(); }

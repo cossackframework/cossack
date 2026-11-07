@@ -66,6 +66,8 @@ export function networkFor(env: CmsBindings): CmsNetwork {
                 // Ending a network session ends the child sessions sites made from it.
                 sessionsEnded: ended => network.endSessions(ended),
                 purgers: purgers(env, site),
+                // Bindings a plugin's manifest names in permissions.secrets; strings only, read when asked.
+                secrets: name => { const value = (env as Record<string, unknown>)[name]; return typeof value === 'string' ? value : undefined; },
             }),
         });
         current = { key, network };

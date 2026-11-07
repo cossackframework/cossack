@@ -295,7 +295,10 @@ payload changes; `timeoutMs` (1 to 600,000, default 5,000) is the per-handler de
 "permissions": {
   "resources": { "cms/posts": ["read"], "cms/pages": ["read", "update"] },
   "network": ["api.example.com", "*.stripe.com"],
-  "define": ["support-desk:triage"]
+  "define": ["support-desk:triage"],
+  "files": true, "mail": true, "jobs": true, "cache": true,
+  "users": ["read", "write"],
+  "secrets": ["STRIPE_SECRET_KEY"]
 }
 ```
 
@@ -304,6 +307,14 @@ payload changes; `timeoutMs` (1 to 600,000, default 5,000) is the per-handler de
 | `resources` | Actions on resources the plugin does not own. Each becomes a grant `resource:<id>:<action>`; `context.cms.resource(id)` refuses an action that is not granted. |
 | `network` | Host names (`example.com`, `*.example.com`, `localhost`) that `context.fetch` may contact. Each becomes a grant `network:<host>`. |
 | `define` | Permissions of the plugin's own, named `<plugin>:<name>`, for roles to hold. Access rules, commands and slot links may name them. |
+| `files` | Library files the plugin owns, through `context.files`. Grant `capability:files`. |
+| `mail` | Email from the site's sender, through `context.mail`. Grant `capability:mail`. |
+| `jobs` | Work queued for later and the manifest's `schedules`, through `context.jobs`. Grant `capability:jobs`. |
+| `cache` | A namespace in the site's cache, through `context.cache`. Grant `capability:cache`. |
+| `users` | The site's members through `context.users`: `read` lists them with their emails and roles; `write` creates members and keeps the plugin's own meta on them. Grants `users:read`, `users:write`. |
+| `secrets` | Names of the application's bindings the plugin reads through `context.secrets`, such as `STRIPE_SECRET_KEY`: upper-case names outside the host's own (`ROMEDB_*`, `APP_*`, `CMS_*`, `CLOUDFLARE_*`, `SMTP_*`, `S3_*`, `TURNSTILE_*`, `OAUTH_*`, `COSSACK_*`, `MAIL_FROM`, `EMAIL`, `AI`). Grant `secret:<NAME>` each. |
+
+See [Capabilities](/docs/cms/plugins.md#capabilities) for what each member of the context does.
 
 ## `ui`
 
@@ -331,6 +342,21 @@ Run as `cossack <plugin>:<name> --<option> <value>`. `name` is lowercase, unique
 plugin and at most 41 characters; options are `string`, `number` or `boolean`, with
 `required` and `description`. The handler comes from `context.commands.add()`.
 
+## `schedules`
+
+```json
+"schedules": [{ "name": "digest", "cron": "0 8 * * *", "description": "Email the day's open tickets." }]
+```
+
+Jobs the clock queues while the plugin is active; the plugin names the handler with
+`context.jobs.handle("digest", …)`. Needs `permissions.jobs`. `cron` is five UTC fields as
+Cloudflare's cron triggers read them: minute, hour, day of month, month, day of week with
+1 = Sunday to 7 = Saturday (names such as `MON` and `JAN` work); lists, ranges and steps are
+allowed, and a day matches either day field when both restrict. At most 20 schedules, named with
+lowercase letters, digits and hyphens. Maintenance runs at most once a minute, so an occurrence
+is queued within a minute of its time; occurrences missed while nothing ran collapse into one,
+or into none after an hour.
+
 ## `theme`
 
 Makes the plugin a theme. See [Themes](/docs/cms/themes.md#the-manifest) for the fields:
@@ -348,5 +374,6 @@ See [Languages](/docs/cms/languages.md#language-packs).
 
 `requestedGrants(manifest)` from `@cossackframework/cms` lists them: `plugin:enabled` for
 every plugin, then `resource:<id>:<action>` for `permissions.resources`, `network:<host>`
-for `permissions.network` and `hook:<point>` for `hooks`. A manifest with only a `theme`
-field asks for nothing and is managed under Appearance.
+for `permissions.network`, `hook:<point>` for `hooks`, `capability:<name>` for `files`, `mail`,
+`jobs` and `cache`, `users:<action>` for `users` and `secret:<NAME>` for `secrets`. A manifest
+with only a `theme` field asks for nothing and is managed under Appearance.

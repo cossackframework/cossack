@@ -104,5 +104,6 @@ per plugin.
 | Arrange an entry editor | Declare `editor` in the manifest: tabs and sidebar boxes added to a collection's editor while the plugin is active. |
 | Add dashboard pages | Put pages under `pages/dashboard/...` in the plugin; link them from the `dashboard.nav` slot. |
 | Add an operator command | Declare `commands` in the manifest; handle them with `context.commands.add()`. |
+| Store files, send email, run work later or on a schedule, read members, cache, hold a key | Ask in the manifest's `permissions` (`files`, `mail`, `jobs`, `users`, `cache`, `secrets`) and `schedules`; use `context.files`, `mail`, `jobs`, `users`, `cache`, `secrets`. See [Capabilities](/docs/cms/plugins.md#capabilities). |
 | Ship a site design | A plugin with a `theme` field and `templates/`; see [Themes](/docs/cms/themes.md). |
 | Let other plugins extend yours | Declare `provides` in the manifest and invoke the points from your code. |

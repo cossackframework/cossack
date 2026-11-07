@@ -14,7 +14,7 @@ import { HOST_TABLES } from './host-schema';
  */
 export const EXPORT_SKIPPED_TABLES: ReadonlySet<string> = new Set([
     'cms_auth_sessions', 'cms_sessions', 'cms_session_values', 'cms_session_sites', 'cms_oauth_states', 'cms_password_resets', 'cms_auth_challenges',
-    'cms_user_security', 'cms_passkeys', 'cms_api_tokens', 'cms_preview_tokens', 'cms_handoffs', 'cms_cache',
+    'cms_user_security', 'cms_passkeys', 'cms_api_tokens', 'cms_preview_tokens', 'cms_handoffs', 'cms_cache', 'cms_schedules',
     'cms_accounts', 'cms_sites', 'cms_site_domains', 'cms_memberships', 'cms_network',
 ]);
 
@@ -29,7 +29,7 @@ export const EXPORT_REDACTED_COLUMNS: Readonly<Record<string, readonly string[]>
  */
 export const FILE_EXPORT_EMPTIED_TABLES: readonly string[] = [
     'cms_auth_sessions', 'cms_sessions', 'cms_session_values', 'cms_session_sites', 'cms_oauth_states', 'cms_password_resets', 'cms_auth_challenges',
-    'cms_preview_tokens', 'cms_handoffs', 'cms_cache', 'cms_outbox', 'cms_webhooks', 'cms_webhook_deliveries', 'cossack_jobs',
+    'cms_preview_tokens', 'cms_handoffs', 'cms_cache', 'cms_outbox', 'cms_webhooks', 'cms_webhook_deliveries', 'cossack_jobs', 'cms_schedules',
 ];
 
 /** RomeDB's longest wait for a copy to start arriving. On Cloud a job builds it first. */

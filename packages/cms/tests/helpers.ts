@@ -2,6 +2,7 @@ import { afterAll, beforeAll } from 'vitest';
 import { createRomeDB, MemoryPendingWriteStore, type RomeDB, type RomeDBOptions } from '@cossackframework/romedb';
 import { liveRomeDBTests, startRomeDBService, type RomeDBTestService } from '@cossackframework/romedb/testing';
 import { cmsReconcilers } from '../src/server/index';
+import type { StorageProvider } from '@cossackframework/core/storage';
 
 export const live = liveRomeDBTests();
 
@@ -29,4 +30,24 @@ export function romedbService() {
             return { db, stop: async () => { await db.close(); await other.stop(); } };
         },
     };
+}
+
+/** An in-memory storage provider for file tests. */
+export function memoryStorage(): StorageProvider & { objects: Map<string, Uint8Array> } {
+    const objects = new Map<string, Uint8Array>();
+    return {
+        name: 'memory', objects,
+        async put(key, body, options) { objects.set(key, new Uint8Array(await new Response(body).arrayBuffer())); return { key, size: options.size }; },
+        async get(key) { const bytes = objects.get(key); return bytes ? { key, size: bytes.length, body: new Response(bytes.slice().buffer as ArrayBuffer).body! } : null; },
+        async head(key) { const bytes = objects.get(key); return bytes ? { key, size: bytes.length } : null; },
+        async delete(key) { objects.delete(key); },
+    };
+}
+
+/** A PNG header of the given size: enough for the signature check and the dimensions. */
+export function pngBytes(width: number, height: number): Uint8Array<ArrayBuffer> {
+    const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, 0, 0, 0, 0, 0, 0, 0, 0, 8, 2, 0, 0, 0]);
+    new DataView(bytes.buffer).setUint32(16, width);
+    new DataView(bytes.buffer).setUint32(20, height);
+    return bytes;
 }

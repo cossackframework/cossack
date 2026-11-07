@@ -72,6 +72,25 @@ export interface CachePurgeEvent {
  */
 export const cachePurge = defineAction<CachePurgeEvent>('cms.cache.purge', { version: 1, timeoutMs: 15_000 });
 
+/**
+ * A plugin's job: queued by `context.jobs.enqueue`, or by the clock through the manifest's
+ * `schedules`, and delivered from the outbox to the plugin's handler of `name`.
+ */
+export interface PluginJobEvent {
+    readonly eventId: string;
+    readonly topic: 'plugin.job';
+    readonly at: number;
+    readonly plugin: string;
+    readonly name: string;
+    readonly payload: unknown;
+    /** The occurrence a schedule queued, or null for a job the plugin queued. */
+    readonly scheduledAt: number | null;
+    /** The key `enqueue` was given, or null. */
+    readonly key: string | null;
+}
+/** Internal: the host routes each event to its plugin's handler. Not an extension point plugins declare. */
+export const pluginJob = defineAction<PluginJobEvent>('cms.plugin.job', { version: 1, timeoutMs: 60_000 });
+
 // --- Forms ----------------------------------------------------------------------------
 
 /** The form a hook runs for. */

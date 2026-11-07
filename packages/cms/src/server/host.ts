@@ -52,8 +52,10 @@ import { CmsIndexNow } from './indexnow';
 import { CmsPurge, type CachePurger } from './purge';
 import { CmsTraffic } from './traffic';
 import type { WebhookEvent } from '../webhooks';
-import { afterCommit, commentBeforeSave, formSubmitted, menuBeforeSave, termBeforeSave, type FormSubmittedEvent, type ResourceEvent, type WriteActor } from '../hooks';
+import { afterCommit, commentBeforeSave, formSubmitted, menuBeforeSave, pluginJob, termBeforeSave, type FormSubmittedEvent, type ResourceEvent, type WriteActor } from '../hooks';
 import { CmsForms, type CmsMail } from './forms';
+import { pluginCapabilities, type PluginCache, type PluginFiles, type PluginJobs, type PluginMail, type PluginSecrets, type PluginUsers } from './capabilities';
+import { CmsSchedules, type DueSchedule } from './schedules';
 import { CmsComments } from './comments';
 import { CmsSecurity } from './security';
 import type { ImageTransformer } from './images';
@@ -130,6 +132,8 @@ export interface CmsOptions {
     readonly mail?: CmsMail;
     /** The sender of form notification emails. Default `no-reply@example.com`. */
     readonly mailFrom?: string;
+    /** Bindings plugins name in `permissions.secrets`, read when a granted plugin asks (`context.secrets.get`). Default: none. */
+    readonly secrets?: (name: string) => string | undefined;
 }
 
 /** The site's languages: the others under `/<code>/`, and the default one too when `prefixDefault`. */
@@ -206,6 +210,18 @@ export interface PluginContext {
     };
     /** `fetch` limited to the manifest's granted network hosts. */
     readonly fetch: typeof globalThis.fetch;
+    /** Library files the plugin owns; needs `permissions.files`. */
+    readonly files: PluginFiles;
+    /** Email from the site's sender; needs `permissions.mail`. */
+    readonly mail: PluginMail;
+    /** Handlers for jobs queued later and for the manifest's `schedules`; needs `permissions.jobs`. */
+    readonly jobs: PluginJobs;
+    /** The site's members; needs `permissions.users`. */
+    readonly users: PluginUsers;
+    /** A namespace in the site's cache; needs `permissions.cache`. */
+    readonly cache: PluginCache;
+    /** The bindings named in `permissions.secrets`. */
+    readonly secrets: PluginSecrets;
 }
 
 export interface PluginCms {
@@ -341,6 +357,9 @@ export class CmsHost {
     readonly mail: CmsMail | null;
     /** The sender of the emails the CMS sends. */
     readonly mailFrom: string;
+    /** Plugin schedules: `tick()` from maintenance queues the due occurrences as jobs. */
+    readonly schedules: CmsSchedules;
+    readonly #secrets: (name: string) => string | undefined;
     /** Second factors and passkeys of network accounts, on the network database. */
     readonly security: CmsSecurity;
     /** Second factors and passkeys of site accounts; null on the main site. */
@@ -509,6 +528,8 @@ export class CmsHost {
         this.notes = new CmsNotes(this.db, { now: this.#now });
         this.files = options.storage ? new FileService(this.db, options.storage, { now: this.#now, ...(options.images ? { images: options.images } : {}), imageSettings: () => this.#imageSettings(), changed: () => this.#purgeSite('media'), ...options.files }) : null;
         this.cache = new CmsCache(this.db, { now: this.#now });
+        this.#secrets = options.secrets ?? (() => undefined);
+        this.schedules = new CmsSchedules(this.db, { outbox: this.outbox, now: this.#now, schedules: () => this.#dueSchedules(), queued: () => this.outboxWritten() });
         this.purge = new CmsPurge({ outbox: this.outbox, hooks: this.hooks, cache: this.cache, site: this.site, purgers: options.purgers ?? [], now: this.#now, queued: () => this.outboxWritten() });
         for (const module of modules) module.register?.({ hooks: this.hooks, settings: this.settings, taxonomies: this.taxonomies, collection: name => this.#collections.get(name), blocks: () => this.#blocks, now: this.#now });
         for (const plugin of this.#plugins.values()) this.#registerPlugin(plugin);
@@ -2156,6 +2177,14 @@ export class CmsHost {
             if (!provided.has(point.name) || !known) throw new Error(`Plugin ${name} invokes ${point.name}, which its manifest does not declare in provides.`);
             if (known.point.kind !== point.kind || known.point.version !== point.version) throw new Error(`Plugin ${name} invokes ${point.name} as a version ${point.version} ${point.kind}, not the version ${known.point.version} ${known.point.kind} it provides.`);
         };
+        const allowed = async (grant: string, what: string): Promise<void> => {
+            if (!(await active())) throw new CmsError('CMS_UNAVAILABLE', `Plugin ${name} is not active.`);
+            if (!this.#granted(name, await this.#state()).has(grant)) throw new CmsError('CMS_FORBIDDEN', `Plugin ${name} is not granted ${what}.`);
+        };
+        const capabilities = pluginCapabilities({ name, manifest: plugin.manifest, allowed, files: this.files, mail: this.mail, mailFrom: this.mailFrom, users: this.users, cache: this.cache,
+            outbox: this.outbox, secrets: this.#secrets, now: this.#now, queued: () => this.outboxWritten() });
+        // The plugin's jobs, queued or scheduled, run its handlers; other plugins' events pass by.
+        this.hooks.addAction(pluginJob, async (event, ctx) => { if (event.plugin === name) await capabilities.runJob(event, { signal: ctx.signal }); }, { plugin: name });
         const context: PluginContext = {
             name,
             version: plugin.manifest.version,
@@ -2194,6 +2223,12 @@ export class CmsHost {
                 },
             },
             cms: this.pluginCms(name),
+            files: capabilities.files,
+            mail: capabilities.mail,
+            jobs: capabilities.jobs,
+            users: capabilities.users,
+            cache: capabilities.cache,
+            secrets: capabilities.secrets,
             settings: {
                 get: async field => {
                     if (!(await active())) throw new CmsError('CMS_UNAVAILABLE', `Plugin ${name} is not active.`);
@@ -2240,6 +2275,19 @@ export class CmsHost {
         if (missing.length && network === 'network') return { ...base, active: false, reason: `Needs the network's grant for ${missing.join(', ')}.`, missing };
         if (missing.length) return { ...base, active: false, reason: granted.size ? `Needs a new grant for ${missing.join(', ')}.` : 'Not enabled.', missing };
         return { ...base, active: true, missing: [] };
+    }
+
+    /** The schedules of active plugins that hold the jobs grant, for the clock. */
+    async #dueSchedules(): Promise<DueSchedule[]> {
+        const state = await this.#state();
+        const due: DueSchedule[] = [];
+        for (const plugin of this.#plugins.values()) {
+            if (plugin.problems.length || !plugin.manifest.schedules?.length) continue;
+            if (!this.#granted(plugin.manifest.name, state).has('capability:jobs')) continue;
+            if (!(await this.#pluginStatus(plugin, state)).active) continue;
+            for (const schedule of plugin.manifest.schedules) due.push({ plugin: plugin.manifest.name, name: schedule.name, cron: schedule.cron });
+        }
+        return due;
     }
 
     /** What a plugin is granted: the network's approval when the network activates it, else the site's own grant. */

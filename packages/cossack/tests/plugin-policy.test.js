@@ -91,6 +91,26 @@ describe('plugin policy', () => {
     expect(codes(source, { collections: [{ name: 'projects', label: 'Projects', singular: 'Project', fields: {} }] })).toEqual([]);
   });
 
+  it('checks capabilities and their secrets against the manifest', () => {
+    const source = `
+      export function register(context: any) {
+        context.jobs.handle('digest', async () => {
+          const key = await context.secrets.get('STRIPE_SECRET_KEY');
+          await context.mail.send({ to: 'a@b.co', subject: 'Hi', text: key ?? '' });
+          await context.files.upload({ name: 'x.txt', contentType: 'text/plain', body: 'x' });
+          await context.cache.set('k', 1);
+          await context.users.list();
+        });
+      }
+    `;
+    // Nothing declared: every member (jobs, secrets, mail, files, cache, users) and the secret itself are reported.
+    expect(codes(source).sort()).toEqual([...Array(6).fill('COSSACK_PLUGIN_PERMISSION'), 'COSSACK_PLUGIN_SECRET']);
+    const granted = { permissions: { ...manifest.permissions, jobs: true, mail: true, files: true, cache: true, users: ['read'], secrets: ['STRIPE_SECRET_KEY'] } };
+    expect(codes(source, granted)).toEqual([]);
+    expect(codes(`const v = context.secrets.get(name);`, granted)).toEqual(['COSSACK_PLUGIN_SECRET']);
+    expect(codes(`const v = context.secrets.get('OTHER_KEY');`, granted)).toEqual(['COSSACK_PLUGIN_SECRET']);
+  });
+
   it('rejects host secrets', () => {
     expect(codes(`
       export function read(c: any, env: any) {

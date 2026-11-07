@@ -7,10 +7,10 @@
 import type { RomeDB } from '@cossackframework/romedb';
 import type { HookRegistry } from '@cossackframework/core/hooks';
 import type { ActionPoint } from '@cossackframework/core/hooks';
-import { afterCommit, cachePurge, formSubmitted } from '../hooks';
+import { afterCommit, cachePurge, formSubmitted, pluginJob } from '../hooks';
 
 /** The action an outbox row runs, by its topic; resource events run `cms.resource.after-commit`. */
-const POINTS: { readonly [topic: string]: ActionPoint<unknown> } = { 'form.submitted': formSubmitted as ActionPoint<unknown>, 'cache.purge': cachePurge as ActionPoint<unknown> };
+const POINTS: { readonly [topic: string]: ActionPoint<unknown> } = { 'form.submitted': formSubmitted as ActionPoint<unknown>, 'cache.purge': cachePurge as ActionPoint<unknown>, 'plugin.job': pluginJob as ActionPoint<unknown> };
 
 export interface DispatchReport {
     readonly delivered: readonly string[];
@@ -111,13 +111,19 @@ export class Outbox {
         return { delivered, retrying, deadLettered };
     }
 
-    /** Queue an event of a topic outside a resource write, such as a cache purge; `eventId` is the row. */
-    async enqueue(topic: string, event: { readonly eventId: string; readonly at: number }, options: { signal?: AbortSignal } = {}): Promise<void> {
-        await this.#db.write([{
-            rql: 'INSERT INTO cms_outbox (id, topic, payload, created_at, available_at, attempts, lease_until) VALUES ($id, $topic, $payload, $at, $at, 0, 0)',
-            params: { $id: event.eventId, $topic: topic, $payload: JSON.stringify(event), $at: event.at },
+    /**
+     * Queue an event of a topic outside a resource write, such as a cache purge or a plugin's job;
+     * `eventId` is the row, delivered from `availableAt` (default: now). With `ignoreDuplicate`, a
+     * row that exists is left alone and false comes back.
+     */
+    async enqueue(topic: string, event: { readonly eventId: string; readonly at: number }, options: { signal?: AbortSignal; availableAt?: number; ignoreDuplicate?: boolean } = {}): Promise<boolean> {
+        const result = await this.#db.write([{
+            rql: `INSERT INTO cms_outbox (id, topic, payload, created_at, available_at, attempts, lease_until) VALUES ($id, $topic, $payload, $at, $available, 0, 0)${options.ignoreDuplicate ? ' ON CONFLICT (id) DO NOTHING' : ''}`,
+            params: { $id: event.eventId, $topic: topic, $payload: JSON.stringify(event), $at: event.at, $available: options.availableAt ?? event.at },
         }], { ...(options.signal ? { signal: options.signal } : {}), kind: 'cms.outbox', retryConflicts: 5 });
-        this.#enqueued++;
+        const inserted = result.results[0]!.affected !== 0n;
+        if (inserted) this.#enqueued++;
+        return inserted;
     }
 
     /** Events still waiting, oldest first. */

@@ -43,6 +43,7 @@ export async function runMaintenance(cms: CmsHost, options: { warm?: boolean } =
     if (!(await cms.installed())) return;
     await cms.db.recoverPending({ limit: 50 });
     await cms.publishDue();
+    await cms.schedules.tick();
     await cms.outbox.dispatch({ limit: 50 });
     await cms.webhooks.dispatch({ limit: 20 });
     await cms.outbox.prune();

@@ -9,6 +9,7 @@ import { collectionProblems, LOCALE, type CollectionDefinition } from './collect
 import { editorLayoutProblems, editorLayoutShapeProblem } from './editor-layout';
 import { FIELD_BLOCKS, fieldGroupProblems, type FieldGroup } from './field-groups';
 import { defineAction, defineFilter, type ExtensionPoint } from '@cossackframework/core/hooks';
+import { cronProblem } from './cron';
 import { EXTENSION_POINTS } from './hooks';
 import { OWNER_NAME, resourceProblems, type ResourceAction, type ResourceDeclaration } from './resource';
 import { themeProblems, type ThemeManifest } from './theme';
@@ -27,6 +28,18 @@ export interface PluginCommand {
     readonly options?: { readonly [name: string]: CommandOption };
     /** Permission the operator needs, in addition to the dashboard. */
     readonly permission?: string;
+}
+
+/** What `permissions.users` lets a plugin do with the site's members. */
+export type UserAction = 'read' | 'write';
+/** Capabilities a manifest switches on in `permissions`; each is the grant `capability:<name>`. */
+export const CAPABILITIES = Object.freeze(['files', 'mail', 'jobs', 'cache'] as const);
+export type Capability = (typeof CAPABILITIES)[number];
+/** A job the clock queues: `cron` is five UTC fields as Cloudflare reads them (1 = Sunday); `name` is the job handler. */
+export interface PluginSchedule {
+    readonly name: string;
+    readonly cron: string;
+    readonly description?: string;
 }
 
 /** An extension point a plugin defines. */
@@ -108,12 +121,26 @@ export interface CmsPluginManifest {
         readonly network?: readonly string[];
         /** Permissions the plugin defines for roles, named `<plugin>:<name>`. */
         readonly define?: readonly string[];
+        /** Library files the plugin owns, through `context.files`. */
+        readonly files?: boolean;
+        /** Email sent as the site, through `context.mail`. */
+        readonly mail?: boolean;
+        /** Work queued for later, and the manifest's `schedules`, through `context.jobs`. */
+        readonly jobs?: boolean;
+        /** A namespace in the site's cache, through `context.cache`. */
+        readonly cache?: boolean;
+        /** The site's members through `context.users`: `read` them; `write` creates members and keeps the plugin's meta on them. */
+        readonly users?: readonly UserAction[];
+        /** Names of the application's bindings the plugin reads through `context.secrets`, such as `STRIPE_SECRET_KEY`. */
+        readonly secrets?: readonly string[];
     };
     readonly ui?: {
         /** Links shown in dashboard slots, such as `dashboard.nav`. */
         readonly slots?: { readonly [slot: string]: readonly SlotLink[] };
     };
     readonly commands?: readonly PluginCommand[];
+    /** Jobs the clock queues while the plugin is active; needs `permissions.jobs`. */
+    readonly schedules?: readonly PluginSchedule[];
     /** Scalar options rendered under Settings → Plugins in the plugin's own namespace. */
     readonly settings?: PluginSettingsDeclaration;
     /** A site theme: its `templates/` files (or `ui.ts` `theme` export) are the site templates. */
@@ -154,11 +181,16 @@ export interface ManifestPattern {
 }
 const PATTERN_SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
-const KNOWN_FIELDS = new Set(['schemaVersion', 'name', 'version', 'description', 'author', 'authorUrl', 'compatibility', 'dependencies', 'resources', 'collections', 'blocks', 'fieldGroups', 'patterns', 'editor', 'hooks', 'permissions', 'ui', 'provides', 'commands', 'settings', 'theme', 'logo', 'cover', 'translations', 'package', 'source']);
+const KNOWN_FIELDS = new Set(['schemaVersion', 'name', 'version', 'description', 'author', 'authorUrl', 'compatibility', 'dependencies', 'resources', 'collections', 'blocks', 'fieldGroups', 'patterns', 'editor', 'hooks', 'permissions', 'ui', 'provides', 'commands', 'schedules', 'settings', 'theme', 'logo', 'cover', 'translations', 'package', 'source']);
 const COLLECTION_NAME = /^[a-z][a-zA-Z0-9_]{0,40}$/;
 const ARTWORK = /^assets\/[A-Za-z0-9][A-Za-z0-9._-]{0,80}\.(?:png|jpe?g|webp|gif|avif|svg)$/;
 const HOST = /^(?:\*\.)?(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$|^localhost$/;
 const ACTIONS = new Set(['read', 'create', 'update', 'delete']);
+const USER_ACTIONS = new Set(['read', 'write']);
+const SECRET_NAME = /^[A-Z][A-Z0-9_]{1,63}$/;
+/** Bindings the host and the application own; a plugin names its own. */
+const RESERVED_SECRET = /^(?:ROMEDB_|APP_|CMS_|CLOUDFLARE_|SMTP_|S3_|TURNSTILE_|OAUTH_|COSSACK_)|^(?:MAIL_FROM|EMAIL|AI|DB|KV|R2|STORAGE)$/;
+const SCHEDULE_NAME = /^[a-z][a-z0-9-]{0,40}$/;
 /** An extension point name, as `@cossackframework/core/hooks` accepts it. */
 const POINT = /^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$/;
 
@@ -287,6 +319,26 @@ export function manifestProblems(manifest: unknown): string[] {
     for (const permission of permissions.define ?? []) {
         if (typeof permission !== 'string' || !permission.startsWith(`${name}:`) || !/^[a-z0-9-]+:[a-z][a-z0-9._-]{0,63}$/.test(permission)) problems.push(`permissions.define: ${String(permission)} must be named ${name}:<name>.`);
     }
+    for (const capability of CAPABILITIES) if (permissions[capability] !== undefined && typeof permissions[capability] !== 'boolean') problems.push(`permissions.${capability} is true or false.`);
+    if (permissions.users !== undefined && (!Array.isArray(permissions.users) || !permissions.users.length || permissions.users.some(action => !USER_ACTIONS.has(action)))) problems.push('permissions.users must list read or write.');
+    if (permissions.secrets !== undefined && !Array.isArray(permissions.secrets)) problems.push('permissions.secrets must list binding names.');
+    for (const secret of Array.isArray(permissions.secrets) ? permissions.secrets : []) {
+        if (typeof secret !== 'string' || !SECRET_NAME.test(secret)) problems.push(`permissions.secrets: ${String(secret)} must be an upper-case binding name.`);
+        else if (RESERVED_SECRET.test(secret)) problems.push(`permissions.secrets: ${secret} belongs to the host.`);
+    }
+    const schedules = Array.isArray(value.schedules) ? value.schedules : value.schedules === undefined ? [] : [null];
+    if (schedules.length > 20) problems.push('schedules: at most 20.');
+    if (schedules.length && permissions.jobs !== true) problems.push('schedules need permissions.jobs.');
+    const scheduleNames = new Set<string>();
+    for (const [index, schedule] of schedules.entries()) {
+        if (!schedule || typeof schedule !== 'object') { problems.push(`schedules[${index}] must be an object.`); continue; }
+        if (typeof schedule.name !== 'string' || !SCHEDULE_NAME.test(schedule.name)) problems.push(`schedules[${index}] needs a name of lowercase letters, digits and hyphens.`);
+        else if (scheduleNames.has(schedule.name)) problems.push(`schedules: ${schedule.name} is listed twice.`);
+        else scheduleNames.add(schedule.name);
+        const problem = cronProblem(schedule.cron);
+        if (problem) problems.push(`schedules[${index}]: cron ${problem}`);
+        if (schedule.description !== undefined && (typeof schedule.description !== 'string' || schedule.description.length > 200)) problems.push(`schedules[${index}]: description is up to 200 characters.`);
+    }
     for (const [slot, links] of Object.entries(value.ui?.slots ?? {})) {
         if (!(HOST_SLOTS as readonly string[]).includes(slot)) problems.push(`ui.slots: ${slot} is not a host slot (${HOST_SLOTS.join(', ')}).`);
         for (const link of Array.isArray(links) ? links : []) {
@@ -345,6 +397,9 @@ export function requestedGrants(manifest: CmsPluginManifest): string[] {
     for (const [resource, actions] of Object.entries(manifest.permissions?.resources ?? {})) for (const action of actions) grants.push(`resource:${resource}:${action}`);
     for (const host of manifest.permissions?.network ?? []) grants.push(`network:${host}`);
     for (const hook of manifest.hooks ?? []) grants.push(`hook:${hook.point}`);
+    for (const capability of CAPABILITIES) if (manifest.permissions?.[capability] === true) grants.push(`capability:${capability}`);
+    for (const action of manifest.permissions?.users ?? []) grants.push(`users:${action}`);
+    for (const secret of manifest.permissions?.secrets ?? []) grants.push(`secret:${secret}`);
     return [...new Set(grants)].sort();
 }
 
