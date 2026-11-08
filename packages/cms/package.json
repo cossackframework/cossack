@@ -39,12 +39,14 @@
     "@types/node": "^22.19.0",
     "hono": "^4.13.7",
     "miniflare": "4.20260722.0",
+    "rolldown": "~1.1.5",
     "simple-icons": "16.36.0",
     "vitest": "^4.1.12"
   },
   "exports": {
     ".": "./src/index.ts",
     "./server": "./src/server/index.ts",
+    "./isolate": "./src/isolate.ts",
     "./package.json": "./package.json"
   }
 }

@@ -105,6 +105,13 @@ describe('isolated bundles', () => {
     }
   });
 
+  it('fails a plugin whose import cannot be found, instead of leaving it to fail the Worker', async () => {
+    const root = project({ ...desk, 'src/plugins/desk/lib/label.ts': "import { label as base } from 'not-installed';\nexport const label = base;\n" });
+    const error = await bundleIsolatedPlugin(root, readRenderedPlugins(root)[0]!, runtime(root)).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(PluginIsolationError);
+    expect((error as Error).message).toContain('src/plugins/desk/server.ts imports not-installed through src/plugins/desk/lib/label.ts, which cannot be found.');
+  });
+
   it('isolates on Cloudflare only, and reports sizes', async () => {
     const root = project({ ...desk, 'src/plugins/themed/plugin.json': manifest('themed'), 'src/plugins/themed/templates/home.ts': '', 'src/plugins/data/plugin.json': manifest('data') });
     const plugins = readRenderedPlugins(root);

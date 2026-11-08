@@ -97,9 +97,15 @@ export async function bundleIsolatedPlugin(projectRoot: string, plugin: Rendered
   const source = (file: string) => relative(projectRoot, file).split(sep).join('/');
   const guard: RolldownPlugin = {
     name: 'cossack-isolate',
-    resolveId(id, importer) {
+    async resolveId(id, importer, resolveOptions) {
       if (id === ENTRY) return ENTRY;
-      if (!id.startsWith('cloudflare:') && !isBuiltin(id)) return null;
+      if (!id.startsWith('cloudflare:') && !isBuiltin(id)) {
+        if (importer === undefined || importer === ENTRY) return null;
+        // An import nothing resolves would otherwise stay external and stop the Worker from starting.
+        const resolved = await this.resolve(id, importer, { ...resolveOptions, skipSelf: true });
+        if (resolved) return resolved;
+        throw new PluginIsolationError(source(server), `${source(server)} imports ${id}${source(importer) === source(server) ? '' : ` through ${source(importer)}`}, which cannot be found. Install it in the application, or fix the import.`);
+      }
       // The runtime's own files, never plugin source, even where an application sits inside the runtime's package.
       const fromRuntime = importer !== undefined && importer !== ENTRY && isInside(importer, runtimeRoot) && !isInside(importer, pluginsRoot);
       if (fromRuntime && (ISOLATE_RUNTIME_IMPORTS as readonly string[]).includes(id)) return { id, external: true };

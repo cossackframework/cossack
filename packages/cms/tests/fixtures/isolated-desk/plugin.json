@@ -1,0 +1,20 @@
+{
+    "name": "desk",
+    "version": "1.0.0",
+    "hooks": [
+        {
+            "point": "cms.resource.before-write",
+            "version": 1
+        },
+        {
+            "point": "cms.resource.after-commit",
+            "version": 1
+        }
+    ],
+    "commands": [
+        {
+            "name": "ping",
+            "description": "Ping."
+        }
+    ]
+}
