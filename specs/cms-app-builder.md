@@ -214,7 +214,7 @@ The deferred restricted runtime for third-party plugins uses isolated server
 code on Dynamic Workers, a brokered capability API, immutable validated artifacts,
 no ambient credentials, pinned artifact and grant revisions, and a validated
 `PluginSurface` UI description with no constructors, closures, raw HTML, or DOM
-properties across the isolate.
+properties across the isolate. `specs/cms-plugin-isolation.md` plans the server half.
 
 Plugins contribute namespaced CLI commands whose help and schemas come from
 manifests and whose handlers run behind the same permission boundary as the
