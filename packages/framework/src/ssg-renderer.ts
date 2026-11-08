@@ -78,17 +78,30 @@ function ssgLocaleStore(catalogs: Record<string, Record<string, string>>, reques
     return { locale, messages: catalogs[locale] ?? {}, defaultLocale: locale, catalogs };
 }
 
+/** A layout whose `@Page({ ssg: false })` keeps the pages under it rendered per request. */
+function rendersPerRequest(layout: unknown): boolean {
+  const component = layout ? getModuleDefault(layout as Record<string, unknown>) : undefined;
+  const ssg = component ? (Reflect.getMetadata('page:options', component) as PageOptions | undefined)?.ssg : undefined;
+  return ssg === false || (typeof ssg === 'object' && ssg.enabled === false);
+}
+
 /**
- * Collect all pages marked for SSG from the pages registry.
+ * Collect all pages marked for SSG from the pages registry. Two kinds of page never are: a
+ * rendered plugin's (`owners`), since the application decides per request whether the plugin
+ * is active, and a page under a layout that says `ssg: false`, whose frame comes from the
+ * request (a CMS site's menus, say). Markdown pages, static by default, follow the same rule.
  */
-export function collectSsgRoutes(pages: Record<string, unknown>, layouts: Record<string, LayoutModule>): SsgRoute[] {
+export function collectSsgRoutes(pages: Record<string, unknown>, layouts: Record<string, LayoutModule>, owners: Readonly<Record<string, string>> = {}): SsgRoute[] {
   const routes: SsgRoute[] = [];
+  const layoutKeys = Object.keys(layouts);
 
   for (const path of resolvePageRouteFiles(Object.keys(pages))) {
     const module = pages[path] as any;
 
     // Skip API routes
     if (path.includes('/src/pages/api/')) continue;
+    if (owners[path] !== undefined) continue;
+    if (resolveLayoutPaths(path, layoutKeys).some(layout => rendersPerRequest(layouts[layout]))) continue;
 
     // Skip 404 and error pages
     if (path.endsWith('/404/index.ts') || path.endsWith('/error/index.ts')) continue;

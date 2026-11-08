@@ -65,6 +65,22 @@ Set `ssg: { enabled: false }` to disable generation for a page. Dynamic SSG
 routes must supply every ordinary or catch-all parameter through
 `generateStaticParams`.
 
+### Pages that render per request
+
+Two kinds of page are left out even when they ask for SSG, Markdown pages included:
+
+- **Pages under a layout with `ssg: false`.** Use it on a layout that reads the request or a
+  database, such as a site frame with menus from the database. Every page below it renders
+  per request.
+- **A rendered plugin's pages.** The application decides per request whether the plugin is
+  active, so a static file would answer for an inactive plugin.
+
+```typescript
+// src/pages/(site)/layout.ts: the menus come from the database
+@Page({ transport: 'http', ssg: false })
+export default class SiteLayout extends Cossack { /* … */ }
+```
+
 ### Dynamic Routes with Static Params
 
 For dynamic routes, such as `/users/[username]`, use `generateStaticParams` to specify which parameter combinations to pre-render:

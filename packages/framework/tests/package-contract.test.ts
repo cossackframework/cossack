@@ -108,7 +108,7 @@ describe('framework publication contract', () => {
     expect(types).not.toMatch(/import\(["'][^"']*src\/index["']\)/);
   });
 
-  it('declares portable provider and published Markdown dependencies while excluding demo libraries', () => {
+  it('declares portable provider, published Markdown and isolated plugin bundler dependencies while excluding demo libraries', () => {
     expect(Object.keys(frameworkPackage.dependencies).sort()).toEqual([
       '@aws-sdk/client-s3',
       '@aws-sdk/s3-request-presigner',
@@ -124,6 +124,8 @@ describe('framework publication contract', () => {
       'remark-rehype',
       'remark-sugar-high',
       'remark-toc',
+      // Bundles isolated plugins at build time (plugin-isolation.ts).
+      'rolldown',
       'unified',
       'vfile-matter',
     ]);
