@@ -6,4 +6,8 @@ declare module 'cloudflare:workers' {
         protected env: Env;
         constructor(ctx: unknown, env: Env);
     }
+    /** The Worker's bindings. */
+    export const env: unknown;
+    /** Loopback bindings for the Worker's top-level exports (`ctx.exports`). */
+    export const exports: unknown;
 }

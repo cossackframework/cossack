@@ -127,6 +127,8 @@ export interface CapabilityHost {
     readonly manifest: CmsPluginManifest;
     /** Throws unless the plugin is active and holds the grant. */
     allowed(grant: string, what: string): Promise<void>;
+    /** An isolated plugin's job handlers, in its Worker: any job name is passed on to it. */
+    readonly jobRunner?: (name: string, payload: unknown, context: PluginJobContext) => Promise<unknown>;
     readonly files: FileService | null;
     readonly mail: CmsMail | null;
     readonly mailFrom: string;
@@ -223,7 +225,9 @@ export function pluginCapabilities(host: CapabilityHost): PluginCapabilities {
         },
         enqueue: async (jobName, payload = null, options = {}) => {
             await host.allowed('capability:jobs', 'jobs');
-            if (typeof jobName !== 'string' || !handlers.has(jobName)) throw new CmsError('CMS_NOT_FOUND', `Plugin ${name} has no handler for job ${String(jobName)}.`);
+            // An isolated plugin checked its own handlers before asking.
+            const known = typeof jobName === 'string' && (handlers.has(jobName) || (host.jobRunner !== undefined && JOB_NAME.test(jobName)));
+            if (!known) throw new CmsError('CMS_NOT_FOUND', `Plugin ${name} has no handler for job ${String(jobName)}.`);
             const json = JSON.stringify(payload ?? null);
             if (json === undefined || json.length > MAX_PAYLOAD) throw new CmsError('CMS_LIMIT', 'A job payload is JSON up to 64 KB.');
             const now = host.now();
@@ -318,7 +322,8 @@ export function pluginCapabilities(host: CapabilityHost): PluginCapabilities {
     const runJob = async (event: PluginJobEvent, context: { signal?: AbortSignal }): Promise<void> => {
         // Inactive or revoked: the outbox retries and gives up in its own time.
         await host.allowed('capability:jobs', 'jobs');
-        const handler = handlers.get(event.name);
+        const runner = host.jobRunner;
+        const handler = handlers.get(event.name) ?? (runner ? ((payload: unknown, context: PluginJobContext) => runner(event.name, payload, context)) : undefined);
         if (!handler) throw new CmsError('CMS_NOT_FOUND', `Plugin ${name} has no handler for job ${event.name}.`);
         await handler(event.payload, { principal, scheduledAt: event.scheduledAt, ...(context.signal ? { signal: context.signal } : {}) });
     };

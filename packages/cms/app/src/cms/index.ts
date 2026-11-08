@@ -1,6 +1,6 @@
 import { createRomeDB } from '@cossackframework/romedb';
 import { getRequestContext } from '@cossackframework/core';
-import { cloudflarePurger, cmsReconcilers, CmsNetwork, createCMS, MAIN_SITE, prefixedStorage, stripePayments, type CachePurger, type CmsHost, type NetworkSite } from '@cossackframework/cms/server';
+import { cloudflarePurger, cmsReconcilers, CmsNetwork, createCMS, MAIN_SITE, prefixedStorage, stripePayments, type CachePurger, type CmsHost, type NetworkSite, type PluginRunner } from '@cossackframework/cms/server';
 import { aiProvider, type AiBindings } from './ai';
 import type { Principal } from '@cossackframework/cms';
 import { plugins } from '@cossackframework/framework/plugins';
@@ -42,6 +42,17 @@ declare module 'hono' {
 }
 
 let current: { key: string; network: CmsNetwork } | undefined;
+let pluginRunner: PluginRunner | null = null;
+
+/**
+ * Runs isolated plugins: a Cloudflare Worker entry sets `cloudflarePluginRunner()` from
+ * `@cossackframework/cms/cloudflare` before the first request. Node sets none, and its build
+ * keeps every plugin in the application.
+ */
+export function setPluginRunner(runner: PluginRunner | null): void {
+    pluginRunner = runner;
+    current = undefined;
+}
 
 /**
  * One network per isolate or process, keyed by the main database's address and credential. The
@@ -80,6 +91,7 @@ export function networkFor(env: CmsBindings): CmsNetwork {
                 secrets: name => { const value = (env as Record<string, unknown>)[name]; return typeof value === 'string' ? value : undefined; },
                 // Every binding, for a plugin granted unrestricted access.
                 env: env as Record<string, unknown>,
+                runner: pluginRunner,
             }),
         });
         current = { key, network };

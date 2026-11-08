@@ -87,3 +87,4 @@ export { CACHE_HOLDS, cacheControl, cacheHoldSeconds, cacheTags, cacheTagHeader,
 export { parseCron, nextCronTime, cronProblem, type CronFields } from './cron';
 export { highlightCode, highlightLanguage, HIGHLIGHT_LANGUAGES, type TokenClass } from './highlight';
 export { AUTOMATION_EVENTS, AUTOMATION_EVENT_LABELS, automationProblems, automationMatches, renderAutomationTemplate, type Automation, type AutomationAction, type AutomationConditions, type AutomationEvent, type AutomationInput } from './automations';
+export { ISOLATE_PROTOCOL, ISOLATE_MEMBERS, type IsolateCall, type IsolateRun, type IsolatePoint, type IsolateMember, type IsolateBridge, type IsolateEntrypoint } from './isolation';

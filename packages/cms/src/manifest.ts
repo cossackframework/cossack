@@ -109,7 +109,12 @@ export interface CmsPluginManifest {
      * Extension points the plugin's server code registers handlers for: the CMS's own, or those
      * another installed plugin `provides`. Each needs the `hook:<point>` grant.
      */
-    readonly hooks?: readonly { readonly point: string; readonly version: number }[];
+    /**
+     * Extension points the plugin handles. `priority` places an isolated plugin's handlers for
+     * the point among other plugins' (lower first, default 10); its handlers' own priorities
+     * order them inside its Worker.
+     */
+    readonly hooks?: readonly { readonly point: string; readonly version: number; readonly priority?: number }[];
     /**
      * Extension points the plugin defines for other plugins, named `<plugin>.<point>`. The host
      * builds them from this list; the plugin invokes them through `context.hooks.doAction` and
@@ -149,6 +154,8 @@ export interface CmsPluginManifest {
     readonly commands?: readonly PluginCommand[];
     /** Jobs the clock queues while the plugin is active; needs `permissions.jobs`. */
     readonly schedules?: readonly PluginSchedule[];
+    /** `false` keeps the plugin in the application where it could run isolated: what `cossack add plugin --in-app` renders. */
+    readonly isolation?: false;
     /** Scalar options rendered under Settings → Plugins in the plugin's own namespace. */
     readonly settings?: PluginSettingsDeclaration;
     /** A site theme: its `templates/` files (or `ui.ts` `theme` export) are the site templates. */
@@ -189,7 +196,7 @@ export interface ManifestPattern {
 }
 const PATTERN_SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
-const KNOWN_FIELDS = new Set(['schemaVersion', 'name', 'version', 'description', 'author', 'authorUrl', 'compatibility', 'dependencies', 'resources', 'collections', 'blocks', 'fieldGroups', 'patterns', 'editor', 'hooks', 'permissions', 'ui', 'provides', 'commands', 'schedules', 'settings', 'theme', 'logo', 'cover', 'translations', 'package', 'source']);
+const KNOWN_FIELDS = new Set(['schemaVersion', 'name', 'version', 'description', 'author', 'authorUrl', 'compatibility', 'dependencies', 'resources', 'collections', 'blocks', 'fieldGroups', 'patterns', 'editor', 'hooks', 'permissions', 'ui', 'provides', 'commands', 'schedules', 'settings', 'theme', 'logo', 'cover', 'translations', 'package', 'source', 'isolation']);
 const COLLECTION_NAME = /^[a-z][a-zA-Z0-9_]{0,40}$/;
 const ARTWORK = /^assets\/[A-Za-z0-9][A-Za-z0-9._-]{0,80}\.(?:png|jpe?g|webp|gif|avif|svg)$/;
 const HOST = /^(?:\*\.)?(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$|^localhost$/;
@@ -317,7 +324,10 @@ export function manifestProblems(manifest: unknown): string[] {
             if (!Number.isSafeInteger(hook.version) || hook.version < 1) problems.push(`hooks: ${point} needs a version of 1 or more.`);
         } else if (!points.has(point)) problems.push(`hooks: ${String(point)} is not a CMS extension point.`);
         else if (hook.version !== points.get(point)) problems.push(`hooks: ${point} is version ${points.get(point)}, not ${String(hook.version)}.`);
+        if (hook?.priority !== undefined && (!Number.isSafeInteger(hook.priority) || hook.priority < -1000 || hook.priority > 1000)) problems.push(`hooks: ${String(point)} priority must be a whole number from -1000 to 1000.`);
     }
+    // A plugin can give isolation up; only its shape can give it.
+    if (value.isolation !== undefined && value.isolation !== false) problems.push('isolation can only be false, which keeps the plugin in the application.');
     const permissions = value.permissions ?? {};
     for (const [resource, actions] of Object.entries(permissions.resources ?? {})) {
         if (!/^[a-z][a-z0-9-]*\/[a-z][a-z0-9_]*$/.test(resource)) problems.push(`permissions.resources: ${resource} is not a resource ID.`);

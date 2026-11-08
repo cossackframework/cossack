@@ -47,6 +47,7 @@
     ".": "./src/index.ts",
     "./server": "./src/server/index.ts",
     "./isolate": "./src/isolate.ts",
+    "./cloudflare": "./src/cloudflare.ts",
     "./package.json": "./package.json"
   }
 }

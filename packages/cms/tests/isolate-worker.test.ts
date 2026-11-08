@@ -1,16 +1,12 @@
-import { fileURLToPath } from 'node:url';
 import { Miniflare } from 'miniflare';
-import { rolldown } from 'rolldown';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ISOLATE_PROTOCOL } from '../src/isolation';
+import { bundleFixturePlugin } from './isolate-bundle';
 
 /**
  * `@cossackframework/cms/isolate` in a Worker of its own: a plugin bundled with it, loaded
  * through the Worker Loader and called with a bridge stub, as the host will (step 4).
  */
-
-const ISOLATE = fileURLToPath(new URL('../src/isolate.ts', import.meta.url));
-const FIXTURE = fileURLToPath(new URL('./fixtures/isolated-desk/', import.meta.url));
 
 const LOADER = (code: string) => `
 import { WorkerEntrypoint } from 'cloudflare:workers';
@@ -48,26 +44,8 @@ describe('an isolated plugin in its own Worker', () => {
     })).json()) as { value?: unknown; error?: { message: string; code: string | null } };
 
     beforeAll(async () => {
-        const build = await rolldown({
-            input: 'entry',
-            cwd: fileURLToPath(new URL('..', import.meta.url)),
-            platform: 'neutral',
-            external: ['cloudflare:workers', 'node:async_hooks'],
-            // As an application resolves the package; here, its own source.
-            resolve: { conditionNames: ['workerd', 'worker', 'browser', 'import', 'module', 'default'], mainFields: ['module', 'main'], alias: { '@cossackframework/cms': fileURLToPath(new URL('../src/index.ts', import.meta.url)) } },
-            plugins: [{
-                name: 'entry',
-                resolveId: (id: string) => id === 'entry' ? id : null,
-                load: (id: string) => id === 'entry' ? `import * as plugin from ${JSON.stringify(`${FIXTURE}server.ts`)};
-                    import manifest from ${JSON.stringify(`${FIXTURE}plugin.json`)};
-                    import isolate from ${JSON.stringify(ISOLATE)};
-                    export default isolate(plugin, manifest);` : null,
-            }],
-            logLevel: 'silent',
-        });
-        const { output } = await build.generate({ format: 'esm', codeSplitting: false });
-        await build.close();
-        mf = new Miniflare({ modules: true, script: LOADER(output[0].code), compatibilityDate: '2026-06-06', compatibilityFlags: ['nodejs_als'], workerLoaders: { LOADER: {} } });
+        const code = await bundleFixturePlugin();
+        mf = new Miniflare({ modules: true, script: LOADER(code), compatibilityDate: '2026-06-06', compatibilityFlags: ['nodejs_als'], workerLoaders: { LOADER: {} } });
         await mf.ready;
     }, 60_000);
 

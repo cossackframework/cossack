@@ -37,7 +37,8 @@ export interface IsolateRuntime {
     run(call: IsolateCall, bridge: IsolateBridge): Promise<unknown>;
 }
 
-const JOB_NAME = /^[a-z][a-z0-9-]{0,63}$/;
+/** As the host's `JOB_NAME`. */
+const JOB_NAME = /^[a-z][a-z0-9-]{0,40}$/;
 
 /** An error that keeps its code across the boundary, like the host's `CmsError`. */
 function failure(code: string, message: string): Error {

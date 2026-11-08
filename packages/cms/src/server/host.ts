@@ -2,7 +2,7 @@
  * The CMS host: resource registry, repositories, plugin hooks and commands, schema and
  * grant activation, outbox, users and stores, all over one RomeDB binding.
  */
-import { createHookRegistry, type ActionHandler, type ActionPoint, type ActionReport, type ExtensionPoint, type FilterHandler, type FilterPoint, type HookRegistry, type InvokeOptions } from '@cossackframework/core/hooks';
+import { createHookRegistry, type ActionHandler, type ActionPoint, type ActionReport, type ExtensionPoint, type FilterContext, type FilterHandler, type FilterPoint, type HookRegistry, type InvokeOptions } from '@cossackframework/core/hooks';
 import type { StorageProvider } from '@cossackframework/core/storage';
 import { ClientError, type RomeDB, type Statement, type Value, type WorkLimits } from '@cossackframework/romedb';
 import { blockId, blockMedia, blockProblems, htmlBlocksChanged, validateBlocks, type Block, type BlockDeclaration } from '../blocks';
@@ -52,9 +52,11 @@ import { CmsIndexNow } from './indexnow';
 import { CmsPurge, type CachePurger } from './purge';
 import { CmsTraffic } from './traffic';
 import type { WebhookEvent } from '../webhooks';
-import { afterCommit, commentBeforeSave, formSubmitted, menuBeforeSave, pluginJob, termBeforeSave, type FormSubmittedEvent, type ResourceEvent, type WriteActor, paymentEvent } from '../hooks';
+import { afterCommit, commentBeforeSave, EXTENSION_POINTS, formSubmitted, menuBeforeSave, pluginJob, termBeforeSave, type FormSubmittedEvent, type ResourceEvent, type WriteActor, paymentEvent } from '../hooks';
+import { ISOLATE_PROTOCOL, type IsolateCall, type IsolatePoint, type IsolateRun } from '../isolation';
+import { serveIsolatedCall, type IsolatedPluginCode, type IsolatedWork, type PluginRunner } from './isolation';
 import { CmsForms, type CmsMail } from './forms';
-import { pluginCapabilities, type PluginAi, type PluginCache, type PluginFiles, type PluginJobs, type PluginMail, type PluginPayments, type PluginSecrets, type PluginUsers } from './capabilities';
+import { pluginCapabilities, type PluginAi, type PluginCache, type PluginFiles, type PluginJobContext, type PluginJobs, type PluginMail, type PluginPayments, type PluginSecrets, type PluginUsers } from './capabilities';
 import { CmsSchedules, type DueSchedule } from './schedules';
 import { CmsAudit, unrestrictedGrantAudit } from './audit';
 import type { AiProvider } from './ai';
@@ -80,6 +82,14 @@ export interface PluginRegistrationLike {
     readonly templates?: { readonly [stem: string]: { readonly [name: string]: unknown } };
     /** URLs of the plugin's images by path, such as `assets/logo.png`. */
     readonly assets?: { readonly [path: string]: string };
+    /** Where the server code runs, when the application isolates plugins: see `@cossackframework/framework/plugins`. */
+    readonly isolation?: {
+        readonly mode: 'isolated' | 'app';
+        readonly reason?: string;
+        readonly code?: string;
+        readonly hash?: string;
+        readonly bytes?: number;
+    };
 }
 
 export type { CmsModule };
@@ -109,6 +119,11 @@ export interface CmsOptions {
     readonly outbox?: OutboxOptions;
     /** Network access for plugins, checked against granted hosts. Default `globalThis.fetch`. */
     readonly fetch?: typeof globalThis.fetch;
+    /**
+     * Runs isolated plugins' server code in Workers of their own (`workerLoaderRunner` on
+     * Cloudflare). Without it an isolated plugin cannot run, and stays inactive with that reason.
+     */
+    readonly runner?: PluginRunner | null;
     /** The site's public origin, such as `https://example.com` (`APP_URL`), for IndexNow pings. */
     readonly siteUrl?: string | (() => string | undefined);
     /** The caches in front of the site that changes purge: the Cloudflare purger, or another CDN's. Plugins add theirs as `cms.cache.purge` handlers. */
@@ -313,6 +328,16 @@ export interface ActivationStatus {
     readonly plugins: readonly PluginStatus[];
 }
 
+/** How long an isolated command or job may run; hooks keep their point's deadline. */
+const ISOLATED_WORK_MS = 60_000;
+
+/** The bundle of a plugin the build isolated, or null when its server code runs in the application. */
+function isolatedCode(registration: PluginRegistrationLike): IsolatedPluginCode | null {
+    const isolation = registration.isolation;
+    return isolation?.mode === 'isolated' && typeof isolation.code === 'string' && typeof isolation.hash === 'string'
+        ? { name: registration.name, version: registration.version, code: isolation.code, hash: isolation.hash } : null;
+}
+
 interface HostedPlugin {
     readonly registration: PluginRegistrationLike;
     readonly manifest: CmsPluginManifest;
@@ -422,6 +447,9 @@ export class CmsHost {
     #resources = new Map<string, Resource>();
     readonly #repositories = new Map<string, ResourceRepository>();
     readonly #plugins = new Map<string, HostedPlugin>();
+    readonly #runner: PluginRunner | null;
+    /** Isolated plugins: the context the bridge serves, and the bundle the runner loads. */
+    readonly #isolated = new Map<string, { readonly context: PluginContext; readonly code: IsolatedPluginCode }>();
     /** Extension points plugins provide, by name, built from their manifests. */
     readonly #pluginPoints = new Map<string, { readonly point: ExtensionPoint; readonly plugin: string }>();
     readonly #builtinCollections = new Map<string, CollectionDefinition>();
@@ -463,6 +491,7 @@ export class CmsHost {
         const modules = options.modules ?? [];
         for (const module of modules) for (const declaration of module.resources) this.#register(resolveResource(declaration, module.owner));
         for (const declaration of options.resources ?? []) this.#register(resolveResource(declaration, declaration.owner ?? 'app'));
+        this.#runner = options.runner ?? null;
         for (const registration of options.plugins ?? []) this.#host(registration);
         this.#resolvePluginPoints();
         for (const taxonomy of [...modules.flatMap(module => module.taxonomies ?? []), ...(options.taxonomies ?? [])]) {
@@ -2187,6 +2216,8 @@ export class CmsHost {
         const manifest = (registration.manifest ?? { schemaVersion: 1, name: registration.name, version: registration.version }) as CmsPluginManifest;
         const problems = manifestProblems(manifest);
         if (manifest.name !== registration.name) problems.push(`The manifest names ${String(manifest.name)}, not ${registration.name}.`);
+        // Never in the application instead: the build left its code out of it.
+        if (isolatedCode(registration) && !this.#runner) problems.push('It runs isolated, and this application has no Worker Loader binding (LOADER) to run it. Add the binding, or add the plugin with --in-app.');
         const resources: string[] = [];
         if (!problems.length) {
             for (const declaration of manifest.resources ?? []) resources.push(this.#register(resolveResource({ ...declaration, owner: registration.name }, registration.name)).id);
@@ -2220,7 +2251,8 @@ export class CmsHost {
 
     #registerPlugin(plugin: HostedPlugin): void {
         const register = plugin.registration.module?.register;
-        if (plugin.problems.length || typeof register !== 'function') return;
+        const isolated = isolatedCode(plugin.registration);
+        if (plugin.problems.length || (!isolated && typeof register !== 'function')) return;
         const name = plugin.manifest.name;
         const active = () => this.pluginActive(name);
         const declared = new Set((plugin.manifest.hooks ?? []).map(hook => hook.point));
@@ -2244,7 +2276,9 @@ export class CmsHost {
             if (!granted.has(grant) && !granted.has(UNRESTRICTED_GRANT)) throw new CmsError('CMS_FORBIDDEN', `Plugin ${name} is not granted ${what}.`);
         };
         const capabilities = pluginCapabilities({ name, manifest: plugin.manifest, allowed, files: this.files, mail: this.mail, mailFrom: this.mailFrom, users: this.users, cache: this.cache,
-            outbox: this.outbox, secrets: this.#secrets, ai: this.ai, payments: this.payments, now: this.#now, queued: () => this.outboxWritten() });
+            outbox: this.outbox, secrets: this.#secrets, ai: this.ai, payments: this.payments, now: this.#now, queued: () => this.outboxWritten(),
+            // An isolated plugin's job handlers live in its Worker.
+            ...(isolated ? { jobRunner: (job: string, payload: unknown, ctx: PluginJobContext) => this.#runIsolated(name, { kind: 'job', name: job, payload, scheduledAt: ctx.scheduledAt, principal: ctx.principal }, 'work', [ctx.principal]) } : {}) });
         // The plugin's jobs, queued or scheduled, run its handlers; other plugins' events pass by.
         this.hooks.addAction(pluginJob, async (event, ctx) => { if (event.plugin === name) await capabilities.runJob(event, { signal: ctx.signal }); }, { plugin: name });
         const context: PluginContext = {
@@ -2320,7 +2354,67 @@ export class CmsHost {
                 return this.#fetch(input, init);
             },
         };
-        (register as (context: PluginContext) => void)(context);
+        if (isolated) this.#registerIsolated(plugin, context, isolated);
+        else (register as (context: PluginContext) => void)(context);
+    }
+
+    /**
+     * An isolated plugin's handlers are stand-ins built from its manifest: each forwards its
+     * call to the plugin's Worker, which runs the handlers `register()` added there. The context
+     * the host would have given `register()` is what the bridge serves.
+     */
+    #registerIsolated(plugin: HostedPlugin, context: PluginContext, code: IsolatedPluginCode): void {
+        const name = plugin.manifest.name;
+        this.#isolated.set(name, { context, code });
+        for (const hook of plugin.manifest.hooks ?? []) {
+            const point = this.#pointNamed(hook.point);
+            if (!point) continue;
+            const options = { priority: hook.priority ?? 10 };
+            if (point.kind === 'action') {
+                context.hooks.addAction(point as ActionPoint<unknown>, async (payload, ctx) => { await this.#runIsolated(name, { kind: 'action', point: point.name, payload }, 'hook', [], ctx.deadline); }, options);
+            } else {
+                context.hooks.addFilter(point as FilterPoint<unknown, unknown>, (value, ctx) => this.#runIsolated(name, { kind: 'filter', point: point.name, value, input: (ctx as FilterContext<unknown>).input }, 'hook', [], ctx.deadline), options);
+            }
+        }
+        for (const command of plugin.manifest.commands ?? []) {
+            context.commands.add(command.name, (input, { principal }) => this.#runIsolated(name, { kind: 'command', name: command.name, input, principal }, 'work', [principal]));
+        }
+    }
+
+    /** A CMS point or one an installed plugin provides, by name. */
+    #pointNamed(name: string): ExtensionPoint | undefined {
+        return this.#pluginPoints.get(name)?.point ?? EXTENSION_POINTS.find(point => point.name === name);
+    }
+
+    #isolatePoints(plugin: HostedPlugin): IsolatePoint[] {
+        const names = [...(plugin.manifest.hooks ?? []).map(hook => hook.point), ...(plugin.manifest.provides ?? []).map(point => point.point)];
+        return names.flatMap(pointName => {
+            const point = this.#pointNamed(pointName);
+            return point ? [{ name: point.name, kind: point.kind, version: point.version, timeoutMs: point.timeoutMs }] : [];
+        });
+    }
+
+    async #runIsolated(name: string, run: IsolateRun, work: IsolatedWork, principals: readonly Principal[], deadline = Date.now() + ISOLATED_WORK_MS): Promise<unknown> {
+        const isolated = this.#isolated.get(name);
+        const plugin = this.#plugins.get(name);
+        if (!isolated || !plugin || !this.#runner) throw new CmsError('CMS_UNAVAILABLE', `Plugin ${name} cannot run isolated here.`);
+        const call: IsolateCall = { protocol: ISOLATE_PROTOCOL, site: this.site, deadline, resources: plugin.resources, points: this.#isolatePoints(plugin), payments: this.payments?.name ?? null, run };
+        try {
+            return await this.#runner.run(isolated.code, call, { site: this.site, plugin: name, deadline, principals }, work);
+        } catch (error) {
+            // A payload with functions or class instances cannot cross; say so instead of the platform's words.
+            if ((error as { name?: unknown } | null)?.name === 'DataCloneError') {
+                throw Object.assign(new Error(`Plugin ${name} could not be called with ${run.kind === 'action' || run.kind === 'filter' ? run.point : run.name}: its data cannot be copied into the plugin's Worker (${(error as Error).message}).`), { code: 'COSSACK_PLUGIN_PAYLOAD' });
+            }
+            throw error;
+        }
+    }
+
+    /** What the application's `PluginBridge` serves: one call from an isolated plugin's Worker, checked as the plugin's context checks it. */
+    isolatedCall(name: string, member: string, args: readonly unknown[], principals: readonly Principal[]): Promise<unknown> {
+        const isolated = this.#isolated.get(name);
+        if (!isolated) return Promise.reject(new CmsError('CMS_NOT_FOUND', `Plugin ${name} does not run isolated on this site.`));
+        return serveIsolatedCall(isolated.context, member, args, principals);
     }
 
     async #pluginStatus(plugin: HostedPlugin, state: Activation): Promise<PluginStatus> {

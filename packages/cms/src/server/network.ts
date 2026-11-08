@@ -108,6 +108,13 @@ export class CmsNetwork {
         return this.hostOf(MAIN);
     }
 
+    /** The host of a site by ID, for calls that name the site rather than arrive at its domain (an isolated plugin's bridge). */
+    async hostById(id: string): Promise<CmsHost | null> {
+        if (id === MAIN_SITE) return this.main;
+        const record = await this.sites.get(id);
+        return record && record.status !== 'creating' && record.status !== 'deleted' ? this.hostOf(networkSite(record)) : null;
+    }
+
     /** The CMS host of a site, built on first use and kept while it is among the last used. */
     hostOf(site: NetworkSite): CmsHost {
         const kept = this.#hosts.get(site.database);
