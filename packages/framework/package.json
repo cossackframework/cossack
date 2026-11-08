@@ -127,6 +127,10 @@
       "types": "./dist/esm/plugin-sources.d.ts",
       "import": "./dist/esm/plugin-sources.js"
     },
+    "./plugin-isolation": {
+      "types": "./dist/esm/plugin-isolation.d.ts",
+      "import": "./dist/esm/plugin-isolation.js"
+    },
     "./development-traces": {
       "types": "./dist/esm/development-traces.d.ts",
       "import": "./dist/esm/development-traces.js"
@@ -248,6 +252,7 @@
     "remark-rehype": "^11.1.2",
     "remark-sugar-high": "^0.6.3",
     "remark-toc": "^9.0.0",
+    "rolldown": "~1.1.5",
     "unified": "^11.0.5",
     "vfile-matter": "^5.0.1"
   },
@@ -259,6 +264,7 @@
     "@tailwindcss/vite": "^4.3.3",
     "cossack": "workspace:*",
     "hono": "^4.13.7",
+    "miniflare": "4.20260722.0",
     "reflect-metadata": "^0.2.2",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.23.0",

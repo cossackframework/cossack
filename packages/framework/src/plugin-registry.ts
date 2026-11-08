@@ -6,6 +6,9 @@
  * `assets/`, such as a logo, a cover or a theme's stylesheet. Nothing scans packages at request time.
  */
 import registry from 'virtual:cossack-plugins';
+import type { PluginIsolation } from './plugin-isolation.js';
+
+export type { PluginIsolation };
 
 /** Rendered manifest data. Each plugin host validates its own fields. */
 export interface PluginManifestData {
@@ -19,8 +22,14 @@ export interface PluginRegistration {
   readonly version: string;
   /** Server environments only. */
   readonly manifest?: PluginManifestData;
-  /** The plugin's `server.ts` exports; server environments only, null when absent. */
+  /** The plugin's `server.ts` exports; server environments only, null when absent or isolated. */
   readonly module?: Record<string, unknown> | null;
+  /**
+   * Where the server code runs, when the application isolates plugins (`pluginIsolation`):
+   * `isolated` carries the bundled module for a Worker of its own, `app` says why it runs in
+   * the application. Server environments only.
+   */
+  readonly isolation?: PluginIsolation;
   /** The plugin's `ui.ts` exports (components for host slots), in every environment; null when absent. */
   readonly ui: Record<string, unknown> | null;
   /** The plugin's `templates/*.ts` modules by file stem (`entry-posts` for `templates/entry-posts.ts`), in every environment. */

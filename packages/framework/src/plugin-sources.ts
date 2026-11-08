@@ -133,8 +133,12 @@ export function readRenderedPlugins(projectRoot: string): RenderedPlugin[] {
   });
 }
 
-/** Source of `virtual:cossack-plugins` for one environment. */
-export function pluginRegistryModule(plugins: readonly RenderedPlugin[], server: boolean): string {
+/**
+ * Source of `virtual:cossack-plugins` for one environment. With `isolation`, server entries of
+ * plugins that run isolated are left out of the application and carried as code instead.
+ */
+export function pluginRegistryModule(plugins: readonly RenderedPlugin[], server: boolean,
+  isolation?: Readonly<Record<string, { readonly mode: 'isolated' | 'app' }>>): string {
   const ui = `const uiModules = import.meta.glob('/${PLUGINS_DIRECTORY}/*/${PLUGIN_UI_ENTRY}', { eager: true });
     const templateModules = import.meta.glob('/${PLUGINS_DIRECTORY}/*/${PLUGIN_TEMPLATES}', { eager: true });
     const assetUrls = import.meta.glob('/${PLUGINS_DIRECTORY}/*/${PLUGIN_ASSETS}', { eager: true, query: '?url', import: 'default' });
@@ -154,9 +158,15 @@ export function pluginRegistryModule(plugins: readonly RenderedPlugin[], server:
     export default plugins;
     `;
   }
+  const isolated = Object.entries(isolation ?? {}).filter(([, entry]) => entry.mode === 'isolated').map(([name]) => name).sort();
+  // Isolated plugins' server code never enters the application bundle.
+  const serverEntries = isolated.length
+    ? JSON.stringify([`/${PLUGINS_DIRECTORY}/*/${PLUGIN_SERVER_ENTRY}`, ...isolated.map(name => `!/${PLUGINS_DIRECTORY}/${name}/${PLUGIN_SERVER_ENTRY}`)])
+    : `'/${PLUGINS_DIRECTORY}/*/${PLUGIN_SERVER_ENTRY}'`;
   return `
     const manifests = import.meta.glob('/${PLUGINS_DIRECTORY}/*/${PLUGIN_MANIFEST_FILE}', { eager: true, import: 'default' });
-    const modules = import.meta.glob('/${PLUGINS_DIRECTORY}/*/${PLUGIN_SERVER_ENTRY}', { eager: true });
+    const modules = import.meta.glob(${serverEntries}, { eager: true });
+    const isolation = ${JSON.stringify(isolation ?? {})};
     ${ui}
     function freeze(value) {
       if (value && typeof value === 'object' && !Object.isFrozen(value)) {
@@ -174,6 +184,7 @@ export function pluginRegistryModule(plugins: readonly RenderedPlugin[], server:
       return Object.freeze({
         name, version: manifest.version, manifest: freeze(manifest),
         module: modules['/${PLUGINS_DIRECTORY}/' + name + '/${PLUGIN_SERVER_ENTRY}'] ?? null,
+        ...(isolation[name] ? { isolation: freeze(isolation[name]) } : {}),
         ui: uiModules['/${PLUGINS_DIRECTORY}/' + name + '/${PLUGIN_UI_ENTRY}'] ?? null,
         templates: templatesOf(name),
         assets: assetsOf(name),

@@ -17,6 +17,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { resolve, dirname, relative } from 'path';
 import { generateRoutes, ROUTES_MODULE_ID, ROUTES_SOURCE_PATH, ROUTE_GLOB_EXCLUDES } from './route-codegen.js';
 import { PLUGINS_MODULE_ID, pluginPageKey, pluginRegistryModule, readRenderedPlugins, scanPageSources } from './plugin-sources.js';
+import { isolationReport, pluginIsolation, PluginIsolationError, type PluginIsolationOptions } from './plugin-isolation.js';
 export { scanPagesDir } from './route-codegen.js';
 import { SSR_MANIFEST_ASSET_PATH } from './runtime-constants.js';
 import { checkCapabilityRequirements, type CapabilityUse, type RuntimeName } from './runtime-capabilities.js';
@@ -105,6 +106,13 @@ export interface CossackPagesOptions {
    * `cossack add markdown`.
    */
   markdownProcessor?: MarkdownProcessor;
+  /**
+   * Run plugins' server code in their own Workers where the shape allows it
+   * (specs/cms-plugin-isolation.md). On Cloudflare each isolated plugin's
+   * `server.ts` is bundled with `runtime` and kept out of the application;
+   * other runtimes keep it in the application and say why.
+   */
+  pluginIsolation?: PluginIsolationOptions;
   /**
    * Check html and svg templates (`cossack check templates`): builds fail on
    * template errors, and the dev server reports diagnostics as files change.
@@ -370,7 +378,17 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
         // One static registry of rendered plugins, built from their manifests.
         const plugins = readRenderedPlugins(projectRoot);
         for (const plugin of plugins) this.addWatchFile(resolve(projectRoot, plugin.manifest));
-        return pluginRegistryModule(plugins, this.environment?.name !== 'client');
+        const server = this.environment?.name !== 'client';
+        if (!server || !options.pluginIsolation) return pluginRegistryModule(plugins, server);
+        const isolationOptions = options.pluginIsolation;
+        return pluginIsolation(projectRoot, plugins, isolationOptions, options.capabilities?.runtime ?? 'unknown').then(({ entries, watchFiles }) => {
+          for (const file of watchFiles) this.addWatchFile(file);
+          if (this.environment?.mode !== 'dev') for (const line of isolationReport(entries)) this.environment?.logger?.info(line);
+          return pluginRegistryModule(plugins, true, entries);
+        }, (error: unknown) => {
+          if (error instanceof PluginIsolationError) this.error({ code: error.code, message: error.message, id: resolve(projectRoot, error.file) });
+          throw error;
+        });
       }
       if (id === resolvedRealtimeComponentsModuleId) {
         // Server environments import exactly the realtime components; the

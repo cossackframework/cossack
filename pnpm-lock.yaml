@@ -456,6 +456,9 @@ importers:
       remark-toc:
         specifier: ^9.0.0
         version: 9.0.0
+      rolldown:
+        specifier: ~1.1.5
+        version: 1.1.5
       unified:
         specifier: ^11.0.5
         version: 11.0.5
@@ -484,6 +487,9 @@ importers:
       hono:
         specifier: ^4.13.7
         version: 4.13.11
+      miniflare:
+        specifier: 4.20260722.0
+        version: 4.20260722.0(@types/node@26.0.0)
       reflect-metadata:
         specifier: ^0.2.2
         version: 0.2.2
