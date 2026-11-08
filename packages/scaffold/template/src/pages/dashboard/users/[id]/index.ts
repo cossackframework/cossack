@@ -1,6 +1,6 @@
 import { ClientVisibleError, Cossack, Page, State, ClientState, Validate, Client, Server, Store, storeRules } from '@cossackframework/core';
 import { Alert, Card, CardBody, CardHeader, Field, Input, PasswordInput, Button, Checkbox, Form, Tabs } from '@cossackframework/ui';
-import { notice } from '../../../../dashboard/page';
+import { notice, pageHeader } from '@cossackframework/ui/blocks';
 import { html, component, bind } from '@cossackframework/renderer';
 import { canAssignRoles, canManageUser, canManageAccess, guard } from '../../../../services/rbac';
 import { getUser, updateUser, syncUserRoles, changeUserPassword, type UserDetail } from '../../../../services/users';
@@ -291,7 +291,7 @@ export default class EditUserPage extends Cossack {
     }
 
     render() {
-        if (this.error) return html`<div class="text-sm text-destructive">${this.error}</div>`;
+        if (this.error) return notice(this.error, 'error');
         if (!this.userDetail) return html`<div class="text-sm text-muted-foreground">${__('Loading user details...')}</div>`;
         if (this.readOnly) return html`<div class="space-y-4 max-w-2xl">
             <h1 class="text-2xl font-bold text-foreground">${this.userDetail.name || this.userDetail.email}</h1>
@@ -301,7 +301,7 @@ export default class EditUserPage extends Cossack {
 
         const own = this.userDetail.id === this.user?.id;
         const lockedNote = html`<p role="status" data-locked-profile class="rounded-md border border-border px-3 py-2 text-sm text-foreground">${this.userDetail.lockedProfile}</p>`;
-        const profile = html`<div class="space-y-8 max-w-2xl">
+        const profile = html`<div class="max-w-2xl space-y-6">
             ${component(Card, {}, html`
                 ${component(CardHeader, {}, html`<h2 class="text-base font-semibold text-foreground">${__('Profile')}</h2>`)}
                 ${component(CardBody, {}, this.locked ? html`<div class="space-y-3">
@@ -311,7 +311,7 @@ export default class EditUserPage extends Cossack {
                     ${component(Form, {
                         submit: (e: Event) => this.handleSubmit(e),
                     }, html`
-                        <div class="flex flex-col space-y-6">
+                        <div class="flex flex-col space-y-4">
                         ${component(Field, { label: __('Name'), for: 'name', error: this.getError('name'),
                             control: attributes => component(Input, { ...attributes, type: 'text', '.value': bind(this.userDetail, 'name') }) })}
                         ${component(Field, { label: __('Email'), for: 'email', error: this.getError('email'),
@@ -334,13 +334,11 @@ export default class EditUserPage extends Cossack {
                         ${this.allRoles.length === 0
                             ? html`<p class="text-sm text-muted-foreground">${__('No roles defined yet.')}</p>`
                             : this.allRoles.map((role) => html`
-                                <label class="flex items-center gap-3 cursor-pointer">
-                                    ${component(Checkbox, {
-                                        checked: this.assignedRoleIds.includes(role.id),
-                                        '@change': (e: any) => this.toggleRole(role.id, e.target.checked),
-                                    })}
-                                    <span class="text-sm font-medium text-foreground">${role.name}</span>
-                                </label>
+                                <div>${component(Checkbox, {
+                                    label: role.name,
+                                    checked: this.assignedRoleIds.includes(role.id),
+                                    '@change': (e: any) => this.toggleRole(role.id, e.target.checked),
+                                })}</div>
                             `)}
                     </div>
                     <div class="mt-6">
@@ -351,7 +349,7 @@ export default class EditUserPage extends Cossack {
 
             ${this.fields ? component(UserFields, { userId: this.userDetail.id, data: this.fields }) : null}
         </div>`;
-        const security = html`<div class="space-y-8 max-w-2xl">
+        const security = html`<div class="max-w-2xl space-y-6">
             ${component(Card, {}, html`
                 ${component(CardHeader, {}, html`<h2 class="text-base font-semibold text-foreground">${__('Change password')}</h2>`)}
                 ${component(CardBody, {}, this.locked ? lockedNote : html`
@@ -428,11 +426,8 @@ export default class EditUserPage extends Cossack {
         </div>`;
 
         return html`
-            <div class=${`space-y-8 ${this.canSeeAccess ? 'max-w-4xl' : 'max-w-2xl'}`}>
-                <div>
-                    <h1 class="text-2xl font-bold text-foreground">${this.userDetail.name || this.userDetail.email}</h1>
-                    <p class="mt-1 text-sm text-muted-foreground">${this.canAssignRoles ? __('Edit user details and roles.') : __('Edit user details.')}</p>
-                </div>
+            <div class=${`space-y-6 ${this.canSeeAccess ? 'max-w-4xl' : 'max-w-2xl'}`}>
+                ${pageHeader(this.userDetail.name || this.userDetail.email, { description: this.canAssignRoles ? __('Edit user details and roles.') : __('Edit user details.') })}
                 ${this.message && !this.failed ? notice(this.message, 'success') : null}
                 ${this.failed ? notice(this.failed, 'error') : null}
 

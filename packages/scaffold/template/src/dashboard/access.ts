@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
 import { dashboardModules } from './registry';
-import type { DashboardModule, DashboardStatus } from './types';
+import type { DashboardModule, DashboardNotice, DashboardStatus } from './types';
 
 /** Navigation for the signed-in user: the installed modules they may open, in order. */
 export async function navigation(c: Context): Promise<DashboardModule[]> {
@@ -16,6 +16,11 @@ export async function navigation(c: Context): Promise<DashboardModule[]> {
 
 /** What waits for the signed-in user, for the dashboard's taskbar. Nothing here; the CMS counts comments, reviews and deliveries. */
 export async function dashboardStatus(_c: Context): Promise<DashboardStatus[]> {
+    return [];
+}
+
+/** Notices above every dashboard screen. Nothing here; the CMS shows what its plugins return from `cms.dashboard.notices`. */
+export async function dashboardNotices(_c: Context): Promise<DashboardNotice[]> {
     return [];
 }
 

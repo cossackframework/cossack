@@ -3,6 +3,7 @@ import { Alert, Button, Field, Input } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { deleteCookie, getCookie } from 'hono/cookie';
 import { authSessions, completeTwoFactor, TWO_FACTOR_COOKIE } from '../../../auth';
+import { returnPath } from '../../../auth-input';
 
 /**
  * The second step of signing in: a code from the authenticator app, or a recovery code. The
@@ -13,8 +14,11 @@ export default class TwoFactorPage extends Cossack {
     @State() code = '';
     @State() error = '';
     @State() recovery = false;
+    /** Where to go once signed in, passed on by the sign-in page. Checked again on use. */
+    @State() returnTo = '';
 
     async init() {
+        this.returnTo = returnPath(this.c.req.query('redirect')) ?? '';
         if (!getCookie(this.c, TWO_FACTOR_COOKIE)) this.error = __('Enter your email and password first.');
     }
 
@@ -39,7 +43,7 @@ export default class TwoFactorPage extends Cossack {
         const { headers } = await authSessions.create(result.user.id, this.c);
         headers.forEach((value, key) => this.c.header(key, value));
         // A used recovery code is a hint to set up the app again.
-        this.redirect(result.recovery ? '/dashboard/profile/security?recovered=1' : config('auth.redirectAfterLogin'));
+        this.redirect(result.recovery ? '/dashboard/profile/security?recovered=1' : returnPath(this.returnTo) ?? config('auth.redirectAfterLogin'));
     }
 
     render() {

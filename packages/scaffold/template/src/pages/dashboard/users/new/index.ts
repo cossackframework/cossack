@@ -1,6 +1,6 @@
 import { Cossack, Page, Store, State, Validate, Client, Server, storeRules } from '@cossackframework/core';
 import { Card, CardBody, CardHeader, Checkbox, Field, Input, PasswordInput, Button, Form } from '@cossackframework/ui';
-import { notice } from '../../../../dashboard/page';
+import { linkButton, notice, pageHeader } from '@cossackframework/ui/blocks';
 import { html, component, bind } from '@cossackframework/renderer';
 import { canAssignRoles, guard } from '../../../../services/rbac';
 import { createUser } from '../../../../services/users';
@@ -76,11 +76,8 @@ export default class NewUserPage extends Cossack {
 
     render() {
         return html`
-            <div class="space-y-8 max-w-2xl">
-                <div>
-                    <h1 class="text-2xl font-bold text-foreground">${__('New user')}</h1>
-                    <p class="mt-1 text-sm text-muted-foreground">${__('Create a new user account.')}</p>
-                </div>
+            <div class="max-w-2xl space-y-6">
+                ${pageHeader(__('New user'), { description: __('Create a new user account.') })}
                 ${this.error ? notice(this.error, 'error') : null}
 
                 ${component(Card, {}, html`
@@ -94,27 +91,19 @@ export default class NewUserPage extends Cossack {
                                 control: attributes => component(Input, { ...attributes, type: 'text', '.value': bind(this.form, 'name') }) })}
                             ${component(Field, { label: __('Email'), for: 'email', error: this.getError('form.email'),
                                 control: attributes => component(Input, { ...attributes, type: 'email', placeholder: 'user@example.com', variant: this.hasError('form.email') ? 'error' : 'default', '.value': bind(this.form, 'email') }) })}
-                            <label class="flex items-center gap-3 cursor-pointer">
-                                ${component(Checkbox, { checked: this.form.invite, '@change': (e: Event) => { this.form.invite = (e.target as HTMLInputElement).checked; } })}
-                                <span class="text-sm text-foreground">${__('Send an invitation email with a link to set the password')}</span>
-                            </label>
+                            ${component(Checkbox, { label: __('Send an invitation email with a link to set the password'), checked: this.form.invite, '@change': (e: Event) => { this.form.invite = (e.target as HTMLInputElement).checked; } })}
                             ${this.form.invite ? null : component(Field, { label: __('Password'), for: 'password', error: this.getError('form.password'),
                                 control: attributes => component(PasswordInput, { ...attributes, value: this.form.password, onValueChange: (v: string) => this.form.password = v }) })}
                             ${this.canAssignRoles ? html`<fieldset class="space-y-2">
                                 <legend class="mb-1 text-sm font-medium text-foreground">${__('Roles')}</legend>
-                                ${this.roles.length ? this.roles.map(role => html`<label class="flex items-center gap-3 cursor-pointer">
-                                    ${component(Checkbox, { checked: this.form.roleIds.includes(role.id), '@change': (e: Event) => this.toggleRole(role.id, (e.target as HTMLInputElement).checked) })}
-                                    <span class="text-sm text-foreground">${role.name}</span>
-                                </label>`) : html`<p class="text-sm text-muted-foreground">${__('No roles defined yet.')}</p>`}
+                                ${this.roles.length ? this.roles.map(role => html`<div>${component(Checkbox, { label: role.name, checked: this.form.roleIds.includes(role.id), '@change': (e: Event) => this.toggleRole(role.id, (e.target as HTMLInputElement).checked) })}</div>`)
+                                    : html`<p class="text-sm text-muted-foreground">${__('No roles defined yet.')}</p>`}
                             </fieldset>` : html`<p class="text-sm text-muted-foreground">${this.defaultRoleName
                                 ? `${__('The new user gets the default role')}: ${this.defaultRoleName}.`
                                 : __('The new user starts without a role.')}</p>`}
                             <div class="flex items-center gap-2">
                                 ${component(Button, { type: 'submit' }, __('Create user'))}
-                                <a href="/dashboard/users"
-                                   class="inline-flex items-center justify-center rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors">
-                                    ${__('Cancel')}
-                                </a>
+                                ${linkButton(__('Cancel'), '/dashboard/users', 'outline')}
                             </div>
                             </div>
                         `)}

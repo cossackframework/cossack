@@ -54,6 +54,8 @@ export interface PublicUser {
   roles: RoleAssignment[];
   /** Set by `registerUser` when the account waits for the email's confirmation link instead of signing in. */
   verification?: 'sent';
+  /** The account waits for an administrator's approval before it can sign in. */
+  approval?: 'pending';
 }
 
 function publicUser(u: User, roles: RoleAssignment[] = []): PublicUser {

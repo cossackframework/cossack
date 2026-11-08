@@ -46,7 +46,7 @@ export const FEATURE_REGISTRY = {
   workflows: { requires: [] },
   // RomeDB CMS: content, media, taxonomies, settings and plugins in the shared dashboard.
   // With cms, auth keeps users and sessions in RomeDB, so it no longer needs database.
-  cms: { requires: ['ui', 'auth', 'dashboard'] },
+  cms: { requires: ['ui', 'auth', 'dashboard', 'markdown'] },
 };
 
 /** Features that cannot be selected together, with the reason. */

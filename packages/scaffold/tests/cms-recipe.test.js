@@ -13,7 +13,7 @@ const text = (files, rel) => files.get(rel)?.content.toString();
 describe('cms recipe', () => {
   it('brings auth and the dashboard on RomeDB without the ORM', () => {
     const recipe = resolveRecipe({ adapter: 'node', preset: 'minimal', features: ['cms'] });
-    expect(recipe.resolvedFeatures).toEqual(['ui', 'auth', 'dashboard', 'cms']);
+    expect(recipe.resolvedFeatures).toEqual(['ui', 'auth', 'dashboard', 'markdown', 'cms']);
     expect(authStore(recipe.resolvedFeatures)).toBe('cms');
     expect(resolveRecipe({ adapter: 'node', preset: 'minimal', features: ['auth'] }).resolvedFeatures).toContain('database');
     expect(() => resolveRecipe({ adapter: 'node', preset: 'minimal', features: ['cms'], authMethods: 'credentials,oauth', oauth: 'github' })).toThrow(/OAuth sign-in is not available with the cms feature/);
@@ -32,7 +32,7 @@ describe('cms recipe', () => {
       expect(files.has(rel), rel).toBe(false);
     // CMS screens under /dashboard, setup under /auth, the site at /.
     for (const rel of ['src/pages/dashboard/(cms)/content/[collection]/[id]/index.ts', 'src/pages/dashboard/(cms)/collections/[name]/index.ts', 'src/pages/dashboard/(cms)/media/index.ts',
-      'src/pages/dashboard/(cms)/terms/[taxonomy]/index.ts', 'src/pages/dashboard/(cms)/field-groups/[id]/index.ts', 'src/pages/dashboard/(cms)/settings/[group]/index.ts', 'src/pages/auth/setup/index.ts', 'src/pages/(site)/index.ts',
+      'src/pages/dashboard/(cms)/terms/[taxonomy]/index.ts', 'src/pages/dashboard/(cms)/field-groups/[id]/index.ts', 'src/pages/dashboard/(cms)/settings/index.ts', 'src/pages/auth/setup/index.ts', 'src/pages/(site)/index.ts',
       'src/pages/(site)/[...path]/index.ts', 'src/pages/(site)/media/[id]/[name]/index.ts', 'src/pages/api/auth/session.ts', 'src/cms/media.ts'])
       expect(files.has(rel), rel).toBe(true);
     expect(files.has('src/pages/index.ts')).toBe(false);
@@ -60,7 +60,7 @@ describe('cms recipe', () => {
     const files = await renderRecipe(resolveRecipe({ adapter: 'node', preset: 'minimal', features: ['cms'] }));
     for (const rel of ['src/pages/(site)/preview/[collection]/[id]/index.ts', 'src/pages/(site)/sitemap.xml/index.ts', 'src/pages/(site)/sitemaps/[file]/index.ts', 'src/pages/(site)/robots.txt/index.ts',
       'src/pages/dashboard/(cms)/content/[collection]/[id]/revisions/index.ts', 'src/pages/dashboard/(cms)/tools/redirects/index.ts', 'src/pages/dashboard/(cms)/tools/webhooks/index.ts',
-      'src/pages/dashboard/(cms)/comments/index.ts', 'src/pages/dashboard/(cms)/settings/languages/index.ts', 'src/pages/api/cms/comments/index.ts', 'src/pages/auth/two-factor/index.ts',
+      'src/pages/dashboard/(cms)/comments/index.ts', 'src/pages/dashboard/(cms)/settings/index.ts', 'src/pages/api/cms/comments/index.ts', 'src/pages/auth/two-factor/index.ts',
       'src/pages/dashboard/profile/security/index.ts', 'src/cms/seo.ts', 'src/cms/seo-head.ts', 'src/cms/sitemaps.ts'])
       expect(files.has(rel), rel).toBe(true);
     // The CMS store backs passkeys with SimpleWebAuthn; it resizes images with sharp on Node.

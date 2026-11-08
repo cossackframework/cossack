@@ -1,8 +1,10 @@
 import { Cossack, Page, State, ClientStore, Validate, Client, Server, storeRules, isClientVisibleError } from '@cossackframework/core';
-import { Field, Input, PasswordInput, Button, Alert } from '@cossackframework/ui';
+import { Field, Input, PasswordInput, Button, Alert, Turnstile } from '@cossackframework/ui';
 import { html, component, bind } from '@cossackframework/renderer';
 import { authSessions, registerUser, registrationOpen } from '../../../auth';
-import { registerInput, type RegisterInput } from '../../../auth-input';
+import { registerInput, returnPath, type RegisterInput } from '../../../auth-input';
+import { botCheckKey, passesBotCheck } from '../../../auth-bot-check';
+import { BOT_CHECK_FAILED, botCheckToken } from '../../../auth-bot-token';
 
 const REGISTRATION_MESSAGES = new Set(['An account with this email already exists.', 'Registration is closed on this site.']);
 
@@ -27,10 +29,18 @@ export default class RegisterPage extends Cossack {
     @State() error = '';
     /** The confirmation email went out; no session yet. */
     @State() sent = false;
+    /** The account waits for an administrator's approval; no session yet. */
+    @State() pending = false;
     @State() closed = false;
+    /** The Turnstile site key while the bot check is on. */
+    @State() botKey: string | null = null;
+    /** Where to go once the account is made: the `redirect` query. Checked again on use. */
+    @State() returnTo = '';
 
     async init() {
         this.closed = !(await registrationOpen());
+        this.botKey = botCheckKey();
+        this.returnTo = returnPath(this.c.req.query('redirect')) ?? '';
     }
 
     @Client()
@@ -40,7 +50,7 @@ export default class RegisterPage extends Cossack {
         const ok = await this.validateAll();
         if (!ok) return;
         try {
-            await this.register({ name: this.form.name, email: this.form.email, password: this.form.password });
+            await this.register({ name: this.form.name, email: this.form.email, password: this.form.password, turnstile: botCheckToken(event.target) });
         } catch {
             this.error = 'Could not create the account. Check your details and try again.';
         }
@@ -48,14 +58,16 @@ export default class RegisterPage extends Cossack {
 
     @Server({ input: registerInput })
     async register(submitted: RegisterInput) {
-        const { name, email, password } = await registerInput.parse(submitted);
+        const { name, email, password, turnstile } = await registerInput.parse(submitted);
         this.error = '';
+        if (!(await passesBotCheck(turnstile, 'register'))) { this.error = BOT_CHECK_FAILED; return; }
         try {
             const user = await registerUser(email, password, name || undefined);
             if (user.verification === 'sent') { this.sent = true; return; }
+            if (user.approval === 'pending') { this.pending = true; return; }
             const { headers } = await authSessions.create(user.id, this.c);
             headers.forEach((value, key) => this.c.header(key, value));
-            this.redirect(config('auth.redirectAfterLogin'));
+            this.redirect(returnPath(this.returnTo) ?? config('auth.redirectAfterLogin'));
         } catch (error) {
             // Only known, safe messages reach the page; anything else stays generic.
             this.error = isClientVisibleError(error) && REGISTRATION_MESSAGES.has(error.message)
@@ -68,6 +80,11 @@ export default class RegisterPage extends Cossack {
         if (this.sent) return html`
             <h3 class="mb-3 text-xl font-semibold text-foreground">${__('Check your email')}</h3>
             ${component(Alert, {}, __('We sent you a link to confirm your email address. Open it to finish creating your account; it works for two days.'))}
+            <p class="mt-6 text-center text-sm text-muted-foreground"><a href="/auth/login" class="text-primary font-medium hover:underline">${__('Back to sign in')}</a></p>
+        `;
+        if (this.pending) return html`
+            <h3 class="mb-3 text-xl font-semibold text-foreground">${__('Thanks for registering')}</h3>
+            ${component(Alert, {}, __('An administrator approves new accounts on this site. We will email you when yours is ready.'))}
             <p class="mt-6 text-center text-sm text-muted-foreground"><a href="/auth/login" class="text-primary font-medium hover:underline">${__('Back to sign in')}</a></p>
         `;
         if (this.closed) return html`
@@ -87,6 +104,7 @@ export default class RegisterPage extends Cossack {
                     control: attributes => component(Input, { ...attributes, type: 'email', placeholder: 'user@example.com', variant: this.hasError('form.email') ? 'error' : 'default', '.value': bind(this.form, 'email') }) })}
                 ${component(Field, { label: __('Password'), for: 'password', error: this.getError('form.password'),
                     control: attributes => component(PasswordInput, { ...attributes, value: this.form.password, onValueChange: (v: string) => this.form.password = v }) })}
+                ${this.botKey ? component(Turnstile, { id: 'register-verify', siteKey: this.botKey, action: 'register', label: __('Bot protection') }) : null}
                 ${this.error ? component(Alert, { variant: 'destructive' }, this.error) : null}
                 ${component(Button, { type: 'submit', block: true }, __('Create Account'))}
             </form>

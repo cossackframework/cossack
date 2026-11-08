@@ -1,9 +1,14 @@
 import { Cossack, Page, State, ClientStore, Validate, Client, Server, storeRules } from '@cossackframework/core';
-import { Field, Input, PasswordInput, Button, Alert } from '@cossackframework/ui';
+import { Field, Input, PasswordInput, Button, Alert, Turnstile } from '@cossackframework/ui';
 import { html, component, bind } from '@cossackframework/renderer';
 import { setCookie } from 'hono/cookie';
 import { authSessions, beginTwoFactor, completePasskeySignIn, loginUser, passkeySignIn, registrationOpen, requestMagicLink, twoFactorAvailable, TWO_FACTOR_COOKIE } from '../../../auth';
-import { loginInput, type LoginInput } from '../../../auth-input';
+import { loginInput, returnPath, type LoginInput } from '../../../auth-input';
+import { botCheckKey, passesBotCheck } from '../../../auth-bot-check';
+import { BOT_CHECK_FAILED, botCheckToken } from '../../../auth-bot-token';
+
+/** Sign-in failures the visitor is told about, after the password matched or before it is checked; see auth.ts. */
+const TOLD = new Set(['SignInLockedError', 'SignInPendingError']);
 import { usePasskey } from '../../../passkeys.client';
 
 interface LoginForm {
@@ -29,10 +34,21 @@ export default class LoginPage extends Cossack {
     @State() passkeys = false;
     /** A sign-in link was requested: the page says to check the email, whatever the address. */
     @State() linkSent = false;
+    /** The Turnstile site key while the bot check is on. */
+    @State() botKey: string | null = null;
+    /** Where to go once signed in: the `redirect` query, such as a members-only entry. Checked again on use. */
+    @State() returnTo = '';
 
     async init() {
         this.canRegister = await registrationOpen();
         this.passkeys = twoFactorAvailable;
+        this.botKey = botCheckKey();
+        this.returnTo = returnPath(this.c.req.query('redirect')) ?? '';
+    }
+
+    /** Where a completed sign-in goes: the page the visitor came from, or the configured default. */
+    private signedInPath(): string {
+        return returnPath(this.returnTo) ?? config('auth.redirectAfterLogin');
     }
 
     @Client()
@@ -42,7 +58,7 @@ export default class LoginPage extends Cossack {
         const ok = await this.validateAll();
         if (!ok) return;
         try {
-            await this.login({ email: this.form.email, password: this.form.password });
+            await this.login({ email: this.form.email, password: this.form.password, turnstile: botCheckToken(event.target) });
         } catch {
             this.error = 'Could not sign in. Check your details and try again.';
         }
@@ -51,8 +67,9 @@ export default class LoginPage extends Cossack {
     @Server({ input: loginInput })
     async login(submitted: LoginInput) {
         // Native server calls bypass decorator gates, so validate here too.
-        const { email, password } = await loginInput.parse(submitted);
+        const { email, password, turnstile } = await loginInput.parse(submitted);
         this.error = '';
+        if (!(await passesBotCheck(turnstile, 'login'))) { this.error = BOT_CHECK_FAILED; return; }
         try {
             const user = await loginUser(email, password);
             if (!user) { this.error = 'Invalid credentials'; return; }
@@ -60,15 +77,16 @@ export default class LoginPage extends Cossack {
             const pending = await beginTwoFactor(user.id);
             if (pending) {
                 setCookie(this.c, TWO_FACTOR_COOKIE, pending, { path: '/auth', httpOnly: true, sameSite: 'Lax', maxAge: 300, secure: new URL(this.c.req.url).protocol === 'https:' });
-                this.redirect('/auth/two-factor');
+                const back = returnPath(this.returnTo);
+                this.redirect(back ? `/auth/two-factor?redirect=${encodeURIComponent(back)}` : '/auth/two-factor');
                 return;
             }
             const { headers } = await authSessions.create(user.id, this.c);
             headers.forEach((value, key) => this.c.header(key, value));
-            this.redirect(config('auth.redirectAfterLogin'));
+            this.redirect(this.signedInPath());
         } catch (error) {
-            // A lock (too many wrong passwords) is the one failure the visitor is told about; see SignInLockedError in auth.ts.
-            this.error = (error as Error)?.name === 'SignInLockedError' ? (error as Error).message : 'Could not sign in. Try again.';
+            // A lock (too many wrong passwords) and an account awaiting approval are the failures the visitor is told about.
+            this.error = TOLD.has((error as Error)?.name) ? (error as Error).message : 'Could not sign in. Try again.';
         }
     }
 
@@ -76,13 +94,14 @@ export default class LoginPage extends Cossack {
     async emailLink(event: Event) {
         event.preventDefault();
         if (!this.form.email) { this.error = __('Enter your email first.'); return; }
-        await this.sendLink(this.form.email);
+        await this.sendLink(this.form.email, botCheckToken((event.target as HTMLElement | null)?.closest?.('form') ?? null));
     }
 
     /** Email a one-time sign-in link; the answer is the same whether the account exists. */
     @Server()
-    async sendLink(email: string) {
+    async sendLink(email: string, turnstile = '') {
         this.error = '';
+        if (!(await passesBotCheck(turnstile, 'login'))) { this.error = BOT_CHECK_FAILED; return; }
         try { await requestMagicLink(String(email).trim().toLowerCase().slice(0, 254), new URL(this.c.req.url).origin); } catch { /* the page says the same either way */ }
         this.linkSent = true;
     }
@@ -112,7 +131,7 @@ export default class LoginPage extends Cossack {
         if (!user) { this.error = 'This passkey is not recognised.'; return; }
         const { headers } = await authSessions.create(user.id, this.c);
         headers.forEach((value, key) => this.c.header(key, value));
-        this.redirect(config('auth.redirectAfterLogin'));
+        this.redirect(this.signedInPath());
     }
 
     render() {
@@ -128,6 +147,7 @@ export default class LoginPage extends Cossack {
                     <a href="/auth/forgot-password" class="text-primary hover:underline">${__('Forgot password?')}</a>
                 </div>
                 ${this.linkSent ? component(Alert, {}, __('If an account exists for that email, a sign-in link is on its way. It works once, for fifteen minutes.')) : null}
+                ${this.botKey ? component(Turnstile, { id: 'login-verify', siteKey: this.botKey, action: 'login', label: __('Bot protection') }) : null}
                 ${this.error ? component(Alert, { variant: 'destructive' }, this.error) : null}
                 ${component(Button, { type: 'submit', block: true }, __('Sign In'))}
             </form>
@@ -137,7 +157,7 @@ export default class LoginPage extends Cossack {
             </div>` : null}
             <p class="mt-6 text-center text-sm text-muted-foreground" ?hidden=${!this.canRegister}>
                 ${__("Don't have an account?")}
-                <a href="/auth/register" class="text-primary font-medium hover:underline">${__('Register')}</a>
+                <a href=${this.returnTo ? `/auth/register?redirect=${encodeURIComponent(this.returnTo)}` : '/auth/register'} class="text-primary font-medium hover:underline">${__('Register')}</a>
             </p>
         `;
     }

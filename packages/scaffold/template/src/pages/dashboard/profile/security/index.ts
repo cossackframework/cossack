@@ -1,6 +1,6 @@
 import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackframework/core';
 import { Alert, Badge, Button, Card, CardBody, CardHeader, Field, Input } from '@cossackframework/ui';
-import { notice } from '../../../../dashboard/page';
+import { notice, pageHeader } from '@cossackframework/ui/blocks';
 import { html, component, unsafeHTML, type TemplateResult } from '@cossackframework/renderer';
 import {
     addPasskey, apiTokensAvailable, confirmAuthenticator, createApiToken, disableAuthenticator, listApiTokens, newRecoveryCodes, passkeyRegistration,
@@ -205,9 +205,10 @@ export default class SecurityPage extends Cossack {
             <p class="flex items-center gap-2 text-sm text-foreground">${component(Badge, { variant: 'success' }, __('On'))} ${__('Sign-in asks for a code from your authenticator app.')}</p>
             <p class="text-sm text-muted-foreground">${this.status.recoveryCodes} ${__('recovery codes left. Each works once, when you do not have your phone.')}</p>
             <form class="flex flex-wrap items-end gap-2" @submit=${(event: Event) => event.preventDefault()}>
-                ${component(Field, { label: __('Current code'), for: 'totp-current', hint: __('From the app, or a recovery code.'), control: () => codeInput('totp-current') })}
+                ${component(Field, { label: __('Current code'), for: 'totp-current', control: () => codeInput('totp-current') })}
                 ${component(Button, { type: 'button', variant: 'outline', disabled: !this.code.trim(), '@click': () => this.regenerate(this.code) }, __('New recovery codes'))}
                 ${component(Button, { type: 'button', variant: 'destructive', disabled: !this.code.trim(), '@click': () => this.turnOff(this.code) }, __('Turn off'))}
+                <p class="w-full text-xs text-muted-foreground">${__('From the app, or a recovery code.')}</p>
             </form>
         </div>`;
     }
@@ -217,14 +218,9 @@ export default class SecurityPage extends Cossack {
             <h1 class="text-2xl font-bold text-foreground">${__('Security')}</h1>
             <p class="text-sm text-muted-foreground">${__('This site signs in with passwords. Two-step sign-in and passkeys come with the CMS auth store.')}</p>
         </div>`;
-        return html`<div class="max-w-3xl space-y-8">
-            <div class="flex flex-wrap items-end justify-between gap-3">
-                <div>
-                    <h1 class="text-2xl font-bold text-foreground">${__('Security')}</h1>
-                    <p class="mt-1 text-sm text-muted-foreground">${__('Protect your account, and connect apps to the content API.')}</p>
-                </div>
-                <a href="/dashboard/profile" class="text-sm text-muted-foreground hover:text-foreground">← ${__('Profile')}</a>
-            </div>
+        return html`<div class="max-w-3xl space-y-6">
+            ${pageHeader(__('Security'), { description: __('Protect your account, and connect apps to the content API.'),
+                actions: html`<a href="/dashboard/profile" class="text-sm text-muted-foreground hover:text-foreground">← ${__('Profile')}</a>` })}
             ${this.required ? component(Alert, { variant: 'warning' }, __('This site requires two-step sign-in. Add an authenticator app or a passkey to continue.')) : null}
             ${this.recovered ? component(Alert, { variant: 'warning' }, __('You signed in with a recovery code. If you lost your phone, turn the authenticator off and set it up again.')) : null}
             ${this.message && !this.error ? notice(this.message, 'success') : null}

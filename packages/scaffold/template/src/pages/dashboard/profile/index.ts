@@ -1,6 +1,6 @@
 import { Cossack, Page, State, ClientState, Store, Validate, Client, Server, storeRules, getLocale, getSupportedLocales, setLocale } from '@cossackframework/core';
 import { Card, CardBody, CardHeader, Field, Input, Button, Avatar, Form, NativeSelect } from '@cossackframework/ui';
-import { notice } from '../../../dashboard/page';
+import { notice, pageHeader } from '@cossackframework/ui/blocks';
 import { html, component, bind } from '@cossackframework/renderer';
 import { avatarUploads, deleteOwnAccount, updateUserProfile, uploadAvatar } from '../../../auth';
 import { avatarField } from '../../../dashboard/avatar-field';
@@ -155,14 +155,9 @@ export default class ProfilePage extends Cossack {
 
     render() {
         return html`
-            <div class="space-y-8 max-w-2xl">
-                <div class="flex flex-wrap items-end justify-between gap-3">
-                    <div>
-                        <h1 class="text-2xl font-bold text-foreground">${__('Profile')}</h1>
-                        <p class="mt-1 text-sm text-muted-foreground">${__('Update your display name and avatar.')}</p>
-                    </div>
-                    <a href="/dashboard/profile/security" class="text-sm text-primary hover:underline">${__('Security and application passwords')} →</a>
-                </div>
+            <div class="max-w-2xl space-y-6">
+                ${pageHeader(__('Profile'), { description: __('Update your display name and avatar.'),
+                    actions: html`<a href="/dashboard/profile/security" class="text-sm text-primary hover:underline">${__('Security and application passwords')} →</a>` })}
                 ${this.message && !this.error ? notice(this.message, 'success') : null}
                 ${this.error ? notice(this.error, 'error') : null}
 
@@ -187,7 +182,7 @@ export default class ProfilePage extends Cossack {
                                 control: attributes => component(Input, { ...attributes, type: 'text', '.value': bind(this.form, 'name') }) })}
                             ${avatarField({ id: 'avatar', value: this.avatarPreview || this.form.avatar, name: this.form.name, uploads: this.avatarUploads, uploading: this.uploading, error: this.avatarError,
                                 onFile: file => this.chooseAvatar(file), onUrl: url => { this.form.avatar = url; }, onRemove: () => this.removeAvatar() })}
-                            ${component(Button, { type: 'submit' }, __('Save changes'))}
+                            <div>${component(Button, { type: 'submit' }, __('Save changes'))}</div>
                             </div>
                         `)}
                     `)}

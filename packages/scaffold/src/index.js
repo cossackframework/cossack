@@ -64,7 +64,7 @@ const dependencyVersions = scaffoldPackage.scaffold?.dependencyVersions ?? {};
  */
 // `@tiptap/pm/<module>` subpaths are listed too: found one page at a time, Vite would bundle a second
 // ProseMirror beside TipTap's, and the editor fails until the browser reloads with the new bundle.
-const CLIENT_DEPENDENCY = /^(?:@cossackframework\/solar-icons\/.+|@tiptap\/[^/]+(?:\/[^/]+)?|prosemirror-collab|@simplewebauthn\/browser|@cossackframework\/(?:ui|auth|cms|framework\/plugins|core\/transport-routes))$/;
+const CLIENT_DEPENDENCY = /^(?:@cossackframework\/solar-icons\/.+|@tiptap\/[^/]+(?:\/[^/]+)?|prosemirror-collab|@simplewebauthn\/browser|@cossackframework\/(?:ui(?:\/blocks)?|auth|cms|framework\/plugins|core\/transport-routes))$/;
 
 /** Fill the client dependency list of vite.config.ts from the rendered source files. */
 export function withClientDependencies(viteConfig, files) {
@@ -276,6 +276,8 @@ const ORM_PATHS = new Set([
 ]);
 const AUTH_PATHS = new Set([
   'src/auth-input.ts',
+  'src/auth-bot-check.ts',
+  'src/auth-bot-token.ts',
   'src/auth.ts',
   'src/config/auth.ts',
   'src/middlewares/auth.ts',
@@ -1284,6 +1286,15 @@ export interface DashboardStatus {
   /** How many, shown beside the label; omitted for a plain link. */
   count?: number;
   tone?: 'info' | 'warning' | 'error';
+}
+
+/** A message above every dashboard screen, such as one a CMS plugin returns. */
+export interface DashboardNotice {
+  id: string;
+  tone: 'info' | 'success' | 'warning' | 'error';
+  message: string;
+  /** A same-site path the notice links to. */
+  href?: string;
 }
 `;
 }

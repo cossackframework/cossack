@@ -447,7 +447,7 @@ cossack add <feature> [options]
 | `schedules` | `jobs` |
 | `notifications` | `jobs` |
 | `workflows` | |
-| `cms` | `ui`, `auth`, `dashboard` |
+| `cms` | `ui`, `auth`, `dashboard`, `markdown` |
 
 Prerequisites are resolved transitively: `dashboard` also adds `ui` and
 `database` through `auth`. With `cms`, `auth` keeps users in RomeDB and does not

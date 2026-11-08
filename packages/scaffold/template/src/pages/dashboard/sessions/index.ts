@@ -1,4 +1,5 @@
 import { Cossack, Page, State, Server } from '@cossackframework/core';
+import { notice, pageHeader } from '@cossackframework/ui/blocks';
 import { Card, CardBody, CardHeader, Button } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { getCookie } from 'hono/cookie';
@@ -81,13 +82,9 @@ export default class SessionsPage extends Cossack {
 
     render() {
         return html`
-            <div class="space-y-8 max-w-5xl">
-                <div>
-                    <h1 class="text-2xl font-bold text-foreground">${__('Sessions')}</h1>
-                    <p class="mt-1 text-sm text-muted-foreground">${__('Devices currently signed in to your account.')}</p>
-                </div>
-
-                ${this.error ? html`<div class="text-sm text-destructive">${this.error}</div>` : null}
+            <div class="max-w-5xl space-y-6">
+                ${pageHeader(__('Sessions'), { description: __('Devices currently signed in to your account.') })}
+                ${this.error ? notice(this.error, 'error') : null}
 
                 ${component(Card, {}, html`
                     ${component(CardHeader, {}, html`<h2 class="text-base font-semibold text-foreground">${__('Active sessions')}</h2>`)}

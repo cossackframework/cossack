@@ -1,6 +1,6 @@
 import { Cossack, Page, Store, State, Validate, Client, Server, storeRules } from '@cossackframework/core';
 import { Card, CardBody, CardHeader, Field, Input, Button, Checkbox, Form } from '@cossackframework/ui';
-import { notice } from '../../../../dashboard/page';
+import { linkButton, notice, pageHeader } from '@cossackframework/ui/blocks';
 import { html, component, bind } from '@cossackframework/renderer';
 import { requireRoleManager } from '../../../../services/rbac';
 import { createRole } from '../../../../services/roles';
@@ -52,11 +52,8 @@ export default class NewRolePage extends Cossack {
 
     render() {
         return html`
-            <div class="space-y-8 max-w-2xl">
-                <div>
-                    <h1 class="text-2xl font-bold text-foreground">${__('New role')}</h1>
-                    <p class="mt-1 text-sm text-muted-foreground">${__('Define a role and the permissions it grants.')}</p>
-                </div>
+            <div class="max-w-2xl space-y-6">
+                ${pageHeader(__('New role'), { description: __('Define a role and the permissions it grants.') })}
                 ${this.error ? notice(this.error, 'error') : null}
 
                 ${component(Card, {}, html`
@@ -65,7 +62,7 @@ export default class NewRolePage extends Cossack {
                         ${component(Form, {
                             submit: (e: Event) => this.handleSubmit(e),
                         }, html`
-                            <div class="flex flex-col space-y-6">
+                            <div class="flex flex-col space-y-4">
                             ${component(Field, { label: __('Name'), for: 'name', error: this.getError('form.name'),
                                 control: attributes => component(Input, { ...attributes, type: 'text', placeholder: 'editor', '.value': bind(this.form, 'name') }) })}
 
@@ -73,26 +70,20 @@ export default class NewRolePage extends Cossack {
                                 <p class="text-sm font-medium text-foreground mb-2">${__('Permissions')}</p>
                                 <div class="space-y-2">
                                     ${PERMISSIONS.map((perm) => html`
-                                        <label class="flex items-start gap-3 cursor-pointer">
-                                            ${component(Checkbox, {
-                                                checked: this.form.permissions.includes(perm),
-                                                '@change': (e: any) => this.togglePermission(perm, e.target.checked),
-                                            })}
-                                            <span>
-                                                <span class="block text-sm text-foreground">${__(permissionLabel(perm))}</span>
-                                                <span class="block text-xs text-muted-foreground font-mono">${perm}</span>
-                                            </span>
-                                        </label>
+                                        <div class="[&_.cs-checkbox]:items-start [&_.cs-checkbox>input]:mt-0.5">${component(Checkbox, {
+                                            checked: this.form.permissions.includes(perm),
+                                            '@change': (e: any) => this.togglePermission(perm, e.target.checked),
+                                        }, html`<span>
+                                            <span class="block text-sm text-foreground">${__(permissionLabel(perm))}</span>
+                                            <span class="block text-xs text-muted-foreground font-mono">${perm}</span>
+                                        </span>`)}</div>
                                     `)}
                                 </div>
                             </div>
 
                             <div class="flex items-center gap-2">
                                 ${component(Button, { type: 'submit' }, __('Create role'))}
-                                <a href="/dashboard/roles"
-                                   class="inline-flex items-center justify-center rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors">
-                                    ${__('Cancel')}
-                                </a>
+                                ${linkButton(__('Cancel'), '/dashboard/roles', 'outline')}
                             </div>
                             </div>
                         `)}

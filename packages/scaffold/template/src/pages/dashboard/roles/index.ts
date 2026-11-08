@@ -3,7 +3,7 @@ import { AlertDialog } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { requireRoleManager } from '../../../services/rbac';
 import { listFilters, listFooter, listTable, rowActions } from '../../../dashboard/list-table';
-import { linkButton, notice, pageHeader } from '../../../dashboard/page';
+import { linkButton, notice, pageHeader } from '@cossackframework/ui/blocks';
 import {
     listRoles,
     deleteRole,

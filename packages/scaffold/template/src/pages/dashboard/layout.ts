@@ -8,9 +8,10 @@ import { SunIcon as sunIconSvg } from '@cossackframework/solar-icons/sun/line';
 import { MoonIcon as moonIconSvg } from '@cossackframework/solar-icons/moon/line';
 import { AltArrowRightIcon as chevronIconSvg } from '@cossackframework/solar-icons/alt-arrow-right/line';
 import { Logout3Icon as logoutIconSvg } from '@cossackframework/solar-icons/logout-3/line';
-import { dashboardSearch, dashboardStatus, navigation } from '../../dashboard/access';
+import { dashboardNotices, dashboardSearch, dashboardStatus, navigation } from '../../dashboard/access';
+import { notice } from '@cossackframework/ui/blocks';
 import { siteLogo, siteName } from '../../brand';
-import type { DashboardModule, DashboardStatus } from '../../dashboard/types';
+import type { DashboardModule, DashboardNotice, DashboardStatus } from '../../dashboard/types';
 import { logout } from '../../auth';
 import { requireDashboardUser } from '../../middlewares/auth';
 import { themeStore } from '@/stores.client';
@@ -46,6 +47,8 @@ export default class DashboardLayout extends Cossack {
     appLogo = server$(() => siteLogo(), { initial: '/logo.svg' });
     /** What waits for the user, with counts, for the taskbar. */
     statuses: DashboardStatus[] = server$(() => dashboardStatus(this.c), { initial: [] });
+    /** Messages above every screen, such as the ones CMS plugins return; fresh on every navigation, like the statuses. */
+    notices: DashboardNotice[] = server$(() => dashboardNotices(this.c), { initial: [] });
     /** Sidebar collapsed state. Seeded from the cookie at SSR (via this.c) and
      *  re-read client-side in onMount; persists across client navigations. */
     @State() sidebarCollapsed = false;
@@ -245,6 +248,9 @@ export default class DashboardLayout extends Cossack {
                         commands: this.commands.map((entry): CommandItem => ({ id: entry.id, label: entry.label, group: entry.group })), onSelect: (id: string) => this.go(id) })}
                     <main class="flex-1 p-6 sm:p-8 overflow-x-hidden has-[[data-settings-toolbar]]:overflow-visible has-[[data-subnav]]:grid has-[[data-subnav]]:grid-cols-1 has-[[data-subnav]]:p-0">
                         ${this.logoutError ? html`<p role="alert" class="mb-4 text-sm text-destructive">${this.logoutError}</p>` : null}
+                        ${this.notices.length ? html`<div data-dashboard-notices class="mb-6 space-y-2 group-has-[[data-subnav]]/dashboard:m-4">${this.notices.map((item) => item.href
+                            ? html`<a href=${item.href} data-notice-id=${item.id} class="block no-underline">${notice(item.message, item.tone)}</a>`
+                            : html`<div data-notice-id=${item.id}>${notice(item.message, item.tone)}</div>`)}</div>` : null}
                         ${this.children}
                     </main>
                     <footer data-dashboard-taskbar aria-label=${__('Dashboard taskbar')} class="sticky bottom-0 z-30 hidden h-10 items-center gap-1 border-t border-border bg-background/95 px-3 text-xs text-muted-foreground backdrop-blur md:flex">

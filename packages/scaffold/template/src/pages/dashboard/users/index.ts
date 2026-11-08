@@ -15,7 +15,7 @@ import { listRoles, type RoleDetail } from '../../../services/roles';
 import { bulkBar, type BulkChoice } from '../../../dashboard/bulk';
 import { timeAgo } from '../../../dashboard/time-ago';
 import { listFilters, listFooter, listTable, rowActions } from '../../../dashboard/list-table';
-import { linkButton, notice, pageHeader } from '../../../dashboard/page';
+import { linkButton, notice, pageHeader } from '@cossackframework/ui/blocks';
 
 const PAGE_SIZE = 20;
 
