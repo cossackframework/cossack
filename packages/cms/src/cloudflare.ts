@@ -16,11 +16,11 @@ import { workerLoaderRunner, type BridgeProps, type IsolateLimits, type Isolated
 
 /** The runner over the application's Worker Loader binding, or null when it has none. */
 export function cloudflarePluginRunner(options: { binding?: string; compatibilityDate?: string; limits?: Partial<Record<IsolatedWork, IsolateLimits>> } = {}): PluginRunner | null {
-    const loader = (env as Record<string, unknown>)[options.binding ?? 'LOADER'] as WorkerLoaderLike | undefined;
+    const loader = (env as unknown as Record<string, unknown>)[options.binding ?? 'LOADER'] as WorkerLoaderLike | undefined;
     if (!loader || typeof loader.get !== 'function') return null;
     return workerLoaderRunner({
         loader,
-        exports: () => exports as LoopbackExports,
+        exports: () => exports as unknown as LoopbackExports,
         ...(options.compatibilityDate ? { compatibilityDate: options.compatibilityDate } : {}),
         ...(options.limits ? { limits: options.limits } : {}),
     });
@@ -51,9 +51,9 @@ interface TailEvent {
 
 /** Writes an isolated plugin's console output and uncaught errors to the application's log, named. */
 export class PluginTail extends WorkerEntrypoint<unknown, { plugin: string }> {
-    tail(events: readonly TailEvent[]): void {
+    tail(events: readonly unknown[]): void {
         const prefix = `[plugin ${this.ctx.props.plugin}]`;
-        for (const event of events) {
+        for (const event of events as readonly TailEvent[]) {
             for (const log of event.logs ?? []) (log.level === 'error' ? console.error : log.level === 'warn' ? console.warn : console.log)(prefix, ...log.message);
             for (const exception of event.exceptions ?? []) console.error(prefix, `${exception.name}: ${exception.message}`);
         }

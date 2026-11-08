@@ -16,6 +16,8 @@ interface PluginRow {
     themeOnly: boolean;
     /** Asks for unrestricted access: a danger notice, and a grant of its own. */
     unrestricted: boolean;
+    /** Its server code runs in a Worker of its own, or in the application with only the build's checks. */
+    runtime: 'isolated' | 'app';
     active: boolean;
     reason: string;
     missing: string[];
@@ -51,7 +53,7 @@ export default class PluginsPage extends Cossack {
             ? this.c.get('cms').settings.catalog({ principal: this.c.get('principal') }).map(group => group.plugin).filter(Boolean) : []);
         // Plugins the network hides are not offered.
         this.plugins = status.plugins.filter(plugin => plugin.network !== 'hidden').map(plugin => ({
-            name: plugin.name, version: plugin.version, description: plugin.description, author: plugin.author, logo: plugin.logo, cover: plugin.cover, themeOnly: plugin.themeOnly, unrestricted: plugin.unrestricted,
+            name: plugin.name, version: plugin.version, description: plugin.description, author: plugin.author, logo: plugin.logo, cover: plugin.cover, themeOnly: plugin.themeOnly, unrestricted: plugin.unrestricted, runtime: plugin.runtime,
             active: plugin.active, reason: plugin.reason ?? '', missing: [...plugin.missing], settings: configurable.has(plugin.name), networkActive: plugin.network === 'network',
         }));
         this.networkAdmin = isNetworkAdmin(this.c.get('principal'));
@@ -149,11 +151,13 @@ export default class PluginsPage extends Cossack {
                             ${plugin.description ? html`<p>${plugin.description}</p>` : null}
                             ${plugin.reason ? html`<p class="mt-1">${plugin.reason}</p>` : null}
                             ${plugin.missing.length ? html`<p class="mt-1 text-xs">${__('Requests')}: ${plugin.missing.join(', ')}</p>` : null}
+                            ${plugin.runtime === 'app' && !plugin.themeOnly && !plugin.unrestricted ? html`<p class="mt-1 text-xs" data-testid=${`plugin-in-app-${plugin.name}`}>${__('Runs in the application: its permissions are checked when the site is built, not enforced while it runs.')}</p>` : null}
                         </td>
                         <td class="px-3 py-3">${plugin.themeOnly ? component(Badge, { variant: 'secondary' }, __('Theme'))
                             : plugin.networkActive ? component(Badge, { variant: plugin.active ? 'success' : 'warning' }, __('Network active'))
                             : component(Badge, { variant: plugin.active ? 'success' : 'secondary' }, plugin.active ? __('Active') : __('Inactive'))}
-                            ${plugin.unrestricted ? html`<div class="mt-1">${component(Badge, { variant: 'destructive' }, __('Unrestricted'))}</div>` : null}</td>
+                            ${plugin.unrestricted ? html`<div class="mt-1">${component(Badge, { variant: 'destructive' }, __('Unrestricted'))}</div>` : null}
+                            ${plugin.runtime === 'isolated' && !plugin.themeOnly ? html`<div class="mt-1" data-testid=${`plugin-isolated-${plugin.name}`} title=${__('Its server code runs in a Worker of its own and reaches only what it is granted.')}>${component(Badge, { variant: 'outline' }, __('Isolated'))}</div>` : null}</td>
                         <td class="px-3 py-3"><div class="flex flex-wrap justify-end gap-2">
                             ${plugin.settings ? html`<a href=${settingsSectionHref(`plugin:${plugin.name}`)} class="text-sm text-primary hover:underline">${__('Settings')}</a>` : null}
                             ${plugin.networkActive ? null : plugin.themeOnly ? html`<a href="/dashboard/appearance" class="text-sm text-primary hover:underline">${__('Manage in Appearance')} →</a>` : html`

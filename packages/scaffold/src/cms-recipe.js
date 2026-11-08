@@ -275,11 +275,21 @@ export function pendingWrites(env: PendingBindings, database = 'main'): PendingW
   };
 }
 
-/** Worker entry: export the pending-write Durable Object and run maintenance from cron. */
+/**
+ * Worker entry: export the pending-write Durable Object, run maintenance from cron, and run
+ * isolated plugins through the Worker Loader binding with the bridge they call back.
+ */
 export function patchCmsWorkerEntry(source, { schedules }) {
-  let patched = source.replace("import { template } from './root';", "import { template } from './root';\nimport { networkFor } from './cms/index';\nimport { runNetworkMaintenance } from './cms/maintenance';\nimport { pluginRouteActive } from './cms/middleware';");
+  let patched = source.replace("import { template } from './root';", "import { template } from './root';\nimport { cloudflarePluginRunner, createPluginBridge, PluginTail } from '@cossackframework/cms/cloudflare';\nimport { networkFor, setPluginRunner } from './cms/index';\nimport { runNetworkMaintenance } from './cms/maintenance';\nimport { pluginRouteActive } from './cms/middleware';");
   patched = patched.replace('  htmlTemplate: template,\n', '  htmlTemplate: template,\n  // A rendered plugin\'s pages and handlers answer only while the plugin is active in the CMS.\n  isPluginActive: pluginRouteActive,\n');
-  patched = patched.replace('export { SseDurableObject };', "export { SseDurableObject };\n// Unconfirmed RomeDB writes (ROMEDB_PENDING) survive isolate restarts here.\nexport { RomeDBPendingWrites } from '@cossackframework/romedb/cloudflare';");
+  patched = patched.replace('export { SseDurableObject };', `export { SseDurableObject };
+// Unconfirmed RomeDB writes (ROMEDB_PENDING) survive isolate restarts here.
+export { RomeDBPendingWrites } from '@cossackframework/romedb/cloudflare';
+// Isolated plugins run in Workers of their own through the Worker Loader binding (LOADER, which
+// cossack add plugin adds with the first one), and call the CMS back through PluginBridge.
+setPluginRunner(cloudflarePluginRunner());
+export const PluginBridge = createPluginBridge<CloudflareBindings>((env, site) => networkFor(env as never).hostById(site));
+export { PluginTail };`);
   const maintenance = 'ctx.waitUntil(runNetworkMaintenance(networkFor(env as never), { warm: true }));';
   if (schedules) {
     return patched.replace(
@@ -314,7 +324,9 @@ export function patchCmsViteConfig(source, { adapter }) {
   let patched = source
     .replace("import { cossackSsg } from '@cossackframework/framework/vite-ssg-plugin';", `import { cossackSsg } from '@cossackframework/framework/vite-ssg-plugin';\nimport { cossackPluginPolicy } from 'cossack/plugin-policy';\nimport { ${cloudflare ? 'romedbDev, romedbDevVars' : 'romedbDev'} } from '@cossackframework/romedb/dev';`)
     .replace('  plugins: [\n', '  plugins: [\n    // Starts `romedb serve` in development when ROMEDB_URL is a loopback URL.\n    romedbDev(),\n')
-    .replace('    cossackConfig(),', '    cossackConfig(),\n    // Rendered plugins must stay within their manifest; violations fail the build.\n    cossackPluginPolicy(),');
+    .replace('    cossackConfig(),', '    cossackConfig(),\n    // Rendered plugins must stay within their manifest; violations fail the build.\n    cossackPluginPolicy(),')
+    // Plugins with only server code run in Workers of their own on Cloudflare (specs/cms-plugin-isolation.md).
+    .replace('cossackPages({ ', "cossackPages({ pluginIsolation: { runtime: '@cossackframework/cms/isolate' }, ");
   if (cloudflare) {
     patched = patched.replace("      viteEnvironment: { name: 'ssr' },\n", "      viteEnvironment: { name: 'ssr' },\n      // The token of the local romedb serve that romedbDev started.\n      config: romedbDevVars,\n");
   } else {

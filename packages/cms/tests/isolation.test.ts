@@ -58,6 +58,9 @@ describe.skipIf(!live)('isolated plugins in the host', () => {
 
     it('stays inactive until granted: no handler runs and the bridge refuses', async () => {
         expect(await cms.pluginActive('desk')).toBe(false);
+        const plugins = (await cms.status()).plugins;
+        expect(plugins.find(plugin => plugin.name === 'desk')).toMatchObject({ runtime: 'isolated' });
+        expect(plugins.find(plugin => plugin.name === 'audit')).toMatchObject({ runtime: 'app' });
         await expect(cms.runCommand('desk', 'close-all', {}, { principal: owner })).rejects.toMatchObject({ code: 'CMS_UNAVAILABLE' });
         await expect(cms.isolatedCall('desk', 'jobs.enqueue', ['notify', null, {}], [])).rejects.toMatchObject({ code: 'CMS_UNAVAILABLE' });
         expect(calls).toEqual([]);

@@ -17,6 +17,9 @@ import { PLUGIN_MANIFEST_FILE, PLUGIN_SERVER_ENTRY, PLUGINS_DIRECTORY, type Rend
 /** Files and directories that run in the application, so their plugin does too. */
 export const PLUGIN_IN_APP_PARTS = ['ui.ts', 'pages', 'components', 'middlewares.ts', 'config', 'templates'] as const;
 
+/** The Worker Loader binding isolated plugins run through. */
+export const PLUGIN_LOADER_BINDING = 'LOADER';
+
 /** Modules the plugin runtime may import inside the isolate; plugin code may import neither. */
 export const ISOLATE_RUNTIME_IMPORTS = ['cloudflare:workers', 'node:async_hooks'] as const;
 
@@ -61,6 +64,16 @@ export function pluginInAppReason(projectRoot: string, plugin: RenderedPlugin): 
   return null;
 }
 
+/** Where a plugin's server code runs on `runtime`, and whether it has any, without bundling it. */
+export function pluginPlacement(projectRoot: string, plugin: RenderedPlugin, runtime: string):
+  { readonly mode: 'isolated'; readonly server: boolean } | { readonly mode: 'app'; readonly reason: string; readonly server: boolean } {
+  const server = existsSync(resolve(projectRoot, PLUGINS_DIRECTORY, plugin.name, PLUGIN_SERVER_ENTRY));
+  const reason = pluginInAppReason(projectRoot, plugin);
+  if (reason) return { mode: 'app', reason, server };
+  if (runtime !== 'cloudflare') return { mode: 'app', reason: `${runtimeLabel(runtime)} has no Worker Loader, so its server code runs in the application.`, server };
+  return { mode: 'isolated', server };
+}
+
 /**
  * Where each plugin's server code runs. On `cloudflare`, a plugin whose shape allows it runs
  * isolated and its server entry is bundled; every other runtime keeps it in the application.
@@ -70,13 +83,8 @@ export async function pluginIsolation(projectRoot: string, plugins: readonly Ren
   const entries: Record<string, PluginIsolation> = {};
   const watchFiles: string[] = [];
   for (const plugin of plugins) {
-    const reason = pluginInAppReason(projectRoot, plugin);
-    if (reason) { entries[plugin.name] = { mode: 'app', reason }; continue; }
-    if (runtime !== 'cloudflare') {
-      entries[plugin.name] = { mode: 'app', reason: `${runtimeLabel(runtime)} has no Worker Loader, so its server code runs in the application.` };
-      continue;
-    }
-    if (!existsSync(resolve(projectRoot, PLUGINS_DIRECTORY, plugin.name, PLUGIN_SERVER_ENTRY))) { entries[plugin.name] = { mode: 'isolated' }; continue; }
+    const placement = pluginPlacement(projectRoot, plugin, runtime);
+    if (placement.mode === 'app' || !placement.server) { entries[plugin.name] = placement.mode === 'app' ? { mode: 'app', reason: placement.reason } : { mode: 'isolated' }; continue; }
     const bundle = await bundleIsolatedPlugin(projectRoot, plugin, options);
     entries[plugin.name] = { mode: 'isolated', code: bundle.code, hash: bundle.hash, bytes: bundle.bytes };
     watchFiles.push(...bundle.watchFiles);

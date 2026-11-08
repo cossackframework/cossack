@@ -241,7 +241,7 @@ export async function removePlugin(projectDir, name, options = {}) {
 export async function listPlugins(projectDir) {
   const root = path.resolve(projectDir);
   const state = await readPluginState(root);
-  const rendered = Object.entries(state.plugins).map(([name, entry]) => ({ name, package: entry.package, version: entry.version, source: entry.source, ...(entry.unrestricted ? { unrestricted: true } : {}) }));
+  const rendered = Object.entries(state.plugins).map(([name, entry]) => ({ name, package: entry.package, version: entry.version, source: entry.source, ...(entry.unrestricted ? { unrestricted: true } : {}), ...(entry.inApp ? { inApp: true } : {}) }));
   const installed = [];
   const modules = path.join(root, 'node_modules');
   const candidates = [];
@@ -294,15 +294,17 @@ async function applyPluginRender(root, state, plugin, record, previous, options,
   if (compatibility.length) {
     throw new PluginError('COSSACK_PLUGIN_INCOMPATIBLE', `Plugin "${name}" requires ${compatibility.join(', ')}.`, { requirements: compatibility });
   }
-  const rendered = renderPlugin(plugin);
+  // Kept in the application where it could run isolated: chosen once, kept by upgrades.
+  const inApp = options.inApp === true || (options.inApp === undefined && previous?.inApp === true);
+  const rendered = renderPlugin(inApp ? { ...plugin, manifest: { ...plugin.manifest, isolation: false } } : plugin);
   const plan = await planPlugin(root, rendered, previous?.files ?? {}, options.force);
   if (plan.conflicts.length) throw conflictError(plan);
   const dependencies = await packageDependencyChanges(root, plugin.manifest.dependencies ?? {});
   const unchanged = !plan.writes.length && !plan.deletes.length && !dependencies.length && previous?.version === plugin.manifest.version;
-  const result = { status: unchanged ? 'present' : status, name, package: plugin.packageName, version: plugin.manifest.version, from: previous?.version ?? null, ...(unrestricted ? { unrestricted } : {}), changes: plan, dependencies };
+  const result = { status: unchanged ? 'present' : status, name, package: plugin.packageName, version: plugin.manifest.version, from: previous?.version ?? null, ...(unrestricted ? { unrestricted } : {}), ...(inApp ? { inApp } : {}), changes: plan, dependencies };
   if (unchanged || options.dryRun) return unchanged ? result : { ...result, status: 'dry-run' };
   const next = structuredClone(state);
-  next.plugins[name] = { package: plugin.packageName, version: plugin.manifest.version, source: record, ...(unrestricted ? { unrestricted } : {}), files: {} };
+  next.plugins[name] = { package: plugin.packageName, version: plugin.manifest.version, source: record, ...(unrestricted ? { unrestricted } : {}), ...(inApp ? { inApp } : {}), files: {} };
   await applyAtomically(root, rendered, plan, next, previous?.files ?? {}, dependencies);
   return result;
 }

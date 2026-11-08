@@ -139,7 +139,9 @@ copies one UI component into src/components/ui/.
 src/plugins/<name>/ (see \`cossack plugins --help\`). The package is read as
 data and never executed. A plugin that asks for unrestricted access can do
 anything in the application, so it stops with a danger message until you
-accept it, or pass --allow-unrestricted.
+accept it, or pass --allow-unrestricted. On Cloudflare a plugin with only
+server code runs isolated, and the first one adds the Worker Loader binding;
+--in-app keeps it in the application.
 
 Run \`pnpm install\` afterwards to install new dependencies. Features that
 include the database also need \`cossack migration up\`.`);

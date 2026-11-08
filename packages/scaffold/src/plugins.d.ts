@@ -33,6 +33,8 @@ export interface PluginStateEntry {
   package: string;
   version: string;
   source: PluginSourceRecord;
+  unrestricted?: true;
+  inApp?: true;
   files: Record<string, { capability: string; hash: string }>;
 }
 
@@ -56,6 +58,8 @@ export interface PluginRenderOptions {
   source?: string;
   /** Accept a plugin asking for unrestricted access; without it, rendering fails with COSSACK_PLUGIN_UNRESTRICTED. */
   allowUnrestricted?: boolean;
+  /** Keep the plugin in the application where it could run isolated: renders `isolation: false`. Upgrades keep the choice. */
+  inApp?: boolean;
 }
 
 export interface PluginRenderResult {
@@ -66,6 +70,8 @@ export interface PluginRenderResult {
   from: string | null;
   /** The plugin asks for unrestricted access. */
   unrestricted?: boolean;
+  /** Rendered with `inApp`. */
+  inApp?: boolean;
   changes: PluginChangeSet;
   dependencies: { name: string; from: null; to: string }[];
 }
@@ -87,7 +93,7 @@ export declare function addPlugin(projectDir: string, source: string, options?: 
 export declare function upgradePlugin(projectDir: string, name: string, options?: PluginRenderOptions): Promise<PluginRenderResult>;
 export declare function removePlugin(projectDir: string, name: string, options?: Pick<PluginRenderOptions, 'force' | 'dryRun'>): Promise<{ status: 'removed' | 'dry-run'; name: string; changes: PluginChangeSet }>;
 export declare function listPlugins(projectDir: string): Promise<{
-  rendered: { name: string; package: string; version: string; source: PluginSourceRecord }[];
+  rendered: { name: string; package: string; version: string; source: PluginSourceRecord; unrestricted?: true; inApp?: true }[];
   installed: { package: string; version: string; plugin: string | null; rendered: boolean; problems: string[] }[];
 }>;
 export declare function satisfies(version: string, range: string): boolean;

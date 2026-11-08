@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { bundleIsolatedPlugin, isolationReport, pluginInAppReason, pluginIsolation, PluginIsolationError } from '../src/plugin-isolation';
 import { pluginRegistryModule, readRenderedPlugins } from '../src/plugin-sources';
 import { cossackPages } from '../src/vite-plugin';
+import { cloudflareBindingNames } from '../src/config-preflight';
 
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
@@ -145,6 +146,12 @@ describe('isolated bundles', () => {
   }, 30_000);
 });
 
+describe('the Worker Loader binding', () => {
+  it('is one of the Cloudflare bindings builds read', () => {
+    expect(cloudflareBindingNames({ worker_loaders: [{ binding: 'LOADER' }], r2_buckets: [{ binding: 'MEDIA' }] })).toEqual(['LOADER', 'MEDIA']);
+  });
+});
+
 describe('the registry with isolation', () => {
   it('leaves isolated server entries out of the application and carries where each runs', () => {
     const plugins = [{ name: 'desk', version: '1.0.0', manifest: 'src/plugins/desk/plugin.json' }, { name: 'shop', version: '2.0.0', manifest: 'src/plugins/shop/plugin.json' }];
@@ -158,7 +165,7 @@ describe('the registry with isolation', () => {
 
   it('is built by the pages plugin for server environments, with a size report on builds', async () => {
     const root = project({ 'src/plugins/desk/plugin.json': manifest('desk'), 'src/plugins/desk/server.ts': server, 'src/plugins/desk/lib/label.ts': 'export const label = (n: number) => String(n);\n' });
-    const plugin = cossackPages({ capabilities: { runtime: 'cloudflare', bindings: [] }, pluginIsolation: runtime(root) });
+    const plugin = cossackPages({ capabilities: { runtime: 'cloudflare', bindings: ['LOADER'] }, pluginIsolation: runtime(root) });
     (plugin.configResolved as Function).call({}, { root, publicDir: false, base: '/' });
     const watched: string[] = [];
     const logged: string[] = [];
@@ -170,5 +177,16 @@ describe('the registry with isolation', () => {
     expect(ssr).toContain('!/src/plugins/desk/server.ts');
     expect(watched).toContain(join(root, 'src/plugins/desk/lib/label.ts'));
     expect(logged).toEqual([expect.stringContaining('Isolated plugin desk:')]);
+  });
+
+  it('fails a Cloudflare build that isolates a plugin without the Worker Loader binding', async () => {
+    const root = project({ 'src/plugins/desk/plugin.json': manifest('desk'), 'src/plugins/desk/server.ts': 'export function register() {}\n', 'src/plugins/data/plugin.json': manifest('data') });
+    const plugin = cossackPages({ capabilities: { runtime: 'cloudflare', bindings: ['ASSETS'] }, pluginIsolation: runtime(root) });
+    (plugin.configResolved as Function).call({}, { root, publicDir: false, base: '/' });
+    const context = { environment: { name: 'ssr', mode: 'build', logger: { info() {} } }, addWatchFile() {}, error: (error: { message: string }) => { throw new Error(error.message); } };
+    await expect((plugin.load as Function).call(context, '\0virtual:cossack-plugins')).rejects.toThrow('desk runs isolated and needs the Worker Loader binding. Add "worker_loaders": [{ "binding": "LOADER" }]');
+    // A plugin with no server code runs nothing, so it needs no binding.
+    rmSync(join(root, 'src/plugins/desk'), { recursive: true });
+    await expect((plugin.load as Function).call(context, '\0virtual:cossack-plugins')).resolves.toContain('"data"');
   });
 });

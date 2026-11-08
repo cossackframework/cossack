@@ -17,7 +17,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { resolve, dirname, relative } from 'path';
 import { generateRoutes, ROUTES_MODULE_ID, ROUTES_SOURCE_PATH, ROUTE_GLOB_EXCLUDES } from './route-codegen.js';
 import { PLUGINS_MODULE_ID, pluginPageKey, pluginRegistryModule, readRenderedPlugins, scanPageSources } from './plugin-sources.js';
-import { isolationReport, pluginIsolation, PluginIsolationError, type PluginIsolationOptions } from './plugin-isolation.js';
+import { isolationReport, PLUGIN_LOADER_BINDING, pluginIsolation, PluginIsolationError, type PluginIsolationOptions } from './plugin-isolation.js';
 export { scanPagesDir } from './route-codegen.js';
 import { SSR_MANIFEST_ASSET_PATH } from './runtime-constants.js';
 import { checkCapabilityRequirements, type CapabilityUse, type RuntimeName } from './runtime-capabilities.js';
@@ -174,6 +174,8 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
 
   let capabilityPages = new Set<string>();
   let capabilityBindings: readonly string[] = [];
+  /** Whether `capabilityBindings` came from the project, so an absent binding means something. */
+  let bindingsRead = false;
   const refreshCapabilityPages = () => {
     const { pageKeys, sources } = scanPageSources(projectRoot, markdownEnabled);
     capabilityPages = new Set(pageKeys.map(key => resolve(projectRoot, (sources[key] ?? key).slice(1)).replaceAll('\\', '/')));
@@ -304,6 +306,7 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
           ? await readBuildBindingNames(projectRoot, options.capabilities.environment ?? process.env.CLOUDFLARE_ENV, options.configPath) : []);
         const requirements: CapabilityUse[] = [...(options.capabilities.requirements ?? [])];
         capabilityBindings = bindings;
+        bindingsRead = true;
         refreshCapabilityPages();
         for (const file of [...capabilityPages].sort()) {
           this.addWatchFile(file);
@@ -383,6 +386,12 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
         const isolationOptions = options.pluginIsolation;
         return pluginIsolation(projectRoot, plugins, isolationOptions, options.capabilities?.runtime ?? 'unknown').then(({ entries, watchFiles }) => {
           for (const file of watchFiles) this.addWatchFile(file);
+          // Isolated code was left out of the application, so without the binding it could not run at all.
+          const needing = Object.entries(entries).filter(([, entry]) => entry.mode === 'isolated' && entry.code !== undefined).map(([name]) => name);
+          const bindings = bindingsRead ? capabilityBindings : options.capabilities?.bindings;
+          if (needing.length && options.capabilities?.runtime === 'cloudflare' && bindings && !bindings.includes(PLUGIN_LOADER_BINDING)) {
+            this.error({ code: 'COSSACK_PLUGIN_ISOLATION_BINDING', message: `[cossack] COSSACK_PLUGIN_ISOLATION_BINDING: ${needing.join(', ')} ${needing.length === 1 ? 'runs' : 'run'} isolated and ${needing.length === 1 ? 'needs' : 'need'} the Worker Loader binding. Add "worker_loaders": [{ "binding": "${PLUGIN_LOADER_BINDING}" }] to the Wrangler configuration (Dynamic Workers need the Workers Paid plan), or add the plugin with --in-app.` });
+          }
           if (this.environment?.mode !== 'dev') for (const line of isolationReport(entries)) this.environment?.logger?.info(line);
           return pluginRegistryModule(plugins, true, entries);
         }, (error: unknown) => {

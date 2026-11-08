@@ -5,6 +5,7 @@ import { createCommandOutput, runWithSpec } from '../command-spec.js';
 import { findProjectRoot } from '../fs-utils.js';
 import { flagString } from '../flags.js';
 import { COSSACK_PACKAGES, readInstalledPackage } from '../installed-packages.js';
+import { ensureWorkerLoader, pluginRuntime, runtimeLine } from '../plugin-isolation.js';
 import { formatPolicyDiagnostic, lintProjectPlugins } from '../plugin-policy.js';
 
 const spec = commandSpecs.plugins;
@@ -33,9 +34,15 @@ export async function addPluginCommand(source, ctx) {
 }
 
 async function listCommand(root, ctx) {
-  const { rendered, installed } = await listPlugins(root);
+  const listed = await listPlugins(root);
+  const installed = listed.installed;
+  const rendered = [];
+  for (const plugin of listed.rendered) {
+    const placement = await pluginRuntime(root, plugin.name).catch(() => null);
+    rendered.push({ ...plugin, ...(placement ? { runtime: placement.mode, ...(placement.mode === 'app' ? { runtimeReason: placement.reason } : {}) } : {}) });
+  }
   if (!rendered.length && !installed.length) ctx.out.line('No plugins are rendered or installed.');
-  for (const plugin of rendered) ctx.out.line(`  rendered  ${plugin.name} ${plugin.version} from ${plugin.package} (${plugin.source.type})${plugin.unrestricted ? ' UNRESTRICTED: can do anything' : ''}`);
+  for (const plugin of rendered) ctx.out.line(`  rendered  ${plugin.name} ${plugin.version} from ${plugin.package} (${plugin.source.type})${plugin.runtime ? ` ${plugin.runtime === 'isolated' ? 'isolated' : 'in app'}` : ''}${plugin.unrestricted ? ' UNRESTRICTED: can do anything' : ''}`);
   for (const plugin of installed.filter(entry => !entry.rendered)) {
     ctx.out.line(`  installed ${plugin.package} ${plugin.version}${plugin.problems.length ? ` (invalid: ${plugin.problems.join(' ')})` : ` — render with cossack add plugin ${plugin.package}`}`);
   }
@@ -102,10 +109,25 @@ async function renderCommand(root, ctx, run, subject) {
   else if (result.status === 'removed') ctx.out.line(`Removed plugin ${result.name}.`);
   else ctx.out.line(`${planned ? 'Would render' : result.status === 'added' ? 'Rendered' : 'Upgraded'} ${result.name} ${result.version}${result.from ? ` (from ${result.from})` : ''} into src/plugins/${result.name}/.`);
   if (dependencies.length && !planned) ctx.out.line(`Added dependencies: ${dependencies.map(change => `${change.name}@${change.to}`).join(', ')}. Run \`pnpm install\`.`);
+  // Where its server code will run, and the binding the first isolated plugin needs on Cloudflare.
+  const placement = planned || result.status === 'removed' ? null : await pluginRuntime(root, result.name);
+  if (placement) ctx.out.line(runtimeLine(result.name, placement));
+  let binding = null;
+  if (placement?.mode === 'isolated' && placement.server) {
+    try {
+      binding = await ensureWorkerLoader(root);
+      if (binding) {
+        ctx.out.file('updated', binding);
+        ctx.out.line(`Added the Worker Loader binding (LOADER) to ${path.relative(root, binding)}. Dynamic Workers need the Workers Paid plan; add the plugin with --in-app to keep it in the application instead.`);
+      }
+    } catch (error) { ctx.out.warn(error.message); }
+  }
   return ctx.out.data({
     name: result.name, status: result.status,
     ...(result.version ? { version: result.version, package: result.package, from: result.from } : {}),
     ...(result.unrestricted ? { unrestricted: true } : {}),
+    ...(placement ? { runtime: placement.mode, ...(placement.mode === 'app' ? { runtimeReason: placement.reason } : {}) } : {}),
+    ...(binding ? { workerLoader: path.relative(root, binding) } : {}),
     preserved: result.changes.preserved.map(change => change.path),
     dependencies,
     nextActions: !planned && dependencies.length ? ['pnpm install'] : [],
@@ -113,7 +135,7 @@ async function renderCommand(root, ctx, run, subject) {
 }
 
 function options(ctx) {
-  return { force: ctx.force, dryRun: ctx.dryRun };
+  return { force: ctx.force, dryRun: ctx.dryRun, ...(ctx.flags['in-app'] === true ? { inApp: true } : {}) };
 }
 
 /** Installed Cossack package versions, read from manifests only, for compatibility ranges. */
@@ -143,6 +165,13 @@ read as data and never executed; npm installs run with --ignore-scripts.
                      Files you edited are kept; an edited file that also
                      changed upstream is a conflict unless you pass --force.
   remove <name>      Delete the plugin's unedited files.
+
+On Cloudflare, a plugin with only server code runs isolated: a Worker of its
+own, reaching only what it is granted. The first one adds the Worker Loader
+binding (LOADER, Workers Paid) to wrangler.jsonc; --in-app keeps a plugin in
+the application instead. A plugin with pages, UI or templates, and every
+plugin on Node.js, runs in the application, where its permissions are
+checked at build, not enforced. \`list\` shows which.
 
 A plugin that asks for unrestricted access can do anything in the application,
 and its code can run as soon as the application starts. Rendering it stops

@@ -313,6 +313,13 @@ export interface PluginStatus {
     readonly themeOnly: boolean;
     /** Asks for unrestricted access: the dashboard warns, and granting it takes a separate yes. */
     readonly unrestricted: boolean;
+    /**
+     * Where its server code runs: `isolated` in a Worker of its own, where its permissions are
+     * enforced, or `app`, where the build's checks are all that holds it (specs/cms-plugin-isolation.md).
+     */
+    readonly runtime: 'isolated' | 'app';
+    /** Why it runs in the application, when the build said. */
+    readonly runtimeReason?: string;
     readonly active: boolean;
     readonly reason?: string;
     /** Grants the manifest requests that are not granted yet. */
@@ -2421,7 +2428,9 @@ export class CmsHost {
         const themeOnly = isThemeOnly(plugin.manifest);
         const network = themeOnly ? 'available' : pluginState(state.policy, plugin.manifest.name);
         const base = { name: plugin.registration.name, version: plugin.registration.version, description: typeof plugin.manifest.description === 'string' ? plugin.manifest.description : '', ...authorOf(plugin), ...artwork(plugin), themeOnly,
-            unrestricted: plugin.requested.includes(UNRESTRICTED_GRANT), requests: [PLUGIN_ENABLED, ...plugin.requested], network };
+            unrestricted: plugin.requested.includes(UNRESTRICTED_GRANT), requests: [PLUGIN_ENABLED, ...plugin.requested], network,
+            runtime: plugin.registration.isolation?.mode === 'isolated' ? 'isolated' as const : 'app' as const,
+            ...(plugin.registration.isolation?.mode === 'app' && plugin.registration.isolation.reason ? { runtimeReason: plugin.registration.isolation.reason } : {}) };
         if (plugin.problems.length) return { ...base, active: false, reason: `Invalid manifest: ${plugin.problems.join(' ')}`, missing: [] };
         // A theme alone runs nothing on the server: choosing it under Appearance is all it needs.
         if (themeOnly) return { ...base, active: true, missing: [] };

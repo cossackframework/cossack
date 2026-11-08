@@ -193,6 +193,22 @@ describe('plugin recipes', () => {
     expect(await upgradePlugin(app, 'support-desk', { source, allowUnrestricted: true })).toMatchObject({ status: 'upgraded', unrestricted: true });
   });
 
+  it('keeps a plugin in the application with inApp, across upgrades', async () => {
+    const app = await project();
+    expect(await addPlugin(app, await pluginPackage(), { inApp: true })).toMatchObject({ status: 'added', inApp: true });
+    const rendered = JSON.parse(await fs.readFile(path.join(app, 'src/plugins/support-desk/plugin.json'), 'utf8'));
+    expect(rendered.isolation).toBe(false);
+    expect((await readPluginState(app)).plugins['support-desk'].inApp).toBe(true);
+    expect((await listPlugins(app)).rendered[0].inApp).toBe(true);
+    // The choice stays with the plugin.
+    expect(await upgradePlugin(app, 'support-desk', { source: await pluginPackage('1.1.0') })).toMatchObject({ status: 'upgraded', inApp: true });
+    expect(JSON.parse(await fs.readFile(path.join(app, 'src/plugins/support-desk/plugin.json'), 'utf8')).isolation).toBe(false);
+    // Without it, nothing is written about isolation.
+    const other = await project();
+    await addPlugin(other, await pluginPackage());
+    expect(JSON.parse(await fs.readFile(path.join(other, 'src/plugins/support-desk/plugin.json'), 'utf8'))).not.toHaveProperty('isolation');
+  });
+
   it('rejects unsafe or invalid packages', async () => {
     expect(validatePluginManifest({ schemaVersion: 1, name: 'cms', version: '1.0.0' })).toEqual(['name "cms" is reserved.']);
     expect(validatePluginManifest({ schemaVersion: 2, name: 'Bad', version: 'x', source: '../up' })).toHaveLength(4);
