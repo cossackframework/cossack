@@ -224,8 +224,8 @@ describe('essentials helpers', () => {
         expect(blockStyleAttributes({ style: {}, layout: { hide: ['sm'] } })).toBeNull();
         expect(blockStyleAttributes({ style: { background: 'bad slug' } })).toBeNull();
         // The advanced background: a gradient over the image's largest variant at its focal point, the overlay's variable, the video for the renderer.
-        const picture = { url: '/media/f1/sea.jpg', alt: '', width: 4000, height: 3000, contentType: 'image/jpeg', caption: '', srcset: '/media/f1/sea.jpg?w=640 640w, /media/f1/sea.jpg?w=1920 1920w, /media/f1/sea.jpg?w=4000 4000w', wideSrcset: '', placeholder: null, sizes: '', focus: { x: 0.25, y: 0.8 } };
-        const clip = { url: '/media/v1/loop.mp4', alt: '', width: null, height: null, contentType: 'video/mp4', caption: '', srcset: '', wideSrcset: '', placeholder: null, sizes: '' };
+        const picture = { url: '/media/f1/sea.jpg', name: 'sea.jpg', size: 2_400_000, alt: '', width: 4000, height: 3000, contentType: 'image/jpeg', caption: '', srcset: '/media/f1/sea.jpg?w=640 640w, /media/f1/sea.jpg?w=1920 1920w, /media/f1/sea.jpg?w=4000 4000w', wideSrcset: '', placeholder: null, sizes: '', focus: { x: 0.25, y: 0.8 } };
+        const clip = { url: '/media/v1/loop.mp4', name: 'loop.mp4', size: 5_100_000, alt: '', width: null, height: null, contentType: 'video/mp4', caption: '', srcset: '', wideSrcset: '', placeholder: null, sizes: '' };
         const band = blockStyleAttributes({ style: { gradient: 'dusk', image: 'f1', imageFixed: true, overlay: 'brand', overlayOpacity: 30, video: 'v1' }, media: { f1: picture, v1: clip } });
         expect(band).toEqual({ className: 'cms-block cms-gradient-dusk cms-has-image cms-has-overlay cms-has-video', id: '', nosnippet: false, video: clip,
             style: 'background-size: cover; background-position: 25% 80%; background-repeat: no-repeat; background-attachment: fixed; background-image: var(--cms-gradient-dusk), url("/media/f1/sea.jpg?w=1920"); --cms-overlay: color-mix(in srgb, var(--cms-color-brand) 30%, transparent)' });
