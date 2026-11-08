@@ -123,13 +123,20 @@ async function essentials(origin, routeIds, diagnostics, { runtime, cloudflare =
   expect((await web.request('/')).status).toBe(200);
   expect((await web.action(SETTINGS, 'saveAll', [{ document: { general: { maintenance: 'off' } }, languages: null, permalinks: null, groups: {} }]))._cossack_return.error).toBe('');
   expect((await anonymous().request('/')).status).toBe(200);
-  // Field selection and sorting on the content API; the beacon counts a view; the newest tools render; Health names the missing AI provider.
+  // Field selection and sorting on the content API; the newest tools render; Health names the missing AI provider.
   const sorted = await (await web.request('/api/cms/content/pages?sort=title:asc&fields=title&perPage=50')).json();
   expect(sorted.items.length).toBeGreaterThan(1);
   expect(sorted.items.every(item => Object.keys(item).sort().join() === 'id,title,url')).toBe(true);
   expect(sorted.items.map(item => item.title)).toEqual([...sorted.items.map(item => item.title)].sort((a, b) => a.localeCompare(b)));
-  expect((await fetch(`${origin}/api/cms/beacon`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ p: '/blocks-tour', r: 'https://news.example/x' }) })).status).toBe(204);
-  contains(await web.page('/dashboard/tools/analytics'), 'data-testid=analytics-views');
+  // Settings → Analytics adds the outside services' scripts to visitors' pages, not to those of people signed in; a wrong ID is refused.
+  const saveAnalytics = analytics => web.action(SETTINGS, 'saveAll', [{ document: { analytics }, languages: null, permalinks: null, groups: {} }]);
+  expect((await saveAnalytics({ googleMeasurementId: 'UA-1234' }))._cossack_return.error).not.toBe('');
+  expect((await saveAnalytics({ cloudflareToken: 'abc123', googleMeasurementId: 'G-TEST1234' }))._cossack_return.error).toBe('');
+  const counted = await (await anonymous().request('/')).text();
+  contains(counted, 'static.cloudflareinsights.com/beacon.min.js');
+  contains(counted, 'gtag/js?id=G-TEST1234');
+  lacks(await web.page('/'), 'G-TEST1234');
+  expect((await saveAnalytics({ cloudflareToken: '', googleMeasurementId: '' }))._cossack_return.error).toBe('');
   contains(await web.page('/dashboard/tools/automations'), 'No automations yet');
   expect((await web.request('/api/cms/webhooks')).status).toBe(200);
   expect((await web.request('/api/cms/comments/queue')).status).toBe(200);

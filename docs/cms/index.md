@@ -47,10 +47,11 @@ puts a default theme in `src/plugins/default-theme/` for you to edit or copy. Se
 Tools under the dashboard's Tools menu: Health (search and answer engines, crawler visits, 404s),
 Links, Redirects, Webhooks, Schema, Export, Cache, Jobs (the outbox: what waits, what failed for
 good, plugin schedules), Activity (the audit trail of writes), Find and replace (a phrase across
-a collection, previewed first), Analytics (page views and visitors from the site's cookieless
-beacon, Settings → Analytics) and Automations (when an entry is published, a form is submitted or a
-payment completes, send an email or post to a URL). Content → Calendar lists the month's published and scheduled
-entries. Settings → Reading names a page for missing addresses (served with status 404); Settings
+a collection, previewed first) and Automations (when an entry is published, a form is submitted or
+a payment completes, send an email or post to a URL). Content → Calendar lists the month's published
+and scheduled entries. Settings → Analytics takes a Cloudflare Web Analytics token or a Google
+Analytics measurement ID and adds that service's script to visitors' pages; the site stores no page
+views, since that would be a database write per view past the cache. Settings → Reading names a page for missing addresses (served with status 404); Settings
 → General has a maintenance or coming-soon mode (visitors get a 503 holding page, people with
 dashboard access see the site) and asks new registrants to confirm their email when the site can
 send one. New users can be invited by email instead of given a password; people can delete their

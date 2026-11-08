@@ -166,7 +166,6 @@ application password. A CMS refusal answers `{ error, code, fields? }` with its 
 | `GET /me` | The user, roles, permissions, site, password scope and network state. |
 | `GET /webhooks`, `POST /webhooks` `{ name, url, events, collections?, active? }`, `DELETE /webhooks/<id>` | Webhooks, for the webhooks permission; the answer to `POST` carries the signing secret once. |
 | `GET /comments/queue?status=&q=&page=&perPage=`, `PATCH /comments/<id>` `{ status }`, `DELETE /comments/<id>` | The moderation queue (pending by default), approving, holding, marking as spam, trashing or deleting a comment, for the comments permission. |
-| `POST /beacon` `{ p, r }` | The site's page-view beacon (Settings → Analytics); always 204. |
 | `POST /payments/webhook` | The payments provider's webhook, signed by the provider; a known event becomes `cms.payment.event`. |
 | `GET /redirects?q=&page=&perPage=`, `POST /redirects` `{ source, target, status?, note? }` | Redirects, for the redirects permission; `source` is a path, `target` a path or URL, `status` 301, 302, 307, 308 or 410. |
 | `GET /me/tokens`, `POST /me/tokens` `{ name, scope, expiresInDays? }`, `DELETE /me/tokens/<id>` | Application passwords; `POST` needs a session (a password cannot make one) and answers the token once; `expiresInDays` (1 to 3650) ends it on its own. |

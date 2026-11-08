@@ -91,7 +91,7 @@ export async function navigation(c: Context): Promise<DashboardModule[]> {
         ...(can(PERMISSIONS.manageSchema) ? [{ label: 'Schema', href: '/dashboard/tools/schema' }] : []),
         ...(can(PERMISSIONS.manageSettings) ? [{ label: 'Export', href: '/dashboard/tools/export' }] : []),
         ...(can(PERMISSIONS.manageSettings) ? [{ label: 'Cache', href: '/dashboard/tools/cache' }] : []),
-        ...(can(PERMISSIONS.manageSettings) ? [{ label: 'Jobs', href: '/dashboard/tools/jobs' }, { label: 'Activity', href: '/dashboard/tools/activity' }, { label: 'Find and replace', href: '/dashboard/tools/replace' }, { label: 'Analytics', href: '/dashboard/tools/analytics' }, { label: 'Automations', href: '/dashboard/tools/automations' }] : []),
+        ...(can(PERMISSIONS.manageSettings) ? [{ label: 'Jobs', href: '/dashboard/tools/jobs' }, { label: 'Activity', href: '/dashboard/tools/activity' }, { label: 'Find and replace', href: '/dashboard/tools/replace' }, { label: 'Automations', href: '/dashboard/tools/automations' }] : []),
     ];
     if (tools.length) admin.push({ id: 'tools', label: 'Tools', href: tools[0]!.href, icon: icon('tuning-2'), authorization: 'authenticated', children: tools });
     // Settings has its own navigation beside its pages, so the sidebar holds one link.

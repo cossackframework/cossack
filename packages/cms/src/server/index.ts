@@ -45,7 +45,7 @@ export { AI_LIMITS, checkAiRequest, type AiProvider, type AiRequest } from './ai
 export { checkCheckout, type Checkout, type CheckoutInput, type PaymentsProvider } from './payments';
 export { stripePayments, STRIPE_API, STRIPE_TOLERANCE_MS, type StripePaymentsOptions } from './stripe';
 export { cloudflarePurger, zoneCandidates, CLOUDFLARE_API, type CloudflarePurgerOptions } from './cloudflare';
-export { CmsTraffic, type CrawlerVisits, type NotFoundRow, type ViewsReport, type VisitKind } from './traffic';
+export { CmsTraffic, type CrawlerVisits, type NotFoundRow, type VisitKind } from './traffic';
 export { CmsComments, type CommentListOptions } from './comments';
 export { CmsForms, type CmsMail, type LoadedForm, type SubmitContext, type SubmitResult, type SubmissionList } from './forms';
 export { sha256Hex, randomToken, base64Url, timingSafeEqual } from './tokens';
