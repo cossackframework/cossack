@@ -38,6 +38,8 @@
 !/src/plugins/
 /src/plugins/*
 !/src/plugins/default-theme/
+# The example plugin is tracked for development; cossack-recipe.json does not list it, and the package leaves it out.
+!/src/plugins/example/
 !/src/pages/
 /src/pages/*
 !/src/pages/(site)/
