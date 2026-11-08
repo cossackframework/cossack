@@ -78,7 +78,11 @@ export function createIsolateRuntime(plugin: Readonly<Record<string, unknown>>, 
             const { signal: _signal, ...rest } = options as { signal?: unknown };
             return rest;
         };
+        // As in the application: a resource the plugin neither owns nor asks for fails at once.
+        const own = (id: string) => call.resources.includes(id) || (manifest.collections ?? []).some(collection => `cms/${collection.name}` === id)
+            || Object.hasOwn(manifest.permissions?.resources ?? {}, id);
         const resource = (id: string) => {
+            if (!own(id)) throw failure('CMS_FORBIDDEN', `Plugin ${name} has no grant for ${id}.`);
             const at = (method: string, ...args: unknown[]) => forward(`resource.${method}` as IsolateMember, id, ...args.map(withoutSignal));
             return {
                 get: (key: unknown, context: unknown) => at('get', key, context),

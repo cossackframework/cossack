@@ -17,7 +17,8 @@ puts a default theme in `src/plugins/default-theme/` for you to edit or copy. Se
 ## Guides
 
 - [Plugins](/docs/cms/plugins.md): package a plugin, what its files do, how it is rendered,
-  activated and upgraded, and the rules its code must follow.
+  activated and upgraded, where its server code runs (isolated on Cloudflare), and the rules its
+  code must follow.
 - [Plugin manifest](/docs/cms/manifest.md): every field of `cossack-plugin.json`.
 - [Hooks](/docs/cms/hooks.md): the extension points, how handlers run, and how a plugin
   defines points of its own.
@@ -90,7 +91,11 @@ const cms = createCMS({ db, modules, resources, plugins, storage, images, mail }
   content module with posts and pages. `resources` are the application's own declarations.
 - `plugins` is the static registry the framework builds from `src/plugins/*/`: each entry
   carries the plugin's rendered manifest, its `server.ts` module, its `ui.ts` module, its
-  `templates/*.ts` modules and the URLs of its `assets/`.
+  `templates/*.ts` modules and the URLs of its `assets/`. An isolated plugin's entry carries
+  its bundled server code instead of the module.
+- `runner` runs isolated plugins. The Cloudflare Worker entry sets `cloudflarePluginRunner()`
+  from `@cossackframework/cms/cloudflare` and exports `PluginBridge` and `PluginTail`; see
+  [Where server code runs](/docs/cms/plugins.md#where-server-code-runs).
 - A request middleware sets `cms` and `principal` on the Hono context. Server code reads
   them with `c.get('cms')` and `c.get('principal')`; every repository call takes the
   principal, and the host authorizes the call.

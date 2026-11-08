@@ -271,6 +271,9 @@ the handler was written against:
   no installed plugin providing it, or another version, makes this plugin invalid.
 - Every entry becomes a grant, `hook:<point>`, that the administrator approves.
 - A handler for a point not listed here fails the policy lint and `register()`.
+- `priority`, a whole number from -1000 to 1000 (default 10, lower first), places an
+  [isolated](/docs/cms/plugins.md#where-server-code-runs) plugin's handlers for the point among
+  other plugins'. Its handlers' own priorities order them inside its Worker.
 
 ## `provides`
 
@@ -372,6 +375,13 @@ distinct codes. Each code has a `translations/<code>.json` file, for the applica
 or a `translations/<code>/` directory of `<plugin>.json` files, for other plugins' text. The
 field describes the pack; the catalogs join the build whether or not the plugin is active.
 See [Languages](/docs/cms/languages.md#language-packs).
+
+## `isolation`
+
+`false` keeps the plugin in the application where its files would let it run isolated. It is
+what `cossack add plugin --in-app` renders into `plugin.json`; any other value is invalid, since
+only a plugin's files can make it isolated. See
+[Where server code runs](/docs/cms/plugins.md#where-server-code-runs).
 
 ## What a manifest asks the administrator for
 

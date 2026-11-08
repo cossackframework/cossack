@@ -125,6 +125,14 @@ describe('isolate runtime', () => {
         expect(() => context.settings.get('x')).toThrow('outside a call from the host');
     });
 
+    it('refuses a resource the manifest neither declares nor asks for at once, as the application does', async () => {
+        let context!: PluginContext;
+        const { isolate } = runtime(given => { context = given; });
+        await isolate.run(call('main', { kind: 'action', point: 'cms.resource.after-commit', payload: {} }), bridge('main').value);
+        expect(() => context.cms.resource('cms/pages')).toThrow(expect.objectContaining({ code: 'CMS_FORBIDDEN', message: 'Plugin desk has no grant for cms/pages.' }));
+        expect(() => context.cms.resource('desk/tickets')).not.toThrow();
+    });
+
     it('keeps concurrent calls on their own bridges', async () => {
         const { isolate } = runtime(context => {
             context.commands.add('close-all', async input => {

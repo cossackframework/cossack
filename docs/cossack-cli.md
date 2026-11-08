@@ -506,6 +506,14 @@ plugin manifest declares. A plugin that asks for unrestricted access can do
 anything in the application, so rendering it stops with a danger message until
 you accept it: a terminal asks, and anything else needs `--allow-unrestricted`.
 
+Each render says where the plugin's server code runs. On Cloudflare a plugin
+with only server code runs isolated in a Worker of its own, and the first one
+adds the Worker Loader binding (`LOADER`, Workers Paid) to `wrangler.jsonc`.
+`--in-app`, on `add plugin` and `plugins upgrade`, keeps a plugin in the
+application instead, and upgrades keep the choice. `cossack plugins list`
+shows `isolated` or `in app` for each plugin. See
+[Where server code runs](/docs/cms/plugins.md#where-server-code-runs).
+
 ```bash
 cossack add plugin ./support-desk-1.0.0.tgz
 cossack plugins check

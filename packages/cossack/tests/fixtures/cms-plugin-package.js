@@ -154,6 +154,78 @@ export function register(context: PluginContext) {
   return { directory, tarball: path.join(directory, stdout.trim().split('\n').pop()) };
 }
 
+/**
+ * A plugin with only server code: on Cloudflare it runs isolated, on Node in the application.
+ * Its probe reaches for the global fetch and process in ways the build's lints cannot see, so
+ * only the Worker it runs in stops it.
+ */
+export async function packIsolated(version = '1.0.0') {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), `tickets-probe-${version}-`));
+  const all = {
+    'package.json': JSON.stringify({ name: '@acme/tickets-probe', version, type: 'module', cossack: { plugin: 'cossack-plugin.json' }, files: ['plugin', 'cossack-plugin.json'] }),
+    'cossack-plugin.json': JSON.stringify({ schemaVersion: 1, name: 'tickets-probe', version, description: 'Tickets, with server code only',
+      resources: [{ name: 'tickets', label: 'Tickets', titleField: 'subject', fields: { subject: { kind: 'string', required: true, max: 120 }, status: { kind: 'string', max: 20 } } }],
+      hooks: [{ point: 'cms.resource.before-write', version: 1 }, { point: 'cms.resource.after-commit', version: 1 }],
+      permissions: { jobs: true },
+      commands: [
+        { name: 'open', description: 'Open a ticket.', options: { subject: { type: 'string', description: 'What it is about.' } } },
+        { name: 'show', description: 'Show a ticket.', options: { id: { type: 'string', description: 'The ticket.' } } },
+        { name: 'probe', description: 'Reach for what the plugin was not given.' },
+      ] }, null, 2),
+    'plugin/server.ts': `import { afterCommit, beforeWrite, systemPrincipal, userPrincipal } from '@cossackframework/cms';
+import type { PluginContext } from '@cossackframework/cms/server';
+
+const TICKETS = 'tickets-probe/tickets';
+/** Found in the application's bundle only when the plugin's code is part of it. */
+const MARK = 'tickets-probe-marker';
+
+export function register(context: PluginContext) {
+  const own = { principal: systemPrincipal('plugin:tickets-probe') };
+  const tickets = context.cms.resource('tickets-probe/tickets');
+  context.hooks.addFilter(beforeWrite, (draft, { input }) =>
+    input.resource === TICKETS && typeof draft.subject === 'string' && !draft.subject.endsWith(' [checked]') ? { ...draft, subject: \`\${draft.subject.trim()} [checked]\` } : draft);
+  context.hooks.addAction(afterCommit, async event => {
+    if (event.resource === TICKETS && event.topic === 'resource.created') await context.jobs.enqueue('triage', { id: event.id }, { key: \`triage-\${event.id}\` });
+  });
+  context.jobs.handle('triage', async (payload: { id: string }) => {
+    const ticket = await tickets.get(payload.id, own);
+    if (ticket && ticket.status !== 'triaged') await tickets.update(payload.id, { status: 'triaged' }, { ...own, expectedRevision: ticket.rev });
+    console.log(\`[tickets-probe] triaged \${payload.id}\`);
+  });
+  context.commands.add('open', async input => {
+    const created = await tickets.create({ subject: String(input.subject), status: 'open' }, own);
+    return { id: created.id, subject: created.subject };
+  });
+  context.commands.add('show', async input => {
+    const ticket = await tickets.get(String(input.id), own);
+    return ticket ? { subject: ticket.subject, status: ticket.status } : null;
+  });
+  context.commands.add('probe', async (_input, { principal }) => {
+    const global = globalThis as unknown as Record<string, unknown>;
+    const reach = Reflect.get(global, 'fe' + 'tch') as typeof fetch;
+    const host = Reflect.get(global, 'pro' + 'cess') as { env?: Record<string, unknown> } | undefined;
+    const code = (error: unknown) => (error as { code?: string }).code ?? String((error as Error).message);
+    return {
+      fetch: await reach('https://example.com/').then(() => 'reached', error => String((error as Error).message)),
+      env: host?.env ? Object.keys(host.env).length : 0,
+      // Named so the lint cannot follow; the host refuses it anyway.
+      ungranted: await (async () => (Reflect.get(context.cms, 'resource') as (id: string) => typeof tickets).call(context.cms, ['cms', 'pages'].join('/')).list({ limit: 1 }, own))().then(() => 'allowed', code),
+      forged: await tickets.list({ limit: 1 }, { principal: userPrincipal('forged', ['administrator'], ['*']) }).then(() => 'allowed', code),
+      given: principal.kind,
+      marker: MARK,
+    };
+  });
+}
+`,
+  };
+  for (const [rel, content] of Object.entries(all)) {
+    await fs.mkdir(path.dirname(path.join(directory, rel)), { recursive: true });
+    await fs.writeFile(path.join(directory, rel), content);
+  }
+  const { stdout } = await run('npm', ['pack', '--ignore-scripts', '--silent', '--pack-destination', directory], { cwd: directory });
+  return { directory, tarball: path.join(directory, stdout.trim().split('\n').pop()) };
+}
+
 /** Write the package and pack it; returns `{ directory, tarball }`. */
 export async function packDesk(version, { files = {}, manifest = {} } = {}) {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), `support-desk-cms-${version}-`));

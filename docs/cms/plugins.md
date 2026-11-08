@@ -386,14 +386,64 @@ stop, and its data stays. An upgrade whose manifest requests more than before le
 plugin inactive until it is granted again. `cms.status()` lists every plugin with
 `active`, a `reason` when it is not, and the grants still `missing`.
 
+## Where server code runs
+
+A plugin's server code runs in one of three places, and the dashboard's Plugins page says which:
+
+| Tier | Where | What holds it to its manifest |
+| --- | --- | --- |
+| Isolated | A Worker of its own, on Cloudflare | The runtime: no bindings, no network but `context.fetch`, and only what it is granted. |
+| In the application | The application's own Worker or process | The build's policy lints, which honest code passes and other code can evade. |
+| Unrestricted | The application | Nothing: it asked for everything, and installing and granting it warn. |
+
+**The plugin's files decide.** A plugin runs isolated when its only code is `server.ts`, with
+data beside it: `plugin.json`, `lang/`, `translations/` and `assets/`. A plugin with `ui.ts`,
+`pages/`, `components/`, `middlewares.ts`, `config/` or `templates/` runs in the application
+as a whole, since those run there at render time and in the browser on the site's own domain.
+So does a theme, a plugin with `permissions.unrestricted`, and one added with `--in-app`. A
+manifest cannot ask to be isolated.
+
+**On Cloudflare**, isolated plugins run in Dynamic Workers, one per plugin version, shared by
+every site of a network. They need the Workers Paid plan and the Worker Loader binding:
+`cossack add plugin` adds `"worker_loaders": [{ "binding": "LOADER" }]` to `wrangler.jsonc`
+with the first isolated plugin, and a build with an isolated plugin and no binding fails with
+`COSSACK_PLUGIN_ISOLATION_BINDING`. Add a plugin with `--in-app` to keep it in the application
+instead, for example on the free plan. Without the binding at run time, an isolated plugin
+stays inactive with that reason; it never runs in the application instead. **On Node.js**,
+every plugin runs in the application, and its status says why.
+
+Writing for isolation changes a few things. The same plugin runs in the application on Node:
+
+- **Everything crosses as a copy.** Payloads, results and errors cross between the plugin's
+  Worker and the host as structured clones. An error keeps its `code`. Functions and class
+  instances do not cross; `COSSACK_PLUGIN_PAYLOAD` names the call when something cannot.
+- **The network is `context.fetch`.** The global `fetch` and sockets throw, and `process.env`
+  is empty. Importing a Node.js built-in or a `cloudflare:` module fails the build with
+  `COSSACK_PLUGIN_ISOLATED_IMPORT`, naming the file.
+- **Act as who you were given.** A repository call must pass the principal its handler received
+  (a command's user, a job's principal) or `systemPrincipal('plugin:<name>')`. Any other
+  principal is refused with `CMS_FORBIDDEN`.
+- **`register()` runs once per site in each Worker**, and again in a fresh one, so keep it free
+  of effects beyond registering. The host registers stand-ins from the manifest's `hooks`,
+  `commands` and jobs, and calls the plugin's Worker for each. A manifest hook's `priority`
+  places the plugin's handlers among other plugins'; the handlers' own priorities order them
+  inside its Worker.
+- **Each call has limits.** A handler's `signal` aborts at the point's deadline, and the
+  bridge refuses calls after it. On Cloudflare a hook may use 50 ms of CPU and 50 subrequests,
+  and a command, job or schedule 1,000 of each; local development does not enforce these.
+
+For an isolated plugin, installing is no longer the real gate: its `register()` runs in a
+Worker that reaches nothing it was not granted.
+
 ## Policy lints
 
-Rendered plugin source is trusted build-time code, so the CLI checks that it stays within
-its manifest. `cossack plugins check` runs the lints; `vite build` runs them too. Source is
+Rendered plugin source is build-time code, so the CLI checks that it stays within its
+manifest. `cossack plugins check` runs the lints; `vite build` runs them too. Source is
 parsed, never executed.
 
 The lints keep honest code inside its manifest. They are not a sandbox: code written to evade
-them can, so review a plugin you did not write, whatever it asks for. A plugin with
+them can, so review a plugin you did not write, whatever it asks for. On Cloudflare an isolated
+plugin is held by its Worker instead, and the lints only catch mistakes early. A plugin with
 `permissions.unrestricted` passes every lint but `COSSACK_PLUGIN_PARSE` and gets the warning
 `COSSACK_PLUGIN_UNRESTRICTED` instead.
 
