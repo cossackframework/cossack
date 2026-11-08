@@ -4,6 +4,7 @@
  * described the page through `c.set('cms.taskbar', …)`.
  */
 import type { Context } from 'hono';
+import { settingsSectionHref } from './settings-search';
 import type { User } from '@cossackframework/core';
 import { ANONYMOUS, evaluateRule, hasPermission, PERMISSIONS, type Principal } from '@cossackframework/cms';
 import type { CmsHost } from '@cossackframework/cms/server';
@@ -69,7 +70,7 @@ function pageContext(cms: CmsHost, principal: Principal, resolved: Resolved | { 
     } else if (resolved?.kind === 'author' && can(PERMISSIONS.manageUsers)) {
         links.push({ label: 'Edit user', href: `/dashboard/users/${resolved.user.id}`, icon: icon('user') });
     } else if (kind === 'home' && can(PERMISSIONS.manageSettings)) {
-        links.push({ label: 'Reading settings', href: '/dashboard/settings/reading', icon: icon('settings') });
+        links.push({ label: 'Reading settings', href: settingsSectionHref('reading'), icon: icon('settings') });
     }
     // A list page: the header and footer are still editable in place for whoever may change the theme's areas.
     return { status: null, edit: page?.frame ? `${path}?edit` : null, links };

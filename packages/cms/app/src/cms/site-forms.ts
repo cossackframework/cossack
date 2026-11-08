@@ -34,7 +34,8 @@ export function typedValues(inputs: readonly FormField[], raw: { readonly [name:
     const values: { [name: string]: FormValue } = {};
     for (const input of inputs) {
         const entry = raw[input.name];
-        if (entry === undefined || entry === null) continue;
+        // A page cannot fill in a file control: files are chosen again.
+        if (entry === undefined || entry === null || input.kind === 'file') continue;
         if (input.kind === 'rows') {
             if (!Array.isArray(entry)) continue;
             values[input.name] = entry.filter((row): row is { [name: string]: unknown } => !!row && typeof row === 'object' && !Array.isArray(row))

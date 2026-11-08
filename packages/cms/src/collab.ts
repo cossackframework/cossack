@@ -266,7 +266,8 @@ export function treeOps(field: string, before: readonly Block[], after: readonly
     return ops;
 }
 
-const PATCH_PATH = /^(?:type|layout|style|when|data\.[A-Za-z_][A-Za-z0-9_-]{0,79})$/;
+/** A block's patchable paths; `data.__proto__` and the like are refused, since a patch writes the key onto a plain object. */
+const PATCH_PATH = /^(?:type|layout|style|when|data\.(?!(?:__proto__|constructor|prototype)$)[A-Za-z_][A-Za-z0-9_-]{0,79})$/;
 
 function indexAfter(blocks: readonly Block[], parent: string | null, after: string | null): number | undefined {
     if (after === null) return 0;

@@ -52,7 +52,7 @@ export default class BlocksPage extends Cossack {
 
     render() {
         const groups = BLOCK_CATEGORIES.map(category => ({ ...category, blocks: this.blocks.filter(block => block.category === category.id && this.matches(block, category.label)) })).filter(group => group.blocks.length);
-        return html`<div class="space-y-8">
+        return html`<div class="space-y-6">
             ${pageHeader(__('Blocks'), { description: __('Entries are built from these in their Content field; a collection can start every entry from a template of them. Plugins add block types. Data blocks store values without showing anything.') })}
             <div class="relative max-w-sm">
                 <span class="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground [&_svg]:size-4">${component(Icon, { entry: { line: MagnifierIcon }, size: 16 })}</span>

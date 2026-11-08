@@ -89,14 +89,28 @@ describe.skipIf(!live)('scheduling, previews, revisions, redirects, tokens, webh
         const post = await repository.create({ title: 'Launch', status: 'published', publishedAt: later }, { principal: author });
         expect(post).toMatchObject({ status: 'scheduled', publishedAt: later });
         expect(await repository.get(post.id, { principal: ANONYMOUS })).toBeNull();
-        expect(await cms.publishDue()).toBe(0);
+        expect(await cms.runSchedule()).toEqual({ published: 0, unpublished: 0 });
         const now = await repository.create({ title: 'Now', status: 'scheduled' }, { principal: author });
         expect(now).toMatchObject({ status: 'published', publishedAt: clock });
         clock = later + 1;
-        expect(await cms.publishDue()).toBe(1);
+        expect(await cms.runSchedule()).toEqual({ published: 1, unpublished: 0 });
         expect(await repository.get(post.id, { principal: ANONYMOUS })).toMatchObject({ status: 'published', rev: 2 });
         const pending = await repository.create({ title: 'Review me', status: 'pending' }, { principal: author });
         expect(pending.status).toBe('pending');
+    });
+
+    it('takes published entries back to draft at their unpublish time', async () => {
+        const repository = cms.resource('cms/posts');
+        const until = clock + 30 * 60_000;
+        const offer = await repository.create({ title: 'Spring offer', status: 'published', unpublishAt: until }, { principal: author });
+        expect(offer).toMatchObject({ status: 'published', unpublishAt: until });
+        await expect(repository.update(offer.id, { unpublishAt: clock - 1 }, { principal: author, expectedRevision: offer.rev })).rejects.toMatchObject({ code: 'CMS_VALIDATION', fields: { unpublishAt: expect.any(String) } });
+        await expect(repository.create({ title: 'Backwards', status: 'published', publishedAt: clock + 10_000, unpublishAt: clock + 5_000 }, { principal: author })).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
+        expect(await cms.runSchedule()).toEqual({ published: 0, unpublished: 0 });
+        clock = until;
+        expect(await cms.runSchedule()).toEqual({ published: 0, unpublished: 1 });
+        expect(await repository.get(offer.id, { principal: ANONYMOUS })).toBeNull();
+        expect(await repository.get(offer.id, { principal: author })).toMatchObject({ status: 'draft', unpublishAt: null });
     });
 
     it('shares previews of drafts through revocable links', async () => {
@@ -618,10 +632,10 @@ describe.skipIf(!live)('scheduling, previews, revisions, redirects, tokens, webh
 
     it('applies changed built-in collections and new host tables on the next request', async () => {
         const extended: CmsModule = { ...contentModule, collections: contentModule.collections!.map(entry => entry.name === 'pages' ? { ...entry, fields: { ...entry.fields, summary2: field.string({ label: 'Teaser' }) } } : entry) };
-        // As if the package was upgraded from before host step 5.
+        // As if a new build of the package added host step 5.
         await service.database().write([
             { rql: "DELETE FROM cms_migrations WHERE id = 'cms#host-5'" },
-            ...['cms_comments', 'cms_user_security', 'cms_passkeys', 'cms_auth_challenges'].map(table => ({ rql: `DROP TABLE ${table}` })),
+            ...['cms_drafts', 'cms_notes', 'cms_note_mentions', 'cms_schedules', 'cms_automations', 'cms_crawler_visits', 'cms_not_found'].map(table => ({ rql: `DROP TABLE ${table}` })),
         ]);
         const upgraded = createCMS({ db: service.database(), modules: [extended] });
         await upgraded.ready();

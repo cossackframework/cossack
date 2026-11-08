@@ -1,10 +1,12 @@
 /** Webhooks: their events, shape and URL rules. Client-safe; the host stores and sends them. */
 /**
  * Entry events; `form.submitted` for each kept or sent form submission (not spam), going to
- * webhooks for all collections or for Forms; and `note.created` and `note.resolved` for
- * editors' review notes on an entry, going to webhooks for the entry's collection.
+ * webhooks for all collections or for Forms; `note.created` and `note.resolved` for editors'
+ * review notes on an entry, going to webhooks for the entry's collection; and
+ * `payment.completed` for a checkout or payment the payments provider confirmed, going to
+ * webhooks for all collections.
  */
-export const WEBHOOK_EVENTS = Object.freeze(['entry.created', 'entry.updated', 'entry.published', 'entry.unpublished', 'entry.deleted', 'form.submitted', 'note.created', 'note.resolved'] as const);
+export const WEBHOOK_EVENTS = Object.freeze(['entry.created', 'entry.updated', 'entry.published', 'entry.unpublished', 'entry.deleted', 'form.submitted', 'note.created', 'note.resolved', 'payment.completed'] as const);
 export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number];
 
 export interface Webhook {
@@ -56,6 +58,8 @@ export interface WebhookPayload {
     readonly previousStatus?: string | null;
     /** `note.created` and `note.resolved`: the note, with `entry` naming its entry (`id`, `title`, the editor's `url`). */
     readonly note?: { readonly [field: string]: unknown };
+    /** `payment.completed`: the `PaymentEvent` without the provider's object (`provider`, `type`, `checkoutId`, `reference`, `customerEmail`, `amount`, `currency`, `metadata`). */
+    readonly payment?: { readonly [field: string]: unknown };
 }
 
 /** HTTPS anywhere; plain HTTP only for this machine, for development. */

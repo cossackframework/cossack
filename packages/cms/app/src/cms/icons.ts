@@ -270,10 +270,4 @@ export function blockIconColor(category: string | undefined): string {
     return BLOCK_CATEGORY_COLORS[category ?? ''] ?? 'text-muted-foreground';
 }
 
-/** The icon of a menu item's kind: the collection's own for entries and archives, a tag or folder for terms, a link for custom links. */
-export function menuItemIcon(kind: string, options: { collection?: string; hierarchical?: boolean } = {}): IconEntry {
-    if (kind === 'link') return icon('link-round');
-    if (kind === 'term') return icon(options.hierarchical ? 'folder' : 'tag');
-    if (kind === 'archive') return icon('folder-with-files');
-    return icon(options.collection, 'document-text');
-}
+

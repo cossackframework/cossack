@@ -1,5 +1,5 @@
 import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackframework/core';
-import { AlertDialog, Button, Card, CardBody, Field, Icon, Input, NativeSelect, Textarea } from '@cossackframework/ui';
+import { AlertDialog, Button, Card, CardBody, Field, Icon, Input, NativeSelect, Textarea, CardHeader } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { isCmsError, PERMISSIONS, slugify, type TermShape } from '@cossackframework/cms';
 import { requireAny } from '../../../../../cms/guards';
@@ -94,9 +94,8 @@ export default class TermsPage extends Cossack {
             ${this.message ? notice(this.message, 'success') : null}
             ${this.error ? notice(this.error, 'error') : null}
             <div class="grid gap-6 lg:grid-cols-[22rem_minmax(0,1fr)]">
-                ${component(Card, {}, component(CardBody, {}, html`
-                    <h2 class="mb-4 text-base font-semibold text-foreground">${__('New')} ${this.taxonomy.singular.toLowerCase()}</h2>
-                    <form class="space-y-4" @submit=${(event: Event) => this.submit(event)}>
+                ${component(Card, {}, html`${component(CardHeader, {}, html`<h2 class="text-base font-semibold text-foreground">${__('New')} ${this.taxonomy.singular.toLowerCase()}</h2>`)}
+                    ${component(CardBody, {}, html`<form class="space-y-4" @submit=${(event: Event) => this.submit(event)}>
                         ${component(Field, { label: __('Name'), for: 'term-name', error: this.errors.name, hint: __('The name is how it appears on your site.'),
                             control: attributes => component(Input, { ...attributes, '.value': this.draft.name, '@input': (event: Event) => this.setDraft('name', (event.target as HTMLInputElement).value) }) })}
                         ${component(Field, { label: __('Slug'), for: 'term-slug', error: this.errors.slug, hint: __('Generated from the name; lowercase letters, digits and hyphens.'),
@@ -109,7 +108,7 @@ export default class TermsPage extends Cossack {
                             control: attributes => component(Textarea, { ...attributes, rows: 3, '.value': this.draft.description, '@input': (event: Event) => this.setDraft('description', (event.target as HTMLTextAreaElement).value) }) })}
                         ${iconSelect('term-icon', this.draft.icon, value => this.setDraft('icon', value), this.errors.icon)}
                         ${component(Button, { type: 'submit', disabled: !this.draft.name.trim() }, `${__('New')} ${this.taxonomy.singular.toLowerCase()}`)}
-                    </form>`))}
+                    </form>`)}`)}
                 <div class="space-y-3">
                     <form method="get" action=${base} class="flex justify-end gap-2" role="search">
                         ${component(Input, { type: 'search', name: 'q', size: 'sm', value: this.search, placeholder: `${__('Search')} ${this.taxonomy.label.toLowerCase()}`, 'aria-label': __('Search') })}

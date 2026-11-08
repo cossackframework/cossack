@@ -109,7 +109,7 @@ async function sendInvitation(cms: CmsHost, email: string, name: string): Promis
   const origin = env('APP_URL', '') || (c ? new URL(c.req.url).origin : '');
   const title = await cms.settings.get('general.siteTitle').catch(() => '');
   const link = `${origin.replace(/\/$/, '')}/auth/reset-password?token=${reset.token}`;
-  await cms.mail.send({ to: email, from: cms.mailFrom, subject: `You are invited to ${title || 'the site'}`,
+  await cms.mail.send({ kind: 'invitation', to: email, from: cms.mailFrom, subject: `You are invited to ${title || 'the site'}`,
     text: `Hello ${name || email},\n\nAn account was made for you on ${title || origin}. Set your password here within seven days:\n${link}\n\nIf you were not expecting this, ignore this email.` });
 }
 

@@ -312,10 +312,59 @@ export class CmsUsers {
         const result = await this.#db.write([
             { rql: 'DELETE FROM cms_user_roles WHERE user_id = $id', params },
             { rql: 'DELETE FROM cms_users WHERE id = $id', params },
+            { rql: 'DELETE FROM cms_registrations WHERE user_id = $id', params },
         ], WRITE);
         if (user?.account === 'site') await this.#siteAccounts!.delete(id);
         else await this.#accounts.leave(id, this.#site);
         return result.results[1]!.affected === 1n;
+    }
+
+    /**
+     * Hold a new member for approval: their account is disabled until an administrator approves
+     * it. `verified` says their email address is confirmed already, or the site asks for none.
+     */
+    async holdForApproval(id: string, options: { verified: boolean }): Promise<void> {
+        await this.setStatus(id, 'disabled');
+        await this.#db.write([{ rql: 'INSERT INTO cms_registrations (user_id, verified, created_at) VALUES ($id, $verified, $now)', params: { $id: id, $verified: options.verified ? 1 : 0, $now: this.#now() } }], WRITE);
+    }
+
+    /** Whether a member waits for approval. */
+    async awaitingApproval(id: string): Promise<boolean> {
+        const result = await this.#db.read([{ rql: 'SELECT user_id FROM cms_registrations WHERE user_id = $id', params: { $id: id } }]);
+        return result.results[0]!.rows.length > 0;
+    }
+
+    /** A held member opened their email link: they still wait for approval. */
+    async confirmRegistration(id: string): Promise<boolean> {
+        const result = await this.#db.write([{ rql: 'UPDATE cms_registrations SET verified = 1 WHERE user_id = $id', params: { $id: id } }], WRITE);
+        return result.results[0]!.affected === 1n;
+    }
+
+    /** Members waiting for approval, oldest first, with whether their email is confirmed. */
+    async registrations(options: { limit?: number } = {}): Promise<{ user: CmsUser; verified: boolean; createdAt: number }[]> {
+        const result = await this.#db.read([{ rql: 'SELECT user_id, verified, created_at FROM cms_registrations ORDER BY created_at, user_id LIMIT $limit', params: { $limit: Math.min(Math.max(options.limit ?? 50, 1), 200) } }]);
+        const rows = result.results[0]!.rows;
+        const users = await Promise.all(rows.map(([id]) => this.get(String(id))));
+        return rows.flatMap(([, verified, createdAt], index) => users[index] ? [{ user: users[index]!, verified: Number(verified as bigint) === 1, createdAt: Number(createdAt as bigint) }] : []);
+    }
+
+    /** How many members wait for approval. */
+    async registrationCount(): Promise<number> {
+        const result = await this.#db.read([{ rql: 'SELECT count(*) FROM cms_registrations' }]);
+        return Number(result.results[0]!.rows[0]![0] as bigint);
+    }
+
+    /**
+     * Approve a held member: their account is active, once their email is confirmed. False when
+     * they were not waiting; `CMS_VALIDATION` while their email link was not opened yet.
+     */
+    async approve(id: string): Promise<boolean> {
+        const result = await this.#db.read([{ rql: 'SELECT verified FROM cms_registrations WHERE user_id = $id', params: { $id: id } }]);
+        const row = result.results[0]!.rows[0];
+        if (!row) return false;
+        if (Number(row[0] as bigint) !== 1) throw new CmsError('CMS_VALIDATION', 'This member has not confirmed their email address yet.');
+        await this.#db.write([{ rql: 'DELETE FROM cms_registrations WHERE user_id = $id', params: { $id: id } }], WRITE);
+        return this.setStatus(id, 'active');
     }
 
     /**

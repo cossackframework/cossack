@@ -49,13 +49,23 @@ Tools under the dashboard's Tools menu: Health (search and answer engines, crawl
 Links, Redirects, Webhooks, Schema, Export, Cache, Jobs (the outbox: what waits, what failed for
 good, plugin schedules), Activity (the audit trail of writes), Find and replace (a phrase across
 a collection, previewed first) and Automations (when an entry is published, a form is submitted or
-a payment completes, send an email or post to a URL). Content → Calendar lists the month's published
-and scheduled entries. Settings → Analytics takes a Cloudflare Web Analytics token or a Google
+a payment completes, send an email; Webhooks post the same events, including `payment.completed`, to a URL). Content → Calendar lists the month's published
+and scheduled entries. An entry's **Unpublish on** time takes it back to draft then, as its
+publish time publishes it (`runSchedule()`, which the maintenance run calls each minute).
+**Members only** (a sidebar switch on posts and pages, the `members` collection feature) shows an
+entry's title and a sign-in prompt to visitors who are not signed in; **Member roles** beside it
+limits the entry to users with one of the ticked roles (a payments plugin can grant one), and
+people who may edit the entry always read it. Its content, excerpt and fields are withheld from
+the others on the site, in Markdown, search, llms.txt and the content API, and
+the sign-in page returns them to the entry (`?redirect=`, a path on the site). Settings → Analytics takes a Cloudflare Web Analytics token or a Google
 Analytics measurement ID and adds that service's script to visitors' pages; the site stores no page
-views, since that would be a database write per view past the cache. Settings → Reading names a page for missing addresses (served with status 404); Settings
+views, since that would be a database write per view past the cache. Settings → Email sets the accent color, logo and footer text of
+the HTML part every email gets beside its plain text (`cms.mail.before-send` filters see and change it last). Settings → Reading names a page for missing addresses (served with status 404); Settings
 → General has a maintenance or coming-soon mode (visitors get a 503 holding page, people with
-dashboard access see the site) and asks new registrants to confirm their email when the site can
-send one. New users can be invited by email instead of given a password; people can delete their
+dashboard access see the site), asks new registrants to confirm their email when the site can
+send one, and can hold new accounts for an administrator's approval (Users → Registrations;
+user managers see a notice while any waits). With `TURNSTILE_SITE_KEY` and `TURNSTILE_SECRET_KEY`
+set, the sign-in, registration and password reset forms check for bots as forms and comments do. New users can be invited by email instead of given a password; people can delete their
 own account from Profile, and sign in with a one-time link emailed from the sign-in page. Ctrl/Cmd+K
 opens a palette of every dashboard screen. The entry editor's Assistant box suggests a title, an
 excerpt or a summary when the application has an AI provider (`ANTHROPIC_API_KEY`, or a Workers AI
@@ -93,6 +103,10 @@ const cms = createCMS({ db, modules, resources, plugins, storage, images, mail }
   carries the plugin's rendered manifest, its `server.ts` module, its `ui.ts` module, its
   `templates/*.ts` modules and the URLs of its `assets/`. An isolated plugin's entry carries
   its bundled server code instead of the module.
+- `mail` sends the site's emails: Cloudflare's `EMAIL` binding, the Node adapter's SMTP sender,
+  or any `{ send({ to, from, subject, text, html, replyTo? }) }`. Server code sends through
+  `host.mail.send({ kind, to, subject, text })`, which adds the HTML part (Settings → Email) and
+  runs [`cms.mail.before-send`](/docs/cms/hooks.md#mail).
 - `runner` runs isolated plugins. The Cloudflare Worker entry sets `cloudflarePluginRunner()`
   from `@cossackframework/cms/cloudflare` and exports `PluginBridge` and `PluginTail`; see
   [Where server code runs](/docs/cms/plugins.md#where-server-code-runs).
@@ -108,7 +122,7 @@ dashboard and applies host schema changes a package upgrade brought.
 A resource is a declaration (`name`, `fields`, `access`, `ownership`, `migrations`) that the
 planner turns into additive RomeDB DDL; records live in `r__<owner>__<name>`. A collection
 is a resource `cms/<name>` stored schemaless, with features such as `content`, `excerpt`,
-`featuredImage`, `revisions` and `password`, taxonomies, a public `path` and field groups.
+`featuredImage`, `revisions`, `password` and `members`, taxonomies, a public `path` and field groups.
 Every mutation is one atomic batch: the record, its revision, an audit row and an outbox
 event, guarded by the operation ID so a stale edit writes nothing. After commit, the outbox
 delivers `cms.resource.after-commit` to plugins, webhooks and notifications, with retries

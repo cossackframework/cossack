@@ -60,17 +60,6 @@ const declare = (kind: FieldBlockKind, own: { readonly [name: string]: FieldDecl
     return { name: `field/${kind}`, label: type.label, icon: type.icon, category: 'field', description: type.description, field: { kind }, fields: fieldBlockFields(own, { multiple: !SINGLE_KINDS.has(kind) }), ...extra };
 };
 
-/** The field blocks of earlier builds: a List is a Single line with Multiple on, a Gallery an Image or file. */
-const LEGACY_FIELD_BLOCKS: { readonly [type: string]: string } = { 'field/list': 'field/text', 'field/gallery': 'field/media' };
-
-/** A stored block tree with the field blocks of earlier builds read as today's, at any depth. */
-export function upgradeFieldBlocks(blocks: readonly Block[]): Block[] {
-    return blocks.map(block => {
-        const type = LEGACY_FIELD_BLOCKS[block.type];
-        const next = type ? { ...block, type, data: { ...block.data, multiple: true } } : block;
-        return next.children ? { ...next, children: upgradeFieldBlocks(next.children) } : next;
-    });
-}
 
 /** Built-in field blocks, one per builder type. */
 export const FIELD_BLOCKS: readonly BlockDeclaration[] = Object.freeze([
@@ -416,7 +405,8 @@ export function metaProblems(fields: { readonly [name: string]: FieldDeclaration
     for (const [name, entry] of Object.entries(value as { [name: string]: unknown })) {
         // `_` keys are the host's own, such as `_recent_blocks`: field names cannot start with `_`, so they are kept as they are.
         if (SYSTEM_META.test(name)) { if (entry !== undefined && entry !== null) values[name] = entry; continue; }
-        const declaration = fields[name];
+        // Own keys only: `constructor` or `__proto__` must not find Object's members.
+        const declaration = Object.hasOwn(fields, name) ? fields[name] : undefined;
         if (!declaration) { errors[name] = 'is not a field here.'; continue; }
         if (entry === undefined || entry === null || entry === '') continue;
         const error = validateValue(name, declaration, entry);

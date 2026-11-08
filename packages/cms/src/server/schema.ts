@@ -8,7 +8,8 @@ import { indexedRowPaths, rowIndexPath, rowsSearchable } from '../field-groups';
 import { ClientError, compareVersions, encodeValue, type RomeDB, type Statement, type Value } from '@cossackframework/romedb';
 import { storageCheck, storageType, type FieldDeclaration } from '../fields';
 import { declarationHash, SYSTEM_FIELDS, type MigrationStep, type Resource } from '../resource';
-import { HOST_STEPS, HOST_TABLES, type HostStep } from './host-schema';
+import { HOST_STEPS, HOST_TABLES, hostSchemaMismatch, unknownHostSteps, type HostStep } from './host-schema';
+import { CmsError } from '../errors';
 
 export interface FieldSpec {
     readonly name: string;
@@ -235,6 +236,9 @@ export async function readCatalog(db: RomeDB, collections: readonly string[], op
             });
         }
         if (!consistent) continue;
+        // A ledger with steps this build does not have belongs to another build: planning against it would be wrong.
+        const unknown = unknownHostSteps(ledger.host);
+        if (unknown.length) throw new CmsError('CMS_SCHEMA_MISMATCH', hostSchemaMismatch(unknown));
         const details = await db.preflight(options);
         return { sequence: first.sequence, engineVersion: details.engineVersion!, tables, ledger };
     }

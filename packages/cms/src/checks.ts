@@ -40,6 +40,53 @@ interface Analysis {
 
 const words = (text: string) => text.trim() ? text.trim().split(/\s+/).length : 0;
 
+/** Block fields that hold a link as a plain string. */
+const LINK_FIELDS = new Set(['url', 'link', 'sourceUrl']);
+
+/** The targets of a rich text document's link marks. */
+export function richTextLinks(doc: RichTextDoc): string[] {
+    const links: string[] = [];
+    const visit = (nodes: readonly RichTextNode[]) => {
+        for (const node of nodes) {
+            for (const mark of node.marks ?? []) if (mark.type === 'link' && typeof mark.attrs?.href === 'string') links.push(mark.attrs.href);
+            if (node.content) visit(node.content);
+        }
+    };
+    visit(doc.content ?? []);
+    return links;
+}
+
+/** The targets of a Markdown text's `[label](target)` links. */
+export function markdownLinks(text: string): string[] {
+    return [...text.matchAll(/\]\(([^)\s]+)\)/g)].map(match => match[1]!);
+}
+
+/**
+ * Every link the blocks hold, children included: `url`, `link` and `sourceUrl` fields, Markdown
+ * links in text fields and link marks in rich text. The Links tool and the editorial checks read
+ * links with this one rule.
+ */
+export function blockLinks(blocks: readonly Block[]): string[] {
+    const links: string[] = [];
+    for (const block of flattenBlocks(blocks)) {
+        for (const [name, value] of Object.entries(block.data)) {
+            if (typeof value === 'string' && LINK_FIELDS.has(name)) links.push(value);
+            else if (typeof value === 'string' && value.includes('](')) links.push(...markdownLinks(value));
+            else if (value && typeof value === 'object' && (value as RichTextDoc).type === 'doc') links.push(...richTextLinks(value as RichTextDoc));
+        }
+    }
+    return links;
+}
+
+/** A link's path on the site, or null for outbound, anchor and malformed links; `host` tells absolute links to the site apart. */
+export function internalLinkPath(href: string, host?: string): string | null {
+    if (href.startsWith('/') && !href.startsWith('//')) return href;
+    try {
+        const url = new URL(href);
+        return host && url.host === host ? url.pathname : null;
+    } catch { return null; }
+}
+
 function inlineText(nodes: readonly RichTextNode[] = []): string {
     return nodes.map(node => node.type === 'text' ? node.text ?? '' : node.type === 'hardBreak' ? ' ' : inlineText(node.content)).join('');
 }
@@ -47,7 +94,6 @@ function inlineText(nodes: readonly RichTextNode[] = []): string {
 function walkRichText(doc: RichTextDoc, into: Analysis): void {
     const visit = (nodes: readonly RichTextNode[]) => {
         for (const node of nodes) {
-            for (const mark of node.marks ?? []) if (mark.type === 'link' && typeof mark.attrs?.href === 'string') into.links.push(mark.attrs.href);
             if (node.type === 'paragraph') { const text = inlineText(node.content).trim(); if (text) into.paragraphs.push(text); }
             else if (node.type === 'heading') into.headings.push({ level: Number(node.attrs?.level) || 2, text: inlineText(node.content).trim() });
             else if (node.type === 'image') into.images++;
@@ -60,8 +106,7 @@ function walkRichText(doc: RichTextDoc, into: Analysis): void {
 
 /** What the content holds, read once for every check. */
 export function analyzeContent(blocks: readonly Block[], types: ReadonlyMap<string, BlockDeclaration>): Analysis {
-    const into: Analysis = { words: 0, paragraphs: [], headings: [], links: [], images: 0, sourced: 0, firstKind: '' };
-    const markdownLinks = (text: string) => { for (const match of text.matchAll(/\]\(([^)\s]+)\)/g)) into.links.push(match[1]!); };
+    const into: Analysis = { words: 0, paragraphs: [], headings: [], links: blockLinks(blocks), images: 0, sourced: 0, firstKind: '' };
     for (const block of flattenBlocks(blocks)) {
         const type = types.get(block.type);
         if (!type) continue;
@@ -77,21 +122,21 @@ export function analyzeContent(blocks: readonly Block[], types: ReadonlyMap<stri
         }
         switch (block.type) {
             case 'core/richtext': if (data.text && typeof data.text === 'object') walkRichText(data.text as RichTextDoc, into); break;
-            case 'core/paragraph': case 'core/answer': if (text('text')) { into.paragraphs.push(text('text')); markdownLinks(text('text')); } break;
+            case 'core/paragraph': case 'core/answer': if (text('text')) into.paragraphs.push(text('text')); break;
             case 'core/heading': into.headings.push({ level: Number(text('level').slice(1)) || 2, text: text('text') }); break;
             case 'core/image': into.images++; break;
             case 'core/gallery': into.images += Array.isArray(data.images) ? data.images.length : 0; break;
-            case 'core/claim': if (text('text')) into.paragraphs.push(text('text')); if (text('sourceUrl')) { into.links.push(text('sourceUrl')); into.sourced++; } break;
-            case 'core/faq-item': if (text('question')) into.headings.push({ level: 3, text: text('question') }); if (text('answer')) { into.paragraphs.push(text('answer')); markdownLinks(text('answer')); } break;
-            case 'core/step': if (text('title')) into.headings.push({ level: 3, text: text('title') }); if (text('text')) { into.paragraphs.push(text('text')); markdownLinks(text('text')); } break;
+            case 'core/claim': if (text('text')) into.paragraphs.push(text('text')); if (text('sourceUrl')) into.sourced++; break;
+            case 'core/faq-item': if (text('question')) into.headings.push({ level: 3, text: text('question') }); if (text('answer')) into.paragraphs.push(text('answer')); break;
+            case 'core/step': if (text('title')) into.headings.push({ level: 3, text: text('title') }); if (text('text')) into.paragraphs.push(text('text')); break;
             case 'core/definition': if (text('definition')) into.paragraphs.push(text('definition')); break;
-            case 'core/button': if (text('url')) into.links.push(text('url')); break;
-            case 'core/card': if (text('url')) into.links.push(text('url')); if (text('text')) { into.paragraphs.push(text('text')); markdownLinks(text('text')); } break;
+            case 'core/button': break;
+            case 'core/card': if (text('text')) into.paragraphs.push(text('text')); break;
             case 'core/quote': if (text('text')) into.paragraphs.push(text('text')); break;
             case 'core/list': into.words += (Array.isArray(data.items) ? data.items as string[] : []).reduce((sum, item) => sum + words(String(item)), 0); break;
             default: for (const [name, declaration] of Object.entries(type.fields)) {
                 if (declaration.kind === 'richtext' && data[name] && typeof data[name] === 'object') walkRichText(data[name] as RichTextDoc, into);
-                else if ((declaration.kind === 'text') && typeof data[name] === 'string' && !declaration.media && !declaration.pattern) { into.paragraphs.push(data[name] as string); if (declaration.format === 'markdown') markdownLinks(data[name] as string); }
+                else if ((declaration.kind === 'text') && typeof data[name] === 'string' && !declaration.media && !declaration.pattern) into.paragraphs.push(data[name] as string);
             }
         }
     }
@@ -99,7 +144,7 @@ export function analyzeContent(blocks: readonly Block[], types: ReadonlyMap<stri
     return into;
 }
 
-const isInternal = (href: string, host?: string) => href.startsWith('/') || href.startsWith('#') || (host ? href.includes(`://${host}`) : false);
+const isInternal = (href: string, host?: string) => href.startsWith('#') || internalLinkPath(href, host) !== null;
 
 /** The checks for an entry, in the order shown. */
 export function entryChecks(input: CheckInput): Check[] {

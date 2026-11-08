@@ -8,7 +8,7 @@ import { notice, pageHeader, shortDate } from '../../../../../cms/ui';
 const EVENT_LABELS: Record<WebhookEvent, string> = {
     'entry.created': 'An entry is created', 'entry.updated': 'An entry changes', 'entry.published': 'An entry is published',
     'entry.unpublished': 'An entry is unpublished', 'entry.deleted': 'An entry is deleted', 'form.submitted': 'A form is submitted',
-    'note.created': 'A note is left on an entry', 'note.resolved': 'A note is resolved',
+    'note.created': 'A note is left on an entry', 'note.resolved': 'A note is resolved', 'payment.completed': 'A payment is completed',
 };
 
 interface Form { id: string; name: string; url: string; events: string[]; collections: string[]; active: boolean }
@@ -125,15 +125,12 @@ export default class WebhooksPage extends Cossack {
                         ${component(Field, { label: __('URL'), for: 'hook-url', hint: __('HTTPS, or http://localhost while developing.'), control: attributes => component(Input, { ...attributes, type: 'url', required: true,
                             placeholder: 'https://api.example.com/hooks/cms', '.value': this.form.url, '@input': (event: Event) => { this.form = { ...this.form, url: (event.target as HTMLInputElement).value }; } }) })}
                         <fieldset class="space-y-2"><legend class="mb-1 text-sm font-medium text-foreground">${__('Events')}</legend>
-                            ${WEBHOOK_EVENTS.map(event => html`<label class="flex items-center gap-2 text-sm text-foreground cursor-pointer">
-                                ${component(Checkbox, { checked: this.form.events.includes(event), '@change': (change: Event) => this.toggle('events', event, (change.target as HTMLInputElement).checked) })}
-                                ${__(EVENT_LABELS[event])} <code class="text-xs text-muted-foreground">${event}</code></label>`)}</fieldset>
+                            ${WEBHOOK_EVENTS.map(event => html`<div>${component(Checkbox, { checked: this.form.events.includes(event), '@change': (change: Event) => this.toggle('events', event, (change.target as HTMLInputElement).checked) },
+                                html`${__(EVENT_LABELS[event])} <code class="text-xs text-muted-foreground">${event}</code>`)}</div>`)}</fieldset>
                         <fieldset class="space-y-2"><legend class="mb-1 text-sm font-medium text-foreground">${__('Collections')}</legend>
                             <p class="text-xs text-muted-foreground">${__('None checked sends events of every collection.')}</p>
-                            <div class="grid gap-2 sm:grid-cols-3">${this.collections.map(collection => html`<label class="flex items-center gap-2 text-sm text-foreground cursor-pointer">
-                                ${component(Checkbox, { checked: this.form.collections.includes(collection.name), '@change': (change: Event) => this.toggle('collections', collection.name, (change.target as HTMLInputElement).checked) })} ${collection.label}</label>`)}</div></fieldset>
-                        <label class="flex items-center gap-2 text-sm text-foreground cursor-pointer">
-                            ${component(Checkbox, { checked: this.form.active, '@change': (change: Event) => { this.form = { ...this.form, active: (change.target as HTMLInputElement).checked }; } })} ${__('Active')}</label>
+                            <div class="grid gap-2 sm:grid-cols-3">${this.collections.map(collection => html`<div>${component(Checkbox, { label: collection.label, checked: this.form.collections.includes(collection.name), '@change': (change: Event) => this.toggle('collections', collection.name, (change.target as HTMLInputElement).checked) })}</div>`)}</div></fieldset>
+                        ${component(Checkbox, { label: __('Active'), checked: this.form.active, '@change': (change: Event) => { this.form = { ...this.form, active: (change.target as HTMLInputElement).checked }; } })}
                         <div class="flex flex-wrap gap-2">
                             ${component(Button, { type: 'submit' }, this.selected ? __('Save webhook') : __('Add webhook'))}
                             ${this.selected ? component(Button, { type: 'button', variant: 'outline', '@click': () => this.test() }, __('Send a test')) : null}

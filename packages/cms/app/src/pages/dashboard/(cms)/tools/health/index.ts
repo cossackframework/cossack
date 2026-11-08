@@ -1,4 +1,5 @@
 import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackframework/core';
+import { settingsSectionHref } from '../../../../../cms/settings-search';
 import { Badge, Button, Card, CardBody, CardHeader } from '@cossackframework/ui';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
 import { ANONYMOUS, ARTICLE_TYPES, CRAWLER_GROUPS, isCmsError, PERMISSIONS, recordTitle, type FieldFilter } from '@cossackframework/cms';
@@ -54,17 +55,17 @@ export default class HealthPage extends Cossack {
         const settings = await cms.settings.all();
         const findings: Finding[] = [];
         const origin = siteOrigin(this.c);
-        if (settings['reading.discourageSearchEngines']) findings.push({ id: 'hidden', tone: 'warn', title: __('The site is hidden from search engines'), detail: __('Settings → Reading asks every engine to stay away; nothing below matters until that is off.'), href: '/dashboard/settings/reading' });
+        if (settings['reading.discourageSearchEngines']) findings.push({ id: 'hidden', tone: 'warn', title: __('The site is hidden from search engines'), detail: __('Settings → Reading asks every engine to stay away; nothing below matters until that is off.'), href: settingsSectionHref('reading') });
         if (!cms.mail) findings.push({ id: 'mail', tone: 'warn', title: __('No email sender'), detail: __('Password resets, form notifications, comment and note emails are not sent. Bind EMAIL (Cloudflare Email Service), or set SMTP_HOST, SMTP_USER and SMTP_PASS on Node, and MAIL_FROM for the sender.') });
         else if (cms.mailFrom === 'no-reply@example.com') findings.push({ id: 'mail-from', tone: 'info', title: __('MAIL_FROM is not set'), detail: __('Emails go out from no-reply@example.com, which receivers may refuse. Set MAIL_FROM to an address on a domain you send from.') });
         if (!cms.ai) findings.push({ id: 'ai', tone: 'info', title: __('No AI provider'), detail: __('Set ANTHROPIC_API_KEY (and ANTHROPIC_MODEL), or bind Workers AI as AI, for the editor\'s Assistant and for plugins that ask for ai.') });
         if (!env('APP_URL', '')) findings.push({ id: 'app-url', tone: 'warn', title: __('APP_URL is not set'), detail: `${__('Canonical URLs, structured data and IndexNow pings use the request\'s origin instead; set APP_URL to the public address')} (${origin}).` });
-        if (!settings['seo.logo']) findings.push({ id: 'logo', tone: 'info', title: __('No publisher logo'), detail: __('Settings → SEO → Logo gives the Organization node an image; engines show it next to the site in results and answers.'), href: '/dashboard/settings/seo' });
-        if (!settings['seo.sameAs'].trim()) findings.push({ id: 'same-as', tone: 'info', title: __('No publisher profiles'), detail: __('Settings → SEO → Profiles tells engines which entity publishes the site (social accounts, Wikidata).'), href: '/dashboard/settings/seo' });
-        if (!settings['indexnow.enabled']) findings.push({ id: 'indexnow', tone: 'info', title: __('IndexNow is off'), detail: __('Turn it on under Settings → IndexNow so Bing, Yandex and the answers built on them learn of changes within minutes.'), href: '/dashboard/settings/indexnow' });
+        if (!settings['seo.logo']) findings.push({ id: 'logo', tone: 'info', title: __('No publisher logo'), detail: __('Settings → SEO → Logo gives the Organization node an image; engines show it next to the site in results and answers.'), href: settingsSectionHref('seo') });
+        if (!settings['seo.sameAs'].trim()) findings.push({ id: 'same-as', tone: 'info', title: __('No publisher profiles'), detail: __('Settings → SEO → Profiles tells engines which entity publishes the site (social accounts, Wikidata).'), href: settingsSectionHref('seo') });
+        if (!settings['indexnow.enabled']) findings.push({ id: 'indexnow', tone: 'info', title: __('IndexNow is off'), detail: __('Turn it on under Settings → IndexNow so Bing, Yandex and the answers built on them learn of changes within minutes.'), href: settingsSectionHref('indexnow') });
         if (!cms.purge.configured && settings['cache.hold'] !== 'none') findings.push({ id: 'cache-purger', tone: 'info', title: __('No cache purger'), detail: __('A cache in front of the site holds pages until their hold ends. Set CLOUDFLARE_API_TOKEN so changes purge Cloudflare at once; Tools → Cache shows the purges.'), href: '/dashboard/tools/cache' });
-        if (!settings['crawlers.allowSearch']) findings.push({ id: 'search-blocked', tone: 'warn', title: __('Search engines are blocked in robots.txt'), detail: __('Settings → Crawlers turns Googlebot and Bingbot away, which also removes the site from AI Overviews and Copilot.'), href: '/dashboard/settings/crawlers' });
-        if (!settings['crawlers.allowAiSearch']) findings.push({ id: 'ai-search-blocked', tone: 'info', title: __('AI search crawlers are blocked'), detail: __('ChatGPT search, Claude and Perplexity cannot cite the site. Intended? Then this is fine.'), href: '/dashboard/settings/crawlers' });
+        if (!settings['crawlers.allowSearch']) findings.push({ id: 'search-blocked', tone: 'warn', title: __('Search engines are blocked in robots.txt'), detail: __('Settings → Crawlers turns Googlebot and Bingbot away, which also removes the site from AI Overviews and Copilot.'), href: settingsSectionHref('crawlers') });
+        if (!settings['crawlers.allowAiSearch']) findings.push({ id: 'ai-search-blocked', tone: 'info', title: __('AI search crawlers are blocked'), detail: __('ChatGPT search, Claude and Perplexity cannot cite the site. Intended? Then this is fine.'), href: settingsSectionHref('crawlers') });
         findings.push({ id: 'cdn', tone: 'info', title: __('Behind Cloudflare? Check its AI bot settings'), detail: __('New Cloudflare zones block AI crawlers by default. The block covers AI search crawlers too, and some rules catch search engines; robots.txt cannot override it. Review Security → Bots in the Cloudflare dashboard.') });
 
         const collections = cms.collections().filter(collection => typeof collection.path === 'string' && collection.publishable !== false && !collection.managed);
@@ -86,7 +87,7 @@ export default class HealthPage extends Cossack {
             }
         }
         if (noSummary.length) findings.push({ id: 'summary', tone: 'warn', title: `${noSummary.length} ${noSummary.length === 1 ? __('article has no summary') : __('articles have no summary')}`, detail: __('The summary is the answer engines quote and the meta description falls back to. Add one in each entry\'s Search and sharing box.'), items: noSummary.slice(0, 10) });
-        if (noDescription.length) findings.push({ id: 'description', tone: 'info', title: `${noDescription.length} ${noDescription.length === 1 ? __('entry has nothing to describe it') : __('entries have nothing to describe them')}`, detail: __('No meta description, summary or excerpt: engines choose a passage themselves.'), items: noDescription.slice(0, 10) });
+        if (noDescription.length) findings.push({ id: 'description', tone: 'info', title: `${noDescription.length} ${noDescription.length === 1 ? __('entry has nothing to describe it') : __('entries have nothing to describe them')}`, detail: __('No meta description, summary or excerpt: engines choose a passage themselves. The SEO editor fills them in for many entries at once.'), href: '/dashboard/tools/seo?filter=missing', items: noDescription.slice(0, 10) });
         if (hiddenLinked.length) findings.push({ id: 'hidden-cornerstone', tone: 'warn', title: `${hiddenLinked.length} ${__('cornerstone entries are hidden from search engines')}`, detail: __('They are marked noindex and cornerstone at once; one of the two is wrong.'), items: hiddenLinked });
         if (settings['seo.authorPages']) {
             const authors = await cms.users.authors({ limit: 200 });
@@ -144,14 +145,14 @@ export default class HealthPage extends Cossack {
             ${component(Card, {}, html`
                 ${component(CardHeader, {}, html`<h2 class="text-base font-semibold text-foreground">${__('Missing pages')} <span class="text-sm font-normal text-muted-foreground">(${this.missing.length})</span></h2>
                     <p class="text-sm text-muted-foreground">${__('Paths that answered 404 to readers or crawlers, most hit first. Redirect the ones that used to be pages.')}</p>`)}
-                ${component(CardBody, { class: 'space-y-3' }, html`${this.message ? notice(this.message, 'success') : null}${this.missing.length ? html`<table class="w-full text-sm">
+                ${component(CardBody, { class: 'space-y-3' }, html`${this.message ? notice(this.message, 'success') : null}${this.missing.length ? html`<div class="overflow-x-auto"><table class="w-full text-sm">
                     <thead><tr class="text-left text-xs uppercase text-muted-foreground"><th class="py-1 pr-3 font-medium">${__('Path')}</th><th class="py-1 pr-3 font-medium">${__('Hits')}</th><th class="py-1 pr-3 font-medium">${__('Last')}</th><th class="py-1 pr-3 font-medium">${__('From')}</th><th class="py-1 font-medium"></th></tr></thead>
                     <tbody>${this.missing.map(row => html`<tr class="border-t border-border">
                         <td class="py-1.5 pr-3"><code class="rounded bg-muted px-1.5 py-0.5 text-xs text-foreground">${row.path}</code></td>
                         <td class="py-1.5 pr-3 tabular-nums">${row.hits}</td><td class="py-1.5 pr-3 text-muted-foreground">${shortDate(row.lastHitAt)}</td>
                         <td class="max-w-48 truncate py-1.5 pr-3 text-xs text-muted-foreground" title=${row.referrer}>${row.referrer ? new URL(row.referrer).host : '—'}</td>
                         <td class="py-1.5 text-right whitespace-nowrap"><a href=${`/dashboard/tools/redirects?source=${encodeURIComponent(row.path)}`} class="text-primary hover:underline">${__('Redirect')}</a>
-                            <button type="button" class="ml-3 text-muted-foreground hover:text-foreground bg-transparent border-none p-0 cursor-pointer" @click=${() => this.forget(row.path)}>${__('Dismiss')}</button></td></tr>`)}</tbody></table>`
+                            <button type="button" class="ml-3 text-muted-foreground hover:text-foreground bg-transparent border-none p-0 cursor-pointer" @click=${() => this.forget(row.path)}>${__('Dismiss')}</button></td></tr>`)}</tbody></table></div>`
                     : html`<p class="text-sm text-muted-foreground">${__('Nothing missed yet.')}</p>`}`)}`)}
             ${component(Badge, { variant: 'secondary' }, `${__('Counted since the upgrade that added this page; older visits are not known.')}`)}
         </div>`;

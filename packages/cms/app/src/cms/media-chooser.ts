@@ -4,10 +4,10 @@
  * on the server; uploads go through `uploadFile`.
  */
 import { component, html, type TemplateResult } from '@cossackframework/renderer';
-import { Button, Modal } from '@cossackframework/ui';
+import { Button, Modal, Input, NativeSelect } from '@cossackframework/ui';
 import { mediaKind } from '@cossackframework/cms';
 import type { MediaPreview } from './field-controls';
-import { CONTROL, notice } from './ui';
+import { notice } from './ui';
 
 export interface MediaChooserState {
     open: boolean;
@@ -62,11 +62,10 @@ export function mediaChooser(state: MediaChooserState, handlers: MediaChooserHan
                 ${component(Button, { type: 'button', variant: 'ghost', size: 'sm', '@click': () => handlers.close() }, state.multiple ? __('Done') : __('Close'))}
             </div>
             <div class="flex flex-wrap items-center gap-2">
-                <input type="search" class=${`${CONTROL} max-w-xs`} placeholder=${__('Search media')} aria-label=${__('Search media')} .value=${state.search}
-                    @change=${(event: Event) => handlers.search((event.target as HTMLInputElement).value)}>
-                <select class=${`${CONTROL} max-w-[10rem]`} aria-label=${__('Media type')} @change=${(event: Event) => handlers.filter((event.target as HTMLSelectElement).value)}>
-                    ${MEDIA_KIND_CHOICES.map(choice => html`<option value=${choice.value} ?selected=${choice.value === state.kind}>${__(choice.label)}</option>`)}
-                </select>
+                ${component(Input, { type: 'search', class: 'max-w-xs', placeholder: __('Search media'), 'aria-label': __('Search media'), '.value': state.search,
+                    '@change': (event: Event) => handlers.search((event.target as HTMLInputElement).value) })}
+                ${component(NativeSelect, { inline: true, 'aria-label': __('Media type'), '@change': (event: Event) => handlers.filter((event.target as HTMLSelectElement).value) }, html`
+                    ${MEDIA_KIND_CHOICES.map(choice => html`<option value=${choice.value} ?selected=${choice.value === state.kind}>${__(choice.label)}</option>`)}`)}
                 ${state.canUpload === false ? null : html`<label class="inline-flex cursor-pointer items-center rounded-md border border-border px-3 py-2 text-sm text-foreground hover:bg-muted">
                     ${state.busy ? __('Uploading…') : state.uploadMultiple === false ? __('Upload file') : __('Upload files')}<input type="file" ?multiple=${state.uploadMultiple !== false} accept=${state.accept ?? MEDIA_ACCEPT} class="sr-only" ?disabled=${!!state.busy} @change=${(event: Event) => handlers.upload(event)}>
                 </label>`}

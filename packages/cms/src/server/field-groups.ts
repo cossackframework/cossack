@@ -6,7 +6,7 @@
  */
 import { ClientError, type RomeDB } from '@cossackframework/romedb';
 import { CmsError } from '../errors';
-import { groupsForTarget, upgradeFieldBlocks, type FieldGroup, type FieldGroupTarget } from '../field-groups';
+import { groupsForTarget, type FieldGroup, type FieldGroupTarget } from '../field-groups';
 import { principalId, type Principal } from '../permissions';
 
 const WRITE = { kind: 'cms.fieldGroups', retryConflicts: 5 } as const;
@@ -74,7 +74,7 @@ export class CmsFieldGroups {
         return rows.flatMap(([definition]) => {
             try {
                 const group = JSON.parse(definition as string) as FieldGroup;
-                return [Object.freeze({ ...group, blocks: upgradeFieldBlocks(group.blocks ?? []) })];
+                return [Object.freeze({ ...group, blocks: group.blocks ?? [] })];
             } catch { return []; }
         });
     }

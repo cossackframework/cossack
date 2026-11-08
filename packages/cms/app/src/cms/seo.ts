@@ -11,7 +11,7 @@ import {
 } from '@cossackframework/cms';
 import type { CmsFile, CmsHost, CmsUser } from '@cossackframework/cms/server';
 import type { SeoView } from './seo-head';
-import { entryAncestors as ancestors, isProtected, localePrefix } from './site';
+import { entryAncestors as ancestors, isMembersOnly, isProtected, localePrefix } from './site';
 
 /** The site's address: `APP_URL` when set, otherwise the request's origin. */
 export function siteOrigin(c: Context): string {
@@ -152,7 +152,7 @@ export async function entrySeo(cms: CmsHost, c: Context, collection: CollectionD
         properties: await mappedProperties(cms, origin, collection, record), authors, about: type === 'none' ? [] : await aboutTerms(cms, collection, record),
         keywords: view.terms.flatMap(group => group.terms.map(term => term.name)), section: view.terms[0]?.terms[0]?.name ?? '', abstract: summary, faq: type === 'none' ? [] : faqOf(record),
     };
-    return base(origin, settings, { title, ogTitle: seo.socialTitle || seo.title || view.title, ogDescription: seo.socialDescription || description, description, url, image, robots, type: article ? 'article' : type === 'Person' ? 'profile' : 'website', locale: view.locale, links, graph: schemaGraph(await schemaSite(cms, origin, settings, view.locale), page), published: article ? published : '', modified: article ? modified : '', markdownUrl: settings['seo.markdown'] && view.url && !isProtected(record) ? `${absolute(origin, view.url)}?format=md` : '' });
+    return base(origin, settings, { title, ogTitle: seo.socialTitle || seo.title || view.title, ogDescription: seo.socialDescription || description, description, url, image, robots, type: article ? 'article' : type === 'Person' ? 'profile' : 'website', locale: view.locale, links, graph: schemaGraph(await schemaSite(cms, origin, settings, view.locale), page), published: article ? published : '', modified: article ? modified : '', markdownUrl: settings['seo.markdown'] && view.url && !isProtected(record) && !isMembersOnly(record) ? `${absolute(origin, view.url)}?format=md` : '' });
 }
 
 /** A list page: an archive, a term archive or search results. */

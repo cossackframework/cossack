@@ -45,6 +45,31 @@ export function declaredType(contentType: string): string {
     return /^[a-z0-9][a-z0-9!#$&^_.+-]{0,126}\/[a-z0-9][a-z0-9!#$&^_.+-]{0,126}$/.test(type) ? type : 'application/octet-stream';
 }
 
+/** Content types of common file extensions, so a file's type follows its name and then its signature, not what the browser declared. */
+export const EXTENSION_TYPES: { readonly [extension: string]: string } = Object.freeze({
+    png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', avif: 'image/avif', svg: SVG_TYPE, heic: 'image/heic',
+    pdf: 'application/pdf', txt: 'text/plain', csv: 'text/csv', md: 'text/markdown', rtf: 'application/rtf', json: 'application/json', xml: 'application/xml',
+    doc: 'application/msword', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    xls: 'application/vnd.ms-excel', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    ppt: 'application/vnd.ms-powerpoint', pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    odt: 'application/vnd.oasis.opendocument.text', ods: 'application/vnd.oasis.opendocument.spreadsheet', odp: 'application/vnd.oasis.opendocument.presentation',
+    zip: 'application/zip', gz: 'application/gzip', tar: 'application/x-tar', '7z': 'application/x-7z-compressed', rar: 'application/vnd.rar',
+    mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime', mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg', m4a: 'audio/mp4',
+    html: 'text/html', htm: 'text/html', js: 'text/javascript', mjs: 'text/javascript', css: 'text/css',
+});
+
+/** A file's extension, lowercase without the dot; empty when its name has none. */
+export function fileExtension(name: string): string {
+    const match = /\.([A-Za-z0-9]{1,16})$/.exec(name.trim());
+    return match ? match[1]!.toLowerCase() : '';
+}
+
+/** The type a file is taken as: its extension's, when known, else the declared one. The stored bytes must then match it (`matchesSignature`). */
+export function fileType(name: string, declared: string): string {
+    const extension = fileExtension(name);
+    return Object.hasOwn(EXTENSION_TYPES, extension) ? EXTENSION_TYPES[extension]! : declaredType(declared);
+}
+
 /**
  * SVG with its script removed: `<script>`, event handler attributes, `javascript:` URLs,
  * `<foreignObject>`, and references to other documents. The result is still the same drawing.

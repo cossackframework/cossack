@@ -1,5 +1,5 @@
 import { Cossack, Page, State, flash, flashed, type HeadValue } from '@cossackframework/core';
-import { Card, CardBody } from '@cossackframework/ui';
+import { Card, CardBody, Button } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { isSameOriginPost, PERMISSIONS } from '@cossackframework/cms';
 import { requireAny } from '../../../../../cms/guards';
@@ -47,7 +47,7 @@ export default class SchemaPage extends Cossack {
             ${this.steps.length ? html`<ol class="space-y-3">${this.steps.map(step => html`<li>${component(Card, {}, component(CardBody, { class: 'space-y-2' }, html`
                     <p class="text-sm font-medium text-foreground">${step.description}</p>
                     <pre class="overflow-x-auto rounded-md bg-muted p-3 text-xs">${step.rql.join(';\n')}</pre>`))}</li>`)}</ol>
-                <form method="post"><button type="submit" class="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground border-none cursor-pointer">${__('Apply the plan')}</button></form>`
+                <form method="post">${component(Button, { type: 'submit' }, __('Apply the plan'))}</form>`
                 : notice(__('The database matches every declaration.'))}
         </div>`;
     }

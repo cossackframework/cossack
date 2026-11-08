@@ -176,11 +176,11 @@ export default class CommentsPage extends Cossack {
                 ${row.parentAuthor ? html`<p class="text-xs text-muted-foreground">${__('In reply to')} ${row.parentAuthor}</p>` : null}
                 ${editing ? html`<form class="space-y-2" @submit=${(event: Event) => { event.preventDefault(); void this.saveEdit(editing); }}>
                     <div class="grid gap-2 sm:grid-cols-3">
-                        ${component(Input, { size: 'sm', 'aria-label': __('Name'), '.value': editing.authorName, '@input': (event: Event) => { this.editing = { ...editing, authorName: (event.target as HTMLInputElement).value }; } })}
-                        ${component(Input, { size: 'sm', type: 'email', 'aria-label': __('Email'), '.value': editing.authorEmail, '@input': (event: Event) => { this.editing = { ...editing, authorEmail: (event.target as HTMLInputElement).value }; } })}
-                        ${component(Input, { size: 'sm', 'aria-label': __('Website'), '.value': editing.authorUrl, '@input': (event: Event) => { this.editing = { ...editing, authorUrl: (event.target as HTMLInputElement).value }; } })}
+                        ${component(Input, { size: 'sm', 'aria-label': __('Name'), placeholder: __('Name'), '.value': editing.authorName, '@input': (event: Event) => { this.editing = { ...editing, authorName: (event.target as HTMLInputElement).value }; } })}
+                        ${component(Input, { size: 'sm', type: 'email', 'aria-label': __('Email'), placeholder: __('Email'), '.value': editing.authorEmail, '@input': (event: Event) => { this.editing = { ...editing, authorEmail: (event.target as HTMLInputElement).value }; } })}
+                        ${component(Input, { size: 'sm', 'aria-label': __('Website'), placeholder: __('Website'), '.value': editing.authorUrl, '@input': (event: Event) => { this.editing = { ...editing, authorUrl: (event.target as HTMLInputElement).value }; } })}
                     </div>
-                    ${component(Textarea, { rows: 4, 'aria-label': __('Comment'), '.value': editing.content, '@input': (event: Event) => { this.editing = { ...editing, content: (event.target as HTMLTextAreaElement).value }; } })}
+                    ${component(Textarea, { rows: 4, 'aria-label': __('Comment'), placeholder: __('Comment'), '.value': editing.content, '@input': (event: Event) => { this.editing = { ...editing, content: (event.target as HTMLTextAreaElement).value }; } })}
                     <div class="flex gap-2">${component(Button, { type: 'submit', size: 'sm' }, __('Update comment'))}${component(Button, { type: 'button', size: 'sm', variant: 'ghost', '@click': () => { this.editing = null; } }, __('Cancel'))}</div>
                 </form>` : html`<p class="whitespace-pre-wrap break-words text-sm text-foreground">${row.content}</p>${this.actions(row)}`}
                 ${this.replying === row.id ? html`<form class="mt-3 space-y-2" @submit=${(event: Event) => { event.preventDefault(); void this.reply(row, this.replyText); }}>
@@ -207,7 +207,7 @@ export default class CommentsPage extends Cossack {
                 <nav aria-label=${__('Filter by status')} class="flex flex-wrap gap-x-3 gap-y-1 text-sm">${tabs.map(([key, label], index) => html`${index ? html`<span class="text-muted-foreground" aria-hidden="true">|</span>` : null}
                     <a href=${this.href({ status: key === 'all' ? '' : key, page: 1 })} aria-current=${this.status === key ? 'page' : 'false'}
                         class=${this.status === key ? 'font-semibold text-foreground no-underline' : 'text-primary no-underline hover:underline'}>${label} <span class="text-muted-foreground">(${this.counts[key] ?? 0})</span></a>`)}</nav>
-                <form method="get" class="flex gap-2" role="search">
+                <form method="get" class="flex flex-wrap gap-2" role="search">
                     ${this.status !== 'all' ? html`<input type="hidden" name="status" value=${this.status}>` : null}
                     ${component(Input, { type: 'search', name: 'q', size: 'sm', value: this.search, placeholder: __('Search comments'), 'aria-label': __('Search comments') })}
                     ${component(Button, { type: 'submit', size: 'sm', variant: 'outline' }, __('Search'))}

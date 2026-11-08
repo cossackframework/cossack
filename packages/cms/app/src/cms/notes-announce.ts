@@ -36,6 +36,6 @@ export async function announceNote(cms: CmsHost, change: { readonly kind: 'creat
     const message = noteMail({ author: context.author, title: context.title, body: note.body, quote: note.quote, url, reply: note.parentId !== null, site });
     for (const person of people.values()) {
         if (person.status !== 'active' || !person.email) continue;
-        await cms.mail.send({ to: person.email, from: cms.mailFrom, subject: message.subject, text: message.text }).catch(error => console.warn(`[cms] the note email to ${person.email} failed`, error));
+        await cms.mail.send({ kind: 'note', to: person.email, from: cms.mailFrom, subject: message.subject, text: message.text }).catch(error => console.warn(`[cms] the note email to ${person.email} failed`, error));
     }
 }

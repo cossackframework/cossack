@@ -203,7 +203,7 @@ export default class DashboardPage extends Cossack {
                 </div>
                 <div class="space-y-6">
                     ${this.canSeeSignIns ? box(__('Recent sign-ins'), signIns, { id: 'box-sign-ins', extra: html`<a href="/dashboard/users" class="text-xs font-normal text-primary hover:underline">${__('All users')}</a>` }) : null}
-                    ${this.canMigrate ? box(__('Delivery'), html`<dl class="grid grid-cols-2 gap-3">
+                    ${this.canMigrate ? box(__('Delivery'), html`<dl class="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
                         <div class="rounded-lg border border-border p-3"><dt class="text-sm text-muted-foreground">${__('Events waiting for delivery')}</dt><dd class="text-2xl font-semibold text-foreground" data-testid="outbox">${this.outbox}</dd></div>
                         <div class="rounded-lg border border-border p-3"><dt class="text-sm text-muted-foreground">${__('Writes waiting for confirmation')}</dt><dd class="text-2xl font-semibold text-foreground">${this.unconfirmed}</dd></div>
                     </dl>`, { id: 'box-delivery' }) : null}

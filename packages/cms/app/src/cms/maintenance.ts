@@ -42,7 +42,7 @@ export async function runMaintenance(cms: CmsHost, options: { warm?: boolean } =
     // A fresh database has no host tables until setup applies the schema.
     if (!(await cms.installed())) return;
     await cms.db.recoverPending({ limit: 50 });
-    await cms.publishDue();
+    await cms.runSchedule();
     await cms.schedules.tick();
     await cms.outbox.dispatch({ limit: 50 });
     await cms.webhooks.dispatch({ limit: 20 });

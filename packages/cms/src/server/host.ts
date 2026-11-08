@@ -6,7 +6,7 @@ import { createHookRegistry, type ActionHandler, type ActionPoint, type ActionRe
 import type { StorageProvider } from '@cossackframework/core/storage';
 import { ClientError, type RomeDB, type Statement, type Value, type WorkLimits } from '@cossackframework/romedb';
 import { blockId, blockMedia, blockProblems, htmlBlocksChanged, validateBlocks, type Block, type BlockDeclaration } from '../blocks';
-import { blocksShapeProblem, normalizeFields, type FieldDeclaration } from '../fields';
+import { blocksShapeProblem, type FieldDeclaration } from '../fields';
 import { collectionProblems, collectionResource, contentBlocks, entryUrl, extendCollection, languageName, LOCALE, translationGroupOf, orderedFields, RESERVED_FIELDS, type CollectionDefinition } from '../collections';
 import type { EditorLayoutAddition } from '../editor-layout';
 import { fieldGroupDeclarations, fieldGroupProblems, fieldVisibility, flattenGroupFields, groupsForTarget, metaProblems, withTarget, type FieldGroup, type FieldGroupTarget } from '../field-groups';
@@ -14,7 +14,7 @@ import { AUTHOR_FIELDS, collectionSeoProblems } from '../seo';
 import { CmsFieldGroups } from './field-groups';
 import { CmsError } from '../errors';
 import type { CmsModule } from '../module';
-import { analytics as analyticsGroup, appearance, cache as cacheGroup, general, media, type SettingsGroup } from '../settings';
+import { analytics as analyticsGroup, appearance, cache as cacheGroup, email as emailGroup, general, media, type SettingsGroup } from '../settings';
 import { pluginSettingsGroupId } from '../plugin-settings';
 import { assembleSiteTheme, entryTemplateChoices, layerPresets, siteThemeProblems, type ArchiveView, type SiteTheme, type EntryView, type SiteView, type ThemeData, type ThemeManifest, type ThemePresets , themeArea } from '../theme';
 import type { MenuItem, ResolvedMenuItem } from '../menus';
@@ -28,11 +28,11 @@ import { canonicalJson, declarationHash, resolveResource, type Resource, type Re
 import { Outbox, type OutboxOptions } from './outbox';
 import { ResourceRepository, type FieldFilter, type ListOptions, type OperationContext } from './repository';
 import { migrate, planSchema, readCatalog, type MigrationReport, type SchemaPlan } from './schema';
-import { FileService, type CmsFile, type FileServiceOptions, type ImageSettings } from './files';
+import { FileService, type CmsFile, type FileServiceOptions, type ImageSettings, LIBRARY_KEYS } from './files';
 import { CmsCache } from './cache';
 import { imageWidths } from '../images';
-import { renameStoredDefinitions, renameStoredRecords } from './block-ids';
-import { HOST_STEPS, HOST_TABLES } from './host-schema';
+
+import { HOST_STEPS, HOST_TABLES, hostSchemaMismatch, unknownHostSteps } from './host-schema';
 import { OPEN_POLICY, pluginState, readPolicy, type NetworkPluginState, type NetworkPolicy } from './network-policy';
 import { CmsSettings } from './site-settings';
 import { createAuthSessionStore, createJobStore, createNotificationStore, createOAuthStateStore, createSessionStore, type EndedSessions } from './stores';
@@ -52,10 +52,11 @@ import { CmsIndexNow } from './indexnow';
 import { CmsPurge, type CachePurger } from './purge';
 import { CmsTraffic } from './traffic';
 import type { WebhookEvent } from '../webhooks';
-import { afterCommit, commentBeforeSave, EXTENSION_POINTS, formSubmitted, menuBeforeSave, pluginJob, termBeforeSave, type FormSubmittedEvent, type ResourceEvent, type WriteActor, paymentEvent } from '../hooks';
+import { afterCommit, commentBeforeSave, EXTENSION_POINTS, formSubmitted, menuBeforeSave, pluginJob, termBeforeSave, type FormSubmittedEvent, type ResourceEvent, type WriteActor, paymentEvent, registrationDraftOf, userBeforeRegister, type RegistrationDraft, type UserRef, type UserRegisteredEvent, type UserSignedInEvent } from '../hooks';
 import { ISOLATE_PROTOCOL, type IsolateCall, type IsolatePoint, type IsolateRun } from '../isolation';
 import { serveIsolatedCall, type IsolatedPluginCode, type IsolatedWork, type PluginRunner } from './isolation';
-import { CmsForms, type CmsMail } from './forms';
+import { CmsForms } from './forms';
+import { siteMailer, type CmsMailer, type MailTransport } from './mail';
 import { pluginCapabilities, type PluginAi, type PluginCache, type PluginFiles, type PluginJobContext, type PluginJobs, type PluginMail, type PluginPayments, type PluginSecrets, type PluginUsers } from './capabilities';
 import { CmsSchedules, type DueSchedule } from './schedules';
 import { CmsAudit, unrestrictedGrantAudit } from './audit';
@@ -148,9 +149,14 @@ export interface CmsOptions {
     readonly themeLoaderTimeoutMs?: number;
     /** The largest JSON a theme loader may return, in characters. Default 65536. */
     readonly themeDataLimit?: number;
-    /** Sends form notification emails. Without it they are skipped. */
-    readonly mail?: CmsMail;
-    /** The sender of form notification emails. Default `no-reply@example.com`. */
+    /**
+     * Sends the site's emails: Cloudflare's `EMAIL` binding, the Node adapter's SMTP sender, or
+     * any `{ send(message) }` taking `{ to, from, subject, text, html, replyTo? }`. The host lays
+     * each message out as HTML (Settings → Email) and runs `cms.mail.before-send` first. Without
+     * it no email is sent.
+     */
+    readonly mail?: MailTransport;
+    /** The sender of the site's emails. Default `no-reply@example.com`. */
     readonly mailFrom?: string;
     /** Bindings plugins name in `permissions.secrets`, read when a granted plugin asks (`context.secrets.get`). Default: none. */
     readonly secrets?: (name: string) => string | undefined;
@@ -298,7 +304,7 @@ export interface ThemeLoaderContext {
 export type ThemeLoader = { bivarianceHack(view: SiteView | EntryView | ArchiveView, context: ThemeLoaderContext): unknown }['bivarianceHack'];
 export type ThemeLoaders = { readonly [template: string]: ThemeLoader };
 
-export type PluginResource = Pick<ResourceRepository, 'get' | 'list' | 'search' | 'create' | 'update' | 'delete'>;
+export type PluginResource = Pick<ResourceRepository, 'get' | 'list' | 'count' | 'search' | 'create' | 'update' | 'delete'>;
 
 export interface PluginStatus {
     readonly name: string;
@@ -418,8 +424,12 @@ export class CmsHost {
     readonly comments: CmsComments;
     /** Forms' submissions: taking them, notifications, and handling them in the dashboard. */
     readonly forms: CmsForms;
-    /** Sends email, when the application gave one (`createCMS({ mail })`); null skips every email. */
-    readonly mail: CmsMail | null;
+    /**
+     * Sends email as the site, when the application gave a transport (`createCMS({ mail })`);
+     * null skips every email. Each message gets the HTML layout and `cms.mail.before-send`; say
+     * what it is with `kind`.
+     */
+    readonly mail: CmsMailer | null;
     /** The sender of the emails the CMS sends. */
     readonly mailFrom: string;
     /** Plugin schedules: `tick()` from maintenance queues the due occurrences as jobs. */
@@ -538,9 +548,11 @@ export class CmsHost {
         this.siteApiTokens = added ? new CmsApiTokens(this.db, { now: this.#now }) : null;
         this.webhooks = new CmsWebhooks(this.db, { now: this.#now, fetch: this.#fetch });
         this.comments = new CmsComments(this.db, { now: this.#now, changed: entries => this.#purgeLater('comments', { tags: entries.filter(entry => entry.resource.startsWith('cms/')).map(entry => this.purge.tag.entry(entry.resource.slice(4), entry.recordId)) }) });
-        this.forms = new CmsForms(this, { ...(options.mail ? { mail: options.mail } : {}), ...(options.mailFrom ? { mailFrom: options.mailFrom } : {}) });
-        this.mail = options.mail ?? null;
         this.mailFrom = options.mailFrom ?? 'no-reply@example.com';
+        this.mail = options.mail ? siteMailer({ transport: options.mail, from: this.mailFrom, site: this.site, hooks: this.hooks, settings: () => this.settings.all(),
+            siteUrl: typeof options.siteUrl === 'function' ? options.siteUrl : () => options.siteUrl as string | undefined }) : null;
+        const mail = this.mail;
+        this.forms = new CmsForms(this, { ...(mail ? { mail: { send: message => mail.send({ ...message, kind: 'form' }) } } : {}), mailFrom: this.mailFrom });
         this.security = new CmsSecurity(this.network, { now: this.#now });
         this.siteSecurity = added ? new CmsSecurity(this.db, { now: this.#now }) : null;
         // Entry events become webhook deliveries; the outbox retries this until they are queued.
@@ -553,6 +565,13 @@ export class CmsHost {
         this.hooks.addAction(afterCommit, event => this.#automate(event), { plugin: 'cms-automations' });
         this.hooks.addAction(formSubmitted, async event => { await this.automations.run('form.submitted', { form: event.form.slug, formTitle: event.form.title, submission: event.submission.id, values: event.submission.values, origin: event.origin ?? '' }); }, { plugin: 'cms-automations' });
         this.hooks.addAction(paymentEvent, async event => { if (event.type === 'checkout.completed' || event.type === 'payment.succeeded') await this.automations.run('payment.completed', { ...event, customerEmail: event.customerEmail ?? '', reference: event.reference ?? '', amount: event.amount ?? '', currency: event.currency ?? '' }); }, { plugin: 'cms-automations' });
+        // A completed payment goes to the webhooks that take every collection's events.
+        this.hooks.addAction(paymentEvent, async event => {
+            if (event.type !== 'checkout.completed' && event.type !== 'payment.succeeded') return;
+            if (!(await this.webhooks.wants(['payment.completed'], ''))) return;
+            const { object: _object, ...payment } = event;
+            await this.webhooks.enqueue({ event: 'payment.completed', eventId: `${event.eventId}:payment.completed`, at: this.#now(), collection: '', payment });
+        }, { plugin: 'cms' });
         // A saved form brings its submissions table up to date; a deleted one takes its table along.
         this.hooks.addAction(afterCommit, async event => {
             if (event.resource !== 'cms/forms') return;
@@ -585,7 +604,7 @@ export class CmsHost {
         for (const resource of this.#static.values()) for (const [name, declaration] of Object.entries(resource.fields)) {
             if (declaration.taxonomy && !this.#builtinTaxonomies.has(declaration.taxonomy)) throw new Error(`${resource.id}.${name} uses taxonomy ${declaration.taxonomy}, which no module declares.`);
         }
-        const groups = [general, media, appearance, cacheGroup, analyticsGroup, ...modules.flatMap(module => module.settings ?? []), ...(options.settings ?? [])];
+        const groups = [general, media, emailGroup, appearance, cacheGroup, analyticsGroup, ...modules.flatMap(module => module.settings ?? []), ...(options.settings ?? [])];
         for (const group of groups) {
             if (group.plugin !== undefined || group.id.startsWith('plugin:')) throw new Error('Plugin settings namespaces and ownership are assigned by the CMS host.');
         }
@@ -615,7 +634,7 @@ export class CmsHost {
         this.audit = new CmsAudit(this.db, { now: this.#now });
         this.ai = options.ai ?? null;
         this.payments = options.payments ?? null;
-        this.automations = new CmsAutomations(this.db, { mail: this.mail, mailFrom: this.mailFrom, fetch: this.#fetch, now: this.#now });
+        this.automations = new CmsAutomations(this.db, { mail: this.mail, mailFrom: this.mailFrom, now: this.#now });
         this.schedules = new CmsSchedules(this.db, { outbox: this.outbox, now: this.#now, schedules: () => this.#dueSchedules(), queued: () => this.outboxWritten() });
         this.purge = new CmsPurge({ outbox: this.outbox, hooks: this.hooks, cache: this.cache, site: this.site, purgers: options.purgers ?? [], now: this.#now, queued: () => this.outboxWritten() });
         for (const module of modules) module.register?.({ hooks: this.hooks, settings: this.settings, taxonomies: this.taxonomies, collection: name => this.#collections.get(name), blocks: () => this.#blocks, now: this.#now });
@@ -720,33 +739,41 @@ export class CmsHost {
     }
 
     /**
-     * Publish scheduled entries whose publication time has come, as `system:scheduler`, so
-     * their webhooks and outbox events fire at that moment. Returns how many were published.
+     * Publish scheduled entries whose publication time has come, and take back to draft the
+     * published entries whose `unpublishAt` has passed, as `system:scheduler`, so their webhooks
+     * and outbox events fire at that moment. Returns how many of each changed.
      */
-    async publishDue(options: { limit?: number } = {}): Promise<number> {
+    async runSchedule(options: { limit?: number } = {}): Promise<{ published: number; unpublished: number }> {
         const scheduler = { principal: systemPrincipal('scheduler') };
-        let published = 0;
+        const done = { published: 0, unpublished: 0 };
         for (const collection of this.#collections.values()) {
             if (collection.publishable === false) continue;
             const repository = this.resource(`cms/${collection.name}`);
-            let due: readonly RecordShape[];
-            try {
-                due = (await repository.list({ where: { status: 'scheduled', publishedAt: { lte: this.#now() } }, order: { field: 'publishedAt', direction: 'asc' }, limit: options.limit ?? 50 }, scheduler)).records;
-            } catch (error) {
-                if (error instanceof CmsError && error.code === 'CMS_UNAVAILABLE') continue;
-                throw error;
-            }
-            for (const record of due) {
+            const now = this.#now();
+            const due = [
+                { kind: 'published', where: { status: 'scheduled', publishedAt: { lte: now } }, order: 'publishedAt', change: { status: 'published' } },
+                { kind: 'unpublished', where: { status: 'published', unpublishAt: { lte: now } }, order: 'unpublishAt', change: { status: 'draft', unpublishAt: null } },
+            ] as const;
+            for (const step of due) {
+                let records: readonly RecordShape[];
                 try {
-                    await repository.update(record.id, { status: 'published' }, { ...scheduler, expectedRevision: record.rev });
-                    published++;
+                    records = (await repository.list({ where: step.where, order: { field: step.order, direction: 'asc' }, limit: options.limit ?? 50 }, scheduler)).records;
                 } catch (error) {
-                    // Changed meanwhile: the next run sees the current revision.
-                    if (!(error instanceof CmsError && error.code === 'CMS_CONFLICT')) throw error;
+                    if (error instanceof CmsError && error.code === 'CMS_UNAVAILABLE') break;
+                    throw error;
+                }
+                for (const record of records) {
+                    try {
+                        await repository.update(record.id, step.change, { ...scheduler, expectedRevision: record.rev });
+                        done[step.kind]++;
+                    } catch (error) {
+                        // Changed meanwhile: the next run sees the current revision.
+                        if (!(error instanceof CmsError && error.code === 'CMS_CONFLICT')) throw error;
+                    }
                 }
             }
         }
-        return published;
+        return done;
     }
 
     /**
@@ -1157,7 +1184,7 @@ export class CmsHost {
         if (files.length > 100) throw new CmsError('CMS_VALIDATION', 'Widgets name too many files.');
         if (files.length) {
             const list = files.map((_, index) => `$m${index}`).join(', ');
-            const found = await this.db.read([{ rql: `SELECT count(*) FROM cms_files WHERE status = 'ready' AND id IN (${list})`, params: Object.fromEntries(files.map((file, index) => [`$m${index}`, file])) }]);
+            const found = await this.db.read([{ rql: `SELECT count(*) FROM cms_files WHERE status = 'ready' AND ${LIBRARY_KEYS} AND id IN (${list})`, params: Object.fromEntries(files.map((file, index) => [`$m${index}`, file])) }]);
             if (Number(found.results[0]!.rows[0]![0] as bigint) !== files.length) throw new CmsError('CMS_VALIDATION', 'Widgets name a missing file.');
         }
         return blocks;
@@ -1215,8 +1242,8 @@ export class CmsHost {
         const settings = await this.settings.all();
         let page = settings['reading.pageForPosts'] && this.#collections.has('pages')
             ? await this.resource('cms/pages').get(settings['reading.pageForPosts'], { principal: ANONYMOUS }).catch(() => null) : null;
-        // In another language, the posts page's translation lists that language's posts.
-        if (page && prefix) page = (await this.translations(this.collection('pages'), page)).get(locale!) ?? null;
+        // In another language, the posts page's translation lists that language's posts; without a locale, the default language's.
+        if (page && prefix) page = (await this.translations(this.collection('pages'), page)).get(locale ?? (await this.languages()).default) ?? null;
         if (page?.status === 'published') return (await this.entryUrls(this.collection('pages'), [page])).get(page.id) ?? null;
         return settings['reading.showOnFront'] === 'posts' ? prefix || '/' : null;
     }
@@ -1237,10 +1264,7 @@ export class CmsHost {
         return code !== languages.default || languages.prefixDefault ? `/${code}` : '';
     }
 
-    /**
-     * Change the site's languages. Entries saved while the site had one language take the
-     * default, so every entry belongs to a language.
-     */
+    /** Change the site's languages. New entries take the default language, so every entry belongs to one. */
     async saveLanguages(input: { default: string; others: readonly string[]; urls?: 'hide-default' | 'all' }, principal: Principal): Promise<SiteLanguages> {
         const codes = [input.default, ...input.others].map(code => String(code).trim().toLowerCase());
         if (codes.some(code => !LOCALE.test(code)) || new Set(codes).size !== codes.length || codes.length > 20) {
@@ -1248,22 +1272,10 @@ export class CmsHost {
         }
         if (input.urls !== undefined && input.urls !== 'hide-default' && input.urls !== 'all') throw new CmsError('CMS_VALIDATION', 'Language in URLs is hide-default or all.');
         await this.settings.update('languages', { default: codes[0], others: codes.slice(1).join(','), ...(input.urls ? { urls: input.urls } : {}) }, { principal });
-        await this.#labelLocales(codes[0]!);
         this.menus.refresh();
         return this.languages();
     }
 
-    /** Entries saved without a language take the default one, so every entry belongs to a language. */
-    async #labelLocales(locale: string): Promise<void> {
-        for (const collection of this.#collections.values()) {
-            const storage = this.resourceById(`cms/${collection.name}`).storage;
-            await this.db.write([{ rql: `UPDATE ${storage} SET "locale" = $locale WHERE "locale" IS NULL`, params: { $locale: locale } }],
-                { kind: 'cms.languages', workLimits: { rowsRead: 1_000_000, rowMutations: 100_000, vmSteps: 10_000_000 } }).catch(error => {
-                // A collection whose table is not created yet has nothing to label.
-                if (!(error instanceof ClientError && /no such table|not found|does not exist/i.test(error.message))) throw error;
-            });
-        }
-    }
 
     /**
      * An entry's translations by language, itself included, as the principal may read them.
@@ -1389,8 +1401,8 @@ export class CmsHost {
         const before = this.#collections.get(given.name);
         const builtin = this.#builtinCollections.get(given.name);
         if (builtin?.managed) throw new CmsError('CMS_FORBIDDEN', `${builtin.label} is managed by its module and has its own screens.`);
-        // Layouts of older versions are converted to groups on load; a definition never carries one in. Managed is the module's to declare.
-        const { layout: _layout, managed: _managed, ...input } = given;
+        // Managed is the module's to declare.
+        const { managed: _managed, ...input } = given;
         const stored: CollectionDefinition = builtin ? {
             name: input.name, label: input.label, singular: input.singular, ...(input.description !== undefined ? { description: input.description } : {}),
             ...(input.icon !== undefined ? { icon: input.icon } : {}), ...(input.path !== undefined ? { path: input.path } : {}),
@@ -1405,10 +1417,10 @@ export class CmsHost {
             ...(input.templateLock !== undefined ? { templateLock: input.templateLock } : {}),
             ...(input.editor !== undefined ? { editor: input.editor } : {}),
             taxonomies: (input.taxonomies ?? []).filter(name => !(builtin.taxonomies ?? []).includes(name)),
-            fields: normalizeFields(Object.fromEntries(Object.entries(input.fields ?? {}).filter(([name]) => !Object.hasOwn(builtin.fields, name)))),
+            fields: Object.fromEntries(Object.entries(input.fields ?? {}).filter(([name]) => !Object.hasOwn(builtin.fields, name))),
             // The module's fields are not stored, so their place among the added ones is.
             fieldOrder: [...(input.fieldOrder ?? Object.keys(input.fields ?? {}))],
-        } : (({ fieldOrder, ...rest }) => ({ ...rest, fields: normalizeFields(orderedFields(input.fields ?? {}, fieldOrder)), builtin: false }))(input);
+        } : (({ fieldOrder, ...rest }) => ({ ...rest, fields: orderedFields(input.fields ?? {}, fieldOrder), builtin: false }))(input);
         const definition = builtin ? extendCollection(builtin, stored) : stored;
         const problems = collectionProblems(definition);
         if (!builtin && this.#static.has(`cms/${definition.name}`)) problems.push(`cms/${definition.name} is already a resource.`);
@@ -1593,23 +1605,7 @@ export class CmsHost {
     async migrate(options: { signal?: AbortSignal } = {}): Promise<MigrationReport> {
         const report = await migrate(this.db, this.resources, { ...options, now: this.#now });
         this.#activation = undefined;
-        await this.#afterHostSteps(report);
-        // Entries from before languages were stored on every entry, now unique per language, take the default.
-        if (report.applied.some(step => step.resource?.startsWith('cms/'))) await this.#labelLocales((await this.languages()).default);
         return report;
-    }
-
-    /**
-     * Data rewrites that follow a host step, on every path that applies steps: Tools → Schema,
-     * setup and the automatic upgrade. Host step 12 renamed block IDs to `_id`: rewrite what the
-     * database stored before it, once. The rewrite is idempotent, so a retry after a failure is safe.
-     */
-    async #afterHostSteps(report: MigrationReport): Promise<void> {
-        if (!report.applied.some(step => step.id === 'cms#host-12')) return;
-        await renameStoredDefinitions(this.db);
-        // A collection whose stored template had `id` was invalid until now: load it, so its records are rewritten too.
-        await this.#loadDefinitions();
-        await renameStoredRecords(this.db, this.resources);
     }
 
     /**
@@ -1814,6 +1810,7 @@ export class CmsHost {
                 return {
                     get: (key, context) => check('read').then(() => repository.get(key, context)),
                     list: (options: ListOptions, context: OperationContext) => check('read').then(() => repository.list(options, context)),
+                    count: (filter, context) => check('read').then(() => repository.count(filter, context)),
                     search: (query, options, context) => check('read').then(() => repository.search(query, options, context)),
                     create: (input, context) => check('create').then(() => repository.create(input, context)),
                     update: (key, patch, context) => check('update').then(() => repository.update(key, patch, context)),
@@ -1883,9 +1880,8 @@ export class CmsHost {
             if (resource && !stale.includes(id) && state.hashes.get(id) !== await declarationHash(resource)) stale.push(id);
         }
         if (hostPending || stale.length) {
-            this.#upgrading ??= migrate(this.db, this.resources, { now: this.#now, only: stale }).then(async report => {
+            this.#upgrading ??= migrate(this.db, this.resources, { now: this.#now, only: stale }).then(report => {
                 if (report.failed) console.error(`[cms] could not upgrade the schema: ${report.failed.message}`);
-                await this.#afterHostSteps(report);
             }).catch(error => console.error('[cms] could not upgrade the schema', error)).finally(() => {
                 this.#upgrading = undefined;
                 this.#activation = undefined;
@@ -1925,52 +1921,7 @@ export class CmsHost {
         }));
         this.fieldGroups.reset();
         this.#groups = await this.fieldGroups.all();
-        this.#apply(await this.#convertLayouts(parse<CollectionDefinition>(collections)), parse<TaxonomyDeclaration>(taxonomies));
-    }
-
-    /**
-     * Collections stored by older versions with a field tree (`layout`): each becomes a field
-     * group named after the collection, attached first, and the stored row keeps its settings and
-     * hand-declared fields. Field blocks named as a core field, a feature or a module field are
-     * dropped, and a blocks field named `content`, text `excerpt` or media `featuredImage` turns
-     * the feature on instead. Idempotent, so concurrent isolates agree.
-     */
-    async #convertLayouts(stored: ReadonlyMap<string, CollectionDefinition>): Promise<ReadonlyMap<string, CollectionDefinition>> {
-        const result = new Map(stored);
-        let converted = false;
-        for (const [name, definition] of stored) {
-            if (definition.layout === undefined) continue;
-            const builtin = this.#builtinCollections.get(name);
-            const skip = new Set([...RESERVED_FIELDS, ...(definition.taxonomies ?? []), ...(builtin?.taxonomies ?? []), ...Object.keys(builtin?.fields ?? {})]);
-            const features = { ...definition.features };
-            const promote: { [field: string]: { feature: keyof typeof features; kind: string } } = { content: { feature: 'content', kind: 'field/blocks' }, excerpt: { feature: 'excerpt', kind: 'field/textarea' }, featuredImage: { feature: 'featuredImage', kind: 'field/media' } };
-            const prune = (blocks: readonly Block[]): Block[] => blocks.flatMap(block => {
-                const field = block.type.startsWith('field/') ? String(block.data.name ?? '') : '';
-                if (field && promote[field]?.kind === block.type) features[promote[field]!.feature] = true;
-                if (field && skip.has(field)) return [];
-                return [block.children ? { ...block, children: prune(block.children) } : block];
-            });
-            // The layout compiled to these fields, which the group now declares; a module's own fields were never stored.
-            const compiled = new Set(flattenGroupFields(definition.layout).map(block => String(block.data.name ?? '')));
-            const blocks = prune(definition.layout);
-            const { layout: _layout, fieldOrder: _order, ...rest } = definition;
-            const next: CollectionDefinition = { ...rest, fields: Object.fromEntries(Object.entries(definition.fields ?? {}).filter(([field]) => !compiled.has(field) && !skip.has(field))), ...(Object.keys(features).length ? { features } : {}) };
-            const principal = systemPrincipal('upgrade');
-            if (flattenGroupFields(blocks).length) {
-                const id = `${name.replaceAll('_', '-')}-fields`;
-                const existing = this.#groups.find(group => group.id === id);
-                const group: FieldGroup = existing ? withTarget(existing, { kind: 'collection', name }, true, -1) : { id, title: `${definition.label ?? builtin?.label ?? name} fields`, placement: 'main', targets: [{ kind: 'collection', name, order: -1 }], blocks };
-                await this.fieldGroups.put(group, principal);
-            }
-            await this.db.write([{
-                rql: 'UPDATE cms_collections SET definition = $definition, updated_at = $now, updated_by = $by WHERE name = $name',
-                params: { $name: name, $definition: JSON.stringify(next), $now: this.#now(), $by: principalId(principal) },
-            }], { kind: 'cms.collections', retryConflicts: 5 });
-            result.set(name, next);
-            converted = true;
-        }
-        if (converted) this.#groups = await this.fieldGroups.all();
-        return result;
+        this.#apply(parse<CollectionDefinition>(collections), parse<TaxonomyDeclaration>(taxonomies));
     }
 
     /** The groups attached to a target, in their order there. */
@@ -2352,13 +2303,36 @@ export class CmsHost {
                 },
             },
             fetch: async (input, init) => {
-                const url = new URL(input instanceof Request ? input.url : String(input));
                 const granted = this.#granted(name, await this.#state());
+                const unrestricted = granted.has(UNRESTRICTED_GRANT);
                 const hosts = [...granted].filter(grant => grant.startsWith('network:')).map(grant => grant.slice('network:'.length));
-                if (!granted.has(UNRESTRICTED_GRANT) && !hosts.some(host => host === url.hostname || (host.startsWith('*.') && url.hostname.endsWith(host.slice(1))))) {
-                    throw new CmsError('CMS_FORBIDDEN', `Plugin ${name} is not granted network access to ${url.hostname}.`);
+                const check = (url: URL) => {
+                    if (!unrestricted && !hosts.some(host => host === url.hostname || (host.startsWith('*.') && url.hostname.endsWith(host.slice(1))))) {
+                        throw new CmsError('CMS_FORBIDDEN', `Plugin ${name} is not granted network access to ${url.hostname}.`);
+                    }
+                };
+                let url = new URL(input instanceof Request ? input.url : String(input));
+                check(url);
+                if (unrestricted) return this.#fetch(input, init);
+                // Redirects are followed here, one hop at a time, so a granted host cannot pass the request on to a host that is not.
+                const method = (init?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase();
+                const redirect = init?.redirect ?? (input instanceof Request ? input.redirect : 'follow');
+                let response = await this.#fetch(input, { ...init, redirect: 'manual' });
+                const location = () => response.status >= 300 && response.status < 400 ? response.headers.get('location') : null;
+                if (redirect === 'manual' || !location()) return response;
+                if (redirect === 'error') throw new TypeError(`Plugin ${name}'s request was redirected.`);
+                // A request with a body is not sent again: its redirect is returned as it came.
+                if (method !== 'GET' && method !== 'HEAD') return response;
+                const headers = init?.headers ?? (input instanceof Request ? input.headers : undefined);
+                const signal = init?.signal ?? (input instanceof Request ? input.signal : undefined);
+                for (let hop = 0; hop < 5 && location(); hop++) {
+                    url = new URL(location()!, url);
+                    check(url);
+                    await response.body?.cancel().catch(() => undefined);
+                    response = await this.#fetch(url.href, { method, redirect: 'manual', ...(headers ? { headers } : {}), ...(signal ? { signal } : {}) });
                 }
-                return this.#fetch(input, init);
+                if (location()) throw new CmsError('CMS_UNAVAILABLE', `Plugin ${name}'s request was redirected too many times.`);
+                return response;
             },
         };
         if (isolated) this.#registerIsolated(plugin, context, isolated);
@@ -2449,6 +2423,31 @@ export class CmsHost {
     }
 
     /**
+     * Register a visitor: `cms.user.before-register` filters may refuse it (`CMS_VALIDATION`
+     * with their message), change its name and roles, or hold it for approval. Returns the
+     * draft the account is made from.
+     */
+    async registrationDraft(input: { email: string; name: string; roles: readonly string[]; approval: boolean }, context: { origin: string }): Promise<RegistrationDraft> {
+        const original: RegistrationDraft = { email: input.email, name: input.name, roles: [...input.roles], approval: input.approval, refused: null };
+        const known = new Set((await this.users.roles({ limit: 200 })).map(role => role.id));
+        const draft = registrationDraftOf(await this.hooks.applyFilters(userBeforeRegister, original, context), original, known);
+        if (draft.refused) throw new CmsError('CMS_VALIDATION', draft.refused);
+        return draft;
+    }
+
+    /** Queue `cms.user.registered` for a new account. */
+    async userRegistered(user: UserRef, state: UserRegisteredEvent['state']): Promise<void> {
+        const event: UserRegisteredEvent = { eventId: `user.registered:${user.id}`, topic: 'user.registered', at: this.#now(), user: { id: user.id, email: user.email, name: user.name }, state };
+        if (await this.outbox.enqueue('user.registered', event, { ignoreDuplicate: true })) this.outboxWritten();
+    }
+
+    /** Queue `cms.user.signed-in` for a session that just started; `sessionId` keeps repeated deliveries one event. */
+    async userSignedIn(user: UserRef, sessionId: string): Promise<void> {
+        const event: UserSignedInEvent = { eventId: `user.signed-in:${await sha256Hex(sessionId)}`, topic: 'user.signed-in', at: this.#now(), user: { id: user.id, email: user.email, name: user.name } };
+        if (await this.outbox.enqueue('user.signed-in', event, { ignoreDuplicate: true })) this.outboxWritten();
+    }
+
+    /**
      * A payments webhook: the provider verifies the request and names the event; a known event is
      * queued as `cms.payment.event` for plugins and delivered from the outbox, so a handler that
      * fails is retried. Returns the event, or null for one the CMS does not relay. Throws
@@ -2507,6 +2506,10 @@ export class CmsHost {
                 { rql: "SELECT subject, permission FROM cms_grants WHERE subject LIKE 'plugin:%' ORDER BY subject, permission LIMIT 1000" },
                 { rql: "SELECT version FROM cms_migrations WHERE kind = 'host' LIMIT 100" },
             ]).then(async result => {
+                const hostVersions = new Set(result.results[2]!.rows.map(([version]) => Number(version as bigint)));
+                // A database made by another build is refused on every request, rather than read with the wrong schema.
+                const unknown = unknownHostSteps(hostVersions);
+                if (unknown.length) throw new CmsError('CMS_SCHEMA_MISMATCH', hostSchemaMismatch(unknown));
                 const grants = new Map<string, Set<string>>();
                 for (const [subject, permission] of result.results[1]!.rows) {
                     const set = grants.get(subject as string) ?? new Set<string>();
@@ -2515,8 +2518,7 @@ export class CmsHost {
                 }
                 return {
                     hashes: new Map(result.results[0]!.rows.map(([resource, hash]) => [resource as string, hash as string])), grants,
-                    hostVersions: new Set(result.results[2]!.rows.map(([version]) => Number(version as bigint))),
-                    policy: await policy,
+                    hostVersions, policy: await policy,
                 };
             }).catch(async error => {
                 // Before the first migration the host tables do not exist yet.

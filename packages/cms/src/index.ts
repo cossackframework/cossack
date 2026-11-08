@@ -1,22 +1,28 @@
 // Client-safe CMS declarations: resources, fields, permissions, extension points and records.
 export { defineResource, resolveResource, resourceProblems, storageName, permissionFor, declarationHash, canonicalJson, SYSTEM_FIELDS, RESOURCE_NAME, OWNER_NAME, ResourceDeclarationError,
     type ResourceDeclaration, type Resource, type ResourceAccess, type ResourceAction, type AccessRule, type IndexDeclaration, type MigrationStep } from './resource';
-export { field, fieldProblems, validateValue, storageType, storageCheck, normalizeDeclaration, normalizeFields, slugify, FIELD_NAME, SLUG_PATTERN, TAXONOMY_NAME, ROW_ID, ROW_LIMITS, ITEM_LIMITS, MULTIPLE_KINDS, FIELD_MEDIA_KINDS, CHOICE_SOURCES, type FieldMediaKind, type ChoiceSource, type FieldDeclaration, type FieldKind, type ListItemKind } from './fields';
+export { field, fieldProblems, validateValue, storageType, storageCheck, slugify, FIELD_NAME, SLUG_PATTERN, TAXONOMY_NAME, ROW_ID, ROW_LIMITS, ITEM_LIMITS, MULTIPLE_KINDS, FIELD_MEDIA_KINDS, CHOICE_SOURCES, type FieldMediaKind, type ChoiceSource, type FieldDeclaration, type FieldKind, type ListItemKind } from './fields';
 export {
-    FIELD_BLOCK_TYPES, FIELD_BLOCKS, FIELD_GROUP_ID, FIELD_GROUP_LIMITS, fieldBlockFields, fieldBlockDeclaration, upgradeFieldBlocks, rowsSearchable, metaProblems, SYSTEM_META, flattenGroupFields, fieldGroupDeclarations, fieldBlockKindOf, fieldBlockOf, layoutOf, sameTarget, targetOrder, groupsForTarget, withTarget, fieldGroupProblems,
+    FIELD_BLOCK_TYPES, FIELD_BLOCKS, FIELD_GROUP_ID, FIELD_GROUP_LIMITS, fieldBlockFields, fieldBlockDeclaration, rowsSearchable, metaProblems, SYSTEM_META, flattenGroupFields, fieldGroupDeclarations, fieldBlockKindOf, fieldBlockOf, layoutOf, sameTarget, targetOrder, groupsForTarget, withTarget, fieldGroupProblems,
     withRowIds, indexedRowPaths, indexedRowField, rowIndexPath, rowsPlain, rowUniqueProblem, conditionValues, hiddenKey, fieldVisibility, clearHidden,
     type FieldGroup, type FieldGroupTarget, type Row,
 } from './field-groups';
 export { ANONYMOUS, PERMISSIONS, DEFAULT_ROLES, NETWORK_ADMIN, MAIN_SITE, isNetworkAdmin, systemPrincipal, userPrincipal, hasPermission, permissionMatches, evaluateRule, ruleScope, principalId, type Principal, type RecordScope } from './permissions';
 export { CmsError, isCmsError, type CmsErrorCode } from './errors';
 export { beforeWrite, afterCommit, cachePurge, pluginJob, paymentEvent, formValidate, formBeforeSubmit, formPrefill, formConfirmation, formNotification, formSubmitted, termBeforeSave, commentBeforeSave, menuBeforeSave, entryActions, entryColumns, bulkActions, ENTRY_ACTION_IDS, EXTENSION_POINTS,
+    dashboardNotices, dashboardTaskbar, siteMarkdown, dashboardNoticesOf, taskbarItemsOf,
     type BeforeWriteInput, type Draft, type ResourceEvent, type CachePurgeEvent, type PluginJobEvent, type PaymentEvent, type WriteActor, type FormRef, type SubmissionContext, type FormErrors, type FormConfirmation, type FormEmail, type FormSubmittedEvent,
-    type TermDraft, type TermWriteInput, type CommentDraft, type CommentWriteInput, type MenuWriteInput, type EntryAction, type BuiltinEntryAction, type EntryColumn, type EntryListInput } from './hooks';
+    type TermDraft, type TermWriteInput, type CommentDraft, type CommentWriteInput, type MenuWriteInput, type EntryAction, type BuiltinEntryAction, type EntryColumn, type EntryListInput,
+    type DashboardNotice, type TaskbarItem } from './hooks';
+export { siteEntryView, ENTRY_VIEW_REFUSED_BLOCKS, type EntryViewParts } from './hooks';
+export { userBeforeRegister, userRegistered, userSignedIn, registrationDraftOf, type RegistrationDraft, type UserRef, type UserRegisteredEvent, type UserSignedInEvent } from './hooks';
+export { mailBeforeSend, mailMessageOf, mailRecipientsLocked, MAIL_KINDS, MAIL_LIMITS, type MailKind, type MailMessage, type MailSendInput } from './hooks';
+export { mailHtml, mailBodyHtml, MAIL_ACCENT, type MailLayout } from './mail';
 export type { RecordShape, RecordPage, RevisionShape, FieldFilter, ListFilter, ListOptions } from './records';
 export { contentModule, categories, tags, patterns } from './modules/content';
 export { formsModule } from './modules/forms';
 export {
-    FORM_BLOCKS, FORM_EMBED_BLOCK, FORM_SETTINGS, FORM_ROW_LIMIT, FORM_ITEM_LIMIT, MULTIPLE_INPUT_KINDS, TEMPLATE_ROW, SUBMISSION_STATUSES, SUBMISSION_META, SUBMISSION_PREFIX, NOTIFICATION_LIMIT, MERGE_TAGS,
+    FORM_BLOCKS, FORM_EMBED_BLOCK, FORM_SETTINGS, FORM_ROW_LIMIT, FORM_ITEM_LIMIT, FORM_FILE_LIMIT, FORM_FILE_MAX_MB, FORM_UPLOAD_LIMIT_MB, MULTIPLE_INPUT_KINDS, formFiles, acceptList, acceptsFile, type FormFile, TEMPLATE_ROW, SUBMISSION_STATUSES, SUBMISSION_META, SUBMISSION_PREFIX, NOTIFICATION_LIMIT, MERGE_TAGS,
     forms, inputFields, choiceOptions, formInputs, flatFormInputs, isRows, rowValues, inputHtmlName, inputKey, ruleMatches, conditionShows, formVisibility, visibleBlocks, formDataValues, validateSubmission, displayValue, displayRows,
     formSettings, submissionResourceName, submissionResource, submissionOf, notificationRules, notificationProblems, renderMergeTags, escapeMarkdown, emailAddresses,
     type ChoiceOption, type FormField, type FormValue, type FormValues, type FormRow, type PostedValue, type SubmittedValues, type SubmissionCheck, type FormSettings, type SubmissionStatus,
@@ -37,7 +43,7 @@ export { hasBinding, bindingPaths, bindingRefs, bindingValue, bindingText, bindi
 export { parseBlockText, hasBlockReference, textBlocks, PATTERN_REFERENCE, type TextPart, type ParsedText } from './block-references';
 export { formInput, formValue, recordTitle, isSameOriginPost, type FormInput, type SubmittedForm } from './forms';
 export { manifestProblems, validateManifest, requestedGrants, commandInput, isPluginPoint, pointOwner, providedPoints, ManifestError, HOST_SLOTS, CAPABILITIES, UNRESTRICTED_GRANT, type Capability, type UserAction, type PluginSchedule, type CmsPluginManifest, type PluginAuthor, type ProvidedPoint, type PluginCommand, type CommandOption, type SlotLink, type HostSlot } from './manifest';
-export { MEDIA_TYPES, AVATAR_TYPES, ARCHIVE_TYPES, SVG_TYPE, MEDIA_FILTERS, MEDIA_FILTER_EXCLUDES, mediaKind, mediaUrl, formatBytes, matchesSignature, imageHasAlpha, imageSize, declaredType, sanitizeSvg, type MediaKind } from './media';
+export { MEDIA_TYPES, AVATAR_TYPES, ARCHIVE_TYPES, SVG_TYPE, MEDIA_FILTERS, MEDIA_FILTER_EXCLUDES, mediaKind, mediaUrl, formatBytes, matchesSignature, imageHasAlpha, imageSize, declaredType, sanitizeSvg, EXTENSION_TYPES, fileExtension, fileType, type MediaKind } from './media';
 export { taxonomyProblems, type TaxonomyDeclaration, type TermShape } from './taxonomy';
 export { general, media, appearance, writing, reading, discussion, seo, crawlers, indexnow, cache, languages, DATE_FORMATS, TIME_FORMATS, TITLE_SEPARATORS, formatSiteDate, validTimeZone, type SettingsGroup, type SettingsSection, type SettingDeclaration, type SettingSource, type SettingControl, type SiteSettings } from './settings';
 export { validateSettingValue, settingControlProblems } from './settings-controls';
@@ -74,7 +80,7 @@ export {
     type SchemaImage, type SchemaSite, type SchemaAuthor, type SchemaBreadcrumb, type SchemaPage,
 } from './seo';
 export { richTextMarkdown, blocksMarkdown, entryMarkdown, type EntryMarkdownInput, type MarkdownOptions } from './to-markdown';
-export { entryChecks, analyzeContent, type Check, type CheckStatus, type CheckInput } from './checks';
+export { entryChecks, analyzeContent, blockLinks, richTextLinks, markdownLinks, internalLinkPath, type Check, type CheckStatus, type CheckInput } from './checks';
 export { recordSchema, fieldSchema, type JsonSchema } from './schema-json';
 export { REDIRECT_STATUSES, REDIRECT_PATH, redirectPath, redirectProblems, type Redirect, type RedirectInput, type RedirectStatus } from './redirects';
 export { WEBHOOK_EVENTS, webhookUrlProblem, type Webhook, type WebhookDelivery, type WebhookEvent, type WebhookInput, type WebhookPayload } from './webhooks';

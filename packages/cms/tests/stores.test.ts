@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { Hono } from 'hono';
 import { createSessionManager } from '@cossackframework/auth';
 import type { StorageProvider } from '@cossackframework/core/storage';
-import { beforeWrite, createCMS, createCmsAuth, FileService, HOST_STEPS, systemPrincipal, userPrincipal, type CmsHost, type PluginContext } from '../src/server/index';
+import { beforeWrite, createCMS, createCmsAuth, FileService, systemPrincipal, userPrincipal, type CmsHost, type PluginContext } from '../src/server/index';
 import { romedbService, live } from './helpers';
 
 const context = {} as never;
@@ -131,14 +131,9 @@ describe.skipIf(!live)('CMS stores on RomeDB', () => {
         const me = await (await app.request('/me', { headers: { cookie } })).json() as { principal: { kind: string; id?: string } };
         expect(me.principal).toMatchObject({ kind: 'user', id: user.id });
         expect((await (await app.request('/me')).json() as { principal: { kind: string } }).principal.kind).toBe('anonymous');
-        // The session's start is the user's last sign-in; the upgrade step derives it from sessions.
+        // The session's start is the user's last sign-in.
         expect(user.lastSignInAt).toBeNull();
-        const signedIn = (await cms.users.get(user.id))!.lastSignInAt;
-        expect(signedIn).toBeGreaterThan(Date.now() - 60_000);
-        const db = service.database();
-        await db.write([{ rql: 'UPDATE cms_users SET last_sign_in_at = NULL WHERE id = $id', params: { $id: user.id } }]);
-        await db.write([HOST_STEPS.find(step => step.version === 6)!.statements[1]!]);
-        expect((await cms.users.get(user.id))!.lastSignInAt).toBe(signedIn);
+        expect((await cms.users.get(user.id))!.lastSignInAt).toBeGreaterThan(Date.now() - 60_000);
 
         const token = cookie.split('=')[1]!;
         const descriptor = await kit.realtime.capture(token, user.id, context);
@@ -270,7 +265,11 @@ describe.skipIf(!live)('CMS stores on RomeDB', () => {
         });
         const { contentModule } = await import('../src/index');
         const db = service.database();
-        const fetch = (async (input: RequestInfo | URL) => { fetched.push(String(input)); return new Response('pong'); }) as typeof globalThis.fetch;
+        const fetch = (async (input: RequestInfo | URL) => {
+            fetched.push(String(input));
+            // The granted host sends one path on to a host the plugin was not granted.
+            return String(input).endsWith('/moved') ? new Response(null, { status: 302, headers: { location: 'https://evil.example/collect' } }) : new Response('pong');
+        }) as typeof globalThis.fetch;
         expect(() => createCMS({ db, modules: [contentModule], plugins: [plugin('1.0.0', { 'cms/posts': ['read'] })], fetch })).toThrow(/ping/);
         const v1 = { ...plugin('1.0.0', { 'cms/posts': ['read'] }), module: { register(context: PluginContext) {
             context.hooks.addFilter(beforeWrite, draft => { seen.push(String(draft.subject ?? draft.title)); return draft; });
@@ -299,7 +298,9 @@ describe.skipIf(!live)('CMS stores on RomeDB', () => {
         const deskFetch = (globalThis as { __deskFetch?: typeof globalThis.fetch }).__deskFetch!;
         expect(await (await deskFetch('https://api.example.com/ping')).text()).toBe('pong');
         await expect(deskFetch('https://evil.example/steal')).rejects.toMatchObject({ code: 'CMS_FORBIDDEN' });
-        expect(fetched).toEqual(['https://api.example.com/ping']);
+        // Each redirect hop is checked like the first request: the plugin never reaches the other host.
+        await expect(deskFetch('https://api.example.com/moved')).rejects.toMatchObject({ code: 'CMS_FORBIDDEN' });
+        expect(fetched).toEqual(['https://api.example.com/ping', 'https://api.example.com/moved']);
 
         const scoped = host.pluginCms('support-desk');
         expect((await scoped.resource('cms/posts').list({}, { principal: admin })).records).toHaveLength(1);

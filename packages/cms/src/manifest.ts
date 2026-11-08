@@ -60,6 +60,8 @@ export interface SlotLink {
     readonly label: string;
     readonly href: string;
     readonly permission?: string;
+    /** A Solar icon name for the link in the dashboard navigation, such as `chart`; a plug when the dashboard has no such icon. */
+    readonly icon?: string;
 }
 
 /** A plugin's maker as its manifest names them. */
@@ -196,7 +198,7 @@ export interface ManifestPattern {
 }
 const PATTERN_SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
-const KNOWN_FIELDS = new Set(['schemaVersion', 'name', 'version', 'description', 'author', 'authorUrl', 'compatibility', 'dependencies', 'resources', 'collections', 'blocks', 'fieldGroups', 'patterns', 'editor', 'hooks', 'permissions', 'ui', 'provides', 'commands', 'schedules', 'settings', 'theme', 'logo', 'cover', 'translations', 'package', 'source', 'isolation']);
+const KNOWN_FIELDS = new Set(['schemaVersion', 'name', 'version', 'description', 'author', 'compatibility', 'dependencies', 'resources', 'collections', 'blocks', 'fieldGroups', 'patterns', 'editor', 'hooks', 'permissions', 'ui', 'provides', 'commands', 'schedules', 'settings', 'theme', 'logo', 'cover', 'translations', 'package', 'source', 'isolation']);
 const COLLECTION_NAME = /^[a-z][a-zA-Z0-9_]{0,40}$/;
 const ARTWORK = /^assets\/[A-Za-z0-9][A-Za-z0-9._-]{0,80}\.(?:png|jpe?g|webp|gif|avif|svg)$/;
 const HOST = /^(?:\*\.)?(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$|^localhost$/;
@@ -227,6 +229,9 @@ export function providedPoints(manifest: CmsPluginManifest): ExtensionPoint[] {
     });
 }
 
+/** List fields whose items are read without a shape check first; the others report a wrong shape item by item. */
+const LIST_FIELDS = ['hooks', 'commands'] as const;
+
 /** Problems with a manifest's CMS fields. Empty when it can be hosted. */
 export function manifestProblems(manifest: unknown): string[] {
     const problems: string[] = [];
@@ -236,6 +241,11 @@ export function manifestProblems(manifest: unknown): string[] {
     if (typeof value.name !== 'string' || !OWNER_NAME.test(value.name) || value.name.length > 64) problems.push('name must be a plugin name.');
     if (typeof value.version !== 'string' || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(value.version)) problems.push('version must be a semantic version.');
     for (const key of Object.keys(value)) if (!KNOWN_FIELDS.has(key)) problems.push(`${key} is not a manifest field.`);
+    // Lists are read item by item below; one of another shape would throw instead of being reported, and the host would not start.
+    const lists = [...LIST_FIELDS.filter(key => value[key] !== undefined && !Array.isArray(value[key])),
+        ...(['network', 'define'] as const).filter(key => value.permissions?.[key] !== undefined && !Array.isArray(value.permissions[key])).map(key => `permissions.${key}`)];
+    if (value.permissions !== undefined && (value.permissions === null || typeof value.permissions !== 'object' || Array.isArray(value.permissions))) lists.push('permissions');
+    if (lists.length) return [...problems, ...lists.map(key => key === 'permissions' ? 'permissions must be an object.' : `${key} must be a list.`)];
     if (value.settings !== undefined) problems.push(...pluginSettingsProblems(value.settings));
     if (value.translations !== undefined && (!Array.isArray(value.translations) || value.translations.length > 50 || new Set(value.translations).size !== value.translations.length
         || value.translations.some(code => typeof code !== 'string' || !LOCALE.test(code)))) problems.push('translations lists at most 50 distinct language codes, such as vi or pt-br.');
@@ -362,6 +372,7 @@ export function manifestProblems(manifest: unknown): string[] {
         for (const link of Array.isArray(links) ? links : []) {
             if (typeof link?.label !== 'string' || !link.label || link.label.length > 60) problems.push(`ui.slots.${slot}: links need a label.`);
             if (typeof link?.href !== 'string' || !link.href.startsWith('/') || link.href.startsWith('//')) problems.push(`ui.slots.${slot}: link ${String(link?.label)} needs a same-site path.`);
+            if (link?.icon !== undefined && (typeof link.icon !== 'string' || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(link.icon) || link.icon.length > 60)) problems.push(`ui.slots.${slot}: link ${String(link?.label)} names its icon in lowercase words joined by hyphens, such as chart-2.`);
         }
     }
     if (value.theme !== undefined) {

@@ -1,22 +1,21 @@
 /**
  * Automations run: the host turns its outbox events (entries, forms, payments) into variables
  * and asks this service to run the active automations that match. An email goes out as the
- * site; a webhook is posted as JSON with the same signature webhooks carry. A failure is kept
- * on the automation as its last error and thrown, so the outbox retries the delivery.
+ * site. A failure is kept on the automation as its last error and thrown, so the outbox
+ * retries the delivery.
  */
 import type { RomeDB } from '@cossackframework/romedb';
 import { automationMatches, automationProblems, renderAutomationTemplate, type Automation, type AutomationAction, type AutomationConditions, type AutomationEvent, type AutomationInput } from '../automations';
 import { CmsError } from '../errors';
-import type { CmsMail } from './forms';
+import type { CmsMailer } from './mail';
 import { randomToken } from './tokens';
 
 const WRITE = { kind: 'cms.automations', retryConflicts: 5 } as const;
 const COLUMNS = 'id, name, event, conditions, action, active, runs, last_run_at, last_error, created_at, updated_at';
 
 export interface AutomationsOptions {
-    readonly mail?: CmsMail | null;
+    readonly mail?: CmsMailer | null;
     readonly mailFrom?: string;
-    readonly fetch?: typeof globalThis.fetch;
     readonly now?: () => number;
     readonly changed?: () => void | Promise<void>;
 }
@@ -50,9 +49,7 @@ export class CmsAutomations {
         if (problems.length) throw new CmsError('CMS_VALIDATION', problems.join(' '));
         const now = this.#now();
         const conditions: AutomationConditions = { ...(input.conditions?.collection ? { collection: input.conditions.collection } : {}), ...(input.conditions?.form ? { form: input.conditions.form } : {}) };
-        const action: AutomationAction = input.action.kind === 'email'
-            ? { kind: 'email', to: input.action.to.split(',').map(part => part.trim()).filter(Boolean).join(', '), subject: input.action.subject.trim(), text: input.action.text }
-            : { kind: 'webhook', url: input.action.url, ...(input.action.secret ? { secret: input.action.secret } : {}) };
+        const action: AutomationAction = { kind: 'email', to: input.action.to.split(',').map(part => part.trim()).filter(Boolean).join(', '), subject: input.action.subject.trim(), text: input.action.text };
         const active = input.active !== false;
         if (options.id) {
             const current = await this.get(options.id);
@@ -83,13 +80,13 @@ export class CmsAutomations {
      * its automation; the first error is thrown after the rest ran, so the outbox retries the
      * delivery (an email sent before a failure is sent again then: keep actions idempotent at the receiver).
      */
-    async run(event: AutomationEvent, vars: Record<string, unknown>, options: { signal?: AbortSignal } = {}): Promise<{ ran: string[]; failed: string[] }> {
+    async run(event: AutomationEvent, vars: Record<string, unknown>): Promise<{ ran: string[]; failed: string[] }> {
         const ran: string[] = [];
         const failed: string[] = [];
         let first: unknown;
         for (const automation of (await this.list()).filter(entry => entry.active && automationMatches(entry, event, vars))) {
             try {
-                await this.#perform(automation, event, vars, options.signal);
+                await this.#perform(automation, vars);
                 await this.#db.write([{ rql: "UPDATE cms_automations SET runs = runs + 1, last_run_at = $now, last_error = '' WHERE id = $id", params: { $id: automation.id, $now: this.#now() } }], WRITE);
                 ran.push(automation.id);
             } catch (error) {
@@ -102,25 +99,12 @@ export class CmsAutomations {
         return { ran, failed };
     }
 
-    async #perform(automation: Automation, event: AutomationEvent, vars: Record<string, unknown>, signal?: AbortSignal): Promise<void> {
+    async #perform(automation: Automation, vars: Record<string, unknown>): Promise<void> {
         const action = automation.action;
-        if (action.kind === 'email') {
-            if (!this.#options.mail) throw new Error('No email sender is configured.');
-            const recipients = renderAutomationTemplate(action.to, vars).split(',').map(part => part.trim()).filter(part => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(part));
-            if (!recipients.length) throw new Error('No recipient: the address was empty.');
-            for (const to of recipients) await this.#options.mail.send({ to, from: this.#options.mailFrom ?? 'no-reply@example.com', subject: renderAutomationTemplate(action.subject, vars).slice(0, 200), text: renderAutomationTemplate(action.text, vars) });
-            return;
-        }
-        const body = JSON.stringify({ automation: automation.id, name: automation.name, event, at: this.#now(), data: vars });
-        const timestamp = String(Math.floor(this.#now() / 1000));
-        const headers: Record<string, string> = { 'content-type': 'application/json', 'user-agent': 'Cossack-CMS-Automation/1', 'x-cossack-event': event, 'x-cossack-timestamp': timestamp };
-        if (action.secret) {
-            const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(action.secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-            const signature = new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`${timestamp}.${body}`)));
-            headers['x-cossack-signature'] = `sha256=${[...signature].map(byte => byte.toString(16).padStart(2, '0')).join('')}`;
-        }
-        const response = await (this.#options.fetch ?? globalThis.fetch)(action.url, { method: 'POST', headers, body, ...(signal ? { signal } : {}) });
-        if (!response.ok) throw new Error(`The webhook answered ${response.status}.`);
+        if (!this.#options.mail) throw new Error('No email sender is configured.');
+        const recipients = renderAutomationTemplate(action.to, vars).split(',').map(part => part.trim()).filter(part => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(part));
+        if (!recipients.length) throw new Error('No recipient: the address was empty.');
+        for (const to of recipients) await this.#options.mail.send({ kind: 'automation', to, from: this.#options.mailFrom ?? 'no-reply@example.com', subject: renderAutomationTemplate(action.subject, vars).slice(0, 200), text: renderAutomationTemplate(action.text, vars) });
     }
 }
 

@@ -1,8 +1,9 @@
 /**
  * Automations: "when this happens, do that", kept as data and run from the outbox events the
  * CMS already delivers. An automation names an event, optional conditions, and one action:
- * an email from the site, or a signed webhook. Templates fill `{{ name }}` from the event's
- * variables. Pure shapes and checks; the server module runs them.
+ * an email from the site. Templates fill `{{ name }}` from the event's variables. Posting the
+ * same events to a URL is what webhooks do, with a delivery log. Pure shapes and checks; the
+ * server module runs them.
  */
 
 export const AUTOMATION_EVENTS = Object.freeze(['entry.published', 'entry.created', 'entry.updated', 'entry.deleted', 'form.submitted', 'payment.completed'] as const);
@@ -20,9 +21,7 @@ export interface AutomationConditions {
     readonly form?: string;
 }
 
-export type AutomationAction =
-    | { readonly kind: 'email'; readonly to: string; readonly subject: string; readonly text: string }
-    | { readonly kind: 'webhook'; readonly url: string; readonly secret?: string };
+export type AutomationAction = { readonly kind: 'email'; readonly to: string; readonly subject: string; readonly text: string };
 
 export interface AutomationInput {
     readonly name: string;
@@ -43,7 +42,6 @@ export interface Automation extends AutomationInput {
 }
 
 const EMAIL = /^(?:[^\s@]+@[^\s@]+\.[^\s@]+|\{\{\s*[a-zA-Z0-9_.]+\s*\}\})$/;
-const URL_OK = /^https:\/\/[^\s]{1,2000}$/;
 const NAME = /^[a-z][a-z0-9_]{0,40}$/;
 
 /** What is wrong with an automation, as sentences; empty when it can be saved. */
@@ -68,10 +66,7 @@ export function automationProblems(input: unknown): string[] {
         if (!recipients.length || recipients.length > 10 || recipients.some(part => !EMAIL.test(part))) problems.push('Email: up to ten addresses, or a {{ variable }} such as {{ customerEmail }}.');
         if (typeof action.subject !== 'string' || !action.subject.trim() || action.subject.length > 200) problems.push('Email: a subject of 1 to 200 characters.');
         if (typeof action.text !== 'string' || !action.text.trim() || action.text.length > 20_000) problems.push('Email: a text of up to 20,000 characters.');
-    } else if (action.kind === 'webhook') {
-        if (typeof action.url !== 'string' || !URL_OK.test(action.url)) problems.push('Webhook: an https URL.');
-        if (action.secret !== undefined && action.secret !== '' && (typeof action.secret !== 'string' || action.secret.length < 8 || action.secret.length > 200)) problems.push('Webhook: a secret of 8 to 200 characters, or none.');
-    } else problems.push('The action is email or webhook.');
+    } else problems.push('The action is an email; to post events to a URL, add a webhook.');
     if (value.active !== undefined && typeof value.active !== 'boolean') problems.push('active is true or false.');
     return problems;
 }

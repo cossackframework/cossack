@@ -128,9 +128,7 @@ export default class FieldGroupPage extends Cossack {
 
     private check(choice: TargetChoice): TemplateResult {
         const checked = this.targets.some(entry => entry.kind === choice.kind && ('name' in entry ? entry.name : '') === choice.name);
-        return html`<label class="flex items-center gap-2 text-sm text-foreground cursor-pointer">
-            ${component(Checkbox, { checked, '@change': (event: Event) => this.toggleTarget(choice, (event.target as HTMLInputElement).checked) })} ${choice.label}
-        </label>`;
+        return html`<div>${component(Checkbox, { label: choice.label, checked, '@change': (event: Event) => this.toggleTarget(choice, (event.target as HTMLInputElement).checked) })}</div>`;
     }
 
     render() {

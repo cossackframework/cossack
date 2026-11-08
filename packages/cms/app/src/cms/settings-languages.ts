@@ -1,11 +1,11 @@
 /** The language form used by the unified Settings page. */
 import { Client, ClientState, Component, Cossack } from '@cossackframework/core';
-import { Button, Checkbox, NativeSelect } from '@cossackframework/ui';
+import { Button, Checkbox, NativeSelect, Input } from '@cossackframework/ui';
 import { component, html } from '@cossackframework/renderer';
 import { isCmsError, languageName, LOCALE, type Principal } from '@cossackframework/cms';
 import type { CmsHost } from '@cossackframework/cms/server';
 import type { SettingsDraft } from './settings-draft';
-import { CONTROL, notice } from './ui';
+import { notice } from './ui';
 
 const COMMON = ['ar', 'bg', 'bn', 'cs', 'da', 'de', 'el', 'en', 'es', 'fa', 'fi', 'fr', 'he', 'hi', 'hu', 'id', 'it', 'ja', 'ko', 'ms', 'nb', 'nl', 'pl', 'pt', 'pt-br',
     'ro', 'ru', 'sk', 'sv', 'sw', 'th', 'tl', 'tr', 'uk', 'ur', 'vi', 'zh-hans', 'zh-hant'];
@@ -103,12 +103,11 @@ export class LanguagesSettings extends Cossack {
                     <legend class="mb-1 text-sm font-medium text-foreground">${__('Other languages')}</legend>
                     <p class="text-xs text-muted-foreground">${__('Their entries live under the language code, such as')} <code>${origin}/fr/a-propos</code>.</p>
                     <div class="grid max-h-80 gap-1.5 overflow-y-auto rounded-md border border-border p-3 sm:grid-cols-2">
-                        ${options.filter(option => option.code !== form.main).map(option => html`<label class="flex cursor-pointer items-center gap-2 text-sm text-foreground">
-                            ${component(Checkbox, { checked: form.others.includes(option.code), '@change': (event: Event) => this.toggle(option.code, (event.target as HTMLInputElement).checked) })} ${option.label}</label>`)}
+                        ${options.filter(option => option.code !== form.main).map(option => html`<div>${component(Checkbox, { label: option.label, checked: form.others.includes(option.code), '@change': (event: Event) => this.toggle(option.code, (event.target as HTMLInputElement).checked) })}</div>`)}
                     </div>
                     <div class="flex gap-2">
-                        <input class=${`${CONTROL} min-w-0 max-w-48`} aria-label=${__('Another language code')} placeholder=${__('Another code, such as eu')} .value=${form.custom}
-                            @input=${(event: Event) => this.set({ custom: (event.target as HTMLInputElement).value })}>
+                        ${component(Input, { class: 'min-w-0 max-w-48', 'aria-label': __('Another language code'), placeholder: __('Another code, such as eu'), '.value': form.custom,
+                            '@input': (event: Event) => this.set({ custom: (event.target as HTMLInputElement).value }) })}
                         ${component(Button, { type: 'button', variant: 'outline', '@click': this.addCustom }, __('Add'))}
                     </div>
                 </fieldset>` : null}

@@ -6,7 +6,7 @@
  */
 import { Client, ClientState, Component, Cossack } from '@cossackframework/core';
 import { component, html, type TemplateResult } from '@cossackframework/renderer';
-import { FIELD_GROUP_LAYOUT, findBlock, updateBlock, type BlockCondition } from '@cossackframework/cms';
+import { findBlock, updateBlock, type BlockCondition } from '@cossackframework/cms';
 import { blockPanel } from './block-panel';
 import { BlockTree } from './block-tree';
 import { fieldName } from './builder';
@@ -31,10 +31,6 @@ export type FieldGroupEditorProps = {
 /** The block open in the panel. */
 interface Dialog { id: string; values: Record<string, unknown>; errors: Record<string, string>; when?: BlockCondition }
 
-/** The block types a field group is built from. */
-export function fieldGroupOptions(options: readonly BlockOption[]): BlockOption[] {
-    return options.filter(option => option.field || option.common || FIELD_GROUP_LAYOUT.has(option.name));
-}
 
 @Component()
 export class FieldGroupEditor extends Cossack {

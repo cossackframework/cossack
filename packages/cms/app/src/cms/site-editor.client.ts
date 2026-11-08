@@ -892,9 +892,9 @@ export class SiteEditor extends Cossack {
                 if (taxonomy.hierarchical) {
                     const chosen = Array.isArray(value) ? value as string[] : [];
                     return html`<fieldset class="space-y-1.5"><legend class="text-sm font-medium">${taxonomy.label}</legend>
-                        ${taxonomy.terms.map(term => html`<label class="flex items-center gap-2 text-sm cursor-pointer" style=${`padding-left: ${term.depth}rem`}>
-                            ${component(Checkbox, { checked: chosen.includes(term.id), '@change': (event: Event) => this.setValue(taxonomy.name,
-                                (event.target as HTMLInputElement).checked ? [...chosen, term.id] : chosen.filter(id => id !== term.id)) })} ${term.name}</label>`)}</fieldset>`;
+                        ${taxonomy.terms.map(term => html`<div style=${`padding-left: ${term.depth}rem`}>
+                            ${component(Checkbox, { label: term.name, checked: chosen.includes(term.id), '@change': (event: Event) => this.setValue(taxonomy.name,
+                                (event.target as HTMLInputElement).checked ? [...chosen, term.id] : chosen.filter(id => id !== term.id)) })}</div>`)}</fieldset>`;
                 }
                 return row(`site-entry-${taxonomy.name}`, taxonomy.label, component(MultiSelect, {
                     id: `site-entry-${taxonomy.name}`, value: Array.isArray(value) ? value as string[] : [],

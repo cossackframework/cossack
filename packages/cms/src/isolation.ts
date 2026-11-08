@@ -43,7 +43,7 @@ export interface IsolateCall {
 /** The members an isolated plugin's context forwards to the host; the bridge serves exactly these. */
 export const ISOLATE_MEMBERS = [
     'settings.get', 'settings.all',
-    'resource.get', 'resource.list', 'resource.search', 'resource.create', 'resource.update', 'resource.delete',
+    'resource.get', 'resource.list', 'resource.count', 'resource.search', 'resource.create', 'resource.update', 'resource.delete',
     'fetch',
     'files.upload', 'files.get', 'files.list', 'files.open', 'files.update', 'files.delete',
     'mail.send',

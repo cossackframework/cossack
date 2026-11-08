@@ -120,7 +120,7 @@ The `PluginContext` holds:
 | `hooks.doAction(point, payload)`, `hooks.applyFilters(point, value, input)` | Run the handlers of a point the plugin `provides`. |
 | `commands.add(name, handler)` | Handle a command the manifest declares. |
 | `settings.get(name)`, `settings.all()` | Read the active plugin's declared settings, with defaults, as detached values. |
-| `cms.resource(id)` | A repository (`get`, `list`, `search`, `create`, `update`, `delete`) for the plugin's own resources and the ones it is granted. |
+| `cms.resource(id)` | A repository (`get`, `list`, `count`, `search`, `create`, `update`, `delete`) for the plugin's own resources and the ones it is granted. |
 | `fetch` | `fetch` limited to the hosts in `permissions.network`. |
 | `files`, `mail`, `jobs`, `users`, `cache`, `secrets`, `ai`, `payments` | The [capabilities](#capabilities) the manifest's `permissions` ask for. |
 
@@ -158,7 +158,7 @@ export function register(context: PluginContext) {
 | Member | What it does |
 | --- | --- |
 | `files.upload({ name, contentType, body, size?, title?, alt? })`, `get`, `open`, `list`, `update`, `delete`, `url(file)` | Files in the media library owned by `plugin:<name>`, shown there like any upload. `body` is a stream (with `size`), bytes or a string. The plugin changes and deletes its own files and reads any. |
-| `mail.send({ to, subject, text, replyTo? })` | One plain-text email from the site's sender (`MAIL_FROM`); one recipient, a subject up to 200 characters, text up to 100 KB. |
+| `mail.send({ to, subject, text, replyTo? })` | One email from the site's sender (`MAIL_FROM`): the text, and the HTML part the site's layout makes from it (Settings → Email); one recipient, a subject up to 200 characters, text up to 100 KB. `cms.mail.before-send` filters see it as `kind: 'plugin'` with the plugin's name. |
 | `jobs.handle(name, handler)` | Names a handler at `register()`. The handler gets the payload and `{ principal, scheduledAt, signal }`; `principal` is the system principal `plugin:<name>`, so repositories accept it. A thrown error retries the job with the outbox's backoff, up to ten attempts. |
 | `jobs.enqueue(name, payload?, { at?, delayMs?, key? })` | Queues a job for now, for a time or after a delay (within a year), as an outbox row; JSON payloads up to 64 KB. A `key` queues once: the same key again returns false. |
 | `users.get(id)`, `findByEmail`, `list({ search, role, limit, offset })` | Members as the plugin sees them: id, email, name, slug, avatar, status, roles, and the plugin's own `meta`. |
@@ -285,8 +285,30 @@ export const blocks = { contact: SupportContact };
 Pages, layouts and loading skeletons overlay `src/pages`: `pages/dashboard/support/index.ts`
 serves `/dashboard/support`, inside the dashboard layout, with its middleware and error
 handling. A path the application also defines fails the build with
-`COSSACK_PLUGIN_ROUTE_CONFLICT`. Markdown pages work once the application has the
-`markdown` feature.
+`COSSACK_PLUGIN_ROUTE_CONFLICT`. A dashboard screen gets the dashboard's look from
+`pageHeader()`, `linkButton()` and `notice()` in `@cossackframework/ui/blocks`, the helpers
+the dashboard's own screens use:
+
+```ts
+import { notice, pageHeader } from '@cossackframework/ui/blocks';
+
+render() {
+    return html`<div class="space-y-6">
+        ${pageHeader('Support', { description: 'Open tickets, newest first.' })}
+        ${this.error ? notice(this.error, 'error') : null}
+        …
+    </div>`;
+}
+```
+
+Markdown pages (`.md`) work too: `cossack add cms` adds the
+`markdown` feature, so a plugin or theme can ship its docs and legal pages as Markdown. Put
+them under `pages/(site)/` to frame them like the site's other pages:
+`pages/(site)/docs/guide.md` serves `/docs/guide` inside the active theme's header and
+footer, because the site layout is `src/pages/(site)/layout.ts`. The content reads like rich
+text at the content width (see [Themes](/docs/cms/themes.md#markdown-pages)). Pages under
+`(site)` and plugin pages render per request, never at build time. A Markdown page outside
+`(site)` gets only the layouts above it, if any.
 
 A functional handler module is an HTTP endpoint at any path: `pages/webhooks/support/index.ts`
 exporting `POST` serves `/webhooks/support`, and `pages/api/support/tickets.ts` serves

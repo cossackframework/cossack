@@ -6,7 +6,7 @@
  */
 import { component, html, ifDefined, unsafeHTML, type TemplateResult } from '@cossackframework/renderer';
 import { Turnstile } from '@cossackframework/ui';
-import type { Block, FormView, InputView, RenderedBlock, ThemeHelpers } from '@cossackframework/cms';
+import { acceptList, FORM_FILE_LIMIT, FORM_FILE_MAX_MB, type Block, type FormView, type InputView, type RenderedBlock, type ThemeHelpers } from '@cossackframework/cms';
 
 export const FORM_INPUT = 'w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring aria-[invalid=true]:border-destructive';
 const LABEL = 'block text-sm font-medium text-foreground';
@@ -35,7 +35,9 @@ export function formBlock(block: RenderedBlock, helpers: ThemeHelpers): Template
     if (form.notice?.kind === 'success') return html`<div id=${anchor} role="status" class="cms-form cms-form-done rounded-md border border-border bg-muted px-4 py-3 text-sm text-foreground [&_p]:my-1">${unsafeHTML(form.notice.html)}</div>`;
     if (form.closed !== null) return html`<div id=${anchor} class="cms-form rounded-md border border-border px-4 py-3 text-sm text-muted-foreground [&_p]:my-1">${unsafeHTML(form.closed)}</div>`;
     if (form.signInUrl) return html`<p id=${anchor} class="cms-form text-sm text-muted-foreground"><a href=${form.signInUrl} class="text-primary hover:underline">${__('Log in')}</a> ${__('to send this form.')}</p>`;
-    return html`<form id=${anchor} method="post" action=${form.action} novalidate class="cms-form space-y-4" aria-label=${form.title}
+    // A form with a file upload posts multipart, so the files go along.
+    const enctype = Object.values(form.kinds).includes('file') ? 'multipart/form-data' : undefined;
+    return html`<form id=${anchor} method="post" action=${form.action} enctype=${ifDefined(enctype)} novalidate class="cms-form space-y-4" aria-label=${form.title}
         data-cms-form=${form.slug} data-blocks=${JSON.stringify(plainBlocks(form.blocks))} data-kinds=${JSON.stringify(form.kinds)} ref=${enhance}>
         <input type="hidden" name="_page" value=${form.page}>
         <input type="hidden" name="_started" value=${String(form.startedAt)}>
@@ -128,6 +130,25 @@ function multipleField(block: RenderedBlock, input: InputView, parts: { label: T
 }
 
 /**
+ * A file upload: one file control, taking several files when the block allows them, with
+ * its allowed types and limits under it. A page cannot fill it in again, so after a post
+ * that came back with errors the visitor chooses the files again.
+ */
+function fileField(block: RenderedBlock, input: InputView, parts: { label: TemplateResult; help: TemplateResult | null; errors: TemplateResult; described: string; invalid: string | undefined; required: boolean }): TemplateResult {
+    const accept = acceptList(block.data.accept);
+    const several = block.data.multipleFiles === true;
+    const most = Math.min(number(block, 'maxFiles') ?? FORM_FILE_LIMIT, FORM_FILE_LIMIT);
+    const largest = Math.min(number(block, 'maxSize') ?? FORM_FILE_MAX_MB, FORM_FILE_MAX_MB);
+    const limits = [accept.join(', '), `${__('up to')} ${largest} MB${several ? ` ${__('each')}` : ''}`, several ? `${__('at most')} ${most} ${__('files')}` : ''].filter(Boolean).join(' · ');
+    return html`<div class="cms-field space-y-1" data-input=${input.key}>
+        <label for=${input.id} class=${LABEL}>${parts.label}</label>
+        <input type="file" id=${input.id} name=${input.name} accept=${ifDefined(accept.length ? accept.join(',') : undefined)} ?multiple=${several} ?required=${parts.required}
+            aria-describedby=${`${input.id}-limits ${parts.described}`} aria-invalid=${ifDefined(parts.invalid)}
+            class="block w-full text-sm text-foreground file:mr-3 file:rounded-md file:border file:border-solid file:border-input file:bg-background file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-foreground file:cursor-pointer hover:file:bg-muted aria-[invalid=true]:text-destructive">
+        <p id=${`${input.id}-limits`} class=${HELP}>${limits}</p>${parts.help}${parts.errors}</div>`;
+}
+
+/**
  * An input block in a form: its label, control, help and error. The server's error shows in
  * `data-cms-server-error`; the browser's checks write theirs into the empty `data-cms-error`.
  * Both carry the input's key: its name, or `repeater.<row id>.<name>` in a row. A repeater's
@@ -148,6 +169,7 @@ export function inputBlock(block: RenderedBlock, helpers?: ThemeHelpers): Templa
     const helpText = help ? html`<p id=${`${input.id}-help`} class=${HELP}>${help}</p>` : null;
     const errors = html`${input.error ? html`<p class=${ERROR} data-cms-server-error=${input.key}>${input.error}</p>` : null}<p id=${`${input.id}-error`} class=${ERROR} data-cms-error=${input.key}></p>`;
     if (block.repeater) return repeaterBlock(block, helpers, { label: html`${label}${mark}`, help: helpText, errors });
+    if (input.kind === 'file') return fileField(block, input, { label: html`${label}${mark}`, help: helpText, errors, described, invalid, required });
     if (input.items) return multipleField(block, input, { label: html`${label}${mark}`, help: helpText, errors });
     const field = (control: TemplateResult) => html`<div class="cms-field space-y-1" data-input=${input.key}>
         <label for=${input.id} class=${LABEL}>${label}${mark}</label>${control}${helpText}${errors}</div>`;

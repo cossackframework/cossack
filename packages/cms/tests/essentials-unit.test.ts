@@ -78,11 +78,11 @@ describe('essentials helpers', () => {
         expect(contentBlocks(false)).toBeNull();
         expect(contentBlocks({ blocks: [1] } as never)).toBeNull();
         expect(collectionProblems({ ...base, fields: { content: field.blocks() } })).toContain('content is a feature; turn it on instead of declaring it.');
-        expect(collectionProblems({ ...base, features: { sticky: true } as never })).toContain('Features are content, excerpt, featuredImage, revisions, password, each on or off.');
+        expect(collectionProblems({ ...base, features: { sticky: true } as never })).toContain('Features are content, excerpt, featuredImage, revisions, password, members, each on or off.');
         expect(collectionProblems({ ...base, template: [{ _id: 'a', type: 'core/richtext', data: {} }] })).toContain('The content template needs the content feature.');
         expect(collectionProblems({ ...base, features: { content: true }, template: [{ _id: 'a', type: 'core/richtext', data: {} }] })).toEqual([]);
         // A built-in collection's features stay on; stored ones add to them.
-        expect(extendCollection(posts, { features: { excerpt: false, revisions: false } }).features).toEqual({ content: true, excerpt: true, featuredImage: true, password: true, revisions: false });
+        expect(extendCollection(posts, { features: { excerpt: false, revisions: false } }).features).toEqual({ content: true, excerpt: true, featuredImage: true, password: true, members: true, revisions: false });
     });
 
     it('names languages and groups blocks', () => {

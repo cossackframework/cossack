@@ -1,7 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { StorageProvider } from '@cossackframework/core/storage';
 import { contentModule, createCMS, DEFAULT_ROLES, userPrincipal, type CmsHost, type Principal } from '../src/server/index';
-import { renameStoredBlockIds } from '../src/server/block-ids';
 import type { RomeDB } from '@cossackframework/romedb';
 import { romedbService, live } from './helpers';
 
@@ -141,37 +140,6 @@ describe.skipIf(!live)('content, taxonomies, settings, users and media', () => {
         await terms.delete(local.id, { principal: editor });
         expect(await terms.get(city.id)).toMatchObject({ parent: sports.id, depth: 1, path: `/${sports.id}/${city.id}/` });
         expect((await posts.get(report.id, { principal: editor }))!.categories).toEqual([city.id]);
-    });
-
-    it('renames stored block IDs on the automatic upgrade, collections stored with id included', async () => {
-        const admin: Principal = { kind: 'user', id: 'admin-1', roles: ['admin'], permissions: ['*'] };
-        await cms.saveCollection({ name: 'notes', label: 'Notes', singular: 'Note', icon: 'notebook', path: 'notes', fields: {}, features: { content: true }, template: [{ _id: 'lead', type: 'core/paragraph', data: { text: 'Lead' } }] }, admin);
-        expect((await cms.migrate()).failed).toBeUndefined();
-        const note = await cms.resource('cms/notes').create({ title: 'Old note', content: [{ _id: 'a', type: 'core/paragraph', data: { text: 'A' } }] }, { principal: editor });
-        const { storage: table } = cms.resourceById('cms/notes');
-        // As stored before host step 12: `id` in the collection's template and in the record, and the step not yet applied.
-        const stored = JSON.parse((await db.read([{ rql: "SELECT definition FROM cms_collections WHERE name = 'notes'" }])).results[0]!.rows[0]![0] as string) as { template: unknown };
-        await db.write([
-            { rql: "UPDATE cms_collections SET definition = $definition WHERE name = 'notes'", params: { $definition: JSON.stringify({ ...stored, template: [{ id: 'lead', type: 'core/paragraph', data: { text: 'Lead' } }] }) } },
-            { rql: `UPDATE ${table} SET "content" = $content WHERE id = type::record('${table}', $key)`, params: { $content: [{ id: 'a', type: 'core/paragraph', data: { text: 'A' } }], $key: note.id } },
-            { rql: "DELETE FROM cms_migrations WHERE id = 'cms#host-12'" },
-        ]);
-        const upgraded = createCMS({ db, modules: [contentModule] });
-        await upgraded.ready();
-        expect(upgraded.collections().map(collection => collection.name)).toContain('notes');
-        expect(upgraded.collection('notes').template).toEqual([{ _id: 'lead', type: 'core/paragraph', data: { text: 'Lead' } }]);
-        expect((await upgraded.resource('cms/notes').get(note.id, { principal: editor }))!.content).toEqual([{ _id: 'a', type: 'core/paragraph', data: { text: 'A' } }]);
-    });
-
-    it('rewrites block trees stored with id to _id once', async () => {
-        const posts = cms.resource('cms/posts');
-        const post = await posts.create({ title: 'Old blocks', content: [{ _id: 'keep', type: 'core/paragraph', data: { text: 'New' } }] }, { principal: editor });
-        const { storage: table } = cms.resourceById('cms/posts');
-        // A tree as versions before host step 12 stored it.
-        await db.write([{ rql: `UPDATE ${table} SET "content" = $content WHERE id = type::record('${table}', $key)`, params: { $content: [{ id: 'old', type: 'core/columns', data: {}, children: [{ id: 'inner', type: 'core/paragraph', data: { text: 'Old' } }] }], $key: post.id } }], { kind: 'test' });
-        expect(await renameStoredBlockIds(db, cms.resources)).toBe(1);
-        expect((await posts.get(post.id, { principal: editor }))!.content).toEqual([{ _id: 'old', type: 'core/columns', data: {}, children: [{ _id: 'inner', type: 'core/paragraph', data: { text: 'Old' } }] }]);
-        expect(await renameStoredBlockIds(db, cms.resources)).toBe(0);
     });
 
     it('creates typed tags for writers and applies the default category', async () => {

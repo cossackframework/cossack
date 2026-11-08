@@ -1,11 +1,11 @@
 import { Cossack, Page, State, flash, flashed, type HeadValue } from '@cossackframework/core';
-import { Card, CardBody } from '@cossackframework/ui';
+import { Card, CardBody, Checkbox } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { isCmsError, isSameOriginPost } from '@cossackframework/cms';
 import { notice, pageHeader } from '../../../../../../cms/ui';
 import { requireNetworkAdmin } from '../../../../../../cms/guards';
 import { network } from '../../../../../../cms/network-ui';
-import { field, SUBMIT } from '../../../../../../cms/network-view';
+import { field, submitButton } from '../../../../../../cms/network-view';
 
 interface NewSiteForm { name: string; host: string; language: string; admin: string; starter: boolean }
 
@@ -65,10 +65,10 @@ export default class NewNetworkSite extends Cossack {
                         hint: this.suffix ? `${__('A subdomain of')} ${this.suffix}. ${__('Add its own domain once it exists.')}` : '' })}
                     ${field('language', __('Language'), { value: this.form.language, hint: __('A language code, such as en, fr or pt-br.') })}
                     ${field('admin', __('First administrator'), { type: 'email', value: this.form.admin, placeholder: __('Your account when empty'), hint: __('The email of an existing account.') })}
-                    <label class="flex items-start gap-2 text-sm text-foreground"><input type="checkbox" name="starter" class="mt-0.5 size-4 accent-primary" ?checked=${this.form.starter}>
-                        <span>${__('Add starter content')}<span class="block text-xs text-muted-foreground">${__('Leave it off to fill the site from another site\'s export: its page offers the import while the site is empty.')}</span></span></label>
+                    <div class="[&_.cs-checkbox]:items-start [&_.cs-checkbox>input]:mt-0.5">${component(Checkbox, { name: 'starter', checked: this.form.starter },
+                        html`<span>${__('Add starter content')}<span class="block text-xs text-muted-foreground">${__('Leave it off to fill the site from another site\'s export: its page offers the import while the site is empty.')}</span></span>`)}</div>
                     <div class="flex items-center gap-2">
-                        <button type="submit" class=${SUBMIT}>${__('Add site')}</button>
+                        ${submitButton(__('Add site'))}
                         <a href="/dashboard/network/sites" class="inline-flex items-center justify-center rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground no-underline hover:bg-muted">${__('Cancel')}</a>
                     </div>
                 </form>`)) : notice(__('This network cannot add sites yet: give it a provider for site databases (see Settings → Network).'))}

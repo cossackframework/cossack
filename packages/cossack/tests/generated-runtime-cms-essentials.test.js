@@ -523,7 +523,6 @@ async function essentials(origin, routeIds, diagnostics, { runtime, cloudflare =
   for (const group of ['discussion', 'seo', 'crawlers', 'languages']) {
     expect(settings).toMatch(new RegExp(`data-settings-menu-group="?${group}(?:"|\\s|>)`));
     expect(settings).toMatch(new RegExp(`data-settings-section="?${group}(?:"|\\s|>)`));
-    expect((await web.request(`/dashboard/settings/${group}`)).headers.get('location')).toBe(`/dashboard/settings#settings-${group}`);
   }
 }
 

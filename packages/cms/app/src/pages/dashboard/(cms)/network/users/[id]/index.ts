@@ -1,12 +1,12 @@
 import { Cossack, Page, State, flash, flashed, type HeadValue } from '@cossackframework/core';
-import { Badge, Card, CardBody, CardHeader } from '@cossackframework/ui';
+import { Badge, Card, CardBody, CardHeader, Field, NativeSelect } from '@cossackframework/ui';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
 import { DEFAULT_ROLES, isCmsError, isSameOriginPost, MAIN_SITE, NETWORK_ADMIN } from '@cossackframework/cms';
 import { networkSite, type CmsHost } from '@cossackframework/cms/server';
 import { notice, pageHeader, shortDate } from '../../../../../../cms/ui';
 import { requireNetworkAdmin } from '../../../../../../cms/guards';
 import { network, siteLinks, siteNames } from '../../../../../../cms/network-ui';
-import { actionButton, field, SUBMIT } from '../../../../../../cms/network-view';
+import { actionButton, field, submitButton } from '../../../../../../cms/network-view';
 import { listTable } from '../../../../../../dashboard/list-table';
 
 interface Membership { id: string; name: string; roles: string; dashboard: string }
@@ -136,7 +136,7 @@ export default class NetworkUser extends Cossack {
                 ${field('name', __('Name'), { value: this.name, required: true })}
                 ${field('email', __('Email'), { type: 'email', value: this.email, required: true })}
                 ${field('password', __('New password'), { type: 'password', placeholder: __('Unchanged when empty'), hint: __('At least 8 characters.') })}
-                <button type="submit" class=${SUBMIT}>${__('Save')}</button>
+                ${submitButton(__('Save'))}
             </form>`, __('The account signs in to every site with this email and password.'))}
             ${html`<section class="space-y-3">
                 <h2 class="text-base font-semibold text-foreground">${__('Sites')}</h2>
@@ -152,15 +152,12 @@ export default class NetworkUser extends Cossack {
                 })}
                 ${this.self || !this.joinable.length ? null : html`<form method="post" class="flex max-w-xl flex-wrap items-end gap-3">
                     <input type="hidden" name="action" value="add-site">
-                    <div class="flex-1 space-y-1.5">
-                        <label for="network-site" class="block text-sm font-medium text-foreground">${__('Add to a site')}</label>
-                        <select id="network-site" name="site" class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm">${this.joinable.map(site => html`<option value=${site.id}>${site.name}</option>`)}</select>
-                    </div>
-                    <select name="role" aria-label=${__('Role')} class="rounded-md border border-input bg-background px-3 py-2 text-sm">
+                    <div class="flex-1">${component(Field, { label: __('Add to a site'), for: 'network-site', control: attributes => component(NativeSelect, { ...attributes, name: 'site' },
+                        html`${this.joinable.map(site => html`<option value=${site.id}>${site.name}</option>`)}`) })}</div>
+                    ${component(NativeSelect, { name: 'role', inline: true, 'aria-label': __('Role') }, html`
                         <option value="">${__('No role')}</option>
-                        ${DEFAULT_ROLES.map(role => html`<option value=${role.id} ?selected=${role.id === 'editor'}>${role.name}</option>`)}
-                    </select>
-                    <button type="submit" class=${SUBMIT}>${__('Add')}</button>
+                        ${DEFAULT_ROLES.map(role => html`<option value=${role.id} ?selected=${role.id === 'editor'}>${role.name}</option>`)}`)}
+                    ${submitButton(__('Add'))}
                 </form>`}
             </section>`}
             ${this.self ? null : card(__('Network access'), html`<div class="flex flex-wrap gap-2">

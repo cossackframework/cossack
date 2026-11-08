@@ -1,12 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
     commandInput, declarationHash, defineResource, evaluateRule, field, formInput, formValue, isPluginPoint, manifestProblems, permissionMatches, providedPoints,
-    requestedGrants, resolveResource, resourceProblems, storageCheck, storageName, storageType, userPrincipal, validateValue, normalizeDeclaration, fieldProblems, recordSchema,
+    requestedGrants, resolveResource, resourceProblems, storageCheck, storageName, storageType, userPrincipal, validateValue, fieldProblems, recordSchema,
     htmlBlocks, htmlBlocksChanged, imageWidths, placeholderStyle, variantWidth, IMAGE_WIDTHS,
 } from '../src/index';
 import { planSchema, type Catalog } from '../src/server/schema';
 import { HOST_STEPS } from '../src/server/host-schema';
-import { renameBlockIds } from '../src/server/block-ids';
 
 const catalog = (tables: Catalog['tables'] = new Map(), ledger: Partial<Catalog['ledger']> = {}): Catalog => ({
     sequence: 7, engineVersion: '0.2.9', tables,
@@ -83,24 +82,6 @@ describe('fields', () => {
         expect(fieldProblems('t', field.string({ multiple: true, unique: true }))).toEqual(['field t: multiple fields cannot be unique.']);
         expect(fieldProblems('t', field.string({ multiple: true, index: true, default: ['a'] }))).toEqual([]);
         expect(fieldProblems('t', field.string({ multiple: true, default: 'a' }))).toEqual(['field t: default must be a list of at most 1000 items.']);
-        expect(normalizeDeclaration({ kind: 'list', items: 'string', index: true, label: 'Tags' } as never)).toEqual({ kind: 'string', multiple: true, index: true, label: 'Tags' });
-        expect(normalizeDeclaration(field.rows({ old: { kind: 'list', items: 'number' } as never }))).toEqual(field.rows({ old: { kind: 'number', multiple: true } }));
-        expect(normalizeDeclaration(tags)).toBe(tags);
-    });
-
-    it('renames stored block ids to _id, rich text embeds included, and leaves renamed trees alone', () => {
-        const old = [{ id: 'a', type: 'core/columns', data: {}, children: [{ id: 'b', type: 'core/paragraph', data: { text: 'Hi' } }] }, { _id: 'c', type: 'core/divider', data: {} }];
-        const doc = { type: 'doc', content: [{ type: 'cmsBlock', attrs: { id: 'e', type: 'core/button', data: { label: 'Go' } } }, { type: 'paragraph', content: [{ type: 'text', text: 'x' }] }] };
-        const renamed = renameBlockIds({ content: old, body: doc, other: { id: 'not-a-block', name: 'x' }, list: [1, 'two'] });
-        expect(renamed.changed).toBe(true);
-        expect(renamed.value).toEqual({
-            content: [{ _id: 'a', type: 'core/columns', data: {}, children: [{ _id: 'b', type: 'core/paragraph', data: { text: 'Hi' } }] }, { _id: 'c', type: 'core/divider', data: {} }],
-            body: { type: 'doc', content: [{ type: 'cmsBlock', attrs: { _id: 'e', type: 'core/button', data: { label: 'Go' } } }, { type: 'paragraph', content: [{ type: 'text', text: 'x' }] }] },
-            other: { id: 'not-a-block', name: 'x' }, list: [1, 'two'],
-        });
-        const again = renameBlockIds(renamed.value);
-        expect(again.changed).toBe(false);
-        expect(again.value).toBe(renamed.value);
     });
 
     it('describes records as JSON Schema', () => {
@@ -229,6 +210,9 @@ describe('plugin manifests', () => {
         // A consumer names another plugin's point; the host checks it against the provider.
         const consumer = { schemaVersion: 1, name: 'loyalty', version: '1.0.0', hooks: [{ point: 'desk.ticket-closed', version: 2 }, { point: 'cms.nope', version: 1 }, { point: 'desk.priority', version: 0 }] };
         expect(manifestProblems(consumer)).toEqual(['hooks: cms.nope is not a CMS extension point.', 'hooks: desk.priority needs a version of 1 or more.']);
+        // Every point the CMS exports can be hooked, the site and user points included.
+        const every = ['cms.site.entry-view', 'cms.site.markdown', 'cms.user.before-register', 'cms.user.registered', 'cms.user.signed-in', 'cms.mail.before-send', 'cms.dashboard.notices'];
+        expect(manifestProblems({ schemaVersion: 1, name: 'loyalty', version: '1.0.0', hooks: every.map(point => ({ point, version: 1 })) })).toEqual([]);
         expect(requestedGrants({ ...consumer, hooks: consumer.hooks.slice(0, 1) } as never)).toEqual(['hook:desk.ticket-closed']);
         expect(isPluginPoint('desk.ticket-closed')).toBe(true);
         expect(isPluginPoint('cms.resource.before-write')).toBe(false);

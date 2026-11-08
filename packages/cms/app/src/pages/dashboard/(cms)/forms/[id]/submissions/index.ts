@@ -141,7 +141,7 @@ export default class SubmissionsPage extends Cossack {
                 <nav aria-label=${__('Filter by status')} class="flex flex-wrap gap-x-3 gap-y-1 text-sm">${tabs.map(([key, label], index) => html`${index ? html`<span class="text-muted-foreground" aria-hidden="true">|</span>` : null}
                     <a href=${this.href({ status: key === 'all' ? '' : key, q: '' })} aria-current=${this.status === key ? 'page' : 'false'}
                         class=${this.status === key ? 'font-semibold text-foreground no-underline' : 'text-primary no-underline hover:underline'}>${label} <span class="text-muted-foreground">(${this.counts[key] ?? 0})</span></a>`)}</nav>
-                <form method="get" class="flex gap-2" role="search">
+                <form method="get" class="flex flex-wrap gap-2" role="search">
                     ${this.status !== 'all' ? html`<input type="hidden" name="status" value=${this.status}>` : null}
                     ${component(Input, { type: 'search', name: 'q', size: 'sm', value: this.search, placeholder: __('Search submissions'), 'aria-label': __('Search submissions') })}
                     ${component(Button, { type: 'submit', size: 'sm', variant: 'outline' }, __('Search'))}

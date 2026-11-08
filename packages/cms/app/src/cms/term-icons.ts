@@ -1,10 +1,7 @@
 /** The icon picker of taxonomy terms and collections: the dashboard's icons in a searchable grid. Client-safe. */
 import { component, type TemplateResult } from '@cossackframework/renderer';
 import { Field, IconPicker } from '@cossackframework/ui';
-import { COLLECTION_ICONS, ICONS } from './icons';
-
-/** Icons offered for terms: the collection icons and a few that suit categories and tags. */
-export const TERM_ICONS: readonly string[] = Object.freeze(['tag', 'folder', 'hashtag', 'bookmark', 'star', 'heart', 'flag', 'pin', 'lightbulb', 'bolt', 'global', 'map', 'crown', 'gift', 'rocket', ...COLLECTION_ICONS].filter((name, index, all) => all.indexOf(name) === index));
+import { ICONS } from './icons';
 
 /**
  * An icon field: the dashboard's whole icon set (the names `icon()` renders) in a searchable

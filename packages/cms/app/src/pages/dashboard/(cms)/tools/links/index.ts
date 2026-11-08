@@ -1,7 +1,7 @@
 import { Cossack, Page, State, type HeadValue } from '@cossackframework/core';
 import { Badge, Card, CardBody, CardHeader } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
-import { ANONYMOUS, isCmsError, PERMISSIONS, recordTitle, type Block, type FieldFilter, type RecordShape, type RichTextDoc, type RichTextNode } from '@cossackframework/cms';
+import { ANONYMOUS, blockLinks, internalLinkPath, isCmsError, markdownLinks, PERMISSIONS, recordTitle, richTextLinks, type Block, type FieldFilter, type RecordShape, type RichTextDoc } from '@cossackframework/cms';
 import { requireAny } from '../../../../../cms/guards';
 import { notice, pageHeader } from '../../../../../cms/ui';
 
@@ -27,6 +27,7 @@ export default class LinksPage extends Cossack {
 
     async init() {
         const cms = this.c.get('cms');
+        const host = new URL(this.c.req.url).host;
         try {
             // Visitors' view of the site: collections they cannot read (private ones) have no public pages.
             const readable = new Set(cms.readable(ANONYMOUS).map(resource => resource.id));
@@ -45,9 +46,9 @@ export default class LinksPage extends Cossack {
                         const links: string[] = [];
                         for (const [name, declaration] of Object.entries(resource.fields)) {
                             const value = record[name];
-                            if (declaration.kind === 'blocks' && Array.isArray(value)) collectBlockLinks(value as Block[], links);
-                            else if (declaration.kind === 'richtext' && value && typeof value === 'object') collectRichTextLinks(value as RichTextDoc, links);
-                            else if (declaration.kind === 'text' && declaration.format === 'markdown' && typeof value === 'string') collectMarkdownLinks(value, links);
+                            if (declaration.kind === 'blocks' && Array.isArray(value)) links.push(...blockLinks(value as Block[]));
+                            else if (declaration.kind === 'richtext' && value && typeof value === 'object') links.push(...richTextLinks(value as RichTextDoc));
+                            else if (declaration.kind === 'text' && declaration.format === 'markdown' && typeof value === 'string') links.push(...markdownLinks(value));
                         }
                         found.push({ record, collection, url, links });
                     }
@@ -59,14 +60,14 @@ export default class LinksPage extends Cossack {
             const byUrl = new Map(found.map(entry => [entry.url, entry]));
             const inbound = new Map<string, number>();
             for (const entry of found) {
-                for (const href of new Set(entry.links.map(link => internalPath(link, this.c.req.url)).filter((path): path is string => !!path))) {
+                for (const href of new Set(entry.links.map(link => internalLinkPath(link, host)).filter((path): path is string => !!path))) {
                     const target = byUrl.get(path(href));
                     if (target && target !== entry) inbound.set(target.url, (inbound.get(target.url) ?? 0) + 1);
                 }
             }
             this.entries = found.map(entry => ({
                 id: entry.record.id, title: recordTitle(entry.record, 'title'), url: entry.url, collection: entry.collection.singular, edit: `/dashboard/content/${entry.collection.name}/${entry.record.id}`,
-                inbound: inbound.get(entry.url) ?? 0, outbound: new Set(entry.links.map(link => internalPath(link, this.c.req.url)).filter(Boolean)).size,
+                inbound: inbound.get(entry.url) ?? 0, outbound: new Set(entry.links.map(link => internalLinkPath(link, host)).filter(Boolean)).size,
                 cornerstone: (entry.record.seo as { cornerstone?: boolean } | null)?.cornerstone === true,
             }));
         } catch (error) {
@@ -77,12 +78,12 @@ export default class LinksPage extends Cossack {
 
     private table(rows: LinkedEntry[], empty: string) {
         if (!rows.length) return html`<p class="text-sm text-muted-foreground">${empty}</p>`;
-        return html`<table class="w-full text-sm">
+        return html`<div class="overflow-x-auto"><table class="w-full text-sm">
             <thead><tr class="text-left text-xs uppercase text-muted-foreground"><th class="py-1 pr-3 font-medium">${__('Entry')}</th><th class="py-1 pr-3 font-medium">${__('Links in')}</th><th class="py-1 font-medium">${__('Links out')}</th></tr></thead>
             <tbody>${rows.map(row => html`<tr class="border-t border-border">
                 <td class="py-1.5 pr-3"><a href=${row.edit} class="text-primary hover:underline">${row.title}</a> <span class="text-xs text-muted-foreground">${row.collection}${row.cornerstone ? html` · ${component(Badge, { variant: 'secondary' }, __('Cornerstone'))}` : ''}</span>
                     <div class="truncate text-xs text-muted-foreground">${row.url}</div></td>
-                <td class="py-1.5 pr-3 tabular-nums">${row.inbound}</td><td class="py-1.5 tabular-nums">${row.outbound}</td></tr>`)}</tbody></table>`;
+                <td class="py-1.5 pr-3 tabular-nums">${row.inbound}</td><td class="py-1.5 tabular-nums">${row.outbound}</td></tr>`)}</tbody></table></div>`;
     }
 
     render() {
@@ -107,41 +108,8 @@ export default class LinksPage extends Cossack {
     }
 }
 
-/** A link's path on this site, or null for outbound and non-page links. */
-function internalPath(href: string, requestUrl: string): string | null {
-    if (href.startsWith('/') && !href.startsWith('//')) return href;
-    try {
-        const url = new URL(href);
-        return url.host === new URL(requestUrl).host ? url.pathname : null;
-    } catch { return null; }
-}
-
+/** A link without its query and fragment, and without a trailing slash, as entry URLs are compared. */
 function path(href: string): string {
     const clean = href.split(/[?#]/)[0]!;
     return clean.length > 1 ? clean.replace(/\/+$/, '') : clean;
-}
-
-function collectBlockLinks(blocks: readonly Block[], into: string[]): void {
-    for (const block of blocks) {
-        for (const [name, value] of Object.entries(block.data)) {
-            if (typeof value === 'string' && ['url', 'link', 'sourceUrl'].includes(name)) into.push(value);
-            else if (typeof value === 'string' && value.includes('](')) collectMarkdownLinks(value, into);
-            else if (value && typeof value === 'object' && (value as RichTextDoc).type === 'doc') collectRichTextLinks(value as RichTextDoc, into);
-        }
-        if (block.children) collectBlockLinks(block.children, into);
-    }
-}
-
-function collectRichTextLinks(doc: RichTextDoc, into: string[]): void {
-    const visit = (nodes: readonly RichTextNode[]) => {
-        for (const node of nodes) {
-            for (const mark of node.marks ?? []) if (mark.type === 'link' && typeof mark.attrs?.href === 'string') into.push(mark.attrs.href);
-            if (node.content) visit(node.content);
-        }
-    };
-    visit(doc.content ?? []);
-}
-
-function collectMarkdownLinks(text: string, into: string[]): void {
-    for (const match of text.matchAll(/\]\(([^)\s]+)\)/g)) into.push(match[1]!);
 }

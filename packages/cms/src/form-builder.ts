@@ -12,6 +12,7 @@ import type { CollectionDefinition } from './collections';
 import type { RecordShape } from './records';
 import type { ResourceDeclaration } from './resource';
 import { PERMISSIONS } from './permissions';
+import { fileExtension, fileType, formatBytes } from './media';
 
 // --- Input blocks -----------------------------------------------------------------------
 
@@ -34,6 +35,16 @@ const MULTIPLE_SETTINGS: { readonly [name: string]: FieldDeclaration } = {
     maxItems: field.integer({ min: 1, max: FORM_ITEM_LIMIT, label: 'Most values' }),
     addLabel: field.string({ max: 80, default: 'Add another', label: 'Add button' }),
 };
+
+/** The largest file a file input takes, in MB, whatever its settings. */
+export const FORM_FILE_MAX_MB = 10;
+/** Files one file input takes at most, whatever its settings. */
+export const FORM_FILE_LIMIT = 10;
+/** The files of one submission add up to at most this many MB: a post is read whole. */
+export const FORM_UPLOAD_LIMIT_MB = 25;
+const MB = 1024 * 1024;
+/** One allowed type of a file input: an extension such as `.pdf`, a type such as `application/pdf`, or a family such as `image/*`. */
+const ACCEPT_TOKEN = '(?:\\.[A-Za-z0-9]{1,16}|[a-z]+/(?:\\*|[a-z0-9][a-z0-9.+\\-]*))';
 
 /** The fields every input block has, then its own. Plugins build their input blocks with it. */
 export function inputFields(own: { readonly [name: string]: FieldDeclaration } = {}): { [name: string]: FieldDeclaration } {
@@ -103,6 +114,12 @@ export const FORM_BLOCKS: readonly BlockDeclaration[] = Object.freeze([
     } },
     { name: 'form/hidden', keywords: ['utm', 'tracking', 'source', 'secret'], label: 'Hidden', icon: 'eye-closed', category: 'form', description: 'A value visitors do not see, from the default or the page address.', input: { kind: 'string' }, fields: inputFields({
         defaultValue: field.string({ max: 500, label: 'Value' }),
+    }) },
+    { name: 'form/file', keywords: ['upload', 'attachment', 'document', 'resume', 'cv', 'photo'], label: 'File upload', icon: 'upload-minimalistic', category: 'form', description: 'Files people attach, kept privately with the submission.', input: { kind: 'file' }, fields: inputFields({
+        accept: field.string({ required: true, max: 300, default: '.pdf, .jpg, .jpeg, .png', pattern: `\\s*${ACCEPT_TOKEN}(?:\\s*,\\s*${ACCEPT_TOKEN})*\\s*`, label: 'Allowed types', description: 'Extensions or types, separated by commas, such as .pdf, .docx, image/*. Each file\'s content is checked against its type.' }),
+        maxSize: field.integer({ default: 5, min: 1, max: FORM_FILE_MAX_MB, label: 'Largest file (MB)' }),
+        multipleFiles: field.boolean({ default: false, label: 'Several files' }),
+        maxFiles: field.integer({ default: 3, min: 1, max: FORM_FILE_LIMIT, label: 'Most files', description: 'When several files are allowed.' }),
     }) },
     { name: 'form/repeater', keywords: ['rows', 'repeat', 'list', 'passengers', 'attendees', 'items', 'group'], label: 'Repeater', icon: 'layers-minimalistic', category: 'form', description: 'A set of fields people fill in once per row: passengers, attendees, items.', input: { kind: 'rows' }, children: {}, fields: inputFields({
         rowLabel: field.string({ max: 60, label: 'Row name', description: 'What one row is, such as Passenger: rows are numbered with it.' }),
@@ -205,11 +222,49 @@ export function flatFormInputs(inputs: readonly FormField[]): FormField[] {
 
 // --- Conditions ---------------------------------------------------------------------------
 
-/** A value of an input: text, a number, a yes or no, the chosen values or a multiple input's items, or a repeater's rows. */
-export type FormValue = string | number | boolean | readonly string[] | readonly number[] | readonly FormRow[];
+/** A value of an input: text, a number, a yes or no, the chosen values or a multiple input's items, a repeater's rows, or a file input's files. */
+export type FormValue = string | number | boolean | readonly string[] | readonly number[] | readonly FormRow[] | readonly FormFile[];
 export type FormValues = { readonly [name: string]: FormValue };
 /** One row of a repeater: its inputs' values under `_id`, which names the row in errors and in the page. */
 export type FormRow = { readonly _id: string; readonly [name: string]: FormValue };
+
+/**
+ * A file of a file input: as posted (a `File`, until the host stores it) or as kept with the
+ * submission, with its `id`. Hooks, notifications, webhooks and exports see this metadata,
+ * never the bytes; once stored, `type` is the type its content was checked against.
+ */
+export interface FormFile {
+    readonly id?: string;
+    readonly name: string;
+    readonly size: number;
+    readonly type: string;
+}
+
+const isFileLike = (entry: unknown): entry is FormFile => !!entry && typeof entry === 'object' && !Array.isArray(entry)
+    && typeof (entry as FormFile).name === 'string' && typeof (entry as FormFile).size === 'number' && Number.isSafeInteger((entry as FormFile).size) && typeof (entry as FormFile).type === 'string';
+
+/** The files of a file input's value as plain `{ id?, name, size, type }`, posted `File`s included; anything else is left out. */
+export function formFiles(value: unknown): FormFile[] {
+    if (!Array.isArray(value)) return [];
+    return value.filter(isFileLike).map(file => Object.freeze({ ...(typeof file.id === 'string' ? { id: file.id } : {}), name: file.name, size: file.size, type: file.type }));
+}
+
+/** A file input's allowed types, lowercase: extensions with their dot, types and `family/*`. */
+export function acceptList(value: unknown): string[] {
+    return typeof value === 'string' ? value.split(',').map(token => token.trim().toLowerCase()).filter(Boolean) : [];
+}
+
+/**
+ * Whether a file is one of the allowed types: by its extension, or by its type, which follows
+ * the extension when it is a known one (`fileType`), so a renamed file cannot pass as another
+ * family. An empty list allows any type. The host also checks the content against the type.
+ */
+export function acceptsFile(accept: readonly string[], name: string, declared: string): boolean {
+    if (!accept.length) return true;
+    const extension = fileExtension(name);
+    const type = fileType(name, declared);
+    return accept.some(token => token.startsWith('.') ? token.slice(1) === extension : token.endsWith('/*') ? type.startsWith(token.slice(0, -1)) : type === token);
+}
 
 /** Whether a value is a repeater's rows. An empty list is blank either way. */
 export function isRows(value: unknown): value is readonly FormRow[] {
@@ -225,7 +280,8 @@ const blank = (value: FormValue | null | undefined): boolean =>
     value === undefined || value === null || value === '' || value === false || (Array.isArray(value) && value.length === 0);
 /** Text to compare: a repeater counts as its number of rows. */
 const asText = (value: FormValue): string => typeof value === 'string' ? value : typeof value === 'number' ? String(value) : typeof value === 'boolean' ? String(value) : isRows(value) ? String(value.length) : (value as readonly (string | number)[]).join(',');
-const same = (a: string, b: string) => a.trim().toLocaleLowerCase() === b.trim().toLocaleLowerCase();
+/** Case-blind equality; a multiple Number input holds numbers, compared as their text. */
+const same = (a: string | number, b: string) => String(a).trim().toLocaleLowerCase() === b.trim().toLocaleLowerCase();
 
 function compare(value: FormValue, expected: string): number | null {
     if (Array.isArray(value) || typeof value === 'boolean') return null;
@@ -343,8 +399,8 @@ export interface SubmissionCheck {
  * input, one of the others, and a repeater's rows from `repeater[row id][input]` names, in
  * the order the rows appear, at most `FORM_ROW_LIMIT` of them.
  */
-export function formDataValues(form: Pick<FormData, 'get' | 'getAll' | 'keys'>, inputs: readonly FormField[]): { [name: string]: PostedValue } {
-    const values: { [name: string]: PostedValue } = {};
+export function formDataValues(form: Pick<FormData, 'get' | 'getAll' | 'keys'>, inputs: readonly FormField[]): { [name: string]: PostedValue | File[] } {
+    const values: { [name: string]: PostedValue | File[] } = {};
     const read = (input: FormField, htmlName: string): string | string[] | undefined => {
         if (input.kind === 'choices' || input.multiple) return form.getAll(htmlName).filter((entry): entry is string => typeof entry === 'string');
         const value = form.get(htmlName);
@@ -370,6 +426,8 @@ export function formDataValues(form: Pick<FormData, 'get' | 'getAll' | 'keys'>, 
             });
             continue;
         }
+        // A file input's files, as the multipart post carries them.
+        if (input.kind === 'file') { values[input.name] = form.getAll(input.name).filter((entry): entry is File => typeof entry !== 'string'); continue; }
         const value = read(input, input.name);
         if (value !== undefined) values[input.name] = value;
     }
@@ -466,6 +524,28 @@ function valueProblem(input: FormField, value: FormValue): string | undefined {
     }
 }
 
+/** The posted files of a file input, at most one more than it takes; a control left empty posts a nameless empty file, which is none. */
+function postedFiles(raw: unknown): FormFile[] {
+    const list = Array.isArray(raw) ? raw : raw === undefined || raw === null || raw === '' ? [] : [raw];
+    return list.filter((entry): entry is FormFile => isFileLike(entry) && !(entry.name === '' && entry.size === 0)).slice(0, FORM_FILE_LIMIT + 1);
+}
+
+/** Why a file input's files are not right for it, as a sentence for the visitor: their number, size and type. */
+function filesProblem(input: FormField, files: readonly FormFile[]): string | undefined {
+    const most = input.data.multipleFiles === true ? Math.min(numberData(input.data.maxFiles) ?? FORM_FILE_LIMIT, FORM_FILE_LIMIT) : 1;
+    if (files.length > most) return most === 1 ? 'Choose one file.' : `Choose at most ${most} files.`;
+    const largest = Math.min(numberData(input.data.maxSize) ?? FORM_FILE_MAX_MB, FORM_FILE_MAX_MB);
+    const accept = acceptList(input.data.accept);
+    for (const file of files) {
+        const name = file.name.slice(0, 80) || 'The file';
+        if (file.size < 1) return `${name} is empty.`;
+        if (file.size > largest * MB) return `${name} is larger than ${largest} MB.`;
+        if (!acceptsFile(accept, file.name, file.type)) return `${name} is not an allowed type. Choose ${accept.join(', ')}.`;
+    }
+    if (files.reduce((sum, file) => sum + file.size, 0) > FORM_UPLOAD_LIMIT_MB * MB) return `The files add up to more than ${FORM_UPLOAD_LIMIT_MB} MB.`;
+    return undefined;
+}
+
 /** The posted rows of a repeater as objects, in order, at most `FORM_ROW_LIMIT`; anything else is no rows. */
 function postedRows(raw: unknown): { [name: string]: unknown }[] {
     return (Array.isArray(raw) ? raw : []).filter((row): row is { [name: string]: unknown } => !!row && typeof row === 'object' && !Array.isArray(row)).slice(0, FORM_ROW_LIMIT);
@@ -503,6 +583,8 @@ function checkLevel(blocks: readonly Block[], inputs: readonly FormField[], type
             else if (postedRows(entry).length) read[input.name] = postedRows(entry).map(row => ({ _id: '' }));
             continue;
         }
+        // Conditions see a file input's number of files.
+        if (input.kind === 'file') { const files = postedFiles(raw[input.name]); if (files.length) read[input.name] = files; continue; }
         if (input.multiple) {
             const items = readItems(input, raw[input.name]).flatMap(item => item.value === null ? [] : [item.value]);
             if (items.length) read[input.name] = items as string[] | number[];
@@ -545,6 +627,14 @@ function checkLevel(blocks: readonly Block[], inputs: readonly FormField[], type
             values[input.name] = rows;
             continue;
         }
+        if (input.kind === 'file') {
+            // The files stay as posted: the host stores them once the whole submission is valid.
+            const files = postedFiles(raw[input.name]);
+            const problem = files.length ? filesProblem(input, files) : input.required ? 'Choose a file.' : undefined;
+            if (problem) errors[key] = problem;
+            else if (files.length) values[input.name] = files;
+            continue;
+        }
         if (input.multiple) {
             // Each item is checked as the kind; a blank item, such as the empty control a form starts with, is dropped. Errors name the item's position as posted.
             const items = readItems(input, raw[input.name]);
@@ -582,11 +672,13 @@ function checkLevel(blocks: readonly Block[], inputs: readonly FormField[], type
 
 /**
  * How a value reads in emails, lists and exports: choice labels, Yes or No, values joined by
- * commas, and a repeater as its number of rows ("Passenger × 3"); `displayRows` has the rows.
+ * commas, a repeater as its number of rows ("Passenger × 3"; `displayRows` has the rows), and
+ * files by name and size, never their content.
  */
 export function displayValue(input: Pick<FormField, 'kind' | 'options'> & { readonly data?: FormField['data'] }, value: FormValue | null | undefined): string {
     if (value === undefined || value === null) return '';
     if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+    if (input.kind === 'file') return formFiles(value).map(file => `${file.name} (${formatBytes(file.size)})`).join(', ');
     if (input.kind === 'rows') {
         const count = Array.isArray(value) ? value.length : 0;
         const label = typeof input.data?.rowLabel === 'string' && input.data.rowLabel.trim() ? input.data.rowLabel.trim() : '';
@@ -738,6 +830,11 @@ function singleInputField(input: FormField): FieldDeclaration {
             return field.rows(fields, { nullable: true, max: FORM_ROW_LIMIT, label });
         }
         case 'text': return field.text({ nullable: true, max: 50_000, search: true, label });
+        // References to the stored files, never their bytes; see CmsForms.
+        case 'file': return field.rows({
+            id: field.string({ required: true, max: 80 }), name: field.string({ required: true, max: 200 }),
+            size: field.integer({ required: true, min: 1 }), type: field.string({ required: true, max: 255 }),
+        }, { nullable: true, max: FORM_FILE_LIMIT, label });
         case 'number': return field.number({ nullable: true, label });
         case 'boolean': return field.boolean({ nullable: true, label });
         case 'choices': return field.list('string', { label });
@@ -793,12 +890,12 @@ export interface SubmissionShape {
     readonly updatedAt: number;
 }
 
-/** A submission from its record. Values of removed inputs stay out. */
+/** A submission from its record. Values of removed inputs stay out; files read as `FormFile`s. */
 export function submissionOf(formId: string, record: RecordShape, inputs: readonly FormField[]): SubmissionShape {
     const values: { [name: string]: FormValue } = {};
     for (const input of inputs) {
         const value = record[input.name];
-        if (value !== undefined && value !== null) values[input.name] = value as FormValue;
+        if (value !== undefined && value !== null) values[input.name] = input.kind === 'file' ? Object.freeze(formFiles(value)) : value as FormValue;
     }
     return Object.freeze({
         id: record.id, form: formId,

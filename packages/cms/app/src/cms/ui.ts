@@ -16,7 +16,8 @@ export function iconButton(id: string, name: string, label: string, run: (event:
 
 // Tab, page and list helpers live with the shared dashboard shell, which the users screen uses without the CMS.
 export { countBadge, rememberTab, tabFromQuery } from '../dashboard/tabs';
-export { clampPerPage, linkButton, notice, pageHeader, saveScreenPreferences, screenCookie, screenHelp, screenOptions, screenPreferences, type NoticeTone, type ScreenPreferences } from '../dashboard/page';
+export { clampPerPage, saveScreenPreferences, screenCookie, screenHelp, screenOptions, screenPreferences, type ScreenPreferences } from '../dashboard/page';
+export { linkButton, notice, pageHeader, type NoticeTone } from '@cossackframework/ui/blocks';
 
 /** Labels of entry statuses. */
 export const STATUS_LABELS: Record<string, string> = { draft: 'Draft', pending: 'Pending review', scheduled: 'Scheduled', published: 'Published', trash: 'Trash' };

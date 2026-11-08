@@ -26,6 +26,7 @@ src/plugins/my-theme/
 │   ├── search.ts        search results (optional)
 │   ├── not-found.ts     404 (optional)
 │   ├── password.ts      the password form of a protected entry (optional)
+│   ├── members.ts       the sign-in prompt of a members-only entry (optional)
 │   ├── head.ts          stylesheets, fonts, meta (optional)
 │   ├── entry-posts.ts   a narrower template, by collection
 │   └── term-category.ts a narrower template, by taxonomy
@@ -95,6 +96,7 @@ name.
 | `home.ts`, `search.ts` | `(view: ArchiveView, helpers)` | The front page's latest posts; search results. |
 | `not-found.ts` | `(helpers) => TemplateResult` | 404. |
 | `password.ts` | `(view: LockedView, helpers)` | The form asking for a protected entry's password; the host draws a plain one otherwise. |
+| `members.ts` | `(view: MembersView, helpers)` | What a members-only entry shows visitors who are not signed in; the host draws a plain sign-in prompt otherwise. |
 | `head.ts` | `(site: SiteView, helpers) => HeadValue` | Tags for the document head. The page's own title and meta win. |
 | `entry-<collection>.ts`, `archive-<collection>.ts`, `term.ts`, `term-<taxonomy>.ts` | as above | Narrower templates. Any other `entry-*` name is a template editors can choose per entry. |
 
@@ -145,9 +147,10 @@ that export over the files, slot by slot.
 | View | What it carries |
 | --- | --- |
 | `SiteView` | `title`, `tagline`, `blog` (the posts page URL), `menus` by location (`MenuItemView` items: `label`, `url`, null for a heading, `kind`, `newTab`, `description`, `className`, `attributes`, `fields`, the typed values of the field groups attached to menu items, `panel`, a mega menu's pattern rendered as blocks, and `children`), `locale`, `languages` (the page in each language), `searchUrl`, `homeUrl`, `areas` (rendered blocks by widget area), `template`, the entry's template name so a layout can leave out its frame, as the default theme does for `entry-blank`, `url`, the page's own absolute URL, and `breadcrumbs` (`BreadcrumbView` steps: `label`, `url`, null for the page itself), the way to the page. |
-| `EntryView` | `id`, `title`, `url`, `collection`, `kind` (the singular label), `date`, `authors` (each `name`, `url` of their author page or null, `avatar`; the main author first; empty outside article collections), `excerpt`, `content` (`RenderedBlock[]`), `image` (`MediaView`), `terms` by taxonomy, `fields` (every field by name as a typed `FieldView`: a scalar, a `MediaView`, an `EntryReference`, `TermLink[]`, `RenderedBlock[]` for blocks, rich text and Markdown, or, for a multiple field, the list of its kind's views), `details` (scalar fields as labelled text), `template`, `locale`, `comments` (`CommentsView`, or null) and `locked`. In lists, `content` is empty. A locked entry withholds its excerpt, content and fields. |
+| `EntryView` | `id`, `title`, `url`, `collection`, `kind` (the singular label), `date`, `authors` (each `name`, `url` of their author page or null, `avatar`; the main author first; empty outside article collections), `excerpt`, `content` (`RenderedBlock[]`), `image` (`MediaView`), `terms` by taxonomy, `fields` (every field by name as a typed `FieldView`: a scalar, a `MediaView`, an `EntryReference`, `TermLink[]`, `RenderedBlock[]` for blocks, rich text and Markdown, or, for a multiple field, the list of its kind's views), `details` (scalar fields as labelled text), `template`, `locale`, `comments` (`CommentsView`, or null) and `locked`: `'password'` for a protected entry the visitor has not unlocked, `'members'` for a members-only entry and a reader who is not signed in or has none of its member roles, else null. In lists, `content` is empty. A locked entry withholds its excerpt, content and fields. |
 | `ArchiveView` | `kind` (`home`, `archive`, `term`, `search`), `collection`, `taxonomy`, `title`, `description`, `entries`, `paging` (`page`, `pages`, `base`) and `query`. |
 | `LockedView` | `entry`, `action` (where the password form posts) and `error` after a wrong password. |
+| `MembersView` | `entry`, `signedIn` (true for a signed-in reader without one of the entry's member roles: signing in again does not help), `signIn` (the sign-in page, returning to the entry) and `register` (the registration page, or null when the site takes none or the reader is signed in). |
 | `MediaView` | `url`, `alt`, `width`, `height`, `contentType`, `caption`, `srcset` and `wideSrcset` (16:9 variants around the focal point, in the widths of Settings → Files), `sizes` (Settings → Files), `placeholder` (a tiny `data:` URL, or null when Settings → Files turns placeholders off or the image has transparency; `placeholderStyle()` blurs it behind the image, and the site's head script drops it once the image has loaded) and `priority` (the entry's first image: load it with `loading="eager" fetchpriority="high"`). |
 | `RenderedBlock` | `id`, `type`, `data`, `html` (Markdown fields rendered), `media` by file ID, `content` (rich text fields as `BodyPart[]`), `children`, `layout`, `style`, and `field` on a block that stands for one of the entry's rich text or Markdown fields. |
 
@@ -279,6 +282,22 @@ The site layout merges this under the page's own head, so an entry's title, desc
 and social tags win. The default theme uses Tailwind classes from the application's own
 stylesheet instead, plus a `<style>` for its typography options, so a child theme with
 its own head keeps them.
+
+## Markdown pages
+
+Markdown pages under `src/pages/(site)/`, or a plugin's `pages/(site)/`, render inside the
+theme's `layout` template, with the page's own `# heading` as its title. The framework
+wraps their content in `.mdx-content`. The CMS stylesheet gives that class the content width
+and the look of rich text, in the `components` layer. A theme's own stylesheet, its
+typography `<style>`, and utility classes in the page's HTML all win over it:
+
+```css
+/* assets/theme.css */
+.mdx-content h2 { font-family: var(--theme-display); }
+```
+
+The site layout passes `site.breadcrumbs` as Home alone, since the CMS knows nothing about
+such a page. It passes the language switcher's links to each language's home page.
 
 ## Loaders
 

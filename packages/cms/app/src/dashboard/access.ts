@@ -1,5 +1,5 @@
 import type { Context } from 'hono';
-import { ANONYMOUS, evaluateRule, hasPermission, isNetworkAdmin, PERMISSIONS, type Principal } from '@cossackframework/cms';
+import { ANONYMOUS, dashboardNotices as noticesPoint, dashboardNoticesOf, dashboardTaskbar, evaluateRule, hasPermission, isNetworkAdmin, PERMISSIONS, taskbarItemsOf, type DashboardNotice, type Principal, type WriteActor } from '@cossackframework/cms';
 import { MAIN_SITE, type CmsHost } from '@cossackframework/cms/server';
 import { icon } from '../cms/icons';
 import { currentCms, networkFor, siteUrl, type CmsBindings } from '../cms/index';
@@ -41,8 +41,10 @@ export async function navigation(c: Context): Promise<DashboardModule[]> {
         content.splice(Math.min(1, content.length), 0, { id: 'media', label: 'Files', href: '/dashboard/media', icon: icon('folder-with-files'), authorization: 'authenticated',
             children: [{ label: 'Library', href: '/dashboard/media' }, { label: 'New', href: '/dashboard/media/new' }, { label: 'Summary', href: '/dashboard/media/summary' }] });
     }
+    // A plugin's records show once it is active; until then its screens answer that it is not.
+    const inactivePlugins = new Set((await cms.status().catch(() => ({ plugins: [] }))).plugins.filter(plugin => !plugin.active).map(plugin => plugin.name));
     for (const resource of cms.readable(principal)) {
-        if (resource.owner === 'cms') continue;
+        if (resource.owner === 'cms' || inactivePlugins.has(resource.owner)) continue;
         const create = evaluateRule(resource.access.create, principal) !== 'deny';
         const base = `/dashboard/content/${resource.owner}.${resource.name}`;
         content.push({ id: `resource-${resource.owner}-${resource.name}`, label: resource.label ?? resource.id, href: base, icon: icon('widget-4'), authorization: 'authenticated',
@@ -63,9 +65,9 @@ export async function navigation(c: Context): Promise<DashboardModule[]> {
                 children: [{ label: 'All forms', href: '/dashboard/forms' }, ...(create ? [{ label: 'New', href: '/dashboard/content/forms/new' }] : [])] });
         }
     }
-    // Host slot: active plugins add navigation links.
+    // Host slot: active plugins add navigation links, with an icon of the dashboard's set when they name one.
     for (const link of await cms.slotLinks('dashboard.nav', principal).catch(() => [])) {
-        content.push({ id: `plugin-${link.plugin}-${link.href}`, label: link.label, href: link.href, icon: icon('plug-circle'), authorization: 'authenticated' });
+        content.push({ id: `plugin-${link.plugin}-${link.href}`, label: link.label, href: link.href, icon: icon(link.icon, 'plug-circle'), authorization: 'authenticated' });
     }
 
     const admin: DashboardModule[] = [];
@@ -81,7 +83,10 @@ export async function navigation(c: Context): Promise<DashboardModule[]> {
     // Roles belong to role managers; the other administration modules to user managers.
     const registry = dashboardModules.filter(module => module.authorization === 'authenticated'
         || (module.authorization === 'admin' ? can(module.id === 'roles' ? PERMISSIONS.manageRoles : PERMISSIONS.manageUsers) : can(module.authorization.permission)));
-    admin.push(...registry.filter(module => module.placement !== 'account'));
+    // Users gains Registrations while the site approves new accounts, or while one still waits.
+    const approving = can(PERMISSIONS.manageUsers) && (await cms.settings.get('general.approveRegistrations').catch(() => false) || await cms.users.registrationCount().catch(() => 0) > 0);
+    admin.push(...registry.filter(module => module.placement !== 'account')
+        .map(module => module.id === 'users' && approving ? { ...module, children: [...(module.children ?? []), { label: 'Registrations', href: '/dashboard/registrations' }] } : module));
     const tools: DashboardModuleLink[] = [
         ...(can(PERMISSIONS.manageRedirects) ? [{ label: 'Redirects', href: '/dashboard/tools/redirects' }] : []),
         ...(can(PERMISSIONS.manageRedirects) || can(PERMISSIONS.manageCollections) ? [{ label: 'Links', href: '/dashboard/tools/links' }] : []),
@@ -173,7 +178,24 @@ export async function dashboardStatus(c: Context): Promise<DashboardStatus[]> {
         if (unconfirmed) items.push({ id: 'unconfirmed', label: 'Writes waiting for confirmation', href: '/dashboard', count: unconfirmed, tone: 'warning' });
     }
     for (const link of await cms.slotLinks('dashboard.taskbar', principal).catch(() => [])) items.push({ id: `plugin-${link.plugin}-${link.href}`, label: link.label, href: link.href });
-    return items;
+    // Plugins add items with counts, or change the built-in ones, through `cms.dashboard.taskbar`; a failing handler leaves the list as it was.
+    const filtered = await cms.hooks.applyFilters(dashboardTaskbar, items, { actor: actorOf(principal) }).catch(() => items);
+    return taskbarItemsOf(filtered);
+}
+
+/** Notices above every dashboard screen: what active plugins return from `cms.dashboard.notices`. */
+export async function dashboardNotices(c: Context): Promise<DashboardNotice[]> {
+    const cms = c.get('cms') as CmsHost | undefined;
+    const principal: Principal = c.get('principal') ?? ANONYMOUS;
+    if (!cms || principal.kind !== 'user') return [];
+    // User managers hear of accounts waiting for their approval on every screen, until none waits.
+    const waiting = hasPermission(principal, PERMISSIONS.manageUsers) ? await cms.users.registrationCount().catch(() => 0) : 0;
+    const core: DashboardNotice[] = waiting ? [{ id: 'cms-registrations', tone: 'info', message: waiting === 1 ? __('1 new account waits for your approval.') : `${waiting} ${__('new accounts wait for your approval.')}`, href: '/dashboard/registrations' }] : [];
+    return dashboardNoticesOf(await cms.hooks.applyFilters(noticesPoint, core, { actor: actorOf(principal) }).catch(() => core));
+}
+
+function actorOf(principal: Principal): WriteActor {
+    return principal.kind === 'user' ? { kind: 'user', id: principal.id } : principal.kind === 'system' ? { kind: 'system', id: principal.reason } : { kind: 'anonymous', id: 'anonymous' };
 }
 
 export { siteName } from '../brand';

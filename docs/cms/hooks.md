@@ -93,6 +93,13 @@ rows, each `{ _id, ...values }`; its errors are keyed `repeater.<row id>.<input>
 input with `multiple` on holds a list of its kind's values (strings, or numbers for a
 Number input); its item errors are keyed `<input>.<position>`.
 
+A file input (`form/file`, kind `file`) holds a list of `FormFile`s: `{ id, name, size, type }`,
+metadata only. Hooks see the posted files' `name`, `size` and `type` (no `id` yet, no bytes)
+and cannot replace them; the stored submission, `cms.form.submitted`, emails (`{all_fields}`
+lists names and sizes), CSV exports and `form.submitted` webhooks carry the same metadata with
+each file's `id`. The bytes are private: only `GET /api/cms/forms/<form>/submissions/<id>/files/<file>`
+serves them, to those with `cms:submissions`.
+
 ### Terms, comments and menus
 
 | Point | Kind | Deadline | Value and input |
@@ -105,7 +112,7 @@ Number input); its item errors are keyed `<input>.<position>`.
 
 | Point | Kind | Deadline | Value and input |
 | --- | --- | --- | --- |
-| `cms.dashboard.entry-actions` (`entryActions`), version 2 | filter | 1 s | Value: the quick actions under one entry in a list, the built-in ones included. Add, remove or reorder them. Input: `resource`, `actor`, `record`. |
+| `cms.dashboard.entry-actions` (`entryActions`) | filter | 1 s | Value: the quick actions under one entry in a list, the built-in ones included. Add, remove or reorder them. Input: `resource`, `actor`, `record`. |
 | `cms.dashboard.entry-columns` (`entryColumns`) | filter | 2 s | Value: `EntryColumn[]` (`id`, `label`, `values` by record ID) after the built-in columns. Input: `resource`, `actor`, `records`. |
 | `cms.dashboard.bulk-actions` (`bulkActions`) | filter | 1 s | Value: the `EntryAction[]` offered for the selected entries. Input: `resource`, `actor`. |
 
@@ -146,7 +153,7 @@ it out by `id`. To move one, change its place in the list:
 import { entryActions } from '@cossackframework/cms';
 
 export function register(context: PluginContext) {
-  context.hooks.addFilter(entryActions, (actions, { resource, record }) => {
+  context.hooks.addFilter(entryActions, (actions, { input: { resource, record } }) => {
     if (resource !== 'cms/posts') return actions;
     const kept = actions.filter(action => action.id !== 'duplicate');
     const view = kept.find(action => action.id === 'view');
@@ -159,13 +166,112 @@ export function register(context: PluginContext) {
 }
 ```
 
-The manifest lists the point with its version: `"hooks": [{ "point":
-"cms.dashboard.entry-actions", "version": 2 }]`. Version 1 started from an empty list, so
-handlers written for it are refused.
 
 When a handler fails, the list keeps the built-in actions. A command action runs only if
 the plugins return it again when the list runs it. A client cannot name a command of its
 own.
+
+### Dashboard notices and taskbar
+
+| Point | Kind | Deadline | Value and input |
+| --- | --- | --- | --- |
+| `cms.dashboard.notices` (`dashboardNotices`) | filter | 1 s | Value: the `DashboardNotice[]` shown above every dashboard screen, empty to start. Input: `actor`. |
+| `cms.dashboard.taskbar` (`dashboardTaskbar`) | filter | 1 s | Value: the `TaskbarItem[]` along the dashboard's bottom bar, the built-in ones included (comments to moderate, pending review, plugins waiting for a grant). Input: `actor`. |
+
+A `DashboardNotice` is `{ id, tone, message, href? }`: `tone` is `info`, `success`, `warning`
+or `error`, `message` is plain text up to 300 characters and `href` a same-site path the
+notice links to. A `TaskbarItem` is `{ id, label, href, count?, tone? }`. The dashboard keeps
+ten notices and twenty items and drops any that are malformed. Both run on every dashboard
+navigation, so keep handlers fast and cache what they count:
+
+```ts
+import { dashboardNotices, dashboardTaskbar } from '@cossackframework/cms';
+
+export function register(context: PluginContext) {
+  context.hooks.addFilter(dashboardNotices, async notices => context.settings.get('apiKey')
+    ? notices
+    : [...notices, { id: 'shop.key', tone: 'warning' as const, message: 'Add your API key to start taking orders.', href: '/dashboard/settings#plugin:shop' }]);
+  context.hooks.addFilter(dashboardTaskbar, async (items, { input: { actor } }) => {
+    const waiting = await context.cache.remember('waiting', 60_000, () => countWaiting(actor));
+    return waiting ? [...items, { id: 'shop.orders', label: 'Orders to ship', href: '/dashboard/shop', count: waiting, tone: 'warning' }] : items;
+  });
+}
+```
+
+Unlike `ui.ts` slots, these points reach an [isolated](/docs/cms/plugins.md#where-server-code-runs)
+plugin too, since it registers them in `server.ts`.
+
+### The site
+
+| Point | Kind | Deadline | Value and input |
+| --- | --- | --- | --- |
+| `cms.site.entry-view` (`siteEntryView`) | filter | 1 s | Value: `{ title, excerpt, before, after }` of an entry's full view on the site, after it is rendered and before the theme draws it, as WordPress's `the_title` and `the_content`. `before` and `after` are blocks in the stored shape (`{ _id, type, data }`), rendered around the content as the entry's own are. Input: `collection`, `id`, `url`, the `record` without its password, `signedIn`. The host keeps at most ten valid blocks each side of known types and refuses `core/html` anywhere in them, so no filter, an isolated plugin's included, puts markup or script of its own on the site. Not run for a locked entry. |
+| `cms.site.markdown` (`siteMarkdown`) | filter | 1 s | Value: an entry as machines read it (`Accept: text/markdown` or `?format=md`), the Markdown document with its front matter. Input: `collection`, `id`, the absolute `url`, the `record` without its password. Return it with your text added, such as a licence or a source note; a failing handler leaves it as it was. |
+
+A theme or an in-app plugin changes what visitors see with templates, blocks and the `ui.ts`
+`head` export; see [Plugins](/docs/cms/plugins.md#uits).
+
+### Mail
+
+| Point | Kind | Deadline | Value and input |
+| --- | --- | --- | --- |
+| `cms.mail.before-send` (`mailBeforeSend`) | filter | 2 s | Value: the `MailMessage` about to go out (`to`, `from`, `subject`, `text`, `html`, `replyTo?`), or null once a filter cancelled it. Input: `kind`, `plugin` (the sender of `kind: 'plugin'` mail, else null), `site`. Return it changed, or null to not send it. |
+
+Every email the site sends goes through `host.mail`: the sign-up confirmation (`verification`),
+password resets (`reset`), sign-in links (`magic-link`), invitations (`invitation`), comment
+notifications (`comment`), note emails (`note`), automations (`automation`), form notifications
+(`form`) and plugin mail through `context.mail` (`plugin`); mail application code sends without
+a `kind` is `other`. The filter runs after the layout, so `html` is the finished document
+(Settings → Email: site title and logo, the message, a footer) and a filter may replace it.
+
+- `from` is always the site's sender. For `verification`, `reset`, `magic-link`, `invitation`
+  and `other`, `to` and `replyTo` stay what the CMS chose whatever the filter returns; for the
+  other kinds they may change to one valid address each.
+- The subject becomes one line of at most 300 characters. A `text` over 100,000 characters or
+  an `html` over 300,000 (`MAIL_LIMITS`), or one that is empty, keeps the original.
+- A filter that throws or runs past its deadline does not stop the mail: it goes out as the
+  layout made it, without any filter's change.
+- The value carries sign-in and reset links. Grant `hook:cms.mail.before-send` only to a
+  plugin you would trust with them.
+
+```ts
+import { mailBeforeSend } from '@cossackframework/cms';
+
+export function register(context: PluginContext) {
+  context.hooks.addFilter(mailBeforeSend, (message, { input: { kind, plugin } }) => {
+    if (!message) return message;
+    // The newsletter plugin's mail goes out through its own service.
+    if (kind === 'plugin' && plugin === 'newsletter') return null;
+    // Form notifications go to the help desk instead.
+    if (kind === 'form') return { ...message, to: 'desk@example.com', subject: `[Web form] ${message.subject}` };
+    // A reset keeps its recipient; the subject may change.
+    if (kind === 'reset') return { ...message, subject: `Acme: ${message.subject}` };
+    return message;
+  });
+}
+```
+
+### Users
+
+| Point | Kind | Deadline | Value and input |
+| --- | --- | --- | --- |
+| `cms.user.before-register` (`userBeforeRegister`) | filter | 2 s | Value: `{ email, name, roles, approval, refused }` before a visitor's account is made. Set `refused` to a message to refuse it (an email domain allowlist), change `name` and `roles` (role IDs; unknown ones are dropped), or set `approval` to hold the account for an administrator. The email cannot change. Input: `origin`. |
+| `cms.user.registered` (`userRegistered`) | action, outbox | 10 s | `{ eventId, topic, at, user: { id, email, name }, state }` after a visitor registered; `state` is `active`, `verification` (waits for the email link) or `approval`. Deliveries can repeat: use `eventId`. |
+| `cms.user.signed-in` (`userSignedIn`) | action, outbox | 10 s | `{ eventId, topic, at, user }` after a session started, by any sign-in method or the automatic sign-in after registering or confirming the email. |
+
+```ts
+import { userBeforeRegister, userRegistered } from '@cossackframework/cms';
+import type { PluginContext } from '@cossackframework/cms/server';
+
+export function register({ hooks }: PluginContext) {
+    hooks.addFilter(userBeforeRegister, draft => draft.email.endsWith('@example.com')
+        ? draft
+        : { ...draft, refused: 'Register with your example.com address.' }, { plugin: 'allowlist' });
+    hooks.addAction(userRegistered, async ({ user, state }) => {
+        if (state === 'active') await welcome(user.email);
+    }, { plugin: 'allowlist' });
+}
+```
 
 ## Points a plugin provides
 

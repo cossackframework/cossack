@@ -4,11 +4,12 @@
  * site's settings document.
  */
 import { Client, ClientState, Component, Cossack } from '@cossackframework/core';
-import { html, type TemplateResult } from '@cossackframework/renderer';
+import { Checkbox, Field, Input, NativeSelect } from '@cossackframework/ui';
+import { html, type TemplateResult, component } from '@cossackframework/renderer';
 import { isCmsError, type Principal } from '@cossackframework/cms';
 import type { CmsNetwork, NetworkSettings, SiteExportPolicy } from '@cossackframework/cms/server';
 import type { SettingsDraft } from './settings-draft';
-import { CONTROL, notice } from './ui';
+import { notice } from './ui';
 
 export interface NetworkSettingsInput {
     enabled: boolean;
@@ -110,18 +111,15 @@ export class NetworkSettingsForm extends Cossack {
         const show = (field: string) => !this.props.fields || this.props.fields.includes(`network.${field}`);
         const errors = this.props.errors ?? {};
         const error = (name: string) => errors[name] ? html`<p role="alert" class="text-xs text-destructive">${errors[name]}</p>` : null;
-        const input = (name: 'name' | 'subdomainSuffix' | 'defaultLanguage', label: string, hint: string, placeholder = ''): TemplateResult | null => show(name) ? html`<div class="space-y-1">
-            <label for=${`network-${name}`} class="block text-sm font-medium text-foreground">${label}</label>
-            <input id=${`network-${name}`} class=${CONTROL} .value=${form[name]} placeholder=${placeholder} @input=${(event: Event) => this.set({ [name]: (event.target as HTMLInputElement).value })}>
-            <p class="text-xs text-muted-foreground">${hint}</p>${error(name)}
-        </div>` : null;
+        const input = (name: 'name' | 'subdomainSuffix' | 'defaultLanguage', label: string, hint: string, placeholder = ''): TemplateResult | null => show(name)
+            ? component(Field, { label, for: `network-${name}`, hint, ...(errors[name] ? { error: errors[name] } : {}),
+                control: attributes => component(Input, { ...attributes, '.value': form[name], placeholder, '@input': (event: Event) => this.set({ [name]: (event.target as HTMLInputElement).value }) }) })
+            : null;
         const suffix = form.subdomainSuffix.trim() || initial.fallbackSuffix || 'example.com';
         return html`<fieldset class="min-w-0 space-y-5" ?disabled=${this.props.draft.saving}>
-            ${show('enabled') ? html`<label class="flex cursor-pointer items-start gap-3 text-sm text-foreground">
-                <input id="network-enabled" type="checkbox" class="mt-1 size-4 accent-primary" .checked=${form.enabled} @change=${(event: Event) => this.set({ enabled: (event.target as HTMLInputElement).checked })}>
-                <span><span class="block font-medium">${__('Run a network of sites')}</span>
-                    <span class="text-xs text-muted-foreground">${__('Each added site has its own database, address and members; accounts sign in once, here, for all of them. Network admins manage the sites under Network.')}</span></span>
-            </label>` : null}
+            ${show('enabled') ? component(Checkbox, { id: 'network-enabled', checked: form.enabled, '@change': (event: Event) => this.set({ enabled: (event.target as HTMLInputElement).checked }) },
+                html`<span><span class="block font-medium">${__('Run a network of sites')}</span>
+                    <span class="text-xs text-muted-foreground">${__('Each added site has its own database, address and members; accounts sign in once, here, for all of them. Network admins manage the sites under Network.')}</span></span>`) : null}
             ${form.enabled && !initial.canAddSites ? notice(__('Sites need their own databases: files beside the main one on Node, or ROMEDB_SITES_URL and ROMEDB_SITES_TOKEN (a RomeDB organization). Until then the network is this site only.')) : null}
             ${!form.enabled && initial.enabled && initial.sites ? notice(`${__('Turning the network off stops serving its other sites')} (${initial.sites}). ${__('Their databases stay: turn it on again to serve them.')}`, 'warning') : null}
             ${form.enabled ? html`
@@ -129,17 +127,13 @@ export class NetworkSettingsForm extends Cossack {
                 ${input('subdomainSuffix', __('Addresses of new sites'), `${__('New sites start at a subdomain of this domain, such as blog.')}${suffix}. ${__('Point a wildcard DNS record at the network.')}`, initial.fallbackSuffix)}
                 ${show('defaultTheme') || show('defaultPlugins') || show('defaultLanguage') ? html`<fieldset class="min-w-0 space-y-4">
                     <legend class="mb-2 text-base font-semibold text-foreground">${__('New sites')}</legend>
-                    ${show('defaultTheme') ? html`<div class="space-y-1">
-                        <label for="network-defaultTheme" class="block text-sm font-medium text-foreground">${__('Theme')}</label>
-                        <select id="network-defaultTheme" class=${CONTROL} @change=${(event: Event) => this.set({ defaultTheme: (event.target as HTMLSelectElement).value })}>
+                    ${show('defaultTheme') ? component(Field, { label: __('Theme'), for: 'network-defaultTheme', ...(errors.defaultTheme ? { error: errors.defaultTheme } : {}),
+                        control: attributes => component(NativeSelect, { ...attributes, '@change': (event: Event) => this.set({ defaultTheme: (event.target as HTMLSelectElement).value }) }, html`
                             <option value="" ?selected=${!form.defaultTheme}>${__('The first available theme')}</option>
-                            ${initial.themes.map(theme => html`<option value=${theme.name} ?selected=${theme.name === form.defaultTheme}>${theme.label}</option>`)}
-                        </select>${error('defaultTheme')}
-                    </div>` : null}
+                            ${initial.themes.map(theme => html`<option value=${theme.name} ?selected=${theme.name === form.defaultTheme}>${theme.label}</option>`)}`) }) : null}
                     ${show('defaultPlugins') && initial.plugins.length ? html`<div class="space-y-1.5">
                         <p class="text-sm font-medium text-foreground">${__('Plugins enabled on new sites')}</p>
-                        ${initial.plugins.map(name => html`<label class="flex items-center gap-2 text-sm text-foreground"><input type="checkbox" class="size-4 accent-primary" .checked=${form.defaultPlugins.includes(name)}
-                            @change=${(event: Event) => this.togglePlugin(name, (event.target as HTMLInputElement).checked)}> ${name}</label>`)}
+                        ${initial.plugins.map(name => html`<div>${component(Checkbox, { label: name, checked: form.defaultPlugins.includes(name), '@change': (event: Event) => this.togglePlugin(name, (event.target as HTMLInputElement).checked) })}</div>`)}
                         <p class="text-xs text-muted-foreground">${__('Network active plugins run on every site already.')}</p>${error('defaultPlugins')}
                     </div>` : null}
                     ${input('defaultLanguage', __('Language'), __('A language code, such as en, fr or pt-br. Add site can choose another.'), 'en')}

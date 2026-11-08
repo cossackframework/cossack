@@ -26,6 +26,8 @@ export const formsModule: CmsModule = {
             if (settings.confirmation === 'redirect' && !settings.redirectUrl) problems.push('Choose the page to go to after submitting.');
             if (settings.oncePerEmail && inputs.find(entry => entry.name === settings.oncePerEmail)?.kind !== 'email') problems.push(`One submission per address needs an email field; ${settings.oncePerEmail} is not one.`);
             if (settings.opensAt !== null && settings.closesAt !== null && settings.closesAt <= settings.opensAt) problems.push('The form must close after it opens.');
+            // Uploaded files are kept with their submission, so a form that keeps nothing cannot take them.
+            if (!settings.store && inputs.some(entry => entry.kind === 'file')) problems.push('A form with a file upload keeps its submissions: turn Keep submissions on.');
             if (problems.length) throw new CmsError('CMS_VALIDATION', problems.join(' '));
             return draft;
         }, { plugin: 'cms', priority: 20 });

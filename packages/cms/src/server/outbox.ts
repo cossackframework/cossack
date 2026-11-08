@@ -7,10 +7,10 @@
 import type { RomeDB } from '@cossackframework/romedb';
 import type { HookRegistry } from '@cossackframework/core/hooks';
 import type { ActionPoint } from '@cossackframework/core/hooks';
-import { afterCommit, cachePurge, formSubmitted, paymentEvent, pluginJob } from '../hooks';
+import { afterCommit, cachePurge, formSubmitted, paymentEvent, pluginJob, userRegistered, userSignedIn } from '../hooks';
 
 /** The action an outbox row runs, by its topic; resource events run `cms.resource.after-commit`. */
-const POINTS: { readonly [topic: string]: ActionPoint<unknown> } = { 'form.submitted': formSubmitted as ActionPoint<unknown>, 'cache.purge': cachePurge as ActionPoint<unknown>, 'plugin.job': pluginJob as ActionPoint<unknown>, 'payment.event': paymentEvent as ActionPoint<unknown> };
+const POINTS: { readonly [topic: string]: ActionPoint<unknown> } = { 'form.submitted': formSubmitted as ActionPoint<unknown>, 'cache.purge': cachePurge as ActionPoint<unknown>, 'plugin.job': pluginJob as ActionPoint<unknown>, 'payment.event': paymentEvent as ActionPoint<unknown>, 'user.registered': userRegistered as ActionPoint<unknown>, 'user.signed-in': userSignedIn as ActionPoint<unknown> };
 
 export interface DispatchReport {
     readonly delivered: readonly string[];

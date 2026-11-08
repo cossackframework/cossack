@@ -6,7 +6,7 @@
  * blocks: a group, columns and a grid hold other blocks, so one tree is stored, edited,
  * diffed and shared as a pattern.
  */
-import { field, slugify, validateValue, type FieldDeclaration } from './fields';
+import { field, fieldProblems, slugify, validateValue, type FieldDeclaration } from './fields';
 import { richTextBlocks, richTextMedia, type RichTextDoc } from './richtext';
 
 export { blocksShapeProblem, blockLayoutProblem, blockStyleProblem, styleValueProblem, blockConditionProblem, blockIdProblem, BLOCK_ID, BLOCK_LIMITS, BREAKPOINTS, CUSTOM_COLOR, MEDIA_ID, BACKGROUND_SIZES, STYLE_PROPERTIES, TEXT_ALIGNMENTS, PRESET_SLUG, INPUT_NAME, CONDITION_OPERATORS, CONDITION_LIMIT,
@@ -23,7 +23,7 @@ import { BLOCK_LIMITS, BREAKPOINTS, INPUT_NAME, STYLE_PROPERTIES, TEXT_ALIGNMENT
 /** Providers an Embed block takes a page address from; `embedUrl` in the application turns each into the provider's player or card. */
 export const EMBED_URL = /^https:\/\/(?:(?:www\.|m\.|mobile\.)?(?:youtube\.com|youtu\.be|vimeo\.com|x\.com|twitter\.com|instagram\.com|tiktok\.com|codepen\.io|loom\.com|figma\.com|soundcloud\.com)|open\.spotify\.com|player\.vimeo\.com)\/\S+$/;
 
-export const INPUT_KINDS = Object.freeze(['string', 'text', 'email', 'url', 'phone', 'number', 'boolean', 'date', 'choice', 'choices', 'rows'] as const);
+export const INPUT_KINDS = Object.freeze(['string', 'text', 'email', 'url', 'phone', 'number', 'boolean', 'date', 'choice', 'choices', 'rows', 'file'] as const);
 export type InputKind = (typeof INPUT_KINDS)[number];
 
 /** A form holds at most this many inputs. */
@@ -566,8 +566,11 @@ export function blockProblems(declaration: BlockDeclaration, owner?: string): st
     const fields = Object.entries(declaration?.fields ?? {});
     if (fields.length > 16) problems.push(`${at}: declare at most 16 fields.`);
     for (const [name, entry] of fields) {
+        if (!entry || typeof entry !== 'object') { problems.push(`${at}: field ${name} must be a field declaration.`); continue; }
         if (!BLOCK_FIELD_KINDS.has(entry.kind)) problems.push(`${at}: field ${name} cannot be ${entry.kind}.`);
         if (entry.unique || entry.index || entry.search || entry.slugFrom || entry.taxonomy) problems.push(`${at}: field ${name} cannot be indexed, searched or derived.`);
+        // As a resource's fields are checked: a bad pattern or an enum without values would otherwise fail every write of the block.
+        else problems.push(...fieldProblems(name, entry).map(problem => `${at}: ${problem}`));
     }
     if (declaration?.inline !== undefined && typeof declaration.inline !== 'boolean') problems.push(`${at}: inline is true or false.`);
     if (declaration?.body !== undefined) {
@@ -803,6 +806,8 @@ function formTreeErrors(blocks: readonly Block[], types: ReadonlyMap<string, Blo
                 if (RESERVED_INPUT_NAMES.has(name)) errors[`${block._id}.name`] = 'is reserved for the submission.';
                 else if (into.has(name)) errors[`${block._id}.name`] = 'is used by another field.';
                 else into.set(name, block);
+                // Uploads are kept per submission, at its top level.
+                if (inside && types.get(block.type)?.input?.kind === 'file') errors[block._id] = 'A file upload cannot go in a repeater.';
             }
             if (repeater(block)) {
                 if (inside) { errors[block._id] = 'A repeater cannot hold another repeater.'; continue; }
@@ -938,9 +943,9 @@ export function blocksPlain(blocks: readonly Block[], types: ReadonlyMap<string,
     return parts.join('\n\n');
 }
 
-/** Blocks with fresh IDs, for copies of a template or a pattern. */
+/** Blocks with fresh IDs, for copies of a template or a pattern: inserting a pattern twice must not repeat an ID. */
 export function cloneBlocks<T extends Block>(blocks: readonly T[], id: () => string = blockId): T[] {
-    return blocks.map(block => ({ ...block, id: id(), ...(block.children ? { children: cloneBlocks(block.children as readonly T[], id) } : {}) }));
+    return blocks.map(block => ({ ...block, _id: id(), ...(block.children ? { children: cloneBlocks(block.children as readonly T[], id) } : {}) }));
 }
 
 /** A new block ID. */

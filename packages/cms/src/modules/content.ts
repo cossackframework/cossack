@@ -1,6 +1,7 @@
 import { CORE_BLOCKS } from '../blocks';
 import { FIELD_BLOCKS } from '../field-groups';
 import { pages, patterns, posts } from '../collections';
+import { CmsError } from '../errors';
 import { beforeWrite } from '../hooks';
 import type { CmsModule } from '../module';
 import { crawlers, discussion, indexnow, languages, reading, seo, writing } from '../settings';
@@ -16,7 +17,8 @@ export const tags: TaxonomyDeclaration = { name: 'tags', label: 'Tags', singular
  * The built-in content module: posts, pages and patterns, categories and tags, the core blocks,
  * and Writing, Reading, Discussion, SEO and Languages settings. In every publishable collection,
  * publishing without a time publishes now; publishing with a future time schedules the entry,
- * and a scheduled entry whose time has come is published. New entries take the default
+ * and a scheduled entry whose time has come is published; an `unpublishAt` time takes it back
+ * to draft then (`runSchedule()`), and must be after the publication. New entries take the default
  * language. A post saved without a category gets the Writing settings' default category.
  */
 export const contentModule: CmsModule = {
@@ -39,6 +41,11 @@ export const contentModule: CmsModule = {
             }
             if (status === 'published' && typeof publishedAt === 'number' && publishedAt > at) next = { ...next, status: 'scheduled' };
             else if (status === 'scheduled' && typeof publishedAt === 'number' && publishedAt <= at) next = { ...next, status: 'published' };
+            // An unpublish time comes after the publication; a passed one is refused rather than acted on at once.
+            if ('unpublishAt' in draft && typeof draft.unpublishAt === 'number') {
+                if (typeof publishedAt === 'number' && draft.unpublishAt <= publishedAt) throw new CmsError('CMS_VALIDATION', 'The unpublish time must be after the publication time.', { fields: { unpublishAt: 'Choose a time after the publication.' } });
+                if (draft.unpublishAt <= at) throw new CmsError('CMS_VALIDATION', 'The unpublish time has passed.', { fields: { unpublishAt: 'Choose a time in the future.' } });
+            }
             if (input.action === 'create' && (draft.locale === undefined || draft.locale === null)) {
                 const locale = (await settings.all())['languages.default'];
                 if (typeof locale === 'string' && locale) next = { ...next, locale };

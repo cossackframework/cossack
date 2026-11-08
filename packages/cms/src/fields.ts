@@ -99,25 +99,6 @@ export interface FieldDeclaration {
     readonly fields?: { readonly [name: string]: FieldDeclaration };
 }
 
-/**
- * A declaration as stored before multiple fields: a `list` kind with `items` reads as a
- * multiple field of that kind. Subfields and row fields follow. Other declarations are returned as they are.
- */
-export function normalizeDeclaration(declaration: FieldDeclaration): FieldDeclaration {
-    const legacy = declaration as Omit<FieldDeclaration, 'kind'> & { kind: string; items?: string };
-    let next: FieldDeclaration = declaration;
-    if (legacy.kind === 'list') {
-        const { items, ...rest } = legacy;
-        next = { ...rest, kind: (items === 'integer' || items === 'number' ? items : 'string') as FieldKind, multiple: true };
-    }
-    if (next.fields) next = { ...next, fields: normalizeFields(next.fields) };
-    return next;
-}
-
-/** `normalizeDeclaration` over a set of fields. */
-export function normalizeFields(fields: { readonly [name: string]: FieldDeclaration }): { [name: string]: FieldDeclaration } {
-    return Object.fromEntries(Object.entries(fields).map(([name, declaration]) => [name, declaration && typeof declaration === 'object' ? normalizeDeclaration(declaration) : declaration]));
-}
 
 /** A row's identity: 1-40 letters, digits, `_` or `-`, distinct within its list. */
 export const ROW_ID = /^[A-Za-z0-9_-]{1,40}$/;
@@ -193,7 +174,7 @@ export const TAXONOMY_NAME = /^[a-z][a-zA-Z0-9]{0,40}$/;
 export const FIELD_MEDIA_KINDS = Object.freeze(['image', 'video', 'audio', 'document', 'archive'] as const);
 export type FieldMediaKind = typeof FIELD_MEDIA_KINDS[number];
 /** What a string field's choice can come from. */
-export const CHOICE_SOURCES = Object.freeze(['forms', 'collections', 'terms', 'locations', 'authors'] as const);
+export const CHOICE_SOURCES = Object.freeze(['forms', 'collections', 'terms', 'locations', 'authors', 'roles'] as const);
 export type ChoiceSource = typeof CHOICE_SOURCES[number];
 const ENUM_VALUE = /^[A-Za-z0-9_.-]{1,64}$/;
 const MAX_SAFE = Number.MAX_SAFE_INTEGER;
@@ -369,7 +350,7 @@ export function validateValue(name: string, declaration: FieldDeclaration, value
             if (!isJsonObject(value, 0)) return 'must be a JSON object.';
             if (!declaration.fields) return undefined;
             for (const [key, entry] of Object.entries(value as { [key: string]: unknown })) {
-                const nested = declaration.fields[key];
+                const nested = Object.hasOwn(declaration.fields, key) ? declaration.fields[key] : undefined;
                 if (!nested) return `has no subfield ${key}.`;
                 // A missing or null subfield is unset.
                 const error = entry === null ? undefined : validateValue(key, nested, entry);

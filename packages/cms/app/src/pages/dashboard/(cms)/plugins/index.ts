@@ -1,5 +1,5 @@
 import { Client, ClientState, Cossack, Page, State, flash, flashed, type HeadValue } from '@cossackframework/core';
-import { Badge, Card, CardBody, Input, NativeSelect } from '@cossackframework/ui';
+import { Badge, Card, CardBody, Input, NativeSelect, Button } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { hasPermission, isCmsError, isNetworkAdmin, isSameOriginPost, PERMISSIONS } from '@cossackframework/cms';
 import { requireAny } from '../../../../cms/guards';
@@ -124,7 +124,7 @@ export default class PluginsPage extends Cossack {
                     <div class="flex flex-wrap items-center gap-2">
                         <div class="w-44">${component(NativeSelect, { name: '_action', size: 'sm', 'aria-label': __('Bulk actions') }, html`
                             <option value="">${__('Bulk actions')}</option><option value="grant">${__('Grant and enable')}</option><option value="disable">${__('Disable')}</option>`)}</div>
-                        <button type="submit" class=${`${button} border border-border bg-background text-foreground hover:bg-muted`}>${__('Apply')}</button>
+                        ${component(Button, { type: 'submit', size: 'sm', variant: 'outline' }, __('Apply'))}
                     </div>
                     <div class="flex flex-wrap items-center gap-2">
                         <div class="w-36">${component(NativeSelect, { size: 'sm', 'aria-label': __('Show'), '@change': (event: Event) => this.setFilter((event.target as HTMLSelectElement).value) }, html`
@@ -161,8 +161,8 @@ export default class PluginsPage extends Cossack {
                         <td class="px-3 py-3"><div class="flex flex-wrap justify-end gap-2">
                             ${plugin.settings ? html`<a href=${settingsSectionHref(`plugin:${plugin.name}`)} class="text-sm text-primary hover:underline">${__('Settings')}</a>` : null}
                             ${plugin.networkActive ? null : plugin.themeOnly ? html`<a href="/dashboard/appearance" class="text-sm text-primary hover:underline">${__('Manage in Appearance')} →</a>` : html`
-                                ${plugin.missing.length && !plugin.unrestricted ? html`<button type="submit" name="_row" value=${`grant:${plugin.name}`} class=${`${button} bg-primary text-primary-foreground border-none`}>${__('Grant and enable')}</button>` : null}
-                                ${plugin.active ? html`<button type="submit" name="_row" value=${`disable:${plugin.name}`} class=${`${button} border border-destructive bg-transparent text-destructive`}>${__('Disable')}</button>` : null}`}
+                                ${plugin.missing.length && !plugin.unrestricted ? component(Button, { type: 'submit', size: 'sm', name: '_row', value: `grant:${plugin.name}` }, __('Grant and enable')) : null}
+                                ${plugin.active ? component(Button, { type: 'submit', size: 'sm', variant: 'destructive', name: '_row', value: `disable:${plugin.name}` }, __('Disable')) : null}`}
                         </div></td>
                     </tr>`)}</tbody></table>
                     ${rows.length ? null : html`<p role="status" class="px-4 py-10 text-center text-sm text-muted-foreground">${__('No plugins match.')}</p>`}</div>`))}

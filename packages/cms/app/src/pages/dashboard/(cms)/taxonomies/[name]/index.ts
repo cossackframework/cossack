@@ -73,14 +73,8 @@ export default class EditTaxonomy extends Cossack {
                 ${input('singular', __('Singular name'))}
                 ${input('description', __('Description'))}
                 ${input('path', __('URL path'), __('Archives at /<path>/<term>. Empty keeps them off the site.'))}
-                <label class=${`flex items-center gap-2 text-sm ${this.draft.builtin ? 'text-muted-foreground' : 'text-foreground cursor-pointer'}`}>
-                    ${component(Checkbox, { checked: this.draft.hierarchical, disabled: this.draft.builtin, '@change': (event: Event) => this.setDraft('hierarchical', (event.target as HTMLInputElement).checked) })}
-                    ${__('Terms can be nested')}
-                </label>
-                ${this.draft.path.trim() ? html`<label class="flex items-center gap-2 text-sm text-foreground cursor-pointer">
-                    ${component(Checkbox, { checked: this.draft.noindex, '@change': (event: Event) => this.setDraft('noindex', (event.target as HTMLInputElement).checked) })}
-                    ${__('Hide term archives from search engines')}
-                </label>` : null}
+                ${component(Checkbox, { label: __('Terms can be nested'), checked: this.draft.hierarchical, disabled: this.draft.builtin, '@change': (event: Event) => this.setDraft('hierarchical', (event.target as HTMLInputElement).checked) })}
+                ${this.draft.path.trim() ? component(Checkbox, { label: __('Hide term archives from search engines'), checked: this.draft.noindex, '@change': (event: Event) => this.setDraft('noindex', (event.target as HTMLInputElement).checked) }) : null}
                 <div class="flex items-center justify-between">
                     ${this.draft.builtin ? html`<span></span>` : html`<button type="button" class="text-sm text-destructive hover:underline bg-transparent border-none p-0 cursor-pointer" @click=${() => this.remove()}>${__('Delete taxonomy and its terms')}</button>`}
                     ${component(Button, { type: 'submit' }, __('Save'))}

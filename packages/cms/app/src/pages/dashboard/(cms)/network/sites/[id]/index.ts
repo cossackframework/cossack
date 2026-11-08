@@ -1,12 +1,12 @@
 import { Client, Cossack, Page, State, flash, flashed, type HeadValue } from '@cossackframework/core';
-import { Badge, Card, CardBody, CardHeader } from '@cossackframework/ui';
+import { Badge, Card, CardBody, CardHeader, NativeSelect, Button } from '@cossackframework/ui';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
 import { isCmsError, isSameOriginPost } from '@cossackframework/cms';
 import { networkSite, siteImportState, type SiteDomain, type SiteStatus } from '@cossackframework/cms/server';
 import { notice, pageHeader, shortDate } from '../../../../../../cms/ui';
 import { requireNetworkAdmin } from '../../../../../../cms/guards';
 import { network, siteLinks } from '../../../../../../cms/network-ui';
-import { actionButton, field, siteStatus, SUBMIT } from '../../../../../../cms/network-view';
+import { actionButton, field, siteStatus, submitButton } from '../../../../../../cms/network-view';
 import { listTable } from '../../../../../../dashboard/list-table';
 import { importRequest, importSummary, sendsExport } from '../../../../../../cms/site-import';
 import { sendExport } from '../../../../../../cms/import.client';
@@ -170,7 +170,7 @@ export default class NetworkSite extends Cossack {
             ${card(__('Details'), html`<form method="post" class="flex max-w-xl items-end gap-3">
                 <input type="hidden" name="action" value="rename">
                 <div class="flex-1">${field('name', __('Name'), { value: this.name, required: true })}</div>
-                <button type="submit" class=${SUBMIT}>${__('Save')}</button>
+                ${submitButton(__('Save'))}
             </form>`)}
             ${card(__('Domains'), html`
                 <ul class="divide-y divide-border rounded-lg border border-border">${this.domains.map(domain => html`<li class="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-sm" data-domain=${domain.host}>
@@ -181,7 +181,7 @@ export default class NetworkSite extends Cossack {
                 <form method="post" class="flex max-w-xl items-end gap-3">
                     <input type="hidden" name="action" value="add-domain">
                     <div class="flex-1">${field('host', __('Add a domain'), { placeholder: 'www.example.org', required: true })}</div>
-                    <button type="submit" class=${SUBMIT}>${__('Add')}</button>
+                    ${submitButton(__('Add'))}
                 </form>`, __('The primary domain serves the site; the others redirect to it.'))}
             ${this.status === 'creating' ? null : html`<section class="space-y-3">
                 <h2 class="text-base font-semibold text-foreground">${__('Members')}</h2>
@@ -198,14 +198,16 @@ export default class NetworkSite extends Cossack {
                             ${actionButton('remove-member', __('Remove from site'), { account: member.id }, { danger: true })}</span>` },
                     ],
                 })}
-                <form method="post" class="flex max-w-xl flex-wrap items-end gap-3">
+                <form method="post" class="max-w-xl space-y-1.5">
                     <input type="hidden" name="action" value="add-member">
-                    <div class="flex-1">${field('email', __('Add a network account'), { type: 'email', required: true, hint: __('Site accounts are added on the site, under Users.') })}</div>
-                    <select name="role" aria-label=${__('Role')} class="rounded-md border border-input bg-background px-3 py-2 text-sm">
-                        <option value="">${__('No role')}</option>
-                        ${this.roles.map(role => html`<option value=${role.id} ?selected=${role.id === 'editor'}>${role.name}</option>`)}
-                    </select>
-                    <button type="submit" class=${SUBMIT}>${__('Add')}</button>
+                    <div class="flex flex-wrap items-end gap-3">
+                        <div class="flex-1">${field('email', __('Add a network account'), { type: 'email', required: true })}</div>
+                        ${component(NativeSelect, { name: 'role', inline: true, 'aria-label': __('Role') }, html`
+                            <option value="">${__('No role')}</option>
+                            ${this.roles.map(role => html`<option value=${role.id} ?selected=${role.id === 'editor'}>${role.name}</option>`)}`)}
+                        ${submitButton(__('Add'))}
+                    </div>
+                    <p class="text-xs text-muted-foreground">${__('Site accounts are added on the site, under Users.')}</p>
                 </form>
                 <p class="text-xs text-muted-foreground">${__('A network account signs in on the network and can join other sites; a site account signs in on this site only. Changing the kind keeps the member\'s roles, password and authenticator app. Their sessions end, and their passkeys are removed: passkeys work only on the address they were made on.')}</p>
             </section>`}
@@ -215,7 +217,7 @@ export default class NetworkSite extends Cossack {
                 <form method="post" enctype="multipart/form-data" class="flex max-w-xl flex-wrap items-end gap-3" data-site-import @submit=${(event: SubmitEvent) => this.upload(event)}>
                     <input type="hidden" name="action" value="import">
                     <input name="file" type="file" required accept=".json,application/json" aria-label=${__('Export file')} class="block flex-1 text-sm text-foreground">
-                    <button type="submit" ?disabled=${this.importing} class=${SUBMIT}>${this.importing ? __('Importing…') : __('Import')}</button>
+                    ${component(Button, { type: 'submit', disabled: this.importing }, this.importing ? __('Importing…') : __('Import'))}
                 </form>`, __('Fill this new site from another site\'s JSON export: its content, settings, roles and members. Network accounts among the members stay network accounts; the others get site accounts and set their passwords with Forgot password. Media files are not in exports: copy them to this site\'s storage.')) : null}
             ${this.status === 'creating' ? null : card(__('Database export'), html`
                 ${this.exportRequest ? html`<p class="text-sm text-foreground" data-export-request>${this.exportRequest.approvedAt

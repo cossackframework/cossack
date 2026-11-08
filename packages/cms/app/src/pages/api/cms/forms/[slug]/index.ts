@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
 import { createTurnstileVerifier } from '@cossackframework/auth/turnstile';
-import { formDataValues, isCmsError, isSameOriginPost, type CmsError, type FormField, type PostedValue, type SubmittedValues } from '@cossackframework/cms';
+import { formDataValues, FORM_UPLOAD_LIMIT_MB, isCmsError, isSameOriginPost, type CmsError, type FormField, type PostedValue, type SubmittedValues } from '@cossackframework/cms';
 import { renderMarkdown, type LoadedForm } from '@cossackframework/cms/server';
 import { apiError } from '../../../../../cms/content-api';
 import { messageHtml, type FormResult } from '../../../../../cms/site-forms';
@@ -30,10 +30,11 @@ function describeInputs(inputs: readonly FormField[]): unknown[] {
     return inputs.map(input => ({ name: input.name, label: input.label, kind: input.kind, type: input.type, required: input.required, options: input.options, ...(input.multiple ? { multiple: true } : {}), ...(input.kind === 'rows' ? { inputs: describeInputs(input.inputs) } : {}) }));
 }
 
-/** What the sender typed, kept for the form to show again: text and choices as posted, a repeater's rows the same way, within limits. */
+/** What the sender typed, kept for the form to show again: text and choices as posted, a repeater's rows the same way, within limits. Files are chosen again. */
 function postedValues(inputs: readonly FormField[], values: SubmittedValues): Record<string, PostedValue> {
     const typed: Record<string, PostedValue> = {};
     for (const input of inputs) {
+        if (input.kind === 'file') continue;
         const entry = values[input.name];
         if (input.kind === 'rows' && Array.isArray(entry)) {
             typed[input.name] = entry.filter((row): row is Record<string, unknown> => !!row && typeof row === 'object' && !Array.isArray(row)).slice(0, 50)
@@ -85,6 +86,15 @@ export const POST = async (c: Context) => {
     let form: LoadedForm | null;
     try { form = await cms.forms.get(c.req.param('slug') ?? ''); } catch (error) { return apiError(c, error); }
     if (!form?.published) return c.json({ error: 'This form does not exist.', code: 'CMS_NOT_FOUND' }, 404);
+    // A post is read whole, files included: one far over the files' limit is refused before it is read.
+    const length = Number(c.req.header('content-length'));
+    if (Number.isFinite(length) && length > (FORM_UPLOAD_LIMIT_MB + 1) * 1024 * 1024) {
+        const message = `The form is too large to send: its files add up to at most ${FORM_UPLOAD_LIMIT_MB} MB.`;
+        if (json) return c.json({ error: message, code: 'CMS_LIMIT' }, 413);
+        const page = samePath((() => { try { return new URL(c.req.header('referer') ?? '').pathname; } catch { return undefined; } })());
+        const key = await cms.forms.saveResult(form.ref.id, { kind: 'error', html: messageHtml(message) } satisfies FormResult);
+        return c.redirect(`${page}?form=${encodeURIComponent(form.ref.slug)}&result=${key}#form-${form.ref.slug}`, 303);
+    }
     let values: SubmittedValues;
     let meta: { page?: string; started?: string; trap?: string; token?: string; add?: string; remove?: string };
     try {

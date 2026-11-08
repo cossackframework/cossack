@@ -208,7 +208,7 @@ export const cmsTools: readonly Tool[] = [
         async run(_input, { c }) { return manage.webhooksList(c); },
     },
     {
-        name: 'create_webhook', description: 'Add a webhook. events: entry.created, entry.updated, entry.published, entry.unpublished, entry.deleted, form.submitted, note.created, note.resolved. The answer carries the signing secret once.',
+        name: 'create_webhook', description: 'Add a webhook. events: entry.created, entry.updated, entry.published, entry.unpublished, entry.deleted, form.submitted, note.created, note.resolved, payment.completed. The answer carries the signing secret once.',
         inputSchema: schema({ name: str('A name for the webhook.'), url: str('The https URL to post to.'), events: strings('The events it receives.'), collections: strings('Only these collections; none means every collection.'), active: bool('Whether it posts; default true.') }, ['name', 'url', 'events']), annotations: CHANGE,
         async run(input, { c }) { return manage.webhookCreate(c, input); },
     },

@@ -64,7 +64,7 @@ export default class CollectionBuilder extends Cossack {
     @State() previews: Record<string, MediaPreview> = {};
     @State() presets: Required<ThemePresets> = { colors: [], gradients: [], fontSizes: [], spacing: [] };
     /** What template blocks' form, collection and term fields choose from. */
-    @State() sources: SourceChoices = { forms: [], collections: [], terms: [], locations: [], authors: [] };
+    @State() sources: SourceChoices = { forms: [], collections: [], terms: [], locations: [], authors: [], roles: [] };
     @State() dialog: BlockDialog | null = null;
     @State() chooser: MediaChooserState = closedChooser();
     @State() tab: (typeof TABS)[number] = 'general';
@@ -353,10 +353,8 @@ export default class CollectionBuilder extends Cossack {
     }
 
     private check(label: string, checked: boolean, change: (checked: boolean) => void, options: { disabled?: boolean; hint?: string } = {}): TemplateResult {
-        return html`<label class=${`flex items-start gap-2 text-sm ${options.disabled ? 'text-muted-foreground' : 'text-foreground cursor-pointer'}`}>
-            ${component(Checkbox, { checked, disabled: options.disabled === true, '@change': (event: Event) => change((event.target as HTMLInputElement).checked) })}
-            <span>${label}${options.hint ? html`<span class="block text-xs text-muted-foreground">${options.hint}</span>` : null}</span>
-        </label>`;
+        return html`<div class="[&_.cs-checkbox]:items-start [&_.cs-checkbox>input]:mt-0.5">${component(Checkbox, { checked, disabled: options.disabled === true, '@change': (event: Event) => change((event.target as HTMLInputElement).checked) },
+            html`<span>${label}${options.hint ? html`<span class="block text-xs text-muted-foreground">${options.hint}</span>` : null}</span>`)}</div>`;
     }
 
     /** The attached groups, in order, with Attach and New. */
@@ -466,6 +464,7 @@ export default class CollectionBuilder extends Cossack {
                             ${this.check(__('Excerpt'), draft.excerpt, checked => this.setDraft('excerpt', checked), { disabled: locked('excerpt'), hint: __('A short summary for lists, feeds and link previews.') })}
                             ${this.check(__('Featured image'), draft.featuredImage, checked => this.setDraft('featuredImage', checked), { disabled: locked('featuredImage'), hint: __('One image from the media library, in the sidebar.') })}
                             ${this.check(__('Password protection'), draft.password, checked => this.setDraft('password', checked), { disabled: locked('password'), hint: __('A password field in the sidebar: visitors type it to read the entry.') })}
+                            ${this.check(__('Members only'), draft.members, checked => this.setDraft('members', checked), { disabled: locked('members'), hint: __('A switch in the sidebar: only signed-in users read the entry; visitors see its title and a sign-in link.') })}
                             ${this.check(__('Revisions'), draft.revisions, checked => this.setDraft('revisions', checked), { hint: __('Keep every version of an entry to compare and restore.') })}
                             ${this.check(__('Generate slugs from titles'), draft.slug, checked => this.setDraft('slug', checked), { disabled: draft.builtin })}
                             ${this.check(__('Drafts and publishing'), draft.publishable, checked => this.setDraft('publishable', checked), { disabled: draft.builtin, hint: __('Visitors see published entries only.') })}

@@ -2,9 +2,9 @@
  * The site as machines read it: `/llms.txt` (the site, its collections and latest entries
  * with summaries) and entries as Markdown for `Accept: text/markdown`. Server-only.
  */
-import { ANONYMOUS, ARTICLE_TYPES, blocksMarkdown, entryAuthors, entryMarkdown, mediaUrl, recordTitle, resolveBindings, richTextMarkdown, type CollectionDefinition, type RecordShape, type RichTextDoc, type Block } from '@cossackframework/cms';
+import { ANONYMOUS, ARTICLE_TYPES, blocksMarkdown, entryAuthors, entryMarkdown, mediaUrl, recordTitle, resolveBindings, richTextMarkdown, siteMarkdown, type CollectionDefinition, type RecordShape, type RichTextDoc, type Block } from '@cossackframework/cms';
 import { excerptOf, type CmsFile, type CmsHost } from '@cossackframework/cms/server';
-import { bindingScopes, isProtected } from './site';
+import { bindingScopes, isMembersOnly, isProtected } from './site';
 
 const PER_COLLECTION = 50;
 
@@ -35,7 +35,7 @@ export async function llmsTxt(cms: CmsHost, origin: string): Promise<string> {
         const where = { ...(collection.publishable === false ? {} : { status: 'published' }), ...(languages.multilingual ? { locale: languages.default } : {}) };
         const order = collection.publishable === false ? { field: 'title', direction: 'asc' as const } : { field: 'publishedAt', direction: 'desc' as const };
         let records: RecordShape[] = [];
-        try { records = [...(await repository.list({ where, order, limit: PER_COLLECTION }, { principal: ANONYMOUS })).records].filter(record => !isProtected(record) && !(record.seo as { noindex?: boolean } | null)?.noindex); }
+        try { records = [...(await repository.list({ where, order, limit: PER_COLLECTION }, { principal: ANONYMOUS })).records].filter(record => !isProtected(record) && !isMembersOnly(record) && !(record.seo as { noindex?: boolean } | null)?.noindex); }
         catch { continue; }
         if (!records.length) continue;
         records.sort((a, b) => Number((b.seo as { cornerstone?: boolean } | null)?.cornerstone === true) - Number((a.seo as { cornerstone?: boolean } | null)?.cornerstone === true));
@@ -101,12 +101,16 @@ export async function entryAsMarkdown(cms: CmsHost, collection: CollectionDefini
     const taxonomyFields = fields.filter(([, declaration]) => declaration.taxonomy);
     const terms = await cms.taxonomies.getMany(taxonomyFields.flatMap(([name]) => Array.isArray(record[name]) ? record[name] as string[] : []));
     const summary = summaryOf(record) || excerptOf(parts.join('\n\n').replace(/[#>*_`]/g, ''), 40);
-    return entryMarkdown({
+    const document = entryMarkdown({
         title: recordTitle(record, 'title'), url: `${origin}${url}`, site: settings['general.siteTitle'], description: summary, ...(authors.length ? { author: authors.join(', ') } : {}),
         published: typeof record.publishedAt === 'number' ? new Date(record.publishedAt).toISOString() : undefined, updated: new Date(record.updatedAt).toISOString(),
         terms: taxonomyFields.map(([name, declaration]) => ({ label: cms.taxonomies.declaration(declaration.taxonomy!).label, terms: (Array.isArray(record[name]) ? record[name] as string[] : []).map(id => terms.get(id)?.name ?? '').filter(Boolean) })),
         body: [image ? `![${mediaAlt(record.featuredImage as string)}](${image})` : '', ...parts].filter(part => part.trim()).join('\n\n'),
     });
+    // Active plugins add to the document through `cms.site.markdown`, as they add to the page through blocks; a failing handler leaves it as it was.
+    const { password: _password, ...visible } = record;
+    const filtered = await cms.hooks.applyFilters(siteMarkdown, document, { collection: collection.name, id: record.id, url: `${origin}${url}`, record: visible as RecordShape }).catch(() => document);
+    return typeof filtered === 'string' && filtered.length <= 1_000_000 ? filtered : document;
 }
 
 function flatten(blocks: readonly Block[]): Block[] {

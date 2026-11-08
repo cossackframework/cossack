@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-    CORE_BLOCKS, FIELD_BLOCKS, FIELD_BLOCK_TYPES, FIELD_BLOCK_KINDS, blockProblems, blockSupports, clearHidden, field, fieldBlockDeclaration, fieldBlockOf, fieldGroupDeclarations, upgradeFieldBlocks,
+    CORE_BLOCKS, FIELD_BLOCKS, FIELD_BLOCK_TYPES, FIELD_BLOCK_KINDS, blockProblems, blockSupports, clearHidden, field, fieldBlockDeclaration, fieldBlockOf, fieldGroupDeclarations,
     fieldGroupProblems, fieldProblems, fieldVisibility, groupsForTarget, hiddenKey, indexedRowField, indexedRowPaths, layoutOf, rowIndexPath, rowsPlain, rowUniqueProblem, storageType, targetOrder, validateBlocks, validateValue, withRowIds, withTarget,
     type Block, type BlockDeclaration, type FieldGroup,
 } from '../src/index';
@@ -138,9 +138,6 @@ describe('field groups', () => {
         expect(fieldProblems('slug', field.slug('title', { translatable: false }))).toEqual([expect.stringContaining('always translated')]);
         expect(FIELD_BLOCKS.find(block => block.name === 'field/boolean')!.fields).not.toHaveProperty('multiple');
         expect(FIELD_BLOCKS.find(block => block.name === 'field/media')!.fields).toHaveProperty('multiple');
-        // Field blocks of earlier builds read as today's.
-        expect(upgradeFieldBlocks([fieldBlock('r', 'repeater', { name: 'r' }, { children: [fieldBlock('l', 'list', { name: 'l' }), fieldBlock('g', 'gallery', { name: 'g' })] })])[0]!.children!.map(block => [block.type, block.data.multiple]))
-            .toEqual([['field/text', true], ['field/media', true]]);
     });
 });
 

@@ -41,6 +41,8 @@ export interface PublicUser {
   principal: Principal;
   /** Set by `registerUser` when the account waits for the email's confirmation link instead of signing in. */
   verification?: 'sent';
+  /** The account waits for an administrator's approval before it can sign in. */
+  approval?: 'pending';
 }
 
 declare module '@cossackframework/core' {
@@ -88,7 +90,13 @@ export const authSessions = createSessionManager({
     create: (record, c) => {
       // A handoff in progress makes the session a child of the network session.
       const child = (c as Context).get('cms.child');
-      return child ? cms(c).authSessions.createChild(record, child, c) : cms(c).authSessions.create(record, c);
+      const created = child ? cms(c).authSessions.createChild(record, child, c) : cms(c).authSessions.create(record, c);
+      // Every sign-in ends here, whatever its method: plugins hear of it through cms.user.signed-in.
+      return created.then(async result => {
+        const user = await cms(c).users.get(record.userId).catch(() => null);
+        if (user) await cms(c).userSignedIn(user, record.id).catch(() => undefined);
+        return result;
+      });
     },
     read: async (id, c) => {
       const session = await cms(c).authSessions.read(id, c);
@@ -140,6 +148,7 @@ export async function loginUser(email: string, password: string, address = clien
   const allowed = await host.security.signInAllowed(email, address);
   if (!allowed.ok) throw new SignInLockedError(allowed.retryAfterMs);
   const account = await host.signIn.accounts.verifier.verify(email, password);
+  if (account && account.status !== 'active' && await host.users.awaitingApproval(account.id).catch(() => false)) throw new SignInPendingError();
   if (!account || account.status !== 'active') {
     await host.security.signInFailed(email, address);
     return null;
@@ -155,6 +164,14 @@ export class SignInLockedError extends ClientVisibleError {
     super(`Too many sign-in attempts. Try again in ${Math.max(1, Math.ceil(retryAfterMs / 60_000))} minutes.`);
     this.name = 'SignInLockedError';
     this.retryAfterMs = retryAfterMs;
+  }
+}
+
+/** The password matched an account that waits for an administrator's approval. */
+export class SignInPendingError extends ClientVisibleError {
+  constructor() {
+    super('Your account waits for an administrator to approve it. We will email you when it is ready.');
+    this.name = 'SignInPendingError';
   }
 }
 
@@ -211,7 +228,9 @@ export async function setupRequired(): Promise<boolean> {
 /**
  * A new account, with the site's default role. On an added site it is a site account. On the
  * network host for another site (the visitor came from its network sign-in) it is a network
- * account, a member of that site only.
+ * account, a member of that site only. `cms.user.before-register` filters may refuse it, change
+ * its roles or hold it for approval; Settings → General may ask for both the email's
+ * confirmation and an administrator's approval, in that order.
  */
 export async function registerUser(email: string, password: string, name?: string): Promise<PublicUser> {
   const c = getRequestContext();
@@ -219,17 +238,29 @@ export async function registerUser(email: string, password: string, name?: strin
   const host = site ?? cms();
   if (!(await registrationOpen())) throw new ClientVisibleError('Registration is closed on this site.');
   const role = await host.settings.get('general.defaultRole');
-  const roles = role && (await host.users.role(role)) ? [role] : [];
+  const origin = env('APP_URL', '') || (c ? new URL(c.req.url).origin : '');
+  let draft;
   try {
-    const user = await host.users.create({ email, password, name: name?.trim() || email.split('@')[0]!, roles, ...(site ? { network: true } : {}) });
+    draft = await host.registrationDraft({ email, name: name?.trim() || email.split('@')[0]!, roles: role && (await host.users.role(role)) ? [role] : [], approval: !site && await host.settings.get('general.approveRegistrations').catch(() => false) }, { origin });
+  } catch (error) {
+    if (isCmsError(error, 'CMS_VALIDATION')) throw new ClientVisibleError(error.message);
+    throw error;
+  }
+  try {
+    const user = await host.users.create({ email, password, name: draft.name, roles: draft.roles, ...(site ? { network: true } : {}) });
+    const bare = { id: user.id, email: user.email, name: user.name, avatar: user.avatar, meta: null, roles: [], principal: ANONYMOUS };
     // With a sender and Settings → General asking for it, the account waits for the email's link; the handoff flow signs in on the network host and skips it.
-    if (!site && host.mail && await host.settings.get('general.verifyEmail').catch(() => true)) {
-      await host.users.setStatus(user.id, 'disabled');
+    const verify = !site && Boolean(host.mail) && await host.settings.get('general.verifyEmail').catch(() => true);
+    if (draft.approval) await host.users.holdForApproval(user.id, { verified: !verify });
+    else if (verify) await host.users.setStatus(user.id, 'disabled');
+    await host.userRegistered(user, verify ? 'verification' : draft.approval ? 'approval' : 'active').catch(() => undefined);
+    if (verify) {
       await sendVerification(host, user.id, user.email, user.name);
-      return { id: user.id, email: user.email, name: user.name, avatar: user.avatar, meta: null, roles: [], principal: ANONYMOUS, verification: 'sent' };
+      return { ...bare, verification: 'sent' };
     }
+    if (draft.approval) return { ...bare, approval: 'pending' };
     // The network host signs the account in; the handoff then takes it to its site.
-    return site ? { id: user.id, email: user.email, name: user.name, avatar: user.avatar, meta: null, roles: [], principal: ANONYMOUS } : (await member(user.id))!;
+    return site ? bare : (await member(user.id))!;
   } catch (error) {
     if (isCmsError(error, 'CMS_CONFLICT')) throw new ClientVisibleError('An account with this email already exists.');
     throw error;
@@ -478,16 +509,13 @@ export async function requestPasswordReset(email: string, resetBaseUrl: string):
     resetBaseUrl = network;
   }
   if (!reset) return; // do NOT leak whether the email exists
-  const from = env('MAIL_FROM', 'no-reply@example.com');
-  const emailBinding = binding<{ send: (m: unknown) => Promise<unknown> }>('EMAIL');
-  if (!emailBinding) {
+  if (!host.mail) {
     console.warn('[cms] A password reset was requested, but no email sender is configured (an EMAIL binding, or SMTP_HOST on Node): the link was not sent.');
     return;
   }
   const resetUrl = `${resetBaseUrl.replace(/\/$/, '')}/auth/reset-password?token=${reset.token}`;
-  const html = `<p>We received a request to reset your password.</p><p><a href="${resetUrl}">Reset password</a></p><p>This link expires in 1 hour.</p>`;
-  const text = `Reset your password: ${resetUrl}`;
-  await emailBinding.send({ to: reset.account.email, from, subject: 'Reset your password', html, text });
+  await host.mail.send({ kind: 'reset', to: reset.account.email, subject: 'Reset your password',
+    text: `We received a request to reset your password. Choose a new one here; the link works for one hour:\n${resetUrl}\n\nIf you did not ask for it, ignore this email.` });
 }
 
 /** One request can use a token; the account's sessions end with the change. */
@@ -602,20 +630,40 @@ async function sendVerification(host: CmsHost, userId: string, email: string, na
   const c = getRequestContext();
   const origin = env('APP_URL', '') || (c ? new URL(c.req.url).origin : '');
   const title = await host.settings.get('general.siteTitle').catch(() => '');
-  await host.mail.send({ to: email, from: host.mailFrom, subject: `Confirm your email for ${title || 'the site'}`,
+  await host.mail.send({ kind: 'verification', to: email, from: host.mailFrom, subject: `Confirm your email for ${title || 'the site'}`,
     text: `Hello ${name || email},\n\nConfirm your email address to finish creating your account on ${title || origin}:\n${origin.replace(/\/$/, '')}/auth/verify?token=${token}\n\nThe link works for two days. If you did not register, ignore this email.` });
 }
 
-/** Open a confirmation link: the account becomes active and the token is spent. Returns the user ID, or null for an unknown or expired link. */
-export async function verifyEmail(token: string): Promise<string | null> {
+/**
+ * Open a confirmation link: the token is spent, and the account becomes active, or keeps
+ * waiting for an administrator's approval (`pending`). Null for an unknown or expired link.
+ */
+export async function verifyEmail(token: string): Promise<{ user: string; pending: boolean } | null> {
   if (!/^[A-Za-z0-9_-]{20,128}$/.test(token)) return null;
   const host = cms();
   const key = `verify:${await sha256Hex(token)}`;
   const found = await host.cache.get<{ user: string }>(key);
   if (!found?.user) return null;
   await host.cache.delete(key);
+  if (await host.users.confirmRegistration(found.user)) return { user: found.user, pending: true };
   await host.users.setStatus(found.user, 'active');
-  return found.user;
+  return { user: found.user, pending: false };
+}
+
+/**
+ * Approve a member who waits for it: their account becomes active and they get an email saying
+ * so. False when they were not waiting; `CMS_VALIDATION` before their email is confirmed.
+ */
+export async function approveRegistration(userId: string, origin: string): Promise<boolean> {
+  const host = cms();
+  if (!(await host.users.approve(userId))) return false;
+  const user = await host.users.get(userId);
+  if (user && host.mail) {
+    const title = await host.settings.get('general.siteTitle').catch(() => '');
+    await host.mail.send({ to: user.email, from: host.mailFrom, subject: `Your account on ${title || 'the site'} is ready`,
+      text: `Hello ${user.name || user.email},\n\nAn administrator approved your account. Sign in at:\n${origin.replace(/\/$/, '')}/auth/login\n` }).catch(() => undefined);
+  }
+  return true;
 }
 
 /** How long a sign-in link lives. */
@@ -636,7 +684,7 @@ export async function requestMagicLink(email: string, origin: string): Promise<v
   const token = randomToken(32);
   await host.cache.set(`magic:${await sha256Hex(token)}`, { user: account.id }, MAGIC_LINK_TTL_MS);
   const title = await host.settings.get('general.siteTitle').catch(() => '');
-  await host.mail.send({ to: account.email, from: host.mailFrom, subject: `Sign in to ${title || 'the site'}`,
+  await host.mail.send({ kind: 'magic-link', to: account.email, from: host.mailFrom, subject: `Sign in to ${title || 'the site'}`,
     text: `Open this link to sign in; it works once, for fifteen minutes:\n${(env('APP_URL', '') || origin).replace(/\/$/, '')}/auth/magic?token=${token}\n\nIf you did not ask for it, ignore this email.` });
 }
 

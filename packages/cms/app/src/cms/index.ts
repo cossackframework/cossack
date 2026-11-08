@@ -16,9 +16,9 @@ export interface CmsBindings extends DatabaseBindings, PendingBindings, MediaBin
     /** Stripe's API base, for tests. */
     STRIPE_API_URL?: string;
     APP_URL?: string;
-    /** Sends form notifications: Cloudflare's Email Service binding, or any `{ send(message) }`. */
-    EMAIL?: { send(message: { to: string; from: string; subject: string; text: string; replyTo?: string }): Promise<unknown> };
-    /** The sender of form notifications. */
+    /** Sends the site's emails, plain text with an HTML part: Cloudflare's Email Service binding, the Node adapter's SMTP sender, or any `{ send(message) }`. */
+    EMAIL?: { send(message: { to: string; from: string; subject: string; text: string; html?: string; replyTo?: string }): Promise<unknown> };
+    /** The sender of the site's emails. */
     MAIL_FROM?: string;
     /** Purges the Cloudflare cache when pages change: a token with Zone → Cache Purge, and Zone → Zone Read unless the zone ID is given. */
     CLOUDFLARE_API_TOKEN?: string;

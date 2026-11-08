@@ -8,11 +8,13 @@ export type CmsErrorCode =
     | 'CMS_VALIDATION'
     | 'CMS_UNAVAILABLE'
     | 'CMS_UNCERTAIN'
-    | 'CMS_LIMIT';
+    | 'CMS_LIMIT'
+    /** The database was made by another build of the CMS: a setup mistake to fix, never a page to wait for. */
+    | 'CMS_SCHEMA_MISMATCH';
 
 const STATUS: { [C in CmsErrorCode]: number } = {
     CMS_UNAUTHENTICATED: 401, CMS_FORBIDDEN: 403, CMS_NOT_FOUND: 404, CMS_CONFLICT: 409,
-    CMS_VALIDATION: 422, CMS_UNAVAILABLE: 503, CMS_UNCERTAIN: 503, CMS_LIMIT: 413,
+    CMS_VALIDATION: 422, CMS_UNAVAILABLE: 503, CMS_UNCERTAIN: 503, CMS_LIMIT: 413, CMS_SCHEMA_MISMATCH: 500,
 };
 
 /**

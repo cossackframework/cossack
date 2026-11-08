@@ -4,7 +4,7 @@ import { isSameOriginPost } from '@cossackframework/cms';
 import { notice, pageHeader } from '../../../../../cms/ui';
 import { requireNetworkAdmin } from '../../../../../cms/guards';
 import { network } from '../../../../../cms/network-ui';
-import { SUBMIT } from '../../../../../cms/network-view';
+import { submitButton } from '../../../../../cms/network-view';
 
 /**
  * Network → Updates: sites whose schema has host steps to apply after a deploy. Each site
@@ -41,7 +41,7 @@ export default class NetworkUpdates extends Cossack {
             ${this.error ? notice(this.error, 'error') : null}
             ${this.pending.length ? html`<ul class="divide-y divide-border rounded-lg border border-border">${this.pending.map(site => html`<li class="flex justify-between px-3 py-2 text-sm">
                     <span class="font-medium text-foreground">${site.name}</span><span class="text-muted-foreground">${site.steps} ${site.steps === 1 ? __('step pending') : __('steps pending')}</span></li>`)}</ul>
-                <form method="post"><button type="submit" class=${SUBMIT}>${__('Upgrade up to 10 sites')}</button></form>`
+                <form method="post">${submitButton(__('Upgrade up to 10 sites'))}</form>`
                 : notice(__('Every site is up to date.'), 'success')}
         </div>`;
     }

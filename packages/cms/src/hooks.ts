@@ -4,6 +4,7 @@
  */
 import { defineAction, defineFilter } from '@cossackframework/core/hooks';
 import type { RecordShape } from './records';
+import type { Block } from './blocks';
 import type { FormField, FormValues, NotificationRule, SubmissionShape } from './form-builder';
 import type { CommentStatus } from './comments';
 import type { MenuItem } from './menus';
@@ -274,13 +275,218 @@ export interface EntryListInput {
 
 /**
  * The quick actions under an entry in its list, the built-in ones included (named by `id`, in
- * `ENTRY_ACTION_IDS`): add yours, remove or reorder them. Version 2: version 1 passed an empty list.
+ * `ENTRY_ACTION_IDS`): add yours, remove or reorder them.
  */
-export const entryActions = defineFilter<readonly EntryAction[], EntryListInput & { readonly record: RecordShape }>('cms.dashboard.entry-actions', { version: 2, timeoutMs: 1_000 });
+export const entryActions = defineFilter<readonly EntryAction[], EntryListInput & { readonly record: RecordShape }>('cms.dashboard.entry-actions', { version: 1, timeoutMs: 1_000 });
 /** Columns of an entries list after the built-in ones, with values for the records shown. */
 export const entryColumns = defineFilter<readonly EntryColumn[], EntryListInput & { readonly records: readonly RecordShape[] }>('cms.dashboard.entry-columns', { version: 1, timeoutMs: 2_000 });
 /** Actions offered for the selected entries of a list, after the built-in ones. */
 export const bulkActions = defineFilter<readonly EntryAction[], EntryListInput>('cms.dashboard.bulk-actions', { version: 1, timeoutMs: 1_000 });
 
+/** A message at the top of every dashboard screen, such as "Connect your payment account". */
+export interface DashboardNotice {
+    /** Names the notice, so another plugin can find or remove it. */
+    readonly id: string;
+    readonly tone: 'info' | 'success' | 'warning' | 'error';
+    /** Plain text, up to 300 characters. */
+    readonly message: string;
+    /** A same-site path the notice links to. */
+    readonly href?: string;
+}
+
+/** What waits for someone, on the dashboard's taskbar: a label, where to go, and a count. */
+export interface TaskbarItem {
+    readonly id: string;
+    readonly label: string;
+    /** A same-site path. */
+    readonly href: string;
+    readonly count?: number;
+    readonly tone?: 'info' | 'warning' | 'error';
+}
+
+/** Notices above every dashboard screen for the signed-in user. Starts empty. */
+export const dashboardNotices = defineFilter<readonly DashboardNotice[], { readonly actor: WriteActor }>('cms.dashboard.notices', { version: 1, timeoutMs: 1_000 });
+/** The taskbar's items for the signed-in user, the built-in ones included (comments to moderate, pending review, …). */
+export const dashboardTaskbar = defineFilter<readonly TaskbarItem[], { readonly actor: WriteActor }>('cms.dashboard.taskbar', { version: 1, timeoutMs: 1_000 });
+
+/**
+ * An entry as machines read it (`Accept: text/markdown`, `?format=md`): the Markdown document
+ * with its front matter. Return it with your text added, such as a licence or a source note.
+ */
+export const siteMarkdown = defineFilter<string, { readonly collection: string; readonly id: string; readonly url: string; readonly record: RecordShape }>('cms.site.markdown', { version: 1, timeoutMs: 1_000 });
+
+// --- The site's entries -----------------------------------------------------------
+
+/** What a `cms.site.entry-view` filter may change of an entry shown on the site. */
+export interface EntryViewParts {
+    readonly title: string;
+    readonly excerpt: string;
+    /**
+     * Blocks shown before and after the entry's content, in the stored shape (`{ _id, type, data }`),
+     * rendered as the entry's own are. `core/html` is refused, so a filter, an isolated plugin's
+     * included, never puts markup of its own, or script, on the site.
+     */
+    readonly before: readonly Block[];
+    readonly after: readonly Block[];
+}
+
+/**
+ * An entry's full view on the site, after it is rendered and before the theme draws it, as
+ * WordPress's `the_title` and `the_content`: change its title and excerpt, add blocks before or
+ * after its content. Not run for a locked entry (password or members only).
+ */
+export const siteEntryView = defineFilter<EntryViewParts, { readonly collection: string; readonly id: string; readonly url: string | null; readonly record: RecordShape; readonly signedIn: boolean }>('cms.site.entry-view', { version: 1, timeoutMs: 1_000 });
+
+/** Block types a `cms.site.entry-view` filter may not add: their data is markup. */
+export const ENTRY_VIEW_REFUSED_BLOCKS: ReadonlySet<string> = new Set(['core/html']);
+
+// --- Users ------------------------------------------------------------------------
+
+/** A registration before the account is made: what a `cms.user.before-register` filter may change. */
+export interface RegistrationDraft {
+    readonly email: string;
+    readonly name: string;
+    /** Role IDs the account gets; roles the site does not have are dropped. */
+    readonly roles: readonly string[];
+    /** The account waits for an administrator's approval (Settings → General, or a filter's choice). */
+    readonly approval: boolean;
+    /** Set to refuse the registration: the message the visitor sees. */
+    readonly refused: string | null;
+}
+
+/**
+ * Before a visitor's account is made, as WordPress's `registration_errors` and `user_register`
+ * meet: refuse it (an email domain allowlist), choose its roles, or hold it for approval.
+ */
+export const userBeforeRegister = defineFilter<RegistrationDraft, { readonly origin: string }>('cms.user.before-register', { version: 1, timeoutMs: 2_000 });
+
+export interface UserRef {
+    readonly id: string;
+    readonly email: string;
+    readonly name: string;
+}
+
+export interface UserRegisteredEvent {
+    /** Outbox ID, stable across repeated deliveries: use it as the idempotency key. */
+    readonly eventId: string;
+    readonly topic: 'user.registered';
+    readonly at: number;
+    readonly user: UserRef;
+    /** What the account waits for: nothing (`active`), its email link (`verification`), or an administrator (`approval`). */
+    readonly state: 'active' | 'verification' | 'approval';
+}
+
+/** After a visitor registered, run from the outbox: a welcome email, a CRM contact. Deliveries can repeat. */
+export const userRegistered = defineAction<UserRegisteredEvent>('cms.user.registered', { version: 1, timeoutMs: 10_000 });
+
+export interface UserSignedInEvent {
+    /** Outbox ID, stable across repeated deliveries: use it as the idempotency key. */
+    readonly eventId: string;
+    readonly topic: 'user.signed-in';
+    readonly at: number;
+    readonly user: UserRef;
+}
+
+/**
+ * After a session started for a user, run from the outbox: by any sign-in method, or the
+ * automatic sign-in after registering or confirming the email. Deliveries can repeat.
+ */
+export const userSignedIn = defineAction<UserSignedInEvent>('cms.user.signed-in', { version: 1, timeoutMs: 10_000 });
+
+/** A `cms.user.before-register` result the host can use: the original email, existing roles, bounded text. */
+export function registrationDraftOf(value: unknown, original: RegistrationDraft, roles: ReadonlySet<string>): RegistrationDraft {
+    const draft = value && typeof value === 'object' ? value as Partial<RegistrationDraft> : {};
+    const name = typeof draft.name === 'string' && draft.name.trim() ? draft.name.trim().slice(0, 191) : original.name;
+    const chosen = Array.isArray(draft.roles) ? draft.roles.filter((role): role is string => typeof role === 'string' && roles.has(role)).slice(0, 10) : [...original.roles];
+    const refused = typeof draft.refused === 'string' && draft.refused.trim() ? draft.refused.trim().slice(0, 300) : null;
+    return { email: original.email, name, roles: [...new Set(chosen)], approval: typeof draft.approval === 'boolean' ? draft.approval : original.approval, refused };
+}
+
+// --- Mail -------------------------------------------------------------------------
+
+/** What an email the CMS sends is for. `other` is mail application code sends without saying. */
+export const MAIL_KINDS = Object.freeze(['verification', 'reset', 'magic-link', 'invitation', 'comment', 'note', 'automation', 'form', 'plugin', 'other'] as const);
+export type MailKind = (typeof MAIL_KINDS)[number];
+
+/** An email about to go out: its plain text, and the HTML the site's layout (Settings → Email) made from it. */
+export interface MailMessage {
+    readonly to: string;
+    /** The site's sender (`MAIL_FROM`); filters cannot change it. */
+    readonly from: string;
+    readonly subject: string;
+    readonly text: string;
+    readonly html: string;
+    readonly replyTo?: string;
+}
+
+export interface MailSendInput {
+    readonly kind: MailKind;
+    /** The plugin that sent it through `context.mail` (`kind: 'plugin'`); null for the CMS's own mail. */
+    readonly plugin: string | null;
+    /** The site sending it: `main`, or the registry ID. */
+    readonly site: string;
+}
+
+/**
+ * Change or stop an email just before it is sent, after the layout: return it with another
+ * subject, text or HTML, or null to not send it. Sign-in, reset and invitation mail (and
+ * `other`) keep their recipient and reply address whatever a filter returns. A failing or slow
+ * filter does not stop the mail: it goes out as the layout made it.
+ */
+export const mailBeforeSend = defineFilter<MailMessage | null, MailSendInput>('cms.mail.before-send', { version: 1, timeoutMs: 2_000 });
+
+/** The largest subject, text and HTML a `cms.mail.before-send` filter may return, in characters. */
+export const MAIL_LIMITS = Object.freeze({ subject: 300, text: 100_000, html: 300_000 });
+
+/** Kinds whose `to` and `replyTo` a filter may change: none of them carries a sign-in link. */
+const OPEN_RECIPIENTS: ReadonlySet<MailKind> = new Set(['comment', 'note', 'automation', 'form', 'plugin']);
+const MAIL_ADDRESS = /^[^\s@<>,;"]+@[^\s@<>,;"]+\.[^\s@<>,;"]+$/;
+
+/** Whether a filter may send this kind of mail elsewhere: never for verification, reset, magic-link, invitation and other mail. */
+export function mailRecipientsLocked(kind: MailKind): boolean {
+    return !OPEN_RECIPIENTS.has(kind);
+}
+
+/**
+ * A `cms.mail.before-send` result the host can send: null when a filter cancelled the mail;
+ * otherwise the original sender, the original recipient and reply address for locked kinds, one
+ * valid address each for the others, a one-line subject, and a text and HTML within
+ * `MAIL_LIMITS` (a field that is missing, empty or too large keeps the original).
+ */
+export function mailMessageOf(value: unknown, original: MailMessage, kind: MailKind): MailMessage | null {
+    if (value === null) return null;
+    if (!value || typeof value !== 'object') return original;
+    const next = value as { readonly [key in keyof MailMessage]?: unknown };
+    const subject = typeof next.subject === 'string' && next.subject.trim() ? next.subject.replace(/[\r\n]+/g, ' ').trim().slice(0, MAIL_LIMITS.subject) : original.subject;
+    const text = typeof next.text === 'string' && next.text.trim() && next.text.length <= MAIL_LIMITS.text ? next.text : original.text;
+    const html = typeof next.html === 'string' && next.html.trim() && next.html.length <= MAIL_LIMITS.html ? next.html : original.html;
+    const address = (candidate: unknown): string | null => typeof candidate === 'string' && candidate.trim().length <= 320 && MAIL_ADDRESS.test(candidate.trim()) ? candidate.trim() : null;
+    if (mailRecipientsLocked(kind)) return { to: original.to, from: original.from, subject, text, html, ...(original.replyTo ? { replyTo: original.replyTo } : {}) };
+    const to = address(next.to) ?? original.to;
+    const replyTo = next.replyTo === undefined || next.replyTo === '' ? undefined : address(next.replyTo) ?? original.replyTo;
+    return { to, from: original.from, subject, text, html, ...(replyTo ? { replyTo } : {}) };
+}
+
 export const EXTENSION_POINTS = Object.freeze([beforeWrite, afterCommit, cachePurge, paymentEvent, formValidate, formBeforeSubmit, formPrefill, formConfirmation, formNotification, formSubmitted,
-    termBeforeSave, commentBeforeSave, menuBeforeSave, entryActions, entryColumns, bulkActions]);
+    termBeforeSave, commentBeforeSave, menuBeforeSave, entryActions, entryColumns, bulkActions, dashboardNotices, dashboardTaskbar, siteMarkdown, siteEntryView,
+    userBeforeRegister, userRegistered, userSignedIn,
+    mailBeforeSend]);
+
+const TONES = new Set(['info', 'success', 'warning', 'error']);
+const sameSitePath = (value: unknown): value is string => typeof value === 'string' && value.startsWith('/') && !value.startsWith('//') && value.length <= 500;
+
+/** The notices a filter returned that the dashboard can show: well-formed, at most ten. Anything else is dropped. */
+export function dashboardNoticesOf(value: unknown): DashboardNotice[] {
+    if (!Array.isArray(value)) return [];
+    return value.filter((entry): entry is DashboardNotice => !!entry && typeof entry === 'object' && typeof entry.id === 'string' && TONES.has(entry.tone)
+        && typeof entry.message === 'string' && entry.message.trim().length > 0 && (entry.href === undefined || sameSitePath(entry.href)))
+        .slice(0, 10).map(entry => ({ id: entry.id.slice(0, 80), tone: entry.tone, message: entry.message.trim().slice(0, 300), ...(entry.href ? { href: entry.href } : {}) }));
+}
+
+/** The taskbar items a filter returned that the taskbar can show: well-formed, at most twenty. */
+export function taskbarItemsOf(value: unknown): TaskbarItem[] {
+    if (!Array.isArray(value)) return [];
+    return value.filter((entry): entry is TaskbarItem => !!entry && typeof entry === 'object' && typeof entry.id === 'string' && typeof entry.label === 'string' && entry.label.trim().length > 0
+        && sameSitePath(entry.href) && (entry.count === undefined || (Number.isSafeInteger(entry.count) && entry.count >= 0)) && (entry.tone === undefined || (TONES.has(entry.tone) && entry.tone !== 'success')))
+        .slice(0, 20).map(entry => ({ id: entry.id.slice(0, 80), label: entry.label.trim().slice(0, 60), href: entry.href, ...(entry.count !== undefined ? { count: entry.count } : {}), ...(entry.tone ? { tone: entry.tone } : {}) }));
+}

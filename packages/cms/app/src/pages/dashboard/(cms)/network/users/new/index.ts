@@ -5,7 +5,7 @@ import { isCmsError, isSameOriginPost, NETWORK_ADMIN } from '@cossackframework/c
 import { notice, pageHeader } from '../../../../../../cms/ui';
 import { requireNetworkAdmin } from '../../../../../../cms/guards';
 import { network } from '../../../../../../cms/network-ui';
-import { field, SUBMIT } from '../../../../../../cms/network-view';
+import { field, submitButton } from '../../../../../../cms/network-view';
 
 interface NewAccountForm { name: string; email: string; admin: boolean }
 
@@ -57,7 +57,7 @@ export default class NewNetworkUser extends Cossack {
                     <label class="flex items-start gap-2 text-sm text-foreground"><input type="checkbox" name="admin" class="mt-0.5 size-4 accent-primary" ?checked=${this.form.admin}>
                         <span><span class="font-medium">${__('Network admin')}</span><span class="block text-xs text-muted-foreground">${__('Runs every site and the network dashboard.')}</span></span></label>
                     <div class="flex items-center gap-2">
-                        <button type="submit" class=${SUBMIT}>${__('Add account')}</button>
+                        ${submitButton(__('Add account'))}
                         <a href="/dashboard/network/users" class="inline-flex items-center justify-center rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground no-underline hover:bg-muted">${__('Cancel')}</a>
                     </div>
                 </form>`))}

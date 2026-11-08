@@ -679,8 +679,23 @@ export interface EntryView {
     readonly locale: string;
     /** Comments, when the collection takes them and the view is full; else null. */
     readonly comments: CommentsView | null;
-    /** Password protected and not unlocked by this visitor: the excerpt, content and fields are withheld. */
-    readonly locked: boolean;
+    /**
+     * Why the excerpt, content and fields are withheld from this visitor: `password` for a
+     * protected entry they have not unlocked, `members` for a members-only entry and a visitor
+     * who is not signed in or has none of its member roles. Null when the entry shows in full.
+     */
+    readonly locked: 'password' | 'members' | null;
+}
+
+/** What a members-only entry shows a reader who may not read it: not signed in, or without one of its roles. */
+export interface MembersView {
+    readonly entry: EntryView;
+    /** The reader is signed in, without one of the entry's member roles: signing in again does not help. */
+    readonly signedIn: boolean;
+    /** The sign-in page, returning to the entry. */
+    readonly signIn: string;
+    /** The registration page, returning to the entry; null when the site does not take registrations. */
+    readonly register: string | null;
 }
 
 /** What the password form of a protected entry shows. */
@@ -862,6 +877,8 @@ export interface SiteTheme {
     notFound?(helpers: ThemeHelpers): TemplateResult;
     /** The form asking for a protected entry's password; the host draws a plain one otherwise. */
     password?(view: LockedView, helpers: ThemeHelpers): TemplateResult;
+    /** What a members-only entry shows visitors who are not signed in; the host draws a plain sign-in prompt otherwise. */
+    members?(view: MembersView, helpers: ThemeHelpers): TemplateResult;
     /** Tags for the document head: stylesheets, fonts, meta. The page's own title and meta win. */
     head?(site: SiteView, helpers: ThemeHelpers): HeadValue;
     /**

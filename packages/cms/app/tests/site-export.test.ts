@@ -1,23 +1,22 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ClientError } from '@cossackframework/romedb';
-import type { CmsHost } from '@cossackframework/cms/server';
+import { FILE_EXPORT_EMPTIED_TABLES, type CmsHost } from '@cossackframework/cms/server';
 import { fileExportResponse } from '../src/cms/site-export';
 
-const INFO = { results: [{ rows: [[{ tables: [{ name: 'cms_cache' }, { name: 'cms_posts' }] }]] }] };
-const host = (exportFile: (options: { emptyTables: string[] }) => Promise<unknown>) => ({ now: () => Date.UTC(2026, 10, 4), db: { read: async () => INFO, exportFile } }) as unknown as CmsHost;
+const host = (exportFile: (options: { emptyTables: string[] }) => Promise<unknown>) => ({ now: () => Date.UTC(2026, 10, 4), db: { exportFile } }) as unknown as CmsHost;
 const site = { id: 'blog' };
 const open = () => new AbortController().signal;
 
 describe('a database file download', () => {
     afterEach(() => { vi.unstubAllGlobals(); });
 
-    it('sends the file, with the tables this site has left empty', async () => {
+    it('sends the file, with the tables a copy leaves empty', async () => {
         let emptied: string[] = [];
         const response = await fileExportResponse(host(async options => {
             emptied = options.emptyTables;
             return { sequence: 1, size: 4, body: new Response('file').body };
         }), site, open());
-        expect(emptied).toEqual(['cms_cache']);
+        expect(emptied).toEqual([...FILE_EXPORT_EMPTIED_TABLES]);
         expect(response.status).toBe(200);
         expect(response.headers.get('content-disposition')).toBe('attachment; filename="blog-2026-11-04.romedb"');
         expect(response.headers.get('content-length')).toBe('4');

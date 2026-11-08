@@ -1,4 +1,5 @@
 import { Cossack, Page, State, flash, flashed, type HeadValue } from '@cossackframework/core';
+import { settingsSectionHref } from '../../../../../cms/settings-search';
 import { Badge, Card, CardBody, CardHeader } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { cacheHoldSeconds, cachePurge, isCmsError, isSameOriginPost, PERMISSIONS, type CacheHold } from '@cossackframework/cms';
@@ -78,7 +79,7 @@ export default class CachePage extends Cossack {
                 <aside class="space-y-4">
                     ${component(Card, {}, component(CardBody, { class: 'space-y-3' }, html`<h2 class="text-base font-semibold text-foreground">${__('Hold')}</h2>
                         <p class="text-sm text-muted-foreground" data-testid="cache-hold">${hold}</p>
-                        <p class="text-xs text-muted-foreground">${__('Anonymous pages say so in Cache-Control; a signed-in user\'s page, Live Edit, previews and protected entries are never held. Change it under')} <a href="/dashboard/settings/cache" class="text-primary hover:underline">${__('Settings → Cache')}</a>.</p>
+                        <p class="text-xs text-muted-foreground">${__('Anonymous pages say so in Cache-Control; a signed-in user\'s page, Live Edit, previews and protected entries are never held. Change it under')} <a href=${settingsSectionHref('cache')} class="text-primary hover:underline">${__('Settings → Cache')}</a>.</p>
                         <p class="text-xs text-muted-foreground">${__('On Cloudflare, add one cache rule for the site: cache everything, using the origin\'s Cache-Control. Crawler counts on Health then see only the requests the cache passes on.')}</p>`))}
                     ${component(Card, {}, component(CardBody, { class: 'space-y-3' }, html`<h2 class="text-base font-semibold text-foreground">${__('Purgers')}</h2>
                         ${purgers.length ? html`<ul class="space-y-1 text-sm text-foreground" data-testid="purgers">${purgers.map(name => html`<li><code>${name}</code></li>`)}</ul>` : html`<p class="text-sm text-muted-foreground">${__('None.')}</p>`}

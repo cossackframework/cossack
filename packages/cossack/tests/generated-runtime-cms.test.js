@@ -343,7 +343,6 @@ async function exercise(origin, routeIds, diagnostics) {
   for (const group of ['general', 'writing', 'reading', 'media', 'permalinks']) {
     expect(general).toMatch(new RegExp(`data-settings-menu-group="?${group}(?:"|\\s|>)`));
     expect(general).toMatch(new RegExp(`data-settings-section="?${group}(?:"|\\s|>)`));
-    expect((await web.request(`/dashboard/settings/${group}`)).headers.get('location')).toBe(`/dashboard/settings#settings-${group}`);
   }
   contains(general, 'aria-label="Edit settings JSON"');
   expect((await web.request('/dashboard/settings')).status).toBe(200);

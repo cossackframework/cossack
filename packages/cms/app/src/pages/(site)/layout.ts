@@ -3,7 +3,7 @@ import { analyticsTags, NO_ANALYTICS, type AnalyticsServices } from '../../cms/a
 import { listedCollections } from '../../cms/cache';
 import { html } from '@cossackframework/renderer';
 import { hasPermission, PERMISSIONS, PLACEHOLDER_SCRIPT, usesUserBinding, type RenderedBlock, type SiteView, type ThemeData } from '@cossackframework/cms';
-import { areaViews, bindingScopes, languageLinks, resolvedOptions, siteMenus, siteView, themeData, themeState, type ThemeState } from '../../cms/site';
+import { areaViews, bindingScopes, languageLinks, resolvedOptions, siteMenus, siteView, themeData, themeState, type Resolved, type ThemeState } from '../../cms/site';
 import { blockOptions } from '../../cms/content';
 import { areaDraftBlocks, patternDraftBlocks } from '../../cms/site-editing';
 import { siteSession, type AreaDraft, type PatternDraft, type SiteEditingContext } from '../../cms/site-session';
@@ -18,8 +18,13 @@ import { logout } from '../../auth';
  * the taskbar signed-in users see along the bottom. The taskbar is a `server$` resource: it is
  * built during render, after the page's `init()` described the page (`c.set('cms.taskbar')`),
  * and again on every client navigation, which a layout's `@State` is not.
+ *
+ * Every page under `(site)` gets this frame, the application's and plugins' own pages too:
+ * `src/plugins/<name>/pages/(site)/docs/guide.md` serves `/docs/guide` inside the theme.
+ * `ssg: false`: the frame comes from the database, so no page under it is rendered at build
+ * time, Markdown pages included, which otherwise are.
  */
-@Page({ transport: 'http' })
+@Page({ transport: 'http', ssg: false })
 export default class SiteLayout extends Cossack {
     /** The signed-in user's taskbar; null for visitors, whose pages carry no trace of it. */
     taskbar: TaskbarView | null = server$(() => siteTaskbar(this.c, this.user), { initial: null });
@@ -170,7 +175,12 @@ export default class SiteLayout extends Cossack {
             const languages = await cms.languages();
             // The catch-all route resolves its path first; other routes are in the default language.
             const resolved = this.c.get('cms.site');
-            const page = resolved && 'locale' in resolved ? resolved : { kind: this.c.req.path === '/' ? 'home' as const : 'search' as const, locale: languages.default };
+            const path = this.c.req.path;
+            const page: Resolved | { kind: 'other'; locale: string } = resolved && 'locale' in resolved ? resolved
+                : path === '/' ? { kind: 'home', locale: languages.default }
+                : path === '/search' ? { kind: 'search', locale: languages.default }
+                // A page of the application's or a plugin's own under (site), a Markdown page say: the frame around it, nothing the CMS resolved.
+                : { kind: 'other', locale: languages.default };
             // The catch-all route set its content's language; the others render in the default one.
             if (!(resolved && 'locale' in resolved)) setRequestLocale(languages.default);
             const template = resolved?.kind === 'entry' && typeof resolved.record.template === 'string' && resolved.record.template ? resolved.record.template : null;

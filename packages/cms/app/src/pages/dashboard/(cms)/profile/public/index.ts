@@ -3,7 +3,7 @@ import { Button, Card, CardBody, CardHeader, Field, Input, Textarea } from '@cos
 import { html, component } from '@cossackframework/renderer';
 import { AUTHOR_FIELDS, authorUrl, isCmsError } from '@cossackframework/cms';
 import { siteOrigin } from '../../../../../cms/seo';
-import { notice } from '../../../../../cms/ui';
+import { notice, pageHeader } from '../../../../../cms/ui';
 
 /** The author profile as the form holds it. */
 interface PublicProfile { slug: string; bio: string; jobTitle: string; website: string; profiles: string }
@@ -78,14 +78,9 @@ export default class PublicProfilePage extends Cossack {
                 : component(Input, { ...attributes, ...(options.placeholder ? { placeholder: options.placeholder } : {}), '.value': this.form[key], '@input': (event: Event) => this.set(key, (event.target as HTMLInputElement).value) }),
         });
         const page = authorUrl(this.form.slug);
-        return html`<div class="max-w-2xl space-y-8">
-            <div class="flex flex-wrap items-end justify-between gap-3">
-                <div>
-                    <h1 class="text-2xl font-bold text-foreground">${__('Public profile')}</h1>
-                    <p class="mt-1 text-sm text-muted-foreground">${__('What readers and search engines learn about you as an author. Your name and picture come from your profile.')}</p>
-                </div>
-                <a href="/dashboard/profile" class="text-sm text-primary hover:underline">← ${__('Profile')}</a>
-            </div>
+        return html`<div class="max-w-2xl space-y-6">
+            ${pageHeader(__('Public profile'), { description: __('What readers and search engines learn about you as an author. Your name and picture come from your profile.'),
+                actions: html`<a href="/dashboard/profile" class="text-sm text-primary hover:underline">← ${__('Profile')}</a>` })}
             ${this.message ? notice(this.message, 'success') : null}
             ${this.error ? notice(this.error, 'error') : null}
             ${component(Card, {}, html`
@@ -93,7 +88,7 @@ export default class PublicProfilePage extends Cossack {
                     <p class="text-sm text-muted-foreground">${this.authorPages && page
                         ? html`${__('Your entries are listed at')} <a href=${`${this.origin}${page}`} class="text-primary hover:underline" target="_blank" rel="noopener">${this.origin}${page}</a>`
                         : __('Author pages are off in Settings → SEO; your articles still name you as the author.')}</p>`)}
-                ${component(CardBody, {}, html`<form class="space-y-5" @submit=${(event: Event) => this.submit(event)}>
+                ${component(CardBody, {}, html`<form class="space-y-4" @submit=${(event: Event) => this.submit(event)}>
                     ${field('slug', __('Address'), { hint: __('The last part of your author page\'s URL: /author/<address>. Changing it breaks links to the old one.'), placeholder: 'ada-lovelace' })}
                     ${field('jobTitle', __('Job title'), { placeholder: __('Senior editor') })}
                     ${field('bio', __('Bio'), { rows: 4, hint: String(AUTHOR_FIELDS.bio!.description) })}

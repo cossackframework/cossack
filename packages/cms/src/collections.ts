@@ -89,10 +89,15 @@ export interface CollectionFeatures {
     readonly revisions?: boolean;
     /** A `password` field: visitors type it to read the entry on the site, as WordPress protects posts. */
     readonly password?: boolean;
+    /**
+     * A `membersOnly` switch and `memberRoles` in the sidebar: only signed-in users read the entry on
+     * the site, those with one of the roles when any is chosen; others see its title and a prompt.
+     */
+    readonly members?: boolean;
 }
 
 /** The feature names that are fields; a feature off leaves its name reserved. */
-export const FEATURE_FIELDS = Object.freeze(['content', 'excerpt', 'featuredImage', 'password'] as const);
+export const FEATURE_FIELDS = Object.freeze(['content', 'excerpt', 'featuredImage', 'password', 'membersOnly', 'memberRoles'] as const);
 
 /** The block types a content feature allows: `[]` for every type, null when it is off or malformed. */
 export function contentBlocks(content: CollectionFeatures['content']): readonly string[] | null {
@@ -151,11 +156,7 @@ export interface CollectionDefinition {
      * Fields made in the dashboard live in field groups attached to the collection.
      */
     readonly fields: { readonly [name: string]: FieldDeclaration };
-    /**
-     * Stored by older versions: the dashboard's field tree. A host upgrade turns it into a field
-     * group attached to the collection and drops it.
-     */
-    readonly layout?: readonly Block[];
+
     /**
      * The blocks a new entry's content starts with, as WordPress's block templates: a structure
      * such as a heading, an image and a rich text, with data blocks for what the entry stores.
@@ -187,7 +188,7 @@ export interface CollectionDefinition {
 }
 
 /** Field names the host derives from a definition. */
-export const CORE_FIELDS = Object.freeze(['title', 'slug', 'status', 'publishedAt', 'parent', 'menuOrder', 'authors', 'seo', 'summary', 'locale', 'translationGroup', 'commentsOpen', 'template']);
+export const CORE_FIELDS = Object.freeze(['title', 'slug', 'status', 'publishedAt', 'unpublishAt', 'parent', 'menuOrder', 'authors', 'seo', 'summary', 'locale', 'translationGroup', 'commentsOpen', 'template']);
 
 /** The users who wrote an entry, first its main author: its `authors`, or its creator for entries from before co-authors. */
 export function entryAuthors(record: { readonly owner?: string | null; readonly [field: string]: unknown }): string[] {
@@ -196,7 +197,7 @@ export function entryAuthors(record: { readonly owner?: string | null; readonly 
 }
 /** Field names no declared field or group field may take: the core fields and the features'. */
 export const RESERVED_FIELDS = Object.freeze([...CORE_FIELDS, ...FEATURE_FIELDS]);
-const FEATURES = Object.freeze(['content', 'excerpt', 'featuredImage', 'revisions', 'password'] as const);
+const FEATURES = Object.freeze(['content', 'excerpt', 'featuredImage', 'revisions', 'password', 'members'] as const);
 /** A template an editor can choose for one entry: one of the active theme's `entry-*` templates. Empty for the default. */
 export const ENTRY_TEMPLATE = 'entry-[a-z][a-z0-9_-]{0,73}';
 const RESERVED = new Set(['media', 'users', 'roles', 'terms', 'settings', 'collections', 'taxonomies', 'blocks', 'plugins', 'schema', 'content', 'new']);
@@ -269,9 +270,15 @@ export function collectionResource(definition: CollectionDefinition, labels: { r
         ...(features.excerpt ? { excerpt: field.text({ max: 1000, label: 'Excerpt', description: 'A short summary for lists, feeds and link previews.' }) } : {}),
         ...(features.featuredImage ? { featuredImage: field.media({ placement: 'sidebar', label: 'Featured image' }) } : {}),
         ...(features.password ? { password: field.string({ max: 100, placement: 'sidebar', label: 'Password', description: 'Visitors type it to read this entry. Empty for none.' }) } : {}),
+        ...(features.members ? {
+            membersOnly: field.boolean({ nullable: true, placement: 'sidebar', label: 'Members only', description: 'Only signed-in users read it; visitors see its title and a sign-in link.' }),
+            memberRoles: field.list('string', { max: 64, maxItems: 20, placement: 'sidebar', choicesFrom: 'roles', label: 'Member roles', description: 'With Members only: just these roles read it. None ticked: every signed-in user.' }),
+        } : {}),
         ...(publishable ? {
             status: field.enum(CONTENT_STATUSES, { required: true, default: 'draft', index: true, label: 'Status' }),
             publishedAt: field.datetime({ nullable: true, index: true, label: 'Published at' }),
+            // A published entry goes back to draft at this time; the scheduler clears it then.
+            unpublishAt: field.datetime({ nullable: true, index: true, label: 'Unpublish at' }),
         } : {}),
         ...(definition.hierarchical ? {
             parent: field.reference(id, { nullable: true, label: `Parent ${definition.singular.toLowerCase()}` }),
@@ -350,7 +357,7 @@ export function extendCollection(builtin: CollectionDefinition, stored: Partial<
         ...(stored.template !== undefined ? { template: stored.template } : {}),
         ...(stored.templateLock !== undefined ? { templateLock: stored.templateLock } : {}),
         ...(stored.editor !== undefined ? { editor: stored.editor } : {}),
-        ...(stored.layout !== undefined ? { layout: stored.layout } : {}),
+
         // The module's features are locked; stored ones add to them.
         ...(builtin.features || stored.features ? { features: { ...stored.features, ...builtin.features } } : {}),
         taxonomies: [...new Set([...(builtin.taxonomies ?? []), ...(stored.taxonomies ?? [])])],
@@ -370,7 +377,7 @@ export const posts: CollectionDefinition = {
     path: 'posts',
     comments: true,
     schema: { type: 'BlogPosting' },
-    features: { content: true, excerpt: true, featuredImage: true, password: true },
+    features: { content: true, excerpt: true, featuredImage: true, password: true, members: true },
     fields: {
         sticky: field.boolean({ default: false, placement: 'sidebar', label: 'Stick to the top of the blog' }),
     },
@@ -387,7 +394,7 @@ export const pages: CollectionDefinition = {
     hierarchical: true,
     path: '',
     schema: { type: 'WebPage' },
-    features: { content: true, excerpt: true, featuredImage: true, password: true },
+    features: { content: true, excerpt: true, featuredImage: true, password: true, members: true },
     fields: {},
     template: [{ _id: 'text', type: 'core/richtext', data: {} }],
 };

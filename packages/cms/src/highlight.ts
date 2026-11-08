@@ -5,10 +5,7 @@
  * else is left as written. No dependency and no script on the site; a theme that wants a full
  * grammar swaps in its own highlighter through `helpers`. Pure functions.
  */
-/** HTML-escape text for a code element. */
-function escapeHtml(value: string): string {
-    return value.replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]!);
-}
+import { escapeHtml } from './richtext';
 
 /** Token classes: comment, string, number, keyword, type, function, attribute (or property), tag, operator, inserted, deleted. */
 export type TokenClass = 'c' | 's' | 'n' | 'k' | 't' | 'f' | 'a' | 'g' | 'o' | 'i' | 'd';

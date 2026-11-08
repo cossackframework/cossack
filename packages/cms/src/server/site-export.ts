@@ -42,10 +42,8 @@ const FILE_EXPORT_TIMEOUT = 120_000;
  */
 export async function siteFile(db: RomeDB, options: { signal?: AbortSignal } = {}): Promise<DatabaseFile> {
     const signal = options.signal ? { signal: options.signal } : {};
-    const info = (await db.read([{ rql: 'INFO FOR DB' }], signal)).results[0]!.rows[0]![0] as unknown as { tables: { name: string }[] };
-    // RomeDB refuses a name the database does not have, and an older site can lack a table.
-    const here = new Set(info.tables.map(table => table.name));
-    return db.exportFile({ ...signal, timeoutMs: FILE_EXPORT_TIMEOUT, emptyTables: FILE_EXPORT_EMPTIED_TABLES.filter(name => here.has(name)) });
+    // Every site's database has every host table, so each named table exists.
+    return db.exportFile({ ...signal, timeoutMs: FILE_EXPORT_TIMEOUT, emptyTables: [...FILE_EXPORT_EMPTIED_TABLES] });
 }
 
 /** A new webhook secret, for one that comes from a copy or an export. */

@@ -183,7 +183,7 @@ application password. A CMS refusal answers `{ error, code, fields? }` with its 
 | `GET /settings`, `PUT /settings`, `GET\|PATCH /settings/<group>` | The settings document and its groups. |
 | `POST /cache/purge` `{ tags?, urls? }` | Purge the caches in front of the site (the settings permission): every page, or the tags and URLs given; answers each purger's result. |
 | `GET\|POST /terms/<taxonomy>`, `GET\|PATCH\|DELETE /terms/<taxonomy>/<id>` | Terms. |
-| `GET /media`, `POST /media` (multipart `file`) | The media library. |
+| `GET /media?q=&kind=`, `POST /media` (multipart `file`) | The media library: `q` matches titles and names, `kind` is image, video, audio, document or archive. |
 | `GET\|POST /appearance/menus`, `GET\|PATCH\|DELETE /appearance/menus/<id>` | Menus, for the appearance permission: `{ name, items, locations }`, `rev` on a change. `GET /menus/<location>` is the resolved menu visitors see. |
 | `GET /appearance/locations`, `PATCH /appearance/locations/<location>` `{ menu }` | The themes' menu locations and the menu at each (`menu` null for none). |
 | `GET /appearance/areas`, `GET\|PUT\|DELETE /appearance/areas/<name>` | Widget areas: `PUT` `{ blocks, rev }` replaces the blocks (`rev` 0 while the theme's defaults show), `DELETE` forgets them. |

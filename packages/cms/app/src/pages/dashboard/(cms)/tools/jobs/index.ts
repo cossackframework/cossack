@@ -49,9 +49,11 @@ export default class JobsPage extends Cossack {
                 await cms.webhooks.dispatch({ limit: 50 });
                 flash('jobs.message', `${__('Ran the queue:')} ${report.delivered.length} ${__('delivered')}, ${report.retrying.length} ${__('retrying')}, ${report.deadLettered.length} ${__('given up')}.`);
             } else if (action === 'retry') {
-                flash(await cms.outbox.retry(id) ? 'jobs.message' : 'jobs.error', await cms.outbox.retry(id) || true ? __('Queued again; it runs on the next pass.') : __('Nothing to retry.'));
+                const retried = await cms.outbox.retry(id);
+                flash(retried ? 'jobs.message' : 'jobs.error', retried ? __('Queued again; it runs on the next pass.') : __('Nothing to retry.'));
             } else if (action === 'remove') {
-                flash(await cms.outbox.remove(id) ? 'jobs.message' : 'jobs.error', __('Removed.'));
+                const removed = await cms.outbox.remove(id);
+                flash(removed ? 'jobs.message' : 'jobs.error', removed ? __('Removed.') : __('Nothing to remove.'));
             } else throw new Error(__('Unknown action.'));
         } catch (error) {
             flash('jobs.error', isCmsError(error) || error instanceof Error ? (error as Error).message : __('The action failed.'));
@@ -60,7 +62,8 @@ export default class JobsPage extends Cossack {
     }
 
     render() {
-        const topic = (name: string) => name === 'plugin.job' ? __('Plugin job') : name === 'cache.purge' ? __('Cache purge') : name === 'form.submitted' ? __('Form submission') : __('Content change');
+        const TOPICS: Record<string, string> = { 'plugin.job': __('Plugin job'), 'cache.purge': __('Cache purge'), 'form.submitted': __('Form submission'), 'payment.event': __('Payment'), 'user.registered': __('Registration'), 'user.signed-in': __('Sign-in') };
+        const topic = (name: string) => TOPICS[name] ?? __('Content change');
         const row = (entry: { id: string; topic: string; attempts: number; plugins: string[] | null }, when: string, actions: unknown) => html`<li class="flex flex-wrap items-center justify-between gap-2 px-4 py-2 text-sm" data-job=${entry.id}>
             <span><span class="font-medium text-foreground">${topic(entry.topic)}</span> <code class="text-xs text-muted-foreground">${entry.id.length > 60 ? `${entry.id.slice(0, 57)}…` : entry.id}</code>
                 <span class="block text-xs text-muted-foreground">${when} · ${entry.attempts} ${__('attempt(s)')}${entry.plugins?.length ? html` · ${__('waiting on')} ${entry.plugins.join(', ')}` : null}</span></span>

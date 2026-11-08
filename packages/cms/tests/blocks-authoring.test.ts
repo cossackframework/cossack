@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { blockProblems, CORE_BLOCKS, manifestProblems } from '../src/index';
+import { blockProblems, cloneBlocks, CORE_BLOCKS, manifestProblems } from '../src/index';
 
 const base = { schemaVersion: 1, name: 'acme', version: '1.0.0' };
 
@@ -30,5 +30,20 @@ describe('what a theme or plugin adds to the block library', () => {
         // Every core block, variations included, is valid; the group's are the hero and the row.
         for (const declaration of CORE_BLOCKS) expect(blockProblems(declaration), declaration.name).toEqual([]);
         expect(CORE_BLOCKS.find(declaration => declaration.name === 'core/group')!.variations!.map(variation => variation.name)).toEqual(['hero', 'row']);
+    });
+});
+
+describe('block declarations and copies', () => {
+    it('checks a plugin block\'s fields as a resource\'s fields are checked', () => {
+        expect(blockProblems({ name: 'acme/badge', label: 'Badge', fields: { code: { kind: 'string', pattern: '(' } } })).toEqual([expect.stringMatching(/^block acme\/badge: field code/)]);
+        expect(blockProblems({ name: 'acme/badge', label: 'Badge', fields: { tone: { kind: 'enum' } } })).toEqual([expect.stringMatching(/^block acme\/badge: field tone/)]);
+        expect(blockProblems({ name: 'acme/badge', label: 'Badge', fields: { code: null } } as never)).toEqual(['block acme/badge: field code must be a field declaration.']);
+    });
+
+    it('gives every block of a copy a fresh ID, children included', () => {
+        const pattern = [{ _id: 'cols', type: 'core/columns', data: {}, children: [{ _id: 'c1', type: 'core/column', data: {} }] }];
+        let next = 0;
+        const copy = cloneBlocks(pattern, () => `b${++next}`);
+        expect(copy).toEqual([{ _id: 'b1', type: 'core/columns', data: {}, children: [{ _id: 'b2', type: 'core/column', data: {} }] }]);
     });
 });

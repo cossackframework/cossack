@@ -59,24 +59,15 @@ describe.skipIf(!live)('schema planner and migration ledger', () => {
         expect(ledger.results[0]!.rows[HOST_STEPS.length]![3]).toContain('CREATE TABLE r__app__tickets');
     });
 
-    it('removes the page view tables from a database that has them, and never makes them for a new one', async () => {
+    it('refuses a database made by another build, whose ledger has host steps this build lacks', async () => {
         const fresh = await service.fresh();
-        const tables = ['cms_views', 'cms_visitors', 'cms_referrers'];
-        const expectGone = async () => {
-            for (const table of tables) await expect(fresh.db.read([{ rql: `SELECT 1 FROM ${table} LIMIT 1` }])).rejects.toThrow(/no such table|not found|does not exist/i);
-        };
         try {
             expect((await createCMS({ db: fresh.db }).migrate()).failed).toBeUndefined();
-            await expectGone();
-            await fresh.db.write([
-                ...tables.map(table => ({ rql: `CREATE TABLE ${table} (day TEXT NOT NULL, name TEXT NOT NULL, PRIMARY KEY (day, name))` })),
-                { rql: "INSERT INTO cms_settings (key, value, updated_at) VALUES ('analytics.enabled', 'false', 1)" },
-                { rql: "DELETE FROM cms_migrations WHERE id = 'cms#host-25'" },
-            ], { kind: 'test' });
-            expect((await createCMS({ db: fresh.db }).migrate()).failed).toBeUndefined();
-            await expectGone();
-            const stored = await fresh.db.read([{ rql: "SELECT key FROM cms_settings WHERE key = 'analytics.enabled'" }]);
-            expect(stored.results[0]!.rows).toEqual([]);
+            await fresh.db.write([{ rql: `INSERT INTO cms_migrations (id, kind, owner, resource, version, declaration_hash, rql, engine_version, applied_at)
+                VALUES ('cms#host-99', 'host', 'cms', NULL, 99, NULL, 'SELECT 1', '0', 1)` }], { kind: 'test' });
+            const other = createCMS({ db: fresh.db });
+            await expect(other.migrate()).rejects.toMatchObject({ code: 'CMS_SCHEMA_MISMATCH', message: expect.stringContaining('host steps 99') });
+            await expect(other.status()).rejects.toMatchObject({ code: 'CMS_SCHEMA_MISMATCH' });
         } finally {
             await fresh.stop();
         }

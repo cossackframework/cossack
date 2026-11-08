@@ -83,7 +83,7 @@ export class UserFields extends Cossack {
 
     @Client()
     private async searchMedia(search: string) {
-        const query = new URLSearchParams({ search, kind: this.chooser.kind });
+        const query = new URLSearchParams({ q: search, kind: this.chooser.kind });
         const response = await fetch(`/api/cms/media?${query}`).catch(() => null);
         const items = response?.ok ? (await response.json() as { items: MediaPreview[] }).items : [];
         this.chooser = { ...this.chooser, search, items };

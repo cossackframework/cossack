@@ -1,7 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { createPasswordHasher } from '@cossackframework/auth';
 import type { RomeDB } from '@cossackframework/romedb';
-import { createCMS, HOST_STEPS, isNetworkAdmin, NETWORK_ADMIN, type CmsHost } from '../src/server/index';
+import { createCMS, isNetworkAdmin, NETWORK_ADMIN, type CmsHost } from '../src/server/index';
 import { romedbService, live } from './helpers';
 
 /** Members keep no password hash: the column is gone. */
@@ -63,42 +62,6 @@ describe.skipIf(!live)('accounts and members', () => {
         expect(await cms.users.resolve(account.id)).toBeNull();
         expect(await cms.users.get(account.id)).toBeNull();
     });
-
-    it('moves the credentials of an existing install to accounts, with its first administrator running the network', async () => {
-        const { db, stop } = await service.fresh();
-        try {
-            for (const step of HOST_STEPS.filter(step => step.version < 16)) {
-                await db.write([...step.statements, {
-                    rql: "INSERT INTO cms_migrations (id, kind, owner, resource, version, declaration_hash, rql, engine_version, applied_at) VALUES ($id, 'host', 'cms', NULL, $version, NULL, '', 'test', 1)",
-                    params: { $id: `cms#host-${step.version}`, $version: step.version },
-                }], { kind: 'test' });
-            }
-            const hash = await createPasswordHasher().hash('old password');
-            const user = (id: string, email: string, status: string, created: number) => ({
-                rql: "INSERT INTO cms_users (id, email, name, password_hash, avatar, status, created_at, updated_at, meta) VALUES ($id, $email, $email, $hash, NULL, $status, $created, $created, '{}')",
-                params: { $id: id, $email: email, $hash: hash, $status: status, $created: created },
-            });
-            await db.write([
-                { rql: "INSERT INTO cms_roles (id, name, permissions, created_at) VALUES ('admin', 'Administrator', '[\"*\"]', 1)" },
-                user('gone', 'gone@example.com', 'disabled', 1), user('owner', 'owner@example.com', 'active', 2), user('helper', 'helper@example.com', 'active', 3), user('reader', 'reader@example.com', 'active', 4),
-                { rql: "INSERT INTO cms_user_roles (user_id, role_id) VALUES ('gone', 'admin'), ('owner', 'admin'), ('helper', 'admin')" },
-            ], { kind: 'test' });
-
-            const upgraded = createCMS({ db });
-            await upgraded.ready();
-            expect(await upgraded.installed()).toBe(true);
-            expect(await count(db, "SELECT count(*) FROM cms_migrations WHERE id = 'cms#host-16'")).toBe(1);
-            await noPasswordColumn(db);
-            expect(await count(db, 'SELECT count(*) FROM cms_accounts')).toBe(4);
-            expect(await upgraded.accounts.get('owner')).toMatchObject({ email: 'owner@example.com', networkRole: NETWORK_ADMIN });
-            expect(await upgraded.accounts.get('helper')).toMatchObject({ networkRole: null });
-            expect(await upgraded.accounts.get('gone')).toMatchObject({ status: 'disabled', networkRole: null });
-            expect((await upgraded.accounts.verifier.verify('reader@example.com', 'old password'))?.id).toBe('reader');
-            expect(isNetworkAdmin((await upgraded.users.principal('owner'))!)).toBe(true);
-            // Host step 19 records the main site's members.
-            expect(await count(db, "SELECT count(*) FROM cms_memberships WHERE site_id = 'main'")).toBe(4);
-        } finally { await stop(); }
-    }, 60_000);
 
     it('keeps network accounts and what signs them in on the network database, and members and child sessions on the site', async () => {
         const other = await service.fresh();

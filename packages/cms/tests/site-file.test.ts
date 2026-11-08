@@ -89,12 +89,11 @@ describe.skipIf(!live)('a site as a .romedb file', () => {
         expect((await blog.db.read([{ rql: "SELECT count(*) FROM cms_webhooks WHERE id = 'hook'" }])).results[0]!.rows[0]![0]).toBe(1n);
     }, 60_000);
 
-    it('copies a database file this process has open, and a site that lacks a table', async () => {
+    it('copies a database file this process has open', async () => {
         const url = path.join(work, 'open.romedb');
         await copyFile(path.join(work, 'blog.romedb'), url);
         const db = createRomeDB({ url, pending: new MemoryPendingWriteStore(), connect: () => connectNode({ url }) });
         try {
-            await db.write([{ rql: 'DROP TABLE cms_handoffs' }]);
             await db.write([{ rql: 'INSERT INTO cms_cache (key, value) VALUES ($key, $value)', params: { $key: 'k', $value: TOKEN } }]);
             const file = await siteFile(db);
             expect((await bytesOf(file.body)).includes(TOKEN)).toBe(false);

@@ -3,7 +3,7 @@ import { createHookRegistry } from '@cossackframework/core/hooks';
 import {
     beforeWrite, blockConditionProblem, field, inputFields, manifestProblems, requestedGrants, blockProblems, choiceOptions, collectionProblems, collectionResource, CORE_BLOCKS, displayValue, emailAddresses, FORM_BLOCKS, FORM_EMBED_BLOCK, formDataValues, formInputs,
     forms, formSettings, formsModule, formVisibility, inputName, notificationProblems, renderMergeTags, resolveResource, ruleMatches, submissionOf, submissionResource, submissionResourceName, validateBlocks,
-    displayRows, flatFormInputs, inputHtmlName, inputKey, FORM_ROW_LIMIT, FORM_ITEM_LIMIT, MULTIPLE_INPUT_KINDS,
+    displayRows, flatFormInputs, inputHtmlName, inputKey, FORM_ROW_LIMIT, FORM_ITEM_LIMIT, MULTIPLE_INPUT_KINDS, acceptsFile, fileType, formFiles,
     validateSubmission, visibleBlocks, type Block, type BlockDeclaration, type FormRow,
 } from '../src/index';
 
@@ -32,7 +32,7 @@ describe('form blocks', () => {
         for (const block of [...FORM_BLOCKS, FORM_EMBED_BLOCK]) expect(blockProblems(block)).toEqual([]);
         expect(FORM_BLOCKS.every(block => block.input && block.category === 'form')).toBe(true);
         expect(blockProblems({ name: 'acme/rating', label: 'Rating', input: { kind: 'stars' as never }, fields: {} })).toEqual([
-            'block acme/rating: input.kind is one of string, text, email, url, phone, number, boolean, date, choice, choices, rows.',
+            'block acme/rating: input.kind is one of string, text, email, url, phone, number, boolean, date, choice, choices, rows, file.',
             'block acme/rating: an input block declares string fields name and label.',
         ]);
         // Inputs and conditions belong to forms.
@@ -100,6 +100,13 @@ describe('conditions', () => {
         const on = formVisibility(blocks, types, { more: true, details: 'x' });
         expect([...on.hidden]).toEqual(['d']);
         expect(visibleBlocks(blocks, types, { more: true }).map(block => block._id)).toEqual(['a', 'g']);
+    });
+});
+
+describe('conditions on multiple inputs', () => {
+    it('compares a multiple Number input, which holds numbers, with the rule\'s text', () => {
+        expect(ruleMatches({ field: 'sizes', op: 'is', value: '5' }, { sizes: [3, 5] })).toBe(true);
+        expect(ruleMatches({ field: 'sizes', op: 'isNot', value: '4' }, { sizes: [3, 5] })).toBe(true);
     });
 });
 
@@ -342,6 +349,90 @@ describe('multiple inputs', () => {
         const context = { form: { id: 'f', title: 'Guests' }, inputs, values: { email: 'ada@example.com', guests: ['Ann', 'Bea'], ages: [30] }, site: { title: 'Site', url: 'https://s.example', adminEmail: 'admin@s.example' } };
         expect(renderMergeTags('{all_fields}', context)).toBe('Email: ada@example.com\nGuest names: Ann, Bea\nAges: 30');
         expect(renderMergeTags('{field:guests}', context)).toBe('Ann, Bea');
+    });
+});
+
+describe('file uploads', () => {
+    const upload = (data: { [key: string]: unknown } = {}, extra: Partial<Block> = {}) => input('f', 'file', { name: 'resume', label: 'Résumé', ...data }, extra);
+    const file = (name: string, size: number, type = '') => new File([new Uint8Array(size)], name, { type });
+    const form = (...blocks: Block[]) => {
+        const result = validateBlocks(blocks, types, { form: true });
+        expect(result.errors).toEqual({});
+        return result.blocks;
+    };
+
+    it('is an input of its own: allowed types, a size and a count, at the top level only', () => {
+        const [block] = form(upload());
+        expect(block!.data).toMatchObject({ accept: '.pdf, .jpg, .jpeg, .png', maxSize: 5, multipleFiles: false, maxFiles: 3, required: false });
+        expect(formInputs([block!], types)[0]).toMatchObject({ kind: 'file', multiple: false });
+        expect(validateBlocks([upload({ maxSize: 11 })], types, { form: true }).errors).toEqual({ 'f.maxSize': 'must be at most 10.' });
+        expect(validateBlocks([upload({ maxFiles: 11 })], types, { form: true }).errors).toEqual({ 'f.maxFiles': 'must be at most 10.' });
+        expect(validateBlocks([upload({ accept: 'pdf files' })], types, { form: true }).errors).toEqual({ 'f.accept': 'has an invalid format.' });
+        expect(form(upload({ accept: '.PDF,image/*, application/vnd.ms-excel' }))[0]!.data.accept).toBe('.PDF,image/*, application/vnd.ms-excel');
+        const nested = validateBlocks([input('r', 'repeater', { name: 'people' }, { children: [upload()] })], types, { form: true });
+        expect(nested.errors).toEqual({ f: 'A file upload cannot go in a repeater.' });
+    });
+
+    it('takes a file\'s type from its extension when it is a known one, so a renamed file cannot pass as another family', () => {
+        expect(fileType('cv.PDF', 'application/octet-stream')).toBe('application/pdf');
+        expect(fileType('notes', 'text/plain; charset=utf-8')).toBe('text/plain');
+        expect(fileType('page.constructor', '')).toBe('application/octet-stream');
+        expect(acceptsFile(['.pdf'], 'cv.pdf', '')).toBe(true);
+        expect(acceptsFile(['image/*'], 'photo.png', '')).toBe(true);
+        expect(acceptsFile(['image/*'], 'page.html', 'image/png')).toBe(false);
+        expect(acceptsFile(['image/*'], 'photo', 'image/png')).toBe(true);
+        expect(acceptsFile(['application/pdf'], 'cv.pdf', 'text/html')).toBe(true);
+        expect(acceptsFile(['.pdf', '.docx'], 'cv.doc', '')).toBe(false);
+        expect(acceptsFile([], 'anything.bin', '')).toBe(true);
+    });
+
+    it('checks the number, size and type of the posted files, as the browser and the host post them', () => {
+        const blocks = form(upload({ required: true, accept: '.pdf, image/*', maxSize: 1, multipleFiles: true, maxFiles: 2 }), input('n', 'text', { name: 'name' }));
+        const cv = file('cv.pdf', 1000, 'application/pdf');
+        const good = validateSubmission(blocks, types, { resume: [cv, file('me.png', 2000, 'image/png')] });
+        expect(good.errors).toEqual({});
+        // The posted files themselves stay in the values: the host stores them once the submission is valid.
+        expect(good.values.resume).toEqual([cv, expect.any(File)]);
+        expect(validateSubmission(blocks, types, {}).errors).toEqual({ resume: 'Choose a file.' });
+        // A control left empty posts a nameless empty file: no file.
+        expect(validateSubmission(blocks, types, { resume: [file('', 0)] }).errors).toEqual({ resume: 'Choose a file.' });
+        expect(validateSubmission(blocks, types, { resume: [cv, cv, cv] }).errors).toEqual({ resume: 'Choose at most 2 files.' });
+        expect(validateSubmission(blocks, types, { resume: [file('big.pdf', 1024 * 1024 + 1)] }).errors).toEqual({ resume: 'big.pdf is larger than 1 MB.' });
+        expect(validateSubmission(blocks, types, { resume: [file('empty.pdf', 0)] }).errors).toEqual({ resume: 'empty.pdf is empty.' });
+        expect(validateSubmission(blocks, types, { resume: [file('page.html', 10, 'image/png')] }).errors).toEqual({ resume: 'page.html is not an allowed type. Choose .pdf, image/*.' });
+        // One file unless several are allowed; text is not a file.
+        const single = form(upload());
+        expect(validateSubmission(single, types, { resume: [file('a.pdf', 5), file('b.pdf', 5)] }).errors).toEqual({ resume: 'Choose one file.' });
+        expect(validateSubmission(single, types, { resume: 'cv.pdf' })).toMatchObject({ errors: {}, values: {} });
+        // Form data carries the files under the input's name; conditions see how many there are.
+        const data = new FormData();
+        data.append('resume', cv);
+        data.append('name', 'Ada');
+        const posted = formDataValues(data, formInputs(blocks, types));
+        expect(posted.resume).toEqual([expect.any(File)]);
+        expect(ruleMatches({ field: 'resume', op: 'notEmpty' }, { resume: [cv] })).toBe(true);
+        expect(ruleMatches({ field: 'resume', op: 'gt', value: '1' }, { resume: [cv] })).toBe(false);
+    });
+
+    it('stores references, never bytes, and shows files by name and size', () => {
+        const blocks = form(upload());
+        const [field] = formInputs(blocks, types);
+        const resource = resolveResource(submissionResource({ id: 'f1', title: 'Jobs' }, [field!]), 'cms');
+        expect(resource.fields.resume).toMatchObject({ kind: 'rows', nullable: true, max: 10, fields: { id: { kind: 'string' }, name: { kind: 'string' }, size: { kind: 'integer' }, type: { kind: 'string' } } });
+        const stored = [{ _id: 'b1', id: 'file-1', name: 'cv.pdf', size: 2048, type: 'application/pdf' }];
+        const submission = submissionOf('f1', { id: 's1', rev: 1, owner: null, createdAt: 1, updatedAt: 1, status: 'new', resume: stored }, [field!]);
+        expect(submission.values.resume).toEqual([{ id: 'file-1', name: 'cv.pdf', size: 2048, type: 'application/pdf' }]);
+        expect(displayValue(field!, submission.values.resume)).toBe('cv.pdf (2 KB)');
+        expect(formFiles([file('a.txt', 3, 'text/plain'), 'nope', { name: 'x' }])).toEqual([{ name: 'a.txt', size: 3, type: 'text/plain' }]);
+        expect(renderMergeTags('{all_fields}', { form: { id: 'f1', title: 'Jobs' }, inputs: [field!], values: submission.values, site: { title: '', url: '', adminEmail: '' } })).toBe('Résumé: cv.pdf (2 KB)');
+    });
+
+    it('needs the form to keep its submissions', async () => {
+        const hooks = createHookRegistry();
+        formsModule.register!({ hooks, settings: { all: async () => ({}) as never }, taxonomies: { get: async () => null }, collection: () => undefined, blocks: () => types, now: Date.now });
+        const failure = await hooks.applyFilters(beforeWrite, { body: form(upload()), settings: { store: false } }, { resource: 'cms/forms', action: 'create', id: null, previous: null, actor: { kind: 'user', id: 'u' } })
+            .catch((error: Error) => (error.cause as Error).message);
+        expect(failure).toBe('A form with a file upload keeps its submissions: turn Keep submissions on.');
     });
 });
 

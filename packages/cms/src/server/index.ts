@@ -6,7 +6,7 @@ export { CmsAreas, type AreaShape } from './areas';
 export { CmsFieldGroups } from './field-groups';
 export { parseMeta, type MetaCheck } from './taxonomies';
 export { collectionSpec, searchTextPath, defineFieldRql, indexRql, readCatalog, planSchema, migrate, type Catalog, type SchemaPlan, type PlannedStep, type SchemaProblem, type MigrationReport, type CollectionSpec, type FieldSpec, type IndexSpec } from './schema';
-export { HOST_STEPS, HOST_TABLES } from './host-schema';
+export { HOST_STEPS, HOST_TABLES, unknownHostSteps } from './host-schema';
 export { Outbox, type DispatchReport, type OutboxOptions } from './outbox';
 export { CmsUsers, type CmsUser, type CmsMember, type CmsRole, type UserPage } from './users';
 export { CmsAccounts, normalizeEmail, type CmsAccount, type AccountProfile } from './accounts';
@@ -49,6 +49,7 @@ export { cloudflarePurger, zoneCandidates, CLOUDFLARE_API, type CloudflarePurger
 export { CmsTraffic, type CrawlerVisits, type NotFoundRow, type VisitKind } from './traffic';
 export { CmsComments, type CommentListOptions } from './comments';
 export { CmsForms, type CmsMail, type LoadedForm, type SubmitContext, type SubmitResult, type SubmissionList } from './forms';
+export { siteMailer, type CmsMailer, type MailTransport, type OutgoingMail, type SiteMailerOptions } from './mail';
 export { sha256Hex, randomToken, base64Url, timingSafeEqual } from './tokens';
 export { FORMAT_TYPES, negotiateFormat, type ImageTransformer, type ImageTransformRequest, type ImageFormat } from './images';
 export { CmsSecurity, SIGN_IN_ATTEMPTS, SIGN_IN_LOCK, RESET_REQUESTS, type PasskeyInfo, type StoredPasskeyRow, type SecurityStatus, type ChallengeKind } from './security';

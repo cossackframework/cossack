@@ -328,10 +328,14 @@ See [Capabilities](/docs/cms/plugins.md#capabilities) for what each member of th
 "ui": { "slots": { "dashboard.nav": [{ "label": "Support", "href": "/dashboard/support", "permission": "support-desk:triage" }] } }
 ```
 
-Links shown in dashboard slots while the plugin is active. The slots are `dashboard.nav`
-(the navigation) and `dashboard.overview` (the overview page); `label` is at most 60
-characters, `href` a same-site path, and `permission` hides the link from users without
-it. Components for `dashboard.overview` come from the `slots` export of `ui.ts`.
+Links shown in host slots while the plugin is active. The slots are `dashboard.nav` (the
+navigation), `dashboard.overview` (the overview page), `dashboard.taskbar` (the dashboard's
+bottom bar) and `site.taskbar` (the bar signed-in users see on the site); `label` is at most
+60 characters, `href` a same-site path, and `permission` hides the link from users without
+it. A `dashboard.nav` link may name an `icon` from the dashboard's Solar set, such as
+`chart-2` or `notebook`; an icon the dashboard lacks shows as a plug. Components for
+`dashboard.overview` come from the `slots` export of `ui.ts`. To show a count on the taskbar or
+a notice on every screen, use the `cms.dashboard.taskbar` and `cms.dashboard.notices` hooks.
 
 ## `commands`
 

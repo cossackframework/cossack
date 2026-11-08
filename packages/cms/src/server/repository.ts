@@ -6,8 +6,9 @@
  * request is saved for recovery.
  */
 import { ClientError, Float64, RecordId, UncertainWriteError, Vector, type Statement, type Value } from '@cossackframework/romedb';
+import { LIBRARY_KEYS } from './files';
 import type { HookRegistry } from '@cossackframework/core/hooks';
-import { CmsError } from '../errors';
+import { CmsError, isCmsError } from '../errors';
 import { translationGroupOf } from '../collections';
 import { FIELD_NAME, slugify, validateValue, type FieldDeclaration } from '../fields';
 import { blockId, blockMedia, blocksPlain, flattenBlocks, htmlBlocksChanged, validateBlocks, type Block } from '../blocks';
@@ -558,7 +559,9 @@ export class ResourceRepository {
             filtered = await this.#host.hooks.applyFilters(beforeWrite, draft, { resource: this.resource.id, action, id, previous, actor: actor(context.principal) }, context.signal ? { signal: context.signal } : {});
         } catch (error) {
             const cause = (error as { cause?: unknown }).cause;
-            throw new CmsError('CMS_VALIDATION', cause instanceof Error ? cause.message : 'A plugin rejected the change.', { cause: error });
+            // A filter's own field errors (a CmsError it threw) stay with the fields they name.
+            const fields = isCmsError(cause) ? cause.fields : undefined;
+            throw new CmsError('CMS_VALIDATION', cause instanceof Error ? cause.message : 'A plugin rejected the change.', { cause: error, ...(fields ? { fields } : {}) });
         }
         // Filters can change values; validate the result again.
         const final = filtered === draft ? draft : this.#validate(action, filtered, previous, context.principal);
@@ -587,7 +590,7 @@ export class ResourceRepository {
                 const unique = [...new Set(files)];
                 if (unique.length > 100) throw new CmsError('CMS_VALIDATION', `${declaration.label ?? name} names too many files.`, { fields: { [name]: 'names too many files.' } });
                 const list = unique.map((_, index) => `$m${index}`).join(', ');
-                const found = await this.#host.db.read([{ rql: `SELECT count(*) FROM cms_files WHERE status = 'ready' AND id IN (${list})`, params: Object.fromEntries(unique.map((file, index) => [`$m${index}`, file])) }]);
+                const found = await this.#host.db.read([{ rql: `SELECT count(*) FROM cms_files WHERE status = 'ready' AND ${LIBRARY_KEYS} AND id IN (${list})`, params: Object.fromEntries(unique.map((file, index) => [`$m${index}`, file])) }]);
                 if (Number(found.results[0]!.rows[0]![0] as bigint) !== unique.length) throw new CmsError('CMS_VALIDATION', `${declaration.label ?? name} names a missing file.`, { fields: { [name]: 'names a missing file.' } });
             }
             if (declaration.kind === 'reference' && declaration.target === this.resource.id) {

@@ -45,14 +45,16 @@ export function fieldControl(field: EditorField, value: unknown, change: (value:
     const bindable = (control: TemplateResult) => extra.bindings !== undefined ? bindingControl(control, value, change, id, extra.bindings) : control;
     if (field.multiple && !field.media) {
         if (field.kind === 'enum') return choicesControl(field, value, change, id);
+        // A few choices from a source, such as the site's roles, are a checklist; more are a searchable list per item.
+        const listed = field.choicesFrom && extra.sources ? extra.sources[field.choicesFrom] : undefined;
+        if (field.kind === 'string' && listed && listed.length <= 12) return choicesControl({ ...field, choices: withMissing(listed, value) }, value, change, id);
         return multipleControl(field, value, change, id, (item, itemChange, itemId) => fieldControl({ ...field, multiple: false }, item, itemChange, itemId, extra) ?? html``);
     }
     if (field.choicesFrom && extra.sources && field.kind === 'string') return sourceControl(field, value, change, id, extra.sources);
     // A site icon: the closed set the public site ships, in a searchable grid.
     if (field.icon && field.kind === 'string') return component(IconPicker, { id, value: typeof value === 'string' ? value : '', icons: SITE_ICONS, label: field.label, allowEmpty: !field.required, onChange: (name: string) => change(name) });
     switch (field.kind) {
-        case 'boolean': return html`<label class="flex items-center gap-2 text-sm text-foreground cursor-pointer">
-            ${component(Checkbox, { id, checked: value === true, '@change': (event: Event) => change((event.target as HTMLInputElement).checked) })} ${field.label}</label>`;
+        case 'boolean': return component(Checkbox, { id, label: field.label, checked: value === true, '@change': (event: Event) => change((event.target as HTMLInputElement).checked) });
         case 'enum': return component(NativeSelect, { id, '@change': (event: Event) => change((event.target as HTMLSelectElement).value) }, html`
             ${field.required ? null : html`<option value="" ?selected=${!value}>—</option>`}
             ${field.choices.map(choice => html`<option value=${choice.value} ?selected=${choice.value === value}>${choice.label}</option>`)}`);
@@ -94,12 +96,17 @@ export function sourceControl(field: EditorField, value: unknown, change: (value
     </div>`;
 }
 
+/** A source's choices, and any chosen value no longer among them, marked, so saving does not drop it unseen. */
+function withMissing(choices: readonly { value: string; label: string }[], value: unknown): { value: string; label: string }[] {
+    const missing = (Array.isArray(value) ? value.map(String) : []).filter(entry => !choices.some(choice => choice.value === entry));
+    return [...choices, ...missing.map(entry => ({ value: entry, label: `${entry} (${__('not found')})` }))];
+}
+
 /** A multiple choice: one checkbox per choice, the ticked values kept in the choices' order. */
 export function choicesControl(field: EditorField, value: unknown, change: (value: unknown) => void, id: string): TemplateResult {
     const chosen = Array.isArray(value) ? value.map(String) : [];
     const toggle = (entry: string, on: boolean) => change(field.choices.map(choice => choice.value).filter(candidate => candidate === entry ? on : chosen.includes(candidate)));
-    return html`<div id=${id} class="space-y-1.5">${field.choices.map(choice => html`<label class="flex items-center gap-2 text-sm text-foreground cursor-pointer">
-        ${component(Checkbox, { checked: chosen.includes(choice.value), '@change': (event: Event) => toggle(choice.value, (event.target as HTMLInputElement).checked) })} ${choice.label}</label>`)}</div>`;
+    return html`<div id=${id} class="space-y-1.5">${field.choices.map(choice => html`<div>${component(Checkbox, { label: choice.label, checked: chosen.includes(choice.value), '@change': (event: Event) => toggle(choice.value, (event.target as HTMLInputElement).checked) })}</div>`)}</div>`;
 }
 
 /** The value a new item of a multiple field starts with: nothing of its kind. */
@@ -184,7 +191,7 @@ export function groupFields(field: EditorField, value: unknown, change: (value: 
     const object = value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
     return html`<div id=${id} class="space-y-4 rounded-md border border-border p-3">${field.fields.map(sub => {
         const subId = `${id}-${sub.name}`;
-        return html`<div class="space-y-1">
+        return html`<div class="space-y-1.5">
             ${sub.kind === 'boolean' ? null : html`<label for=${subId} class="block text-sm font-medium text-foreground">${sub.label}${sub.required ? html`<span class="text-destructive"> *</span>` : null}</label>`}
             ${render(sub, object[sub.name], next => change({ ...object, [sub.name]: next }), subId)}
             ${sub.description ? html`<p class="text-xs text-muted-foreground">${sub.description}</p>` : null}
@@ -192,18 +199,18 @@ export function groupFields(field: EditorField, value: unknown, change: (value: 
     })}</div>`;
 }
 
-/** A block's fields as a form: one labelled control each. `errors` are keyed by field name. */
+/** A block's fields as a form: one labelled control each, spaced like a form. `errors` are keyed by field name. */
 export function blockFields(option: BlockOption, values: Record<string, unknown>, change: (name: string, value: unknown) => void, idPrefix: string,
     media: (name: string) => MediaHooks, errors: Record<string, string> = {}, bindings: readonly BindingChoice[] = [], sources?: SourceChoices): TemplateResult {
-    return html`${option.fields.map(entry => {
+    return html`<div class="space-y-4">${option.fields.map(entry => {
         const id = `${idPrefix}-${entry.name}`;
-        return html`<div class="space-y-1">
+        return html`<div class="space-y-1.5">
             ${entry.kind === 'boolean' ? null : html`<label for=${id} class="block text-sm font-medium text-foreground">${entry.label}${entry.required ? ' *' : ''}</label>`}
             ${fieldControl(entry, values[entry.name], value => change(entry.name, value), id, { media: media(entry.name), bindings, language: String(values.language ?? ''), ...(sources ? { sources } : {}) })}
             ${entry.description ? html`<p class="text-xs text-muted-foreground">${entry.description}</p>` : null}
             ${errors[entry.name] ? html`<p role="alert" class="text-xs text-destructive">${entry.label} ${errors[entry.name]}</p>` : null}
         </div>`;
-    })}`;
+    })}</div>`;
 }
 
 /** Move one item of a list by `delta` places; the list unchanged when it would leave the ends. */

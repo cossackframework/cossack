@@ -32,7 +32,8 @@ describe.skipIf(!live)('plugin capabilities', () => {
     });
     const host = () => createCMS({
         db: service.database(), plugins: [plugin()], storage: memoryStorage(), now: () => clock,
-        mail: { send: async message => { sent.push(message); } }, mailFrom: 'site@example.com',
+        // Each message carries the HTML layout beside its text.
+        mail: { send: async ({ html, ...message }) => { expect(html).toContain('<!doctype html>'); sent.push(message); } }, mailFrom: 'site@example.com',
         secrets: name => ({ STRIPE_SECRET_KEY: 'sk_test_123' })[name],
         ai: { name: 'fake', complete: async request => `echo:${request.prompt}` },
         payments: { name: 'fake-pay', checkout: async input => ({ id: 'c1', url: `https://pay.test/${input.reference ?? ''}` }), webhook: async () => null },

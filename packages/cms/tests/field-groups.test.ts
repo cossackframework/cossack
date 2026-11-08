@@ -187,36 +187,6 @@ describe.skipIf(!live)('field groups', () => {
         expect(cms.resourceById('cms/products').fields.specs).toMatchObject({ kind: 'string' });
     });
 
-    it('turns a stored layout of an older version into a group on load and promotes its content field', async () => {
-        const legacy = {
-            name: 'events', label: 'Events', singular: 'Event', icon: 'calendar', path: 'events', slug: true, publishable: true, taxonomies: [], builtin: false,
-            fields: { content: field.blocks({ search: true, label: 'Content' }), venue: field.string({ label: 'Venue' }) }, fieldOrder: ['content', 'venue'],
-            layout: [fieldBlock('content', 'blocks', { name: 'content', label: 'Content' }), fieldBlock('venue', 'text', { name: 'venue', label: 'Venue', max: 80 })],
-            template: [{ _id: 'text', type: 'core/richtext', data: {} }],
-        };
-        await cms.db.write([{ rql: 'INSERT INTO cms_collections (name, definition, updated_at, updated_by) VALUES ($name, $definition, $now, $by)', params: { $name: 'events', $definition: JSON.stringify(legacy), $now: Date.now(), $by: 'test' } }], { kind: 'test' });
-        const other = createCMS({ db: service.database(), modules: [contentModule] });
-        await other.ready();
-        const events = other.collection('events');
-        expect(events.layout).toBeUndefined();
-        expect(events.fields).toEqual({});
-        expect(events.features).toEqual({ content: true });
-        expect(events.template).toEqual(legacy.template);
-        const group = (await other.fieldGroups.get('events-fields'))!;
-        expect(group.title).toBe('Events fields');
-        expect(group.targets).toEqual([{ kind: 'collection', name: 'events', order: -1 }]);
-        expect(group.blocks.map(block => block.data.name)).toEqual(['venue']);
-        expect(Object.keys(other.resourceById('cms/events').fields)).toEqual(expect.arrayContaining(['content', 'venue']));
-        expect(other.resourceById('cms/events').fields.venue).toMatchObject({ kind: 'string', max: 80 });
-        // Loading again converts nothing more.
-        const again = createCMS({ db: service.database(), modules: [contentModule] });
-        await again.ready();
-        expect((await again.fieldGroups.get('events-fields'))!.blocks).toEqual(group.blocks);
-        const stored = await again.db.read([{ rql: "SELECT definition FROM cms_collections WHERE name = 'events'" }]);
-        expect(JSON.parse(stored.results[0]!.rows[0]![0] as string)).not.toHaveProperty('layout');
-        await again.deleteCollection('events', admin);
-        expect((await again.fieldGroups.get('events-fields'))!.targets).toEqual([]);
-    });
 });
 
 /** A shop plugin that ships a Shipping group for products and a Shipping tab holding it. */

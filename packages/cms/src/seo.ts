@@ -138,7 +138,7 @@ export function renderSeoTemplate(template: string, variables: Partial<Record<Se
     text = text.replace(/%([a-z]+)%/g, (_match, name: string) => {
         if (name === 'sep') return `\u0000`;
         if (name === 'page') return page > 1 ? String(page) : '';
-        const value = variables[name as SeoTemplateVariable];
+        const value = Object.hasOwn(variables, name) ? variables[name as SeoTemplateVariable] : undefined;
         return value === undefined || value === null ? '' : String(value).trim();
     });
     // Collapse separators around empty values: at the ends, or two in a row.

@@ -4,7 +4,7 @@ import { getCookie } from 'hono/cookie';
 import { component, html } from '@cossackframework/renderer';
 import { hasPermission, isCmsError, isSameOriginPost, PERMISSIONS, type ArchiveView, type EntryView, type LanguageLink, type Note, type RecordShape, type ThemeData } from '@cossackframework/cms';
 import type { CmsHost } from '@cossackframework/cms/server';
-import { archive, authorArchive, authorView, bindingScopes, commentResult, entryViews, homeView, isProtected, languageLinks, localePrefix, pageNumber, redirectFor, resolvePath, searchEntries, termArchive, themeData, themeState, unlockCookie, unlockToken, resolvedOptions, type Resolved, type ThemeState, notFoundPage } from '../../../cms/site';
+import { archive, authorArchive, authorView, bindingScopes, commentResult, entryLock, entryViews, homeView, isMembersOnly, isProtected, languageLinks, localePrefix, pageNumber, redirectFor, resolvePath, searchEntries, termArchive, themeData, themeState, unlockCookie, unlockToken, resolvedOptions, type Resolved, type ThemeState, notFoundPage } from '../../../cms/site';
 import { archiveTemplate, entryTemplate, siteContent, siteTheme, tagDocument, themeHelpers, unavailable } from '../../../cms/site-view';
 import { authorSeo, entrySeo, homeSeo, listSeo } from '../../../cms/seo';
 import { emptySeo, seoHead, type SeoView } from '../../../cms/seo-head';
@@ -67,11 +67,13 @@ export const resolveSitePath = defineServerMiddleware(async (c, next) => {
         c.header('vary', 'Accept');
         if (wantsMarkdown(c.req.raw) && await cms.settings.get('seo.markdown')) {
             if (isProtected(resolved.record)) return c.text('This entry is password protected.', 403);
+            const reader = c.get('principal');
+            if (isMembersOnly(resolved.record) && entryLock(resolved.record, { signedIn: reader.kind === 'user', roles: reader.kind === 'user' ? reader.roles : [], editor: reader.kind === 'user' && cms.resource(`cms/${resolved.collection.name}`).canUpdate(resolved.record, reader) }) === 'members') return c.text('This entry is for members.', 403);
             trackCrawler(c, 'markdown');
             const url = (await cms.entryUrls(resolved.collection, [resolved.record])).get(resolved.record.id) ?? c.req.path;
             // Caches key HTML by URL and ignore Vary: Markdown chosen by Accept is never stored; `?format=md` is the address to cache.
             const addressed = /^(?:md|markdown)$/.test(c.req.query('format') ?? '');
-            const headers = addressed ? await cacheHeaders(cms, [cms.purge.tag.entry(resolved.collection.name, resolved.record.id), cms.purge.tag.collection(resolved.collection.name)]) : { 'cache-control': 'private, no-store' };
+            const headers = addressed && !isMembersOnly(resolved.record) ? await cacheHeaders(cms, [cms.purge.tag.entry(resolved.collection.name, resolved.record.id), cms.purge.tag.collection(resolved.collection.name)]) : { 'cache-control': 'private, no-store' };
             return c.body(await entryAsMarkdown(cms, resolved.collection, resolved.record, url, siteOrigin(c)), 200, { 'content-type': 'text/markdown; charset=utf-8', ...headers, 'x-robots-tag': 'noindex' });
         }
     }
@@ -99,8 +101,10 @@ export default class SitePath extends Cossack {
     @State() entry: EntryView | null = null;
     /** The entry is the page Settings → Reading shows for missing addresses: status 404, no indexing. */
     @State() notFound = false;
-    /** A protected entry this visitor has not unlocked: the password form shows instead of the content. */
-    @State() locked = false;
+    /** Why this visitor cannot read the entry: the password form or a sign-in prompt shows instead of its content. */
+    @State() locked: 'password' | 'members' | null = null;
+    /** The site takes registrations: a members-only entry's prompt links to the registration page. */
+    @State() registration = false;
     @State() wrongPassword = false;
     @State() view: ArchiveView = { kind: 'archive', collection: null, taxonomy: null, title: '', description: '', entries: [], paging: { page: 1, pages: 1, base: '/' }, query: '' };
     @State() theme: ThemeState = { name: null, options: {} };
@@ -160,8 +164,11 @@ export default class SitePath extends Cossack {
             this.languages = links;
             this.site = await siteInfo(cms, resolved.locale, { url: this.c.req.url, page: resolved });
             const usage = { user: false };
+            const signedIn = this.c.get('principal');
+            const readerRoles = signedIn.kind === 'user' ? signedIn.roles : [];
             const viewOptions = {
                 comment: commentResult(this.c.req.query('comment')), user: this.user ? { name: this.user.name } : null,
+                roles: readerRoles,
                 forms: { query: this.c.req.query(), principal: this.c.get('principal'), url: base }, usage,
             };
             /** The entry the page shows, which its editor may edit in place: an entry, or the static front page. */
@@ -194,14 +201,17 @@ export default class SitePath extends Cossack {
             } else if (resolved.kind === 'entry') {
                 this.kind = 'entry';
                 shown = { collection: resolved.collection.name, record: resolved.record };
-                // Editors read their protected entries; visitors unlock them with the password, which a cookie remembers.
-                const unlocked = isProtected(resolved.record) && (getCookie(this.c, unlockCookie(resolved.record)) === await unlockToken(resolved.record)
-                    || (this.c.get('principal').kind === 'user' && cms.resource(`cms/${resolved.collection.name}`).canUpdate(resolved.record, this.c.get('principal'))));
-                this.locked = isProtected(resolved.record) && !unlocked;
+                // Editors read their protected and members-only entries; visitors unlock protected ones with the password, which a cookie remembers.
+                const reader = this.c.get('principal');
+                const editor = reader.kind === 'user' && cms.resource(`cms/${resolved.collection.name}`).canUpdate(resolved.record, reader);
+                const unlocked = isProtected(resolved.record) && getCookie(this.c, unlockCookie(resolved.record)) === await unlockToken(resolved.record);
+                const only = new Set([resolved.record.id]);
+                this.locked = entryLock(resolved.record, { unlocked: unlocked ? only : undefined, signedIn: reader.kind === 'user', roles: viewOptions.roles, editor });
                 this.wrongPassword = this.c.req.query('password') === 'wrong';
-                // The page depends on the password cookie, which shared caches ignore: never stored, locked or unlocked.
-                if (isProtected(resolved.record)) this.c.header('cache-control', 'private, no-store');
-                this.entry = (await entryViews(cms, resolved.collection, [resolved.record], { ...viewOptions, full: true, ...(unlocked ? { unlocked: new Set([resolved.record.id]) } : {}) }))[0]!;
+                if (this.locked === 'members') this.registration = await cms.settings.get('general.usersCanRegister');
+                // The page depends on the password cookie or the session, which shared caches ignore: never stored, locked or unlocked.
+                if (isProtected(resolved.record) || isMembersOnly(resolved.record)) this.c.header('cache-control', 'private, no-store');
+                this.entry = (await entryViews(cms, resolved.collection, [resolved.record], { ...viewOptions, full: true, ...(unlocked ? { unlocked: only } : {}), ...(editor ? { editable: only } : {}) }))[0]!;
                 this.seo = await entrySeo(cms, this.c, resolved.collection, resolved.record, this.entry, links);
             } else if (resolved.kind === 'archive') {
                 this.kind = 'list';
@@ -280,6 +290,25 @@ export default class SitePath extends Cossack {
         const secure = new URL(this.c.req.url).protocol === 'https:' ? '; Secure' : '';
         this.c.header('set-cookie', `${unlockCookie(resolved.record)}=${await unlockToken(resolved.record)}; Path=${url}; Max-Age=${10 * 24 * 3600}; HttpOnly; SameSite=Lax${secure}`, { append: true });
         return this.redirect(url);
+    }
+
+    /** What a members-only entry shows a visitor who is not signed in: the theme's prompt, or a plain one. */
+    private membersPrompt(theme: ReturnType<typeof siteTheme>, helpers: ReturnType<typeof themeHelpers>) {
+        const entry = this.entry!;
+        const back = encodeURIComponent(this.c.req.path);
+        const signedIn = this.c.get('principal').kind === 'user';
+        const view = { entry, signedIn, signIn: `/auth/login?redirect=${back}`, register: this.registration && !signedIn ? `/auth/register?redirect=${back}` : null };
+        return theme.members?.(view, helpers) ?? html`<article class="space-y-6" data-members-only>
+            <header><h1 class="text-4xl font-bold tracking-tight text-foreground">${entry.title}</h1></header>
+            <div class="max-w-sm space-y-3">
+                ${signedIn ? html`<p class="text-sm text-muted-foreground">${__('This content is for members with another kind of account than yours.')}</p>` : html`
+                <p class="text-sm text-muted-foreground">${__('This content is for members. Sign in to read it.')}</p>
+                <p class="flex flex-wrap items-center gap-3">
+                    <a href=${view.signIn} class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground no-underline">${__('Sign in')}</a>
+                    ${view.register ? html`<a href=${view.register} class="text-sm text-primary hover:underline">${__('Create an account')}</a>` : null}
+                </p>`}
+            </div>
+        </article>`;
     }
 
     /** The password form of a protected entry: the theme's, or a plain one. */
@@ -509,7 +538,7 @@ export default class SitePath extends Cossack {
         if (this.kind === 'unavailable') return unavailable();
         const theme = siteTheme(this.theme);
         const helpers = themeHelpers(theme, { ...this.theme, data: { page: this.data }, editing: Boolean(this.draft), languages: this.languages, menus: this.menus, site: this.site ?? undefined }, (path, exact) => this.isActive(path, exact));
-        if (this.kind === 'entry' && this.entry && this.locked) return siteContent(this.passwordForm(theme, helpers), this.theme);
+        if (this.kind === 'entry' && this.entry && this.locked) return siteContent(this.locked === 'members' ? this.membersPrompt(theme, helpers) : this.passwordForm(theme, helpers), this.theme);
         if (this.kind === 'entry' && this.entry) {
             // In edit mode the content's blocks carry their document: the entry's own, or a pattern's, locked when the user may not change it.
             const entry = this.draft ? { ...this.entry, content: tagDocument(this.entry.content, 'entry', false, new Map(this.draft.documents.filter(document => document.kind === 'pattern').map(document => [document.name, !document.editable]))) } : this.entry;

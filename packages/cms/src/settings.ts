@@ -63,6 +63,7 @@ export const general: SettingsGroup = {
         tagline: field.string({ max: 200, default: 'Just another Cossack site', label: 'Tagline', description: 'In a few words, explain what this site is about.' }),
         adminEmail: field.string({ max: 254, default: '', pattern: '(?:[^\\s@]+@[^\\s@]+)?', label: 'Administration email address', description: 'Used for administration notices.' }),
         usersCanRegister: field.boolean({ default: false, label: 'Anyone can register' }),
+        approveRegistrations: field.boolean({ default: false, label: 'An administrator approves new accounts', description: 'New registrants cannot sign in until a user manager approves them under Users → Registrations.' }),
         verifyEmail: field.boolean({ default: true, label: 'New registrants confirm their email address', description: 'The account is active once the link in the email is opened. Without an email sender, accounts are active at once.' }),
         defaultRole: { ...field.string({ max: 80, default: 'subscriber', label: 'New user default role' }), source: 'roles' },
         timezone: { ...field.string({ max: 64, default: 'UTC', label: 'Timezone' }), source: 'timezones' },
@@ -238,6 +239,20 @@ export const cache: SettingsGroup = {
     },
 };
 
+/** How the emails the site sends look: each goes out as plain text with an HTML part laid out from it. */
+export const email: SettingsGroup = {
+    id: 'email',
+    json: true,
+    icon: 'letter',
+    label: 'Email',
+    description: 'Every email the site sends (sign-up and sign-in links, password resets, invitations, comment, note and form notifications, automations, plugin mail) has an HTML part with the site title and logo above and a footer below, and the plain text alongside.',
+    fields: {
+        accentColor: { ...field.string({ max: 9, default: '#2563eb', label: 'Accent color', description: 'Of the button and the links.' }), control: 'color' },
+        logo: { ...field.string({ max: 2000, default: '', pattern: '(?:https?://[^\\s]+|/[^\\s]*)?', label: 'Logo', description: 'Shown before the site title: a PNG or JPEG, since many email apps do not show SVG. Empty uses the site logo or app icon when it is not an SVG.' }), source: 'media' },
+        footer: field.text({ max: 1000, default: '', label: 'Footer text', description: 'Under every message, above the site name and address: a postal address, or why people get these emails.' }),
+    },
+};
+
 /** The site's languages: others under `/<code>/`, the default one too when `urls` is `all`. */
 /** Page views are counted by an outside service: a count here would be a database write per view, past the cache. */
 export const analytics: SettingsGroup = {
@@ -271,6 +286,7 @@ export interface SiteSettings {
     'general.adminEmail': string;
     'general.usersCanRegister': boolean;
     'general.verifyEmail': boolean;
+    'general.approveRegistrations': boolean;
     'general.defaultRole': string;
     'general.timezone': string;
     'general.dateFormat': keyof typeof DATE_FORMATS;
@@ -304,6 +320,9 @@ export interface SiteSettings {
     'reading.feedContent': 'excerpt' | 'full';
     'reading.discourageSearchEngines': boolean;
     'reading.notFoundPage': string;
+    'email.accentColor': string;
+    'email.logo': string;
+    'email.footer': string;
     'analytics.cloudflareToken': string;
     'analytics.googleMeasurementId': string;
     'discussion.enabled': boolean;

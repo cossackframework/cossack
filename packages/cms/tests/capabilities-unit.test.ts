@@ -44,6 +44,11 @@ describe('capability declarations', () => {
         expect(problems({ ...base, permissions: { jobs: true }, schedules: Array.from({ length: 21 }, (_, i) => ({ name: `s${i}`, cron: '* * * * *' })) })).toMatch(/at most 20/);
         expect(problems({ ...base, permissions: { jobs: true }, schedules: [{ name: 'a', cron: '* * * * *', description: 'x'.repeat(201) }] })).toMatch(/description/);
         expect(problems({ ...base, permissions: { jobs: true }, schedules: 'none' })).toMatch(/schedules\[0\] must be an object/);
+        // A list of another shape is reported, never thrown: one bad manifest must not stop the host.
+        expect(problems({ ...base, hooks: { point: 'cms.resource.before-write' } })).toMatch(/hooks must be a list/);
+        expect(problems({ ...base, commands: 'close-all' })).toMatch(/commands must be a list/);
+        expect(problems({ ...base, permissions: { network: 'api.example.com' } })).toMatch(/permissions.network must be a list/);
+        expect(problems({ ...base, permissions: 'all' })).toMatch(/permissions must be an object/);
     });
 
     it('keeps plugin meta under a system key', () => {
@@ -63,7 +68,7 @@ describe('capabilities without a database', () => {
     const host = (overrides: Partial<CapabilityHost> = {}): CapabilityHost => ({
         name: 'desk', manifest: full,
         allowed: async (grant, what) => { if (!allow) throw Object.assign(new Error(`not granted ${what}`), { code: 'CMS_FORBIDDEN', grant }); },
-        files: null, mail: { send: async message => { sent.push(message); } }, mailFrom: 'site@example.com',
+        files: null, mail: { send: async message => { sent.push(message); return true; } }, mailFrom: 'site@example.com',
         users: {} as never, cache: {} as never, ai: null, payments: null,
         outbox: { enqueue: async (topic: string, event: { eventId: string }, options: unknown) => { queued.push({ topic, event, options }); return true; } } as never,
         secrets: name => ({ STRIPE_SECRET_KEY: 'sk_test' })[name], now: () => 1_000_000, queued: () => undefined,
@@ -73,7 +78,7 @@ describe('capabilities without a database', () => {
     it('sends mail as the site after validating the message', async () => {
         const { mail } = pluginCapabilities(host());
         await mail.send({ to: 'ada@example.com', subject: '  Hello ', text: 'Hi' });
-        expect(sent).toEqual([{ to: 'ada@example.com', from: 'site@example.com', subject: 'Hello', text: 'Hi' }]);
+        expect(sent).toEqual([{ kind: 'plugin', plugin: 'desk', to: 'ada@example.com', from: 'site@example.com', subject: 'Hello', text: 'Hi' }]);
         await expect(mail.send({ to: 'nobody', subject: 'x', text: 'y' })).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
         await expect(mail.send({ to: 'a@b.co', subject: '', text: 'y' })).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
         await expect(mail.send({ to: 'a@b.co', subject: 'x', text: 'y', replyTo: 'no' })).rejects.toMatchObject({ code: 'CMS_VALIDATION' });

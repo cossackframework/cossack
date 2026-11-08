@@ -232,7 +232,7 @@ export async function entriesList(c: Context, name: string, query: Query): Promi
         if (!field || typeof raw !== 'string') continue;
         const row = field.includes('.') ? indexedRowField(fields, field.split('.')) : null;
         const declaration = field.includes('.') ? row : fields[field];
-        if (!declaration) throw new CmsError('CMS_VALIDATION', `Cannot filter on ${field}.`);
+        if (!declaration || UNQUERYABLE_FIELDS.has(field)) throw new CmsError('CMS_VALIDATION', `Cannot filter on ${field}.`);
         const kind = declaration.kind;
         const value = kind === 'integer' || kind === 'number' || (kind === 'datetime' && (row !== null || declaration.multiple)) ? Number(raw) : kind === 'boolean' ? raw === 'true' : raw;
         where[field] = declaration.multiple || row ? { contains: value } : value;
@@ -255,11 +255,17 @@ export async function entriesList(c: Context, name: string, query: Query): Promi
 }
 
 /** `sort=field` or `sort=field:desc` on a scalar field the collection declares; null for none, an error for a field it cannot sort on. */
+/**
+ * Fields the API never answers with, so a request may not filter or sort on them either: a
+ * filter that matches only when the guess is right would give a protected entry's password away.
+ */
+const UNQUERYABLE_FIELDS = new Set(['password']);
+
 function sortOf(sort: string | undefined, fields: { readonly [name: string]: FieldDeclaration }): { field: string; direction: 'asc' | 'desc' } | null {
     if (!sort) return null;
     const [field, direction = 'asc'] = sort.split(':', 2);
     const declaration = field ? fields[field] : undefined;
-    if (!declaration || declaration.multiple || !['string', 'integer', 'number', 'datetime', 'boolean', 'enum'].includes(declaration.kind) || declaration.kind === 'string' && declaration.media) throw new CmsError('CMS_VALIDATION', `Cannot sort on ${String(field)}.`);
+    if (!declaration || UNQUERYABLE_FIELDS.has(field!) || declaration.multiple || !['string', 'integer', 'number', 'datetime', 'boolean', 'enum'].includes(declaration.kind) || declaration.kind === 'string' && declaration.media) throw new CmsError('CMS_VALIDATION', `Cannot sort on ${String(field)}.`);
     if (direction !== 'asc' && direction !== 'desc') throw new CmsError('CMS_VALIDATION', 'sort takes field or field:asc or field:desc.');
     return { field: field!, direction };
 }
@@ -532,7 +538,7 @@ export async function usersList(c: Context, query: Query): Promise<{ items: User
     allowed(c, PERMISSIONS.manageUsers, USERS);
     const page = integer(query.page, 1, 1, 10_000);
     const pageSize = integer(query.perPage, 20, 1, 100);
-    const result = await listUsers({ search: (query.q ?? query.search ?? '').trim().slice(0, 100) || undefined, roleId: query.role || undefined, page, pageSize });
+    const result = await listUsers({ search: (query.q ?? '').trim().slice(0, 100) || undefined, roleId: query.role || undefined, page, pageSize });
     return { items: result.items, total: result.total, page, pages: Math.max(1, Math.ceil(result.total / pageSize)) };
 }
 
@@ -792,7 +798,7 @@ export async function mediaList(c: Context, query: Query) {
         throw new CmsError(principal.kind === 'user' ? 'CMS_FORBIDDEN' : 'CMS_UNAUTHENTICATED', 'Not allowed to see the media library.');
     }
     const kind = query.kind ?? '';
-    return { items: await findMedia(c.get('cms'), (query.q ?? query.search ?? '').slice(0, 100), ['image', 'video', 'audio', 'document', 'archive'].includes(kind) ? kind : '') };
+    return { items: await findMedia(c.get('cms'), (query.q ?? '').slice(0, 100), ['image', 'video', 'audio', 'document', 'archive'].includes(kind) ? kind : '') };
 }
 
 // --- Network sites ---------------------------------------------------------------

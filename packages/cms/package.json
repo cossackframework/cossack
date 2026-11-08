@@ -13,6 +13,7 @@
   "files": [
     "src",
     "app",
+    "!app/src/plugins/example",
     "agent-docs.json"
   ],
   "publishConfig": {

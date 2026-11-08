@@ -283,17 +283,17 @@ export default class MediaDetails extends Cossack {
                         ${file.uploadedBy ? html`<dt class="text-muted-foreground">${__('Uploaded by')}</dt><dd class="text-foreground">${file.uploadedBy}</dd>` : null}
                     </dl>
                     <div class="flex gap-2">
-                        <input class="w-full rounded-md border border-input bg-muted px-3 py-1.5 font-mono text-xs text-foreground" readonly .value=${file.url} aria-label=${__('File URL')}>
+                        ${component(Input, { size: 'sm', class: 'bg-muted font-mono text-xs', readonly: true, '.value': file.url, 'aria-label': __('File URL') })}
                         ${component(Button, { type: 'button', size: 'sm', variant: 'outline', '@click': () => this.copyUrl() }, __('Copy'))}
                     </div>
-                    <form class="space-y-3" @submit=${(event: Event) => this.submit(event)}>
+                    <form class="space-y-4" @submit=${(event: Event) => this.submit(event)}>
                         ${component(Field, { label: __('Title'), for: 'media-title', control: attributes => component(Input, { ...attributes, '.value': this.details.title, '@input': (event: Event) => this.set('title', (event.target as HTMLInputElement).value) }) })}
                         ${file.kind === 'image' ? component(Field, { label: __('Alternative text'), for: 'media-alt', hint: __('Describe the image for people who cannot see it. Leave empty if it is decorative.'),
                             control: attributes => component(Textarea, { ...attributes, rows: 2, '.value': this.details.alt, '@input': (event: Event) => this.set('alt', (event.target as HTMLTextAreaElement).value) }) }) : null}
                         ${component(Field, { label: __('Caption'), for: 'media-caption', control: attributes => component(Textarea, { ...attributes, rows: 2, '.value': this.details.caption, '@input': (event: Event) => this.set('caption', (event.target as HTMLTextAreaElement).value) }) })}
                         ${component(Field, { label: __('Description'), for: 'media-description', control: attributes => component(Textarea, { ...attributes, rows: 3, '.value': this.details.description, '@input': (event: Event) => this.set('description', (event.target as HTMLTextAreaElement).value) }) })}
-                        <div class="flex items-center justify-between">
-                            <button type="button" class="text-sm text-destructive hover:underline bg-transparent border-none p-0 cursor-pointer" @click=${() => { this.confirmDelete = true; }}>${__('Delete permanently')}</button>
+                        <div class="flex items-center justify-between gap-2">
+                            ${component(Button, { type: 'button', variant: 'link', class: 'px-0 text-destructive', '@click': () => { this.confirmDelete = true; } }, __('Delete permanently'))}
                             ${component(Button, { type: 'submit' }, __('Update'))}
                         </div>
                     </form>

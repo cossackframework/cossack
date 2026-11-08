@@ -68,9 +68,9 @@ async function entryUrl(cms: CmsHost, input: Record<string, string>): Promise<st
     } catch { return null; }
 }
 
-/** Email the site and the entry's author about the comment, as Settings → Discussion asks. Needs the `EMAIL` binding. */
+/** Email the site and the entry's author about the comment, as Settings → Discussion asks. Needs a mail sender (`EMAIL`). */
 function notify(c: Context, cms: CmsHost, comment: CommentShape, title: string, owner: string | null, url: string | null): void {
-    const mail = binding<{ send: (message: unknown) => Promise<unknown> }>('EMAIL');
+    const mail = cms.mail;
     if (!mail || comment.status === 'spam') return;
     const work = (async () => {
         const settings = await cms.settings.all();
@@ -84,7 +84,7 @@ function notify(c: Context, cms: CmsHost, comment: CommentShape, title: string, 
         const origin = env('APP_URL', '') || new URL(c.req.url).origin;
         const subject = `${held ? 'Please moderate' : 'New comment'}: “${title}”`;
         const text = `${comment.authorName} <${comment.authorEmail}> wrote on “${title}”:\n\n${comment.content}\n\n${url ? `${origin}${url}\n` : ''}Moderate: ${origin}/dashboard/comments?status=${comment.status}`;
-        for (const to of recipients) await mail.send({ to, from: env('MAIL_FROM', 'no-reply@example.com'), subject, text });
+        for (const to of recipients) await mail.send({ kind: 'comment', to, from: cms.mailFrom, subject, text });
     })().catch(error => console.error('[cms] could not send comment notifications', error));
     try { c.executionCtx.waitUntil(work); } catch { /* Node keeps running the promise. */ }
 }

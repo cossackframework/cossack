@@ -191,7 +191,7 @@ export const CMS_COMMANDS = [
     request: ([name]) => ({ method: 'DELETE', path: `/api/cms/appearance/areas/${name}` }) },
 
   { noun: 'media', verb: 'list', summary: 'Files in the media library.', positionals: [], flags: ['q', 'kind'],
-    request: (_args, flags) => ({ method: 'GET', path: '/api/cms/media', query: { search: flags.q, kind: flags.kind } }), table: { rows: data => data.items, columns: ['id', 'name', 'kind', 'url'] } },
+    request: (_args, flags) => ({ method: 'GET', path: '/api/cms/media', query: { q: flags.q, kind: flags.kind } }), table: { rows: data => data.items, columns: ['id', 'name', 'kind', 'url'] } },
   { noun: 'media', verb: 'upload', summary: 'Upload files to the media library.', positionals: ['file...'], flags: [],
     request: files => ({ method: 'POST', path: '/api/cms/media', files }) },
 

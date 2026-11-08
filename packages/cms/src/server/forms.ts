@@ -4,27 +4,35 @@
  * the form's rules, the validation filters and one atomic write of the submission, its
  * receipt and its outbox event; notifications, webhooks and plugin actions run from the
  * outbox. Handling submissions needs `cms:submissions`.
+ *
+ * Files of a file input are private files (`FileService.stashPrivate`), under
+ * `cms/private/forms/<form>/<submission>/`: stored once the submission is valid, made ready
+ * in the submission's own batch, read only through `file()` by whoever handles submissions,
+ * and deleted with the submission or the form. Records, hooks, emails, exports and webhooks
+ * carry their metadata (`FormFile`), never their bytes.
  */
 import type { Statement, Value } from '@cossackframework/romedb';
 import type { FilterPoint } from '@cossackframework/core/hooks';
-import { CmsError } from '../errors';
+import { CmsError, isCmsError } from '../errors';
+import { fileType } from '../media';
 import { SLUG_PATTERN } from '../fields';
 import type { Block } from '../blocks';
 import {
-    conditionShows, displayRows, displayValue, emailAddresses, escapeMarkdown, formInputs, formSettings, notificationRules, renderMergeTags, submissionOf, submissionResource,
-    SUBMISSION_STATUSES, validateSubmission, type FormSettings, type FormValues, type MergeContext, type NotificationRule, type SubmissionMeta, type SubmissionShape,
+    conditionShows, displayRows, displayValue, emailAddresses, escapeMarkdown, formFiles, formInputs, formSettings, notificationRules, renderMergeTags, submissionOf, submissionResource, submissionResourceName,
+    FORM_FILE_MAX_MB, FORM_UPLOAD_LIMIT_MB, SUBMISSION_STATUSES, validateSubmission, type FormFile, type FormSettings, type FormValues, type MergeContext, type NotificationRule, type SubmissionMeta, type SubmissionShape,
     type SubmissionStatus, type SubmittedValues,
 } from '../form-builder';
 import {
     formBeforeSubmit, formConfirmation, formNotification, formPrefill, formValidate, type FormConfirmation, type FormEmail, type FormErrors, type FormRef, type FormSubmittedEvent, type WriteActor,
 } from '../hooks';
-import { hasPermission, PERMISSIONS, systemPrincipal, type Principal } from '../permissions';
+import { hasPermission, PERMISSIONS, principalId, systemPrincipal, type Principal } from '../permissions';
 import type { RecordShape } from '../records';
-import { declarationHash, resolveResource, type Resource } from '../resource';
+import { declarationHash, resolveResource, storageName, type Resource } from '../resource';
 import { migrate } from './schema';
 import { sha256Hex } from './tokens';
 import { bound, type ResourceRepository } from './repository';
 import type { CmsHost } from './host';
+import type { CmsFile } from './files';
 import { uuidv7 } from '@cossackframework/core';
 
 /** Sends email, such as Cloudflare's `EMAIL` binding or an SMTP client. */
@@ -84,12 +92,14 @@ const THROTTLE_MS = 5_000;
 /** Filled in faster than people can: spam. */
 const MIN_FILL_MS = 2_000;
 const DAY = 24 * 60 * 60 * 1000;
+const MB = 1024 * 1024;
 const WRITE = { kind: 'cms.forms', retryConflicts: 5 } as const;
 /** What a handled submission may be set to. */
 const STATUSES = new Set<string>(SUBMISSION_STATUSES);
 
+/** The actor of a form event, named as resource events name it (`system:<reason>` for the system). */
 function writeActor(principal: Principal): WriteActor {
-    return principal.kind === 'user' ? { kind: 'user', id: principal.id } : principal.kind === 'system' ? { kind: 'system', id: principal.reason } : { kind: 'anonymous', id: 'anonymous' };
+    return { kind: principal.kind, id: principalId(principal) };
 }
 
 export class CmsForms {
@@ -174,10 +184,14 @@ export class CmsForms {
         this.#host.refreshActivation();
     }
 
-    /** Drop a deleted form's submissions table. Runs from the outbox after the form is deleted. */
+    /** Drop a deleted form's submissions table and their files. Runs from the outbox after the form is deleted. */
     async dropTable(formId: string): Promise<void> {
-        const id = `cms/form_${formId.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
-        const storage = `r__cms__${id.slice(4)}`;
+        // Named as the submissions resource was made, so a renamed rule cannot orphan the table.
+        const name = submissionResourceName(formId);
+        // The files first: a retry finds the rest, and none outlive the table.
+        await this.#host.files?.deletePrivate(filesScope(formId));
+        const id = `cms/${name}`;
+        const storage = storageName('cms', name);
         const info = await this.#host.db.read([{ rql: 'INFO FOR DB' }]);
         const exists = ((info.results[0]!.rows[0]![0] as { tables?: { name: string }[] }).tables ?? []).some(table => table.name === storage);
         await this.#host.db.write([
@@ -240,7 +254,17 @@ export class CmsForms {
         const actor = writeActor(context.principal);
         const hookContext = { form: form.ref, actor, ...(context.ip ? { ip: context.ip } : {}), ...(context.userAgent ? { userAgent: context.userAgent } : {}), ...(context.page ? { page: context.page } : {}) };
         const check = validateSubmission(form.blocks, types, raw);
-        let values = check.values;
+        // Posted files stay aside: hooks see their metadata, and they are stored once the submission is valid.
+        const uploads = new Map<string, readonly FormFile[]>();
+        for (const input of form.ref.inputs) if (input.kind === 'file' && check.values[input.name]) uploads.set(input.name, check.values[input.name] as readonly FormFile[]);
+        const withFiles = (from: FormValues): FormValues => {
+            if (!uploads.size && !form.ref.inputs.some(input => input.kind === 'file')) return from;
+            const next: { [name: string]: FormValues[string] } = { ...from };
+            for (const input of form.ref.inputs) if (input.kind === 'file') delete next[input.name];
+            for (const [name, files] of uploads) next[name] = Object.freeze(formFiles(files));
+            return Object.freeze(next);
+        };
+        let values = withFiles(check.values);
         if (!spam) {
             const errors = await this.#filter(formValidate, check.errors, { ...hookContext, values });
             if (Object.keys(errors).length) throw new CmsError('CMS_VALIDATION', 'Check the fields marked below.', { fields: { ...errors } });
@@ -249,7 +273,8 @@ export class CmsForms {
                 const again = validateSubmission(form.blocks, types, changed);
                 const problem = Object.entries(again.errors)[0];
                 if (problem) throw new CmsError('CMS_VALIDATION', `A plugin set ${problem[0]} to a value the form does not take: ${problem[1]}`);
-                values = again.values;
+                // Files are the posted ones: a plugin can check them but not replace them.
+                values = withFiles(again.values);
             }
             if (settings.store && settings.oncePerUser && user && await this.#exists(form, '"_owner" = $value', user)) throw new CmsError('CMS_CONFLICT', 'You already sent this form.');
             const email = settings.oncePerEmail ? values[settings.oncePerEmail] : undefined;
@@ -259,6 +284,9 @@ export class CmsForms {
         }
         const id = uuidv7();
         const op = uuidv7();
+        // Files are stored before the record, pending; the record's batch makes them ready, and a refused write removes them.
+        let stashed: readonly string[] = [];
+        if (settings.store && uploads.size) ({ values, ids: stashed } = await this.#stash(form, id, uploads, values, user, context.signal));
         const meta: { -readonly [K in keyof SubmissionMeta]: string } = {};
         if (settings.recordIp && context.ip) meta.ip = context.ip.slice(0, 64);
         if (context.userAgent) meta.userAgent = context.userAgent.slice(0, 300);
@@ -271,13 +299,20 @@ export class CmsForms {
         const sendParams = { $op: op, $form: form.ref.id, $ip: ipHash, $at: now };
         const eventParams = { $op: op, $payload: JSON.stringify(event), $at: now };
         if (settings.store) {
-            await this.#host.resource(form.resource.id).insert({ ...values, status, ...(Object.keys(meta).length ? { meta } : {}) }, {
-                principal: SYSTEM, id, op, owner: user, kind: 'cms.forms.submit', ...(context.signal ? { signal: context.signal } : {}),
-                attach: guard => [
-                    bound(`INSERT INTO cms_form_sends (id, form_id, ip_hash, at) SELECT $op, $form, $ip, $at WHERE ${guard.rql}`, { ...guard.params, ...sendParams }),
-                    ...(spam ? [] : [bound(`INSERT INTO cms_outbox (id, topic, payload, created_at, available_at, attempts, lease_until) SELECT $op, 'form.submitted', $payload, $at, $at, 0, 0 WHERE ${guard.rql}`, { ...guard.params, ...eventParams })]),
-                ],
-            });
+            try {
+                await this.#host.resource(form.resource.id).insert({ ...values, status, ...(Object.keys(meta).length ? { meta } : {}) }, {
+                    principal: SYSTEM, id, op, owner: user, kind: 'cms.forms.submit', ...(context.signal ? { signal: context.signal } : {}),
+                    attach: guard => [
+                        bound(`INSERT INTO cms_form_sends (id, form_id, ip_hash, at) SELECT $op, $form, $ip, $at WHERE ${guard.rql}`, { ...guard.params, ...sendParams }),
+                        ...(spam ? [] : [bound(`INSERT INTO cms_outbox (id, topic, payload, created_at, available_at, attempts, lease_until) SELECT $op, 'form.submitted', $payload, $at, $at, 0, 0 WHERE ${guard.rql}`, { ...guard.params, ...eventParams })]),
+                        // The receipt is the guard: RomeQL's UPDATE takes a relational row, not the record's.
+                        ...(stashed.length ? [this.#host.files!.privateReady(stashed, { rql: 'EXISTS (SELECT 1 FROM cms_form_sends WHERE id = $op)', params: { $op: op } })] : []),
+                    ],
+                });
+            } catch (error) {
+                if (stashed.length) await this.#host.files?.discardPrivate(stashed).catch(() => undefined);
+                throw error;
+            }
         } else {
             const statements: Statement[] = [{ rql: 'INSERT INTO cms_form_sends (id, form_id, ip_hash, at) VALUES ($op, $form, $ip, $at)', params: sendParams }];
             if (!spam) statements.push({ rql: "INSERT INTO cms_outbox (id, topic, payload, created_at, available_at, attempts, lease_until) VALUES ($op, 'form.submitted', $payload, $at, $at, 0, 0)", params: eventParams });
@@ -293,6 +328,49 @@ export class CmsForms {
             catch (error) { console.error('[cms] a cms.form.confirmation handler failed; the form\'s own confirmation is shown', error); }
         }
         return { form, submission, confirmation };
+    }
+
+    /**
+     * Store a submission's posted files as private files of it, each checked by its input's
+     * size and the content against its type, and answer the values with their references. A
+     * file that fails is the input's error; the files stored before it are removed.
+     */
+    async #stash(form: LoadedForm, submission: string, uploads: ReadonlyMap<string, readonly FormFile[]>, values: FormValues, owner: string | null, signal?: AbortSignal): Promise<{ values: FormValues; ids: string[] }> {
+        const files = this.#host.files;
+        const refuse = (name: string, message: string) => new CmsError('CMS_VALIDATION', 'Check the fields marked below.', { fields: { [name]: message } });
+        if (!files) throw refuse(uploads.keys().next().value!, 'This site cannot take files: it has no file storage.');
+        const total = [...uploads.values()].flat().reduce((sum, file) => sum + file.size, 0);
+        if (total > FORM_UPLOAD_LIMIT_MB * MB) throw new CmsError('CMS_LIMIT', `The files add up to more than ${FORM_UPLOAD_LIMIT_MB} MB.`);
+        const ids: string[] = [];
+        const stored: { [name: string]: readonly FormFile[] } = {};
+        try {
+            for (const [name, list] of uploads) {
+                const input = form.ref.inputs.find(entry => entry.name === name)!;
+                const largest = Math.min(typeof input.data.maxSize === 'number' ? input.data.maxSize : FORM_FILE_MAX_MB, FORM_FILE_MAX_MB) * MB;
+                const kept: FormFile[] = [];
+                for (const file of list) {
+                    const label = file.name.slice(0, 80) || 'The file';
+                    // A JSON post names files without sending them.
+                    const blob = file as Partial<Blob>;
+                    if (typeof blob.stream !== 'function') throw refuse(name, `Attach ${label} itself: send the form as multipart form data.`);
+                    let saved: { id: string; name: string; contentType: string; size: number };
+                    try {
+                        saved = await files.stashPrivate({ name: file.name, contentType: fileType(file.name, file.type), size: file.size, body: blob.stream() as ReadableStream<Uint8Array> },
+                            { principal: SYSTEM, scope: `${filesScope(form.ref.id)}/${submission}`, maxBytes: largest, ...(owner ? { owner } : {}), ...(signal ? { signal } : {}) });
+                    } catch (error) {
+                        if (isCmsError(error, 'CMS_VALIDATION') || isCmsError(error, 'CMS_LIMIT')) throw refuse(name, `${label}: ${error.message}`);
+                        throw error;
+                    }
+                    ids.push(saved.id);
+                    kept.push(Object.freeze({ id: saved.id, name: saved.name, size: saved.size, type: saved.contentType }));
+                }
+                stored[name] = Object.freeze(kept);
+            }
+        } catch (error) {
+            await files.discardPrivate(ids).catch(() => undefined);
+            throw error;
+        }
+        return { values: Object.freeze({ ...values, ...stored }), ids };
     }
 
     /** Run a filter, reporting a failing or slow handler as a validation error. */
@@ -424,6 +502,17 @@ export class CmsForms {
         return record ? submissionOf(form.ref.id, record, form.ref.inputs) : null;
     }
 
+    /**
+     * A file of a submission with its bytes, for whoever handles submissions; null when the
+     * submission or the file is gone. Files are private: nothing else serves them.
+     */
+    async file(form: LoadedForm, submission: string, fileId: string, principal: Principal, options: { signal?: AbortSignal } = {}): Promise<{ file: CmsFile; body: ReadableStream<Uint8Array> } | null> {
+        this.#authorize(principal);
+        if (!this.#host.files || !ID.test(submission)) return null;
+        if (!(await this.#repository(form).get(submission, { principal }))) return null;
+        return this.#host.files.openPrivate(`${filesScope(form.ref.id)}/${submission}`, fileId, options);
+    }
+
     /** Mark submissions read, unread (`new`), spam or trash. Returns how many changed. */
     async setStatus(form: LoadedForm, ids: readonly string[], status: SubmissionStatus, principal: Principal): Promise<number> {
         this.#authorize(principal);
@@ -437,16 +526,18 @@ export class CmsForms {
         ));
     }
 
-    /** Delete submissions for good. Returns how many were deleted. */
+    /** Delete submissions for good, with their files. Returns how many were deleted. */
     async delete(form: LoadedForm, ids: readonly string[], principal: Principal): Promise<number> {
         this.#authorize(principal);
         await this.#host.assertActive(form.resource, { fresh: true });
         const storage = form.resource.storage;
+        // The files first, so none outlive their submission; a retry finds the rest.
+        if (this.#host.files) for (const key of submissionKeys(ids)) await this.#host.files.deletePrivate(`${filesScope(form.ref.id)}/${key}`);
         return this.#each(ids, (key, index) => ({ rql: `DELETE FROM ${storage} WHERE id = type::record('${storage}', $k${index})`, params: { [`$k${index}`]: key } }));
     }
 
     async #each(ids: readonly string[], statement: (key: string, index: number) => Statement): Promise<number> {
-        const keys = [...new Set(ids.filter(id => typeof id === 'string' && ID.test(id)))].slice(0, 100);
+        const keys = submissionKeys(ids);
         let changed = 0;
         for (let offset = 0; offset < keys.length; offset += 25) {
             const result = await this.#host.db.write(keys.slice(offset, offset + 25).map((key, index) => statement(key, index)), WRITE);
@@ -475,10 +566,14 @@ export class CmsForms {
         const repository = this.#repository(form);
         const record = await repository.get(id, { principal });
         if (!record) throw new CmsError('CMS_NOT_FOUND', 'The submission is gone.');
-        const check = validateSubmission(form.blocks, this.#host.blockTypes, raw);
-        if (Object.keys(check.errors).length) throw new CmsError('CMS_VALIDATION', 'Check the fields marked below.', { fields: { ...check.errors } });
+        // Files are not edited here: they stay as sent, and are checked as kept, whatever the values say.
+        const files = form.ref.inputs.filter(field => field.kind === 'file').map(field => field.name);
+        const kept = submissionOf(form.ref.id, record, form.ref.inputs).values;
+        const check = validateSubmission(form.blocks, this.#host.blockTypes, { ...raw, ...Object.fromEntries(files.map(name => [name, kept[name] ?? []])) });
+        const errors = Object.fromEntries(Object.entries(check.errors).filter(([key]) => !files.includes(key)));
+        if (Object.keys(errors).length) throw new CmsError('CMS_VALIDATION', 'Check the fields marked below.', { fields: errors });
         const input: { [name: string]: unknown } = {};
-        for (const field of form.ref.inputs) input[field.name] = check.values[field.name] ?? null;
+        for (const field of form.ref.inputs) if (field.kind !== 'file') input[field.name] = check.values[field.name] ?? null;
         const updated = await repository.update(id, input, { principal, expectedRevision: record.rev });
         return submissionOf(form.ref.id, updated, form.ref.inputs);
     }
@@ -553,6 +648,16 @@ export class CmsForms {
         await this.#host.db.write([{ rql: 'DELETE FROM cms_form_results WHERE id = $id', params: { $id: id } }], WRITE);
         try { return JSON.parse(data); } catch { return null; }
     }
+}
+
+/** The scope of a form's private files; a submission's are under `<scope>/<submission>`. */
+function filesScope(formId: string): string {
+    return `forms/${formId}`;
+}
+
+/** Distinct submission IDs, at most 100 at a time. */
+function submissionKeys(ids: readonly string[]): string[] {
+    return [...new Set(ids.filter(id => typeof id === 'string' && ID.test(id)))].slice(0, 100);
 }
 
 /** One CSV line. Cells starting like a formula get a leading apostrophe. */

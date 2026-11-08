@@ -359,6 +359,11 @@ export function newBlock(type: string, options: readonly BlockOption[], id: () =
 }
 
 /** Stored block data as control values, through the tree, so the editor's controls can show them. */
+/** The name of the collection's content: the `content` feature, or a plugin resource's first blocks field, which the template and patterns fill. */
+export function contentField(view: Pick<EditorView, 'fields'>): string | null {
+    return view.fields.find(field => field.kind === 'blocks' && !field.form)?.name ?? null;
+}
+
 export function editorBlocks(blocks: readonly EditorBlock[], options: readonly BlockOption[]): EditorBlock[] {
     return blocks.map(block => {
         const option = options.find(entry => entry.name === block.type);

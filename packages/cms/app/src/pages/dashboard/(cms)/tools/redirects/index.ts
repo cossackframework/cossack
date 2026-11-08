@@ -124,7 +124,7 @@ export default class RedirectsPage extends Cossack {
                     ${([['', __('All')], ['manual', __('Added by people')], ['auto', __('Automatic')]] as const).map(([value, label]) => html`<a href=${this.href({ kind: value, page: 1 })}
                         aria-current=${this.kind === value ? 'page' : 'false'} class=${this.kind === value ? 'font-semibold text-foreground no-underline' : 'text-primary no-underline hover:underline'}>${label}</a>`)}
                 </nav>
-                <form method="get" class="flex gap-2" role="search">
+                <form method="get" class="flex flex-wrap gap-2" role="search">
                     ${this.kind ? html`<input type="hidden" name="kind" value=${this.kind}>` : null}
                     ${component(Input, { type: 'search', name: 'q', size: 'sm', value: this.search, placeholder: __('Search redirects'), 'aria-label': __('Search redirects') })}
                     ${component(Button, { type: 'submit', size: 'sm', variant: 'outline' }, __('Search'))}

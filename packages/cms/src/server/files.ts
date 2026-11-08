@@ -4,7 +4,7 @@
  * the metadata row records intent first, and `sweep()` finishes or cleans up interrupted work.
  */
 import type { StoragePresignedUpload, StorageProvider } from '@cossackframework/core/storage';
-import type { RomeDB, Value } from '@cossackframework/romedb';
+import type { RomeDB, Statement, Value } from '@cossackframework/romedb';
 import { CmsError } from '../errors';
 import { declaredType, imageHasAlpha, imageSize, matchesSignature, MEDIA_FILTER_EXCLUDES, MEDIA_FILTERS, mediaKind, sanitizeSvg, SVG_TYPE, type MediaKind } from '../media';
 import { hasPermission, PERMISSIONS, principalId, type Principal } from '../permissions';
@@ -88,6 +88,20 @@ export interface FileMetadata {
 }
 
 const ID = /^[A-Za-z0-9_-]{1,80}$/;
+/**
+ * Private files, such as a form's uploads, live in a key space of their own:
+ * `cms/private/<scope>/<id>` against the library's `cms/files/<id>`. Every library read
+ * (`get`, `getMany`, `list`, `summary`, and through them `open`, `variant`, the public
+ * `/media/` route and media references in content) selects library keys alone, so a private
+ * file's ID resolves nowhere public; only `openPrivate`, given the file's scope, reads it, and
+ * its caller decides who may (forms: `cms:submissions`). The key marks them rather than a
+ * status of their own because `cms_files.status` is fixed to pending, ready and deleting, and
+ * keeping them in `cms_files` keeps the two-phase upload and `sweep()` for them.
+ */
+export const LIBRARY_KEYS = "key LIKE 'cms/files/%'";
+const PRIVATE_PREFIX = 'cms/private/';
+/** A scope of private files: path segments of letters, digits, `_` and `-`, such as `forms/<form>/<submission>`. */
+const SCOPE = /^[A-Za-z0-9_-]{1,80}(?:\/[A-Za-z0-9_-]{1,80}){0,4}$/;
 const COLUMNS = 'id, name, content_type, size, owner_id, title, alt, caption, description, width, height, created_at, updated_at, edits, placeholder';
 /** The width of the placeholder the transformer makes; the browser blurs it up to the image's size. */
 const PLACEHOLDER_WIDTH = 16;
@@ -179,7 +193,7 @@ export class FileService {
     /** Count the library by kind, and the resized copies; one read. */
     async summary(): Promise<FileSummary> {
         const result = await this.#db.read([
-            { rql: "SELECT content_type, count(*), sum(size) FROM cms_files WHERE status = 'ready' GROUP BY content_type" },
+            { rql: `SELECT content_type, count(*), sum(size) FROM cms_files WHERE status = 'ready' AND ${LIBRARY_KEYS} GROUP BY content_type` },
             { rql: 'SELECT count(*), sum(size) FROM cms_file_variants' },
         ]);
         const kinds = new Map<MediaKind, { files: number; bytes: number }>();
@@ -274,7 +288,14 @@ export class FileService {
      */
     async upload(file: { name: string; contentType: string; size: number; body: ReadableStream<Uint8Array> } & FileMetadata,
         context: { principal: Principal; signal?: AbortSignal; maxBytes?: number; owner?: string }): Promise<CmsFile> {
-        const { id, key, contentType } = await this.#begin(file, context);
+        const { id, contentType, size, head } = await this.#store(file, context, 'cms/files/');
+        return this.#placeholder(await this.#shrink(await this.#ready(id, size, imageSize(contentType, head))));
+    }
+
+    /** Begin an upload under a key prefix, check its signature and store its bytes; the row stays pending. */
+    async #store(file: { name: string; contentType: string; size: number; body: ReadableStream<Uint8Array> } & FileMetadata,
+        context: { principal: Principal; signal?: AbortSignal; maxBytes?: number; owner?: string }, prefix: string): Promise<{ id: string; name: string; contentType: string; size: number; head: Uint8Array }> {
+        const { id, key, name, contentType } = await this.#begin(file, context, prefix);
         const { head, body } = await peek(file.body, Math.min(HEAD_BYTES, file.size));
         if (!matchesSignature(contentType, head)) {
             await body.cancel().catch(() => undefined);
@@ -292,7 +313,72 @@ export class FileService {
             if (!(error instanceof CmsError)) await this.#abandon(id).catch(() => undefined);
             throw error;
         }
-        return this.#placeholder(await this.#shrink(await this.#ready(id, size, imageSize(contentType, head))));
+        return { id, name, contentType, size, head };
+    }
+
+    // --- Private files ----------------------------------------------------------------------
+
+    /**
+     * Store a private file under `cms/private/<scope>/`, checked as an upload is (size, type,
+     * signature, SVG sanitized). Its row stays pending: the caller's own write makes it ready
+     * with `privateReady`, in the same batch as what the file belongs to, and `sweep()` removes
+     * it when that write never happens. The principal is the host's; `owner` names the sender.
+     */
+    async stashPrivate(file: { name: string; contentType: string; size: number; body: ReadableStream<Uint8Array> },
+        context: { principal: Principal; scope: string; signal?: AbortSignal; maxBytes?: number; owner?: string }): Promise<{ id: string; name: string; contentType: string; size: number }> {
+        if (!SCOPE.test(context.scope)) throw new Error(`Invalid private file scope ${context.scope}.`);
+        const { head: _head, ...stored } = await this.#store(file, context, `${PRIVATE_PREFIX}${context.scope}/`);
+        return stored;
+    }
+
+    /** The statement that makes stashed private files ready, for the caller's batch: it applies only when `guard` (a condition with its params) holds. */
+    privateReady(ids: readonly string[], guard: { readonly rql: string; readonly params: { readonly [key: string]: Value } }): Statement {
+        const params: { [key: string]: Value } = { ...guard.params, $readyAt: this.#now() };
+        const list = ids.map((id, index) => { params[`$ready${index}`] = id; return `$ready${index}`; }).join(', ');
+        return { rql: `UPDATE cms_files SET status = 'ready', updated_at = $readyAt WHERE status = 'pending' AND key LIKE '${PRIVATE_PREFIX}%' AND id IN (${list}) AND ${guard.rql}`, params };
+    }
+
+    /** A ready private file of a scope with its bytes, or null. The caller has checked who may read it. */
+    async openPrivate(scope: string, id: string, options: { signal?: AbortSignal } = {}): Promise<{ file: CmsFile; body: ReadableStream<Uint8Array> } | null> {
+        if (!SCOPE.test(scope) || !ID.test(id)) return null;
+        const key = `${PRIVATE_PREFIX}${scope}/${id}`;
+        const result = await this.#db.read([{ rql: `SELECT ${COLUMNS} FROM cms_files WHERE id = $id AND key = $key AND status = 'ready'`, params: { $id: id, $key: key } }]);
+        const row = result.results[0]!.rows[0];
+        if (!row) return null;
+        const object = await this.#storage.get(key, options);
+        return object ? { file: fileOf(row), body: object.body } : null;
+    }
+
+    /** Remove stashed private files no write made ready, such as those of a refused submission. */
+    async discardPrivate(ids: readonly string[]): Promise<void> {
+        for (const id of ids) {
+            const marked = await this.#db.write([{ rql: `UPDATE cms_files SET status = 'deleting', updated_at = $now WHERE id = $id AND status = 'pending' AND key LIKE '${PRIVATE_PREFIX}%'`, params: { $id: id, $now: this.#now() } }], WRITE);
+            if (marked.results[0]!.affected === 1n) await this.#finishDelete(id);
+        }
+    }
+
+    /**
+     * Delete every private file under a scope, ready or pending, such as a submission's
+     * (`forms/<form>/<submission>`) or a whole form's (`forms/<form>`). Returns how many.
+     * Keys are matched as a range, so the key index finds them.
+     */
+    async deletePrivate(scope: string): Promise<number> {
+        if (!SCOPE.test(scope)) throw new Error(`Invalid private file scope ${scope}.`);
+        // Every key under `<prefix>/` sorts at or after it and before `<prefix>0`: '0' follows '/'.
+        const range = { $from: `${PRIVATE_PREFIX}${scope}/`, $to: `${PRIVATE_PREFIX}${scope}0` };
+        let removed = 0;
+        for (;;) {
+            const found = await this.#db.read([{ rql: "SELECT id FROM cms_files WHERE key >= $from AND key < $to AND status IN ('pending', 'ready') LIMIT 200", params: range }]);
+            const ids = found.results[0]!.rows.map(row => row[0] as string);
+            for (const id of ids) {
+                const marked = await this.#db.write([{ rql: "UPDATE cms_files SET status = 'deleting', updated_at = $now WHERE id = $id AND status IN ('pending', 'ready') AND key >= $from AND key < $to", params: { ...range, $id: id, $now: this.#now() } }], WRITE);
+                if (marked.results[0]!.affected !== 1n) continue;
+                await this.#finishDelete(id);
+                removed++;
+            }
+            if (ids.length < 200) break;
+        }
+        return removed;
     }
 
     /**
@@ -344,7 +430,7 @@ export class FileService {
     }
 
     /** Check the upload and record intent; the row is pending until the bytes are in. */
-    async #begin(file: { name: string; contentType: string; size: number } & FileMetadata, context: { principal: Principal; maxBytes?: number; owner?: string }): Promise<{ id: string; key: string; name: string; contentType: string }> {
+    async #begin(file: { name: string; contentType: string; size: number } & FileMetadata, context: { principal: Principal; maxBytes?: number; owner?: string }, prefix = 'cms/files/'): Promise<{ id: string; key: string; name: string; contentType: string }> {
         if (!hasPermission(context.principal, PERMISSIONS.upload) && !hasPermission(context.principal, PERMISSIONS.manageMedia)) {
             throw new CmsError(context.principal.kind === 'anonymous' ? 'CMS_UNAUTHENTICATED' : 'CMS_FORBIDDEN', 'Not allowed to upload files.');
         }
@@ -355,7 +441,7 @@ export class FileService {
         if (contentType === SVG_TYPE && file.size > SVG_MAX_BYTES) throw new CmsError('CMS_LIMIT', `SVG files must be at most ${SVG_MAX_BYTES / 1024 / 1024} MB.`);
         const name = file.name.replace(/[\x00-\x1f\x7f/\\]/g, '_').trim().slice(0, 200) || 'file';
         const id = uuidv7();
-        const key = `cms/files/${id}`;
+        const key = `${prefix}${id}`;
         const now = this.#now();
         // Host work, such as storing an avatar, names the user the file belongs to.
         const owner = context.principal.kind === 'user' ? context.principal.id : context.principal.kind === 'system' ? context.owner ?? null : null;
@@ -371,7 +457,7 @@ export class FileService {
     /** A pending upload the principal may finish: its owner, a media manager, or host work. */
     async #pending(id: string, principal: Principal): Promise<{ key: string; owner: string | null; contentType: string; size: number }> {
         if (!ID.test(id)) throw new CmsError('CMS_NOT_FOUND', 'Upload not found.');
-        const result = await this.#db.read([{ rql: "SELECT key, owner_id, content_type, size FROM cms_files WHERE id = $id AND status = 'pending'", params: { $id: id } }]);
+        const result = await this.#db.read([{ rql: `SELECT key, owner_id, content_type, size FROM cms_files WHERE id = $id AND status = 'pending' AND ${LIBRARY_KEYS}`, params: { $id: id } }]);
         const row = result.results[0]!.rows[0];
         if (!row) throw new CmsError('CMS_NOT_FOUND', 'Upload not found.');
         const pending = { key: row[0] as string, owner: row[1] as string | null, contentType: row[2] as string, size: Number(row[3] as bigint) };
@@ -403,7 +489,7 @@ export class FileService {
 
     async get(id: string): Promise<CmsFile | null> {
         if (!ID.test(id)) return null;
-        const result = await this.#db.read([{ rql: `SELECT ${COLUMNS} FROM cms_files WHERE id = $id AND status = 'ready'`, params: { $id: id } }]);
+        const result = await this.#db.read([{ rql: `SELECT ${COLUMNS} FROM cms_files WHERE id = $id AND status = 'ready' AND ${LIBRARY_KEYS}`, params: { $id: id } }]);
         const row = result.results[0]!.rows[0];
         return row ? fileOf(row) : null;
     }
@@ -412,13 +498,13 @@ export class FileService {
         const wanted = [...new Set(ids.filter(id => typeof id === 'string' && ID.test(id)))].slice(0, 200);
         if (!wanted.length) return new Map();
         const params = Object.fromEntries(wanted.map((id, index) => [`$f${index}`, id]));
-        const result = await this.#db.read([{ rql: `SELECT ${COLUMNS} FROM cms_files WHERE status = 'ready' AND id IN (${wanted.map((_, index) => `$f${index}`).join(', ')})`, params }]);
+        const result = await this.#db.read([{ rql: `SELECT ${COLUMNS} FROM cms_files WHERE status = 'ready' AND ${LIBRARY_KEYS} AND id IN (${wanted.map((_, index) => `$f${index}`).join(', ')})`, params }]);
         return new Map(result.results[0]!.rows.map(row => { const file = fileOf(row); return [file.id, file]; }));
     }
 
     /** Ready files, newest first, filtered by kind, owner and a search over name and title. */
     async list(options: { kind?: MediaKind; search?: string; owner?: string; limit?: number; offset?: number } = {}): Promise<{ items: CmsFile[]; total: number }> {
-        const conditions = ["status = 'ready'"];
+        const conditions = ["status = 'ready'", LIBRARY_KEYS];
         const params: { [key: string]: Value } = {};
         if (options.kind) {
             const prefixes = MEDIA_FILTERS[options.kind];
@@ -511,8 +597,11 @@ export class FileService {
     }
 
     async #finishDelete(id: string): Promise<void> {
+        // The row names its key: a library file's, or a private one's.
+        const row = await this.#db.read([{ rql: 'SELECT key FROM cms_files WHERE id = $id', params: { $id: id } }]);
+        const key = row.results[0]!.rows[0]?.[0];
         await this.#dropVariants(id);
-        await this.#storage.delete(`cms/files/${id}`);
+        await this.#storage.delete(typeof key === 'string' ? key : `cms/files/${id}`);
         await this.#db.write([{ rql: "DELETE FROM cms_files WHERE id = $id AND status = 'deleting'", params: { $id: id } }], WRITE);
     }
 }

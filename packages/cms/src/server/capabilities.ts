@@ -12,7 +12,7 @@ import { mediaUrl, type MediaKind } from '../media';
 import { systemPrincipal, type Principal } from '../permissions';
 import type { CmsCache } from './cache';
 import type { CmsFile, FileMetadata, FileService } from './files';
-import type { CmsMail } from './forms';
+import type { CmsMailer } from './mail';
 import type { Outbox } from './outbox';
 import type { CmsUser, CmsUsers } from './users';
 import type { AiProvider, AiRequest } from './ai';
@@ -36,7 +36,7 @@ export interface PluginFiles {
 }
 
 export interface PluginMail {
-    /** Send one plain-text email from the site's sender. */
+    /** Send one email from the site's sender: the text, and the HTML the site's layout makes from it (Settings → Email). */
     send(message: { to: string; subject: string; text: string; replyTo?: string }): Promise<void>;
 }
 
@@ -130,7 +130,7 @@ export interface CapabilityHost {
     /** An isolated plugin's job handlers, in its Worker: any job name is passed on to it. */
     readonly jobRunner?: (name: string, payload: unknown, context: PluginJobContext) => Promise<unknown>;
     readonly files: FileService | null;
-    readonly mail: CmsMail | null;
+    readonly mail: CmsMailer | null;
     readonly mailFrom: string;
     readonly users: CmsUsers;
     readonly cache: CmsCache;
@@ -212,7 +212,7 @@ export function pluginCapabilities(host: CapabilityHost): PluginCapabilities {
             if (typeof message.subject !== 'string' || !message.subject.trim() || message.subject.length > 200) throw new CmsError('CMS_VALIDATION', 'subject is 1 to 200 characters.');
             if (typeof message.text !== 'string' || !message.text.trim() || message.text.length > MAX_TEXT) throw new CmsError('CMS_VALIDATION', 'text is up to 100 KB.');
             if (message.replyTo !== undefined && (typeof message.replyTo !== 'string' || !EMAIL.test(message.replyTo))) throw new CmsError('CMS_VALIDATION', 'replyTo must be an email address.');
-            await host.mail.send({ to: message.to, from: host.mailFrom, subject: message.subject.trim(), text: message.text, ...(message.replyTo ? { replyTo: message.replyTo } : {}) });
+            await host.mail.send({ kind: 'plugin', plugin: host.name, to: message.to, from: host.mailFrom, subject: message.subject.trim(), text: message.text, ...(message.replyTo ? { replyTo: message.replyTo } : {}) });
         },
     };
 

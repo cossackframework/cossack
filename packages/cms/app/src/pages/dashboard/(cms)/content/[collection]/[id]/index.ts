@@ -6,8 +6,8 @@ import { blockPanel } from '../../../../../../cms/block-panel';
 import { describeBlockError } from '../../../../../../cms/block-errors';
 import { blockIdOf, styleValues, withStyle, type BlockTab, type StyleValues } from '../../../../../../cms/style-controls';
 import { renderMarkdown, type CmsHost } from '@cossackframework/cms/server';
-import { applyEntryJson, contentField, editorView, entryJson, entryValues, fieldErrors, mediaPreviews, parentOptions, patternBlocks, routeResource, saveEntry, termOptions, type MediaPreview, type SaveIntent } from '../../../../../../cms/content';
-import { blockDefaults, controlValue, editorBlocks, editorInput, entryUrl, suggestedSlug, type EditorBlock, type EditorField, type EditorValues, type EditorView, type TermOption } from '../../../../../../cms/editor';
+import { applyEntryJson, editorView, entryJson, entryValues, fieldErrors, mediaPreviews, parentOptions, patternBlocks, routeResource, saveEntry, termOptions, type MediaPreview, type SaveIntent } from '../../../../../../cms/content';
+import { blockDefaults, contentField, controlValue, editorBlocks, editorInput, entryUrl, suggestedSlug, type EditorBlock, type EditorField, type EditorValues, type EditorView, type TermOption } from '../../../../../../cms/editor';
 import { collabEditors, RichTextField, richTextEditors, type RichTextFieldProps } from '../../../../../../cms/rich-text-field';
 import type { Caret, NoteMark } from '../../../../../../cms/rich-text.client';
 import { EntryRoom, type NoteChange, type RoomHandle, type RoomSnapshot } from '../../../../../../cms/collab/room';
@@ -1573,9 +1573,8 @@ export default class EntryEditor extends Cossack {
         // A pattern's starting layouts: the collections, one checkbox each.
         if (this.view?.route === 'patterns' && field.name === 'starter' && target.block === undefined) {
             const chosen = Array.isArray(value) ? value.map(String) : [];
-            return html`<div id=${id} class="space-y-1.5">${this.collectionChoices.map(choice => html`<label class="flex items-center gap-2 text-sm text-foreground cursor-pointer">
-                ${component(Checkbox, { checked: chosen.includes(choice.name), '@change': (event: Event) => change((event.target as HTMLInputElement).checked
-                    ? [...new Set([...chosen, choice.name])] : chosen.filter(name => name !== choice.name)) })} ${choice.label}</label>`)}</div>`;
+            return html`<div id=${id} class="space-y-1.5">${this.collectionChoices.map(choice => html`<div>${component(Checkbox, { label: choice.label, checked: chosen.includes(choice.name), '@change': (event: Event) => change((event.target as HTMLInputElement).checked
+                    ? [...new Set([...chosen, choice.name])] : chosen.filter(name => name !== choice.name)) })}</div>`)}</div>`;
         }
         // A multiple field: this editor's control for the kind, once per item; a multiple choice is checkboxes and a gallery the media control.
         if (field.multiple && !field.media) {
@@ -1748,6 +1747,11 @@ export default class EntryEditor extends Cossack {
                 <p class="text-xs text-muted-foreground">${future && (status === 'published' || status === 'scheduled') ? __('Goes live at this time.') : __('Leave empty to publish immediately.')}</p>
                 ${this.errorFor('publishedAt')}`,
                 { label: html`<label for="field-publishedAt" class="block text-xs font-medium text-foreground">${live && !future ? __('Published on (UTC)') : __('Publish on (UTC)')}</label>` }) : null}
+            ${view.publishable && status !== 'trash' ? this.tracked('unpublishAt', html`
+                ${component(Input, { id: 'field-unpublishAt', type: 'datetime-local', size: 'sm', '.value': String(this.values.unpublishAt ?? ''), '@input': (event: Event) => this.set('unpublishAt', (event.target as HTMLInputElement).value) })}
+                <p class="text-xs text-muted-foreground">${__('Goes back to draft at this time. Leave empty to keep it published.')}</p>
+                ${this.errorFor('unpublishAt')}`,
+                { label: html`<label for="field-unpublishAt" class="block text-xs font-medium text-foreground">${__('Unpublish on (UTC)')}</label>` }) : null}
             ${!isNew && (view.path !== null || view.route === 'forms') ? html`<div class="space-y-2 border-t border-border pt-3">
                 <div class="flex flex-wrap items-center gap-2">
                     ${component(Button, { type: 'button', variant: 'outline', size: 'sm', '@click': () => this.openPreview() }, __('Preview'))}
@@ -1858,8 +1862,7 @@ export default class EntryEditor extends Cossack {
             multiline ? component(Textarea, { id: `seo-${key}`, rows: 3, '.value': String(seo[key] ?? ''), '@input': (event: Event) => this.setGroup('seo', key, (event.target as HTMLTextAreaElement).value) })
                 : component(Input, { id: `seo-${key}`, '.value': String(seo[key] ?? ''), '@input': (event: Event) => this.setGroup('seo', key, (event.target as HTMLInputElement).value) }),
             { label: html`<div class="flex items-center justify-between gap-3"><label for=${`seo-${key}`} class="block text-sm font-medium text-foreground">${label}</label>${counter(String(seo[key] ?? ''), ideal)}</div>`, inline: !multiline });
-        const check = (key: string, label: string) => this.tracked(`seo.${key}`, html`<label class="flex items-center gap-2 text-sm text-foreground cursor-pointer">
-            ${component(Checkbox, { checked: seo[key] === true, '@change': (event: Event) => this.setGroup('seo', key, (event.target as HTMLInputElement).checked) })} ${label}</label>`);
+        const check = (key: string, label: string) => this.tracked(`seo.${key}`, html`<div>${component(Checkbox, { label, checked: seo[key] === true, '@change': (event: Event) => this.setGroup('seo', key, (event.target as HTMLInputElement).checked) })}</div>`);
         const checks = this.checks();
         const tone = (status: Check['status']) => status === 'ok' ? 'bg-emerald-500' : status === 'warn' ? 'bg-amber-500' : 'bg-sky-500';
         const warnings = checks.filter(check => check.status === 'warn').length;
@@ -1960,8 +1963,8 @@ export default class EntryEditor extends Cossack {
         const draft = this.termDrafts[taxonomy.name] ?? { name: '', parent: '' };
         return box(taxonomy.label, this.tracked(taxonomy.name, html`
             <div class="max-h-56 space-y-1 overflow-y-auto">
-                ${taxonomy.terms.length ? taxonomy.terms.map(term => html`<label class="flex items-center gap-2 text-sm text-foreground cursor-pointer" style=${`padding-left: ${term.depth * 1.25}rem`}>
-                    ${component(Checkbox, { checked: selected.includes(term.id), '@change': (event: Event) => this.toggleTerm(taxonomy.name, term.id, (event.target as HTMLInputElement).checked) })} ${term.name}</label>`)
+                ${taxonomy.terms.length ? taxonomy.terms.map(term => html`<div style=${`padding-left: ${term.depth * 1.25}rem`}>
+                    ${component(Checkbox, { label: term.name, checked: selected.includes(term.id), '@change': (event: Event) => this.toggleTerm(taxonomy.name, term.id, (event.target as HTMLInputElement).checked) })}</div>`)
                     : html`<p class="text-xs text-muted-foreground">${__('None yet.')}</p>`}
             </div>
             ${this.canManageTerms ? html`<details class="text-sm">
@@ -2134,8 +2137,7 @@ export default class EntryEditor extends Cossack {
     }
 
     private discussionBox(view: EditorView): TemplateResult {
-        return box(__('Discussion'), html`${this.tracked('commentsOpen', html`<label class="flex items-center gap-2 text-sm text-foreground cursor-pointer">
-            ${component(Checkbox, { id: 'field-commentsOpen', checked: this.values.commentsOpen !== false, '@change': (event: Event) => this.set('commentsOpen', (event.target as HTMLInputElement).checked) })} ${__('Allow comments')}</label>`)}
+        return box(__('Discussion'), html`${this.tracked('commentsOpen', html`<div>${component(Checkbox, { id: 'field-commentsOpen', label: __('Allow comments'), checked: this.values.commentsOpen !== false, '@change': (event: Event) => this.set('commentsOpen', (event.target as HTMLInputElement).checked) })}</div>`)}
             ${this.id === 'new' ? null : html`<a href=${`/dashboard/comments?collection=${view.route}&entry=${this.id}`} class="text-xs text-primary hover:underline">${__('Comments on this entry')}</a>`}`, { id: 'box-discussion' });
     }
 

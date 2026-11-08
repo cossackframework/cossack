@@ -2,7 +2,7 @@ import { Cossack, Page, State, Server, Client, Ref, type RefObject, type HeadVal
 import { getCookie } from 'hono/cookie';
 import { bulkBar } from '../../../../../dashboard/bulk';
 import { listFilters, listFooter, listTable } from '../../../../../dashboard/list-table';
-import { Avatar, AvatarGroup, HoverCard, Icon, NativeSelect, AlertDialog, Tooltip } from '@cossackframework/ui';
+import { Avatar, AvatarGroup, HoverCard, Icon, NativeSelect, AlertDialog, Tooltip, Button, Input } from '@cossackframework/ui';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
 import { ENTRY_ACTION_IDS, entryAuthors, evaluateRule, isCmsError, languageName, mediaUrl, participantColor, recordTitle, translationGroupOf, type BuiltinEntryAction, type EntryAction, type EntryColumn, type FieldFilter, type ListFilter, type RecordShape } from '@cossackframework/cms';
 import { duplicateEntry, importEntries, importItems, listExtras, routeResource, runEntryCommand, termOptions, type ImportReport } from '../../../../../cms/content';
@@ -531,9 +531,8 @@ export default class EntriesPage extends Cossack {
                     <input type="checkbox" name="column" value=${column.id} ?checked=${!this.hidden.includes(column.id)} class="size-4 accent-primary">${column.label}</label>`)}</div>
             </fieldset>
             <label class="flex items-center justify-between gap-3 text-foreground">${__('Number of items per page')}
-                <input type="number" name="perPage" min="1" max="100" step="1" value=${String(this.perPage)} required
-                    class="w-20 rounded-md border border-input bg-background px-2 py-1 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"></label>
-            <div class="flex justify-end"><button type="submit" class="cursor-pointer rounded-md border-none bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90">${__('Apply')}</button></div>
+                ${component(Input, { type: 'number', name: 'perPage', min: 1, max: 100, step: 1, value: String(this.perPage), required: true, size: 'sm', class: 'w-20' })}</label>
+            <div class="flex justify-end">${component(Button, { type: 'submit', size: 'sm' }, __('Apply'))}</div>
         </form>`);
     }
 

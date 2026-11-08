@@ -4,6 +4,7 @@
  * from `init()` and hand the views to the theme's templates.
  */
 import {
+    ENTRY_VIEW_REFUSED_BLOCKS, siteEntryView, validateBlocks, type EntryViewParts,
     ANONYMOUS, ARTICLE_TYPES, authorUrl, entryAuthors, blockDocuments, SHARE_BRAND_URLS, blockIsData, blocksPlain, editedSize, fieldGroupDeclarations, hasBlockReference, parseBlockText, PATTERN_REFERENCE, resolveBindings, resolveBlockBindings, textBlocks, usesUserBinding, type BindingScopes, type ParsedText, flattenBlocks, escapeHtml, formatSiteDate, formInputs, formSettings, imageSrcset, imageUrl, imageWidths, IMAGE_WIDTHS, isCmsError, languageFlag, languageName, mediaUrl, notificationRules, recordTitle, resolvePresets, richTextBlocks, richTextParts, richTextPlain, systemPrincipal, templateCandidates, transformable, urlList,
     type AuthorView, type Block,
     type Principal, type TemplatePage, type ThemeData, type ThemePresets,
@@ -598,6 +599,10 @@ export interface EntryViewOptions {
     comment?: Pick<CommentsView, 'notice' | 'error'>;
     /** The signed-in user, who comments without a name and email. */
     user?: { name: string } | null;
+    /** The signed-in reader's role IDs, for members-only entries limited to roles. */
+    roles?: readonly string[];
+    /** IDs of entries the reader may edit: nothing of them is locked. */
+    editable?: ReadonlySet<string>;
     /** Set when a binding reads the signed-in user, so the page is not cached for everyone. */
     usage?: { user: boolean };
     /** IDs of protected entries this visitor unlocked, whose content shows. */
@@ -646,6 +651,40 @@ function textBlock(field: string, parts: readonly BodyPart[]): RenderedBlock {
 /** Whether an entry has a password visitors must type. */
 export function isProtected(record: RecordShape): boolean {
     return typeof record.password === 'string' && record.password.length > 0;
+}
+
+/** Whether only signed-in users read an entry's content. */
+export function isMembersOnly(record: RecordShape): boolean {
+    return record.membersOnly === true;
+}
+
+/** The roles a members-only entry is for; empty for every signed-in user. */
+export function memberRoles(record: RecordShape): string[] {
+    return Array.isArray(record.memberRoles) ? record.memberRoles.filter((role): role is string => typeof role === 'string' && role !== '') : [];
+}
+
+/** Who reads an entry: signed in or not, with which role IDs, and whether they may edit it. */
+export interface EntryReader {
+    readonly signedIn: boolean;
+    readonly roles?: readonly string[];
+    /** May edit the entry: nothing is locked for them. */
+    readonly editor?: boolean;
+    /** IDs of protected entries this visitor unlocked with their password. */
+    readonly unlocked?: ReadonlySet<string> | undefined;
+}
+
+/**
+ * Why a reader cannot read an entry's content: `password` for a protected entry they have not
+ * unlocked, `members` for a members-only entry and a reader who is not signed in or has none
+ * of its roles; null when they can. A password wins: signing in does not unlock a protected entry.
+ */
+export function entryLock(record: RecordShape, reader: EntryReader): 'password' | 'members' | null {
+    if (reader.editor) return null;
+    if (isProtected(record) && !reader.unlocked?.has(record.id)) return 'password';
+    if (!isMembersOnly(record)) return null;
+    if (!reader.signedIn) return 'members';
+    const roles = memberRoles(record);
+    return roles.length && !roles.some(role => reader.roles?.includes(role)) ? 'members' : null;
 }
 
 /** The cookie that remembers an unlocked entry, and its value: a digest of the entry and its password. */
@@ -781,8 +820,11 @@ export async function entryViews(cms: CmsHost, collection: CollectionDefinition,
     const views: EntryView[] = [];
     for (const record of records) {
         const locale = typeof record.locale === 'string' ? record.locale : languages.default;
-        // A protected entry a visitor has not unlocked shows its title alone.
-        const locked = isProtected(record) && !options.unlocked?.has(record.id);
+        // A protected entry a visitor has not unlocked, or a members-only one and a visitor not signed in, shows its title alone.
+        const lock = entryLock(record, { unlocked: options.unlocked, signedIn: Boolean(options.user), roles: options.roles ?? [], editor: options.editable?.has(record.id) === true });
+        const locked = lock !== null;
+        // A members-only entry reads differently for signed-in users: the page is theirs alone.
+        if (isMembersOnly(record) && options.usage) options.usage.user = true;
         const typed: Record<string, FieldView> = {};
         for (const [name, declaration] of fields) {
             // A locked entry shows nothing of its fields; the password itself is never a field of the view.
@@ -816,14 +858,44 @@ export async function entryViews(cms: CmsHost, collection: CollectionDefinition,
             template: typeof record.template === 'string' && record.template ? record.template : null,
             locale,
             comments: options.full && collection.comments && !locked && cms.discussions(settings) ? await commentsView(cms, collection, record, urls.get(record.id) ?? '/', settings, options) : null,
-            locked,
+            locked: lock,
         });
+        if (options.full && !locked) {
+            // Active plugins change the title and excerpt, and add blocks around the content, through `cms.site.entry-view`.
+            const parts = await entryViewParts(cms, collection, record, views.at(-1)!, Boolean(options.user));
+            if (parts) {
+                const view = views.at(-1)!;
+                const around = (blocks: readonly Block[]) => (expandPatterns(blocks, patterns) as RenderedBlock[]).map(block => render(block, record));
+                content.unshift(...around(parts.before));
+                content.push(...around(parts.after));
+                views[views.length - 1] = { ...view, title: parts.title, excerpt: parts.excerpt };
+            }
+        }
         if (options.full) {
             await withForms(cms, content, options.forms);
             await withLatest(cms, content, locale, { exclude: record.id });
         }
     }
     return views;
+}
+
+/**
+ * The `cms.site.entry-view` filters' changes to a full entry view, checked: a title and excerpt
+ * of bounded text, and valid blocks of known types other than `core/html`, at most ten each side.
+ * Null without a change, or when a filter failed or returned something else.
+ */
+export async function entryViewParts(cms: CmsHost, collection: CollectionDefinition, record: RecordShape, view: EntryView, signedIn: boolean): Promise<EntryViewParts | null> {
+    const original: EntryViewParts = { title: view.title, excerpt: view.excerpt, before: [], after: [] };
+    const { password: _password, ...visible } = record;
+    const changed = await cms.hooks.applyFilters(siteEntryView, original, { collection: collection.name, id: record.id, url: view.url, record: visible as RecordShape, signedIn }).catch(() => original);
+    if (changed === original || !changed || typeof changed !== 'object') return null;
+    const blocks = (value: unknown): Block[] => {
+        if (!Array.isArray(value) || !value.length || value.length > 10 || JSON.stringify(value).length > 64_000) return [];
+        const { blocks: valid, errors } = validateBlocks(value as Block[], cms.blockTypes);
+        return Object.keys(errors).length || flattenBlocks(valid).some(block => ENTRY_VIEW_REFUSED_BLOCKS.has(block.type)) ? [] : valid;
+    };
+    const text = (value: unknown, fallback: string, max: number) => typeof value === 'string' ? value.slice(0, max) : fallback;
+    return { title: text(changed.title, view.title, 300) || view.title, excerpt: text(changed.excerpt, view.excerpt, 1000), before: blocks(changed.before), after: blocks(changed.after) };
 }
 
 /** Comment text as escaped paragraphs, with line breaks kept. */
@@ -1067,7 +1139,7 @@ export async function searchEntries(cms: CmsHost, query: string, locale?: string
             const where = { ...(collection.publishable === false ? {} : { status: 'published' }), ...localeWhere(languages, locale ?? languages.default) };
             const records = await cms.resource(resource.id).search(query, { limit: 10, where }, visitor);
             // Protected entries match on their content, which visitors cannot read: they stay out.
-            results.push(...await entryViews(cms, collection, records.filter(record => !isProtected(record))));
+            results.push(...await entryViews(cms, collection, records.filter(record => !isProtected(record) && !isMembersOnly(record))));
         } catch (error) { if (!isCmsError(error)) throw error; }
     }
     return results;

@@ -447,8 +447,8 @@ export default class MenuEditor extends Cossack {
 
     private sourceBox(source: Source): TemplateResult {
         const selected = this.selected[source.name] ?? [];
-        const option = (value: string, label: string, depth = 0) => html`<label class="flex items-center gap-2 py-0.5 text-sm text-foreground cursor-pointer" style=${`padding-left: ${depth * 1.25}rem`}>
-            ${component(Checkbox, { checked: selected.includes(value), '@change': (event: Event) => this.toggleSelected(source.name, value, (event.target as HTMLInputElement).checked) })} ${label}</label>`;
+        const option = (value: string, label: string, depth = 0) => html`<div class="py-0.5" style=${`padding-left: ${depth * 1.25}rem`}>
+            ${component(Checkbox, { label, checked: selected.includes(value), '@change': (event: Event) => this.toggleSelected(source.name, value, (event.target as HTMLInputElement).checked) })}</div>`;
         return html`<details class="rounded-lg border border-border bg-card" ?open=${source.name === this.sources[0]?.name}>
             <summary class="flex cursor-pointer select-none items-center gap-2 px-4 py-2.5 text-sm font-semibold text-foreground"><span class="inline-flex text-muted-foreground [&_svg]:size-4">${component(Icon, { entry: icon(source.icon), size: 16 })}</span>${source.label}</summary>
             <div class="space-y-3 border-t border-border p-4">
@@ -593,8 +593,7 @@ export default class MenuEditor extends Cossack {
                 <div class="space-y-1"><label for=${`description-${row.id}`} class="block text-xs font-medium text-foreground">${__('Description')}</label>
                     <input id=${`description-${row.id}`} class=${CONTROL} maxlength=${MENU_LIMITS.description} .value=${row.description ?? ''} placeholder=${__('Shown under the link in a mega menu')}
                         @input=${(event: Event) => this.setRow(index, { description: (event.target as HTMLInputElement).value })}></div>
-                ${row.kind === 'heading' ? null : html`<label class="flex items-center gap-2 text-sm text-foreground cursor-pointer">
-                    ${component(Checkbox, { checked: row.newTab === true, '@change': (event: Event) => this.setRow(index, { newTab: (event.target as HTMLInputElement).checked })})} ${__('Open link in a new tab')}</label>`}
+                ${row.kind === 'heading' ? null : html`<div>${component(Checkbox, { label: __('Open link in a new tab'), checked: row.newTab === true, '@change': (event: Event) => this.setRow(index, { newTab: (event.target as HTMLInputElement).checked })})}</div>`}
                 ${row.kind !== 'link' && row.kind !== 'heading' && target ? html`<p class="text-xs text-muted-foreground">${__('Original')}: ${target.edit ? html`<a href=${target.edit} class="text-primary hover:underline">${target.title}</a>` : target.title}</p>` : null}
                 ${this.panelControl(row, index)}
                         </div>` },

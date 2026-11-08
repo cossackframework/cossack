@@ -1,10 +1,11 @@
 /** The permalink form used by the unified Settings page. */
 import { Client, ClientState, Component, Cossack } from '@cossackframework/core';
-import { html } from '@cossackframework/renderer';
+import { Checkbox, Field, Input } from '@cossackframework/ui';
+import { html, component } from '@cossackframework/renderer';
 import { isCmsError, type Principal } from '@cossackframework/cms';
 import type { CmsHost } from '@cossackframework/cms/server';
 import type { SettingsDraft } from './settings-draft';
-import { CONTROL } from './ui';
+
 
 interface Base { name: string; label: string; singular: string; path: string }
 export interface PermalinkSettingsInput { postsAtRoot: boolean; postsBase: string; withCategory: boolean; bases: { name: string; path: string }[] }
@@ -92,26 +93,19 @@ export class PermalinksSettings extends Cossack {
                 ${show('posts') || show('postsBase') || show('category') ? html`<fieldset id="permalink-posts" class="min-w-0 space-y-3">
                     <legend class="mb-2 text-base font-semibold text-foreground">${__('Post permalinks')}</legend>
                     ${show('posts') || show('postsBase') ? html`${option(true, __('Post name'), sample(''))}${option(false, __('Under a base'), sample(`/${form.postsBase.trim() || 'posts'}`))}` : null}
-                    ${show('category') ? html`<label class="flex cursor-pointer items-start gap-3 text-sm text-foreground">
-                        <input id="permalink-category" type="checkbox" class="mt-1" .checked=${form.withCategory} @change=${(event: Event) => this.set({ withCategory: (event.target as HTMLInputElement).checked })}>
-                        <span><span class="block font-medium">${__('Category before the post name')}</span>
-                            <span class="text-xs text-muted-foreground">${__('Use the first category before the post name. Posts without a category keep the plain address.')}</span></span>
-                    </label>` : null}
-                    ${(show('posts') || show('postsBase')) && !form.postsAtRoot ? html`<div class="space-y-1"><label for="posts-base" class="block text-sm font-medium text-foreground">${__('Posts base')}</label>
-                        <input id="posts-base" class=${CONTROL} .value=${form.postsBase} @input=${(event: Event) => this.set({ postsBase: (event.target as HTMLInputElement).value })}>
-                        ${errors.posts ? html`<p role="alert" class="text-xs text-destructive">${errors.posts}</p>` : null}
-                    </div>` : null}
+                    ${show('category') ? component(Checkbox, { id: 'permalink-category', checked: form.withCategory, '@change': (event: Event) => this.set({ withCategory: (event.target as HTMLInputElement).checked }) },
+                        html`<span><span class="block font-medium">${__('Category before the post name')}</span>
+                            <span class="text-xs text-muted-foreground">${__('Use the first category before the post name. Posts without a category keep the plain address.')}</span></span>`) : null}
+                    ${(show('posts') || show('postsBase')) && !form.postsAtRoot ? component(Field, { label: __('Posts base'), for: 'posts-base', ...(errors.posts ? { error: errors.posts } : {}),
+                        control: attributes => component(Input, { ...attributes, '.value': form.postsBase, '@input': (event: Event) => this.set({ postsBase: (event.target as HTMLInputElement).value }) }) }) : null}
                 </fieldset>` : null}
                 ${taxonomies.length ? html`<fieldset class="min-w-0 space-y-3">
                     <legend class="mb-2 text-base font-semibold text-foreground">${__('Archive bases')}</legend>
                     ${taxonomies.map(taxonomy => {
                         const path = form.bases.find(base => base.name === taxonomy.name)?.path ?? taxonomy.path;
-                        return html`<div class="space-y-1">
-                            <label for=${`base-${taxonomy.name}`} class="block text-sm font-medium text-foreground">${taxonomy.singular} ${__('base')}</label>
-                            <input id=${`base-${taxonomy.name}`} class=${CONTROL} .value=${path} @input=${(event: Event) => this.setBase(taxonomy.name, (event.target as HTMLInputElement).value)}>
-                            <p class="break-all text-xs text-muted-foreground"><code>${this.props.initial.origin}/${path || '…'}/sample-${taxonomy.singular.toLowerCase()}</code></p>
-                            ${errors[taxonomy.name] ? html`<p role="alert" class="text-xs text-destructive">${errors[taxonomy.name]}</p>` : null}
-                        </div>`;
+                        return component(Field, { label: `${taxonomy.singular} ${__('base')}`, for: `base-${taxonomy.name}`, hint: `${this.props.initial.origin}/${path || '…'}/sample-${taxonomy.singular.toLowerCase()}`,
+                            ...(errors[taxonomy.name] ? { error: errors[taxonomy.name] } : {}), class: 'min-w-0 [&_.cs-field__hint]:break-all [&_.cs-field__hint]:font-mono',
+                            control: attributes => component(Input, { ...attributes, '.value': path, '@input': (event: Event) => this.setBase(taxonomy.name, (event.target as HTMLInputElement).value) }) });
                     })}
                 </fieldset>` : null}
             </fieldset>

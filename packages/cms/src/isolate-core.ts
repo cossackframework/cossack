@@ -87,6 +87,7 @@ export function createIsolateRuntime(plugin: Readonly<Record<string, unknown>>, 
             return {
                 get: (key: unknown, context: unknown) => at('get', key, context),
                 list: (options: unknown, context: unknown) => at('list', options, context),
+                count: (filter: unknown, context: unknown) => at('count', filter, context),
                 search: (query: unknown, options: unknown, context: unknown) => at('search', query, options, context),
                 create: (input: unknown, context: unknown) => at('create', input, context),
                 update: (key: unknown, patch: unknown, context: unknown) => at('update', key, patch, context),

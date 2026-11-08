@@ -104,7 +104,7 @@ export default class ReplacePage extends Cossack {
                     ${this.collections.map(collection => html`<option value=${collection.name} ?selected=${collection.name === this.collection}>${collection.label}</option>`)}`) })}
                 ${component(Field, { label: __('Find'), for: 'replace-find', control: attributes => component(Input, { ...attributes, required: true, maxlength: 200, '.value': this.find, '@input': (event: Event) => { this.find = (event.target as HTMLInputElement).value; } }) })}
                 ${component(Field, { label: __('Replace with'), for: 'replace-with', control: attributes => component(Input, { ...attributes, maxlength: 2000, '.value': this.replace, '@input': (event: Event) => { this.replace = (event.target as HTMLInputElement).value; } }) })}
-                <label class="flex items-center gap-2 text-sm text-foreground md:col-span-3">${component(Checkbox, { checked: this.matchCase, '@change': (event: Event) => { this.matchCase = (event.target as HTMLInputElement).checked; } })} ${__('Match case')}</label>
+                <div class="md:col-span-3">${component(Checkbox, { label: __('Match case'), checked: this.matchCase, '@change': (event: Event) => { this.matchCase = (event.target as HTMLInputElement).checked; } })}</div>
                 <div class="flex flex-wrap gap-2 md:col-span-3">
                     ${component(Button, { type: 'submit', variant: 'outline' }, __('Preview'))}
                     ${component(Button, { type: 'button', variant: 'destructive', disabled: !this.previewed || !this.matches.length, '@click': (event: Event) => this.submit(event, true) }, __('Replace in every matching entry'))}

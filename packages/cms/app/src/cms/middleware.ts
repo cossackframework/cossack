@@ -1,7 +1,7 @@
 import type { Context, MiddlewareHandler } from 'hono';
 import { getCookie } from 'hono/cookie';
 import { enforceRateLimit, getClientIp, getSupportedLocales, LOCALE_COOKIE_NAME, setRequestLocale } from '@cossackframework/core';
-import { ANONYMOUS, hasPermission, PERMISSIONS, type Principal } from '@cossackframework/cms';
+import { ANONYMOUS, escapeHtml, hasPermission, PERMISSIONS, type Principal } from '@cossackframework/cms';
 import { MAIN, MAIN_SITE, networkSite, type SiteResolution } from '@cossackframework/cms/server';
 import { cmsFor, networkFor, type CmsBindings } from './index';
 import { handoff } from './handoff';
@@ -134,7 +134,7 @@ const HOLDING_EXEMPT = /^\/(?:dashboard|auth|api|crpc|sse|assets|media|_cossack|
 
 /** The holding page of maintenance and coming-soon mode: the site's title, the message, no script, no theme (the theme may be what is being worked on). */
 export function holdingPage(mode: 'maintenance' | 'soon', title: string, message: string): string {
-    const esc = (value: string) => value.replace(/[<>&"]/g, character => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' })[character]!);
+    const esc = escapeHtml;
     const heading = mode === 'soon' ? 'Coming soon' : 'Down for maintenance';
     const text = message.trim() || (mode === 'soon' ? 'This site has not launched yet. Check back soon.' : 'This site is being worked on and will be back shortly.');
     return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>${esc(heading)} · ${esc(title)}</title>`

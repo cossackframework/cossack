@@ -138,7 +138,7 @@ function stableJson(value: unknown): string {
     return JSON.stringify(value) ?? 'undefined';
 }
 
-const RESOURCE_METHODS = new Set(['get', 'list', 'search', 'create', 'update', 'delete']);
+const RESOURCE_METHODS = new Set(['get', 'list', 'count', 'search', 'create', 'update', 'delete']);
 
 /**
  * Serve one bridge call from the plugin's context: the one the host builds for in-app plugins,

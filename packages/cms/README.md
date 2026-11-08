@@ -101,8 +101,8 @@ Data contract:
   plain text of searchable rich text and blocks fields feeds the full-text index.
 - Extension points besides the resource and form hooks: `cms.term.before-save`,
   `cms.comment.before-save` and `cms.menu.before-save` adjust or refuse writes;
-  `cms.dashboard.entry-actions` (version 2: the built-in quick actions, which handlers add
-  to, remove or reorder), `entry-columns` and `bulk-actions` add links, plugin commands and
+  `cms.dashboard.entry-actions` (the built-in quick actions, which handlers add to, remove
+  or reorder), `entry-columns` and `bulk-actions` add links, plugin commands and
   columns to the dashboard's entry lists.
 - A menu is one JSON tree saved with a revision check. Entries and terms are stored by ID and
   resolved when the site renders.
@@ -122,7 +122,12 @@ Data contract:
 - A form is a `forms` entry whose `body` holds input blocks (`input: { kind }` in the
   declaration), laid out with the containers and shown or hidden by a block's `when`; a
   `form/repeater` holds a row of inputs people fill in once per passenger or item, and a
-  text, number or date input with `multiple` on takes several values, added one at a time. Its
+  text, number or date input with `multiple` on takes several values, added one at a time. A
+  `form/file` input takes uploads (allowed extensions or types, up to 10 MB a file, 10 files, 25 MB
+  a submission; the content is checked against the type): the files are private files under
+  `cms/private/forms/<form>/<submission>/`, which the library and `/media/` never serve, and
+  download through `GET /api/cms/forms/<form>/submissions/<id>/files/<file>` with `cms:submissions`;
+  the record keeps `{ id, name, size, type }`, and deleting the submission or the form removes them. Its
   submissions are the resource `cms/form_<form id>`, stored in its own table and extended
   when inputs are added. A submission is one batch: the record, a receipt and its
   `form.submitted` outbox event, which sends the form's notifications and webhooks. Hooks:

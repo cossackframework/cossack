@@ -6,26 +6,29 @@
 import type { Context } from 'hono';
 import { ClientVisibleError } from '@cossackframework/core';
 import type { Principal } from '@cossackframework/cms';
-import { flattenBlocks, isCmsError, isSameOriginPost, richTextBlocks, richTextHtml, systemPrincipal, type Block, type CollectionDefinition, type RecordShape, type RichTextDoc } from '@cossackframework/cms';
+import { CORE_FIELDS, flattenBlocks, isCmsError, isSameOriginPost, richTextBlocks, richTextHtml, systemPrincipal, type Block, type CollectionDefinition, type RecordShape, type RichTextDoc } from '@cossackframework/cms';
 import type { CmsHost } from '@cossackframework/cms/server';
 import { blocksHtml } from './content';
+import { entryLock } from './site';
 
 export interface ApiEntry { [field: string]: unknown; id: string; url: string | null }
 
 /** Entries with their public URLs and, with `?format=html`, their rich text and blocks rendered. */
 export async function apiEntries(cms: CmsHost, collection: CollectionDefinition, records: readonly RecordShape[], html: boolean, principal?: Principal): Promise<ApiEntry[]> {
     const repository = cms.resource(`cms/${collection.name}`);
-    // The password itself never leaves; a protected entry's content stays with those who may edit it.
-    const redacted = records.map(record => {
-        const { password, ...rest } = record;
-        if (typeof password !== 'string' || !password) return record;
-        if (principal && repository.canUpdate(record, principal)) return record;
-        const { content, excerpt, body, ...bare } = rest as RecordShape & { content?: unknown; excerpt?: unknown; body?: unknown };
-        return { ...bare, protected: true } as RecordShape;
-    });
-    records = redacted;
-    const urls = await cms.entryUrls(collection, records);
     const fields = Object.entries(cms.resourceById(`cms/${collection.name}`).fields);
+    // The password itself never leaves. A protected entry's fields stay with those who may edit
+    // it, and a members-only entry's with signed-in users: others get its core fields alone.
+    const withheld = new Set(fields.map(([name]) => name).filter(name => name === 'summary' || (!(CORE_FIELDS as readonly string[]).includes(name) && !(collection.taxonomies ?? []).includes(name))));
+    records = records.map(record => {
+        const { password, ...rest } = record;
+        const editor = principal !== undefined && repository.canUpdate(record, principal);
+        const lock = entryLock(record, { editor, signedIn: principal?.kind === 'user', roles: principal?.kind === 'user' ? principal.roles : [] });
+        if (!lock) return (typeof password === 'string' && password ? (editor ? record : rest) : rest) as RecordShape;
+        const bare = Object.fromEntries(Object.entries(rest).filter(([name]) => !withheld.has(name))) as unknown as RecordShape;
+        return { ...bare, ...(lock === 'password' ? { protected: true } : { membersOnly: true }), locked: lock };
+    });
+    const urls = await cms.entryUrls(collection, records);
     const rich = fields.filter(([, field]) => field.kind === 'richtext').map(([name]) => name);
     const blocks = fields.filter(([, field]) => field.kind === 'blocks' && !field.form).map(([name]) => name);
     const files = html && blocks.length && cms.files ? await cms.files.getMany([...new Set(records.flatMap(record => blocks.flatMap(name => Array.isArray(record[name]) ? flattenBlocks(record[name] as Block[]).flatMap(block => Object.values(block.data).filter((value): value is string => typeof value === 'string')) : [])))].slice(0, 200)).catch(() => new Map()) : new Map();

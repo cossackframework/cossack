@@ -2,7 +2,7 @@
  * Server helpers for the dashboard's content screens: which resource a route names, the
  * editor's view of it, and saving entries. Pages call these from their server methods.
  */
-import { blockCategory, blockMedia, entryAuthors, blockSupports, bulkActions, cloneBlocks, editorBoxes, fieldGroupDeclarations, type FieldGroupTarget, CmsError, CORE_FIELDS, entryActions, entryColumns, flattenBlocks, isCmsError, mediaUrl, principalId, recordTitle, resolveEditorLayout, richTextHtml, richTextMedia, type Block, type BlockDeclaration, type CollectionDefinition, type EntryAction, type EntryColumn, type MediaKind, type Principal, type RecordShape, type Resource, type RichTextDoc, type WriteActor } from '@cossackframework/cms';
+import { blockCategory, blockMedia, entryAuthors, blockSupports, bulkActions, cloneBlocks, editorBoxes, escapeHtml, fieldGroupDeclarations, type FieldGroupTarget, CmsError, CORE_FIELDS, entryActions, entryColumns, flattenBlocks, isCmsError, mediaUrl, principalId, recordTitle, resolveEditorLayout, richTextHtml, richTextMedia, type Block, type BlockDeclaration, type CollectionDefinition, type EntryAction, type EntryColumn, type MediaKind, type Principal, type RecordShape, type Resource, type RichTextDoc, type WriteActor } from '@cossackframework/cms';
 import { renderMarkdown, type CmsHost } from '@cossackframework/cms/server';
 import { activePresets } from './site';
 import { controlValue, editorBlocks, editorField, editorFields, editorInput, type BlockOption, type EditorBlock, type EditorField, type EditorGroup, type EditorTaxonomy, type EditorValues, type EditorView, type SourceChoice, type SourceChoices, type TermOption } from './editor';
@@ -15,7 +15,7 @@ export function routeResource(cms: CmsHost, route: string): { resource: Resource
     return { resource, collection: owner === 'cms' ? cms.collection(name!) : null };
 }
 
-/** What fields with `choicesFrom` choose from: the site's forms by title, its collections, its terms by taxonomy (200 of each at most) and the themes' menu locations. */
+/** What fields with `choicesFrom` choose from: the site's forms by title, its collections, its terms by taxonomy (200 of each at most), the themes' menu locations, its authors and its roles. */
 export async function sourceChoices(cms: CmsHost): Promise<SourceChoices> {
     const terms: SourceChoice[] = [];
     for (const declaration of cms.taxonomies.declarations) {
@@ -30,6 +30,8 @@ export async function sourceChoices(cms: CmsHost): Promise<SourceChoices> {
         // The site's authors (people who wrote something), for blocks that list one author's entries.
         authors: (await cms.users.authors({ limit: 200 }).catch(() => [])).map(user => ({ value: user.id, label: user.name || user.email })),
         locations: (await cms.menuLocations()).map(location => ({ value: location.name, label: location.active ? location.label : `${location.label} (${location.theme})` })),
+        // The site's roles, for who may read a members-only entry.
+        roles: (await cms.users.roles({ limit: 100 }).catch(() => [])).map(role => ({ value: role.id, label: role.name })),
     };
 }
 
@@ -65,11 +67,12 @@ export async function editorView(cms: CmsHost, route: string): Promise<EditorVie
         collections: cms.collections().filter(entry => entry.publishable !== false && !entry.managed).map(entry => ({ name: entry.name, label: entry.label })),
         sources: await sourceChoices(cms),
         groups: groups.map(group => ({
-            id: group.id, title: group.title, description: group.description ?? '', placement: group.placement ?? 'main', blocks: editorBlocks(cloneBlocks(group.blocks) as EditorBlock[], blocks),
+            id: group.id, title: group.title, description: group.description ?? '', placement: group.placement ?? 'main', blocks: editorBlocks(group.blocks as EditorBlock[], blocks),
         })),
+        // The layout keeps its IDs: a section's open or closed state is remembered by its ID.
         layout: {
-            tabs: resolved.tabs.map(tab => ({ id: tab._id, label: String(tab.data.label ?? ''), icon: String(tab.data.icon ?? ''), blocks: cloneBlocks(tab.children ?? []) as EditorBlock[] })),
-            sidebar: cloneBlocks(resolved.sidebar) as EditorBlock[],
+            tabs: resolved.tabs.map(tab => ({ id: tab._id, label: String(tab.data.label ?? ''), icon: String(tab.data.icon ?? ''), blocks: [...(tab.children ?? [])] as EditorBlock[] })),
+            sidebar: [...resolved.sidebar] as EditorBlock[],
         },
     };
 }
@@ -87,7 +90,7 @@ export async function groupsView(cms: CmsHost, target: FieldGroupTarget): Promis
     const groups = cms.fieldGroupsFor(target);
     const fields = editorFields(fieldGroupDeclarations(groups.flatMap(group => group.blocks), cms.blockTypes), []);
     return {
-        groups: groups.map(group => ({ id: group.id, title: group.title, description: group.description ?? '', placement: group.placement ?? 'main', blocks: editorBlocks(cloneBlocks(group.blocks) as EditorBlock[], options) })),
+        groups: groups.map(group => ({ id: group.id, title: group.title, description: group.description ?? '', placement: group.placement ?? 'main', blocks: editorBlocks(group.blocks as EditorBlock[], options) })),
         fields, options,
     };
 }
@@ -103,10 +106,7 @@ export function metaInput(fields: readonly EditorField[], values: EditorValues):
     return { meta: input, errors };
 }
 
-/** The name of the collection's content: the `content` feature, or a plugin resource's first blocks field, which the template and patterns fill. */
-export function contentField(view: Pick<EditorView, 'fields'>): string | null {
-    return view.fields.find(field => field.kind === 'blocks' && !field.form)?.name ?? null;
-}
+export { contentField } from './editor';
 
 /** A pattern's blocks, with fresh IDs for the copy. Null when it is gone or private to someone else. */
 export async function patternBlocks(cms: CmsHost, id: string, principal: Principal): Promise<Block[] | null> {
@@ -137,9 +137,7 @@ export function blocksHtml(cms: CmsHost, blocks: readonly Block[], files: Readon
     return parts.join('\n');
 }
 
-function escape(text: string): string {
-    return text.replace(/[&<>"]/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[character]!);
-}
+const escape = escapeHtml;
 
 /** Control values for an entry; tags show as names. */
 export async function entryValues(cms: CmsHost, view: EditorView, record: RecordShape | null): Promise<EditorValues> {
@@ -158,6 +156,7 @@ export async function entryValues(cms: CmsHost, view: EditorView, record: Record
     if (view.publishable) {
         values.status = (record?.status as string | undefined) ?? 'draft';
         values.publishedAt = record?.publishedAt ? new Date(record.publishedAt as number).toISOString().slice(0, 16) : '';
+        values.unpublishAt = record?.unpublishAt ? new Date(record.unpublishAt as number).toISOString().slice(0, 16) : '';
     }
     if (view.hierarchical) {
         values.parent = (record?.parent as string | null | undefined) ?? '';
@@ -284,8 +283,8 @@ export async function entryInput(cms: CmsHost, route: string, values: EditorValu
     const fields = [...view.fields];
     const titleField = view.titleField;
     if (titleField && resource.fields[titleField]) fields.push(editorField(titleField, resource.fields[titleField]!));
-    for (const name of ['slug', 'publishedAt', 'parent', 'menuOrder', 'authors', 'seo', 'summary', 'locale', 'commentsOpen', 'template']) {
-        if (resource.fields[name] && (name !== 'slug' || view.slug) && (name !== 'publishedAt' || view.publishable)) fields.push(editorField(name, resource.fields[name]!));
+    for (const name of ['slug', 'publishedAt', 'unpublishAt', 'parent', 'menuOrder', 'authors', 'seo', 'summary', 'locale', 'commentsOpen', 'template']) {
+        if (resource.fields[name] && (name !== 'slug' || view.slug) && ((name !== 'publishedAt' && name !== 'unpublishAt') || view.publishable)) fields.push(editorField(name, resource.fields[name]!));
     }
     const { input, errors } = editorInput(fields, values, view.blocks);
     if (Object.keys(errors).length) throw new CmsError('CMS_VALIDATION', 'Some fields are invalid.', { fields: errors });
@@ -333,7 +332,7 @@ export async function assertNotesResolved(cms: CmsHost, resourceId: string, id: 
 }
 
 /** Fields a copy of an entry does not take: its identity, its slug (derived again), its publication and its translation group. */
-const NOT_COPIED = new Set(['slug', 'status', 'publishedAt', 'translationGroup']);
+const NOT_COPIED = new Set(['slug', 'status', 'publishedAt', 'unpublishAt', 'translationGroup']);
 
 /**
  * A draft copy of an entry, as WordPress's duplicate plugins make one: the same fields with

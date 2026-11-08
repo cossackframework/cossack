@@ -1,13 +1,13 @@
 import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackframework/core';
 import { Badge, Button, Card, CardBody, Checkbox, Input, NativeSelect, Textarea } from '@cossackframework/ui';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
-import { displayValue, formatSiteDate, isCmsError, isRows, PERMISSIONS, type FormField, type SubmissionShape, type SubmissionStatus } from '@cossackframework/cms';
+import { displayValue, formatBytes, formatSiteDate, formFiles, isCmsError, isRows, PERMISSIONS, type FormField, type SubmissionShape, type SubmissionStatus } from '@cossackframework/cms';
 import type { LoadedForm } from '@cossackframework/cms/server';
 import { requireAny } from '../../../../../../../cms/guards';
 import { notice, pageHeader } from '../../../../../../../cms/ui';
 
-/** An answer; a repeater's rows as a table, one column per input of a row. */
-interface Answer { label: string; value: string; rows?: { columns: string[]; cells: string[][] } }
+/** An answer; a repeater's rows as a table, one column per input of a row; a file upload's files as downloads. */
+interface Answer { label: string; value: string; rows?: { columns: string[]; cells: string[][] }; files?: { name: string; size: string; url: string }[] }
 interface View {
     id: string;
     status: SubmissionStatus;
@@ -88,6 +88,10 @@ export default class SubmissionPage extends Cossack {
                 // A multiple input's values read one per line.
                 const answer: Answer = { label: input.label, value: input.multiple && Array.isArray(value) ? (value as readonly (string | number)[]).map(String).join('\n') : displayValue(input, value) };
                 if (input.kind === 'rows' && isRows(value)) answer.rows = { columns: input.inputs.map(child => child.label), cells: value.map(row => input.inputs.map(child => displayValue(child, row[child.name]))) };
+                // Files are private: they download through the submissions API, which checks the same permission as this screen.
+                if (input.kind === 'file') answer.files = formFiles(value).filter(file => file.id).map(file => ({
+                    name: file.name, size: formatBytes(file.size), url: `/api/cms/forms/${form.ref.id}/submissions/${submission.id}/files/${file.id}`,
+                }));
                 return answer;
             }),
         };
@@ -178,12 +182,16 @@ export default class SubmissionPage extends Cossack {
                 try { set(JSON.parse(raw)); } catch { set(raw); }
             } });
         }
+        if (input.kind === 'file') {
+            const files = formFiles(value);
+            return html`<p id=${id} class="text-sm text-muted-foreground">${files.length ? files.map(file => file.name).join(', ') : '—'} · ${__('Files stay as they were sent.')}</p>`;
+        }
         if (input.multiple) {
             const lines = Array.isArray(value) ? (value as unknown[]).map(String).join('\n') : typeof value === 'string' ? value : '';
             return component(Textarea, { id, rows: 3, '.value': lines, '@input': (event: Event) => set((event.target as HTMLTextAreaElement).value.split('\n').map(line => line.trim()).filter(Boolean)) });
         }
         switch (input.kind) {
-            case 'boolean': return html`<label class="flex items-center gap-2 text-sm text-foreground cursor-pointer">${component(Checkbox, { id, checked: value === true, '@change': (event: Event) => set((event.target as HTMLInputElement).checked) })} ${input.label}</label>`;
+            case 'boolean': return component(Checkbox, { id, label: input.label, checked: value === true, '@change': (event: Event) => set((event.target as HTMLInputElement).checked) });
             case 'choice': return component(NativeSelect, { id, '@change': text }, html`<option value="" ?selected=${!value}>—</option>${input.options.map(option => html`<option value=${option.value} ?selected=${option.value === value}>${option.label}</option>`)}`);
             case 'choices': {
                 const chosen = new Set(Array.isArray(value) ? (value as unknown[]).map(String) : []);
@@ -224,7 +232,9 @@ export default class SubmissionPage extends Cossack {
     private list(entries: readonly Answer[]): TemplateResult {
         return html`<dl class="divide-y divide-border">${entries.map(entry => html`<div class="grid gap-1 px-4 py-3 sm:grid-cols-3">
             <dt class="text-sm font-medium text-muted-foreground">${entry.label}</dt>
-            <dd class="whitespace-pre-wrap break-words text-sm text-foreground sm:col-span-2">${entry.rows ? html`<span>${entry.value}</span>
+            <dd class="whitespace-pre-wrap break-words text-sm text-foreground sm:col-span-2">${entry.files ? (entry.files.length ? html`<ul class="space-y-1 whitespace-normal">${entry.files.map(file => html`<li>
+                <a href=${file.url} download=${file.name} class="text-primary hover:underline">${file.name}</a> <span class="text-xs text-muted-foreground">${file.size}</span></li>`)}</ul>` : html`<span class="text-muted-foreground">—</span>`)
+                : entry.rows ? html`<span>${entry.value}</span>
                 <div class="mt-2 overflow-x-auto"><table class="w-full text-left text-xs"><thead><tr>${entry.rows.columns.map(column => html`<th class="border-b border-border px-2 py-1 font-medium text-muted-foreground">${column}</th>`)}</tr></thead>
                 <tbody>${entry.rows.cells.map(cells => html`<tr>${cells.map(cell => html`<td class="border-b border-border px-2 py-1 align-top">${cell || html`<span class="text-muted-foreground">—</span>`}</td>`)}</tr>`)}</tbody></table></div>`
                 : entry.value || html`<span class="text-muted-foreground">—</span>`}</dd>
@@ -247,12 +257,12 @@ export default class SubmissionPage extends Cossack {
             ${this.message ? notice(this.message, 'success') : null}
             ${this.error ? notice(this.error, 'error') : null}
             <div class="grid gap-6 lg:grid-cols-3">
-                <div class="lg:col-span-2">${component(Card, {}, component(CardBody, { class: 'p-0' }, html`<div class="flex items-center justify-between border-b border-border px-4 py-2">
+                <div class="lg:col-span-2">${component(Card, {}, component(CardBody, { class: 'p-0' }, html`<div class="flex min-h-12 items-center justify-between gap-2 border-b border-border px-4 py-2">
                     <h2 class="text-sm font-semibold text-foreground">${__('Answers')}</h2>
                     ${this.editing ? null : component(Button, { type: 'button', size: 'sm', variant: 'outline', '@click': () => this.startEditing() }, __('Edit'))}</div>
                     ${this.editing ? this.editor(view) : this.list(view.answers)}`))}</div>
                 <div class="space-y-6">
-                    ${component(Card, {}, component(CardBody, { class: 'p-0' }, html`<h2 class="border-b border-border px-4 py-3 text-sm font-semibold text-foreground">${__('Details')}</h2>${this.list(view.details)}`))}
+                    ${component(Card, {}, component(CardBody, { class: 'p-0' }, html`<h2 class="flex min-h-12 items-center border-b border-border px-4 py-2 text-sm font-semibold text-foreground">${__('Details')}</h2>${this.list(view.details)}`))}
                     ${component(Card, {}, component(CardBody, {}, html`<form class="space-y-2" @submit=${(event: Event) => this.submitNote(event)}>
                         <label for="submission-note" class="block text-sm font-semibold text-foreground">${__('Note')}</label>
                         ${component(Textarea, { id: 'submission-note', rows: 4, '.value': this.note, '@input': (event: Event) => { this.note = (event.target as HTMLTextAreaElement).value; } })}

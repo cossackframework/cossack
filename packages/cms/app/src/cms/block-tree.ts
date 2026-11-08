@@ -477,7 +477,7 @@ export class BlockTree extends Cossack {
                     aria-expanded=${collapsed ? 'false' : 'true'} aria-label=${`${collapsed ? __('Expand') : __('Collapse')} ${label}`} @click=${() => this.toggleCollapsed(block._id)}>
                     ${component(Icon, { entry: icon(collapsed ? 'alt-arrow-right' : 'alt-arrow-down'), size: 16 })}</button>` : null}
                 <span class=${`inline-flex shrink-0 [&_svg]:size-4 ${blockIconColor(option?.category)}`}>${component(Icon, { entry: blockIcon(option?.icon), size: 16 })}</span>
-                <span class="min-w-0 flex-1 truncate text-sm">
+                <span class="min-w-28 flex-1 truncate text-sm">
                     <span class="font-medium text-foreground">${option?.field && typeof block.data.label === 'string' && block.data.label ? block.data.label : label}</span>
                     ${option?.field ? html` <code class="text-xs text-muted-foreground">${typeof block.data.name === 'string' && block.data.name ? block.data.name : fieldName(String(block.data.label ?? ''))}</code> ${component(Badge, { variant: 'outline' }, label)}` : null}
                     ${data ? html` ${component(Badge, { variant: 'outline' }, __('Data only'))}` : null}

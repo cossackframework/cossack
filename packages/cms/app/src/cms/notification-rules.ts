@@ -41,9 +41,8 @@ export function notificationRulesControl(text: string, fields: readonly Conditio
         ${rules.map((rule, index) => html`<fieldset class="space-y-3 rounded-md border border-border p-3" data-notification=${rule.id}>
             <legend class="sr-only">${rule.label}</legend>
             <div class="flex items-center justify-between gap-2">
-                <label class="flex items-center gap-2 text-sm font-medium text-foreground">
-                    ${component(Checkbox, { checked: rule.enabled !== false, '@change': (event: Event) => set(index, { enabled: (event.target as HTMLInputElement).checked }) })}
-                    ${__('Send')} “${rule.label || __('Notification')}”</label>
+                <span class="[&_.cs-checkbox]:font-medium">${component(Checkbox, { checked: rule.enabled !== false, '@change': (event: Event) => set(index, { enabled: (event.target as HTMLInputElement).checked }) },
+                    html`${__('Send')} “${rule.label || __('Notification')}”`)}</span>
                 ${component(Button, { type: 'button', size: 'sm', variant: 'ghost', 'aria-label': `${__('Remove')} ${rule.label}`, '@click': () => save(rules.filter((_, at) => at !== index)) }, __('Remove'))}
             </div>
             <div class="grid gap-3 sm:grid-cols-2">
