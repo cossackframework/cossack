@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CAPABILITIES, manifestProblems, requestedGrants, SYSTEM_META, type CmsPluginManifest } from '../src/index';
+import { CAPABILITIES, manifestProblems, requestedGrants, SYSTEM_META, UNRESTRICTED_GRANT, type CmsPluginManifest } from '../src/index';
 import { pluginCapabilities, pluginMetaKey, type CapabilityHost } from '../src/server/capabilities';
 
 const base: CmsPluginManifest = { schemaVersion: 1, name: 'desk', version: '1.0.0' };
@@ -14,7 +14,15 @@ describe('capability declarations', () => {
         expect(manifestProblems(full)).toEqual([]);
         expect(requestedGrants(full)).toEqual(['capability:ai', 'capability:cache', 'capability:files', 'capability:jobs', 'capability:mail', 'capability:payments', 'secret:STRIPE_SECRET_KEY', 'users:read', 'users:write']);
         expect(requestedGrants(base)).toEqual([]);
-        expect(CAPABILITIES).toEqual(['files', 'mail', 'jobs', 'cache', 'ai', 'payments']);
+        expect(CAPABILITIES).toEqual(['files', 'mail', 'jobs', 'cache', 'ai', 'payments', 'unrestricted']);
+    });
+
+    it('declares unrestricted access as one grant, which covers schedules', () => {
+        const unrestricted: CmsPluginManifest = { ...base, permissions: { unrestricted: true }, schedules: [{ name: 'digest', cron: '0 8 * * *' }] };
+        expect(manifestProblems(unrestricted)).toEqual([]);
+        expect(requestedGrants(unrestricted)).toEqual([UNRESTRICTED_GRANT]);
+        expect(UNRESTRICTED_GRANT).toBe('capability:unrestricted');
+        expect(problems({ ...base, permissions: { unrestricted: 'yes' } })).toMatch(/permissions.unrestricted is true or false/);
     });
 
     it('checks the shapes', () => {

@@ -18,6 +18,8 @@ const promo = (hosts: string[]): PluginRegistrationLike => ({
         fieldGroups: [{ id: 'promo-shipping', title: 'Shipping', targets: [{ kind: 'collection', name: 'promos' }], blocks: [weight] }],
     },
 });
+/** A plugin asking for everything. */
+const vault: PluginRegistrationLike = { name: 'vault', version: '1.0.0', manifest: { schemaVersion: 1, name: 'vault', version: '1.0.0', permissions: { unrestricted: true } } };
 const themes: PluginRegistrationLike[] = [
     { name: 'folio', version: '1.0.0', templates, manifest: { schemaVersion: 1, name: 'folio', version: '1.0.0', theme: { label: 'Folio' } } },
     { name: 'plain', version: '1.0.0', templates, manifest: { schemaVersion: 1, name: 'plain', version: '1.0.0', theme: { label: 'Plain' } } },
@@ -112,6 +114,21 @@ describe.skipIf(!live)('network plugin and theme states', () => {
         // Available again: the site's own grant applies.
         await network.setPluginState('promo', 'available', { principal: networkAdmin });
         expect(await blog.pluginActive('promo')).toBe(true);
+    });
+
+    it('asks a network admin to confirm unrestricted access, and a site admin cannot grant it', async () => {
+        plugins = [...plugins, vault];
+        const upgraded = open();
+        const site = await siteOf(upgraded);
+        await site.ready({ force: true });
+        // New sites' default plugins grant without confirming, so they cannot enable it either.
+        await expect(site.grantPlugin('vault', systemPrincipal('defaults'))).rejects.toMatchObject({ code: 'CMS_CONFLICT' });
+        await expect(site.grantPlugin('vault', siteAdmin, { unrestricted: true })).rejects.toMatchObject({ code: 'CMS_FORBIDDEN' });
+        await expect(upgraded.setPluginState('vault', 'network', { principal: networkAdmin })).rejects.toMatchObject({ code: 'CMS_CONFLICT' });
+        expect(await upgraded.setPluginState('vault', 'network', { principal: networkAdmin, unrestricted: true })).toMatchObject({ network: 'network', unrestricted: true, active: true });
+        expect((await upgraded.main.audit.list({ action: 'grant-unrestricted' })).items).toMatchObject([{ actor: 'root', resource: 'cms/plugins', recordId: 'vault' }]);
+        await upgraded.setPluginState('vault', 'available', { principal: networkAdmin });
+        plugins = plugins.filter(plugin => plugin !== vault);
     });
 
     it('hides themes from every site, and a site on a hidden theme falls back', async () => {

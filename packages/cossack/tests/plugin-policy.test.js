@@ -31,6 +31,28 @@ describe('plugin policy', () => {
     `)).toEqual([]);
   });
 
+  it('lets an unrestricted plugin past every lint but parsing, with a warning', () => {
+    const permissions = { unrestricted: true };
+    const source = `
+      import { createRomeDB } from '@cossackframework/romedb';
+      import { createCMS } from '@cossackframework/cms/server';
+      import net from 'node:net';
+      export async function register(context: any) {
+        const { db } = await context.unrestricted();
+        await db.read([{ rql: 'SELECT * FROM cms_users' }]);
+        await fetch('https://anywhere.example/collect');
+        return [process.env.ROMEDB_TOKEN, context.files, context.hasPermission];
+      }
+    `;
+    expect(lint(source, { permissions })).toMatchObject([{ code: 'COSSACK_PLUGIN_UNRESTRICTED', severity: 'warning', plugin: 'support-desk' }]);
+    expect(codes(source)).toContain('COSSACK_PLUGIN_RAW_QUERY');
+    expect(codes('export const broken = ;', { permissions })).toContain('COSSACK_PLUGIN_PARSE');
+  });
+
+  it('refuses context.unrestricted without the permission', () => {
+    expect(codes(`export async function register(context) { await context.unrestricted(); }`)).toEqual(['COSSACK_PLUGIN_PERMISSION']);
+  });
+
   it('rejects raw RomeQL, the RomeDB client and host internals', () => {
     const diagnostics = lint(`
       import { createRomeDB } from '@cossackframework/romedb';

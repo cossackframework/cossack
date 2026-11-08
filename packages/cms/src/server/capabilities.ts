@@ -290,9 +290,10 @@ export function pluginCapabilities(host: CapabilityHost): PluginCapabilities {
     };
 
     const declaredSecrets = new Set(host.manifest.permissions?.secrets ?? []);
+    const anySecret = host.manifest.permissions?.unrestricted === true;
     const secrets: PluginSecrets = {
         get: async secret => {
-            if (typeof secret !== 'string' || !declaredSecrets.has(secret)) throw new CmsError('CMS_FORBIDDEN', `Plugin ${name} does not declare the secret ${String(secret)}.`);
+            if (typeof secret !== 'string' || (!anySecret && !declaredSecrets.has(secret))) throw new CmsError('CMS_FORBIDDEN', `Plugin ${name} does not declare the secret ${String(secret)}.`);
             await host.allowed(`secret:${secret}`, `the secret ${secret}`);
             return host.secrets(secret);
         },

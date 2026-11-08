@@ -191,6 +191,50 @@ settings. Theme options stay under Appearance → Customize.
 Handlers registered here do nothing while the plugin is inactive: a filter returns its
 value unchanged and an action returns at once.
 
+#### Unrestricted access
+
+Most plugins fit inside the context above. A migration tool, a custom report or a deep
+integration may not, so a plugin can ask for everything with
+`"permissions": { "unrestricted": true }`:
+
+```ts
+context.commands.add('report', async () => {
+  const { db, host, env } = await context.unrestricted();
+  const result = await db.read([{ rql: 'SELECT count(*) FROM cms_audit' }]);
+  return Number(result.results[0].rows[0][0]);
+});
+```
+
+| Member | What it is |
+| --- | --- |
+| `db` | The site's database with no access rules. `read` and `write` take RomeQL statements. |
+| `host` | The whole CMS host: repositories, accounts, settings, files and the outbox. |
+| `env` | Every binding of the application, including what reaches other sites' databases. |
+
+The call refuses until the plugin is active and granted. The grant also lifts the limits of the
+other members: `context.fetch` reaches any host, `context.secrets` reads any string binding,
+`context.cms.resource()` takes any resource, handlers may use any extension point, and
+`schedules` need no `permissions.jobs`. The policy lints step aside, so the plugin's source may
+import `@cossackframework/cms/server`, use global `fetch` and read `process.env`.
+
+Asking for this is the point where the plugin stops being limited, so it is hard to miss:
+
+- **Installing warns.** A plugin's code can run as soon as the application starts, before
+  anyone grants it. `cossack add plugin` and `cossack plugins upgrade` print a danger message
+  and stop until it is accepted: a prompt that defaults to no in a terminal, or
+  `--allow-unrestricted` anywhere else. `--yes` and `--force` do not count. The scaffold API takes
+  `allowUnrestricted: true`.
+- **Granting warns again.** Plugins and Network → Plugins show a danger notice with a box to tick
+  beside the button. Bulk actions never grant it, and new sites' default plugins skip it.
+- **Only a network admin grants it**, since `env` reaches every site.
+- **The grant leaves a trail.** Tools → Activity shows who approved it, the plugin's row keeps an
+  Unrestricted badge, and every build warns with `COSSACK_PLUGIN_UNRESTRICTED`.
+- **It does not travel.** A site import removes the grant, so the plugin waits for a new one.
+
+Disabling the plugin stops its handlers, its commands and `context.unrestricted()`. Code it
+runs on its own at startup keeps running until you remove the plugin with
+`cossack plugins remove`.
+
 ### `ui.ts`
 
 Exports components the host renders. It is imported in every environment, so it holds
@@ -347,6 +391,11 @@ plugin inactive until it is granted again. `cms.status()` lists every plugin wit
 Rendered plugin source is trusted build-time code, so the CLI checks that it stays within
 its manifest. `cossack plugins check` runs the lints; `vite build` runs them too. Source is
 parsed, never executed.
+
+The lints keep honest code inside its manifest. They are not a sandbox: code written to evade
+them can, so review a plugin you did not write, whatever it asks for. A plugin with
+`permissions.unrestricted` passes every lint but `COSSACK_PLUGIN_PARSE` and gets the warning
+`COSSACK_PLUGIN_UNRESTRICTED` instead.
 
 | Code | What fails |
 | --- | --- |

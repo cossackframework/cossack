@@ -41,7 +41,7 @@ export async function loadNetworkSettings(network: CmsNetwork): Promise<NetworkS
         enabled, name: settings.name, subdomainSuffix: settings.subdomainSuffix, defaultTheme: settings.defaultTheme,
         defaultPlugins: [...settings.defaultPlugins], defaultLanguage: settings.defaultLanguage, siteExports: settings.siteExports, fallbackSuffix: network.subdomainSuffix,
         themes: network.main.themes().filter(theme => !theme.problems.length && !policy.hiddenThemes.has(theme.name)).map(theme => ({ name: theme.name, label: theme.label })),
-        plugins: status.plugins.filter(plugin => !plugin.themeOnly && plugin.network === 'available').map(plugin => plugin.name),
+        plugins: status.plugins.filter(plugin => !plugin.themeOnly && !plugin.unrestricted && plugin.network === 'available').map(plugin => plugin.name),
         canAddSites: network.canAddSites, sites: active.total + archived.total,
     };
 }

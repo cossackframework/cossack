@@ -122,5 +122,6 @@ per plugin.
 | Add an operator command | Declare `commands` in the manifest; handle them with `context.commands.add()`. |
 | Take payments or ask a model | Ask for `payments` or `ai` in `permissions`; `context.payments.checkout()` and `context.ai.complete()`; handle `cms.payment.event`. The application configures Stripe (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`) and Anthropic or Workers AI (`ANTHROPIC_API_KEY`, or the `AI` binding). |
 | Store files, send email, run work later or on a schedule, read members, cache, hold a key | Ask in the manifest's `permissions` (`files`, `mail`, `jobs`, `users`, `cache`, `secrets`) and `schedules`; use `context.files`, `mail`, `jobs`, `users`, `cache`, `secrets`. See [Capabilities](/docs/cms/plugins.md#capabilities). |
+| Use the database directly, or anything else the context does not offer | Ask for `permissions.unrestricted` and call `context.unrestricted()`. Installing and granting it each carry a danger warning. See [Unrestricted access](/docs/cms/plugins.md#unrestricted-access). |
 | Ship a site design | A plugin with a `theme` field and `templates/`; see [Themes](/docs/cms/themes.md). |
 | Let other plugins extend yours | Declare `provides` in the manifest and invoke the points from your code. |

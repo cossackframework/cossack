@@ -1,9 +1,9 @@
 import { Client, ClientState, Cossack, Page, State, flash, flashed, type HeadValue } from '@cossackframework/core';
 import { Badge, Card, CardBody, Input, NativeSelect } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
-import { hasPermission, isCmsError, isSameOriginPost, PERMISSIONS } from '@cossackframework/cms';
+import { hasPermission, isCmsError, isNetworkAdmin, isSameOriginPost, PERMISSIONS } from '@cossackframework/cms';
 import { requireAny } from '../../../../cms/guards';
-import { artwork, authorLine, notice, pageHeader } from '../../../../cms/ui';
+import { artwork, authorLine, notice, pageHeader, unrestrictedConfirm, unrestrictedNotice } from '../../../../cms/ui';
 import { settingsSectionHref } from '../../../../cms/settings-search';
 
 interface PluginRow {
@@ -14,6 +14,8 @@ interface PluginRow {
     logo: string | null;
     cover: string | null;
     themeOnly: boolean;
+    /** Asks for unrestricted access: a danger notice, and a grant of its own. */
+    unrestricted: boolean;
     active: boolean;
     reason: string;
     missing: string[];
@@ -34,6 +36,8 @@ type PluginFilter = 'all' | 'active' | 'inactive' | 'themes';
 export default class PluginsPage extends Cossack {
     @State() plugins: PluginRow[] = [];
     @State() message = '';
+    /** Only a network admin can grant unrestricted access. */
+    @State() networkAdmin = false;
     @ClientState() search = '';
     @ClientState() filter: PluginFilter = 'all';
 
@@ -47,9 +51,10 @@ export default class PluginsPage extends Cossack {
             ? this.c.get('cms').settings.catalog({ principal: this.c.get('principal') }).map(group => group.plugin).filter(Boolean) : []);
         // Plugins the network hides are not offered.
         this.plugins = status.plugins.filter(plugin => plugin.network !== 'hidden').map(plugin => ({
-            name: plugin.name, version: plugin.version, description: plugin.description, author: plugin.author, logo: plugin.logo, cover: plugin.cover, themeOnly: plugin.themeOnly,
+            name: plugin.name, version: plugin.version, description: plugin.description, author: plugin.author, logo: plugin.logo, cover: plugin.cover, themeOnly: plugin.themeOnly, unrestricted: plugin.unrestricted,
             active: plugin.active, reason: plugin.reason ?? '', missing: [...plugin.missing], settings: configurable.has(plugin.name), networkActive: plugin.network === 'network',
         }));
+        this.networkAdmin = isNetworkAdmin(this.c.get('principal'));
         this.message = flashed<string>('cms.message') ?? '';
     }
 
@@ -63,6 +68,8 @@ export default class PluginsPage extends Cossack {
         const cms = this.c.get('cms');
         const principal = this.c.get('principal');
         if (action !== 'grant' && action !== 'disable') { flash('cms.message', 'Choose an action.'); return this.redirect('/dashboard/plugins'); }
+        // Only a row's own ticked box confirms unrestricted access, so a bulk grant never does.
+        const accepted = new Set(row ? form.getAll('accept-unrestricted').map(String) : []);
         const messages: string[] = [];
         for (const name of names.slice(0, 100)) {
             try {
@@ -70,7 +77,7 @@ export default class PluginsPage extends Cossack {
                     await cms.revokePlugin(name, principal);
                     messages.push(`Disabled ${name}.`);
                 } else {
-                    const status = await cms.grantPlugin(name, principal);
+                    const status = await cms.grantPlugin(name, principal, { unrestricted: accepted.has(name) });
                     messages.push(status.active ? `Enabled ${name}.` : `Granted ${name}. ${status.reason ?? ''}`.trim());
                 }
             } catch (error) {
@@ -107,6 +114,9 @@ export default class PluginsPage extends Cossack {
         return html`<div class="space-y-6">
             ${pageHeader(__('Plugins'), { description: __('A plugin runs after its schema is applied and you grant what it requests.') })}
             ${this.message ? notice(this.message) : null}
+            ${this.plugins.filter(plugin => plugin.unrestricted && plugin.missing.length).map(plugin => unrestrictedNotice(plugin.name, plugin.networkActive ? null : this.networkAdmin
+                ? unrestrictedConfirm({ name: 'accept-unrestricted', value: plugin.name }, { name: '_row', value: `grant:${plugin.name}`, label: __('Grant unrestricted access') })
+                : html`<p class="mt-2 text-sm">${__('Only a network admin can grant this.')}</p>`))}
             ${this.plugins.length ? html`<form method="post" class="space-y-3" id="plugins-form">
                 <div class="flex flex-wrap items-center justify-between gap-3">
                     <div class="flex flex-wrap items-center gap-2">
@@ -142,11 +152,12 @@ export default class PluginsPage extends Cossack {
                         </td>
                         <td class="px-3 py-3">${plugin.themeOnly ? component(Badge, { variant: 'secondary' }, __('Theme'))
                             : plugin.networkActive ? component(Badge, { variant: plugin.active ? 'success' : 'warning' }, __('Network active'))
-                            : component(Badge, { variant: plugin.active ? 'success' : 'secondary' }, plugin.active ? __('Active') : __('Inactive'))}</td>
+                            : component(Badge, { variant: plugin.active ? 'success' : 'secondary' }, plugin.active ? __('Active') : __('Inactive'))}
+                            ${plugin.unrestricted ? html`<div class="mt-1">${component(Badge, { variant: 'destructive' }, __('Unrestricted'))}</div>` : null}</td>
                         <td class="px-3 py-3"><div class="flex flex-wrap justify-end gap-2">
                             ${plugin.settings ? html`<a href=${settingsSectionHref(`plugin:${plugin.name}`)} class="text-sm text-primary hover:underline">${__('Settings')}</a>` : null}
                             ${plugin.networkActive ? null : plugin.themeOnly ? html`<a href="/dashboard/appearance" class="text-sm text-primary hover:underline">${__('Manage in Appearance')} →</a>` : html`
-                                ${plugin.missing.length ? html`<button type="submit" name="_row" value=${`grant:${plugin.name}`} class=${`${button} bg-primary text-primary-foreground border-none`}>${__('Grant and enable')}</button>` : null}
+                                ${plugin.missing.length && !plugin.unrestricted ? html`<button type="submit" name="_row" value=${`grant:${plugin.name}`} class=${`${button} bg-primary text-primary-foreground border-none`}>${__('Grant and enable')}</button>` : null}
                                 ${plugin.active ? html`<button type="submit" name="_row" value=${`disable:${plugin.name}`} class=${`${button} border border-destructive bg-transparent text-destructive`}>${__('Disable')}</button>` : null}`}
                         </div></td>
                     </tr>`)}</tbody></table>

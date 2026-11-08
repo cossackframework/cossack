@@ -170,6 +170,29 @@ describe('plugin recipes', () => {
     expect(satisfies('2.0.0', '~1.2.0')).toBe(false);
   });
 
+  it('stops at a plugin asking for unrestricted access until someone accepts it', async () => {
+    const app = await project();
+    const source = await pluginPackage('1.0.0', {}, { permissions: { unrestricted: true } });
+    await expect(addPlugin(app, source)).rejects.toMatchObject({ code: 'COSSACK_PLUGIN_UNRESTRICTED', message: expect.stringMatching(/^DANGER: plugin "support-desk" asks for unrestricted access/) });
+    await expect(fs.stat(path.join(app, 'src/plugins/support-desk'))).rejects.toThrow();
+    // A dry run renders nothing, so it reports the danger instead of stopping.
+    expect(await addPlugin(app, source, { dryRun: true })).toMatchObject({ status: 'dry-run', unrestricted: true });
+    expect(await addPlugin(app, source, { allowUnrestricted: true })).toMatchObject({ status: 'added', unrestricted: true });
+    expect((await readPluginState(app)).plugins['support-desk'].unrestricted).toBe(true);
+    expect((await listPlugins(app)).rendered[0].unrestricted).toBe(true);
+    // Accepted once: a later version does not ask again.
+    expect(await upgradePlugin(app, 'support-desk', { source: await pluginPackage('1.1.0', {}, { permissions: { unrestricted: true } }) })).toMatchObject({ status: 'upgraded', unrestricted: true });
+  });
+
+  it('stops an upgrade that starts asking for unrestricted access', async () => {
+    const app = await project();
+    await addPlugin(app, await pluginPackage());
+    const source = await pluginPackage('1.1.0', {}, { permissions: { unrestricted: true } });
+    await expect(upgradePlugin(app, 'support-desk', { source })).rejects.toMatchObject({ code: 'COSSACK_PLUGIN_UNRESTRICTED' });
+    expect((await readPluginState(app)).plugins['support-desk'].version).toBe('1.0.0');
+    expect(await upgradePlugin(app, 'support-desk', { source, allowUnrestricted: true })).toMatchObject({ status: 'upgraded', unrestricted: true });
+  });
+
   it('rejects unsafe or invalid packages', async () => {
     expect(validatePluginManifest({ schemaVersion: 1, name: 'cms', version: '1.0.0' })).toEqual(['name "cms" is reserved.']);
     expect(validatePluginManifest({ schemaVersion: 2, name: 'Bad', version: 'x', source: '../up' })).toHaveLength(4);

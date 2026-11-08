@@ -3,7 +3,7 @@
  * when), written in the record's own batch by the repository. Read here for Tools → Activity and
  * pruned by maintenance after a year.
  */
-import type { RomeDB, Value } from '@cossackframework/romedb';
+import type { RomeDB, Statement, Value } from '@cossackframework/romedb';
 
 export interface AuditEntry {
     readonly id: string;
@@ -29,6 +29,14 @@ export interface AuditQuery {
 /** Rows older than this are pruned. */
 export const AUDIT_RETENTION_MS = 365 * 24 * 60 * 60_000;
 const WRITE = { kind: 'cms.audit', retryConflicts: 5 } as const;
+
+/** The audit row of an unrestricted grant: who approved it, for Tools → Activity. */
+export function unrestrictedGrantAudit(plugin: string, actor: string, at: number): Statement {
+    return {
+        rql: "INSERT INTO cms_audit (id, actor, action, resource, record_id, revision, at) VALUES ($id, $actor, 'grant-unrestricted', 'cms/plugins', $plugin, NULL, $at)",
+        params: { $id: crypto.randomUUID(), $actor: actor, $plugin: plugin, $at: at },
+    };
+}
 
 export class CmsAudit {
     readonly #db: RomeDB;

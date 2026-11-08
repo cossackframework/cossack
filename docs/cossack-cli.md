@@ -502,7 +502,9 @@ Renders a plugin package (a directory, an `npm pack` tarball or an npm package)
 into `src/plugins/<name>/`. The package is read as data and never executed;
 npm installs run with `--ignore-scripts`. `cossack plugins list|check|upgrade|remove`
 manage rendered plugins, and `cossack <plugin>:<command>` runs a command a
-plugin manifest declares.
+plugin manifest declares. A plugin that asks for unrestricted access can do
+anything in the application, so rendering it stops with a danger message until
+you accept it: a terminal asks, and anything else needs `--allow-unrestricted`.
 
 ```bash
 cossack add plugin ./support-desk-1.0.0.tgz

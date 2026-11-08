@@ -5,11 +5,13 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { cleanupRoots, cossack, productionServer, project, trackRoot, typecheck, vite } from './fixtures/generated-app.js';
-import { packDesk, violations } from './fixtures/cms-plugin-package.js';
+import { packDesk, packVault, violations } from './fixtures/cms-plugin-package.js';
 import { browserless, contains, lacks } from './fixtures/cms-client.js';
 import { liveRomeDBTests, startRomeDBService } from '../../romedb/src/testing.ts';
 
 afterEach(cleanupRoots);
+
+const SETTINGS = 'dashboard/(cms)/settings/index.ts';
 
 const build = async root => {
   await vite(root, []);
@@ -28,6 +30,15 @@ describe.skipIf(!liveRomeDBTests())('CMS plugin trust', () => {
     expect(JSON.parse((await cossack(root, ['add', 'plugin', v1.tarball, '--json'])).stdout).data).toMatchObject({ status: 'added', name: 'support-desk' });
     // The default theme is a rendered plugin too, and passes the same lints.
     expect(JSON.parse((await cossack(root, ['plugins', 'check', '--json'])).stdout).data.plugins).toEqual([{ plugin: 'default-theme', files: 14, errors: 0 }, { plugin: 'support-desk', files: 4, errors: 0 }]);
+    // A plugin asking for unrestricted access stops at the danger message until it is accepted; then its raw queries pass the lints, with a warning.
+    const vault = await packVault();
+    trackRoot(vault.directory);
+    const refused = await cossack(root, ['add', 'plugin', vault.tarball, '--json']).catch(error => error);
+    expect(JSON.parse(refused.stdout).diagnostics[0].code).toBe('COSSACK_PLUGIN_UNRESTRICTED');
+    expect(JSON.parse(refused.stdout).diagnostics[0].message).toMatch(/^DANGER: plugin "vault".*--allow-unrestricted/);
+    await expect(fs.stat(path.join(root, 'src/plugins/vault'))).rejects.toThrow();
+    expect(JSON.parse((await cossack(root, ['add', 'plugin', vault.tarball, '--allow-unrestricted', '--json'])).stdout).data).toMatchObject({ status: 'added', name: 'vault', unrestricted: true });
+    expect(JSON.parse((await cossack(root, ['plugins', 'check', '--json'])).stdout).data.plugins.find(plugin => plugin.plugin === 'vault')).toMatchObject({ errors: 0, unrestricted: true });
     await cossack(root, ['config', '--generate']);
     await typecheck(root, 'cms plugin application');
 
@@ -99,6 +110,33 @@ describe.skipIf(!liveRomeDBTests())('CMS plugin trust', () => {
       expect(helpDesk).toMatch(/<meta name="?support-desk"? content="?on"?[^>]*>/);
       contains(await web.page('/dashboard/content/patterns'), 'Contact card');
 
+      // The danger notice: a bulk grant and an unticked row leave the plugin off; the ticked row turns it on, and Activity says who did.
+      const vaultActive = async () => /data-plugin="?vault"? data-version="?1\.0\.0"? data-active="?true/.test(await web.page('/dashboard/plugins'));
+      contains(await web.page('/dashboard/plugins'), 'Danger: vault asks for unrestricted access');
+      await web.post('/dashboard/plugins', { plugins: 'vault', _action: 'grant' });
+      expect(await vaultActive()).toBe(false);
+      await web.post('/dashboard/plugins', { _row: 'grant:vault' });
+      expect(await vaultActive()).toBe(false);
+      await web.post('/dashboard/plugins', { _row: 'grant:vault', 'accept-unrestricted': 'vault' });
+      expect(await vaultActive()).toBe(true);
+      lacks(await web.page('/dashboard/plugins'), 'Danger: vault asks for unrestricted access');
+      contains(await web.page('/dashboard/plugins'), 'Unrestricted');
+      contains(await web.page('/dashboard/tools/activity'), 'grant-unrestricted');
+
+      // Network → Plugins asks the same way: unticked stays as it was, ticked runs it on every site.
+      const setNetwork = enabled => web.action(SETTINGS, 'saveAll', [{ document: null, languages: null, permalinks: null, groups: {},
+        network: { enabled, name: 'Desk network', subdomainSuffix: '', defaultTheme: '', defaultPlugins: [], defaultLanguage: '', siteExports: 'request' } }]);
+      expect((await setNetwork(true))._cossack_return.error).toBe('');
+      const vaultState = async () => /data-plugin="?vault"? data-state="?([a-z]+)/.exec(await web.page('/dashboard/network/plugins'))?.[1];
+      contains(await web.page('/dashboard/network/plugins'), 'Danger: vault asks for unrestricted access');
+      await web.post('/dashboard/network/plugins', { plugin: 'vault', action: 'network' });
+      expect(await vaultState()).toBe('available');
+      await web.post('/dashboard/network/plugins', { plugin: 'vault', action: 'network', 'accept-unrestricted': 'vault' });
+      expect(await vaultState()).toBe('network');
+      lacks(await web.page('/dashboard/network/plugins'), 'Danger: vault asks for unrestricted access');
+      await web.post('/dashboard/network/plugins', { plugin: 'vault', action: 'available' });
+      expect((await setNetwork(false))._cossack_return.error).toBe('');
+
       // The plugin command runs in the application as the signed-in user.
       const env = { ...process.env, CMS_PASSWORD: 'long password' };
       const help = (await cossack(root, ['support-desk:close-all', '--help'], { env })).stdout;
@@ -108,6 +146,10 @@ describe.skipIf(!liveRomeDBTests())('CMS plugin trust', () => {
         .catch(error => { throw new Error(`${error.message}\n${error.stdout}\n${error.stderr}`); })).stdout);
       expect(ran).toMatchObject({ ok: true, command: 'support-desk:close-all', data: { result: { closed: 2, reason: 'resolved' } } });
       contains(await web.page('/dashboard/support'), 'Open tickets: 0');
+      // The unrestricted plugin's command reads the database directly, with the application's bindings to hand.
+      const counted = JSON.parse((await cossack(root, ['vault:count', '--url', server.origin, '--email', 'ada@example.com', '--json'], { env })).stdout);
+      expect(counted.data.result).toMatchObject({ binding: 'string', token: 'string', network: 'function' });
+      expect(counted.data.result.settings).toBeGreaterThan(0);
       // The command queued a job through the plugin's jobs capability; the outbox ran it after the request.
       await expect.poll(() => server.diagnostics().includes('[support-desk] job notify {"closed":2}'), { timeout: 20_000 }).toBe(true);
       const denied = await cossack(root, ['support-desk:close-all', '--url', server.origin, '--email', 'ada@example.com'], { env: { ...env, CMS_PASSWORD: 'wrong password' } }).catch(error => error);

@@ -21,8 +21,8 @@ import type { MenuItem, ResolvedMenuItem } from '../menus';
 import { recordTitle } from '../forms';
 import type { RecordShape } from '../records';
 import { taxonomyProblems, type TaxonomyDeclaration, type TermShape } from '../taxonomy';
-import { isPluginPoint, manifestProblems, providedPoints, requestedGrants, type CmsPluginManifest, type PluginCommand, type SlotLink } from '../manifest';
-import { ANONYMOUS, evaluateRule, hasPermission, PERMISSIONS, principalId, systemPrincipal, type Principal } from '../permissions';
+import { isPluginPoint, manifestProblems, providedPoints, requestedGrants, UNRESTRICTED_GRANT, type CmsPluginManifest, type PluginCommand, type SlotLink } from '../manifest';
+import { ANONYMOUS, evaluateRule, hasPermission, isNetworkAdmin, PERMISSIONS, principalId, systemPrincipal, type Principal } from '../permissions';
 import { AVATAR_TYPES, mediaUrl } from '../media';
 import { canonicalJson, declarationHash, resolveResource, type Resource, type ResourceAction, type ResourceDeclaration } from '../resource';
 import { Outbox, type OutboxOptions } from './outbox';
@@ -56,7 +56,7 @@ import { afterCommit, commentBeforeSave, formSubmitted, menuBeforeSave, pluginJo
 import { CmsForms, type CmsMail } from './forms';
 import { pluginCapabilities, type PluginAi, type PluginCache, type PluginFiles, type PluginJobs, type PluginMail, type PluginPayments, type PluginSecrets, type PluginUsers } from './capabilities';
 import { CmsSchedules, type DueSchedule } from './schedules';
-import { CmsAudit } from './audit';
+import { CmsAudit, unrestrictedGrantAudit } from './audit';
 import type { AiProvider } from './ai';
 import type { PaymentsProvider } from './payments';
 import type { PaymentEvent } from '../hooks';
@@ -139,6 +139,8 @@ export interface CmsOptions {
     readonly mailFrom?: string;
     /** Bindings plugins name in `permissions.secrets`, read when a granted plugin asks (`context.secrets.get`). Default: none. */
     readonly secrets?: (name: string) => string | undefined;
+    /** The application's bindings, for a plugin granted unrestricted access (`context.unrestricted()`). Default: none. */
+    readonly env?: Readonly<Record<string, unknown>>;
     /** The AI provider for the editor's assistant and plugins with `ai`; none without it. */
     readonly ai?: AiProvider;
     /** The payments provider for plugins with `payments`; its webhooks come through `receivePayment()`. */
@@ -235,6 +237,22 @@ export interface PluginContext {
     readonly ai: PluginAi;
     /** Checkouts with the application's payments provider; needs `permissions.payments`. */
     readonly payments: PluginPayments;
+    /**
+     * Everything, with no limits: needs `permissions.unrestricted`, and is refused until the
+     * plugin is active and a network admin has granted it. The grant also lifts the limits of
+     * the members above.
+     */
+    readonly unrestricted: () => Promise<PluginUnrestricted>;
+}
+
+/** What `context.unrestricted()` gives a plugin. Nothing here checks anything. */
+export interface PluginUnrestricted {
+    /** The site's database with no access rules: `read` and `write` take RomeQL statements. */
+    readonly db: RomeDB;
+    /** The whole host: repositories, accounts, settings, files and the outbox. */
+    readonly host: CmsHost;
+    /** Every binding and secret of the application, including what reaches other sites' databases. */
+    readonly env: Readonly<Record<string, unknown>>;
 }
 
 export interface PluginCms {
@@ -278,6 +296,8 @@ export interface PluginStatus {
     readonly cover: string | null;
     /** Only a theme: nothing to grant, managed under Appearance. */
     readonly themeOnly: boolean;
+    /** Asks for unrestricted access: the dashboard warns, and granting it takes a separate yes. */
+    readonly unrestricted: boolean;
     readonly active: boolean;
     readonly reason?: string;
     /** Grants the manifest requests that are not granted yet. */
@@ -381,6 +401,7 @@ export class CmsHost {
     /** Automations: emails and webhooks run from the site's events (Tools → Automations). */
     readonly automations: CmsAutomations;
     readonly #secrets: (name: string) => string | undefined;
+    readonly #env: Readonly<Record<string, unknown>>;
     /** Second factors and passkeys of network accounts, on the network database. */
     readonly security: CmsSecurity;
     /** Second factors and passkeys of site accounts; null on the main site. */
@@ -554,6 +575,7 @@ export class CmsHost {
         this.files = options.storage ? new FileService(this.db, options.storage, { now: this.#now, ...(options.images ? { images: options.images } : {}), imageSettings: () => this.#imageSettings(), changed: () => this.#purgeSite('media'), ...options.files }) : null;
         this.cache = new CmsCache(this.db, { now: this.#now });
         this.#secrets = options.secrets ?? (() => undefined);
+        this.#env = options.env ?? {};
         this.audit = new CmsAudit(this.db, { now: this.#now });
         this.ai = options.ai ?? null;
         this.payments = options.payments ?? null;
@@ -1602,17 +1624,23 @@ export class CmsHost {
 
     /**
      * Record an administrator's grant of everything the plugin's manifest requests. An upgrade
-     * that requests more leaves the plugin inactive until it is granted again.
+     * that requests more leaves the plugin inactive until it is granted again. A plugin asking
+     * for unrestricted access also takes `{ unrestricted: true }` and a network admin, since it
+     * can reach every site, and the grant is written to the audit trail.
      */
-    async grantPlugin(name: string, principal: Principal): Promise<PluginStatus> {
+    async grantPlugin(name: string, principal: Principal, options: { unrestricted?: boolean } = {}): Promise<PluginStatus> {
         if (!hasPermission(principal, PERMISSIONS.managePlugins)) throw new CmsError('CMS_FORBIDDEN', 'Not allowed to manage plugins.');
         const plugin = this.#plugins.get(name);
         const network = pluginState((await this.#state()).policy, name);
         if (!plugin || network === 'hidden') throw new CmsError('CMS_NOT_FOUND', `Unknown plugin ${name}.`);
         if (network === 'network') throw new CmsError('CMS_FORBIDDEN', `The network activates ${name} on every site.`);
         if (plugin.problems.length) throw new CmsError('CMS_VALIDATION', `Plugin ${name} has an invalid manifest: ${plugin.problems.join(' ')}`);
+        const unrestricted = plugin.requested.includes(UNRESTRICTED_GRANT);
+        if (unrestricted && !options.unrestricted) throw new CmsError('CMS_CONFLICT', `Plugin ${name} was not enabled: unrestricted access has to be confirmed on its own.`);
+        if (unrestricted && !isNetworkAdmin(principal)) throw new CmsError('CMS_FORBIDDEN', 'Only a network admin can grant unrestricted access.');
         const now = this.#now();
         await this.db.write([
+            ...(unrestricted ? [unrestrictedGrantAudit(name, principalId(principal), now)] : []),
             { rql: 'DELETE FROM cms_grants WHERE subject = $subject', params: { $subject: `plugin:${name}` } },
             ...[PLUGIN_ENABLED, ...plugin.requested].map((permission, index) => ({
                 rql: 'INSERT INTO cms_grants (id, subject, permission, revision, created_at) VALUES ($id, $subject, $permission, $revision, $now)',
@@ -1735,14 +1763,16 @@ export class CmsHost {
                 // Its own resources and the collections it ships.
                 const own = (plugin?.resources.includes(id) || plugin?.manifest.collections?.some(collection => `cms/${collection.name}` === id)) ?? false;
                 const requested = new Set((plugin?.requested ?? []).filter(grant => grant.startsWith(`resource:${id}:`)).map(grant => grant.slice(`resource:${id}:`.length) as ResourceAction));
-                if (!own && !requested.size) throw new CmsError('CMS_FORBIDDEN', `Plugin ${name} has no grant for ${id}.`);
+                const unrestricted = plugin?.requested.includes(UNRESTRICTED_GRANT) ?? false;
+                if (!own && !requested.size && !unrestricted) throw new CmsError('CMS_FORBIDDEN', `Plugin ${name} has no grant for ${id}.`);
                 const repository = this.resource(id);
                 // Requested in the manifest and granted by an administrator.
                 const check = (action: ResourceAction): Promise<void> => {
                     if (own) return Promise.resolve();
-                    if (!requested.has(action)) throw new CmsError('CMS_FORBIDDEN', `Plugin ${name} may not ${action} ${id}.`);
+                    if (!unrestricted && !requested.has(action)) throw new CmsError('CMS_FORBIDDEN', `Plugin ${name} may not ${action} ${id}.`);
                     return this.#state().then(state => {
-                        if (!this.#granted(name, state).has(`resource:${id}:${action}`)) throw new CmsError('CMS_FORBIDDEN', `Plugin ${name} is not granted ${action} on ${id}.`);
+                        const granted = this.#granted(name, state);
+                        if (!granted.has(`resource:${id}:${action}`) && !granted.has(UNRESTRICTED_GRANT)) throw new CmsError('CMS_FORBIDDEN', `Plugin ${name} is not granted ${action} on ${id}.`);
                     });
                 };
                 return {
@@ -2196,8 +2226,10 @@ export class CmsHost {
         const declared = new Set((plugin.manifest.hooks ?? []).map(hook => hook.point));
         const provided = new Set((plugin.manifest.provides ?? []).map(declaration => declaration.point));
         const declaredCommands = new Set((plugin.manifest.commands ?? []).map(command => command.name));
+        // Unrestricted: any extension point, though handlers still run only while the plugin is active.
+        const anyPoint = plugin.manifest.permissions?.unrestricted === true;
         const checkHook = (point: ExtensionPoint) => {
-            if (!declared.has(point.name)) throw new Error(`Plugin ${name} registers ${point.name}, which its manifest does not declare in hooks.`);
+            if (!anyPoint && !declared.has(point.name)) throw new Error(`Plugin ${name} registers ${point.name}, which its manifest does not declare in hooks.`);
             const known = this.#pluginPoints.get(point.name);
             if (known && (known.point.kind !== point.kind || known.point.version !== point.version)) throw new Error(`Plugin ${name} registers ${point.name} as a version ${point.version} ${point.kind}; ${known.plugin} provides a version ${known.point.version} ${known.point.kind}.`);
         };
@@ -2208,7 +2240,8 @@ export class CmsHost {
         };
         const allowed = async (grant: string, what: string): Promise<void> => {
             if (!(await active())) throw new CmsError('CMS_UNAVAILABLE', `Plugin ${name} is not active.`);
-            if (!this.#granted(name, await this.#state()).has(grant)) throw new CmsError('CMS_FORBIDDEN', `Plugin ${name} is not granted ${what}.`);
+            const granted = this.#granted(name, await this.#state());
+            if (!granted.has(grant) && !granted.has(UNRESTRICTED_GRANT)) throw new CmsError('CMS_FORBIDDEN', `Plugin ${name} is not granted ${what}.`);
         };
         const capabilities = pluginCapabilities({ name, manifest: plugin.manifest, allowed, files: this.files, mail: this.mail, mailFrom: this.mailFrom, users: this.users, cache: this.cache,
             outbox: this.outbox, secrets: this.#secrets, ai: this.ai, payments: this.payments, now: this.#now, queued: () => this.outboxWritten() });
@@ -2230,7 +2263,7 @@ export class CmsHost {
                 },
                 point: ((pointName: string, kind: 'action' | 'filter') => {
                     const known = this.#pluginPoints.get(pointName);
-                    if (!known || (!declared.has(pointName) && !provided.has(pointName))) throw new Error(`Plugin ${name} asks for ${pointName}, which its manifest does not declare in hooks or provides.`);
+                    if (!known || (!anyPoint && !declared.has(pointName) && !provided.has(pointName))) throw new Error(`Plugin ${name} asks for ${pointName}, which its manifest does not declare in hooks or provides.`);
                     if (known.point.kind !== kind) throw new Error(`${pointName} is ${known.point.kind === 'action' ? 'an action' : 'a filter'}, not ${kind === 'action' ? 'an action' : 'a filter'}.`);
                     return known.point;
                 }) as PluginContext['hooks']['point'],
@@ -2260,6 +2293,10 @@ export class CmsHost {
             secrets: capabilities.secrets,
             ai: capabilities.ai,
             payments: capabilities.payments,
+            unrestricted: async () => {
+                await allowed(UNRESTRICTED_GRANT, 'unrestricted access');
+                return { db: this.db, host: this, env: this.#env };
+            },
             settings: {
                 get: async field => {
                     if (!(await active())) throw new CmsError('CMS_UNAVAILABLE', `Plugin ${name} is not active.`);
@@ -2277,7 +2314,7 @@ export class CmsHost {
                 const url = new URL(input instanceof Request ? input.url : String(input));
                 const granted = this.#granted(name, await this.#state());
                 const hosts = [...granted].filter(grant => grant.startsWith('network:')).map(grant => grant.slice('network:'.length));
-                if (!hosts.some(host => host === url.hostname || (host.startsWith('*.') && url.hostname.endsWith(host.slice(1))))) {
+                if (!granted.has(UNRESTRICTED_GRANT) && !hosts.some(host => host === url.hostname || (host.startsWith('*.') && url.hostname.endsWith(host.slice(1))))) {
                     throw new CmsError('CMS_FORBIDDEN', `Plugin ${name} is not granted network access to ${url.hostname}.`);
                 }
                 return this.#fetch(input, init);
@@ -2290,7 +2327,7 @@ export class CmsHost {
         const themeOnly = isThemeOnly(plugin.manifest);
         const network = themeOnly ? 'available' : pluginState(state.policy, plugin.manifest.name);
         const base = { name: plugin.registration.name, version: plugin.registration.version, description: typeof plugin.manifest.description === 'string' ? plugin.manifest.description : '', ...authorOf(plugin), ...artwork(plugin), themeOnly,
-            requests: [PLUGIN_ENABLED, ...plugin.requested], network };
+            unrestricted: plugin.requested.includes(UNRESTRICTED_GRANT), requests: [PLUGIN_ENABLED, ...plugin.requested], network };
         if (plugin.problems.length) return { ...base, active: false, reason: `Invalid manifest: ${plugin.problems.join(' ')}`, missing: [] };
         // A theme alone runs nothing on the server: choosing it under Appearance is all it needs.
         if (themeOnly) return { ...base, active: true, missing: [] };
@@ -2342,7 +2379,8 @@ export class CmsHost {
         const due: DueSchedule[] = [];
         for (const plugin of this.#plugins.values()) {
             if (plugin.problems.length || !plugin.manifest.schedules?.length) continue;
-            if (!this.#granted(plugin.manifest.name, state).has('capability:jobs')) continue;
+            const granted = this.#granted(plugin.manifest.name, state);
+            if (!granted.has('capability:jobs') && !granted.has(UNRESTRICTED_GRANT)) continue;
             if (!(await this.#pluginStatus(plugin, state)).active) continue;
             for (const schedule of plugin.manifest.schedules) due.push({ plugin: plugin.manifest.name, name: schedule.name, cron: schedule.cron });
         }
@@ -2419,7 +2457,7 @@ function loadersOf(plugin: HostedPlugin): ThemeLoaders {
 /** A plugin that only ships a theme: no resources, blocks, hooks, commands, slots or permissions. */
 function isThemeOnly(manifest: CmsPluginManifest): boolean {
     return manifest.theme !== undefined && manifest.settings === undefined && !manifest.resources?.length && !manifest.collections?.length && !manifest.blocks?.length && !manifest.hooks?.length && !manifest.commands?.length
-        && !Object.keys(manifest.ui?.slots ?? {}).length && !Object.keys(manifest.permissions?.resources ?? {}).length && !manifest.permissions?.network?.length && !manifest.permissions?.define?.length;
+        && !Object.keys(manifest.ui?.slots ?? {}).length && !Object.keys(manifest.permissions?.resources ?? {}).length && !manifest.permissions?.network?.length && !manifest.permissions?.define?.length && manifest.permissions?.unrestricted !== true;
 }
 
 /** The plugin's logo and cover: the manifest's files, else `assets/logo.*` and `assets/cover.*`. */

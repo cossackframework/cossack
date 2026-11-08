@@ -54,6 +54,8 @@ export interface PluginRenderOptions {
   versions?: Record<string, string>;
   /** Upgrade only: render from this source instead of the recorded one. */
   source?: string;
+  /** Accept a plugin asking for unrestricted access; without it, rendering fails with COSSACK_PLUGIN_UNRESTRICTED. */
+  allowUnrestricted?: boolean;
 }
 
 export interface PluginRenderResult {
@@ -62,6 +64,8 @@ export interface PluginRenderResult {
   package: string;
   version: string;
   from: string | null;
+  /** The plugin asks for unrestricted access. */
+  unrestricted?: boolean;
   changes: PluginChangeSet;
   dependencies: { name: string; from: null; to: string }[];
 }
@@ -72,6 +76,7 @@ export declare class PluginError extends Error {
   problems?: string[];
 }
 
+export declare function unrestrictedWarning(name: string): string;
 export declare function validatePluginManifest(manifest: unknown, packageJson?: { version?: string }): string[];
 export declare function readPluginDirectory(directory: string): Promise<PluginPackage>;
 export declare function readPluginTarball(file: string): Promise<PluginPackage>;

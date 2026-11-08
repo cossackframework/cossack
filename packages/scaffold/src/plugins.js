@@ -241,7 +241,7 @@ export async function removePlugin(projectDir, name, options = {}) {
 export async function listPlugins(projectDir) {
   const root = path.resolve(projectDir);
   const state = await readPluginState(root);
-  const rendered = Object.entries(state.plugins).map(([name, entry]) => ({ name, package: entry.package, version: entry.version, source: entry.source }));
+  const rendered = Object.entries(state.plugins).map(([name, entry]) => ({ name, package: entry.package, version: entry.version, source: entry.source, ...(entry.unrestricted ? { unrestricted: true } : {}) }));
   const installed = [];
   const modules = path.join(root, 'node_modules');
   const candidates = [];
@@ -278,8 +278,18 @@ export function satisfies(version, range) {
   }));
 }
 
+/** The danger message of a plugin asking for unrestricted access. */
+export function unrestrictedWarning(name) {
+  return `DANGER: plugin "${name}" asks for unrestricted access. It can do anything: read and change all content and accounts, use the database directly, read the application's secrets, reach every site and send data anywhere. It skips the build's plugin checks, and its code can run as soon as the application starts, before anyone grants it in the dashboard. Install it only if you trust its author.`;
+}
+
 async function applyPluginRender(root, state, plugin, record, previous, options, status) {
   const name = plugin.manifest.name;
+  // Accepted once per plugin, so a later upgrade does not ask again; an upgrade that adds it does.
+  const unrestricted = plugin.manifest.permissions?.unrestricted === true;
+  if (unrestricted && !options.allowUnrestricted && !options.dryRun && previous?.unrestricted !== true) {
+    throw new PluginError('COSSACK_PLUGIN_UNRESTRICTED', unrestrictedWarning(name));
+  }
   const compatibility = options.versions ? incompatible(plugin.manifest.compatibility, options.versions) : [];
   if (compatibility.length) {
     throw new PluginError('COSSACK_PLUGIN_INCOMPATIBLE', `Plugin "${name}" requires ${compatibility.join(', ')}.`, { requirements: compatibility });
@@ -289,10 +299,10 @@ async function applyPluginRender(root, state, plugin, record, previous, options,
   if (plan.conflicts.length) throw conflictError(plan);
   const dependencies = await packageDependencyChanges(root, plugin.manifest.dependencies ?? {});
   const unchanged = !plan.writes.length && !plan.deletes.length && !dependencies.length && previous?.version === plugin.manifest.version;
-  const result = { status: unchanged ? 'present' : status, name, package: plugin.packageName, version: plugin.manifest.version, from: previous?.version ?? null, changes: plan, dependencies };
+  const result = { status: unchanged ? 'present' : status, name, package: plugin.packageName, version: plugin.manifest.version, from: previous?.version ?? null, ...(unrestricted ? { unrestricted } : {}), changes: plan, dependencies };
   if (unchanged || options.dryRun) return unchanged ? result : { ...result, status: 'dry-run' };
   const next = structuredClone(state);
-  next.plugins[name] = { package: plugin.packageName, version: plugin.manifest.version, source: record, files: {} };
+  next.plugins[name] = { package: plugin.packageName, version: plugin.manifest.version, source: record, ...(unrestricted ? { unrestricted } : {}), files: {} };
   await applyAtomically(root, rendered, plan, next, previous?.files ?? {}, dependencies);
   return result;
 }

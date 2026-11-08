@@ -107,6 +107,7 @@ export const commandSpecs = {
       'auth-methods': createFlags['auth-methods'],
       runtime: choices('Web runtime adapter.', ADAPTERS),
       features: { ...list('Dashboard modules, comma separated.', DASHBOARD_MODULES), when: ['dashboard'] }, yes,
+      'allow-unrestricted': bool('Accept a plugin that asks for unrestricted access. It can do anything in this application.', { when: ['plugin'] }),
     }, check: (args, flags) => [
       ...providerDiagnostics(args, flags),
       ...(args[1] && args[0] !== 'ui' && args[0] !== 'plugin' ? [{ code: 'COSSACK_ARGUMENT_UNEXPECTED', severity: 'error',
@@ -118,7 +119,8 @@ export const commandSpecs = {
     subcommands: {
       list: { positionals: [] },
       check: { positionals: ['name'] },
-      upgrade: { positionals: ['name'], minPositionals: 1, flags: { source: str('Render from this package directory, tarball or npm package instead of the recorded source.') } },
+      upgrade: { positionals: ['name'], minPositionals: 1, flags: { source: str('Render from this package directory, tarball or npm package instead of the recorded source.'),
+        'allow-unrestricted': bool('Accept a new version that starts asking for unrestricted access.') } },
       remove: { positionals: ['name'], minPositionals: 1 },
     } }),
   remove: new CommandSpec({ name: 'remove', globals: mutations, positionals: ['feature'],

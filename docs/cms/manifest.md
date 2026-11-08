@@ -314,6 +314,7 @@ payload changes; `timeoutMs` (1 to 600,000, default 5,000) is the per-handler de
 | `ai` | The application's AI provider (Anthropic or Workers AI, from its bindings), through `context.ai.complete()`. Grant `capability:ai`. |
 | `payments` | Checkouts with the application's payments provider (Stripe built in) through `context.payments.checkout()`; the results arrive as `cms.payment.event`, which the plugin lists in `hooks`. Grant `capability:payments`. |
 | `users` | The site's members through `context.users`: `read` lists them with their emails and roles; `write` creates members and keeps the plugin's own meta on them. Grants `users:read`, `users:write`. |
+| `unrestricted` | Everything, with no limits: `context.unrestricted()` gives the database, the host and every binding, and the policy lints step aside. Grant `capability:unrestricted`, which installing and granting each warn about and only a network admin can give. See [Unrestricted access](/docs/cms/plugins.md#unrestricted-access). |
 | `secrets` | Names of the application's bindings the plugin reads through `context.secrets`, such as `STRIPE_SECRET_KEY`: upper-case names outside the host's own (`ROMEDB_*`, `APP_*`, `CMS_*`, `CLOUDFLARE_*`, `SMTP_*`, `S3_*`, `TURNSTILE_*`, `OAUTH_*`, `COSSACK_*`, `MAIL_FROM`, `EMAIL`, `AI`). Grant `secret:<NAME>` each. |
 
 See [Capabilities](/docs/cms/plugins.md#capabilities) for what each member of the context does.
@@ -377,5 +378,6 @@ See [Languages](/docs/cms/languages.md#language-packs).
 `requestedGrants(manifest)` from `@cossackframework/cms` lists them: `plugin:enabled` for
 every plugin, then `resource:<id>:<action>` for `permissions.resources`, `network:<host>`
 for `permissions.network`, `hook:<point>` for `hooks`, `capability:<name>` for `files`, `mail`,
-`jobs` and `cache`, `users:<action>` for `users` and `secret:<NAME>` for `secrets`. A manifest
+`jobs`, `cache`, `ai`, `payments` and `unrestricted`, `users:<action>` for `users` and
+`secret:<NAME>` for `secrets`. A manifest
 with only a `theme` field asks for nothing and is managed under Appearance.

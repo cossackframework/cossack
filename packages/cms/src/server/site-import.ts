@@ -8,6 +8,7 @@
  */
 import { decodeValue, type PortableValue, type Statement, type Value } from '@cossackframework/romedb';
 import { CmsError } from '../errors';
+import { UNRESTRICTED_GRANT } from '../manifest';
 import { HOST_TABLES } from './host-schema';
 import { EXPORT_SKIPPED_TABLES, newSecret, quote } from './site-export';
 import type { CmsHost } from './host';
@@ -111,6 +112,8 @@ async function importInto(host: CmsHost, source: ReadableStream<Uint8Array> | As
         count++;
     }
     await reader.end();
+    // Unrestricted access is granted where it runs: an export cannot switch it on here.
+    await write([{ rql: 'DELETE FROM cms_grants WHERE permission = $permission', params: { $permission: UNRESTRICTED_GRANT } }]);
     if (!collections) await openCollections(host, options);
     const members = await adoptMembers(host, before);
     await lease.release();

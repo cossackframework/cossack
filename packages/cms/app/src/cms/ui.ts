@@ -1,7 +1,7 @@
 /** Small view helpers shared by the CMS dashboard screens. */
 import { Client, ClientState, Component, Cossack } from '@cossackframework/core';
 import { component, html, ifDefined, type TemplateResult } from '@cossackframework/renderer';
-import { Badge, Icon, Tooltip } from '@cossackframework/ui';
+import { Alert, Badge, Icon, Tooltip } from '@cossackframework/ui';
 import { icon } from './icons';
 
 /** A small square button with an icon alone; its label is a tooltip and its accessible name. */
@@ -146,4 +146,23 @@ export function artwork(kind: 'logo' | 'cover', url: string | null, name: string
     </div>`;
 }
 
+/**
+ * The danger notice of a plugin asking for unrestricted access, above the page's table so no
+ * filter or horizontal scroll hides it. `action` is the confirmation, or
+ * null for a reader who cannot grant it. It says what granting allows and never calls other
+ * plugins safe: only this one skips the checks, and the checks are not a sandbox.
+ */
+export function unrestrictedNotice(name: string, action: TemplateResult | null): TemplateResult {
+    return html`<div data-testid=${`plugin-unrestricted-${name}`}>${component(Alert, { variant: 'destructive', title: `${__('Danger:')} ${name} ${__('asks for unrestricted access')}` }, html`
+        <p>${__('It can do anything: read and change all content and accounts, use the database directly, read the application\'s secrets, reach every site, and send data anywhere. It skips the checks other plugins pass, and its code is already part of this application. Grant this only if you trust its author.')}</p>
+        ${action}`)}</div>`;
+}
 
+/** The box to tick and the button of an unrestricted grant, in a plain form of its own: it works without JavaScript. */
+export function unrestrictedConfirm(field: { name: string; value: string }, submit: { name: string; value: string; label: string }, hidden: Record<string, string> = {}): TemplateResult {
+    return html`<form method="post" class="mt-3 flex flex-wrap items-center gap-3">
+        ${Object.entries(hidden).map(([name, value]) => html`<input type="hidden" name=${name} value=${value}>`)}
+        <label class="flex items-center gap-2 text-sm font-medium"><input type="checkbox" name=${field.name} value=${field.value} class="size-4 cursor-pointer accent-destructive">${__('I trust this plugin with everything in this application')}</label>
+        <button type="submit" name=${submit.name} value=${submit.value} class="inline-flex items-center justify-center rounded-md border-none bg-destructive px-2.5 py-1 text-xs font-medium text-destructive-foreground cursor-pointer">${submit.label}</button>
+    </form>`;
+}

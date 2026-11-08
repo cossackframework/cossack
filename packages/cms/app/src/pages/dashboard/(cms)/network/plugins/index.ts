@@ -3,7 +3,7 @@ import { Badge, Card, CardBody } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { isCmsError, isSameOriginPost } from '@cossackframework/cms';
 import type { NetworkPluginState } from '@cossackframework/cms/server';
-import { artwork, notice, pageHeader } from '../../../../../cms/ui';
+import { artwork, notice, pageHeader, unrestrictedConfirm, unrestrictedNotice } from '../../../../../cms/ui';
 import { requireNetworkAdmin } from '../../../../../cms/guards';
 import { network } from '../../../../../cms/network-ui';
 import { actionButton } from '../../../../../cms/network-view';
@@ -14,6 +14,8 @@ interface NetworkPluginRow {
     description: string;
     logo: string | null;
     state: NetworkPluginState;
+    /** Asks for unrestricted access: a danger notice, and an approval of its own. */
+    unrestricted: boolean;
     /** What the manifest requests. */
     requests: string[];
     /** Requested since a network admin approved it; only for a network-active plugin. */
@@ -45,7 +47,7 @@ export default class NetworkPlugins extends Cossack {
     async init() {
         const status = await network(this.c).main.status();
         this.plugins = status.plugins.filter(plugin => !plugin.themeOnly).map(plugin => ({
-            name: plugin.name, version: plugin.version, description: plugin.description, logo: plugin.logo, state: plugin.network, requests: [...plugin.requests],
+            name: plugin.name, version: plugin.version, description: plugin.description, logo: plugin.logo, state: plugin.network, unrestricted: plugin.unrestricted, requests: [...plugin.requests],
             unapproved: plugin.network === 'network' ? [...plugin.missing] : [],
             problem: plugin.reason?.startsWith('Invalid manifest') ? plugin.reason : '',
         }));
@@ -60,7 +62,7 @@ export default class NetworkPlugins extends Cossack {
         const state = (['network', 'available', 'hidden'] as const).find(entry => entry === form.get('action'));
         try {
             if (!state) throw new Error('Choose a state.');
-            const status = await network(this.c).setPluginState(name, state, { principal: this.c.get('principal') });
+            const status = await network(this.c).setPluginState(name, state, { principal: this.c.get('principal'), unrestricted: form.get('accept-unrestricted') === name });
             flash('network.message', state === 'network' ? `${name}: ${status.active ? __('active on every site.') : status.reason ?? ''}` : `${name}: ${__(STATES[state].label).toLowerCase()}.`);
         } catch (error) {
             flash('network.error', isCmsError(error) ? error.message : `${name} could not be changed.`);
@@ -74,6 +76,8 @@ export default class NetworkPlugins extends Cossack {
             ${pageHeader(__('Network plugins'), { description: __('Plugin code ships with the application. Choose for every site whether a plugin runs everywhere, is each site\'s choice, or stays hidden.') })}
             ${this.message ? notice(this.message, 'success') : null}
             ${this.error ? notice(this.error, 'error') : null}
+            ${this.plugins.filter(plugin => plugin.unrestricted && (plugin.state !== 'network' || plugin.unapproved.length)).map(plugin => unrestrictedNotice(plugin.name,
+                unrestrictedConfirm({ name: 'accept-unrestricted', value: plugin.name }, { name: 'action', value: 'network', label: __('Network activate with unrestricted access') }, { plugin: plugin.name })))}
             ${this.plugins.length ? component(Card, {}, component(CardBody, { class: 'p-0' }, html`<div class="overflow-x-auto"><table class="w-full text-sm">
                 <thead><tr class="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
                     <th class=${th}>${__('Plugin')}</th><th class=${th}>${__('Requests')}</th><th class=${th}>${__('State')}</th><th class=${`${th} text-right`}>${__('Actions')}</th>
@@ -92,9 +96,10 @@ export default class NetworkPlugins extends Cossack {
                         ${plugin.unapproved.length ? html`<p class="mt-1 text-warning-text">${__('Not approved yet')}: ${plugin.unapproved.join(', ')}</p>` : null}
                         ${plugin.problem ? html`<p class="mt-1 text-destructive">${plugin.problem}</p>` : null}
                     </td>
-                    <td class="px-3 py-3">${component(Badge, { variant: STATES[plugin.state].variant }, __(STATES[plugin.state].label))}</td>
+                    <td class="px-3 py-3">${component(Badge, { variant: STATES[plugin.state].variant }, __(STATES[plugin.state].label))}
+                        ${plugin.unrestricted ? html`<div class="mt-1">${component(Badge, { variant: 'destructive' }, __('Unrestricted'))}</div>` : null}</td>
                     <td class="px-3 py-3"><div class="flex flex-wrap justify-end gap-2">
-                        ${plugin.state !== 'network' || plugin.unapproved.length ? actionButton('network', plugin.state === 'network' ? __('Approve and keep active') : __('Network activate'), { plugin: plugin.name }) : null}
+                        ${!plugin.unrestricted && (plugin.state !== 'network' || plugin.unapproved.length) ? actionButton('network', plugin.state === 'network' ? __('Approve and keep active') : __('Network activate'), { plugin: plugin.name }) : null}
                         ${plugin.state !== 'available' ? actionButton('available', plugin.state === 'network' ? __('Network deactivate') : __('Make available'), { plugin: plugin.name }) : null}
                         ${plugin.state !== 'hidden' ? actionButton('hidden', __('Hide'), { plugin: plugin.name }, { danger: true }) : null}
                     </div></td>

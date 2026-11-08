@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { addPlugin, listPlugins, removePlugin, upgradePlugin } from '@cossackframework/scaffold/plugins';
+import { addPlugin, listPlugins, removePlugin, unrestrictedWarning, upgradePlugin } from '@cossackframework/scaffold/plugins';
 import { commandSpecs } from '../command-specs.js';
 import { createCommandOutput, runWithSpec } from '../command-spec.js';
 import { findProjectRoot } from '../fs-utils.js';
@@ -15,8 +15,8 @@ export async function pluginsCommand(args, ctx) {
     const [subcommand, name] = args;
     const root = await findProjectRoot(ctx.cwd);
     if (subcommand === 'list') return listCommand(root, ctx);
-    if (subcommand === 'upgrade') return renderCommand(root, ctx, async () => upgradePlugin(root, name, {
-      ...options(ctx), source: flagString(ctx.flags.source), versions: await installedVersions(root),
+    if (subcommand === 'upgrade') return renderCommand(root, ctx, async consent => upgradePlugin(root, name, {
+      ...options(ctx), ...consent, source: flagString(ctx.flags.source), versions: await installedVersions(root),
     }), name);
     if (subcommand === 'remove') return renderCommand(root, ctx, () => removePlugin(root, name, options(ctx)), name);
     if (subcommand === 'check') return checkCommand(root, ctx, name);
@@ -29,13 +29,13 @@ export async function addPluginCommand(source, ctx) {
   ctx.out ??= createCommandOutput(ctx);
   if (!source) throw Object.assign(new Error('Name a plugin package directory, .tgz tarball or npm package.'), { code: 'COSSACK_ARGUMENT_MISSING' });
   const root = await findProjectRoot(ctx.cwd);
-  return renderCommand(root, ctx, async () => addPlugin(root, source, { ...options(ctx), versions: await installedVersions(root) }), source);
+  return renderCommand(root, ctx, async consent => addPlugin(root, source, { ...options(ctx), ...consent, versions: await installedVersions(root) }), source);
 }
 
 async function listCommand(root, ctx) {
   const { rendered, installed } = await listPlugins(root);
   if (!rendered.length && !installed.length) ctx.out.line('No plugins are rendered or installed.');
-  for (const plugin of rendered) ctx.out.line(`  rendered  ${plugin.name} ${plugin.version} from ${plugin.package} (${plugin.source.type})`);
+  for (const plugin of rendered) ctx.out.line(`  rendered  ${plugin.name} ${plugin.version} from ${plugin.package} (${plugin.source.type})${plugin.unrestricted ? ' UNRESTRICTED: can do anything' : ''}`);
   for (const plugin of installed.filter(entry => !entry.rendered)) {
     ctx.out.line(`  installed ${plugin.package} ${plugin.version}${plugin.problems.length ? ` (invalid: ${plugin.problems.join(' ')})` : ` — render with cossack add plugin ${plugin.package}`}`);
   }
@@ -49,22 +49,50 @@ async function checkCommand(root, ctx, only) {
   const diagnostics = results.flatMap(result => result.diagnostics);
   for (const diagnostic of diagnostics) ctx.out.warn(formatPolicyDiagnostic(diagnostic));
   ctx.out.line(`Checked ${results.length} plugin(s), ${results.reduce((total, result) => total + result.files, 0)} file(s): ${diagnostics.length} problem(s).`);
-  const data = ctx.out.data({ plugins: results.map(result => ({ plugin: result.plugin, files: result.files, errors: result.diagnostics.length })) });
-  return diagnostics.length
-    ? { exitCode: 1, data, diagnostics: diagnostics.map(diagnostic => ({ ...diagnostic })) }
+  const isError = diagnostic => diagnostic.severity === 'error';
+  const data = ctx.out.data({ plugins: results.map(result => ({ plugin: result.plugin, files: result.files, errors: result.diagnostics.filter(isError).length,
+    ...(result.diagnostics.some(diagnostic => diagnostic.code === 'COSSACK_PLUGIN_UNRESTRICTED') ? { unrestricted: true } : {}) })) });
+  return diagnostics.some(isError)
+    ? { exitCode: 1, data, diagnostics: diagnostics.filter(isError).map(diagnostic => ({ ...diagnostic })) }
     : data;
 }
 
-async function renderCommand(root, ctx, run, subject) {
-  let result;
-  try { result = await run(); }
+/**
+ * Rendering stops at a plugin asking for unrestricted access until someone accepts it: its code
+ * can run as soon as the application starts. A terminal asks, defaulting to no; anything else
+ * needs --allow-unrestricted, and --yes and --force do not count.
+ */
+async function renderWithConsent(run, ctx, seen) {
+  try { return await run({ allowUnrestricted: ctx.flags['allow-unrestricted'] === true }); }
   catch (error) {
+    if (error?.code !== 'COSSACK_PLUGIN_UNRESTRICTED') throw error;
+    ctx.out.warn(error.message);
+    seen.warning = true;
+    if (ctx.flags.json === true || !process.stdin.isTTY || !process.stdout.isTTY) throw error;
+    const { default: prompts } = await import('prompts');
+    const { accepted } = await prompts({ type: 'confirm', name: 'accepted', message: 'Install this plugin anyway?', initial: false });
+    if (accepted !== true) throw error;
+    return run({ allowUnrestricted: true });
+  }
+}
+
+async function renderCommand(root, ctx, run, subject) {
+  const seen = { warning: false };
+  let result;
+  try { result = await renderWithConsent(run, ctx, seen); }
+  catch (error) {
+    if (error?.code === 'COSSACK_PLUGIN_UNRESTRICTED') {
+      const hint = 'Nothing was rendered. Pass --allow-unrestricted to accept this.';
+      ctx.out.warn(hint);
+      return { exitCode: 1, data: ctx.out.data({ subject, unrestricted: true }), diagnostics: [{ code: error.code, severity: 'error', message: `${error.message} ${hint}` }] };
+    }
     if (error?.code === 'COSSACK_PLUGIN_CONFLICT') {
       ctx.out.warn(error.message);
       return { exitCode: 1, data: ctx.out.data({ subject, conflicts: error.conflicts }), diagnostics: [{ code: error.code, severity: 'error', message: error.message, conflicts: error.conflicts }] };
     }
     throw Object.assign(new Error(error.message), { code: error.code ?? 'COSSACK_PLUGIN_FAILED' });
   }
+  if (result.unrestricted && !seen.warning) ctx.out.warn(unrestrictedWarning(result.name));
   const planned = result.status === 'dry-run';
   for (const change of result.changes.writes) ctx.out.file(planned ? 'planned' : change.overwrite ? 'overwritten' : 'created', path.join(root, change.path));
   for (const change of result.changes.deletes) ctx.out.file(planned ? 'planned-delete' : 'deleted', path.join(root, change.path));
@@ -77,6 +105,7 @@ async function renderCommand(root, ctx, run, subject) {
   return ctx.out.data({
     name: result.name, status: result.status,
     ...(result.version ? { version: result.version, package: result.package, from: result.from } : {}),
+    ...(result.unrestricted ? { unrestricted: true } : {}),
     preserved: result.changes.preserved.map(change => change.path),
     dependencies,
     nextActions: !planned && dependencies.length ? ['pnpm install'] : [],
@@ -108,11 +137,17 @@ read as data and never executed; npm installs run with --ignore-scripts.
                      package.json#cossack.plugin but are not rendered yet.
   check [name]       Policy lints: no raw RomeQL, no undeclared network hosts,
                      permissions, resources or hooks, no host secrets. Builds
-                     with the cms feature run the same checks.
+                     with the cms feature run the same checks. A plugin with
+                     permissions.unrestricted skips them and gets a warning.
   upgrade <name>     Re-render from the recorded source, or from --source.
                      Files you edited are kept; an edited file that also
                      changed upstream is a conflict unless you pass --force.
   remove <name>      Delete the plugin's unedited files.
+
+A plugin that asks for unrestricted access can do anything in the application,
+and its code can run as soon as the application starts. Rendering it stops
+with a danger message: a terminal asks, and anything else needs
+--allow-unrestricted.
 
 .cossack/plugins.json records each plugin's source and file hashes.`);
 }

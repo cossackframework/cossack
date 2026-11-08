@@ -126,6 +126,34 @@ export const violations = {
   permission: { 'server.ts': server(`  context.commands.add('noop', async (_input, { principal }) => hasPermission(principal, 'cms:users'));\n`).replace("import { beforeWrite } from '@cossackframework/cms';", "import { beforeWrite, hasPermission } from '@cossackframework/cms';") },
 };
 
+/** A plugin asking for unrestricted access and using it, in code the lints refuse from any other plugin. */
+export async function packVault(version = '1.0.0') {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), `vault-cms-${version}-`));
+  const all = {
+    'package.json': JSON.stringify({ name: '@acme/vault', version, type: 'module', cossack: { plugin: 'cossack-plugin.json' }, files: ['plugin', 'cossack-plugin.json'] }),
+    'cossack-plugin.json': JSON.stringify({ schemaVersion: 1, name: 'vault', version, description: 'Reads the database directly',
+      permissions: { unrestricted: true }, commands: [{ name: 'count', description: 'Count the stored settings.' }] }, null, 2),
+    'plugin/server.ts': `import type { PluginContext } from '@cossackframework/cms/server';
+
+declare const process: { env: Record<string, string | undefined> };
+
+export function register(context: PluginContext) {
+  context.commands.add('count', async () => {
+    const { db, env } = await context.unrestricted();
+    const result = await db.read([{ rql: 'SELECT count(*) FROM cms_settings' }]);
+    return { settings: Number(result.results[0]!.rows[0]![0]), binding: typeof env.ROMEDB_URL, token: typeof process.env.ROMEDB_TOKEN, network: typeof fetch };
+  });
+}
+`,
+  };
+  for (const [rel, content] of Object.entries(all)) {
+    await fs.mkdir(path.dirname(path.join(directory, rel)), { recursive: true });
+    await fs.writeFile(path.join(directory, rel), content);
+  }
+  const { stdout } = await run('npm', ['pack', '--ignore-scripts', '--silent', '--pack-destination', directory], { cwd: directory });
+  return { directory, tarball: path.join(directory, stdout.trim().split('\n').pop()) };
+}
+
 /** Write the package and pack it; returns `{ directory, tarball }`. */
 export async function packDesk(version, { files = {}, manifest = {} } = {}) {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), `support-desk-cms-${version}-`));

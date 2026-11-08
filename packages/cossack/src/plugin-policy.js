@@ -10,6 +10,9 @@
  * - COSSACK_PLUGIN_SECRET: no host secrets or `process.env`.
  * - COSSACK_PLUGIN_HOOK: handlers only for extension points the manifest declares.
  *
+ * A plugin with `permissions.unrestricted` passes all of these except parsing, and gets the
+ * warning COSSACK_PLUGIN_UNRESTRICTED instead. These lints read honest code; they are not a sandbox.
+ *
  * Source is parsed, never executed.
  */
 import fs from 'node:fs/promises';
@@ -46,7 +49,7 @@ export function lintPlugin({ manifest, files, parse }) {
   const hooks = new Set((manifest?.hooks ?? []).map(hook => hook.point));
   // Capabilities the manifest asks for; a context member used without its permission is a lint error, as the host would refuse it.
   const permissions = manifest?.permissions ?? {};
-  const capabilities = { files: permissions.files === true, mail: permissions.mail === true, jobs: permissions.jobs === true, cache: permissions.cache === true, ai: permissions.ai === true, payments: permissions.payments === true,
+  const capabilities = { files: permissions.files === true, mail: permissions.mail === true, jobs: permissions.jobs === true, cache: permissions.cache === true, ai: permissions.ai === true, unrestricted: permissions.unrestricted === true, payments: permissions.payments === true,
     users: Array.isArray(permissions.users) && permissions.users.length > 0, secrets: Array.isArray(permissions.secrets) && permissions.secrets.length > 0 };
   const secrets = new Set(Array.isArray(permissions.secrets) ? permissions.secrets : []);
   const ownPermission = permission => [...own].some(id => ['*', 'read', 'create', 'update', 'delete'].some(action => permission === `${id}:${action}`));
@@ -54,10 +57,14 @@ export function lintPlugin({ manifest, files, parse }) {
 
   // Manifest data that names permissions.
   const manifestFile = `src/plugins/${name}/plugin.json`;
+  const unrestricted = permissions.unrestricted === true;
   const report = (file, code, message, offset = 0, source = '') => {
+    if (unrestricted && code !== 'COSSACK_PLUGIN_PARSE') return;
     const { line, column } = position(source, offset);
     diagnostics.push({ code, severity: 'error', plugin: name, file, line, column, message });
   };
+  if (unrestricted) diagnostics.push({ code: 'COSSACK_PLUGIN_UNRESTRICTED', severity: 'warning', plugin: name, file: manifestFile, line: 1, column: 1,
+    message: `${name} has unrestricted access: its code skips these checks and can do anything in this application.` });
   for (const command of manifest?.commands ?? []) if (command.permission && !knownPermission(command.permission)) report(manifestFile, 'COSSACK_PLUGIN_PERMISSION', `Command ${command.name} requires ${command.permission}, which the manifest does not define.`);
   for (const [slot, links] of Object.entries(manifest?.ui?.slots ?? {})) for (const link of links ?? []) {
     if (link.permission && !knownPermission(link.permission)) report(manifestFile, 'COSSACK_PLUGIN_PERMISSION', `Slot ${slot} link ${link.label} requires ${link.permission}, which the manifest does not define.`);
@@ -224,7 +231,9 @@ export function cossackPluginPolicy() {
     configResolved(config) { root = config.root; },
     async buildStart() {
       const results = await lintProjectPlugins(root);
-      const diagnostics = results.flatMap(result => result.diagnostics);
+      const all = results.flatMap(result => result.diagnostics);
+      const diagnostics = all.filter(diagnostic => diagnostic.severity === 'error');
+      for (const warning of all.filter(diagnostic => diagnostic.severity !== 'error')) this.warn(`[cossack] Plugin policy: ${formatPolicyDiagnostic(warning)}`);
       if (!diagnostics.length) return;
       const message = `[cossack] Plugin policy:\n${diagnostics.map(formatPolicyDiagnostic).join('\n')}`;
       if (this.environment?.mode === 'dev') this.warn(message);

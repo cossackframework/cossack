@@ -9,6 +9,7 @@ import { CmsError } from '../errors';
 import { LOCALE } from '../collections';
 import { slugify } from '../fields';
 import { DEFAULT_ROLES, isNetworkAdmin, principalId, systemPrincipal, type Principal } from '../permissions';
+import { unrestrictedGrantAudit } from './audit';
 import { PLUGIN_ENABLED, type CmsHost, type PluginStatus } from './host';
 import { pluginState, POLICY_KEYS, readPolicy, type NetworkPluginState, type NetworkPolicy, type NetworkThemeState, type StoredPluginStates, type StoredThemeStates } from './network-policy';
 import { CmsHandoffs } from './handoffs';
@@ -402,15 +403,17 @@ export class CmsNetwork {
      * now, and each site migrates it as it loads; an upgrade that requests more waits until a
      * network admin sets it again. Hosts in other isolates see the change within their activation TTL.
      */
-    async setPluginState(name: string, state: NetworkPluginState, context: { principal: Principal }): Promise<PluginStatus> {
+    async setPluginState(name: string, state: NetworkPluginState, context: { principal: Principal; unrestricted?: boolean }): Promise<PluginStatus> {
         requireNetworkAdmin(context.principal);
         const plugin = (await this.main.status()).plugins.find(entry => entry.name === name && !entry.themeOnly);
         if (!plugin) throw new CmsError('CMS_NOT_FOUND', `Unknown plugin ${name}.`);
         if (state === 'network' && plugin.reason?.startsWith('Invalid manifest')) throw new CmsError('CMS_VALIDATION', `${name} cannot be activated: ${plugin.reason}`);
+        if (state === 'network' && plugin.unrestricted && !context.unrestricted) throw new CmsError('CMS_CONFLICT', `Plugin ${name} was not enabled: unrestricted access has to be confirmed on its own.`);
         const stored: StoredPluginStates = { ...await this.state<StoredPluginStates>(POLICY_KEYS.plugins) };
         if (state === 'available') delete stored[name];
         else stored[name] = state === 'network' ? { state, grants: plugin.requests.filter(grant => grant !== PLUGIN_ENABLED) } : { state };
         await this.setState(POLICY_KEYS.plugins, stored);
+        if (state === 'network' && plugin.unrestricted) await this.main.db.write([unrestrictedGrantAudit(name, principalId(context.principal), this.#now())], { kind: 'cms.grants' });
         this.#expireHosts();
         await this.main.ready();
         return (await this.main.status()).plugins.find(entry => entry.name === name)!;

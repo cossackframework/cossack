@@ -78,6 +78,8 @@ describe.skipIf(!live)('importing a site export into a new site', () => {
 
     it('imports into a new added site: settings, collections and entries, members with accounts', async () => {
         const copy = await hostOf('copy.example.com');
+        // A plugin's grants come along, but unrestricted access is granted where it runs.
+        await blog.db.write([{ rql: "INSERT INTO cms_grants (id, subject, permission, revision, created_at) VALUES ('raw-1', 'plugin:raw', 'plugin:enabled', 1, 1), ('raw-2', 'plugin:raw', 'capability:unrestricted', 1, 1)" }], { kind: 'test' });
         const report = await siteImport(copy, bytes(await exported(blog, 'blog')));
         expect(report).toMatchObject({ site: { id: 'blog', name: 'Blog', host: 'blog.example.com' }, skipped: [] });
         expect(report.rows).toBeGreaterThan(10);
@@ -101,6 +103,7 @@ describe.skipIf(!live)('importing a site export into a new site', () => {
         expect(hook[0]).toMatch(/^[0-9a-f]{64}$/);
         expect(hook[1]).toBe(0n);
         expect((await copy.db.read([{ rql: 'SELECT count(*) FROM cms_outbox' }])).results[0]!.rows[0]![0]).toBe(0n);
+        expect((await copy.db.read([{ rql: "SELECT permission FROM cms_grants WHERE subject = 'plugin:raw'" }])).results[0]!.rows).toEqual([['plugin:enabled']]);
     }, 60_000);
 
     it('refuses a site with content, a second import, and files that are not exports', async () => {

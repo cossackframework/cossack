@@ -137,7 +137,9 @@ copies one UI component into src/components/ui/.
 
 \`cossack add plugin <source>\` renders a plugin package into
 src/plugins/<name>/ (see \`cossack plugins --help\`). The package is read as
-data and never executed.
+data and never executed. A plugin that asks for unrestricted access can do
+anything in the application, so it stops with a danger message until you
+accept it, or pass --allow-unrestricted.
 
 Run \`pnpm install\` afterwards to install new dependencies. Features that
 include the database also need \`cossack migration up\`.`);

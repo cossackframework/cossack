@@ -33,8 +33,10 @@ export interface PluginCommand {
 /** What `permissions.users` lets a plugin do with the site's members. */
 export type UserAction = 'read' | 'write';
 /** Capabilities a manifest switches on in `permissions`; each is the grant `capability:<name>`. */
-export const CAPABILITIES = Object.freeze(['files', 'mail', 'jobs', 'cache', 'ai', 'payments'] as const);
+export const CAPABILITIES = Object.freeze(['files', 'mail', 'jobs', 'cache', 'ai', 'payments', 'unrestricted'] as const);
 export type Capability = (typeof CAPABILITIES)[number];
+/** The grant that lifts every limit, from `permissions.unrestricted`. */
+export const UNRESTRICTED_GRANT = 'capability:unrestricted';
 /** A job the clock queues: `cron` is five UTC fields as Cloudflare reads them (1 = Sunday); `name` is the job handler. */
 export interface PluginSchedule {
     readonly name: string;
@@ -133,6 +135,8 @@ export interface CmsPluginManifest {
         readonly ai?: boolean;
         /** Checkouts with the application's payments provider, through `context.payments`; `cms.payment.event` brings the results. */
         readonly payments?: boolean;
+        /** No limits: `context.unrestricted()` gives the database, the host and every binding, and the policy lint steps aside. Installing and granting it each carry a danger warning. */
+        readonly unrestricted?: boolean;
         /** The site's members through `context.users`: `read` them; `write` creates members and keeps the plugin's meta on them. */
         readonly users?: readonly UserAction[];
         /** Names of the application's bindings the plugin reads through `context.secrets`, such as `STRIPE_SECRET_KEY`. */
@@ -332,7 +336,7 @@ export function manifestProblems(manifest: unknown): string[] {
     }
     const schedules = Array.isArray(value.schedules) ? value.schedules : value.schedules === undefined ? [] : [null];
     if (schedules.length > 20) problems.push('schedules: at most 20.');
-    if (schedules.length && permissions.jobs !== true) problems.push('schedules need permissions.jobs.');
+    if (schedules.length && permissions.jobs !== true && permissions.unrestricted !== true) problems.push('schedules need permissions.jobs.');
     const scheduleNames = new Set<string>();
     for (const [index, schedule] of schedules.entries()) {
         if (!schedule || typeof schedule !== 'object') { problems.push(`schedules[${index}] must be an object.`); continue; }
