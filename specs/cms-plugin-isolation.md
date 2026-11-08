@@ -44,7 +44,9 @@ in app (linted), unrestricted (warned).
 - **The bridge goes in with each call.** Every call passes a stub of `PluginBridge`, a
   `WorkerEntrypoint` the application exports, made with `ctx.exports.PluginBridge({ props })`.
   The props are the site, the plugin and the call's deadline, which plugin code cannot see or
-  forge. A stub the plugin keeps stops working after the deadline. The bridge opens the site's
+  forge. The platform scopes a stub to its call, so a kept stub fails in any later call, and the
+  bridge refuses calls past the deadline, which ends a call the host stopped waiting for. Errors
+  cross with their `code`, so `CMS_FORBIDDEN` reaches the host as it does today. The bridge opens the site's
   host as a request does and serves the context the host builds for the plugin today, method by
   method from an allow list. It never serves `unrestricted`. The host's grant checks stay where
   they are, but they become the boundary, so each bridge method gets a test.
@@ -60,12 +62,13 @@ in app (linted), unrestricted (warned).
 - **The network is `context.fetch` only.** `globalOutbound: null` makes the global `fetch` and
   `connect` throw. `context.fetch` goes through the bridge and its existing host check. The lint
   rule becomes enforcement.
-- **Limits per call.** `getEntrypoint(null, { limits })` caps CPU and subrequests per call, with
-  separate defaults for hooks and for commands, jobs and schedules, set in `createCMS`. The
-  first step decides the numbers. A plugin that reaches a limit fails that call, and the
-  request goes on as after any failed handler. Hooks already run one plugin at a time, and the
-  runner keeps at most four distinct isolated plugins in flight per request, the platform's
-  limit.
+- **Limits per call.** `getEntrypoint(undefined, { limits })` caps CPU and subrequests per call:
+  50 ms and 50 for hooks, 1,000 ms and 1,000 for commands, jobs and schedules, both changeable in
+  `createCMS`. Miniflare enforces neither, so the host's own deadlines are what tests see, and
+  the numbers are a first guess to check on Cloudflare. A plugin that reaches a limit fails that
+  call, and the request goes on as after any failed handler. Hooks already run one plugin at a
+  time, and the runner keeps at most four distinct isolated plugins in flight per request, the
+  platform's limit, which Miniflare does not enforce either.
 - **The binding arrives with the first isolated plugin.** Dynamic Workers need Workers Paid, so
   `cossack add cms` does not add them. `cossack add plugin` adds `worker_loaders` and the
   `PluginBridge` export to a Cloudflare application the first time it adds an isolated plugin,
@@ -129,3 +132,10 @@ in app (linted), unrestricted (warned).
 - [EmDash plugin formats](https://docs.emdashcms.com/plugins/creating-plugins/choosing-a-format/)
   and [sandbox](https://docs.emdashcms.com/deployment/plugin-sandbox/): the same split between
   sandboxed server code and native plugins with UI.
+
+## Outcome
+
+| Area | Delivered | Verified by |
+| --- | --- | --- |
+| Step 1, measurements (2026-11-08) | Miniflare 4.20260722 in the CMS package's tests. Locally a cold call takes about 8 ms and a warm one about 1 ms. `LOADER.get` loads once per ID across sites, `AsyncLocalStorage` keeps concurrent calls apart under `nodejs_als`, the isolate sees no env, imported env or `process.env`, and `globalOutbound: null` blocks `fetch` and `connect`. A stub fails outside its call with "Cannot perform I/O on behalf of a different request", errors keep their `code`, and tails receive the plugin's logs. CPU and subrequest limits and the four in flight are not enforced locally. | `tests/worker-loader.test.ts`, three runs |
+

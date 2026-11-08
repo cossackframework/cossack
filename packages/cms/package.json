@@ -38,6 +38,7 @@
     "@types/markdown-it": "^14.2.0",
     "@types/node": "^22.19.0",
     "hono": "^4.13.7",
+    "miniflare": "4.20260722.0",
     "simple-icons": "16.36.0",
     "vitest": "^4.1.12"
   },
