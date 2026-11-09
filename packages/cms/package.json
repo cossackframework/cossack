@@ -30,7 +30,7 @@
     "@cossackframework/core": "workspace:*",
     "@cossackframework/renderer": "workspace:*",
     "@cossackframework/romedb": "workspace:*",
-    "markdown-it": "15.0.2"
+    "markdown-it": "15.0.3"
   },
   "peerDependencies": {
     "hono": "^4.13.7"

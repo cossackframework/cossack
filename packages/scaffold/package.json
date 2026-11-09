@@ -45,7 +45,7 @@
       "@electron-forge/maker-wix": "^8.0.1",
       "@electron-forge/shared-types": "^8.0.1",
       "@electron/rebuild": "^4.2.0",
-      "@hono/node-server": "^2.0.5",
+      "@hono/node-server": "^2.1.6",
       "@romedb/client": "0.2.18",
       "@romedb/node": "0.2.18",
       "@simplewebauthn/browser": "14.0.0",

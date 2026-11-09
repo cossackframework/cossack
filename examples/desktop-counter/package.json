@@ -25,7 +25,7 @@
     "@cossackframework/node-adapter": "workspace:*",
     "@cossackframework/renderer": "workspace:*",
     "@cossackframework/ui": "workspace:*",
-    "@hono/node-server": "^2.0.5",
+    "@hono/node-server": "^2.1.6",
     "@tailwindcss/vite": "^4.3.3",
     "hono": "^4.13.7",
     "tailwindcss": "^4.3.3",
