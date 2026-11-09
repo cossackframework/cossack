@@ -54,10 +54,14 @@ describe('RomeDB binding', () => {
         const ID = '00000000-0000-4000-8000-000000000002';
         const CLOUD = `https://cloud.romedb.com/v1/organizations/00000000-0000-4000-8000-000000000001/databases/${ID}`;
         const files: string[] = [];
-        const reach = (engine: string) => (async (input: RequestInfo | URL) => {
+        const JOB = '00000000-0000-4000-8000-000000000003';
+        // Cloud builds the file in a job: start it, read its state, then download what it built.
+        const reach = (engine: string) => (async (input: RequestInfo | URL, init?: RequestInit) => {
             const url = String(input);
-            if (!url.includes('/file')) return json({ ...details(engine), id: ID });
-            files.push(url);
+            if (!url.includes('/file-exports')) return json({ ...details(engine), id: ID });
+            files.push(`${init?.method ?? 'GET'} ${url}`);
+            if (init?.method === 'POST') return json({ id: JOB, state: 'running' }, 202);
+            if (url.endsWith(`/file-exports/${JOB}`)) return json({ id: JOB, state: 'ready' });
             return new Response('file', { headers: { 'content-type': 'application/vnd.romedb.database', 'content-length': '4', 'x-romedb-sequence': '10', 'x-romedb-database-id': ID } });
         }) as typeof globalThis.fetch;
         // Cloud connections defer their details, so nothing else has checked the engine yet.
@@ -69,7 +73,7 @@ describe('RomeDB binding', () => {
         const file = await current.exportFile({ emptyTables: ['cms_cache', 'cms_sessions'] });
         expect(file.size).toBe(4);
         expect(await new Response(file.body).text()).toBe('file');
-        expect(files).toEqual([`${CLOUD}/file?empty=cms_cache,cms_sessions`]);
+        expect(files).toEqual([`POST ${CLOUD}/file-exports?empty=cms_cache,cms_sessions`, `GET ${CLOUD}/file-exports/${JOB}`, `GET ${CLOUD}/file-exports/${JOB}/file`]);
     });
 
     it('sends explicit work limits by default', async () => {
