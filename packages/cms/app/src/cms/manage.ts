@@ -8,12 +8,14 @@
 import type { Context } from 'hono';
 import {
     BLOCK_ID, checkNoteRange, CmsError, CONTENT_STATUSES, findBlock, hasPermission, indexedRowField, isNetworkAdmin, MAIN_SITE, MENU_LIMITS, menuItemId, noteThreads, PERMISSIONS, recordSchema, recordTitle, richTextBlocks,
+    ANONYMOUS, type SnippetPart,
     type Block, type FieldFilter, type MenuItem, type MenuShape, type Note, type NoteThread, type Principal, type RecordShape, type RichTextDoc, redirectProblems, type Redirect, type RedirectStatus, type FieldDeclaration, WEBHOOK_EVENTS, COMMENT_STATUSES, type Webhook, type CommentShape, type CommentStatus } from '@cossackframework/cms';
 import { networkSite, type ApiToken, type CmsHost, type NetworkSite, type SiteRecord } from '@cossackframework/cms/server';
 import { createApiToken, listApiTokens, manageableHere, NETWORK_ACCOUNT_LOCKED, revokeApiToken, type PublicUser } from '../auth';
 import { canAssignRoles, canManageUser } from '../services/rbac';
 import { changeUserPassword, createUser, deleteUser, getUser, listUsers, syncUserRoles, updateUser, type UserDetail, type UserSummary } from '../services/users';
 import { apiEntries, apiPatterns, type ApiEntry } from './content-api';
+import { entryLock } from './site';
 import { assertNotesResolved, findMedia, routeResource } from './content';
 import { siteUrl, type CmsBindings } from './index';
 import { announceNote } from './notes-announce';
@@ -240,7 +242,10 @@ export async function entriesList(c: Context, name: string, query: Query): Promi
     const q = (query.q ?? '').trim().slice(0, 200);
     const html = query.format === 'html';
     if (q) {
-        const records = await repository.search(q, { limit: perPage, where }, { principal });
+        // A locked entry the reader may not open stays out: that it matched would tell what its content says.
+        const signedIn = principal.kind === 'user';
+        const records = (await repository.search(q, { limit: perPage, where }, { principal }))
+            .filter(record => !entryLock(record, { editor: repository.canUpdate(record, principal), signedIn, roles: signedIn ? principal.roles : [] }));
         return { items: await apiEntries(cms, collection, records, html, principal), page: 1, pages: 1, total: records.length };
     }
     // `sort=publishedAt:asc`, `sort=title`: a scalar field of the collection; the default follows what is listed.
@@ -252,6 +257,42 @@ export async function entriesList(c: Context, name: string, query: Query): Promi
     ]);
     const items = await apiEntries(cms, collection, list.records, html, principal);
     return { items: pickFields(items, query.fields), page, pages: Math.max(1, Math.ceil(total / perPage)), total };
+}
+
+/** One result of the site's search. */
+export interface SearchItem { collection: string; id: string; title: string; url: string | null; snippet: readonly SnippetPart[] }
+
+/**
+ * The site's search, as its visitors get it: published entries they may read, of every
+ * collection (or `collection=`), best first, with snippets. `q` is what someone typed; every
+ * word is required, and when nothing has them all, `loose` answers with any of them.
+ */
+export async function siteSearch(c: Context, query: Query): Promise<{ items: SearchItem[]; page: number; next: boolean; loose: boolean }> {
+    const cms = c.get('cms');
+    const q = (query.q ?? '').trim().slice(0, 200);
+    const page = integer(query.page, 1, 1, 1000);
+    const perPage = integer(query.perPage, 10, 1, 50);
+    const languages = await cms.languages();
+    if (query.locale && !languages.all.includes(query.locale)) throw new CmsError('CMS_VALIDATION', `${query.locale} is not one of the site's languages.`);
+    const only = query.collection ? [cms.collection(query.collection).name] : undefined;
+    const found = await cms.siteSearch.search(q, { page, perPage, ...(languages.multilingual ? { locale: query.locale || languages.default } : {}), ...(only ? { collections: only } : {}) });
+    const byCollection = new Map<string, string[]>();
+    for (const hit of found.hits) byCollection.set(hit.collection, [...byCollection.get(hit.collection) ?? [], hit.id]);
+    const shown = new Map<string, { title: string; url: string | null }>();
+    for (const [name, ids] of byCollection) {
+        const collection = cms.collections().find(entry => entry.name === name);
+        if (!collection) continue;
+        // Read as a visitor: the index is what visitors find, whoever asks.
+        const records = [...(await cms.resource(`cms/${name}`).getMany(ids, { principal: ANONYMOUS })).values()]
+            .filter(record => !entryLock(record, { editor: false, signedIn: false, roles: [] }));
+        const urls = await cms.entryUrls(collection, records);
+        for (const record of records) shown.set(`${name}:${record.id}`, { title: recordTitle(record, 'title'), url: urls.get(record.id) ?? null });
+    }
+    const items = found.hits.flatMap(hit => {
+        const entry = shown.get(`${hit.collection}:${hit.id}`);
+        return entry ? [{ collection: hit.collection, id: hit.id, ...entry, snippet: hit.snippet }] : [];
+    });
+    return { items, page, next: found.next, loose: found.loose };
 }
 
 /** `sort=field` or `sort=field:desc` on a scalar field the collection declares; null for none, an error for a field it cannot sort on. */

@@ -128,6 +128,20 @@ event, guarded by the operation ID so a stale edit writes nothing. After commit,
 delivers `cms.resource.after-commit` to plugins, webhooks and notifications, with retries
 per plugin.
 
+**Search.** Each collection with `search` fields has a RomeDB full-text index over them, which
+the dashboard's lists and pickers and the content API's `q` read. The site's search reads one
+more index, `cms_search` (host step 7): a document per entry visitors may read (published, not
+protected, not members-only, in a collection with a path), with its title and the plain text of
+its searchable fields. The entry's batch writes or removes that document, so it is never behind;
+`cms.siteSearch.rebuild()` (Tools → Health → Rebuild) clears and fills it from the outbox, 200
+entries a round, and runs after a site import and when a collection's path or searched fields
+change. One index ranks every collection together and holds nothing locked. Search takes what
+people type (`searchQuery` in `@cossackframework/cms`): every word is required, `"phrases"` and
+`-word` work, and anything else (`NOT`, `title:`, `*`) is plain text, so no query fails. When
+nothing has every word, the site's search answers with any of them (`loose`). RomeDB does not
+yet do prefix search (`hel` finds `hello`), field weights, stemming or accent folding, or filters
+before ranking; the proposals are in RomeDB's own plans.
+
 ## Where to extend
 
 | You want to | Do this |

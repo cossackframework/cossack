@@ -9,7 +9,7 @@ import {
     type AuthorView, type Block,
     type Principal, type TemplatePage, type ThemeData, type ThemePresets,
     type ArchiveView, type BodyPart, type BrandIcon, type CollectionDefinition, type CommentShape, type CommentView, type CommentsView, type EntryReference, type EntryView, type FieldDeclaration, type FieldFilter,
-    type BreadcrumbView, type FieldView, type LanguageLink, type MediaView, type MenuItemView, type RecordShape, type RenderedBlock, type ResolvedMenuItem, type RichTextDoc, type SiteSettings, type SiteView, type TermLink, type TermShape,
+    type BreadcrumbView, type FieldView, type LanguageLink, type MediaView, type MenuItemView, type Paging, type RecordShape, type RenderedBlock, type ResolvedMenuItem, type RichTextDoc, type SiteSettings, type SiteView, type TermLink, type TermShape,
 } from '@cossackframework/cms';
 import { brandIcon, excerptOf, renderMarkdown, type CmsFile, type CmsHost, type CmsUser, type LoadedForm, type SiteLanguages } from '@cossackframework/cms/server';
 import type { FormView } from '@cossackframework/cms';
@@ -1128,21 +1128,36 @@ export async function authorArchive(cms: CmsHost, user: CmsUser, page: number, b
     return { entries, paging: { page, pages: Math.max(1, Math.ceil(total / perPage)), base }, collection: collections.length === 1 ? collections[0]!.name : null };
 }
 
-/** Published entries of every collection on the site that match the query, in one language. */
-export async function searchEntries(cms: CmsHost, query: string, locale?: string): Promise<EntryView[]> {
+/**
+ * One page of the site's search: entries visitors may read, from every collection, best first,
+ * with snippets, in the page's language. `base` is the first page's URL (`/search?q=…`).
+ */
+export async function searchEntries(cms: CmsHost, query: string, options: { locale?: string; page?: number; base: string }): Promise<{ entries: EntryView[]; paging: Paging; loose: boolean }> {
     const languages = await cms.languages();
-    const results: EntryView[] = [];
-    for (const collection of cms.collections()) {
-        const resource = cms.resourceById(`cms/${collection.name}`);
-        if (collection.path === null || collection.path === undefined || !Object.values(resource.fields).some(field => field.search)) continue;
-        try {
-            const where = { ...(collection.publishable === false ? {} : { status: 'published' }), ...localeWhere(languages, locale ?? languages.default) };
-            const records = await cms.resource(resource.id).search(query, { limit: 10, where }, visitor);
-            // Protected entries match on their content, which visitors cannot read: they stay out.
-            results.push(...await entryViews(cms, collection, records.filter(record => !isProtected(record) && !isMembersOnly(record))));
-        } catch (error) { if (!isCmsError(error)) throw error; }
+    const page = options.page ?? 1;
+    const none = { entries: [], paging: { page, pages: page, base: options.base }, loose: false };
+    const perPage = Math.min(await cms.settings.get('reading.postsPerPage'), 50);
+    const found = await cms.siteSearch.search(query, { page, perPage, ...(languages.multilingual ? { locale: options.locale ?? languages.default } : {}) })
+        .catch(error => { if (isCmsError(error)) return null; throw error; });
+    if (!found) return none;
+    // The hits load as the visitor, who may still be refused one; they render in score order.
+    const byCollection = new Map<string, string[]>();
+    for (const hit of found.hits) byCollection.set(hit.collection, [...byCollection.get(hit.collection) ?? [], hit.id]);
+    const views = new Map<string, EntryView>();
+    for (const [name, ids] of byCollection) {
+        const collection = cms.collections().find(entry => entry.name === name);
+        if (!collection) continue;
+        const records = await cms.resource(`cms/${name}`).getMany(ids, visitor);
+        const readable = ids.map(id => records.get(id)).filter((record): record is RecordShape => record !== undefined && !isProtected(record) && !isMembersOnly(record));
+        for (const view of await entryViews(cms, collection, readable)) views.set(`${name}:${view.id}`, view);
     }
-    return results;
+    const entries = found.hits.flatMap(hit => { const view = views.get(`${hit.collection}:${hit.id}`); return view ? [{ ...view, snippet: hit.snippet }] : []; });
+    return { entries, paging: { page, pages: found.next ? page + 1 : page, base: options.base }, loose: found.loose };
+}
+
+/** The search page's own URL for a query: `?q=` on the search path, and `page=N` after it. */
+export function searchBase(path: string, query: string): string {
+    return query ? `${path}?q=${encodeURIComponent(query)}` : path;
 }
 
 /**

@@ -15,8 +15,9 @@ import { blockId, blockMedia, blocksPlain, flattenBlocks, htmlBlocksChanged, val
 import { fieldVisibility, indexedRowField, rowIndexPath, rowsPlain, rowsSearchable, rowUniqueProblem, withRowIds } from '../field-groups';
 import { normalizeRichText, richTextBlocks, richTextMedia, richTextPlain, withRichTextBlocks, type RichTextDoc } from '../richtext';
 import { searchedAsText, searchTextPath } from './schema';
+import { isSearchSyntaxError, searchQuery } from '../search';
 import { afterCommit, beforeWrite, type Draft, type ResourceEvent, type WriteActor } from '../hooks';
-import { evaluateRule, hasPermission, PERMISSIONS, principalId, ruleScope, type Principal, type RecordScope } from '../permissions';
+import { ANONYMOUS, evaluateRule, hasPermission, PERMISSIONS, principalId, ruleScope, type Principal, type RecordScope } from '../permissions';
 import type { FieldFilter, ListFilter, ListOptions, RecordPage, RecordShape, RevisionShape } from '../records';
 
 export type { FieldFilter, ListFilter, ListOptions };
@@ -129,18 +130,25 @@ export class ResourceRepository {
     }
 
     /**
-     * Full-text search over `search: true` fields. Owner-scoped readers search only their
-     * records: allowed IDs are computed first and every hit is checked again in the same query.
+     * Full-text search over `search: true` fields, for what a person typed (`searchQuery`): every
+     * word by default, any word with `match: 'any'`. Empty when nothing searchable was typed.
+     * Owner-scoped readers search only their records: allowed IDs are computed first and every
+     * hit is checked again in the same query. `offset + limit` stays within RomeDB's 10000 hits.
      */
-    async search(query: string, options: ListFilter & { limit?: number }, context: OperationContext): Promise<RecordShape[]> {
+    async search(query: string, options: ListFilter & { limit?: number; offset?: number; match?: 'all' | 'any' }, context: OperationContext): Promise<RecordShape[]> {
         const access = await this.#authorize('read', context.principal);
         if (!Object.values(this.resource.fields).some(field => field.search)) throw new CmsError('CMS_VALIDATION', `${this.resource.id} has no searchable fields.`);
-        if (typeof query !== 'string' || !query.trim() || new TextEncoder().encode(query).byteLength > 4096) throw new CmsError('CMS_VALIDATION', 'Search needs 1-4096 bytes of text.');
+        if (typeof query !== 'string') throw new CmsError('CMS_VALIDATION', 'Search needs text.');
         const limit = options.limit ?? 20;
-        if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new CmsError('CMS_VALIDATION', 'limit must be 1..100.');
+        const offset = options.offset ?? 0;
+        if (!Number.isInteger(limit) || limit < 1 || limit > 200) throw new CmsError('CMS_VALIDATION', 'limit must be 1..200.');
+        if (!Number.isInteger(offset) || offset < 0 || offset + limit > 10_000) throw new CmsError('CMS_VALIDATION', 'Search reaches the first 10000 results.');
+        const parsed = searchQuery(query);
+        if (!parsed) return [];
+        const text = options.match === 'any' ? parsed.any ?? parsed.all : parsed.all;
         const filtered = access !== 'allow' || options.where !== undefined || options.owner !== undefined;
         // Hits are checked again in the outer query; fetch more when some may be filtered out.
-        const params: { [key: string]: Value } = { $query: query, $limit: filtered ? Math.min(limit * 4, 400) : limit };
+        const params: { [key: string]: Value } = { $query: text, $limit: Math.min(filtered ? (offset + limit) * 4 : offset + limit, 10_000) };
         let source = `search::text('${this.resource.storage}__text', $query, $limit)`;
         if (access !== 'allow' && access.owner && !access.where.length) {
             const owned = await this.#host.db.read([{ rql: `SELECT id FROM ${this.resource.storage} WHERE "_owner" = $owner LIMIT 4097`, params: { $owner: principalId(context.principal) } }], this.#readOptions(context));
@@ -150,9 +158,12 @@ export class ResourceRepository {
         }
         const where = this.#conditions(access, context.principal, this.#filters(options, context.principal, params, 'd.'), params, 'd.');
         const result = await this.#host.db.read([bound(
-            `SELECT d FROM ${source} h JOIN ${this.resource.storage} d ON d.id = h.id${where.rql ? ` WHERE ${where.rql}` : ''} ORDER BY h.score DESC, h.id LIMIT ${limit}`,
+            `SELECT d FROM ${source} h JOIN ${this.resource.storage} d ON d.id = h.id${where.rql ? ` WHERE ${where.rql}` : ''} ORDER BY h.score DESC, h.id LIMIT ${limit}${offset ? ` OFFSET ${offset}` : ''}`,
             where.params,
-        )], this.#readOptions(context));
+        )], this.#readOptions(context)).catch(error => {
+            if (isSearchSyntaxError(error)) throw new CmsError('CMS_VALIDATION', 'That search could not be read.');
+            throw error;
+        });
         return result.results[0]!.rows.map(row => this.#public(row[0] as Document, context.principal));
     }
 
@@ -757,6 +768,8 @@ export class ResourceRepository {
             `INSERT INTO cms_audit (id, actor, action, resource, record_id, revision, at) SELECT $op, $actor, $action, $resource, $key, $revision, $at WHERE ${guard}`,
             { ...params, $action: action },
         ));
+        // The site's search index, guarded by the audit row above.
+        statements.push(...this.#host.siteSearch.statements(this.resource, key, op, record && this.canRead(record, ANONYMOUS) ? record : null));
         const event: ResourceEvent = {
             eventId: op, topic: action === 'create' ? 'resource.created' : action === 'update' ? 'resource.updated' : 'resource.deleted',
             resource: this.resource.id, id: key, revision, actor: actor(principal), at: now, record,

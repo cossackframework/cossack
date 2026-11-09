@@ -67,6 +67,7 @@ cossack cms <command> [args] [--url …] [--site …] [--json]
 | `login`, `logout`, `whoami`, `mcp` | Sign in and out, show who the password acts as, print an MCP client configuration. |
 | `collections list`, `collections schema <collection>` | The content types and their fields; the JSON Schema of one. |
 | `entries list <collection>` | Published entries; `--status draft` (or `pending`, `scheduled`, `published`, `trash`, `any`), `--q`, `--term categories:news`, `--filter field=value`, `--locale`, `--page`, `--per-page`, `--format html`. |
+| `entries search <words…>` | Search the site as visitors do: published entries of every collection, best first, with snippets; `--collection`, `--locale`, `--page`, `--per-page`. |
 | `entries get <collection> <id\|slug>` | One entry, with its `rev`, patterns and translations. |
 | `entries create <collection>` | A new entry from `--data '{…}'` (or `@file`, `@-` for stdin) and `--set field=value`. |
 | `entries update <collection> <id>` | Change fields; the current revision is read first unless `--rev` is given. |
@@ -139,7 +140,7 @@ claude mcp add --transport http cms-example-com "https://example.com/api/cms/mcp
 ```
 
 The server's instructions tell the model what the site has. Its tools mirror the API: `get_site`
-(start here), `list_collections`, `get_collection_schema`, `list_entries`, `get_entry`,
+(start here), `list_collections`, `get_collection_schema`, `list_entries`, `search_site`, `get_entry`,
 `create_entry`, `update_entry`, `delete_entry`, `publish_entry`, `unpublish_entry`,
 `set_entry_status`, `list_revisions`, `get_revision`, `restore_revision`, `list_notes`,
 `add_note`, `update_note`, `delete_note`, `list_users`, `get_user`, `create_user`,
@@ -170,7 +171,8 @@ application password. A CMS refusal answers `{ error, code, fields? }` with its 
 | `GET /redirects?q=&page=&perPage=`, `POST /redirects` `{ source, target, status?, note? }` | Redirects, for the redirects permission; `source` is a path, `target` a path or URL, `status` 301, 302, 307, 308 or 410. |
 | `GET /me/tokens`, `POST /me/tokens` `{ name, scope, expiresInDays? }`, `DELETE /me/tokens/<id>` | Application passwords; `POST` needs a session (a password cannot make one) and answers the token once; `expiresInDays` (1 to 3650) ends it on its own. |
 | `GET /collections`, `GET /schema/<collection>`, `GET /taxonomies` | Content types with fields; a JSON Schema; taxonomies. |
-| `GET /content/<collection>` | Entries: `status`, `q`, `term`, `locale`, `filter[field]`, `page`, `perPage`, `format=html`. |
+| `GET /search?q=&collection=&locale=&page=&perPage=` | The site's search, as visitors get it: `{ items: [{ collection, id, title, url, snippet }], page, next, loose }`. Every word is required; `loose` is true when nothing had them all and the items have some. A snippet is plain parts, `{ text, match }`. No total: `next` says another page follows. |
+| `GET /content/<collection>` | Entries: `status`, `q`, `term`, `locale`, `filter[field]`, `page`, `perPage`, `format=html`. With `q`, the first `perPage` matches, without entries locked to the reader (protected, or members-only for a visitor). |
 | `POST /content/<collection>` | Create. |
 | `GET /content/<collection>/<id\|slug>` | One entry (`?preview=<token>` for a preview link). |
 | `GET /content/<collection>/<id\|slug>/blocks/<blockId>` | One block of the entry by its ID (set under Style → Advanced → Block ID), nested blocks and blocks embedded in rich text included, with the field it sits in. |

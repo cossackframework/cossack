@@ -28,6 +28,7 @@ export const CMS_FLAGS = {
   'per-page': str('Items per page.'),
   locale: str('A language code, on a site with several languages.'),
   term: str('Entries of a term: taxonomy:slug, such as categories:news.'),
+  collection: str('Only entries of this collection, such as posts (entries search).'),
   filter: str('Entries matching a field: field=value; repeat for several.', { repeated: true }),
   format: str('Output: html renders rich text beside the JSON (entries); mcp prints json (a config block) or claude (a command).', { choices: ['json', 'html', 'claude'] }),
   data: str('A JSON object of fields, or @file, or @- for stdin.'),
@@ -117,6 +118,9 @@ export const CMS_COMMANDS = [
   { noun: 'entries', verb: 'revert', summary: 'Restore a revision\'s fields as a new revision.', positionals: ['collection', 'id', 'revision'], flags: ['rev'],
     request: ([collection, id, revision], flags) => ({ method: 'POST', path: `/api/cms/content/${collection}/${id}/revisions/${revision}/restore`, body: flags.rev ? { rev: Number(flags.rev) } : {} }) },
 
+  { noun: 'entries', verb: 'search', summary: 'Search the site as visitors do: published entries of every collection, best first, with snippets.', positionals: ['words...'], flags: ['collection', 'page', 'per-page', 'locale'],
+    request: (words, flags) => ({ method: 'GET', path: '/api/cms/search', query: { q: words.join(' '), collection: flags.collection, page: flags.page, perPage: flags['per-page'], locale: flags.locale } }),
+    table: { rows: data => data.items, columns: ['collection', 'id', 'title', 'url', { name: 'snippet', value: row => row.snippet.map(part => part.match ? `*${part.text}*` : part.text).join('') }] } },
   { noun: 'notes', verb: 'list', summary: 'An entry\'s review notes, or the entries with notes across the site.', positionals: ['collection?', 'id?'], flags: ['status', 'limit'],
     request: ([collection, id], flags) => collection && id
       ? { method: 'GET', path: `/api/cms/content/${collection}/${id}/notes`, query: { status: flags.status } }

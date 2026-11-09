@@ -102,7 +102,14 @@ describe.skipIf(!live)('importing a site export into a new site', () => {
         const hook = (await copy.db.read([{ rql: "SELECT secret, active FROM cms_webhooks WHERE id = 'hook'" }])).results[0]!.rows[0]!;
         expect(hook[0]).toMatch(/^[0-9a-f]{64}$/);
         expect(hook[1]).toBe(0n);
-        expect((await copy.db.read([{ rql: 'SELECT count(*) FROM cms_outbox' }])).results[0]!.rows[0]![0]).toBe(0n);
+        expect((await copy.db.read([{ rql: "SELECT count(*) FROM cms_outbox WHERE topic != 'search.rebuild'" }])).results[0]!.rows[0]![0]).toBe(0n);
+        // The search index is not exported: the import queues its rebuild, which the outbox runs.
+        expect((await copy.siteSearch.status()).rebuilding).toBe(true);
+        const deadline = Date.now() + 20_000;
+        while ((await copy.outbox.dispatch({ limit: 100 })).delivered.length && Date.now() < deadline) { /* next round */ }
+        const indexed = await blog.siteSearch.status();
+        expect(indexed.entries).toBeGreaterThan(0);
+        expect(await copy.siteSearch.status()).toEqual({ entries: indexed.entries, rebuilding: false });
         expect((await copy.db.read([{ rql: "SELECT permission FROM cms_grants WHERE subject = 'plugin:raw'" }])).results[0]!.rows).toEqual([['plugin:enabled']]);
     }, 60_000);
 

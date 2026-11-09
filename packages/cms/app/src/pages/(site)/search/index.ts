@@ -1,6 +1,6 @@
 import { Cossack, Page, State, type HeadValue } from '@cossackframework/core';
 import type { ArchiveView, ThemeData } from '@cossackframework/cms';
-import { searchEntries, themeData, themeState, type ThemeState } from '../../../cms/site';
+import { pageNumber, searchBase, searchEntries, themeData, themeState, type ThemeState } from '../../../cms/site';
 import { archiveTemplate, siteContent, siteTheme, themeHelpers } from '../../../cms/site-view';
 
 /** Search published entries of every collection on the site. */
@@ -20,7 +20,9 @@ export default class SearchPage extends Cossack {
         const query = (this.c.req.query('q') ?? '').trim().slice(0, 200);
         this.theme = await themeState(cms).catch(() => this.theme);
         const locale = (await cms.languages()).default;
-        this.view = { ...this.view, query, title: query ? `${__('Results for')} “${query}”` : __('Search'), entries: query ? await searchEntries(cms, query, locale) : [] };
+        const base = searchBase('/search', query);
+        const found = query ? await searchEntries(cms, query, { locale, page: pageNumber(this.c.req.query('page')), base }) : { entries: [], paging: { page: 1, pages: 1, base }, loose: false };
+        this.view = { ...this.view, query, title: query ? `${__('Results for')} “${query}”` : __('Search'), ...found };
         this.data = await themeData(cms, this.theme, this.view, this.view, this.c.get('principal'), locale);
     }
 

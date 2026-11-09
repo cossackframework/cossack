@@ -4,7 +4,7 @@ import { getCookie } from 'hono/cookie';
 import { component, html } from '@cossackframework/renderer';
 import { hasPermission, isCmsError, isSameOriginPost, PERMISSIONS, type ArchiveView, type EntryView, type LanguageLink, type Note, type RecordShape, type ThemeData } from '@cossackframework/cms';
 import type { CmsHost } from '@cossackframework/cms/server';
-import { archive, authorArchive, authorView, bindingScopes, commentResult, entryLock, entryViews, homeView, isMembersOnly, isProtected, languageLinks, localePrefix, pageNumber, redirectFor, resolvePath, searchEntries, termArchive, themeData, themeState, unlockCookie, unlockToken, resolvedOptions, type Resolved, type ThemeState, notFoundPage } from '../../../cms/site';
+import { archive, authorArchive, authorView, bindingScopes, commentResult, entryLock, entryViews, homeView, isMembersOnly, isProtected, languageLinks, localePrefix, pageNumber, redirectFor, resolvePath, searchBase, searchEntries, termArchive, themeData, themeState, unlockCookie, unlockToken, resolvedOptions, type Resolved, type ThemeState, notFoundPage } from '../../../cms/site';
 import { archiveTemplate, entryTemplate, siteContent, siteTheme, tagDocument, themeHelpers, unavailable } from '../../../cms/site-view';
 import { authorSeo, entrySeo, homeSeo, listSeo } from '../../../cms/seo';
 import { emptySeo, seoHead, type SeoView } from '../../../cms/seo-head';
@@ -190,7 +190,8 @@ export default class SitePath extends Cossack {
             } else if (resolved.kind === 'search') {
                 const query = (this.c.req.query('q') ?? '').trim().slice(0, 200);
                 this.kind = 'list';
-                this.view = { ...this.view, kind: 'search', collection: null, query, title: query ? `${__('Results for')} “${query}”` : __('Search'), entries: query ? await searchEntries(cms, query, resolved.locale) : [] };
+                const found = query ? await searchEntries(cms, query, { locale: resolved.locale, page, base: searchBase(base, query) }) : { entries: [], paging: { page: 1, pages: 1, base }, loose: false };
+                this.view = { ...this.view, kind: 'search', collection: null, query, title: query ? `${__('Results for')} “${query}”` : __('Search'), ...found };
                 this.seo = await listSeo(cms, this.c, { kind: 'search', title: this.view.title, description: '', url: base, locale: resolved.locale, links, noindex: true });
             } else if (resolved.kind === 'entry' && resolved.collection.name === 'pages' && resolved.record.id === settings['reading.pageForPosts']) {
                 // Settings → Reading's posts page lists the latest posts under its own title.

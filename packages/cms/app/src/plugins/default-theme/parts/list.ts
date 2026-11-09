@@ -15,9 +15,14 @@ function card(entry: EntryView): TemplateResult {
     </article>`;
 }
 
+/** The URL of a page of a list: the base, with `page=N` added to its query after the first. */
+export function pageHref(paging: Paging, page: number): string {
+    return page > 1 ? `${paging.base}${paging.base.includes('?') ? '&' : '?'}page=${page}` : paging.base;
+}
+
 function pagination(paging: Paging): TemplateResult | null {
     if (paging.pages <= 1) return null;
-    const href = (page: number) => page > 1 ? `${paging.base}?page=${page}` : paging.base;
+    const href = (page: number) => pageHref(paging, page);
     return html`<nav aria-label=${__('Pages')} class="flex items-center justify-between border-t border-border pt-6 text-sm">
         ${paging.page > 1 ? html`<a href=${href(paging.page - 1)} class="text-primary hover:underline" rel="prev">← ${__('Newer')}</a>` : html`<span></span>`}
         <span class="text-muted-foreground">${__('Page')} ${paging.page} ${__('of')} ${paging.pages}</span>

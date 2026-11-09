@@ -87,6 +87,12 @@ export const cmsTools: readonly Tool[] = [
         },
     },
     {
+        name: 'search_site', title: 'Search the site',
+        description: 'Search the site as its visitors do: published entries they may read, from every collection or one, best first, each with its title, URL and a snippet whose parts have match: true on the words that matched. Every word is required; loose: true means nothing had them all and these have some. next: true when another page follows.',
+        inputSchema: schema({ q: str('What to search for: words, and "quoted phrases"; -word leaves out entries with it.'), collection: str('Only this collection (see list_collections).'), page, perPage: int('Results per page, 1 to 50.', { minimum: 1, maximum: 50 }), locale: str('A language code, on a site with several languages.') }, ['q']), annotations: READ,
+        async run(input, { c }) { return manage.siteSearch(c, query(input, ['q', 'collection', 'page', 'perPage', 'locale'])); },
+    },
+    {
         name: 'get_entry', description: 'One entry by ID, or a published entry by slug: every field, its rev (needed to change it), URL, the synced patterns it uses and its translations. html: true adds rendered rich text and blocks.',
         inputSchema: schema({ collection, id: str('The entry ID, or the slug of a published entry.'), html: bool('Also render rich text and blocks to HTML.') }, ['collection', 'id']), annotations: READ,
         async run(input, { c }) {

@@ -2,7 +2,7 @@ import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackfr
 import { settingsSectionHref } from '../../../../../cms/settings-search';
 import { Badge, Button, Card, CardBody, CardHeader } from '@cossackframework/ui';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
-import { ANONYMOUS, ARTICLE_TYPES, CRAWLER_GROUPS, isCmsError, PERMISSIONS, recordTitle, type FieldFilter } from '@cossackframework/cms';
+import { ANONYMOUS, ARTICLE_TYPES, CmsError, CRAWLER_GROUPS, hasPermission, isCmsError, PERMISSIONS, recordTitle, type FieldFilter } from '@cossackframework/cms';
 import type { CrawlerVisits, NotFoundRow } from '@cossackframework/cms/server';
 import { requireAny } from '../../../../../cms/guards';
 import { siteOrigin } from '../../../../../cms/seo';
@@ -27,6 +27,10 @@ export default class HealthPage extends Cossack {
     @State() error = '';
     /** What the last dismissal did, shown with the missing pages. */
     @State() message = '';
+    /** The site search index: entries it holds, and whether a rebuild runs. */
+    @State() search: { entries: number; rebuilding: boolean } = { entries: 0, rebuilding: false };
+    @State() canRebuild = false;
+    @State() searchMessage = '';
 
     head(): HeadValue {
         return { title: __('Health') };
@@ -40,6 +44,8 @@ export default class HealthPage extends Cossack {
     async load() {
         const cms = this.c.get('cms');
         try {
+            this.search = await cms.siteSearch.status();
+            this.canRebuild = hasPermission(this.c.get('principal'), PERMISSIONS.manageSettings);
             this.visits = await cms.traffic.visits(this.days);
             this.missing = await cms.traffic.notFound({ limit: 50 });
             this.findings = await this.inspect();
@@ -99,6 +105,22 @@ export default class HealthPage extends Cossack {
     }
 
     @Client()
+    async rebuild() {
+        this.searchMessage = '';
+        await this.rebuildSearch();
+        this.searchMessage = __('Rebuilding: the index fills in the background, a few hundred entries at a time.');
+    }
+
+    /** Clear the search index and fill it again from the entries. */
+    @Server()
+    async rebuildSearch() {
+        if (!hasPermission(this.c.get('principal'), PERMISSIONS.manageSettings)) throw new CmsError('CMS_FORBIDDEN', 'Rebuilding the search index needs the Manage settings permission.');
+        const cms = this.c.get('cms');
+        await cms.siteSearch.rebuild();
+        this.search = await cms.siteSearch.status();
+    }
+
+    @Client()
     async forget(path: string) {
         this.message = '';
         await this.forgetMissing(path);
@@ -137,6 +159,12 @@ export default class HealthPage extends Cossack {
                         <p class="text-sm text-muted-foreground">${finding.detail}</p>
                         ${finding.items?.length ? html`<p class="text-sm">${finding.items.map((item, index) => html`${index ? ', ' : ''}<a href=${item.href} class="text-primary hover:underline">${item.title}</a>`)}</p>` : null}
                     </div></li>`)}</ul>`)}`)}
+            ${component(Card, {}, html`
+                ${component(CardHeader, {}, html`<div class="flex flex-wrap items-center justify-between gap-2"><h2 class="text-base font-semibold text-foreground">${__('Site search')}</h2>
+                    ${this.canRebuild ? component(Button, { type: 'button', size: 'sm', variant: 'outline', disabled: this.search.rebuilding, '@click': () => this.rebuild() }, __('Rebuild')) : null}</div>
+                    <p class="text-sm text-muted-foreground">${__('The index the site\'s search reads: published entries visitors may read. Each change keeps it in step; rebuild it after an import, or if results look out of date.')}</p>`)}
+                ${component(CardBody, { class: 'space-y-2' }, html`${this.searchMessage ? notice(this.searchMessage, 'success') : null}
+                    <p class="text-sm text-foreground"><span class="tabular-nums font-medium">${this.search.entries}</span> ${this.search.entries === 1 ? __('entry indexed') : __('entries indexed')}${this.search.rebuilding ? html` · <span class="text-muted-foreground">${__('rebuilding')}</span>` : null}</p>`)}`)}
             ${component(Card, {}, html`
                 ${component(CardHeader, {}, html`<div class="flex flex-wrap items-center justify-between gap-2"><h2 class="text-base font-semibold text-foreground">${__('Crawler visits')} <span class="text-sm font-normal text-muted-foreground">${__('last')} ${this.days} ${__('days')}</span></h2>
                     <div class="flex gap-1">${[7, 14, 30, 90].map(days => component(Button, { type: 'button', size: 'sm', variant: days === this.days ? 'default' : 'outline', '@click': () => { this.days = days; void this.load(); } }, `${days}d`))}</div></div>

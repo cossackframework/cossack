@@ -25,7 +25,7 @@ export const HOST_TABLES = [
     'cms_preview_tokens', 'cms_autosaves', 'cms_file_variants', 'cms_redirects', 'cms_api_tokens', 'cms_webhooks', 'cms_webhook_deliveries',
     'cms_comments', 'cms_user_security', 'cms_passkeys', 'cms_auth_challenges', 'cms_areas', 'cms_form_sends', 'cms_form_mail', 'cms_form_results', 'cms_crawler_visits', 'cms_not_found', 'cms_cache',
     'cms_accounts', 'cms_sites', 'cms_site_domains', 'cms_handoffs', 'cms_session_sites', 'cms_memberships', 'cms_network', 'cossack_jobs', 'cossack_notifications',
-    'cms_drafts', 'cms_notes', 'cms_note_mentions', 'cms_schedules', 'cms_automations',
+    'cms_drafts', 'cms_notes', 'cms_note_mentions', 'cms_schedules', 'cms_automations', 'cms_registrations', 'cms_search',
 ] as const;
 
 export const HOST_STEPS: readonly HostStep[] = [{
@@ -233,6 +233,17 @@ export const HOST_STEPS: readonly HostStep[] = [{
         // A registered member the site's administrators have not approved yet: their account is disabled until then. `verified` once their email link was opened (1 when the site asks for no confirmation).
         { rql: 'CREATE TABLE cms_registrations (user_id TEXT PRIMARY KEY, verified INTEGER NOT NULL, created_at INTEGER NOT NULL)' },
         { rql: 'CREATE INDEX cms_registrations_created ON cms_registrations (created_at)' },
+    ],
+}, {
+    version: 7,
+    description: 'The site search index',
+    statements: [
+        // One document per entry visitors may read (site-search.ts): collection, entry, locale, title, text and publication time.
+        { rql: 'CREATE TABLE cms_search' },
+        { rql: 'CREATE SEARCH INDEX cms_search__text ON cms_search(title, text) USING FULLTEXT' },
+        // Fill it from the entries a site already has, from the outbox, a round at a time.
+        { rql: `INSERT INTO cms_outbox (id, topic, payload, created_at, available_at, attempts, lease_until) VALUES ('search:host-7:0', 'search.rebuild',
+            '{"eventId":"search:host-7:0","topic":"search.rebuild","at":0,"run":"host-7","only":null,"collection":null,"after":null,"step":0}', 0, 0, 0, 0)` },
     ],
 }];
 

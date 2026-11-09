@@ -86,9 +86,10 @@ export function listFilters(options: ListFiltersOptions): TemplateResult {
 }
 
 /** Below a list: how many items there are and, past one page, the pages. */
-export function listFooter(options: { total: number; page: number; totalPages: number; href(page: number): string }): TemplateResult {
+/** The count and pages under a list. `more`: the count is what was found so far, and more follow (search). */
+export function listFooter(options: { total: number; page: number; totalPages: number; more?: boolean; href(page: number): string }): TemplateResult {
     return html`<div class="flex flex-col items-center justify-between gap-3 sm:flex-row">
-        <p class="text-xs text-muted-foreground">${options.total} ${options.total === 1 ? __('item') : __('items')}</p>
+        <p class="text-xs text-muted-foreground">${options.total}${options.more ? '+' : ''} ${options.total === 1 && !options.more ? __('item') : __('items')}</p>
         ${options.totalPages > 1 ? component(Pagination, {
             page: options.page, totalPages: options.totalPages, label: __('Pagination'), previousLabel: __('Previous page'), nextLabel: __('Next page'),
             pageLabel: (page: number) => `${__('Page')} ${page}`, href: (page: number) => options.href(page),

@@ -586,6 +586,7 @@ Manage a running CMS site through its management API, as a signed-in user:
 cossack cms login --url https://example.com        # email from --email or CMS_EMAIL, password from CMS_PASSWORD or a prompt
 cossack cms whoami
 cossack cms entries list posts --status draft --json
+cossack cms entries search walrus facts --per-page 5
 cossack cms entries create posts --set title="Hello" --data @body.json
 cossack cms entries publish posts <id> --at 2026-12-01T09:00:00Z
 cossack cms notes add posts <id> --body "Shorter title?" --target field:title

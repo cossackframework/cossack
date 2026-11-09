@@ -179,6 +179,12 @@ async function essentials(origin, routeIds, diagnostics, { runtime, cloudflare =
   expect(secretItem.excerpt).toBeUndefined();
   expect((await (await web.request(`/api/cms/content/posts/${secretId}`)).json()).item).toMatchObject({ password: 'open sesame', excerpt: 'For members' });
   lacks(await visitorOf().page('/search?q=sesame'), 'Members only');
+  // Words of the locked content find nothing for visitors: not the site's search, not the content API's q.
+  const searchHits = await (await fetch(`${origin}/api/cms/search?q=members+only+body`)).json();
+  expect(searchHits.items.map(item => item.id)).not.toContain(secretId);
+  const contentHits = await (await fetch(`${origin}/api/cms/content/posts?q=members+only+body`)).json();
+  expect(contentHits.items.map(item => item.id)).not.toContain(secretId);
+  expect((await (await web.request('/api/cms/content/posts?q=members+only+body')).json()).items.map(item => item.id)).toContain(secretId);
   lacks(await visitorOf().page('/'), 'For members');
 
   // Scheduling: a future time schedules; the list shows it; visitors do not see it yet.

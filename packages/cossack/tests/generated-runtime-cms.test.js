@@ -103,7 +103,14 @@ async function exercise(origin, routeIds, diagnostics) {
   contains(await web.page('/posts'), 'Hello, World!');
   contains(await web.page('/search?q=hello'), 'Hello, World!');
   // Rich text bodies are searched by their text.
-  contains(await web.page('/search?q=zeppelin'), 'Hello, World!');
+  const searched = await web.page('/search?q=zeppelin');
+  contains(searched, 'Hello, World!');
+  expect(searched).toMatch(/<mark[^>]*>zeppelin<\/mark>/i);
+  // Syntax a visitor types is text, not an error.
+  expect((await fetch(origin + '/search?q=' + encodeURIComponent('NOT title:x^2 "'))).status).toBe(200);
+  const api = await (await fetch(origin + '/api/cms/search?q=zeppelin')).json();
+  expect(api).toMatchObject({ page: 1, next: false, loose: false, items: [{ collection: 'posts', title: 'Hello, World!', url: expect.stringContaining('/posts/hello-world') }] });
+  expect(api.items[0].snippet.some(part => part.match && /zeppelin/i.test(part.text))).toBe(true);
   const feed = await fetch(origin + '/feed');
   expect(feed.headers.get('content-type')).toContain('application/rss+xml');
   expect(await feed.text()).toContain('<title>Hello, World!</title>');

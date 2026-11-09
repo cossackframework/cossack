@@ -119,6 +119,7 @@ async function importInto(host: CmsHost, source: ReadableStream<Uint8Array> | As
     await lease.release();
     forget(host);
     await host.ready({ force: true });
+    await host.siteSearch.rebuild();
     return { site: header.site, exportedAt: header.exportedAt, tables: count, rows, skipped, members };
 }
 

@@ -37,6 +37,7 @@ export { CmsApiTokens, API_TOKEN_LIMIT, type ApiToken, type ApiTokenScope } from
 export { CmsWebhooks, verifyWebhookSignature } from './webhooks';
 export { CmsIndexNow, INDEXNOW_ENDPOINT, INDEXNOW_KEY, type IndexNowOptions } from './indexnow';
 export { CmsPurge, PurgeError, type CachePurger, type CmsPurgeOptions, type PurgeContext, type PurgeRecord } from './purge';
+export { SiteSearch, SITE_SEARCH, type SearchedCollection, type SearchRebuildEvent, type SiteSearchHit, type SiteSearchOptions, type SiteSearchPage } from './site-search';
 export { workerLoaderRunner, serveIsolatedCall, inFlightLimiter, ISOLATE_LIMITS, ISOLATES_IN_FLIGHT, ISOLATE_COMPATIBILITY_DATE, type PluginRunner, type IsolatedPluginCode, type BridgeProps, type IsolatedWork, type IsolateLimits, type WorkerLoaderLike, type WorkerCodeLike, type LoopbackExports } from './isolation';
 export { pluginCapabilities, pluginMetaKey, JOB_NAME, type PluginFiles, type PluginMail, type PluginJobs, type PluginJobContext, type PluginJobHandler, type PluginUsers, type PluginUser, type PluginCache, type PluginSecrets, type PluginAi, type PluginPayments, type PluginCapabilities, type CapabilityHost } from './capabilities';
 export { CmsSchedules, SCHEDULE_GRACE_MS, type DueSchedule, type ScheduleRow } from './schedules';

@@ -5,6 +5,7 @@
  * receive plain view data and helpers; they never read the database. Themes own templates,
  * never routes: the site's URLs come from its content.
  */
+import type { SnippetPart } from './search';
 import type { HeadValue } from '@cossackframework/core';
 import type { TemplateResult } from '@cossackframework/renderer';
 import { fieldProblems } from './fields';
@@ -685,6 +686,11 @@ export interface EntryView {
      * who is not signed in or has none of its member roles. Null when the entry shows in full.
      */
     readonly locked: 'password' | 'members' | null;
+    /**
+     * Search results only: the text around the words that matched, as plain parts with the
+     * matched words flagged (`match`), for a theme to mark up, for example with `<mark>`.
+     */
+    readonly snippet?: readonly SnippetPart[];
 }
 
 /** What a members-only entry shows a reader who may not read it: not signed in, or without one of its roles. */
@@ -709,8 +715,9 @@ export interface LockedView {
 
 export interface Paging {
     readonly page: number;
+    /** The last page. Search knows no total: there it is one past the current page while more follow. */
     readonly pages: number;
-    /** The first page's URL; others add `?page=N`. */
+    /** The first page's URL; others add `page=N` to its query (`?page=N`, or `&page=N` after search's `?q=`). */
     readonly base: string;
 }
 
@@ -743,6 +750,8 @@ export interface ArchiveView {
     readonly paging: Paging;
     /** search: the query. */
     readonly query: string;
+    /** search: nothing had every word, so these entries have some of them. */
+    readonly loose?: boolean;
 }
 
 export interface SiteView {

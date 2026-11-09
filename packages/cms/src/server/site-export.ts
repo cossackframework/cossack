@@ -16,6 +16,8 @@ export const EXPORT_SKIPPED_TABLES: ReadonlySet<string> = new Set([
     'cms_auth_sessions', 'cms_sessions', 'cms_session_values', 'cms_session_sites', 'cms_oauth_states', 'cms_password_resets', 'cms_auth_challenges',
     'cms_user_security', 'cms_passkeys', 'cms_api_tokens', 'cms_preview_tokens', 'cms_handoffs', 'cms_cache', 'cms_schedules',
     'cms_accounts', 'cms_sites', 'cms_site_domains', 'cms_memberships', 'cms_network',
+    // The search index is built from the entries; an import rebuilds it.
+    'cms_search',
 ]);
 
 /** Columns exported as null: webhook signing secrets. */

@@ -33,6 +33,7 @@ import { CmsCache } from './cache';
 import { imageWidths } from '../images';
 
 import { HOST_STEPS, HOST_TABLES, hostSchemaMismatch, unknownHostSteps } from './host-schema';
+import { SiteSearch, SITE_SEARCH, searchRebuild } from './site-search';
 import { OPEN_POLICY, pluginState, readPolicy, type NetworkPluginState, type NetworkPolicy } from './network-policy';
 import { CmsSettings } from './site-settings';
 import { createAuthSessionStore, createJobStore, createNotificationStore, createOAuthStateStore, createSessionStore, type EndedSessions } from './stores';
@@ -420,6 +421,8 @@ export class CmsHost {
     readonly indexnow: CmsIndexNow;
     /** Purges of the caches in front of the site, queued by changes and sent from the outbox. */
     readonly purge: CmsPurge;
+    /** The site's search index over what visitors may read, kept with each entry write. */
+    readonly siteSearch: SiteSearch;
     readonly traffic: CmsTraffic;
     readonly comments: CmsComments;
     /** Forms' submissions: taking them, notifications, and handling them in the dashboard. */
@@ -555,6 +558,9 @@ export class CmsHost {
         this.forms = new CmsForms(this, { ...(mail ? { mail: { send: message => mail.send({ ...message, kind: 'form' }) } } : {}), mailFrom: this.mailFrom });
         this.security = new CmsSecurity(this.network, { now: this.#now });
         this.siteSecurity = added ? new CmsSecurity(this.db, { now: this.#now }) : null;
+        this.siteSearch = new SiteSearch(this);
+        // Rebuilds of the site's search index run from the outbox, a round of entries at a time.
+        this.hooks.addAction(searchRebuild, (event, context) => this.siteSearch.step(event, context.signal ? { signal: context.signal } : {}), { plugin: 'cms-search' });
         // Entry events become webhook deliveries; the outbox retries this until they are queued.
         this.hooks.addAction(afterCommit, event => this.#queueWebhooks(event), { plugin: 'cms' });
         // Published, changed and unpublished entries are pinged to IndexNow; a failed ping retries with the outbox.
@@ -1399,6 +1405,7 @@ export class CmsHost {
         this.#authorizeBuilder(principal);
         await this.ready({ force: true });
         const before = this.#collections.get(given.name);
+        const searched = this.siteSearch.signature(given.name);
         const builtin = this.#builtinCollections.get(given.name);
         if (builtin?.managed) throw new CmsError('CMS_FORBIDDEN', `${builtin.label} is managed by its module and has its own screens.`);
         // Managed is the module's to declare.
@@ -1479,6 +1486,8 @@ export class CmsHost {
         await this.ready({ force: true });
         const saved = this.collection(definition.name);
         if (before && before.path !== saved.path) await this.#pathRedirects(before, saved, principal);
+        // A new path, status rule or searched field changes which entries visitors find, and what in them.
+        if (before && this.siteSearch.signature(saved.name) !== searched) await this.siteSearch.rebuild({ only: saved.name });
         return saved;
     }
 
@@ -1544,6 +1553,7 @@ export class CmsHost {
             ...(exists ? [{ rql: `DROP TABLE ${storage}` }] : []),
             { rql: 'DELETE FROM cms_collections WHERE name = $name', params: { $name: name } },
             { rql: 'DELETE FROM cms_schema_state WHERE resource = $id', params: { $id: id } },
+            { rql: `DELETE FROM ${SITE_SEARCH.collection} WHERE collection = $name`, params: { $name: name } },
         ], { kind: 'cms.collections' });
         // The groups attached to it stay, for other targets, without it.
         for (const group of groupsForTarget(this.#groups, { kind: 'collection', name })) await this.fieldGroups.put(withTarget(group, { kind: 'collection', name }, false), principal);

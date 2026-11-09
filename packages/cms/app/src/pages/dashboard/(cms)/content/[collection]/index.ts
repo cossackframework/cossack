@@ -77,6 +77,8 @@ export default class EntriesPage extends Cossack {
     @State() term = '';
     @State() taxonomy: { name: string; label: string; terms: TermOption[] } | null = null;
     @State() page = 1;
+    /** A search found more entries than this page shows. */
+    @State() more = false;
     @State() total = 0;
     @State() counts: { key: string; label: string; count: number }[] = [];
     @State() rows: Row[] = [];
@@ -179,9 +181,14 @@ export default class EntriesPage extends Cossack {
             if (this.term && this.taxonomy) where[this.taxonomy.name] = { containsAny: (await cms.taxonomies.subtree(this.term)).slice(0, 50) };
             const filter: ListFilter = { where, ...(tab.filter.owner ? { owner: tab.filter.owner } : {}) };
             let records: readonly RecordShape[];
+            this.more = false;
             if (this.search && Object.values(resource.fields).some(field => field.search)) {
-                records = await repository.search(this.search, { ...filter, limit: 50 }, context);
-                this.total = records.length;
+                // Search knows no total: a page asks for one more entry to tell whether another follows.
+                const offset = Math.min((this.page - 1) * this.perPage, 10_000 - this.perPage - 1);
+                const found = await repository.search(this.search, { ...filter, limit: this.perPage + 1, offset }, context);
+                this.more = found.length > this.perPage;
+                records = found.slice(0, this.perPage);
+                this.total = offset + records.length;
             } else {
                 // The Date column sorts by the publication time on the Published and Scheduled tabs, by the last change elsewhere.
                 const dateField = this.publishable && ['published', 'scheduled'].includes(this.status) ? 'publishedAt' : 'updatedAt';
@@ -561,7 +568,7 @@ export default class EntriesPage extends Cossack {
     render() {
         if (!this.label) return notice(this.error || __('This content type does not exist.'), 'error');
         const base = `/dashboard/content/${this.route}`;
-        const totalPages = Math.max(1, Math.ceil(this.total / this.perPage));
+        const totalPages = this.more ? this.page + 1 : Math.max(1, Math.ceil(this.total / this.perPage));
         const shown = (id: string) => !this.hidden.includes(id);
         const sortState = (key: Sort) => this.sort === key ? (this.dir === 'asc' ? 'ascending' as const : 'descending' as const) : 'none' as const;
         return html`<div class="space-y-6">
@@ -627,7 +634,7 @@ export default class EntriesPage extends Cossack {
                 ],
             })}
             ${this.rows.length ? this.bulkBar('bottom') : null}
-            ${listFooter({ total: this.total, page: this.page, totalPages, href: page => this.href({ page }) })}
+            ${listFooter({ total: this.total, page: this.page, totalPages, more: this.more, href: page => this.href({ page }) })}
             ${component(AlertDialog, {
                 id: 'delete-entry-dialog',
                 open: this.pendingDelete !== null,

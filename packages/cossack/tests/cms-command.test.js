@@ -45,6 +45,7 @@ function fakeCms() {
     if (url.pathname === '/api/cms/me') return json(200, { ...ME, site: { id: site, name: site === 'main' ? 'Main' : 'Blog', host: 'cms.test', url: 'http://cms.test', status: 'active' } });
     if (url.pathname === '/api/cms/me/tokens/0123456789abcdef' && request.method === 'DELETE') return json(204, undefined);
     if (url.pathname === '/api/cms/collections') return json(200, { items: [{ name: 'posts', label: 'Posts', publishable: true, fields: [{ name: 'title' }, { name: 'content' }] }] });
+    if (url.pathname === '/api/cms/search' && request.method === 'GET') return json(200, { items: [{ collection: 'posts', id: 'p1', title: 'Hello', url: '/posts/hello', snippet: [{ text: 'Say ', match: false }, { text: 'hello', match: true }] }], page: 1, next: false, loose: false });
     if (url.pathname === '/api/cms/content/posts' && request.method === 'GET') return json(200, { items: Object.values(entries), page: 1, pages: 1, total: 1 });
     if (url.pathname === '/api/cms/content/posts' && request.method === 'POST') { entries.p2 = { id: 'p2', rev: 1, ...body }; return json(201, { item: entries.p2 }); }
     if (url.pathname === '/api/cms/content/posts/p1' && request.method === 'GET') return json(200, { item: entries.p1, patterns: {}, translations: {} });
@@ -192,6 +193,13 @@ describe('cossack cms commands', () => {
     expect(list.stdout).toMatch(/ID  STATUS  TITLE  SLUG   UPDATED\np1  draft   Hello  hello  2023-11-14 22:13\n1 in all\./);
     const one = await run(['entries', 'get', 'posts', 'p1']);
     expect(JSON.parse(one.stdout)).toMatchObject({ item: { id: 'p1', rev: 3 } });
+  });
+
+  it('searches the site as visitors do, joining the words', async () => {
+    const found = await run(['entries', 'search', 'say', 'hello', '--collection', 'posts', '--per-page', '5']);
+    expect(found.code).toBe(0);
+    expect(cms.requests.at(-1)).toMatchObject({ method: 'GET', path: '/api/cms/search', query: { q: 'say hello', collection: 'posts', perPage: '5' } });
+    expect(found.stdout).toContain('posts       p1  Hello  /posts/hello  Say *hello*');
   });
 
   it('creates and changes entries from --set and --data, reading the revision first and sending the given one', async () => {
