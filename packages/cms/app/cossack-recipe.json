@@ -22,6 +22,8 @@
     "src/services/rbac.ts",
     "src/lib/permissions.ts",
     "src/dashboard/access.ts",
+    "src/dashboard/icons.ts",
+    "src/dashboard/head.ts",
     "src/dashboard/user-sections.ts",
     "src/pages/dashboard/index.ts"
   ],

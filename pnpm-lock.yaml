@@ -126,6 +126,9 @@ importers:
       '@cossackframework/romedb':
         specifier: workspace:*
         version: link:../romedb
+      '@cossackframework/solar-icons':
+        specifier: 0.7.1
+        version: 0.7.1
       markdown-it:
         specifier: 15.0.3
         version: 15.0.3
@@ -148,6 +151,9 @@ importers:
       simple-icons:
         specifier: 16.36.0
         version: 16.36.0
+      vite:
+        specifier: ~8.1.6
+        version: 8.1.6(@types/node@22.20.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.0)(tsx@4.23.0)(yaml@2.9.0)
       vitest:
         specifier: ^4.1.12
         version: 4.1.12(@types/node@22.20.1)(happy-dom@21.0.4)(jsdom@29.1.1)(vite@8.1.6(@types/node@22.20.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.0)(tsx@4.23.0)(yaml@2.9.0))
@@ -188,11 +194,11 @@ importers:
         specifier: ^2.1.6
         version: 2.1.6(hono@4.13.11)
       '@romedb/client':
-        specifier: 0.2.18
-        version: 0.2.18
+        specifier: 0.2.21
+        version: 0.2.21
       '@romedb/node':
-        specifier: 0.2.18
-        version: 0.2.18
+        specifier: 0.2.21
+        version: 0.2.21
       '@simplewebauthn/browser':
         specifier: 14.0.0
         version: 14.0.0
@@ -619,15 +625,15 @@ importers:
   packages/romedb:
     dependencies:
       '@romedb/client':
-        specifier: 0.2.18
-        version: 0.2.18
+        specifier: 0.2.21
+        version: 0.2.21
       vite:
         specifier: ~8.1.6
         version: 8.1.6(@types/node@22.20.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.0)(tsx@4.23.0)(yaml@2.9.0)
     devDependencies:
       '@romedb/node':
-        specifier: 0.2.18
-        version: 0.2.18
+        specifier: 0.2.21
+        version: 0.2.21
       '@types/node':
         specifier: ^22.19.0
         version: 22.20.1
@@ -1918,12 +1924,12 @@ packages:
   '@rolldown/pluginutils@1.0.1':
     resolution: {integrity: sha512-2j9bGt5Jh8hj+vPtgzPtl72j0yRxHAyumoo6TNfAjsLB04UtpSvPbPcDcBMxz7n+9CYB0c1GxQFxYRg2jimqGw==}
 
-  '@romedb/client@0.2.18':
-    resolution: {integrity: sha512-ICvllKByNh3XH2ItvQ0QBEGCpVLPcuiNUdxUd5g3Oo2c3g1o3TPRpKaMBtWbSVFpUaiDBpQtwH+XqYQuSCtEFA==}
+  '@romedb/client@0.2.21':
+    resolution: {integrity: sha512-dj1SybK/xqzFAIqUpTEHAI+Pm8Z+MPpM7WabuK0dZhU16jrV2YFwROyNFvUTJtdetF37vsTcnY5+ZMYanrrK3A==}
     engines: {node: '>=22'}
 
-  '@romedb/node@0.2.18':
-    resolution: {integrity: sha512-6xpbcKfjvUCme99lYxnvzbJboVvRrtxW7+tmeeuyN8QF6tfjXOZtj1h9I0eLu6W1d+YQQo6+DWWsQbZTZ02Grg==}
+  '@romedb/node@0.2.21':
+    resolution: {integrity: sha512-acDnvxOvEQa1xHXA1010Wz8cCYsEhV+I98NPr1MaZZENtOcv92CVyEyd53pwqxWyNjGYndig5PRPTEGQ6OoTLA==}
     engines: {node: '>=22'}
 
   '@sagold/json-pointer@5.1.2':
@@ -5905,11 +5911,11 @@ snapshots:
 
   '@rolldown/pluginutils@1.0.1': {}
 
-  '@romedb/client@0.2.18': {}
+  '@romedb/client@0.2.21': {}
 
-  '@romedb/node@0.2.18':
+  '@romedb/node@0.2.21':
     dependencies:
-      '@romedb/client': 0.2.18
+      '@romedb/client': 0.2.21
 
   '@sagold/json-pointer@5.1.2': {}
 

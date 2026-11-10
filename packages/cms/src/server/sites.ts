@@ -70,6 +70,12 @@ export class CmsSites {
         return (await this.#many([id]))[0] ?? null;
     }
 
+    /** The added sites among the IDs, in one read; unknown IDs and the main site are left out. */
+    async getMany(ids: readonly string[]): Promise<SiteRecord[]> {
+        const wanted = [...new Set(ids.filter(id => ID.test(id) && id !== MAIN_SITE))];
+        return wanted.length ? this.#many(wanted) : [];
+    }
+
     /** Newest first. `search` matches the name or a domain. */
     async list(options: { search?: string; status?: SiteStatus; limit?: number; offset?: number } = {}): Promise<{ items: SiteRecord[]; total: number }> {
         const conditions: string[] = [];

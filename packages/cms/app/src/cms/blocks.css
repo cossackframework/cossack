@@ -320,6 +320,12 @@ a.cms-nav-sublink:hover { background: var(--muted); }
 .cms-search-toggle > summary::-webkit-details-marker { display: none; }
 .cms-search-toggle > summary:hover { background: var(--muted); color: var(--foreground); }
 .cms-search-toggle[open] > .cms-search { position: absolute; right: 0; top: 100%; z-index: 20; margin-top: 0.5rem; padding: 0.5rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--popover); box-shadow: 0 12px 32px -12px rgb(0 0 0 / 0.35); }
+/* Suggestions under the box while someone types (search.client.ts): a listbox of entry links. */
+.cms-search { position: relative; }
+.cms-search-suggestions { position: absolute; left: 0; top: 100%; z-index: 30; min-width: 100%; width: max-content; max-width: min(24rem, 90vw); margin: 0.25rem 0 0; padding: 0.25rem; list-style: none; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--popover, var(--background)); color: var(--popover-foreground, var(--foreground)); box-shadow: 0 12px 32px -12px rgb(0 0 0 / 0.35); }
+.cms-search-suggestions[hidden] { display: none; }
+.cms-search-suggestions > li > a { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-radius: 0.25rem; padding: 0.375rem 0.625rem; font-size: 0.875rem; color: inherit; text-decoration: none; }
+.cms-search-suggestions > li > a:hover, .cms-search-suggestions > li[aria-selected="true"] > a { background: var(--accent, var(--muted)); color: var(--accent-foreground, var(--foreground)); }
 
 /*
  * Section blocks: the leaf widgets of page builders (cms/site-view.ts). Icons are inline SVGs

@@ -460,8 +460,9 @@ export class CmsNetwork {
         const ids = (await this.main.accounts.memberships([accountId])).get(accountId) ?? [];
         const sites: NetworkSite[] = ids.includes(MAIN_SITE) ? [MAIN] : [];
         if (!(await this.enabled())) return sites;
+        const records = new Map((await this.sites.getMany(ids)).map(record => [record.id, record]));
         for (const id of ids) {
-            const record = id === MAIN_SITE ? null : await this.sites.get(id);
+            const record = records.get(id);
             if (record && (record.status === 'active' || record.status === 'archived')) sites.push(networkSite(record));
         }
         return sites;

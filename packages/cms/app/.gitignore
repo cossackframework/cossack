@@ -26,6 +26,8 @@
 !/src/dashboard/
 /src/dashboard/*
 !/src/dashboard/access.ts
+!/src/dashboard/icons.ts
+!/src/dashboard/head.ts
 !/src/dashboard/user-sections.ts
 !/src/lib/
 /src/lib/*

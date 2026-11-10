@@ -25,7 +25,9 @@ puts a default theme in `src/plugins/default-theme/` for you to edit or copy. Se
 - [Themes](/docs/cms/themes.md): templates, helpers, loaders, options, presets, child
   themes and widget areas.
 - [Menus](/docs/cms/menus.md): the menu builder, headings and descriptions, field groups on
-  items, mega menu panels, the Navigation block, `helpers.menu()` and the menus API.
+  items, mega menu panels, the Navigation block, `helpers.menu()` and the menus API. The
+  dashboard's own sidebar is arranged under Appearance → Dashboard menu (see
+  [Settings](/docs/cms/settings.md#the-dashboard-menu)).
 - [Live Edit](/docs/cms/site-editing.md): editing an entry and the theme's areas around it in
   place, documents and their revisions, markers, and what stays code.
 - [Settings](/docs/cms/settings.md): reading and writing settings, declaring groups and
@@ -49,7 +51,7 @@ Tools under the dashboard's Tools menu: Health (search and answer engines, crawl
 Links, Redirects, Webhooks, Schema, Export, Cache, Jobs (the outbox: what waits, what failed for
 good, plugin schedules), Activity (the audit trail of writes), Find and replace (a phrase across
 a collection, previewed first) and Automations (when an entry is published, a form is submitted or
-a payment completes, send an email; Webhooks post the same events, including `payment.completed`, to a URL). Content → Calendar lists the month's published
+a payment completes, send an email whose text binds `{{ $.title }}`, `{{ $site.title }}` and `{{ $user.name }}` as content does; Webhooks post the same events, including `payment.completed`, to a URL). Content → Calendar lists the month's published
 and scheduled entries. An entry's **Unpublish on** time takes it back to draft then, as its
 publish time publishes it (`runSchedule()`, which the maintenance run calls each minute).
 **Members only** (a sidebar switch on posts and pages, the `members` collection feature) shows an
@@ -130,17 +132,20 @@ per plugin.
 
 **Search.** Each collection with `search` fields has a RomeDB full-text index over them, which
 the dashboard's lists and pickers and the content API's `q` read. The site's search reads one
-more index, `cms_search` (host step 7): a document per entry visitors may read (published, not
+more index, `cms_search` (host steps 7 and 8): a document per entry visitors may read (published, not
 protected, not members-only, in a collection with a path), with its title and the plain text of
 its searchable fields. The entry's batch writes or removes that document, so it is never behind;
 `cms.siteSearch.rebuild()` (Tools → Health → Rebuild) clears and fills it from the outbox, 200
 entries a round, and runs after a site import and when a collection's path or searched fields
 change. One index ranks every collection together and holds nothing locked. Search takes what
 people type (`searchQuery` in `@cossackframework/cms`): every word is required, `"phrases"` and
-`-word` work, and anything else (`NOT`, `title:`, `*`) is plain text, so no query fails. When
-nothing has every word, the site's search answers with any of them (`loose`). RomeDB does not
-yet do prefix search (`hel` finds `hello`), field weights, stemming or accent folding, or filters
-before ranking; the proposals are in RomeDB's own plans.
+`-word` work, and anything else (`NOT`, `title:`, `*`) is plain text, so no query fails. The
+last word typed is a prefix when it has two characters or more (`hel` finds `hello`), so lists,
+pickers, the command palette and the suggestions under the site's search box find while someone
+types. A title match outranks the same word in the text (the index weighs titles 3), and RomeDB
+cuts each result's snippet (`search::snippet`). When nothing has every word, the site's search
+answers with any of them (`loose`). The CMS needs RomeDB 0.2.21 for these. RomeDB does not yet
+do stemming or accent folding, or filters before ranking; the proposals are in RomeDB's own plans.
 
 ## Where to extend
 

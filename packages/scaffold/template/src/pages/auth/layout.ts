@@ -5,7 +5,7 @@ import { signInBrand } from '../../brand';
 
 @Page({ transport: 'http' })
 export default class AuthLayout extends Cossack {
-    brand = server$(() => signInBrand(), { initial: { name: 'My App', logo: '/logo.svg', home: '/', network: '', networkSignIn: null } });
+    brand = server$(() => signInBrand(), { initial: { name: 'Cossack', logo: '/logo.svg', home: '/', network: '', networkSignIn: null } });
     render() {
         return html`
             <div class="flex justify-center items-center min-h-screen bg-muted/40 px-4">

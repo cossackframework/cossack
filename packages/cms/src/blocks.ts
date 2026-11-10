@@ -403,6 +403,7 @@ const core: BlockDeclaration[] = [
     { name: 'core/search', inline: true, keywords: ['search', 'find', 'form', 'header'], label: 'Search', icon: 'magnifer', category: 'widgets', description: 'A search box that opens the site\'s search results.', fields: {
         placeholder: field.string({ max: 80, label: 'Placeholder', description: 'Empty shows “Search”.' }),
         style: field.enum(['box', 'icon'], { default: 'box', label: 'Style', choices: { box: 'A box', icon: 'A button that opens the box' } }),
+        suggest: field.boolean({ default: true, label: 'Suggestions', description: 'Entries show under the box while someone types.' }),
     }, supports: { color: false, typography: ['align'] } },
     // A menu of the theme's locations, as `helpers.menu()` renders it: dropdowns and mega panels for a header, a row for a footer, a tree for a sidebar.
     { name: 'core/navigation', inline: true, keywords: ['menu', 'nav', 'links', 'header', 'mega menu'], label: 'Navigation', icon: 'hamburger-menu', category: 'widgets', description: 'The menu assigned to one of the theme\'s locations.', fields: {

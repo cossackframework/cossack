@@ -1,5 +1,5 @@
 import { richTextProblem } from './richtext';
-import { SITE_ICON_SET } from './icons';
+import { ICON_NAME_SET } from './icons';
 
 /**
  * Field kinds of a resource declaration. Each kind maps to one RomeDB field type and
@@ -80,7 +80,7 @@ export interface FieldDeclaration {
     readonly kinds?: readonly FieldMediaKind[];
     /** string: the editor offers a choice of the site's forms (the value is a slug), collections (a name) or terms (an ID). */
     readonly choicesFrom?: ChoiceSource;
-    /** string: the name of one of the site icons (`SITE_ICON_NAMES`), chosen with the icon picker and checked on write. */
+    /** string: the name of an icon of the catalog (`ICON_CATEGORIES`), chosen with the icon picker and checked on write. */
     readonly icon?: boolean;
     /** string: the URL of a profile on a social network; the host adds the network's icon to the rendered block's `icons`, by URL. */
     readonly brand?: boolean;
@@ -130,7 +130,7 @@ export const field = {
     terms: (taxonomy: string, options: Omit<Options, 'default'> = {}): FieldDeclaration => ({ kind: 'string', multiple: true, taxonomy, index: true, ...options }),
     /** A media file ID; with `multiple`, several. */
     media: (options: Options = {}): FieldDeclaration => ({ kind: 'string', max: 80, media: true, nullable: true, ...options }),
-    /** One of the site icons by name (`SITE_ICON_NAMES`). */
+    /** An icon of the catalog by name, drawn in the site's icon style. */
     icon: (options: Options = {}): FieldDeclaration => ({ kind: 'string', max: 60, pattern: '(?:[a-z0-9]+(?:-[a-z0-9]+)*)?', icon: true, ...options }),
     /** Several media file IDs. */
     gallery: (options: Options = {}): FieldDeclaration => ({ kind: 'string', max: 80, media: true, multiple: true, ...options }),
@@ -322,7 +322,7 @@ export function validateValue(name: string, declaration: FieldDeclaration, value
             if (declaration.max !== undefined && length > declaration.max) return `must be at most ${declaration.max} characters.`;
             if (declaration.min !== undefined && length < declaration.min) return `must be at least ${declaration.min} characters.`;
             if (declaration.pattern !== undefined && !new RegExp(`^(?:${declaration.pattern})$`, 'u').test(value)) return 'has an invalid format.';
-            if (declaration.icon && value && !SITE_ICON_SET.has(value)) return 'is not one of the site icons.';
+            if (declaration.icon && value && !ICON_NAME_SET.has(value)) return 'is not a known icon.';
             return undefined;
         }
         case 'enum': return typeof value === 'string' && declaration.values!.includes(value) ? undefined : `must be one of ${declaration.values!.join(', ')}.`;

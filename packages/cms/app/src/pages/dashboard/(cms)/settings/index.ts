@@ -253,6 +253,8 @@ export default class SettingsPage extends Cossack {
             if (result.network) this.draft.acceptSection('network', networkDraft(result.network));
             // Network appears in, or leaves, the dashboard menu.
             if (result.network && result.network.enabled !== this.view.network?.enabled && !result.error) { window.location.reload(); return; }
+            // Interface settings restyle the dashboard itself (palettes, icon sprites): show them at once.
+            if (changes.interface && result.document && !result.error) { window.location.reload(); return; }
             for (const id of result.groups) this.draft.acceptSection(id, groups[id]);
             this.error = result.error; this.errors = result.fields;
             if (!result.error) this.message = __('Settings saved.');

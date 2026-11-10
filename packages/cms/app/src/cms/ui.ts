@@ -128,7 +128,8 @@ function hue(name: string): number {
     return hash;
 }
 
-function initials(label: string): string {
+/** Up to two initials of a name, `?` for none, for avatars without a picture. */
+export function initials(label: string): string {
     return label.split(/[\s-]+/).filter(Boolean).slice(0, 2).map(word => [...word][0]!.toUpperCase()).join('') || '?';
 }
 

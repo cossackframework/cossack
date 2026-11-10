@@ -48,6 +48,18 @@ async function exercise(origin, routeIds, diagnostics) {
   contains(dashboard, 'data-sidebar-value="module:users:/dashboard/roles"');
   lacks(dashboard, 'data-sidebar-value="module:users:/dashboard/roles/new"');
   lacks(dashboard, 'data-sidebar-value="module:roles"');
+  // Appearance → Dashboard menu arranges the sidebar for everyone: Pages first, Files hidden, a link added; the default comes back on reset.
+  const MENU = 'dashboard/(cms)/appearance/dashboard-menu/index.ts';
+  contains(await web.page('/dashboard/appearance/dashboard-menu'), 'aria-label="Dashboard menu items"');
+  const arrangedMenu = await web.action(MENU, 'save', [{ order: ['collection-pages', 'link-docs'], hidden: ['media'], links: [{ id: 'docs', label: 'Docs', href: 'https://docs.example', icon: 'book' }] }]);
+  expect(JSON.stringify(arrangedMenu)).toContain('Dashboard menu saved');
+  const arranged = await web.page('/dashboard');
+  lacks(arranged, 'data-sidebar-value="module:media"');
+  contains(arranged, 'data-sidebar-value="module:link-docs"');
+  contains(arranged, 'href="https://docs.example"');
+  expect(arranged.indexOf('data-sidebar-value="module:collection-pages"')).toBeLessThan(arranged.indexOf('data-sidebar-value="module:collection-posts"'));
+  await web.action(MENU, 'save', [{ order: [], hidden: [], links: [] }]);
+  contains(await web.page('/dashboard'), 'data-sidebar-value="module:media"');
   contains(await web.page('/dashboard/users'), 'ada@example.com');
   contains(await web.page('/dashboard/roles'), 'Editor');
   // Files → Summary counts the library once a day; Refresh counts again.
@@ -111,6 +123,12 @@ async function exercise(origin, routeIds, diagnostics) {
   const api = await (await fetch(origin + '/api/cms/search?q=zeppelin')).json();
   expect(api).toMatchObject({ page: 1, next: false, loose: false, items: [{ collection: 'posts', title: 'Hello, World!', url: expect.stringContaining('/posts/hello-world') }] });
   expect(api.items[0].snippet.some(part => part.match && /zeppelin/i.test(part.text))).toBe(true);
+  // The last word typed is a prefix, and the search box asks the API for suggestions while someone types.
+  const typing = await (await fetch(origin + '/api/cms/search?perPage=5&q=zepp')).json();
+  expect(typing.items.map(item => item.title)).toEqual(['Hello, World!']);
+  expect(typing.items[0].snippet.some(part => part.match && /zeppelin/i.test(part.text))).toBe(true);
+  expect(await web.page('/search?q=zepp')).toMatch(/<mark[^>]*>zeppelin<\/mark>/i);
+  expect(searched).toMatch(/<form[^>]*data-suggest="\/api\/cms\/search\?perPage=5(?:&amp;|&)locale=en"/);
   const feed = await fetch(origin + '/feed');
   expect(feed.headers.get('content-type')).toContain('application/rss+xml');
   expect(await feed.text()).toContain('<title>Hello, World!</title>');
@@ -591,6 +609,37 @@ describe.skipIf(!liveRomeDBTests())('generated CMS application', () => {
       await editing.getByRole('button', { name: 'Exit', exact: true }).click();
       await browserExpect(taskbar.getByRole('link', { name: 'Live Edit', exact: true })).toBeVisible();
       expect(new URL(page.url()).search).toBe('');
+
+      // Appearance → Dashboard menu: the handles reorder by drag and by arrow keys; Save puts the new order in the sidebar.
+      await page.goto(server.origin + '/dashboard/appearance/dashboard-menu');
+      await ready();
+      const menuRows = page.locator('[data-menu-row]');
+      const firstMenuRow = await menuRows.first().getAttribute('data-menu-row');
+      const secondMenuRow = await menuRows.nth(1).getAttribute('data-menu-row');
+      await menuRows.first().locator('[data-handle]').focus();
+      await page.keyboard.press('ArrowDown');
+      await browserExpect(menuRows.nth(1)).toHaveAttribute('data-menu-row', firstMenuRow);
+      // Drag the (now) first row below the third one.
+      const grip = await menuRows.first().locator('[data-handle]').boundingBox();
+      const third = await menuRows.nth(2).boundingBox();
+      await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(grip.x + grip.width / 2, third.y + third.height - 2, { steps: 8 });
+      await browserExpect(page.locator('ol[aria-label="Dashboard menu items"] + div')).toHaveCount(1);
+      await page.mouse.up();
+      await browserExpect(menuRows.nth(2)).toHaveAttribute('data-menu-row', secondMenuRow);
+      await page.getByRole('button', { name: 'Save', exact: true }).click();
+      await browserExpect(page.getByText('Dashboard menu saved')).toBeVisible();
+      const editorOrder = await menuRows.evaluateAll(rows => rows.map(row => `module:${row.dataset.menuRow}`));
+      // The sidebar is the layout's state, kept across client navigation: a reload shows the new order.
+      await page.reload();
+      await ready();
+      const sidebarOrder = await page.locator('[data-sidebar-value^="module:"]').evaluateAll(items => items.map(item => item.dataset.sidebarValue).filter(value => !value.includes(':/')));
+      expect(sidebarOrder).toEqual(editorOrder);
+      expect(editorOrder[2]).toBe(`module:${secondMenuRow}`);
+      await page.getByRole('button', { name: 'Reset to default', exact: true }).click();
+      await page.getByRole('button', { name: 'Save', exact: true }).click();
+      await browserExpect(page.getByText('Dashboard menu saved')).toBeVisible();
 
       // Screen options, from the dashboard's taskbar: hide the Slug column and list one page per screen; a reload keeps both.
       await page.goto(server.origin + '/dashboard/content/pages');

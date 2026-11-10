@@ -322,9 +322,9 @@ export function patchCmsNodeEntry(source) {
 export function patchCmsViteConfig(source, { adapter }) {
   const cloudflare = adapter === 'cloudflare';
   let patched = source
-    .replace("import { cossackSsg } from '@cossackframework/framework/vite-ssg-plugin';", `import { cossackSsg } from '@cossackframework/framework/vite-ssg-plugin';\nimport { cossackPluginPolicy } from 'cossack/plugin-policy';\nimport { ${cloudflare ? 'romedbDev, romedbDevVars' : 'romedbDev'} } from '@cossackframework/romedb/dev';`)
+    .replace("import { cossackSsg } from '@cossackframework/framework/vite-ssg-plugin';", `import { cossackSsg } from '@cossackframework/framework/vite-ssg-plugin';\nimport { cossackPluginPolicy } from 'cossack/plugin-policy';\nimport { ${cloudflare ? 'romedbDev, romedbDevVars' : 'romedbDev'} } from '@cossackframework/romedb/dev';\nimport { cossackCmsIcons } from '@cossackframework/cms/vite';`)
     .replace('  plugins: [\n', '  plugins: [\n    // Starts `romedb serve` in development when ROMEDB_URL is a loopback URL.\n    romedbDev(),\n')
-    .replace('    cossackConfig(),', '    cossackConfig(),\n    // Rendered plugins must stay within their manifest; violations fail the build.\n    cossackPluginPolicy(),')
+    .replace('    cossackConfig(),', '    cossackConfig(),\n    // Rendered plugins must stay within their manifest; violations fail the build.\n    cossackPluginPolicy(),\n    // The icon sprites under /assets/icons/, served in development and emitted into the client build.\n    cossackCmsIcons(),')
     // Plugins with only server code run in Workers of their own on Cloudflare (specs/cms-plugin-isolation.md).
     .replace('cossackPages({ ', "cossackPages({ pluginIsolation: { runtime: '@cossackframework/cms/isolate' }, ");
   if (cloudflare) {

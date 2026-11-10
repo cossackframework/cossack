@@ -21,10 +21,10 @@
     "test": "vitest"
   },
   "dependencies": {
-    "@romedb/client": "0.2.18"
+    "@romedb/client": "0.2.21"
   },
   "devDependencies": {
-    "@romedb/node": "0.2.18",
+    "@romedb/node": "0.2.21",
     "@types/node": "^22.19.0",
     "vitest": "^4.1.12"
   },
@@ -41,7 +41,7 @@
     "./package.json": "./package.json"
   },
   "peerDependencies": {
-    "@romedb/node": "0.2.18",
+    "@romedb/node": "0.2.21",
     "vite": "*"
   },
   "peerDependenciesMeta": {

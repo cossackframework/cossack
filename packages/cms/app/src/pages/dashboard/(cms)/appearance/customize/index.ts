@@ -1,5 +1,5 @@
 import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackframework/core';
-import { Button, Card, CardBody, CodeEditor, ColorPicker, Input } from '@cossackframework/ui';
+import { Button, Card, CardBody, CodeEditor, ColorPicker, Field, Input } from '@cossackframework/ui';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
 import { customCssProblem, hasPermission, isCmsError, PERMISSIONS, presetOverridesProblem, resolvePresets, slugify, type Preset } from '@cossackframework/cms';
 import { requireAny } from '../../../../../cms/guards';
@@ -174,26 +174,27 @@ export default class CustomizePage extends Cossack {
 
     private colorRow(color: Preset & { themeValue?: string }, change: (patch: Partial<Preset>) => void, remove?: () => void): TemplateResult {
         const changed = color.themeValue !== undefined && color.value !== color.themeValue;
-        return html`<li class="flex flex-wrap items-center gap-2" data-color=${color.slug}>
-            ${component(ColorPicker, { value: color.value, label: `${color.name} ${__('picker')}`, onChange: (value: string) => change({ value }) })}
-            ${remove ? component(Input, { type: 'text', class: 'w-36', maxlength: 40, '.value': color.name, 'aria-label': __('Name'), '@input': (event: Event) => change({ name: (event.target as HTMLInputElement).value }) })
-                : html`<span class="w-36 text-sm font-medium text-foreground">${color.name}</span>`}
-            ${component(Input, { type: 'text', class: 'w-48 font-mono text-xs', maxlength: 80, '.value': color.value, 'aria-label': `${color.name} ${__('value')}`, '@input': (event: Event) => change({ value: (event.target as HTMLInputElement).value }) })}
-            ${changed ? html`<button type="button" class="border-none bg-transparent text-xs text-muted-foreground hover:text-foreground cursor-pointer" @click=${() => change({ value: color.themeValue! })}>${__('Reset')}</button>` : null}
-            ${remove ? html`<button type="button" class="border-none bg-transparent text-xs text-destructive hover:underline cursor-pointer" @click=${remove}>${__('Remove')}</button>` : null}
+        // One row whatever the width: the name and the value shrink, the picker and the buttons do not.
+        return html`<li class="flex items-center gap-2" data-color=${color.slug}>
+            <span class="shrink-0">${component(ColorPicker, { value: color.value, label: `${color.name} ${__('picker')}`, onChange: (value: string) => change({ value }) })}</span>
+            ${remove ? component(Input, { type: 'text', class: 'min-w-0', maxlength: 40, '.value': color.name, 'aria-label': __('Name'), '@input': (event: Event) => change({ name: (event.target as HTMLInputElement).value }) })
+                : html`<span class="min-w-0 flex-1 truncate text-sm font-medium text-foreground" title=${color.name}>${color.name}</span>`}
+            <span class="w-36 shrink-0">${component(Input, { type: 'text', class: 'font-mono text-xs', maxlength: 80, '.value': color.value, 'aria-label': `${color.name} ${__('value')}`, '@input': (event: Event) => change({ value: (event.target as HTMLInputElement).value }) })}</span>
+            ${changed ? html`<button type="button" class="shrink-0 border-none bg-transparent text-xs text-muted-foreground hover:text-foreground cursor-pointer" @click=${() => change({ value: color.themeValue! })}>${__('Reset')}</button>` : null}
+            ${remove ? html`<button type="button" class="shrink-0 border-none bg-transparent text-xs text-destructive hover:underline cursor-pointer" @click=${remove}>${__('Remove')}</button>` : null}
         </li>`;
     }
 
     /** A gradient: its swatch, its name (editable for the site's own), its CSS value, and Reset or Remove. */
     private gradientRow(gradient: Preset & { themeValue?: string }, change: (patch: Partial<Preset>) => void, remove?: () => void): TemplateResult {
         const changed = gradient.themeValue !== undefined && gradient.value !== gradient.themeValue;
-        return html`<li class="flex flex-wrap items-center gap-2" data-gradient=${gradient.slug}>
+        return html`<li class="flex items-center gap-2" data-gradient=${gradient.slug}>
             <span aria-hidden="true" class="inline-block h-8 w-14 shrink-0 rounded border border-border" style=${`background: ${gradient.value}`}></span>
-            ${remove ? component(Input, { type: 'text', class: 'w-36', maxlength: 40, '.value': gradient.name, 'aria-label': __('Name'), '@input': (event: Event) => change({ name: (event.target as HTMLInputElement).value }) })
-                : html`<span class="w-36 text-sm font-medium text-foreground">${gradient.name}</span>`}
+            ${remove ? html`<span class="w-28 shrink-0">${component(Input, { type: 'text', maxlength: 40, '.value': gradient.name, 'aria-label': __('Name'), '@input': (event: Event) => change({ name: (event.target as HTMLInputElement).value }) })}</span>`
+                : html`<span class="w-28 shrink-0 truncate text-sm font-medium text-foreground" title=${gradient.name}>${gradient.name}</span>`}
             ${component(Input, { type: 'text', class: 'min-w-0 flex-1 font-mono text-xs', maxlength: 400, '.value': gradient.value, 'aria-label': `${gradient.name} ${__('value')}`, '@input': (event: Event) => change({ value: (event.target as HTMLInputElement).value }) })}
-            ${changed ? html`<button type="button" class="border-none bg-transparent text-xs text-muted-foreground hover:text-foreground cursor-pointer" @click=${() => change({ value: gradient.themeValue! })}>${__('Reset')}</button>` : null}
-            ${remove ? html`<button type="button" class="border-none bg-transparent text-xs text-destructive hover:underline cursor-pointer" @click=${remove}>${__('Remove')}</button>` : null}
+            ${changed ? html`<button type="button" class="shrink-0 border-none bg-transparent text-xs text-muted-foreground hover:text-foreground cursor-pointer" @click=${() => change({ value: gradient.themeValue! })}>${__('Reset')}</button>` : null}
+            ${remove ? html`<button type="button" class="shrink-0 border-none bg-transparent text-xs text-destructive hover:underline cursor-pointer" @click=${remove}>${__('Remove')}</button>` : null}
         </li>`;
     }
 

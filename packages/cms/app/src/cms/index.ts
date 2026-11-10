@@ -2,7 +2,7 @@ import { createRomeDB } from '@cossackframework/romedb';
 import { getRequestContext } from '@cossackframework/core';
 import { cloudflarePurger, cmsReconcilers, CmsNetwork, createCMS, MAIN_SITE, prefixedStorage, stripePayments, type CachePurger, type CmsHost, type NetworkSite, type PluginRunner } from '@cossackframework/cms/server';
 import { aiProvider, type AiBindings } from './ai';
-import type { Principal } from '@cossackframework/cms';
+import type { IconStyleName, Principal } from '@cossackframework/cms';
 import { plugins } from '@cossackframework/framework/plugins';
 import { modules, resources } from './resources';
 import { databaseConnection, siteDatabase, siteDirectory, type DatabaseBindings } from './database';
@@ -38,6 +38,12 @@ declare module 'hono' {
         principal: Principal;
         /** Cache tags the site layout adds to every page: the collections its widget areas list. */
         'cms.cacheTags'?: readonly string[];
+        /** What the dashboard computed for this request already (`remember` in `dashboard/access.ts`). */
+        'cms.memo'?: Map<string, Promise<unknown>>;
+        /** The Solar style this request's icons are drawn in (Settings → Appearance); `iconStyle()` reads it. */
+        'cms.iconStyle'?: IconStyleName;
+        /** The dashboard's `ui-palette` meta content, `<base> <accent>`, from Settings → Interface. */
+        'cms.palette'?: string;
     }
 }
 

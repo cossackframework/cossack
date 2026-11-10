@@ -22,7 +22,7 @@ const manifest = JSON.parse(await fs.readFile(path.join(root, 'cossack-recipe.js
 const tracked = rel => !manifest.rendered.includes(rel) && [...manifest.files, ...manifest.replaces].some(entry => entry.endsWith('/') ? rel.startsWith(entry) : rel === entry);
 
 const recipe = resolveRecipe({ adapter: 'node', preset: 'minimal', features: ['cms'] });
-const rendered = await renderRecipe(recipe, { projectName: 'cms-app' });
+const rendered = await renderRecipe(recipe, { projectName: 'Cossack' });
 
 const previous = JSON.parse(await fs.readFile(statePath, 'utf8').catch(() => '{"files":[]}'));
 const written = [];

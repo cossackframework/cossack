@@ -36,6 +36,10 @@ function fakeCms() {
       return json(200, { ok: true }, { 'set-cookie': ['session_id=sess-1; Path=/; HttpOnly', 'other=1; Path=/'] });
     }
     if (url.pathname === '/api/auth/session' && request.method === 'DELETE') return json(request.headers.cookie?.includes('session_id=sess-1') ? 204 : 401, undefined);
+    if (url.pathname === '/api/cms/recovery' && request.method === 'POST') {
+      if (request.headers.authorization !== 'Bearer recovery-code-0123456789') return json(401, { error: 'The recovery code is not correct.', code: 'CMS_UNAUTHENTICATED' });
+      return json(200, { email: body.email, resetUrl: `http://cms.test/auth/reset-password?token=t-${site}`, expiresAt: 1700003600000, secondFactorsCleared: body.secondFactors === true });
+    }
     const bearer = request.headers.authorization === `Bearer ${TOKEN}`;
     if (url.pathname === '/api/cms/me/tokens' && request.method === 'POST') {
       if (!request.headers.cookie?.includes('session_id=sess-1')) return json(401, { error: 'Sign in.', code: 'CMS_UNAUTHENTICATED' });
@@ -82,7 +86,7 @@ function fakeCms() {
 let cms, config;
 const initialCwd = process.cwd();
 const saved = {};
-const ENV = ['COSSACK_CONFIG_DIR', 'COSSACK_CMS_URL', 'COSSACK_CMS_TOKEN', 'COSSACK_CMS_SITE', 'CMS_EMAIL', 'CMS_PASSWORD', 'XDG_CONFIG_HOME'];
+const ENV = ['COSSACK_CONFIG_DIR', 'COSSACK_CMS_URL', 'COSSACK_CMS_TOKEN', 'COSSACK_CMS_SITE', 'CMS_EMAIL', 'CMS_PASSWORD', 'CMS_RECOVERY_CODE', 'XDG_CONFIG_HOME'];
 
 beforeAll(async () => { cms = await fakeCms(); });
 afterAll(async () => { await cms.close(); });
@@ -175,6 +179,24 @@ describe('cossack cms login', () => {
     expect(who.result).toMatchObject({ ok: true, data: { user: { email: 'ada@example.com' }, site: { id: 'blog' } } });
     const main = await run(['whoami', '--site', 'main', '--json']);
     expect(main.result.data.site.id).toBe('main');
+  });
+});
+
+describe('cossack cms password reset', () => {
+  it('sends the recovery code without a login and prints the reset link', async () => {
+    process.env.CMS_RECOVERY_CODE = 'recovery-code-0123456789';
+    const { code, stdout } = await run(['password', 'reset', '--url', cms.origin, '--email', 'ada@example.com', '--site', 'blog', '--second-factors']);
+    expect(code).toBe(0);
+    expect(stdout).toContain('http://cms.test/auth/reset-password?token=t-blog');
+    expect(stdout).toContain('authenticator app, recovery codes and passkeys were removed');
+    expect(cms.requests.at(-1)).toMatchObject({ method: 'POST', path: '/api/cms/recovery', site: 'blog', authorization: 'Bearer recovery-code-0123456789', body: { email: 'ada@example.com', secondFactors: true } });
+  });
+
+  it('reports a wrong code with its error', async () => {
+    process.env.CMS_RECOVERY_CODE = 'wrong';
+    const { code, result } = await run(['password', 'reset', '--url', cms.origin, '--email', 'ada@example.com', '--json']);
+    expect(code).not.toBe(0);
+    expect(result).toMatchObject({ ok: false, diagnostics: [{ code: 'COSSACK_CMS_UNAUTHENTICATED', message: 'The recovery code is not correct.' }] });
   });
 });
 

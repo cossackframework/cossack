@@ -20,6 +20,7 @@ export const CMS_FLAGS = {
   scope: str('What the application password may do (login; default: write).', { choices: ['read', 'write'] }),
   expires: str('Days until the application password expires (login; default: never).'),
   'dry-run': bool('Report what an import would do without writing (import).'),
+  'second-factors': bool('Also remove the account\'s authenticator app, recovery codes and passkeys (password reset).'),
   posts: str('The collection WordPress posts go to (import; default: posts).'),
   pages: str('The collection WordPress pages go to (import; default: pages).'),
   status: str('A status: entries (draft, pending, scheduled, published, trash, any), notes (open, resolved), users (active, disabled), sites (active, archived, deleted).'),
@@ -72,6 +73,7 @@ export const CMS_COMMANDS = [
   { noun: 'import', verb: 'wxr', summary: 'Import a WordPress export (WXR): categories, tags, posts and pages, with redirects from old permalinks.', positionals: ['file'], flags: ['dry-run', 'posts', 'pages'] },
   { noun: 'logout', verb: null, summary: 'Revoke the stored application password and forget the login.', positionals: [], flags: [] },
   { noun: 'whoami', verb: null, summary: 'Who the stored password acts as, on which site.', positionals: [], flags: [] },
+  { noun: 'password', verb: 'reset', summary: 'Recovery mode: a one-hour password reset link for an account, with the site\'s CMS_RECOVERY_CODE; no sign-in needed.', positionals: [], flags: ['email', 'second-factors'] },
   { noun: 'mcp', verb: null, summary: 'Print the MCP client configuration for this site: its URL and the stored password.', positionals: [], flags: ['format', 'name'] },
 
   { noun: 'collections', verb: 'list', summary: 'The content types and their fields.', positionals: [], flags: [],

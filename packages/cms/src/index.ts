@@ -39,13 +39,13 @@ export { CORE_BLOCKS, BLOCK_CATEGORIES, BLOCK_ID, BLOCK_NAME, BLOCK_LIMITS, CUST
     flattenBlocks, placeBlocks, findBlock, HTML_BLOCK, htmlBlocks, htmlBlocksChanged, updateBlock, removeBlock, insertBlock, moveBlock, shiftBlock, blockTreeProblem,
     type Block, type BlockCategory, type BlockDeclaration, type BlockLayout, type BlockStyle, type BlockSupports, type BlockMove, type BlockPlace, type Breakpoint, type StyleProperty,
     type BlockCondition, type ConditionRule, type ConditionOperator, type InputKind, type FieldBlockKind, type ValidateBlocksOptions, EMBED_URL } from './blocks';
-export { hasBinding, bindingPaths, bindingRefs, bindingValue, bindingText, bindingProblem, usesUserBinding, resolveBindings, resolveBlockBindings, withBinding, BINDING_SCOPES, type BindingScope, type BindingScopes } from './bindings';
+export { hasBinding, bindingPaths, bindingRefs, bindingValue, bindingText, bindingProblem, usesUserBinding, resolveBindings, resolveBlockBindings, withBinding, siteBindingScope, BINDING_SCOPES, type BindingScope, type BindingScopes } from './bindings';
 export { parseBlockText, hasBlockReference, textBlocks, PATTERN_REFERENCE, type TextPart, type ParsedText } from './block-references';
 export { formInput, formValue, recordTitle, isSameOriginPost, type FormInput, type SubmittedForm } from './forms';
 export { manifestProblems, validateManifest, requestedGrants, commandInput, isPluginPoint, pointOwner, providedPoints, ManifestError, HOST_SLOTS, CAPABILITIES, UNRESTRICTED_GRANT, type Capability, type UserAction, type PluginSchedule, type CmsPluginManifest, type PluginAuthor, type ProvidedPoint, type PluginCommand, type CommandOption, type SlotLink, type HostSlot } from './manifest';
 export { MEDIA_TYPES, AVATAR_TYPES, ARCHIVE_TYPES, SVG_TYPE, MEDIA_FILTERS, MEDIA_FILTER_EXCLUDES, mediaKind, mediaUrl, formatBytes, matchesSignature, imageHasAlpha, imageSize, declaredType, sanitizeSvg, EXTENSION_TYPES, fileExtension, fileType, type MediaKind } from './media';
 export { taxonomyProblems, type TaxonomyDeclaration, type TermShape } from './taxonomy';
-export { general, media, appearance, writing, reading, discussion, seo, crawlers, indexnow, cache, languages, DATE_FORMATS, TIME_FORMATS, TITLE_SEPARATORS, formatSiteDate, validTimeZone, type SettingsGroup, type SettingsSection, type SettingDeclaration, type SettingSource, type SettingControl, type SiteSettings } from './settings';
+export { general, interfaceGroup, DASHBOARD_PALETTES, DASHBOARD_ACCENTS, type DashboardPalette, type DashboardAccent, media, appearance, dashboard, writing, reading, discussion, seo, crawlers, indexnow, cache, languages, DATE_FORMATS, TIME_FORMATS, TITLE_SEPARATORS, formatSiteDate, validTimeZone, type SettingsGroup, type SettingsSection, type SettingDeclaration, type SettingSource, type SettingControl, type SiteSettings } from './settings';
 export { validateSettingValue, settingControlProblems } from './settings-controls';
 export { pluginSettingsProblems, pluginSettingsGroupId, PLUGIN_SETTINGS_LIMITS, type PluginSettingsDeclaration, type PluginSettingDeclaration } from './plugin-settings';
 export { parseSettingsDocument, checkSettingsDocument, stringifySettingsDocument, settingsJsonSchema, isPortableSetting, SETTINGS_DOCUMENT_MAX_BYTES, SETTINGS_DOCUMENT_MAX_FIELDS, type SettingsValue, type SettingsDocument } from './settings-document';
@@ -69,7 +69,7 @@ export {
 export type { BrandIcon, BreadcrumbView, HeadingView } from './theme';
 export { SHARE_NETWORKS, SHARE_BRAND_URLS, type ShareNetwork, type BlockVariation } from './blocks';
 export type { PluginHead } from './theme';
-export { ICON_NAME, SITE_ICON_NAMES, SITE_ICON_SET } from './icons';
+export { ICON_NAME, SITE_ICON_NAMES, DASHBOARD_ICON_NAMES, HOT_ICON_NAMES, ICON_NAME_SET, ICON_CATEGORIES, ICON_SET_VERSION, ICON_STYLES, ICON_STYLE_LABELS, DEFAULT_ICON_STYLE, ICON_SPRITE_GROUPS, ICON_SPRITE_VERSION, isIconStyle, isIconName, iconCategoryOf, iconSpriteNames, iconSpriteGroup, iconSpriteUrl, iconHref, type IconCategory, type IconStyleName } from './icons';
 export { MAP_EMBED_URL } from './blocks';
 export { diffWords, compareRecords, comparableValue, type DiffPart, type FieldChange } from './diff';
 export {
@@ -92,6 +92,7 @@ export { NOTE_STATUSES, NOTE_LIMITS, formatNoteTarget, parseNoteTarget, noteBloc
 export { CACHE_HOLDS, cacheControl, cacheHoldSeconds, cacheTags, cacheTagHeader, type CacheHold } from './cache';
 export { parseCron, nextCronTime, cronProblem, type CronFields } from './cron';
 export { highlightCode, highlightLanguage, HIGHLIGHT_LANGUAGES, type TokenClass } from './highlight';
-export { searchQuery, searchWords, snippetParts, isSearchSyntaxError, SEARCH_LIMITS, type SearchQuery, type SnippetPart } from './search';
+export { searchQuery, searchWords, isSearchSyntaxError, SEARCH_LIMITS, type SearchQuery, type SnippetPart } from './search';
 export { AUTOMATION_EVENTS, AUTOMATION_EVENT_LABELS, automationProblems, automationMatches, renderAutomationTemplate, type Automation, type AutomationAction, type AutomationConditions, type AutomationEvent, type AutomationInput } from './automations';
 export { ISOLATE_PROTOCOL, ISOLATE_MEMBERS, type IsolateCall, type IsolateRun, type IsolatePoint, type IsolateMember, type IsolateBridge, type IsolateEntrypoint } from './isolation';
+export { applyDashboardMenu, dashboardLinkHrefProblem, dashboardLinkModuleId, dashboardMenuOf, dashboardMenuProblems, DASHBOARD_MENU_LIMITS, EMPTY_DASHBOARD_MENU, type DashboardMenu, type DashboardMenuLink } from './dashboard-menu';

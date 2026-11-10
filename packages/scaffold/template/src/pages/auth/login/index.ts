@@ -76,7 +76,7 @@ export default class LoginPage extends Cossack {
             // With an authenticator app, the password only starts the sign-in.
             const pending = await beginTwoFactor(user.id);
             if (pending) {
-                setCookie(this.c, TWO_FACTOR_COOKIE, pending, { path: '/auth', httpOnly: true, sameSite: 'Lax', maxAge: 300, secure: new URL(this.c.req.url).protocol === 'https:' });
+                setCookie(this.c, TWO_FACTOR_COOKIE, pending, { path: '/', httpOnly: true, sameSite: 'Lax', maxAge: 300, secure: new URL(this.c.req.url).protocol === 'https:' });
                 const back = returnPath(this.returnTo);
                 this.redirect(back ? `/auth/two-factor?redirect=${encodeURIComponent(back)}` : '/auth/two-factor');
                 return;

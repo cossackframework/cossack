@@ -7,8 +7,7 @@ import { component, html, type TemplateResult } from '@cossackframework/renderer
 import { Button, Checkbox, CodeEditor, Combobox, DropdownMenu, Icon, IconPicker, Input, NativeSelect, Textarea } from '@cossackframework/ui';
 import { hasBinding, ITEM_LIMITS, mediaKind, withBinding } from '@cossackframework/cms';
 import type { BlockOption, EditorField, SourceChoices } from './editor';
-import { icon } from './icons';
-import { SITE_ICONS } from './site-icons';
+import { icon, ICON_CATALOG } from './icons';
 import { iconButton } from './ui';
 
 /** A file as media controls preview it. */
@@ -52,7 +51,7 @@ export function fieldControl(field: EditorField, value: unknown, change: (value:
     }
     if (field.choicesFrom && extra.sources && field.kind === 'string') return sourceControl(field, value, change, id, extra.sources);
     // A site icon: the closed set the public site ships, in a searchable grid.
-    if (field.icon && field.kind === 'string') return component(IconPicker, { id, value: typeof value === 'string' ? value : '', icons: SITE_ICONS, label: field.label, allowEmpty: !field.required, onChange: (name: string) => change(name) });
+    if (field.icon && field.kind === 'string') return component(IconPicker, { id, value: typeof value === 'string' ? value : '', icons: ICON_CATALOG, label: field.label, allowEmpty: !field.required, onChange: (name: string) => change(name) });
     switch (field.kind) {
         case 'boolean': return component(Checkbox, { id, label: field.label, checked: value === true, '@change': (event: Event) => change((event.target as HTMLInputElement).checked) });
         case 'enum': return component(NativeSelect, { id, '@change': (event: Event) => change((event.target as HTMLSelectElement).value) }, html`

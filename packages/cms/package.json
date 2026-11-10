@@ -23,17 +23,20 @@
     "dev": "pnpm --dir app run dev",
     "sync": "pnpm --dir app run sync",
     "brands": "node scripts/brand-icons.mjs",
-    "test": "pnpm sync && vitest"
+    "test": "pnpm sync && vitest",
+    "icons": "node scripts/icon-catalog.mjs"
   },
   "dependencies": {
     "@cossackframework/auth": "workspace:*",
     "@cossackframework/core": "workspace:*",
     "@cossackframework/renderer": "workspace:*",
     "@cossackframework/romedb": "workspace:*",
-    "markdown-it": "15.0.3"
+    "markdown-it": "15.0.3",
+    "@cossackframework/solar-icons": "0.7.1"
   },
   "peerDependencies": {
-    "hono": "^4.13.7"
+    "hono": "^4.13.7",
+    "vite": "*"
   },
   "devDependencies": {
     "@types/markdown-it": "^14.2.0",
@@ -42,13 +45,23 @@
     "miniflare": "4.20260722.0",
     "rolldown": "~1.1.5",
     "simple-icons": "16.36.0",
-    "vitest": "^4.1.12"
+    "vitest": "^4.1.12",
+    "vite": "^8.1.6"
   },
   "exports": {
     ".": "./src/index.ts",
     "./server": "./src/server/index.ts",
     "./isolate": "./src/isolate.ts",
     "./cloudflare": "./src/cloudflare.ts",
+    "./vite": {
+      "types": "./src/vite.d.ts",
+      "default": "./src/vite.js"
+    },
     "./package.json": "./package.json"
+  },
+  "peerDependenciesMeta": {
+    "vite": {
+      "optional": true
+    }
   }
 }

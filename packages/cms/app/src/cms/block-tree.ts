@@ -8,8 +8,8 @@
  */
 import { Client, ClientState, Component, Cossack, getTabbable } from '@cossackframework/core';
 import { component, html, type TemplateResult } from '@cossackframework/renderer';
-import { AlertDialog, Badge, Icon } from '@cossackframework/ui';
-import { blockId, BREAKPOINTS, FIELD_GROUP_LAYOUT, insertBlock, placeBlocks, removeBlock, shiftBlock, updateBlock, type BlockDeclaration, type BlockMove, type Breakpoint } from '@cossackframework/cms';
+import { AlertDialog, Badge, DropdownMenu, Icon } from '@cossackframework/ui';
+import { blockId, BREAKPOINTS, cloneBlocks, FIELD_GROUP_LAYOUT, insertBlock, placeBlocks, removeBlock, shiftBlock, updateBlock, type BlockDeclaration, type BlockMove, type Breakpoint } from '@cossackframework/cms';
 import { fieldName } from './builder';
 import { BlockInserter } from './block-inserter';
 import { reorderBlocks } from './block-rows';
@@ -256,6 +256,44 @@ export class BlockTree extends Cossack {
         this.props.onChange(removeBlock(this.props.blocks, id));
     }
 
+    /** A copy of the block (nested blocks included, every ID fresh) right after it. */
+    @Client()
+    private duplicate(id: string, parent: string | null, index: number) {
+        const block = placeBlocks(this.props.blocks).find(place => place.block._id === id)?.block;
+        if (!block) return;
+        const copy = cloneBlocks([block])[0]!;
+        const next = insertBlock(this.props.blocks, parent, copy, index + 1);
+        if (this.fits(next)) {
+            this.props.onChange(next);
+            requestAnimationFrame(() => this.handles.get(copy._id)?.focus());
+        }
+    }
+
+    /**
+     * The block's secondary actions behind one ⋮ button: where it shows (per device), where it
+     * sits (the four moves) and Duplicate. Edit, Note and Remove stay as buttons of their own.
+     */
+    private moreMenu(block: EditorBlock, label: string, prefix: string, can: { devices: boolean; hide: readonly Breakpoint[]; up: boolean; down: boolean; out: boolean; into: string | undefined; duplicate: boolean; parent: string | null; index: number }): TemplateResult {
+        const item = (name: string, text: string, run: () => void, enabled: boolean, options: { checked?: boolean } = {}) => html`<button type="button" role="menuitem" tabindex="-1" ?disabled=${!enabled} aria-label=${`${text} ${label}`}
+            aria-pressed=${options.checked === undefined ? undefined : options.checked ? 'true' : 'false'}
+            class=${`flex w-full items-center gap-2 rounded-sm border-none bg-transparent px-2 py-1.5 text-left text-sm cursor-pointer hover:bg-muted disabled:cursor-default disabled:opacity-40 [&_svg]:size-4 ${options.checked ? 'text-destructive' : 'text-foreground'}`}
+            @click=${run}>${component(Icon, { entry: icon(name), size: 16 })}<span class="flex-1">${text}</span>${options.checked ? html`<span aria-hidden="true" class="text-xs">${__('Hidden')}</span>` : null}</button>`;
+        const separator = html`<hr role="separator" class="-mx-1 my-1 border-t border-border">`;
+        return component(DropdownMenu, { id: `${prefix}-more`, side: 'bottom', align: 'end', 'aria-label': `${__('More actions for')} ${label}`, title: __('More'),
+            class: 'inline-flex h-7 shrink-0 items-center justify-center px-1.5 rounded border border-border bg-background text-muted-foreground hover:bg-muted hover:text-foreground [&_svg]:size-4',
+            trigger: component(Icon, { entry: icon('menu-dots'), size: 16 }) }, html`
+            ${can.devices ? html`${BREAKPOINTS.map(breakpoint => {
+                const hidden = can.hide.includes(breakpoint);
+                const device = __(BREAKPOINT_DEVICES[breakpoint].label);
+                return item(BREAKPOINT_DEVICES[breakpoint].icon, hidden ? `${__('Show on')} ${device}` : `${__('Hide on')} ${device}`, () => this.toggleHide(block._id, breakpoint), true, { checked: hidden });
+            })}${separator}` : null}
+            ${item('arrow-up', __('Move up'), () => this.shift(block._id, 'up'), can.up)}
+            ${item('arrow-down', __('Move down'), () => this.shift(block._id, 'down'), can.down)}
+            ${item('arrow-left', __('Move out'), () => this.shift(block._id, 'out'), can.out)}
+            ${item('arrow-right', __('Move in'), () => this.shift(block._id, 'in', can.into), !!can.into)}
+            ${can.duplicate ? html`${separator}${item('copy', __('Duplicate'), () => this.duplicate(block._id, can.parent, can.index), true)}` : null}`);
+    }
+
     @Client()
     private setValue(id: string, key: string, value: unknown) {
         this.props.onChange(updateBlock(this.props.blocks, id, block => ({ ...block, data: { ...block.data, [key]: value } })));
@@ -488,18 +526,12 @@ export class BlockTree extends Cossack {
                     ${collapsed ? html`<span class="ml-2 text-muted-foreground">${held} ${held === 1 ? __('block') : __('blocks')}</span>` : null}
                 </span>
                 <span class="flex flex-wrap items-center gap-1">
-                    ${data || this.props.devices === false ? null : html`<span class="mr-1 inline-flex items-center gap-0.5" role="group" aria-label=${`${__('Hide')} ${label}`}>
-                        ${BREAKPOINTS.map(breakpoint => {
-                            const hidden = hide.includes(breakpoint);
-                            const device = __(BREAKPOINT_DEVICES[breakpoint].label);
-                            return iconButton(`${prefix}-hide-${breakpoint}`, BREAKPOINT_DEVICES[breakpoint].icon, hidden ? `${__('Hidden on')} ${device}` : `${__('Hide on')} ${device}`, () => this.toggleHide(block._id, breakpoint),
-                                { pressed: hidden, class: hidden ? 'border-destructive/40 bg-destructive/10 text-destructive hover:text-destructive' : '' });
-                        })}
-                    </span>`}
-                    ${iconButton(`${prefix}-up`, 'arrow-up', `${__('Move up')} ${label}`, () => this.shift(block._id, 'up'), { disabled: locked || index === 0 })}
-                    ${iconButton(`${prefix}-down`, 'arrow-down', `${__('Move down')} ${label}`, () => this.shift(block._id, 'down'), { disabled: locked || index === siblings.length - 1 })}
-                    ${iconButton(`${prefix}-out`, 'arrow-left', `${__('Move out')} ${label}`, () => this.shift(block._id, 'out'), { disabled: locked || !parent })}
-                    ${iconButton(`${prefix}-in`, 'arrow-right', `${__('Move in')} ${label}`, () => this.shift(block._id, 'in', above?._id), { disabled: !canGoIn })}
+                    ${hide.length && !data && this.props.devices !== false ? html`<span class="inline-flex items-center gap-0.5 text-destructive [&_svg]:size-3.5" title=${`${__('Hidden on')} ${hide.map(breakpoint => __(BREAKPOINT_DEVICES[breakpoint].label)).join(', ')}`}>
+                        ${hide.map(breakpoint => component(Icon, { entry: icon(BREAKPOINT_DEVICES[breakpoint].icon), size: 14 }))}</span>` : null}
+                    ${this.moreMenu(block, label, prefix, {
+                        devices: !data && this.props.devices !== false, hide, up: !locked && index > 0, down: !locked && index < siblings.length - 1, out: !locked && !!parent, into: canGoIn ? above?._id : undefined,
+                        duplicate: !locked && !option?.field && !!option, parent: parent?._id ?? null, index,
+                    })}
                     ${option && this.props.onEdit && (option.fields.length > inlineFields.length || this.props.form || this.props.fieldGroup) ? iconButton(`${prefix}-edit`, 'pen', `${__('Edit')} ${label}`, () => this.props.onEdit!(block._id)) : null}
                     ${this.props.onNote ? iconButton(`${prefix}-note`, 'chat-round-line', `${__('Add a note on')} ${label}`, () => this.props.onNote!(block._id)) : null}
                     ${this.props.lock || pinned ? null : iconButton(`${prefix}-remove`, 'trash-bin-trash', `${__('Remove')} ${label}`, () => { this.pendingRemove = block._id; }, { danger: true })}

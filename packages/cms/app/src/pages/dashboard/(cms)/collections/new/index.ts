@@ -4,7 +4,7 @@ import { html, component } from '@cossackframework/renderer';
 import { isCmsError, PERMISSIONS } from '@cossackframework/cms';
 import { collectionName } from '../../../../../cms/builder';
 import { requireAny } from '../../../../../cms/guards';
-import { ICONS } from '../../../../../cms/icons';
+import { ICON_CATALOG } from '../../../../../cms/icons';
 import { notice, pageHeader } from '../../../../../cms/ui';
 
 /** A new collection: its names and icon; the builder takes over once it exists. */
@@ -57,7 +57,7 @@ export default class NewCollectionPage extends Cossack {
                     ${component(Field, { label: __('Singular name'), for: 'collection-singular', hint: __('Such as Product.'),
                         control: attributes => component(Input, { ...attributes, '.value': this.draft.singular, '@input': (event: Event) => this.setDraft('singular', (event.target as HTMLInputElement).value) }) })}
                     ${component(Field, { label: __('Icon'), for: 'collection-icon-picker',
-                        control: () => component(IconPicker, { id: 'collection-icon', value: this.draft.icon, icons: ICONS, label: __('Icon'), allowEmpty: false, onChange: (name: string) => this.setDraft('icon', name) }) })}
+                        control: () => component(IconPicker, { id: 'collection-icon', value: this.draft.icon, icons: ICON_CATALOG, label: __('Icon'), allowEmpty: false, onChange: (name: string) => this.setDraft('icon', name) }) })}
                     ${component(Button, { type: 'submit', disabled: !collectionName(this.draft.label) }, __('Create collection'))}
                 </form>`))}
         </div>`;

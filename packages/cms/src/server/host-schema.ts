@@ -245,6 +245,20 @@ export const HOST_STEPS: readonly HostStep[] = [{
         { rql: `INSERT INTO cms_outbox (id, topic, payload, created_at, available_at, attempts, lease_until) VALUES ('search:host-7:0', 'search.rebuild',
             '{"eventId":"search:host-7:0","topic":"search.rebuild","at":0,"run":"host-7","only":null,"collection":null,"after":null,"step":0}', 0, 0, 0, 0)` },
     ],
+}, {
+    version: 8,
+    description: 'Title matches first in the site search',
+    statements: [
+        // Weights are part of an index's definition (RomeDB 0.2.21), so the index is made again. It is
+        // made on an empty table, which is instant, and refilled from the outbox like step 7, so no
+        // request builds an index over every row. A rebuild still waiting is replaced by this one.
+        { rql: 'DROP INDEX cms_search__text' },
+        { rql: 'DELETE FROM cms_search' },
+        { rql: `CREATE SEARCH INDEX cms_search__text ON cms_search(title, text) USING FULLTEXT WITH (weights='title=3')` },
+        { rql: `DELETE FROM cms_outbox WHERE topic = 'search.rebuild' AND delivered_at IS NULL` },
+        { rql: `INSERT INTO cms_outbox (id, topic, payload, created_at, available_at, attempts, lease_until) VALUES ('search:host-8:0', 'search.rebuild',
+            '{"eventId":"search:host-8:0","topic":"search.rebuild","at":0,"run":"host-8","only":null,"collection":null,"after":null,"step":0}', 0, 0, 0, 0)` },
+    ],
 }];
 
 /**

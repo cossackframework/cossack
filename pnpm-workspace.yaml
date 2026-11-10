@@ -37,8 +37,8 @@ minimumReleaseAgeExclude:
   - '@modelcontextprotocol/core@2.3.0'
   - '@modelcontextprotocol/server@2.3.0'
   - '@modelcontextprotocol/client@2.3.0'
-  - '@romedb/client@0.2.18'
-  - '@romedb/node@0.2.18'
+  - '@romedb/client@0.2.21'
+  - '@romedb/node@0.2.21'
 
 patchedDependencies:
   appdmg@^0.6.6: packages/scaffold/template/patches/appdmg@0.6.6.patch

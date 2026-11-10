@@ -55,7 +55,7 @@ describe.skipIf(!live)('site search index', () => {
         expect(await found('zebra')).toEqual([]);
     });
 
-    it('ranks every collection together, pages, marks snippets and falls back to any word', async () => {
+    it('ranks every collection together, titles first, pages, marks snippets and falls back to any word', async () => {
         const context = { principal: editor };
         const page = await cms.resource('cms/pages').create({ title: 'Walrus facts', status: 'published' }, context);
         const posts = [];
@@ -70,9 +70,20 @@ describe.skipIf(!live)('site search index', () => {
         expect(new Set(all).size).toBe(24);
         expect(all).toContain(`pages:${page.id}`);
         expect(await found('walrus', { collections: ['pages'] })).toEqual([`pages:${page.id}`]);
-        const snippet = (await cms.siteSearch.search('ice number', { perPage: 1 })).hits[0]!.snippet;
-        expect(snippet.filter(part => part.match).map(part => part.text)).toEqual(['number', 'ice']);
-        expect(snippet.map(part => part.text).join('')).toMatch(/^The walrus number \d+ lives near ice$/);
+        // A title match outranks a mention in the text (the index weighs titles 3), and the last word typed is a prefix.
+        const mention = await cms.resource('cms/posts').create({ title: 'Ice field', content: content('Snow and wind for miles, then a walrus, then more snow and wind for miles'), status: 'published' }, context);
+        const ranked = (await cms.siteSearch.search('walrus', { perPage: 50 })).hits;
+        expect(ranked).toHaveLength(25);
+        expect(ranked.at(-1)!.id).toBe(mention.id);
+        expect((await cms.siteSearch.search('walr', { perPage: 50 })).hits.map(hit => hit.id)).toEqual(ranked.map(hit => hit.id));
+        expect((await cms.siteSearch.search('w', { perPage: 50 })).hits).toEqual([]);
+        // RomeDB cuts the snippet from the text and marks what matched, a prefix's word included.
+        for (const typed of ['ice number', 'ice numb']) {
+            const snippet = (await cms.siteSearch.search(typed, { perPage: 1 })).hits[0]!.snippet;
+            expect(snippet.filter(part => part.match).map(part => part.text), typed).toEqual(['number', 'ice']);
+            expect(snippet.map(part => part.text).join(''), typed).toMatch(/^The walrus number \d+ lives near ice$/);
+        }
+        expect(ranked.find(hit => hit.id === page.id)!.snippet).toEqual([]);
         const loose = await cms.siteSearch.search('walrus pelican');
         expect(loose.loose).toBe(true);
         expect(loose.hits.length).toBeGreaterThan(0);

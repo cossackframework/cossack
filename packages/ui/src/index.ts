@@ -28,7 +28,7 @@ export { Accordion, type AccordionProps } from "./components/Accordion";
 export { Textarea, type TextareaProps } from "./components/Textarea";
 export { CodeEditor, type CodeEditorProps } from "./components/CodeEditor";
 export { ColorPicker, type ColorPickerProps } from "./components/ColorPicker";
-export { IconPicker, type IconPickerProps, type IconPickerSource } from "./components/IconPicker";
+export { IconPicker, isIconPickerCatalog, type IconPickerCatalog, type IconPickerCategory, type IconPickerProps, type IconPickerSource } from "./components/IconPicker";
 export { Checkbox, type CheckboxProps } from "./components/Checkbox";
 export { Switch, type SwitchProps } from "./components/Switch";
 export { Spinner, type SpinnerProps } from "./components/Spinner";
@@ -98,7 +98,7 @@ export { MultiSelect, type MultiSelectProps } from "./components/MultiSelect";
 // name-based/icon-registry component: it pulled the full ~1,200-icon registry
 // (~9MB of SVG paths) into the client bundle. Import the icon you need by name
 // and pass it to Icon:  <${Icon} entry=${ArrowRightIcon} />
-export { Icon, normalizeStyle, type IconProps } from "./icons/Icon";
+export { Icon, normalizeStyle, isSpriteEntry, type IconProps, type SpriteIconEntry } from "./icons/Icon";
 export type { IconStyle, IconEntry, IconRegistry } from "@cossackframework/solar-icons/types";
 
 export { DataTable, type DataTableProps, type DataTableColumn, type DataTableState, type DataTableSort } from './components/DataTable';
@@ -118,3 +118,5 @@ export type { DisclosureProps, DisclosureTriggerProps, DisclosurePanelProps } fr
 export { createUiFormBindings, type UiFormBindings, type UiFormFieldBinding } from './form-bindings';
 
 export { Turnstile, type TurnstileProps, type TurnstileError, type TurnstileClient, type TurnstileLoader, type TurnstileRenderOptions } from './components/Turnstile';
+
+export { UI_PALETTES, UI_PALETTE_META, type UiPalette } from './theme/palettes';

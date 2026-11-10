@@ -19,7 +19,7 @@ describe('section blocks', () => {
         const svg = await renderToString(siteIcon('check-circle', { class: 'size-6' })!);
         expect(svg).toContain('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" class="cms-icon size-6"');
         expect(svg).toContain('aria-hidden="true"');
-        expect(svg).toContain('stroke="currentColor"');
+        expect(svg).toContain('<use href="/assets/icons/line/hot.');
         expect(await renderToString(helpers.icon('star', { label: 'Favourite' })!)).toContain('role="img" aria-label="Favourite"');
         expect(siteIcon('no-such-icon')).toBeNull();
         expect(helpers.icon('')).toBeNull();

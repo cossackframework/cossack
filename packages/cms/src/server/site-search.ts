@@ -13,7 +13,7 @@ import { uuidv7 } from '@cossackframework/core';
 import type { Statement, Value } from '@cossackframework/romedb';
 import { CmsError } from '../errors';
 import { ANONYMOUS, hasPermission, ruleScope } from '../permissions';
-import { isSearchSyntaxError, searchQuery, snippetParts, type SnippetPart } from '../search';
+import { isSearchSyntaxError, searchQuery, type SnippetPart } from '../search';
 import type { CollectionDefinition } from '../collections';
 import type { RecordShape } from '../records';
 import type { Resource } from '../resource';
@@ -29,6 +29,8 @@ export const SITE_SEARCH = {
     batch: 100,
     /** RomeDB's largest `search::text` limit, so the deepest page reaches this many hits. */
     hits: 10_000,
+    /** Characters of each hit's snippet (`search::snippet` takes 40 to 1000). */
+    snippet: 160,
 } as const;
 
 /** One round of a rebuild, queued in the outbox; the first clears what it rebuilds. */
@@ -206,8 +208,11 @@ export class SiteSearch {
         // Hits are checked again in the outer query; fetch more when some may be filtered out.
         const filtered = options.locale !== undefined || wanted.length < shown.length;
         const run = async (query: string) => {
+            // The page's hits first, then a snippet cut in the database for each of them only: a
+            // projection beside ORDER BY would cut one for every hit fetched, and a hit's text never leaves.
+            const onPage = `SELECT h.id, h.score FROM search::text('${SITE_SEARCH.index}', $query, $limit) h JOIN ${SITE_SEARCH.collection} s ON s.id = h.id WHERE ${conditions.join(' AND ')} ORDER BY h.score DESC, h.id LIMIT ${perPage + 1}${offset ? ` OFFSET ${offset}` : ''}`;
             const result = await this.#host.db.read([{
-                rql: `SELECT s.collection, s.entry, s.text, h.score FROM search::text('${SITE_SEARCH.index}', $query, $limit) h JOIN ${SITE_SEARCH.collection} s ON s.id = h.id WHERE ${conditions.join(' AND ')} ORDER BY h.score DESC, h.id LIMIT ${perPage + 1}${offset ? ` OFFSET ${offset}` : ''}`,
+                rql: `SELECT s.collection, s.entry, search::snippet('${SITE_SEARCH.index}', s.text, $query, ${SITE_SEARCH.snippet}), p.score FROM (${onPage}) p JOIN ${SITE_SEARCH.collection} s ON s.id = p.id ORDER BY p.score DESC, p.id`,
                 params: { ...params, $query: query, $limit: Math.min((offset + perPage + 1) * (filtered ? 4 : 1), SITE_SEARCH.hits) },
             }], { ...(options.signal ? { signal: options.signal } : {}), workLimits: this.#host.readLimits }).catch(error => {
                 if (isSearchSyntaxError(error)) throw new CmsError('CMS_VALIDATION', 'That search could not be read.');
@@ -221,8 +226,8 @@ export class SiteSearch {
             rows = await run(parsed.any);
             loose = rows.length > 0;
         }
-        const hits = rows.slice(0, perPage).map(([collection, id, body, score]) => ({
-            collection: collection as string, id: id as string, score: Number(score), snippet: snippetParts(typeof body === 'string' ? body : '', parsed.words),
+        const hits = rows.slice(0, perPage).map(([collection, id, snippet, score]) => ({
+            collection: collection as string, id: id as string, score: Number(score), snippet: snippetOf(snippet),
         }));
         return { hits, page, next: rows.length > perPage, loose };
     }
@@ -274,4 +279,11 @@ export class SiteSearch {
             params: { ...params, $sCollection: searched.collection.name },
         };
     }
+}
+
+/** `search::snippet`'s parts as plain values: text and a match flag each, empty parts left out. */
+function snippetOf(value: unknown): SnippetPart[] {
+    if (!Array.isArray(value)) return [];
+    return value.flatMap(part => part !== null && typeof part === 'object' && typeof (part as { text?: unknown }).text === 'string' && (part as { text: string }).text !== ''
+        ? [{ text: (part as { text: string }).text, match: (part as { match?: unknown }).match === true }] : []);
 }

@@ -611,6 +611,8 @@ export interface SearchOptions {
     readonly style?: 'box' | 'icon' | string;
     /** Class names for the form. */
     readonly class?: string;
+    /** Entries under the box while someone types, from the site's search; on by default. */
+    readonly suggest?: boolean;
 }
 
 /** A reference field's target: an entry with its title and URL, or a record of another resource. */
@@ -818,8 +820,9 @@ export interface ThemeHelpers {
     /** The URL of a file in the theme's `assets/`, such as `asset('assets/theme.css')`; empty when it has none. */
     asset(path: string): string;
     /**
-     * One of the site icons (`SITE_ICON_NAMES`) as an inline SVG, sized by `class` (default
-     * `size-5`) and decorative unless `label` names it. Null for a name outside the set.
+     * Any icon of the catalog (`ICON_CATEGORIES`) in the site's icon style, as an SVG drawn from
+     * a cached sprite, sized by `class` (default `size-5`) and decorative unless `label` names it.
+     * Null for a name outside the catalog.
      */
     icon(name: string, options?: { readonly class?: string; readonly label?: string }): TemplateResult | null;
     /**

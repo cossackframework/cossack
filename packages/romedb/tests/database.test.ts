@@ -36,7 +36,7 @@ const noSleep = async () => {};
 
 describe('RomeDB binding', () => {
     it('refuses an older or missing engine release', async () => {
-        for (const engine of ['0.2.13', undefined]) {
+        for (const engine of ['0.2.20', undefined]) {
             const db = createRomeDB({ url: LOCAL, token: 't', pending: new MemoryPendingWriteStore(), fetch: service({ engine: engine as string }).fetch });
             if (engine === undefined) {
                 const fetch = (async (input: RequestInfo | URL) => String(input) === LOCAL ? json(details()) : json({})) as typeof globalThis.fetch;
@@ -44,7 +44,7 @@ describe('RomeDB binding', () => {
                 await expect(missing.read([{ rql: 'SELECT 1' }])).rejects.toBeInstanceOf(EngineVersionError);
                 continue;
             }
-            await expect(db.read([{ rql: 'SELECT 1' }])).rejects.toThrow(/0\.2\.13 is older than the required 0\.2\.14/);
+            await expect(db.read([{ rql: 'SELECT 1' }])).rejects.toThrow(/0\.2\.20 is older than the required 0\.2\.21/);
         }
         const newer = createRomeDB({ url: LOCAL, token: 't', pending: new MemoryPendingWriteStore(), fetch: service({ engine: '2.10.1' }).fetch });
         expect((await newer.preflight()).engineVersion).toBe('2.10.1');

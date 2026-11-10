@@ -65,13 +65,18 @@ signed-in user. A path walks into objects and lists with dots, as in
   stands for its data: `{{ $.content#hero.title }}` is the `title` of the block whose ID is
   `hero`. Give a block an ID of your own under its Style tab → Advanced → Block ID; the
   management API serves the same block at `GET /api/cms/content/<collection>/<entry>/blocks/hero`.
-- `$site` holds `title`, `tagline`, `logo` and `icon`.
+- `$site` holds `title`, `tagline`, `logo`, `icon` and `year`.
 - `$user` holds `name`. It is empty for visitors. A signed-in user's page that reads `$user`
   is sent with `cache-control: private, no-store`.
 - A binding to another scope, such as `{{ $page.title }}`, is refused when the content is
   saved.
 - A bare `$.price`, without braces, is plain text. Text such as "costs $.99" never turns into
   a binding.
+- Automations (Tools → Automations) fill their recipient, subject and text with the same
+  syntax: `$` is the event's variables there (`{{ $.title }}`, `{{ $.url }}`, `{{ $.values.email }}`
+  for a form, `{{ $.customerEmail }}` for a payment, `{{ $.record.<field> }}` for the whole
+  entry), `$site` the same site settings and `$user` the person whose action raised the event
+  (`name` and `email`; empty for a visitor's form or a payment).
 
 ## Checks and limits
 

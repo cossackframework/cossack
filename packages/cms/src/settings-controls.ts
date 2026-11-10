@@ -36,9 +36,10 @@ export function validateSettingValue(name: string, declaration: SettingDeclarati
 export function settingControlProblems(name: string, declaration: SettingDeclaration): string[] {
     const problems: string[] = [];
     const at = `field ${name}`;
-    if (declaration.control !== undefined && (!['color', 'file'].includes(declaration.control)
-        || declaration.kind !== 'string' || declaration.multiple || declaration.media || declaration.source !== undefined)) {
-        problems.push(`${at}: control is color or file and applies to a single string without a source.`);
+    const preview = declaration.control === 'icon-style' || declaration.control === 'palette';
+    if (declaration.control !== undefined && (!['color', 'file', 'icon-style', 'palette'].includes(declaration.control)
+        || declaration.kind !== (preview ? 'enum' : 'string') || declaration.multiple || declaration.media || declaration.source !== undefined)) {
+        problems.push(`${at}: control is color or file on a single string, or icon-style or palette on an enum, without a source.`);
     }
     if (declaration.fileKinds !== undefined && (declaration.control !== 'file' || !Array.isArray(declaration.fileKinds)
         || !declaration.fileKinds.length || declaration.fileKinds.some(kind => !(FIELD_MEDIA_KINDS as readonly string[]).includes(kind))

@@ -13,6 +13,7 @@ import { createClient, resolveTarget } from '../cms/client.js';
 import { readBody } from '../cms/input.js';
 import { loginCommand, logoutCommand, mcpCommand, whoamiCommand } from '../cms/login.js';
 import { importWxrCommand } from '../cms/import-wxr.js';
+import { passwordResetCommand } from '../cms/recovery.js';
 import { mimeType } from '../cms/mime.js';
 import { formatJson, formatTable } from '../cms/output.js';
 
@@ -38,6 +39,8 @@ On a network, --site <id> acts on one site (site accounts sign in with --site to
 Writes take --data '{"title":"Hello"}' (or @file, @- for stdin) and --set title=Hello; deletes and resets need --yes.
 Menus, their locations and the theme's widget areas (menus, locations, areas) take the appearance permission.
 \`cossack cms mcp\` prints the configuration an MCP client needs for the same site.
+Locked out? With CMS_RECOVERY_CODE set in the site's environment, \`cossack cms password reset --email you@example.com\`
+prints a one-hour reset link without signing in (the code from CMS_RECOVERY_CODE, the project's .env, or a prompt).
 
 Commands:
 ${lines.join('\n')}`);
@@ -56,6 +59,7 @@ export async function cmsCommand(args, ctx) {
     if (noun === 'whoami') return whoamiCommand(options);
     if (noun === 'mcp') return mcpCommand(options);
     if (noun === 'import') return importWxrCommand({ ...options, positionals: rest });
+    if (noun === 'password') return passwordResetCommand(options);
     const label = `cms ${noun} ${command.verb}`;
     if (command.destructive && ctx.flags.yes !== true) throw coded('COSSACK_CMS_CONFIRM_REQUIRED', `${label} is permanent: add --yes to confirm.`);
     const body = command.write ? await readBody(ctx.flags, { cwd: ctx.cwd }) : undefined;

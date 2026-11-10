@@ -22,13 +22,13 @@ WordPress.com's 2021 block ranking (Paragraph, Image, Heading, List, Spacer, Sep
   from the server; `tabs.client.ts` switches panels, moves with the arrow keys and opens the
   panel a `#id` link names; without scripting every panel shows under its title. The
   accordion is native `<details>`; "open one at a time" shares a `name` between sections.
-- **A closed icon set, shipped.** The menu-icon decision stands for the dashboard's whole set,
-  which never reaches visitors. Blocks need icons, so the site ships a bounded set:
-  `SITE_ICON_NAMES` (about 120 Solar line icons) in the CMS package, one import per icon in
-  the application's `cms/site-icons.ts` (a test keeps the lists equal), `field.icon()` for a
-  field the picker fills and the host checks against the set, and `helpers.icon(name)` for
-  templates and plugin blocks. Icons in the Card (in place of an image: the icon box), the
-  Icon list and the Tab.
+- **Any icon, from sprites.** (Revised 2026-11-10; wave 1 shipped a closed set of about 120
+  site icons inlined from `cms/site-icons.ts`.) Every Solar icon can be chosen: the CMS package
+  holds the catalog by category (`ICON_CATEGORIES`, generated), `field.icon()` is checked
+  against it, and `helpers.icon(name)` draws `<svg><use href>` into sprites the
+  `cossackCmsIcons()` Vite plugin serves and builds under `/assets/icons/<style>/<group>.svg`:
+  one per style and category plus the hot set, cached for a year. Settings → Appearance picks
+  the style. Icons in the Card (in place of an image: the icon box), the Icon list and the Tab.
 - **Brand icons resolved on the server.** A `brand: true` string field holds a profile URL;
   `renderedBlock` resolves its network by host (`brandIcon`, Simple Icons, CC0; LinkedIn drawn
   in since Simple Icons dropped it) into `RenderedBlock.icons`, so a page carries the icons it

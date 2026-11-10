@@ -1,11 +1,10 @@
 import { Client, ClientState, Cossack, Page, State, type HeadValue } from '@cossackframework/core';
 import { Badge, Card, CardBody, Icon, Input } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
-import { MagnifierIcon } from '@cossackframework/solar-icons/magnifier/line';
 import { BLOCK_CATEGORIES, blockCategory, blockSupports, PERMISSIONS, type BlockCategory } from '@cossackframework/cms';
 import { FIELD_TYPES, typeOf } from '../../../../cms/builder';
 import { requireAny } from '../../../../cms/guards';
-import { blockIcon, blockIconColor } from '../../../../cms/icons';
+import { blockIcon, blockIconColor, icon } from '../../../../cms/icons';
 import { pageHeader } from '../../../../cms/ui';
 
 /** The Style tab's properties as words; the advanced background's details fold into their main property. */
@@ -55,7 +54,7 @@ export default class BlocksPage extends Cossack {
         return html`<div class="space-y-6">
             ${pageHeader(__('Blocks'), { description: __('Entries are built from these in their Content field; a collection can start every entry from a template of them. Plugins add block types. Data blocks store values without showing anything.') })}
             <div class="relative max-w-sm">
-                <span class="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground [&_svg]:size-4">${component(Icon, { entry: { line: MagnifierIcon }, size: 16 })}</span>
+                <span class="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground [&_svg]:size-4">${component(Icon, { entry: icon('magnifier'), size: 16 })}</span>
                 ${component(Input, { type: 'search', id: 'blocks-search', placeholder: __('Search blocks'), 'aria-label': __('Search blocks'), '.value': this.search, class: 'pl-8',
                     '@input': (event: Event) => this.setSearch((event.target as HTMLInputElement).value) })}</div>
             ${groups.length ? null : html`<p role="status" class="text-sm text-muted-foreground">${__('No blocks match your search.')}</p>`}

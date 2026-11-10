@@ -1,10 +1,11 @@
 import type { Context, MiddlewareHandler } from 'hono';
 import { getCookie } from 'hono/cookie';
 import { enforceRateLimit, getClientIp, getSupportedLocales, LOCALE_COOKIE_NAME, setRequestLocale } from '@cossackframework/core';
-import { ANONYMOUS, escapeHtml, hasPermission, PERMISSIONS, type Principal } from '@cossackframework/cms';
+import { ANONYMOUS, escapeHtml, hasPermission, PERMISSIONS, type Principal, DEFAULT_ICON_STYLE, isIconStyle } from '@cossackframework/cms';
 import { MAIN, MAIN_SITE, networkSite, type SiteResolution } from '@cossackframework/cms/server';
 import { cmsFor, networkFor, type CmsBindings } from './index';
 import { handoff } from './handoff';
+import { dashboardPalette } from '../dashboard/head';
 import { runMaintenance } from './maintenance';
 
 /**
@@ -62,6 +63,11 @@ export const cmsMiddleware: MiddlewareHandler = async (c, next) => {
     if (routed) return routed;
     // Before setup the definition tables do not exist yet; built-in collections apply.
     await cms.ready().catch(error => console.error('[cms] could not load collections', error));
+    // Settings → Interface: the style every icon of this request is drawn in (`iconStyle()` in
+    // cms/icons.ts reads it) and the dashboard's palettes (`dashboardHead()` in dashboard/head.ts).
+    const [style, palette, accent] = await Promise.all((['interface.iconStyle', 'interface.palette', 'interface.accent'] as const).map(key => cms.settings.get(key).catch(() => undefined)));
+    c.set('cms.iconStyle', isIconStyle(style) ? style : DEFAULT_ICON_STYLE);
+    c.set('cms.palette', dashboardPalette(palette, accent));
     // Until a user picks a language (Profile → Dashboard language), the dashboard speaks the
     // site's default one when a catalog has it. Site pages then switch to their content's language.
     const supported = getSupportedLocales();

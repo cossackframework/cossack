@@ -20,9 +20,9 @@ describe.skipIf(!live)('automations', () => {
     }, 30_000);
 
     it('saves, lists and refuses bad automations', async () => {
-        const saved = await cms.automations.save({ name: 'Tell the team', event: 'entry.published', conditions: { collection: 'posts' }, action: { kind: 'email', to: 'team@example.com', subject: 'Published: {{ title }}', text: 'Read it at {{ url }}' } });
+        const saved = await cms.automations.save({ name: 'Tell the team', event: 'entry.published', conditions: { collection: 'posts' }, action: { kind: 'email', to: 'team@example.com', subject: 'Published: {{ $.title }}', text: 'Read it at {{ $.url }} ({{ $site.title }}, by {{ $user.name }})' } });
         expect(saved).toMatchObject({ name: 'Tell the team', active: true, runs: 0, conditions: { collection: 'posts' } });
-        await cms.automations.save({ name: 'New draft', event: 'entry.created', action: { kind: 'email', to: 'desk@example.com', subject: 'Draft: {{ title }}', text: '{{ collection }} {{ status }}' } });
+        await cms.automations.save({ name: 'New draft', event: 'entry.created', action: { kind: 'email', to: 'desk@example.com', subject: 'Draft: {{ $.title }}', text: '{{ $.collection }} {{ $.status }}' } });
         expect((await cms.automations.list()).map(entry => entry.name)).toEqual(['Tell the team', 'New draft']);
         await expect(cms.automations.save({ name: '', event: 'entry.published', action: { kind: 'email', to: 'x', subject: '', text: '' } })).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
         // Posting to a URL is a webhook, not an automation.
@@ -37,7 +37,7 @@ describe.skipIf(!live)('automations', () => {
         sent.length = 0;
         await posts.update(draft.id, { status: 'published', slug: 'launch-day' }, { principal: admin, expectedRevision: draft.rev });
         await cms.outbox.dispatch({ limit: 20 });
-        expect(sent).toEqual([{ to: 'team@example.com', from: 'site@example.com', subject: 'Published: Launch day', text: 'Read it at https://auto.example/posts/launch-day' }]);
+        expect(sent).toEqual([{ to: 'team@example.com', from: 'site@example.com', subject: 'Published: Launch day', text: 'Read it at https://auto.example/posts/launch-day (My Site, by )' }]);
         expect((await cms.automations.list()).find(entry => entry.name === 'Tell the team')).toMatchObject({ runs: 1, lastError: '' });
     });
 

@@ -5,7 +5,7 @@
  */
 import {
     ENTRY_VIEW_REFUSED_BLOCKS, siteEntryView, validateBlocks, type EntryViewParts,
-    ANONYMOUS, ARTICLE_TYPES, authorUrl, entryAuthors, blockDocuments, SHARE_BRAND_URLS, blockIsData, blocksPlain, editedSize, fieldGroupDeclarations, hasBlockReference, parseBlockText, PATTERN_REFERENCE, resolveBindings, resolveBlockBindings, textBlocks, usesUserBinding, type BindingScopes, type ParsedText, flattenBlocks, escapeHtml, formatSiteDate, formInputs, formSettings, imageSrcset, imageUrl, imageWidths, IMAGE_WIDTHS, isCmsError, languageFlag, languageName, mediaUrl, notificationRules, recordTitle, resolvePresets, richTextBlocks, richTextParts, richTextPlain, systemPrincipal, templateCandidates, transformable, urlList,
+    ANONYMOUS, ARTICLE_TYPES, authorUrl, entryAuthors, blockDocuments, SHARE_BRAND_URLS, blockIsData, blocksPlain, editedSize, fieldGroupDeclarations, hasBlockReference, parseBlockText, PATTERN_REFERENCE, resolveBindings, resolveBlockBindings, siteBindingScope, textBlocks, usesUserBinding, type BindingScopes, type ParsedText, flattenBlocks, escapeHtml, formatSiteDate, formInputs, formSettings, imageSrcset, imageUrl, imageWidths, IMAGE_WIDTHS, isCmsError, languageFlag, languageName, mediaUrl, notificationRules, recordTitle, resolvePresets, richTextBlocks, richTextParts, richTextPlain, systemPrincipal, templateCandidates, transformable, urlList,
     type AuthorView, type Block,
     type Principal, type TemplatePage, type ThemeData, type ThemePresets,
     type ArchiveView, type BodyPart, type BrandIcon, type CollectionDefinition, type CommentShape, type CommentView, type CommentsView, type EntryReference, type EntryView, type FieldDeclaration, type FieldFilter,
@@ -65,7 +65,7 @@ function referencedBlocks(cms: CmsHost, block: { type: string; data: Record<stri
 export function bindingScopes(settings: SiteSettings, options: { entry?: Readonly<Record<string, unknown>> | null; user?: { readonly name: string } | null } = {}): BindingScopes {
     return {
         entry: options.entry ?? null,
-        site: { title: settings['general.siteTitle'], tagline: settings['general.tagline'], logo: settings['general.logo'], icon: settings['general.favicon'], year: new Date().getFullYear() },
+        site: siteBindingScope(settings),
         user: options.user ?? null,
     };
 }
@@ -181,14 +181,14 @@ export async function entryAncestors(cms: CmsHost, collection: CollectionDefinit
 }
 
 /** What the site blocks need of the site and the page, in the page's language: the logo and search blocks, the share buttons (`url`) and the breadcrumbs. */
-export interface SiteInfo { readonly title: string; readonly tagline: string; readonly logo: string | null; readonly homeUrl: string; readonly searchUrl: string; readonly url: string; readonly breadcrumbs: readonly BreadcrumbView[] }
+export interface SiteInfo { readonly title: string; readonly tagline: string; readonly logo: string | null; readonly homeUrl: string; readonly searchUrl: string; readonly locale: string; readonly url: string; readonly breadcrumbs: readonly BreadcrumbView[] }
 
 export async function siteInfo(cms: CmsHost, locale?: string, page: { /** The page's absolute URL. */ url?: string; /** The page resolved, for its breadcrumbs. */ page?: Resolved | { kind: string; locale: string } } = {}): Promise<SiteInfo> {
     const settings = await cms.settings.all();
     const languages = await cms.languages();
     const prefix = localePrefix(languages, locale ?? languages.default);
     return { title: settings['general.siteTitle'], tagline: settings['general.tagline'], logo: settings['general.logo'] || null, homeUrl: prefix || '/', searchUrl: `${prefix}/search`,
-        url: page.url ?? '', breadcrumbs: await breadcrumbTrail(cms, page.page, languages, locale ?? languages.default) };
+        locale: locale ?? languages.default, url: page.url ?? '', breadcrumbs: await breadcrumbTrail(cms, page.page, languages, locale ?? languages.default) };
 }
 
 /**

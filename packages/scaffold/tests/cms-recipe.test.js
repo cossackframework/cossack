@@ -74,6 +74,9 @@ describe('cms recipe', () => {
     expect(dependencies['@romedb/client']).toBe(dependencies['@romedb/node']);
     const config = text(files, 'vite.config.ts');
     expect(config).toContain("external: ['@romedb/client', '@romedb/node']");
+    // The icon sprites come from the CMS package's Vite plugin, not from files in the application.
+    expect(config).toContain("import { cossackCmsIcons } from '@cossackframework/cms/vite';");
+    expect(config).toContain('    cossackCmsIcons(),');
     expect(config.slice(config.indexOf('@cossack:client-dependencies'))).toContain("'@simplewebauthn/browser'");
     // Applications with database auth keep passwords only.
     const orm = await renderRecipe(resolveRecipe({ adapter: 'node', preset: 'minimal', features: ['dashboard'] }));
@@ -129,7 +132,7 @@ describe('cms recipe', () => {
     const files = await renderRecipe(resolveRecipe({ adapter: 'node', preset: 'minimal', features: ['cms'] }));
     const config = text(files, 'vite.config.ts');
     const list = config.slice(config.indexOf('@cossack:client-dependencies'), config.indexOf('],', config.indexOf('@cossack:client-dependencies')));
-    for (const name of ['@cossackframework/cms', '@cossackframework/framework/plugins', '@cossackframework/solar-icons/palette-2/line', '@tiptap/core', '@tiptap/starter-kit'])
+    for (const name of ['@cossackframework/cms', '@cossackframework/framework/plugins', '@cossackframework/solar-icons/users-group-rounded/line', '@tiptap/core', '@tiptap/starter-kit'])
       expect(list).toContain(`'${name}'`);
     expect(list).not.toContain('@cossackframework/cms/server');
     const source = (content) => ({ content: Buffer.from(content) });
@@ -145,7 +148,7 @@ describe('cms recipe', () => {
       .toBe("      // @cossack:server-dependencies\n      '@cossackframework/solar-icons/star/line',\n      '@tiptap/core',\n      '@cossackframework/renderer > parse5',");
     expect(withClientDependencies("      // @cossack:server-dependencies\n      ...([] as string[]),\n      'x',", new Map())).toBe("      // @cossack:server-dependencies\n      'x',");
     const rendered = text(files, 'vite.config.ts');
-    expect(rendered.slice(rendered.indexOf('@cossack:server-dependencies'), rendered.indexOf('parse5'))).toContain("'@cossackframework/solar-icons/palette-2/line'");
+    expect(rendered.slice(rendered.indexOf('@cossack:server-dependencies'), rendered.indexOf('parse5'))).toContain("'@cossackframework/solar-icons/users-group-rounded/line'");
     expect(rendered.slice(rendered.indexOf('@cossack:server-dependencies'), rendered.indexOf('parse5'))).not.toContain("'@cossackframework/ui'");
     expect(text(await renderRecipe(resolveRecipe({ adapter: 'node', preset: 'minimal', features: [] })), 'vite.config.ts')).toContain('// @cossack:client-dependencies\n        include: [],');
   });

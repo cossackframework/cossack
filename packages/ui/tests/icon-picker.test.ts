@@ -54,3 +54,46 @@ it('loads a larger set the first time the picker opens', async () => {
     expect(host.querySelectorAll('[role=option]').length).toBe(4);
     expect(host.querySelector('.cs-icon-picker')?.innerHTML).toContain('M1 1');
 });
+
+it('browses a catalog by category, searches across all of them and keeps the icons picked last', async () => {
+    localStorage.removeItem('cs-icon-picker-recent');
+    const picked: string[] = [];
+    const catalog = {
+        categories: [
+            { id: 'arrows', label: 'Arrows', names: ['arrow-up', 'arrow-down'] },
+            { id: 'space', label: 'Astronomy', names: ['asteroid', 'star'] },
+        ],
+        entry: (name: string) => ({ line: `<path d="${name}" />` }),
+    };
+    const host = document.createElement('div');
+    document.body.append(host);
+    render(component(IconPicker, { id: 'pick', value: '', icons: catalog, onChange: (name: string) => picked.push(name) }), host);
+    await new Promise(resolve => setTimeout(resolve, 30));
+    host.querySelector('#pick-picker-content')!.dispatchEvent(Object.assign(new Event('toggle'), { newState: 'open' }));
+    await new Promise(resolve => setTimeout(resolve, 20));
+    const options = () => [...host.querySelectorAll('[role=option]')].map(option => option.getAttribute('title'));
+    const tabs = () => [...host.querySelectorAll('[role=tab]')].map(tab => `${tab.getAttribute('title')}${tab.getAttribute('aria-selected') === 'true' ? '*' : ''}`);
+    // No recent picks yet: the first category opens, with None first.
+    expect(tabs()).toEqual(['Arrows*', 'Astronomy']);
+    expect(options()).toEqual(['None', 'arrow-up', 'arrow-down']);
+    (host.querySelectorAll('[role=tab]')[1] as HTMLButtonElement).click();
+    await new Promise(resolve => setTimeout(resolve, 20));
+    expect(tabs()).toEqual(['Arrows', 'Astronomy*']);
+    expect(options()).toEqual(['None', 'asteroid', 'star']);
+    // A search looks across every category and hides the tabs.
+    const search = host.querySelector('input[type=search]') as HTMLInputElement;
+    search.value = 'ar';
+    search.dispatchEvent(new Event('input', { bubbles: true }));
+    await new Promise(resolve => setTimeout(resolve, 20));
+    expect(host.querySelector('[role=tablist]')).toBeNull();
+    expect(options()).toEqual(['arrow-up', 'arrow-down', 'star']);
+    (host.querySelectorAll('[role=option]')[2] as HTMLButtonElement).click();
+    await new Promise(resolve => setTimeout(resolve, 20));
+    expect(picked).toEqual(['star']);
+    expect(JSON.parse(localStorage.getItem('cs-icon-picker-recent')!)).toEqual(['star']);
+    // The next open starts on Recent.
+    host.querySelector('#pick-picker-content')!.dispatchEvent(Object.assign(new Event('toggle'), { newState: 'open' }));
+    await new Promise(resolve => setTimeout(resolve, 20));
+    expect(tabs()[0]).toBe('Recent*');
+    expect(options()).toEqual(['star']);
+});

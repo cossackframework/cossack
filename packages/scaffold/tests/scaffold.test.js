@@ -554,7 +554,7 @@ describe('composition', () => {
     expect(plain.get('src/style.css').content.toString()).not.toContain('./cms/blocks.css');
     expect(plain.has('src/cms/blocks.css')).toBe(false);
     const cms = await renderRecipe(resolveRecipe({ adapter: 'node', preset: 'minimal', features: ['cms'] }));
-    expect(cms.get('src/style.css').content.toString()).toContain('@import "./cms/blocks.css";');
+    expect(cms.get('src/style.css').content.toString()).toContain('@import "@cossackframework/ui/theme/palettes.css";\n@import "./cms/blocks.css";');
     expect(cms.has('src/cms/blocks.css')).toBe(true);
   });
 

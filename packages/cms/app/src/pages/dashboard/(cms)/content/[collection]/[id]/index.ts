@@ -19,7 +19,7 @@ import { chooserKind, MEDIA_ACCEPT, MEDIA_KIND_CHOICES, uploadFile } from '../..
 import { FieldGroupView, plainBlocks, visibilityTypes, type RowPath } from '../../../../../../cms/field-group-view';
 import { box, CONTROL, countBadge, iconButton, linkButton, notice, rememberTab, shortDate, STATUS_LABELS, statusBadge, tabFromQuery } from '../../../../../../cms/ui';
 import { editorLayoutView } from '../../../../../../cms/editor-layout-view';
-import { ICONS, icon } from '../../../../../../cms/icons';
+import { hasIcon, icon } from '../../../../../../cms/icons';
 import { boxFields, layoutBoxes } from '@cossackframework/cms';
 import { conditionControl, conditionFields } from '../../../../../../cms/condition-control';
 import { notificationRulesControl } from '../../../../../../cms/notification-rules';
@@ -2202,10 +2202,10 @@ export default class EntryEditor extends Cossack {
             return fresh;
         };
         const tabLabel = (id: string) => id === 'json' ? 'JSON' : __(view.layout.tabs.find(tab => tab.id === id)?.label || id);
-        // A tab's icon, when it names one of the dashboard's.
+        // A tab's icon, when it names one of the catalog's.
         const tabIcon = (id: string) => {
-            const entry = ICONS[view.layout.tabs.find(tab => tab.id === id)?.icon ?? ''];
-            return entry ? html`<span class="mr-1.5 inline-flex align-middle [&_svg]:size-4" aria-hidden="true">${component(Icon, { entry, size: 16 })}</span>` : null;
+            const name = view.layout.tabs.find(tab => tab.id === id)?.icon;
+            return hasIcon(name) ? html`<span class="mr-1.5 inline-flex align-middle [&_svg]:size-4" aria-hidden="true">${component(Icon, { entry: icon(name), size: 16 })}</span>` : null;
         };
         const base = `/dashboard/content/${view.route}`;
         // Who else is on each tab, for the tab labels.

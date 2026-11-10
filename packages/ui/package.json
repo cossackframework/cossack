@@ -24,6 +24,7 @@
     },
     "./theme/base.css": "./src/theme/base.css",
     "./theme/theme.css": "./src/theme/theme.css",
+    "./theme/palettes.css": "./src/theme/palettes.css",
     "./theme/themes/default.css": "./src/theme/themes/default.css",
     "./theme/themes/dark.css": "./src/theme/themes/dark.css",
     "./theme/themes/neutral.css": "./src/theme/themes/neutral.css",
@@ -53,7 +54,8 @@
     "test": "vitest",
     "pretest:browser": "pnpm run build",
     "test:browser": "vitest run --config vitest.browser.config.ts",
-    "build:icons": "tsx src/scripts/build-icons.ts"
+    "build:icons": "tsx src/scripts/build-icons.ts",
+    "palettes": "node scripts/build-palettes.mjs"
   },
   "peerDependencies": {
     "@cossackframework/core": "^0.9.0",

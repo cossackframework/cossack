@@ -6,12 +6,12 @@ import { requireAny } from '../../../../../cms/guards';
 import { linkButton, notice, pageHeader, shortDate } from '../../../../../cms/ui';
 
 interface Form { id: string; name: string; event: AutomationEvent; collection: string; form: string; to: string; subject: string; text: string; active: boolean }
-const EMPTY: Form = { id: '', name: '', event: 'entry.published', collection: '', form: '', to: '', subject: '{{ title }} was published', text: '{{ title }}\n{{ url }}', active: true };
+const EMPTY: Form = { id: '', name: '', event: 'entry.published', collection: '', form: '', to: '', subject: '{{ $.title }} was published', text: '{{ $.title }}\n{{ $.url }}', active: true };
 
 /**
  * Tools → Automations: when something happens on the site (an entry is published, a form is
  * submitted, a payment completes), send an email. Templates take the event's variables as
- * {{ title }}, {{ url }}, {{ collection }}, {{ values.email }}, {{ customerEmail }}. Runs ride
+ * {{ $.title }}, {{ $.url }}, {{ $.collection }}, {{ $.values.email }}, {{ $.customerEmail }}. Runs ride
  * the outbox, so a failing action is retried and its last error is shown here. Posting the
  * same events to a URL is Tools → Webhooks.
  */
@@ -107,9 +107,9 @@ export default class AutomationsPage extends Cossack {
                         ${select('event', __('When'), AUTOMATION_EVENTS.map(event => ({ value: event, label: __(AUTOMATION_EVENT_LABELS[event]) })))}
                         ${entryEvent ? select('collection', __('Only this collection'), [{ value: '', label: __('Any collection') }, ...this.collections.map(collection => ({ value: collection.name, label: collection.label }))]) : null}
                         ${this.form.event === 'form.submitted' ? select('form', __('Only this form'), [{ value: '', label: __('Any form') }, ...this.forms.map(form => ({ value: form.slug, label: form.title }))]) : null}
-                        ${input('to', __('To'), { required: true, placeholder: 'editor@example.com, {{ customerEmail }}' })}
+                        ${input('to', __('To'), { required: true, placeholder: 'editor@example.com, {{ $.customerEmail }}' })}
                         ${input('subject', __('Subject'), { required: true, maxlength: 200 })}
-                        ${component(Field, { label: __('Text'), for: 'automation-text', hint: __('Variables: {{ title }}, {{ url }}, {{ collection }}, {{ status }}, {{ values.<field> }} for forms, {{ amount }}, {{ customerEmail }}, {{ reference }} for payments.'),
+                        ${component(Field, { label: __('Text'), for: 'automation-text', hint: __('Variables: {{ $.title }}, {{ $.url }}, {{ $.collection }}, {{ $.status }}, {{ $.values.<field> }} for forms, {{ $.amount }}, {{ $.customerEmail }}, {{ $.reference }} for payments; {{ $site.title }} and {{ $user.name }} as in content.'),
                             control: attributes => component(Textarea, { ...attributes, rows: 5, required: true, '.value': this.form.text, '@input': (event: Event) => { this.form = { ...this.form, text: (event.target as HTMLTextAreaElement).value }; } }) })}
                         ${component(Checkbox, { label: __('Active'), checked: this.form.active, '@change': (event: Event) => { this.form = { ...this.form, active: (event.target as HTMLInputElement).checked }; } })}
                         <div class="flex flex-wrap items-center gap-2">${component(Button, { type: 'submit' }, this.form.id ? __('Save') : __('Add automation'))}${this.form.id ? linkButton(__('New'), '/dashboard/tools/automations', 'outline') : null}</div>

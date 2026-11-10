@@ -13,7 +13,7 @@ import { Avatar, DropdownMenu, Icon, Popover } from '@cossackframework/ui';
 import type { IconEntry } from '@cossackframework/solar-icons/types';
 import type { SeoView } from './seo-head';
 import { icon } from './icons';
-import { statusBadge } from './ui';
+import { initials, STATUS_LABELS } from './ui';
 
 /** What a page tells the taskbar about itself, in its `init()`, before the layout renders. */
 export interface TaskbarPage {
@@ -61,6 +61,10 @@ const SEPARATOR = html`<span aria-hidden="true" class="mx-1 h-5 w-px bg-border">
 const menuLink = (link: TaskbarLink) => html`<a role="menuitem" tabindex="-1" href=${link.href} class="flex w-full items-center gap-2 rounded-sm px-3 py-2 text-sm text-foreground no-underline hover:bg-muted">
     ${link.icon ? html`<span class="inline-flex text-muted-foreground [&_svg]:size-4">${component(Icon, { entry: link.icon, size: 16 })}</span>` : null}<span class="min-w-0 truncate">${__(link.label)}</span></a>`;
 
+/** The entry's status as underlined text in the status's color, quieter than a badge on the bar. */
+const STATUS_LINE: Record<string, string> = { published: 'decoration-emerald-500', scheduled: 'decoration-sky-500', pending: 'decoration-amber-500', draft: 'decoration-muted-foreground/60', trash: 'decoration-destructive' };
+const statusText = (status: string) => STATUS_LABELS[status] ? html`<span data-taskbar-status=${status} class=${`inline-flex h-8 items-center px-2 text-xs font-medium text-muted-foreground underline decoration-2 underline-offset-[5px] ${STATUS_LINE[status] ?? ''}`}>${__(STATUS_LABELS[status]!)}</span>` : null;
+
 const barLink = (link: TaskbarLink) => html`<a href=${link.href} class=${ITEM}>${link.icon ? component(Icon, { entry: link.icon, size: 16 }) : null}${__(link.label)}</a>`;
 
 export function taskbar(view: TaskbarView, handlers: { logout(): void; error?: string }): TemplateResult {
@@ -75,8 +79,8 @@ export function taskbar(view: TaskbarView, handlers: { logout(): void; error?: s
         }, html`${view.start.map(menuLink)}`)}</span>
         <div class=${`contents ${EDITING}`}>
             ${SEPARATOR}
-            ${context.status ? html`<span class="px-1 [&_span]:text-xs">${statusBadge(context.status)}</span>` : null}
-            ${context.edit ? html`<a href=${context.edit} class="inline-flex h-7 items-center rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground no-underline hover:opacity-90">${__('Live Edit')}</a>` : null}
+            ${context.status ? statusText(context.status) : null}
+            ${context.edit ? barLink({ label: 'Live Edit', href: context.edit, icon: icon('cursor') }) : null}
             ${context.links.map(barLink)}
             ${view.seo?.title ? seoInspector(view.seo) : null}
         </div>
@@ -91,7 +95,7 @@ export function taskbar(view: TaskbarView, handlers: { logout(): void; error?: s
         </div>
         <span data-taskbar-end class="inline-flex shrink-0">${component(DropdownMenu, {
             id: 'cms-taskbar-user', side: 'top', align: 'end',
-            trigger: html`<span class=${ITEM}>${component(Avatar, { src: view.user.avatar ?? undefined, alt: '', size: 24 })}<span class="max-w-40 truncate text-foreground">${view.user.name}</span></span>`,
+            trigger: html`<span class=${ITEM}>${component(Avatar, { src: view.user.avatar ?? undefined, alt: '', size: 24 }, initials(view.user.name))}<span class="max-w-40 truncate text-foreground">${view.user.name}</span></span>`,
         }, html`
             <div class="px-3 py-2">
                 <div class="text-sm font-medium">${view.user.name}</div>

@@ -313,6 +313,8 @@ const DASHBOARD_CORE_PATHS = new Set([
   'src/dashboard/app-passwords.ts',
   'src/dashboard/avatar-field.ts',
   'src/dashboard/bulk.ts',
+  'src/dashboard/icons.ts',
+  'src/dashboard/head.ts',
   'src/dashboard/list-table.ts',
   'src/dashboard/page.ts',
   'src/dashboard/tabs.ts',
@@ -1703,7 +1705,8 @@ function applyStyles(content, recipe) {
   const marker = '@import "@cossackframework/ui/theme/theme.css";';
   const imports = [marker];
   if (recipe.config.theme !== 'default') imports.push(`@import "@cossackframework/ui/theme/themes/${recipe.config.theme}.css";`);
-  if (recipe.resolvedFeatures.includes('cms')) imports.push('@import "./cms/blocks.css";');
+  // The CMS dashboard switches palettes at runtime (Settings → Interface).
+  if (recipe.resolvedFeatures.includes('cms')) imports.push('@import "@cossackframework/ui/theme/palettes.css";', '@import "./cms/blocks.css";');
   return content.replace(marker, imports.join('\n'));
 }
 

@@ -7,10 +7,9 @@ import { Client, ClientState, Component, Cossack } from '@cossackframework/core'
 import { html, component } from '@cossackframework/renderer';
 import { BLOCK_CATEGORIES, type BlockCategory } from '@cossackframework/cms';
 import { Icon, Popover } from '@cossackframework/ui';
-import { AddSquareIcon } from '@cossackframework/solar-icons/add-square/line';
-import { blockIcon, blockIconColor } from './icons';
+import { blockIcon, blockIconColor, icon } from './icons';
 
-const addIcon = { line: AddSquareIcon };
+const addIcon = icon('add-square');
 
 /** The user's recent block types, newest first, shared by the page's inserters; loaded once. */
 let recentTypes: Promise<string[]> | null = null;

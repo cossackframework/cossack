@@ -97,8 +97,9 @@ describe('helpers.menu', () => {
 
 describe('helpers.search', () => {
     it('renders a box, or a button that opens one', async () => {
-        const box = await renderToString(searchForm('/fr/search', { placeholder: 'Rechercher' }));
-        expect(box).toContain('<form action="/fr/search" method="get" role="search" class="cms-search">');
+        const box = await renderToString(searchForm('/fr/search', { placeholder: 'Rechercher' }, 'fr'));
+        expect(box).toMatch(/<form action="\/fr\/search" method="get" role="search" class="cms-search" data-suggest="\/api\/cms\/search\?perPage=5(?:&amp;|&)locale=fr" data-suggest-label="Suggestions">/);
+        expect(await renderToString(searchForm('/fr/search', { suggest: false }))).toContain('<form action="/fr/search" method="get" role="search" class="cms-search">');
         expect(box).toContain('placeholder="Rechercher" aria-label="Rechercher"');
         const toggle = await renderToString(searchForm('/search', { style: 'icon' }));
         expect(toggle).toContain('<details class="cms-search-toggle"><summary class="cms-search-button" aria-label="Search"');

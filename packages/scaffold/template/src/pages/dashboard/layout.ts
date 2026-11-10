@@ -1,26 +1,17 @@
-import { Cossack, Page, Server, State, Client, Image, server$ } from '@cossackframework/core';
+import { Cossack, Page, Server, State, Client, Image, server$, type HeadValue } from '@cossackframework/core';
 import { Sidebar, DropdownMenu, Avatar, Icon, type SidebarItem } from '@cossackframework/ui';
 import { CommandPalette, type CommandItem } from '@cossackframework/ui/blocks';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
 import { getCookie } from 'hono/cookie';
-import { Widget2Icon as dashboardIconSvg } from '@cossackframework/solar-icons/widget-2/line';
-import { SunIcon as sunIconSvg } from '@cossackframework/solar-icons/sun/line';
-import { MoonIcon as moonIconSvg } from '@cossackframework/solar-icons/moon/line';
-import { AltArrowRightIcon as chevronIconSvg } from '@cossackframework/solar-icons/alt-arrow-right/line';
-import { Logout3Icon as logoutIconSvg } from '@cossackframework/solar-icons/logout-3/line';
-import { dashboardNotices, dashboardSearch, dashboardStatus, navigation } from '../../dashboard/access';
+import { dashboardFind, dashboardNotices, dashboardSearch, dashboardStatus, navigation } from '../../dashboard/access';
+import { shellIcons } from '../../dashboard/icons';
+import { dashboardHead } from '../../dashboard/head';
 import { notice } from '@cossackframework/ui/blocks';
 import { siteLogo, siteName } from '../../brand';
 import type { DashboardModule, DashboardNotice, DashboardStatus } from '../../dashboard/types';
 import { logout } from '../../auth';
 import { requireDashboardUser } from '../../middlewares/auth';
 import { themeStore } from '@/stores.client';
-
-const dashboardIcon = { line: dashboardIconSvg };
-const sunIcon = { line: sunIconSvg };
-const moonIcon = { line: moonIconSvg };
-const chevronIcon = { line: chevronIconSvg };
-const logoutIcon = { line: logoutIconSvg };
 
 /**
  * Dashboard layout: sidebar nav + user menu + theme toggle, shared by every
@@ -43,7 +34,7 @@ const logoutIcon = { line: logoutIconSvg };
  */
 @Page({ transport: 'http', middlewares: [requireDashboardUser] })
 export default class DashboardLayout extends Cossack {
-    appName = server$(() => siteName(), { initial: 'My App' });
+    appName = server$(() => siteName(), { initial: 'Cossack' });
     appLogo = server$(() => siteLogo(), { initial: '/logo.svg' });
     /** What waits for the user, with counts, for the taskbar. */
     statuses: DashboardStatus[] = server$(() => dashboardStatus(this.c), { initial: [] });
@@ -56,6 +47,12 @@ export default class DashboardLayout extends Cossack {
     @State() modules: DashboardModule[] = [];
     /** Where Ctrl/Cmd+K can go: every screen of the navigation, resolved with it. */
     @State() commands: { id: string; label: string; group: string; href: string }[] = [];
+    /** What the palette found for its text besides the screens (`dashboardFind`): the CMS's entries. */
+    @State() found: { id: string; label: string; group: string; href: string }[] = [];
+    /** The palette's text the next find is for; one find runs at a time, so an older answer never replaces a newer one. */
+    private wanted = '';
+    private finding = false;
+    private findTimer: ReturnType<typeof setTimeout> | undefined;
     @State() logoutError = '';
     @State() account: { name: string; email: string; avatar: string | null } = {
         name: '',
@@ -73,11 +70,48 @@ export default class DashboardLayout extends Cossack {
     /** Flip the sidebar collapsed state and persist to a cookie so the next
      *  SSR render paints the correct state (no flash). The @State update drives
      *  the Sidebar re-render (controlled component). */
-    /** Open the screen a palette entry names; the palette's ids are the hrefs. */
+    /** Open the screen or entry a palette entry names; the palette's ids are the hrefs. */
     @Client()
     go(id: string) {
-        const found = this.commands.find((entry) => entry.id === id);
+        const found = [...this.commands, ...this.found].find((entry) => entry.id === id);
         if (found) window.location.assign(found.href);
+    }
+
+    /** The palette's text changed: find for it a moment after the typing stops, from two characters. */
+    @Client()
+    onPaletteSearch(text: string) {
+        this.wanted = text.trim();
+        clearTimeout(this.findTimer);
+        if (this.wanted.length < 2) {
+            if (this.found.length) this.found = [];
+            return;
+        }
+        this.findTimer = setTimeout(() => void this.findWanted(), 150);
+    }
+
+    /** Find for the text wanted, again while it changed during a find. */
+    @Client()
+    async findWanted() {
+        if (this.finding) return;
+        this.finding = true;
+        try {
+            let text: string;
+            do {
+                text = this.wanted;
+                if (text.length >= 2) await this.find(text);
+            } while (text !== this.wanted);
+            if (this.wanted.length < 2 && this.found.length) this.found = [];
+        } catch {
+            /* the screens still show; the next text finds again */
+        } finally {
+            this.finding = false;
+        }
+    }
+
+    @Server()
+    async find(text: string) {
+        const seen = new Set(this.commands.map((entry) => entry.id));
+        this.found = typeof text === 'string' ? (await dashboardFind(this.c, text.slice(0, 200))).filter((entry) => !seen.has(entry.id)) : [];
     }
 
     @Client()
@@ -117,7 +151,12 @@ export default class DashboardLayout extends Cossack {
             : this.sidebarCollapsed;
     }
 
+    head(): HeadValue {
+        return { meta: dashboardHead() };
+    }
+
     render(): TemplateResult {
+        const icons = shellIcons();
         const iconClass = 'inline-flex items-center justify-center [&_svg]:size-4';
         // The theme icons: only one shows, so `hidden` must not share the element with `inline-flex`.
         const themeIcon = 'items-center justify-center [&_svg]:size-4';
@@ -135,7 +174,7 @@ export default class DashboardLayout extends Cossack {
                 value: 'dashboard',
                 label: __('Dashboard'),
                 href: '/dashboard',
-                icon: dashboardIcon,
+                icon: icons.home,
                 active: this.isActive('/dashboard'),
             },
             ...navigationModules.map((module): SidebarItem => {
@@ -196,8 +235,8 @@ export default class DashboardLayout extends Cossack {
                                 title=${__('Switch between light and dark mode')}
                                 aria-label=${__('Switch between light and dark mode')}
                             >
-                                <span class=${`${themeIcon} inline-flex dark:hidden`}>${component(Icon, { entry: sunIcon, size: 16 })}</span>
-                                <span class=${`${themeIcon} hidden dark:inline-flex`}>${component(Icon, { entry: moonIcon, size: 16 })}</span>
+                                <span class=${`${themeIcon} inline-flex dark:hidden`}>${component(Icon, { entry: icons.light, size: 16 })}</span>
+                                <span class=${`${themeIcon} hidden dark:inline-flex`}>${component(Icon, { entry: icons.dark, size: 16 })}</span>
                                 <span class="group-[.is-collapsed]:hidden dark:hidden">${__('Light mode')}</span>
                                 <span class="hidden group-[.is-collapsed]:hidden dark:inline">${__('Dark mode')}</span>
                             </button>
@@ -216,7 +255,7 @@ export default class DashboardLayout extends Cossack {
                                         <span class="block text-xs text-muted-foreground truncate">${this.account.email}</span>
                                     </span>
                                     <span class="text-muted-foreground group-[.is-collapsed]:hidden ${iconClass}">
-                                        ${component(Icon, { entry: chevronIcon, size: 16 })}
+                                        ${component(Icon, { entry: icons.expand, size: 16 })}
                                     </span>
                                 </span>
                             `,
@@ -237,15 +276,17 @@ export default class DashboardLayout extends Cossack {
                                 type="button" role="menuitem" tabindex="-1"
                                 @click=${() => this.doLogout()}
                                 class="w-full flex items-center gap-2 px-3 py-2 text-sm rounded-sm hover:bg-muted cursor-pointer border-none bg-transparent text-left text-destructive">
-                                <span class=${iconClass}>${component(Icon, { entry: logoutIcon, size: 16 })}</span>
+                                <span class=${iconClass}>${component(Icon, { entry: icons.logout, size: 16 })}</span>
                                 ${__('Log out')}
                             </button>
                         `)}
                     `,
                 })}
                 <div class="flex-1 min-w-0 flex flex-col">
-                    ${component(CommandPalette, { id: 'dashboard-commands', label: __('Go to'), placeholder: __('Type a screen name…'), shortcut: true,
-                        commands: this.commands.map((entry): CommandItem => ({ id: entry.id, label: entry.label, group: entry.group })), onSelect: (id: string) => this.go(id) })}
+                    ${component(CommandPalette, { id: 'dashboard-commands', label: __('Go to'), placeholder: __('Type a screen name or search…'), shortcut: true,
+                        commands: [...this.commands.map((entry): CommandItem => ({ id: entry.id, label: entry.label, group: entry.group })),
+                            ...this.found.map((entry): CommandItem => ({ id: entry.id, label: entry.label, group: entry.group, matched: true }))],
+                        onSelect: (id: string) => this.go(id), onSearchChange: (text: string) => this.onPaletteSearch(text) })}
                     <main class="flex-1 p-6 sm:p-8 overflow-x-hidden has-[[data-settings-toolbar]]:overflow-visible has-[[data-subnav]]:grid has-[[data-subnav]]:grid-cols-1 has-[[data-subnav]]:p-0">
                         ${this.logoutError ? html`<p role="alert" class="mb-4 text-sm text-destructive">${this.logoutError}</p>` : null}
                         ${this.notices.length ? html`<div data-dashboard-notices class="mb-6 space-y-2 group-has-[[data-subnav]]/dashboard:m-4">${this.notices.map((item) => item.href

@@ -34,7 +34,7 @@ export type DatabaseClient = RemoteDatabase | EmbeddedClient;
 export interface Statement { rql: string; params?: { [key: string]: Value } }
 
 /** The RomeDB engine release this package targets. Older engines are refused at preflight. */
-export const REQUIRED_ENGINE_VERSION = '0.2.14';
+export const REQUIRED_ENGINE_VERSION = '0.2.21';
 
 export interface RomeDBWorkLimits {
     /** Default budget for each read batch. */

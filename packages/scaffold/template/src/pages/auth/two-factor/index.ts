@@ -35,11 +35,11 @@ export default class TwoFactorPage extends Cossack {
         const result = await completeTwoFactor(pending, code);
         if ('error' in result) {
             this.error = result.error;
-            if (result.expired) deleteCookie(this.c, TWO_FACTOR_COOKIE, { path: '/auth' });
+            if (result.expired) deleteCookie(this.c, TWO_FACTOR_COOKIE, { path: '/' });
             this.code = '';
             return;
         }
-        deleteCookie(this.c, TWO_FACTOR_COOKIE, { path: '/auth' });
+        deleteCookie(this.c, TWO_FACTOR_COOKIE, { path: '/' });
         const { headers } = await authSessions.create(result.user.id, this.c);
         headers.forEach((value, key) => this.c.header(key, value));
         // A used recovery code is a hint to set up the app again.

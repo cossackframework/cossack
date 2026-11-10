@@ -25,16 +25,22 @@ export const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAA
  */
 export function browserless(origin, routeIds, diagnostics = () => '', options = {}) {
   const jar = new Map();
+  // Each cookie's Path, so a request carries only the cookies a browser would send it.
+  const paths = new Map();
+  const sends = (name, pathname) => { const path = paths.get(name) ?? '/'; return path === '/' || pathname === path || pathname.startsWith(`${path.replace(/\/$/, '')}/`); };
   const send = (url, init) => options.connect ? viaHost(url, init, options.connect) : fetch(url, init);
   const request = async (pathname, init = {}) => {
     const headers = new Headers(init.headers);
-    headers.set('cookie', [...jar].map(([name, value]) => `${name}=${value}`).join('; '));
+    const path = pathname.split(/[?#]/)[0];
+    headers.set('cookie', [...jar].filter(([name]) => sends(name, path)).map(([name, value]) => `${name}=${value}`).join('; '));
     if (init.method === 'POST') { headers.set('origin', origin); headers.set('sec-fetch-site', 'same-origin'); }
     const response = await send(origin + pathname, { ...init, headers, redirect: 'manual' });
     for (const cookie of response.headers.getSetCookie()) {
       const [pair] = cookie.split(';');
       const [name, value] = pair.split('=');
-      if (/Max-Age=0/i.test(cookie)) jar.delete(name); else jar.set(name, value);
+      if (/Max-Age=0/i.test(cookie)) { jar.delete(name); paths.delete(name); continue; }
+      jar.set(name, value);
+      paths.set(name, /;\s*Path=([^;]*)/i.exec(cookie)?.[1] || '/');
     }
     return response;
   };

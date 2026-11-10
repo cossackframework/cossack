@@ -2,9 +2,9 @@
  * Forms for settings groups: Settings screens and Appearance → Customize render a group's
  * fields with these. Rows and values are plain data; the server converts them back.
  */
-import { Checkbox, ColorPicker, Field, Input, NativeSelect, Textarea } from '@cossackframework/ui';
+import { Checkbox, ColorPicker, Field, Input, NativeSelect, Textarea, UI_PALETTES, type FieldControlAttributes } from '@cossackframework/ui';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
-import { CmsError, hasPermission, isCmsError, PERMISSIONS, recordTitle, type FieldMediaKind, type Principal, type SettingControl, type SettingDeclaration, type SettingsDocument, type SettingsGroup } from '@cossackframework/cms';
+import { CmsError, hasPermission, iconHref, isCmsError, isIconStyle, PERMISSIONS, recordTitle, type FieldMediaKind, type Principal, type SettingControl, type SettingDeclaration, type SettingsDocument, type SettingsGroup } from '@cossackframework/cms';
 import type { CmsHost } from '@cossackframework/cms/server';
 import { findMedia } from './content';
 import { SettingsFile, type SettingsMedia } from './settings-file';
@@ -55,7 +55,7 @@ export async function settingRows(cms: CmsHost, group: SettingsGroup, principal:
 }
 
 function choicesOf(cms: CmsHost, declaration: SettingDeclaration, principal: Principal, cache: ChoiceCache): Promise<SettingRow['choices']> {
-    if (declaration.control || declaration.source === 'media') return Promise.resolve([]);
+    if (declaration.control && declaration.kind !== 'enum' || declaration.source === 'media') return Promise.resolve([]);
     if (declaration.kind === 'enum') return Promise.resolve((declaration.values ?? []).map(value => ({ value, label: declaration.choices?.[value] ?? value })));
     if (!declaration.source) return Promise.resolve([]);
     let found = cache.get(declaration.source);
@@ -115,6 +115,40 @@ export function settingPickerColor(value: string): string {
     return /^#[0-9a-f]{6}(?:[0-9a-f]{2})?$/i.test(value) ? value.slice(0, 7) : '#000000';
 }
 
+/** Icons the icon style control previews in the chosen style, from their sprites. */
+const ICON_STYLE_PREVIEW = ['star', 'heart', 'bell', 'settings', 'chat-round-line', 'cart-large-2', 'user', 'calendar'];
+
+function iconStyleControl(row: SettingRow, value: SettingValue | undefined, attributes: FieldControlAttributes, set: (value: SettingValue) => void): TemplateResult {
+    const style = isIconStyle(value) ? value : 'line';
+    return html`<div class="flex flex-wrap items-center gap-3">
+        ${component(NativeSelect, { ...attributes, class: 'w-auto min-w-40', disabled: value === null, '@change': (event: Event) => set((event.target as HTMLSelectElement).value) }, html`
+            ${row.choices.map(choice => html`<option value=${choice.value} ?selected=${choice.value === value}>${__(choice.label)}</option>`)}`)}
+        <div class="flex flex-wrap items-center gap-3 text-foreground" role="img" aria-label=${`${__('Preview')}: ${row.choices.find(choice => choice.value === style)?.label ?? style}`} data-icon-style=${style}>
+            ${ICON_STYLE_PREVIEW.map(name => html`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" class="size-6" focusable="false" aria-hidden="true"><use href=${iconHref(name, style) ?? ''}></use></svg>`)}
+        </div>
+    </div>`;
+}
+
+/**
+ * The UI's palettes as swatches, like WordPress's admin color schemes: four colors of each in
+ * the current mode, and the name. A radio group; the choice applies once saved.
+ */
+function paletteControl(row: SettingRow, value: SettingValue | undefined, attributes: FieldControlAttributes, set: (value: SettingValue) => void): TemplateResult {
+    const kind = row.name === 'accent' ? 'accent' : 'base';
+    const strip = (colors: readonly string[], mode: string) => html`<span aria-hidden="true" class=${`${mode} h-6 overflow-hidden rounded-sm border border-border`}>${colors.map(color => html`<span class="h-full flex-1" style=${`background:${color}`}></span>`)}</span>`;
+    return html`<div id=${attributes.id} role="radiogroup" aria-label=${row.label} aria-describedby=${attributes['aria-describedby'] ?? null} class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+        ${row.choices.map(choice => {
+            const palette = UI_PALETTES.find(entry => entry.id === choice.value && entry.kind === kind);
+            const checked = choice.value === value;
+            return html`<label data-palette-choice=${choice.value} class=${`flex cursor-pointer flex-col gap-2 rounded-md border p-2 text-sm has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring ${checked ? 'border-primary bg-primary/5 font-medium text-foreground' : 'border-border text-muted-foreground hover:border-foreground/30 hover:text-foreground'}`}>
+                ${palette ? html`${strip(palette.light, 'flex dark:hidden')}${strip(palette.dark, 'hidden dark:flex')}` : null}
+                <span class="flex items-center gap-2"><input type="radio" class="sr-only" name=${`${row.namespace}-${row.name}`} value=${choice.value} .checked=${checked} ?disabled=${value === null}
+                    @change=${(event: Event) => { if ((event.target as HTMLInputElement).checked) set(choice.value); }}>${__(choice.label)}</span>
+            </label>`;
+        })}
+    </div>`;
+}
+
 export function settingControl(row: SettingRow, value: SettingValue | undefined, error: string | undefined, set: (value: SettingValue) => void, media?: SettingsMedia): TemplateResult {
     const id = settingControlId(row.namespace, row.name);
     const select = row.choices.length || row.kind === 'enum';
@@ -124,6 +158,10 @@ export function settingControl(row: SettingRow, value: SettingValue | undefined,
                 ${component(ColorPicker, { id: `${id}-picker`, label: `${__('Choose color')}: ${row.label}`, value: settingPickerColor(String(value ?? '')), disabled: value === null, onChange: set })}
                 ${component(Input, { ...attributes, type: 'text', disabled: value === null, placeholder: '#000000', '.value': String(value ?? ''), '@input': (event: Event) => set((event.target as HTMLInputElement).value) })}
             </div>`
+            : row.control === 'icon-style'
+            ? iconStyleControl(row, value, attributes, set)
+            : row.control === 'palette'
+            ? paletteControl(row, value, attributes, set)
             : row.control === 'file'
             ? component(SettingsFile, { attributes, label: row.label, value: String(value ?? ''), disabled: value === null, kinds: row.fileKinds, media, onChange: set })
             : row.kind === 'boolean'

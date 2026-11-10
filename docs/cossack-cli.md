@@ -594,6 +594,7 @@ cossack cms users create --email grace@example.com --password … --role editor
 cossack cms settings set general --set siteTitle="My site"
 cossack cms sites create Blog --host blog.example.com
 cossack cms mcp                                    # the MCP client configuration for the same site
+cossack cms password reset --email you@example.com # recovery mode: a reset link with the site's CMS_RECOVERY_CODE, no login
 ```
 
 `login` creates an application password through a session and keeps it in

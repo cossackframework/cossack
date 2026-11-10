@@ -53,19 +53,22 @@ export function createClient({ url, token, site, fetch = globalThis.fetch }) {
   };
 }
 
-/** `APP_URL` from the project's `.env` or `.dev.vars`, when the working directory is in a project. */
-export async function projectUrl(cwd) {
+/** A variable from the project's `.env` or `.dev.vars`, when the working directory is in a project. */
+export async function projectEnv(cwd, name) {
   let root;
   try { root = await findProjectRoot(cwd); } catch { return undefined; }
   for (const file of ['.env', '.dev.vars']) {
     const text = await fs.readFile(path.join(root, file), 'utf8').catch(() => '');
-    const match = /^APP_URL=(.*)$/m.exec(text);
-    if (match) {
-      const value = match[1].trim().replace(/^"(.*)"$/, '$1').replace(/^'(.*)'$/, '$1');
-      if (/^https?:\/\//.test(value)) return value;
-    }
+    const match = new RegExp(`^${name}=(.*)$`, 'm').exec(text);
+    if (match) return match[1].trim().replace(/^"(.*)"$/, '$1').replace(/^'(.*)'$/, '$1');
   }
   return undefined;
+}
+
+/** `APP_URL` from the project's `.env` or `.dev.vars`, when the working directory is in a project. */
+export async function projectUrl(cwd) {
+  const value = await projectEnv(cwd, 'APP_URL');
+  return value && /^https?:\/\//.test(value) ? value : undefined;
 }
 
 /**

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { blockProblems, CORE_BLOCKS, field, fieldProblems, MAP_EMBED_URL, SITE_ICON_NAMES, SITE_ICON_SET, validateBlocks, validateValue, type Block } from '../src/index';
+import { blockProblems, CORE_BLOCKS, field, fieldProblems, MAP_EMBED_URL, SITE_ICON_NAMES, ICON_NAME_SET, validateBlocks, validateValue, type Block } from '../src/index';
 import { brandIcon } from '../src/server/brands';
 
 const types = new Map(CORE_BLOCKS.map(block => [block.name, block]));
@@ -32,7 +32,7 @@ describe('section blocks', () => {
         ];
         expect(validateBlocks(page, types).errors).toEqual({});
         // An icon outside the site set, a stat that is not a number, an embed URL from elsewhere, a section outside its accordion.
-        expect(validateBlocks([{ _id: 'c', type: 'core/card', data: { title: 'Fast', icon: 'rocket-ship-9000' } }], types).errors).toEqual({ 'c.icon': 'is not one of the site icons.' });
+        expect(validateBlocks([{ _id: 'c', type: 'core/card', data: { title: 'Fast', icon: 'rocket-ship-9000' } }], types).errors).toEqual({ 'c.icon': 'is not a known icon.' });
         expect(validateBlocks([{ _id: 's', type: 'core/stat', data: { value: '24/7' } }], types).errors).toEqual({ 's.value': 'has an invalid format.' });
         expect(validateBlocks([{ _id: 'm', type: 'core/map', data: { url: 'https://evil.example/maps/embed?pb=1' } }], types).errors).toEqual({ 'm.url': 'has an invalid format.' });
         expect(validateBlocks([{ _id: 'a1', type: 'core/accordion-item', data: { label: 'Loose' } }], types).errors).not.toEqual({});
@@ -45,10 +45,10 @@ describe('section blocks', () => {
         expect(validateValue('icon', field.icon(), 'star')).toBeUndefined();
         expect(validateValue('icon', field.icon(), '')).toBeUndefined();
         expect(validateValue('icon', field.icon(), 'Star')).toBe('has an invalid format.');
-        expect(validateValue('icon', field.icon(), 'not-an-icon')).toBe('is not one of the site icons.');
+        expect(validateValue('icon', field.icon(), 'not-an-icon')).toBe('is not a known icon.');
         expect(SITE_ICON_NAMES.length).toBeGreaterThan(100);
         expect(new Set(SITE_ICON_NAMES).size).toBe(SITE_ICON_NAMES.length);
-        expect(SITE_ICON_SET.has('check-circle')).toBe(true);
+        expect(ICON_NAME_SET.has("check-circle")).toBe(true);
     });
 
     it('accepts the embed URLs Google Maps and OpenStreetMap give', () => {

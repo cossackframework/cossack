@@ -4,16 +4,8 @@
  */
 import { Badge, Button, Icon, Tooltip } from '@cossackframework/ui';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
-import { SmartphoneIcon as smartphoneIconSvg } from '@cossackframework/solar-icons/smartphone/line';
-import { TabletIcon as tabletIconSvg } from '@cossackframework/solar-icons/tablet/line';
-import { MonitorIcon as monitorIconSvg } from '@cossackframework/solar-icons/monitor/line';
+import { shellIcons } from './icons';
 import type { SessionInfo } from '../auth';
-
-const DEVICE_ICON = {
-    mobile: { line: smartphoneIconSvg },
-    tablet: { line: tabletIconSvg },
-    desktop: { line: monitorIconSvg },
-} as const;
 
 /**
  * Parses a User-Agent string into device type + human-readable browser/OS.
@@ -68,7 +60,7 @@ export function sessionTable(sessions: readonly SessionInfo[], options: { id: st
                     ${s.userAgent
                         ? component(Tooltip, { id: tip, label: `${deviceLabel} · ${ua.browser} · ${ua.os}` }, html`
                             <span tabindex="0" aria-describedby=${tip} class="inline-flex items-center gap-2 cursor-help">
-                                <span class=${iconBtn}>${component(Icon, { entry: DEVICE_ICON[ua.device], size: 16 })}</span>
+                                <span class=${iconBtn}>${component(Icon, { entry: shellIcons()[ua.device], size: 16 })}</span>
                                 <span>${ua.browser} · ${ua.os}</span>
                             </span>`)
                         : html`<span class="text-muted-foreground">${__('Unknown device')}</span>`}

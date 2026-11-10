@@ -39,7 +39,7 @@ Rules:
   text `sql`; values, results and `ClientError` are RomeDB's own. `RecordId` is RomeDB's
   `Record`, renamed so it does not hide TypeScript's `Record` type. Print one as
   `` `${id.table}:${id.key}` ``.
-- The engine must be RomeDB 0.2.14 or later; `preflight()` refuses older or missing releases,
+- The engine must be RomeDB 0.2.21 or later; `preflight()` refuses older or missing releases,
   and `exportFile()` runs it first, so a copy is never asked of an engine that cannot leave
   tables out.
 - One process owns a file. Share a live database between processes (the app and Studio)

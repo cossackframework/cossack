@@ -5,7 +5,7 @@
  */
 import { component, html, ifDefined, type TemplateResult } from '@cossackframework/renderer';
 import { Button, Card, CardBody, Icon, Input, Pagination } from '@cossackframework/ui';
-import { MagnifierIcon } from '@cossackframework/solar-icons/magnifier/line';
+import { shellIcons } from './icons';
 import { selectAllBox, selectBox } from './bulk';
 
 export interface ListColumn<T> {
@@ -78,7 +78,7 @@ export function listFilters(options: ListFiltersOptions): TemplateResult {
         ${Object.entries(options.hidden ?? {}).filter(([, value]) => value !== '').map(([name, value]) => html`<input type="hidden" name=${name} value=${value}>`)}
         ${options.filters ?? null}
         <div class="relative w-64 max-w-full">
-            <span aria-hidden="true" class="pointer-events-none absolute left-2.5 top-1/2 inline-flex -translate-y-1/2 text-muted-foreground [&_svg]:size-4">${component(Icon, { entry: { line: MagnifierIcon }, size: 16 })}</span>
+            <span aria-hidden="true" class="pointer-events-none absolute left-2.5 top-1/2 inline-flex -translate-y-1/2 text-muted-foreground [&_svg]:size-4">${component(Icon, { entry: shellIcons().search, size: 16 })}</span>
             ${component(Input, { type: 'search', name: options.search.name, value: options.search.value, size: 'sm', class: 'pl-8', placeholder: options.search.placeholder, 'aria-label': options.search.placeholder })}
         </div>
         ${component(Button, { type: 'submit', size: 'sm', variant: 'outline' }, __('Filter'))}

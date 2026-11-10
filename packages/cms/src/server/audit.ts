@@ -78,6 +78,12 @@ export class CmsAudit {
         return { actions: result.results[0]!.rows.map(row => row[0] as string), resources: result.results[1]!.rows.map(row => row[0] as string) };
     }
 
+    /** Write one row for something that is not a resource write, such as an account recovery. */
+    async record(entry: { actor: string; action: string; resource: string; recordId: string }): Promise<void> {
+        await this.#db.write([{ rql: 'INSERT INTO cms_audit (id, actor, action, resource, record_id, revision, at) VALUES ($id, $actor, $action, $resource, $record, NULL, $at)',
+            params: { $id: crypto.randomUUID(), $actor: entry.actor, $action: entry.action, $resource: entry.resource, $record: entry.recordId, $at: this.#now() } }], WRITE);
+    }
+
     /** Drop rows older than the retention, a thousand at a time. */
     async prune(olderThanMs = AUDIT_RETENTION_MS): Promise<void> {
         const before = this.#now() - olderThanMs;

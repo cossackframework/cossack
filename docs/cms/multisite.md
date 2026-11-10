@@ -328,7 +328,7 @@ scheduled publishing, the outbox, webhooks and write recovery also run on sites 
 
 ## Limits of this release
 
-- The CMS needs RomeDB 0.2.14 or later, and refuses an older engine at connect. Databases from
+- The CMS needs RomeDB 0.2.21 or later, and refuses an older engine at connect. Databases from
   RomeDB 0.2.12 or earlier that hold documents do not open: export them as JSON on the old
   release first, or start new ones.
 - Each process keeps up to 32 site hosts open; the one used longest ago closes first.

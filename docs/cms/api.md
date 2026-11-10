@@ -47,6 +47,31 @@ stores a password made in the dashboard instead. `cossack cms logout` revokes an
 `COSSACK_CMS_URL` and `COSSACK_CMS_TOKEN` alone are enough in CI. A read-only password lists
 and reads; writes answer 403.
 
+## Locked out: recovery mode
+
+An administrator who forgot the password normally uses *Forgot password*, which needs a site
+that can send email. Without one, turn on recovery mode by setting `CMS_RECOVERY_CODE` in the
+site's environment to a random value of at least 16 characters (`openssl rand -hex 24`; with
+`wrangler secret put CMS_RECOVERY_CODE` on Workers, in `.env` on Node), then run:
+
+```bash
+cossack cms password reset --email you@example.com              # --url and --site as for any command
+cossack cms password reset --email you@example.com --second-factors   # the phone is lost too
+```
+
+The CLI takes the code from `CMS_RECOVERY_CODE`, the project's `.env` or `.dev.vars`, or a
+prompt, and needs no login. It prints a reset link that works for one hour; the new password is
+chosen in the browser, so it never goes through the command line. `--second-factors` also
+removes the account's authenticator app, recovery codes and passkeys.
+
+The site answers `POST /api/cms/recovery` (`Authorization: Bearer <code>`, body `{ email,
+secondFactors? }`) with `{ email, resetUrl, expiresAt, secondFactorsCleared }`; 403 while the
+environment has no code (or one shorter than 16 characters), 401 for a wrong code, 404 for an
+email with no active account, 429 after five tries from one address in fifteen minutes. Each
+recovery is written to Tools → Activity (`recover-account`, or `recover-account-factors`), the
+account gets an email about it when the site can send one, and while the code is set the
+dashboard reminds administrators to remove it. A network account resets on the network host.
+
 ## Sites of a network
 
 Every command takes `--site <id>` (`main` for the main site). The CLI sends it as an
@@ -171,7 +196,7 @@ application password. A CMS refusal answers `{ error, code, fields? }` with its 
 | `GET /redirects?q=&page=&perPage=`, `POST /redirects` `{ source, target, status?, note? }` | Redirects, for the redirects permission; `source` is a path, `target` a path or URL, `status` 301, 302, 307, 308 or 410. |
 | `GET /me/tokens`, `POST /me/tokens` `{ name, scope, expiresInDays? }`, `DELETE /me/tokens/<id>` | Application passwords; `POST` needs a session (a password cannot make one) and answers the token once; `expiresInDays` (1 to 3650) ends it on its own. |
 | `GET /collections`, `GET /schema/<collection>`, `GET /taxonomies` | Content types with fields; a JSON Schema; taxonomies. |
-| `GET /search?q=&collection=&locale=&page=&perPage=` | The site's search, as visitors get it: `{ items: [{ collection, id, title, url, snippet }], page, next, loose }`. Every word is required; `loose` is true when nothing had them all and the items have some. A snippet is plain parts, `{ text, match }`. No total: `next` says another page follows. |
+| `GET /search?q=&collection=&locale=&page=&perPage=` | The site's search, as visitors get it: `{ items: [{ collection, id, title, url, snippet }], page, next, loose }`. Every word is required, and the last one is a prefix from two characters (`walr` finds walrus); `loose` is true when nothing had them all and the items have some. Titles rank above the same word in the text. A snippet is plain parts, `{ text, match }`, cut by RomeDB. No total: `next` says another page follows. The site's search box asks it for suggestions (`perPage=5`). |
 | `GET /content/<collection>` | Entries: `status`, `q`, `term`, `locale`, `filter[field]`, `page`, `perPage`, `format=html`. With `q`, the first `perPage` matches, without entries locked to the reader (protected, or members-only for a visitor). |
 | `POST /content/<collection>` | Create. |
 | `GET /content/<collection>/<id\|slug>` | One entry (`?preview=<token>` for a preview link). |

@@ -9,6 +9,7 @@ import { areaDraftBlocks, patternDraftBlocks } from '../../cms/site-editing';
 import { siteSession, type AreaDraft, type PatternDraft, type SiteEditingContext } from '../../cms/site-session';
 import { closeMenusOnFollow, pluginHeads, siteTheme, tagDocument, themeHelpers } from '../../cms/site-view';
 import { siteTaskbar } from '../../cms/site-taskbar';
+import { ICON_STYLE_META, iconStyle } from '../../cms/icons';
 import { taskbar, type TaskbarView } from '../../cms/taskbar';
 
 import { logout } from '../../auth';
@@ -131,6 +132,8 @@ export default class SiteLayout extends Cossack {
                 ...[...(contributed.meta ?? []), ...added.flatMap(head => head.meta ?? [])].filter(tag => !taken.has(key(tag))),
                 ...(this.site.noindex ? [{ tag: 'meta', attributes: { name: 'robots', content: 'noindex, nofollow' } }] : []),
                 { tag: 'meta', attributes: { property: 'og:site_name', content: this.site.title } },
+                // The icon style the sprites are drawn in, so Live Edit's client renders match the server's.
+                { tag: 'meta', attributes: { name: ICON_STYLE_META, content: iconStyle() } },
             ],
             links: [...(contributed.links ?? []), ...added.flatMap(head => head.links ?? []), ...(this.site.blog ? [{ tag: 'link', attributes: { rel: 'alternate', type: 'application/rss+xml', title: this.site.title, href: '/feed' } }] : []), ...this.iconLinks()],
             ...(scripts.length ? { scripts } : {}),

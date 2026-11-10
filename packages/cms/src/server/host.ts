@@ -14,7 +14,7 @@ import { AUTHOR_FIELDS, collectionSeoProblems } from '../seo';
 import { CmsFieldGroups } from './field-groups';
 import { CmsError } from '../errors';
 import type { CmsModule } from '../module';
-import { analytics as analyticsGroup, appearance, cache as cacheGroup, email as emailGroup, general, media, type SettingsGroup } from '../settings';
+import { analytics as analyticsGroup, appearance, cache as cacheGroup, dashboard as dashboardGroup, email as emailGroup, general, interfaceGroup, media, type SettingsGroup } from '../settings';
 import { pluginSettingsGroupId } from '../plugin-settings';
 import { assembleSiteTheme, entryTemplateChoices, layerPresets, siteThemeProblems, type ArchiveView, type SiteTheme, type EntryView, type SiteView, type ThemeData, type ThemeManifest, type ThemePresets , themeArea } from '../theme';
 import type { MenuItem, ResolvedMenuItem } from '../menus';
@@ -64,6 +64,7 @@ import { CmsAudit, unrestrictedGrantAudit } from './audit';
 import type { AiProvider } from './ai';
 import type { PaymentsProvider } from './payments';
 import type { PaymentEvent } from '../hooks';
+import { siteBindingScope, type BindingScopes } from '../bindings';
 import { CmsAutomations } from './automations';
 import { CmsComments } from './comments';
 import { CmsSecurity } from './security';
@@ -569,8 +570,8 @@ export class CmsHost {
         this.hooks.addAction(afterCommit, event => this.#queuePurge(event), { plugin: 'cms-cache' });
         // Automations run from the same events, under their own name, so their retries are theirs alone.
         this.hooks.addAction(afterCommit, event => this.#automate(event), { plugin: 'cms-automations' });
-        this.hooks.addAction(formSubmitted, async event => { await this.automations.run('form.submitted', { form: event.form.slug, formTitle: event.form.title, submission: event.submission.id, values: event.submission.values, origin: event.origin ?? '' }); }, { plugin: 'cms-automations' });
-        this.hooks.addAction(paymentEvent, async event => { if (event.type === 'checkout.completed' || event.type === 'payment.succeeded') await this.automations.run('payment.completed', { ...event, customerEmail: event.customerEmail ?? '', reference: event.reference ?? '', amount: event.amount ?? '', currency: event.currency ?? '' }); }, { plugin: 'cms-automations' });
+        this.hooks.addAction(formSubmitted, async event => { await this.automations.run('form.submitted', { form: event.form.slug, formTitle: event.form.title, submission: event.submission.id, values: event.submission.values, origin: event.origin ?? '' }, await this.#automationScopes()); }, { plugin: 'cms-automations' });
+        this.hooks.addAction(paymentEvent, async event => { if (event.type === 'checkout.completed' || event.type === 'payment.succeeded') await this.automations.run('payment.completed', { ...event, customerEmail: event.customerEmail ?? '', reference: event.reference ?? '', amount: event.amount ?? '', currency: event.currency ?? '' }, await this.#automationScopes()); }, { plugin: 'cms-automations' });
         // A completed payment goes to the webhooks that take every collection's events.
         this.hooks.addAction(paymentEvent, async event => {
             if (event.type !== 'checkout.completed' && event.type !== 'payment.succeeded') return;
@@ -610,7 +611,7 @@ export class CmsHost {
         for (const resource of this.#static.values()) for (const [name, declaration] of Object.entries(resource.fields)) {
             if (declaration.taxonomy && !this.#builtinTaxonomies.has(declaration.taxonomy)) throw new Error(`${resource.id}.${name} uses taxonomy ${declaration.taxonomy}, which no module declares.`);
         }
-        const groups = [general, media, emailGroup, appearance, cacheGroup, analyticsGroup, ...modules.flatMap(module => module.settings ?? []), ...(options.settings ?? [])];
+        const groups = [general, interfaceGroup, media, emailGroup, appearance, dashboardGroup, cacheGroup, analyticsGroup, ...modules.flatMap(module => module.settings ?? []), ...(options.settings ?? [])];
         for (const group of groups) {
             if (group.plugin !== undefined || group.id.startsWith('plugin:')) throw new Error('Plugin settings namespaces and ownership are assigned by the CMS host.');
         }
@@ -2481,8 +2482,16 @@ export class CmsHost {
         const path = record ? (await this.entryUrls(collection, [record]).catch(() => new Map<string, string | null>())).get(record.id) ?? '' : '';
         const origin = this.indexnow.origin() ?? '';
         const vars = { collection: name, collectionLabel: collection.label, id: event.id, title: record ? recordTitle(record, 'title') : '', status: record?.status ?? '', path, url: path ? `${origin}${path}` : '', actor: event.actor.id, record };
-        await this.automations.run(event.topic === 'resource.deleted' ? 'entry.deleted' : event.topic === 'resource.created' ? 'entry.created' : 'entry.updated', vars);
-        if (collection.publishable !== false && event.topic !== 'resource.deleted' && record?.status === 'published' && event.previousStatus !== 'published') await this.automations.run('entry.published', vars);
+        const scopes = await this.#automationScopes(event.actor);
+        await this.automations.run(event.topic === 'resource.deleted' ? 'entry.deleted' : event.topic === 'resource.created' ? 'entry.created' : 'entry.updated', vars, scopes);
+        if (collection.publishable !== false && event.topic !== 'resource.deleted' && record?.status === 'published' && event.previousStatus !== 'published') await this.automations.run('entry.published', vars, scopes);
+    }
+
+    /** What `$site` and `$user` read in an automation's templates: the site's public settings and the account that acted, when a user did. */
+    async #automationScopes(actor?: WriteActor): Promise<Omit<BindingScopes, 'entry'>> {
+        const settings = await this.settings.all().catch(() => null);
+        const account = actor?.kind === 'user' ? await this.accounts.get(actor.id).catch(() => null) : null;
+        return { site: settings ? siteBindingScope(settings) : null, user: account ? { name: account.name, email: account.email } : null };
     }
 
     /** The schedules of active plugins that hold the jobs grant, for the clock. */

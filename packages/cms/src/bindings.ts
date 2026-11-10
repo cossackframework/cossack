@@ -11,6 +11,8 @@
  * The site resolves bindings when it renders; the editor keeps the syntax.
  */
 
+import type { SiteSettings } from './settings';
+
 /** The scopes a binding can read: `''` for `$` (the entry), `site` and `user`. */
 export const BINDING_SCOPES = Object.freeze(['', 'site', 'user'] as const);
 export type BindingScope = (typeof BINDING_SCOPES)[number];
@@ -24,6 +26,11 @@ export interface BindingScopes {
 
 /** Bindings inside text: `{{ $.a.b }}`, `{{ $site.title }}`, `{{ $.content#hero.title }}`; the scope is captured even when unknown, so it can be reported. */
 const INLINE = /\{\{\s*\$([a-z]*)\.([A-Za-z_][\w-]*(?:#[\w-]+)?(?:\.[\w-]+(?:#[\w-]+)?)*)\s*\}\}/g;
+
+/** What `$site` reads: the site's public settings, the same on a page and in an automation's email. */
+export function siteBindingScope(settings: SiteSettings): Record<string, unknown> {
+    return { title: settings['general.siteTitle'], tagline: settings['general.tagline'], logo: settings['general.logo'], icon: settings['general.favicon'], year: new Date().getFullYear() };
+}
 
 /** Whether a value binds to anything at all, so a renderer knows to resolve it. */
 export function hasBinding(value: unknown): value is string {

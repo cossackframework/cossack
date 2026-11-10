@@ -732,8 +732,8 @@ export class SiteEditor extends Cossack {
 
     /**
      * The block's form in a sheet at the side, as the dashboard's block panel: a header with the
-     * block's name and its move and remove buttons, the settings scrolling between, and Cancel
-     * and Apply fixed at the bottom. Escape in a nested block's form selects its container.
+     * block's name, its move buttons and a close button, the settings scrolling between, and
+     * Remove at the left, Cancel and Apply at the right of the fixed bottom. Escape in a nested block's form selects its container.
      */
     private formSheet(): TemplateResult {
         const form = this.form;
@@ -757,8 +757,8 @@ export class SiteEditor extends Cossack {
                     ${this.iconButton('↓', __('Move down'), () => this.shift(block._id, 'down'), place.index === siblings.length - 1)}
                     ${this.iconButton('←', __('Move out of the container'), () => this.shift(block._id, 'out'), !place.parent)}
                     ${this.iconButton('→', __('Move into the block above'), () => this.shift(block._id, 'in'), !this.canGoIn(block._id))}
-                    ${this.iconButton(trash(), `${__('Remove')} ${option.label}`, () => this.remove(block._id))}
                 </span>
+                <button type="button" class="inline-flex size-8 shrink-0 items-center justify-center rounded-md border-none bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer" aria-label=${__('Close')} @click=${() => this.closeForm(true)}>✕</button>
             </header>
             <div class="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
                 <div class="flex flex-wrap items-center gap-1 text-xs text-muted-foreground" role="group" aria-label=${__('Hide on')}>
@@ -784,9 +784,14 @@ export class SiteEditor extends Cossack {
                     : html`<p class="text-sm text-muted-foreground">${__('This block has no settings.')}</p>`,
                 })}
             </div>
-            <footer class="flex items-center justify-end gap-2 border-t border-border px-5 py-3">
-                ${component(Button, { type: 'button', variant: 'outline', size: 'sm', '@click': () => this.closeForm() }, __('Cancel'))}
-                ${component(Button, { type: 'submit', size: 'sm' }, __('Apply'))}
+            <footer class="flex items-center justify-between gap-2 border-t border-border px-5 py-3">
+                <button type="button" aria-label=${`${__('Remove')} ${option.label}`} title=${`${__('Remove')} ${option.label}`}
+                    class="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 text-sm text-muted-foreground cursor-pointer hover:border-destructive/40 hover:bg-destructive/10 hover:text-destructive"
+                    @click=${() => this.remove(block._id)}>${trash()}${__('Remove')}</button>
+                <span class="flex items-center gap-2">
+                    ${component(Button, { type: 'button', variant: 'outline', size: 'sm', '@click': () => this.closeForm() }, __('Cancel'))}
+                    ${component(Button, { type: 'submit', size: 'sm' }, __('Apply'))}
+                </span>
             </footer>
         </form>`;
     }

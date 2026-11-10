@@ -1,6 +1,6 @@
 ---
 title: 'CMS Blocks'
-description: 'The core block library, the sections built from it, the site icons, and blocks a theme or plugin adds.'
+description: 'The core block library, the sections built from it, icons and their style, and blocks a theme or plugin adds.'
 ---
 
 # CMS Blocks
@@ -40,14 +40,27 @@ and opening the tab a `#panel` link points at, and counts a stat up.
 
 ## Icons
 
-The site ships a closed set of icons, the Solar line icons named in `SITE_ICON_NAMES` from
-`@cossackframework/cms` (about 120: marks, achievement, trust, places, numbers, commerce,
-contact, documents, media, nature, arrows). A block field declared with `field.icon()` is
-chosen with the icon picker and checked against the set on write; the *Card*, the *Icon list*
-and the *Tab* use one. Templates and block renderers draw an icon with
-`helpers.icon(name, { class, label })`: an inline SVG colored by `currentColor`, sized by
-`class` (default `size-5`), decorative unless `label` names it, and null for a name outside
-the set.
+Any of the 1,246 Solar icons can be chosen wherever the dashboard asks for one: a block field
+declared with `field.icon()` (the *Card*, the *Icon list* and the *Tab* have one), a
+collection, a taxonomy term, a dashboard menu link. The picker searches by name and browses by
+Solar's 38 categories, with the icons picked last first; `ICON_CATEGORIES` in
+`@cossackframework/cms` is that catalog, and a value is checked against it on write. Settings →
+Interface → *Icon style* picks the style every icon is drawn in, on the site and in the
+dashboard: line (the default), bold, bold duotone, broken, outline or line duotone.
+
+Templates and block renderers draw an icon with `helpers.icon(name, { class, label })`: an SVG
+colored by `currentColor`, sized by `class` (default `size-5`), decorative unless `label` names
+it, and null for a name outside the catalog. The artwork is not in the HTML: the icon is
+`<svg><use href="/assets/icons/<style>/<group>.<version>.svg#name">`, a reference into one of
+the sprites the `cossackCmsIcons()` Vite plugin (`@cossackframework/cms/vite`, in every
+generated application's `vite.config.ts`) serves in development and emits into the client
+build. There is one sprite per style and category, plus one of the hot set (the site's
+`SITE_ICON_NAMES` and the dashboard's `DASHBOARD_ICON_NAMES`), so a dashboard page loads its
+icons in one request, and an icon outside that set costs one more request for its category.
+The browser caches each sprite for a year; its name carries the icon package's version and the
+hot set, so a new package or a changed list is a new file. The dashboard's own `icon(name)` gives
+the same reference. `pnpm --filter @cossackframework/cms icons` regenerates the catalog after
+updating `@cossackframework/solar-icons`; a test fails while it is stale.
 
 Brands are different: the *Social links* block declares its URLs with `brand: true`, and the
 server resolves each URL's network (X, Facebook, Instagram, LinkedIn, YouTube, TikTok, GitHub,

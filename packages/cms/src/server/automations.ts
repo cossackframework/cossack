@@ -5,6 +5,7 @@
  * retries the delivery.
  */
 import type { RomeDB } from '@cossackframework/romedb';
+import type { BindingScopes } from '../bindings';
 import { automationMatches, automationProblems, renderAutomationTemplate, type Automation, type AutomationAction, type AutomationConditions, type AutomationEvent, type AutomationInput } from '../automations';
 import { CmsError } from '../errors';
 import type { CmsMailer } from './mail';
@@ -80,13 +81,13 @@ export class CmsAutomations {
      * its automation; the first error is thrown after the rest ran, so the outbox retries the
      * delivery (an email sent before a failure is sent again then: keep actions idempotent at the receiver).
      */
-    async run(event: AutomationEvent, vars: Record<string, unknown>): Promise<{ ran: string[]; failed: string[] }> {
+    async run(event: AutomationEvent, vars: Record<string, unknown>, scopes: Omit<BindingScopes, 'entry'> = {}): Promise<{ ran: string[]; failed: string[] }> {
         const ran: string[] = [];
         const failed: string[] = [];
         let first: unknown;
         for (const automation of (await this.list()).filter(entry => entry.active && automationMatches(entry, event, vars))) {
             try {
-                await this.#perform(automation, vars);
+                await this.#perform(automation, vars, scopes);
                 await this.#db.write([{ rql: "UPDATE cms_automations SET runs = runs + 1, last_run_at = $now, last_error = '' WHERE id = $id", params: { $id: automation.id, $now: this.#now() } }], WRITE);
                 ran.push(automation.id);
             } catch (error) {
@@ -99,12 +100,12 @@ export class CmsAutomations {
         return { ran, failed };
     }
 
-    async #perform(automation: Automation, vars: Record<string, unknown>): Promise<void> {
+    async #perform(automation: Automation, vars: Record<string, unknown>, scopes: Omit<BindingScopes, 'entry'>): Promise<void> {
         const action = automation.action;
         if (!this.#options.mail) throw new Error('No email sender is configured.');
-        const recipients = renderAutomationTemplate(action.to, vars).split(',').map(part => part.trim()).filter(part => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(part));
+        const recipients = renderAutomationTemplate(action.to, vars, scopes).split(',').map(part => part.trim()).filter(part => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(part));
         if (!recipients.length) throw new Error('No recipient: the address was empty.');
-        for (const to of recipients) await this.#options.mail.send({ kind: 'automation', to, from: this.#options.mailFrom ?? 'no-reply@example.com', subject: renderAutomationTemplate(action.subject, vars).slice(0, 200), text: renderAutomationTemplate(action.text, vars) });
+        for (const to of recipients) await this.#options.mail.send({ kind: 'automation', to, from: this.#options.mailFrom ?? 'no-reply@example.com', subject: renderAutomationTemplate(action.subject, vars, scopes).slice(0, 200), text: renderAutomationTemplate(action.text, vars, scopes) });
     }
 }
 

@@ -4,17 +4,18 @@
  */
 import { CACHE_HOLDS, type CacheHold } from './cache';
 import { field, type FieldDeclaration, type FieldMediaKind } from './fields';
+import { DEFAULT_ICON_STYLE, ICON_STYLE_LABELS, ICON_STYLES, type IconStyleName } from './icons';
 import { SEO_TEMPLATE_DEFAULTS } from './seo';
 
 /** Choices filled in by the host when a form renders, such as the list of roles. */
 /** Where a setting's choices come from; `media` lists the library's images by their URL. */
 export type SettingSource = 'roles' | 'pages' | 'categories' | 'timezones' | 'media';
 /** String settings keep their scalar value while offering a richer editor. */
-export type SettingControl = 'color' | 'file';
+export type SettingControl = 'color' | 'file' | 'icon-style' | 'palette';
 
 export interface SettingDeclaration extends FieldDeclaration {
     readonly source?: SettingSource;
-    /** color: a hex color; file: an HTTP(S) or root-relative file URL. */
+    /** color: a hex color; file: an HTTP(S) or root-relative file URL; icon-style and palette: an enum shown with a preview. */
     readonly control?: SettingControl;
     /** file control: the kinds the media chooser lists first; other kinds remain available. */
     readonly fileKinds?: readonly FieldMediaKind[];
@@ -96,7 +97,40 @@ export const media: SettingsGroup = {
     },
 };
 
+/** The base palettes of `@cossackframework/ui/theme/palettes.css` the dashboard can use, and the accents. */
+export const DASHBOARD_PALETTES = Object.freeze(['neutral', 'zinc', 'gray', 'slate', 'stone'] as const);
+export const DASHBOARD_ACCENTS = Object.freeze(['neutral', 'blue', 'green', 'red'] as const);
+export type DashboardPalette = typeof DASHBOARD_PALETTES[number];
+export type DashboardAccent = typeof DASHBOARD_ACCENTS[number];
+
+/** Site-wide look of the interface: the icon style everywhere, and the dashboard's colors. */
+export const interfaceGroup: SettingsGroup = {
+    id: 'interface',
+    json: true,
+    icon: 'monitor',
+    label: 'Interface',
+    fields: {
+        /** The Solar style every icon is drawn in, on the site and in the dashboard. */
+        iconStyle: { ...field.enum(ICON_STYLES, { default: DEFAULT_ICON_STYLE, label: 'Icon style', description: 'How icons are drawn on the site and in the dashboard.' }), choices: ICON_STYLE_LABELS, control: 'icon-style' },
+        palette: { ...field.enum(DASHBOARD_PALETTES, { default: 'neutral', label: 'Dashboard colors', description: 'The dashboard\'s surfaces and text, in light and dark mode. The site keeps its theme\'s colors.' }),
+            choices: { neutral: 'Neutral', zinc: 'Zinc', gray: 'Gray', slate: 'Slate', stone: 'Stone' }, control: 'palette' },
+        accent: { ...field.enum(DASHBOARD_ACCENTS, { default: 'neutral', label: 'Dashboard accent', description: 'Buttons, links, the current menu item and charts.' }),
+            choices: { neutral: 'Neutral', blue: 'Blue', green: 'Green', red: 'Red' }, control: 'palette' },
+    },
+};
+
 /** The active theme, a plugin name. Changed under Appearance → Themes. */
+/** How administrators arrange the dashboard's navigation (Appearance → Dashboard menu); checked by `dashboardMenuProblems` on write. */
+export const dashboard: SettingsGroup = {
+    id: 'dashboard',
+    icon: 'sidebar-minimalistic',
+    label: 'Dashboard menu',
+    permission: 'cms:appearance',
+    fields: {
+        menu: field.json({ label: 'Menu' }),
+    },
+};
+
 export const appearance: SettingsGroup = {
     id: 'appearance',
     icon: 'palette',
@@ -305,7 +339,11 @@ export interface SiteSettings {
     'media.placeholder': 'blurred' | 'none';
     'media.sizes': string;
     'media.eagerFirstImage': boolean;
+    'dashboard.menu': { readonly order?: readonly string[]; readonly hidden?: readonly string[]; readonly links?: readonly { id: string; label: string; href: string; icon?: string }[] } | null;
     'appearance.theme': string;
+    'interface.iconStyle': IconStyleName;
+    'interface.palette': DashboardPalette;
+    'interface.accent': DashboardAccent;
     'appearance.presets': { readonly [theme: string]: { readonly colors?: { readonly [slug: string]: string }; readonly custom?: readonly { slug: string; name: string; value: string }[]; readonly gradients?: { readonly [slug: string]: string }; readonly customGradients?: readonly { slug: string; name: string; value: string }[] } } | null;
     'appearance.customCss': string;
     'writing.defaultCategory': string;

@@ -230,9 +230,16 @@ export function canonicalJson(value: unknown): string {
         .map(key => `${JSON.stringify(key)}:${canonicalJson((value as Record<string, unknown>)[key])}`).join(',')}}`;
 }
 
-/** SHA-256 of the canonical declaration, recorded in the migration ledger. */
-export async function declarationHash(resource: Resource): Promise<string> {
-    const { storage: _storage, ...declaration } = resource;
-    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonicalJson(declaration)));
-    return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('');
+const HASHES = new WeakMap<Resource, Promise<string>>();
+
+/** SHA-256 of the canonical declaration, recorded in the migration ledger. Hashed once per declaration object: the host asks for it on every status check. */
+export function declarationHash(resource: Resource): Promise<string> {
+    let hash = HASHES.get(resource);
+    if (!hash) {
+        const { storage: _storage, ...declaration } = resource;
+        hash = crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonicalJson(declaration))).then(digest => [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join(''));
+        hash.catch(() => HASHES.delete(resource));
+        HASHES.set(resource, hash);
+    }
+    return hash;
 }

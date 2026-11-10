@@ -39,6 +39,38 @@ await cms.settings.update('general', { siteTitle: 'Acme', logo: '/media/abc/logo
   `CMS_VALIDATION`. `error.fields` names each field and its problem. Nothing is written then.
 - The result is the new `SiteSettings`.
 
+## The dashboard menu
+
+Appearance holds the theme, its colors and the site's additional CSS (edited under Appearance →
+Customize).
+
+Settings → Interface holds what applies site-wide rather than to a theme:
+
+- *Icon style*: the Solar style every icon is drawn in on the site and in the dashboard
+  (`interface.iconStyle`: `line`, `bold`, `duotone`, `broken`, `outline` or `line-duotone`; see
+  [Icons](/docs/cms/blocks.md#icons)), with a preview row.
+- *Dashboard colors* and *Dashboard accent*: the dashboard's palettes, shown as swatches
+  (`interface.palette`: `neutral`, `zinc`, `gray`, `slate` or `stone`; `interface.accent`:
+  `neutral`, `blue`, `green` or `red`). They are the UI package's palettes, applied through
+  `@cossackframework/ui/theme/palettes.css` and a `ui-palette` meta tag in the dashboard's head,
+  in light and dark mode. The site keeps its theme's colors. Saving reloads the page.
+
+Appearance → Dashboard menu arranges the dashboard's sidebar for everyone: hide modules,
+change their order and add links (a dashboard screen, a page of the site or an http(s) URL,
+with an icon of the dashboard's set). It is the `dashboard.menu` setting, a JSON value
+`{ order: string[], hidden: string[], links: { id, label, href, icon? }[] }` behind
+`cms:appearance`, so it is not part of the Settings page or the settings documents.
+
+The application builds the default navigation for the signed-in user, then
+`applyDashboardMenu` hides the listed modules, adds the links (modules `link-<id>`) and sorts
+the listed IDs first in their order, the rest after in the default order. A user never gains a
+module their permissions withhold, whatever the order says; the account menu is untouched. An
+unusable stored value counts as no menu (`dashboardMenuOf`); `dashboardMenuProblems` checks a
+value before it is saved. Module IDs are `collection-<name>`, `media`, `calendar`,
+`comments`, `forms`, `plugin-<plugin>-<href>`, `resource-<plugin>-<name>`, `appearance`,
+`collections`, `plugins`, `users`, `sessions`, `roles`, `tools`, `site-settings`, `network`
+and `my-sites`.
+
 ## Declaring a group
 
 A module or the host options declare groups with `settings`. A group is data: an `id`

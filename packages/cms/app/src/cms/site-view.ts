@@ -7,7 +7,8 @@ import { component, html, ifDefined, unsafeHTML, type TemplateResult } from '@co
 import type { HeadValue } from '@cossackframework/core';
 import { plugins } from '@cossackframework/framework/plugins';
 import { formBlock, inputBlock } from './form-view';
-import { SITE_ICONS } from './site-icons';
+import { iconHref } from '@cossackframework/cms';
+import { iconStyle } from './icons';
 import { archiveTemplate, assembleSiteTheme, blockStyleAttributes, entryTemplate, MAP_EMBED_URL, SHARE_NETWORKS, type BreadcrumbView, type PluginHead, type ShareNetwork, type SiteView, placeholderStyle, presetStyle, resolvePresets, siteThemeProblems, type ArchiveView, type EntryView, type LanguageLink, type LanguageSwitcherOptions, type MediaView, type MenuItemView, type MenuOptions, type RenderedBlock, type SearchOptions, type SiteTheme, type ThemeData, type ThemeHelpers, type ThemePresets, highlightCode, formatBytes } from '@cossackframework/cms';
 
 export { archiveTemplate, entryTemplate };
@@ -48,14 +49,20 @@ export interface ThemeRenderState {
     readonly menus?: { readonly [location: string]: readonly MenuItemView[] };
     /** Active plugins apart from the theme chain, whose `ui.ts` `head` adds tags to every site page (`pluginHeads`). */
     readonly plugins?: readonly string[];
-    /** The site's title, tagline, logo and URLs, for `helpers.search()` and the site logo block. */
-    readonly site?: { readonly title: string; readonly tagline: string; readonly logo: string | null; readonly homeUrl: string; readonly searchUrl: string; readonly url?: string; readonly breadcrumbs?: readonly BreadcrumbView[] };
+    /** The site's title, tagline, logo and URLs, and the page's language, for `helpers.search()` and the site logo block. */
+    readonly site?: { readonly title: string; readonly tagline: string; readonly logo: string | null; readonly homeUrl: string; readonly searchUrl: string; readonly locale?: string; readonly url?: string; readonly breadcrumbs?: readonly BreadcrumbView[] };
 }
 
-/** A search form posting to the site's search page: a box, or a button that opens one. As `helpers.search()` and the `core/search` block render it. */
-export function searchForm(action: string, options: SearchOptions = {}): TemplateResult {
+/**
+ * A search form posting to the site's search page: a box, or a button that opens one. As
+ * `helpers.search()` and the `core/search` block render it. While someone types, entries of the
+ * page's language show under the box (`search.client.ts`), unless `suggest` is false.
+ */
+export function searchForm(action: string, options: SearchOptions = {}, locale?: string): TemplateResult {
     const placeholder = options.placeholder || __('Search');
-    const form = html`<form action=${action} method="get" role="search" class=${`cms-search${options.class ? ` ${options.class}` : ''}`}>
+    const suggest = options.suggest === false ? undefined : `/api/cms/search?perPage=5${locale ? `&locale=${encodeURIComponent(locale)}` : ''}`;
+    const form = html`<form action=${action} method="get" role="search" class=${`cms-search${options.class ? ` ${options.class}` : ''}`}
+        data-suggest=${ifDefined(suggest)} data-suggest-label=${ifDefined(suggest ? __('Suggestions') : undefined)} ref=${enhanceSearch}>
         <input type="search" name="q" placeholder=${placeholder} aria-label=${placeholder} class="cms-search-input">
     </form>`;
     if (options.style !== 'icon') return form;
@@ -251,7 +258,7 @@ export function themeHelpers(theme: SiteTheme, state: ThemeRenderState, isActive
         languages: options => languageSwitcher(state.languages ?? [], options),
         menu: (source, options = {}) => menuNav(typeof source === 'string' ? state.menus?.[source] ?? [] : source,
             { ...(typeof source === 'string' ? { label: locationLabel(source) } : {}), ...options, ...(typeof options.mobile === 'string' ? { mobile: state.menus?.[options.mobile] ?? [] } : {}) }, helpers),
-        search: options => searchForm(state.site?.searchUrl ?? '/search', options),
+        search: options => searchForm(state.site?.searchUrl ?? '/search', options, state.site?.locale),
         isActive: url => {
             const path = url.replace(/[?#].*$/, '').replace(/(.)\/$/, '$1');
             if (!path.startsWith('/')) return false;
@@ -421,6 +428,12 @@ function enhanceCountdown(element: Element | undefined): void {
     void import('./countdown.client').then(module => module.enhanceCountdown(element as HTMLElement)).catch(() => undefined);
 }
 
+/** The search box's browser part: suggestions while someone types. The form submits without it. */
+function enhanceSearch(element: Element | undefined): void {
+    if (!element || typeof window === 'undefined' || !(element as HTMLElement).dataset.suggest) return;
+    void import('./search.client').then(module => module.enhanceSearch(element as HTMLFormElement)).catch(() => undefined);
+}
+
 /** The share buttons' browser part: copying the address, opening networks in a small window. */
 function enhanceShare(element: Element | undefined): void {
     if (!element || typeof window === 'undefined') return;
@@ -466,16 +479,17 @@ function enhanceAccordion(element: Element | undefined): void {
 }
 
 /**
- * One of the site icons (`SITE_ICON_NAMES`) as an inline SVG: `class` sizes it (default
- * `size-5`), and it is decorative unless `label` names it. Null for a name outside the set, so a
- * theme can fall back. `helpers.icon` is this.
+ * An icon of the catalog, in the site's style: `class` sizes it (default `size-5`), and it is
+ * decorative unless `label` names it. Drawn as `<use>` into the icon sprites (cms/icons.ts), so
+ * the HTML carries a reference, not the artwork. Null for a name outside the catalog, so a theme
+ * can fall back. `helpers.icon` is this.
  */
 export function siteIcon(name: string, options: { readonly class?: string; readonly label?: string } = {}): TemplateResult | null {
-    const artwork = SITE_ICONS[name]?.line;
-    if (!artwork) return null;
+    const href = iconHref(name, iconStyle());
+    if (!href) return null;
     const label = options.label?.trim();
     return html`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" class=${`cms-icon ${options.class ?? 'size-5'}`} focusable="false"
-        role=${ifDefined(label ? 'img' : undefined)} aria-label=${ifDefined(label || undefined)} aria-hidden=${ifDefined(label ? undefined : 'true')}>${unsafeHTML(artwork)}</svg>`;
+        role=${ifDefined(label ? 'img' : undefined)} aria-label=${ifDefined(label || undefined)} aria-hidden=${ifDefined(label ? undefined : 'true')}><use href=${href}></use></svg>`;
 }
 
 /** What a social link is called when no network is known: Email, Phone, or the site's host. */
@@ -540,7 +554,7 @@ export function coreBlock(block: RenderedBlock, helpers: ThemeHelpers, state?: P
                 ${showTitle || (block.data.showTagline === true && site.tagline) ? html`<span class="cms-site-logo-text">${showTitle ? html`<span class="cms-site-logo-title">${site.title}</span>` : null}
                     ${block.data.showTagline === true && site.tagline ? html`<span class="cms-site-logo-tagline">${site.tagline}</span>` : null}</span>` : null}</a>`;
         }
-        case 'core/search': return helpers.search({ placeholder: text('placeholder'), style: text('style') });
+        case 'core/search': return helpers.search({ placeholder: text('placeholder'), style: text('style'), suggest: block.data.suggest !== false });
         // Text with block references renders its runs and blocks; the HTML alone otherwise.
         case 'core/paragraph': return block.content?.text ? helpers.content(block.content.text) : html`<div class=${PROSE}>${unsafeHTML(block.html.text ?? '')}</div>`;
         case 'core/heading': {

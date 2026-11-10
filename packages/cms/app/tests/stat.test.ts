@@ -1,19 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SITE_ICON_NAMES } from '@cossackframework/cms';
-import { iconRegistry } from '@cossackframework/solar-icons/registry';
-import { SITE_ICONS } from '../src/cms/site-icons';
 import { formatStat, parseStat } from '../src/cms/stat.client';
-
-describe('the site icons', () => {
-    it('ship exactly the names the CMS package validates, with the artwork the icon package has now', () => {
-        expect(Object.keys(SITE_ICONS).sort()).toEqual([...SITE_ICON_NAMES].sort());
-        for (const name of SITE_ICON_NAMES) {
-            expect(SITE_ICONS[name]?.line, name).toMatch(/stroke="currentColor"/);
-            // The module is written by scripts/site-icons.mjs; a stale one fails here.
-            expect(SITE_ICONS[name]?.line, `${name}: run pnpm --dir packages/cms/app run icons`).toBe(iconRegistry[name]?.line);
-        }
-    });
-});
 
 describe('a stat counts up in the digits it was written with', () => {
     it('reads grouped, decimal and plain numbers', () => {

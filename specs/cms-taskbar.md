@@ -26,8 +26,11 @@ bar as a status line.
   (2026-11-06; before, the whole bar hid behind a floating pill of the editor's).
 - **Left: the start menu.** The site's logo and title open Dashboard and the user's navigation
   modules, the same `navigation(c)` the dashboard sidebar shows.
-- **Middle: the page's tools.** An entry the user may edit: its status, *Live Edit* (in place,
-  at `?edit`, which the entry page already honors) and *Edit* (the dashboard's editor); the SEO
+- **Middle: the page's tools.** An entry the user may edit: its status (as small text
+  underlined in the status's color, `data-taskbar-status`, not a badge: the bar is quieter
+  that way, 2026-11-09), *Live Edit* (in place, at `?edit`, which the entry page already
+  honors; the same muted link style as *Edit*, with a cursor icon, since 2026-11-09) and
+  *Edit* (the dashboard's editor); the SEO
   inspector, a magnifier before its label
   (title, description, robots, canonical, image, schema types, the Markdown view) wherever the
   page has an SEO view. An archive: *All <collection>*. A term: *Edit <term>*. An author page:
@@ -37,7 +40,8 @@ bar as a status line.
   `@Page` (the build reads each page file's decorator, so a bare re-export fails), so the front
   page is shown, tracked and edited in place (`/?edit`) by the same code as every other entry.
 - **Right.** *New*: an entry of every collection the user may create, and *Upload file*. The user's
-  avatar and name open the account modules (Profile, Public profile, Sessions) and *Log out*.
+  avatar (their picture, or their initials when they have none) and name open the account modules
+  (Profile, Public profile, Sessions) and *Log out*.
 - **Plugins.** Two host slots join `dashboard.nav`: `site.taskbar` and `dashboard.taskbar`.
   A manifest's `ui.slots` lists links (label, same-site href, optional permission), served by
   `cms.slotLinks()`. Links, not markup: the bar renders them itself.

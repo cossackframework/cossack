@@ -82,16 +82,16 @@ export function settingsFrame(links: readonly SettingsLink[], current: string, b
         return html`<li data-settings-menu-parent=${link.id} class="min-w-0">
             <a href=${link.href} data-settings-menu-group=${link.id} data-settings-count=${link.count} @click=${onNavigate}
                 aria-current=${link.id === current ? 'location' : 'false'}
-                class=${`flex items-center gap-2 rounded-md px-3 py-2 text-sm no-underline [&_svg]:size-4 ${link.id === current ? 'bg-background font-medium text-foreground shadow-xs' : 'text-muted-foreground hover:bg-background/60 hover:text-foreground'}`}>
+                class=${`flex items-center gap-2 rounded-md px-3 py-2 text-sm no-underline [&_svg]:size-4 ${link.id === current ? 'bg-muted font-medium text-foreground' : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'}`}>
                 <span aria-hidden="true" class="inline-flex shrink-0">${component(Icon, { entry: icon(link.icon ?? 'settings', 'settings'), size: 16 })}</span>
                 <span class="min-w-0 flex-1 break-words">${__(link.label)}</span>
-                ${query.trim() && link.count !== undefined ? html`<span aria-label=${`${link.count} ${link.count === 1 ? __('setting') : __('settings')}`} class="shrink-0 rounded bg-background px-1.5 py-0.5 text-xs tabular-nums">${link.count}</span>` : null}
+                ${query.trim() && link.count !== undefined ? html`<span aria-label=${`${link.count} ${link.count === 1 ? __('setting') : __('settings')}`} class="shrink-0 rounded bg-muted px-1.5 py-0.5 text-xs tabular-nums">${link.count}</span>` : null}
             </a>
             ${children.length ? html`<ul class="ms-5 space-y-0.5 border-s border-border ps-1">${children.map(child => item(child, [...ancestors, link.id]))}</ul>` : null}
         </li>`;
     };
     return html`<div data-subnav class="grid min-h-screen min-w-0 content-start md:grid-cols-[13rem_minmax(0,1fr)] md:content-stretch">
-        <nav aria-label=${__('Settings')} class="self-stretch border-b border-border bg-muted/40 md:min-h-screen md:border-b-0 md:border-e">
+        <nav aria-label=${__('Settings')} class="self-stretch border-b border-border bg-background md:min-h-screen md:border-b-0 md:border-e">
             <div class="md:sticky md:overflow-y-auto" style="top:var(--settings-toolbar-height, 56px);max-height:calc(100dvh - var(--settings-toolbar-height, 56px))">
                 <ul class="flex gap-1 overflow-x-auto p-2 md:flex-col md:overflow-x-visible">${roots.map(link => item(link))}</ul>
                 ${menu.length ? null : html`<p role="status" class="px-4 py-3 text-sm text-muted-foreground">${__('No settings match your search.')}</p>`}
