@@ -6,7 +6,7 @@
  * in the relational migration ledger.
  */
 import { indexedRowPaths, rowIndexPath, rowsSearchable } from '../field-groups';
-import { ClientError, compareVersions, encodeValue, type RomeDB, type Statement, type Value } from '@cossackframework/romedb';
+import { ClientError, compareVersions, MAX_STATEMENTS, encodeValue, type RomeDB, type Statement, type Value } from '@cossackframework/romedb';
 import { storageCheck, storageType, type FieldDeclaration } from '../fields';
 import { declarationHash, SYSTEM_FIELDS, type MigrationStep, type Resource } from '../resource';
 import { HOST_STEPS, HOST_TABLES, hostSchemaMismatch, unknownHostSteps, type HostStep } from './host-schema';
@@ -113,7 +113,8 @@ export interface MigrationReport {
     readonly replans: number;
 }
 
-const MAX_STEP_STATEMENTS = 28;
+/** A step's statements per request: the rest of the request holds its ledger rows, the generation claim and attached statements. */
+const MAX_STEP_STATEMENTS = MAX_STATEMENTS - 4;
 /** The first RomeDB release that indexes paths into arrays of objects, as `team.*.kind`. */
 export const ROW_INDEX_ENGINE_VERSION = '0.2.11';
 const quote = (name: string) => `"${name}"`;
@@ -236,8 +237,9 @@ export async function readCatalog(db: RomeDB, collections: readonly string[], op
         const fixed = 1 + ledgerStatements.length;
         const tableStatements: Statement[] = wanted.map(name => ({ rql: `INFO FOR TABLE ${name}` }));
         const chunks: Statement[][] = [];
-        for (let offset = 0; offset < tableStatements.length || chunks.length === 0; offset += 30 - fixed) {
-            chunks.push([{ rql: 'INFO FOR DB' }, ...ledgerStatements, ...tableStatements.slice(offset, offset + 30 - fixed)]);
+        const perChunk = MAX_STATEMENTS - fixed;
+        for (let offset = 0; offset < tableStatements.length || chunks.length === 0; offset += perChunk) {
+            chunks.push([{ rql: 'INFO FOR DB' }, ...ledgerStatements, ...tableStatements.slice(offset, offset + perChunk)]);
         }
         const tables = new Map<string, CatalogTable>();
         for (const [name, model] of names) tables.set(name, { name, model });

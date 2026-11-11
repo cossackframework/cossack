@@ -31,7 +31,6 @@ import type { EditorValues, EditorView } from '../editor';
 import { collabEditors } from '../rich-text-field';
 import type { CollabTransport, StepsResult } from '../rich-text.client';
 import { richTextSchema } from '../rich-text-schema';
-import { announceNote } from '../notes-announce';
 import { mailOrigin } from '../seo';
 import { avatarStack, type Someone } from './presence';
 
@@ -547,11 +546,11 @@ export class EntryRoom extends Cossack {
         if (typeof peer !== 'string' || !PEER.test(peer)) throw new CmsError('CMS_VALIDATION', 'Invalid peer.');
         const input = checkNoteAction(action);
         const tell = (change: NoteChange) => this.broadcastEvent('note', change);
-        // Webhooks and emails follow on their own; the tab is answered first.
-        const announce = (kind: 'created' | 'resolved', note: Note) => void announceNote(cms, { kind, note }, {
+        // Webhooks and emails follow from the outbox job the note's write queues; the tab is answered first.
+        const announcement = {
             origin: mailOrigin(this.c), route: this.c.req.param('collection') ?? '', collection: this.resourceId.startsWith('cms/') ? this.resourceId.slice(4) : null,
             title: String(this.values[this.view?.titleField ?? 'title'] ?? ''), author: this.people.get(principal.id)?.name ?? principal.id,
-        }).catch(error => console.warn('[cms] a note could not be announced', error));
+        };
         const current = (id: string) => {
             const note = this.notes.find(entry => entry.id === id);
             if (!note) throw new CmsError('CMS_NOT_FOUND', 'The note no longer exists.');
@@ -559,11 +558,11 @@ export class EntryRoom extends Cossack {
         };
         switch (input.kind) {
             case 'create': {
-                const note = await cms.notes.create({ resource: this.resourceId, recordId: this.entryId, userId: principal.id, target: input.target, range: input.range ?? null, quote: input.quote ?? '', body: input.body, parentId: input.parentId ?? null });
+                const note = await cms.notes.create({ resource: this.resourceId, recordId: this.entryId, userId: principal.id, target: input.target, range: input.range ?? null, quote: input.quote ?? '', body: input.body, parentId: input.parentId ?? null }, { announce: announcement });
+                cms.outboxWritten();
                 await this.know(cms, [principal.id]);
                 this.notes = [...this.notes.map(entry => entry.id === note.parentId ? { ...entry, updatedAt: note.createdAt } : entry), note];
                 tell({ kind: 'created', note, author: this.people.get(principal.id)! });
-                announce('created', note);
                 return note;
             }
             case 'edit': {
@@ -577,11 +576,11 @@ export class EntryRoom extends Cossack {
             case 'resolve':
             case 'reopen': {
                 if (current(input.id).parentId) throw new CmsError('CMS_VALIDATION', 'Resolve the thread, not a reply.');
-                const note = await cms.notes.setStatus(input.id, input.kind === 'resolve' ? 'resolved' : 'open', principal.id);
+                const note = await cms.notes.setStatus(input.id, input.kind === 'resolve' ? 'resolved' : 'open', principal.id, { announce: announcement });
                 if (!note) throw new CmsError('CMS_NOT_FOUND', 'The note no longer exists.');
                 this.notes = this.notes.map(entry => entry.id === note.id ? note : entry);
                 tell({ kind: 'status', note });
-                if (note.status === 'resolved') announce('resolved', note);
+                if (note.status === 'resolved') cms.outboxWritten();
                 return note;
             }
             case 'remove': {

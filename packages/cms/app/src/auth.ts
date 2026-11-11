@@ -93,13 +93,16 @@ export const authSessions = createSessionManager({
       const child = (c as Context).get('cms.child');
       // createSession() says whether this sign-in used a second factor; a child session copies its network session's.
       const secondFactor = (c as Context).get('cms.signInSecondFactor') === true;
-      const created = child ? cms(c).authSessions.createChild(record, child, c) : cms(c).authSessions.create(record, c, { secondFactor });
-      // Every sign-in ends here, whatever its method: plugins hear of it through cms.user.signed-in.
-      return created.then(async result => {
-        const user = await cms(c).users.get(record.userId).catch(() => null);
-        if (user) await cms(c).userSignedIn(user, record.id).catch(() => undefined);
+      // Every sign-in ends here, whatever its method: plugins hear of it through cms.user.signed-in,
+      // queued in the session's own write.
+      return (async () => {
+        const host = cms(c);
+        const user = await host.users.get(record.userId).catch(() => null);
+        const also = user ? [await host.userSignedInStatement(user, record.id)] : [];
+        const result = child ? await host.authSessions.createChild(record, child, c, { also }) : await host.authSessions.create(record, c, { secondFactor, also });
+        if (also.length) host.outboxWritten();
         return result;
-      });
+      })();
     },
     read: async (id, c) => {
       const session = await cms(c).authSessions.read(id, c);

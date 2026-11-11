@@ -11,7 +11,7 @@
  * and deleted with the submission or the form. Records, hooks, emails, exports and webhooks
  * carry their metadata (`FormFile`), never their bytes.
  */
-import type { Statement, Value } from '@cossackframework/romedb';
+import { MAX_STATEMENTS, type Statement, type Value } from '@cossackframework/romedb';
 import type { FilterPoint } from '@cossackframework/core/hooks';
 import { CmsError, isCmsError } from '../errors';
 import { fileType } from '../media';
@@ -34,6 +34,7 @@ import { bound, type ResourceRepository } from './repository';
 import type { CmsHost } from './host';
 import type { CmsFile } from './files';
 import { uuidv7 } from '@cossackframework/core';
+import { readBatches, requestBatches } from './budget';
 
 /** Sends email, such as Cloudflare's `EMAIL` binding or an SMTP client. */
 export interface CmsMail {
@@ -503,8 +504,8 @@ export class CmsForms {
     async inboxCounts(forms: readonly LoadedForm[], principal: Principal): Promise<Map<string, { fresh: number; kept: number }>> {
         if (!hasPermission(principal, PERMISSIONS.manageSubmissions) || !forms.length) return new Map();
         const counts = new Map<string, { fresh: number; kept: number }>();
-        for (let offset = 0; offset < forms.length; offset += 15) {
-            const chunk = forms.slice(offset, offset + 15);
+        // Two counts a form.
+        for (const chunk of readBatches(forms, MAX_STATEMENTS / 2)) {
             try {
                 const result = await this.#host.db.read(chunk.flatMap(form => [
                     { rql: `SELECT count(*) FROM ${form.resource.storage} WHERE status = 'new'` },
@@ -559,8 +560,8 @@ export class CmsForms {
     async #each(ids: readonly string[], statement: (key: string, index: number) => Statement): Promise<number> {
         const keys = submissionKeys(ids);
         let changed = 0;
-        for (let offset = 0; offset < keys.length; offset += 25) {
-            const result = await this.#host.db.write(keys.slice(offset, offset + 25).map((key, index) => statement(key, index)), WRITE);
+        for (const batch of await requestBatches(this.#host.db, keys.map((key, index) => statement(key, index)))) {
+            const result = await this.#host.db.write(batch, WRITE);
             changed += result.results.reduce((sum, entry) => sum + Number(entry.affected), 0);
         }
         return changed;

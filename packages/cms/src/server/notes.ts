@@ -8,6 +8,41 @@ import type { RomeDB, Statement, Value } from '@cossackframework/romedb';
 import { CmsError } from '../errors';
 import { checkNoteBody, checkNoteQuote, checkNoteRange, mentionsIn, NOTE_LIMITS, NOTE_STATUSES, parseNoteTarget, type Note, type NoteRange, type NoteStatus } from '../notes';
 import { inList } from './users';
+import { defineAction } from '@cossackframework/core/hooks';
+
+/** What a note's announcement names besides the note: worked out by the caller, which knows the request and the entry. */
+export interface NoteAnnouncement {
+    /** The site's configured origin for links, or null. */
+    readonly origin: string | null;
+    /** The entry's dashboard route (`posts`, `app.tickets`). */
+    readonly route: string;
+    /** The collection's name, for webhooks; null for a plugin's resource. */
+    readonly collection: string | null;
+    readonly title: string;
+    /** Who did it, by name. */
+    readonly author: string;
+}
+
+/** The outbox job that announces a new or resolved note (webhooks, emails), queued with the note's own write. */
+export interface NoteAnnouncedEvent {
+    readonly eventId: string;
+    readonly topic: 'note.announced';
+    readonly at: number;
+    readonly kind: 'created' | 'resolved';
+    readonly noteId: string;
+    readonly context: NoteAnnouncement;
+}
+
+/** Runs from the outbox; the application's `announceNote` handles it, plugins cannot hook it. */
+export const noteAnnounced = defineAction<NoteAnnouncedEvent>('cms.note.announced', { version: 1, timeoutMs: 60_000 });
+
+function announcementRow(kind: 'created' | 'resolved', noteId: string, at: number, context: NoteAnnouncement): Statement {
+    const event: NoteAnnouncedEvent = { eventId: `note:${noteId}:${kind}:${crypto.randomUUID()}`, topic: 'note.announced', at, kind, noteId, context };
+    return {
+        rql: 'INSERT INTO cms_outbox (id, topic, payload, created_at, available_at, attempts, lease_until) VALUES ($eventId, $topic, $payload, $at, $at, 0, 0)',
+        params: { $eventId: event.eventId, $topic: event.topic, $payload: JSON.stringify(event), $at: at },
+    };
+}
 
 const WRITE = { kind: 'cms.notes', retryConflicts: 5 } as const;
 const COLUMNS = 'id, resource, record_id, parent_id, user_id, target, text_range, quoted, body, status, resolved_by, resolved_at, created_at, updated_at';
@@ -56,7 +91,7 @@ export class CmsNotes {
      * A new thread, or a reply in one. A reply mentions the thread's author and everyone who
      * replied before, so they hear of it; a mention in the body adds its person.
      */
-    async create(input: NoteInput): Promise<Note> {
+    async create(input: NoteInput, options: { announce?: NoteAnnouncement } = {}): Promise<Note> {
         check(input.recordId);
         if (!ID.test(input.userId)) throw new CmsError('CMS_VALIDATION', 'Invalid user.');
         const body = checkNoteBody(input.body);
@@ -86,6 +121,8 @@ export class CmsNotes {
         }];
         if (input.parentId) statements.push({ rql: 'UPDATE cms_notes SET updated_at = $now WHERE id = $root', params: { $now: now, $root: input.parentId } });
         statements.push(...this.#mentionRows(id, thread, mentioned.filter(user => user !== input.userId), now, []));
+        // Its webhooks and emails follow from the outbox, queued only when the note is.
+        if (options.announce) statements.push(announcementRow('created', id, now, options.announce));
         await this.#db.write(statements, WRITE);
         return (await this.get(id))!;
     }
@@ -105,7 +142,7 @@ export class CmsNotes {
     }
 
     /** Resolve or reopen a thread, by its root. */
-    async setStatus(id: string, status: NoteStatus, by: string): Promise<Note | null> {
+    async setStatus(id: string, status: NoteStatus, by: string, options: { announce?: NoteAnnouncement } = {}): Promise<Note | null> {
         if (!NOTE_STATUSES.includes(status)) throw new CmsError('CMS_VALIDATION', 'Unknown note status.');
         const note = await this.get(id);
         if (!note || note.parentId) return null;
@@ -113,7 +150,7 @@ export class CmsNotes {
         await this.#db.write([{
             rql: 'UPDATE cms_notes SET status = $status, resolved_by = $by, resolved_at = $at, updated_at = $now WHERE id = $id',
             params: { $status: status, $by: status === 'resolved' ? by : null, $at: status === 'resolved' ? now : null, $now: now, $id: id },
-        }], WRITE);
+        }, ...(options.announce && status === 'resolved' ? [announcementRow('resolved', id, now, options.announce)] : [])], WRITE);
         return this.get(id);
     }
 

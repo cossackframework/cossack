@@ -1,5 +1,8 @@
 /** Settings declarations, authorized portable documents, and atomic storage. */
-import { ClientError, UncertainWriteError, encodeValue, type RomeDB, type Statement } from '@cossackframework/romedb';
+import { ClientError, LOCAL_REQUEST_BYTES, UncertainWriteError, encodeValue, type RomeDB, type Statement } from '@cossackframework/romedb';
+
+/** Room a request needs besides its statement: its identity and work limits. */
+const REQUEST_ROOM = 4096;
 import { CmsError } from '../errors';
 import { FIELD_NAME } from '../fields';
 import { hasPermission, PERMISSIONS, principalId, type Principal } from '../permissions';
@@ -38,6 +41,8 @@ type Stored = { values: SiteSettings; errors: Record<string, string> };
 
 export class CmsSettings {
     readonly #db: RomeDB;
+    /** The most a settings save may encode to: the database's request size, less room for the request around it. Learned on the first read or write. */
+    #saveBytes = LOCAL_REQUEST_BYTES - REQUEST_ROOM;
     readonly #groups = new Map<string, SettingsGroup>();
     readonly #now: () => number;
     readonly #ttl: number;
@@ -209,11 +214,17 @@ export class CmsSettings {
         };
         // The service protocol also encodes bound strings. Leave room for its request identity and work limits.
         const bytes = encoder.encode(JSON.stringify({ sql: statement.rql, params: Object.fromEntries(Object.entries(statement.params!).map(([name, value]) => [name, encodeValue(value)])) })).byteLength;
-        if (bytes > 60 * 1024) throw new CmsError('CMS_LIMIT', 'This settings save exceeds the 60 KiB encoded write limit. Apply fewer changes.');
+        if (bytes > this.#saveBytes) throw new CmsError('CMS_LIMIT', `This settings save exceeds the ${Math.floor(this.#saveBytes / 1024)} KiB the database takes in one write. Apply fewer changes.`);
         return statement;
     }
 
+    /** The database's request size; a database stand-in without one counts as a local service. */
+    async #requestBytes(): Promise<number> {
+        return typeof this.#db.maxRequestBytes === 'function' ? this.#db.maxRequestBytes() : LOCAL_REQUEST_BYTES;
+    }
+
     async #write(entries: readonly (readonly [string, unknown])[], context: Context): Promise<void> {
+        this.#saveBytes = await this.#requestBytes() - REQUEST_ROOM;
         const statement = this.#statement(entries, context);
         if (!statement) return;
         try { await this.#db.write([statement], WRITE); }
@@ -229,6 +240,7 @@ export class CmsSettings {
     }
 
     async #read(): Promise<Stored> {
+        this.#saveBytes = await this.#requestBytes() - REQUEST_ROOM;
         // Retry if another writer commits between pages, so one export cannot mix snapshots.
         for (let attempt = 0; attempt < 3; attempt++) {
             const values: Record<string, unknown> = {};

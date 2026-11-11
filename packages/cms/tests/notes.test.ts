@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { contentModule, createCMS, type CmsHost } from '../src/server/index';
+import { contentModule, createCMS, type CmsHost, type NoteAnnouncedEvent } from '../src/server/index';
 import { mentionToken, NOTE_LIMITS } from '../src/notes';
 import { live, romedbService } from './helpers';
 
@@ -7,9 +7,10 @@ describe.skipIf(!live)('notes', () => {
     const service = romedbService();
     let clock = Date.UTC(2026, 10, 5, 9, 0);
     let cms: CmsHost;
+    const announced: NoteAnnouncedEvent[] = [];
 
     beforeAll(async () => {
-        cms = createCMS({ db: service.database(), modules: [contentModule], now: () => clock });
+        cms = createCMS({ db: service.database(), modules: [contentModule], now: () => clock, announceNote: async (_host, event) => { announced.push(event); } });
         expect((await cms.migrate()).failed).toBeUndefined();
         await cms.ready({ force: true });
     }, 30_000);
@@ -104,4 +105,18 @@ describe.skipIf(!live)('notes', () => {
         }
         await expect(cms.notes.create({ resource: 'cms/posts', recordId: 'full', userId: 'ada', target: 'entry', body: 'One more' })).rejects.toMatchObject({ code: 'CMS_LIMIT' });
     }, 120_000);
+
+    it('announces a new or resolved note from the outbox job its own write queued', async () => {
+        const context = { origin: null, route: 'posts', collection: 'posts', title: 'A post', author: 'Ada' };
+        const note = await cms.notes.create({ resource: 'cms/posts', recordId: 'p9', userId: 'ada', body: 'Check this.' }, { announce: context });
+        // Nothing runs in the request: the job is in the outbox with the note.
+        expect(announced).toEqual([]);
+        await cms.outbox.dispatch({ limit: 100 });
+        expect(announced).toMatchObject([{ kind: 'created', noteId: note.id, context }]);
+        await cms.notes.setStatus(note.id, 'resolved', 'ada', { announce: context });
+        await cms.notes.setStatus(note.id, 'open', 'ada', { announce: context });
+        await cms.outbox.dispatch({ limit: 100 });
+        // Reopening announces nothing.
+        expect(announced.map(event => event.kind)).toEqual(['created', 'resolved']);
+    });
 });

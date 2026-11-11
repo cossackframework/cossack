@@ -45,6 +45,8 @@ export {
     MAX_STATEMENTS,
     LOCAL_REQUEST_BYTES,
     CLOUD_REQUEST_BYTES,
+    RESULT_BYTES,
+    MAX_ROWS,
     statementBytes,
     type DatabaseClient,
     type Statement,

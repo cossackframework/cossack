@@ -36,6 +36,10 @@ import { imageWidths } from '../images';
 import { HOST_STEPS, HOST_TABLES, hostSchemaMismatch, unknownHostSteps } from './host-schema';
 import { SiteSearch, SITE_SEARCH, searchRebuild } from './site-search';
 import { sharedFields } from './shared-fields';
+import { pathsMoved, pathsMovedStatement } from './path-moves';
+import { noteAnnounced, type NoteAnnouncedEvent } from './notes';
+import { readPaged } from './budget';
+import { isLockedRecord, lockedView } from './locked';
 import { OPEN_POLICY, pluginState, readPolicy, type NetworkPluginState, type NetworkPolicy } from './network-policy';
 import { CmsSettings } from './site-settings';
 import { createAuthSessionStore, createJobStore, createNotificationStore, createOAuthStateStore, createSessionStore, type EndedSessions } from './stores';
@@ -115,6 +119,11 @@ export interface CmsOptions {
      * application passwords, the main site's sessions). It is the main site's database; default `db`.
      */
     readonly network?: RomeDB;
+    /**
+     * Announce a new or resolved note (its webhooks and emails). It runs from the outbox job the
+     * note's write queued, so a note that was saved is announced even after a crash.
+     */
+    readonly announceNote?: (host: CmsHost, event: NoteAnnouncedEvent) => Promise<void>;
     /** Network sessions ended: end the child sessions that sites made from them. */
     readonly sessionsEnded?: (ended: EndedSessions) => Promise<void>;
     /** This site's ID in the network; default `main`. */
@@ -593,6 +602,21 @@ export class CmsHost {
         this.hooks.addAction(afterCommit, async event => { if (event.topic === 'resource.deleted') await this.comments.deleteForEntry(event.resource, event.id); }, { plugin: 'cms-comments' });
         this.hooks.addAction(collectionDeleted, event => this.comments.deleteForResource(event.resource, event.at), { plugin: 'cms-comments' });
         // Shared fields' rows for an entry's other translations; under its own name, so its retries are its alone.
+        // A collection or taxonomy that moved: its old links redirect. Under its own name, so its retries are its alone.
+        this.hooks.addAction(pathsMoved, async event => {
+            if (event.kind === 'taxonomy') {
+                await this.redirects.record([{ from: `/${event.from}`, to: `/${event.to}`, prefix: true }], event.by);
+                return;
+            }
+            // This isolate may hold the collection as it was before the move.
+            await this.ready({ force: true });
+            const after = this.#collections.get(event.name);
+            // Gone, or moved again since: the later move's own job redirects.
+            if (!after || after.path !== event.to) return;
+            await this.#pathRedirects({ ...after, path: event.from }, after, event.by);
+        }, { plugin: 'cms-paths' });
+        const announceNote = options.announceNote;
+        if (announceNote) this.hooks.addAction(noteAnnounced, event => announceNote(this, event), { plugin: 'cms-notes' });
         this.hooks.addAction(sharedFields, async (event, context) => {
             if (!this.resources.some(resource => resource.id === event.resource)) return;
             await this.resource(event.resource).sharedSideEffects(event, context.signal ? { signal: context.signal } : {});
@@ -662,11 +686,14 @@ export class CmsHost {
         this.automations = new CmsAutomations(this.db, {
             mail: this.mail, mailFrom: this.mailFrom, now: this.#now,
             principal: id => this.users.principal(id),
-            // As the repository answers the author: without the fields their permissions do not read.
+            // As the repository answers the author: without the fields their permissions do not read,
+            // and a locked entry as its readers see it unless the author may update it.
             redact: (collection, record, principal) => {
                 const fields = this.#collections.has(collection) ? this.resourceById(`cms/${collection}`).fields : {};
+                const editor = this.#collections.has(collection) && this.resource(`cms/${collection}`).canUpdate(record as RecordShape, principal);
+                const seen = editor ? record : lockedView(record as RecordShape, fields);
                 const hidden = Object.entries(fields).filter(([, field]) => field.access?.read && !hasPermission(principal, field.access.read)).map(([name]) => name);
-                return hidden.length ? Object.fromEntries(Object.entries(record).filter(([name]) => !hidden.includes(name))) : record;
+                return hidden.length ? Object.fromEntries(Object.entries(seen).filter(([name]) => !hidden.includes(name))) : seen;
             },
         });
         this.schedules = new CmsSchedules(this.db, { outbox: this.outbox, now: this.#now, schedules: () => this.#dueSchedules(), queued: () => this.outboxWritten() });
@@ -829,10 +856,12 @@ export class CmsHost {
             ...(resource.fields.password ? [`("password" IS NULL OR "password" = '')`] : []),
             ...(resource.fields.membersOnly ? ['NOT coalesce("membersOnly", false)'] : []),
         ];
-        const result = await this.db.read([{
-            rql: `SELECT id, "slug", "parent", "locale", "seo", "_updatedAt", "_createdAt", "_owner", ${taxonomy ? `"${taxonomy}"` : 'NULL'}, ${image ? `"${image}"` : 'NULL'}, "title", "translationGroup", ${collection.publishable === false ? 'NULL' : '"publishedAt"'} FROM ${resource.storage}${conditions.length ? ` WHERE ${conditions.join(' AND ')}` : ''} ORDER BY "_createdAt", record::id(id) LIMIT ${limit} OFFSET ${offset}`,
-        }], { workLimits: this.readLimits });
-        const records = result.results[0]!.rows.map(([id, slug, parent, locale, seo, updatedAt, createdAt, owner, terms, picture, title, translationGroup, publishedAt]) => Object.freeze({
+        // A thousand entries' SEO fields can pass the result budget: the page may come in smaller reads.
+        const rows = await readPaged(this.db, (size, at) => ({
+            rql: `SELECT id, "slug", "parent", "locale", "seo", "_updatedAt", "_createdAt", "_owner", ${taxonomy ? `"${taxonomy}"` : 'NULL'}, ${image ? `"${image}"` : 'NULL'}, "title", "translationGroup", ${collection.publishable === false ? 'NULL' : '"publishedAt"'} FROM ${resource.storage}${conditions.length ? ` WHERE ${conditions.join(' AND ')}` : ''} ORDER BY "_createdAt", record::id(id) LIMIT $limit OFFSET $offset`,
+            params: { $limit: size, $offset: at },
+        }), limit, offset, { workLimits: this.readLimits });
+        const records = rows.map(([id, slug, parent, locale, seo, updatedAt, createdAt, owner, terms, picture, title, translationGroup, publishedAt]) => Object.freeze({
             id: String((id as { key: unknown }).key), rev: 0, slug, parent: parent && typeof parent === 'object' && 'key' in parent ? String((parent as { key: unknown }).key) : null,
             locale, seo, title, translationGroup, publishedAt: publishedAt === null || publishedAt === undefined ? null : Number(publishedAt as bigint), status: 'published', updatedAt: Number(updatedAt as bigint), createdAt: Number(createdAt as bigint), owner: (owner as string | null) ?? null,
             ...(taxonomy ? { [taxonomy]: Array.isArray(terms) ? terms : [] } : {}),
@@ -1512,18 +1541,22 @@ export class CmsHost {
             rql: 'INSERT INTO cms_collections (name, definition, updated_at, updated_by) VALUES ($name, $definition, $now, $by) ON CONFLICT (name) DO UPDATE SET definition = excluded.definition, updated_at = excluded.updated_at, updated_by = excluded.updated_by',
             params: { $name: definition.name, $definition: JSON.stringify(stored), $now: this.#now(), $by: principalId(principal) },
         };
+        // A new path: old links redirect, from the outbox job this write queues.
+        const moved = before && before.path !== definition.path && typeof before.path === 'string' && typeof definition.path === 'string' && before.slug !== false
+            ? pathsMovedStatement({ at: this.#now(), kind: 'collection', name: definition.name, from: before.path, to: definition.path, by: principalId(principal) }) : null;
+        const saving = moved ? [row, moved] : [row];
         const resources = [...[...this.#resources.values()].filter(entry => entry.id !== resource.id), resource];
         let attached = false;
         const plan = await planSchema(resources, await readCatalog(this.db, resources.map(entry => entry.storage)));
         const blocked = plan.blocked.filter(problem => problem.resource === resource.id);
         if (blocked.length) throw new CmsError('CMS_VALIDATION', blocked.map(problem => problem.message).join(' '));
-        const report = await migrate(this.db, resources, { now: this.#now, only: [resource.id], attach: id => id === resource.id ? (attached = true, [row]) : [] });
+        const report = await migrate(this.db, resources, { now: this.#now, only: [resource.id], attach: id => id === resource.id ? (attached = true, saving) : [] });
         if (report.failed) throw new CmsError('CMS_CONFLICT', `The collection could not be saved: ${report.failed.message}`);
-        if (!attached) await this.db.write([row], { kind: 'cms.collections', retryConflicts: 5 });
+        if (!attached) await this.db.write(saving, { kind: 'cms.collections', retryConflicts: 5 });
+        if (moved) this.outboxWritten();
         this.#activation = undefined;
         await this.ready({ force: true });
         const saved = this.collection(definition.name);
-        if (before && before.path !== saved.path) await this.#pathRedirects(before, saved, principal);
         // A new path, status rule or searched field changes which entries visitors find, and what in them.
         if (before && this.siteSearch.signature(saved.name) !== searched) await this.siteSearch.rebuild({ only: saved.name });
         return saved;
@@ -1549,7 +1582,7 @@ export class CmsHost {
      * Old links keep working after a collection's URL path changes: `/<old>/*` redirects to the
      * new path, the archive to the new archive, and entries that leave the site root one by one.
      */
-    async #pathRedirects(before: CollectionDefinition, after: CollectionDefinition, principal: Principal): Promise<void> {
+    async #pathRedirects(before: CollectionDefinition, after: CollectionDefinition, by: string | null): Promise<void> {
         if (before.path === null || before.path === undefined || after.path === null || after.path === undefined || before.slug === false) return;
         const pairs: { from: string; to: string; prefix?: boolean }[] = [];
         if (before.path) {
@@ -1570,7 +1603,7 @@ export class CmsHost {
                 if (!page.more) break;
             }
         }
-        await this.redirects.record(pairs, principalId(principal));
+        await this.redirects.record(pairs, by);
         // The new path serves the collection again: an older redirect away from it goes.
         if (after.path) await this.redirects.dropPrefix(`/${after.path}`);
     }
@@ -1634,13 +1667,15 @@ export class CmsHost {
             const nested = await this.db.read([{ rql: 'SELECT count(*) FROM cms_terms WHERE taxonomy = $taxonomy AND parent_id IS NOT NULL', params: { $taxonomy: declaration.name } }]);
             if (Number(nested.results[0]!.rows[0]![0] as bigint)) throw new CmsError('CMS_CONFLICT', `Some ${declaration.label.toLowerCase()} have parents. Move them to the top level first.`);
         }
+        // Term archives keep answering at the old path, from the outbox job this write queues.
+        const moved = current?.path && declaration.path && current.path !== declaration.path
+            ? pathsMovedStatement({ at: this.#now(), kind: 'taxonomy', name: declaration.name, from: current.path, to: declaration.path, by: principalId(principal) }) : null;
         await this.db.write([{
             rql: 'INSERT INTO cms_taxonomies (name, definition, updated_at, updated_by) VALUES ($name, $definition, $now, $by) ON CONFLICT (name) DO UPDATE SET definition = excluded.definition, updated_at = excluded.updated_at, updated_by = excluded.updated_by',
             params: { $name: declaration.name, $definition: JSON.stringify(declaration), $now: this.#now(), $by: principalId(principal) },
-        }], { kind: 'cms.collections', retryConflicts: 5 });
+        }, ...(moved ? [moved] : [])], { kind: 'cms.collections', retryConflicts: 5 });
+        if (moved) this.outboxWritten();
         await this.ready({ force: true });
-        // Term archives keep answering at the old path.
-        if (current?.path && declaration.path && current.path !== declaration.path) await this.redirects.record([{ from: `/${current.path}`, to: `/${declaration.path}`, prefix: true }], principalId(principal));
         return this.taxonomies.declaration(declaration.name);
     }
 
@@ -2532,8 +2567,16 @@ export class CmsHost {
 
     /** Queue `cms.user.signed-in` for a session that just started; `sessionId` keeps repeated deliveries one event. */
     async userSignedIn(user: UserRef, sessionId: string): Promise<void> {
-        const event: UserSignedInEvent = { eventId: `user.signed-in:${await sha256Hex(sessionId)}`, topic: 'user.signed-in', at: this.#now(), user: { id: user.id, email: user.email, name: user.name } };
-        if (await this.outbox.enqueue('user.signed-in', event, { ignoreDuplicate: true })) this.outboxWritten();
+        await this.outbox.enqueue('user.signed-in', await this.#signedInEvent(user, sessionId), { ignoreDuplicate: true }).then(inserted => { if (inserted) this.outboxWritten(); });
+    }
+
+    /** The outbox row of `cms.user.signed-in`, for the batch that stores the session: the event is queued exactly when the session is. */
+    async userSignedInStatement(user: UserRef, sessionId: string): Promise<Statement> {
+        return this.outbox.statement('user.signed-in', await this.#signedInEvent(user, sessionId), { ignoreDuplicate: true });
+    }
+
+    async #signedInEvent(user: UserRef, sessionId: string): Promise<UserSignedInEvent> {
+        return { eventId: `user.signed-in:${await sha256Hex(sessionId)}`, topic: 'user.signed-in', at: this.#now(), user: { id: user.id, email: user.email, name: user.name } };
     }
 
     /**
@@ -2705,6 +2748,5 @@ export function paymentCompleted(event: PaymentEvent): boolean {
  * is for read it, but a copy they own would also carry its password, or outlive its roles.
  */
 export function lockedCopy(record: RecordShape, editor: boolean): boolean {
-    if (editor) return false;
-    return (typeof record.password === 'string' && record.password.length > 0) || record.membersOnly === true;
+    return !editor && isLockedRecord(record);
 }

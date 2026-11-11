@@ -83,6 +83,14 @@ describe.skipIf(!live)('registration approval, members-only entries and the user
             expect(signedIn).toHaveLength(2);
             expect(signedIn[0]).toMatchObject({ topic: 'user.signed-in', user: { name: 'Reader' } });
             expect(signedIn[0]!.eventId).not.toContain('session-1');
+            // Queued in the session's own write: a session that is stored has its event, one that is not has none.
+            const id = 'a'.repeat(64);
+            await cms.authSessions.create({ id, userId: user!.id, kind: 'auth', createdAt: clock, expiresAt: clock + 60_000 } as never, undefined, { also: [await cms.userSignedInStatement(user!, id)] });
+            await cms.outbox.dispatch({ limit: 20 });
+            expect(signedIn).toHaveLength(3);
+            await expect(cms.authSessions.create({ id, userId: user!.id, kind: 'auth', createdAt: clock, expiresAt: clock + 60_000 } as never, undefined, { also: [await cms.userSignedInStatement(user!, `${id}x`)] })).rejects.toThrow();
+            await cms.outbox.dispatch({ limit: 20 });
+            expect(signedIn).toHaveLength(3);
         }
     });
 

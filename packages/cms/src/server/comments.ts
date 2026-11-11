@@ -7,6 +7,7 @@ import { CmsError } from '../errors';
 import { containsPattern, inList } from './users';
 import { checkComment, COMMENT_STATUSES, type CommentRow, type CommentShape, type CommentStatus } from '../comments';
 import { defineAction } from '@cossackframework/core/hooks';
+import { requestBatches } from './budget';
 
 /** A deleted collection, queued in the batch that drops it, so its comments go in a retried job. */
 export interface CollectionDeletedEvent {
@@ -168,7 +169,8 @@ export class CmsComments {
             statements.push({ rql: 'UPDATE cms_comments SET parent_id = $parent WHERE parent_id = $id', params: { $parent: comment.parentId, $id: comment.id } });
             statements.push({ rql: 'DELETE FROM cms_comments WHERE id = $id', params: { $id: comment.id } });
         }
-        for (let index = 0; index < statements.length; index += 30) await this.#db.write(statements.slice(index, index + 30), WRITE);
+        // Each comment's two statements stay in one request.
+        for (const batch of await requestBatches(this.#db, statements, { group: 2 })) await this.#db.write(batch, WRITE);
         await this.#changed?.(comments.filter(comment => comment.status === 'approved').map(comment => ({ resource: comment.resource, recordId: comment.recordId })));
     }
 

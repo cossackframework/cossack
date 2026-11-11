@@ -12,6 +12,7 @@ import type { TermDraft, TermWriteInput, WriteActor } from '../hooks';
 import type { TaxonomyDeclaration, TermShape } from '../taxonomy';
 import { containsPattern, inList } from './users';
 import { uuidv7 } from '@cossackframework/core';
+import { readBatches } from './budget';
 
 export type { TaxonomyDeclaration, TermShape };
 
@@ -173,8 +174,7 @@ export class CmsTaxonomies {
         for (const id of ids) for (const use of usage) {
             statements.push({ id, statement: { rql: `SELECT count(*) FROM ${use.storage} WHERE array::contains("${use.field}", $term)`, params: { $term: id } } });
         }
-        for (let offset = 0; offset < statements.length; offset += 30) {
-            const chunk = statements.slice(offset, offset + 30);
+        for (const chunk of readBatches(statements)) {
             const result = await this.#db.read(chunk.map(entry => entry.statement));
             chunk.forEach((entry, index) => counts.set(entry.id, (counts.get(entry.id) ?? 0) + Number(result.results[index]!.rows[0]![0] as bigint)));
         }

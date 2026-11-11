@@ -18,6 +18,8 @@ import { searchedAsText, searchTextPath } from './schema';
 import { isSearchSyntaxError, searchQuery } from '../search';
 import { afterCommit, beforeWrite, type Draft, type ResourceEvent, type WriteActor } from '../hooks';
 import { sharedOp, type SharedFieldsEvent } from './shared-fields';
+import { readPaged } from './budget';
+import { isLockedRecord, lockedView } from './locked';
 import { ANONYMOUS, evaluateRule, hasPermission, PERMISSIONS, principalId, ruleScope, type Principal, type RecordScope } from '../permissions';
 import type { FieldFilter, ListFilter, ListOptions, RecordPage, RecordShape, RevisionShape } from '../records';
 
@@ -98,13 +100,13 @@ export class ResourceRepository {
             const past = ascending ? '>' : '<';
             conditions.push(`("${timed}" ${past} $afterAt OR ("${timed}" = $afterAt AND record::id(id) ${past} $afterKey))`);
         }
-        if (offset) params.$offset = offset;
         const where = this.#conditions(access, context.principal, conditions, params);
-        const result = await this.#host.db.read([bound(
-            `SELECT * FROM ${this.resource.storage}${where.rql ? ` WHERE ${where.rql}` : ''} ORDER BY ${order} LIMIT $limit${offset ? ' OFFSET $offset' : ''}`,
-            where.params,
-        )], this.#readOptions(context));
-        const documents = result.results[0]!.rows.map(row => row[0] as Document);
+        // Whole documents: a page of long entries can pass the result budget, so it may come in smaller reads.
+        const rows = await readPaged(this.#host.db, (size, at) => bound(
+            `SELECT * FROM ${this.resource.storage}${where.rql ? ` WHERE ${where.rql}` : ''} ORDER BY ${order} LIMIT $limit OFFSET $offset`,
+            { ...where.params, $limit: size, $offset: at },
+        ), limit + 1, offset, this.#readOptions(context));
+        const documents = rows.map(row => row[0] as Document);
         const page = documents.slice(0, limit).map(document => this.#public(document, context.principal));
         const last = documents.length > limit && timed && !offset ? documents[limit - 1]! : undefined;
         if (!last) return { records: page, ...(documents.length > limit ? { more: true } : {}) };
@@ -189,7 +191,7 @@ export class ResourceRepository {
         const record = await this.get(id, context);
         if (!record) throw new CmsError('CMS_NOT_FOUND', 'Record not found.');
         if (this.canUpdate(record, context.principal)) return true;
-        if (!hasPermission(context.principal, `${this.resource.id}:read`) || lockedRecord(record)) {
+        if (!hasPermission(context.principal, `${this.resource.id}:read`) || isLockedRecord(record)) {
             throw new CmsError('CMS_FORBIDDEN', 'Only editors read this record\'s revisions.');
         }
         return false;
@@ -197,7 +199,7 @@ export class ResourceRepository {
 
     #historyRow(revision: unknown, at: unknown, actor: unknown, data: unknown, editor: boolean, principal: Principal): RevisionShape | null {
         const snapshot = JSON.parse(data as string) as RecordShape;
-        if (!editor && lockedRecord(snapshot)) return null;
+        if (!editor && isLockedRecord(snapshot)) return null;
         const shaped = this.#redact(snapshot, principal);
         return { revision: Number(revision), at: Number(at), actor: actor as string | null, data: editor || !('password' in shaped) ? shaped : Object.freeze({ ...shaped, password: null }) as RecordShape };
     }
@@ -234,6 +236,11 @@ export class ResourceRepository {
     }
 
     /** Whether the principal may update the record: its rule allows, or the record is in the rule's scope. */
+    /** The record as this principal may read it outside the site's gate: whole for those who may update it, else the reader's view (`lockedView`). */
+    readerView(record: RecordShape, principal: Principal): RecordShape {
+        return this.canUpdate(record, principal) ? record : lockedView(record, this.resource.fields);
+    }
+
     canUpdate(record: RecordShape, principal: Principal): boolean {
         return this.#inScope(this.resource.access.update, record, principal);
     }
@@ -883,7 +890,8 @@ export class ResourceRepository {
         statements.push(...this.#host.siteSearch.statements(this.resource, key, op, record && this.canRead(record, ANONYMOUS) ? record : null));
         const event: ResourceEvent = {
             eventId: op, topic: action === 'create' ? 'resource.created' : action === 'update' ? 'resource.updated' : 'resource.deleted',
-            resource: this.resource.id, id: key, revision, actor: who, at: now, record,
+            // Webhooks, plugins and automations get the reader's view: a locked entry's password and content stay here.
+            resource: this.resource.id, id: key, revision, actor: who, at: now, record: record ? lockedView(record, this.resource.fields) : null,
             ...(this.resource.fields.status ? { previousStatus: typeof previous?.status === 'string' ? previous.status : null } : {}),
         };
         statements.push(bound(
@@ -1051,11 +1059,6 @@ function decodeCursor(cursor: string): { at: number; key: string } {
 }
 
 export { afterCommit };
-
-/** A protected or members-only record: only those who may change it read it whole. */
-function lockedRecord(record: RecordShape): boolean {
-    return (typeof record.password === 'string' && record.password.length > 0) || record.membersOnly === true;
-}
 
 /** Translations one shared-field update reaches. */
 const SHARED_MEMBERS = 100;

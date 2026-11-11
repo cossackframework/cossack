@@ -251,7 +251,8 @@ export default class EditUserPage extends Cossack {
         if (canAssignRoles(this.user as PublicUser | undefined)) {
             const chosen = (await listRoles()).filter(role => this.assignedRoleIds.includes(role.id));
             if (!canGrantRoles(this.user as PublicUser | undefined, chosen)) throw new ClientVisibleError(__('You cannot give a role with permissions you do not have.'));
-            await syncUserRoles(user.id, this.assignedRoleIds);
+            // Only roles the site has: the client's list may name others.
+            await syncUserRoles(user.id, chosen.map(role => role.id));
         }
     }
 

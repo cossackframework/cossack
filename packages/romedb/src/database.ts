@@ -130,6 +130,10 @@ export const MAX_STATEMENTS = 32;
 /** Request JSON a local service accepts; Cloud accepts `CLOUD_REQUEST_BYTES`. */
 export const LOCAL_REQUEST_BYTES = 65_536;
 export const CLOUD_REQUEST_BYTES = 1_048_576;
+/** Result JSON one request may return in all, locally and on Cloud. */
+export const RESULT_BYTES = 262_144;
+/** Rows one statement may return. */
+export const MAX_ROWS = 1_000;
 
 /** A request over the database's size or statement limit. Nothing was sent. */
 export class RequestTooLargeError extends Error {
@@ -205,6 +209,11 @@ export class RomeDB {
     /** The most request JSON this database accepts: 1 MiB on Cloud, 64 KiB on a local service. */
     async maxRequestBytes(): Promise<number> {
         return cloud(await this.#connection()) ? CLOUD_REQUEST_BYTES : LOCAL_REQUEST_BYTES;
+    }
+
+    /** The most result JSON one request may return, all statements together: 256 KiB, locally and on Cloud. */
+    async maxResultBytes(): Promise<number> {
+        return RESULT_BYTES;
     }
 
     /** Highest publication sequence this binding has confirmed. */

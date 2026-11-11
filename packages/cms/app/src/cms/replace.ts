@@ -10,6 +10,11 @@ export function replaceableText(declaration: FieldDeclaration): boolean {
         && declaration.format !== 'code';
 }
 
+/** The fields find and replace reads and writes: prose, rich text and blocks, never the entry's password. */
+export function replaceableFields(fields: { readonly [name: string]: FieldDeclaration }): [string, FieldDeclaration][] {
+    return Object.entries(fields).filter(([name, declaration]) => name !== 'password' && (replaceableText(declaration) || declaration.kind === 'richtext' || declaration.kind === 'blocks'));
+}
+
 export function replaceInText(value: string, pattern: RegExp, replacement: string): Replaced<string> {
     let count = 0;
     const next = value.replace(pattern, () => { count++; return replacement; });

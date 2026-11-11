@@ -42,7 +42,11 @@ export interface ResourceEvent {
     readonly revision: number;
     readonly actor: WriteActor;
     readonly at: number;
-    /** Public record after the write; null after delete. */
+    /**
+     * The record after the write, as its readers see it; null after delete. A protected or
+     * members-only entry comes without its password and content (`lockedView`): read it with a
+     * grant of your own when you need them.
+     */
     readonly record: RecordShape | null;
     /** The record's `status` before the write, for resources with one; null on create. */
     readonly previousStatus?: string | null;

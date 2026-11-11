@@ -5,7 +5,7 @@
  */
 import { createSqlJobStore, type JobStore } from '@cossackframework/core/jobs';
 import { createSqlNotificationStore, type NotificationStore } from '@cossackframework/core/notifications';
-import { rqlDatabase, type RomeDB, type Value } from '@cossackframework/romedb';
+import { rqlDatabase, type RomeDB, type Statement, type Value } from '@cossackframework/romedb';
 
 const TOKEN = /^[A-Za-z0-9_-]{1,191}$/;
 const n = (value: Value | undefined) => Number(value as bigint);
@@ -72,12 +72,12 @@ export interface CmsSessionStore {
  */
 export function createAuthSessionStore(db: RomeDB, options: { now?: () => number; request?: (context: unknown) => { ip?: string; userAgent?: string }; sessionsEnded?: (ended: EndedSessions) => Promise<void> } = {}): Omit<CmsAuthSessionStore, 'read' | 'create'> & {
     read(id: string, context?: unknown): Promise<CmsAuthSession | null>;
-    /** A session whose sign-in used a second factor (`secondFactor`) or did not. */
-    create(record: AuthSessionRecord, context?: unknown, options?: { secondFactor?: boolean }): Promise<void>;
+    /** A session whose sign-in used a second factor (`secondFactor`) or did not; `also` joins the session's write (its sign-in event). */
+    create(record: AuthSessionRecord, context?: unknown, options?: { secondFactor?: boolean; also?: readonly Statement[] }): Promise<void>;
     /** Mark a session as having used a second factor: its user just added one in it. */
     markSecondFactor(id: string): Promise<boolean>;
     /** A child session on a site, from a network session's handoff. It expires no later than its parent, and rotation keeps that. */
-    createChild(record: AuthSessionRecord, child: ChildSession, context?: unknown): Promise<void>;
+    createChild(record: AuthSessionRecord, child: ChildSession, context?: unknown, options?: { also?: readonly Statement[] }): Promise<void>;
     /** End the child sessions of these network sessions, or all of an account's (but `except`'s). */
     revokeChildren(ended: EndedSessions): Promise<number>;
     publicReference(id: string): Promise<string | null>;
@@ -91,7 +91,7 @@ export function createAuthSessionStore(db: RomeDB, options: { now?: () => number
 } {
     const now = options.now ?? Date.now;
     const ended = (scope: EndedSessions) => options.sessionsEnded?.(scope).catch(error => console.error('[cms] could not end child sessions', error));
-    const insert = async (record: AuthSessionRecord, child: ChildSession | null, context: unknown, secondFactor: boolean) => {
+    const insert = async (record: AuthSessionRecord, child: ChildSession | null, context: unknown, secondFactor: boolean, also: readonly Statement[] = []) => {
         assertRecord(record);
         const expires = child ? Math.min(record.expiresAt, child.expiresAt) : record.expiresAt;
         if (expires <= record.createdAt) throw new Error('The network session has expired.');
@@ -107,11 +107,11 @@ export function createAuthSessionStore(db: RomeDB, options: { now?: () => number
         }, {
             rql: 'UPDATE cms_users SET last_sign_in_at = $created WHERE id = $user',
             params: { $user: record.userId, $created: record.createdAt },
-        }], { kind: 'cms.auth.session', retryConflicts: 5 });
+        }, ...also], { kind: 'cms.auth.session', retryConflicts: 5 });
     };
     return {
-        create: (record, context, extra) => insert(record, null, context, extra?.secondFactor === true),
-        createChild: (record, child, context) => insert(record, child, context, child.secondFactor === true),
+        create: (record, context, extra) => insert(record, null, context, extra?.secondFactor === true, extra?.also),
+        createChild: (record, child, context, extra) => insert(record, child, context, child.secondFactor === true, extra?.also),
         async markSecondFactor(id) {
             if (!TOKEN.test(id)) return false;
             const result = await db.write([{ rql: 'UPDATE cms_auth_sessions SET second_factor = 1 WHERE id = $id', params: { $id: id } }], { kind: 'cms.auth.session', retryConflicts: 5 });

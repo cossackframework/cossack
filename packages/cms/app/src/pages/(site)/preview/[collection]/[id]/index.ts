@@ -78,7 +78,8 @@ export default class PreviewPage extends Cossack {
                 this.data = await themeData(cms, this.theme, 'layout', site, principal);
                 return;
             }
-            this.entry = (await entryViews(cms, collection, [record], { full: true, forms: { query: {}, principal, url: this.c.req.path } }))[0]!;
+            // The preview is for the entry's editor or the holder of its preview link: nothing is locked for them.
+            this.entry = (await entryViews(cms, collection, [record], { full: true, editable: new Set([record.id]), forms: { query: {}, principal, url: this.c.req.path } }))[0]!;
             this.menus = await contentMenus(cms, this.theme, this.entry.content, { locale: this.entry.locale });
             this.site = await siteInfo(cms, this.entry.locale, { url: this.c.req.url, page: { kind: 'entry', collection, record, locale: this.entry.locale } });
             this.data = await themeData(cms, this.theme, { kind: 'entry', collection: collection.name, template: this.entry.template }, this.entry, principal, this.entry.locale);

@@ -2,10 +2,19 @@
  * What follows a note outside the entry's room: the webhook events `note.created` and
  * `note.resolved` for the entry's collection, and the email to the people a new note names
  * (its mentions and, for a reply, the thread's earlier voices), with the Writing setting on and
- * an application that sends mail. Server-only; callers never wait for it.
+ * an application that sends mail. Server-only; it runs from the outbox job the note's write queued
+ * (`announceNoteEvent`).
  */
 import { noteMail, type Note } from '@cossackframework/cms';
-import type { CmsHost } from '@cossackframework/cms/server';
+import type { CmsHost, NoteAnnouncedEvent } from '@cossackframework/cms/server';
+
+/** The `note.announced` outbox job, queued with the note's write: the note as it is now, announced. */
+export async function announceNoteEvent(cms: CmsHost, event: NoteAnnouncedEvent): Promise<void> {
+    const note = await cms.notes.get(event.noteId);
+    // A note removed before the job ran is not announced.
+    if (!note) return;
+    await announceNote(cms, { kind: event.kind, note }, event.context);
+}
 
 export interface NoteContext {
     /**

@@ -8,6 +8,7 @@ import { modules, resources } from './resources';
 import { databaseConnection, siteDatabase, siteDirectory, webhookFetch, type DatabaseBindings } from './database';
 import { pendingWrites, type PendingBindings } from './pending';
 import { imageTransformer, mediaStorage, type MediaBindings } from './media';
+import { announceNoteEvent } from './notes-announce';
 
 export interface CmsBindings extends DatabaseBindings, PendingBindings, MediaBindings, AiBindings {
     /** Stripe as the payments provider: the secret key, and the webhook endpoint's signing secret. */
@@ -93,6 +94,8 @@ export function networkFor(env: CmsBindings): CmsNetwork {
                 ...(mail ? { mail: { send: message => mail.send(message) }, mailFrom: env.MAIL_FROM || 'no-reply@example.com' } : {}),
                 // Ending a network session ends the child sessions sites made from it.
                 sessionsEnded: ended => network.endSessions(ended),
+                // A note's webhooks and emails, from the outbox job its write queued.
+                announceNote: announceNoteEvent,
                 purgers: purgers(env, site),
                 ...(ai ? { ai } : {}),
                 ...(payments ? { payments } : {}),

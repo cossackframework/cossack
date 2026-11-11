@@ -6,18 +6,17 @@
 import type { Context } from 'hono';
 import { ClientVisibleError } from '@cossackframework/core';
 import type { Principal } from '@cossackframework/cms';
-import { CORE_FIELDS, flattenBlocks, isCmsError, isSameOriginPost, richTextBlocks, richTextHtml, systemPrincipal, type Block, type CollectionDefinition, type RecordShape, type RichTextDoc } from '@cossackframework/cms';
-import type { CmsHost } from '@cossackframework/cms/server';
+import { flattenBlocks, isCmsError, isSameOriginPost, richTextBlocks, richTextHtml, systemPrincipal, type Block, type CollectionDefinition, type RecordShape, type RichTextDoc } from '@cossackframework/cms';
+import { withheldFieldNames, type CmsHost } from '@cossackframework/cms/server';
 import { blocksHtml } from './content';
 import { entryLock } from './site';
 
 export interface ApiEntry { [field: string]: unknown; id: string; url: string | null }
 
 /** Entries with their public URLs and, with `?format=html`, their rich text and blocks rendered. */
-/** Fields a locked entry's readers do not get: all but the core fields and taxonomies (and its summary). */
+/** Fields a locked entry's readers do not get (`withheldFieldNames`): all but the core fields, taxonomies and lock flags. */
 export function withheldFields(cms: CmsHost, collection: CollectionDefinition): Set<string> {
-    const names = Object.keys(cms.resourceById(`cms/${collection.name}`).fields);
-    return new Set(names.filter(name => name === 'summary' || (!(CORE_FIELDS as readonly string[]).includes(name) && !(collection.taxonomies ?? []).includes(name))));
+    return withheldFieldNames(cms.resourceById(`cms/${collection.name}`).fields);
 }
 
 export async function apiEntries(cms: CmsHost, collection: CollectionDefinition, records: readonly RecordShape[], html: boolean, principal?: Principal): Promise<ApiEntry[]> {

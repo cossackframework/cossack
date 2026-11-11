@@ -18,7 +18,6 @@ import { apiEntries, apiPatterns, withheldFields, type ApiEntry } from './conten
 import { entryLock } from './site';
 import { findMedia, routeResource } from './content';
 import { siteUrl, type CmsBindings } from './index';
-import { announceNote } from './notes-announce';
 import { mailOrigin } from './seo';
 import type { CachePurgeEvent } from '@cossackframework/cms';
 import type { PurgeRecord } from '@cossackframework/cms/server';
@@ -416,7 +415,7 @@ export async function entryCreate(c: Context, name: string, fields: Body): Promi
     const cms = c.get('cms');
     const collection = cms.collection(name);
     const record = await cms.resource(`cms/${collection.name}`).create(fields, { principal: signedIn(c) });
-    return { item: (await apiEntries(cms, collection, [record], false))[0]! };
+    return { item: (await apiEntries(cms, collection, [record], false, signedIn(c)))[0]! };
 }
 
 /** Change an entry's fields. `rev` is the revision the client read; left out, the current one. A stale revision answers 409. */
@@ -427,7 +426,7 @@ export async function entryUpdate(c: Context, name: string, id: string, fields: 
     const resource = `cms/${collection.name}`;
     const current = await entryOf(cms, resource, id, principal);
     const record = await cms.resource(resource).update(id, fields, { principal, expectedRevision: expected(rev, current.rev) });
-    return { item: (await apiEntries(cms, collection, [record], false))[0]! };
+    return { item: (await apiEntries(cms, collection, [record], false, principal))[0]! };
 }
 
 export async function entryDelete(c: Context, name: string, id: string, rev: unknown): Promise<void> {
@@ -452,7 +451,7 @@ export async function entryPublish(c: Context, name: string, id: string, input: 
     const current = await entryOf(cms, resource, id, principal);
     const at = moment(input.at, 'at', cms.now());
     const record = await cms.resource(resource).update(id, { status: 'published', ...(at === undefined ? {} : { publishedAt: at }) }, { principal, expectedRevision: expected(input.rev, current.rev) });
-    return { item: (await apiEntries(cms, collection, [record], false))[0]! };
+    return { item: (await apiEntries(cms, collection, [record], false, principal))[0]! };
 }
 
 /** Take an entry off the site: back to a draft, keeping its publication time for a later republish. */
@@ -470,7 +469,7 @@ export async function entrySetStatus(c: Context, name: string, id: string, statu
     const resource = `cms/${collection.name}`;
     const current = await entryOf(cms, resource, id, principal);
     const record = await cms.resource(resource).update(id, { status }, { principal, expectedRevision: expected(rev, current.rev) });
-    return { item: (await apiEntries(cms, collection, [record], false))[0]! };
+    return { item: (await apiEntries(cms, collection, [record], false, principal))[0]! };
 }
 
 export interface RevisionSummary { revision: number; at: number; actor: string | null; title: string; status: string | null }
@@ -508,7 +507,7 @@ export async function entryRestore(c: Context, name: string, id: string, revisio
     const current = await entryOf(cms, resource, id, principal);
     if (!Number.isSafeInteger(revision) || revision < 1) throw new CmsError('CMS_VALIDATION', 'revision is a positive integer.');
     const record = await cms.resource(resource).restore(id, revision, { principal, expectedRevision: expected(rev, current.rev) });
-    return { item: (await apiEntries(cms, collection, [record], false))[0]! };
+    return { item: (await apiEntries(cms, collection, [record], false, principal))[0]! };
 }
 
 // --- Notes -------------------------------------------------------------------
@@ -538,13 +537,13 @@ export async function noteAdd(c: Context, name: string, id: string, input: Body)
     const repository = cms.resource(resource);
     const record = await entryOf(cms, resource, id, principal);
     if (!repository.canUpdate(record, principal)) throw new CmsError('CMS_FORBIDDEN', 'Not allowed to leave notes on this entry.');
+    const author = await cms.users.get(principal.id).catch(() => null);
+    // Its webhooks and emails follow from the outbox, queued with the note.
     const note = await cms.notes.create({
         resource, recordId: id, userId: principal.id, body: String(input.body ?? ''),
         ...(typeof input.parentId === 'string' ? { parentId: input.parentId } : { target: typeof input.target === 'string' ? input.target : 'entry', range: checkNoteRange(input.range), quote: typeof input.quote === 'string' ? input.quote : '' }),
-    });
-    const author = await cms.users.get(principal.id).catch(() => null);
-    void announceNote(cms, { kind: 'created', note }, { origin: mailOrigin(c), route: collection.name, collection: collection.name, title: recordTitle(record, cms.resourceById(resource).titleField), author: author?.name || author?.email || principal.id })
-        .catch(error => console.warn('[cms] a note could not be announced', error));
+    }, { announce: { origin: mailOrigin(c), route: collection.name, collection: collection.name, title: recordTitle(record, cms.resourceById(resource).titleField), author: author?.name || author?.email || principal.id } });
+    cms.outboxWritten();
     return { note };
 }
 
@@ -573,14 +572,12 @@ export async function noteChange(c: Context, noteId: string, input: Body): Promi
     if (input.status !== undefined) {
         if (note.parentId) throw new CmsError('CMS_VALIDATION', 'Resolve the thread, not a reply.');
         if (input.status !== 'open' && input.status !== 'resolved') throw new CmsError('CMS_VALIDATION', 'status is open or resolved.');
-        note = (await cms.notes.setStatus(note.id, input.status, found.principal.id)) ?? note;
-        if (note.status === 'resolved') {
-            const [owner, resourceName] = note.resource.split('/');
-            const author = await cms.users.get(found.principal.id).catch(() => null);
-            void announceNote(cms, { kind: 'resolved', note }, { origin: mailOrigin(c), route: owner === 'cms' ? resourceName! : `${owner}.${resourceName}`, collection: owner === 'cms' ? resourceName! : null,
-                title: recordTitle(found.record, cms.resourceById(note.resource).titleField), author: author?.name || author?.email || found.principal.id })
-                .catch(error => console.warn('[cms] a note could not be announced', error));
-        }
+        const [owner, resourceName] = note.resource.split('/');
+        const author = await cms.users.get(found.principal.id).catch(() => null);
+        // Resolving queues its announcement with the write.
+        note = (await cms.notes.setStatus(note.id, input.status, found.principal.id, { announce: { origin: mailOrigin(c), route: owner === 'cms' ? resourceName! : `${owner}.${resourceName}`, collection: owner === 'cms' ? resourceName! : null,
+            title: recordTitle(found.record, cms.resourceById(note.resource).titleField), author: author?.name || author?.email || found.principal.id } })) ?? note;
+        if (note.status === 'resolved') cms.outboxWritten();
     }
     return { note };
 }

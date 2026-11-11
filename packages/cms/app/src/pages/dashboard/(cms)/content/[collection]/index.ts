@@ -111,6 +111,11 @@ export default class EntriesPage extends Cossack {
         return { title: this.label || 'Content' };
     }
 
+    /** Server methods act on the collection the URL names, never on the client's state. */
+    private fromRoute(): void {
+        this.route = this.c.req.param('collection') ?? '';
+    }
+
     async init() {
         this.route = this.c.req.param('collection') ?? '';
         this.status = this.c.req.query('status') ?? 'all';
@@ -259,6 +264,7 @@ export default class EntriesPage extends Cossack {
 
     @Server()
     async importJson(text: string) {
+        this.fromRoute();
         this.message = '';
         this.error = '';
         this.imported = null;
@@ -275,6 +281,7 @@ export default class EntriesPage extends Cossack {
 
     @Server()
     async moveTo(id: string, rev: number, status: 'trash' | 'draft') {
+        this.fromRoute();
         this.message = '';
         this.error = '';
         try {
@@ -289,6 +296,7 @@ export default class EntriesPage extends Cossack {
 
     @Server()
     async deleteEntry(id: string, rev: number) {
+        this.fromRoute();
         this.message = '';
         this.error = '';
         try {
@@ -304,6 +312,7 @@ export default class EntriesPage extends Cossack {
     /** A draft copy of the entry, kept in this list with a link to edit it. */
     @Server()
     async duplicate(id: string) {
+        this.fromRoute();
         this.message = '';
         this.error = '';
         try {
@@ -318,6 +327,7 @@ export default class EntriesPage extends Cossack {
     /** Run a plugin's action for one entry. */
     @Server()
     async runAction(id: string, index: number) {
+        this.fromRoute();
         this.message = '';
         this.error = '';
         const cms = this.c.get('cms');
@@ -340,6 +350,7 @@ export default class EntriesPage extends Cossack {
     /** Apply a bulk action to the selected entries, one by one, and report what went wrong. */
     @Server()
     async applyBulk(entries: { id: string; rev: number }[], key: BulkKey) {
+        this.fromRoute();
         this.message = '';
         this.error = '';
         const cms = this.c.get('cms');
@@ -410,6 +421,7 @@ export default class EntriesPage extends Cossack {
     /** Open an entry's translation in a language, starting it as a draft copy. */
     @Server()
     async translate(id: string, locale: string) {
+        this.fromRoute();
         this.error = '';
         try {
             const translation = await this.c.get('cms').translateEntry(this.route, id, locale, this.c.get('principal'));

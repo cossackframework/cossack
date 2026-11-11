@@ -17,7 +17,7 @@ export const RECOVERY_ATTEMPTS = Object.freeze({ max: 5, windowMs: 15 * 60_000 }
 export const RECOVERY_CODE_MIN_LENGTH = 16;
 
 export class RecoveryError extends Error {
-    constructor(readonly code: 'CMS_RECOVERY_OFF' | 'CMS_RECOVERY_WEAK' | 'CMS_UNAUTHENTICATED' | 'CMS_RATE_LIMITED' | 'CMS_NOT_FOUND' | 'CMS_VALIDATION', message: string, readonly status: 400 | 401 | 403 | 404 | 429) {
+    constructor(readonly code: 'CMS_RECOVERY_OFF' | 'CMS_RECOVERY_WEAK' | 'CMS_UNAUTHENTICATED' | 'CMS_RATE_LIMITED' | 'CMS_NOT_FOUND' | 'CMS_VALIDATION' | 'CMS_UNAVAILABLE', message: string, readonly status: 400 | 401 | 403 | 404 | 429 | 503) {
         super(message);
     }
 }
@@ -55,18 +55,26 @@ export async function recoverAccount(c: Context, input: { code: unknown; email: 
     const email = typeof input.email === 'string' ? input.email.trim() : '';
     if (!email || email.length > 254 || !email.includes('@')) throw new RecoveryError('CMS_VALIDATION', 'Give the email address of the account.', 400);
 
+    const secondFactorsCleared = input.secondFactors === true;
+    // Logged before anything changes, and refused when it cannot be: a recovery never goes unrecorded.
+    // (The reset lives in the account's database, which may be the network's, so the two cannot share one write.)
+    const member = await host.users.findByEmail(email).catch(() => null);
+    try { await host.audit.record({ actor: 'system:recovery', action: secondFactorsCleared ? 'recover-account-factors' : 'recover-account', resource: 'cms/users', recordId: member?.id ?? email }); }
+    catch (error) {
+        console.error('[cms] could not log a recovery', error);
+        throw new RecoveryError('CMS_UNAVAILABLE', 'The recovery could not be recorded in Tools → Activity, so it was not made. Try again.', 503);
+    }
+
     // A site account resets on its site; a network account on the network host, as Forgot password does.
     let reset = await host.signIn.accounts.createPasswordReset(email);
     let origin = siteOrigin(c);
-    if (!reset && host.siteAccounts && (await host.users.findByEmail(email).catch(() => null))?.account === 'network') {
+    if (!reset && host.siteAccounts && member?.account === 'network') {
         reset = await host.accounts.createPasswordReset(email);
         origin = (c.env as CmsBindings).APP_URL?.replace(/\/+$/, '') || siteOrigin(c);
     }
     if (!reset) throw new RecoveryError('CMS_NOT_FOUND', `No active account with the email ${email} on this site.`, 404);
     const userId = reset.account.id;
-    const secondFactorsCleared = input.secondFactors === true;
     if (secondFactorsCleared) await (await host.storesOf(userId)).security.reset(userId);
-    await host.audit.record({ actor: 'system:recovery', action: secondFactorsCleared ? 'recover-account-factors' : 'recover-account', resource: 'cms/users', recordId: userId }).catch(error => console.error('[cms] could not log a recovery', error));
     await host.mail?.send({ kind: 'other', to: reset.account.email, subject: 'Your account was recovered',
         text: `Someone with the site's recovery code asked for a password reset link for your account${secondFactorsCleared ? ' and removed its two-step sign-in' : ''}, from ${address}.\n\nIf that was not you or another administrator, tell whoever runs the site: the recovery code should be removed from its environment.` })
         .catch(error => console.error('[cms] could not send the recovery notice', error));

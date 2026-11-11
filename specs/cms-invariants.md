@@ -12,10 +12,10 @@ An entry is **locked** when it has a password (`protected`) or is members-only.
 | Anyone else, including readers with `<resource>:read` | Neither: the entry's title, slug, dates and SEO fields only |
 | Site visitor | The password form or the members gate; the body after unlocking or as a member |
 
-**Owner:** the repository. `get`, `list`, `search`, revisions, and every event, outbox payload and hook argument built from a record return the **reader's view** unless the principal may update the entry. The app's `entryLock` stays the owner of the *site* gate (unlock cookie, member roles) and decides on top of the reader's view.
+**Owner:** `packages/cms/src/server/locked.ts` (`isLockedRecord`, `withheldFieldNames`, `lockedView`) and the repository's `readerView(record, principal)`. Everything that leaves for other readers carries the **reader's view** unless the principal may update the entry: revisions, events, outbox payloads, hook arguments, copies, search rows, API answers and dashboard tools. Plain `get` and `list` stay whole, because the site page needs the body for members and the password for the unlock check. The app's `entryLock` owns that *site* gate (unlock cookie, member roles), and nothing renders a raw record without it.
 
 **Decisions:**
-- One function (`lockedView(record, principal)`) builds the reader's view. `lockedRecord`, `lockedCopy`, `withheldFields` and the site-search `#visible` checks call it, and the separate copies of the test go.
+- `lockedView` is the only place the reader's view is built. `lockedCopy`, `withheldFields` and the site-search `#visible` checks call `isLockedRecord` / `withheldFieldNames`, and the separate copies of the test are gone.
 - Outbox events (`resource.*`) carry the reader's view. Plugins and webhooks that need the full record read it with their own grant. Automations already run as their author, so they get the author's view.
 - Theme bindings (`$.…`) and the `entry` given to themes and areas come from `entryLock`'s result, never from the raw record.
 - Find-and-replace and the SEO tool count and show only entries the principal may update. `password` is never a replaceable field.
@@ -44,8 +44,9 @@ An entry is **locked** when it has a password (`protected`) or is members-only.
 
 **Decisions:**
 - Repeatable after a commit (keep in-process): cache-purge queueing, `ready()` reloads, child-session cleanup, last-used timestamps, draft timers.
-- Move into the batch as outbox rows: the redirect writes after a collection or taxonomy rename, the `user.registered` / `user.signed-in` events, note mail and webhooks (`announceNote`), and the recovery audit and mail.
-- Every write `kind` has a reconciler, even if it only drops the pending write.
+- In the batch as outbox rows: redirects after a collection or taxonomy rename (`paths.moved`), the `user.signed-in` event (with the session write), and note mail and webhooks (`note.announced`).
+- Exceptions, because the write spans the network and site databases: `user.registered` follows the account write and is deduplicated by its stable ID. The recovery audit row is written *before* the reset and fails closed (no audit, no reset link); its mail follows.
+- Every write `kind` has a reconciler, even if it only drops the pending write; `tests/reconcilers.test.ts` scans the source for kinds without one.
 
 ## 5. Request budget
 

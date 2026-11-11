@@ -101,7 +101,8 @@ export default class SubmissionPage extends Cossack {
     async setStatus(status: SubmissionStatus | 'delete') {
         const cms = this.c.get('cms');
         const form = await this.loaded();
-        const id = this.view?.id;
+        // The submission the URL names, not the one the client's state shows.
+        const id = this.c.req.param('submission');
         if (!form || !id) return;
         this.error = '';
         this.message = '';
@@ -119,7 +120,8 @@ export default class SubmissionPage extends Cossack {
     async saveNote(note: string) {
         const cms = this.c.get('cms');
         const form = await this.loaded();
-        const id = this.view?.id;
+        // The submission the URL names, not the one the client's state shows.
+        const id = this.c.req.param('submission');
         if (!form || !id) return;
         this.error = '';
         try {
@@ -133,7 +135,8 @@ export default class SubmissionPage extends Cossack {
     async saveValues(draft: Record<string, unknown>) {
         const cms = this.c.get('cms');
         const form = await this.loaded();
-        const id = this.view?.id;
+        // The submission the URL names, not the one the client's state shows.
+        const id = this.c.req.param('submission');
         if (!form || !id) return;
         this.error = '';
         this.errors = {};

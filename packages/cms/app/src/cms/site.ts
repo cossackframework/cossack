@@ -11,7 +11,7 @@ import {
     type ArchiveView, type BodyPart, type BrandIcon, type CollectionDefinition, type CommentShape, type CommentView, type CommentsView, type EntryReference, type EntryView, type FieldDeclaration, type FieldFilter,
     type BreadcrumbView, type FieldView, type LanguageLink, type MediaView, type MenuItemView, type Paging, type RecordShape, type RenderedBlock, type ResolvedMenuItem, type RichTextDoc, type SiteSettings, type SiteView, type TermLink, type TermShape,
 } from '@cossackframework/cms';
-import { brandIcon, excerptOf, renderMarkdown, type CmsFile, type CmsHost, type CmsUser, type LoadedForm, type SiteLanguages } from '@cossackframework/cms/server';
+import { brandIcon, excerptOf, lockedView, renderMarkdown, type CmsFile, type CmsHost, type CmsUser, type LoadedForm, type SiteLanguages } from '@cossackframework/cms/server';
 import type { FormView } from '@cossackframework/cms';
 import { formView, type FormRequest } from './site-forms';
 import { withHeadingAnchors } from './headings';
@@ -705,6 +705,18 @@ export async function requestLock(cms: CmsHost, record: RecordShape, resourceId:
     const editor = principal.kind === 'user' && cms.resource(resourceId).canUpdate(record, principal);
     const unlocked = isProtected(record) && cookie !== undefined && cookie === await unlockToken(record);
     return entryLock(record, { signedIn: principal.kind === 'user', roles: principal.kind === 'user' ? principal.roles : [], editor, unlocked: unlocked ? new Set([record.id]) : undefined });
+}
+
+/**
+ * The entry a theme's `$` bindings read (widgets, theme options): whole for a reader the site's
+ * gate lets in, less its password, else the reader's view (`lockedView`), so a binding can never
+ * print a locked entry's content or anyone's password.
+ */
+export async function bindableEntry(cms: CmsHost, collection: string, record: RecordShape, principal: Principal, cookie: string | undefined): Promise<RecordShape> {
+    const resource = `cms/${collection}`;
+    if (await requestLock(cms, record, resource, principal, cookie)) return lockedView(record, cms.resourceById(resource).fields);
+    const { password: _password, ...open } = record;
+    return open as RecordShape;
 }
 
 /** The cookie that remembers an unlocked entry, and its value: a digest of the entry and its password. */

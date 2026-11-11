@@ -6,7 +6,7 @@
  * nothing is sent twice; webhooks arrive turned off with new secrets, since exports leave the
  * secrets out. Media files are not in exports: copy the storage separately.
  */
-import { decodeValue, type PortableValue, type Statement, type Value } from '@cossackframework/romedb';
+import { decodeValue, MAX_STATEMENTS, RequestTooLargeError, type PortableValue, type Statement, type Value } from '@cossackframework/romedb';
 import { CmsError } from '../errors';
 import { NETWORK_ADMIN } from '../permissions';
 import { UNRESTRICTED_GRANT } from '../manifest';
@@ -43,9 +43,8 @@ const IMPORT_KEY = 'import';
 /** An import that wrote nothing for this long has stopped; another may take over. */
 const IMPORT_LEASE_MS = 5 * 60_000;
 const WRITE = { kind: 'cms.import', retryConflicts: 3 } as const;
-/** What one write holds: RomeDB takes 32 statements and 64 KiB of JSON a request. */
-const BATCH_STATEMENTS = 32;
-const BATCH_TEXT = 48 * 1024;
+/** Of the database's request size, the share rows take: the rest is the statements' encoding around them. */
+const BATCH_SHARE = 0.75;
 /** A statement's text around its row's values, at most. */
 const STATEMENT_TEXT = 1024;
 
@@ -68,7 +67,15 @@ export async function siteImport(host: CmsHost, source: ReadableStream<Uint8Arra
 
 async function importInto(host: CmsHost, source: ReadableStream<Uint8Array> | AsyncIterable<Uint8Array | string>, lease: Lease, options: SiteImportOptions): Promise<SiteImportReport> {
     const db = host.db;
-    const write = (statements: Statement[]) => db.write(statements, { ...WRITE, ...(options.signal ? { signal: options.signal } : {}) });
+    // One write holds what the database takes in a request: its statement count, and its size with room for the encoding.
+    const batchText = Math.floor(await db.maxRequestBytes() * BATCH_SHARE);
+    const write = async (statements: Statement[]) => {
+        try { return await db.write(statements, { ...WRITE, ...(options.signal ? { signal: options.signal } : {}) }); }
+        catch (error) {
+            if (error instanceof RequestTooLargeError) throw new CmsError('CMS_LIMIT', 'A row in this export is larger than the database takes in one write, so the export cannot be imported here.', { cause: error });
+            throw error;
+        }
+    };
     const before = (await allUsers(host)).filter(user => user.account === 'network');
 
     const reader = new ExportReader(source);
@@ -105,7 +112,7 @@ async function importInto(host: CmsHost, source: ReadableStream<Uint8Array> | As
         for (let row = await reader.row(); row !== undefined; row = await reader.row()) {
             const statement = columns ? insertRow(table.name, columns, row) : { rql: `INSERT INTO ${quote(table.name)} DOCUMENT $document`, params: { $document: decoded(row) } };
             const text = reader.lastSize + STATEMENT_TEXT;
-            if (batch.length >= BATCH_STATEMENTS || size + text > BATCH_TEXT) await flush();
+            if (batch.length >= MAX_STATEMENTS || size + text > batchText) await flush();
             batch.push(statement);
             size += text;
             rows++;

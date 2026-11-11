@@ -197,6 +197,12 @@ async function essentials(origin, routeIds, diagnostics, { runtime, cloudflare =
   contains(await web.page('/dashboard/content/posts?status=pending'), 'Needs review');
   contains(await web.page('/dashboard'), 'pending review');
 
+  // Server methods act on the entry the URL names: state naming another entry or collection is ignored.
+  const forged = await web.action(EDITOR, 'loadJson', [], { params: { collection: 'posts', id: pendingId }, state: { route: 'pages', id: scheduledId } });
+  expect(JSON.parse(forged.json).title).toBe('Needs review');
+  expect(forged.route).toBe('posts');
+  expect(forged.id).toBe(pendingId);
+
   // Preview links show the scheduled entry to anyone with the link, until revoked.
   const editorState = { route: 'posts', id: scheduledId };
   const linked = await web.action(EDITOR, 'createPreviewLink', [], { params: { collection: 'posts', id: scheduledId }, state: editorState });
@@ -522,6 +528,9 @@ async function essentials(origin, routeIds, diagnostics, { runtime, cloudflare =
   const liveEdit = { state: { editable: { collection: 'posts', id: pendingId } }, params: { path: 'needs-review' } };
   expect((await eve.action(SITE_PAGE, 'startEditing', [], liveEdit)).draft ?? null).toBeNull();
   expect((await eve.request('/api/cms/search?q=needs')).status).not.toBe(403);
+  // A session still owing its second factor is a visitor on the site: members-only entries stay closed.
+  await save(web, 'posts', post('Staff only', { membersOnly: true }));
+  expect(await eve.page('/posts/staff-only')).not.toContain('Staff only body');
   // JSON sign-in for tools answers Eve as it would anyone; the API stays closed to the session.
   const eveTool = await fetch(`${origin}/api/auth/session`, { method: 'POST', headers: { 'content-type': 'application/json', origin, 'sec-fetch-site': 'same-origin' }, body: JSON.stringify({ email: 'eve@example.com', password: 'eve password 1' }) });
   expect(eveTool.status).toBe(200);
@@ -530,6 +539,7 @@ async function essentials(origin, routeIds, diagnostics, { runtime, cloudflare =
   expect((await web.action(SETTINGS, 'saveAll', [{ document: { general: { requireTwoFactor: false } }, languages: null, permalinks: null, groups: {} }]))._cossack_return.error).toBe('');
   // Without the requirement the same session edits on the site, and the earlier password works again.
   expect((await eve.action(SITE_PAGE, 'startEditing', [], liveEdit)).draft).toBeTruthy();
+  contains(await eve.page('/posts/staff-only'), 'Staff only body');
   expect((await fetch(`${origin}/api/cms/content/posts`, { headers: { authorization: `Bearer ${earlier.newToken}` } })).status).toBe(200);
   await web.action('dashboard/users/[id]/index.ts', 'deleteToken', [earlier.tokens.find(entry => entry.name === 'Before the rule').id], { params: { id: eveUserId } });
 

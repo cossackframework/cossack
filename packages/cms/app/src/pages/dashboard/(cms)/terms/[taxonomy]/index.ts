@@ -67,7 +67,8 @@ export default class TermsPage extends Cossack {
         this.error = '';
         try {
             const terms = this.c.get('cms').taxonomies;
-            await terms.create(this.taxonomy.name, { name: draft.name, slug: draft.slug, description: draft.description, parent: draft.parent || null, icon: draft.icon }, { principal: this.c.get('principal') });
+            // The taxonomy the URL names, not the client's state.
+            await terms.create(terms.declaration(this.c.req.param('taxonomy') ?? '').name, { name: draft.name, slug: draft.slug, description: draft.description, parent: draft.parent || null, icon: draft.icon }, { principal: this.c.get('principal') });
             this.draft = { name: '', slug: '', parent: '', description: '', icon: '' };
             this.slugTouched = false;
             await this.load();

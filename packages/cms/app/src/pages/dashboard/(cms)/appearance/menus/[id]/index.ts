@@ -415,6 +415,8 @@ export default class MenuEditor extends Cossack {
         this.error = '';
         this.conflict = false;
         try {
+            // Menu item fields as the host has them, not as the client's state lists them.
+            this.fieldGroups = await groupsView(cms, { kind: 'menus' });
             const typed: MenuRow[] = [];
             for (const row of rows) {
                 const { meta, errors } = metaInput(this.fieldGroups.fields, (row.meta ?? {}) as Record<string, unknown>);

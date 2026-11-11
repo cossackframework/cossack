@@ -1,5 +1,6 @@
 // Server-only CMS host. Import from server code; the security transform keeps it out of the client.
 export { CmsHost, createCMS, lockedCopy, PLUGIN_ENABLED, type AccountStores, type SiteLanguages, type ThemeInfo, type PluginAuthorView, type CmsOptions, type CmsModule, type PluginContext, type PluginUnrestricted, type PluginCms, type PluginResource, type PluginRegistrationLike, type ActivationStatus, type PluginStatus, type CommandHandler, type CommandContext, type ThemeLoader, type ThemeLoaders, type ThemeLoaderContext } from './host';
+export { isLockedRecord, lockedView, withheldFieldNames } from './locked';
 export { ResourceRepository, type OperationContext, type ListOptions, type ListFilter, type FieldFilter } from './repository';
 export { CmsMenus, type MenuSummary } from './menus';
 export { CmsAreas, type AreaShape } from './areas';
@@ -31,7 +32,7 @@ export { cmsReconcilers } from './reconcile';
 export { CmsPreviews, type PreviewLink } from './previews';
 export { CmsAutosaves, type Autosave } from './autosaves';
 export { CmsDrafts, EDITING_WINDOW, saveBytes, type Draft, type DraftInput } from './drafts';
-export { CmsNotes, type NoteInput } from './notes';
+export { CmsNotes, noteAnnounced, type NoteAnnouncedEvent, type NoteAnnouncement, type NoteInput } from './notes';
 export { CmsRedirects } from './redirects';
 export { CmsApiTokens, API_TOKEN_LIMIT, type ApiToken, type ApiTokenScope } from './api-tokens';
 export { CmsWebhooks, verifyWebhookSignature } from './webhooks';

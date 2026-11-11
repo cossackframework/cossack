@@ -11,9 +11,11 @@ import { afterCommit, cachePurge, formSubmitted, paymentEvent, pluginJob, userRe
 import { searchRebuild } from './site-search';
 import { collectionDeleted } from './comments';
 import { sharedFields } from './shared-fields';
+import { noteAnnounced } from './notes';
+import { pathsMoved } from './path-moves';
 
 /** The action an outbox row runs, by its topic; resource events run `cms.resource.after-commit`. */
-const POINTS: { readonly [topic: string]: ActionPoint<unknown> } = { 'form.submitted': formSubmitted as ActionPoint<unknown>, 'cache.purge': cachePurge as ActionPoint<unknown>, 'plugin.job': pluginJob as ActionPoint<unknown>, 'payment.event': paymentEvent as ActionPoint<unknown>, 'user.registered': userRegistered as ActionPoint<unknown>, 'user.signed-in': userSignedIn as ActionPoint<unknown>, 'search.rebuild': searchRebuild as ActionPoint<unknown>, 'collection.deleted': collectionDeleted as ActionPoint<unknown>, 'resource.shared': sharedFields as ActionPoint<unknown> };
+const POINTS: { readonly [topic: string]: ActionPoint<unknown> } = { 'form.submitted': formSubmitted as ActionPoint<unknown>, 'cache.purge': cachePurge as ActionPoint<unknown>, 'plugin.job': pluginJob as ActionPoint<unknown>, 'payment.event': paymentEvent as ActionPoint<unknown>, 'user.registered': userRegistered as ActionPoint<unknown>, 'user.signed-in': userSignedIn as ActionPoint<unknown>, 'search.rebuild': searchRebuild as ActionPoint<unknown>, 'collection.deleted': collectionDeleted as ActionPoint<unknown>, 'resource.shared': sharedFields as ActionPoint<unknown>, 'note.announced': noteAnnounced as ActionPoint<unknown>, 'paths.moved': pathsMoved as ActionPoint<unknown> };
 
 export interface DispatchReport {
     readonly delivered: readonly string[];
@@ -128,6 +130,14 @@ export class Outbox {
      * `eventId` is the row, delivered from `availableAt` (default: now). With `ignoreDuplicate`, a
      * row that exists is left alone and false comes back.
      */
+    /** The row `enqueue` writes, for a caller's own batch: the event is queued exactly when the batch commits. Call `outboxWritten()` after it. */
+    statement(topic: string, event: { readonly eventId: string; readonly at: number }, options: { availableAt?: number; ignoreDuplicate?: boolean } = {}): Statement {
+        return {
+            rql: `INSERT INTO cms_outbox (id, topic, payload, created_at, available_at, attempts, lease_until) VALUES ($outbox_id, $outbox_topic, $outbox_payload, $outbox_at, $outbox_available, 0, 0)${options.ignoreDuplicate ? ' ON CONFLICT (id) DO NOTHING' : ''}`,
+            params: { $outbox_id: event.eventId, $outbox_topic: topic, $outbox_payload: JSON.stringify(event), $outbox_at: event.at, $outbox_available: options.availableAt ?? event.at },
+        };
+    }
+
     async enqueue(topic: string, event: { readonly eventId: string; readonly at: number }, options: { signal?: AbortSignal; availableAt?: number; ignoreDuplicate?: boolean } = {}): Promise<boolean> {
         const result = await this.#db.write([{
             rql: `INSERT INTO cms_outbox (id, topic, payload, created_at, available_at, attempts, lease_until) VALUES ($id, $topic, $payload, $at, $available, 0, 0)${options.ignoreDuplicate ? ' ON CONFLICT (id) DO NOTHING' : ''}`,

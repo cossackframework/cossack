@@ -1,7 +1,7 @@
 import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackframework/core';
 import { Avatar, Badge, Button, Card, CardBody, Checkbox, Input, NativeSelect, Pagination, Textarea } from '@cossackframework/ui';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
-import { COMMENT_STATUSES, isCmsError, PERMISSIONS, recordTitle, type CommentStatus } from '@cossackframework/cms';
+import { CmsError, COMMENT_STATUSES, hasPermission, isCmsError, PERMISSIONS, recordTitle, type CommentStatus } from '@cossackframework/cms';
 import { requireAny } from '../../../../cms/guards';
 import { notice, pageHeader, shortDate } from '../../../../cms/ui';
 
@@ -132,6 +132,8 @@ export default class CommentsPage extends Cossack {
         this.error = '';
         this.message = '';
         try {
+            // The store's update takes no principal: the page's permission is checked here too.
+            if (!hasPermission(this.c.get('principal'), PERMISSIONS.moderateComments)) throw new CmsError('CMS_FORBIDDEN', __('You cannot edit comments.'));
             const { comments } = this.c.get('cms');
             await comments.update(edit.id, { content: edit.content, authorName: edit.authorName, authorEmail: edit.authorEmail, authorUrl: edit.authorUrl });
             this.editing = null;

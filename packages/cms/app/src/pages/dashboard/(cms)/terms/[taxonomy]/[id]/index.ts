@@ -157,6 +157,13 @@ export default class EditTerm extends Cossack {
     async save(draft: Draft, meta: EditorValues) {
         this.errors = {};
         this.error = '';
+        // The term, its taxonomy and its fields as the host has them, not as the client's state says.
+        const cms = this.c.get('cms');
+        const current = await cms.taxonomies.get(this.c.req.param('id') ?? '');
+        if (!current || current.taxonomy !== this.c.req.param('taxonomy')) { this.error = __('This term does not exist.'); return; }
+        const declaration = cms.taxonomies.declaration(current.taxonomy);
+        this.taxonomy = { name: declaration.name, label: declaration.label, singular: declaration.singular, hierarchical: declaration.hierarchical };
+        this.fieldGroups = await groupsView(cms, { kind: 'taxonomy', name: current.taxonomy });
         const converted = metaInput(this.fieldGroups.fields, meta);
         if (Object.keys(converted.errors).length) { this.errors = converted.errors; this.error = __('Some fields are invalid.'); return; }
         try {
@@ -177,7 +184,7 @@ export default class EditTerm extends Cossack {
         this.message = '';
         try {
             await this.c.get('cms').taxonomies.delete(this.c.req.param('id') ?? '', { principal: this.c.get('principal') });
-            return this.redirect(`/dashboard/terms/${this.taxonomy.name}`);
+            return this.redirect(`/dashboard/terms/${encodeURIComponent(this.c.req.param('taxonomy') ?? '')}`);
         } catch (error) {
             this.error = isCmsError(error) ? error.message : __('The term could not be deleted.');
         }

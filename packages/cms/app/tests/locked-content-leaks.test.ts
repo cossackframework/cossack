@@ -9,7 +9,9 @@ vi.stubGlobal('__', (text: string) => text);
 
 const { buildFeed } = await import('../src/cms/feeds');
 const { entrySeo } = await import('../src/cms/seo');
-const { entriesList, entryRead } = await import('../src/cms/manage');
+const { entriesList, entryCreate, entryRead } = await import('../src/cms/manage');
+const { bindableEntry, unlockToken } = await import('../src/cms/site');
+const { replaceableFields } = await import('../src/cms/replace');
 
 const record = (id: string, fields: Record<string, unknown>): RecordShape => ({ id, rev: 1, createdAt: 1, updatedAt: 1, publishedAt: 1, owner: 'author-1', title: `Entry ${id}`, slug: `entry-${id}`, status: 'published', ...fields }) as RecordShape;
 const settings = new Proxy({ 'general.siteTitle': 'Site', 'reading.feedItems': 10, 'reading.feedContent': 'full' } as Record<string, unknown>, { get: (target, key: string) => key in target ? target[key] : '' });
@@ -86,6 +88,35 @@ describe('locked entries stay locked outside their page', () => {
         await list({ kind: 'user', id: 'e1', roles: ['editor'], permissions: ['cms/*'] }, { 'filter[price]': '49' });
         expect(calls.at(-1)).not.toHaveProperty('password');
         expect(page).not.toHaveProperty('truncated');
+    });
+
+    it('binds a locked entry as its readers see it, and never binds a password', async () => {
+        const locked = record('b1', { password: 'hunter2', content: 'secret body' });
+        const anonymous = { kind: 'anonymous' } as never;
+        const seen = await bindableEntry(host([locked]), 'posts', locked, anonymous, undefined);
+        expect(seen).toMatchObject({ title: 'Entry b1' });
+        expect(JSON.stringify(seen)).not.toMatch(/secret|hunter2/);
+        // A visitor who unlocked it reads the body, still without the password.
+        const unlocked = await bindableEntry(host([locked]), 'posts', locked, anonymous, await unlockToken(locked));
+        expect(unlocked).toMatchObject({ content: 'secret body' });
+        expect(JSON.stringify(unlocked)).not.toContain('hunter2');
+        const members = await bindableEntry(host([]), 'posts', record('b2', { membersOnly: true, content: 'secret members' }), anonymous, undefined);
+        expect(JSON.stringify(members)).not.toContain('secret');
+    });
+
+    it('never finds or replaces in an entry\'s password', () => {
+        const names = replaceableFields({ ...resource.fields, password: { kind: 'string', max: 100 } } as never).map(([name]) => name);
+        expect(names).not.toContain('password');
+        expect(names).toContain('title');
+    });
+
+    it('answers an editor\'s own write with the entry whole', async () => {
+        const written = record('w1', { password: 'hunter2', body: 'editor body' });
+        const editorHost = { ...host([written]), collection: () => posts,
+            resource: () => ({ create: async () => written, canUpdate: () => true, getMany: async () => new Map() }) } as unknown as CmsHost;
+        const editor = { kind: 'user', id: 'e1', roles: ['editor'], permissions: ['cms/*'] };
+        const created = await entryCreate({ get: (key: string) => key === 'cms' ? editorHost : editor } as unknown as Context, 'posts', { title: 'x' });
+        expect(created.item).toMatchObject({ body: 'editor body', password: 'hunter2' });
     });
 
     it('says when a filter on withheld fields read only the first 1,000 matches', async () => {

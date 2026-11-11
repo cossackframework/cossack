@@ -55,7 +55,10 @@ export default class WebhooksPage extends Cossack {
     /** Read the selected webhook's secret, for whoever manages webhooks here. */
     @Server()
     async reveal() {
-        this.revealed = this.selected ? await this.c.get('cms').webhooks.secret(this.selected) ?? '' : '';
+        // The client names the webhook: only one of this site's, read again here.
+        const cms = this.c.get('cms');
+        const hook = (await cms.webhooks.list()).find(entry => entry.id === this.selected);
+        this.revealed = hook ? await cms.webhooks.secret(hook.id) ?? '' : '';
     }
 
     @Client()
@@ -106,7 +109,8 @@ export default class WebhooksPage extends Cossack {
         const cms = this.c.get('cms');
         await cms.webhooks.redeliver(deliveryId);
         await cms.webhooks.dispatch({ limit: 5 });
-        this.deliveries = await cms.webhooks.deliveries(this.selected, 20);
+        const hook = (await cms.webhooks.list()).find(entry => entry.id === this.selected);
+        this.deliveries = hook ? await cms.webhooks.deliveries(hook.id, 20) : [];
     }
 
     @Server()

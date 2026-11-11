@@ -9,6 +9,7 @@
  * text. `search.rebuild` fills the index from scratch in rounds of 200 entries from the outbox.
  */
 import { defineAction } from '@cossackframework/core/hooks';
+import { isLockedRecord } from './locked';
 import { uuidv7 } from '@cossackframework/core';
 import type { Statement, Value } from '@cossackframework/romedb';
 import { CmsError } from '../errors';
@@ -240,8 +241,7 @@ export class SiteSearch {
     /** Whether visitors may read an entry the read rule lets them see: published, not protected, not members-only. */
     #visible(searched: SearchedCollection, record: RecordShape): boolean {
         if (searched.collection.publishable !== false && record.status !== 'published') return false;
-        if (typeof record.password === 'string' && record.password !== '') return false;
-        return record.membersOnly !== true;
+        return !isLockedRecord(record);
     }
 
     /** `#visible` and the visitor's read rule, as conditions on the entry document `d`. */

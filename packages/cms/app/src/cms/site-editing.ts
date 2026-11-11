@@ -180,6 +180,15 @@ export async function draftEntry(cms: CmsHost, collection: CollectionDefinition,
     return (await entryViews(cms, collection, [{ ...record, ...input }], { full: true, editable: new Set([record.id]), ...(forms ? { forms } : {}), ...(patterns.length ? { patternDrafts: patternDraftBlocks(patterns.map(pattern => ({ id: pattern.name, blocks: pattern.blocks })), options) } : {}) }))[0]!;
 }
 
+/**
+ * The block options a draft's documents are checked and saved with, as the host has them for
+ * this principal: the draft itself is page state the client sends back, so never its copy.
+ */
+export async function draftBlockOptions(cms: CmsHost, draft: Pick<SiteDraft, 'collection'>, principal: Principal): Promise<BlockOption[]> {
+    if (!draft.collection) return principal.kind === 'user' && hasPermission(principal, PERMISSIONS.manageAppearance) ? blockOptions(cms) : [];
+    return (await editorView(cms, draft.collection, principal)).blocks;
+}
+
 /** Save the draft over the revision it started from. A newer save makes a CMS_CONFLICT. */
 export function saveDraft(cms: CmsHost, draft: Pick<SiteDraft, 'collection' | 'id' | 'rev'>, values: EditorValues, principal: Principal): Promise<RecordShape> {
     return saveEntry(cms, draft.collection, draft.id, values, 'update', draft.rev, principal);

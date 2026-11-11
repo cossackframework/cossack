@@ -4,12 +4,12 @@ import { getCookie } from 'hono/cookie';
 import { component, html } from '@cossackframework/renderer';
 import { hasPermission, isCmsError, isSameOriginPost, PERMISSIONS, type ArchiveView, type EntryView, type LanguageLink, type Note, type RecordShape, type ThemeData } from '@cossackframework/cms';
 import type { CmsHost } from '@cossackframework/cms/server';
-import { archive, authorArchive, authorView, bindingScopes, commentResult, entryLock, entryViews, homeView, isMembersOnly, isProtected, languageLinks, localePrefix, pageNumber, redirectFor, resolvePath, searchBase, searchEntries, termArchive, themeData, themeState, unlockCookie, unlockToken, resolvedOptions, type Resolved, type ThemeState, notFoundPage } from '../../../cms/site';
+import { archive, authorArchive, authorView, bindingScopes, commentResult, entryLock, entryViews, homeView, isMembersOnly, isProtected, languageLinks, localePrefix, pageNumber, redirectFor, requestLock, resolvePath, searchBase, searchEntries, termArchive, themeData, themeState, unlockCookie, unlockToken, resolvedOptions, type Resolved, type ThemeState, notFoundPage } from '../../../cms/site';
 import { archiveTemplate, entryTemplate, siteContent, siteTheme, tagDocument, themeHelpers, unavailable } from '../../../cms/site-view';
 import { authorSeo, entrySeo, homeSeo, listSeo } from '../../../cms/seo';
 import { emptySeo, seoHead, type SeoView } from '../../../cms/seo-head';
 import type { SiteDraft, SiteEditable } from '../../../cms/site-editor';
-import { draftEntry, draftMedia, editableRecord, frameDraft, saveDocuments, saveDraft, siteDraft, siteEditable } from '../../../cms/site-editing';
+import { draftBlockOptions, draftEntry, draftMedia, editableRecord, frameDraft, saveDocuments, saveDraft, siteDraft, siteEditable } from '../../../cms/site-editing';
 import { siteSession, type SiteEditingContext } from '../../../cms/site-session';
 import type { SiteDocument } from '../../../cms/site-editor';
 import { contentMenus, siteInfo, type SiteInfo } from '../../../cms/site';
@@ -66,14 +66,15 @@ export const resolveSitePath = defineServerMiddleware(async (c, next) => {
     if (resolved.kind === 'entry' && !post) {
         c.header('vary', 'Accept');
         if (wantsMarkdown(c.req.raw) && await cms.settings.get('seo.markdown')) {
-            if (isProtected(resolved.record)) return c.text('This entry is password protected.', 403);
-            const reader = c.get('principal');
-            if (isMembersOnly(resolved.record) && entryLock(resolved.record, { signedIn: reader.kind === 'user', roles: reader.kind === 'user' ? reader.roles : [], editor: reader.kind === 'user' && cms.resource(`cms/${resolved.collection.name}`).canUpdate(resolved.record, reader) }) === 'members') return c.text('This entry is for members.', 403);
+            // As the HTML page decides: its editors and a visitor who unlocked it read a protected entry, members a members-only one.
+            const lock = await requestLock(cms, resolved.record, `cms/${resolved.collection.name}`, c.get('principal'), getCookie(c, unlockCookie(resolved.record)));
+            if (lock === 'password') return c.text('This entry is password protected.', 403);
+            if (lock === 'members') return c.text('This entry is for members.', 403);
             trackCrawler(c, 'markdown');
             const url = (await cms.entryUrls(resolved.collection, [resolved.record])).get(resolved.record.id) ?? c.req.path;
             // Caches key HTML by URL and ignore Vary: Markdown chosen by Accept is never stored; `?format=md` is the address to cache.
             const addressed = /^(?:md|markdown)$/.test(c.req.query('format') ?? '');
-            const headers = addressed && !isMembersOnly(resolved.record) ? await cacheHeaders(cms, [cms.purge.tag.entry(resolved.collection.name, resolved.record.id), cms.purge.tag.collection(resolved.collection.name)]) : { 'cache-control': 'private, no-store' };
+            const headers = addressed && !isMembersOnly(resolved.record) && !isProtected(resolved.record) ? await cacheHeaders(cms, [cms.purge.tag.entry(resolved.collection.name, resolved.record.id), cms.purge.tag.collection(resolved.collection.name)]) : { 'cache-control': 'private, no-store' };
             return c.body(await entryAsMarkdown(cms, resolved.collection, resolved.record, url, siteOrigin(c)), 200, { 'content-type': 'text/markdown; charset=utf-8', ...headers, 'x-robots-tag': 'noindex' });
         }
     }
@@ -167,7 +168,8 @@ export default class SitePath extends Cossack {
             const signedIn = this.c.get('principal');
             const readerRoles = signedIn.kind === 'user' ? signedIn.roles : [];
             const viewOptions = {
-                comment: commentResult(this.c.req.query('comment')), user: this.user ? { name: this.user.name } : null,
+                // Signed in means the principal is a user: a session still owing its second factor is a visitor here.
+                comment: commentResult(this.c.req.query('comment')), user: signedIn.kind === 'user' && this.user ? { name: this.user.name } : null,
                 roles: readerRoles,
                 forms: { query: this.c.req.query(), principal: this.c.get('principal'), url: base }, usage,
             };
@@ -360,7 +362,7 @@ export default class SitePath extends Cossack {
         const found = draft ? await editableRecord(cms, draft.collection, draft.id, this.c.get('principal')) : null;
         if (!draft || !found) { this.draft = null; return; }
         try {
-            this.entry = await draftEntry(cms, found.collection, found.record, values, this.formRequest(), draft.documents, draft.view.blocks);
+            this.entry = await draftEntry(cms, found.collection, found.record, values, this.formRequest(), draft.documents, await draftBlockOptions(cms, draft, this.c.get('principal')));
             await this.refreshMenus();
             this.draft = { ...draft, values, changed: true, error: '', errors: {} };
         } catch (error) {
@@ -377,13 +379,13 @@ export default class SitePath extends Cossack {
         const draft = this.draft;
         if (draft && !draft.collection) {
             // The frame alone: the documents are everything there is to save.
-            this.draft = { ...draft, documents: await saveDocuments(cms, draft.documents, draft.view.blocks, principal) };
+            this.draft = { ...draft, documents: await saveDocuments(cms, draft.documents, await draftBlockOptions(cms, draft, principal), principal) };
             return;
         }
         const found = draft ? await editableRecord(cms, draft.collection, draft.id, principal) : null;
         if (!draft || !found) { this.draft = null; return; }
         // The areas save on their own, each over its revision; a conflict stays on its document and the others still save.
-        const documents = await saveDocuments(cms, draft.documents, draft.view.blocks, principal);
+        const documents = await saveDocuments(cms, draft.documents, await draftBlockOptions(cms, draft, principal), principal);
         if (!draft.changed) { this.draft = { ...draft, documents }; return; }
         try {
             const record = await saveDraft(cms, draft, values, principal);
@@ -413,7 +415,7 @@ export default class SitePath extends Cossack {
 
     /** The menus the entry's own Navigation blocks show; nothing when it has none. */
     private async refreshMenus() {
-        this.menus = this.entry ? await contentMenus(this.c.get('cms'), this.theme, this.entry.content, { locale: this.entry.locale, user: this.user ? { name: this.user.name } : null, forms: this.formRequest() }) : {};
+        this.menus = this.entry ? await contentMenus(this.c.get('cms'), this.theme, this.entry.content, { locale: this.entry.locale, user: this.c.get('principal').kind === 'user' && this.user ? { name: this.user.name } : null, forms: this.formRequest() }) : {};
     }
 
     /** The media library, for the editor of this entry only. */

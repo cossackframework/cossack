@@ -72,6 +72,9 @@ export default class RevisionsPage extends Cossack {
     @Server()
     async restore(revision: number) {
         const cms = this.c.get('cms');
+        // The entry the URL names, not the client's state; the revision it last saw stays its own.
+        this.route = this.c.req.param('collection') ?? '';
+        this.id = this.c.req.param('id') ?? '';
         try {
             const { resource } = routeResource(cms, this.route);
             await cms.resource(resource.id).restore(this.id, revision, { principal: this.c.get('principal'), expectedRevision: this.current });

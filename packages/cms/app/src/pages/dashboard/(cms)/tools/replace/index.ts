@@ -2,7 +2,7 @@ import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackfr
 import { Button, Card, CardBody, CardHeader, Checkbox, Field, Input, NativeSelect } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { isCmsError, PERMISSIONS, recordTitle, type Block, type RichTextDoc } from '@cossackframework/cms';
-import { replaceableText, replaceInBlocks, replaceInDoc, replaceInText } from '../../../../../cms/replace';
+import { replaceableFields, replaceInBlocks, replaceInDoc, replaceInText } from '../../../../../cms/replace';
 import { requireAny } from '../../../../../cms/guards';
 import { notice, pageHeader } from '../../../../../cms/ui';
 
@@ -60,12 +60,15 @@ export default class ReplacePage extends Cossack {
         const definition = cms.collections().find(entry => entry.name === collection);
         if (!definition) { this.error = __('Choose a collection.'); return; }
         const resource = cms.resource(`cms/${collection}`);
-        const fields = Object.entries(cms.resourceById(`cms/${collection}`).fields).filter(([, declaration]) => replaceableText(declaration) || declaration.kind === 'richtext' || declaration.kind === 'blocks');
+        const fields = replaceableFields(cms.resourceById(`cms/${collection}`).fields);
         const pattern = new RegExp(this.find.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), matchCase ? 'g' : 'gi');
         try {
             for (let offset = 0; offset < 1000; offset += 100) {
                 const page = await resource.list({ limit: 100, offset, order: { field: 'updatedAt', direction: 'desc' } }, { principal });
                 for (const record of page.records) {
+                    // Only entries this user may change are searched: a count over one they may not would
+                    // tell what a protected or members-only entry says.
+                    if (!resource.canUpdate(record, principal)) continue;
                     this.scanned++;
                     const changed: Record<string, unknown> = {};
                     const touched: string[] = [];

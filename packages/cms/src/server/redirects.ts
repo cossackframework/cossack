@@ -8,6 +8,7 @@ import { CmsError } from '../errors';
 import { containsPattern } from './users';
 import { REDIRECT_PATH as PATH, redirectPath, redirectProblems, type Redirect, type RedirectInput, type RedirectStatus } from '../redirects';
 import { uuidv7 } from '@cossackframework/core';
+import { requestBatches } from './budget';
 
 const WRITE = { kind: 'cms.redirects', retryConflicts: 5 } as const;
 const COLUMNS = 'id, source, target, status, prefix, kind, note, hits, last_hit_at, created_at, updated_at';
@@ -146,7 +147,7 @@ export class CmsRedirects {
     /** Write automatic redirects outside a content change, such as after a path setting changed. */
     async record(pairs: readonly { from: string; to: string; prefix?: boolean }[], by: string | null): Promise<void> {
         const statements = pairs.flatMap(pair => this.automatic(pair.from, pair.to, { by, ...(pair.prefix ? { prefix: true } : {}) }));
-        for (let index = 0; index < statements.length; index += 30) await this.#db.write(statements.slice(index, index + 30), WRITE);
+        for (const batch of await requestBatches(this.#db, statements)) await this.#db.write(batch, WRITE);
         this.#prefixes = undefined;
         await this.#changed?.();
     }

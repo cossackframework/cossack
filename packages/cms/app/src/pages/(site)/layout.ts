@@ -3,7 +3,8 @@ import { analyticsTags, NO_ANALYTICS, type AnalyticsServices } from '../../cms/a
 import { listedCollections } from '../../cms/cache';
 import { html } from '@cossackframework/renderer';
 import { hasPermission, PERMISSIONS, PLACEHOLDER_SCRIPT, usesUserBinding, type RenderedBlock, type SiteView, type ThemeData } from '@cossackframework/cms';
-import { areaViews, bindingScopes, languageLinks, resolvedOptions, siteMenus, siteView, themeData, themeState, type Resolved, type ThemeState } from '../../cms/site';
+import { areaViews, bindableEntry, bindingScopes, languageLinks, resolvedOptions, siteMenus, siteView, themeData, themeState, unlockCookie, type Resolved, type ThemeState } from '../../cms/site';
+import { getCookie } from 'hono/cookie';
 import { blockOptions } from '../../cms/content';
 import { areaDraftBlocks, patternDraftBlocks } from '../../cms/site-editing';
 import { siteSession, type AreaDraft, type PatternDraft, type SiteEditingContext } from '../../cms/site-session';
@@ -188,8 +189,11 @@ export default class SiteLayout extends Cossack {
             if (!(resolved && 'locale' in resolved)) setRequestLocale(languages.default);
             const template = resolved?.kind === 'entry' && typeof resolved.record.template === 'string' && resolved.record.template ? resolved.record.template : null;
             // Widgets and theme options bind like blocks: `$` is the entry shown, `$site` and `$user` are there on every page.
-            const entry = resolved?.kind === 'entry' ? resolved.record : null;
-            const user = this.user ? { name: this.user.name } : null;
+            // A locked entry binds as its readers see it unless this reader may read it; the password never binds.
+            const principal = this.c.get('principal');
+            const entry = resolved?.kind === 'entry' ? await bindableEntry(cms, resolved.collection.name, resolved.record, principal, getCookie(this.c, unlockCookie(resolved.record))) : null;
+            // `$user` is the signed-in principal's: a session still owing its second factor binds as a visitor.
+            const user = principal.kind === 'user' && this.user ? { name: this.user.name } : null;
             const usage = { user: Object.values(this.theme.options).some(value => usesUserBinding(value)) };
             this.theme = { ...this.theme, options: resolvedOptions(this.theme.options, bindingScopes(settings, { entry, user })) };
             this.site = await siteView(cms, this.theme, { locale: page.locale, languages: await languageLinks(cms, page), template, entry, user, usage, url: this.c.req.url, page, forms: { query: this.c.req.query(), principal: this.c.get('principal'), url: this.c.req.path } });

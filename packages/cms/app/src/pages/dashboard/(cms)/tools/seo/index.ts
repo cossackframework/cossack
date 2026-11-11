@@ -70,7 +70,8 @@ export default class SeoEditorPage extends Cossack {
         const slice = this.filter === 'missing' ? records.slice((this.page - 1) * PAGE_SIZE, this.page * PAGE_SIZE) : records;
         const urls = await cms.entryUrls(collection, slice);
         this.total = total;
-        this.rows = slice.map(record => {
+        // A locked entry's summary is written from its content: only its editors see it.
+        this.rows = slice.map(stored => repository.readerView(stored, principal)).map(record => {
             const seo = (record.seo ?? {}) as { title?: string; description?: string };
             return { id: record.id, title: recordTitle(record, 'title'), url: urls.get(record.id) ?? null, status: String(record.status ?? ''), seoTitle: seo.title ?? '', description: seo.description ?? '', summary: typeof record.summary === 'string' ? record.summary : '', rev: record.rev, saved: false };
         });
@@ -95,11 +96,14 @@ export default class SeoEditorPage extends Cossack {
         this.error = '';
         const cms = this.c.get('cms');
         try {
-            const repository = cms.resource(`cms/${this.collection}`);
+            // The collection and its fields as the host has them: the client's list only names one.
+            const collection = cms.collections().find(entry => entry.name === this.collection && typeof entry.path === 'string' && !entry.managed);
+            if (!collection) { this.error = __('The entry no longer exists.'); return; }
+            const repository = cms.resource(`cms/${collection.name}`);
             const current = await repository.get(row.id, { principal: this.c.get('principal') });
             if (!current) { this.error = __('The entry no longer exists.'); return; }
             const seo = { ...((current.seo as Record<string, unknown> | null) ?? {}), title: row.seoTitle.trim(), description: row.description.trim() };
-            const summary = this.collections.find(entry => entry.name === this.collection)?.summary;
+            const summary = Boolean(cms.resourceById(`cms/${collection.name}`).fields.summary);
             const saved = await repository.update(row.id, { seo, ...(summary ? { summary: row.summary.trim() } : {}) }, { principal: this.c.get('principal'), expectedRevision: row.rev });
             this.rows = this.rows.map(entry => entry.id === row.id ? { ...entry, rev: saved.rev, saved: true } : entry);
         } catch (error) {

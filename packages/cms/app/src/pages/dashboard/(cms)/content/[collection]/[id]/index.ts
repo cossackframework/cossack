@@ -531,8 +531,7 @@ export default class EntryEditor extends Cossack {
         const cms = this.c.get('cms');
         if (this.id === 'new') return;
         await this.assertEditor();
-        const view = this.view;
-        if (!view) return;
+        const view = await this.serverView();
         const record = await cms.resource(this.resourceId()).get(this.id, { principal: this.c.get('principal') });
         if (!record) return;
         const saved = await entryValues(cms, view, record);
@@ -987,7 +986,7 @@ export default class EntryEditor extends Cossack {
     @Server()
     async refreshPreviews(values: EditorValues) {
         const cms = this.c.get('cms');
-        this.previews = await mediaPreviews(cms, values, this.view ?? await editorView(cms, this.route));
+        this.previews = await mediaPreviews(cms, values, await this.serverView());
     }
 
     /** The values as the autosave stores them; a control that cannot be serialized counts as unchanged. */
@@ -1019,10 +1018,29 @@ export default class EntryEditor extends Cossack {
     }
 
     /**
+     * Server methods act on the collection and entry the URL names, never on the client's state.
+     * The first save of a new entry stays on `/new` until the browser's URL follows, so `/new`
+     * keeps the saved ID the state carries; every method checks the principal's rights to it.
+     */
+    private fromRoute(): void {
+        this.route = this.c.req.param('collection') ?? '';
+        const id = this.c.req.param('id') ?? 'new';
+        if (id !== 'new' || !this.id) this.id = id;
+    }
+
+    /** This route's editor view as the host builds it, once per request: fields, blocks and taxonomies never come from the client. */
+    private routeView?: Promise<EditorView>;
+    private serverView(): Promise<EditorView> {
+        this.fromRoute();
+        return this.routeView ??= editorView(this.c.get('cms'), this.route, this.c.get('principal'));
+    }
+
+    /**
      * Refuse a server method unless the principal may edit this entry, or create one for a new
-     * entry: the page itself only asks for a dashboard account, and the route and ID are page state.
+     * entry: the page itself only asks for a dashboard account.
      */
     private async assertEditor(): Promise<void> {
+        this.fromRoute();
         const cms = this.c.get('cms');
         const principal = this.c.get('principal');
         const { resource } = routeResource(cms, this.route);
@@ -1036,6 +1054,7 @@ export default class EntryEditor extends Cossack {
 
     /** The resource this editor's route names, read on the server. */
     private resourceId(): string {
+        this.fromRoute();
         return routeResource(this.c.get('cms'), this.route).resource.id;
     }
 
@@ -1058,7 +1077,7 @@ export default class EntryEditor extends Cossack {
         const autosave = await cms.latestAutosave(this.resourceId(), this.id, this.c.get('principal'));
         if (autosave?.data && typeof autosave.data === 'object' && !Array.isArray(autosave.data)) {
             this.values = { ...this.values, ...(autosave.data as EditorValues) };
-            this.previews = await mediaPreviews(cms, this.values, await editorView(cms, this.route));
+            this.previews = await mediaPreviews(cms, this.values, await this.serverView());
             this.message = __('The autosave is restored. Save to keep it.');
         }
         this.autosaveOffer = null;
@@ -1124,6 +1143,7 @@ export default class EntryEditor extends Cossack {
     @Server()
     async translate(locale: string) {
         const cms = this.c.get('cms');
+        this.fromRoute();
         try {
             const translation = await cms.translateEntry(this.route, this.id, locale, this.c.get('principal'));
             return this.redirect(`/dashboard/content/${this.route}/${translation.id}`);
@@ -1140,6 +1160,7 @@ export default class EntryEditor extends Cossack {
 
     @Server()
     async findPatterns() {
+        this.fromRoute();
         await this.loadPatterns(this.route, false);
     }
 
@@ -1404,12 +1425,15 @@ export default class EntryEditor extends Cossack {
     async addTerm(taxonomy: string, name: string, parent: string) {
         const cms = this.c.get('cms');
         try {
+            const view = await this.serverView();
+            // Only a taxonomy the collection has: the client names it.
+            if (!view.taxonomies.some(entry => entry.name === taxonomy)) throw new ClientVisibleError(__('This collection has no such taxonomy.'));
             const term = await cms.taxonomies.create(taxonomy, { name, parent: parent || null }, { principal: this.c.get('principal') });
-            this.view = this.view ? { ...this.view, taxonomies: await Promise.all(this.view.taxonomies.map(async entry => entry.name === taxonomy ? { ...entry, terms: await termOptions(cms, taxonomy) } : entry)) } : this.view;
+            this.view = { ...view, taxonomies: await Promise.all(view.taxonomies.map(async entry => entry.name === taxonomy ? { ...entry, terms: await termOptions(cms, taxonomy) } : entry)) };
             this.values = { ...this.values, [taxonomy]: [...((this.values[taxonomy] as string[] | undefined) ?? []), term.id] };
             this.termDrafts = { ...this.termDrafts, [taxonomy]: { name: '', parent: '' } };
         } catch (error) {
-            this.error = isCmsError(error) ? error.message : __('The term could not be added.');
+            this.error = isCmsError(error) || error instanceof ClientVisibleError ? error.message : __('The term could not be added.');
         }
     }
 
@@ -1463,6 +1487,7 @@ export default class EntryEditor extends Cossack {
     async save(values: EditorValues, intent: SaveIntent, rev: number) {
         const cms = this.c.get('cms');
         this.errors = {};
+        this.fromRoute();
         try {
             const record = await saveEntry(cms, this.route, this.id === 'new' ? null : this.id, values, intent, rev, this.c.get('principal'));
             // A new entry becomes this editor's entry: the page stays, and the browser's URL follows.
@@ -1478,7 +1503,7 @@ export default class EntryEditor extends Cossack {
     /** What the editor shows after a write: the saved values, the status, the URL and the revisions. */
     private async refreshSaved(cms: CmsHost, record: RecordShape, intent: SaveIntent) {
         this.rev = record.rev;
-        const view = this.view ?? await editorView(cms, this.route);
+        const view = await this.serverView();
         const before = this.savedStatus;
         this.savedStatus = String(record.status ?? '');
         this.values = await entryValues(cms, view, record);
@@ -1514,6 +1539,7 @@ export default class EntryEditor extends Cossack {
         const cms = this.c.get('cms');
         this.errors = {};
         this.error = '';
+        this.fromRoute();
         try {
             const record = await applyEntryJson(cms, this.route, this.id, text, rev, this.c.get('principal'));
             await this.refreshSaved(cms, record, 'update');

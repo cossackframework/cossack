@@ -169,11 +169,15 @@ describe.skipIf(!live)('scheduling, previews, revisions, redirects, tokens, webh
 
         clock += 1000;
         await cms.saveCollection({ ...cms.collection('posts'), path: 'blog' }, admin);
+        // The redirects follow from the outbox job the save queued with the new path.
+        expect(await cms.redirects.match('/posts/anything/else')).toBeNull();
+        await cms.outbox.dispatch({ limit: 100 });
         expect(await cms.redirects.match('/posts/moving-post')).toMatchObject({ location: '/blog/moving-post' });
         expect(await cms.redirects.match('/posts/anything/else')).toMatchObject({ location: '/blog/anything/else' });
         expect(await cms.redirects.match('/posts')).toMatchObject({ location: '/blog' });
         clock += 1000;
         await cms.saveCollection({ ...cms.collection('posts'), path: 'posts' }, admin);
+        await cms.outbox.dispatch({ limit: 100 });
 
         // Category permalinks: the first category's slug before the post name; a change of category redirects.
         const [sports, culture] = (await Promise.all([cms.taxonomies.create('categories', { name: 'Sports' }, { principal: editor }), cms.taxonomies.create('categories', { name: 'Culture' }, { principal: editor })])).map(term => term.id);
@@ -191,6 +195,13 @@ describe.skipIf(!live)('scheduling, previews, revisions, redirects, tokens, webh
         const [news] = await cms.taxonomies.ensure('tags', ['Old news'], { principal: editor });
         await cms.taxonomies.update(news!, { slug: 'news' }, { principal: editor });
         expect(await cms.redirects.match('/tag/old-news')).toMatchObject({ location: '/tag/news' });
+        // A taxonomy that moves keeps its term archives answering at the old path.
+        clock += 1000;
+        await cms.saveTaxonomy({ ...cms.taxonomies.declaration('tags'), path: 'topic' }, admin);
+        await cms.outbox.dispatch({ limit: 100 });
+        expect(await cms.redirects.match('/tag/news')).toMatchObject({ location: '/topic/news' });
+        await cms.saveTaxonomy({ ...cms.taxonomies.declaration('tags'), path: 'tag' }, admin);
+        await cms.outbox.dispatch({ limit: 100 });
 
         await expect(cms.redirects.save({ source: 'nope', target: '/x' })).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
         await expect(cms.redirects.save({ source: '/a', target: '/a' })).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
