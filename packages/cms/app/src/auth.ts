@@ -14,10 +14,10 @@ import {
 } from '@cossackframework/auth/passkeys';
 import { ClientVisibleError, getClientIp, getRequestContext } from '@cossackframework/core';
 import { ANONYMOUS, hasPermission, isCmsError, isNetworkAdmin, PERMISSIONS, type Principal } from '@cossackframework/cms';
-import { MAIN_SITE, randomToken, RESET_REQUESTS, sha256Hex, type ApiToken, type CmsHost, type CmsMember, type SecurityStatus as AccountSecurity } from '@cossackframework/cms/server';
+import { MAIN_SITE, networkSite, randomToken, RESET_REQUESTS, sha256Hex, type ApiToken, type CmsHost, type CmsMember, type SecurityStatus as AccountSecurity } from '@cossackframework/cms/server';
 import { renderSVG } from 'uqr';
-import { currentCms, networkFor, type CmsBindings } from './cms/index';
-import { handoffSite } from './cms/handoff';
+import { currentCms, networkFor, siteUrl, type CmsBindings } from './cms/index';
+import { handoffSite, pendingSite } from './cms/handoff';
 
 const SESSION_COOKIE = 'session_id';
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7; // 7 days
@@ -145,15 +145,21 @@ export const auth = createAuth<PublicUser>({
  */
 export async function loginUser(email: string, password: string, address = clientAddress()): Promise<PublicUser | null> {
   const host = cms();
-  const allowed = await host.security.signInAllowed(email, address);
+  // The attempt is counted before the password is checked, so guesses sent at once meet the limit too.
+  const allowed = await host.security.signInBegin(email, address);
   if (!allowed.ok) throw new SignInLockedError(allowed.retryAfterMs);
   const account = await host.signIn.accounts.verifier.verify(email, password);
-  if (account && account.status !== 'active' && await host.users.awaitingApproval(account.id).catch(() => false)) throw new SignInPendingError();
-  if (!account || account.status !== 'active') {
-    await host.security.signInFailed(email, address);
+  if (!account) {
+    // The verifier signs in active accounts only. One that waits for approval hears so, once its password is right.
+    const waiting = await host.signIn.accounts.disabledWithPassword(email, password).catch(() => null);
+    if (waiting && await host.users.awaitingApproval(waiting.id).catch(() => false)) {
+      await host.security.signInSucceeded(email, address);
+      throw new SignInPendingError();
+    }
     return null;
   }
-  await host.security.signInSucceeded(email);
+  await host.security.signInSucceeded(email, address);
+  if (account.status !== 'active') return null;
   return member(account.id);
 }
 
@@ -172,6 +178,17 @@ export class SignInPendingError extends ClientVisibleError {
   constructor() {
     super('Your account waits for an administrator to approve it. We will email you when it is ready.');
     this.name = 'SignInPendingError';
+  }
+}
+
+/**
+ * Two-step sign-in is required (Settings → General) and the account's only second factor is a
+ * passkey: a password or an email link alone is one step, so the account signs in with its passkey.
+ */
+export class SignInPasskeyError extends ClientVisibleError {
+  constructor() {
+    super('Two-step sign-in is required, and this account\'s second step is its passkey. Sign in with your passkey.');
+    this.name = 'SignInPasskeyError';
   }
 }
 
@@ -234,28 +251,31 @@ export async function setupRequired(): Promise<boolean> {
  */
 export async function registerUser(email: string, password: string, name?: string): Promise<PublicUser> {
   const c = getRequestContext();
-  const site = c ? await handoffSite(c, networkFor(c.env as CmsBindings)) : null;
+  const network = c ? networkFor(c.env as CmsBindings) : null;
+  // Registering on the network host for another site: that site's settings apply, whoever hosts the form.
+  const site = c && network ? await handoffSite(c, network) : null;
+  const siteRecord = site && c && network ? await pendingSite(c, network) : null;
   const host = site ?? cms();
   if (!(await registrationOpen())) throw new ClientVisibleError('Registration is closed on this site.');
   const role = await host.settings.get('general.defaultRole');
-  const origin = env('APP_URL', '') || (c ? new URL(c.req.url).origin : '');
+  const origin = linkOrigin() ?? '';
   let draft;
   try {
-    draft = await host.registrationDraft({ email, name: name?.trim() || email.split('@')[0]!, roles: role && (await host.users.role(role)) ? [role] : [], approval: !site && await host.settings.get('general.approveRegistrations').catch(() => false) }, { origin });
+    draft = await host.registrationDraft({ email, name: name?.trim() || email.split('@')[0]!, roles: role && (await host.users.role(role)) ? [role] : [], approval: await host.settings.get('general.approveRegistrations').catch(() => false) }, { origin });
   } catch (error) {
     if (isCmsError(error, 'CMS_VALIDATION')) throw new ClientVisibleError(error.message);
     throw error;
   }
+  // With a sender (the one that sends the link: this request's host) and the site asking for it, the account waits for the email's link.
+  const verify = Boolean(cms().mail) && Boolean(origin) && await host.settings.get('general.verifyEmail').catch(() => true);
+  await replaceUnconfirmed(host, email, site !== null);
   try {
-    const user = await host.users.create({ email, password, name: draft.name, roles: draft.roles, ...(site ? { network: true } : {}) });
+    const user = await host.users.create({ email, password, name: draft.name, roles: draft.roles, ...(site ? { network: true } : {}), ...(verify && !draft.approval ? { status: 'disabled' as const } : {}) });
     const bare = { id: user.id, email: user.email, name: user.name, avatar: user.avatar, meta: null, roles: [], principal: ANONYMOUS };
-    // With a sender and Settings → General asking for it, the account waits for the email's link; the handoff flow signs in on the network host and skips it.
-    const verify = !site && Boolean(host.mail) && await host.settings.get('general.verifyEmail').catch(() => true);
     if (draft.approval) await host.users.holdForApproval(user.id, { verified: !verify });
-    else if (verify) await host.users.setStatus(user.id, 'disabled');
     await host.userRegistered(user, verify ? 'verification' : draft.approval ? 'approval' : 'active').catch(() => undefined);
     if (verify) {
-      await sendVerification(host, user.id, user.email, user.name);
+      await sendVerification(cms(), user.id, user.email, user.name, siteRecord?.id ?? null);
       return { ...bare, verification: 'sent' };
     }
     if (draft.approval) return { ...bare, approval: 'pending' };
@@ -265,6 +285,37 @@ export async function registerUser(email: string, password: string, name?: strin
     if (isCmsError(error, 'CMS_CONFLICT')) throw new ClientVisibleError('An account with this email already exists.');
     throw error;
   }
+}
+
+/**
+ * An account registered with this email that never confirmed it (created waiting, untouched since,
+ * never signed in) gives way to a new registration, so a missed or expired link, or someone
+ * registering another person's address, never locks the address. One waiting for approval stays.
+ */
+async function replaceUnconfirmed(host: CmsHost, email: string, network: boolean): Promise<void> {
+  const accounts = network ? host.accounts : host.signIn.accounts;
+  const account = await accounts.findByEmail(email).catch(() => null);
+  if (!account?.unconfirmed || await host.users.awaitingApproval(account.id).catch(() => false)) return;
+  await host.users.delete(account.id).catch(() => undefined);
+  await accounts.delete(account.id).catch(() => undefined);
+}
+
+/**
+ * Where links in this request's emails point: the site's own address (APP_URL for the main site,
+ * its domain for an added one), never the request's Host header, which a client chooses. Without
+ * a configured address, a request to this machine (development) uses its own origin; otherwise
+ * null, and no link is sent.
+ */
+export function linkOrigin(): string | null {
+  const c = getRequestContext();
+  const bindings = c?.env as CmsBindings | undefined;
+  const site = c?.get('site') as { id: string; host?: string } | undefined;
+  const own = bindings ? (site && site.id !== MAIN_SITE ? siteUrl(bindings, site as never) : bindings.APP_URL) : env('APP_URL', '');
+  if (own) return own.replace(/\/+$/, '');
+  if (!c) return null;
+  const url = new URL(c.req.url);
+  const local = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname) || url.hostname.endsWith('.localhost');
+  return local ? url.origin : null;
 }
 
 // --- Profile updates -------------------------------------------------------
@@ -306,13 +357,19 @@ export type { ApiToken };
 export type SecurityStatus = AccountSecurity & { passkeysManagedAt?: { name: string; href: string | null } | null };
 
 /**
- * After a correct password: null when the user signs in at once, or the ID of a pending
- * sign-in (5 minutes, 5 tries) that /auth/two-factor completes with a code.
+ * After a correct password or email link: null when the user signs in at once, or the ID of a
+ * pending sign-in (5 minutes, 5 tries) that /auth/two-factor completes with a code. When
+ * two-step sign-in is required for the dashboard and the account's second factor is a passkey,
+ * having enrolled one is not having used it: throws SignInPasskeyError.
  */
 export async function beginTwoFactor(userId: string): Promise<string | null> {
-  const { security } = cms().signIn;
-  if (!(await security.requiresCode(userId))) return null;
-  return security.createChallenge('signin', userId, 'password');
+  const host = cms();
+  const { security } = host.signIn;
+  if (await security.requiresCode(userId)) return security.createChallenge('signin', userId, 'password');
+  if (!(await host.settings.get('general.requireTwoFactor').catch(() => false))) return null;
+  const user = await member(userId);
+  if (user && hasPermission(user.principal, PERMISSIONS.dashboard) && await security.hasSecondFactor(userId)) throw new SignInPasskeyError();
+  return null;
 }
 
 /** Finish a pending sign-in with an authenticator or recovery code. */
@@ -495,8 +552,14 @@ export async function revokeApiToken(userId: string, id: string): Promise<void> 
  * global helpers. Unknown emails and a missing send_email binding are silent no-ops. On an
  * added site, a member with a network account gets the network's reset link.
  */
-export async function requestPasswordReset(email: string, resetBaseUrl: string): Promise<void> {
+export async function requestPasswordReset(email: string, _requestOrigin?: string): Promise<void> {
   const host = cms();
+  // The link goes to the site's own address, never the Host the request named.
+  let resetBaseUrl = linkOrigin();
+  if (!resetBaseUrl) {
+    console.warn('[cms] A password reset was requested, but the site has no address (APP_URL): the link was not sent.');
+    return;
+  }
   // A flood of requests for one email or from one address sends nothing after the first few.
   const address = clientAddress();
   const byEmail = await host.security.attempt('reset', `e:${email.trim().toLowerCase()}`, RESET_REQUESTS.perEmail, RESET_REQUESTS.windowMs);
@@ -622,13 +685,16 @@ export async function deleteOwnAccount(c: Context, userId: string, password: str
 /** How long a confirmation link lives. */
 const VERIFICATION_TTL_MS = 48 * 60 * 60_000;
 
-/** Send the confirmation link; the token's hash in the cache names the account until it is opened or two days pass. */
-async function sendVerification(host: CmsHost, userId: string, email: string, name: string): Promise<void> {
-  if (!host.mail) return;
+/**
+ * Send the confirmation link, from and to the host that registered the account (this request's);
+ * the token's hash in its cache names the account, and the site it registered for when that is
+ * another (a network registration), until it is opened or two days pass.
+ */
+async function sendVerification(host: CmsHost, userId: string, email: string, name: string, site: string | null): Promise<void> {
+  const origin = linkOrigin();
+  if (!host.mail || !origin) return;
   const token = randomToken(32);
-  await host.cache.set(`verify:${await sha256Hex(token)}`, { user: userId }, VERIFICATION_TTL_MS);
-  const c = getRequestContext();
-  const origin = env('APP_URL', '') || (c ? new URL(c.req.url).origin : '');
+  await host.cache.set(`verify:${await sha256Hex(token)}`, { user: userId, ...(site ? { site } : {}) }, VERIFICATION_TTL_MS);
   const title = await host.settings.get('general.siteTitle').catch(() => '');
   await host.mail.send({ kind: 'verification', to: email, from: host.mailFrom, subject: `Confirm your email for ${title || 'the site'}`,
     text: `Hello ${name || email},\n\nConfirm your email address to finish creating your account on ${title || origin}:\n${origin.replace(/\/$/, '')}/auth/verify?token=${token}\n\nThe link works for two days. If you did not register, ignore this email.` });
@@ -638,16 +704,21 @@ async function sendVerification(host: CmsHost, userId: string, email: string, na
  * Open a confirmation link: the token is spent, and the account becomes active, or keeps
  * waiting for an administrator's approval (`pending`). Null for an unknown or expired link.
  */
-export async function verifyEmail(token: string): Promise<{ user: string; pending: boolean } | null> {
+export async function verifyEmail(token: string): Promise<{ user: string; pending: boolean; site?: string } | null> {
   if (!/^[A-Za-z0-9_-]{20,128}$/.test(token)) return null;
-  const host = cms();
   const key = `verify:${await sha256Hex(token)}`;
-  const found = await host.cache.get<{ user: string }>(key);
+  const found = await cms().cache.take<{ user: string; site?: string }>(key);
   if (!found?.user) return null;
-  await host.cache.delete(key);
+  // A network registration for another site waits on that site: its approval, its member.
+  const c = getRequestContext();
+  const record = found.site && c ? await networkFor(c.env as CmsBindings).sites.get(found.site).catch(() => null) : null;
+  const host = record ? networkFor(c!.env as CmsBindings).hostOf(networkSite(record)) : cms();
   if (await host.users.confirmRegistration(found.user)) return { user: found.user, pending: true };
+  // Only an account still waiting for this link becomes active: one an administrator disabled (or changed) since stays as it is.
+  const account = await (await host.storesOf(found.user)).accounts.get(found.user).catch(() => null);
+  if (!account?.unconfirmed) return null;
   await host.users.setStatus(found.user, 'active');
-  return { user: found.user, pending: false };
+  return { user: found.user, pending: false, ...(record ? { site: record.id } : {}) };
 }
 
 /**
@@ -673,8 +744,10 @@ const MAGIC_LINK_TTL_MS = 15 * 60_000;
  * Email a one-time sign-in link to an active account. Nothing says whether the email exists; a
  * flood for one address or from one client stops after a few. Without a mail sender, nothing is sent.
  */
-export async function requestMagicLink(email: string, origin: string): Promise<void> {
+export async function requestMagicLink(email: string, _requestOrigin?: string): Promise<void> {
   const host = cms();
+  const origin = linkOrigin();
+  if (!origin) return;
   const address = clientAddress();
   const allowedEmail = await host.security.attempt('magic', `e:${email.trim().toLowerCase()}`, RESET_REQUESTS.perEmail, RESET_REQUESTS.windowMs);
   const allowedAddress = await host.security.attempt('magic', `a:${address}`, RESET_REQUESTS.perAddress, RESET_REQUESTS.windowMs);
@@ -685,7 +758,7 @@ export async function requestMagicLink(email: string, origin: string): Promise<v
   await host.cache.set(`magic:${await sha256Hex(token)}`, { user: account.id }, MAGIC_LINK_TTL_MS);
   const title = await host.settings.get('general.siteTitle').catch(() => '');
   await host.mail.send({ kind: 'magic-link', to: account.email, from: host.mailFrom, subject: `Sign in to ${title || 'the site'}`,
-    text: `Open this link to sign in; it works once, for fifteen minutes:\n${(env('APP_URL', '') || origin).replace(/\/$/, '')}/auth/magic?token=${token}\n\nIf you did not ask for it, ignore this email.` });
+    text: `Open this link to sign in; it works once, for fifteen minutes:\n${origin}/auth/magic?token=${token}\n\nIf you did not ask for it, ignore this email.` });
 }
 
 /** Spend a sign-in link: the account's ID, or null for a link that is unknown, spent or expired. */
@@ -693,9 +766,9 @@ export async function consumeMagicLink(token: string): Promise<string | null> {
   if (!/^[A-Za-z0-9_-]{20,128}$/.test(token)) return null;
   const host = cms();
   const key = `magic:${await sha256Hex(token)}`;
-  const found = await host.cache.get<{ user: string }>(key);
+  // Taken in one conditional delete, so two requests with the same link cannot both sign in.
+  const found = await host.cache.take<{ user: string }>(key);
   if (!found?.user) return null;
-  await host.cache.delete(key);
   const account = await host.signIn.accounts.get(found.user).catch(() => null);
   return account && account.status === 'active' ? account.id : null;
 }

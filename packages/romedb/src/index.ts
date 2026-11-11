@@ -57,8 +57,12 @@ export {
     encodePendingWrite,
     decodePendingWrite,
     preparedRequestId,
+    pendingCursor,
+    pagePendingWrites,
     type PendingWrite,
     type PendingWriteStore,
+    type PendingListOptions,
+    type PendingCursor,
 } from './pending';
 
 // Databases created and deleted by name: a Cloud organization or romedb serve --directory

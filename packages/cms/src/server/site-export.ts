@@ -14,7 +14,7 @@ import { HOST_TABLES } from './host-schema';
  */
 export const EXPORT_SKIPPED_TABLES: ReadonlySet<string> = new Set([
     'cms_auth_sessions', 'cms_sessions', 'cms_session_values', 'cms_session_sites', 'cms_oauth_states', 'cms_password_resets', 'cms_auth_challenges',
-    'cms_user_security', 'cms_passkeys', 'cms_api_tokens', 'cms_preview_tokens', 'cms_handoffs', 'cms_cache', 'cms_schedules',
+    'cms_user_security', 'cms_passkeys', 'cms_api_tokens', 'cms_preview_tokens', 'cms_handoffs', 'cms_cache', 'cms_attempts', 'cms_schedules',
     'cms_accounts', 'cms_sites', 'cms_site_domains', 'cms_memberships', 'cms_network',
     // The search index is built from the entries; an import rebuilds it.
     'cms_search',
@@ -25,13 +25,16 @@ export const EXPORT_REDACTED_COLUMNS: Readonly<Record<string, readonly string[]>
 
 /**
  * Tables a `.romedb` file leaves empty: sign-in state (sessions are keyed by their tokens, so a
- * copy would sign in on the live site), the cache, pending work, which would run again where
- * the file is opened, and webhooks, whose secrets are the live site's. Accounts stay, so a
- * site's own accounts keep their passwords.
+ * copy would sign in on the live site), authenticator apps and recovery codes (the secrets are
+ * stored as they are, so a copy would make valid codes), the cache, pending work, which would
+ * run again where the file is opened, and webhooks, whose secrets are the live site's. Accounts
+ * stay with their password hashes, passkeys (public keys) and application passwords (digests),
+ * so a site's own accounts keep signing in; they set up an authenticator app again.
  */
 export const FILE_EXPORT_EMPTIED_TABLES: readonly string[] = [
+    'cms_user_security',
     'cms_auth_sessions', 'cms_sessions', 'cms_session_values', 'cms_session_sites', 'cms_oauth_states', 'cms_password_resets', 'cms_auth_challenges',
-    'cms_preview_tokens', 'cms_handoffs', 'cms_cache', 'cms_outbox', 'cms_webhooks', 'cms_webhook_deliveries', 'cossack_jobs', 'cms_schedules',
+    'cms_preview_tokens', 'cms_handoffs', 'cms_cache', 'cms_attempts', 'cms_outbox', 'cms_webhooks', 'cms_webhook_deliveries', 'cossack_jobs', 'cms_schedules',
 ];
 
 /** RomeDB's longest wait for a copy to start arriving. On Cloud a job builds it first. */

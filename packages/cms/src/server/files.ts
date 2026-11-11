@@ -251,7 +251,9 @@ export class FileService {
         if (!file || !this.#images || !transformable(file.contentType) || !file.width || !file.height) return null;
         if (!Number.isSafeInteger(request.width) || request.width < 1 || (request.height !== undefined && (!Number.isSafeInteger(request.height) || request.height < 1 || request.height > 10_000))) return null;
         const settings = await this.#imageSettings();
-        const aspect = request.height ? variantWidth(request.width, settings.widths) / request.height : undefined;
+        // Any height is a new crop, and every crop is kept: the shape snaps to a bounded set of
+        // fractions, so visitors cannot make unbounded variants of one image.
+        const aspect = request.height ? snapAspect(variantWidth(request.width, settings.widths) / request.height) : undefined;
         const rect = variantRect(file, aspect)!;
         const width = Math.min(variantWidth(request.width, settings.widths), rect.width);
         const height = Math.max(1, Math.round(width * rect.height / rect.width));
@@ -387,10 +389,11 @@ export class FileService {
      * and makes the file. Stale uploads that never complete are swept.
      */
     async begin(file: { name: string; contentType: string; size: number } & FileMetadata, context: { principal: Principal; maxBytes?: number; owner?: string }): Promise<PendingUpload> {
-        const { id, key, name, contentType } = await this.#begin(file, context);
+        const { id, name, contentType } = await this.#begin(file, context);
         let direct: StoragePresignedUpload | null = null;
         if (this.#storage.presign) {
-            try { direct = await this.#storage.presign(key, { size: file.size, contentType, expiresIn: this.#presignSeconds }); }
+            // The browser writes a staging object; the served one is written by complete() alone, from the bytes it checked.
+            try { direct = await this.#storage.presign(stagingKey(id), { size: file.size, contentType, expiresIn: this.#presignSeconds }); }
             catch { direct = null; }
         }
         return { id, name, contentType, size: file.size, direct };
@@ -399,33 +402,43 @@ export class FileService {
     /** Store the bytes of an upload the browser sends through the application, as begun. */
     async receive(id: string, body: ReadableStream<Uint8Array>, context: { principal: Principal; signal?: AbortSignal }): Promise<void> {
         const pending = await this.#pending(id, context.principal);
-        await this.#storage.put(pending.key, body, { size: pending.size, contentType: pending.contentType, ...(context.signal ? { signal: context.signal } : {}) });
+        await this.#storage.put(stagingKey(id), body, { size: pending.size, contentType: pending.contentType, ...(context.signal ? { signal: context.signal } : {}) });
     }
 
     /**
-     * Finish an upload: the object must exist with the declared size and a matching signature.
-     * SVG is sanitized in place; image dimensions are read. A failed check removes both the
-     * object and the row.
+     * Finish an upload: the staging object must exist with the declared size and a matching
+     * signature. The served key gets only the bytes this read checked (SVG sanitized), so bytes
+     * sent to the staging key later, through a presigned URL still valid or a late request,
+     * never reach it; the staging object is removed. A failed check removes both.
      */
     async complete(id: string, context: { principal: Principal; signal?: AbortSignal }): Promise<CmsFile> {
         const pending = await this.#pending(id, context.principal);
+        const signal = context.signal ? { signal: context.signal } : {};
+        const staging = stagingKey(id);
         const refuse = async (message: string) => { await this.#abandon(id); return new CmsError('CMS_VALIDATION', message); };
-        const stored = await this.#storage.head(pending.key, context.signal ? { signal: context.signal } : {});
-        if (!stored) throw await refuse('The upload did not finish.');
-        if (stored.size !== pending.size) throw await refuse(`The upload has ${stored.size} bytes, not the ${pending.size} declared.`);
-        const object = await this.#storage.get(pending.key, context.signal ? { signal: context.signal } : {});
+        const object = await this.#storage.get(staging, signal);
         if (!object) throw await refuse('The upload did not finish.');
+        if (object.size !== pending.size) {
+            await object.body.cancel().catch(() => undefined);
+            throw await refuse(`The upload has ${object.size} bytes, not the ${pending.size} declared.`);
+        }
         const { head, body } = await peek(object.body, Math.min(HEAD_BYTES, pending.size));
         if (!matchesSignature(pending.contentType, head)) {
             await body.cancel().catch(() => undefined);
             throw await refuse(`The file is not a valid ${pending.contentType} file.`);
         }
         let size = pending.size;
-        if (pending.contentType === SVG_TYPE) {
-            const clean = await this.#cleanSvg(id, body, pending.size);
-            size = clean.byteLength;
-            await this.#storage.put(pending.key, streamOf(clean), { size, contentType: pending.contentType });
-        } else await body.cancel().catch(() => undefined);
+        try {
+            if (pending.contentType === SVG_TYPE) {
+                const clean = await this.#cleanSvg(id, body, pending.size);
+                size = clean.byteLength;
+                await this.#storage.put(pending.key, streamOf(clean), { size, contentType: pending.contentType, ...signal });
+            } else await this.#storage.put(pending.key, body, { size, contentType: pending.contentType, ...signal });
+        } catch (error) {
+            if (!(error instanceof CmsError)) await this.#abandon(id).catch(() => undefined);
+            throw error;
+        }
+        await this.#storage.delete(staging).catch(() => undefined);
         return this.#placeholder(await this.#shrink(await this.#ready(id, size, imageSize(pending.contentType, head))));
     }
 
@@ -602,8 +615,15 @@ export class FileService {
         const key = row.results[0]!.rows[0]?.[0];
         await this.#dropVariants(id);
         await this.#storage.delete(typeof key === 'string' ? key : `cms/files/${id}`);
+        // A browser upload that never finished left its bytes in staging.
+        await this.#storage.delete(stagingKey(id)).catch(() => undefined);
         await this.#db.write([{ rql: "DELETE FROM cms_files WHERE id = $id AND status = 'deleting'", params: { $id: id } }], WRITE);
     }
+}
+
+/** Where a browser upload's bytes wait for complete(): never a served key, and never written to after it. */
+function stagingKey(id: string): string {
+    return `cms/uploads/${id}`;
 }
 
 /** Read up to `bytes` from the start of a stream, and a stream that replays them followed by the rest. */
@@ -674,4 +694,18 @@ function parseEdits(text: string): ImageEdits | null {
 
 function streamOf(bytes: Uint8Array): ReadableStream<Uint8Array> {
     return new ReadableStream({ start(controller) { controller.enqueue(bytes); controller.close(); } });
+}
+
+/**
+ * A variant's shape, snapped to the nearest fraction with a denominator up to 16 between 1:8 and
+ * 8:1: the usual shapes (16:9, 4:3, 3:2, 21:9) stay exact, and there are a few hundred at most.
+ */
+export function snapAspect(aspect: number): number {
+    const target = Math.min(8, Math.max(1 / 8, aspect));
+    let best = 1;
+    for (let q = 1; q <= 16; q++) {
+        const p = Math.max(1, Math.round(target * q));
+        if (Math.abs(p / q - target) < Math.abs(best - target) - 1e-12) best = p / q;
+    }
+    return Math.min(8, Math.max(1 / 8, best));
 }

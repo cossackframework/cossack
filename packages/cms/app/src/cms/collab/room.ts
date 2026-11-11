@@ -22,7 +22,7 @@ import type { Context, MiddlewareHandler } from 'hono';
 import { Node as ProseMirrorNode } from '@tiptap/pm/model';
 import { Step } from '@tiptap/pm/transform';
 import {
-    applyTreeOp, checkNoteAction, checkPresence, CmsError, expiredPeers, findBlock, groupPeers, hasPermission, livePeers, parseRichTextPath, participantColor, PERMISSIONS, richTextProblem, stableJson, StepLog, systemPrincipal, treeHash, updateBlock,
+    applyTreeOp, checkNoteAction, checkPresence, CmsError, expiredPeers, findBlock, groupPeers, hasPermission, htmlBlocksChanged, livePeers, parseRichTextPath, participantColor, PERMISSIONS, richTextProblem, stableJson, StepLog, systemPrincipal, treeHash, updateBlock,
     type Block, type Note, type NoteAction, type NoteRange, type Participant, type PeerPresence, type PeerState, type Principal, type RichTextDoc, type TreeOp,
 } from '@cossackframework/cms';
 import type { CmsHost } from '@cossackframework/cms/server';
@@ -169,6 +169,8 @@ export class EntryRoom extends Cossack {
     private scalarFields = new Set<string>();
     private blockFields = new Set<string>();
     private richFields = new Set<string>();
+    /** Fields with an `access` rule of their own, kept out of the room. */
+    private restricted = new Set<string>();
     /** Rich text keys by block type. */
     private richKeys = new Map<string, Set<string>>();
     private docs = new Map<string, ProseMirrorNode>();
@@ -205,8 +207,11 @@ export class EntryRoom extends Cossack {
             this.view = view;
             this.resourceId = resource.id;
             this.entryId = id;
+            // Fields with their own read or write rule are not shared: each editor reads and saves them as the repository lets them.
+            this.restricted = new Set(view.restricted);
             // A multiple rich text field is a list of documents: it travels as one value, like a scalar.
             for (const field of view.fields) {
+                if (this.restricted.has(field.name)) continue;
                 if (field.kind === 'blocks') this.blockFields.add(field.name);
                 else if (field.kind === 'richtext' && !field.multiple) this.richFields.add(field.name);
             }
@@ -214,19 +219,24 @@ export class EntryRoom extends Cossack {
                 const keys = option.fields.filter(field => field.kind === 'richtext').map(field => field.name);
                 if (keys.length) this.richKeys.set(option.name, new Set(keys));
             }
-            const values = await entryValues(cms, view, record);
+            const values = this.shared(await entryValues(cms, view, record));
             for (const name of Object.keys(values)) if (!this.blockFields.has(name) && !this.richFields.has(name)) this.scalarFields.add(name);
             this.rev = record.rev;
             this.baseRev = record.rev;
             const draft = await cms.drafts.get(resource.id, id).catch(() => null);
             if (draft && draft.at > record.updatedAt && draft.baseRev === record.rev && Object.keys(draft.values).length) {
-                this.values = { ...values, ...draft.values };
+                this.values = { ...values, ...this.shared(draft.values) };
                 for (const [path, version] of Object.entries(draft.versions)) if (Number.isSafeInteger(version) && version >= 0) this.logs.set(path, new StepLog(version));
                 this.dirty = true;
             } else this.values = values;
             this.notes = await cms.notes.forEntry(resource.id, id).catch(() => []);
             await this.know(cms, this.notes.map(note => note.userId));
         })().catch(error => { this.entryLoading = undefined; throw error; });
+    }
+
+    /** The values without the restricted fields, which never enter the room's draft, snapshots or broadcasts. */
+    private shared(values: EditorValues): EditorValues {
+        return Object.fromEntries(Object.entries(values).filter(([name]) => !this.restricted.has(name)));
     }
 
     /** Make sure the people are known by name and picture, looking up those who are not yet. */
@@ -351,7 +361,7 @@ export class EntryRoom extends Cossack {
     private async restart(cms: CmsHost, resets: string[]): Promise<RoomSnapshot> {
         const record = await cms.resource(this.resourceId).get(this.entryId, { principal: systemPrincipal('collab') });
         if (!record) throw new Error('The entry does not exist.');
-        const values = await entryValues(cms, this.view!, record);
+        const values = this.shared(await entryValues(cms, this.view!, record));
         // A document the record holds differently from the room restarts its log, so editors load it again.
         for (const [path, log] of this.logs) {
             const at = parseRichTextPath(path);
@@ -395,11 +405,20 @@ export class EntryRoom extends Cossack {
         return this.snapshot();
     }
 
+    /**
+     * Whether the change adds or alters a Custom HTML block the editor may not post. The room's
+     * draft is saved by whoever presses Save, so the check is made here, per editor.
+     */
+    private htmlRefused(principal: Principal, next: unknown, previous: unknown): boolean {
+        return !hasPermission(principal, PERMISSIONS.unfilteredHtml) && htmlBlocksChanged(next, previous);
+    }
+
     @Server()
     async set(peer: unknown, field: unknown, value: unknown): Promise<{ applied: boolean }> {
-        const { cms } = this.contextOf();
+        const { cms, principal } = this.contextOf();
         await this.load(cms);
         if (typeof peer !== 'string' || !PEER.test(peer) || typeof field !== 'string' || !this.scalarFields.has(field) || stableJson(value).length > VALUE_MAX) return { applied: false };
+        if (this.htmlRefused(principal, value, this.values[field])) return { applied: false };
         this.values = { ...this.values, [field]: value };
         this.changed();
         this.broadcastEvent('set', peer, field, value);
@@ -408,14 +427,14 @@ export class EntryRoom extends Cossack {
 
     @Server()
     async tree(peer: unknown, op: unknown): Promise<{ applied: boolean; hash: string }> {
-        const { cms } = this.contextOf();
+        const { cms, principal } = this.contextOf();
         await this.load(cms);
         const checked = typeof peer === 'string' && PEER.test(peer) ? this.checkOp(op) : null;
         const field = checked?.field ?? '';
         const current = (this.values[field] as Block[] | undefined) ?? [];
         if (!checked) return { applied: false, hash: treeHash(current) };
         const next = applyTreeOp(current, checked);
-        if (!next) return { applied: false, hash: treeHash(current) };
+        if (!next || this.htmlRefused(principal, next, current)) return { applied: false, hash: treeHash(current) };
         this.values = { ...this.values, [field]: next };
         for (const path of this.docs.keys()) if (path.startsWith(`${field}:`) && !this.richTextAt(path)) { this.docs.delete(path); this.logs.delete(path); }
         this.changed();
@@ -455,7 +474,7 @@ export class EntryRoom extends Cossack {
 
     @Server()
     async steps(peer: unknown, path: unknown, version: unknown, steps: unknown, clientID: unknown): Promise<StepsResult> {
-        const { cms } = this.contextOf();
+        const { cms, principal } = this.contextOf();
         await this.load(cms);
         const at = typeof path === 'string' ? this.richTextAt(path) : null;
         if (!at || typeof peer !== 'string' || !PEER.test(peer) || typeof clientID !== 'string' || clientID.length > 64 || !Number.isSafeInteger(version) || !Array.isArray(steps) || steps.length > STEPS_MAX) return { status: 'reload' };
@@ -466,6 +485,7 @@ export class EntryRoom extends Cossack {
         }
         if (!steps.length) return { status: 'accepted', version: log.version };
         let doc = this.docAt(path as string, at);
+        const before = doc;
         try {
             for (const json of steps) {
                 const result = Step.fromJSON(richTextSchema(), json).apply(doc);
@@ -476,7 +496,7 @@ export class EntryRoom extends Cossack {
         // ProseMirror attribute objects have no prototype; the validator and the draft want plain JSON.
         const json = JSON.parse(JSON.stringify(doc.toJSON())) as RichTextDoc;
         const problem = richTextProblem(json);
-        if (problem) return { status: 'reload' };
+        if (problem || this.htmlRefused(principal, json, before.toJSON())) return { status: 'reload' };
         this.docs.set(path as string, doc);
         this.writeDoc(at, json);
         const next = log.push(steps, clientID);
@@ -495,7 +515,7 @@ export class EntryRoom extends Cossack {
 
     @Server()
     async richText(path: unknown): Promise<{ doc: RichTextDoc | null; version: number }> {
-        const { cms } = this.contextOf();
+        const { cms, principal } = this.contextOf();
         await this.load(cms);
         const at = typeof path === 'string' ? this.richTextAt(path) : null;
         if (!at) return { doc: null, version: 0 };

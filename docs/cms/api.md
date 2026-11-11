@@ -27,8 +27,9 @@ The MCP server adds `list_webhooks`, `create_webhook`, `delete_webhook`, `list_c
 
 `import wxr <file>` reads a WordPress export: categories and tags become terms (parents first),
 posts and pages become entries (their HTML as a Custom HTML block, plain text as paragraphs;
-`--posts` and `--pages` name other collections), and a permalink that differs from the new address
-becomes a redirect. `--dry-run` reports without writing. Attachments and comments are counted and
+`--posts` and `--pages` name other collections), nested pages keep their parents, and a permalink
+that differs from the new address becomes a redirect. A password-protected post keeps its password;
+in a collection without a password field it is imported as a draft, and the report says so. `--dry-run` reports without writing. Attachments and comments are counted and
 left: upload the media and update links; comments have no endpoint yet.
 
 `login` asks for the email and password (or reads `CMS_EMAIL` and `CMS_PASSWORD`), takes a

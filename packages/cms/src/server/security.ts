@@ -6,7 +6,6 @@ import { generateRecoveryCodes, generateTotpSecret, hashRecoveryCode, verifyTotp
 import type { RomeDB, Value } from '@cossackframework/romedb';
 import { CmsError } from '../errors';
 import { randomToken, sha256Hex } from './tokens';
-import { CmsCache } from './cache';
 
 export interface PasskeyInfo {
     readonly id: string;
@@ -39,62 +38,73 @@ const PASSKEY_COLUMNS = 'id, user_id, name, public_key, counter, transports, dev
 /** Wrong codes a pending sign-in allows. */
 export const SIGN_IN_ATTEMPTS = 5;
 /**
- * Failed password sign-ins are counted per email and per client address for a window; past the
- * limit the sign-in is refused until the window ends, whether or not the account exists.
+ * Password sign-ins are counted per email and per client address for a window, a right password
+ * giving its attempt back; past the limit the sign-in is refused until the window ends, whether
+ * or not the account exists.
  */
 export const SIGN_IN_LOCK = Object.freeze({ windowMs: 15 * 60_000, perEmail: 5, perAddress: 20 });
 /** Password reset requests per email and per address in an hour; beyond them nothing is sent. */
 export const RESET_REQUESTS = Object.freeze({ windowMs: 60 * 60_000, perEmail: 3, perAddress: 10 });
-interface Attempts { readonly count: number; readonly until: number }
 
 export class CmsSecurity {
     readonly #db: RomeDB;
     readonly #now: () => number;
 
-    readonly #cache: CmsCache;
-
     constructor(db: RomeDB, options: { now?: () => number } = {}) {
         this.#db = db;
         this.#now = options.now ?? Date.now;
-        this.#cache = new CmsCache(db, { now: this.#now });
     }
 
-    /** Whether a password sign-in may be tried: neither the email nor the address is locked. */
-    async signInAllowed(email: string, address: string): Promise<{ ok: true } | { ok: false; retryAfterMs: number }> {
-        const [byEmail, byAddress] = await this.#cache.getMany<Attempts>([await emailKey(email), addressKey(address)]);
-        const now = this.#now();
-        const locked = [byEmail && byEmail.count >= SIGN_IN_LOCK.perEmail ? byEmail : null, byAddress && byAddress.count >= SIGN_IN_LOCK.perAddress ? byAddress : null]
-            .filter((entry): entry is Attempts => !!entry && entry.until > now);
-        if (!locked.length) return { ok: true };
-        return { ok: false, retryAfterMs: Math.max(...locked.map(entry => entry.until - now)) };
+    /**
+     * Start a password sign-in: one attempt is counted for the email and for the address before
+     * the password is checked, in conditional writes, so attempts sent at once are held to the
+     * limits as well as one after another. Refused while either is at its limit for the window.
+     * A right password gives the attempt back (`signInSucceeded`); a wrong one leaves it counted.
+     */
+    async signInBegin(email: string, address: string): Promise<{ ok: true } | { ok: false; retryAfterMs: number }> {
+        const [emailId, addressId] = [await emailKey(email), addressKey(address)];
+        const byEmail = await this.#count(emailId, SIGN_IN_LOCK.windowMs, SIGN_IN_LOCK.perEmail);
+        const byAddress = byEmail && await this.#count(addressId, SIGN_IN_LOCK.windowMs, SIGN_IN_LOCK.perAddress);
+        if (byEmail && byAddress) return { ok: true };
+        // The email's attempt does not stand when the address refused it.
+        if (byEmail) await this.#giveBack(emailId);
+        const result = await this.#db.read([{ rql: 'SELECT until FROM cms_attempts WHERE key = $key', params: { $key: byEmail ? addressId : emailId } }]);
+        const until = Number((result.results[0]!.rows[0]?.[0] as bigint | undefined) ?? 0n);
+        return { ok: false, retryAfterMs: Math.max(1, until - this.#now()) };
     }
 
-    /** A wrong password: one more failure for the email and the address. */
-    async signInFailed(email: string, address: string): Promise<void> {
-        await this.#count(await emailKey(email), SIGN_IN_LOCK.windowMs);
-        await this.#count(addressKey(address), SIGN_IN_LOCK.windowMs);
+    /** A right password: the email's failures are forgotten, and the address gets this attempt back. */
+    async signInSucceeded(email: string, address: string): Promise<void> {
+        await this.#db.write([{ rql: 'DELETE FROM cms_attempts WHERE key = $key', params: { $key: await emailKey(email) } }], WRITE);
+        await this.#giveBack(addressKey(address));
     }
 
-    /** A right password: the email's failures are forgotten; the address keeps its count. */
-    async signInSucceeded(email: string): Promise<void> {
-        await this.#cache.delete(await emailKey(email));
+    async #giveBack(key: string): Promise<void> {
+        await this.#db.write([{ rql: 'UPDATE cms_attempts SET count = count - 1 WHERE key = $key AND count > 0', params: { $key: key } }], WRITE);
     }
 
     /**
      * Count an attempt of `kind` (such as `reset`) for a key within a window; false past `max`.
-     * The attempt is counted either way, so a flood keeps the gate shut until the window ends.
+     * A refused attempt keeps the gate shut until the window ends.
      */
     async attempt(kind: string, key: string, max: number, windowMs: number): Promise<boolean> {
-        const count = await this.#count(`attempt:${kind}:${key.replace(/[^\x21-\x7e]/g, '-').slice(0, 120)}`, windowMs);
-        return count <= max;
+        return this.#count(`attempt:${kind}:${key.replace(/[^\x21-\x7e]/g, '-').slice(0, 120)}`, windowMs, max);
     }
 
-    async #count(key: string, windowMs: number): Promise<number> {
+    /**
+     * One more attempt for the key, unless it already has `max` in its window: true when this
+     * one was counted. The database does the counting in one write (an ended window starts
+     * again, then a conditional increment), so concurrent attempts are each counted once and
+     * no more than `max` are let through.
+     */
+    async #count(key: string, windowMs: number, max: number): Promise<boolean> {
         const now = this.#now();
-        const current = await this.#cache.get<Attempts>(key);
-        const next: Attempts = current && current.until > now ? { count: current.count + 1, until: current.until } : { count: 1, until: now + windowMs };
-        await this.#cache.set(key, next, next.until - now);
-        return next.count;
+        const result = await this.#db.write([
+            { rql: 'DELETE FROM cms_attempts WHERE key = $key AND until <= $now', params: { $key: key, $now: now } },
+            { rql: 'INSERT INTO cms_attempts (key, count, until) VALUES ($key, 0, $until) ON CONFLICT (key) DO NOTHING', params: { $key: key, $until: now + windowMs } },
+            { rql: 'UPDATE cms_attempts SET count = count + 1 WHERE key = $key AND count < $max', params: { $key: key, $max: max } },
+        ], WRITE);
+        return result.results[2]!.affected === 1n;
     }
 
     async status(userId: string): Promise<SecurityStatus> {
@@ -118,14 +128,21 @@ export class CmsSecurity {
         return (await this.status(userId)).totp;
     }
 
-    /** A new, unconfirmed authenticator secret. It takes effect once confirmed with a code. */
+    /**
+     * A new, unconfirmed authenticator secret. It takes effect once confirmed with a code. A
+     * confirmed authenticator stays as it is: replacing it means turning it off first, which
+     * asks for one of its codes, so starting a setup never removes the factor in use.
+     */
     async startTotp(userId: string): Promise<string> {
         const secret = generateTotpSecret();
-        await this.#db.write([{
-            rql: `INSERT INTO cms_user_security (user_id, totp_secret, totp_confirmed_at, totp_last_step, recovery, updated_at) VALUES ($user, $secret, NULL, NULL, NULL, $now)
-                ON CONFLICT (user_id) DO UPDATE SET totp_secret = excluded.totp_secret, totp_confirmed_at = NULL, totp_last_step = NULL, updated_at = excluded.updated_at`,
-            params: { $user: userId, $secret: secret, $now: this.#now() },
-        }], WRITE);
+        const now = this.#now();
+        const result = await this.#db.write([
+            { rql: 'INSERT INTO cms_user_security (user_id, totp_secret, totp_confirmed_at, totp_last_step, recovery, updated_at) VALUES ($user, $secret, NULL, NULL, NULL, $now) ON CONFLICT (user_id) DO NOTHING',
+                params: { $user: userId, $secret: secret, $now: now } },
+            { rql: 'UPDATE cms_user_security SET totp_secret = $secret, totp_last_step = NULL, updated_at = $now WHERE user_id = $user AND totp_confirmed_at IS NULL',
+                params: { $user: userId, $secret: secret, $now: now } },
+        ], WRITE);
+        if (result.results[1]!.affected !== 1n) throw new CmsError('CMS_VALIDATION', 'An authenticator app is already on. Turn it off with one of its codes before setting up another.');
         return secret;
     }
 

@@ -2,7 +2,7 @@ import { ClientVisibleError, Cossack, Page, State, ClientState, Validate, Client
 import { Alert, Card, CardBody, CardHeader, Field, Input, PasswordInput, Button, Checkbox, Form, Tabs } from '@cossackframework/ui';
 import { notice, pageHeader } from '@cossackframework/ui/blocks';
 import { html, component, bind } from '@cossackframework/renderer';
-import { canAssignRoles, canManageUser, canManageAccess, guard } from '../../../../services/rbac';
+import { canAssignRoles, canManageUser, canManageAccess, guard, canGrantRoles } from '../../../../services/rbac';
 import { getUser, updateUser, syncUserRoles, changeUserPassword, type UserDetail } from '../../../../services/users';
 import { listRoles, type RoleDetail } from '../../../../services/roles';
 import {
@@ -96,7 +96,7 @@ export default class EditUserPage extends Cossack {
             const status = await securityStatus(id);
             this.security = { available: true, totp: status.totp, passkeys: status.passkeys.length };
         }
-        this.canSeeAccess = canManageAccess(this.user as PublicUser | undefined, id);
+        this.canSeeAccess = canManageAccess(this.user as PublicUser | undefined, user);
         if (this.canSeeAccess) {
             this.sessions = await sessionsOf(this.c, id);
             this.tokensAvailable = apiTokensAvailable && !this.locked;
@@ -110,22 +110,23 @@ export default class EditUserPage extends Cossack {
     // --- Sessions ----------------------------------------------------------------
 
     /** Server methods check again who may see the sessions and passwords; the caller's own session stays. */
-    private accessOwner(): string {
+    private async accessOwner(): Promise<string> {
         const id = this.c.req.param('id')!;
-        if (!canManageAccess(this.user as PublicUser | undefined, id)) throw new ClientVisibleError(__('Only the user and administrators can manage this.'));
+        const target = await getUser(id);
+        if (!target || !canManageAccess(this.user as PublicUser | undefined, target)) throw new ClientVisibleError(__('Only the user and administrators can manage this.'));
         return id;
     }
 
     @Server()
     async endSession(reference: string) {
-        const id = this.accessOwner();
+        const id = await this.accessOwner();
         this.sessionsError = (await revokeSessionOf(this.c, id, reference)) ? '' : __('The session could not be ended.');
         this.sessions = await sessionsOf(this.c, id);
     }
 
     @Server()
     async endOtherSessions() {
-        const id = this.accessOwner();
+        const id = await this.accessOwner();
         await revokeSessionsOf(this.c, id);
         this.sessionsError = '';
         this.sessions = await sessionsOf(this.c, id);
@@ -136,7 +137,7 @@ export default class EditUserPage extends Cossack {
     /** An administrator's password for another user acts as that user. Returns whether it was created. */
     @Server()
     async addToken(name: string, scope: 'read' | 'write', expiresInDays: number): Promise<boolean> {
-        const id = this.accessOwner();
+        const id = await this.accessOwner();
         this.tokensError = '';
         try {
             this.newToken = await createApiToken(id, name, scope === 'read' ? 'read' : 'write', expiresInDays);
@@ -150,7 +151,7 @@ export default class EditUserPage extends Cossack {
 
     @Server()
     async deleteToken(tokenId: string) {
-        const id = this.accessOwner();
+        const id = await this.accessOwner();
         await revokeApiToken(id, tokenId);
         this.tokens = await listApiTokens(id);
     }
@@ -231,8 +232,12 @@ export default class EditUserPage extends Cossack {
         if (user.id !== await this.editable()) throw new ClientVisibleError(__('User not found'));
 
         await updateUser(user.id, { name: user.name, email: user.email, avatar: user.avatar || null });
-        // The client sends its roles with every save; only a role manager's are applied.
-        if (canAssignRoles(this.user as PublicUser | undefined)) await syncUserRoles(user.id, this.assignedRoleIds);
+        // The client sends its roles with every save; only a role manager's are applied, and only roles they could hold themselves.
+        if (canAssignRoles(this.user as PublicUser | undefined)) {
+            const chosen = (await listRoles()).filter(role => this.assignedRoleIds.includes(role.id));
+            if (!canGrantRoles(this.user as PublicUser | undefined, chosen)) throw new ClientVisibleError(__('You cannot give a role with permissions you do not have.'));
+            await syncUserRoles(user.id, this.assignedRoleIds);
+        }
     }
 
     /** Upload a picture for this user: it shows at once and is saved when the upload finishes. */

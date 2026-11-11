@@ -174,6 +174,23 @@ describe.skipIf(!live)('field groups', () => {
         expect(views[0]!.meta).toEqual({ color: 'blue' });
     });
 
+    it('checks blocks in meta as an entry\'s: Custom HTML needs cms:html, and invalid blocks are refused', async () => {
+        await cms.saveFieldGroup({ id: 'panel', title: 'Panel', targets: [{ kind: 'menus' }], blocks: [fieldBlock('mega', 'blocks', { name: 'mega', label: 'Mega' })] }, admin);
+        const designer: Principal = { kind: 'user', id: 'designer-1', roles: ['designer'], permissions: ['cms:dashboard', 'cms:appearance'] };
+        const script = { _id: 'h1', type: 'core/html', data: { html: '<script>alert(1)</script>' } };
+        const item = (panel: unknown[]) => [{ id: 'shop', kind: 'link' as const, label: 'Shop', url: '/shop', meta: { mega: panel }, children: [] }];
+        await expect(cms.menus.create({ name: 'Mega', items: item([script]) }, { principal: designer })).rejects.toMatchObject({ code: 'CMS_VALIDATION', message: expect.stringContaining('Custom HTML') });
+        const menu = await cms.menus.create({ name: 'Mega', items: item([{ ...script, data: { html: '<p>ok</p>' } }]) }, { principal: admin });
+        // Keeping the stored block is fine; a second block repeating its ID with other HTML is not.
+        const kept = await cms.menus.update(menu.id, { items: item([{ ...script, data: { html: '<p>ok</p>' } }]) }, { principal: designer, expectedRevision: menu.revision });
+        const sneaky = { _id: 'r1', type: 'core/richtext', data: { text: { type: 'doc', content: [{ type: 'cmsBlock', attrs: script }] } } };
+        await expect(cms.menus.update(menu.id, { items: item([sneaky, { ...script, data: { html: '<p>ok</p>' } }]) }, { principal: designer, expectedRevision: kept.revision }))
+            .rejects.toMatchObject({ code: 'CMS_VALIDATION', message: expect.stringContaining('Custom HTML') });
+        await expect(cms.menus.update(menu.id, { items: item([{ _id: 'x', type: 'core/nope', data: {} }]) }, { principal: admin, expectedRevision: kept.revision }))
+            .rejects.toMatchObject({ code: 'CMS_VALIDATION' });
+        await cms.deleteFieldGroup('panel', admin);
+    });
+
     it('drops a group: entries keep their values, the index goes, and the names free up', async () => {
         await cms.deleteFieldGroup('specs', admin);
         expect(cms.resourceById('cms/products').fields.specs).toBeUndefined();

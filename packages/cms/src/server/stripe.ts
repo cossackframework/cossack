@@ -1,7 +1,8 @@
 /**
  * Stripe as the payments provider: Checkout Sessions over its REST API (form-encoded, no SDK),
  * and webhooks verified with the signing secret (HMAC-SHA256 over `t.payload`, five minutes of
- * tolerance). The events the CMS relays: a completed checkout, a succeeded or failed payment, a
+ * tolerance). The events the CMS relays: a completed checkout (pending while its payment is
+ * on its way, completed or failed when it arrives), a succeeded or failed payment, a
  * subscription change or end, a refund. Others answer 200 and are not relayed.
  */
 import { CmsError } from '../errors';
@@ -23,7 +24,9 @@ export interface StripePaymentsOptions {
 }
 
 const TYPES: { readonly [stripe: string]: PaymentEvent['type'] } = {
-    'checkout.session.completed': 'checkout.completed', 'payment_intent.succeeded': 'payment.succeeded', 'payment_intent.payment_failed': 'payment.failed',
+    // A completed checkout whose payment is still on its way (a bank transfer, SEPA) is pending until one of the async events says how it went.
+    'checkout.session.completed': 'checkout.completed', 'checkout.session.async_payment_succeeded': 'checkout.completed', 'checkout.session.async_payment_failed': 'payment.failed',
+    'payment_intent.succeeded': 'payment.succeeded', 'payment_intent.payment_failed': 'payment.failed',
     'customer.subscription.created': 'subscription.updated', 'customer.subscription.updated': 'subscription.updated', 'customer.subscription.deleted': 'subscription.cancelled',
     'charge.refunded': 'refund',
 };
@@ -42,6 +45,10 @@ export function stripePayments(options: StripePaymentsOptions): PaymentsProvider
             form.set('cancel_url', input.cancelUrl);
             if (input.customerEmail) form.set('customer_email', input.customerEmail);
             if (input.reference) form.set('client_reference_id', input.reference);
+            // The session's metadata stays on the session: the payment and subscription it makes carry their own copy,
+            // with the reference, so their later events (payments, refunds, renewals) name the order too.
+            const carried = { ...(input.metadata ?? {}), ...(input.reference ? { reference: input.reference } : {}) };
+            for (const [key, value] of Object.entries(carried)) form.set(input.mode === 'subscription' ? `subscription_data[metadata][${key}]` : `payment_intent_data[metadata][${key}]`, value);
             if (input.priceId) { form.set('line_items[0][price]', input.priceId); form.set('line_items[0][quantity]', '1'); }
             else {
                 form.set('line_items[0][price_data][currency]', input.currency!.toLowerCase());
@@ -67,11 +74,14 @@ export function stripePayments(options: StripePaymentsOptions): PaymentsProvider
             const expected = await hmacHex(options.webhookSecret, `${timestamp}.${body}`);
             if (!signatures.some(signature => signature.length === expected.length && timingSafeEqual(signature, expected))) throw new CmsError('CMS_FORBIDDEN', 'The webhook signature does not match.');
             const event = JSON.parse(body) as { id: string; type: string; created: number; data: { object: Record<string, unknown> } };
-            const type = TYPES[event.type];
-            if (!type) return null;
             const object = event.data?.object ?? {};
+            const mapped = TYPES[event.type];
+            if (!mapped) return null;
+            const type: PaymentEvent['type'] = event.type === 'checkout.session.completed' && object.payment_status === 'unpaid' ? 'checkout.pending' : mapped;
             const metadata = object.metadata && typeof object.metadata === 'object' ? Object.fromEntries(Object.entries(object.metadata as Record<string, unknown>).filter(([, value]) => typeof value === 'string')) as Record<string, string> : {};
-            const amount = typeof object.amount_total === 'number' ? object.amount_total : typeof object.amount === 'number' ? object.amount : typeof object.amount_received === 'number' ? object.amount_received : null;
+            // A refund's amount is what was refunded, not the charge it came from.
+            const amount = event.type === 'charge.refunded' ? (typeof object.amount_refunded === 'number' ? object.amount_refunded : null)
+                : typeof object.amount_total === 'number' ? object.amount_total : typeof object.amount === 'number' ? object.amount : typeof object.amount_received === 'number' ? object.amount_received : null;
             return {
                 eventId: `payment:stripe:${event.id}`, topic: 'payment.event', at: now(), provider: 'stripe', type, providerType: event.type,
                 checkoutId: typeof object.id === 'string' && event.type.startsWith('checkout.') ? object.id : null,

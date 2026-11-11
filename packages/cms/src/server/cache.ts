@@ -63,6 +63,17 @@ export class CmsCache {
         if (statements.length) await this.#db.write(statements, WRITE);
     }
 
+    /**
+     * Read a live value and delete it in one go, for single-use tokens: of requests taking the
+     * same key at once, only the one whose delete removed the row gets the value.
+     */
+    async take<T = unknown>(key: string): Promise<T | undefined> {
+        const value = await this.get<T>(key);
+        if (value === undefined) return undefined;
+        const result = await this.#db.write([{ rql: 'DELETE FROM cms_cache WHERE key = $key AND (expires_at IS NULL OR expires_at > $now)', params: { $key: key, $now: this.#now() } }], WRITE);
+        return result.results[0]!.affected === 1n ? value : undefined;
+    }
+
     async delete(key: string): Promise<void> {
         await this.deleteMany([key]);
     }

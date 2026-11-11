@@ -7,7 +7,7 @@ import { component, html, ifDefined, unsafeHTML, type TemplateResult } from '@co
 import type { HeadValue } from '@cossackframework/core';
 import { plugins } from '@cossackframework/framework/plugins';
 import { formBlock, inputBlock } from './form-view';
-import { iconHref } from '@cossackframework/cms';
+import { iconHref, safeLinkUrl } from '@cossackframework/cms';
 import { iconStyle } from './icons';
 import { archiveTemplate, assembleSiteTheme, blockStyleAttributes, entryTemplate, MAP_EMBED_URL, SHARE_NETWORKS, type BreadcrumbView, type PluginHead, type ShareNetwork, type SiteView, placeholderStyle, presetStyle, resolvePresets, siteThemeProblems, type ArchiveView, type EntryView, type LanguageLink, type LanguageSwitcherOptions, type MediaView, type MenuItemView, type MenuOptions, type RenderedBlock, type SearchOptions, type SiteTheme, type ThemeData, type ThemeHelpers, type ThemePresets, highlightCode, formatBytes } from '@cossackframework/cms';
 
@@ -394,14 +394,20 @@ export function embedUrl(url: string): Embed | null {
     return null;
 }
 
-function safeLink(url: unknown): string {
-    return typeof url === 'string' && /^(?:https?:\/\/|\/|mailto:|tel:|#)/.test(url) ? url : '#';
+/** A link a block gives: a site path, an http(s), mail or phone address, or `#`; anything else is `#`. */
+export function safeLink(url: unknown): string {
+    return safeLinkUrl(url) ? url : '#';
 }
 
-/** A divider's color: a palette slug as its variable, else the CSS color given, else the border color. */
-function dividerColor(value: string): string {
+/**
+ * A divider's color: a palette slug as its variable, else a hex, rgb()/hsl()/oklch() or named
+ * CSS color, else the border color. Anything else could add declarations to the style.
+ */
+export function dividerColor(value: string): string {
     if (!value) return 'var(--border)';
-    return /^[a-z][a-z0-9-]*$/.test(value) && !/^(?:red|blue|green|black|white|gray|grey|transparent|currentcolor)$/.test(value) ? `var(--cms-color-${value}, ${value})` : value;
+    if (/^[a-z][a-z0-9-]*$/.test(value)) return /^(?:red|blue|green|black|white|gray|grey|transparent|currentcolor)$/.test(value) ? value : `var(--cms-color-${value}, ${value})`;
+    if (/^#[0-9a-f]{3,8}$/i.test(value) || /^(?:rgba?|hsla?|oklch|oklab|lab|lch)\([\d\s.,%/+-]{1,60}\)$/i.test(value)) return value;
+    return 'var(--border)';
 }
 
 /** The carousel's browser part: arrows, dots and autoplay over a scroll-snapping track. Swiping works without it. */
@@ -778,7 +784,7 @@ export function coreBlock(block: RenderedBlock, helpers: ThemeHelpers, state?: P
             if (!src) return null;
             const caption = text('caption');
             return html`<figure class="cms-map my-6" data-height=${text('height') || 'medium'}>
-                <iframe class="cms-map-frame" src=${src} title=${caption || address || __('Map')} loading="lazy" referrerpolicy="no-referrer-when-downgrade" allowfullscreen></iframe>
+                <iframe class="cms-map-frame" src=${src} title=${caption || address || __('Map')} loading="lazy" referrerpolicy="no-referrer" allowfullscreen></iframe>
                 ${caption ? html`<figcaption class="cms-map-caption">${caption}</figcaption>` : null}
             </figure>`;
         }

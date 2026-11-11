@@ -8,7 +8,7 @@ import { ClientError, type RomeDB, type Statement, type Value } from '@cossackfr
 import { CmsError, isCmsError } from '../errors';
 import { SYSTEM_META } from '../field-groups';
 import { slugify } from '../fields';
-import { NETWORK_ADMIN, userPrincipal, type Principal } from '../permissions';
+import { holdsAll, NETWORK_ADMIN, userPrincipal, type Principal } from '../permissions';
 import { parseMeta, type MetaCheck } from './taxonomies';
 import { ACCOUNT_ID, normalizeEmail, type AccountProfile, type CmsAccount, type CmsAccounts } from './accounts';
 import { MAIN_SITE } from './sites';
@@ -95,7 +95,7 @@ export class CmsUsers {
      * A new account that is a member of this site with these roles: a site account on an added
      * site, unless `network` asks for a network account, and a network account on the main site.
      */
-    async create(input: AccountProfile & { email: string; name: string; password?: string; roles?: readonly string[]; id?: string; meta?: unknown; networkRole?: typeof NETWORK_ADMIN; network?: boolean }): Promise<CmsUser> {
+    async create(input: AccountProfile & { email: string; name: string; password?: string; roles?: readonly string[]; id?: string; meta?: unknown; networkRole?: typeof NETWORK_ADMIN; network?: boolean; status?: 'active' | 'disabled' }): Promise<CmsUser> {
         const meta = await this.#meta(input.meta, null);
         for (const role of input.roles ?? []) if (!ID.test(role)) throw new CmsError('CMS_VALIDATION', `Invalid role ${role}.`);
         const store = input.network || !this.#siteAccounts ? this.#accounts : this.#siteAccounts;
@@ -135,8 +135,8 @@ export class CmsUsers {
     }
 
     /** The meta to store: the field groups' check, or the input as given when users have no groups. */
-    async #meta(meta: unknown, previous: { readonly [field: string]: unknown } | null): Promise<{ readonly [field: string]: unknown }> {
-        if (this.#checkMeta) return this.#checkMeta(meta, previous);
+    async #meta(meta: unknown, previous: { readonly [field: string]: unknown } | null, principal?: Principal): Promise<{ readonly [field: string]: unknown }> {
+        if (this.#checkMeta) return this.#checkMeta(meta, previous, principal);
         if (meta === undefined) return previous ?? {};
         if (meta === null || typeof meta !== 'object' || Array.isArray(meta)) throw new CmsError('CMS_VALIDATION', 'Meta must be an object of fields.', { fields: { meta: 'must be an object of fields.' } });
         return { ...previous, ...(meta as { [field: string]: unknown }) };
@@ -154,7 +154,8 @@ export class CmsUsers {
         const list = inList('u', wanted);
         const result = await this.#db.read([
             { rql: `SELECT id, email, name, avatar, status, created_at, last_sign_in_at, meta, slug FROM cms_users WHERE id IN ${list.rql}`, params: list.params },
-            { rql: `SELECT ur.user_id, r.id, r.name, r.permissions FROM cms_user_roles ur JOIN cms_roles r ON r.id = ur.role_id WHERE ur.user_id IN ${list.rql} ORDER BY r.id`, params: list.params },
+            // network_admin comes from the account alone (resolve): a site role row of that name, as a crafted import could add, grants nothing.
+            { rql: `SELECT ur.user_id, r.id, r.name, r.permissions FROM cms_user_roles ur JOIN cms_roles r ON r.id = ur.role_id WHERE ur.user_id IN ${list.rql} AND r.id <> $networkAdmin ORDER BY r.id`, params: { ...list.params, $networkAdmin: NETWORK_ADMIN } },
             // On an added site, accounts in its own database are site accounts.
             ...(this.#siteAccounts ? [{ rql: `SELECT id FROM cms_accounts WHERE id IN ${list.rql}`, params: list.params }] : []),
         ]);
@@ -226,10 +227,10 @@ export class CmsUsers {
      * Change the name, email or avatar (on the account first, then the copy here), the profile
      * meta or the author slug.
      */
-    async update(id: string, patch: AccountProfile & { meta?: unknown; slug?: string }): Promise<boolean> {
+    async update(id: string, patch: AccountProfile & { meta?: unknown; slug?: string }, options: { principal?: Principal } = {}): Promise<boolean> {
         const current = await this.get(id);
         if (!current) return false;
-        const meta = patch.meta === undefined ? current.meta : await this.#meta(patch.meta, current.meta);
+        const meta = patch.meta === undefined ? current.meta : await this.#meta(patch.meta, current.meta, options.principal);
         const profile = patch.name !== undefined || patch.email !== undefined || patch.avatar !== undefined
             ? await this.#store(current).update(id, { ...(patch.name === undefined ? {} : { name: patch.name }), ...(patch.email === undefined ? {} : { email: patch.email }), ...(patch.avatar === undefined ? {} : { avatar: patch.avatar }) })
             : current;
@@ -456,10 +457,14 @@ export class CmsUsers {
         return (await this.role(role.id))!;
     }
 
-    /** A new role; its ID is derived from the name when omitted. */
-    async createRole(role: { name: string; permissions: readonly string[]; id?: string }): Promise<CmsRole> {
+    /**
+     * A new role; its ID is derived from the name when omitted. With an `actor`, the role may
+     * hold only permissions the actor holds, so a role manager cannot make a stronger role.
+     */
+    async createRole(role: { name: string; permissions: readonly string[]; id?: string }, options: { actor?: Principal } = {}): Promise<CmsRole> {
         const id = role.id ?? (slugify(role.name, 60) || crypto.randomUUID());
         const permissions = checkRole({ ...role, id });
+        if (options.actor) checkGrant(options.actor, permissions);
         try {
             await this.#db.write([{ rql: 'INSERT INTO cms_roles (id, name, permissions, created_at) VALUES ($id, $name, $permissions, $now)',
                 params: { $id: id, $name: role.name.trim(), $permissions: JSON.stringify(permissions), $now: this.#now() } }], WRITE);
@@ -470,10 +475,19 @@ export class CmsUsers {
         return (await this.role(id))!;
     }
 
-    async updateRole(id: string, patch: { name?: string; permissions?: readonly string[] }): Promise<boolean> {
+    /**
+     * Change a role's name or permissions. The administrator role stays as it is. With an
+     * `actor`, both the role as it is and as it becomes may hold only permissions the actor holds.
+     */
+    async updateRole(id: string, patch: { name?: string; permissions?: readonly string[] }, options: { actor?: Principal } = {}): Promise<boolean> {
+        if (id === 'admin') throw new CmsError('CMS_FORBIDDEN', 'The administrator role cannot be changed.');
         const current = await this.role(id);
         if (!current) return false;
         const permissions = checkRole({ id, name: patch.name ?? current.name, permissions: patch.permissions ?? current.permissions });
+        if (options.actor) {
+            if (!holdsAll(options.actor, current.permissions)) throw new CmsError('CMS_FORBIDDEN', 'This role has permissions you do not have, so you cannot change it.');
+            checkGrant(options.actor, permissions);
+        }
         try {
             const result = await this.#db.write([{ rql: 'UPDATE cms_roles SET name = $name, permissions = $permissions WHERE id = $id',
                 params: { $id: id, $name: (patch.name ?? current.name).trim(), $permissions: JSON.stringify(permissions) } }], WRITE);
@@ -484,9 +498,14 @@ export class CmsUsers {
         }
     }
 
-    /** Remove a role and its assignments. The administrator role stays. */
-    async deleteRole(id: string): Promise<boolean> {
+    /** Remove a role and its assignments. The administrator role stays, and an actor deletes only roles within their own permissions. */
+    async deleteRole(id: string, options: { actor?: Principal } = {}): Promise<boolean> {
         if (id === 'admin') throw new CmsError('CMS_FORBIDDEN', 'The administrator role cannot be deleted.');
+        if (options.actor) {
+            const current = await this.role(id);
+            if (!current) return false;
+            if (!holdsAll(options.actor, current.permissions)) throw new CmsError('CMS_FORBIDDEN', 'This role has permissions you do not have, so you cannot delete it.');
+        }
         const result = await this.#db.write([
             { rql: 'DELETE FROM cms_user_roles WHERE role_id = $id', params: { $id: id } },
             { rql: 'DELETE FROM cms_roles WHERE id = $id', params: { $id: id } },
@@ -531,6 +550,12 @@ function roleStatements(userId: string, roles: readonly string[]): Statement[] {
         // Insert only roles that exist; the caller checks the outcome through get().
         return { rql: 'INSERT INTO cms_user_roles (user_id, role_id) SELECT $user, id FROM cms_roles WHERE id = $role', params: { $user: userId, $role: role } as { [key: string]: Value } };
     });
+}
+
+/** A role manager gives only permissions they hold. */
+function checkGrant(actor: Principal, permissions: readonly string[]): void {
+    const missing = permissions.filter(permission => !holdsAll(actor, [permission]));
+    if (missing.length) throw new CmsError('CMS_FORBIDDEN', `You cannot give a role permissions you do not have: ${missing.join(', ')}.`, { fields: { permissions: 'include permissions you do not have.' } });
 }
 
 function checkRole(role: { id: string; name: string; permissions: readonly string[] }): string[] {

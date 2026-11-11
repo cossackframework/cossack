@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { blockProblems, CORE_BLOCKS, hasBlockReference, parseBlockText, textBlocks, validateBlocks, type Block, type BlockDeclaration } from '../src/index';
+import { blockProblems, CORE_BLOCKS, field, hasBlockReference, parseBlockText, textBlocks, textFieldProblem, validateBlocks, type Block, type BlockDeclaration } from '../src/index';
 
 const types = new Map<string, BlockDeclaration>(CORE_BLOCKS.map(block => [block.name, block]));
 
@@ -89,6 +89,18 @@ describe('block references', () => {
         expect(paragraph('{{ block core/button label="Go" /}}')['p.text']).toMatch(/block reference is invalid: url is required/);
         expect(paragraph('{{ block core/faq /}}')['p.text']).toBe('Questions and answers (core/faq) cannot be used in text.');
         expect(validateBlocks([{ _id: 'h', type: 'core/heading', data: { text: '{{ $page.title }}', level: 'h2' } }], types).errors['h.text']).toMatch(/unknown scope/);
+    });
+
+    it('checks blocks embedded in rich text inside block data, and block references in entry Markdown', () => {
+        const embed = (data: { [key: string]: unknown }) => [{ _id: 'r', type: 'core/richtext', data: { text: { type: 'doc', content: [{ type: 'cmsBlock', attrs: { _id: 'd', type: 'core/divider', data } }] } } }];
+        expect(validateBlocks(embed({ color: 'red;position:fixed' }), types).errors['r.text']).toMatch(/block is invalid: d\.color/);
+        const ok = validateBlocks(embed({ color: 'accent' }), types);
+        expect(ok.errors).toEqual({});
+        expect((ok.blocks[0]!.data.text as { content: { attrs: { data: unknown } }[] }).content[0]!.attrs.data).toMatchObject({ color: 'accent', thickness: 'thin' });
+        const markdown = field.text({ format: 'markdown' });
+        expect(textFieldProblem(markdown, '{{ block core/divider color="red;inset:0" /}}', types)).toMatch(/block reference is invalid/);
+        expect(textFieldProblem(markdown, 'Hello {{ block core/divider color="accent" /}}', types)).toBeUndefined();
+        expect(textFieldProblem(field.text(), '{{ block core/divider color="red;inset:0" /}}', types)).toBeUndefined();
     });
 
     it('checks the inline and body declarations of block types', () => {

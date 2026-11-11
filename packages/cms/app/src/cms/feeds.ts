@@ -6,6 +6,7 @@
 import { ANONYMOUS, blocksPlain, entryUrl, isCmsError, recordTitle, richTextExcerpt, richTextHtml, richTextPlain, type Block, type CollectionDefinition, type RichTextDoc } from '@cossackframework/cms';
 import { renderMarkdown, excerptOf, type CmsHost, type CmsFile } from '@cossackframework/cms/server';
 import { blocksHtml } from './content';
+import { isMembersOnly, isProtected } from './site';
 import { cacheHeaders } from './cache';
 
 export type FeedFormat = 'rss' | 'atom' | 'json';
@@ -66,14 +67,16 @@ export async function buildFeed(cms: CmsHost, options: { collection: CollectionD
         if (!matched) return { title, description, home: `${origin}/`, self: options.self, items: [] };
     }
     const page = await resource.list({ where: where as never, order: { field: 'publishedAt', direction: 'desc' }, limit: settings['reading.feedItems'] }, { principal: ANONYMOUS });
+    // Feed readers send no password cookie or session: protected and members-only entries stay out.
+    const records = page.records.filter(record => !isProtected(record) && !isMembersOnly(record));
     const blocksOf = (record: Record<string, unknown>) => Array.isArray(record.content) ? record.content as Block[] : [];
     const mediaIds = new Set<string>();
-    for (const record of page.records) for (const block of flat(blocksOf(record))) {
+    for (const record of records) for (const block of flat(blocksOf(record))) {
         for (const value of Object.values(block.data)) if (typeof value === 'string' && value) mediaIds.add(value);
     }
     const files: Map<string, CmsFile> = cms.files ? await cms.files.getMany([...mediaIds]) : new Map();
-    const authors = await cms.users.getMany([...new Set(page.records.flatMap(record => Array.isArray(record.authors) ? record.authors as string[] : []))]);
-    const items = page.records.map((record): FeedItem => {
+    const authors = await cms.users.getMany([...new Set(records.flatMap(record => Array.isArray(record.authors) ? record.authors as string[] : []))]);
+    const items = records.map((record): FeedItem => {
         const blocks = blocksOf(record);
         const doc = !blocks.length && record.body && typeof record.body === 'object' ? record.body as RichTextDoc : null;
         const markdown = typeof record.body === 'string' ? record.body : '';

@@ -29,12 +29,17 @@ export function canAssignRoles(user: PublicUser | null | undefined): boolean {
 }
 
 /** Who may see and end a user's sessions and application passwords: the user and administrators. */
-export function canManageAccess(user: PublicUser | null | undefined, userId: string): boolean {
-    return !!user && (user.id === userId || canAssignRoles(user));
+export function canManageAccess(user: PublicUser | null | undefined, target: { id: string }): boolean {
+    return !!user && (user.id === target.id || canAssignRoles(user));
 }
 
 /** Guard of the role screens. */
 export const requireRoleManager: MiddlewareHandler = guard.requireRole('admin');
+
+/** Whether the user may give these roles: administrators give any. */
+export function canGrantRoles(user: PublicUser | null | undefined, _roles: readonly { permissions: readonly string[] }[]): boolean {
+    return canAssignRoles(user);
+}
 
 /** Whether the user may change another account: administrators stay with administrators. */
 export function canManageUser(user: PublicUser | null | undefined, target: { roles: readonly { name: string }[] }): boolean {

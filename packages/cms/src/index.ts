@@ -7,7 +7,7 @@ export {
     withRowIds, indexedRowPaths, indexedRowField, rowIndexPath, rowsPlain, rowUniqueProblem, conditionValues, hiddenKey, fieldVisibility, clearHidden,
     type FieldGroup, type FieldGroupTarget, type Row,
 } from './field-groups';
-export { ANONYMOUS, PERMISSIONS, DEFAULT_ROLES, NETWORK_ADMIN, MAIN_SITE, isNetworkAdmin, systemPrincipal, userPrincipal, hasPermission, permissionMatches, evaluateRule, ruleScope, principalId, type Principal, type RecordScope } from './permissions';
+export { ANONYMOUS, PERMISSIONS, DEFAULT_ROLES, NETWORK_ADMIN, MAIN_SITE, isNetworkAdmin, systemPrincipal, userPrincipal, hasPermission, holdsAll, permissionMatches, evaluateRule, ruleScope, principalId, type Principal, type RecordScope } from './permissions';
 export { CmsError, isCmsError, type CmsErrorCode } from './errors';
 export { beforeWrite, afterCommit, cachePurge, pluginJob, paymentEvent, formValidate, formBeforeSubmit, formPrefill, formConfirmation, formNotification, formSubmitted, termBeforeSave, commentBeforeSave, menuBeforeSave, entryActions, entryColumns, bulkActions, ENTRY_ACTION_IDS, EXTENSION_POINTS,
     dashboardNotices, dashboardTaskbar, siteMarkdown, dashboardNoticesOf, taskbarItemsOf,
@@ -35,7 +35,7 @@ export {
 } from './editor-layout';
 export { CONTENT_STATUSES, CORE_FIELDS, ENTRY_TEMPLATE, entryAuthors, FEATURE_FIELDS, RESERVED_FIELDS, LOCALE, SEO_FIELDS, collectionProblems, collectionResource, contentBlocks, entryUrl, extendCollection, languageFlag, languageName, orderedFields, posts, pages, translationGroupOf, type CollectionDefinition, type CollectionFeatures, type ContentStatus } from './collections';
 export { CORE_BLOCKS, BLOCK_CATEGORIES, BLOCK_ID, BLOCK_NAME, BLOCK_LIMITS, CUSTOM_COLOR, MEDIA_ID, BACKGROUND_SIZES, FIELD_BLOCK_KINDS, FIELD_GROUP_LAYOUT, FIELD_GROUP_LIMIT, RESERVED_FIELD_NAMES, BREAKPOINTS, STYLE_PROPERTIES, TEXT_ALIGNMENTS, PRESET_SLUG, INPUT_KINDS, INPUT_NAME, CONDITION_OPERATORS, CONDITION_LIMIT, FORM_INPUT_LIMIT, RESERVED_INPUT_NAMES,
-    blockCategory, blockIdProblem, blockIsData, blockProblems, blocksShapeProblem, blockLayoutProblem, blockStyleProblem, styleValueProblem, blockConditionProblem, blockSupports, blockAllowedIn, validateBlocks, blockMedia, blockDocuments, blocksPlain, cloneBlocks, blockId, inputName,
+    blockCategory, blockIdProblem, blockIsData, blockProblems, blocksShapeProblem, blockLayoutProblem, blockStyleProblem, styleValueProblem, blockConditionProblem, blockSupports, blockAllowedIn, validateBlocks, textFieldProblem, blockMedia, blockDocuments, blocksPlain, cloneBlocks, blockId, inputName,
     flattenBlocks, placeBlocks, findBlock, HTML_BLOCK, htmlBlocks, htmlBlocksChanged, updateBlock, removeBlock, insertBlock, moveBlock, shiftBlock, blockTreeProblem,
     type Block, type BlockCategory, type BlockDeclaration, type BlockLayout, type BlockStyle, type BlockSupports, type BlockMove, type BlockPlace, type Breakpoint, type StyleProperty,
     type BlockCondition, type ConditionRule, type ConditionOperator, type InputKind, type FieldBlockKind, type ValidateBlocksOptions, EMBED_URL } from './blocks';

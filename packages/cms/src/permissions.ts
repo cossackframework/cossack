@@ -87,6 +87,15 @@ export function hasPermission(principal: Principal, permission: string): boolean
     return principal.permissions.some(pattern => permissionMatches(pattern, permission));
 }
 
+/**
+ * Whether the principal holds every one of the permissions (each pattern of them as written, so
+ * `cms/*` needs `cms/*` or `*`): what a role manager may put in a role or give someone, without
+ * reaching beyond their own permissions.
+ */
+export function holdsAll(principal: Principal, permissions: readonly string[]): boolean {
+    return permissions.every(permission => hasPermission(principal, permission));
+}
+
 /** Records an action is limited to: the principal's own, or those matching any of the conditions. */
 export interface RecordScope {
     readonly owner: boolean;

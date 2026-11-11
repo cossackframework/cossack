@@ -37,7 +37,7 @@ export class CodeEditor extends Cossack {
     private surface?: HTMLElement;
     private language = "";
 
-    /** A value or language set from outside reaches the editor; its own edits come back unchanged and are left alone. */
+    /** A value, language, compared text, read-only or schema set from outside reaches the editor; its own edits come back unchanged and are left alone. */
     @Client()
     updated(changed: Map<string | number | symbol, unknown>) {
         super.updated(changed);
@@ -45,6 +45,13 @@ export class CodeEditor extends Cossack {
         this.handle.setValue(this.props.value ?? "");
         const language = this.props.language ?? "";
         if (language !== this.language) { this.language = language; void this.handle.setLanguage(language); }
+        this.handle.configure(this.mountOptions());
+    }
+
+    /** The options read at mount that may change later; a diff is always read-only. */
+    @Client()
+    private mountOptions() {
+        return { readOnly: this.props.readOnly === true || this.props.original !== undefined, original: this.props.original ?? null, schema: this.props.schema ?? null };
     }
 
     @Client()
@@ -57,8 +64,8 @@ export class CodeEditor extends Cossack {
             this.surface.replaceChildren();
             this.language = this.props.language ?? "";
             this.handle = mountCodeEditor(this.surface, {
-                value: this.props.value ?? "", language: this.language, readOnly: this.props.readOnly === true || this.props.original !== undefined,
-                placeholder: this.props.placeholder ?? "", label: this.props.label ?? "Code", original: this.props.original ?? null, schema: this.props.schema ?? null,
+                ...this.mountOptions(), value: this.props.value ?? "", language: this.language,
+                placeholder: this.props.placeholder ?? "", label: this.props.label ?? "Code",
                 onChange: value => this.props.onChange?.(value),
             });
             this.ready = true;

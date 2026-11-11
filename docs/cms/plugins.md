@@ -284,7 +284,8 @@ export const blocks = { contact: SupportContact };
 
 Pages, layouts and loading skeletons overlay `src/pages`: `pages/dashboard/support/index.ts`
 serves `/dashboard/support`, inside the dashboard layout, with its middleware and error
-handling. A path the application also defines fails the build with
+handling. A plugin's layouts and error pages apply only to its own pages, never to the
+application's pages in the same folder. A path the application also defines fails the build with
 `COSSACK_PLUGIN_ROUTE_CONFLICT`. A dashboard screen gets the dashboard's look from
 `pageHeader()`, `linkButton()` and `notice()` in `@cossackframework/ui/blocks`, the helpers
 the dashboard's own screens use:
@@ -372,7 +373,7 @@ so the typed config registry knows the key. Plugins read configuration this way,
 ### `middlewares.ts`
 
 Default-exports an array of Hono middleware. They run after the application's own, on
-every request.
+every request while the plugin is active; an inactive plugin's middleware is skipped.
 
 ### `templates/` and `assets/`
 

@@ -5,7 +5,7 @@ import { aiProvider, type AiBindings } from './ai';
 import type { IconStyleName, Principal } from '@cossackframework/cms';
 import { plugins } from '@cossackframework/framework/plugins';
 import { modules, resources } from './resources';
-import { databaseConnection, siteDatabase, siteDirectory, type DatabaseBindings } from './database';
+import { databaseConnection, siteDatabase, siteDirectory, webhookFetch, type DatabaseBindings } from './database';
 import { pendingWrites, type PendingBindings } from './pending';
 import { imageTransformer, mediaStorage, type MediaBindings } from './media';
 
@@ -84,6 +84,9 @@ export function networkFor(env: CmsBindings): CmsNetwork {
             hostUrl: host => siteUrl(env, { host })!,
             host: (site, siteDb) => createCMS({
                 db: siteDb, network: db, site: site.id, modules, resources, plugins,
+                // A site whose address is this machine (or that has none yet) is in development: its webhooks may stay local.
+                localWebhooks: localAddress(env.APP_URL),
+                ...(webhookFetch && !localAddress(env.APP_URL) ? { webhookFetch } : {}),
                 // A site's media keys start with sites/<id>/; the main site keeps its own.
                 ...(storage ? { storage: site.id === MAIN_SITE ? storage : prefixedStorage(storage, `sites/${site.id}/`) } : {}),
                 ...(images ? { images } : {}), siteUrl: () => siteUrl(env, site),
@@ -141,4 +144,10 @@ export function currentCms(): CmsHost {
     const cms = c?.get('cms');
     if (!cms) throw new Error('No CMS on this request. Register cmsMiddleware in src/bootstrap/middlewares.ts.');
     return cms;
+}
+
+/** Whether the site's address is unset or this machine. */
+function localAddress(appUrl: string | undefined): boolean {
+    const host = urlOf(appUrl)?.hostname;
+    return !appUrl || host === 'localhost' || host === '127.0.0.1' || host === '[::1]' || host?.endsWith('.localhost') === true;
 }

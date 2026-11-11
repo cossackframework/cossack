@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, expect, it } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
 import { component, render, renderToString } from '@cossackframework/renderer';
 import { CodeEditor } from '../src/components/CodeEditor';
 import { languageFor } from '../src/internal/code-editor.client';
@@ -36,4 +36,20 @@ it('mounts CodeMirror in the browser and reports edits', async () => {
     expect(editor).not.toBeNull();
     expect(host.querySelector('.cm-content')?.textContent).toBe('one');
     expect(host.querySelector('.cm-content')?.getAttribute('aria-label')).toBe('Code');
+});
+
+it('follows a new comparison and read-only setting on the same mounted editor', async () => {
+    const host = document.createElement('div');
+    document.body.append(host);
+    render(component(CodeEditor, { id: 'diff', value: 'AFTER', original: 'BEFORE_A' }), host);
+    await vi.waitFor(() => expect(host.textContent).toContain('BEFORE_A'));
+    render(component(CodeEditor, { id: 'diff', value: 'AFTER_TWO', original: 'BEFORE_B' }), host);
+    await vi.waitFor(() => expect(host.querySelector('.cm-content')?.textContent).toContain('AFTER_TWO'));
+    await vi.waitFor(() => expect(host.textContent).toContain('BEFORE_B'));
+    expect(host.textContent).not.toContain('BEFORE_A');
+    expect(host.querySelector('.cm-content')?.getAttribute('contenteditable')).toBe('false');
+    // Leaving the comparison makes the editor editable again, without the diff.
+    render(component(CodeEditor, { id: 'diff', value: 'AFTER_TWO' }), host);
+    await vi.waitFor(() => expect(host.querySelector('.cm-content')?.getAttribute('contenteditable')).toBe('true'));
+    expect(host.textContent).not.toContain('BEFORE_B');
 });

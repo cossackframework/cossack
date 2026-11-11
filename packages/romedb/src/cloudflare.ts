@@ -1,4 +1,4 @@
-import { decodePendingWrite, encodePendingWrite, PendingWriteConflictError, samePendingWrite, type PendingWrite, type PendingWriteStore } from './pending';
+import { decodePendingWrite, encodePendingWrite, pagePendingWrites, PendingWriteConflictError, samePendingWrite, type PendingCursor, type PendingListOptions, type PendingWrite, type PendingWriteStore } from './pending';
 
 /** Structural Durable Object types, so the package does not need Workers ambient types. */
 interface DurableObjectStorageLike {
@@ -36,7 +36,9 @@ export class RomeDBPendingWrites {
             if (request.method === 'GET' && url.pathname === '/list') {
                 const limit = Math.min(Math.max(Number(url.searchParams.get('limit') ?? 100) || 100, 1), 1000);
                 const entries = await this.#storage.list<string>({ prefix: PREFIX });
-                const writes = [...entries.values()].map(decodePendingWrite).sort((a, b) => a.savedAt - b.savedAt).slice(0, limit);
+                const after = url.searchParams.get('afterId');
+                const cursor: PendingCursor | undefined = after === null ? undefined : { savedAt: Number(url.searchParams.get('afterSavedAt')), id: after };
+                const writes = pagePendingWrites([...entries.values()].map(decodePendingWrite), { limit, ...(cursor ? { after: cursor } : {}) });
                 return Response.json(writes.map(encodePendingWrite));
             }
             if (!ID.test(id)) return Response.json({ error: 'invalid id' }, { status: 400 });
@@ -68,20 +70,24 @@ export class RomeDBPendingWrites {
 }
 
 /**
- * Pending write store backed by {@link RomeDBPendingWrites}. Writes spread across `shards`
- * objects by request ID; `list` reads every shard.
+ * Objects a store spreads its writes across by request ID. Fixed: `get` and `delete` find a write
+ * by hashing over this count and `list` reads exactly these objects, so changing it would strand
+ * every saved write in an object no longer read.
+ */
+const SHARDS = 4;
+
+/**
+ * Pending write store backed by {@link RomeDBPendingWrites}. Writes spread across a fixed number
+ * of objects by request ID; `list` reads every one.
  */
 export class DurableObjectPendingWriteStore implements PendingWriteStore {
     readonly durability = 'durable' as const;
     readonly #namespace: DurableObjectNamespaceLike;
     readonly #name: string;
-    readonly #shards: number;
 
-    constructor(namespace: DurableObjectNamespaceLike, options: { name?: string; shards?: number } = {}) {
+    constructor(namespace: DurableObjectNamespaceLike, options: { name?: string } = {}) {
         this.#namespace = namespace;
         this.#name = options.name ?? 'romedb';
-        this.#shards = options.shards ?? 4;
-        if (!Number.isInteger(this.#shards) || this.#shards < 1 || this.#shards > 64) throw new RangeError('shards must be 1..64');
     }
 
     async put(id: string, write: PendingWrite): Promise<void> {
@@ -102,20 +108,21 @@ export class DurableObjectPendingWriteStore implements PendingWriteStore {
         if (!response.ok) throw new Error(`Pending write store delete failed (${response.status}).`);
     }
 
-    async list(options: { limit?: number } = {}): Promise<readonly PendingWrite[]> {
+    async list(options: PendingListOptions = {}): Promise<readonly PendingWrite[]> {
         const limit = options.limit ?? 100;
+        const after = options.after ? `&afterSavedAt=${options.after.savedAt}&afterId=${encodeURIComponent(options.after.id)}` : '';
         const writes: PendingWrite[] = [];
-        for (let shard = 0; shard < this.#shards; shard++) {
-            const response = await this.#namespace.get(this.#namespace.idFromName(`${this.#name}:${shard}`) as never).fetch(`https://pending/list?limit=${limit}`);
+        for (let shard = 0; shard < SHARDS; shard++) {
+            const response = await this.#namespace.get(this.#namespace.idFromName(`${this.#name}:${shard}`) as never).fetch(`https://pending/list?limit=${limit}${after}`);
             if (!response.ok) throw new Error(`Pending write store list failed (${response.status}).`);
             writes.push(...(await response.json() as string[]).map(decodePendingWrite));
         }
-        return writes.sort((a, b) => a.savedAt - b.savedAt).slice(0, limit);
+        return pagePendingWrites(writes, { limit });
     }
 
     #stub(id: string): DurableObjectStubLike {
         if (!ID.test(id)) throw new TypeError('pending write id requires 1..80 letters, digits, underscores or hyphens');
-        return this.#namespace.get(this.#namespace.idFromName(`${this.#name}:${shardOf(id, this.#shards)}`) as never);
+        return this.#namespace.get(this.#namespace.idFromName(`${this.#name}:${shardOf(id, SHARDS)}`) as never);
     }
 }
 

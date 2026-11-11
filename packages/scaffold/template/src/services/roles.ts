@@ -5,6 +5,8 @@ import { PERMISSIONS, type Permission } from '../lib/permissions';
 import { Role } from '../models/Role';
 import { UserRole } from '../models/UserRole';
 
+const ADMIN_ROLE = 'admin';
+
 export interface RoleDetail {
   id: string;
   name: string;
@@ -118,6 +120,9 @@ export async function createRole(input: CreateRoleInput): Promise<RoleDetail> {
 
 export async function updateRole(id: string, patch: UpdateRoleInput): Promise<void> {
   const values: Partial<Role> = {};
+  if (patch.name !== undefined && patch.name !== ADMIN_ROLE && (await Role.findOne({ where: { id } }))?.name === ADMIN_ROLE) {
+    throw new ClientVisibleError('The admin role cannot be renamed.');
+  }
   if (patch.name !== undefined) {
     if (await Role.exists({ id: Not(id), name: patch.name })) {
       throw new ClientVisibleError('A role with this name already exists.');
@@ -130,7 +135,11 @@ export async function updateRole(id: string, patch: UpdateRoleInput): Promise<vo
   if (Object.keys(values).length) await Role.update({ id }, values);
 }
 
+/** The admin role, found by its stored name: deleting it would lock everyone out of these screens. */
 export async function deleteRole(id: string): Promise<void> {
+  const role = await Role.findOne({ where: { id } });
+  if (!role) throw new ClientVisibleError('Role not found.');
+  if (role.name === ADMIN_ROLE) throw new ClientVisibleError('The admin role cannot be deleted.');
   await UserRole.delete({ roleId: id });
   await Role.delete({ id });
 }

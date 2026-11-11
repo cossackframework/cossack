@@ -11,7 +11,7 @@ import type { HookRegistry } from '@cossackframework/core/hooks';
 import { CmsError, isCmsError } from '../errors';
 import { translationGroupOf } from '../collections';
 import { FIELD_NAME, slugify, validateValue, type FieldDeclaration } from '../fields';
-import { blockId, blockMedia, blocksPlain, flattenBlocks, htmlBlocksChanged, validateBlocks, type Block } from '../blocks';
+import { blockId, blockMedia, blocksPlain, flattenBlocks, htmlBlocksChanged, textFieldProblem, validateBlocks, type Block } from '../blocks';
 import { fieldVisibility, indexedRowField, rowIndexPath, rowsPlain, rowsSearchable, rowUniqueProblem, withRowIds } from '../field-groups';
 import { normalizeRichText, richTextBlocks, richTextMedia, richTextPlain, withRichTextBlocks, type RichTextDoc } from '../richtext';
 import { searchedAsText, searchTextPath } from './schema';
@@ -168,8 +168,7 @@ export class ResourceRepository {
     }
 
     async revisions(id: string, context: OperationContext, options: { limit?: number } = {}): Promise<RevisionShape[]> {
-        const record = await this.get(id, context);
-        if (!record) throw new CmsError('CMS_NOT_FOUND', 'Record not found.');
+        await this.#historyOf(id, context);
         const result = await this.#host.db.read([{
             rql: 'SELECT revision, at, actor, data FROM cms_revisions WHERE resource = $resource AND record_id = $key ORDER BY revision DESC LIMIT $limit',
             params: { $resource: this.resource.id, $key: id, $limit: options.limit ?? 50 },
@@ -179,10 +178,22 @@ export class ResourceRepository {
         }));
     }
 
-    /** One revision's snapshot of a record the principal can read, or null. */
-    async revision(id: string, revision: number, context: OperationContext): Promise<RevisionShape | null> {
+    /**
+     * A record's history is editorial: earlier revisions hold drafts and passwords the
+     * published record does not show. Those who may change the record read it, and holders
+     * of the resource's read permission, who read its drafts anyway.
+     */
+    async #historyOf(id: string, context: OperationContext): Promise<void> {
         const record = await this.get(id, context);
         if (!record) throw new CmsError('CMS_NOT_FOUND', 'Record not found.');
+        if (!this.canUpdate(record, context.principal) && !hasPermission(context.principal, `${this.resource.id}:read`)) {
+            throw new CmsError('CMS_FORBIDDEN', 'Only editors read this record\'s revisions.');
+        }
+    }
+
+    /** One revision's snapshot of a record the principal may change, or null. */
+    async revision(id: string, revision: number, context: OperationContext): Promise<RevisionShape | null> {
+        await this.#historyOf(id, context);
         if (!Number.isSafeInteger(revision) || revision < 1) return null;
         const result = await this.#host.db.read([{
             rql: 'SELECT revision, at, actor, data FROM cms_revisions WHERE resource = $resource AND record_id = $key AND revision = $revision',
@@ -578,6 +589,7 @@ export class ResourceRepository {
         const final = filtered === draft ? draft : this.#validate(action, filtered, previous, context.principal);
         await this.#checkReferences(final, id);
         await this.#checkTemplate(final, previous);
+        await this.#checkNotes(final, previous);
         return this.#uniqueSlugs(await this.#withLocale(action, final), id, previous, context);
     }
 
@@ -616,6 +628,21 @@ export class ResourceRepository {
                 }
             }
         }
+    }
+
+    /**
+     * With "Open notes hold publishing" on (Settings → Writing), an entry that is not live yet is
+     * not published or scheduled while it has open notes, whoever writes it: the editor, the API,
+     * a plugin or an automation. An entry already live keeps being updated, and a scheduled one
+     * is published when due.
+     */
+    async #checkNotes(draft: Draft, previous: RecordShape | null): Promise<void> {
+        const status = draft.status;
+        if (this.resource.owner !== 'cms' || !previous || (status !== 'published' && status !== 'scheduled')) return;
+        if (previous.status === 'published' || previous.status === 'scheduled') return;
+        if (!(await this.#host.settings.get('writing.requireResolvedNotes'))) return;
+        const open = (await this.#host.notes.counts(this.resource.id, [previous.id])).get(previous.id) ?? 0;
+        if (open) throw new CmsError('CMS_VALIDATION', open === 1 ? 'Resolve the open note before publishing.' : `Resolve the ${open} open notes before publishing.`, { fields: { status: 'Open notes hold publishing.' } });
     }
 
     /**
@@ -679,7 +706,7 @@ export class ResourceRepository {
             // An empty slug is derived from its source field below.
             if (declaration.slugFrom && (value === '' || value === null)) { generate.add(name); continue; }
             if (declaration.access?.write && !hasPermission(principal, declaration.access.write)) { errors[name] = 'cannot be changed by you.'; continue; }
-            const error = validateValue(name, declaration, value);
+            const error = validateValue(name, declaration, value) ?? textFieldProblem(declaration, value, this.#host.blockTypes);
             if (error) { errors[name] = error; continue; }
             if ((declaration.kind === 'blocks' || declaration.kind === 'richtext') && !hasPermission(principal, PERMISSIONS.unfilteredHtml) && htmlBlocksChanged(value, previous?.[name])) {
                 errors[name] = 'has a Custom HTML block, which only people allowed to post HTML can add or change.';

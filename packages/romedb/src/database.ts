@@ -15,7 +15,7 @@ import {
     type WarmResult,
     type WorkLimits,
 } from '@romedb/client';
-import { preparedRequestId, type PendingWrite, type PendingWriteStore } from './pending';
+import { pendingCursor, preparedRequestId, type PendingCursor, type PendingWrite, type PendingWriteStore } from './pending';
 
 /**
  * A file this process opened with `@romedb/node`, described here so that Workers, which never
@@ -229,13 +229,13 @@ export class RomeDB {
         for (let attempt = 1; ; attempt++) {
             try {
                 const result = attempt === 1 ? await client.submit(request, options) : await client.recover(request, options);
-                await this.pending.delete(id);
+                await this.#forget(id);
                 return result;
             } catch (error) {
                 lastError = error;
                 if (!(error instanceof ClientError)) throw new UncertainWriteError(request, error);
                 if (error.outcome === 'rolled-back' || (error.outcome === 'not-sent' && attempt === 1)) {
-                    await this.pending.delete(id);
+                    await this.#forget(id);
                     throw error;
                 }
                 if (options.signal?.aborted) break;
@@ -246,6 +246,14 @@ export class RomeDB {
             }
         }
         throw new UncertainWriteError(request, lastError);
+    }
+
+    /**
+     * Drop a saved write whose outcome is known. A failed delete never changes that outcome: the
+     * write stays saved and a later `recoverPending` confirms or rolls it back again.
+     */
+    async #forget(id: string): Promise<void> {
+        await this.pending.delete(id).catch(() => {});
     }
 
     /** Recover one saved write by its request ID. */
@@ -280,18 +288,49 @@ export class RomeDB {
         return 'pending';
     }
 
-    /** Recover saved writes, oldest first. Run from a scheduled path. */
+    /**
+     * Recover saved writes, oldest first. Run from a scheduled path. `limit` bounds the recovery
+     * attempts; writes nothing here can resolve (another URL, or an earlier database identity
+     * with no reconciler for their kind) are passed over without counting, so they cannot hold
+     * back newer writes, and stay saved for an operator. At most `limit * 20` writes are read.
+     */
     async recoverPending(options: RequestOptions & { limit?: number } = {}): Promise<RecoveryReport> {
         const report: RecoveryReport = { confirmed: [], rolledBack: [], reconciled: [], pending: [] };
-        for (const write of await this.pending.list({ limit: options.limit ?? 100 })) {
-            const id = preparedRequestId(write.request);
-            const status = await this.recover(id, options);
-            if (status === 'confirmed') report.confirmed.push(id);
-            else if (status === 'rolled-back') report.rolledBack.push(id);
-            else if (status === 'reconciled') report.reconciled.push(id);
-            else if (status === 'pending') report.pending.push(id);
+        const limit = Math.max(1, options.limit ?? 100);
+        let attempts = 0;
+        let scanned = 0;
+        let after: PendingCursor | undefined;
+        while (attempts < limit && scanned < limit * 20) {
+            const page = await this.pending.list({ limit, ...(after ? { after } : {}) });
+            if (!page.length) break;
+            for (const write of page) {
+                scanned++;
+                after = pendingCursor(write);
+                const id = after.id;
+                if (await this.#unresolvable(write, options)) {
+                    report.pending.push(id);
+                    continue;
+                }
+                if (attempts >= limit) break;
+                attempts++;
+                const status = await this.recover(id, options).catch(() => 'pending' as const);
+                if (status === 'confirmed') report.confirmed.push(id);
+                else if (status === 'rolled-back') report.rolledBack.push(id);
+                else if (status === 'reconciled') report.reconciled.push(id);
+                else if (status === 'pending') report.pending.push(id);
+            }
+            if (page.length < limit) break;
         }
         return report;
+    }
+
+    /** Whether `recover` could only answer `pending` for this write, without asking the database. */
+    async #unresolvable(write: PendingWrite, options: RequestOptions): Promise<boolean> {
+        const client = await this.#connection();
+        if (client.databaseId === undefined) await this.preflight(options);
+        if (write.request.url !== client.url) return true;
+        if (write.request.databaseId === client.databaseId) return false;
+        return write.kind === undefined || !this.#options.reconcilers?.[write.kind];
     }
 
     /**

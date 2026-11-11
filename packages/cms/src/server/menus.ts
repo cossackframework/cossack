@@ -26,7 +26,7 @@ export interface CmsMenusOptions {
     /** The `cms.menu.before-save` filter: plugins adjust or refuse the items before they are written. */
     readonly beforeSave?: (items: readonly MenuItem[], input: MenuWriteInput) => Promise<readonly MenuItem[]>;
     /** Each item's meta checked against the field groups attached to menu items. */
-    readonly checkMeta?: (meta: unknown, previous: { readonly [field: string]: unknown } | null) => Promise<{ readonly [field: string]: unknown }>;
+    readonly checkMeta?: (meta: unknown, previous: { readonly [field: string]: unknown } | null, principal: Principal) => Promise<{ readonly [field: string]: unknown }>;
     readonly now?: () => number;
     readonly ttlMs?: number;
     /** Called after a committed change, for the host to purge the site's pages. */
@@ -71,7 +71,7 @@ export class CmsMenus {
     }
 
     /** Items with their meta checked against the field groups; an item keeps the stored meta it does not send. */
-    async #withMeta(items: readonly MenuItem[], previous: readonly MenuItem[]): Promise<MenuItem[]> {
+    async #withMeta(items: readonly MenuItem[], previous: readonly MenuItem[], principal: Principal): Promise<MenuItem[]> {
         const check = this.#checkMeta;
         if (!check) return [...items];
         const stored = new Map(flattenItems(previous).map(item => [item.id, item.meta ?? null]));
@@ -79,7 +79,7 @@ export class CmsMenus {
             const result: MenuItem[] = [];
             for (const item of list) {
                 let meta: { readonly [field: string]: unknown };
-                try { meta = await check(item.meta, stored.get(item.id) ?? null); }
+                try { meta = await check(item.meta, stored.get(item.id) ?? null, principal); }
                 catch (error) { throw error instanceof CmsError ? new CmsError('CMS_VALIDATION', `Item “${item.label.slice(0, 40)}”: ${error.message}`, { fields: { items: error.message } }) : error; }
                 result.push(Object.freeze({ ...item, ...(Object.keys(meta).length ? { meta } : {}), children: Object.freeze(await visit(item.children)) }));
             }
@@ -98,7 +98,7 @@ export class CmsMenus {
     async create(input: { name: string; items?: readonly MenuItem[] }, context: { principal: Principal }): Promise<MenuShape> {
         authorize(context.principal);
         const name = checkName(input.name);
-        const items = await this.#filtered(await this.#withMeta(checkItems(input.items ?? []), []), { id: null, name, actor: actorOf(context.principal) });
+        const items = await this.#filtered(await this.#withMeta(checkItems(input.items ?? []), [], context.principal), { id: null, name, actor: actorOf(context.principal) });
         const id = uuidv7();
         const now = this.#now();
         await this.#write([{ rql: `INSERT INTO cms_menus (${COLUMNS}, updated_by) VALUES ($id, $name, $items, 1, $now, $now, $by)`,
@@ -112,7 +112,7 @@ export class CmsMenus {
         const current = await this.get(id);
         if (!current) throw new CmsError('CMS_NOT_FOUND', 'Menu not found.');
         const name = input.name === undefined ? current.name : checkName(input.name);
-        const items = input.items === undefined ? current.items : await this.#filtered(await this.#withMeta(checkItems(input.items), current.items), { id, name, actor: actorOf(context.principal) });
+        const items = input.items === undefined ? current.items : await this.#filtered(await this.#withMeta(checkItems(input.items), current.items, context.principal), { id, name, actor: actorOf(context.principal) });
         const result = await this.#write([{
             rql: 'UPDATE cms_menus SET name = $name, items = $items, revision = revision + 1, updated_at = $now, updated_by = $by WHERE id = $id AND revision = $revision',
             params: { $name: name, $items: JSON.stringify(items), $now: this.#now(), $by: principalId(context.principal), $id: id, $revision: context.expectedRevision },

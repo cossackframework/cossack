@@ -12,11 +12,11 @@ import {
     type Block, type FieldFilter, type MenuItem, type MenuShape, type Note, type NoteThread, type Principal, type RecordShape, type RichTextDoc, redirectProblems, type Redirect, type RedirectStatus, type FieldDeclaration, WEBHOOK_EVENTS, COMMENT_STATUSES, type Webhook, type CommentShape, type CommentStatus } from '@cossackframework/cms';
 import { networkSite, type ApiToken, type CmsHost, type NetworkSite, type SiteRecord } from '@cossackframework/cms/server';
 import { createApiToken, listApiTokens, manageableHere, NETWORK_ACCOUNT_LOCKED, revokeApiToken, type PublicUser } from '../auth';
-import { canAssignRoles, canManageUser } from '../services/rbac';
+import { canAssignRoles, canGrantRoles, canManageUser } from '../services/rbac';
 import { changeUserPassword, createUser, deleteUser, getUser, listUsers, syncUserRoles, updateUser, type UserDetail, type UserSummary } from '../services/users';
 import { apiEntries, apiPatterns, type ApiEntry } from './content-api';
 import { entryLock } from './site';
-import { assertNotesResolved, findMedia, routeResource } from './content';
+import { findMedia, routeResource } from './content';
 import { siteUrl, type CmsBindings } from './index';
 import { announceNote } from './notes-announce';
 import { siteOrigin } from './seo';
@@ -345,7 +345,9 @@ export async function entryRead(c: Context, name: string, key: string, options: 
     const languages = await cms.languages();
     const translations = languages.multilingual ? Object.fromEntries(await Promise.all([...await cms.translations(collection, record, { principal })]
         .map(async ([code, entry]) => [code, { id: entry.id, url: (await cms.entryUrls(collection, [entry])).get(entry.id) ?? null }] as const))) : {};
-    return { item: (await apiEntries(cms, collection, [record], options.html === true, principal))[0]!, patterns: await apiPatterns(cms, collection, [record]), translations };
+    const item = (await apiEntries(cms, collection, [record], options.html === true, principal))[0]!;
+    // Patterns come from the answered item, so a locked entry's withheld content lists none.
+    return { item, patterns: await apiPatterns(cms, collection, [item]), translations };
 }
 
 /**
@@ -384,7 +386,6 @@ export async function entryUpdate(c: Context, name: string, id: string, fields: 
     const collection = cms.collection(name);
     const resource = `cms/${collection.name}`;
     const current = await entryOf(cms, resource, id, principal);
-    if (collection.publishable !== false && fields.status === 'published' && current.status !== 'published' && current.status !== 'scheduled') await assertNotesResolved(cms, resource, id, principal);
     const record = await cms.resource(resource).update(id, fields, { principal, expectedRevision: expected(rev, current.rev) });
     return { item: (await apiEntries(cms, collection, [record], false))[0]! };
 }
@@ -410,7 +411,6 @@ export async function entryPublish(c: Context, name: string, id: string, input: 
     const resource = `cms/${collection.name}`;
     const current = await entryOf(cms, resource, id, principal);
     const at = moment(input.at, 'at', cms.now());
-    if (current.status !== 'published' && current.status !== 'scheduled') await assertNotesResolved(cms, resource, id, principal);
     const record = await cms.resource(resource).update(id, { status: 'published', ...(at === undefined ? {} : { publishedAt: at }) }, { principal, expectedRevision: expected(input.rev, current.rev) });
     return { item: (await apiEntries(cms, collection, [record], false))[0]! };
 }
@@ -429,7 +429,6 @@ export async function entrySetStatus(c: Context, name: string, id: string, statu
     if (!(CONTENT_STATUSES as readonly string[]).includes(status) || status === 'scheduled') throw new CmsError('CMS_VALIDATION', 'status is draft, pending, published or trash; publish with a future time to schedule.');
     const resource = `cms/${collection.name}`;
     const current = await entryOf(cms, resource, id, principal);
-    if (status === 'published' && current.status !== 'published' && current.status !== 'scheduled') await assertNotesResolved(cms, resource, id, principal);
     const record = await cms.resource(resource).update(id, { status }, { principal, expectedRevision: expected(rev, current.rev) });
     return { item: (await apiEntries(cms, collection, [record], false))[0]! };
 }
@@ -478,7 +477,10 @@ export async function notesForEntry(c: Context, name: string, id: string, status
     const cms = c.get('cms');
     const collection = cms.collection(name);
     const resource = `cms/${collection.name}`;
-    await entryOf(cms, resource, id, c.get('principal'));
+    const principal = c.get('principal');
+    const record = await entryOf(cms, resource, id, principal);
+    // Notes are the editors' discussion: publishing an entry does not publish them.
+    if (!cms.resource(resource).canUpdate(record, principal)) throw new CmsError('CMS_FORBIDDEN', 'Not allowed to read notes on this entry.');
     if (status !== undefined && status !== '' && status !== 'open' && status !== 'resolved') throw new CmsError('CMS_VALIDATION', 'status is open or resolved.');
     return { threads: noteThreads(await cms.notes.forEntry(resource, id)).filter(thread => !status || thread.root.status === status) };
 }
@@ -552,7 +554,7 @@ export async function noteRemove(c: Context, noteId: string): Promise<void> {
 
 export interface NotedEntry { collection: string; entryId: string; title: string; status: string | null; threads: NoteThread[] }
 
-/** Entries with notes across the site (up to 100), with their threads, for whoever may read each entry; `status` keeps open or resolved threads. */
+/** Entries with notes across the site (up to 100), with their threads, for whoever may edit each entry; `status` keeps open or resolved threads. */
 export async function notesAcross(c: Context, status: string | undefined, limit: unknown): Promise<{ items: NotedEntry[] }> {
     const cms = c.get('cms');
     const principal = signedIn(c);
@@ -563,7 +565,7 @@ export async function notesAcross(c: Context, status: string | undefined, limit:
         if (owner !== 'cms' || !resourceName) continue;
         let record: RecordShape | null;
         try { record = await cms.resource(entry.resource).get(entry.recordId, { principal }); } catch { continue; }
-        if (!record) continue;
+        if (!record || !cms.resource(entry.resource).canUpdate(record, principal)) continue;
         const threads = noteThreads(await cms.notes.forEntry(entry.resource, entry.recordId)).filter(thread => !status || thread.root.status === status);
         if (!threads.length) continue;
         items.push({ collection: resourceName, entryId: entry.recordId, title: recordTitle(record, cms.resourceById(entry.resource).titleField), status: typeof record.status === 'string' ? record.status : null, threads });
@@ -600,6 +602,12 @@ function roleIds(value: unknown): string[] | undefined {
     return [...new Set(roles)];
 }
 
+/** Refuse roles holding permissions the caller lacks: nobody gives a stronger role than their own. */
+async function grantable(c: Context, roles: readonly string[]): Promise<void> {
+    const found = (await Promise.all(roles.map(role => c.get('cms').users.role(role)))).filter(role => role !== null);
+    if (!canGrantRoles(actor(c), found)) throw new CmsError('CMS_FORBIDDEN', 'You cannot give a role with permissions you do not have.');
+}
+
 /** A new account with the chosen roles (role managers) or General settings' default role. */
 export async function userCreate(c: Context, input: Body): Promise<UserDetail> {
     allowed(c, PERMISSIONS.manageUsers, USERS);
@@ -608,6 +616,7 @@ export async function userCreate(c: Context, input: Body): Promise<UserDetail> {
     if (password.length < 8) throw new CmsError('CMS_VALIDATION', 'password must be at least 8 characters.', { fields: { password: 'must be at least 8 characters.' } });
     const roles = roleIds(input.roles);
     if (roles && !canAssignRoles(actor(c))) throw new CmsError('CMS_FORBIDDEN', 'Only role managers choose roles; leave roles out for the default role.');
+    if (roles) await grantable(c, roles);
     const created = await createUser({ email, password, name: text(input.name, 'name', { required: false, max: 120 }) || undefined, ...(roles ? { roleIds: roles } : {}) });
     return (await getUser(created.id))!;
 }
@@ -625,12 +634,15 @@ export async function userUpdate(c: Context, id: string, input: Body): Promise<U
     };
     if (Object.keys(profile).length) await updateUser(id, profile);
     if (input.password !== undefined) {
+        // Your own password changes on your profile, which asks for the current one: an API key or open session alone cannot take the account.
+        if (id === me.id) throw new CmsError('CMS_FORBIDDEN', 'Change your own password from your profile, with your current password.');
         if (typeof input.password !== 'string' || input.password.length < 8) throw new CmsError('CMS_VALIDATION', 'password must be at least 8 characters.', { fields: { password: 'must be at least 8 characters.' } });
         await changeUserPassword(id, input.password);
     }
     const roles = roleIds(input.roles);
     if (roles) {
         if (!canAssignRoles(me)) throw new CmsError('CMS_FORBIDDEN', 'Only role managers change roles.');
+        await grantable(c, roles);
         await syncUserRoles(id, roles);
     }
     if (input.status !== undefined) {
@@ -721,7 +733,7 @@ export async function webhooksList(c: Context): Promise<{ items: Webhook[] }> {
 }
 
 /** A new webhook: `POST /api/cms/webhooks` with `{ name, url, events, collections?, active? }`; the answer carries the signing `secret` once. */
-export async function webhookCreate(c: Context, input: Body): Promise<{ item: Webhook }> {
+export async function webhookCreate(c: Context, input: Body): Promise<{ item: Webhook & { readonly secret?: string } }> {
     const principal = signedIn(c);
     if (!hasPermission(principal, PERMISSIONS.manageWebhooks)) throw new CmsError('CMS_FORBIDDEN', 'Not allowed to manage webhooks.');
     const events = Array.isArray(input.events) ? input.events.filter((event): event is string => typeof event === 'string') : [];

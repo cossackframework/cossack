@@ -1,7 +1,7 @@
 import { Cossack, Page, State, Server, Client } from '@cossackframework/core';
 import { Avatar, Badge, NativeSelect, AlertDialog } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
-import { canAssignRoles, canManageUser, guard } from '../../../services/rbac';
+import { canAssignRoles, canGrantRoles, canManageUser, guard } from '../../../services/rbac';
 import type { PublicUser } from '../../../auth';
 import {
     getUser,
@@ -121,7 +121,9 @@ export default class UsersPage extends Cossack {
         const actor = this.user as PublicUser | undefined;
         const roleId = key.startsWith('role:') ? key.slice('role:'.length) : '';
         if (key !== 'delete' && !roleId) return;
-        if (roleId && (!canAssignRoles(actor) || !(await listRoles()).some(role => role.id === roleId))) { this.error = __('Only an administrator can change roles.'); return; }
+        const granted = roleId ? (await listRoles()).find(role => role.id === roleId) : undefined;
+        if (roleId && (!canAssignRoles(actor) || !granted)) { this.error = __('Only an administrator can change roles.'); return; }
+        if (granted && !canGrantRoles(actor, [granted])) { this.error = __('You cannot give a role with permissions you do not have.'); return; }
         let done = 0, skipped = 0;
         for (const id of [...new Set(ids)].slice(0, 100)) {
             const target = await getUser(id);

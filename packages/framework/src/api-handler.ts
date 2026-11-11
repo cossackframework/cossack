@@ -10,6 +10,7 @@ import { resolveRealtimeScopeKey } from './realtime-scope.js';
 export interface ApiHandlerOptions {
     componentPath?: string;
     layouts?: Record<string, unknown>;
+    owners?: Readonly<Record<string, string>>;
     routePathToIdMap?: Map<string, string>;
     runtimeInfo?: () => Promise<CossackRuntimeInfo>;
 }
@@ -77,6 +78,7 @@ export function createApiHandler(ComponentClass: new () => Cossack, methodNames:
             const chain = await createServiceScopeChain({
                 componentPath: options.componentPath ?? '',
                 layouts: options.layouts ?? {},
+                owners: options.owners,
                 routePathToIdMap: options.routePathToIdMap ?? new Map(),
                 scopeKey: await resolveRealtimeScopeKey(c, undefined),
                 facilities,

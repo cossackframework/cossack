@@ -135,6 +135,14 @@ describe('Custom HTML blocks', () => {
         expect(htmlBlocksChanged([{ _id: 'a', type: 'core/html', data: { html: '<b>A</b>' } }], blocks)).toBe(true);
         expect(htmlBlocksChanged(embedded, null)).toBe(true);
     });
+
+    it('counts a block repeating a stored ID with other HTML as a change, wherever it sits', () => {
+        const stored = [{ _id: 'h1', type: 'core/html', data: { html: '<p>ok</p>' } }];
+        const embed = { type: 'doc', content: [{ type: 'cmsBlock', attrs: { _id: 'h1', type: 'core/html', data: { html: '<script>x</script>' } } }] };
+        expect(htmlBlocksChanged([{ _id: 'r1', type: 'core/richtext', data: { text: embed } }, ...stored], stored)).toBe(true);
+        expect(htmlBlocksChanged([...stored, { _id: 'r1', type: 'core/richtext', data: { text: embed } }], stored)).toBe(true);
+        expect(htmlBlocksChanged([...stored, ...stored], stored)).toBe(false);
+    });
 });
 
 describe('resources', () => {

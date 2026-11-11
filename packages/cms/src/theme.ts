@@ -318,13 +318,28 @@ export function blockStyleAttributes(block: { readonly style?: BlockStyle; reado
     return { className: ['cms-block', ...classes, ...extra].join(' '), style: rules.join('; '), id, nosnippet, ...(video && video.contentType.startsWith('video/') ? { video } : {}) };
 }
 
+/**
+ * The CSS as the browser reads it, for matching: comments removed and escapes decoded, so
+ * `u\72l(` and `@\69mport` are seen as `url(` and `@import`.
+ */
+function cssTokens(css: string): string {
+    return css.replace(/\/\*[\s\S]*?(?:\*\/|$)/g, '')
+        .replace(/\\(?:([0-9a-f]{1,6})[ \t\n\r\f]?|\r\n|([\s\S]))/gi, (match, hex: string | undefined, char: string | undefined) => {
+            if (hex !== undefined) { const point = parseInt(hex, 16); return point > 0 && point <= 0x10ffff && (point < 0xd800 || point > 0xdfff) ? String.fromCodePoint(point) : '\ufffd'; }
+            return char === undefined || /[\n\r\f]/.test(char) ? '' : char;
+        });
+}
+
 /** Why a site's Additional CSS is refused: it may not load other resources or run scripts. Undefined when fine. */
 export function customCssProblem(css: string): string | undefined {
     if (css.length > 20_000) return 'Additional CSS is at most 20,000 characters.';
-    if (/@import\b/i.test(css)) return 'Additional CSS cannot use @import.';
-    if (/\burl\s*\(/i.test(css)) return 'Additional CSS cannot use url().';
-    if (/\bexpression\s*\(|\bbehavior\s*:|-moz-binding|javascript:/i.test(css)) return 'Additional CSS cannot run scripts.';
-    if (/<\/?\s*(?:style|script)\b/i.test(css)) return 'Additional CSS cannot contain HTML tags.';
+    for (const text of [css, cssTokens(css)]) {
+        if (/@import\b/i.test(text)) return 'Additional CSS cannot use @import.';
+        if (/\burl\s*\(/i.test(text)) return 'Additional CSS cannot use url().';
+        if (/(?:^|[^\w-])(?:-webkit-)?(?:image-set|image|cross-fade|element)\s*\(/i.test(text)) return 'Additional CSS cannot load images.';
+        if (/\bexpression\s*\(|\bbehavior\s*:|-moz-binding|javascript:/i.test(text)) return 'Additional CSS cannot run scripts.';
+        if (/<\/?\s*(?:style|script)\b/i.test(text)) return 'Additional CSS cannot contain HTML tags.';
+    }
     return undefined;
 }
 

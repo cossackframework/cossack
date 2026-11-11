@@ -103,6 +103,7 @@ describe.skipIf(!live)('forms', () => {
         expect(blocked.fields).toEqual({ email: 'We cannot take this address.' });
         await submit({ name: 'Cy', email: 'cy@example.com', message: 'One', callMe: 'on', phone: '+1 555 0100' }, { ip: '198.51.100.1' });
         await expect(submit({ name: 'Cy', email: 'cy@example.com', message: 'Two' }, { ip: '198.51.100.1' })).rejects.toMatchObject({ code: 'CMS_LIMIT' });
+
         tick();
         // The trap, or a form sent within two seconds of rendering: kept as spam, answered as usual, nothing sent.
         await cms.outbox.dispatch();
@@ -181,6 +182,8 @@ describe.skipIf(!live)('forms', () => {
         expect((await cms.forms.get('survey'))?.published).toBe(true);
         expect((await send('a@example.com', '10.0.0.1')).confirmation).toEqual({ kind: 'redirect', url: '/thanks' });
         await expect(send('a@example.com', '10.0.0.2')).rejects.toMatchObject({ code: 'CMS_CONFLICT', fields: { email: 'This address already sent this form.' } });
+        // An address is one address whatever its case.
+        await expect(send('A@Example.COM', '10.0.0.7')).rejects.toMatchObject({ code: 'CMS_CONFLICT' });
         await send('b@example.com', '10.0.0.3');
         await expect(send('c@example.com', '10.0.0.4')).rejects.toMatchObject({ code: 'CMS_FORBIDDEN', message: 'Survey is over.' });
         // Sign-in rules, the schedule and the switch.
@@ -240,5 +243,15 @@ describe.skipIf(!live)('forms', () => {
         expect(await cms.forms.maintain()).toEqual({ emptied: 1 });
         const sends = await cms.db.read([{ rql: 'SELECT count(*) FROM cms_form_sends' }]);
         expect(Number(sends.results[0]!.rows[0]![0] as bigint)).toBe(0);
+    });
+
+    it('lets one send through when several from one address, or one address, arrive at once', async () => {
+        const forms = cms.resource('cms/forms');
+        await forms.create({ title: 'Burst', status: 'published', body: [input('e', 'email', { name: 'email', required: true })], settings: { oncePerEmail: 'email' } }, { principal: editor });
+        const sends = (from: (i: number) => { email: string; ip: string }) => Promise.allSettled(Array.from({ length: 6 }, (_, i) => cms.forms.submit('burst', { email: from(i).email }, { principal: ANONYMOUS, ip: from(i).ip })));
+        tick();
+        expect((await sends(i => ({ email: `p${i}@example.com`, ip: '203.0.113.50' }))).filter(result => result.status === 'fulfilled')).toHaveLength(1);
+        tick();
+        expect((await sends(i => ({ email: i % 2 ? 'Same@Example.com' : 'same@example.com', ip: `203.0.113.${60 + i}` }))).filter(result => result.status === 'fulfilled')).toHaveLength(1);
     });
 });

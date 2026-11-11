@@ -132,6 +132,7 @@ import { createRpcStreamResponse, isRpcStream, retainRpcResponseBody } from './t
 import { logRpcFailure, type RpcFailureContext } from './transports/rpc-logging.js';
 import { retainResponseLifetime } from './response-lifetime.js';
 import { captureRealtimeIdentity, snapshotRealtimeRequest, withRealtimeAuthorization } from './realtime-context.js';
+import { gatePluginMiddlewares, setPluginActivity } from './plugin-activity.js';
 
 // Side-effect: register the i18n helpers (`__`, `setLocale`, ...) on
 // `globalThis` so bare `__('key')` calls in `render()` resolve during SSR.
@@ -340,7 +341,7 @@ export type PageModule = {
 };
 
 function getLayoutStack(pagePath: string) {
-  return resolveLayoutPaths(pagePath, Object.keys(layouts));
+  return resolveLayoutPaths(pagePath, Object.keys(layouts), owners);
 }
 
 /**
@@ -349,7 +350,7 @@ function getLayoutStack(pagePath: string) {
  * In production, collects the page chunk and all its transitive JS imports.
  */
 function findNearestSpecialPage(pagePath: string, type: '404' | 'error') {
-  const path = resolveNearestSpecialPage(pagePath, Object.keys(pages), type);
+  const path = resolveNearestSpecialPage(pagePath, Object.keys(pages), type, owners);
   return path ? { path, component: getModuleDefault(pages[path] as object) as new () => Cossack } : null;
 }
 
@@ -493,6 +494,7 @@ export function createApp(options: CreateAppOptions = {}) {
     routePathToFilePathMap,
     pages,
     layouts,
+    owners,
     allowedOrigins: options.allowedOrigins,
     rpcBodyLimits: { jsonBytes: options.rpc?.maxJsonBytes, uploadBytes: options.rpc?.maxUploadBytes },
     runtimeInfo: resolveRuntimeInfo,
@@ -545,7 +547,9 @@ export function createApp(options: CreateAppOptions = {}) {
   // auth session, feature flags, ...). Each is registered in array order,
   // before the locale middleware. The registry is the Laravel-style "kernel"
   // list — definitions live in `src/middlewares/*.ts`. Absent file → no-op.
-  for (const middleware of configuredMiddlewares) {
+  // A plugin's middleware runs only while the plugin is active for the request.
+  setPluginActivity(options.isPluginActive);
+  for (const middleware of gatePluginMiddlewares(configuredMiddlewares, () => options.isPluginActive)) {
     app.use('*', middleware as any);
   }
 
@@ -692,7 +696,7 @@ export function createApp(options: CreateAppOptions = {}) {
         // layout) renders without one and stays offline.
         const layoutRealtime: Record<string, string> = {};
         const { scope: activeServiceScope } = await createServiceScopeChain({
-          componentPath: path, layouts, routePathToIdMap, scopeKey,
+          componentPath: path, layouts, owners, routePathToIdMap, scopeKey,
           facilities: { context: c, user, env: c.env }, root: requestServiceScope,
           onLayout: async ({ path: lPath, component: LComp, scope: layoutServiceScope }) => {
             const layoutOptions = Reflect.getMetadata('page:options', LComp) as PageOptions | undefined;
@@ -1054,7 +1058,7 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
           // embeds it, so it gets a root scope of its own.
           const instance = await createChainedComponent({
             component: ComponentClass, componentPath: owner.id,
-            layouts: owner.kind === 'component' ? {} : layouts, routePathToIdMap, scopeKey,
+            layouts: owner.kind === 'component' ? {} : layouts, owners, routePathToIdMap, scopeKey,
             facilities: { context: componentContext, user, env: c.env },
             bootstrap: { context: componentContext, user, env: c.env, runtime: runtimeInfo, page: pathname },
           });
@@ -1105,7 +1109,7 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
       try {
         const pageOptions = Reflect.getMetadata('page:options', getModuleDefault(pages[pagePath]) as object) as PageOptions | undefined;
         const chain = await createServiceScopeChain({
-          componentPath: pagePath, layouts, routePathToIdMap, scopeKey: await resolveSseScopeKey(pageContext, pageOptions),
+          componentPath: pagePath, layouts, owners, routePathToIdMap, scopeKey: await resolveSseScopeKey(pageContext, pageOptions),
           facilities: { context: pageContext, user, env: c.env }, root: requestScope,
         });
         const ownerScope = chain.layouts.find(layout => layout.path === ownerPath)?.scope;
@@ -1276,7 +1280,7 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
       try {
         if (componentContext.req.raw.signal.aborted) throw new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.');
         const { scope: activeScope } = await createServiceScopeChain({
-          componentPath, layouts, routePathToIdMap, scopeKey: effectiveScopeKey,
+          componentPath, layouts, owners, routePathToIdMap, scopeKey: effectiveScopeKey,
           facilities: { context: componentContext, user, env: c.env }, root: requestScope,
         });
         componentInstance = createInstance(ComponentClass, { serviceScope: activeScope });
@@ -1547,7 +1551,7 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
   // where `[id]` sorts before `new`, which broke `/dashboard/users/new`
   // (matched `:id = 'new'`). See `compareHttpRoutes` for the comparator.
   const apiHandlerOptions = (componentPath: string) => ({
-    componentPath, layouts, routePathToIdMap, runtimeInfo: resolveRuntimeInfo,
+    componentPath, layouts, owners, routePathToIdMap, runtimeInfo: resolveRuntimeInfo,
   });
   const pagePaths = resolvePageRouteFiles(Object.keys(pages)).sort((a, b) =>
     compareHttpRoutes(filePathToHttpRoute(a), filePathToHttpRoute(b)),

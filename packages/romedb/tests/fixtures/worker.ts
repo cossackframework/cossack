@@ -7,7 +7,7 @@ interface Env { ROMEDB_URL: string; ROMEDB_TOKEN: string; ROMEDB_PENDING: Durabl
 
 export default {
     async fetch(request: Request, env: Env): Promise<Response> {
-        const pending = new DurableObjectPendingWriteStore(env.ROMEDB_PENDING, { shards: 2 });
+        const pending = new DurableObjectPendingWriteStore(env.ROMEDB_PENDING);
         const suffix = new URL(request.url).searchParams.get('suffix')!;
         const table = `wk_${suffix}`;
         let drop = false;

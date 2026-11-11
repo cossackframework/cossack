@@ -25,7 +25,7 @@ export const POST = async (c: Context) => {
     const converted = metaInput(fields, body.meta && typeof body.meta === 'object' ? body.meta as Record<string, unknown> : {});
     if (Object.keys(converted.errors).length) return c.json({ error: 'Some fields are invalid.', code: 'CMS_VALIDATION', fields: converted.errors }, 422);
     try {
-        await cms.users.update(id, { meta: converted.meta });
+        await cms.users.update(id, { meta: converted.meta }, { principal: c.get('principal') });
         return c.json({ values: metaValues(fields, (await cms.users.get(id))?.meta ?? {}) });
     } catch (error) { return apiError(c, error); }
 };

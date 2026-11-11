@@ -89,6 +89,8 @@ const SLUG = new RegExp(`^${SLUG_PATTERN}$`);
 const ID = /^[A-Za-z0-9_-]{1,80}$/;
 /** One submission per address and form in this time. */
 const THROTTLE_MS = 5_000;
+/** How long a once-per-user or once-per-address send holds its key against sends at the same moment; stored sends are found by lookup after. */
+const ONCE_CLAIM_MS = 60_000;
 /** Filled in faster than people can: spam. */
 const MIN_FILL_MS = 2_000;
 const DAY = 24 * 60 * 60 * 1000;
@@ -246,10 +248,6 @@ export class CmsForms {
         if (settings.turnstile && context.botCheck && !(await context.botCheck())) throw new CmsError('CMS_FORBIDDEN', 'The check against bots failed. Try again.');
         const now = this.#host.now();
         const ipHash = context.ip ? await sha256Hex(`cms-form:${form.ref.id}:${context.ip}`) : null;
-        if (ipHash) {
-            const last = await this.#host.db.read([{ rql: 'SELECT max(at) FROM cms_form_sends WHERE form_id = $form AND ip_hash = $ip AND at > $since', params: { $form: form.ref.id, $ip: ipHash, $since: now - THROTTLE_MS } }]);
-            if (last.results[0]!.rows[0]?.[0] !== null && last.results[0]!.rows[0]?.[0] !== undefined) throw new CmsError('CMS_LIMIT', 'You sent this form a moment ago. Wait a few seconds and try again.');
-        }
         const spam = Boolean(context.trap) || (typeof context.startedAt === 'number' && Number.isFinite(context.startedAt) && now - context.startedAt < MIN_FILL_MS);
         const actor = writeActor(context.principal);
         const hookContext = { form: form.ref, actor, ...(context.ip ? { ip: context.ip } : {}), ...(context.userAgent ? { userAgent: context.userAgent } : {}), ...(context.page ? { page: context.page } : {}) };
@@ -276,12 +274,17 @@ export class CmsForms {
                 // Files are the posted ones: a plugin can check them but not replace them.
                 values = withFiles(again.values);
             }
-            if (settings.store && settings.oncePerUser && user && await this.#exists(form, '"_owner" = $value', user)) throw new CmsError('CMS_CONFLICT', 'You already sent this form.');
+            // Once per user or address: sends at the same moment are held to one by a claim on the key
+            // (a minute, by which time the first is stored), and stored ones by looking them up.
+            const once = (key: string) => this.#host.security.attempt('form-once', `${form.ref.id}:${key}`, 1, ONCE_CLAIM_MS);
+            if (settings.store && settings.oncePerUser && user && (!(await once(`u:${user}`)) || await this.#exists(form, '"_owner" = $value', user))) throw new CmsError('CMS_CONFLICT', 'You already sent this form.');
             const email = settings.oncePerEmail ? values[settings.oncePerEmail] : undefined;
-            if (settings.store && typeof email === 'string' && await this.#exists(form, `"${settings.oncePerEmail}" = $value`, email)) {
+            if (settings.store && typeof email === 'string' && (!(await once(`e:${await sha256Hex(email.toLowerCase())}`)) || await this.#exists(form, `lower("${settings.oncePerEmail}") = $value`, email.toLowerCase()))) {
                 throw new CmsError('CMS_CONFLICT', 'This address already sent this form.', { fields: { [settings.oncePerEmail]: 'This address already sent this form.' } });
             }
         }
+        // One send per address in the window, counted in one conditional write once the send is checked, so a burst gets one through.
+        if (ipHash && !(await this.#host.security.attempt('form', ipHash, 1, THROTTLE_MS))) throw new CmsError('CMS_LIMIT', 'You sent this form a moment ago. Wait a few seconds and try again.');
         const id = uuidv7();
         const op = uuidv7();
         // Files are stored before the record, pending; the record's batch makes them ready, and a refused write removes them.

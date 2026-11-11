@@ -49,6 +49,15 @@ describe.skipIf(!live)('CMS stores on RomeDB', () => {
         expect(await cms.oauthStates.consume(expired, 'github', now)).toBe(false);
     });
 
+    it('takes a single-use cache value once, however many requests take it at the same time', async () => {
+        await cms.cache.set('magic:once', { user: 'u1' }, 60_000);
+        const taken = await Promise.all(Array.from({ length: 5 }, () => cms.cache.take<{ user: string }>('magic:once')));
+        expect(taken.filter(Boolean)).toEqual([{ user: 'u1' }]);
+        expect(await cms.cache.get('magic:once')).toBeUndefined();
+        await cms.cache.set('magic:expired', { user: 'u1' }, 0);
+        expect(await cms.cache.take('magic:expired')).toBeUndefined();
+    });
+
     it('keeps concurrent writes to different session keys', async () => {
         const store = cms.sessions;
         const id = await store.create(60_000);
@@ -234,9 +243,14 @@ describe.skipIf(!live)('CMS stores on RomeDB', () => {
         storage.presign = async (key, options) => ({ url: `https://bucket.example/${key}?signed`, method: 'PUT', headers: { 'content-type': options.contentType!, 'content-length': String(options.size) } });
         expect(files.direct).toBe(true);
         const direct = await files.begin({ name: 'big.zip', contentType: 'application/zip', size: 3 }, { principal });
-        expect(direct.direct).toEqual({ url: `https://bucket.example/cms/files/${direct.id}?signed`, method: 'PUT', headers: { 'content-type': 'application/zip', 'content-length': '3' } });
-        objects.set(`cms/files/${direct.id}`, new Uint8Array([1, 2, 3]));
+        // The browser writes a staging object; complete() writes the served one from the bytes it checked.
+        expect(direct.direct).toEqual({ url: `https://bucket.example/cms/uploads/${direct.id}?signed`, method: 'PUT', headers: { 'content-type': 'application/zip', 'content-length': '3' } });
+        objects.set(`cms/uploads/${direct.id}`, new Uint8Array([0x50, 0x4b, 3]));
         expect(await files.complete(direct.id, { principal })).toMatchObject({ contentType: 'application/zip', size: 3 });
+        expect(objects.has(`cms/uploads/${direct.id}`)).toBe(false);
+        // The presigned URL is still valid for a while: what it writes later never reaches the served file.
+        objects.set(`cms/uploads/${direct.id}`, new TextEncoder().encode('<x>'));
+        expect([...new Uint8Array(await new Response((await files.open(direct.id))!.body).arrayBuffer())]).toEqual([0x50, 0x4b, 3]);
         expect((await files.list({ kind: 'archive' })).items.map(item => item.name)).toEqual(['big.zip']);
         expect((await files.list({ kind: 'document' })).items.map(item => item.name)).toEqual(['notes.txt']);
         for (const item of (await files.list()).items) await files.delete(item.id, { principal });

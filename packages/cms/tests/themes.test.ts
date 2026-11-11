@@ -259,5 +259,8 @@ describe.skipIf(!live)('themes: loaders', () => {
         const settings = await cms.settings.update('appearance', { presets: { 'folio-dark': { colors: { brand: '#0a0' }, custom: [{ slug: 'mine', name: 'Mine', value: '#123' }] } }, customCss: '.hero { color: red }' }, { principal: admin });
         expect(settings['appearance.presets']).toEqual({ 'folio-dark': { colors: { brand: '#0a0' }, custom: [{ slug: 'mine', name: 'Mine', value: '#123' }] } });
         expect(settings['appearance.customCss']).toBe('.hero { color: red }');
+        // Every write path checks the CSS, not only the Customize screen.
+        await expect(cms.settings.update('appearance', { customCss: '@import url(//evil.example/x.css);' }, { principal: admin })).rejects.toMatchObject({ code: 'CMS_VALIDATION', fields: { customCss: 'Additional CSS cannot use @import.' } });
+        await expect(cms.settings.update('appearance', { presets: { 'folio-dark': { colors: { brand: 'url(x)' } } } }, { principal: admin })).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
     });
 });

@@ -81,10 +81,14 @@ export function siteDatabase(env: DatabaseBindings, database: string): Pick<Rome
 export function siteDirectory(env: DatabaseBindings): DatabaseDirectory | null {
     return env.ROMEDB_SITES_URL && env.ROMEDB_SITES_TOKEN ? organizationDatabases({ url: env.ROMEDB_SITES_URL, token: env.ROMEDB_SITES_TOKEN }) : null;
 }
+
+/** Webhook deliveries use the Worker's own fetch, which cannot reach private networks. */
+export const webhookFetch: typeof fetch | undefined = undefined;
 `
       : `import path from 'node:path';
 import { organizationDatabases, type DatabaseDirectory, type RomeDBOptions } from '@cossackframework/romedb';
 import { connectNode, fileDatabases, isServiceUrl } from '@cossackframework/romedb/node';
+import { publicOnlyFetch } from '@cossackframework/cms/node';
 
 export interface DatabaseBindings {
     /**
@@ -137,6 +141,9 @@ export function siteDirectory(env: DatabaseBindings): DatabaseDirectory | null {
     const main = env.ROMEDB_URL || 'storage/romedb/app.romedb';
     return isServiceUrl(main) ? null : fileDatabases(path.dirname(main));
 }
+
+/** Webhook deliveries refuse names that resolve to this machine or a private network. */
+export const webhookFetch: typeof fetch | undefined = publicOnlyFetch;
 `,
     'src/cms/media.ts': adapter === 'cloudflare'
       ? `import type { StorageProvider } from '@cossackframework/core/storage';

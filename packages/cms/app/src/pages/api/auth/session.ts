@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
 import { isSameOriginPost } from '@cossackframework/cms';
-import { auth, completeTwoFactor, beginTwoFactor, loginUser, logout, SignInLockedError } from '../../../auth';
+import { auth, completeTwoFactor, beginTwoFactor, loginUser, logout, SignInLockedError, SignInPasskeyError } from '../../../auth';
 
 /**
  * JSON sign-in for tools such as `cossack <plugin>:<command>`: `{ email, password }` answers
@@ -19,7 +19,12 @@ export const POST = auth.createLoginHandler({
             return Response.json({ error: error.message, code: 'CMS_RATE_LIMITED' }, { status: 429, headers: { 'retry-after': String(Math.ceil(error.retryAfterMs / 1000)) } });
         }
         if (!user) return null;
-        const pending = await beginTwoFactor(user.id);
+        let pending: string | null;
+        try { pending = await beginTwoFactor(user.id); }
+        catch (error) {
+            if (!(error instanceof SignInPasskeyError)) throw error;
+            return Response.json({ error: error.message, code: 'CMS_PASSKEY_REQUIRED' }, { status: 401 });
+        }
         if (!pending) return user;
         if (typeof code !== 'string' || !code.trim()) return Response.json({ error: 'Enter the code from your authenticator app.', twoFactorRequired: true }, { status: 401 });
         const result = await completeTwoFactor(pending, code);

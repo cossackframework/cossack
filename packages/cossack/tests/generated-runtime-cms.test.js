@@ -849,7 +849,8 @@ describe.skipIf(!liveRomeDBTests())('generated CMS application', () => {
         // Opening the blog's dashboard without a session there asks the network first: the network admin's session
         // signs them in without a click; a visitor the network does not know comes back to the blog's own sign-in, once.
         const auto = new URL((await blogAdmin.request('/dashboard')).headers.get('location'));
-        expect(auto.toString()).toBe(`${origin}/auth/handoff?site=blog&next=%2Fdashboard&auto=1`);
+        // The blog's state for this browser travels along and comes back with the code.
+        expect(auto.toString()).toMatch(new RegExp(`^${origin}/auth/handoff\\?site=blog&next=%2Fdashboard&state=[0-9a-f]{32}&auto=1$`));
         const autoBack = new URL((await web.request(auto.pathname + auto.search)).headers.get('location'));
         expect(`${autoBack.origin}${autoBack.pathname}`).toBe(`${blogOrigin}/auth/handoff`);
         expect((await blogAdmin.request(autoBack.pathname + autoBack.search)).headers.get('location')).toBe('/dashboard');
@@ -861,9 +862,12 @@ describe.skipIf(!liveRomeDBTests())('generated CMS application', () => {
         expect((await strangerOnNetwork.request(strangerAuto.pathname + strangerAuto.search)).headers.get('location')).toBe(`${blogOrigin}/auth/login`);
         expect((await stranger.request('/dashboard')).headers.get('location')).toBe('/auth/login');
         const toNetwork = new URL((await blogAdmin.request('/auth/handoff?next=/dashboard')).headers.get('location'));
-        expect(toNetwork.toString()).toBe(`${origin}/auth/handoff?site=blog&next=%2Fdashboard`);
+        expect(toNetwork.toString()).toMatch(new RegExp(`^${origin}/auth/handoff\\?site=blog&next=%2Fdashboard&state=[0-9a-f]{32}$`));
         const back = new URL((await web.request(toNetwork.pathname + toNetwork.search)).headers.get('location'));
         expect(back.origin).toBe(blogOrigin);
+        // A code opened in another browser (a link made with someone else's account) does not sign it in.
+        const elsewhere = browserless(blogOrigin, routeIds, () => output, { connect: '127.0.0.1' });
+        expect((await elsewhere.request(back.pathname + back.search)).status).toBe(400);
         expect((await blogAdmin.request(back.pathname + back.search)).headers.get('location')).toBe('/dashboard');
         // A user added on the blog is a site account: listed on the blog and on its network page, not among the network's accounts.
         await blogAdmin.action('dashboard/users/new/index.ts', 'create', ['Thanh', 'thanh@example.com', 'long password', ['author']]);

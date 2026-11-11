@@ -8,6 +8,7 @@
  */
 import { decodeValue, type PortableValue, type Statement, type Value } from '@cossackframework/romedb';
 import { CmsError } from '../errors';
+import { NETWORK_ADMIN } from '../permissions';
 import { UNRESTRICTED_GRANT } from '../manifest';
 import { HOST_TABLES } from './host-schema';
 import { EXPORT_SKIPPED_TABLES, newSecret, quote } from './site-export';
@@ -67,7 +68,7 @@ export async function siteImport(host: CmsHost, source: ReadableStream<Uint8Arra
 async function importInto(host: CmsHost, source: ReadableStream<Uint8Array> | AsyncIterable<Uint8Array | string>, lease: Lease, options: SiteImportOptions): Promise<SiteImportReport> {
     const db = host.db;
     const write = (statements: Statement[]) => db.write(statements, { ...WRITE, ...(options.signal ? { signal: options.signal } : {}) });
-    const before = (await host.users.list({ limit: 100 })).items.filter(user => user.account === 'network');
+    const before = (await allUsers(host)).filter(user => user.account === 'network');
 
     const reader = new ExportReader(source);
     const header = await reader.header();
@@ -112,8 +113,12 @@ async function importInto(host: CmsHost, source: ReadableStream<Uint8Array> | As
         count++;
     }
     await reader.end();
-    // Unrestricted access is granted where it runs: an export cannot switch it on here.
-    await write([{ rql: 'DELETE FROM cms_grants WHERE permission = $permission', params: { $permission: UNRESTRICTED_GRANT } }]);
+    // Unrestricted access is granted where it runs, and network admins are the network's: an export can make neither.
+    await write([
+        { rql: 'DELETE FROM cms_grants WHERE permission = $permission', params: { $permission: UNRESTRICTED_GRANT } },
+        { rql: 'DELETE FROM cms_user_roles WHERE role_id = $role', params: { $role: NETWORK_ADMIN } },
+        { rql: 'DELETE FROM cms_roles WHERE id = $role', params: { $role: NETWORK_ADMIN } },
+    ]);
     if (!collections) await openCollections(host, options);
     const members = await adoptMembers(host, before);
     await lease.release();
@@ -178,6 +183,8 @@ function insertRow(table: string, columns: readonly string[], row: unknown): Sta
         values[columns.indexOf('secret')] = newSecret();
         if (columns.includes('active')) values[columns.indexOf('active')] = 0n;
     }
+    // Automations send email from the moment they are on: off until someone here checks them, as webhooks.
+    if (table === 'cms_automations' && columns.includes('active')) values[columns.indexOf('active')] = 0n;
     return {
         rql: `INSERT INTO ${quote(table)} (${columns.map(quote).join(', ')}) VALUES (${columns.map((_, index) => `$c${index}`).join(', ')})`,
         params: Object.fromEntries(values.map((value, index) => [`$c${index}`, value as Value])),
@@ -454,3 +461,13 @@ async function* readStream(stream: ReadableStream<Uint8Array>): AsyncGenerator<U
 }
 
 const truncated = (wanted: string) => new CmsError('CMS_VALIDATION', `The export ends early: expected ${wanted}. Download it again.`);
+
+/** Every member of the site, a page at a time (lists stop at 100). */
+async function allUsers(host: CmsHost): Promise<Awaited<ReturnType<CmsHost['users']['list']>>['items'][number][]> {
+    const users: Awaited<ReturnType<CmsHost['users']['list']>>['items'][number][] = [];
+    for (let offset = 0; ; offset += 100) {
+        const page = await host.users.list({ limit: 100, offset });
+        users.push(...page.items);
+        if (page.items.length < 100) return users;
+    }
+}

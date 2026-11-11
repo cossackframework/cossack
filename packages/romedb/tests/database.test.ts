@@ -1,8 +1,8 @@
-import { mkdtemp, rm, stat } from 'node:fs/promises';
+import { mkdtemp, readdir, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { ClientError, createRomeDB, EngineVersionError, MemoryPendingWriteStore, PendingWriteConflictError, REQUIRED_ENGINE_VERSION, UncertainWriteError, type PendingWriteStore } from '../src/index';
+import { ClientError, connect, createRomeDB, EngineVersionError, MemoryPendingWriteStore, PendingWriteConflictError, pendingCursor, REQUIRED_ENGINE_VERSION, UncertainWriteError, type PendingWriteStore } from '../src/index';
 import { FilePendingWriteStore } from '../src/node';
 import { DurableObjectPendingWriteStore, RomeDBPendingWrites } from '../src/cloudflare';
 
@@ -167,6 +167,38 @@ describe('RomeDB binding', () => {
         expect(decisions).toEqual(['audit']);
     });
 
+    it('returns a committed result when clearing the saved request fails', async () => {
+        const pending = new MemoryPendingWriteStore();
+        pending.delete = async () => { throw new Error('disk full'); };
+        const db = createRomeDB({ url: LOCAL, token: 't', pending, fetch: service().fetch });
+        expect((await db.write([{ rql: 'UPDATE x SET y = 1' }], { requestId: 'op-9' })).requestId).toBe('op-9');
+        // Still saved: a later recovery confirms it again by its receipt.
+        expect(await pending.get('op-9')).toBeDefined();
+        const rolledBack = createRomeDB({ url: LOCAL, token: 't', pending, sleep: noSleep, fetch: service({ onQuery: body => json({ requestId: body.requestId, sequence: 11, error: { code: 'RDB_CONSTRAINT', message: 'unique' } }, 409) }).fetch });
+        await expect(rolledBack.write([{ rql: 'INSERT INTO x VALUES (1)' }])).rejects.toBeInstanceOf(ClientError);
+    });
+
+    it('passes over writes nothing can resolve to reach newer ones', async () => {
+        const OTHER = 'http://127.0.0.1:4322/v1/database';
+        const otherFetch = (async (input: RequestInfo | URL) => String(input) === OTHER ? json(details(REQUIRED_ENGINE_VERSION)) : json({})) as typeof globalThis.fetch;
+        const other = await connect({ url: OTHER, token: 't', fetch: otherFetch });
+        await other.info();
+        const pending = new MemoryPendingWriteStore();
+        for (let i = 0; i < 5; i++) await pending.put(`old-${i}`, { request: other.prepareWrite([{ sql: 'SELECT 1' }], { requestId: `old-${i}` }), savedAt: i });
+        let up = false;
+        const fake = service({ onQuery: body => {
+            if (!up) throw new TypeError('connection reset');
+            return json({ requestId: body.requestId, sequence: 11, results: [{ columns: [], rows: [], affected: '1' }] });
+        } });
+        const db = createRomeDB({ url: LOCAL, token: 't', pending, fetch: fake.fetch, sleep: noSleep, retry: { attempts: 1 } });
+        await expect(db.write([{ rql: 'UPDATE x SET y = 1' }], { requestId: 'new-1' })).rejects.toBeInstanceOf(UncertainWriteError);
+        up = true;
+        const report = await db.recoverPending({ limit: 2 });
+        expect(report.confirmed).toEqual(['new-1']);
+        expect(report.pending).toEqual(['old-0', 'old-1', 'old-2', 'old-3', 'old-4']);
+        expect(await pending.list()).toHaveLength(5);
+    });
+
     it('retries reads under backpressure only', async () => {
         const fake = service({ onRead: attempt => attempt === 1 ? json({ error: 'busy' }, 503) : json({ error: { code: 'RDB_SYNTAX', message: 'bad' } }, 400) });
         const db = createRomeDB({ url: LOCAL, token: 't', pending: new MemoryPendingWriteStore(), fetch: fake.fetch, sleep: noSleep });
@@ -194,6 +226,8 @@ describe('pending write stores', () => {
         await expect(store.put('a', { request: b, savedAt: 3 })).rejects.toBeInstanceOf(PendingWriteConflictError);
         await store.put('c', { request: remote.prepareWrite([{ sql: 'SELECT 3' }], { requestId: 'c' }), savedAt: 1, kind: 'k' });
         expect((await store.list()).map(write => write.savedAt)).toEqual([1, 2]);
+        const [oldest] = await store.list({ limit: 1 });
+        expect((await store.list({ after: pendingCursor(oldest!) })).map(write => write.savedAt)).toEqual([2]);
         expect((await store.get('a'))!.request.body).toBe(a.body);
         await store.delete('a');
         expect(await store.get('a')).toBeUndefined();
@@ -212,6 +246,23 @@ describe('pending write stores', () => {
         const id = JSON.parse(entry!.request.body).requestId;
         expect((await stat(path.join(directory, 'pending', `${id}.json`))).mode & 0o777).toBe(0o600);
         await expect(store.get('../x')).rejects.toThrow(/letters/);
+        expect((await readdir(path.join(directory, 'pending'))).filter(name => name.endsWith('.tmp'))).toEqual([]);
+    });
+
+    it('file store sets aside a torn file and old temporary bodies', async () => {
+        const directory = await mkdtemp(path.join(os.tmpdir(), 'romedb-pending-'));
+        directories.push(directory);
+        const folder = path.join(directory, 'pending');
+        const store = new FilePendingWriteStore(folder);
+        const remote = await connect({ url: LOCAL, token: 't', fetch: service().fetch });
+        await store.put('good', { request: remote.prepareWrite([{ sql: 'SELECT 1' }], { requestId: 'good' }), savedAt: 1 });
+        // A crash mid-write in an older release left half a body behind, and one left a temporary body.
+        await writeFile(path.join(folder, 'torn.json'), '{"version":1,"sav', { mode: 0o600 });
+        const temporary = path.join(folder, '.x.abc.tmp');
+        await writeFile(temporary, '{}', { mode: 0o600 });
+        await utimes(temporary, new Date(0), new Date(0));
+        expect((await store.list()).map(write => write.savedAt)).toEqual([1]);
+        expect((await readdir(folder)).sort()).toEqual(['good.json', 'torn.json.corrupt']);
     });
 
     it('Durable Object store', async () => {
@@ -235,6 +286,6 @@ describe('pending write stores', () => {
                 return { fetch: (input: string | Request, init?: RequestInit) => object.fetch(new Request(input, init)) };
             },
         };
-        await contract(new DurableObjectPendingWriteStore(namespace, { shards: 3 }));
+        await contract(new DurableObjectPendingWriteStore(namespace));
     });
 });

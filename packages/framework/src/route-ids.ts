@@ -18,9 +18,14 @@ export const APP_ROUTE_ID = 'cossack_app';
 /** File path the global `App` component is expected at. */
 export const APP_FILE_PATH = '/src/App';
 
-/** Layout ancestry follows source directories, including groups and parameters. */
-export function resolveLayoutPaths(pageFilePath: string, availableLayouts: readonly string[]): string[] {
-  const available = new Set(availableLayouts);
+/**
+ * Layout ancestry follows source directories, including groups and parameters.
+ * A plugin's layout (one in `owners`) wraps only the same plugin's pages: an
+ * application page under the same directory never gets it, nor its guards.
+ */
+export function resolveLayoutPaths(pageFilePath: string, availableLayouts: readonly string[], owners: Readonly<Record<string, string>> = {}): string[] {
+  const owner = owners[pageFilePath];
+  const available = new Set(availableLayouts.filter(layout => owners[layout] === undefined || owners[layout] === owner));
   const parts = pageFilePath.replace('/src/pages/', '').split('/');
   const stack: string[] = [];
   let directory = '/src/pages';
@@ -33,10 +38,14 @@ export function resolveLayoutPaths(pageFilePath: string, availableLayouts: reado
   return stack;
 }
 
-/** Boundaries follow source ancestry, including directories omitted from the URL. */
-export function resolveNearestSpecialPage(pageFilePath: string, pageKeys: readonly string[], type: '404' | 'error'): string | null {
+/**
+ * Boundaries follow source ancestry, including directories omitted from the URL.
+ * With `owners`, a plugin's boundary serves only the same plugin's pages.
+ */
+export function resolveNearestSpecialPage(pageFilePath: string, pageKeys: readonly string[], type: '404' | 'error', owners?: Readonly<Record<string, string>>): string | null {
   const parts = pageFilePath.replace('/src/pages/', '').split('/');
-  const available = new Set(pageKeys);
+  const owner = owners?.[pageFilePath];
+  const available = new Set(owners ? pageKeys.filter(key => owners[key] === undefined || owners[key] === owner) : pageKeys);
   for (let index = parts.length - 1; index >= 0; index--) {
     const directory = parts.slice(0, index).join('/');
     const candidate = `/src/pages/${directory ? `${directory}/` : ''}${type}/index.ts`;
@@ -252,7 +261,7 @@ function prefixMatcher(pattern: string) {
     return catchAll ? '(.+)' : '([^/]+)';
   }).join('/');
   const regex = expression ? new RegExp(`^/${expression}(?=/|$)`) : /^/;
-  return { ranks, match(pathname: string) {
+  return { ranks, expression: expression ? `^/${expression}` : '^/', match(pathname: string) {
     const matched = regex.exec(pathname);
     if (!matched) return null;
     const params: Record<string, string> = Object.create(null);
@@ -262,6 +271,22 @@ function prefixMatcher(pattern: string) {
     });
     return { params, depth: matched[0].split('/').filter(Boolean).length };
   } };
+}
+
+/**
+ * The route file a public path reaches, in the router's registration order (most
+ * specific pattern first), or `null`. Boundaries are not addressable and never match.
+ */
+export function createRouteMatcher(pageKeys: readonly string[]): (pathname: string) => string | null {
+  const routes = resolvePageRouteFiles([...pageKeys])
+    .map(path => ({ path, pattern: filePathToHttpRoute(path) }))
+    .filter(route => { const kind = classifyRoute(route.pattern); return kind !== '404' && kind !== 'error'; })
+    .sort((a, b) => compareHttpRoutes(a.pattern, b.pattern))
+    .map(route => ({ path: route.path, regex: new RegExp(`${prefixMatcher(route.pattern).expression}$`) }));
+  return pathname => {
+    const path = pathname.length > 1 ? pathname.replace(/\/+$/, '') || '/' : pathname;
+    return routes.find(route => route.regex.test(path))?.path ?? null;
+  };
 }
 
 /**
@@ -348,6 +373,8 @@ export interface RouterContext {
   routePathToFilePathMap: Map<string, string>;
   pages: Record<string, any>;
   layouts: Record<string, any>;
+  /** Route key -> plugin name for plugin pages and layouts (see {@link resolveLayoutPaths}). */
+  owners?: Readonly<Record<string, string>>;
   /** Allowed Origin values for transport requests. Defaults to same-origin. */
   allowedOrigins?: string[];
   /** Request-body limits for `/crpc` and `/upload`. */

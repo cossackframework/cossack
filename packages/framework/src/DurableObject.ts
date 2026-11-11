@@ -56,7 +56,7 @@ export class AppDurableObject extends CossackDurableObject {
         const component = Object.hasOwn(realtimeComponents(), request.componentPath);
         return createChainedComponent({
             component: Component, componentPath: request.componentPath, scopeKey: request.scopeKey,
-            layouts: component ? {} : applicationRegistry.layouts, routePathToIdMap: routeIds.routePathToIdMap,
+            layouts: component ? {} : applicationRegistry.layouts, owners: applicationRegistry.owners, routePathToIdMap: routeIds.routePathToIdMap,
             facilities: { context, user, env: this.env },
             bootstrap: { context, user, env: this.env, page: request.page, skipInit: true, initialState: request.initialState },
         });
@@ -86,7 +86,7 @@ export class AppDurableObject extends CossackDurableObject {
         const guardPath = kind === 'layout' ? componentPath : peer.guardPath ?? componentPath;
         if (!Object.hasOwn(pages, guardPath) && !Object.hasOwn(layouts, guardPath)) return undefined;
         const owner: RealtimeOwner = { kind, id: componentPath, options: Reflect.getMetadata('page:options', Component) as PageOptions | undefined };
-        const paths = new Set([...resolveLayoutPaths(guardPath, Object.keys(layouts)), guardPath]);
+        const paths = new Set([...resolveLayoutPaths(guardPath, Object.keys(layouts), applicationRegistry.owners), guardPath]);
         const middlewares: MiddlewareHandler[] = [...paths].flatMap(path => {
             const GuardComponent = componentOf(pages[path] ?? layouts[path]);
             const declared = GuardComponent ? Reflect.getMetadata('page:options', GuardComponent)?.middlewares ?? [] : [];

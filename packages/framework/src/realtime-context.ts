@@ -1,6 +1,7 @@
 import { Context, type MiddlewareHandler } from 'hono';
 import { assertResponseHeadersMutable, getLocaleCatalog, RESPONSE_HEADER_STATE_KEY } from '@cossackframework/core';
 import configuredMiddlewares from 'virtual:cossack-middlewares';
+import { gatePluginMiddlewares } from './plugin-activity.js';
 import configFactories, { requirements as configRequirements, environment as configEnvironment } from 'virtual:cossack-config';
 import { ensureRequestContextAlsWired, runWithContext } from './request-context-als.js';
 import { withRuntimeRouteParams } from './runtime-websocket.js';
@@ -60,7 +61,7 @@ export async function withRealtimeAuthorization<T>(
     ensureRequestContextAlsWired();
     let outcome: { context: Context; value: T } | null = null;
     let index = -1;
-    const stack = [...configuredMiddlewares, ...middlewares];
+    const stack = [...gatePluginMiddlewares(configuredMiddlewares), ...middlewares];
     let operationStarted = false;
     let operationFailed = false;
     const dispatch = async (position: number): Promise<void> => {

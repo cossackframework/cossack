@@ -7,7 +7,7 @@
  * diffed and shared as a pattern.
  */
 import { field, fieldProblems, slugify, validateValue, type FieldDeclaration } from './fields';
-import { richTextBlocks, richTextMedia, type RichTextDoc } from './richtext';
+import { normalizeRichText, richTextBlocks, richTextMedia, withRichTextBlocks, type RichTextDoc } from './richtext';
 
 export { blocksShapeProblem, blockLayoutProblem, blockStyleProblem, styleValueProblem, blockConditionProblem, blockIdProblem, BLOCK_ID, BLOCK_LIMITS, BREAKPOINTS, CUSTOM_COLOR, MEDIA_ID, BACKGROUND_SIZES, STYLE_PROPERTIES, TEXT_ALIGNMENTS, PRESET_SLUG, INPUT_NAME, CONDITION_OPERATORS, CONDITION_LIMIT,
     type Breakpoint, type StyleProperty, type ConditionOperator } from './block-shape';
@@ -692,8 +692,17 @@ export function validateBlocks(value: readonly Block[], types: ReadonlyMap<strin
                     continue;
                 }
                 const error = validateValue(name, declaration, entry) ?? textProblem(declaration, entry, types, `${block._id}-`, options.inText === true);
-                if (error) errors[`${block._id}.${name}`] = error;
-                else data[name] = entry;
+                if (error) { errors[`${block._id}.${name}`] = error; continue; }
+                if (declaration.kind === 'richtext') {
+                    // Blocks a rich-text value embeds are checked like any others.
+                    const doc = normalizeRichText(entry);
+                    const checked = validateBlocks(richTextBlocks(doc), types, { inText: options.inText === true });
+                    const [path, message] = Object.entries(checked.errors)[0] ?? [];
+                    if (path) errors[`${block._id}.${name}`] = `a block is invalid: ${path} ${message}`;
+                    else data[name] = withRichTextBlocks(doc, checked.blocks);
+                    continue;
+                }
+                data[name] = entry;
             }
             const children = block.children ?? [];
             if (children.length && !type.children) { errors[block._id] = `${block.type} does not hold blocks.`; continue; }
@@ -718,6 +727,15 @@ export function validateBlocks(value: readonly Block[], types: ReadonlyMap<strin
 }
 
 /**
+ * Why a record's Markdown field is refused: a block reference that is not a valid block, as
+ * in a block's own Markdown. The site renders references in both alike.
+ */
+export function textFieldProblem(declaration: FieldDeclaration, value: unknown, types: ReadonlyMap<string, BlockDeclaration>): string | undefined {
+    if (typeof value !== 'string' || declaration.kind !== 'text' || declaration.format !== 'markdown' || declaration.media || !hasBlockReference(value)) return undefined;
+    return markdownBlocksProblem(value, types, '');
+}
+
+/**
  * Why a text value is refused although its declaration takes it: a binding to an unknown scope,
  * or, in Markdown, a block reference that is not a valid block (see `parseBlockText`).
  */
@@ -726,6 +744,10 @@ function textProblem(declaration: FieldDeclaration, value: unknown, types: Reado
     const binding = bindingProblem(value);
     if (binding) return binding;
     if (inText || declaration.kind !== 'text' || declaration.format !== 'markdown' || !hasBlockReference(value)) return undefined;
+    return markdownBlocksProblem(value, types, prefix);
+}
+
+function markdownBlocksProblem(value: string, types: ReadonlyMap<string, BlockDeclaration>, prefix: string): string | undefined {
     const parsed = parseBlockText(value, types, prefix);
     if (parsed.problems.length) return parsed.problems[0];
     const { errors } = validateBlocks(textBlocks(parsed), types, { inText: true });
@@ -1070,14 +1092,20 @@ export const HTML_BLOCK = 'core/html';
  * a block can sit is covered.
  */
 export function htmlBlocks(value: unknown): Map<string, string> {
-    const found = new Map<string, string>();
+    return new Map(htmlBlockList(value));
+}
+
+/** Every Custom HTML block in a value as `[id, html]`, repeated IDs included. */
+function htmlBlockList(value: unknown): [string, string][] {
+    const found: [string, string][] = [];
     const walk = (node: unknown, depth: number): void => {
         if (!node || typeof node !== 'object' || depth > 64) return;
         if (Array.isArray(node)) { for (const item of node) walk(item, depth + 1); return; }
         const object = node as Record<string, unknown>;
         if (object.type === HTML_BLOCK && object.data && typeof object.data === 'object') {
             const data = object.data as Record<string, unknown>;
-            found.set(typeof object._id === 'string' ? object._id : `#${found.size}`, typeof data.html === 'string' ? data.html : '');
+            const html = typeof data.html === 'string' ? data.html : '';
+            found.push([typeof object._id === 'string' ? object._id : `#${html}`, html]);
         }
         for (const child of Object.values(object)) walk(child, depth + 1);
     };
@@ -1085,9 +1113,20 @@ export function htmlBlocks(value: unknown): Map<string, string> {
     return found;
 }
 
-/** Whether a new value adds a Custom HTML block or changes one's HTML; removing one is no change. */
+/**
+ * Whether a new value adds a Custom HTML block or changes one's HTML; removing one is no change.
+ * Every occurrence is compared, so a block that repeats a stored block's ID with other HTML
+ * (in a nested rich-text embed, say) counts as a change; so does a deeper walk than the limit.
+ */
 export function htmlBlocksChanged(next: unknown, previous: unknown): boolean {
-    const before = htmlBlocks(previous);
-    for (const [id, html] of htmlBlocks(next)) if (before.get(id) !== html) return true;
-    return false;
+    const before = new Map<string, Set<string>>();
+    for (const [id, html] of htmlBlockList(previous)) before.set(id, (before.get(id) ?? new Set()).add(html));
+    for (const [id, html] of htmlBlockList(next)) if (!before.get(id)?.has(html)) return true;
+    return tooDeep(next, 0);
+}
+
+function tooDeep(node: unknown, depth: number): boolean {
+    if (!node || typeof node !== 'object') return false;
+    if (depth > 64) return true;
+    return (Array.isArray(node) ? node : Object.values(node as Record<string, unknown>)).some(child => tooDeep(child, depth + 1));
 }

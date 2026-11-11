@@ -1,7 +1,8 @@
 /**
  * `cossack cms import wxr <file>`: a WordPress export (WXR) into the site through the management
  * API, as the signed-in user. Categories and tags become terms, posts and pages become entries
- * (their HTML as a Custom HTML block, or paragraphs when the content is plain text), and an old
+ * (their HTML as a Custom HTML block, or paragraphs when the content is plain text) with their
+ * protection passwords and, for nested pages, their parents, and an old
  * permalink that differs from the new address becomes a redirect. Attachments, comments and
  * authors are reported, not imported: media stays where WordPress serves it until the files are
  * uploaded, and comments have no management endpoint yet.
@@ -49,7 +50,8 @@ export function parseWxr(xml) {
       title: tagText(item, 'title'), slug: tagText(item, 'wp:post_name'), type: tagText(item, 'wp:post_type'), status: tagText(item, 'wp:status'),
       date: Number.isFinite(parsed) ? parsed : null, link: tagText(item, 'link'), content: tagText(item, 'content:encoded'), excerpt: tagText(item, 'excerpt:encoded'),
       categories: terms.filter(term => term[1] === 'category').map(term => term[2]), tags: terms.filter(term => term[1] === 'post_tag').map(term => term[2]),
-      parent: tagText(item, 'wp:post_parent'), order: Number(tagText(item, 'wp:menu_order')) || 0, attachment: tagText(item, 'wp:attachment_url'),
+      id: tagText(item, 'wp:post_id'), parent: tagText(item, 'wp:post_parent'), order: Number(tagText(item, 'wp:menu_order')) || 0, attachment: tagText(item, 'wp:attachment_url'),
+      password: tagText(item, 'wp:post_password'),
     };
   });
   return { title: tagText(channel, 'title'), link: tagText(channel, 'link'), authors, categories, tags, items };
@@ -105,14 +107,46 @@ export async function importWxr(data, request, options = {}) {
     }
     for (const term of pending) report.skipped.push(`${taxonomy} ${term.slug}: its parent ${term.parent} was not found`);
   }
+  // Entries: parents before their children, so a nested page keeps its place and its URL.
+  const entryIds = new Map();
+  const hasField = (name, field) => (collection(name)?.fields ?? []).some(entry => entry.name === field);
+  const isParent = value => value && value !== '0';
+  const importable = [];
   for (const item of data.items) {
     // Attachments are counted once at the end; media is not imported.
     if (item.type === 'attachment') continue;
     const target = item.type === 'post' ? posts : item.type === 'page' ? pages : null;
     if (!target || !collection(target)) { report.skipped.push(`${item.type || 'item'} "${item.title}": not a post or page`); continue; }
-    const status = STATUS[item.status];
-    if (!status) { report.skipped.push(`${item.type} "${item.title}": status ${item.status}`); continue; }
+    if (!STATUS[item.status]) { report.skipped.push(`${item.type} "${item.title}": status ${item.status}`); continue; }
+    importable.push({ item, target, nested: isParent(item.parent) && hasField(target, 'parent') });
+  }
+  const exported = new Map(importable.map(entry => [entry.item.id, entry]));
+  const pending = [...importable];
+  for (let progress = true; pending.length && progress;) {
+    progress = false;
+    for (const entry of [...pending]) {
+      const parentEntry = entry.nested ? exported.get(entry.item.parent) : undefined;
+      // Wait for a parent that is still to come; one that is not in the export, failed, or is in another collection, is reported.
+      if (parentEntry && parentEntry.target === entry.target && !entryIds.has(entry.item.parent) && pending.includes(parentEntry)) continue;
+      pending.splice(pending.indexOf(entry), 1);
+      progress = true;
+      await importEntry(entry);
+    }
+  }
+  // A loop of parents in the export: the rest go in at the top.
+  for (const entry of pending) await importEntry(entry);
+
+  async function importEntry({ item, target, nested }) {
+    let status = STATUS[item.status];
     const fields = { title: item.title || '(untitled)', slug: item.slug || undefined, status, content: contentBlocks(item.content), excerpt: item.excerpt.replace(/<[^>]+>/g, '').trim() };
+    // A WordPress password protects the entry: kept where the collection has one, otherwise the entry stays unpublished.
+    if (item.password) {
+      if (hasField(target, 'password')) fields.password = item.password;
+      else if (status === 'published' || status === 'scheduled') {
+        fields.status = status = 'draft';
+        report.skipped.push(`${item.type} "${item.title}": password protected in WordPress, and ${target} has no password field; imported as a draft`);
+      }
+    }
     if (item.date && (status === 'published' || status === 'scheduled')) fields.publishedAt = item.date;
     if (item.type === 'post') {
       const declared = collection(target);
@@ -121,11 +155,17 @@ export async function importWxr(data, request, options = {}) {
       if (taxonomies.includes('tags')) fields.tags = item.tags.map(slug => termIds.tags.get(slug)).filter(Boolean);
     }
     if (item.type === 'page') fields.menuOrder = item.order;
+    if (nested) {
+      const parent = entryIds.get(item.parent);
+      if (parent && exported.get(item.parent)?.target === target) fields.parent = parent;
+      else report.skipped.push(`parent of ${item.type} "${item.title}": WordPress item ${item.parent} was not imported into ${target}; the entry is at the top level`);
+    }
     let created = null;
     if (!report.dryRun) {
       created = await request('POST', `/api/cms/content/${target}`, fields).catch(error => { report.skipped.push(`${item.type} "${item.title}": ${error.message}`); return null; });
-      if (!created) continue;
+      if (!created) return;
     }
+    if (item.id) entryIds.set(item.id, created?.item?.id ?? `dry:${item.id}`);
     report.entries++;
     const oldPath = pathOf(item.link);
     const newUrl = created?.item?.url ?? null;

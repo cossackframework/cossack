@@ -289,7 +289,8 @@ export default class SitePath extends Cossack {
         const url = this.c.req.path;
         if (typed !== String(resolved.record.password)) return this.redirect(`${url}?password=wrong#password`);
         const secure = new URL(this.c.req.url).protocol === 'https:' ? '; Secure' : '';
-        this.c.header('set-cookie', `${unlockCookie(resolved.record)}=${await unlockToken(resolved.record)}; Path=${url}; Max-Age=${10 * 24 * 3600}; HttpOnly; SameSite=Lax${secure}`, { append: true });
+        // Path=/: the comments form posts to /api/cms/comments, which checks the same unlock.
+        this.c.header('set-cookie', `${unlockCookie(resolved.record)}=${await unlockToken(resolved.record)}; Path=/; Max-Age=${10 * 24 * 3600}; HttpOnly; SameSite=Lax${secure}`, { append: true });
         return this.redirect(url);
     }
 

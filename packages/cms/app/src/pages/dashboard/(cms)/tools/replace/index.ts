@@ -1,7 +1,8 @@
 import { Cossack, Page, State, Server, Client, type HeadValue } from '@cossackframework/core';
 import { Button, Card, CardBody, CardHeader, Checkbox, Field, Input, NativeSelect } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
-import { isCmsError, PERMISSIONS, recordTitle, type Block, type RichTextDoc, type RichTextNode } from '@cossackframework/cms';
+import { isCmsError, PERMISSIONS, recordTitle, type Block, type RichTextDoc } from '@cossackframework/cms';
+import { replaceableText, replaceInBlocks, replaceInDoc, replaceInText } from '../../../../../cms/replace';
 import { requireAny } from '../../../../../cms/guards';
 import { notice, pageHeader } from '../../../../../cms/ui';
 
@@ -59,7 +60,7 @@ export default class ReplacePage extends Cossack {
         const definition = cms.collections().find(entry => entry.name === collection);
         if (!definition) { this.error = __('Choose a collection.'); return; }
         const resource = cms.resource(`cms/${collection}`);
-        const fields = Object.entries(cms.resourceById(`cms/${collection}`).fields).filter(([, declaration]) => declaration.kind === 'string' && !declaration.media && !declaration.taxonomy && !declaration.multiple || declaration.kind === 'text' || declaration.kind === 'richtext' || declaration.kind === 'blocks');
+        const fields = Object.entries(cms.resourceById(`cms/${collection}`).fields).filter(([, declaration]) => replaceableText(declaration) || declaration.kind === 'richtext' || declaration.kind === 'blocks');
         const pattern = new RegExp(this.find.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), matchCase ? 'g' : 'gi');
         try {
             for (let offset = 0; offset < 1000; offset += 100) {
@@ -72,7 +73,7 @@ export default class ReplacePage extends Cossack {
                     for (const [name, declaration] of fields) {
                         const value = record[name];
                         const result = declaration.kind === 'richtext' ? replaceInDoc(value as RichTextDoc | null, pattern, this.replace)
-                            : declaration.kind === 'blocks' ? replaceInBlocks(value as Block[] | null, pattern, this.replace)
+                            : declaration.kind === 'blocks' ? replaceInBlocks(value as Block[] | null, cms.blockTypes, pattern, this.replace)
                             : typeof value === 'string' ? replaceInText(value, pattern, this.replace) : null;
                         if (!result || !result.count) continue;
                         changed[name] = result.value;
@@ -116,44 +117,4 @@ export default class ReplacePage extends Cossack {
                     : html`<p class="px-4 py-6 text-sm text-muted-foreground">${__('No entry contains the text.')}</p>`)}`) : null}
         </div>`;
     }
-}
-
-function replaceInText(value: string, pattern: RegExp, replacement: string): { value: string; count: number } {
-    let count = 0;
-    const next = value.replace(pattern, () => { count++; return replacement; });
-    return { value: next, count };
-}
-
-function replaceInDoc(doc: RichTextDoc | null, pattern: RegExp, replacement: string): { value: RichTextDoc; count: number } | null {
-    if (!doc || !Array.isArray(doc.content)) return null;
-    let count = 0;
-    const visit = (node: RichTextNode): RichTextNode => {
-        if (node.type === 'text' && typeof node.text === 'string') {
-            const result = replaceInText(node.text, pattern, replacement);
-            count += result.count;
-            return result.count && result.value ? { ...node, text: result.value } : node;
-        }
-        return node.content ? { ...node, content: node.content.map(visit) } : node;
-    };
-    const content = doc.content.map(visit);
-    return { value: { ...doc, content }, count };
-}
-
-function replaceInBlocks(blocks: Block[] | null, pattern: RegExp, replacement: string): { value: Block[]; count: number } | null {
-    if (!Array.isArray(blocks)) return null;
-    let count = 0;
-    const visit = (block: Block): Block => {
-        const data: Record<string, unknown> = { ...block.data };
-        for (const [name, value] of Object.entries(data)) {
-            if (typeof value === 'string' && !/^[A-Za-z0-9_-]{16,}$/.test(value)) {
-                const result = replaceInText(value, pattern, replacement);
-                if (result.count) { data[name] = result.value; count += result.count; }
-            } else if (value && typeof value === 'object' && !Array.isArray(value) && 'type' in (value as object) && (value as RichTextDoc).type === 'doc') {
-                const result = replaceInDoc(value as RichTextDoc, pattern, replacement);
-                if (result?.count) { data[name] = result.value; count += result.count; }
-            }
-        }
-        return { ...block, data, ...(block.children ? { children: block.children.map(visit) } : {}) };
-    };
-    return { value: blocks.map(visit), count };
 }

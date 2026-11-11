@@ -1,9 +1,10 @@
 /**
  * Plugin schedules: the clock's jobs. Each schedule an active plugin declares has a row with
  * its next time. A tick (from maintenance, at most once a minute per site) queues a due
- * occurrence as a `plugin.job` outbox row and advances the row with a conditional update, so two
- * hosts ticking together never queue one occurrence twice, and occurrences missed while nothing
- * ran collapse into one, or into none past the grace. See `specs/cms-plugin-capabilities.md`.
+ * occurrence as a `plugin.job` outbox row and advances the row with a conditional update in the
+ * same write, so a failed write loses no occurrence, two hosts ticking together never queue one
+ * occurrence twice, and occurrences missed while nothing ran collapse into one, or into none past
+ * the grace. See `specs/cms-plugin-capabilities.md`.
  */
 import type { RomeDB } from '@cossackframework/romedb';
 import { nextCronTime } from '../cron';
@@ -74,18 +75,22 @@ export class CmsSchedules {
                 continue;
             }
             if (row.nextAt > now) continue;
-            // One host claims the occurrence; the others see a changed next_at and move on.
-            const claimed = await this.#db.write([{
-                rql: 'UPDATE cms_schedules SET next_at = $next, last_at = $due, updated_at = $now WHERE id = $id AND next_at = $due',
-                params: { $id: id, $next: nextCronTime(schedule.cron, now), $due: row.nextAt, $now: now },
-            }], WRITE);
-            if (claimed.results[0]!.affected !== 1n) continue;
-            if (now - row.nextAt > SCHEDULE_GRACE_MS) { skipped.push(id); continue; }
+            // One host claims the occurrence; the others see a changed next_at and move on. The
+            // claim and the occurrence's outbox row are one write, so a failed write leaves the
+            // occurrence due for the next tick instead of advanced and lost.
+            const params = { $id: id, $next: nextCronTime(schedule.cron, now), $due: row.nextAt, $now: now };
+            const claim = { rql: 'UPDATE cms_schedules SET next_at = $next, last_at = $due, updated_at = $now WHERE id = $id AND next_at = $due', params };
+            if (now - row.nextAt > SCHEDULE_GRACE_MS) {
+                const claimed = await this.#db.write([claim], WRITE);
+                if (claimed.results[0]!.affected === 1n) skipped.push(id);
+                continue;
+            }
             const event: PluginJobEvent = {
                 eventId: `schedule:${id}:${row.nextAt}`, topic: 'plugin.job', at: now, plugin: schedule.plugin, name: schedule.name,
                 payload: { cron: schedule.cron, scheduledAt: row.nextAt }, scheduledAt: row.nextAt, key: null,
             };
-            if (await this.#outbox.enqueue('plugin.job', event, { ignoreDuplicate: true })) {
+            const written = await this.#outbox.enqueueWith('plugin.job', event, { rql: 'EXISTS (SELECT 1 FROM cms_schedules WHERE id = $id AND next_at = $due)', params: { $id: id, $due: row.nextAt } }, [claim]);
+            if (written.results[0]!.affected === 1n && written.inserted) {
                 queued.push(id);
                 this.#queued();
             }

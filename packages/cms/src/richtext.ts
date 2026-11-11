@@ -55,7 +55,7 @@ const ALIGNMENTS = new Set(['left', 'center', 'right', 'justify']);
 /** A link target: `http(s)`, `mailto:`, `tel:`, a site path or a fragment. */
 export function safeLinkUrl(url: unknown): url is string {
     return typeof url === 'string' && url.length <= 2048 && !/[\s\u0000-\u001f\u007f]/.test(url)
-        && /^(?:https?:\/\/[^/]|mailto:|tel:|\/(?!\/)|#)/i.test(url);
+        && !url.includes('\\') && /^(?:https?:\/\/[^/]|mailto:|tel:|\/(?!\/)|#)/i.test(url);
 }
 
 /** An image source: a media file of this site or an `https` URL. */

@@ -42,7 +42,7 @@ export async function apiEntries(cms: CmsHost, collection: CollectionDefinition,
 }
 
 /** Synced patterns the entries' content and rich text use, by ID: their title and blocks. */
-export async function apiPatterns(cms: CmsHost, collection: CollectionDefinition, records: readonly RecordShape[]): Promise<Record<string, { title: string; content: readonly Block[] }>> {
+export async function apiPatterns(cms: CmsHost, collection: CollectionDefinition, records: readonly { readonly [field: string]: unknown }[]): Promise<Record<string, { title: string; content: readonly Block[] }>> {
     const fields = Object.entries(cms.resourceById(`cms/${collection.name}`).fields);
     const rich = fields.filter(([, field]) => field.kind === 'richtext').map(([name]) => name);
     const blocks = fields.filter(([, field]) => field.kind === 'blocks').map(([name]) => name);
@@ -75,6 +75,34 @@ export function writeAllowed(c: Context): Response | null {
     if (!c.get('cms.token') && !isSameOriginPost(c.req.raw)) return c.json({ error: 'Cross-site writes are not allowed.', code: 'CMS_FORBIDDEN' }, 403);
     if (c.get('principal')?.kind !== 'user') return c.json({ error: 'Sign in, or send an application password.', code: 'CMS_UNAUTHENTICATED' }, 401, { 'www-authenticate': 'Bearer' });
     return null;
+}
+
+/**
+ * The request's body as a Request of its own, read up to `maxBytes`: null past it, whether or not
+ * the request declared its length, so a chunked post cannot make the server buffer without limit.
+ */
+export async function cappedRequest(c: Context, maxBytes: number): Promise<Request | null> {
+    const raw = c.req.raw;
+    const declared = Number(raw.headers.get('content-length'));
+    if (Number.isFinite(declared) && declared > maxBytes) return null;
+    if (!raw.body) return raw;
+    const reader = raw.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        size += value.byteLength;
+        if (size > maxBytes) { await reader.cancel().catch(() => undefined); return null; }
+        chunks.push(value);
+    }
+    const body = new Uint8Array(size);
+    let at = 0;
+    for (const chunk of chunks) { body.set(chunk, at); at += chunk.byteLength; }
+    const headers = new Headers(raw.headers);
+    headers.delete('content-length');
+    headers.delete('transfer-encoding');
+    return new Request(raw.url, { method: raw.method, headers, body });
 }
 
 /** The JSON object a write sends, or a 400 answer. */

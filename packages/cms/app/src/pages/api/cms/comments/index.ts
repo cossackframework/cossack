@@ -1,8 +1,11 @@
 import type { Context } from 'hono';
 import { createTurnstileVerifier } from '@cossackframework/auth/turnstile';
-import { isCmsError, isSameOriginPost, type CommentShape } from '@cossackframework/cms';
+import { isCmsError, isSameOriginPost, systemPrincipal, type CommentShape } from '@cossackframework/cms';
 import type { CmsHost } from '@cossackframework/cms/server';
+import { getCookie } from 'hono/cookie';
+import { getClientIp } from '@cossackframework/core';
 import { apiError } from '../../../../cms/content-api';
+import { isMembersOnly, isProtected, requestLock, unlockCookie } from '../../../../cms/site';
 
 /**
  * Approved comments of an entry, oldest first, for headless sites:
@@ -13,9 +16,12 @@ export const GET = async (c: Context) => {
     try {
         const collection = cms.collection(c.req.query('collection') ?? '');
         const entry = await cms.resource(`cms/${collection.name}`).get(c.req.query('entry') ?? '', { principal: { kind: 'anonymous' } });
-        if (!collection.comments || !entry) return c.json({ error: 'Entry not found.', code: 'CMS_NOT_FOUND' }, 404);
+        // A locked entry's discussion is as locked as its content.
+        const lock = entry ? await lockedFor(c, cms, collection.name, entry) : null;
+        if (!collection.comments || !entry || !lock || lock.locked) return c.json({ error: 'Entry not found.', code: 'CMS_NOT_FOUND' }, 404);
         const comments = await cms.comments.forEntry(`cms/${collection.name}`, entry.id);
-        c.header('cache-control', 'public, max-age=60');
+        // Protected and members-only entries answer per reader: never from a shared cache.
+        c.header('cache-control', lock.lockable ? 'private, no-store' : 'public, max-age=60');
         return c.json({ items: comments.map(comment => ({ id: comment.id, parentId: comment.parentId, author: comment.authorName, authorUrl: comment.authorUrl || null, content: comment.content, createdAt: comment.createdAt })) });
     } catch (error) { return apiError(c, error); }
 };
@@ -38,7 +44,9 @@ export const POST = async (c: Context) => {
         input = Object.fromEntries(Object.entries(raw).map(([key, value]) => [key, typeof value === 'string' ? value : '']));
     } catch { return c.json({ error: 'Send the comment as a form or JSON.', code: 'CMS_VALIDATION' }, 400); }
     const back = async (reason: string, url: string | null) => c.redirect(`${url ?? '/'}?comment=${reason}#comments`, 303);
-    const ip = c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for')?.split(',')[0]?.trim();
+    // The address the deployment trusts (TRUSTED_PROXY_HEADER, or the socket), not a header anyone can send.
+    const address = getClientIp(c);
+    const ip = address && address !== 'anonymous' ? address : undefined;
     const secret = env('TURNSTILE_SECRET_KEY', '');
     if (secret && env('TURNSTILE_SITE_KEY', '')) {
         const verifier = createTurnstileVerifier({ secret, expectedHostname: env('TURNSTILE_HOSTNAME', '') || new URL(c.req.url).hostname, expectedAction: 'comment' });
@@ -46,6 +54,8 @@ export const POST = async (c: Context) => {
         if (!verdict.success) return json ? c.json({ error: 'The check against bots failed. Try again.', code: 'CMS_FORBIDDEN' }, 403) : back('bot', await entryUrl(cms, input));
     }
     try {
+        const target = await commentTarget(cms, input);
+        if (target && (await lockedFor(c, cms, target.collection, target.entry)).locked) return json ? c.json({ error: 'Entry not found.', code: 'CMS_NOT_FOUND' }, 404) : back('closed', await entryUrl(cms, input));
         const posted = await cms.postComment({
             collection: input.collection ?? '', entry: input.entry ?? '', parent: input.parent || null, content: input.content ?? '',
             authorName: input.authorName ?? '', authorEmail: input.authorEmail ?? '', authorUrl: input.authorUrl ?? '', trap: input.website ?? '',
@@ -59,6 +69,23 @@ export const POST = async (c: Context) => {
         return back(REASONS[error.code] ?? 'invalid', await entryUrl(cms, input));
     }
 };
+
+/** The entry's lock for this request's reader (a password not typed, or members only), and whether it has one at all. */
+async function lockedFor(c: Context, cms: CmsHost, collection: string, entry: { id: string }): Promise<{ locked: boolean; lockable: boolean }> {
+    // The anonymous read leaves the password out; the lock needs the stored one.
+    const record = await cms.resource(`cms/${collection}`).get(entry.id, { principal: systemPrincipal('comments') });
+    if (!record) return { locked: true, lockable: true };
+    const lockable = isProtected(record) || isMembersOnly(record);
+    return { locked: lockable && await requestLock(cms, record, `cms/${collection}`, c.get('principal'), getCookie(c, unlockCookie(record))) !== null, lockable };
+}
+
+async function commentTarget(cms: CmsHost, input: Record<string, string>): Promise<{ collection: string; entry: Record<string, unknown> & { id: string } } | null> {
+    try {
+        const collection = cms.collection(input.collection ?? '');
+        const entry = await cms.resource(`cms/${collection.name}`).get(input.entry ?? '', { principal: { kind: 'anonymous' } });
+        return entry ? { collection: collection.name, entry } : null;
+    } catch { return null; }
+}
 
 async function entryUrl(cms: CmsHost, input: Record<string, string>): Promise<string | null> {
     try {

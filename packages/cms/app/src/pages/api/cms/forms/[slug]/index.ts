@@ -2,7 +2,8 @@ import type { Context } from 'hono';
 import { createTurnstileVerifier } from '@cossackframework/auth/turnstile';
 import { formDataValues, FORM_UPLOAD_LIMIT_MB, isCmsError, isSameOriginPost, type CmsError, type FormField, type PostedValue, type SubmittedValues } from '@cossackframework/cms';
 import { renderMarkdown, type LoadedForm } from '@cossackframework/cms/server';
-import { apiError } from '../../../../../cms/content-api';
+import { getClientIp } from '@cossackframework/core';
+import { apiError, cappedRequest } from '../../../../../cms/content-api';
 import { messageHtml, type FormResult } from '../../../../../cms/site-forms';
 
 /**
@@ -86,9 +87,9 @@ export const POST = async (c: Context) => {
     let form: LoadedForm | null;
     try { form = await cms.forms.get(c.req.param('slug') ?? ''); } catch (error) { return apiError(c, error); }
     if (!form?.published) return c.json({ error: 'This form does not exist.', code: 'CMS_NOT_FOUND' }, 404);
-    // A post is read whole, files included: one far over the files' limit is refused before it is read.
-    const length = Number(c.req.header('content-length'));
-    if (Number.isFinite(length) && length > (FORM_UPLOAD_LIMIT_MB + 1) * 1024 * 1024) {
+    // A post is read whole, files included: one far over the files' limit is refused, declared or not, before it is parsed.
+    const posted = await cappedRequest(c, (FORM_UPLOAD_LIMIT_MB + 1) * 1024 * 1024);
+    if (!posted) {
         const message = `The form is too large to send: its files add up to at most ${FORM_UPLOAD_LIMIT_MB} MB.`;
         if (json) return c.json({ error: message, code: 'CMS_LIMIT' }, 413);
         const page = samePath((() => { try { return new URL(c.req.header('referer') ?? '').pathname; } catch { return undefined; } })());
@@ -99,12 +100,12 @@ export const POST = async (c: Context) => {
     let meta: { page?: string; started?: string; trap?: string; token?: string; add?: string; remove?: string };
     try {
         if ((c.req.header('content-type') ?? '').includes('application/json')) {
-            const body = await c.req.json() as Record<string, unknown>;
+            const body = await posted.json() as Record<string, unknown>;
             values = body;
             const text = (key: string) => typeof body[key] === 'string' ? body[key] as string : undefined;
             meta = { page: text('_page'), started: text('_started'), trap: text('_website'), token: text('cf-turnstile-response') ?? text('turnstile') };
         } else {
-            const data = await c.req.formData();
+            const data = await posted.formData();
             values = formDataValues(data, form.ref.inputs);
             const text = (key: string) => { const value = data.get(key); return typeof value === 'string' ? value : undefined; };
             meta = { page: text('_page'), started: text('_started'), trap: text('_website'), token: text('cf-turnstile-response'), add: text('_add'), remove: text('_remove') };
@@ -119,7 +120,9 @@ export const POST = async (c: Context) => {
         const result: FormResult = { kind: 'edit', html: '', values: typed };
         return back(await cms.forms.saveResult(form.ref.id, result));
     }
-    const ip = c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for')?.split(',')[0]?.trim();
+    // The address the deployment trusts (TRUSTED_PROXY_HEADER, or the socket), not a header anyone can send.
+    const address = getClientIp(c);
+    const ip = address && address !== 'anonymous' ? address : undefined;
     const secret = env('TURNSTILE_SECRET_KEY', '');
     const botCheck = secret && env('TURNSTILE_SITE_KEY', '') ? async () => {
         const verifier = createTurnstileVerifier({ secret, expectedHostname: env('TURNSTILE_HOSTNAME', '') || new URL(c.req.url).hostname, expectedAction: 'form' });

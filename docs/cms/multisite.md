@@ -221,9 +221,11 @@ the site keeps running, on every runtime (`?format=romedb` on either address, *D
 database file* in the dashboard). Use it for sites too large to import.
 
 - **It keeps** the site's content, settings and members, and its own accounts with their
-  password hashes, authenticator secrets, passkeys and application passwords. Keep it private.
+  password hashes, passkeys and application passwords (stored as digests). Keep it private.
 - **It leaves out** sessions, sign-in challenges, reset tokens, preview links, handoffs and the
-  cache, plus webhooks and pending work (the outbox, webhook deliveries, background jobs).
+  cache, authenticator apps and recovery codes (their secrets would make valid codes, so
+  accounts set them up again), plus webhooks and pending work (the outbox, webhook deliveries,
+  background jobs).
   RomeDB never reads these tables into the copy, so no part of the file holds their rows. Set
   up webhooks again after the move. Media files are not included.
 - **The main site's file** is the network's database, with every network account, so only

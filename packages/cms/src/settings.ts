@@ -189,7 +189,7 @@ export const discussion: SettingsGroup = {
         closeAfterDays: field.integer({ default: 0, min: 0, max: 3650, label: 'Close comments on entries older than (days)', description: '0 keeps comments open.' }),
         threadDepth: field.integer({ default: 3, min: 1, max: 5, label: 'Nest replies up to this many levels' }),
         moderation: { ...field.enum(['all', 'first', 'none'], { default: 'first', label: 'Before a comment appears' }),
-            choices: { all: 'It must be approved', first: 'Its author must have an earlier approved comment', none: 'Nothing: comments appear at once' } },
+            choices: { all: 'It must be approved', first: 'Its author must be signed in and have an earlier approved comment', none: 'Nothing: comments appear at once' } },
         maxLinks: field.integer({ default: 2, min: 0, max: 20, label: 'Hold a comment for moderation when it has at least this many links', description: '0 holds none for links.' }),
         blockedWords: field.text({ max: 5000, default: '', label: 'Disallowed words', description: 'One per line. A comment containing one in its content, name, email or URL goes to spam.' }),
         notifyPosted: field.boolean({ default: true, label: 'Email the administration address when anyone posts a comment' }),

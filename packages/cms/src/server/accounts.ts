@@ -22,6 +22,11 @@ export interface CmsAccount {
     readonly createdAt: number;
     /** When the account last started a session, or null when never. */
     readonly lastSignInAt: number | null;
+    /**
+     * Registered and waiting for its email's confirmation: created disabled and not changed since,
+     * never signed in. An account an administrator disabled, or changed in any way, is not.
+     */
+    readonly unconfirmed: boolean;
 }
 
 export interface AccountProfile {
@@ -33,7 +38,7 @@ export interface AccountProfile {
 const EMAIL = /^[^\s@]{1,64}@[^\s@]{1,190}$/;
 export const ACCOUNT_ID = /^[A-Za-z0-9_-]{1,80}$/;
 const TOKEN = /^[A-Za-z0-9_-]{32,128}$/;
-const COLUMNS = 'id, email, name, avatar, status, network_role, created_at, last_sign_in_at';
+const COLUMNS = 'id, email, name, avatar, status, network_role, created_at, last_sign_in_at, updated_at';
 const WRITE = { kind: 'cms.accounts', retryConflicts: 5 } as const;
 /** What moves with an account to another database: the row, second factors and application passwords. */
 const MOVED = {
@@ -78,7 +83,20 @@ export class CmsAccounts {
         });
     }
 
-    async create(input: AccountProfile & { email: string; name: string; password?: string; id?: string; networkRole?: typeof NETWORK_ADMIN | null }): Promise<CmsAccount> {
+    /**
+     * The disabled account this email and password name, or null: for telling someone whose
+     * account waits for approval that it does, only once they proved it is theirs. Active
+     * accounts sign in through `verifier`.
+     */
+    async disabledWithPassword(email: string, password: string): Promise<CmsAccount | null> {
+        const result = await this.#db.read([{ rql: "SELECT id, password_hash FROM cms_accounts WHERE email = $email AND status = 'disabled'", params: { $email: normalizeEmail(email) } }]);
+        const row = result.results[0]!.rows[0];
+        if (!row || typeof row[1] !== 'string' || !(await this.#hasher.verify(password, row[1]))) return null;
+        return this.get(row[0] as string);
+    }
+
+    /** A new account; `status: 'disabled'` for one that waits for its email's confirmation (`unconfirmed`). */
+    async create(input: AccountProfile & { email: string; name: string; password?: string; id?: string; networkRole?: typeof NETWORK_ADMIN | null; status?: 'active' | 'disabled' }): Promise<CmsAccount> {
         const email = normalizeEmail(input.email);
         checkProfile({ email, name: input.name, avatar: input.avatar ?? null });
         if (input.password !== undefined) checkPassword(input.password);
@@ -88,8 +106,8 @@ export class CmsAccounts {
         const now = this.#now();
         try {
             await this.#db.write([{
-                rql: "INSERT INTO cms_accounts (id, email, name, password_hash, avatar, status, network_role, created_at, updated_at) VALUES ($id, $email, $name, $hash, $avatar, 'active', $role, $now, $now)",
-                params: { $id: id, $email: email, $name: input.name.trim(), $hash: hash, $avatar: input.avatar ?? null, $role: input.networkRole ?? null, $now: now },
+                rql: 'INSERT INTO cms_accounts (id, email, name, password_hash, avatar, status, network_role, created_at, updated_at) VALUES ($id, $email, $name, $hash, $avatar, $status, $role, $now, $now)',
+                params: { $id: id, $email: email, $name: input.name.trim(), $hash: hash, $avatar: input.avatar ?? null, $status: input.status === 'disabled' ? 'disabled' : 'active', $role: input.networkRole ?? null, $now: now },
             }], WRITE);
         } catch (error) { throw uniqueEmail(error); }
         return (await this.get(id))!;
@@ -345,6 +363,7 @@ function accountOf(row: readonly Value[]): CmsAccount {
     return Object.freeze({
         id: row[0] as string, email: row[1] as string, name: row[2] as string, avatar: row[3] as string | null, status: row[4] as CmsAccount['status'],
         networkRole: row[5] === NETWORK_ADMIN ? NETWORK_ADMIN : null, createdAt: Number(row[6] as bigint), lastSignInAt: row[7] === null ? null : Number(row[7] as bigint),
+        unconfirmed: row[4] === 'disabled' && row[7] === null && row[8] !== undefined && Number(row[8] as bigint) === Number(row[6] as bigint),
     });
 }
 

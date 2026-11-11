@@ -268,6 +268,13 @@ describe('essentials helpers', () => {
         expect(customCssProblem('.a { background: url(x) }')).toBe('Additional CSS cannot use url().');
         expect(customCssProblem('.a { width: expression(1) }')).toBe('Additional CSS cannot run scripts.');
         expect(customCssProblem('</style><script>')).toBe('Additional CSS cannot contain HTML tags.');
+        // Escapes and comments are read as the browser reads them.
+        expect(customCssProblem('.a { background: u\\72l(https://evil.example/x) }')).toBe('Additional CSS cannot use url().');
+        expect(customCssProblem('.a { background: \\75 rl(x) }')).toBe('Additional CSS cannot use url().');
+        expect(customCssProblem('@\\69mport "x.css";')).toBe('Additional CSS cannot use @import.');
+        expect(customCssProblem('@im\\port "x.css";')).toBe('Additional CSS cannot use @import.');
+        expect(customCssProblem('.a { background: image-set("https://evil.example/x" 1x) }')).toBe('Additional CSS cannot load images.');
+        expect(customCssProblem('.a::before { content: "\\2014" } /* a comment */')).toBeUndefined();
         // A body's embedded block carries its style.
         const doc = normalizeRichText({ type: 'doc', content: [{ type: 'cmsBlock', attrs: { _id: 'q', type: 'core/quote', data: { text: 'q' }, style: { background: 'brand' } } }] });
         expect(richTextBlocks(doc)[0]).toMatchObject({ _id: 'q', style: { background: 'brand' } });
@@ -284,7 +291,8 @@ describe('essentials helpers', () => {
         expect(redirectProblems({ source: '/gone', target: '', status: 410 })).toEqual([]);
         expect(redirectProblems({ source: '/a', target: 'javascript:alert(1)' })).toHaveLength(1);
         expect(webhookUrlProblem('https://hooks.example.com/build')).toBeUndefined();
-        expect(webhookUrlProblem('http://localhost:8787/hook')).toBeUndefined();
+        expect(webhookUrlProblem('http://localhost:8787/hook')).toBeDefined();
+        expect(webhookUrlProblem('http://localhost:8787/hook', { local: true })).toBeUndefined();
         expect(webhookUrlProblem('http://example.com/hook')).toContain('HTTPS');
         expect(webhookUrlProblem('https://user:secret@example.com/')).toContain('credentials');
     });

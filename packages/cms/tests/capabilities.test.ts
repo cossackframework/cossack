@@ -152,6 +152,21 @@ describe.skipIf(!live)('plugin capabilities', () => {
         const before = ran.length;
         await cms.outbox.dispatch({ limit: 10 });
         expect(ran.slice(before).filter(entry => entry.name === 'heartbeat')).toEqual([{ name: 'heartbeat', payload: { cron: '*/5 * * * *', scheduledAt: planned }, scheduledAt: planned }]);
+        // A write that fails leaves the occurrence due: the next tick queues it.
+        const due = (await cms.schedules.list())[0]!.nextAt;
+        clock = due + 1_000;
+        const write = cms.db.write.bind(cms.db);
+        let failures = 0;
+        cms.db.write = (async (statements: readonly { rql: string }[], options?: unknown) => {
+            if (statements.some(statement => statement.rql.includes('INSERT INTO cms_outbox')) && failures++ === 0) throw new Error('outbox unavailable');
+            return write(statements as never, options as never);
+        }) as typeof cms.db.write;
+        try {
+            await expect(cms.schedules.tick()).rejects.toThrow('outbox unavailable');
+            expect((await cms.schedules.list())[0]).toMatchObject({ nextAt: due, lastAt: planned });
+            expect(await cms.schedules.tick()).toEqual({ queued: ['desk:heartbeat'], skipped: [] });
+        } finally { cms.db.write = write; }
+        await cms.outbox.dispatch({ limit: 10 });
         // Long after, the missed occurrence is skipped and the row planned ahead.
         clock += 3 * 60 * 60_000;
         const late = await cms.schedules.tick();

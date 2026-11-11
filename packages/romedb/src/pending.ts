@@ -18,8 +18,37 @@ export interface PendingWriteStore {
     put(id: string, write: PendingWrite): Promise<void>;
     get(id: string): Promise<PendingWrite | undefined>;
     delete(id: string): Promise<void>;
-    /** Oldest first. */
-    list(options?: { limit?: number }): Promise<readonly PendingWrite[]>;
+    /** Oldest first (by `savedAt`, then request ID), after `after` when it is given. */
+    list(options?: PendingListOptions): Promise<readonly PendingWrite[]>;
+}
+
+export interface PendingListOptions {
+    limit?: number;
+    /** Continue after this write, as {@link pendingCursor} gives it, to page past the oldest. */
+    after?: PendingCursor;
+}
+
+/** A position in the oldest-first order of saved writes. */
+export interface PendingCursor {
+    readonly savedAt: number;
+    readonly id: string;
+}
+
+export function pendingCursor(write: PendingWrite): PendingCursor {
+    return { savedAt: write.savedAt, id: preparedRequestId(write.request) };
+}
+
+/** Sort saved writes oldest first, keep those after the cursor, and cut to the limit. */
+export function pagePendingWrites(writes: readonly PendingWrite[], options: PendingListOptions = {}): PendingWrite[] {
+    const keyed = writes.map(write => ({ write, cursor: pendingCursor(write) }));
+    keyed.sort((a, b) => compareCursors(a.cursor, b.cursor));
+    const after = options.after;
+    const page = after ? keyed.filter(entry => compareCursors(entry.cursor, after) > 0) : keyed;
+    return page.slice(0, options.limit ?? page.length).map(entry => entry.write);
+}
+
+function compareCursors(a: PendingCursor, b: PendingCursor): number {
+    return a.savedAt - b.savedAt || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 }
 
 export class PendingWriteConflictError extends Error {
@@ -77,8 +106,7 @@ export class MemoryPendingWriteStore implements PendingWriteStore {
         this.#writes.delete(id);
     }
 
-    async list(options: { limit?: number } = {}): Promise<readonly PendingWrite[]> {
-        const writes = [...this.#writes.values()].map(decodePendingWrite).sort((a, b) => a.savedAt - b.savedAt);
-        return writes.slice(0, options.limit ?? writes.length);
+    async list(options: PendingListOptions = {}): Promise<readonly PendingWrite[]> {
+        return pagePendingWrites([...this.#writes.values()].map(decodePendingWrite), options);
     }
 }

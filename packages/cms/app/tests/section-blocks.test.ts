@@ -110,7 +110,7 @@ describe('section blocks', () => {
 
     it('renders a map of an address, or an embed URL it checks again, and nothing else', async () => {
         const byAddress = await render(block('core/map', { address: 'Hanoi, Vietnam', zoom: 12, height: 'tall', caption: 'Find us' }));
-        expect(byAddress).toContain('<figure class="cms-map my-6" data-height="tall"><iframe class="cms-map-frame" src="https://maps.google.com/maps?q=Hanoi%2C%20Vietnam&amp;z=12&amp;output=embed" title="Find us" loading="lazy" referrerpolicy="no-referrer-when-downgrade" allowfullscreen></iframe><figcaption class="cms-map-caption">Find us</figcaption></figure>');
+        expect(byAddress).toContain('<figure class="cms-map my-6" data-height="tall"><iframe class="cms-map-frame" src="https://maps.google.com/maps?q=Hanoi%2C%20Vietnam&amp;z=12&amp;output=embed" title="Find us" loading="lazy" referrerpolicy="no-referrer" allowfullscreen></iframe><figcaption class="cms-map-caption">Find us</figcaption></figure>');
         const embed = await render(block('core/map', { url: 'https://www.openstreetmap.org/export/embed.html?bbox=1,2,3,4' }));
         expect(embed).toContain('src="https://www.openstreetmap.org/export/embed.html?bbox=1,2,3,4" title="Map"');
         expect(await render(block('core/map', { url: 'https://evil.example/maps/embed?x' }))).toBe('');

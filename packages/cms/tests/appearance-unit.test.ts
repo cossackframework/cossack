@@ -49,6 +49,7 @@ describe('rich text', () => {
         expect(safeLinkUrl('mailto:a@example.com')).toBe(true);
         expect(safeLinkUrl('/about#team')).toBe(true);
         expect(safeLinkUrl('https://exa mple.com')).toBe(false);
+        for (const url of ['//evil.example', '/\\evil.example', '\\\\evil.example', 'https:\\\\evil.example', 'javascript:alert(1)']) expect(safeLinkUrl(url)).toBe(false);
     });
 
     it('renders escaped HTML, plain text and parts split at blocks', () => {

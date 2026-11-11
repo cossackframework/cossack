@@ -34,7 +34,7 @@ export async function siteEditable(cms: CmsHost, collection: string, id: string,
 
 /** A draft of the saved entry: its editor view and control values, blocks' data as control values too. */
 export async function siteDraft(cms: CmsHost, collection: CollectionDefinition, record: RecordShape, principal: Principal): Promise<SiteDraft> {
-    const view = await editorView(cms, collection.name);
+    const view = await editorView(cms, collection.name, principal);
     const values = await entryValues(cms, view, record);
     const blocksField = view.fields.find(field => field.kind === 'blocks')?.name ?? null;
     const bodyField = view.fields.find(field => field.name === 'body' && field.kind === 'richtext')?.name ?? view.fields.find(field => field.kind === 'richtext')?.name ?? null;
@@ -67,7 +67,7 @@ export async function frameDraft(cms: CmsHost, principal: Principal): Promise<Si
     if (principal.kind !== 'user' || !hasPermission(principal, PERMISSIONS.manageAppearance)) return null;
     const view: EditorView = {
         resource: '', route: '', label: '', singular: '', titleField: '', titleRequired: false, slug: false, publishable: false, hierarchical: false, path: null,
-        fields: [], taxonomies: [], blocks: await blockOptions(cms), presets: await activePresets(cms), template: [], groups: [], layout: { tabs: [], sidebar: [] }, collections: [], sources: await sourceChoices(cms),
+        fields: [], restricted: [], taxonomies: [], blocks: await blockOptions(cms), presets: await activePresets(cms), template: [], groups: [], layout: { tabs: [], sidebar: [] }, collections: [], sources: await sourceChoices(cms),
     };
     return {
         collection: '', id: '', rev: 0, view, values: {}, previews: {}, references: {}, blocksField: null, bodyField: null,
@@ -167,13 +167,17 @@ export function patternDraftBlocks(patterns: readonly { id: string; blocks: Edit
     return areaDraftBlocks(patterns.map(pattern => ({ name: pattern.id, blocks: pattern.blocks })), options);
 }
 
-/** The entry as the site shows it with the draft's values, like a preview, with its forms and the draft's patterns. Invalid values throw. */
+/**
+ * The entry as the site shows it with the draft's values, like a preview, with its forms and the
+ * draft's patterns. Callers have checked the principal may edit the entry, so nothing of it is
+ * locked: a members-only or protected entry shows its content to its editor. Invalid values throw.
+ */
 export async function draftEntry(cms: CmsHost, collection: CollectionDefinition, record: RecordShape, values: EditorValues, forms?: FormRequest, documents: readonly SiteDocument[] = [], options: readonly BlockOption[] = []): Promise<EntryView> {
     const input = await entryInput(cms, collection.name, values);
     // Typed tags are names until the save creates their terms; the preview keeps the saved ones.
     for (const name of Object.keys(input)) if (cms.resourceById(`cms/${collection.name}`).fields[name]?.taxonomy) delete input[name];
     const patterns = documents.filter(document => document.kind === 'pattern' && document.changed);
-    return (await entryViews(cms, collection, [{ ...record, ...input }], { full: true, ...(forms ? { forms } : {}), ...(patterns.length ? { patternDrafts: patternDraftBlocks(patterns.map(pattern => ({ id: pattern.name, blocks: pattern.blocks })), options) } : {}) }))[0]!;
+    return (await entryViews(cms, collection, [{ ...record, ...input }], { full: true, editable: new Set([record.id]), ...(forms ? { forms } : {}), ...(patterns.length ? { patternDrafts: patternDraftBlocks(patterns.map(pattern => ({ id: pattern.name, blocks: pattern.blocks })), options) } : {}) }))[0]!;
 }
 
 /** Save the draft over the revision it started from. A newer save makes a CMS_CONFLICT. */

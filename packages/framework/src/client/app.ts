@@ -32,7 +32,7 @@ import {
     getLocale,
 } from '@cossackframework/core';
 import { CossackElement, captureRenderDrafts } from '@cossackframework/renderer';
-import { classifyRoute, computeRouteIds, filePathToHttpRoute, filePathToRoutePath, resolvePageRouteFiles } from '../route-ids.js';
+import { classifyRoute, computeRouteIds, createRouteMatcher, filePathToHttpRoute, filePathToRoutePath, resolvePageRouteFiles } from '../route-ids.js';
 import registry from 'virtual:cossack-pages';
 import { supportedLocales, defaultLocale, loadCatalog } from 'virtual:cossack-lang';
 // Side-effect: registers `__`, `setLocale`, `getLocale`, `isLocale` as globals.
@@ -44,6 +44,20 @@ import '../i18n-globals.js';
 
 const { pages, layouts, loadings } = registry;
 const { routeIdMap } = computeRouteIds(Object.keys(pages), Object.keys(layouts));
+const handlerRoutes = new Set(registry.handlers ?? []);
+const matchRoute = handlerRoutes.size ? createRouteMatcher(Object.keys(pages)) : () => null;
+
+/**
+ * Whether a same-origin URL reaches a functional HTTP handler (`/feed.xml`, a webhook):
+ * navigation loads it as a document, and hover never prefetches it, so its GET runs once.
+ */
+function isHandlerUrl(url: string): boolean {
+  if (!handlerRoutes.size) return false;
+  const target = new URL(url, window.location.href);
+  if (target.origin !== window.location.origin) return false;
+  const route = matchRoute(target.pathname);
+  return route !== null && handlerRoutes.has(route);
+}
 
 // Create mapping from route paths to file paths for component loading
 const routeToFilePath = new Map<string, string>();
@@ -898,6 +912,7 @@ export async function createClientApp({
 
       // Check for loading.ts convention
       const urlObj = new URL(url, window.location.href);
+      if (isHandlerUrl(urlObj.href)) throw new NotAPageError(urlObj.href);
       const cleanPath = urlObj.pathname.replace(/\/$/, '') || '/index';
       const potentialLoadingPath = `/src/pages${cleanPath}/loading.ts`;
       const LoadingCompClass = loadings[potentialLoadingPath] ? getModuleDefault(loadings[potentialLoadingPath]) as new () => Cossack : null;
@@ -1112,7 +1127,7 @@ export async function createClientApp({
   enableClientNavigation(
     dispatchNavigate,
     async (url) => {
-      if (!pageCache.has(pageCacheKey(url))) {
+      if (!isHandlerUrl(url) && !pageCache.has(pageCacheKey(url))) {
         fetchPage(url).catch(() => {});
       }
     }

@@ -57,7 +57,8 @@ export default class SecurityPage extends Cossack {
     async beginSetup() {
         this.error = '';
         this.recoveryCodes = [];
-        this.setup = await startAuthenticator(this.user as PublicUser);
+        try { this.setup = await startAuthenticator(this.user as PublicUser); }
+        catch (error) { this.error = (error as Error).message; }
     }
 
     @Server()

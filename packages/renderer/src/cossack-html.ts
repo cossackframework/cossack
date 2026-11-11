@@ -2040,10 +2040,6 @@ class SpreadGroup {
   // or null for a bound one. A spread key overrides a static attribute; when
   // the key is dropped, the static value comes back, as SSR renders it.
   private templateAttributes = new Map<string, string | null>();
-  // What the last commit left on each spread attribute: its text, or null when
-  // removed. A key whose value is the same again writes nothing, since an
-  // unchanged setAttribute still queues a mutation record and restyles.
-  private writtenAttributes = new Map<string, string | null>();
 
   /** Called while compiling, with the template's own element. */
   constructor(public element: Element) {
@@ -2169,17 +2165,20 @@ class SpreadGroup {
     this.previousEntries = entries;
   }
 
-  /** Set the attribute, or remove it for null, unless the last commit left it so. */
+  /**
+   * Set the attribute, or remove it for null, unless the element already has
+   * that value: an unchanged setAttribute still queues a mutation record and
+   * restyles. Compared with the DOM, not with the last commit, since a bound
+   * attribute of the same name may have written it since.
+   */
   private writeAttribute(name: string, next: string | null) {
-    if (this.writtenAttributes.has(name) && this.writtenAttributes.get(name) === next) return;
-    this.writtenAttributes.set(name, next);
+    if (this.element.getAttribute(name) === next) return;
     if (next === null) this.element.removeAttribute(name);
     else this.element.setAttribute(name, next);
   }
 
   /** Give a dropped key's attribute back to the template. */
   private resetAttribute(name: string) {
-    this.writtenAttributes.delete(name);
     const value = this.templateAttributes.get(name.toLowerCase());
     if (typeof value === 'string') this.element.setAttribute(name, value);
     else this.element.removeAttribute(name);

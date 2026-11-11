@@ -52,6 +52,8 @@
 !/src/pages/auth/
 /src/pages/auth/*
 !/src/pages/auth/setup/
+!/src/pages/auth/magic/
+!/src/pages/auth/verify/
 !/src/pages/dashboard/
 /src/pages/dashboard/*
 !/src/pages/dashboard/(cms)/

@@ -10,6 +10,10 @@ import { WEBHOOK_EVENTS, webhookUrlProblem, type Webhook, type WebhookDelivery, 
 import { uuidv7 } from '@cossackframework/core';
 
 const WRITE = { kind: 'cms.webhooks', retryConflicts: 5 } as const;
+/** A dispatcher holds claimed deliveries this long; each send takes at most 10 seconds. */
+const LEASE_MS = 60_000;
+/** Lease time a send needs left; with less, the delivery's lease is extended first. */
+const LEASE_MARGIN_MS = 20_000;
 /** Waits before attempts 2-6; the sixth failure marks the delivery failed. */
 const BACKOFF = [60_000, 5 * 60_000, 30 * 60_000, 2 * 60 * 60_000, 12 * 60 * 60_000];
 const COLUMNS = 'id, name, url, events, collections, secret, active, created_at, updated_at';
@@ -21,8 +25,12 @@ export class CmsWebhooks {
     readonly #fetch: typeof globalThis.fetch;
     #cache: { at: number; hooks: Promise<Webhook[]> } | undefined;
 
-    constructor(db: RomeDB, options: { now?: () => number; fetch?: typeof globalThis.fetch } = {}) {
+    readonly #local: boolean;
+
+    /** `local`: the site runs in development, and webhooks may go to its own machine or network. */
+    constructor(db: RomeDB, options: { now?: () => number; fetch?: typeof globalThis.fetch; local?: boolean } = {}) {
         this.#db = db;
+        this.#local = options.local === true;
         this.#now = options.now ?? Date.now;
         this.#fetch = options.fetch ?? ((input, init) => globalThis.fetch(input, init));
     }
@@ -38,15 +46,24 @@ export class CmsWebhooks {
         return row ? webhookOf(row) : null;
     }
 
-    /** Create a webhook, or change the one with `id`. A new webhook gets a random secret. */
-    async save(input: WebhookInput, options: { id?: string; by?: string | null; collections?: readonly string[] } = {}): Promise<Webhook> {
+    /**
+     * The secret that signs a webhook's deliveries (`X-Cossack-Signature: sha256=HMAC(secret,
+     * "<timestamp>.<body>")`). Lists and reads leave it out, so only who asks for it sees it.
+     */
+    async secret(id: string): Promise<string | null> {
+        const result = await this.#db.read([{ rql: 'SELECT secret FROM cms_webhooks WHERE id = $id', params: { $id: id } }]);
+        return (result.results[0]!.rows[0]?.[0] as string | undefined) ?? null;
+    }
+
+    /** Create a webhook, or change the one with `id`. A new webhook gets a random secret, in the answer this once. */
+    async save(input: WebhookInput, options: { id?: string; by?: string | null; collections?: readonly string[] } = {}): Promise<Webhook & { readonly secret?: string }> {
         const name = typeof input.name === 'string' ? input.name.trim() : '';
         const url = typeof input.url === 'string' ? input.url.trim() : '';
         const events = [...new Set(input.events ?? [])];
         const collections = [...new Set(input.collections ?? [])];
         const problems: string[] = [];
         if (!name || name.length > 80) problems.push('Name the webhook in 1-80 characters.');
-        const urlProblem = webhookUrlProblem(url);
+        const urlProblem = webhookUrlProblem(url, { local: this.#local });
         if (urlProblem) problems.push(urlProblem);
         if (!events.length || events.some(event => !(WEBHOOK_EVENTS as readonly string[]).includes(event))) problems.push('Choose at least one event.');
         if (options.collections && collections.some(entry => !options.collections!.includes(entry))) problems.push('Choose existing collections.');
@@ -54,17 +71,19 @@ export class CmsWebhooks {
         const now = this.#now();
         const id = options.id ?? uuidv7();
         const params = { $id: id, $name: name, $url: url, $events: JSON.stringify(events), $collections: JSON.stringify(collections), $active: input.active === false ? 0 : 1, $now: now };
+        const secret = `whsec_${randomToken(24)}`;
         if (options.id) {
             const result = await this.#db.write([{ rql: 'UPDATE cms_webhooks SET name = $name, url = $url, events = $events, collections = $collections, active = $active, updated_at = $now WHERE id = $id', params }], WRITE);
             if (result.results[0]!.affected === 0n) throw new CmsError('CMS_NOT_FOUND', 'Webhook not found.');
         } else {
             await this.#db.write([{
                 rql: 'INSERT INTO cms_webhooks (id, name, url, events, collections, secret, active, created_at, updated_at, created_by) VALUES ($id, $name, $url, $events, $collections, $secret, $active, $now, $now, $by)',
-                params: { ...params, $secret: `whsec_${randomToken(24)}`, $by: options.by ?? null },
+                params: { ...params, $secret: secret, $by: options.by ?? null },
             }], WRITE);
         }
         this.#cache = undefined;
-        return (await this.get(id))!;
+        const saved = (await this.get(id))!;
+        return options.id ? saved : { ...saved, secret };
     }
 
     async delete(id: string): Promise<void> {
@@ -111,7 +130,7 @@ export class CmsWebhooks {
         await this.#db.write([{
             rql: `UPDATE cms_webhook_deliveries SET lease_token = $token, lease_until = $until, attempts = attempts + 1
                 WHERE id IN (SELECT id FROM cms_webhook_deliveries WHERE status = 'pending' AND next_attempt_at <= $now AND lease_until <= $now ORDER BY next_attempt_at, id LIMIT $limit)`,
-            params: { $token: token, $until: now + 60_000, $now: now, $limit: limit },
+            params: { $token: token, $until: now + LEASE_MS, $now: now, $limit: limit },
         }], WRITE);
         const claimed = await this.#db.read([{
             rql: `SELECT d.id, d.event, d.payload, d.attempts, w.url, w.secret, w.active FROM cms_webhook_deliveries d LEFT JOIN cms_webhooks w ON w.id = d.webhook_id
@@ -120,6 +139,15 @@ export class CmsWebhooks {
         }]);
         const report = { delivered: 0, failed: 0, retrying: 0 };
         for (const [id, event, payload, attempts, url, secret, active] of claimed.results[0]!.rows) {
+            // Serial sends can outlast the batch lease. Near its end, extend this delivery's lease
+            // before sending; one another dispatcher claimed meanwhile is its to send, not ours.
+            if (this.#now() > now + LEASE_MS - LEASE_MARGIN_MS) {
+                const renewed = await this.#db.write([{
+                    rql: "UPDATE cms_webhook_deliveries SET lease_until = $until WHERE id = $id AND lease_token = $token AND status = 'pending'",
+                    params: { $until: this.#now() + LEASE_MS, $id: id as string, $token: token },
+                }], WRITE);
+                if (renewed.results[0]!.affected !== 1n) continue;
+            }
             const outcome = url === null || Number(active as bigint) !== 1 ? { ok: false, status: null, error: 'The webhook was removed or turned off.', final: true }
                 : await this.#send(url as string, secret as string, event as string, id as string, payload as string, options.signal);
             const attempt = Number(attempts as bigint);
@@ -142,7 +170,7 @@ export class CmsWebhooks {
         if (!hook) throw new CmsError('CMS_NOT_FOUND', 'Webhook not found.');
         const delivery = uuidv7();
         const payload: WebhookPayload = { event: 'ping', eventId: delivery, at: this.#now() };
-        return this.#send(hook.url, hook.secret, 'ping', delivery, JSON.stringify(payload));
+        return this.#send(hook.url, (await this.secret(id))!, 'ping', delivery, JSON.stringify(payload));
     }
 
     /** Queue a delivery again, such as after fixing the receiving end. */
@@ -201,7 +229,7 @@ export async function verifyWebhookSignature(secret: string, timestamp: string, 
 function webhookOf(row: readonly Value[]): Webhook {
     return Object.freeze({
         id: row[0] as string, name: row[1] as string, url: row[2] as string, events: JSON.parse(row[3] as string) as WebhookEvent[], collections: JSON.parse(row[4] as string) as string[],
-        secret: row[5] as string, active: Number(row[6] as bigint) === 1, createdAt: Number(row[7] as bigint), updatedAt: Number(row[8] as bigint),
+        secretHint: (row[5] as string).slice(0, 10), active: Number(row[6] as bigint) === 1, createdAt: Number(row[7] as bigint), updatedAt: Number(row[8] as bigint),
     });
 }
 

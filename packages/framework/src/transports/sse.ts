@@ -450,7 +450,7 @@ async function buildColdStartState(
 ): Promise<Record<string, unknown>> {
     const facilities = { context: c, user: c.get('user'), env: c.env };
     const chain = await createServiceScopeChain({
-        componentPath, layouts: ctx.layouts, routePathToIdMap: ctx.routePathToIdMap, scopeKey, facilities,
+        componentPath, layouts: ctx.layouts, owners: ctx.owners, routePathToIdMap: ctx.routePathToIdMap, scopeKey, facilities,
     });
     let instance: Cossack | undefined;
     try {

@@ -400,7 +400,8 @@ export class ORM {
       this.primaryWhere(entity, state.metadata),
       { [deleteDate.propertyName]: null },
     );
-    this.refreshSnapshot(entity, state);
+    // Only the delete date was written; other pending changes stay pending for save().
+    state.original[deleteDate.propertyName] = null;
     return entity;
   }
 

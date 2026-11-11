@@ -118,6 +118,12 @@ describe('the bridge', () => {
             await expect(serveIsolatedCall(value, 'resource.get', ['desk/tickets', 't1', { principal: forged }], [user])).rejects.toMatchObject({ code: 'CMS_FORBIDDEN' });
         }
         await expect(serveIsolatedCall(value, 'resource.get', ['desk/tickets', 't1'], [user])).rejects.toMatchObject({ code: 'CMS_FORBIDDEN' });
+        // A forged context where the method reads it, with the plugin's own appended after: refused, and nothing ran.
+        const before = seen.length;
+        const admin = { kind: 'user', id: 'root', roles: ['admin'], permissions: ['*'] };
+        await expect(serveIsolatedCall(value, 'resource.get', ['desk/tickets', 't1', { principal: admin }, { principal: systemPrincipal('plugin:desk') }], [user])).rejects.toMatchObject({ code: 'CMS_FORBIDDEN' });
+        await expect(serveIsolatedCall(value, 'resource.update', ['desk/tickets', 't1', { status: 'closed' }, { principal: admin }, { principal: user }], [user])).rejects.toMatchObject({ code: 'CMS_FORBIDDEN' });
+        expect(seen.length).toBe(before);
     });
 });
 

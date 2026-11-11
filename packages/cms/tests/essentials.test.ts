@@ -233,8 +233,11 @@ describe.skipIf(!live)('scheduling, previews, revisions, redirects, tokens, webh
         const delivery = sent[0]!;
         expect(JSON.parse(delivery.body)).toMatchObject({ event: 'entry.published', collection: 'posts', previousStatus: 'draft', entry: { id: post.id, title: 'Hook me', url: '/posts/hook-me' } });
         expect(delivery.headers.get('x-cossack-event')).toBe('entry.published');
-        expect(await verifyWebhookSignature(hook.secret, delivery.headers.get('x-cossack-timestamp')!, delivery.body, delivery.headers.get('x-cossack-signature')!)).toBe(true);
-        expect(await verifyWebhookSignature(hook.secret, delivery.headers.get('x-cossack-timestamp')!, `${delivery.body} `, delivery.headers.get('x-cossack-signature')!)).toBe(false);
+        // The secret comes with the new webhook, and again only by asking for it; lists leave it out.
+        expect(JSON.stringify(await cms.webhooks.list())).not.toContain(hook.secret!);
+        expect(await cms.webhooks.secret(hook.id)).toBe(hook.secret);
+        expect(await verifyWebhookSignature(hook.secret!, delivery.headers.get('x-cossack-timestamp')!, delivery.body, delivery.headers.get('x-cossack-signature')!)).toBe(true);
+        expect(await verifyWebhookSignature(hook.secret!, delivery.headers.get('x-cossack-timestamp')!, `${delivery.body} `, delivery.headers.get('x-cossack-signature')!)).toBe(false);
 
         answer = 500;
         await repository.delete(post.id, { principal: editor, expectedRevision: 2 });
@@ -264,8 +267,8 @@ describe.skipIf(!live)('scheduling, previews, revisions, redirects, tokens, webh
         await expect(comment({}, '10.0.0.1').then(() => comment({}, '10.0.0.1'))).rejects.toMatchObject({ code: 'CMS_LIMIT' });
         await cms.moderateComments([first.comment.id], 'approved', editor);
         await expect(cms.moderateComments([first.comment.id], 'spam', author)).rejects.toMatchObject({ code: 'CMS_FORBIDDEN' });
-        // A returning commenter is approved; links and blocked words are held or spam.
-        expect((await comment({ content: 'Again' })).comment.status).toBe('approved');
+        // An anonymous commenter only claims an email, so returning under it is still held; links and blocked words are held or spam.
+        expect((await comment({ content: 'Again' })).comment.status).toBe('pending');
         expect((await comment({ content: 'See https://a.example and https://b.example' })).comment.status).toBe('pending');
         await cms.settings.update('discussion', { blockedWords: 'casino' }, { principal: admin });
         expect((await comment({ content: 'Best CASINO deals' })).comment.status).toBe('spam');
@@ -275,9 +278,9 @@ describe.skipIf(!live)('scheduling, previews, revisions, redirects, tokens, webh
         await expect(comment({ authorName: '', authorEmail: '' })).rejects.toMatchObject({ code: 'CMS_VALIDATION', fields: { authorName: expect.any(String), authorEmail: expect.any(String) } });
         clock += 1000;
         expect((await cms.postComment({ collection: 'posts', entry: post.id, content: 'From the editor' }, { principal: editor })).comment).toMatchObject({ status: 'approved', authorName: 'editor' });
-        expect((await cms.comments.forEntry('cms/posts', post.id)).map(entry => entry.content)).toEqual(['Nice post', 'Again', 'A reply', 'From the editor']);
-        expect((await cms.comments.approvedCounts('cms/posts', [post.id])).get(post.id)).toBe(4);
-        expect(await cms.comments.counts()).toEqual({ pending: 2, approved: 4, spam: 2, trash: 0 });
+        expect((await cms.comments.forEntry('cms/posts', post.id)).map(entry => entry.content)).toEqual(['Nice post', 'From the editor']);
+        expect((await cms.comments.approvedCounts('cms/posts', [post.id])).get(post.id)).toBe(2);
+        expect(await cms.comments.counts()).toEqual({ pending: 4, approved: 2, spam: 2, trash: 0 });
 
         await repository.update(post.id, { commentsOpen: false }, { principal: editor, expectedRevision: post.rev });
         await expect(comment({})).rejects.toMatchObject({ code: 'CMS_FORBIDDEN' });

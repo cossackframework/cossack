@@ -8,7 +8,7 @@ import { botCheckKey, passesBotCheck } from '../../../auth-bot-check';
 import { BOT_CHECK_FAILED, botCheckToken } from '../../../auth-bot-token';
 
 /** Sign-in failures the visitor is told about, after the password matched or before it is checked; see auth.ts. */
-const TOLD = new Set(['SignInLockedError', 'SignInPendingError']);
+const TOLD = new Set(['SignInLockedError', 'SignInPendingError', 'SignInPasskeyError']);
 import { usePasskey } from '../../../passkeys.client';
 
 interface LoginForm {

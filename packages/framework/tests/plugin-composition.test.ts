@@ -90,7 +90,7 @@ describe('plugin pages', () => {
       expect(source).toContain('COSSACK_PLUGIN_ROUTE_CONFLICT');
       // The router asks the host whether a plugin's routes answer, by route key.
       expect(source).toContain("owners[key] = file.split('/')[3]");
-      expect(source).toContain('export default { pages, layouts, loadings, components, owners }');
+      expect(source).toContain('export default { pages, layouts, loadings, components, owners, handlers }');
     }
   });
 });
@@ -187,6 +187,8 @@ describe('plugin translations, configuration and middleware', () => {
     const server = (plugin.load as Function).call({ environment: { name: 'ssr' } }, '\0virtual:cossack-middlewares') as string;
     expect(server).toContain("import.meta.glob('/src/plugins/*/middlewares.ts', { eager: true })");
     expect(server.indexOf("'/src/bootstrap/middlewares.ts'")).toBeLessThan(server.indexOf('/src/plugins/*/middlewares.ts'));
+    // Tagged with the plugin's name, so the router runs them only while the plugin is active.
+    expect(server).toContain('cossackPlugin: plugin');
     const client = (plugin.load as Function).call({ environment: { name: 'client' } }, '\0virtual:cossack-middlewares') as string;
     expect(client).not.toContain('plugins');
   });

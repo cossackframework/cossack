@@ -25,7 +25,8 @@ export default class WebhooksPage extends Cossack {
     @State() form: Form = { ...EMPTY, events: [...EMPTY.events] };
     @State() deliveries: WebhookDelivery[] = [];
     @State() selected = '';
-    @State() revealed = false;
+    /** The selected webhook's secret, once shown: lists carry only its first characters. */
+    @State() revealed = '';
     @State() error = '';
     /** What the last save or test did. */
     @State() message = '';
@@ -46,9 +47,15 @@ export default class WebhooksPage extends Cossack {
         this.hooks = await cms.webhooks.list();
         const hook = this.hooks.find(entry => entry.id === id);
         this.selected = hook?.id ?? '';
-        this.revealed = false;
+        this.revealed = '';
         this.form = hook ? { id: hook.id, name: hook.name, url: hook.url, events: [...hook.events], collections: [...hook.collections], active: hook.active } : { ...EMPTY, events: [...EMPTY.events] };
         this.deliveries = hook ? await cms.webhooks.deliveries(hook.id, 20) : [];
+    }
+
+    /** Read the selected webhook's secret, for whoever manages webhooks here. */
+    @Server()
+    async reveal() {
+        this.revealed = this.selected ? await this.c.get('cms').webhooks.secret(this.selected) ?? '' : '';
     }
 
     @Client()
@@ -74,7 +81,7 @@ export default class WebhooksPage extends Cossack {
             const hook = await cms.webhooks.save({ name: form.name, url: form.url, events: form.events, collections: form.collections, active: form.active },
                 { ...(form.id ? { id: form.id } : {}), by: principal.kind === 'user' ? principal.id : null, collections: cms.collections().map(collection => collection.name) });
             await this.load(hook.id);
-            this.revealed = !form.id;
+            if (hook.secret) this.revealed = hook.secret;
         } catch (error) {
             this.error = isCmsError(error) ? error.message : __('The webhook could not be saved.');
         }
@@ -154,8 +161,8 @@ export default class WebhooksPage extends Cossack {
                                 ${component(Badge, { variant: entry.active ? 'success' : 'secondary' }, entry.active ? __('Active') : __('Off'))}</span>
                             <span class="block truncate text-xs text-muted-foreground">${entry.url}</span></a></li>`)}</ul>` : html`<p class="text-sm text-muted-foreground">${__('No webhooks yet.')}</p>`}`))}
                     ${hook ? component(Card, {}, component(CardBody, { class: 'space-y-2' }, html`<h2 class="text-base font-semibold text-foreground">${__('Signing secret')}</h2>
-                        <code class="block break-all rounded bg-muted px-2 py-1 text-xs">${this.revealed ? hook.secret : `${hook.secret.slice(0, 10)}${'•'.repeat(16)}`}</code>
-                        ${this.revealed ? null : html`<button type="button" class="text-xs text-primary hover:underline bg-transparent border-none p-0 cursor-pointer" @click=${() => { this.revealed = true; }}>${__('Show')}</button>`}
+                        <code class="block break-all rounded bg-muted px-2 py-1 text-xs">${this.revealed || `${hook.secretHint}${'•'.repeat(16)}`}</code>
+                        ${this.revealed ? null : html`<button type="button" class="text-xs text-primary hover:underline bg-transparent border-none p-0 cursor-pointer" @click=${() => this.reveal()}>${__('Show')}</button>`}
                         <p class="text-xs text-muted-foreground">${__('Each delivery has X-Cossack-Signature: sha256= the HMAC-SHA256 of “timestamp.body” with this secret, and the timestamp in X-Cossack-Timestamp.')}</p>`)) : null}
                 </aside>
             </div>

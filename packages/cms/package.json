@@ -53,6 +53,7 @@
     "./server": "./src/server/index.ts",
     "./isolate": "./src/isolate.ts",
     "./cloudflare": "./src/cloudflare.ts",
+    "./node": "./src/node.ts",
     "./vite": {
       "types": "./src/vite.d.ts",
       "default": "./src/vite.js"

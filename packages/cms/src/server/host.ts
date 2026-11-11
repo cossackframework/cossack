@@ -5,7 +5,8 @@
 import { createHookRegistry, type ActionHandler, type ActionPoint, type ActionReport, type ExtensionPoint, type FilterContext, type FilterHandler, type FilterPoint, type HookRegistry, type InvokeOptions } from '@cossackframework/core/hooks';
 import type { StorageProvider } from '@cossackframework/core/storage';
 import { ClientError, type RomeDB, type Statement, type Value, type WorkLimits } from '@cossackframework/romedb';
-import { blockId, blockMedia, blockProblems, htmlBlocksChanged, validateBlocks, type Block, type BlockDeclaration } from '../blocks';
+import { normalizeRichText, richTextBlocks, withRichTextBlocks } from '../richtext';
+import { blockId, blockMedia, blockProblems, htmlBlocksChanged, textFieldProblem, validateBlocks, type Block, type BlockDeclaration } from '../blocks';
 import { blocksShapeProblem, type FieldDeclaration } from '../fields';
 import { collectionProblems, collectionResource, contentBlocks, entryUrl, extendCollection, languageName, LOCALE, translationGroupOf, orderedFields, RESERVED_FIELDS, type CollectionDefinition } from '../collections';
 import type { EditorLayoutAddition } from '../editor-layout';
@@ -72,7 +73,7 @@ import type { ImageTransformer } from './images';
 import { checkComment, COMMENT_STATUSES, type CommentShape, type CommentStatus } from '../comments';
 import { sha256Hex } from './tokens';
 import type { SiteSettings } from '../settings';
-import { uuidv7 } from '@cossackframework/core';
+import { getClientIp, uuidv7 } from '@cossackframework/core';
 
 /** Structural plugin registration, as `@cossackframework/framework/plugins` provides it. */
 export interface PluginRegistrationLike {
@@ -100,6 +101,14 @@ export type { CmsModule };
 export interface CmsOptions {
     /** The site's database. */
     readonly db: RomeDB;
+    /** The site runs in development: webhooks may use plain HTTP and go to this machine or a private network. */
+    readonly localWebhooks?: boolean;
+    /**
+     * The `fetch` webhook deliveries and pings use, default `fetch`. On Node pass `publicOnlyFetch`
+     * from `@cossackframework/cms/node` (unless `localWebhooks`), which refuses names that resolve
+     * to this machine or a private network; Workers' own `fetch` cannot reach them.
+     */
+    readonly webhookFetch?: typeof globalThis.fetch;
     /**
      * The network database: accounts and what signs them in (second factors, reset tokens,
      * application passwords, the main site's sessions). It is the main site's database; default `db`.
@@ -545,12 +554,12 @@ export class CmsHost {
         const added = this.network !== this.db;
         // A site account's sessions are this site's: ending them ends nothing elsewhere.
         this.siteAccounts = added ? new CmsAccounts(this.db, { now: this.#now, sessionsEnded: async ended => { if ('user' in ended) await this.authSessions.revokeAllForUser(ended.user, ended.except); } }) : null;
-        this.users = new CmsUsers(this.db, { accounts: this.accounts, ...(this.siteAccounts ? { siteAccounts: this.siteAccounts } : {}), ...(options.site ? { site: options.site } : {}), now: this.#now, checkMeta: (meta, previous) => this.#checkMeta({ kind: 'users' }, meta, previous) });
+        this.users = new CmsUsers(this.db, { accounts: this.accounts, ...(this.siteAccounts ? { siteAccounts: this.siteAccounts } : {}), ...(options.site ? { site: options.site } : {}), now: this.#now, checkMeta: (meta, previous, principal) => this.#checkMeta({ kind: 'users' }, meta, previous, principal) });
         this.redirects = new CmsRedirects(this.db, { now: this.#now, changed: () => this.#purgeSite('redirects') });
         this.traffic = new CmsTraffic(this.db, { now: this.#now });
         this.apiTokens = new CmsApiTokens(this.network, { now: this.#now });
         this.siteApiTokens = added ? new CmsApiTokens(this.db, { now: this.#now }) : null;
-        this.webhooks = new CmsWebhooks(this.db, { now: this.#now, fetch: this.#fetch });
+        this.webhooks = new CmsWebhooks(this.db, { now: this.#now, fetch: options.webhookFetch ?? this.#fetch, local: options.localWebhooks === true });
         this.comments = new CmsComments(this.db, { now: this.#now, changed: entries => this.#purgeLater('comments', { tags: entries.filter(entry => entry.resource.startsWith('cms/')).map(entry => this.purge.tag.entry(entry.resource.slice(4), entry.recordId)) }) });
         this.mailFrom = options.mailFrom ?? 'no-reply@example.com';
         this.mail = options.mail ? siteMailer({ transport: options.mail, from: this.mailFrom, site: this.site, hooks: this.hooks, settings: () => this.settings.all(),
@@ -570,8 +579,8 @@ export class CmsHost {
         this.hooks.addAction(afterCommit, event => this.#queuePurge(event), { plugin: 'cms-cache' });
         // Automations run from the same events, under their own name, so their retries are theirs alone.
         this.hooks.addAction(afterCommit, event => this.#automate(event), { plugin: 'cms-automations' });
-        this.hooks.addAction(formSubmitted, async event => { await this.automations.run('form.submitted', { form: event.form.slug, formTitle: event.form.title, submission: event.submission.id, values: event.submission.values, origin: event.origin ?? '' }, await this.#automationScopes()); }, { plugin: 'cms-automations' });
-        this.hooks.addAction(paymentEvent, async event => { if (event.type === 'checkout.completed' || event.type === 'payment.succeeded') await this.automations.run('payment.completed', { ...event, customerEmail: event.customerEmail ?? '', reference: event.reference ?? '', amount: event.amount ?? '', currency: event.currency ?? '' }, await this.#automationScopes()); }, { plugin: 'cms-automations' });
+        this.hooks.addAction(formSubmitted, async event => { await this.automations.run('form.submitted', { form: event.form.slug, formTitle: event.form.title, submission: event.submission.id, values: event.submission.values, origin: event.origin ?? '' }, await this.#automationScopes(), event.eventId); }, { plugin: 'cms-automations' });
+        this.hooks.addAction(paymentEvent, async event => { if (event.type === 'checkout.completed' || event.type === 'payment.succeeded') await this.automations.run('payment.completed', { ...event, customerEmail: event.customerEmail ?? '', reference: event.reference ?? '', amount: event.amount ?? '', currency: event.currency ?? '' }, await this.#automationScopes(), event.eventId); }, { plugin: 'cms-automations' });
         // A completed payment goes to the webhooks that take every collection's events.
         this.hooks.addAction(paymentEvent, async event => {
             if (event.type !== 'checkout.completed' && event.type !== 'payment.succeeded') return;
@@ -597,7 +606,7 @@ export class CmsHost {
             taxonomies: () => this.#taxonomies,
             now: this.#now,
             beforeSave: (draft, input) => this.hooks.applyFilters(termBeforeSave, draft, input),
-            checkMeta: taxonomy => (meta, previous) => this.#checkMeta({ kind: 'taxonomy', name: taxonomy }, meta, previous),
+            checkMeta: taxonomy => (meta, previous, principal) => this.#checkMeta({ kind: 'taxonomy', name: taxonomy }, meta, previous, principal),
             usage: name => this.resources.flatMap(resource => Object.entries(resource.fields)
                 .filter(([, declaration]) => declaration.taxonomy === name).map(([field]) => ({ resource: resource.id, storage: resource.storage, field }))),
             canAssign: (principal, taxonomy) => this.taxonomies.usage(taxonomy.name).some(({ resource: id }) => {
@@ -628,7 +637,7 @@ export class CmsHost {
         }
         this.settings = new CmsSettings(this.db, groups, { now: this.#now, changed: () => this.#purgeSite('settings') });
         this.indexnow = new CmsIndexNow(this.settings, { now: this.#now, fetch: this.#fetch, siteUrl: typeof options.siteUrl === 'function' ? options.siteUrl : () => options.siteUrl as string | undefined });
-        this.menus = new CmsMenus(this.db, { now: this.#now, checkMeta: (meta, previous) => this.#checkMeta({ kind: 'menus' }, meta, previous), resolve: (items, locale) => this.#resolveMenu(items, locale), beforeSave: (items, input) => this.hooks.applyFilters(menuBeforeSave, items, input), changed: () => this.#purgeSite('menus') });
+        this.menus = new CmsMenus(this.db, { now: this.#now, checkMeta: (meta, previous, principal) => this.#checkMeta({ kind: 'menus' }, meta, previous, principal), resolve: (items, locale) => this.#resolveMenu(items, locale), beforeSave: (items, input) => this.hooks.applyFilters(menuBeforeSave, items, input), changed: () => this.#purgeSite('menus') });
         this.areas = new CmsAreas(this.db, { now: this.#now, check: blocks => this.#checkBlocks(blocks), changed: () => this.#purgeSite('areas') });
         this.previews = new CmsPreviews(this.db, { now: this.#now });
         this.autosaves = new CmsAutosaves(this.db, { now: this.#now });
@@ -935,12 +944,11 @@ export class CmsHost {
             parentId = parent.id;
         }
         const ipHash = context.ip ? await sha256Hex(`cms-comment:${context.ip}`) : null;
-        if (ipHash) {
-            const last = await this.comments.lastFrom(ipHash);
-            if (last !== null && this.#now() - last < 15_000) throw new CmsError('CMS_LIMIT', 'You are posting comments too quickly. Wait a moment and try again.');
-        }
+        // One comment per address in 15 seconds, counted in one conditional write so a burst gets one through.
+        if (ipHash && !(await this.security.attempt('comment', ipHash, 1, 15_000))) throw new CmsError('CMS_LIMIT', 'You are posting comments too quickly. Wait a moment and try again.');
+        // "An earlier approved comment" counts for signed-in users only: an anonymous commenter types any email.
         const status: CommentStatus = input.trap ? 'spam' : hasPermission(context.principal, PERMISSIONS.moderateComments) ? 'approved'
-            : await commentStatus(fields, settings, () => this.comments.hasApproved(fields.authorEmail));
+            : await commentStatus(fields, settings, async () => user !== null && await this.comments.hasApproved(fields.authorEmail));
         // Plugins check, change or hold the comment: spam filters, profanity lists, extra rules.
         const filtered = await this.hooks.applyFilters(commentBeforeSave, Object.freeze({ ...fields, status }), Object.freeze({
             collection: collection.name, entry: record.id, parent: parentId, actor: writeActorOf(context.principal), ...(context.ip ? { ip: context.ip } : {}), ...(context.userAgent ? { userAgent: context.userAgent } : {}),
@@ -1962,7 +1970,7 @@ export class CmsHost {
         return { widths: imageWidths(settings['media.imageWidths']), quality: settings['media.imageQuality'], maxWidth: settings['media.maxImageWidth'] };
     }
 
-    async #checkMeta(target: FieldGroupTarget, meta: unknown, previous: { readonly [field: string]: unknown } | null): Promise<{ readonly [field: string]: unknown }> {
+    async #checkMeta(target: FieldGroupTarget, meta: unknown, previous: { readonly [field: string]: unknown } | null, principal?: Principal): Promise<{ readonly [field: string]: unknown }> {
         const { fields: groupFields, layout } = this.#groupFields(target);
         // Users carry their public author profile besides their groups' fields.
         const fields = target.kind === 'users' ? { ...AUTHOR_FIELDS, ...groupFields } : groupFields;
@@ -1972,6 +1980,29 @@ export class CmsHost {
         const { hidden, values: cleared } = fieldVisibility(layout, this.#blocks, values);
         const names = new Map(flattenGroupFields(layout).map(block => [block._id, block.data.name as string]));
         for (const key of hidden) { const name = key.includes('/') ? undefined : names.get(key); if (name) { delete errors[name]; delete cleared[name]; } }
+        // Blocks, rich text and Markdown render on the site: their blocks are checked as an
+        // entry's are, and Custom HTML needs the HTML permission (no principal: never).
+        const html = principal !== undefined && hasPermission(principal, PERMISSIONS.unfilteredHtml);
+        for (const [name, value] of Object.entries(cleared)) {
+            const declaration = Object.hasOwn(fields, name) ? fields[name] : undefined;
+            if (!declaration || errors[name] || value === undefined || value === null) continue;
+            if ((declaration.kind === 'blocks' || declaration.kind === 'richtext') && !html && htmlBlocksChanged(value, previous?.[name])) { errors[name] = 'has a Custom HTML block, which only people allowed to post HTML can add or change.'; continue; }
+            if (declaration.kind === 'blocks') {
+                const checked = validateBlocks(value as Block[], this.#blocks, declaration.blocks ? { allowed: declaration.blocks } : {});
+                const [path, message] = Object.entries(checked.errors)[0] ?? [];
+                if (path) errors[name] = `block ${path} ${message}`;
+                else cleared[name] = checked.blocks;
+            } else if (declaration.kind === 'richtext') {
+                const doc = normalizeRichText(value);
+                const checked = validateBlocks(richTextBlocks(doc), this.#blocks, declaration.blocks ? { allowed: declaration.blocks } : {});
+                const [path, message] = Object.entries(checked.errors)[0] ?? [];
+                if (path) errors[name] = `block ${path} ${message}`;
+                else cleared[name] = withRichTextBlocks(doc, checked.blocks);
+            } else {
+                const problem = textFieldProblem(declaration, value, this.#blocks);
+                if (problem) errors[name] = problem;
+            }
+        }
         if (Object.keys(errors).length) throw new CmsError('CMS_VALIDATION', Object.entries(errors).map(([name, error]) => `${fields[name]?.label ?? name} ${error}`).join(' '), { fields: errors });
         return cleared;
     }
@@ -2483,8 +2514,8 @@ export class CmsHost {
         const origin = this.indexnow.origin() ?? '';
         const vars = { collection: name, collectionLabel: collection.label, id: event.id, title: record ? recordTitle(record, 'title') : '', status: record?.status ?? '', path, url: path ? `${origin}${path}` : '', actor: event.actor.id, record };
         const scopes = await this.#automationScopes(event.actor);
-        await this.automations.run(event.topic === 'resource.deleted' ? 'entry.deleted' : event.topic === 'resource.created' ? 'entry.created' : 'entry.updated', vars, scopes);
-        if (collection.publishable !== false && event.topic !== 'resource.deleted' && record?.status === 'published' && event.previousStatus !== 'published') await this.automations.run('entry.published', vars, scopes);
+        await this.automations.run(event.topic === 'resource.deleted' ? 'entry.deleted' : event.topic === 'resource.created' ? 'entry.created' : 'entry.updated', vars, scopes, event.eventId);
+        if (collection.publishable !== false && event.topic !== 'resource.deleted' && record?.status === 'published' && event.previousStatus !== 'published') await this.automations.run('entry.published', vars, scopes, `${event.eventId}:published`);
     }
 
     /** What `$site` and `$user` read in an automation's templates: the site's public settings and the account that acted, when a user did. */
@@ -2609,7 +2640,9 @@ export function createCMS(options: CmsOptions): CmsHost {
 function requestMetadata(context: unknown): { ip?: string; userAgent?: string } {
     const request = (context as { req?: { header(name: string): string | undefined } } | undefined)?.req;
     if (!request || typeof request.header !== 'function') return {};
-    const ip = request.header('cf-connecting-ip') ?? request.header('x-forwarded-for')?.split(',')[0]?.trim();
+    // The address the deployment trusts (TRUSTED_PROXY_HEADER, Cloudflare's, or the socket's), not a header anyone sends.
+    const address = getClientIp(context as Parameters<typeof getClientIp>[0]);
+    const ip = address && address !== 'anonymous' ? address : undefined;
     const userAgent = request.header('user-agent');
     return { ...(ip ? { ip } : {}), ...(userAgent ? { userAgent } : {}) };
 }

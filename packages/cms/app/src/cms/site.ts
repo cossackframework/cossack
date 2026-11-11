@@ -687,6 +687,16 @@ export function entryLock(record: RecordShape, reader: EntryReader): 'password' 
     return roles.length && !roles.some(role => reader.roles?.includes(role)) ? 'members' : null;
 }
 
+/**
+ * Why the request's reader cannot read the entry (`entryLock`), from its principal and the
+ * entry's unlock cookie, as the entry's page decides: for the comments API and form.
+ */
+export async function requestLock(cms: CmsHost, record: RecordShape, resourceId: string, principal: Principal, cookie: string | undefined): Promise<'password' | 'members' | null> {
+    const editor = principal.kind === 'user' && cms.resource(resourceId).canUpdate(record, principal);
+    const unlocked = isProtected(record) && cookie !== undefined && cookie === await unlockToken(record);
+    return entryLock(record, { signedIn: principal.kind === 'user', roles: principal.kind === 'user' ? principal.roles : [], editor, unlocked: unlocked ? new Set([record.id]) : undefined });
+}
+
 /** The cookie that remembers an unlocked entry, and its value: a digest of the entry and its password. */
 export function unlockCookie(record: RecordShape): string {
     return `cms_unlock_${record.id}`;

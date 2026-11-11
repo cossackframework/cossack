@@ -30,7 +30,7 @@ export function toTransport(value: Value): TransportValue {
     if (Array.isArray(value)) return value.map(toTransport);
     if (plainObject(value)) {
         const entries: { [key: string]: TransportValue } = {};
-        for (const [key, entry] of Object.entries(value)) entries[key] = toTransport(entry);
+        for (const [key, entry] of Object.entries(value)) setOwn(entries, key, toTransport(entry));
         return Object.hasOwn(value, '$fdb') ? tag('obj', entries) : entries;
     }
     throw new TypeError('unsupported value');
@@ -47,15 +47,15 @@ export function fromTransport(value: unknown, depth = 0): Value {
     if (!plainObject(value)) throw new TypeError('invalid transport value');
     if (!Object.hasOwn(value, '$fdb')) {
         const entries: { [key: string]: Value } = {};
-        for (const [key, entry] of Object.entries(value)) entries[key] = fromTransport(entry, depth + 1);
+        for (const [key, entry] of Object.entries(value)) setOwn(entries, key, fromTransport(entry, depth + 1));
         return entries;
     }
     if (value.$fdb !== TRANSPORT_VERSION || Object.keys(value).sort().join() !== '$fdb,t,v') throw new TypeError('unsupported transport tag');
     const payload = value.v;
     switch (value.t as Tag) {
         case 'int':
-            if (typeof payload !== 'string' || !/^(?:0|-?[1-9][0-9]{0,18})$/.test(payload)) throw new TypeError('invalid int64');
-            return BigInt(payload);
+            if (typeof payload !== 'string') throw new TypeError('invalid int64');
+            return int64(payload);
         case 'f64': {
             if (typeof payload !== 'string' || !/^[0-9a-f]{16}$/.test(payload)) throw new TypeError('invalid float64 bits');
             const view = new DataView(new ArrayBuffer(8));
@@ -65,7 +65,7 @@ export function fromTransport(value: unknown, depth = 0): Value {
         case 'rec': {
             if (!plainObject(payload) || typeof payload.table !== 'string') throw new TypeError('invalid record');
             if (typeof payload.key === 'string' && Object.keys(payload).length === 2) return new Record(payload.table, payload.key);
-            if (typeof payload.int === 'string' && Object.keys(payload).length === 2 && /^(?:0|-?[1-9][0-9]{0,18})$/.test(payload.int)) return new Record(payload.table, BigInt(payload.int));
+            if (typeof payload.int === 'string' && Object.keys(payload).length === 2) return new Record(payload.table, int64(payload.int));
             throw new TypeError('invalid record');
         }
         case 'bin':
@@ -77,11 +77,26 @@ export function fromTransport(value: unknown, depth = 0): Value {
         case 'obj': {
             if (!plainObject(payload)) throw new TypeError('invalid object');
             const entries: { [key: string]: Value } = {};
-            for (const [key, entry] of Object.entries(payload)) entries[key] = fromTransport(entry, depth + 1);
+            for (const [key, entry] of Object.entries(payload)) setOwn(entries, key, fromTransport(entry, depth + 1));
             return entries;
         }
         default: throw new TypeError('unsupported transport tag');
     }
+}
+
+const INT64_MIN = -(2n ** 63n);
+const INT64_MAX = 2n ** 63n - 1n;
+
+function int64(text: string): bigint {
+    if (!/^(?:0|-?[1-9][0-9]{0,18})$/.test(text)) throw new TypeError('invalid int64');
+    const value = BigInt(text);
+    if (value < INT64_MIN || value > INT64_MAX) throw new TypeError('invalid int64');
+    return value;
+}
+
+/** An own data property, so a `__proto__` key stays a field instead of replacing the prototype. */
+function setOwn<T>(target: { [key: string]: T }, key: string, value: T): void {
+    Object.defineProperty(target, key, { value, enumerable: true, writable: true, configurable: true });
 }
 
 function tag(t: Tag, v: TransportValue): TransportValue {

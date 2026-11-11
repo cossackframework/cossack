@@ -4,7 +4,7 @@
  * (`cms.resource.after-commit` for resource events, `cms.form.submitted` for form
  * submissions), and records which plugins still need the event. Deliveries can repeat: consumers key on `eventId`.
  */
-import type { RomeDB } from '@cossackframework/romedb';
+import type { RomeDB, Statement, Value } from '@cossackframework/romedb';
 import type { HookRegistry } from '@cossackframework/core/hooks';
 import type { ActionPoint } from '@cossackframework/core/hooks';
 import { afterCommit, cachePurge, formSubmitted, paymentEvent, pluginJob, userRegistered, userSignedIn } from '../hooks';
@@ -89,6 +89,15 @@ export class Outbox {
         const retrying: { id: string; plugins: readonly string[] }[] = [];
         const deadLettered: string[] = [];
         for (const [id, payload, pending, attempts, topic] of claimed.results[0]!.rows) {
+            // Handlers run one row at a time and can outlast the batch lease. Past half of it,
+            // extend this row's lease first; a row another dispatcher claimed meanwhile is its to run.
+            if (this.#now() > now + this.#leaseMs / 2) {
+                const renewed = await this.#db.write([{
+                    rql: 'UPDATE cms_outbox SET lease_until = $until WHERE id = $id AND lease_token = $token AND delivered_at IS NULL',
+                    params: { $until: this.#now() + this.#leaseMs, $id: id as string, $token: token },
+                }], { ...call, kind: 'cms.outbox', retryConflicts: 5 });
+                if (renewed.results[0]!.affected !== 1n) continue;
+            }
             const event = JSON.parse(payload as string) as unknown;
             const only = pending ? JSON.parse(pending as string) as string[] : undefined;
             const point = POINTS[topic as string] ?? afterCommit as ActionPoint<unknown>;
@@ -125,6 +134,22 @@ export class Outbox {
         const inserted = result.results[0]!.affected !== 0n;
         if (inserted) this.#enqueued++;
         return inserted;
+    }
+
+    /**
+     * Queue an event in one atomic write with `writes`, and only when `guard` (an SQL condition
+     * on the caller's rows, such as an `EXISTS`) holds as the write starts; a row that exists is
+     * left alone. The answer has whether the row was added and the results of `writes`.
+     */
+    async enqueueWith(topic: string, event: { readonly eventId: string; readonly at: number }, guard: { readonly rql: string; readonly params: { readonly [name: string]: Value } }, writes: readonly Statement[]): Promise<{ inserted: boolean; results: readonly { readonly affected: bigint }[] }> {
+        const result = await this.#db.write([{
+            // The row's parameters have their own names, so the guard's own ($id, say) keep theirs.
+            rql: `INSERT INTO cms_outbox (id, topic, payload, created_at, available_at, attempts, lease_until) SELECT $outbox_id, $outbox_topic, $outbox_payload, $outbox_at, $outbox_at, 0, 0 WHERE ${guard.rql} ON CONFLICT (id) DO NOTHING`,
+            params: { ...guard.params, $outbox_id: event.eventId, $outbox_topic: topic, $outbox_payload: JSON.stringify(event), $outbox_at: event.at },
+        }, ...writes], { kind: 'cms.outbox', retryConflicts: 5 });
+        const inserted = result.results[0]!.affected !== 0n;
+        if (inserted) this.#enqueued++;
+        return { inserted, results: result.results.slice(1) };
     }
 
     /** Events the dispatcher gave up on: delivered, with the plugins that never took them kept in `plugins`. Newest first. */

@@ -98,7 +98,12 @@ export interface PaymentEvent {
     readonly topic: 'payment.event';
     readonly at: number;
     readonly provider: string;
-    readonly type: 'checkout.completed' | 'payment.succeeded' | 'payment.failed' | 'subscription.updated' | 'subscription.cancelled' | 'refund';
+    /**
+     * `checkout.pending`: the checkout is done but its payment is still on its way (a bank transfer);
+     * `checkout.completed` follows when it is paid, `payment.failed` when it is not. `refund`'s
+     * `amount` is the amount refunded.
+     */
+    readonly type: 'checkout.completed' | 'checkout.pending' | 'payment.succeeded' | 'payment.failed' | 'subscription.updated' | 'subscription.cancelled' | 'refund';
     /** The provider's own event type, such as `checkout.session.completed`. */
     readonly providerType: string;
     readonly checkoutId: string | null;

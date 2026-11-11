@@ -4,11 +4,11 @@
  * from `@codemirror/language-data`.
  */
 import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightSpecialChars, drawSelection, placeholder as placeholderOf } from '@codemirror/view';
-import { Compartment, EditorState, type Extension } from '@codemirror/state';
+import { ChangeSet, Compartment, EditorState, type Extension } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { bracketMatching, defaultHighlightStyle, foldGutter, indentOnInput, syntaxHighlighting, type LanguageSupport } from '@codemirror/language';
 import { languages } from '@codemirror/language-data';
-import { unifiedMergeView } from '@codemirror/merge';
+import { getOriginalDoc, originalDocChangeEffect, unifiedMergeView } from '@codemirror/merge';
 
 export interface CodeEditorOptions {
     value: string;
@@ -27,6 +27,8 @@ export interface CodeEditorHandle {
     /** Replace the text from outside, without reporting it as a change. */
     setValue(value: string): void;
     setLanguage(name: string): Promise<void>;
+    /** Change the options set at mount that may follow the props: the compared text, read-only and the JSON schema. */
+    configure(options: Pick<CodeEditorOptions, 'original' | 'readOnly' | 'schema'>): void;
     focus(): void;
     destroy(): void;
 }
@@ -72,17 +74,21 @@ export function mountCodeEditor(parent: HTMLElement, options: CodeEditorOptions)
     const language = new Compartment();
     const editable = new Compartment();
     const schemaSupport = new Compartment();
+    const merge = new Compartment();
     let held = options.value;
+    let current = { original: options.original, readOnly: options.readOnly, schema: options.schema, language: options.language };
+    const mergeOf = (original: string | null): Extension => original !== null ? unifiedMergeView({ original, mergeControls: false, highlightChanges: true, gutter: true }) : [];
+    const editableOf = (readOnly: boolean): Extension => [EditorView.editable.of(!readOnly), EditorState.readOnly.of(readOnly)];
     const extensions: Extension[] = [
         lineNumbers(), highlightSpecialChars(), history(), drawSelection(), indentOnInput(), bracketMatching(), foldGutter(), highlightActiveLine(),
         syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
         keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
         theme, EditorView.lineWrapping,
         language.of([]),
-        editable.of([EditorView.editable.of(!options.readOnly), EditorState.readOnly.of(options.readOnly)]),
+        editable.of(editableOf(options.readOnly)),
         EditorView.contentAttributes.of({ 'aria-label': options.label }),
         ...(options.placeholder ? [placeholderOf(options.placeholder)] : []),
-        ...(options.original !== null ? [unifiedMergeView({ original: options.original, mergeControls: false, highlightChanges: true, gutter: true })] : []),
+        merge.of(mergeOf(options.original)),
         schemaSupport.of([]),
         EditorView.updateListener.of(update => {
             if (!update.docChanged) return;
@@ -93,17 +99,26 @@ export function mountCodeEditor(parent: HTMLElement, options: CodeEditorOptions)
         }),
     ];
     const view = new EditorView({ parent, state: EditorState.create({ doc: options.value, extensions }) });
+    // The schema's linting, completion and hover help load with the first JSON document that has one.
+    const loadSchema = () => {
+        const schema = current.schema;
+        if (!schema || !['json', 'jsonc', 'json5'].includes(current.language.trim().toLowerCase())) {
+            view.dispatch({ effects: schemaSupport.reconfigure([]) });
+            return;
+        }
+        void import('codemirror-json-schema').then(({ jsonSchema }) => {
+            if (view.dom.isConnected && current.schema === schema) view.dispatch({ effects: schemaSupport.reconfigure(jsonSchema(schema as Parameters<typeof jsonSchema>[0])) });
+        }).catch(error => console.warn('[ui] the JSON schema support could not load', error));
+    };
     const apply = async (name: string) => {
+        const languageChanged = name !== current.language;
+        current = { ...current, language: name };
+        if (languageChanged) loadSchema();
         const support = await languageFor(name);
-        if (view.dom.isConnected) view.dispatch({ effects: language.reconfigure(support ?? []) });
+        if (view.dom.isConnected && current.language === name) view.dispatch({ effects: language.reconfigure(support ?? []) });
     };
     void apply(options.language);
-    // The schema's linting, completion and hover help load with the first JSON document that has one.
-    if (options.schema && ['json', 'jsonc', 'json5'].includes(options.language.trim().toLowerCase())) {
-        void import('codemirror-json-schema').then(({ jsonSchema }) => {
-            if (view.dom.isConnected) view.dispatch({ effects: schemaSupport.reconfigure(jsonSchema(options.schema as Parameters<typeof jsonSchema>[0])) });
-        }).catch(error => console.warn('[ui] the JSON schema support could not load', error));
-    }
+    if (options.schema) loadSchema();
     return {
         setValue(value) {
             if (value === held) return;
@@ -111,6 +126,22 @@ export function mountCodeEditor(parent: HTMLElement, options: CodeEditorOptions)
             view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: value } });
         },
         setLanguage: apply,
+        configure(next) {
+            const previous = current;
+            current = { ...current, ...next };
+            if (next.readOnly !== previous.readOnly) view.dispatch({ effects: editable.reconfigure(editableOf(next.readOnly)) });
+            if (next.original !== previous.original) {
+                if (next.original !== null && previous.original !== null) {
+                    // Same diff view, another comparison: replace the original document in place.
+                    const before = getOriginalDoc(view.state);
+                    view.dispatch({ effects: originalDocChangeEffect(view.state, ChangeSet.of({ from: 0, to: before.length, insert: next.original }, before.length)) });
+                } else {
+                    view.dispatch({ effects: merge.reconfigure(mergeOf(next.original)) });
+                }
+            }
+            // A new copy of the same schema is common (props rebuilt each render): compare by content only when the reference changed.
+            if (next.schema !== previous.schema && JSON.stringify(next.schema) !== JSON.stringify(previous.schema)) loadSchema();
+        },
         focus() { view.focus(); },
         destroy() { view.destroy(); },
     };

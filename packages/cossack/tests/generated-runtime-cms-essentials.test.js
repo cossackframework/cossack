@@ -165,7 +165,7 @@ async function essentials(origin, routeIds, diagnostics, { runtime, cloudflare =
   contains(await locked.page('/posts/members-only?password=wrong'), 'not right');
   const right = await locked.post('/posts/members-only', { password: 'open sesame' });
   expect(right.headers.get('location')).toBe('/posts/members-only');
-  expect(right.headers.get('set-cookie')).toMatch(new RegExp(`^cms_unlock_${secretId}=[0-9a-f]{64}; Path=/posts/members-only;`));
+  expect(right.headers.get('set-cookie')).toMatch(new RegExp(`^cms_unlock_${secretId}=[0-9a-f]{64}; Path=/;`));
   contains(await locked.page('/posts/members-only'), 'Members only body');
   // The unlocked page depends on the cookie, which shared caches ignore: never held, nor the locked one.
   expect((await locked.request('/posts/members-only')).headers.get('cache-control')).toBe('private, no-store');
@@ -512,7 +512,8 @@ async function essentials(origin, routeIds, diagnostics, { runtime, cloudflare =
   // Editors cannot open user screens; a user manager who is not an administrator sees no
   // Sessions or Application passwords there, and the server refuses the actions.
   await expect(eve.action(userScreen, 'addToken', ['Not mine', 'write'], { params: { id: eveId } })).rejects.toThrow(/answered 403/);
-  await web.action('dashboard/roles/new/index.ts', 'create', ['User manager', ['cms:dashboard', 'cms:users']]);
+  // A user manager changes only accounts whose permissions they hold too: this one holds an editor's.
+  await web.action('dashboard/roles/new/index.ts', 'create', ['User manager', ['cms:dashboard', 'cms:users', 'cms:terms', 'cms:media', 'cms:upload', 'cms:comments', 'cms:submissions', 'cms/*', 'app/*']]);
   await web.action(editorUser, 'create', ['Max', 'max@example.com', 'max password 1', ['user-manager']]);
   const max = browserless(origin, routeIds, diagnostics);
   await max.action('auth/login/index.ts', 'login', [{ email: 'max@example.com', password: 'max password 1' }]);
@@ -539,7 +540,7 @@ async function webhooks(web) {
     const page = 'dashboard/(cms)/tools/webhooks/index.ts';
     const saved = await web.action(page, 'save', [{ id: '', name: 'Rebuild', url: hook.url, events: ['entry.published'], collections: ['posts'], active: true }]);
     expect(saved.error).toBe('');
-    const secret = saved.hooks[0].secret;
+    const secret = saved.revealed;
     expect((await web.action(page, 'ping', [saved.selected]))._cossack_return).toMatchObject({ ok: true, status: 204 });
     await save(web, 'posts', post('Rebuild me'));
     await expect.poll(() => hook.deliveries.filter(delivery => delivery.headers['x-cossack-event'] === 'entry.published').length, { timeout: 20_000 }).toBe(1);

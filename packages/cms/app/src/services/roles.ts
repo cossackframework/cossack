@@ -1,5 +1,5 @@
-import { ClientVisibleError } from '@cossackframework/core';
-import { isCmsError } from '@cossackframework/cms';
+import { ClientVisibleError, getRequestContext } from '@cossackframework/core';
+import { ANONYMOUS, isCmsError, type Principal } from '@cossackframework/cms';
 import type { CmsRole } from '@cossackframework/cms/server';
 import { currentCms } from '../cms/index';
 import type { Permission } from '../lib/permissions';
@@ -69,15 +69,21 @@ export async function getRole(id: string): Promise<RoleDetail | null> {
   return role ? detail(role) : null;
 }
 
+/** Who is changing roles: the request's principal, which may give only the permissions it holds. */
+function actor(): Principal {
+  return (getRequestContext()?.get('principal') as Principal | undefined) ?? ANONYMOUS;
+}
+
 export async function createRole(input: CreateRoleInput): Promise<RoleDetail> {
-  return detail(await visible(currentCms().users.createRole({ name: input.name, permissions: input.permissions ?? [] })));
+  return detail(await visible(currentCms().users.createRole({ name: input.name, permissions: input.permissions ?? [] }, { actor: actor() })));
 }
 
+/** The administrator role cannot be changed, and a role stronger than the actor stays as it is. */
 export async function updateRole(id: string, patch: UpdateRoleInput): Promise<void> {
-  if (!(await visible(currentCms().users.updateRole(id, patch)))) throw new ClientVisibleError('Role not found.');
+  if (!(await visible(currentCms().users.updateRole(id, patch, { actor: actor() })))) throw new ClientVisibleError('Role not found.');
 }
 
-/** The administrator role cannot be deleted. Its holders keep their other roles. */
+/** The administrator role cannot be deleted, nor a role stronger than the actor. Its holders keep their other roles. */
 export async function deleteRole(id: string): Promise<void> {
-  await visible(currentCms().users.deleteRole(id));
+  await visible(currentCms().users.deleteRole(id, { actor: actor() }));
 }

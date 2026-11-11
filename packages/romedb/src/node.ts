@@ -1,10 +1,11 @@
 import { constants } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ClientError, connect } from '@romedb/client';
 import type { DatabaseClient, EmbeddedClient } from './database';
-import { decodePendingWrite, encodePendingWrite, PendingWriteConflictError, samePendingWrite, type PendingWrite, type PendingWriteStore } from './pending';
+import { decodePendingWrite, encodePendingWrite, pagePendingWrites, PendingWriteConflictError, samePendingWrite, type PendingListOptions, type PendingWrite, type PendingWriteStore } from './pending';
 
 /** What this entry uses of `@romedb/node`, an optional peer: a Node app on a service does not install it. */
 interface EmbeddedOpener {
@@ -13,10 +14,24 @@ interface EmbeddedOpener {
 
 const MAX_FILE = 2_359_296;
 const ID = /^[A-Za-z0-9_-]{1,80}$/;
+const TEMPORARY = '.tmp';
+const CORRUPT = '.corrupt';
+/** A temporary body older than this was left by a crash between its write and its link. */
+const STALE_TEMPORARY_MS = 60 * 60_000;
+
+/** A saved file that does not decode, such as one cut short by a crash from an older release. */
+export class CorruptPendingWriteError extends Error {
+    constructor(readonly id: string, cause: unknown) {
+        super(`The pending write ${id} does not decode.`, { cause });
+        this.name = 'CorruptPendingWriteError';
+    }
+}
 
 /**
- * One private file per pending write: created exclusively with mode 0600, flushed with its
- * directory before dispatch, and never overwritten with a different body.
+ * One private file per pending write, mode 0600. The body is written and flushed under a temporary
+ * name and then hard-linked into place, so a saved name never holds a partial body and an existing
+ * one is never replaced. `list` sets aside files that do not decode, so one bad file cannot stop
+ * recovery of the rest.
  */
 export class FilePendingWriteStore implements PendingWriteStore {
     readonly durability = 'durable' as const;
@@ -31,24 +46,27 @@ export class FilePendingWriteStore implements PendingWriteStore {
         const file = await this.#file(id);
         const text = encodePendingWrite(write);
         if (Buffer.byteLength(text) > MAX_FILE) throw new RangeError('pending write exceeds byte limit');
-        let handle: fs.FileHandle;
-        try {
-            handle = await fs.open(file, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | (constants.O_NOFOLLOW ?? 0), 0o600);
-        } catch (error) {
-            if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-            const existing = await this.get(id);
-            if (existing && samePendingWrite(existing, write)) return;
-            throw new PendingWriteConflictError(id);
-        }
+        const temporary = path.join(this.#directory, `.${id}.${randomUUID()}${TEMPORARY}`);
+        const handle = await fs.open(temporary, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | (constants.O_NOFOLLOW ?? 0), 0o600);
         try {
             await handle.writeFile(text, 'utf8');
             await handle.sync();
         } catch (error) {
             await handle.close();
-            await fs.unlink(file).catch(() => {});
+            await fs.unlink(temporary).catch(() => {});
             throw error;
         }
         await handle.close();
+        try {
+            await fs.link(temporary, file);
+        } catch (error) {
+            await fs.unlink(temporary).catch(() => {});
+            if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+            const existing = await this.get(id);
+            if (existing && samePendingWrite(existing, write)) return;
+            throw new PendingWriteConflictError(id);
+        }
+        await fs.unlink(temporary);
         await this.#syncDirectory();
     }
 
@@ -65,7 +83,9 @@ export class FilePendingWriteStore implements PendingWriteStore {
             if (!stat.isFile() || stat.nlink !== 1 || (stat.mode & 0o077) !== 0 || (typeof process.getuid === 'function' && stat.uid !== process.getuid()) || stat.size > MAX_FILE) {
                 throw new Error('pending write requires a private bounded regular file');
             }
-            return decodePendingWrite(await handle.readFile('utf8'));
+            const text = await handle.readFile('utf8');
+            try { return decodePendingWrite(text); }
+            catch (error) { throw new CorruptPendingWriteError(id, error); }
         } finally { await handle.close(); }
     }
 
@@ -75,16 +95,32 @@ export class FilePendingWriteStore implements PendingWriteStore {
         await this.#syncDirectory();
     }
 
-    async list(options: { limit?: number } = {}): Promise<readonly PendingWrite[]> {
+    async list(options: PendingListOptions = {}): Promise<readonly PendingWrite[]> {
         await this.#prepare();
-        const names = (await fs.readdir(this.#directory)).filter(name => name.endsWith('.json') && ID.test(name.slice(0, -5)));
+        const names = await fs.readdir(this.#directory);
         const writes: PendingWrite[] = [];
         for (const name of names) {
-            const write = await this.get(name.slice(0, -5));
-            if (write) writes.push(write);
+            if (name.endsWith(TEMPORARY)) {
+                await this.#dropStaleTemporary(name);
+                continue;
+            }
+            if (!name.endsWith('.json') || !ID.test(name.slice(0, -5))) continue;
+            try {
+                const write = await this.get(name.slice(0, -5));
+                if (write) writes.push(write);
+            } catch (error) {
+                // Kept beside the others under a name nothing reads, for an operator to inspect.
+                if (error instanceof CorruptPendingWriteError) await fs.rename(path.join(this.#directory, name), path.join(this.#directory, `${name}${CORRUPT}`)).catch(() => {});
+                // A file that fails the ownership checks, or is mid-link, is left for a later run.
+            }
         }
-        writes.sort((a, b) => a.savedAt - b.savedAt);
-        return writes.slice(0, options.limit ?? writes.length);
+        return pagePendingWrites(writes, options);
+    }
+
+    async #dropStaleTemporary(name: string): Promise<void> {
+        const file = path.join(this.#directory, name);
+        const stat = await fs.lstat(file).catch(() => undefined);
+        if (stat && Date.now() - stat.mtimeMs > STALE_TEMPORARY_MS) await fs.unlink(file).catch(() => {});
     }
 
     async #file(id: string): Promise<string> {

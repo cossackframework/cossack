@@ -4,7 +4,7 @@ import type { MediaView, RenderedBlock, SiteTheme } from '@cossackframework/cms'
 // The site view reads the app's plugins for theme overrides; none here.
 vi.mock('virtual:cossack-plugins', () => ({ default: [] }));
 vi.stubGlobal('__', (value: string) => value);
-const { themeHelpers, alignOf } = await import('../src/cms/site-view');
+const { themeHelpers, alignOf, dividerColor, safeLink } = await import('../src/cms/site-view');
 const { renderToString } = await import('@cossackframework/renderer/server');
 
 const theme = { layout: () => null, entry: () => null, archive: () => null } as unknown as SiteTheme;
@@ -56,5 +56,19 @@ describe('the constrained layout', () => {
         // A video the media did not resolve renders no element.
         const silent = compact(await renderToString(helpers.block(group('s', {}, [], { style: { video: 'gone', background: 'brand' } }))!));
         expect(silent).not.toContain('<video');
+    });
+});
+
+describe('block values in markup', () => {
+    it('keeps divider colors to slugs and CSS colors, and links to the site or http(s)', () => {
+        expect(dividerColor('accent')).toBe('var(--cms-color-accent, accent)');
+        expect(dividerColor('red')).toBe('red');
+        expect(dividerColor('#ff0000')).toBe('#ff0000');
+        expect(dividerColor('rgb(0 0 0 / 50%)')).toBe('rgb(0 0 0 / 50%)');
+        expect(dividerColor('red;position:fixed;inset:0')).toBe('var(--border)');
+        expect(dividerColor('rgb(0);position:fixed')).toBe('var(--border)');
+        expect(safeLink('/about')).toBe('/about');
+        expect(safeLink('https://example.com/')).toBe('https://example.com/');
+        for (const url of ['//evil.example', '/\\evil.example', 'javascript:alert(1)']) expect(safeLink(url)).toBe('#');
     });
 });

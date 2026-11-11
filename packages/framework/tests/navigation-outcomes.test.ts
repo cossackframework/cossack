@@ -4,7 +4,7 @@ import type { NavigateResult } from '@cossackframework/core';
 import { startDevelopmentTrace, type DevelopmentTraceSession } from '@cossackframework/core/devtools';
 
 const fixture = vi.hoisted(() => ({
-    registry: { pages: {} as Record<string, any>, layouts: {} as Record<string, any>, loadings: {} },
+    registry: { pages: { '/src/pages/feed.xml.ts': async () => ({}) } as Record<string, any>, layouts: {} as Record<string, any>, loadings: {}, handlers: ['/src/pages/feed.xml.ts'] },
     guard: async () => false,
     bootstrapGate: undefined as Promise<void> | undefined,
     bootstrapStarted: false,
@@ -622,6 +622,17 @@ describe('development navigation diagnostics', () => {
         ]);
     });
 
+
+    it('loads a handler route as a document without fetching it first, and never prefetches it', async () => {
+        const fetchMock = vi.fn(async () => documentResponse('fast'));
+        vi.stubGlobal('fetch', fetchMock);
+        const core = await import('@cossackframework/core');
+        const prefetch = vi.mocked(core.enableClientNavigation).mock.calls.at(-1)![1]!;
+        await prefetch('/feed.xml');
+        const result = await navigate('/feed.xml');
+        expect(result).toMatchObject({ outcome: 'failed', error: { url: 'http://localhost:3000/feed.xml' } });
+        expect(fetchMock).not.toHaveBeenCalled();
+    });
 
     it('correlates a shared prefetch and superseded navigation independently', async () => {
         let release!: (response: Response) => void;

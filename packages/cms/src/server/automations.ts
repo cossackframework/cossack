@@ -1,13 +1,16 @@
 /**
  * Automations run: the host turns its outbox events (entries, forms, payments) into variables
  * and asks this service to run the active automations that match. An email goes out as the
- * site. A failure is kept on the automation as its last error and thrown, so the outbox
- * retries the delivery.
+ * site. A failure is kept on the automation as its last error; one that can pass on another
+ * try is thrown, so the outbox retries the delivery, and the automations that already sent for
+ * it are skipped then. An automation emails what its event carries, so saving or switching one
+ * on needs read access to that: the entries of its collection, or form submissions.
  */
 import type { RomeDB } from '@cossackframework/romedb';
 import type { BindingScopes } from '../bindings';
 import { automationMatches, automationProblems, renderAutomationTemplate, type Automation, type AutomationAction, type AutomationConditions, type AutomationEvent, type AutomationInput } from '../automations';
 import { CmsError } from '../errors';
+import { hasPermission, PERMISSIONS, type Principal } from '../permissions';
 import type { CmsMailer } from './mail';
 import { randomToken } from './tokens';
 
@@ -44,10 +47,11 @@ export class CmsAutomations {
         return row ? rowOf(row) : null;
     }
 
-    /** Create or change an automation; problems are refused as `CMS_VALIDATION`. */
-    async save(input: AutomationInput, options: { id?: string } = {}): Promise<Automation> {
+    /** Create or change an automation; problems are refused as `CMS_VALIDATION`, data the principal may not read as `CMS_FORBIDDEN`. */
+    async save(input: AutomationInput, options: { id?: string; principal: Principal }): Promise<Automation> {
         const problems = automationProblems(input);
         if (problems.length) throw new CmsError('CMS_VALIDATION', problems.join(' '));
+        assertReads(options.principal, input.event, input.conditions?.collection);
         const now = this.#now();
         const conditions: AutomationConditions = { ...(input.conditions?.collection ? { collection: input.conditions.collection } : {}), ...(input.conditions?.form ? { form: input.conditions.form } : {}) };
         const action: AutomationAction = { kind: 'email', to: input.action.to.split(',').map(part => part.trim()).filter(Boolean).join(', '), subject: input.action.subject.trim(), text: input.action.text };
@@ -58,7 +62,7 @@ export class CmsAutomations {
             await this.#db.write([{ rql: 'UPDATE cms_automations SET name = $name, event = $event, conditions = $conditions, action = $action, active = $active, updated_at = $now WHERE id = $id',
                 params: { $id: options.id, $name: input.name.trim(), $event: input.event, $conditions: JSON.stringify(conditions), $action: JSON.stringify(action), $active: active ? 1 : 0, $now: now } }], WRITE);
         } else {
-            options = { id: randomToken(12) };
+            options = { ...options, id: randomToken(12) };
             await this.#db.write([{ rql: `INSERT INTO cms_automations (${COLUMNS}) VALUES ($id, $name, $event, $conditions, $action, $active, 0, NULL, '', $now, $now)`,
                 params: { $id: options.id!, $name: input.name.trim(), $event: input.event, $conditions: JSON.stringify(conditions), $action: JSON.stringify(action), $active: active ? 1 : 0, $now: now } }], WRITE);
         }
@@ -66,7 +70,11 @@ export class CmsAutomations {
         return (await this.get(options.id!))!;
     }
 
-    async setActive(id: string, active: boolean): Promise<boolean> {
+    async setActive(id: string, active: boolean, principal: Principal): Promise<boolean> {
+        if (active) {
+            const current = await this.get(id);
+            if (current) assertReads(principal, current.event, current.conditions?.collection);
+        }
         const result = await this.#db.write([{ rql: 'UPDATE cms_automations SET active = $active, updated_at = $now WHERE id = $id', params: { $id: id, $active: active ? 1 : 0, $now: this.#now() } }], WRITE);
         return result.results[0]!.affected === 1n;
     }
@@ -81,18 +89,27 @@ export class CmsAutomations {
      * its automation; the first error is thrown after the rest ran, so the outbox retries the
      * delivery (an email sent before a failure is sent again then: keep actions idempotent at the receiver).
      */
-    async run(event: AutomationEvent, vars: Record<string, unknown>, scopes: Omit<BindingScopes, 'entry'> = {}): Promise<{ ran: string[]; failed: string[] }> {
+    async run(event: AutomationEvent, vars: Record<string, unknown>, scopes: Omit<BindingScopes, 'entry'> = {}, delivery?: string): Promise<{ ran: string[]; failed: string[] }> {
         const ran: string[] = [];
         const failed: string[] = [];
         let first: unknown;
-        for (const automation of (await this.list()).filter(entry => entry.active && automationMatches(entry, event, vars))) {
+        const matching = (await this.list()).filter(entry => entry.active && automationMatches(entry, event, vars));
+        // On a retry of the same delivery, the automations that sent already are done.
+        const done = delivery && matching.length ? await this.#done(matching.map(entry => doneKey(entry.id, delivery))) : new Set<string>();
+        for (const automation of matching) {
+            const key = delivery ? doneKey(automation.id, delivery) : null;
+            if (key && done.has(key)) continue;
             try {
                 await this.#perform(automation, vars, scopes);
-                await this.#db.write([{ rql: "UPDATE cms_automations SET runs = runs + 1, last_run_at = $now, last_error = '' WHERE id = $id", params: { $id: automation.id, $now: this.#now() } }], WRITE);
+                await this.#db.write([
+                    { rql: "UPDATE cms_automations SET runs = runs + 1, last_run_at = $now, last_error = '' WHERE id = $id", params: { $id: automation.id, $now: this.#now() } },
+                    ...(key ? [{ rql: "INSERT INTO cms_cache (key, value, expires_at) VALUES ($key, '1', $until) ON CONFLICT (key) DO NOTHING", params: { $key: key, $until: this.#now() + DONE_MS } }] : []),
+                ], WRITE);
                 ran.push(automation.id);
             } catch (error) {
                 failed.push(automation.id);
-                first ??= error;
+                // Nothing to send to, or no sender: another try fails the same way, so it is only recorded.
+                if (!(error instanceof AutomationSkipped)) first ??= error;
                 await this.#db.write([{ rql: 'UPDATE cms_automations SET last_run_at = $now, last_error = $error WHERE id = $id', params: { $id: automation.id, $now: this.#now(), $error: String((error as Error)?.message ?? error).slice(0, 500) } }], WRITE).catch(() => undefined);
             }
         }
@@ -100,13 +117,36 @@ export class CmsAutomations {
         return { ran, failed };
     }
 
+    async #done(keys: readonly string[]): Promise<Set<string>> {
+        const result = await this.#db.read([{ rql: `SELECT key FROM cms_cache WHERE key IN (${keys.map((_, index) => `$k${index}`).join(', ')})`, params: Object.fromEntries(keys.map((key, index) => [`$k${index}`, key])) }]);
+        return new Set(result.results[0]!.rows.map(row => row[0] as string));
+    }
+
     async #perform(automation: Automation, vars: Record<string, unknown>, scopes: Omit<BindingScopes, 'entry'>): Promise<void> {
         const action = automation.action;
-        if (!this.#options.mail) throw new Error('No email sender is configured.');
+        if (!this.#options.mail) throw new AutomationSkipped('No email sender is configured.');
         const recipients = renderAutomationTemplate(action.to, vars, scopes).split(',').map(part => part.trim()).filter(part => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(part));
-        if (!recipients.length) throw new Error('No recipient: the address was empty.');
+        if (!recipients.length) throw new AutomationSkipped('No recipient: the address was empty.');
         for (const to of recipients) await this.#options.mail.send({ kind: 'automation', to, from: this.#options.mailFrom ?? 'no-reply@example.com', subject: renderAutomationTemplate(action.subject, vars, scopes).slice(0, 200), text: renderAutomationTemplate(action.text, vars, scopes) });
     }
+}
+
+/** Automations that sent for a delivery are remembered this long: past the outbox's retries. */
+const DONE_MS = 8 * 24 * 60 * 60 * 1000;
+
+function doneKey(id: string, delivery: string): string {
+    return `automation:${id}:${delivery}`.slice(0, 200);
+}
+
+/** A failure another try would repeat: recorded on the automation, not retried. */
+class AutomationSkipped extends Error {}
+
+/** Whether the principal may read what an automation of this event sends: entries of the collection (all collections without one), or form submissions and payments. */
+function assertReads(principal: Principal, event: AutomationEvent, collection: string | undefined): void {
+    const permission = event === 'form.submitted' ? PERMISSIONS.manageSubmissions
+        : event === 'payment.completed' ? PERMISSIONS.manageSettings
+        : collection ? `cms/${collection}:read` : 'cms/*';
+    if (!hasPermission(principal, permission)) throw new CmsError('CMS_FORBIDDEN', `This automation sends what you may not read (${permission}).`);
 }
 
 function rowOf(row: readonly unknown[]): Automation {

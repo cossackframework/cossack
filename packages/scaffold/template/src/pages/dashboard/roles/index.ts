@@ -49,13 +49,9 @@ export default class RolesPage extends Cossack {
     }
 
     @Server()
-    async remove(id: string, name: string) {
+    async remove(id: string) {
         this.message = '';
         this.error = '';
-        if (name === 'admin') {
-            this.error = __('The admin role cannot be deleted.');
-            return;
-        }
         try {
             await deleteRole(id);
             this.message = __('Role deleted.');
@@ -85,7 +81,7 @@ export default class RolesPage extends Cossack {
         const r = this.pendingDelete;
         this.pendingDelete = null;
         if (!r) return;
-        await this.remove(r.id, r.name);
+        await this.remove(r.id);
     }
 
     /** Query-string for pagination links — preserves the current search. */

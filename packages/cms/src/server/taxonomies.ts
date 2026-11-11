@@ -35,7 +35,8 @@ export interface TermInput {
 }
 
 /** A target's meta, checked against its field groups: errors by field, or the values to store. */
-export type MetaCheck = (meta: unknown, previous: { readonly [field: string]: unknown } | null) => Promise<{ readonly [field: string]: unknown }>;
+/** Checks meta against the field groups; Custom HTML in it needs `principal` to hold `cms:html`. */
+export type MetaCheck = (meta: unknown, previous: { readonly [field: string]: unknown } | null, principal?: Principal) => Promise<{ readonly [field: string]: unknown }>;
 
 const ID = /^[A-Za-z0-9_-]{1,80}$/;
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -183,7 +184,7 @@ export class CmsTaxonomies {
     async create(taxonomy: string, input: TermInput, context: { principal: Principal }): Promise<TermShape> {
         this.#authorize(context.principal);
         const declaration = this.declaration(taxonomy);
-        const meta = await this.#meta(taxonomy, input.meta, null);
+        const meta = await this.#meta(taxonomy, input.meta, null, context.principal);
         const draft = await this.#filtered({ name: checkName(input.name), slug: input.slug?.trim() ?? '', description: checkDescription(input.description), parent: input.parent ?? null, icon: checkIcon(input.icon), meta },
             { taxonomy, action: 'create', id: null, previous: null, actor: actorOf(context.principal) });
         const name = checkName(draft.name);
@@ -213,7 +214,7 @@ export class CmsTaxonomies {
             name: input.name === undefined ? term.name : checkName(input.name), slug: input.slug === undefined ? term.slug : input.slug.trim(),
             description: input.description === undefined ? term.description : checkDescription(input.description), parent: input.parent === undefined ? term.parent : input.parent,
             icon: input.icon === undefined ? term.icon : checkIcon(input.icon),
-            meta: input.meta === undefined ? term.meta : await this.#meta(term.taxonomy, input.meta, term.meta),
+            meta: input.meta === undefined ? term.meta : await this.#meta(term.taxonomy, input.meta, term.meta, context.principal),
         }, { taxonomy: term.taxonomy, action: 'update', id, previous: term, actor: actorOf(context.principal) });
         const name = checkName(draft.name);
         const slug = draft.slug.trim() === term.slug ? term.slug
@@ -313,8 +314,8 @@ export class CmsTaxonomies {
 
     /** The draft after the before-save filter, when the host has one. */
     /** The meta to store: the field groups' check, or the input as given when the taxonomy has none. */
-    async #meta(taxonomy: string, meta: unknown, previous: { readonly [field: string]: unknown } | null): Promise<{ readonly [field: string]: unknown }> {
-        if (this.#checkMeta) return this.#checkMeta(taxonomy)(meta, previous);
+    async #meta(taxonomy: string, meta: unknown, previous: { readonly [field: string]: unknown } | null, principal: Principal): Promise<{ readonly [field: string]: unknown }> {
+        if (this.#checkMeta) return this.#checkMeta(taxonomy)(meta, previous, principal);
         if (meta === undefined) return previous ?? {};
         if (meta === null || typeof meta !== 'object' || Array.isArray(meta)) throw new CmsError('CMS_VALIDATION', 'Meta must be an object of fields.', { fields: { meta: 'must be an object of fields.' } });
         return { ...previous, ...(meta as { [field: string]: unknown }) };

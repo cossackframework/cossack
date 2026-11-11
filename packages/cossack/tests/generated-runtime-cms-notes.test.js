@@ -105,6 +105,16 @@ describe.skipIf(!liveRomeDBTests())('generated CMS notes', () => {
       await evePage.locator('[data-note-composer] button[type="submit"]').click();
       await browserExpect(adaPage.locator('[data-notes-rail] [data-note-thread] [data-note]')).toHaveCount(2, { timeout: 10_000 });
       await browserExpect(adaPage.locator('[data-notes-rail] [data-mention]')).toHaveText('@Ada');
+      // A subscriber who can read the entry gets no editor: neither its notes nor the people list, nor its server methods.
+      await ada.action('dashboard/users/new/index.ts', 'create', ['Sam', 'sam@example.com', 'sam password 1', ['subscriber']]);
+      const sam = browserless(origin, app.routeIds, diagnostics);
+      await sam.action('auth/login/index.ts', 'login', [{ email: 'sam@example.com', password: 'sam password 1' }]);
+      const refused = await sam.request(`/dashboard/content/posts/${id}`);
+      const refusedHtml = await refused.text();
+      expect(refused.status).toBe(404);
+      expect(refusedHtml).not.toContain('Needs a source');
+      expect(refusedHtml).not.toContain('eve@example.com');
+      await expect(sam.action(EDITOR, 'findMedia', ['', ''], { params: { collection: 'posts', id }, state: { route: 'posts', id } })).rejects.toThrow(/cannot edit/);
       // Ada changes her own words from the pen icon on her note; Eve reads the new text.
       await adaPage.locator('[data-notes-rail] [data-note] [aria-label="Edit"]').first().click();
       await adaPage.locator('[data-notes-rail] textarea[id^="entry-notes-edit-"]').fill('Needs a source, please.');

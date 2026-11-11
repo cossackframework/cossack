@@ -41,6 +41,26 @@ describe('transport representation', () => {
         expect(decoded.$fdb).toBe('user data');
     });
 
+    it('keeps a __proto__ key as a field instead of a prototype', () => {
+        const decoded = fromTransport(JSON.parse('{"__proto__":{"isAdmin":true},"a":1}')) as { [key: string]: Value };
+        expect(Object.getPrototypeOf(decoded)).toBe(Object.prototype);
+        expect((decoded as { isAdmin?: unknown }).isAdmin).toBeUndefined();
+        expect(Object.keys(decoded)).toEqual(['__proto__', 'a']);
+        const wrapped = fromTransport(JSON.parse('{"$fdb":1,"t":"obj","v":{"__proto__":{"x":1}}}')) as object;
+        expect(Object.getPrototypeOf(wrapped)).toBe(Object.prototype);
+        const encoded = toTransport(decoded) as object;
+        expect(Object.getPrototypeOf(encoded)).toBe(Object.prototype);
+        expect(JSON.parse(JSON.stringify(encoded))).toEqual(JSON.parse('{"__proto__":{"isAdmin":true},"a":1}'));
+    });
+
+    it('refuses integers outside int64', () => {
+        expect(fromTransport({ $fdb: 1, t: 'int', v: '9223372036854775807' })).toBe(9223372036854775807n);
+        expect(fromTransport({ $fdb: 1, t: 'int', v: '-9223372036854775808' })).toBe(-9223372036854775808n);
+        expect(() => fromTransport({ $fdb: 1, t: 'int', v: '9223372036854775808' })).toThrow(/int64/);
+        expect(() => fromTransport({ $fdb: 1, t: 'int', v: '9999999999999999999' })).toThrow(/int64/);
+        expect(() => fromTransport({ $fdb: 1, t: 'rec', v: { table: 't', int: '9999999999999999999' } })).toThrow(/int64/);
+    });
+
     it('rejects unknown tags and versions', () => {
         expect(() => fromTransport({ $fdb: 2, t: 'int', v: '1' })).toThrow(/unsupported/);
         expect(() => fromTransport({ $fdb: 1, t: 'nope', v: '1' })).toThrow(/unsupported/);

@@ -6,6 +6,8 @@ import { hasPermission, PERMISSIONS, principalId, type Principal } from '../perm
 import { OWNER_NAME } from '../resource';
 import type { SettingsGroup, SiteSettings } from '../settings';
 import { settingControlProblems, validateSettingValue } from '../settings-controls';
+import { customCssProblem, presetOverridesProblem } from '../theme';
+import { dashboardMenuProblems } from '../dashboard-menu';
 import { checkSettingsDocument, isPortableSetting, SETTINGS_DOCUMENT_MAX_FIELDS, stringifySettingsDocument, type SettingsDocument, type SettingsValue } from '../settings-document';
 
 const WRITE = { kind: 'cms.settings', retryConflicts: 5, workLimits: { rowsRead: 100_000, rowMutations: 5000, vmSteps: 2_000_000 } } as const;
@@ -13,6 +15,25 @@ const UNSAFE = new Set(['__proto__', 'constructor', 'prototype']);
 const EXCLUDED = new Set(['appearance', 'languages', 'permalinks']);
 const encoder = new TextEncoder();
 type Context = { principal: Principal };
+
+/**
+ * Rules beyond a setting's declaration, run on every write (the dashboard, the settings API,
+ * the CLI and MCP alike): the screens that edit these values check them too, for their messages.
+ */
+const VALUE_CHECKS: Readonly<Record<string, (value: unknown) => string | undefined>> = {
+    'appearance.customCss': value => typeof value === 'string' ? customCssProblem(value) : undefined,
+    'appearance.presets': value => {
+        if (value === null || value === undefined) return undefined;
+        if (typeof value !== 'object' || Array.isArray(value)) return 'are an object of preset overrides by theme.';
+        for (const overrides of Object.values(value)) { const problem = presetOverridesProblem(overrides); if (problem) return problem; }
+        return undefined;
+    },
+    'dashboard.menu': value => value === null || value === undefined ? undefined : dashboardMenuProblems(value)[0],
+};
+
+function settingProblem(key: string, name: string, declaration: SettingsGroup['fields'][string], value: unknown): string | undefined {
+    return validateSettingValue(name, declaration, value) ?? (Object.hasOwn(VALUE_CHECKS, key) ? VALUE_CHECKS[key]!(value) : undefined);
+}
 type Stored = { values: SiteSettings; errors: Record<string, string> };
 
 export class CmsSettings {
@@ -95,7 +116,7 @@ export class CmsSettings {
             this.#authorize(group, context);
             for (const [name, value] of Object.entries(fields)) {
                 const declaration = Object.hasOwn(group.fields, name) ? group.fields[name] : undefined;
-                const error = declaration ? validateSettingValue(name, declaration, value) : 'is not a setting of this group.';
+                const error = declaration ? settingProblem(`${id}.${name}`, name, declaration, value) : 'is not a setting of this group.';
                 if (error) errors[`${id}.${name}`] = error;
             }
         }
@@ -134,7 +155,7 @@ export class CmsSettings {
             const declaration = Object.hasOwn(group.fields, name) ? group.fields[name] : undefined;
             if (!declaration) { errors[name] = 'is not a setting of this group.'; continue; }
             if (value === undefined) continue;
-            const error = validateSettingValue(name, declaration, value);
+            const error = settingProblem(`${group.id}.${name}`, name, declaration, value);
             if (error) { errors[name] = error; continue; }
             entries.push([`${group.id}.${name}`, value]);
         }

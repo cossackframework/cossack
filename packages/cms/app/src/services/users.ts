@@ -1,8 +1,9 @@
 import { ClientVisibleError, getRequestContext } from '@cossackframework/core';
-import { isCmsError, systemPrincipal } from '@cossackframework/cms';
+import { isCmsError, NETWORK_ADMIN, systemPrincipal } from '@cossackframework/cms';
 import { MAIN_SITE, randomToken, type CmsHost, type CmsUser } from '@cossackframework/cms/server';
 import { currentCms, networkFor, type CmsBindings } from '../cms/index';
-import { manageableHere, NETWORK_ACCOUNT_LOCKED, type PublicUser, type RoleAssignment } from '../auth';
+import { getCookie } from 'hono/cookie';
+import { linkOrigin, manageableHere, NETWORK_ACCOUNT_LOCKED, SESSION_COOKIE_NAME, type PublicUser, type RoleAssignment } from '../auth';
 
 export interface UserSummary {
   id: string;
@@ -18,6 +19,8 @@ export interface UserSummary {
 }
 
 export interface UserDetail extends UserSummary {
+  /** The account administers the network: only another network admin changes it. */
+  networkAdmin?: true;
   /** For others on an added site, why a network account's profile, password and sign-in methods are not changed here. */
   lockedProfile?: string;
 }
@@ -79,7 +82,9 @@ export async function listUsers(options: ListUsersOptions = {}): Promise<ListUse
 export async function getUser(id: string): Promise<UserDetail | null> {
   const user = await currentCms().users.get(id);
   if (!user) return null;
-  return { ...summary(user), ...(await manageableHere(id) ? {} : { lockedProfile: NETWORK_ACCOUNT_LOCKED }) };
+  const cms = currentCms();
+  const networkAdmin = user.account === 'network' && (await cms.accounts.get(id))?.networkRole === NETWORK_ADMIN;
+  return { ...summary(user), ...(networkAdmin ? { networkAdmin: true as const } : {}), ...(await manageableHere(id) ? {} : { lockedProfile: NETWORK_ACCOUNT_LOCKED }) };
 }
 
 /** A new account with the chosen roles, or General settings' default role. */
@@ -104,9 +109,9 @@ export async function createUser(input: CreateUserInput): Promise<Omit<PublicUse
 /** The invitation: a link to set a password, good for seven days, from the site's sender. */
 async function sendInvitation(cms: CmsHost, email: string, name: string): Promise<void> {
   const reset = await cms.signIn.accounts.createPasswordReset(email, { ttlMs: 7 * 24 * 60 * 60_000 });
-  if (!reset || !cms.mail) return;
-  const c = getRequestContext();
-  const origin = env('APP_URL', '') || (c ? new URL(c.req.url).origin : '');
+  // The site's own address, never the request's Host: without one, no link is sent.
+  const origin = linkOrigin();
+  if (!reset || !cms.mail || !origin) return;
   const title = await cms.settings.get('general.siteTitle').catch(() => '');
   const link = `${origin.replace(/\/$/, '')}/auth/reset-password?token=${reset.token}`;
   await cms.mail.send({ kind: 'invitation', to: email, from: cms.mailFrom, subject: `You are invited to ${title || 'the site'}`,
@@ -124,9 +129,19 @@ export async function updateUser(id: string, patch: UpdateUserInput): Promise<vo
   await visible(cms.users.update(id, patch));
 }
 
+/**
+ * Set a user's password. Every other session of the account ends, so whoever had the old
+ * password is signed out; the caller's own session stays when it is their own password.
+ */
 export async function changeUserPassword(id: string, newPassword: string): Promise<void> {
   if (!(await manageableHere(id))) throw new ClientVisibleError(NETWORK_ACCOUNT_LOCKED);
-  if (!(await visible(currentCms().users.setPassword(id, newPassword)))) throw new ClientVisibleError('User not found.');
+  const cms = currentCms();
+  if (!(await visible(cms.users.setPassword(id, newPassword)))) throw new ClientVisibleError('User not found.');
+  const c = getRequestContext();
+  const own = c && (c.get('user') as { id?: string } | undefined)?.id === id ? getCookie(c, SESSION_COOKIE_NAME) : undefined;
+  // On an added site, a network account's sessions are the network host's; its sites' child sessions end with them.
+  const sessions = cms.siteAccounts && (await cms.storesOf(id)).kind === 'network' && c ? networkFor(c.env as CmsBindings).main.authSessions : cms.authSessions;
+  await sessions.revokeAllForUser(id, own);
 }
 
 /**

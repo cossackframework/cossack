@@ -41,7 +41,8 @@ export async function runMaintenance(cms: CmsHost, options: { warm?: boolean } =
     if (options.warm) await cms.db.warm().catch(() => undefined);
     // A fresh database has no host tables until setup applies the schema.
     if (!(await cms.installed())) return;
-    await cms.db.recoverPending({ limit: 50 });
+    // Recovery failing (an unreadable store, an unreachable database) must not stop the rest of upkeep.
+    await cms.db.recoverPending({ limit: 50 }).catch(error => console.error('[cms] recovering unconfirmed writes failed', error));
     await cms.runSchedule();
     await cms.schedules.tick();
     await cms.outbox.dispatch({ limit: 50 });

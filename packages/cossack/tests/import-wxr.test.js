@@ -98,4 +98,47 @@ describe('WordPress import', () => {
     expect(report).toMatchObject({ dryRun: true, terms: 3, entries: 2 });
     expect(calls.filter(method => method !== 'GET')).toEqual([]);
   });
+
+  const item = (fields) => `<item><title>${fields.title}</title><link>https://old.example.com/${fields.slug}/</link><wp:post_id>${fields.id}</wp:post_id><wp:post_name><![CDATA[${fields.slug}]]></wp:post_name>`
+    + `<wp:status><![CDATA[publish]]></wp:status><wp:post_type><![CDATA[${fields.type ?? 'page'}]]></wp:post_type><wp:post_parent>${fields.parent ?? 0}</wp:post_parent>`
+    + `<wp:post_password><![CDATA[${fields.password ?? ''}]]></wp:post_password><content:encoded><![CDATA[Private words.]]></content:encoded></item>`;
+  const document = (...items) => WXR.replace(/<item>[\s\S]*<\/item>/, items.join('\n'));
+  const api = (collections) => {
+    const calls = [];
+    let next = 0;
+    const request = async (method, path, body) => {
+      if (path === '/api/cms/collections') return { items: collections };
+      if (method === 'GET') return { items: [] };
+      calls.push([path, body]);
+      if (path.startsWith('/api/cms/content/')) return { item: { id: `new-${++next}`, url: `/${body.slug}` } };
+      return {};
+    };
+    return { calls, request };
+  };
+  const field = name => ({ name });
+
+  it('keeps a protected entry\'s password, or keeps the entry unpublished where the collection has no password', async () => {
+    const xml = document(item({ id: 5, title: 'Secret', slug: 'secret', type: 'post', password: 'open sesame' }));
+    const withPassword = api([{ name: 'posts', taxonomies: [], fields: [field('title'), field('password')] }, { name: 'pages', fields: [] }]);
+    await importWxr(parseWxr(xml), withPassword.request);
+    expect(withPassword.calls.find(([path]) => path.startsWith('/api/cms/content/'))).toEqual(['/api/cms/content/posts', expect.objectContaining({ status: 'published', password: 'open sesame' })]);
+    const without = api([{ name: 'posts', taxonomies: [], fields: [field('title')] }, { name: 'pages', fields: [] }]);
+    const report = await importWxr(parseWxr(xml), without.request);
+    expect(without.calls.find(([path]) => path.startsWith('/api/cms/content/'))[1]).toMatchObject({ status: 'draft' });
+    expect(without.calls.find(([path]) => path.startsWith('/api/cms/content/'))[1]).not.toHaveProperty('password');
+    expect(without.calls.some(([path]) => path === '/api/cms/redirects')).toBe(false);
+    expect(report.skipped).toContain('post "Secret": password protected in WordPress, and posts has no password field; imported as a draft');
+  });
+
+  it('imports parents before their children and gives nested pages their parent', async () => {
+    // The child comes first in the file; its parent is created first anyway.
+    const xml = document(item({ id: 11, title: 'Team', slug: 'team', parent: 10 }), item({ id: 10, title: 'About', slug: 'about' }), item({ id: 12, title: 'Orphan', slug: 'orphan', parent: 99 }));
+    const { calls, request } = api([{ name: 'posts', taxonomies: [], fields: [] }, { name: 'pages', hierarchical: true, fields: [field('title'), field('parent')] }]);
+    const report = await importWxr(parseWxr(xml), request);
+    const pages = calls.filter(([path]) => path === '/api/cms/content/pages').map(([, body]) => [body.slug, body.parent]);
+    expect(pages).toEqual([['about', undefined], ['orphan', undefined], ['team', 'new-1']]);
+    expect(report.skipped).toContain('parent of page "Orphan": WordPress item 99 was not imported into pages; the entry is at the top level');
+    expect(parseWxr(xml).items[0]).toMatchObject({ id: '11', parent: '10' });
+  });
 });
+

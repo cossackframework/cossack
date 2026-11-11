@@ -86,13 +86,6 @@ export class CmsComments {
         return result.results[0]!.rows.length > 0;
     }
 
-    /** When the address last commented, for throttling. */
-    async lastFrom(ipHash: string): Promise<number | null> {
-        const result = await this.#db.read([{ rql: 'SELECT created_at FROM cms_comments WHERE ip_hash = $ip ORDER BY created_at DESC LIMIT 1', params: { $ip: ipHash } }]);
-        const row = result.results[0]!.rows[0];
-        return row ? Number(row[0] as bigint) : null;
-    }
-
     /** The insert statement for a new comment, so callers can batch it. */
     insert(row: Omit<CommentRow, 'createdAt' | 'updatedAt'>): Statement {
         const now = this.#now();

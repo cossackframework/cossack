@@ -101,7 +101,7 @@ export function collectSsgRoutes(pages: Record<string, unknown>, layouts: Record
     // Skip API routes
     if (path.includes('/src/pages/api/')) continue;
     if (owners[path] !== undefined) continue;
-    if (resolveLayoutPaths(path, layoutKeys).some(layout => rendersPerRequest(layouts[layout]))) continue;
+    if (resolveLayoutPaths(path, layoutKeys, owners).some(layout => rendersPerRequest(layouts[layout]))) continue;
 
     // Skip 404 and error pages
     if (path.endsWith('/404/index.ts') || path.endsWith('/error/index.ts')) continue;

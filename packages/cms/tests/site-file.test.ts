@@ -11,6 +11,7 @@ import { romedbService, live } from './helpers';
 const modules = [contentModule, formsModule];
 const TOKEN = 'f00dcafe'.repeat(8);
 const SECRET = 'an old webhook secret that must not leave';
+let totpSecret = '';
 
 const bytesOf = async (body: ReadableStream<Uint8Array>) => {
     const chunks: Uint8Array[] = [];
@@ -46,6 +47,7 @@ describe.skipIf(!live)('a site as a .romedb file', () => {
         await seedStarterContent(blog, { principal: (await blog.users.principal(owner))! });
         const reader = await blog.users.create({ email: 'reader@example.com', name: 'Reader', password: 'reads a lot', roles: ['subscriber'] });
         await blog.authSessions.create({ id: TOKEN, userId: reader.id, kind: 'auth', createdAt: Date.now(), expiresAt: Date.now() + 60_000 });
+        totpSecret = await (await blog.storesOf(reader.id)).security.startTotp(reader.id);
         await blog.db.write([{ rql: 'INSERT INTO cms_webhooks (id, name, url, events, collections, secret, active, created_at, updated_at) VALUES ($id, $name, $url, $events, $collections, $secret, 1, 1, 1)',
             params: { $id: 'hook', $name: 'Hook', $url: 'https://hooks.example.com', $events: '[]', $collections: '[]', $secret: SECRET } }]);
     }, 120_000);
@@ -60,6 +62,7 @@ describe.skipIf(!live)('a site as a .romedb file', () => {
         const plain = await bytesOf((await blog.db.exportFile()).body);
         expect(plain.includes(TOKEN)).toBe(true);
         expect(plain.includes(SECRET)).toBe(true);
+        expect(plain.includes(totpSecret)).toBe(true);
 
         const writes = Promise.all(Array.from({ length: 5 }, (_, index) => blog.settings.update('general', { tagline: `Writing ${index}` }, { principal: systemPrincipal('tests') })));
         const [file] = await Promise.all([siteFile(blog.db), writes]);
@@ -67,6 +70,8 @@ describe.skipIf(!live)('a site as a .romedb file', () => {
         expect(bytes.length).toBe(file.size);
         expect(bytes.includes(TOKEN)).toBe(false);
         expect(bytes.includes(SECRET)).toBe(false);
+        // Authenticator secrets are stored as they are: a copy would make valid codes.
+        expect(bytes.includes(totpSecret)).toBe(false);
         await writeFile(path.join(work, 'blog.romedb'), bytes);
         await writeFile(path.join(work, 'unopened.romedb'), bytes);
 

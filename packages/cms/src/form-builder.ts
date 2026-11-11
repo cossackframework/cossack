@@ -456,7 +456,8 @@ function readValue(input: FormField, raw: unknown): { value: FormValue | null; e
         default: {
             if (one !== undefined && one !== null && typeof one !== 'string') return { value: null, error: 'Enter text.' };
             const text = input.kind === 'text' ? (one ?? '').replace(/\r\n?/g, '\n').trim() : (one ?? '').trim();
-            return { value: text || null };
+            // Addresses compare without case: A@x.com and a@x.com are one address.
+            return { value: (input.kind === 'email' ? text.toLowerCase() : text) || null };
         }
     }
 }

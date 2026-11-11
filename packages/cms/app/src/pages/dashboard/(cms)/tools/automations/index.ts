@@ -61,7 +61,7 @@ export default class AutomationsPage extends Cossack {
                 name: form.name, event: form.event, active: form.active,
                 conditions: { ...(form.collection ? { collection: form.collection } : {}), ...(form.form ? { form: form.form } : {}) },
                 action: { kind: 'email', to: form.to, subject: form.subject, text: form.text },
-            }, form.id ? { id: form.id } : {});
+            }, { ...(form.id ? { id: form.id } : {}), principal: this.c.get('principal') });
             await this.load(saved.id);
         } catch (error) {
             if (!isCmsError(error)) throw error;
@@ -71,7 +71,9 @@ export default class AutomationsPage extends Cossack {
 
     @Server()
     async toggle(id: string, active: boolean) {
-        await this.c.get('cms').automations.setActive(id, active);
+        this.error = '';
+        try { await this.c.get('cms').automations.setActive(id, active, this.c.get('principal')); }
+        catch (error) { if (!isCmsError(error)) throw error; this.error = error.message; }
         await this.load(this.form.id);
     }
 

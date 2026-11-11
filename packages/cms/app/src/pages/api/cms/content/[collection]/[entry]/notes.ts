@@ -5,7 +5,7 @@ import { noteAdd, notesForEntry } from '../../../../../../cms/manage';
 /**
  * An entry's review notes: `GET /api/cms/content/posts/<id>/notes` answers its threads, each a
  * root with its replies, oldest first; `?status=open` or `resolved` keeps one kind. Whoever
- * may read the entry reads its notes.
+ * may edit the entry reads its notes.
  */
 export const GET = (c: Context) => answer(c, () => notesForEntry(c, c.req.param('collection') ?? '', c.req.param('entry') ?? '', c.req.query('status')));
 

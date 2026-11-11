@@ -25,7 +25,7 @@ export const HOST_TABLES = [
     'cms_preview_tokens', 'cms_autosaves', 'cms_file_variants', 'cms_redirects', 'cms_api_tokens', 'cms_webhooks', 'cms_webhook_deliveries',
     'cms_comments', 'cms_user_security', 'cms_passkeys', 'cms_auth_challenges', 'cms_areas', 'cms_form_sends', 'cms_form_mail', 'cms_form_results', 'cms_crawler_visits', 'cms_not_found', 'cms_cache',
     'cms_accounts', 'cms_sites', 'cms_site_domains', 'cms_handoffs', 'cms_session_sites', 'cms_memberships', 'cms_network', 'cossack_jobs', 'cossack_notifications',
-    'cms_drafts', 'cms_notes', 'cms_note_mentions', 'cms_schedules', 'cms_automations', 'cms_registrations', 'cms_search',
+    'cms_drafts', 'cms_notes', 'cms_note_mentions', 'cms_schedules', 'cms_automations', 'cms_registrations', 'cms_search', 'cms_attempts',
 ] as const;
 
 export const HOST_STEPS: readonly HostStep[] = [{
@@ -258,6 +258,14 @@ export const HOST_STEPS: readonly HostStep[] = [{
         { rql: `DELETE FROM cms_outbox WHERE topic = 'search.rebuild' AND delivered_at IS NULL` },
         { rql: `INSERT INTO cms_outbox (id, topic, payload, created_at, available_at, attempts, lease_until) VALUES ('search:host-8:0', 'search.rebuild',
             '{"eventId":"search:host-8:0","topic":"search.rebuild","at":0,"run":"host-8","only":null,"collection":null,"after":null,"step":0}', 0, 0, 0, 0)` },
+    ],
+}, {
+    version: 9,
+    description: 'Security counters counted in the database',
+    statements: [
+        // Sign-in failures and request budgets (security.ts) by key: each attempt is one conditional increment, so concurrent attempts cannot overwrite each other's count.
+        { rql: 'CREATE TABLE cms_attempts (key TEXT PRIMARY KEY, count INTEGER NOT NULL, until INTEGER NOT NULL)' },
+        { rql: 'CREATE INDEX cms_attempts_until ON cms_attempts (until)' },
     ],
 }];
 

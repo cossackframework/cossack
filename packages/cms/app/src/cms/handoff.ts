@@ -15,7 +15,8 @@ import { siteUrl, type CmsBindings } from './index';
  * 2. Without a network session, the network keeps the request in a cookie and shows its sign-in;
  *    after any sign-in, the next page continues the handoff.
  * 3. With one, the network issues a code bound to the site and the session, valid for a minute,
- *    and sends the visitor to `<site>/auth/handoff?code=…`, which trades it for a child session.
+ *    and sends the visitor to `<site>/auth/handoff?code=…&state=…`, which trades it for a child
+ *    session when `state` is the one the site set in this browser at step 1.
  *
  * A visitor who opens a site's dashboard without a session there goes through the same steps on
  * their own, with `auto=1`: a network admin, or a member signed in on the network, arrives signed
@@ -25,6 +26,13 @@ import { siteUrl, type CmsBindings } from './index';
 const HANDOFF_COOKIE = 'cms_handoff';
 /** Set by a site that started a handoff on its own: no second attempt until it expires. */
 const AUTO_COOKIE = 'cms_handoff_auto';
+/**
+ * Set by a site as it sends the visitor to the network, and sent back with the code: a code
+ * opened in a browser that did not start the handoff (a link someone else made with their own
+ * account) is refused, so nobody is signed in to another person's account.
+ */
+const STATE_COOKIE = 'cms_handoff_state';
+const STATE = /^[0-9a-f]{32}$/;
 /** The site paths a missing session starts a handoff for: the dashboard, which needs one. */
 const AUTO_PATHS = /^\/dashboard(?:\/|$)/;
 
@@ -49,12 +57,12 @@ export async function handoff(c: Context, network: CmsNetwork, site: NetworkSite
             if (url.searchParams.has('code')) return toSite(c, network, site);
             // Sign in with a network account: on the network host, which hands the session back.
             if (!env.APP_URL) return c.text('This network has no sign-in host: set APP_URL.', 404);
-            return c.redirect(toNetwork(env.APP_URL, site, nextPath(url.searchParams.get('next')), url.searchParams.get('auto') === '1'));
+            return c.redirect(toNetwork(env.APP_URL, site, nextPath(url.searchParams.get('next')), url.searchParams.get('auto') === '1', startState(c)));
         }
         // The dashboard without a live session here: the network may have one, so ask it once before the site's sign-in shows.
         if (env.APP_URL && c.req.method === 'GET' && AUTO_PATHS.test(url.pathname) && !getCookie(c, AUTO_COOKIE) && !(await siteSession(c))) {
             setCookie(c, AUTO_COOKIE, '1', { path: '/', httpOnly: true, sameSite: 'Lax', maxAge: 300, secure: secure(c) });
-            return c.redirect(toNetwork(env.APP_URL, site, nextPath(url.pathname + url.search), true));
+            return c.redirect(toNetwork(env.APP_URL, site, nextPath(url.pathname + url.search), true, startState(c)));
         }
         return null;
     }
@@ -63,19 +71,27 @@ export async function handoff(c: Context, network: CmsNetwork, site: NetworkSite
     const pending = getCookie(c, HANDOFF_COOKIE);
     if (pending && !url.pathname.startsWith('/auth/') && !url.pathname.startsWith('/api/') && await networkSession(c, network)) {
         deleteCookie(c, HANDOFF_COOKIE, { path: '/' });
-        const { site: id, next } = parsePending(pending);
-        if (id) return c.redirect(`/auth/handoff?site=${encodeURIComponent(id)}&next=${encodeURIComponent(next)}`);
+        const { site: id, next, state } = parsePending(pending);
+        if (id) return c.redirect(`/auth/handoff?site=${encodeURIComponent(id)}&next=${encodeURIComponent(next)}&state=${encodeURIComponent(state)}`);
     }
     return null;
 }
 
 /** The network's handoff address for a site: where the site sends a visitor to sign in, or to try their network session (`auto`). */
-function toNetwork(appUrl: string, site: Pick<NetworkSite, 'id'>, next: string, auto: boolean): string {
+function toNetwork(appUrl: string, site: Pick<NetworkSite, 'id'>, next: string, auto: boolean, state: string): string {
     const target = new URL('/auth/handoff', appUrl);
     target.searchParams.set('site', site.id);
     target.searchParams.set('next', next);
+    target.searchParams.set('state', state);
     if (auto) target.searchParams.set('auto', '1');
     return target.toString();
+}
+
+/** A new handoff state for this browser, kept in a cookie on the site for ten minutes. */
+function startState(c: Context): string {
+    const state = [...crypto.getRandomValues(new Uint8Array(16))].map(byte => byte.toString(16).padStart(2, '0')).join('');
+    setCookie(c, STATE_COOKIE, state, { path: '/auth/handoff', httpOnly: true, sameSite: 'Lax', maxAge: 600, secure: secure(c) });
+    return state;
 }
 
 /** Whether the request carries a live session of this site. */
@@ -95,6 +111,8 @@ async function fromNetwork(c: Context, network: CmsNetwork): Promise<Response> {
     const id = url.searchParams.get('site') ?? '';
     const next = nextPath(url.searchParams.get('next'));
     const auto = url.searchParams.get('auto') === '1';
+    const state = url.searchParams.get('state') ?? '';
+    if (!STATE.test(state)) return c.text('Start signing in from the site.', 400);
     const record = await network.sites.get(id);
     if (!record || (record.status !== 'active' && record.status !== 'archived')) return c.text('No site at this address.', 404);
     const site = networkSite(record);
@@ -102,7 +120,7 @@ async function fromNetwork(c: Context, network: CmsNetwork): Promise<Response> {
     const session = await networkSession(c, network);
     if (!session) {
         if (auto) return siteLogin();
-        setCookie(c, HANDOFF_COOKIE, JSON.stringify({ site: id, next }), { path: '/', httpOnly: true, sameSite: 'Lax', maxAge: 600, secure: secure(c) });
+        setCookie(c, HANDOFF_COOKIE, JSON.stringify({ site: id, next, state }), { path: '/', httpOnly: true, sameSite: 'Lax', maxAge: 600, secure: secure(c) });
         return c.redirect(url.searchParams.get('register') === '1' ? '/auth/register' : '/auth/login');
     }
     deleteCookie(c, HANDOFF_COOKIE, { path: '/' });
@@ -116,12 +134,17 @@ async function fromNetwork(c: Context, network: CmsNetwork): Promise<Response> {
     const target = new URL('/auth/handoff', siteUrl(c.env as CmsBindings, site));
     target.searchParams.set('code', code);
     target.searchParams.set('next', next);
+    target.searchParams.set('state', state);
     return c.redirect(target.toString());
 }
 
 /** On a site: trade the code for a child session in the site's own database. */
 async function toSite(c: Context, network: CmsNetwork, site: NetworkSite): Promise<Response> {
     const url = new URL(c.req.url);
+    // Only the browser that started this handoff may finish it; the code is left unused otherwise.
+    const state = getCookie(c, STATE_COOKIE) ?? '';
+    if (!STATE.test(state) || url.searchParams.get('state') !== state) return c.html('<p>This sign-in did not start in this browser. <a href="/auth/login">Sign in again</a>.</p>', 400);
+    deleteCookie(c, STATE_COOKIE, { path: '/auth/handoff' });
     const handoff = await network.handoffs.consume(url.searchParams.get('code') ?? '', site.id);
     if (!handoff) return c.html('<p>This sign-in link expired or was used. <a href="/auth/login">Sign in again</a>.</p>', 400);
     const cms = network.hostOf(site);
@@ -160,11 +183,12 @@ async function networkSession(c: Context, network: CmsNetwork): Promise<{ userId
     return record && reference ? { userId: record.userId, reference } : null;
 }
 
-function parsePending(value: string): { site: string | null; next: string } {
+function parsePending(value: string): { site: string | null; next: string; state: string } {
     try {
-        const parsed = JSON.parse(value) as { site?: unknown; next?: unknown };
-        return { site: typeof parsed.site === 'string' && /^[a-z0-9-]{1,63}$/.test(parsed.site) ? parsed.site : null, next: nextPath(typeof parsed.next === 'string' ? parsed.next : null) };
-    } catch { return { site: null, next: '/dashboard' }; }
+        const parsed = JSON.parse(value) as { site?: unknown; next?: unknown; state?: unknown };
+        return { site: typeof parsed.site === 'string' && /^[a-z0-9-]{1,63}$/.test(parsed.site) ? parsed.site : null, next: nextPath(typeof parsed.next === 'string' ? parsed.next : null),
+            state: typeof parsed.state === 'string' && STATE.test(parsed.state) ? parsed.state : '' };
+    } catch { return { site: null, next: '/dashboard', state: '' }; }
 }
 
 declare module 'hono' {

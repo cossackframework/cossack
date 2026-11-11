@@ -135,6 +135,16 @@ describe("soft delete", () => {
     expect(titles(folder!.documents)).toEqual(["one", "three"]);
   }));
 
+  it("entity.restore() writes only the delete date and leaves other edits for save()", () => setup(async () => {
+    const document = await Document.create({ title: "original" }).save();
+    await document.remove();
+    document.title = "restored and edited";
+    await document.restore();
+    expect((await Document.findOne({ where: { id: document.id } }))!.title).toBe("original");
+    await document.save();
+    expect((await Document.findOne({ where: { id: document.id } }))!.title).toBe("restored and edited");
+  }));
+
   it("rejects an empty where for softDelete() and restore()", () => setup(async () => {
     await expect(Document.softDelete({})).rejects.toThrow(/softDelete\(\) with an empty where/);
     await expect(Document.restore([{}])).rejects.toThrow(/restore\(\) with an empty where/);

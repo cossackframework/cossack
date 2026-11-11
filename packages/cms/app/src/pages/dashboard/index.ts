@@ -119,7 +119,7 @@ export default class DashboardPage extends Cossack {
             for (const note of threads) {
                 const [owner, name] = note.resource.split('/');
                 const record = await cms.resource(note.resource).get(note.recordId, context).catch(() => null);
-                if (!record) continue;
+                if (!record || !cms.resource(note.resource).canUpdate(record, principal)) continue;
                 const author = authors.get(note.userId);
                 const excerpt = note.quote ? `“${note.quote.slice(0, 80)}”` : note.body.replace(/@\[([^\]]+)\]\([^)]+\)/g, '@$1').slice(0, 80);
                 items.push({ title: recordTitle(record, cms.resourceById(note.resource).titleField), href: `/dashboard/content/${owner === 'cms' ? name : `${owner}.${name}`}/${record.id}?notes=open`, at: note.updatedAt, meta: excerpt,

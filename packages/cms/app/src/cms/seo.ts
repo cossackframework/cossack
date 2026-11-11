@@ -132,7 +132,9 @@ export async function entrySeo(cms: CmsHost, c: Context, collection: CollectionD
     const prefix = localePrefix(languages, view.locale);
     const sep = separator(settings);
     const seo = (record.seo ?? {}) as { title?: string; description?: string; image?: string | null; canonical?: string; noindex?: boolean; nosnippet?: boolean; maxSnippet?: number | null; noarchive?: boolean; socialTitle?: string; socialDescription?: string };
-    const summary = typeof record.summary === 'string' ? record.summary.trim() : '';
+    // A locked entry's content stays out of the page: its summary, FAQ answers and mapped fields too.
+    const locked = view.locked !== null;
+    const summary = !locked && typeof record.summary === 'string' ? record.summary.trim() : '';
     const url = absolute(origin, seo.canonical || view.url || '');
     const type = collection.schema?.type ?? 'WebPage';
     const article = ARTICLE_TYPES.has(type);
@@ -149,8 +151,8 @@ export async function entrySeo(cms: CmsHost, c: Context, collection: CollectionD
     const page: SchemaPage = {
         kind: 'entry', url, title: seo.title || view.title, description, locale: view.locale, image, published, modified, type,
         breadcrumbs: type === 'none' ? [] : await breadcrumbs(cms, origin, collection, record, view.locale, prefix),
-        properties: await mappedProperties(cms, origin, collection, record), authors, about: type === 'none' ? [] : await aboutTerms(cms, collection, record),
-        keywords: view.terms.flatMap(group => group.terms.map(term => term.name)), section: view.terms[0]?.terms[0]?.name ?? '', abstract: summary, faq: type === 'none' ? [] : faqOf(record),
+        properties: locked ? {} : await mappedProperties(cms, origin, collection, record), authors, about: type === 'none' ? [] : await aboutTerms(cms, collection, record),
+        keywords: view.terms.flatMap(group => group.terms.map(term => term.name)), section: view.terms[0]?.terms[0]?.name ?? '', abstract: summary, faq: type === 'none' || locked ? [] : faqOf(record),
     };
     return base(origin, settings, { title, ogTitle: seo.socialTitle || seo.title || view.title, ogDescription: seo.socialDescription || description, description, url, image, robots, type: article ? 'article' : type === 'Person' ? 'profile' : 'website', locale: view.locale, links, graph: schemaGraph(await schemaSite(cms, origin, settings, view.locale), page), published: article ? published : '', modified: article ? modified : '', markdownUrl: settings['seo.markdown'] && view.url && !isProtected(record) && !isMembersOnly(record) ? `${absolute(origin, view.url)}?format=md` : '' });
 }

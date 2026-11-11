@@ -138,7 +138,8 @@ function stableJson(value: unknown): string {
     return JSON.stringify(value) ?? 'undefined';
 }
 
-const RESOURCE_METHODS = new Set(['get', 'list', 'count', 'search', 'create', 'update', 'delete']);
+/** The resource methods isolated plugins may call, with how many arguments each takes; the last is the operation context. */
+const RESOURCE_METHODS = new Map<string, number>([['get', 2], ['list', 2], ['count', 2], ['search', 3], ['create', 2], ['update', 3], ['delete', 2]]);
 
 /**
  * Serve one bridge call from the plugin's context: the one the host builds for in-app plugins,
@@ -154,8 +155,11 @@ export async function serveIsolatedCall(context: PluginContext, member: string, 
         case 'settings': return method === 'get' ? context.settings.get(String(args[0])) : context.settings.all();
         case 'resource': {
             const [id, ...rest] = args;
-            if (!method || !RESOURCE_METHODS.has(method)) throw new CmsError('CMS_FORBIDDEN', `Plugin ${name} asked for ${member}.`);
-            const operation = rest.at(-1) as { principal?: unknown } | undefined;
+            const arity = method ? RESOURCE_METHODS.get(method) : undefined;
+            if (!method || arity === undefined) throw new CmsError('CMS_FORBIDDEN', `Plugin ${name} asked for ${member}.`);
+            // Exactly the method's arguments: the context checked here is the one the method reads, not an extra one after it.
+            if (rest.length !== arity) throw new CmsError('CMS_FORBIDDEN', `Plugin ${name} called ${member} with ${rest.length} arguments; it takes ${arity}, the last its operation context.`);
+            const operation = rest[arity - 1] as { principal?: unknown } | undefined;
             const own = systemPrincipal(`plugin:${name}`);
             if (!operation || typeof operation !== 'object' || !(samePrincipal(operation.principal, own) || principals.some(principal => samePrincipal(operation.principal, principal)))) {
                 throw new CmsError('CMS_FORBIDDEN', `Plugin ${name} must act as the principal its handler was given, or as plugin:${name}.`);

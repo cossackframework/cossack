@@ -2,7 +2,7 @@
  * Server helpers for the dashboard's content screens: which resource a route names, the
  * editor's view of it, and saving entries. Pages call these from their server methods.
  */
-import { blockCategory, blockMedia, entryAuthors, blockSupports, bulkActions, cloneBlocks, editorBoxes, escapeHtml, fieldGroupDeclarations, type FieldGroupTarget, CmsError, CORE_FIELDS, entryActions, entryColumns, flattenBlocks, isCmsError, mediaUrl, principalId, recordTitle, resolveEditorLayout, richTextHtml, richTextMedia, type Block, type BlockDeclaration, type CollectionDefinition, type EntryAction, type EntryColumn, type MediaKind, type Principal, type RecordShape, type Resource, type RichTextDoc, type WriteActor } from '@cossackframework/cms';
+import { blockCategory, blockMedia, entryAuthors, blockSupports, bulkActions, cloneBlocks, editorBoxes, escapeHtml, fieldGroupDeclarations, type FieldGroupTarget, CmsError, CORE_FIELDS, hasPermission, entryActions, entryColumns, flattenBlocks, isCmsError, mediaUrl, principalId, recordTitle, resolveEditorLayout, richTextHtml, richTextMedia, type Block, type BlockDeclaration, type CollectionDefinition, type EntryAction, type EntryColumn, type MediaKind, type Principal, type RecordShape, type Resource, type RichTextDoc, type WriteActor } from '@cossackframework/cms';
 import { renderMarkdown, type CmsHost } from '@cossackframework/cms/server';
 import { activePresets } from './site';
 import { controlValue, editorBlocks, editorField, editorFields, editorInput, type BlockOption, type EditorBlock, type EditorField, type EditorGroup, type EditorTaxonomy, type EditorValues, type EditorView, type SourceChoice, type SourceChoices, type TermOption } from './editor';
@@ -40,7 +40,11 @@ export async function termOptions(cms: CmsHost, taxonomy: string): Promise<TermO
     return (await cms.taxonomies.tree(taxonomy)).map(term => ({ id: term.id, name: term.name, depth: term.depth }));
 }
 
-export async function editorView(cms: CmsHost, route: string): Promise<EditorView> {
+/**
+ * The editor of a route's entries. With a principal, the fields they may not read or change are
+ * left out, so no control shows a hidden value as empty or takes an edit the save would refuse.
+ */
+export async function editorView(cms: CmsHost, route: string, principal?: Principal): Promise<EditorView> {
     const { resource, collection } = routeResource(cms, route);
     const taxonomyFields = Object.entries(resource.fields).filter(([, field]) => field.taxonomy).map(([name, field]) => ({ name, taxonomy: field.taxonomy! }));
     const special = collection ? [...CORE_FIELDS, ...taxonomyFields.map(entry => entry.name)] : [resource.titleField ?? '', ...taxonomyFields.map(entry => entry.name)];
@@ -61,7 +65,8 @@ export async function editorView(cms: CmsHost, route: string): Promise<EditorVie
         titleField, titleRequired: Boolean(titleField && resource.fields[titleField]?.required),
         slug: Boolean(collection && collection.slug !== false), publishable: Boolean(collection && collection.publishable !== false), hierarchical: Boolean(collection?.hierarchical),
         path: collection?.path ?? null,
-        fields: editorFields(resource.fields, special),
+        fields: editorFields(resource.fields, special).filter(field => !principal || fieldAllowed(resource.fields[field.name], principal)),
+        restricted: [...restrictedFields(cms, resource.id)],
         taxonomies, blocks, presets: await activePresets(cms),
         template: editorBlocks(cloneBlocks(collection?.template ?? []) as EditorBlock[], blocks), ...(collection?.templateLock ? { templateLock: collection.templateLock } : {}),
         collections: cms.collections().filter(entry => entry.publishable !== false && !entry.managed).map(entry => ({ name: entry.name, label: entry.label })),
@@ -292,6 +297,28 @@ export async function entryInput(cms: CmsHost, route: string, values: EditorValu
 }
 
 /**
+ * Fields whose reading or writing is limited to some principals (`access` on the field). A
+ * principal's editor shows those they may read and change, and saves only those; the shared
+ * editing room leaves them all out.
+ */
+export function restrictedFields(cms: CmsHost, resourceId: string): Set<string> {
+    return new Set(Object.entries(cms.resourceById(resourceId).fields).filter(([, declaration]) => declaration.access?.read || declaration.access?.write).map(([name]) => name));
+}
+
+/** Whether the principal may read and change a field: its `access` rules, where it has them, allow both. */
+function fieldAllowed(declaration: Resource['fields'][string] | undefined, principal: Principal): boolean {
+    const access = declaration?.access;
+    return !access || ((!access.read || hasPermission(principal, access.read)) && (!access.write || hasPermission(principal, access.write)));
+}
+
+/** Leave out of an input the fields the principal's editor does not show: their values are not a request to change them. */
+export function writableInput(cms: CmsHost, resourceId: string, input: Record<string, unknown>, principal: Principal): Record<string, unknown> {
+    const fields = cms.resourceById(resourceId).fields;
+    for (const name of Object.keys(input)) if (!fieldAllowed(fields[name], principal)) delete input[name];
+    return input;
+}
+
+/**
  * Create or update an entry from control values. Typed tags become term IDs, creating the
  * missing ones. The status is the one chosen, or follows the button pressed. Field errors
  * come back keyed by field.
@@ -302,7 +329,7 @@ export async function saveEntry(cms: CmsHost, route: string, id: string | null, 
     const repository = cms.resource(resource.id);
     // Moving to the trash changes only the status, as in WordPress; edits are not saved.
     if (intent === 'trash' && id && view.publishable) return repository.update(id, { status: 'trash' }, { principal, expectedRevision: revision });
-    const input = await entryInput(cms, route, values);
+    const input = writableInput(cms, resource.id, await entryInput(cms, route, values), principal);
     for (const taxonomy of view.taxonomies) {
         const raw = values[taxonomy.name];
         const list = Array.isArray(raw) ? raw.filter((item): item is string => typeof item === 'string') : [];
@@ -311,24 +338,11 @@ export async function saveEntry(cms: CmsHost, route: string, id: string | null, 
     if (view.publishable) {
         const current = typeof values.status === 'string' && ['draft', 'pending', 'scheduled', 'published'].includes(values.status) ? values.status : 'draft';
         input.status = intent === 'publish' ? 'published' : intent === 'draft' ? 'draft' : intent === 'trash' ? 'trash' : intent === 'restore' ? 'draft' : current;
-        if (id && input.status === 'published') await assertNotesResolved(cms, resource.id, id, principal);
     }
     const record = id ? await repository.update(id, input, { principal, expectedRevision: revision }) : await repository.create(input, { principal });
     // The saved entry replaces the editor's autosave.
     await cms.discardAutosave(resource.id, id ?? 'new', principal).catch(() => undefined);
     return record;
-}
-
-/**
- * With "Open notes hold publishing" on (Settings → Writing), an entry that is not live yet cannot
- * be published or scheduled while it has open notes; an entry already live keeps being updated.
- */
-export async function assertNotesResolved(cms: CmsHost, resourceId: string, id: string, principal: Principal): Promise<void> {
-    if (!(await cms.settings.get('writing.requireResolvedNotes'))) return;
-    const current = await cms.resource(resourceId).get(id, { principal });
-    if (!current || current.status === 'published' || current.status === 'scheduled') return;
-    const open = (await cms.notes.counts(resourceId, [id])).get(id) ?? 0;
-    if (open) throw new CmsError('CMS_VALIDATION', open === 1 ? 'Resolve the open note before publishing.' : `Resolve the ${open} open notes before publishing.`, { fields: { status: 'Open notes hold publishing.' } });
 }
 
 /** Fields a copy of an entry does not take: its identity, its slug (derived again), its publication and its translation group. */

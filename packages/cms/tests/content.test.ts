@@ -181,9 +181,21 @@ describe.skipIf(!live)('content, taxonomies, settings, users and media', () => {
         const role = await users.createRole({ name: 'Moderator', permissions: ['cms:dashboard'] });
         expect(role.id).toBe('moderator');
         await expect(users.createRole({ name: 'Moderator', permissions: [] })).rejects.toMatchObject({ code: 'CMS_CONFLICT' });
+        // A role manager gives only what they hold, cannot change a stronger role, and nobody changes the administrator role.
+        const manager = userPrincipal('manager', ['manager'], ['cms:roles', 'cms:dashboard']);
+        await expect(users.createRole({ name: 'Everything', permissions: ['*'] }, { actor: manager })).rejects.toMatchObject({ code: 'CMS_FORBIDDEN' });
+        expect((await users.createRole({ name: 'Viewer', permissions: ['cms:dashboard'] }, { actor: manager })).permissions).toEqual(['cms:dashboard']);
+        await expect(users.updateRole('viewer', { permissions: ['cms:dashboard', 'cms:plugins'] }, { actor: manager })).rejects.toMatchObject({ code: 'CMS_FORBIDDEN' });
+        await users.createRole({ id: 'developer', name: 'Developer', permissions: ['cms:plugins'] });
+        await expect(users.updateRole('developer', { permissions: [] }, { actor: manager })).rejects.toMatchObject({ code: 'CMS_FORBIDDEN' });
+        await expect(users.updateRole('admin', { permissions: [] })).rejects.toMatchObject({ code: 'CMS_FORBIDDEN' });
         await users.setRoles(created.id, ['moderator']);
         expect((await users.roles()).find(entry => entry.id === 'moderator')).toMatchObject({ userCount: 1 });
         await expect(users.deleteRole('admin')).rejects.toMatchObject({ code: 'CMS_FORBIDDEN' });
+        // Nor delete one: the stronger role stays with its holders.
+        await expect(users.deleteRole('developer', { actor: manager })).rejects.toMatchObject({ code: 'CMS_FORBIDDEN' });
+        expect(await users.role('developer')).not.toBeNull();
+        expect(await users.deleteRole('viewer', { actor: manager })).toBe(true);
         expect(await users.deleteRole('moderator')).toBe(true);
         expect((await users.get(created.id))!.roles).toEqual([]);
 

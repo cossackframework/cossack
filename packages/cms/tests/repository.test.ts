@@ -93,6 +93,12 @@ describe.skipIf(!live)('resource repositories', () => {
         const history = await repository.revisions('race', { principal: editor });
         expect(history.map(entry => entry.revision)).toEqual([2, 1]);
         expect(history[0]!.data.title).toBe(winner.title);
+        // Readers of the current record do not read its history: drafts and passwords live there.
+        for (const principal of [{ kind: 'anonymous' } as const, alice]) {
+            await expect(repository.revisions('race', { principal })).rejects.toMatchObject({ code: 'CMS_FORBIDDEN' });
+            await expect(repository.revision('race', 1, { principal })).rejects.toMatchObject({ code: 'CMS_FORBIDDEN' });
+        }
+        expect(await repository.revision('race', 1, { principal: userPrincipal('reader', ['reviewer'], ['app/articles:read']) })).toMatchObject({ revision: 1 });
     });
 
     it('writes no side effects for a stale edit or delete', async () => {

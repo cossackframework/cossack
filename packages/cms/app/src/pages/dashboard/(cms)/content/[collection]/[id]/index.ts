@@ -1,7 +1,7 @@
 import { Cossack, Page, State, ClientState, Server, Client, On, OnWindow, PreventNavigation, type HeadValue, ClientVisibleError } from '@cossackframework/core';
 import { Avatar, Button, Checkbox, Combobox, Icon, Input, Modal, NativeSelect, Textarea, CodeEditor, Tabs } from '@cossackframework/ui';
 import { html, component, unsafeHTML, type TemplateResult } from '@cossackframework/renderer';
-import { applyTreeOp, ARTICLE_TYPES, blockId, CORE_BLOCKS, entryAuthors, groupPeers, livePeers, patchKey, PendingKeys, richTextPath, parseRichTextPath, scalarKey, treeHash, treeOps, systemPrincipal, entryChecks, evaluateRule, fieldVisibility, findBlock, flattenBlocks, flattenGroupFields, formatBytes, hasPermission, isCmsError, languageName, mediaKind, recordSchema, recordTitle, renderSeoTemplate, richTextBlocks, TITLE_SEPARATORS, updateBlock, PERMISSIONS, participantColor, formatNoteTarget, noteBlock, noteField, noteThreads, parseNoteTarget, type Block, type BlockCondition, type Check, type EmbeddedBlock, type JsonSchema, type MediaKind, type Note, type NoteAction, type NoteRange, type NoteStatus, type NoteThread, type RecordShape, type RichTextDoc, type Participant, type PeerPresence, type PeerState, type TreeOp, blocksPlain, richTextPlain } from '@cossackframework/cms';
+import { applyTreeOp, ARTICLE_TYPES, blockId, CORE_BLOCKS, entryAuthors, groupPeers, livePeers, patchKey, PendingKeys, richTextPath, parseRichTextPath, scalarKey, treeHash, treeOps, systemPrincipal, entryChecks, evaluateRule, fieldVisibility, findBlock, flattenBlocks, flattenGroupFields, formatBytes, hasPermission, isCmsError, languageName, mediaKind, recordSchema, recordTitle, renderSeoTemplate, richTextBlocks, TITLE_SEPARATORS, updateBlock, PERMISSIONS, participantColor, formatNoteTarget, noteBlock, noteField, noteThreads, parseNoteTarget, type Block, type BlockCondition, type Check, type EmbeddedBlock, type JsonSchema, type MediaKind, type Note, type NoteAction, type NoteRange, type NoteStatus, type NoteThread, type RecordShape, type RichTextDoc, type Participant, type PeerPresence, type PeerState, type TreeOp, blocksPlain, richTextPlain, principalId } from '@cossackframework/cms';
 import { blockPanel } from '../../../../../../cms/block-panel';
 import { describeBlockError } from '../../../../../../cms/block-errors';
 import { blockIdOf, styleValues, withStyle, type BlockTab, type StyleValues } from '../../../../../../cms/style-controls';
@@ -24,6 +24,9 @@ import { boxFields, layoutBoxes } from '@cossackframework/cms';
 import { conditionControl, conditionFields } from '../../../../../../cms/condition-control';
 import { notificationRulesControl } from '../../../../../../cms/notification-rules';
 import { siteOrigin } from '../../../../../../cms/seo';
+
+/** Assistant suggestions per account: each one spends the site's AI budget. */
+const SUGGESTIONS = { max: 20, windowMs: 60_000 };
 
 type MediaTarget = { field: string; block?: string; key?: string; multiple?: boolean; insert?: boolean; richText?: boolean; dialog?: boolean; group?: boolean; /** The rich text editor to insert into, when it is not the field's own. */ editor?: string;
     /** The file goes to the panel's Style tab: the block's background image or video. */ style?: 'image' | 'video';
@@ -178,10 +181,10 @@ export default class EntryEditor extends Cossack {
         this.assistant = cms.ai !== null;
         const principal = this.c.get('principal');
         try {
-            const view = await editorView(cms, this.route);
+            const view = await editorView(cms, this.route, principal);
             const { resource } = routeResource(cms, this.route);
             const record = this.id === 'new' ? null : await cms.resource(resource.id).get(this.id, { principal });
-            if (this.id !== 'new' && !record) { this.error = __('This entry does not exist or you cannot edit it.'); this.c.status(404); return; }
+            if (this.id !== 'new' && (!record || !cms.resource(resource.id).canUpdate(record, principal))) { this.error = __('This entry does not exist or you cannot edit it.'); this.c.status(404); return; }
             if (!record && evaluateRule(resource.access.create, principal) === 'deny') { this.error = __('You cannot create entries here.'); this.c.status(403); return; }
             this.view = view;
             this.schema = recordSchema(resource);
@@ -224,7 +227,7 @@ export default class EntryEditor extends Cossack {
                 if (view.path !== null || view.route === 'forms') this.previewLinks = await cms.previews.count(resource.id, record.id).catch(() => 0);
             }
             // The entry's notes, with who wrote them; opening the entry marks the viewer's mentions seen.
-            if (record && principal.kind === 'user') {
+            if (record && principal.kind === 'user' && cms.resource(resource.id).canUpdate(record, principal)) {
                 this.meId = principal.id;
                 this.canRemoveNotes = hasPermission(principal, PERMISSIONS.manageUsers);
                 this.notes = await cms.notes.forEntry(resource.id, record.id).catch(() => []);
@@ -380,6 +383,8 @@ export default class EntryEditor extends Cossack {
         const room = this.room;
         // Typed before the room was joined: the first snapshot keeps it, and sends it then.
         if (!room) { this.beforeJoin.set(name, { previous: this.beforeJoin.get(name)?.previous ?? previous, value }); return; }
+        // A field with its own access rule is not in the room: it is saved with this tab's own save.
+        if (this.view?.restricted.includes(name)) return;
         const field = this.fieldOf(name);
         if (field?.kind === 'richtext' && !field.multiple) return;
         if (field?.kind === 'blocks') {
@@ -503,7 +508,24 @@ export default class EntryEditor extends Cossack {
         this.rev = rev;
         this.unsaved = false;
         this.dirty = false;
-        if (!this.savingSelf) this.message = `${by} ${__('saved this entry.')}`;
+        if (!this.savingSelf) {
+            this.message = `${by} ${__('saved this entry.')}`;
+            // The room's snapshot leaves out the fields with their own access rule: read them again, or this tab's next save would put back what it had.
+            if (this.view?.fields.some(field => this.view!.restricted.includes(field.name))) void this.reloadRestricted();
+        }
+    }
+
+    /** The fields the room leaves out, as saved now, for this editor. */
+    @Server()
+    async reloadRestricted() {
+        const cms = this.c.get('cms');
+        const view = this.view;
+        if (!view || this.id === 'new') return;
+        const record = await cms.resource(view.resource).get(this.id, { principal: this.c.get('principal') });
+        if (!record) return;
+        const saved = await entryValues(cms, view, record);
+        const names = view.fields.map(field => field.name).filter(name => view.restricted.includes(name));
+        this.values = { ...this.values, ...Object.fromEntries(names.map(name => [name, saved[name]])) };
     }
 
     /** Tell the room this tab saved; the others hear who did, this tab keeps its own notice. */
@@ -814,7 +836,7 @@ export default class EntryEditor extends Cossack {
     /** Whether a field is one rich text document the room holds (a multiple field travels as one value). */
     private sharedRichText(name: string): boolean {
         const field = this.fieldOf(name);
-        return field?.kind === 'richtext' && !field.multiple;
+        return field?.kind === 'richtext' && !field.multiple && !this.view?.restricted.includes(name);
     }
 
     /** The rich text editor's part in the room, for a document at `path`. */
@@ -981,6 +1003,22 @@ export default class EntryEditor extends Cossack {
         } catch (error) {
             console.warn('[cms] the draft could not be autosaved', error);
         } finally { this.autosaving = false; }
+    }
+
+    /**
+     * Refuse a server method unless the principal may edit this entry, or create one for a new
+     * entry: the page itself only asks for a dashboard account, and the route and ID are page state.
+     */
+    private async assertEditor(): Promise<void> {
+        const cms = this.c.get('cms');
+        const principal = this.c.get('principal');
+        const { resource } = routeResource(cms, this.route);
+        if (this.id === 'new') {
+            if (evaluateRule(resource.access.create, principal) === 'deny') throw new ClientVisibleError(__('You cannot create entries here.'));
+            return;
+        }
+        const record = await cms.resource(resource.id).get(this.id, { principal });
+        if (!record || !cms.resource(resource.id).canUpdate(record, principal)) throw new ClientVisibleError(__('This entry does not exist or you cannot edit it.'));
     }
 
     /** The resource this editor's route names, read on the server. */
@@ -1190,6 +1228,7 @@ export default class EntryEditor extends Cossack {
 
     @Server()
     async findMedia(search: string, kind: string) {
+        await this.assertEditor();
         const files = this.c.get('cms').files;
         if (!files) { this.picker = { ...this.picker, items: [] }; return; }
         const page = await files.list({ search: search.slice(0, 100), limit: 40, ...(kind ? { kind: kind as MediaKind } : {}) });
@@ -1834,6 +1873,9 @@ export default class EntryEditor extends Cossack {
         const cms = this.c.get('cms');
         if (!cms.ai) throw new ClientVisibleError(__('The application has no AI provider.'));
         if (!['title', 'excerpt', 'summary'].includes(kind)) throw new ClientVisibleError(__('Unknown suggestion.'));
+        await this.assertEditor();
+        const principal = this.c.get('principal');
+        if (!(await cms.security.attempt('suggest', principalId(principal), SUGGESTIONS.max, SUGGESTIONS.windowMs))) throw new ClientVisibleError(__('Too many suggestions in a short time. Wait a minute and try again.'));
         const parts: string[] = [];
         for (const [name, value] of Object.entries(values)) {
             if (name === kind || parts.join(' ').length > 12_000) continue;

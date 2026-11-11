@@ -15,7 +15,7 @@ import { checkTemplatesForBuild, formatTemplateDiagnostic, startDevelopmentTempl
 import { clientOptimizedDependencies, linkedDependenciesConfig, linkedDependencyFolders, restartOnLinkedRebuilds, ssrOptimizedDependencies, type LinkedDependency } from './vite-dependency-optimization.js';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { resolve, dirname, relative } from 'path';
-import { generateRoutes, ROUTES_MODULE_ID, ROUTES_SOURCE_PATH, ROUTE_GLOB_EXCLUDES } from './route-codegen.js';
+import { discoverRoutes, generateRoutes, ROUTES_MODULE_ID, ROUTES_SOURCE_PATH, ROUTE_GLOB_EXCLUDES } from './route-codegen.js';
 import { PLUGINS_MODULE_ID, pluginPageKey, pluginRegistryModule, readRenderedPlugins, scanPageSources } from './plugin-sources.js';
 import { isolationReport, PLUGIN_LOADER_BINDING, pluginIsolation, PluginIsolationError, type PluginIsolationOptions } from './plugin-isolation.js';
 export { scanPagesDir } from './route-codegen.js';
@@ -467,7 +467,10 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
           // (e.g. a UI barrel) and defeat tree-shaking.
           const components = {};
 
-          export default { pages, layouts, loadings, components, owners };
+          // Functional HTTP handler routes: client navigation loads them as documents, without fetching first.
+          const handlers = ${isSsrEnvironment ? '[]' : JSON.stringify(discoverRoutes(projectRoot, markdownEnabled).handlers ?? [])};
+
+          export default { pages, layouts, loadings, components, owners, handlers };
         `;
       }
     },
@@ -891,7 +894,9 @@ export function cossackMiddlewares(): Plugin {
         for (const key of Object.keys(pluginModules).sort()) {
           const list = pluginModules[key].default;
           if (!Array.isArray(list)) throw new Error('[Cossack] COSSACK_PLUGIN_MIDDLEWARE_INVALID: ' + key.slice(1) + ' must default-export an array of middleware.');
-          middlewares.push(...list);
+          // Tagged with the plugin's name, so the router runs them only while it is active.
+          const plugin = key.split('/')[3];
+          middlewares.push(...list.map(middleware => Object.assign((c, next) => middleware(c, next), { cossackPlugin: plugin })));
         }
         export default middlewares;
       `;

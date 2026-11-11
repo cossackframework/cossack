@@ -1,8 +1,8 @@
-import { Cossack, Page, Store, State, Validate, Client, Server, storeRules } from '@cossackframework/core';
+import { ClientVisibleError, Cossack, Page, Store, State, Validate, Client, Server, storeRules } from '@cossackframework/core';
 import { Card, CardBody, CardHeader, Checkbox, Field, Input, PasswordInput, Button, Form } from '@cossackframework/ui';
 import { linkButton, notice, pageHeader } from '@cossackframework/ui/blocks';
 import { html, component, bind } from '@cossackframework/renderer';
-import { canAssignRoles, guard } from '../../../../services/rbac';
+import { canAssignRoles, canGrantRoles, guard } from '../../../../services/rbac';
 import { createUser } from '../../../../services/users';
 import { defaultRole, listRoles, type RoleDetail } from '../../../../services/roles';
 import type { PublicUser } from '../../../../auth';
@@ -70,6 +70,7 @@ export default class NewUserPage extends Cossack {
     async create(name: string, email: string, password: string, roleIds: string[], invite: boolean) {
         // Roles from the form count only for a role manager; others get the default role.
         const chosen = canAssignRoles(this.user as PublicUser | undefined) ? roleIds : undefined;
+        if (chosen && !canGrantRoles(this.user as PublicUser | undefined, (await listRoles()).filter(role => chosen.includes(role.id)))) throw new ClientVisibleError(__('You cannot give a role with permissions you do not have.'));
         await createUser({ email, ...(invite ? { invite: true } : { password }), name: name || undefined, ...(chosen ? { roleIds: chosen } : {}) });
         this.redirect('/dashboard/users');
     }

@@ -92,4 +92,15 @@ describe('re-rendering unchanged values', () => {
         render(template('b'), container);
         expect(div.className.split(' ').sort()).toEqual(['b', 'extra']);
     });
+
+    it('writes a spread attribute again after a bound attribute of the same name changed it', () => {
+        const container = document.createElement('div');
+        const template = (title: string) => html`<div title=${title} ...=${{ title: 'override' }}></div>`;
+        render(template('a'), container);
+        const div = container.querySelector('div')!;
+        expect(div.title).toBe('override');
+        render(template('b'), container);
+        expect(div.title).toBe('override');
+        expect(renderToString(template('b'))).toContain('title="override"');
+    });
 });

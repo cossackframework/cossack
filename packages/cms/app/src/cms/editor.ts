@@ -134,7 +134,13 @@ export interface EditorView {
     hierarchical: boolean;
     /** Public URL base, or null when entries are not on the site. */
     path: string | null;
+    /** The fields to edit; for a principal, without those they may not read or change (`access` on the field). */
     fields: EditorField[];
+    /**
+     * Fields with an `access` rule of their own. The shared editing room leaves them out: each
+     * editor reads and saves them as the repository lets them, never through the room.
+     */
+    restricted: string[];
     taxonomies: EditorTaxonomy[];
     blocks: BlockOption[];
     /** The active theme's presets, for the blocks' Style tab. */

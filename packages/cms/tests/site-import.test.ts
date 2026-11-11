@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { RomeDB } from '@cossackframework/romedb';
-import { CmsNetwork, contentModule, createCMS, DEFAULT_ROLES, formsModule, NETWORK_ADMIN, seedStarterContent, siteExport, siteImport, systemPrincipal, type CmsHost, type NetworkSite } from '../src/server/index';
+import { CmsNetwork, contentModule, createCMS, DEFAULT_ROLES, formsModule, isNetworkAdmin, NETWORK_ADMIN, seedStarterContent, siteExport, siteImport, systemPrincipal, type CmsHost, type NetworkSite } from '../src/server/index';
 import { romedbService, live } from './helpers';
 
 /** The export as text chunks of an awkward size, so values and characters straddle them. */
@@ -58,7 +58,13 @@ describe.skipIf(!live)('importing a site export into a new site', () => {
         await blog.resource('cms/articles').create({ title: 'Ünïcödé 🎉 title' }, { principal: admin });
         await blog.settings.update('general', { tagline: 'Notes from far away' }, { principal: admin });
         await blog.db.write([{ rql: "INSERT INTO cms_webhooks (id, name, url, events, collections, secret, active, created_at, updated_at) VALUES ('hook', 'Hook', 'https://hooks.example.com', '[]', '[]', 'old secret', 1, 1, 1)" }]);
-        await blog.users.create({ email: 'reader@example.com', name: 'Reader', password: 'reads a lot', roles: ['subscriber'] });
+        const readerId = (await blog.users.create({ email: 'reader@example.com', name: 'Reader', password: 'reads a lot', roles: ['subscriber'] })).id;
+        // What an edited export could carry: a network_admin role for the reader, and an automation that is on.
+        await blog.db.write([
+            { rql: "INSERT INTO cms_roles (id, name, permissions, created_at) VALUES ('network_admin', 'Network', '[\"*\"]', 1)" },
+            { rql: "INSERT INTO cms_user_roles (user_id, role_id) VALUES ($user, 'network_admin')", params: { $user: readerId } },
+            { rql: "INSERT INTO cms_automations (id, name, event, conditions, action, active, runs, created_at, updated_at) VALUES ('auto', 'Mail out', 'form.submitted', '[]', '{}', 1, 0, 1, 1)" },
+        ], { kind: 'test' });
         // More than one RomeDB request or response holds: 32 statements, 64 KiB, 256 KiB.
         for (let batch = 0; batch < 20; batch++) {
             await blog.db.write(Array.from({ length: 13 }, (_, index) => ({ rql: 'INSERT INTO cms_not_found (path, hits, first_at, last_hit_at, referrer) VALUES ($path, 1, 1, 1, $referrer)', params: { $path: `/${batch}/${index}`, $referrer: 'r'.repeat(2048) } })));
@@ -97,6 +103,10 @@ describe.skipIf(!live)('importing a site export into a new site', () => {
         expect((await main.accounts.memberships([owner])).get(owner)).toEqual(expect.arrayContaining(['copy']));
         const reader = (await copy.users.findByEmail('reader@example.com'))!;
         expect(reader).toMatchObject({ account: 'site', roles: ['subscriber'] });
+        // Network admins are the network's: the export's role and its assignment stay behind, and its automations come in off.
+        expect(isNetworkAdmin((await copy.users.principal(reader.id))!)).toBe(false);
+        expect((await copy.db.read([{ rql: "SELECT count(*) FROM cms_roles WHERE id = 'network_admin'" }])).results[0]!.rows[0]![0]).toBe(0n);
+        expect((await copy.db.read([{ rql: "SELECT active FROM cms_automations WHERE id = 'auto'" }])).results[0]!.rows[0]![0]).toBe(0n);
         expect(await copy.siteAccounts!.verifier.verify('reader@example.com', 'reads a lot')).toBeNull();
         // Webhooks come in turned off, with a new secret; pending work stays behind.
         const hook = (await copy.db.read([{ rql: "SELECT secret, active FROM cms_webhooks WHERE id = 'hook'" }])).results[0]!.rows[0]!;
