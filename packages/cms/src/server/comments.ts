@@ -154,9 +154,25 @@ export class CmsComments {
 
     /** Delete an entry's comments, after the entry is deleted. */
     async deleteForEntry(resource: string, recordId: string): Promise<void> {
-        await this.#db.write([{ rql: 'DELETE FROM cms_comments WHERE id IN (SELECT id FROM cms_comments WHERE resource = $resource AND record_id = $record LIMIT 1000)', params: { $resource: resource, $record: recordId } }], WRITE);
+        await this.#deleteWhere('resource = $resource AND record_id = $record', { $resource: resource, $record: recordId });
+    }
+
+    /** Delete every comment on a resource's entries, after the resource (a collection) is deleted. */
+    async deleteForResource(resource: string): Promise<void> {
+        await this.#deleteWhere('resource = $resource', { $resource: resource });
+    }
+
+    /** Delete matching comments a thousand at a time, until none are left. */
+    async #deleteWhere(where: string, params: { [key: string]: Value }): Promise<void> {
+        for (;;) {
+            const result = await this.#db.write([{ rql: `DELETE FROM cms_comments WHERE id IN (SELECT id FROM cms_comments WHERE ${where} LIMIT ${DELETE_BATCH})`, params }], WRITE);
+            if (Number(result.results[0]!.affected) < DELETE_BATCH) return;
+        }
     }
 }
+
+/** How many comments one delete removes. */
+const DELETE_BATCH = 1000;
 
 function conditions(options: CommentListOptions): { where: string; params: { [key: string]: Value } } {
     const parts: string[] = [];

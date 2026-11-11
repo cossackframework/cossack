@@ -70,14 +70,18 @@ export async function logoutCommand({ flags, env = process.env, cwd = process.cw
   // Forgetting a stored login sends nothing, so it works for any address; revoking sends the
   // password, so only where it may go.
   const target = await resolveTarget({ flags, env, cwd, needToken: false });
-  if (!target.token) throw coded('COSSACK_CMS_LOGIN_REQUIRED', `Not signed in to ${target.url}${target.site ? ` (site ${target.site})` : ''}.`);
-  const id = tokenId(target.token);
+  // Logging out ends the stored login: its password is the one revoked and forgotten. A
+  // `COSSACK_CMS_TOKEN` from the shell is revoked only when no login is stored for the target.
+  const stored = target.login?.token;
+  const token = stored || env.COSSACK_CMS_TOKEN;
+  if (!token) throw coded('COSSACK_CMS_LOGIN_REQUIRED', `Not signed in to ${target.url}${target.site ? ` (site ${target.site})` : ''}.`);
+  const id = tokenId(token);
   let revoked = false;
   let kept;
-  try { assertCredentialTarget(target.url, { source: target.source, credential: 'COSSACK_CMS_TOKEN', fromEnvironment: Boolean(env.COSSACK_CMS_TOKEN), allowHttp: target.allowHttp }); }
+  try { assertCredentialTarget(target.url, { source: target.source, credential: stored ? 'the stored application password' : 'COSSACK_CMS_TOKEN', fromEnvironment: !stored, allowHttp: target.allowHttp }); }
   catch (error) { kept = error; }
   if (id && !kept) {
-    try { await createClient({ ...target, fetch }).request('DELETE', `/api/cms/me/tokens/${id}`); revoked = true; }
+    try { await createClient({ url: target.url, site: target.site, token, fetch }).request('DELETE', `/api/cms/me/tokens/${id}`); revoked = true; }
     catch (error) { if (!(error instanceof CmsApiError)) throw error; }
   }
   const forgotten = target.login ? Boolean(await forgetLogin(target.key, env)) : false;

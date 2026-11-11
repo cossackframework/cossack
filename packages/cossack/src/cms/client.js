@@ -117,15 +117,17 @@ export async function resolveTarget({ flags = {}, env = process.env, cwd = proce
   else { url = current?.url || only?.url; source = 'login'; }
   if (!url) throw Object.assign(new Error('Which CMS? Pass --url, set COSSACK_CMS_URL, or run cossack cms login from the project.'), { code: 'COSSACK_CMS_URL_REQUIRED' });
   try { url = new URL(url).origin; } catch { throw Object.assign(new Error(`${url} is not a URL.`), { code: 'COSSACK_CMS_URL_INVALID' }); }
-  const stored = (site) => store.logins[loginKey(url, site)];
   const site = flags.site || env.COSSACK_CMS_SITE || ((current?.url === url && current.site) || undefined) || undefined;
   if (site !== undefined && !/^[a-z0-9][a-z0-9-]{0,62}$/.test(site)) throw Object.assign(new Error('--site is a site ID, such as blog or main.'), { code: 'COSSACK_CMS_SITE_INVALID' });
-  const login = stored(site === 'main' ? undefined : site) ?? stored(undefined);
+  const siteKey = loginKey(url, site === 'main' ? undefined : site);
+  const loginAt = store.logins[siteKey] ? siteKey : store.logins[loginKey(url, undefined)] ? loginKey(url, undefined) : null;
+  const login = loginAt ? store.logins[loginAt] : undefined;
   const token = env.COSSACK_CMS_TOKEN || login?.token;
   if (needToken && !token) throw Object.assign(new Error(`Not signed in to ${url}${site ? ` (site ${site})` : ''}. Run cossack cms login --url ${url}${site ? ` --site ${site}` : ''}, or set COSSACK_CMS_TOKEN.`), { code: 'COSSACK_CMS_LOGIN_REQUIRED' });
   const allowHttp = httpAllowed(flags, env);
   if (needToken) assertCredentialTarget(url, { source, credential: 'COSSACK_CMS_TOKEN', fromEnvironment: Boolean(env.COSSACK_CMS_TOKEN), allowHttp });
-  return { url, source, allowHttp, site: site === 'main' ? undefined : site, token, login: login ?? null, key: loginKey(url, site === 'main' ? undefined : site) };
+  // `key` names the stored login in use (the site's, or the address's network login), not the site's slot.
+  return { url, source, allowHttp, site: site === 'main' ? undefined : site, token, login: login ?? null, key: loginAt ?? siteKey };
 }
 
 /** The ID an application password carries in front of its secret, for revoking it. */

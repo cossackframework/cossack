@@ -21,6 +21,8 @@ export const STRIPE_API = 'https://api.stripe.com';
 const CHECKOUT_MARK = 'cms_checkout';
 /** How old a webhook's timestamp may be. */
 export const STRIPE_TOLERANCE_MS = 5 * 60_000;
+/** How long a webhook waits for a lookup in Stripe's API before relaying without it. */
+export const STRIPE_LOOKUP_MS = 5_000;
 
 export interface StripePaymentsOptions {
     readonly secretKey: string;
@@ -29,6 +31,8 @@ export interface StripePaymentsOptions {
     readonly api?: string;
     readonly fetch?: typeof globalThis.fetch;
     readonly now?: () => number;
+    /** How long a webhook waits for a lookup in Stripe's API; {@link STRIPE_LOOKUP_MS} by default. */
+    readonly lookupMs?: number;
 }
 
 const TYPES: { readonly [stripe: string]: PaymentEvent['type'] } = {
@@ -44,17 +48,32 @@ export function stripePayments(options: StripePaymentsOptions): PaymentsProvider
     const api = (options.api ?? STRIPE_API).replace(/\/$/, '');
     const fetcher = options.fetch ?? globalThis.fetch;
     const now = options.now ?? Date.now;
-    /** The metadata of an invoice's subscription, or nothing when Stripe does not answer. */
-    const invoiceMetadata = async (id: string): Promise<Record<string, unknown> | undefined> => {
-        if (!/^in_[A-Za-z0-9]{1,200}$/.test(id)) return undefined;
+    /** A GET of Stripe's API, or nothing when it does not answer in time. */
+    const lookup = async <T>(path: string): Promise<T | undefined> => {
         try {
-            const response = await fetcher(`${api}/v1/invoices/${id}`, { headers: { authorization: `Bearer ${options.secretKey}` } });
-            if (!response.ok) return undefined;
-            const data = await response.json() as { parent?: { subscription_details?: { metadata?: Record<string, unknown> } }; subscription_details?: { metadata?: Record<string, unknown> } };
-            return data.parent?.subscription_details?.metadata ?? data.subscription_details?.metadata;
+            const response = await fetcher(`${api}${path}`, { headers: { authorization: `Bearer ${options.secretKey}` }, signal: AbortSignal.timeout(options.lookupMs ?? STRIPE_LOOKUP_MS) });
+            return response.ok ? await response.json() as T : undefined;
         } catch {
             return undefined;
         }
+    };
+    /** The metadata of an invoice's subscription, or nothing when Stripe does not answer. */
+    const invoiceMetadata = async (id: string): Promise<Record<string, unknown> | undefined> => {
+        if (!/^in_[A-Za-z0-9]{1,200}$/.test(id)) return undefined;
+        const data = await lookup<{ parent?: { subscription_details?: { metadata?: Record<string, unknown> } }; subscription_details?: { metadata?: Record<string, unknown> } }>(`/v1/invoices/${id}`);
+        return data?.parent?.subscription_details?.metadata ?? data?.subscription_details?.metadata;
+    };
+    /**
+     * The invoice a charge paid. Charges name it (`invoice`) before Stripe's 2025-03-31 (basil) API
+     * version; from then on the invoice's payment record links it to the charge's payment intent.
+     */
+    const chargeInvoice = async (charge: Record<string, unknown>): Promise<string | undefined> => {
+        if (typeof charge.invoice === 'string') return charge.invoice;
+        const intent = charge.payment_intent;
+        if (typeof intent !== 'string' || !/^pi_[A-Za-z0-9]{1,200}$/.test(intent)) return undefined;
+        const payments = await lookup<{ data?: { invoice?: unknown }[] }>(`/v1/invoice_payments?payment[type]=payment_intent&payment[payment_intent]=${intent}&limit=1`);
+        const invoice = payments?.data?.[0]?.invoice;
+        return typeof invoice === 'string' ? invoice : (invoice as { id?: unknown } | undefined)?.id as string | undefined;
     };
     return {
         name: 'stripe',
@@ -106,7 +125,10 @@ export function stripePayments(options: StripePaymentsOptions): PaymentsProvider
             const subscription = (object.parent as { subscription_details?: { metadata?: unknown } } | undefined)?.subscription_details ?? (object.subscription_details as { metadata?: unknown } | undefined);
             let given = (invoice ? subscription?.metadata : object.metadata) as Record<string, unknown> | undefined;
             // A refunded subscription payment's charge has no metadata; its invoice's subscription has the order's.
-            if (event.type === 'charge.refunded' && !Object.keys(given ?? {}).length && typeof object.invoice === 'string') given = await invoiceMetadata(object.invoice);
+            if (event.type === 'charge.refunded' && !Object.keys(given ?? {}).length) {
+                const paid = await chargeInvoice(object);
+                if (paid) given = await invoiceMetadata(paid);
+            }
             given = given && typeof given === 'object' ? given : {};
             const metadata = Object.fromEntries(Object.entries(given).filter(([key, value]) => typeof value === 'string' && key !== CHECKOUT_MARK)) as Record<string, string>;
             const marked = given[CHECKOUT_MARK] === '1';

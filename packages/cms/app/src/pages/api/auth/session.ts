@@ -1,17 +1,21 @@
 import type { Context } from 'hono';
 import { isSameOriginPost } from '@cossackframework/cms';
+import { passesBotCheck } from '../../../auth-bot-check';
 import { auth, completeTwoFactor, beginTwoFactor, loginUser, logout, SignInLockedError, SignInPasskeyError } from '../../../auth';
 
 /**
  * JSON sign-in for tools such as `cossack <plugin>:<command>`: `{ email, password }` answers
  * with the session cookie. Accounts with an authenticator app also send `code`; without it the
- * answer is 401 `{ twoFactorRequired: true }`. The auth kit refuses cross-site requests and
+ * answer is 401 `{ twoFactorRequired: true }`. While the Turnstile bot check is on, `turnstile`
+ * carries its token (403 `CMS_BOT_CHECK` without one). The auth kit refuses cross-site requests and
  * non-JSON bodies.
  */
 export const POST = auth.createLoginHandler({
     validateCredentials: async credentials => {
-        const { email, password, code } = credentials as { email?: unknown; password?: unknown; code?: unknown };
+        const { email, password, code, turnstile } = credentials as { email?: unknown; password?: unknown; code?: unknown; turnstile?: unknown };
         if (typeof email !== 'string' || typeof password !== 'string') return null;
+        // The sign-in form's bot check guards this door too; tools sign in with an application password instead.
+        if (!(await passesBotCheck(turnstile, 'login'))) return Response.json({ error: 'This site checks sign-ins for bots: send a Turnstile token as `turnstile`, or use an application password (`--token`).', code: 'CMS_BOT_CHECK' }, { status: 403 });
         let user: Awaited<ReturnType<typeof loginUser>>;
         try { user = await loginUser(email, password); }
         catch (error) {

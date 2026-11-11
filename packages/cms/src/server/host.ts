@@ -588,6 +588,8 @@ export class CmsHost {
             const { object: _object, ...payment } = event;
             await this.webhooks.enqueue({ event: 'payment.completed', eventId: `${event.eventId}:payment.completed`, at: this.#now(), collection: '', payment });
         }, { plugin: 'cms' });
+        // A deleted entry takes its comments along; under its own name, so its retries are its alone.
+        this.hooks.addAction(afterCommit, async event => { if (event.topic === 'resource.deleted') await this.comments.deleteForEntry(event.resource, event.id); }, { plugin: 'cms-comments' });
         // A saved form brings its submissions table up to date; a deleted one takes its table along.
         this.hooks.addAction(afterCommit, async event => {
             if (event.resource !== 'cms/forms') return;
@@ -1354,6 +1356,8 @@ export class CmsHost {
         const repository = this.resource(`cms/${collection.name}`);
         const source = await repository.get(id, { principal });
         if (!source) throw new CmsError('CMS_NOT_FOUND', 'Entry not found.');
+        // A translation starts as a copy: a reader the entry is locked for gets none to open.
+        if (lockedCopy(source, repository.canUpdate(source, principal))) throw new CmsError('CMS_FORBIDDEN', 'Only its editors can translate a protected or members-only entry.');
         // A translation the principal cannot read still exists: never start a second one.
         const existing = (await this.translations(collection, source, { principal: systemPrincipal('translations') })).get(locale);
         if (existing) {
@@ -1580,6 +1584,7 @@ export class CmsHost {
             { rql: `DELETE FROM ${SITE_SEARCH.collection} WHERE collection = $name`, params: { $name: name } },
             nextGenerationStatement(this.#now()),
         ], { kind: 'cms.collections' });
+        await this.comments.deleteForResource(id);
         // The groups attached to it stay, for other targets, without it.
         for (const group of groupsForTarget(this.#groups, { kind: 'collection', name })) await this.fieldGroups.put(withTarget(group, { kind: 'collection', name }, false), principal);
         this.#activation = undefined;
@@ -2666,4 +2671,14 @@ function requestMetadata(context: unknown): { ip?: string; userAgent?: string } 
 /** Whether a payment event completes a payment, once per payment: what its provider says in `completes`. */
 export function paymentCompleted(event: PaymentEvent): boolean {
     return event.completes;
+}
+
+/**
+ * Whether a copy of an entry (a duplicate, a translation) would hand someone what the entry
+ * locks: a protected or members-only entry is copied only by those who may edit it. Members it
+ * is for read it, but a copy they own would also carry its password, or outlive its roles.
+ */
+export function lockedCopy(record: RecordShape, editor: boolean): boolean {
+    if (editor) return false;
+    return (typeof record.password === 'string' && record.password.length > 0) || record.membersOnly === true;
 }

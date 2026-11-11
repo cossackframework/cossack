@@ -495,6 +495,21 @@ async function essentials(origin, routeIds, diagnostics, { runtime, cloudflare =
   await eve.action('auth/login/index.ts', 'login', [{ email: 'eve@example.com', password: 'eve password 1' }]);
   expect((await eve.request('/dashboard')).headers.get('location')).toBe('/dashboard/profile/security?required=1');
   contains(await eve.page('/dashboard/profile/security?required=1'), 'This site requires two-step sign-in');
+  // Until Eve adds one, the password alone reaches only the security page: no other dashboard
+  // action, no API with the session, and no application password to sign in with instead.
+  const skipped = await eve.action(security, 'addToken', ['Skip it', 'write', 30]);
+  expect(skipped._cossack_return).toBe(false);
+  expect(skipped.error).toMatch(/requires two-step sign-in/);
+  expect((await eve.action(security, 'beginSetup', [])).setup.secret).toBeTruthy();
+  await expect(eve.action(EDITOR, 'loadJson', [], { state: { route: 'posts', id: 'any' }, params: { collection: 'posts', id: 'any' } })).rejects.toThrow(/answered 403/);
+  const eveApi = await eve.request('/api/cms/me/tokens', { method: 'POST', headers: { 'content-type': 'application/json', origin }, body: JSON.stringify({ name: 'Skip it' }) });
+  expect(eveApi.status).toBe(403);
+  expect((await eveApi.json()).code).toBe('CMS_SECOND_FACTOR_REQUIRED');
+  // JSON sign-in for tools answers Eve as it would anyone; the API stays closed to the session.
+  const eveTool = await fetch(`${origin}/api/auth/session`, { method: 'POST', headers: { 'content-type': 'application/json', origin, 'sec-fetch-site': 'same-origin' }, body: JSON.stringify({ email: 'eve@example.com', password: 'eve password 1' }) });
+  expect(eveTool.status).toBe(200);
+  const toolCookie = eveTool.headers.getSetCookie().map(cookie => cookie.split(';')[0]).join('; ');
+  expect((await fetch(`${origin}/api/cms/me/tokens`, { headers: { cookie: toolCookie } })).status).toBe(403);
   expect((await web.action(SETTINGS, 'saveAll', [{ document: { general: { requireTwoFactor: false } }, languages: null, permalinks: null, groups: {} }]))._cossack_return.error).toBe('');
 
   // An administrator issues an application password for Eve from her user screen; it acts as Eve.

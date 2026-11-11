@@ -224,6 +224,7 @@ application password. A CMS refusal answers `{ error, code, fields? }` with its 
 | `GET /appearance/areas`, `GET\|PUT\|DELETE /appearance/areas/<name>` | Widget areas: `PUT` `{ blocks, rev }` replaces the blocks (`rev` 0 while the theme's defaults show), `DELETE` forgets them. |
 | `GET\|POST /network/sites`, `GET\|PATCH /network/sites/<id>` `{ status }` | Sites, for network admins on the network host. |
 | `POST /mcp` | The MCP server. |
+| `POST /api/auth/session` `{ email, password, code?, turnstile? }` | Signs in with a session cookie, for tools that make a password. While the Turnstile bot check is on it needs a `turnstile` token (403 `CMS_BOT_CHECK`); use an application password instead. When General settings require two-step sign-in, a session without a second factor gets 403 `CMS_SECOND_FACTOR_REQUIRED` from the API and no application passwords. |
 | `DELETE /api/auth/session` | Ends the session (same-origin), for tools that signed in to make a password. |
 
 In the application, every route calls `src/cms/manage.ts`, and so do the MCP tools in

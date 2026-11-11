@@ -117,7 +117,13 @@ describe.skipIf(!live)('collections built in the dashboard', () => {
     it('deletes collections and taxonomies only when nothing depends on them', async () => {
         await expect(cms.deleteTaxonomy('brands', admin)).rejects.toMatchObject({ code: 'CMS_CONFLICT' });
         await expect(cms.deleteTaxonomy('categories', admin)).rejects.toMatchObject({ code: 'CMS_FORBIDDEN' });
+        // A deleted collection takes its entries' comments along.
+        const comment = { resource: 'cms/products', recordId: 'p1', parentId: null, userId: null, authorName: 'Ann', authorEmail: 'ann@example.com', authorUrl: '', content: 'Nice', status: 'approved' as const, ipHash: null, userAgent: null };
+        await cms.comments.create({ ...comment, id: 'c-products-1' });
+        await cms.comments.create({ ...comment, id: 'c-posts-1', resource: 'cms/posts' });
         await cms.deleteCollection('products', admin);
+        expect(await cms.comments.get('c-products-1')).toBeNull();
+        expect(await cms.comments.get('c-posts-1')).not.toBeNull();
         // Posts were relabelled Articles above, so they sort first.
         expect(cms.collections().map(collection => collection.name)).toEqual(['posts', 'pages', 'patterns']);
         expect(() => cms.resource('cms/products')).toThrow(/Unknown resource/);

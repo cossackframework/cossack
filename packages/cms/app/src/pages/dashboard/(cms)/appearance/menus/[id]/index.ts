@@ -14,6 +14,7 @@ import { fieldVisibility } from '@cossackframework/cms';
 import type { EditorField } from '../../../../../../cms/editor';
 import { icon } from '../../../../../../cms/icons';
 import { box, CONTROL, iconButton, linkButton, notice, pageHeader } from '../../../../../../cms/ui';
+import { openMatches } from '../../../../../../cms/site';
 
 interface SourceEntry { id: string; title: string; depth: number }
 interface Source { kind: 'collection' | 'taxonomy'; name: string; label: string; singular: string; icon: string; archive: boolean; entries: SourceEntry[] }
@@ -236,7 +237,7 @@ export default class MenuEditor extends Cossack {
         } else {
             const collection = cms.collection(source);
             const where = collection.publishable === false ? {} : { where: { status: 'published' } };
-            const records = query.trim() ? await cms.resource(`cms/${source}`).search(query.slice(0, 100), { limit: 30, ...where }, { principal }).catch(() => [])
+            const records = query.trim() ? openMatches(cms, `cms/${source}`, await cms.resource(`cms/${source}`).search(query.slice(0, 100), { limit: 30, ...where }, { principal }).catch(() => []), principal)
                 : (await cms.resource(`cms/${source}`).list({ ...where, limit: 30 }, { principal })).records;
             entries = records.map(record => ({ id: record.id, title: recordTitle(record, 'title'), depth: 0 }));
         }

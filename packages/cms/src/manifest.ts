@@ -235,10 +235,10 @@ const LIST_FIELDS = ['hooks', 'commands'] as const;
 /** Problems with a manifest's CMS fields. Empty when it can be hosted. */
 /**
  * Names no plugin may take: the host's own owners (`cms/…` and `app/…` resources, `cms:…`
- * permissions, `system:` principals) and the framework's. A plugin named like one would hold
+ * permissions, `system:` principals, the `form/…` and `editor/…` blocks) and the framework's. A plugin named like one would hold
  * their permissions as its own, such as assigning a role whose permissions are all `cms:…`.
  */
-export const RESERVED_PLUGIN_NAMES: ReadonlySet<string> = new Set(['cms', 'app', 'core', 'system', 'cossack', 'framework']);
+export const RESERVED_PLUGIN_NAMES: ReadonlySet<string> = new Set(['cms', 'app', 'core', 'system', 'form', 'editor', 'cossack', 'framework']);
 
 export function manifestProblems(manifest: unknown): string[] {
     const problems: string[] = [];

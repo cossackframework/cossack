@@ -293,6 +293,13 @@ describe.skipIf(!live)('scheduling, previews, revisions, redirects, tokens, webh
         await cms.settings.update('discussion', { defaultOpen: false }, { principal: admin });
         expect((await repository.create({ title: 'Closed by default' }, { principal: editor })).commentsOpen).toBe(false);
         await cms.settings.update('discussion', { defaultOpen: true, blockedWords: '' }, { principal: admin });
+        // Deleting the entry takes its comments along, once the outbox runs.
+        const closed = (await repository.get(post.id, { principal: editor }))!;
+        await repository.delete(post.id, { principal: editor, expectedRevision: closed.rev });
+        await cms.outbox.dispatch({ limit: 100 });
+        expect(await cms.comments.list({ resource: 'cms/posts', recordId: post.id, status: 'spam' })).toMatchObject({ items: [] });
+        expect(await cms.comments.forEntry('cms/posts', post.id)).toEqual([]);
+        expect((await cms.db.read([{ rql: 'SELECT count(*) FROM cms_comments WHERE record_id = $id', params: { $id: post.id } }])).results[0]!.rows[0]![0]).toBe(0n);
     });
 
     it('copies fields that are the same in every language to the translations', async () => {
@@ -310,6 +317,14 @@ describe.skipIf(!live)('scheduling, previews, revisions, redirects, tokens, webh
         // Saving either copies the price to the other and moves the other's revision on.
         const cheaper = await products.update(french.id, { price: 12, tagline: 'Pratique' }, { principal: ann, expectedRevision: french.rev });
         expect(await products.get(widget.id, { principal: ann })).toMatchObject({ price: 12, tagline: 'Handy', rev: widget.rev + 1 });
+        // The other translation's change is audited and announced like any update of it.
+        const rows = await cms.db.read([
+            { rql: "SELECT revision, actor FROM cms_audit WHERE record_id = $key AND action = 'update'", params: { $key: widget.id } },
+            { rql: "SELECT payload FROM cms_outbox WHERE topic = 'resource.updated'" },
+        ]);
+        expect(rows.results[0]!.rows.map(row => [Number(row[0]), row[1]])).toEqual([[widget.rev + 1, 'ann']]);
+        const announced = rows.results[1]!.rows.map(row => JSON.parse(row[0] as string)).filter(event => event.id === widget.id);
+        expect(announced).toEqual([expect.objectContaining({ revision: widget.rev + 1, record: expect.objectContaining({ price: 12, tagline: 'Handy' }) })]);
         await expect(products.update(widget.id, { title: 'Stale' }, { principal: ann, expectedRevision: widget.rev })).rejects.toMatchObject({ code: 'CMS_CONFLICT' });
         // An unchanged value copies nothing.
         await products.update(french.id, { title: 'Bidule', price: 12 }, { principal: ann, expectedRevision: cheaper.rev });
@@ -335,6 +350,11 @@ describe.skipIf(!live)('scheduling, previews, revisions, redirects, tokens, webh
         // Each language has its own slugs, so the translation keeps the original's.
         expect(french).toMatchObject({ locale: 'fr', translationGroup: about.id, status: 'draft', title: 'About', slug: 'about' });
         expect((await cms.translateEntry('pages', about.id, 'fr', editor)).id).toBe(french.id);
+        // A protected or members-only entry is translated only by those who may edit it.
+        const reader: Principal = { kind: 'user', id: 'reader-1', roles: [], permissions: ['cms/pages:read', 'cms/pages:create'] };
+        const secret = await pages.create({ title: 'Secret', password: 'open sesame', status: 'published' }, { principal: editor });
+        await expect(cms.translateEntry('pages', secret.id, 'fr', reader)).rejects.toMatchObject({ code: 'CMS_FORBIDDEN' });
+        expect(await cms.translateEntry('pages', secret.id, 'fr', editor)).toMatchObject({ password: 'open sesame', locale: 'fr' });
         const second = await pages.create({ title: 'About' }, { principal: editor });
         expect(second).toMatchObject({ locale: 'en', slug: 'about-2' });
         // Moving an entry to another language checks its slug there.

@@ -6,6 +6,7 @@ import { blockPanel } from '../../../../../../cms/block-panel';
 import { describeBlockError } from '../../../../../../cms/block-errors';
 import { blockIdOf, styleValues, withStyle, type BlockTab, type StyleValues } from '../../../../../../cms/style-controls';
 import { renderMarkdown, type CmsHost } from '@cossackframework/cms/server';
+import { openMatches } from '../../../../../../cms/site';
 import { applyEntryJson, editorView, entryJson, entryValues, fieldErrors, mediaPreviews, parentOptions, patternBlocks, routeResource, saveEntry, termOptions, type MediaPreview, type SaveIntent } from '../../../../../../cms/content';
 import { blockDefaults, contentField, controlValue, editorBlocks, editorInput, entryUrl, suggestedSlug, type EditorBlock, type EditorField, type EditorValues, type EditorView, type TermOption } from '../../../../../../cms/editor';
 import { collabEditors, RichTextField, richTextEditors, type RichTextFieldProps } from '../../../../../../cms/rich-text-field';
@@ -519,9 +520,11 @@ export default class EntryEditor extends Cossack {
     @Server()
     async reloadRestricted() {
         const cms = this.c.get('cms');
+        if (this.id === 'new') return;
+        await this.assertEditor();
         const view = this.view;
-        if (!view || this.id === 'new') return;
-        const record = await cms.resource(view.resource).get(this.id, { principal: this.c.get('principal') });
+        if (!view) return;
+        const record = await cms.resource(this.resourceId()).get(this.id, { principal: this.c.get('principal') });
         if (!record) return;
         const saved = await entryValues(cms, view, record);
         const names = view.fields.map(field => field.name).filter(name => view.restricted.includes(name));
@@ -962,7 +965,8 @@ export default class EntryEditor extends Cossack {
             const resource = cms.resourceById(`cms/${collection.name}`);
             if (!Object.values(resource.fields).some(field => field.search)) continue;
             try {
-                const records = (await cms.resource(resource.id).search(query, { limit: 6, ...(collection.publishable === false ? {} : { where: { status: 'published' } }) }, { principal: this.c.get('principal') })).filter(record => record.id !== exclude);
+                const principal = this.c.get('principal');
+                const records = openMatches(cms, resource.id, await cms.resource(resource.id).search(query, { limit: 6, ...(collection.publishable === false ? {} : { where: { status: 'published' } }) }, { principal }), principal).filter(record => record.id !== exclude);
                 const urls = await cms.entryUrls(collection, records);
                 for (const record of records) if (urls.get(record.id)) found.push({ title: recordTitle(record, 'title'), url: urls.get(record.id)!, collection: collection.singular });
             } catch (error) { if (!isCmsError(error)) throw error; }
@@ -1485,13 +1489,14 @@ export default class EntryEditor extends Cossack {
     async loadJson() {
         const cms = this.c.get('cms');
         try {
+            await this.assertEditor();
             const { resource } = routeResource(cms, this.route);
             const record = await cms.resource(resource.id).get(this.id, { principal: this.c.get('principal') });
             if (!record) { this.error = __('This entry does not exist or you cannot read it.'); return; }
             this.json = await entryJson(cms, this.route, record);
             this.jsonDirty = false;
         } catch (error) {
-            this.error = isCmsError(error) ? error.message : __('The entry could not be loaded.');
+            this.error = isCmsError(error) || error instanceof ClientVisibleError ? error.message : __('The entry could not be loaded.');
         }
     }
 

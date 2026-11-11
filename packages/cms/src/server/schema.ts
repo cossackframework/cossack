@@ -244,6 +244,9 @@ export async function readCatalog(db: RomeDB, collections: readonly string[], op
             const rows = (index: number) => result.results[index]!.rows;
             const ledgerRows = JSON.stringify(ledgerStatements.map((_, index) => rows(1 + index)), (_key, value) => typeof value === 'bigint' ? `${value}n` : value);
             if (result.sequence !== first.sequence) {
+                // Before host step 11 a migration guards on the global sequence alone, so every read
+                // must see the same one: a table altered between chunks would go unnoticed otherwise.
+                if (!generations) { consistent = false; break; }
                 // Something was written since: go on only if it was not the schema.
                 if (tableList(rows(0)[0]![0] as { tables?: { name: string; model: string }[] }) !== listed || (ledgerSeen !== undefined && ledgerRows !== ledgerSeen)) { consistent = false; break; }
             }
@@ -272,7 +275,8 @@ export async function readCatalog(db: RomeDB, collections: readonly string[], op
         const unknown = unknownHostSteps(ledger.host);
         if (unknown.length) throw new CmsError('CMS_SCHEMA_MISMATCH', hostSchemaMismatch(unknown));
         const details = await db.preflight(options);
-        // The schema is as read up to the last read, so migrations guard on that sequence.
+        // The schema is as read up to the last read, so migrations guard on that sequence (the
+        // first one, before host step 11, since every read then saw it).
         return { sequence, engineVersion: details.engineVersion!, tables, ledger, generation };
     }
     throw new Error('The database schema kept changing while it was read; retry the migration.');

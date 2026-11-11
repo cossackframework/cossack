@@ -688,6 +688,16 @@ export function entryLock(record: RecordShape, reader: EntryReader): 'password' 
 }
 
 /**
+ * Search results a signed-in dashboard user may see: a locked entry (`entryLock`) that matched
+ * would tell what its content says, so only entries open to them stay, as the content API's search.
+ */
+export function openMatches(cms: CmsHost, resourceId: string, records: readonly RecordShape[], principal: Principal): RecordShape[] {
+    const repository = cms.resource(resourceId);
+    const signedIn = principal.kind === 'user';
+    return records.filter(record => !entryLock(record, { editor: signedIn && repository.canUpdate(record, principal), signedIn, roles: signedIn ? principal.roles : [] }));
+}
+
+/**
  * Why the request's reader cannot read the entry (`entryLock`), from its principal and the
  * entry's unlock cookie, as the entry's page decides: for the comments API and form.
  */

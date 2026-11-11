@@ -211,6 +211,7 @@ describe('plugin recipes', () => {
 
   it('rejects unsafe or invalid packages', async () => {
     expect(validatePluginManifest({ schemaVersion: 1, name: 'cms', version: '1.0.0' })).toEqual(['name "cms" is reserved.']);
+    expect(validatePluginManifest({ schemaVersion: 1, name: 'form', version: '1.0.0' })).toEqual(['name "form" is reserved.']);
     expect(validatePluginManifest({ schemaVersion: 2, name: 'Bad', version: 'x', source: '../up' })).toHaveLength(4);
     const linked = await pluginPackage();
     await fs.symlink('/etc/passwd', path.join(linked, 'plugin/passwd'));
@@ -231,6 +232,11 @@ describe('plugin recipes', () => {
     await fs.rm(path.join(manifestLink, 'cossack-plugin.json'));
     await fs.symlink(path.join(outside, 'secret.txt'), path.join(manifestLink, 'cossack-plugin.json'));
     await expect(readPluginDirectory(manifestLink)).rejects.toMatchObject({ code: 'COSSACK_PLUGIN_SOURCE_UNSAFE' });
+    const packageLink = await pluginPackage();
+    await fs.copyFile(path.join(packageLink, 'package.json'), path.join(outside, 'package.json'));
+    await fs.rm(path.join(packageLink, 'package.json'));
+    await fs.symlink(path.join(outside, 'package.json'), path.join(packageLink, 'package.json'));
+    await expect(readPluginDirectory(packageLink)).rejects.toMatchObject({ code: 'COSSACK_PLUGIN_SOURCE_UNSAFE' });
     const mismatch = await pluginPackage('1.0.0', { 'package.json': JSON.stringify({ name: '@acme/support-desk', version: '2.0.0' }) });
     await expect(readPluginDirectory(mismatch)).rejects.toMatchObject({ code: 'COSSACK_PLUGIN_MANIFEST_INVALID' });
   });

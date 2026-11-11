@@ -395,6 +395,23 @@ describe('cms helpers', () => {
     } finally { await fs.rm(project, { recursive: true, force: true }); }
   });
 
+  it('logs out of the stored login in use, not the shell token or the site slot', async () => {
+    const home = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-cms-logout-'));
+    try {
+      const config = { COSSACK_CONFIG_DIR: home };
+      // Only the address's network login exists; --site blog signs in with it.
+      await rememberLogin({ url: 'https://cms.example', token: 'cms_nnnnnnnnnnnnnnnn.secret', tokenId: 'nnnnnnnnnnnnnnnn', name: 'network', scope: 'write', email: 'ada@example.com', user: 'u1' }, config);
+      const fetch = vi.fn(async () => new Response(null, { status: 204 }));
+      const result = await logoutCommand({ flags: { url: 'https://cms.example', site: 'blog' }, env: { ...config, COSSACK_CMS_TOKEN: 'cms_eeeeeeeeeeeeeeee.secret' }, cwd: home, fetch });
+      expect(result).toMatchObject({ revoked: true, forgotten: true });
+      expect(fetch).toHaveBeenCalledTimes(1);
+      const [requested, init] = fetch.mock.calls[0];
+      expect(String(requested)).toBe('https://cms.example/api/cms/me/tokens/nnnnnnnnnnnnnnnn');
+      expect(init.headers.get('authorization')).toBe('Bearer cms_nnnnnnnnnnnnnnnn.secret');
+      expect((await readLogins(config)).logins).toEqual({});
+    } finally { await fs.rm(home, { recursive: true, force: true }); }
+  });
+
   it('sends credentials over plain HTTP to a development host only when allowed', async () => {
     expect(isLocalAddress('http://0.0.0.0:5173')).toBe(true);
     for (const url of ['http://myapp.test', 'http://192.168.1.20:3000', 'http://host.docker.internal:8787']) {

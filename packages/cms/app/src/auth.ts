@@ -545,6 +545,10 @@ export async function listApiTokens(userId: string): Promise<ApiToken[]> {
 /** A new application password; the token is shown once. A network account's work on every site it belongs to. */
 export async function createApiToken(userId: string, name: string, scope: 'read' | 'write', expiresInDays: number | null = null): Promise<string> {
   await requireManageable(userId);
+  // An application password signs in without a second factor: an account that General settings
+  // require to have one gets passwords only once it does.
+  const owner = await member(userId);
+  if (owner && await secondFactorRequired(owner)) throw new ClientVisibleError('This site requires two-step sign-in: set it up under Profile → Security before creating application passwords.');
   const expiresAt = expiresInDays && expiresInDays > 0 ? Date.now() + Math.trunc(expiresInDays) * 86_400_000 : null;
   try { return (await (await storesOf(userId)).apiTokens.create(userId, { name, scope, expiresAt })).token; }
   catch (error) { throw isCmsError(error) ? new ClientVisibleError(error.message) : error; }

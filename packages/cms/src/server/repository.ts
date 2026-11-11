@@ -377,8 +377,7 @@ export class ResourceRepository {
             condition.params,
         )];
         const guard = `EXISTS (SELECT 1 FROM ${this.resource.storage} WHERE id = type::record('${this.resource.storage}', $key) AND "_op" = $op)`;
-        const shared = await this.#sharedStatement(id, previous, draft, guard, { $key: id, $op: op, $now: now }, context);
-        if (shared) statements.push(shared);
+        statements.push(...await this.#sharedStatements(id, op, previous, draft, guard, now, context));
         statements.push(...this.#sideEffects(guard, op, id, revision, 'update', record, context.principal, now, {}, previous));
         // A published entry whose URL changes keeps answering at the old one. The audit row,
         // written only when the change commits, guards these relational statements.
@@ -389,36 +388,52 @@ export class ResourceRepository {
     }
 
     /**
-     * Fields that are the same in every language (`translatable: false`) and changed: one
-     * statement writes them to the entry's other translations, once the entry's own update
-     * committed, and moves their revisions on so an editor holding an older one reloads. The
-     * principal must be able to update every translation.
+     * Fields that are the same in every language (`translatable: false`) and changed: each of the
+     * entry's other translations gets them in its own statement, once the entry's own update
+     * committed, with its revision moved on (so an editor holding an older one reloads) and the
+     * revision, audit, search and outbox rows any update writes. The principal must be able to
+     * update every translation.
      */
-    async #sharedStatement(id: string, previous: RecordShape, draft: Draft, guard: string, params: { [key: string]: Value }, context: OperationContext): Promise<Statement | null> {
-        if (!this.resource.fields.translationGroup) return null;
+    async #sharedStatements(id: string, op: string, previous: RecordShape, draft: Draft, guard: string, now: number, context: OperationContext): Promise<Statement[]> {
+        if (!this.resource.fields.translationGroup) return [];
         const changed = Object.entries(this.resource.fields).filter(([name, declaration]) => declaration.translatable === false && draft[name] !== undefined
             && JSON.stringify(draft[name] ?? null) !== JSON.stringify(previous[name] ?? null)).map(([name]) => name);
-        if (!changed.length) return null;
+        if (!changed.length) return [];
         const group = translationGroupOf(previous);
         const members = await this.#host.db.read([{
-            rql: `SELECT record::id(id) FROM ${this.resource.storage} WHERE ("translationGroup" = $group OR id = type::record('${this.resource.storage}', $group)) AND record::id(id) != $key LIMIT 100`,
+            rql: `SELECT * FROM ${this.resource.storage} WHERE ("translationGroup" = $group OR id = type::record('${this.resource.storage}', $group)) AND record::id(id) != $key LIMIT 100`,
             params: { $group: group, $key: id },
         }], this.#readOptions(context));
-        const others = members.results[0]!.rows.map(row => row[0] as string);
-        if (!others.length) return null;
-        if ((await this.updatable(others, context)).size < others.length) {
+        const others = members.results[0]!.rows.map(row => this.#shapeOf(row[0] as Document));
+        if (!others.length) return [];
+        if ((await this.updatable(others.map(other => other.id), context)).size < others.length) {
             const labels = changed.map(name => this.resource.fields[name]!.label ?? name).join(', ');
             throw new CmsError('CMS_FORBIDDEN', `${labels} is the same in every language, and you cannot edit every translation.`, { fields: Object.fromEntries(changed.map(name => [name, 'is the same in every language.'])) });
         }
-        const values: { [key: string]: Value } = { ...params, $group: group };
+        const shared: Draft = Object.fromEntries(changed.map(name => [name, draft[name]]));
+        const values: { [key: string]: Value } = { $sNow: now };
         const assignments = changed.map((name, index) => {
             values[`$s${index}`] = this.#store(name, this.resource.fields[name]!, draft[name]);
             return `${quote(name)} = $s${index}`;
         });
-        return {
-            rql: `UPDATE ${this.resource.storage} SET ${[...assignments, '"_rev" = "_rev" + 1', '"_op" = $op', '"_updatedAt" = $now'].join(', ')} WHERE ("translationGroup" = $group OR id = type::record('${this.resource.storage}', $group)) AND record::id(id) != $key AND ${guard}`,
-            params: values,
-        };
+        for (const [index, [path, text]] of this.#searchText(shared).entries()) {
+            values[`$st${index}`] = text;
+            assignments.push(`${quote(path)} = $st${index}`);
+        }
+        const statements: Statement[] = [];
+        for (const other of others) {
+            const memberOp = uuidv7();
+            const revision = other.rev + 1;
+            statements.push(bound(
+                `UPDATE ${this.resource.storage} SET ${[...assignments, '"_rev" = "_rev" + 1', '"_op" = $sOp', '"_updatedAt" = $sNow'].join(', ')} WHERE id = type::record('${this.resource.storage}', $sKey) AND ${guard}`,
+                { ...values, $key: id, $op: op, $sKey: other.id, $sOp: memberOp },
+            ));
+            // The member's own rows follow its update, as an update of it would write them.
+            const memberGuard = `EXISTS (SELECT 1 FROM ${this.resource.storage} WHERE id = type::record('${this.resource.storage}', $key) AND "_op" = $op)`;
+            const record = this.#shape(other.id, revision, other.createdAt, now, other.owner, { ...this.#fieldsOf(other), ...shared });
+            statements.push(...this.#sideEffects(memberGuard, memberOp, other.id, revision, 'update', record, context.principal, now, {}, other));
+        }
+        return statements;
     }
 
     /** The IDs among these the principal may update. */

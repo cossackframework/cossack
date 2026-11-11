@@ -9,8 +9,15 @@ import { CmsError } from '../errors';
 
 const WRITE = { kind: 'cms.drafts', retryConflicts: 5 } as const;
 const KEY = /^[A-Za-z0-9_-]{1,80}$/;
-/** The draft's values as JSON, at most. */
+/** The draft's values as JSON, at most, in UTF-8 bytes as the request carries them. */
 export const DRAFT_MAX_BYTES = 48 * 1024;
+
+const encoder = new TextEncoder();
+
+/** The bytes a string parameter takes in a RomeDB request: UTF-8, quoted and escaped as JSON. */
+export function requestBytes(value: string): number {
+    return encoder.encode(JSON.stringify(value)).length;
+}
 /** An editor the room has not reported for this long is no longer editing. */
 export const EDITING_WINDOW = 90_000;
 
@@ -46,7 +53,7 @@ export class CmsDrafts {
         check(recordId);
         if (!Number.isSafeInteger(draft.baseRev) || draft.baseRev < 0) throw new CmsError('CMS_VALIDATION', 'baseRev must be a nonnegative integer.');
         const data = JSON.stringify(draft.values ?? {});
-        if (data.length > DRAFT_MAX_BYTES) throw new CmsError('CMS_LIMIT', `The draft is larger than ${DRAFT_MAX_BYTES / 1024} KB.`);
+        if (requestBytes(data) > DRAFT_MAX_BYTES) throw new CmsError('CMS_LIMIT', `The draft is larger than ${DRAFT_MAX_BYTES / 1024} KB.`);
         const at = this.#now();
         await this.#db.write([{
             rql: `INSERT INTO cms_drafts (id, resource, record_id, base_rev, data, logs, editors, editors_at, at) VALUES ($id, $resource, $record, $rev, $data, $logs, $editors, $at, $at)

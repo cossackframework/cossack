@@ -19,7 +19,7 @@ export const PLUGINS_DIRECTORY = 'src/plugins';
 export const PLUGINS_STATE = '.cossack/plugins.json';
 export const PLUGIN_NAME = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 /** Names owned by Cossack recipes. */
-export const RESERVED_PLUGIN_NAMES = new Set(['cms', 'cossack', 'core', 'framework', 'app', 'system']);
+export const RESERVED_PLUGIN_NAMES = new Set(['cms', 'cossack', 'core', 'framework', 'app', 'system', 'form', 'editor']);
 
 const MAX_FILES = 2_000;
 const MAX_FILE_BYTES = 1_048_576;
@@ -67,7 +67,7 @@ export function validatePluginManifest(manifest, packageJson) {
 /** Read a plugin from a package directory as data. */
 export async function readPluginDirectory(directory) {
   const root = await fs.realpath(directory);
-  const packageJson = await readJsonFile(path.join(root, 'package.json'), MAX_MANIFEST_BYTES, 'package.json');
+  const packageJson = await readJsonFile(await insidePackage(root, 'package.json'), MAX_MANIFEST_BYTES, 'package.json');
   const manifestPath = packageJson?.[PLUGIN_PACKAGE_FIELD]?.plugin ?? PLUGIN_MANIFEST_DEFAULT;
   if (typeof manifestPath !== 'string' || !safeRelative(manifestPath)) throw new PluginError('COSSACK_PLUGIN_MANIFEST_INVALID', 'package.json#cossack.plugin must name a manifest file inside the package.');
   const manifest = await readJsonFile(await insidePackage(root, manifestPath), MAX_MANIFEST_BYTES, manifestPath);

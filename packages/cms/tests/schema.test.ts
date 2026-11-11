@@ -117,6 +117,35 @@ describe.skipIf(!live)('schema planner and migration ledger', () => {
         }
     }, 60_000);
 
+    it('requires one sequence across reads on a database without the generation table', async () => {
+        const fresh = await service.fresh();
+        try {
+            expect((await createCMS({ db: fresh.db, resources: [tickets] }).migrate()).failed).toBeUndefined();
+            // A database before host step 11 guards migrations on the global sequence alone.
+            await fresh.db.write([{ rql: 'DROP TABLE cms_schema_generations' }]);
+            const writer = fresh.db;
+            let noise = 0;
+            const reading = (times: number) => createRomeDB({
+                url: fresh.url, token: fresh.token, pending: new MemoryPendingWriteStore(),
+                fetch: async (input, init) => {
+                    if (String(input).endsWith('/read') && String(init?.body).includes('INFO FOR TABLE') && noise < times) {
+                        noise++;
+                        await writer.write([{ rql: `INSERT INTO cms_audit (id, actor, action, resource, record_id, at) VALUES ('old-${noise}', 'x', 'noise', 'x', 'x', 0)` }]);
+                    }
+                    return fetch(input, init);
+                },
+            });
+            await expect(readCatalog(reading(Infinity), ['r__app__tickets'])).rejects.toThrow(/kept changing/);
+            noise = 0;
+            const once = await readCatalog(reading(1), ['r__app__tickets']);
+            expect(once.generation).toBeNull();
+            const settled = await fresh.db.read([{ rql: 'SELECT 1' }]);
+            expect(once.sequence).toBe(settled.sequence);
+        } finally {
+            await fresh.stop();
+        }
+    }, 60_000);
+
     it('applies through writes to other rows, and re-plans when another schema change lands between planning and applying', async () => {
         const other = service.database();
         let interfered = false;

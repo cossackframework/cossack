@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { describe, expect, it, vi } from 'vitest';
 import { Cossack } from '@cossackframework/core';
 import { computeRouteIds } from '../src/route-ids';
+import { transportGuardPath } from '../src/transport-routes';
 
 const { constructed, registry } = vi.hoisted(() => ({
   constructed: vi.fn(), registry: { pages: {} as Record<string, any>, layouts: {} as Record<string, any>, loadings: {} },
@@ -21,6 +22,7 @@ Reflect.defineMetadata('page:options', { transport: 'durable-object', middleware
 }] }, PrivatePage);
 Reflect.defineMetadata('page:options', { middlewares: [async (c: any, next: any) => {
   if (!c.req.header('x-test-role')) return c.text('layout guard', 401);
+  if (c.req.header('x-test-role') === 'probe') return c.text(transportGuardPath(c) ?? 'none', 418);
   await next();
 }] }, RootLayout);
 class NamedHelper { constructor() { throw new Error('wrong component export'); } }
@@ -53,6 +55,11 @@ describe('router transport guard wiring', () => {
     expect(member.status).toBe(403);
     expect(await member.text()).toBe('page guard');
     expect(constructed).not.toHaveBeenCalled();
+    // The layout guard sees /crpc, /upload, /sse or /ws, and learns the page from the transport.
+    const probe = await app.request(url, {
+      method: post ? 'POST' : 'GET', headers: { origin: 'http://localhost', 'x-test-role': 'probe' }, ...(post ? { body } : {}),
+    });
+    expect(await probe.text()).toBe(pagePath);
   });
 });
 

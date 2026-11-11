@@ -66,7 +66,8 @@ async function shop(origin, routeIds, diagnostics) {
   // The collection manager lists the attached groups in order and saves that order with the features.
   const loaded = await web.action(BUILDER, 'load', ['products'], { params: { name: 'products' } });
   expect(loaded.groups.map(entry => entry.id)).toEqual(['details', 'specifications']);
-  expect(loaded.available).toEqual([]);
+  // The default theme's menu item group can be attached too.
+  expect(loaded.available.map(entry => entry.id)).toEqual(['default-theme-menu']);
   const built = await web.action(BUILDER, 'save', [DRAFT, ['specifications', 'details'], []], { params: { name: 'products' } });
   expect(built.error).toBe('');
   expect(built.groups.map(entry => entry.id)).toEqual(['specifications', 'details']);

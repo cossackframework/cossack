@@ -4,7 +4,7 @@ import type { RouterContext } from '../route-ids.js';
 import { readRpcRequest, RPC_JSON_REQUEST_MAX_BYTES } from './http.js';
 import { discardRequestBody } from '../request-body.js';
 import { withRuntimeRouteParams } from '../runtime-websocket.js';
-import { isTransportPath } from '../transport-routes.js';
+import { isTransportPath, TRANSPORT_GUARD_PATH } from '../transport-routes.js';
 import { checkPageRouteParams, checkRouteParams, resolveComponentRpcTarget, resolveServiceRpcTarget } from './rpc-target.js';
 import { realtimeOwnerMiddlewares, resolveRealtimeConnection } from './realtime-target.js';
 
@@ -112,6 +112,8 @@ export function protectTransport(ctx: RouterContext): MiddlewareHandler {
             guarded = withRuntimeRouteParams(c, resolved.target.params);
         }
         if (!componentPath) return c.json({ error: 'Invalid component ID' }, 400);
+        // Layout guards see /crpc as the path; this names the page whose guards run.
+        guarded.set(TRANSPORT_GUARD_PATH, componentPath);
         // A realtime component's own guards run after its page's guards.
         const middlewares = [...ctx.getMiddlewares?.(componentPath) ?? [], ...ownerMiddlewares];
         // Preserve short-circuit responses and after-next headers without

@@ -39,7 +39,18 @@ export async function announceNote(cms: CmsHost, change: { readonly kind: 'creat
     const site = String((await cms.settings.get('general.siteTitle').catch(() => '')) ?? '');
     const message = noteMail({ author: context.author, title: context.title, body: note.body, quote: note.quote, url: context.origin ? url : '', reply: note.parentId !== null, site });
     for (const person of people.values()) {
-        if (person.status !== 'active' || !person.email) continue;
+        if (person.status !== 'active' || !person.email || !(await mayReadNotes(cms, note, person.id))) continue;
         await cms.mail.send({ kind: 'note', to: person.email, from: cms.mailFrom, subject: message.subject, text: message.text }).catch(error => console.warn(`[cms] the note email to ${person.email} failed`, error));
     }
+}
+
+/** Whether the member may read the entry's notes (edit the entry, as the notes API asks): a mention does not show them a note they cannot open. */
+async function mayReadNotes(cms: CmsHost, note: Note, userId: string): Promise<boolean> {
+    try {
+        const principal = await cms.users.principal(userId);
+        if (!principal) return false;
+        const repository = cms.resource(note.resource);
+        const record = await repository.get(note.recordId, { principal });
+        return record !== null && repository.canUpdate(record, principal);
+    } catch { return false; }
 }

@@ -97,3 +97,16 @@ export function transportPath(name: TransportRouteName, param?: string): string 
   if (param === undefined) throw new TypeError(`[Cossack] The ${name} transport path needs a parameter.`);
   return `${route.slice(0, index)}/${encodeURIComponent(param)}`;
 }
+
+/** Context variable where a transport request records the page or layout file whose guards it runs. */
+export const TRANSPORT_GUARD_PATH = 'cossack.transportGuardPath';
+
+/**
+ * The page or layout file (`/src/pages/dashboard/index.ts`) whose guards a transport request
+ * (an RPC call, an upload, a stream or a WebSocket) runs, from the request's checked target;
+ * undefined for other requests. A layout guard learns from it which page an action belongs to.
+ */
+export function transportGuardPath(c: { get: (key: any) => unknown }): string | undefined {
+  const value = c.get(TRANSPORT_GUARD_PATH);
+  return typeof value === 'string' ? value : undefined;
+}

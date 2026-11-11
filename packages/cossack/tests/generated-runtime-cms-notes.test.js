@@ -115,6 +115,10 @@ describe.skipIf(!liveRomeDBTests())('generated CMS notes', () => {
       expect(refusedHtml).not.toContain('Needs a source');
       expect(refusedHtml).not.toContain('eve@example.com');
       await expect(sam.action(EDITOR, 'findMedia', ['', ''], { params: { collection: 'posts', id }, state: { route: 'posts', id } })).rejects.toThrow(/cannot edit/);
+      const exported = await sam.action(EDITOR, 'loadJson', [], { params: { collection: 'posts', id }, state: { route: 'posts', id } });
+      expect(exported.error).toMatch(/cannot edit/);
+      expect(exported.json ?? '').toBe('');
+      await expect(sam.action(EDITOR, 'reloadRestricted', [], { params: { collection: 'posts', id }, state: { route: 'posts', id } })).rejects.toThrow(/cannot edit/);
       // Ada changes her own words from the pen icon on her note; Eve reads the new text.
       await adaPage.locator('[data-notes-rail] [data-note] [aria-label="Edit"]').first().click();
       await adaPage.locator('[data-notes-rail] textarea[id^="entry-notes-edit-"]').fill('Needs a source, please.');

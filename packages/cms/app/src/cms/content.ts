@@ -3,8 +3,8 @@
  * editor's view of it, and saving entries. Pages call these from their server methods.
  */
 import { blockCategory, blockMedia, entryAuthors, blockSupports, bulkActions, cloneBlocks, editorBoxes, escapeHtml, fieldGroupDeclarations, type FieldGroupTarget, CmsError, CORE_FIELDS, hasPermission, entryActions, entryColumns, flattenBlocks, isCmsError, mediaUrl, principalId, recordTitle, resolveEditorLayout, richTextHtml, richTextMedia, type Block, type BlockDeclaration, type CollectionDefinition, type EntryAction, type EntryColumn, type MediaKind, type Principal, type RecordShape, type Resource, type RichTextDoc, type WriteActor } from '@cossackframework/cms';
-import { renderMarkdown, type CmsHost } from '@cossackframework/cms/server';
-import { activePresets } from './site';
+import { lockedCopy, renderMarkdown, type CmsHost } from '@cossackframework/cms/server';
+import { activePresets, entryLock } from './site';
 import { controlValue, editorBlocks, editorField, editorFields, editorInput, type BlockOption, type EditorBlock, type EditorField, type EditorGroup, type EditorTaxonomy, type EditorValues, type EditorView, type SourceChoice, type SourceChoices, type TermOption } from './editor';
 
 /** A collection by name (`posts`), or a plugin or application resource as `<owner>.<name>`. */
@@ -357,10 +357,13 @@ export async function duplicateEntry(cms: CmsHost, route: string, id: string, pr
     const repository = cms.resource(resource.id);
     const source = await repository.get(id, { principal });
     if (!source) throw new CmsError('CMS_NOT_FOUND', 'The entry does not exist.');
+    // A copy holds everything the entry does: a reader the entry is locked for gets no copy to open.
+    if (lockedCopy(source, repository.canUpdate(source, principal))) throw new CmsError('CMS_FORBIDDEN', 'Only its editors can copy a protected or members-only entry.');
     const input: Record<string, unknown> = {};
-    for (const name of Object.keys(resource.fields)) {
+    for (const [name, declaration] of Object.entries(resource.fields)) {
         // Empty fields stay unset: the repository refuses null where a field has no value.
         if (NOT_COPIED.has(name) || source[name] === undefined || source[name] === null) continue;
+        if (declaration.access?.write && !hasPermission(principal, declaration.access.write)) continue;
         input[name] = source[name];
     }
     const titleField = resource.titleField ?? 'title';
@@ -479,8 +482,18 @@ export async function* exportEntries(cms: CmsHost, route: string, principal: Pri
     for (let offset = 0; offset <= 10_000; offset += 100) {
         const page = await repository.list({ order: { field: 'createdAt', direction: 'asc' }, limit: 100, offset }, { principal });
         if (!page.records.length) return;
-        const urls = collection ? await cms.entryUrls(collection, page.records) : new Map<string, string | null>();
-        yield page.records.map(record => ({ ...record, ...(collection ? { url: urls.get(record.id) ?? null } : {}) }));
+        // An export goes back in through the import, so it holds whole entries: those the caller
+        // may change in full, others without their password, and none the caller could not open
+        // (a protected entry, or members-only for other roles).
+        const roles = principal.kind === 'user' ? principal.roles : [];
+        const records = page.records.flatMap(record => {
+            if (repository.canUpdate(record, principal)) return [record];
+            if (entryLock(record, { editor: false, signedIn: principal.kind === 'user', roles })) return [];
+            const { password: _password, ...rest } = record;
+            return [rest as RecordShape];
+        });
+        const urls = collection ? await cms.entryUrls(collection, records) : new Map<string, string | null>();
+        yield records.map(record => ({ ...record, ...(collection ? { url: urls.get(record.id) ?? null } : {}) }));
         if (page.records.length < 100) return;
     }
 }

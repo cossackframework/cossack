@@ -10,6 +10,7 @@ import type { TermOption } from '../../../../../cms/editor';
 import { avatarStack, type Someone } from '../../../../../cms/collab/presence';
 import { icon } from '../../../../../cms/icons';
 import { clampPerPage, iconButton, linkButton, notice, pageHeader, saveScreenPreferences, screenCookie, screenHelp, screenOptions, screenPreferences, shortDate, statusBadge } from '../../../../../cms/ui';
+import { openMatches } from '../../../../../cms/site';
 
 const PAGE_SIZE = 20;
 
@@ -187,7 +188,7 @@ export default class EntriesPage extends Cossack {
                 const offset = Math.min((this.page - 1) * this.perPage, 10_000 - this.perPage - 1);
                 const found = await repository.search(this.search, { ...filter, limit: this.perPage + 1, offset }, context);
                 this.more = found.length > this.perPage;
-                records = found.slice(0, this.perPage);
+                records = openMatches(cms, resource.id, found.slice(0, this.perPage), context.principal);
                 this.total = offset + records.length;
             } else {
                 // The Date column sorts by the publication time on the Published and Scheduled tabs, by the last change elsewhere.

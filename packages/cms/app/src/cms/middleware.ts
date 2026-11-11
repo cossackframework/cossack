@@ -7,6 +7,7 @@ import { cmsFor, networkFor, type CmsBindings } from './index';
 import { handoff } from './handoff';
 import { dashboardPalette } from '../dashboard/head';
 import { runMaintenance } from './maintenance';
+import { secondFactorRequired, type PublicUser } from '../auth';
 
 /**
  * For `createApp({ isPluginActive })`: a rendered plugin's pages, layouts and HTTP handlers
@@ -108,6 +109,12 @@ function securityHeaders(c: Context, url: URL): void {
 export const cmsPrincipal: MiddlewareHandler = async (c, next) => {
     const session = (c.get('user') as { principal?: Principal } | undefined)?.principal;
     c.set('principal', session ?? ANONYMOUS);
+    // Staff that General settings require to use two-step sign-in reach the API with their
+    // session only once they have a second factor; signing in and out stays open.
+    if (session && /^\/api(?:\/|$)/.test(c.req.path) && !c.req.path.startsWith('/api/auth/')
+        && await secondFactorRequired(c.get('user') as PublicUser).catch(() => true)) {
+        return c.json({ error: 'This site requires two-step sign-in: set it up under Profile → Security first.', code: 'CMS_SECOND_FACTOR_REQUIRED' }, 403);
+    }
     const header = c.req.header('authorization') ?? '';
     if (!session && /^Bearer cms_/i.test(header) && (c.req.path === '/api' || c.req.path.startsWith('/api/'))) {
         const token = await c.get('cms').tokenPrincipal(header.slice(7).trim()).catch(() => null);

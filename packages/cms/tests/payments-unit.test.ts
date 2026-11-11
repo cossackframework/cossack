@@ -94,4 +94,27 @@ describe('payments', () => {
         expect(asked).toEqual(['https://stripe.test/v1/invoices/in_9']);
         expect(event).toMatchObject({ type: 'refund', reference: 'sub-order', metadata: { reference: 'sub-order' }, fromCheckout: true, completes: false, amount: 900 });
     });
+
+    it('finds a refunded charge\'s invoice through its payment intent on basil API versions, and gives up on a slow answer', async () => {
+        const now = Date.parse('2026-11-07T12:00:00Z');
+        const asked: string[] = [];
+        let signals = 0;
+        let hang = false;
+        const stripe = stripePayments({ secretKey: 'sk', webhookSecret: 'whsec_test', api: 'https://stripe.test', now: () => now, lookupMs: 50, fetch: (async (url: string | URL | Request, init?: RequestInit) => {
+            asked.push(String(url));
+            if (init?.signal) signals++;
+            if (hang) return new Promise((_resolve, reject) => init!.signal!.addEventListener('abort', () => reject(init!.signal!.reason)));
+            if (String(url).includes('/v1/invoice_payments')) return Response.json({ data: [{ id: 'inpay_1', invoice: 'in_7' }] });
+            return Response.json({ id: 'in_7', parent: { subscription_details: { metadata: { reference: 'basil-order', cms_checkout: '1' } } } });
+        }) as typeof fetch });
+        const refund = async () => {
+            const body = JSON.stringify({ id: 'evt_b', type: 'charge.refunded', created: Math.floor(now / 1000), data: { object: { id: 'ch_7', amount_refunded: 500, currency: 'eur', metadata: {}, payment_intent: 'pi_7' } } });
+            return stripe.webhook(new Request('https://shop.test/x', { method: 'POST', headers: { 'stripe-signature': await sign('whsec_test', Math.floor(now / 1000), body) }, body }));
+        };
+        expect(await refund()).toMatchObject({ type: 'refund', reference: 'basil-order', fromCheckout: true, amount: 500 });
+        expect(asked).toEqual(['https://stripe.test/v1/invoice_payments?payment[type]=payment_intent&payment[payment_intent]=pi_7&limit=1', 'https://stripe.test/v1/invoices/in_7']);
+        expect(signals).toBe(2);
+        hang = true;
+        expect(await refund()).toMatchObject({ type: 'refund', reference: null });
+    });
 });
