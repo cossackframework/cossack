@@ -222,7 +222,9 @@ export default class SecurityPage extends Cossack {
         return html`<div class="max-w-3xl space-y-6">
             ${pageHeader(__('Security'), { description: __('Protect your account, and connect apps to the content API.'),
                 actions: html`<a href="/dashboard/profile" class="text-sm text-muted-foreground hover:text-foreground">← ${__('Profile')}</a>` })}
-            ${this.required ? component(Alert, { variant: 'warning' }, __('This site requires two-step sign-in. Add an authenticator app or a passkey to continue.')) : null}
+            ${this.required ? component(Alert, { variant: 'warning' }, this.status.totp || this.status.passkeys.length
+                ? __('This site requires two-step sign-in, and this session signed in without it. Sign out, then sign in again with your authenticator app or passkey.')
+                : __('This site requires two-step sign-in. Add an authenticator app or a passkey to continue.')) : null}
             ${this.recovered ? component(Alert, { variant: 'warning' }, __('You signed in with a recovery code. If you lost your phone, turn the authenticator off and set it up again.')) : null}
             ${this.message && !this.error ? notice(this.message, 'success') : null}
             ${this.error ? notice(this.error, 'error') : null}

@@ -21,6 +21,8 @@ export interface Handoff {
     readonly networkRole: string | null;
     /** When the network session expires; the child session ends no later. */
     readonly expiresAt: number;
+    /** Whether the network session's sign-in used a second factor; the child session copies it. */
+    readonly secondFactor: boolean;
 }
 
 export class CmsHandoffs {
@@ -50,7 +52,7 @@ export class CmsHandoffs {
         const id = await sha256(code);
         const now = this.#now();
         const found = await this.#db.read([{
-            rql: `SELECT h.session_id, h.user_id, a.network_role, s.expires_at FROM cms_handoffs h JOIN cms_accounts a ON a.id = h.user_id
+            rql: `SELECT h.session_id, h.user_id, a.network_role, s.expires_at, s.second_factor FROM cms_handoffs h JOIN cms_accounts a ON a.id = h.user_id
                 JOIN cms_auth_sessions s ON s.public_id = h.session_id AND s.user_id = h.user_id
                 WHERE h.id = $id AND h.site_id = $site AND h.expires_at > $now AND s.expires_at > $now AND a.status = 'active'`,
             params: { $id: id, $site: site, $now: now },
@@ -59,7 +61,7 @@ export class CmsHandoffs {
         // Delete it either way; only the request whose delete removed it may use it.
         const taken = await this.#db.write([{ rql: 'DELETE FROM cms_handoffs WHERE id = $id', params: { $id: id } }], WRITE);
         if (!row || taken.results[0]!.affected !== 1n) return null;
-        const handoff = { session: row[0] as string, user: row[1] as string, networkRole: row[2] as string | null, expiresAt: Number(row[3]) };
+        const handoff = { session: row[0] as string, user: row[1] as string, networkRole: row[2] as string | null, expiresAt: Number(row[3]), secondFactor: row[4] !== null && Number(row[4]) === 1 };
         await this.#db.write([{
             rql: 'INSERT INTO cms_session_sites (session_id, site_id, user_id, created_at) SELECT $session, $site, $user, $now WHERE 1 = 1 ON CONFLICT (session_id, site_id) DO NOTHING',
             params: { $session: handoff.session, $site: site, $user: handoff.user, $now: now },

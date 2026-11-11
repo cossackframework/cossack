@@ -204,6 +204,27 @@ describe.skipIf(!live)('field groups', () => {
         expect(cms.resourceById('cms/products').fields.specs).toMatchObject({ kind: 'string' });
     });
 
+    it('detaches a deleted collection\'s groups in the batch that drops it, so a failed delete keeps both', async () => {
+        await cms.saveCollection({ ...products, name: 'gadgets', label: 'Gadgets', singular: 'Gadget', path: 'gadgets' }, admin);
+        await cms.saveFieldGroup({ id: 'shared-notes', title: 'Notes', targets: [{ kind: 'collection', name: 'gadgets' }, { kind: 'collection', name: 'posts' }], blocks: [fieldBlock('remark', 'text', { name: 'remark', label: 'Remark' })] }, admin);
+        const db = cms.db as unknown as { write: (...args: unknown[]) => Promise<unknown> };
+        const write = db.write.bind(db);
+        let fail = true;
+        db.write = async (...args: unknown[]) => {
+            if (fail && (args[1] as { kind?: string } | undefined)?.kind === 'cms.collections') { fail = false; throw new Error('the database went away'); }
+            return write(...args);
+        };
+        try {
+            await expect(cms.deleteCollection('gadgets', admin)).rejects.toThrow('the database went away');
+        } finally { db.write = write; }
+        const targets = async () => (await cms.fieldGroups.get('shared-notes'))!.targets.map(target => (target as { name?: string }).name);
+        expect(await targets()).toEqual(['gadgets', 'posts']);
+        expect(cms.resourceById('cms/gadgets').fields.remark).toBeDefined();
+        await cms.deleteCollection('gadgets', admin);
+        expect(await targets()).toEqual(['posts']);
+        expect(cms.resourceById('cms/posts').fields.remark).toBeDefined();
+    });
+
 });
 
 /** A shop plugin that ships a Shipping group for products and a Shipping tab holding it. */

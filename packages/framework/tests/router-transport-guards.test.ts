@@ -2,7 +2,7 @@ import 'reflect-metadata';
 import { describe, expect, it, vi } from 'vitest';
 import { Cossack } from '@cossackframework/core';
 import { computeRouteIds } from '../src/route-ids';
-import { transportGuardPath, transportTargetPath } from '../src/transport-routes';
+import { transportAction, transportGuardPath, transportTargetPath } from '../src/transport-routes';
 
 const { constructed, registry } = vi.hoisted(() => ({
   constructed: vi.fn(), registry: { pages: {} as Record<string, any>, layouts: {} as Record<string, any>, loadings: {} },
@@ -22,7 +22,7 @@ Reflect.defineMetadata('page:options', { transport: 'durable-object', middleware
 }] }, PrivatePage);
 Reflect.defineMetadata('page:options', { middlewares: [async (c: any, next: any) => {
   if (!c.req.header('x-test-role')) return c.text('layout guard', 401);
-  if (c.req.header('x-test-role') === 'probe') return c.text(`${transportGuardPath(c) ?? 'none'}|${transportTargetPath(c) ?? 'none'}`, 418);
+  if (c.req.header('x-test-role') === 'probe') return c.text(`${transportGuardPath(c) ?? 'none'}|${transportTargetPath(c) ?? 'none'}|${transportAction(c) ?? 'none'}`, 418);
   await next();
 }] }, RootLayout);
 class NamedHelper { constructor() { throw new Error('wrong component export'); } }
@@ -60,14 +60,15 @@ describe('router transport guard wiring', () => {
     const probe = await app.request(url, {
       method: post ? 'POST' : 'GET', headers: { origin: 'http://localhost', 'x-test-role': 'probe' }, ...(post ? { body } : {}),
     });
-    expect(await probe.text()).toBe(`${pagePath}|${transport === 'service' ? layoutPath : pagePath}`);
+    // An RPC call or upload also names its action, so a guard can exempt one action of one file.
+    expect(await probe.text()).toBe(`${pagePath}|${transport === 'service' ? layoutPath : pagePath}|${['rpc', 'upload'].includes(transport) ? 'secret' : 'none'}`);
   });
 
   it('names the layout as the target of a layout action that runs under a page', async () => {
     const app = createApp();
     const response = await app.request('/crpc', { method: 'POST', headers: { origin: 'http://localhost', 'x-test-role': 'probe' },
       body: JSON.stringify({ componentRouteId: ids.get(layoutPath), pageRouteId: ids.get(pagePath), action: 'find', payload: [] }) });
-    expect(await response.text()).toBe(`${pagePath}|${layoutPath}`);
+    expect(await response.text()).toBe(`${pagePath}|${layoutPath}|find`);
   });
 });
 

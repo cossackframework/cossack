@@ -8,7 +8,7 @@ vi.mock('@cossackframework/core', async original => ({ ...await original<typeof 
 vi.stubGlobal('env', (_name: string, fallback: string) => fallback);
 vi.stubGlobal('__', (text: string) => text);
 const { changeUserPassword } = await import('../src/services/users');
-const { linkOrigin, loginUser, registerUser, requestPasswordReset, SignInPendingError, verifyEmail } = await import('../src/auth');
+const { linkOrigin, loginUser, passwordMatches, registerUser, requestPasswordReset, SignInPendingError, verifyEmail } = await import('../src/auth');
 
 /** A request to `url` with these bindings, as getRequestContext gives it. */
 function request(url: string, bindings: Record<string, unknown> = {}, variables: Record<string, unknown> = {}) {
@@ -43,6 +43,16 @@ describe.skipIf(!live)('account flows', () => {
         expect(state.sent).toHaveLength(0);
         request('http://localhost:5173/auth/forgot-password');
         expect(linkOrigin()).toBe('http://localhost:5173');
+    });
+
+    it('counts wrong current passwords per account, so a session cannot guess its way in', async () => {
+        const cms = state.cms!;
+        const user = await cms.users.create({ email: 'guess@example.com', name: 'Guess', password: 'right password', roles: ['editor'] });
+        request('https://site.example/dashboard/users/x');
+        // Right answers do not use up the allowance.
+        for (let i = 0; i < 12; i++) expect(await passwordMatches(user.id, 'right password')).toBe(true);
+        for (let i = 0; i < 10; i++) expect(await passwordMatches(user.id, `wrong ${i}`)).toBe(false);
+        await expect(passwordMatches(user.id, 'right password')).rejects.toThrow(/Too many wrong passwords/);
     });
 
     it('activates only an account still waiting for its link, and lets an unconfirmed address register again', async () => {

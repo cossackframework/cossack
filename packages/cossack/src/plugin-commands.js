@@ -34,7 +34,9 @@ ${command.description}
 
 Runs in the application as a signed-in dashboard user${command.permission ? ` with ${command.permission}` : ''}.
 Signs in with the application password from cossack cms login or COSSACK_CMS_TOKEN; otherwise
-set CMS_PASSWORD with --email or CMS_EMAIL. The application comes from --url or APP_URL.
+set CMS_PASSWORD with --email or CMS_EMAIL. The application comes from --url, COSSACK_CMS_URL
+or the project's APP_URL; credentials from the environment go to a non-local APP_URL only
+when --url or COSSACK_CMS_URL confirms it.
 
 Options:
 ${[...options, '  --url <url>  Application URL.', '  --email <email>  Dashboard user.', '  --allow-http  Allow plain HTTP to a development host (or COSSACK_CMS_ALLOW_HTTP=1).', '  --json  Emit versioned JSON.', '  --help  Show this help.'].join('\n')}`;
@@ -53,12 +55,15 @@ export async function runPluginCommand(raw, rest, found) {
   const parsed = parseOptions(rest.filter(argument => argument !== '--json'), command);
   if (parsed.problems.length) return commandFailure(ctx, label, 'COSSACK_OPTION_INVALID', parsed.problems.join(' '));
   const environment = await readEnvironment(root);
-  const url = (parsed.url ?? process.env.APP_URL ?? environment.APP_URL ?? '').replace(/\/$/, '');
-  if (!url) return commandFailure(ctx, label, 'COSSACK_PLUGIN_COMMAND_CREDENTIALS', 'Set --url (or APP_URL).');
+  // The same rules as `cossack cms`: --url and COSSACK_CMS_URL confirm the address. APP_URL,
+  // from the shell or the project's .env, is only what this folder names: a loaded project .env
+  // lands in the shell too, so credentials from the environment go there only when it is local.
+  const url = (parsed.url ?? (process.env.COSSACK_CMS_URL || process.env.APP_URL || environment.APP_URL || '')).replace(/\/$/, '');
+  if (!url) return commandFailure(ctx, label, 'COSSACK_PLUGIN_COMMAND_CREDENTIALS', 'Set --url (or COSSACK_CMS_URL, or APP_URL in the project).');
   let origin;
   try { origin = new URL(url).origin; }
   catch { return commandFailure(ctx, label, 'COSSACK_CMS_URL_INVALID', `${url} is not a URL.`); }
-  const source = parsed.url !== undefined || process.env.APP_URL ? 'flag' : 'project';
+  const source = parsed.url !== undefined ? 'flag' : process.env.COSSACK_CMS_URL ? 'env' : 'project';
   const allowHttp = httpAllowed({ 'allow-http': parsed.allowHttp }, process.env);
   // An application password signs in first: COSSACK_CMS_TOKEN, then the stored login for the
   // address (`cossack cms login`). Email and CMS_PASSWORD are the fallback; a site with a bot

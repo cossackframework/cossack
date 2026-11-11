@@ -317,7 +317,11 @@ describe.skipIf(!live)('scheduling, previews, revisions, redirects, tokens, webh
         // Saving either copies the price to the other and moves the other's revision on.
         const cheaper = await products.update(french.id, { price: 12, tagline: 'Pratique' }, { principal: ann, expectedRevision: french.rev });
         expect(await products.get(widget.id, { principal: ann })).toMatchObject({ price: 12, tagline: 'Handy', rev: widget.rev + 1 });
-        // The other translation's change is audited and announced like any update of it.
+        // The other translation's change is audited and announced like any update of it, from an
+        // outbox job queued in the update.
+        const queued = await cms.db.read([{ rql: "SELECT count() FROM cms_audit WHERE record_id = $key AND action = 'update'", params: { $key: widget.id } }]);
+        expect(Number(queued.results[0]!.rows[0]![0])).toBe(0);
+        await cms.outbox.dispatch({ limit: 100 });
         const rows = await cms.db.read([
             { rql: "SELECT revision, actor FROM cms_audit WHERE record_id = $key AND action = 'update'", params: { $key: widget.id } },
             { rql: "SELECT payload FROM cms_outbox WHERE topic = 'resource.updated'" },
@@ -356,8 +360,19 @@ describe.skipIf(!live)('scheduling, previews, revisions, redirects, tokens, webh
         const saved = await gizmos.update(gizmo.id, { price: 12 }, { principal: admin, expectedRevision: gizmo.rev });
         expect(saved.price).toBe(12);
         for (const translation of translations) expect(await gizmos.get(translation.id, { principal: admin })).toMatchObject({ price: 12, rev: translation.rev + 1, notes });
-        const audit = await cms.db.read([{ rql: "SELECT record_id, revision FROM cms_audit WHERE resource = 'cms/gizmos' AND action = 'update'" }]);
-        expect(audit.results[0]!.rows.map(row => row[0]).sort()).toEqual([gizmo.id, ...translations.map(translation => translation.id)].sort());
+        const job = await cms.db.read([{ rql: "SELECT payload FROM cms_outbox WHERE topic = 'resource.shared'" }]);
+        const event = job.results[0]!.rows.map(row => JSON.parse(row[0] as string)).find(entry => entry.id === gizmo.id);
+        expect(event).toMatchObject({ topic: 'resource.shared', resource: 'cms/gizmos', group: gizmo.id });
+        // A translation saved again before the job runs wrote its own rows; the job leaves it alone.
+        const [first] = translations;
+        await gizmos.update(first!.id, { title: 'Gizmo again' }, { principal: admin, expectedRevision: first!.rev + 1 });
+        await cms.outbox.dispatch({ limit: 100 });
+        const updates = async () => (await cms.db.read([{ rql: "SELECT record_id, revision FROM cms_audit WHERE resource = 'cms/gizmos' AND action = 'update'" }])).results[0]!.rows.map(row => `${row[0]}:${Number(row[1])}`).sort();
+        const expected = [`${gizmo.id}:${gizmo.rev + 1}`, `${first!.id}:${first!.rev + 2}`, ...translations.slice(1).map(translation => `${translation.id}:${translation.rev + 1}`)].sort();
+        expect(await updates()).toEqual(expected);
+        // A retried job, after a lost answer say, writes nothing twice.
+        await gizmos.sharedSideEffects(event);
+        expect(await updates()).toEqual(expected);
         // An entry whose save would not fit one request is refused plainly.
         await expect(gizmos.update(gizmo.id, { notes: 'x'.repeat(70_000) }, { principal: admin, expectedRevision: saved.rev })).rejects.toMatchObject({ code: 'CMS_LIMIT', message: expect.stringContaining('too large to save') });
         await cms.saveLanguages({ default: 'en', others: [] }, admin);

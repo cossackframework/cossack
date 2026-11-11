@@ -151,7 +151,8 @@ async function toSite(c: Context, network: CmsNetwork, site: NetworkSite): Promi
     // A network admin may open any site; the first visit copies them in without a role, so their writes have an author.
     if (handoff.networkRole === NETWORK_ADMIN) await cms.users.addMember(handoff.user);
     if (!(await cms.users.get(handoff.user))) return c.text('Your account is not a member of this site.', 403);
-    c.set('cms.child', { parentId: handoff.session, networkRole: handoff.networkRole, expiresAt: handoff.expiresAt });
+    // The child session used a second factor only if the network session did: the site's own two-step requirement then asks it of the child.
+    c.set('cms.child', { parentId: handoff.session, networkRole: handoff.networkRole, expiresAt: handoff.expiresAt, secondFactor: handoff.secondFactor });
     const { headers } = await authSessions.create(handoff.user, c);
     headers.forEach((value, name) => c.header(name, value, { append: true }));
     deleteCookie(c, AUTO_COOKIE, { path: '/' });

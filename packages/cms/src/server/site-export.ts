@@ -29,12 +29,13 @@ export const EXPORT_REDACTED_COLUMNS: Readonly<Record<string, readonly string[]>
  * Tables a `.romedb` file leaves empty: sign-in state (sessions are keyed by their tokens, so a
  * copy would sign in on the live site), authenticator apps and recovery codes (the secrets are
  * stored as they are, so a copy would make valid codes), the cache, pending work, which would
- * run again where the file is opened, and webhooks, whose secrets are the live site's. Accounts
- * stay with their password hashes, passkeys (public keys) and application passwords (digests),
- * so a site's own accounts keep signing in; they set up an authenticator app again.
+ * run again where the file is opened, webhooks, whose secrets are the live site's, and
+ * application passwords, which would sign scripts in to the copy. Accounts stay with their
+ * password hashes and passkeys (public keys), so a site's own accounts keep signing in; they
+ * set up an authenticator app and application passwords again.
  */
 export const FILE_EXPORT_EMPTIED_TABLES: readonly string[] = [
-    'cms_user_security',
+    'cms_user_security', 'cms_api_tokens',
     'cms_auth_sessions', 'cms_sessions', 'cms_session_values', 'cms_session_sites', 'cms_oauth_states', 'cms_password_resets', 'cms_auth_challenges',
     'cms_preview_tokens', 'cms_handoffs', 'cms_cache', 'cms_attempts', 'cms_outbox', 'cms_webhooks', 'cms_webhook_deliveries', 'cossack_jobs', 'cms_schedules',
 ];

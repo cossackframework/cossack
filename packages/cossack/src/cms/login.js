@@ -5,7 +5,7 @@
  */
 import os from 'node:os';
 import { assertCredentialTarget, CmsApiError, createClient, resolveTarget, tokenId } from './client.js';
-import { forgetLogin, loginKey, rememberLogin } from './logins.js';
+import { forgetLogin, loginKey, readLogins, rememberLogin } from './logins.js';
 
 const coded = (code, message) => Object.assign(new Error(message), { code });
 
@@ -88,7 +88,14 @@ export async function loginCommand({ flags, env = process.env, cwd = process.cwd
 export async function logoutCommand({ flags, env = process.env, cwd = process.cwd(), out = () => {}, fetch = globalThis.fetch }) {
   // Forgetting a stored login sends nothing, so it works for any address; revoking sends the
   // password, so only where it may go.
-  const target = await resolveTarget({ flags, env, cwd, needToken: false });
+  let target = await resolveTarget({ flags, env, cwd, needToken: false });
+  // --network ends the address's network login, even when the site has a login of its own.
+  if (flags.network) {
+    const key = loginKey(target.url, undefined);
+    const login = (await readLogins(env)).logins[key];
+    if (!login) throw coded('COSSACK_CMS_LOGIN_REQUIRED', `No network login is stored for ${target.url}.`);
+    target = { ...target, site: undefined, login, key };
+  }
   // A site without its own login signs in with the address's network login; ending that ends
   // every site's, so it takes --network rather than happening as a side effect of --site.
   if (target.site && target.login && target.key === loginKey(target.url, undefined) && !flags.network) {

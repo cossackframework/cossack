@@ -4,7 +4,7 @@ import { isCmsError, isSameOriginPost, systemPrincipal, type CommentShape } from
 import type { CmsHost } from '@cossackframework/cms/server';
 import { getCookie } from 'hono/cookie';
 import { getClientIp } from '@cossackframework/core';
-import { apiError } from '../../../../cms/content-api';
+import { apiError, cappedRequest } from '../../../../cms/content-api';
 import { mailOrigin } from '../../../../cms/seo';
 import { isMembersOnly, isProtected, requestLock, unlockCookie } from '../../../../cms/site';
 
@@ -27,6 +27,9 @@ export const GET = async (c: Context) => {
     } catch (error) { return apiError(c, error); }
 };
 
+/** The largest comment body read: the fields are short text, well under this. */
+const COMMENT_MAX_BYTES = 64 * 1024;
+
 /** What went wrong, for the form's message after a redirect. */
 const REASONS: Record<string, string> = { CMS_FORBIDDEN: 'closed', CMS_UNAUTHENTICATED: 'sign-in', CMS_LIMIT: 'too-fast', CMS_VALIDATION: 'invalid', CMS_NOT_FOUND: 'closed' };
 
@@ -39,9 +42,12 @@ export const POST = async (c: Context) => {
     if (!isSameOriginPost(c.req.raw)) return c.json({ error: 'Cross-site comments are not allowed.', code: 'CMS_FORBIDDEN' }, 403);
     const cms = c.get('cms');
     const json = (c.req.header('content-type') ?? '').includes('application/json');
+    // A comment is a few kilobytes of text; the body is read only up to this.
+    const request = await cappedRequest(c, COMMENT_MAX_BYTES);
+    if (!request) return c.json({ error: 'The comment is too long.', code: 'CMS_LIMIT' }, 413);
     let input: Record<string, string>;
     try {
-        const raw = json ? await c.req.json() as Record<string, unknown> : Object.fromEntries(await c.req.formData());
+        const raw = json ? await request.json() as Record<string, unknown> : Object.fromEntries(await request.formData());
         input = Object.fromEntries(Object.entries(raw).map(([key, value]) => [key, typeof value === 'string' ? value : '']));
     } catch { return c.json({ error: 'Send the comment as a form or JSON.', code: 'CMS_VALIDATION' }, 400); }
     const back = async (reason: string, url: string | null) => c.redirect(`${url ?? '/'}?comment=${reason}#comments`, 303);

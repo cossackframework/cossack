@@ -47,6 +47,10 @@ export default class EditUserPage extends Cossack {
     @State() newPassword = '';
     /** Your own password before you change it; another user's needs none. */
     @State() currentPassword = '';
+    /** Your own password, when you change your own email: a session alone cannot move the account. */
+    @State() emailPassword = '';
+    /** The email the account had when the page loaded, so the form asks for the password only for a change. */
+    @State() savedEmail = '';
 
     /** The last action's outcome above the tabs: what it did, or why it failed (`failed`). */
     @State() message = '';
@@ -89,6 +93,7 @@ export default class EditUserPage extends Cossack {
         }
 
         this.userDetail = user;
+        this.savedEmail = user.email;
         this.assignedRoleIds = user.roles.map((r) => r.id);
         this.readOnly = !canManageUser(this.user as PublicUser | undefined, user);
         this.locked = !!user.lockedProfile && user.id !== this.user?.id;
@@ -195,7 +200,8 @@ export default class EditUserPage extends Cossack {
         if (!ok) return;
 
         try {
-            await this.save();
+            await this.save(this.emailPassword);
+            this.emailPassword = '';
             this.message = __('Saved.');
         } catch (e: any) {
             this.failed = e?.message || __('Could not save user');
@@ -223,15 +229,24 @@ export default class EditUserPage extends Cossack {
     }
 
     @Server()
-    async save() {
+    async save(emailPassword = '') {
         const user = this.userDetail;
         if (!user) {
             this.error = __('User not found');
             throw new Error(__('User not found'));
         }
         if (user.id !== await this.editable()) throw new ClientVisibleError(__('User not found'));
+        // Your own email moves your password resets with it, so changing it needs your password, as changing the password does.
+        if (user.id === this.user?.id) {
+            const saved = await getUser(user.id);
+            if (saved && saved.email.trim().toLowerCase() !== String(user.email ?? '').trim().toLowerCase()
+                && !(emailPassword && await passwordMatches(user.id, String(emailPassword)))) {
+                throw new ClientVisibleError(__('Enter your current password to change your email.'));
+            }
+        }
 
         await updateUser(user.id, { name: user.name, email: user.email, avatar: user.avatar || null });
+        this.savedEmail = user.email;
         // The client sends its roles with every save; only a role manager's are applied, and only roles they could hold themselves.
         if (canAssignRoles(this.user as PublicUser | undefined)) {
             const chosen = (await listRoles()).filter(role => this.assignedRoleIds.includes(role.id));
@@ -321,6 +336,8 @@ export default class EditUserPage extends Cossack {
                             control: attributes => component(Input, { ...attributes, type: 'text', '.value': bind(this.userDetail, 'name') }) })}
                         ${component(Field, { label: __('Email'), for: 'email', error: this.getError('email'),
                             control: attributes => component(Input, { ...attributes, type: 'email', '.value': bind(this.userDetail, 'email') }) })}
+                        ${own && this.userDetail.email !== this.savedEmail ? component(Field, { label: __('Current password'), for: 'email-password', hint: __('Needed to change your own email.'),
+                            control: attributes => component(PasswordInput, { ...attributes, autocomplete: 'current-password', value: this.emailPassword, onValueChange: (v: string) => this.emailPassword = v }) }) : null}
                         ${avatarField({ id: 'avatar', value: this.avatarPreview || this.userDetail.avatar || '', name: this.userDetail.name || this.userDetail.email, uploads: this.avatarUploads,
                             uploading: this.uploading, error: this.avatarError, onFile: file => this.chooseAvatar(file),
                             onUrl: url => { if (this.userDetail) this.userDetail.avatar = url; }, onRemove: () => this.removeAvatar() })}

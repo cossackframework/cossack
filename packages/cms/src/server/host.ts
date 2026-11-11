@@ -4,7 +4,7 @@
  */
 import { createHookRegistry, type ActionHandler, type ActionPoint, type ActionReport, type ExtensionPoint, type FilterContext, type FilterHandler, type FilterPoint, type HookRegistry, type InvokeOptions } from '@cossackframework/core/hooks';
 import type { StorageProvider } from '@cossackframework/core/storage';
-import { ClientError, type RomeDB, type Statement, type Value, type WorkLimits } from '@cossackframework/romedb';
+import { ClientError, MAX_STATEMENTS, type RomeDB, type Statement, type Value, type WorkLimits } from '@cossackframework/romedb';
 import { normalizeRichText, richTextBlocks, withRichTextBlocks } from '../richtext';
 import { blockId, blockMedia, blockProblems, htmlBlocksChanged, textFieldProblem, validateBlocks, type Block, type BlockDeclaration } from '../blocks';
 import { blocksShapeProblem, type FieldDeclaration } from '../fields';
@@ -35,6 +35,7 @@ import { imageWidths } from '../images';
 
 import { HOST_STEPS, HOST_TABLES, hostSchemaMismatch, unknownHostSteps } from './host-schema';
 import { SiteSearch, SITE_SEARCH, searchRebuild } from './site-search';
+import { sharedFields } from './shared-fields';
 import { OPEN_POLICY, pluginState, readPolicy, type NetworkPluginState, type NetworkPolicy } from './network-policy';
 import { CmsSettings } from './site-settings';
 import { createAuthSessionStore, createJobStore, createNotificationStore, createOAuthStateStore, createSessionStore, type EndedSessions } from './stores';
@@ -590,7 +591,12 @@ export class CmsHost {
         }, { plugin: 'cms' });
         // A deleted entry takes its comments along; under its own name, so its retries are its alone.
         this.hooks.addAction(afterCommit, async event => { if (event.topic === 'resource.deleted') await this.comments.deleteForEntry(event.resource, event.id); }, { plugin: 'cms-comments' });
-        this.hooks.addAction(collectionDeleted, event => this.comments.deleteForResource(event.resource), { plugin: 'cms-comments' });
+        this.hooks.addAction(collectionDeleted, event => this.comments.deleteForResource(event.resource, event.at), { plugin: 'cms-comments' });
+        // Shared fields' rows for an entry's other translations; under its own name, so its retries are its alone.
+        this.hooks.addAction(sharedFields, async (event, context) => {
+            if (!this.resources.some(resource => resource.id === event.resource)) return;
+            await this.resource(event.resource).sharedSideEffects(event, context.signal ? { signal: context.signal } : {});
+        }, { plugin: 'cms-shared' });
         // A saved form brings its submissions table up to date; a deleted one takes its table along.
         this.hooks.addAction(afterCommit, async event => {
             if (event.resource !== 'cms/forms') return;
@@ -1579,21 +1585,33 @@ export class CmsHost {
         const referrers = this.resources.filter(resource => resource.id !== id && Object.values(resource.fields).some(field => field.kind === 'reference' && field.target === id));
         if (referrers.length) throw new CmsError('CMS_CONFLICT', `${referrers.map(resource => resource.label ?? resource.id).join(', ')} refer to this collection.`);
         const storage = this.resourceById(id).storage;
-        // The groups attached to it stay, for other targets, without it. First, so a failure
-        // leaves the collection there to delete again.
-        for (const group of groupsForTarget(this.#groups, { kind: 'collection', name })) await this.fieldGroups.put(withTarget(group, { kind: 'collection', name }, false), principal);
+        // The groups attached to it stay, for other targets, without it: in the batch that drops
+        // it, so a failure leaves both as they were. Groups that do not fit go first, each batch
+        // a schema change the other servers reload, and a retry finds them detached.
+        const detach = groupsForTarget(this.#groups, { kind: 'collection', name }).map(group => this.fieldGroups.putStatement(withTarget(group, { kind: 'collection', name }, false), principal));
+        const room = MAX_STATEMENTS - 7;
+        try {
+            while (detach.length > room) await this.db.write([...detach.splice(0, room), nextGenerationStatement(this.#now())], { kind: 'cms.fieldGroups' });
+        } finally {
+            this.fieldGroups.reset();
+        }
         const info = await this.db.read([{ rql: 'INFO FOR DB' }]);
         const exists = ((info.results[0]!.rows[0]![0] as { tables?: { name: string }[] }).tables ?? []).some(table => table.name === storage);
         const at = this.#now();
-        await this.db.write([
-            ...(exists ? [{ rql: `DROP TABLE ${storage}` }] : []),
-            { rql: 'DELETE FROM cms_collections WHERE name = $name', params: { $name: name } },
-            { rql: 'DELETE FROM cms_schema_state WHERE resource = $id', params: { $id: id } },
-            { rql: `DELETE FROM ${SITE_SEARCH.collection} WHERE collection = $name`, params: { $name: name } },
-            // Its comments go from the outbox, which retries until they are gone.
-            collectionDeletedStatement(id, `collection.deleted:${id}:${uuidv7()}`, at),
-            nextGenerationStatement(at),
-        ], { kind: 'cms.collections' });
+        try {
+            await this.db.write([
+                ...detach,
+                ...(exists ? [{ rql: `DROP TABLE ${storage}` }] : []),
+                { rql: 'DELETE FROM cms_collections WHERE name = $name', params: { $name: name } },
+                { rql: 'DELETE FROM cms_schema_state WHERE resource = $id', params: { $id: id } },
+                { rql: `DELETE FROM ${SITE_SEARCH.collection} WHERE collection = $name`, params: { $name: name } },
+                // Its comments go from the outbox, which retries until they are gone.
+                collectionDeletedStatement(id, `collection.deleted:${id}:${uuidv7()}`, at),
+                nextGenerationStatement(at),
+            ], { kind: 'cms.collections' });
+        } finally {
+            this.fieldGroups.reset();
+        }
         this.outboxWritten();
         this.#activation = undefined;
         await this.ready({ force: true });

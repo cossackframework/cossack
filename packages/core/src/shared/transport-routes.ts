@@ -124,3 +124,16 @@ export function transportTargetPath(c: { get: (key: any) => unknown }): string |
   const value = c.get(TRANSPORT_TARGET_PATH);
   return typeof value === 'string' ? value : undefined;
 }
+
+/** Context variable where an RPC call records the action it calls. */
+export const TRANSPORT_ACTION = 'cossack.transportAction';
+
+/**
+ * The action an RPC call names on its {@link transportTargetPath} (a component's method, or a
+ * service's), as the client sent it; undefined for other requests. A guard may exempt one
+ * named action of one file, such as a layout's sign-out.
+ */
+export function transportAction(c: { get: (key: any) => unknown }): string | undefined {
+  const value = c.get(TRANSPORT_ACTION);
+  return typeof value === 'string' ? value : undefined;
+}

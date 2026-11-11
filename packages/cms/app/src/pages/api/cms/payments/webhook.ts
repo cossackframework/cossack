@@ -1,5 +1,9 @@
 import type { Context } from 'hono';
 import { isCmsError } from '@cossackframework/cms';
+import { cappedRequest } from '../../../../cms/content-api';
+
+/** Stripe's events are a few kilobytes; anything far larger is not one. */
+const WEBHOOK_MAX_BYTES = 1024 * 1024;
 
 /**
  * The payments provider's webhook: `POST /api/cms/payments/webhook`, signed by the provider
@@ -11,8 +15,10 @@ import { isCmsError } from '@cossackframework/cms';
 export const POST = async (c: Context) => {
     const cms = c.get('cms');
     if (!cms.payments) return c.json({ error: 'The application has no payments provider.', code: 'CMS_UNAVAILABLE' }, 404);
+    const request = await cappedRequest(c, WEBHOOK_MAX_BYTES);
+    if (!request) return c.json({ error: 'The webhook body is too large.', code: 'CMS_LIMIT' }, 413);
     try {
-        const event = await cms.receivePayment(c.req.raw);
+        const event = await cms.receivePayment(request);
         return c.json(event ? { received: true, eventId: event.eventId, type: event.type } : { received: true, ignored: true }, 200, { 'cache-control': 'no-store' });
     } catch (error) {
         if (isCmsError(error, 'CMS_UNAVAILABLE')) return c.json({ error: error.message, code: error.code }, 503, { 'retry-after': '60' });

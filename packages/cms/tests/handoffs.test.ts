@@ -52,13 +52,38 @@ describe.skipIf(!live)('sign-in handoffs and child sessions', () => {
         expect(await network.handoffs.consume(code, 'blog')).toBeNull();
         const fresh = await network.handoffs.issue({ session: reference, user, site: 'blog' });
         const [first, second] = await Promise.all([network.handoffs.consume(fresh, 'blog'), network.handoffs.consume(fresh, 'blog')]);
-        expect([first, second].filter(Boolean)).toEqual([{ session: reference, user, networkRole: null, expiresAt: expect.any(Number) }]);
+        expect([first, second].filter(Boolean)).toEqual([{ session: reference, user, networkRole: null, expiresAt: expect.any(Number), secondFactor: false }]);
         expect(await network.handoffs.consume(await network.handoffs.issue({ session: reference, user, site: 'blog', ttlMs: -1 }), 'blog')).toBeNull();
         expect(await network.handoffs.consume('not a code', 'blog')).toBeNull();
 
         const ended = await network.handoffs.issue({ session: reference, user, site: 'blog' });
         await main.authSessions.revoke(record('a', user).id);
         expect(await network.handoffs.consume(ended, 'blog')).toBeNull();
+    });
+
+    it('records whether a sign-in used a second factor, carries it through a handoff and keeps it across rotation', async () => {
+        // A password-only network session hands off a child session that did not use one either.
+        const plain = await signIn('n', user);
+        const plainHandoff = (await network.handoffs.consume(await network.handoffs.issue({ session: plain, user, site: 'blog' }), 'blog'))!;
+        expect(plainHandoff.secondFactor).toBe(false);
+        await blog.authSessions.createChild(record('o', user), { parentId: plainHandoff.session, networkRole: plainHandoff.networkRole, expiresAt: plainHandoff.expiresAt, secondFactor: plainHandoff.secondFactor });
+        expect((await blog.authSessions.read(record('o', user).id))!.secondFactor).toBe(false);
+        // One signed in with a code hands that on.
+        await main.authSessions.create(record('p', user), undefined, { secondFactor: true });
+        const verified = (await main.authSessions.publicReference(record('p', user).id))!;
+        const handoff = (await network.handoffs.consume(await network.handoffs.issue({ session: verified, user, site: 'blog' }), 'blog'))!;
+        expect(handoff.secondFactor).toBe(true);
+        await blog.authSessions.createChild(record('q', user), { parentId: handoff.session, networkRole: handoff.networkRole, expiresAt: handoff.expiresAt, secondFactor: handoff.secondFactor });
+        const child = (await blog.authSessions.read(record('q', user).id))!;
+        expect(child.secondFactor).toBe(true);
+        const rotated = record('r', user);
+        expect(await blog.authSessions.replace(child, rotated, Date.now())).toBe(true);
+        expect((await blog.authSessions.read(rotated.id))!.secondFactor).toBe(true);
+        expect((await blog.authSessions.findByReference((await blog.authSessions.publicReference(rotated.id))!))!.secondFactor).toBe(true);
+        // A factor added in a session marks that session only.
+        expect(await blog.authSessions.markSecondFactor(record('o', user).id)).toBe(true);
+        expect((await blog.authSessions.read(record('o', user).id))!.secondFactor).toBe(true);
+        expect(await blog.authSessions.markSecondFactor('missing')).toBe(false);
     });
 
     it('keeps child sessions in the site database and ends them with their network session', async () => {

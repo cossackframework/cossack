@@ -672,6 +672,10 @@ export async function userUpdate(c: Context, id: string, input: Body): Promise<U
         ...(input.name !== undefined ? { name: text(input.name, 'name', { max: 120 }) } : {}),
         ...(input.email !== undefined ? { email: text(input.email, 'email', { max: 254 }) } : {}),
     };
+    // Your own email takes your password resets with it: like your password, it changes on your profile with your current password, never with an API key or open session alone.
+    if (profile.email !== undefined && id === me.id && profile.email.trim().toLowerCase() !== target.email.trim().toLowerCase()) {
+        throw new CmsError('CMS_FORBIDDEN', 'Change your own email from your user screen in the dashboard, with your current password.');
+    }
     if (Object.keys(profile).length) await updateUser(id, profile);
     if (input.password !== undefined) {
         // Your own password changes on your profile, which asks for the current one: an API key or open session alone cannot take the account.

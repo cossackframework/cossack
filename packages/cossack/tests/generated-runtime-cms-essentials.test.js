@@ -533,6 +533,41 @@ async function essentials(origin, routeIds, diagnostics, { runtime, cloudflare =
   expect((await fetch(`${origin}/api/cms/content/posts`, { headers: { authorization: `Bearer ${earlier.newToken}` } })).status).toBe(200);
   await web.action('dashboard/users/[id]/index.ts', 'deleteToken', [earlier.tokens.find(entry => entry.name === 'Before the rule').id], { params: { id: eveUserId } });
 
+  // The requirement asks it of the session: Finn signs in with a password alone, may still sign out
+  // from the security page, and a session counts as two-step only once a factor was used in it.
+  await web.action(editorUser, 'create', ['Finn', 'finn@example.com', 'finn password 1', ['editor']]);
+  expect((await web.action(SETTINGS, 'saveAll', [{ document: { general: { requireTwoFactor: true } }, languages: null, permalinks: null, groups: {} }]))._cossack_return.error).toBe('');
+  const finnLeaving = browserless(origin, routeIds, diagnostics);
+  await finnLeaving.action('auth/login/index.ts', 'login', [{ email: 'finn@example.com', password: 'finn password 1' }]);
+  const signedOut = await finnLeaving.action('dashboard/layout.ts', 'doLogout', [], { page: 'dashboard/profile/security/index.ts' });
+  expect(signedOut._cossack_redirect).toBe('/auth/login');
+  expect((await finnLeaving.request('/dashboard')).headers.get('location')).toBe('/auth/login');
+  const finnOther = browserless(origin, routeIds, diagnostics);
+  await finnOther.action('auth/login/index.ts', 'login', [{ email: 'finn@example.com', password: 'finn password 1' }]);
+  const finn = browserless(origin, routeIds, diagnostics);
+  await finn.action('auth/login/index.ts', 'login', [{ email: 'finn@example.com', password: 'finn password 1' }]);
+  const finnSetup = await finn.action(security, 'beginSetup', []);
+  const finnConfirmed = await finn.action(security, 'finishSetup', [await totpCode(finnSetup.setup.secret, totpStep(Date.now()))]);
+  expect(finnConfirmed.error).toBe('');
+  // The session that added the factor counts as having used it; the other password-only session
+  // stays limited to the security page (it is not ended: whoever adds the first factor would sign the other out).
+  expect((await finn.request('/dashboard')).status).toBe(200);
+  expect((await finnOther.request('/dashboard')).headers.get('location')).toBe('/dashboard/profile/security?required=1');
+  // With a factor on the account, a password alone no longer starts a session: it asks for the code.
+  const finnAgain = browserless(origin, routeIds, diagnostics);
+  expect((await finnAgain.action('auth/login/index.ts', 'login', [{ email: 'finn@example.com', password: 'finn password 1' }]))._cossack_redirect).toMatch(/^\/auth\/two-factor/);
+  expect((await web.action(SETTINGS, 'saveAll', [{ document: { general: { requireTwoFactor: false } }, languages: null, permalinks: null, groups: {} }]))._cossack_return.error).toBe('');
+
+  // Your own email takes your password resets with it: an application password cannot change it,
+  // and the user screen asks for your current password.
+  const adaId = (await (await fetch(`${origin}/api/cms/me`, { headers: { authorization: `Bearer ${writer}` } })).json()).user.id;
+  const moved = await fetch(`${origin}/api/cms/users/${adaId}`, { method: 'PATCH', headers: { authorization: `Bearer ${writer}`, 'content-type': 'application/json' }, body: JSON.stringify({ email: 'taken@example.com' }) });
+  expect(moved.status).toBe(403);
+  const adaDetail = { id: adaId, name: 'Ada', email: 'taken@example.com', avatar: '' };
+  const userScreen0 = 'dashboard/users/[id]/index.ts';
+  const unconfirmed = await web.action(userScreen0, 'save', [''], { params: { id: adaId }, state: { userDetail: adaDetail } }).catch(error => ({ error: String(error) }));
+  expect(JSON.stringify(unconfirmed)).toMatch(/current password to change your email/);
+
   // An administrator issues an application password for Eve from her user screen; it acts as Eve.
   const eveId = (await (await web.request('/dashboard/users?search=eve')).text()).match(/\/dashboard\/users\/(?!new\b)([A-Za-z0-9_-]{8,})/)[1];
   const userScreen = 'dashboard/users/[id]/index.ts';

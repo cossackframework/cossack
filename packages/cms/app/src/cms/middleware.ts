@@ -7,7 +7,7 @@ import { cmsFor, networkFor, type CmsBindings } from './index';
 import { handoff } from './handoff';
 import { dashboardPalette } from '../dashboard/head';
 import { runMaintenance } from './maintenance';
-import { secondFactorRequired, type PublicUser } from '../auth';
+import { accountNeedsSecondFactor, secondFactorRequired, type PublicUser } from '../auth';
 
 /**
  * For `createApp({ isPluginActive })`: a rendered plugin's pages, layouts and HTTP handlers
@@ -113,7 +113,7 @@ export const cmsPrincipal: MiddlewareHandler = async (c, next) => {
     // once they have a second factor. Until then the session is anonymous everywhere (the site,
     // Live Edit, previews, server methods), so no page has to repeat the check; signing in and
     // out stays open, the rest of the API refuses, and the dashboard guards send them to set one up.
-    if (session && !c.req.path.startsWith('/api/auth/') && await secondFactorRequired(user!).catch(() => true)) {
+    if (session && !c.req.path.startsWith('/api/auth/') && await secondFactorRequired(user!, c).catch(() => true)) {
         if (API_PATH.test(c.req.path) && !VISITOR_API.test(c.req.path)) return secondFactorRefusal(c);
         session = undefined;
     }
@@ -123,7 +123,7 @@ export const cmsPrincipal: MiddlewareHandler = async (c, next) => {
         const token = await c.get('cms').tokenPrincipal(header.slice(7).trim()).catch(() => null);
         if (!token) return c.json({ error: 'The application password is not valid.', code: 'CMS_UNAUTHENTICATED' }, 401, { 'www-authenticate': 'Bearer' });
         // An application password made before the requirement was turned on stops working too.
-        if (token.principal.kind === 'user' && await secondFactorRequired({ id: token.principal.id, principal: token.principal } as PublicUser).catch(() => true)) return secondFactorRefusal(c);
+        if (token.principal.kind === 'user' && await accountNeedsSecondFactor({ id: token.principal.id, principal: token.principal }).catch(() => true)) return secondFactorRefusal(c);
         if (token.scope === 'read' && c.req.path !== MCP_PATH && !['GET', 'HEAD', 'OPTIONS'].includes(c.req.method)) return c.json({ error: 'This application password can only read.', code: 'CMS_FORBIDDEN' }, 403);
         c.set('principal', token.principal);
         c.set('cms.token', true);

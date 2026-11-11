@@ -4,7 +4,7 @@
  * into the targets' resources and plans the schema; this store keeps the rows and a per-isolate
  * cache the host drops on every write.
  */
-import { ClientError, type RomeDB } from '@cossackframework/romedb';
+import { ClientError, type RomeDB, type Statement } from '@cossackframework/romedb';
 import { CmsError } from '../errors';
 import { groupsForTarget, type FieldGroup, type FieldGroupTarget } from '../field-groups';
 import { principalId, type Principal } from '../permissions';
@@ -40,13 +40,18 @@ export class CmsFieldGroups {
     /** Insert or replace a group the host has checked. */
     async put(group: FieldGroup, principal: Principal): Promise<void> {
         try {
-            await this.#db.write([{
-                rql: 'INSERT INTO cms_field_groups (id, definition, sort, updated_at, updated_by) VALUES ($id, $definition, $sort, $now, $by) ON CONFLICT (id) DO UPDATE SET definition = excluded.definition, sort = excluded.sort, updated_at = excluded.updated_at, updated_by = excluded.updated_by',
-                params: { $id: group.id, $definition: JSON.stringify(group), $sort: group.order ?? 0, $now: this.#now(), $by: principalId(principal) },
-            }], WRITE);
+            await this.#db.write([this.putStatement(group, principal)], WRITE);
         } finally {
             this.#cache = undefined;
         }
+    }
+
+    /** The statement `put` writes, for a batch the host writes itself; `reset()` after it. */
+    putStatement(group: FieldGroup, principal: Principal): Statement {
+        return {
+            rql: 'INSERT INTO cms_field_groups (id, definition, sort, updated_at, updated_by) VALUES ($id, $definition, $sort, $now, $by) ON CONFLICT (id) DO UPDATE SET definition = excluded.definition, sort = excluded.sort, updated_at = excluded.updated_at, updated_by = excluded.updated_by',
+            params: { $id: group.id, $definition: JSON.stringify(group), $sort: group.order ?? 0, $now: this.#now(), $by: principalId(principal) },
+        };
     }
 
     async remove(id: string): Promise<boolean> {

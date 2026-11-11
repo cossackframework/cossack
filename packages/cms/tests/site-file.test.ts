@@ -48,6 +48,8 @@ describe.skipIf(!live)('a site as a .romedb file', () => {
         const reader = await blog.users.create({ email: 'reader@example.com', name: 'Reader', password: 'reads a lot', roles: ['subscriber'] });
         await blog.authSessions.create({ id: TOKEN, userId: reader.id, kind: 'auth', createdAt: Date.now(), expiresAt: Date.now() + 60_000 });
         totpSecret = await (await blog.storesOf(reader.id)).security.startTotp(reader.id);
+        // Application passwords would sign scripts in to the copy: the file leaves them out.
+        await (await blog.storesOf(reader.id)).apiTokens.create(reader.id, { name: 'Script', scope: 'write', expiresAt: null });
         await blog.db.write([{ rql: 'INSERT INTO cms_webhooks (id, name, url, events, collections, secret, active, created_at, updated_at) VALUES ($id, $name, $url, $events, $collections, $secret, 1, 1, 1)',
             params: { $id: 'hook', $name: 'Hook', $url: 'https://hooks.example.com', $events: '[]', $collections: '[]', $secret: SECRET } }]);
     }, 120_000);

@@ -91,7 +91,9 @@ export const authSessions = createSessionManager({
     create: (record, c) => {
       // A handoff in progress makes the session a child of the network session.
       const child = (c as Context).get('cms.child');
-      const created = child ? cms(c).authSessions.createChild(record, child, c) : cms(c).authSessions.create(record, c);
+      // createSession() says whether this sign-in used a second factor; a child session copies its network session's.
+      const secondFactor = (c as Context).get('cms.signInSecondFactor') === true;
+      const created = child ? cms(c).authSessions.createChild(record, child, c) : cms(c).authSessions.create(record, c, { secondFactor });
       // Every sign-in ends here, whatever its method: plugins hear of it through cms.user.signed-in.
       return created.then(async result => {
         const user = await cms(c).users.get(record.userId).catch(() => null);
@@ -102,6 +104,7 @@ export const authSessions = createSessionManager({
     read: async (id, c) => {
       const session = await cms(c).authSessions.read(id, c);
       if (session?.parentId) (c as Context).set('cms.networkRole', session.networkRole);
+      if (session) (c as Context).set('cms.sessionSecondFactor', session.secondFactor);
       return session;
     },
     replace: (expected: AuthSessionRecord, replacement: AuthSessionRecord, now: number, c) => cms(c).authSessions.replace(expected, replacement, now, c),
@@ -128,6 +131,7 @@ export const auth = createAuth<PublicUser>({
       if (typeof reference !== 'string' || typeof fingerprint !== 'string' || !/^[0-9a-f]{64}$/.test(fingerprint)) return null;
       const row = await cms(c).authSessions.findByReference(reference);
       if (!row || row.expiresAt <= Date.now() || await sessionFingerprint(row.id) !== fingerprint) return null;
+      c.set('cms.sessionSecondFactor', row.secondFactor);
       return row.userId;
     },
   },
@@ -137,6 +141,26 @@ export const auth = createAuth<PublicUser>({
   resolveUserById: (userId, c) => member(userId, c),
   createSession: async (user, c) => authSessions.create(user.id, c),
 });
+
+/**
+ * Start a session for a sign-in, recording whether it used a second factor (an authenticator or
+ * recovery code, or a passkey). Required two-step sign-in asks that of the session: a session
+ * signed in with a password alone stays limited even after its account gains a factor.
+ */
+export async function createSession(userId: string, c: Context, options: { secondFactor?: boolean } = {}) {
+  c.set('cms.signInSecondFactor', options.secondFactor === true);
+  try { return await authSessions.create(userId, c); }
+  finally { c.set('cms.signInSecondFactor', false); }
+}
+
+declare module 'hono' {
+  interface ContextVariableMap {
+    /** Set by createSession() for the session it is about to store. */
+    'cms.signInSecondFactor': boolean;
+    /** Whether the request's session was signed in with a second factor. */
+    'cms.sessionSecondFactor': boolean;
+  }
+}
 
 // --- Credentials -----------------------------------------------------------
 /**
@@ -199,11 +223,25 @@ function clientAddress(): string {
   return c ? getClientIp(c) : 'unknown';
 }
 
-/** Whether this is the user's current password, before they change it: their site account's, or their network account's. */
+/** Wrong current passwords an account may give within the window before checks stop. */
+const PASSWORD_CHECKS = { max: 10, windowMs: 15 * 60_000 };
+
+/**
+ * Whether this is the user's current password, before they change it: their site account's, or
+ * their network account's. Wrong answers are counted per account, so an open session cannot
+ * guess its way to the password (and from there the email or the account).
+ */
 export async function passwordMatches(userId: string, password: string): Promise<boolean> {
-  const { accounts } = await cms().storesOf(userId);
+  const host = cms();
+  if (!(await host.security.attempt('password-check', userId, PASSWORD_CHECKS.max, PASSWORD_CHECKS.windowMs))) {
+    throw new ClientVisibleError('Too many wrong passwords. Wait a few minutes, then try again.');
+  }
+  const { accounts } = await host.storesOf(userId);
   const account = await accounts.get(userId);
-  return !!account && (await accounts.verifier.verify(account.email, password))?.id === userId;
+  const matches = !!account && (await accounts.verifier.verify(account.email, password))?.id === userId;
+  // Only wrong passwords count against the account.
+  if (matches) await host.security.release('password-check', userId).catch(() => undefined);
+  return matches;
 }
 
 /** What others see on an added site instead of a network account's profile, password and sign-in methods. */
@@ -432,19 +470,60 @@ async function requireLocalPasskeys(userId: string): Promise<void> {
   if (elsewhere) throw new ClientVisibleError(`Add or remove this account's passkeys on ${elsewhere.name}.`);
 }
 
+async function twoFactorAsked(user: Pick<PublicUser, 'principal'>): Promise<boolean> {
+  return hasPermission(user.principal, PERMISSIONS.dashboard) && await cms().settings.get('general.requireTwoFactor').catch(() => false) === true;
+}
+
 /**
- * Whether the user must add a second factor before using the dashboard: General settings ask
- * for it and they have neither an authenticator app nor a passkey.
+ * Whether the request's session may not act as the user yet: General settings require two-step
+ * sign-in of staff, and the session was signed in without a second factor. That covers staff
+ * with no factor (they set one up) and a session signed in with a password alone (it signs in
+ * again with the factor), so a factor added later does not trust a session that never used it.
  */
-export async function secondFactorRequired(user: PublicUser): Promise<boolean> {
-  const host = cms();
-  if (!hasPermission(user.principal, PERMISSIONS.dashboard)) return false;
-  if (!(await host.settings.get('general.requireTwoFactor').catch(() => false))) return false;
+export async function secondFactorRequired(user: PublicUser, c: Context | undefined = getRequestContext()): Promise<boolean> {
+  if (!(await twoFactorAsked(user))) return false;
+  return c?.get('cms.sessionSecondFactor') !== true;
+}
+
+/** Whether an account itself still lacks the second factor General settings require: for application passwords, which have no sign-in of their own. */
+export async function accountNeedsSecondFactor(user: Pick<PublicUser, 'id' | 'principal'>): Promise<boolean> {
+  if (!(await twoFactorAsked(user))) return false;
   return !(await (await storesOf(user.id)).security.hasSecondFactor(user.id));
+}
+
+/**
+ * Before a factor is added: a session limited by required two-step sign-in may add the
+ * account's first one (that is the setup), but not one beside a factor it never used, which
+ * would let a password alone take the account's two-step sign-in.
+ */
+async function requireFactorSetupAllowed(userId: string): Promise<void> {
+  const c = getRequestContext();
+  const user = c?.get('user') as PublicUser | undefined;
+  if (!user || user.id !== userId || c?.get('cms.sessionSecondFactor') === true) return;
+  if (!(await twoFactorAsked(user))) return;
+  if (await (await storesOf(userId)).security.hasSecondFactor(userId)) {
+    throw new ClientVisibleError('This account already has two-step sign-in. Sign out, then sign in again with it.');
+  }
+}
+
+/**
+ * After the user added a factor in this session: the session counts as using it. Other sessions
+ * keep what their own sign-in used, so a password-only one stays limited; they are not ended,
+ * since whoever added the first factor (the owner, or someone with the password) would otherwise
+ * sign the other out.
+ */
+async function factorAdded(userId: string): Promise<void> {
+  const c = getRequestContext();
+  const id = c ? getCookie(c, SESSION_COOKIE) : undefined;
+  const user = c?.get('user') as PublicUser | undefined;
+  if (!c || !id || user?.id !== userId) return;
+  await cms(c).authSessions.markSecondFactor(id);
+  c.set('cms.sessionSecondFactor', true);
 }
 
 /** A new authenticator secret, its `otpauth://` URI and a QR code of it as SVG. */
 export async function startAuthenticator(user: PublicUser): Promise<{ secret: string; uri: string; qr: string }> {
+  await requireFactorSetupAllowed(user.id);
   const host = cms();
   const secret = await (await storesOf(user.id)).security.startTotp(user.id);
   const issuer = await host.settings.get('general.siteTitle').catch(() => 'Cossack');
@@ -454,8 +533,12 @@ export async function startAuthenticator(user: PublicUser): Promise<{ secret: st
 
 /** Confirm the authenticator with a code from it; returns the recovery codes, shown once. */
 export async function confirmAuthenticator(userId: string, code: string): Promise<string[]> {
-  try { return await (await storesOf(userId)).security.confirmTotp(userId, code); }
+  await requireFactorSetupAllowed(userId);
+  let codes: string[];
+  try { codes = await (await storesOf(userId)).security.confirmTotp(userId, code); }
   catch (error) { throw isCmsError(error) ? new ClientVisibleError(error.message) : error; }
+  await factorAdded(userId);
+  return codes;
 }
 
 /** Turning the authenticator off needs one of its codes, or a recovery code. */
@@ -489,6 +572,7 @@ function passkeySite(c: Context, siteName: string): PasskeyConfig {
 
 export async function passkeyRegistration(c: Context, user: PublicUser): Promise<{ challenge: string; options: PublicKeyCredentialCreationOptionsJSON }> {
   await requireLocalPasskeys(user.id);
+  await requireFactorSetupAllowed(user.id);
   const host = cms(c);
   const site = passkeySite(c, await host.settings.get('general.siteTitle').catch(() => 'Cossack'));
   const { security } = await host.storesOf(user.id);
@@ -506,8 +590,10 @@ export async function addPasskey(c: Context, user: PublicUser, challengeId: stri
   const site = passkeySite(c, await host.settings.get('general.siteTitle').catch(() => 'Cossack'));
   const passkey = await verifyPasskeyRegistration(site, response, pending.challenge);
   if (!passkey) throw new ClientVisibleError('The passkey could not be verified.');
+  await requireFactorSetupAllowed(user.id);
   try { await security.addPasskey(user.id, passkey, name); }
   catch (error) { throw isCmsError(error) ? new ClientVisibleError(error.message) : error; }
+  await factorAdded(user.id);
 }
 
 export async function removePasskey(userId: string, id: string): Promise<void> {
@@ -552,7 +638,7 @@ export async function createApiToken(userId: string, name: string, scope: 'read'
   // An application password signs in without a second factor: an account that General settings
   // require to have one gets passwords only once it does.
   const owner = await member(userId);
-  if (owner && await secondFactorRequired(owner)) throw new ClientVisibleError('This site requires two-step sign-in: set it up under Profile → Security before creating application passwords.');
+  if (owner && (await accountNeedsSecondFactor(owner) || (owner.id === (getRequestContext()?.get('user') as PublicUser | undefined)?.id && await secondFactorRequired(owner)))) throw new ClientVisibleError('This site requires two-step sign-in: set it up under Profile → Security before creating application passwords.');
   const expiresAt = expiresInDays && expiresInDays > 0 ? Date.now() + Math.trunc(expiresInDays) * 86_400_000 : null;
   try { return (await (await storesOf(userId)).apiTokens.create(userId, { name, scope, expiresAt })).token; }
   catch (error) { throw isCmsError(error) ? new ClientVisibleError(error.message) : error; }

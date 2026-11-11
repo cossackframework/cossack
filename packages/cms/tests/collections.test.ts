@@ -125,10 +125,14 @@ describe.skipIf(!live)('collections built in the dashboard', () => {
         await expect(cms.comments.create({ ...comment, id: 'c-gone-1' }, { rql: 'EXISTS (SELECT 1 FROM cms_comments WHERE id = $missing)', params: { $missing: 'none' } })).rejects.toMatchObject({ code: 'CMS_NOT_FOUND' });
         expect(await cms.comments.get('c-gone-1')).toBeNull();
         await cms.deleteCollection('products', admin);
-        // From the outbox, queued in the batch that dropped the collection.
+        // From the outbox, queued in the batch that dropped the collection. A comment posted
+        // after the delete belongs to a collection made again under the name, and stays.
         expect(await cms.comments.get('c-products-1')).not.toBeNull();
+        await cms.comments.create({ ...comment, id: 'c-products-again' });
+        await cms.db.write([{ rql: "UPDATE cms_comments SET created_at = created_at + 60000 WHERE id = 'c-products-again'" }]);
         await cms.outbox.dispatch({ limit: 100 });
         expect(await cms.comments.get('c-products-1')).toBeNull();
+        expect(await cms.comments.get('c-products-again')).not.toBeNull();
         expect(await cms.comments.get('c-posts-1')).not.toBeNull();
         // Posts were relabelled Articles above, so they sort first.
         expect(cms.collections().map(collection => collection.name)).toEqual(['posts', 'pages', 'patterns']);

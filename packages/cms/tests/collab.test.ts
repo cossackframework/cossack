@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { contentModule, createCMS, DRAFT_MAX_BYTES, type CmsHost } from '../src/server/index';
+import { contentModule, createCMS, saveBytes, type CmsHost, type Principal } from '../src/server/index';
 import { live, romedbService } from './helpers';
 
 describe.skipIf(!live)('shared drafts', () => {
@@ -27,15 +27,37 @@ describe.skipIf(!live)('shared drafts', () => {
     });
 
     it('refuses drafts a RomeDB request cannot carry, and bad entry IDs', async () => {
-        await expect(cms.drafts.save('cms/posts', 'p2', { baseRev: 1, values: { body: 'x'.repeat(DRAFT_MAX_BYTES) }, versions: {}, editors: [] })).rejects.toMatchObject({ code: 'CMS_LIMIT' });
+        await expect(cms.drafts.save('cms/posts', 'p2', { baseRev: 1, values: { body: 'x'.repeat(65_536) }, versions: {}, editors: [] })).rejects.toMatchObject({ code: 'CMS_LIMIT' });
         // Counted in UTF-8 bytes as the request carries them: 6 000 three-byte characters are 18 000 bytes,
         // over what an entry can hold and still be saved in a 64 KiB request.
         await expect(cms.drafts.save('cms/posts', 'p2', { baseRev: 1, values: { body: '€'.repeat(6_000) }, versions: {}, editors: [] })).rejects.toMatchObject({ code: 'CMS_LIMIT' });
         await expect(cms.autosaves.save('cms/posts', 'p2', 'alice', { body: '€'.repeat(6_000) })).rejects.toMatchObject({ code: 'CMS_LIMIT' });
-        await cms.drafts.save('cms/posts', 'p2', { baseRev: 1, values: { body: '€'.repeat(4_000) }, versions: {}, editors: [] });
+        await cms.drafts.save('cms/posts', 'p2', { baseRev: 1, values: { body: '€'.repeat(3_000) }, versions: {}, editors: [] });
         await expect(cms.drafts.save('cms/posts', 'p 2', { baseRev: 1, values: {}, versions: {}, editors: [] })).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
         await expect(cms.drafts.save('cms/posts', 'p2', { baseRev: -1, values: {}, versions: {}, editors: [] })).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
         await expect(cms.drafts.get('cms/posts', '../p2')).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
+    });
+
+    it('takes the largest draft whose entry still saves, for plain, rich and densely formatted text', async () => {
+        const admin: Principal = { kind: 'user', id: 'admin-1', roles: ['admin'], permissions: ['*'] };
+        const marked = (i: number) => ({ type: 'paragraph', content: [{ type: 'text', text: `Lorem "ipsum" dolor sit amet ${i} ` }, { type: 'text', marks: [{ type: 'bold' }], text: 'bold' }, { type: 'text', marks: [{ type: 'link', attrs: { href: 'https://example.com/a' } }], text: 'link' }] });
+        const dense = () => ({ type: 'paragraph', content: Array.from({ length: 10 }, (_, j) => ({ type: 'text', marks: [{ type: j % 2 ? 'bold' : 'italic' }], text: String.fromCharCode(97 + j) })) });
+        const shapes: { [name: string]: (n: number) => unknown[] } = {
+            paragraphs: n => Array.from({ length: n }, (_, i) => ({ _id: `p${i}`, type: 'core/paragraph', data: { text: `Lorem "ipsum" dolor sit amet, consectetur ${i}. `.repeat(8) } })),
+            rich: n => [{ _id: 'r', type: 'core/richtext', data: { text: { type: 'doc', content: Array.from({ length: n }, (_, i) => marked(i)) } } }],
+            dense: n => [{ _id: 'r', type: 'core/richtext', data: { text: { type: 'doc', content: Array.from({ length: n }, dense) } } }],
+        };
+        const posts = cms.resource('cms/posts');
+        for (const [name, shape] of Object.entries(shapes)) {
+            let n = 1;
+            while (saveBytes({ title: name, content: shape(n + 1) }) <= 65_536 && n < 200) n++;
+            const values = { title: name, content: shape(n) };
+            // The largest draft the cap takes saves as an entry; one paragraph more is refused.
+            await cms.drafts.save('cms/posts', `cap-${name}`, { baseRev: 1, values, versions: {}, editors: [] });
+            const post = await posts.create({ title: name }, { principal: admin });
+            expect((await posts.update(post.id, values, { principal: admin, expectedRevision: post.rev })).content).toHaveLength(shape(n).length);
+            await expect(cms.drafts.save('cms/posts', `cap-${name}`, { baseRev: 1, values: { title: name, content: shape(n + 1) }, versions: {}, editors: [] })).rejects.toMatchObject({ code: 'CMS_LIMIT' });
+        }
     });
 
     it('reports who is editing which entries within the window, without a draft of values', async () => {

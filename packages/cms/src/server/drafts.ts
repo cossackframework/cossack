@@ -2,29 +2,36 @@
  * Shared drafts: what an entry's room (every editor of the entry together) holds between saves,
  * one row per entry, so a restart or an evicted instance loses at most the room's write delay.
  * The row also names who is editing, for the entries list. A draft is capped at what an entry
- * can hold and still be saved (`draftMaxBytes`).
+ * can hold and still be saved (`saveBytes`).
  */
-import { LOCAL_REQUEST_BYTES, type RomeDB } from '@cossackframework/romedb';
+import { statementBytes, type RomeDB, type Value } from '@cossackframework/romedb';
 import { CmsError } from '../errors';
 
 const WRITE = { kind: 'cms.drafts', retryConflicts: 5 } as const;
 const KEY = /^[A-Za-z0-9_-]{1,80}$/;
 
-/**
- * The most values, as JSON in UTF-8 bytes as a request carries them, that an entry can hold and
- * still be saved in a request of this size: a save carries them about 3.5 times (the fields,
- * their search text, the revision and the event), with room for the statements around them.
- */
-export function draftMaxBytes(requestBytes: number): number {
-    return Math.floor((requestBytes - 4096) / 4);
-}
-/** The draft cap on a local RomeDB service (64 KiB requests); Cloud takes 1 MiB requests. */
-export const DRAFT_MAX_BYTES = draftMaxBytes(LOCAL_REQUEST_BYTES);
+/** Room a save takes besides its values: its statements, guards, audit and search rows. */
+const SAVE_OVERHEAD = 6144;
 
-/** The cap for this database, refused as `CMS_LIMIT` when over it. */
+/**
+ * The bytes saving these values takes in a RomeDB request, from above: the fields as the client
+ * sends them (typed, so nested rich text and blocks weigh about three times their JSON), plus the
+ * JSON quoted again three times (the search text, the revision and the event), plus the rest of
+ * the save. A save under the database's request size fits.
+ */
+export function saveBytes(values: unknown): number {
+    const json = JSON.stringify(values ?? {});
+    let fields: number;
+    try { fields = statementBytes([{ rql: '', params: { $values: values as Value } }]); } catch { fields = 4 * encoder.encode(json).length; }
+    return fields + 3 * requestBytes(json) + SAVE_OVERHEAD;
+}
+
+/** Refused as `CMS_LIMIT` when saving the values would not fit one request to this database. */
 export async function checkDraftSize(db: RomeDB, json: string, what: string): Promise<void> {
-    const limit = draftMaxBytes(await db.maxRequestBytes());
-    if (requestBytes(json) > limit) throw new CmsError('CMS_LIMIT', `The ${what} is larger than ${Math.floor(limit / 1024)} KB, the most an entry can hold and still be saved.`);
+    const limit = await db.maxRequestBytes();
+    // A save carries well under eight times the JSON: a draft that small fits without measuring it.
+    if (8 * requestBytes(json) + SAVE_OVERHEAD <= limit) return;
+    if (saveBytes(JSON.parse(json) as unknown) > limit) throw new CmsError('CMS_LIMIT', `The ${what} is too large: an entry this size could not be saved. Shorten it, or split it into several entries.`);
 }
 
 const encoder = new TextEncoder();

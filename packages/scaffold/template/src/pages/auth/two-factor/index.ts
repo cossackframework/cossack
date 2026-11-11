@@ -2,7 +2,7 @@ import { Cossack, Page, State, Server, Client } from '@cossackframework/core';
 import { Alert, Button, Field, Input } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { deleteCookie, getCookie } from 'hono/cookie';
-import { authSessions, completeTwoFactor, TWO_FACTOR_COOKIE } from '../../../auth';
+import { completeTwoFactor, createSession, TWO_FACTOR_COOKIE } from '../../../auth';
 import { returnPath } from '../../../auth-input';
 
 /**
@@ -40,7 +40,7 @@ export default class TwoFactorPage extends Cossack {
             return;
         }
         deleteCookie(this.c, TWO_FACTOR_COOKIE, { path: '/' });
-        const { headers } = await authSessions.create(result.user.id, this.c);
+        const { headers } = await createSession(result.user.id, this.c, { secondFactor: true });
         headers.forEach((value, key) => this.c.header(key, value));
         // A used recovery code is a hint to set up the app again.
         this.redirect(result.recovery ? '/dashboard/profile/security?recovered=1' : returnPath(this.returnTo) ?? config('auth.redirectAfterLogin'));

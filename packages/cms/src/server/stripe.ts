@@ -50,8 +50,10 @@ export function stripePayments(options: StripePaymentsOptions): PaymentsProvider
     const now = options.now ?? Date.now;
     /**
      * A GET of Stripe's API; nothing when Stripe has no such object. When Stripe does not answer
-     * in time or fails, the webhook fails too (`CMS_UNAVAILABLE`), so Stripe sends it again
-     * instead of the event going out without the order it belongs to.
+     * in time, is rate limiting or fails (429, 5xx), the webhook fails too (`CMS_UNAVAILABLE`),
+     * so Stripe sends it again instead of the event going out without the order it belongs to.
+     * Any other refusal (a key without read access, say) would answer the same on every retry,
+     * until Stripe drops the event or disables the endpoint: the event goes out without it.
      */
     const lookup = async <T>(path: string): Promise<T | undefined> => {
         let response: Response;
@@ -61,7 +63,11 @@ export function stripePayments(options: StripePaymentsOptions): PaymentsProvider
             throw new CmsError('CMS_UNAVAILABLE', `Stripe did not answer a lookup: ${(error as Error).message}`);
         }
         if (response.status === 404) return undefined;
-        if (!response.ok) throw new CmsError('CMS_UNAVAILABLE', `Stripe answered a lookup with ${response.status}.`);
+        if (response.status === 429 || response.status >= 500) throw new CmsError('CMS_UNAVAILABLE', `Stripe answered a lookup with ${response.status}.`);
+        if (!response.ok) {
+            console.warn(`[cms] Stripe refused a lookup with ${response.status}; the event goes out without the order it belongs to. Check the key's read access.`);
+            return undefined;
+        }
         try { return await response.json() as T; } catch { throw new CmsError('CMS_UNAVAILABLE', 'Stripe answered a lookup with something other than JSON.'); }
     };
     /** The metadata of an invoice's subscription, or nothing when Stripe does not answer. */

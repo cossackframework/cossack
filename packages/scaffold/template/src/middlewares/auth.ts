@@ -1,5 +1,5 @@
 import { defineServerMiddleware } from '@cossackframework/core';
-import { isTransportPath, transportGuardPath, transportTargetPath } from '@cossackframework/core/transport-routes';
+import { isTransportPath, transportAction, transportGuardPath, transportTargetPath } from '@cossackframework/core/transport-routes';
 import { createAuthorizer } from '@cossackframework/auth';
 import { auth, secondFactorRequired, setupRequired, type PublicUser } from '../auth';
 
@@ -26,15 +26,21 @@ function secondFactorSetupAction(c: { get: (key: any) => unknown }): boolean {
     return SECOND_FACTOR_SETUP.test(transportGuardPath(c) ?? '') && SECOND_FACTOR_SETUP.test(transportTargetPath(c) ?? '');
 }
 
+/** The dashboard layout's sign-out: staff who still have to add a second factor may always sign out. */
+const DASHBOARD_LAYOUT = /\/pages\/dashboard\/layout\.[jt]s$/;
+function signOutAction(c: { get: (key: any) => unknown }): boolean {
+    return DASHBOARD_LAYOUT.test(transportTargetPath(c) ?? '') && transportAction(c) === 'doLogout';
+}
+
 // A layout guard also runs for the dashboard's RPC actions. The global path
 // guard below sees /crpc rather than the component's dashboard URL, so the
 // two-step requirement is enforced here too: until staff add a second factor,
-// only the security page's own actions answer.
+// only the security page's own actions and the layout's sign-out answer.
 export const requireDashboardUser = defineServerMiddleware(async (c, next) => {
     const user = c.get('user') as PublicUser | undefined;
     if (user && isTransportPath(c.req.path, 'rpc', 'upload', 'sse', 'websocket')
-        && !secondFactorSetupAction(c)
-        && await secondFactorRequired(user).catch(() => true)) {
+        && !secondFactorSetupAction(c) && !signOutAction(c)
+        && await secondFactorRequired(user, c).catch(() => true)) {
         return c.json({ error: 'This site requires two-step sign-in: set it up under Profile → Security first.', code: 'COSSACK_RPC_FORBIDDEN' }, 403);
     }
     return dashboardAuthorizer.requireUser(c, next);
@@ -78,7 +84,7 @@ export const authGuard = defineServerMiddleware(async (c, next) => {
     // covers a page's form handlers too (POST, PUT, PATCH, DELETE), which answer at the page's URL.
     if (path.startsWith('/dashboard') && !path.startsWith('/dashboard/profile/security')) {
         const reading = c.req.method === 'GET' || c.req.method === 'HEAD';
-        if (await secondFactorRequired(user as PublicUser).catch(() => !reading)) {
+        if (await secondFactorRequired(user as PublicUser, c).catch(() => !reading)) {
             return c.redirect('/dashboard/profile/security?required=1', reading ? 302 : 303);
         }
     }

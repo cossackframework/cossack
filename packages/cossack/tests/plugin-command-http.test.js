@@ -24,6 +24,8 @@ async function project() {
   // Never the developer's own stored logins.
   vi.stubEnv('COSSACK_CONFIG_DIR', path.join(root, '.config'));
   vi.stubEnv('COSSACK_CMS_TOKEN', '');
+  vi.stubEnv('COSSACK_CMS_URL', '');
+  vi.stubEnv('APP_URL', '');
   return root;
 }
 
@@ -94,4 +96,37 @@ it('says why a password sign-in was refused: the bot check or required two-step 
   answer = { status: 200 };
   expect(await runPluginCommand('seo:reindex', ['--url', 'https://cms.example'], found)).toBe(1);
   expect(errors.join('\n')).toMatch(/requires two-step sign-in/);
+});
+
+it('sends shell credentials to an APP_URL only when --url or COSSACK_CMS_URL confirms it', async () => {
+  const root = await project();
+  // A project's .env loaded into the shell (direnv, dotenv --) sets APP_URL there too.
+  vi.stubEnv('APP_URL', 'https://elsewhere.example');
+  vi.stubEnv('COSSACK_CMS_TOKEN', 'cms_tttttttttttttttt.secret');
+  vi.stubEnv('CMS_EMAIL', '');
+  vi.stubEnv('CMS_PASSWORD', '');
+  const errors = [];
+  vi.spyOn(console, 'error').mockImplementation((...line) => errors.push(line.join(' ')));
+  vi.spyOn(console, 'log').mockImplementation(() => {});
+  const requests = [];
+  vi.stubGlobal('fetch', vi.fn(async (url, init) => {
+    requests.push(`${init.method} ${url}`);
+    return new Response(JSON.stringify({ result: 'done' }), { status: 200 });
+  }));
+  const found = await findPluginCommand('seo:reindex', root);
+  expect(await runPluginCommand('seo:reindex', [], found)).toBe(1);
+  expect(requests).toEqual([]);
+  expect(errors.join('\n')).toMatch(/COSSACK_CMS_TOKEN is not sent to https:\/\/elsewhere\.example.*--url/s);
+  // A shell CMS_PASSWORD is held back the same way.
+  vi.stubEnv('COSSACK_CMS_TOKEN', '');
+  vi.stubEnv('CMS_EMAIL', 'ada@example.com');
+  vi.stubEnv('CMS_PASSWORD', 'long password');
+  expect(await runPluginCommand('seo:reindex', [], found)).toBe(1);
+  expect(requests).toEqual([]);
+  // COSSACK_CMS_URL confirms an address, and wins over APP_URL.
+  vi.stubEnv('CMS_PASSWORD', '');
+  vi.stubEnv('COSSACK_CMS_TOKEN', 'cms_tttttttttttttttt.secret');
+  vi.stubEnv('COSSACK_CMS_URL', 'https://cms.example');
+  expect(await runPluginCommand('seo:reindex', [], found)).toBe(0);
+  expect(requests).toEqual(['POST https://cms.example/api/cms/commands/seo/reindex']);
 });

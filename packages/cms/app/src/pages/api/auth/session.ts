@@ -1,7 +1,7 @@
 import type { Context } from 'hono';
 import { isSameOriginPost } from '@cossackframework/cms';
 import { passesBotCheck } from '../../../auth-bot-check';
-import { auth, completeTwoFactor, beginTwoFactor, loginUser, logout, SignInLockedError, SignInPasskeyError } from '../../../auth';
+import { auth, completeTwoFactor, beginTwoFactor, createSession, loginUser, logout, SignInLockedError, SignInPasskeyError } from '../../../auth';
 
 /**
  * JSON sign-in for tools such as `cossack <plugin>:<command>`: `{ email, password }` answers
@@ -11,7 +11,9 @@ import { auth, completeTwoFactor, beginTwoFactor, loginUser, logout, SignInLocke
  * non-JSON bodies.
  */
 export const POST = auth.createLoginHandler({
-    validateCredentials: async credentials => {
+    // The session records whether the sign-in used a code, which required two-step sign-in asks of it.
+    createSession: (user, c) => createSession(user.id, c, { secondFactor: c.get('cms.signInSecondFactor') === true }),
+    validateCredentials: async (credentials, c) => {
         const { email, password, code, turnstile } = credentials as { email?: unknown; password?: unknown; code?: unknown; turnstile?: unknown };
         if (typeof email !== 'string' || typeof password !== 'string') return null;
         // The sign-in form's bot check guards this door too; tools sign in with an application password instead.
@@ -32,6 +34,7 @@ export const POST = auth.createLoginHandler({
         if (!pending) return user;
         if (typeof code !== 'string' || !code.trim()) return Response.json({ error: 'Enter the code from your authenticator app.', twoFactorRequired: true }, { status: 401 });
         const result = await completeTwoFactor(pending, code);
+        if ('user' in result) c.set('cms.signInSecondFactor', true);
         return 'user' in result ? result.user : Response.json({ error: result.error, twoFactorRequired: true }, { status: 401 });
     },
 });

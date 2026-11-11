@@ -4,7 +4,7 @@ import type { RouterContext } from '../route-ids.js';
 import { readRpcRequest, RPC_JSON_REQUEST_MAX_BYTES } from './http.js';
 import { discardRequestBody } from '../request-body.js';
 import { withRuntimeRouteParams } from '../runtime-websocket.js';
-import { isTransportPath, TRANSPORT_GUARD_PATH, TRANSPORT_TARGET_PATH } from '../transport-routes.js';
+import { isTransportPath, TRANSPORT_ACTION, TRANSPORT_GUARD_PATH, TRANSPORT_TARGET_PATH } from '../transport-routes.js';
 import { checkPageRouteParams, checkRouteParams, resolveComponentRpcTarget, resolveServiceRpcTarget } from './rpc-target.js';
 import { realtimeOwnerMiddlewares, resolveRealtimeConnection } from './realtime-target.js';
 
@@ -41,6 +41,7 @@ export function protectTransport(ctx: RouterContext): MiddlewareHandler {
     return async (c, next) => {
         let componentPath: string | undefined;
         let targetPath: string | undefined;
+        let action: string | undefined;
         let ownerMiddlewares: MiddlewareHandler[] = [];
         let guarded: Context = c;
         if (c.req.method === 'POST') {
@@ -62,6 +63,7 @@ export function protectTransport(ctx: RouterContext): MiddlewareHandler {
                 if (!body || typeof body !== 'object' || Array.isArray(body)) {
                     return c.json({ error: 'Invalid transport body' }, 400);
                 }
+                if (typeof body.action === 'string') action = body.action;
                 if (body.service !== undefined) {
                     // A layout service runs under the page the browser is on.
                     // Guard it like SSR of that page: every layout and page
@@ -120,6 +122,8 @@ export function protectTransport(ctx: RouterContext): MiddlewareHandler {
         guarded.set(TRANSPORT_GUARD_PATH, componentPath);
         // ...and this names the file whose code runs: a layout's action runs under the client's page.
         guarded.set(TRANSPORT_TARGET_PATH, targetPath ?? componentPath);
+        // ...and, for an RPC call, the action it names there.
+        if (action !== undefined) guarded.set(TRANSPORT_ACTION, action);
         // A realtime component's own guards run after its page's guards.
         const middlewares = [...ctx.getMiddlewares?.(componentPath) ?? [], ...ownerMiddlewares];
         // Preserve short-circuit responses and after-next headers without

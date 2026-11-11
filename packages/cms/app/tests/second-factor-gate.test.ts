@@ -3,7 +3,7 @@ import { Hono } from 'hono';
 import { ANONYMOUS, type Principal } from '@cossackframework/cms';
 
 const { required } = vi.hoisted(() => ({ required: vi.fn() }));
-vi.mock('../src/auth', () => ({ secondFactorRequired: required }));
+vi.mock('../src/auth', () => ({ secondFactorRequired: required, accountNeedsSecondFactor: required }));
 vi.mock('../src/cms/index', () => ({ cmsFor: vi.fn(), networkFor: vi.fn() }));
 vi.mock('../src/cms/handoff', () => ({ handoff: vi.fn() }));
 vi.mock('../src/cms/maintenance', () => ({ runMaintenance: vi.fn() }));

@@ -281,6 +281,13 @@ export const HOST_STEPS: readonly HostStep[] = [{
         // Every migration batch inserts the next generation, so two that planned from the same schema collide here and one replans; writes to other rows do not hold migrations up.
         { rql: 'CREATE TABLE cms_schema_generations (id INTEGER PRIMARY KEY, at INTEGER NOT NULL)' },
     ],
+}, {
+    version: 12,
+    description: 'Sessions record a second factor used at sign-in',
+    statements: [
+        // 1 when the sign-in that made the session used an authenticator code, a recovery code or a passkey: required two-step sign-in asks it of the session, not only of the account.
+        { rql: 'ALTER TABLE cms_auth_sessions ADD COLUMN second_factor INTEGER' },
+    ],
 }];
 
 /**

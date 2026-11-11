@@ -329,7 +329,9 @@ export async function completeTwoFactor(_challengeId: string, _code: string): Pr
   return { error: 'The sign-in expired. Enter your password again.', expired: true };
 }
 export async function securityStatus(_userId: string): Promise<SecurityStatus> { return { totp: false, recoveryCodes: 0, passkeys: [] }; }
-export async function secondFactorRequired(_user: PublicUser): Promise<boolean> { return false; }
+export async function secondFactorRequired(_user: PublicUser, _c?: Context): Promise<boolean> { return false; }
+/** Start a session for a sign-in; `secondFactor` says whether it used one, for sites that require two-step sign-in. */
+export async function createSession(userId: string, c: Context, _options: { secondFactor?: boolean } = {}) { return authSessions.create(userId, c); }
 export async function startAuthenticator(_user: PublicUser): Promise<{ secret: string; uri: string; qr: string }> { throw unavailable(); }
 export async function confirmAuthenticator(_userId: string, _code: string): Promise<string[]> { throw unavailable(); }
 export async function disableAuthenticator(_userId: string, _code: string): Promise<void> { throw unavailable(); }

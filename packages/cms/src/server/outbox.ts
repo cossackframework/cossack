@@ -10,9 +10,10 @@ import type { ActionPoint } from '@cossackframework/core/hooks';
 import { afterCommit, cachePurge, formSubmitted, paymentEvent, pluginJob, userRegistered, userSignedIn } from '../hooks';
 import { searchRebuild } from './site-search';
 import { collectionDeleted } from './comments';
+import { sharedFields } from './shared-fields';
 
 /** The action an outbox row runs, by its topic; resource events run `cms.resource.after-commit`. */
-const POINTS: { readonly [topic: string]: ActionPoint<unknown> } = { 'form.submitted': formSubmitted as ActionPoint<unknown>, 'cache.purge': cachePurge as ActionPoint<unknown>, 'plugin.job': pluginJob as ActionPoint<unknown>, 'payment.event': paymentEvent as ActionPoint<unknown>, 'user.registered': userRegistered as ActionPoint<unknown>, 'user.signed-in': userSignedIn as ActionPoint<unknown>, 'search.rebuild': searchRebuild as ActionPoint<unknown>, 'collection.deleted': collectionDeleted as ActionPoint<unknown> };
+const POINTS: { readonly [topic: string]: ActionPoint<unknown> } = { 'form.submitted': formSubmitted as ActionPoint<unknown>, 'cache.purge': cachePurge as ActionPoint<unknown>, 'plugin.job': pluginJob as ActionPoint<unknown>, 'payment.event': paymentEvent as ActionPoint<unknown>, 'user.registered': userRegistered as ActionPoint<unknown>, 'user.signed-in': userSignedIn as ActionPoint<unknown>, 'search.rebuild': searchRebuild as ActionPoint<unknown>, 'collection.deleted': collectionDeleted as ActionPoint<unknown>, 'resource.shared': sharedFields as ActionPoint<unknown> };
 
 export interface DispatchReport {
     readonly delivered: readonly string[];

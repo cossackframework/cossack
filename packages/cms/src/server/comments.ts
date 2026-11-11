@@ -183,9 +183,12 @@ export class CmsComments {
         await this.#deleteWhere('resource = $resource AND record_id = $record', { $resource: resource, $record: recordId });
     }
 
-    /** Delete every comment on a resource's entries, after the resource (a collection) is deleted. */
-    async deleteForResource(resource: string): Promise<void> {
-        await this.#deleteWhere('resource = $resource', { $resource: resource });
+    /**
+     * Delete every comment on a resource's entries, after the resource (a collection) is deleted
+     * at `before`: comments posted later belong to a collection made again under the same name.
+     */
+    async deleteForResource(resource: string, before: number): Promise<void> {
+        await this.#deleteWhere('resource = $resource AND created_at <= $before', { $resource: resource, $before: before });
     }
 
     /** Delete matching comments a thousand at a time, until none are left. */

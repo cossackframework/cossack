@@ -2,7 +2,7 @@ import { Cossack, Page, State, ClientStore, Validate, Client, Server, storeRules
 import { Field, Input, PasswordInput, Button, Alert, Turnstile } from '@cossackframework/ui';
 import { html, component, bind } from '@cossackframework/renderer';
 import { setCookie } from 'hono/cookie';
-import { authSessions, beginTwoFactor, completePasskeySignIn, loginUser, passkeySignIn, registrationOpen, requestMagicLink, twoFactorAvailable, TWO_FACTOR_COOKIE } from '../../../auth';
+import { authSessions, beginTwoFactor, completePasskeySignIn, createSession, loginUser, passkeySignIn, registrationOpen, requestMagicLink, twoFactorAvailable, TWO_FACTOR_COOKIE } from '../../../auth';
 import { loginInput, returnPath, type LoginInput } from '../../../auth-input';
 import { botCheckKey, passesBotCheck } from '../../../auth-bot-check';
 import { BOT_CHECK_FAILED, botCheckToken } from '../../../auth-bot-token';
@@ -129,7 +129,7 @@ export default class LoginPage extends Cossack {
     async passkeyLogin(challenge: string, response: unknown) {
         const user = await completePasskeySignIn(this.c, challenge, response as never);
         if (!user) { this.error = 'This passkey is not recognised.'; return; }
-        const { headers } = await authSessions.create(user.id, this.c);
+        const { headers } = await createSession(user.id, this.c, { secondFactor: true });
         headers.forEach((value, key) => this.c.header(key, value));
         this.redirect(this.signedInPath());
     }

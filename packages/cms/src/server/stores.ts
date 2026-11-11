@@ -20,6 +20,8 @@ export interface AuthSessionRecord { readonly id: string; readonly userId: strin
 export interface CmsAuthSession extends AuthSessionRecord {
     readonly parentId: string | null;
     readonly networkRole: string | null;
+    /** Whether the sign-in that made it used a second factor; a child session copies its network session's. */
+    readonly secondFactor: boolean;
 }
 
 /** What a child session takes from its network session's handoff. */
@@ -29,6 +31,8 @@ export interface ChildSession {
     readonly networkRole: string | null;
     /** The network session's expiry. */
     readonly expiresAt: number;
+    /** Whether the network session's sign-in used a second factor; missing means it did not. */
+    readonly secondFactor?: boolean;
 }
 
 /** Network sessions that ended: one by its public reference, or an account's (all but `except`). Their child sessions end with them. */
@@ -66,14 +70,18 @@ export interface CmsSessionStore {
  * Auth sessions keyed by token. Rotation is one conditional update of the key; the public
  * reference survives it, so realtime descriptors detect rotation through the fingerprint.
  */
-export function createAuthSessionStore(db: RomeDB, options: { now?: () => number; request?: (context: unknown) => { ip?: string; userAgent?: string }; sessionsEnded?: (ended: EndedSessions) => Promise<void> } = {}): Omit<CmsAuthSessionStore, 'read'> & {
+export function createAuthSessionStore(db: RomeDB, options: { now?: () => number; request?: (context: unknown) => { ip?: string; userAgent?: string }; sessionsEnded?: (ended: EndedSessions) => Promise<void> } = {}): Omit<CmsAuthSessionStore, 'read' | 'create'> & {
     read(id: string, context?: unknown): Promise<CmsAuthSession | null>;
+    /** A session whose sign-in used a second factor (`secondFactor`) or did not. */
+    create(record: AuthSessionRecord, context?: unknown, options?: { secondFactor?: boolean }): Promise<void>;
+    /** Mark a session as having used a second factor: its user just added one in it. */
+    markSecondFactor(id: string): Promise<boolean>;
     /** A child session on a site, from a network session's handoff. It expires no later than its parent, and rotation keeps that. */
     createChild(record: AuthSessionRecord, child: ChildSession, context?: unknown): Promise<void>;
     /** End the child sessions of these network sessions, or all of an account's (but `except`'s). */
     revokeChildren(ended: EndedSessions): Promise<number>;
     publicReference(id: string): Promise<string | null>;
-    findByReference(reference: string): Promise<{ id: string; userId: string; expiresAt: number } | null>;
+    findByReference(reference: string): Promise<{ id: string; userId: string; expiresAt: number; secondFactor: boolean } | null>;
     listForUser(userId: string, now: number): Promise<{ reference: string; createdAt: number; expiresAt: number; ip: string | null; userAgent: string | null }[]>;
     /** The newest sessions across users, for the dashboard's sign-in activity. Sessions end at sign-out, so this shows who is signed in. */
     listRecent(now: number, limit?: number): Promise<{ reference: string; userId: string; createdAt: number; ip: string | null; userAgent: string | null }[]>;
@@ -83,15 +91,15 @@ export function createAuthSessionStore(db: RomeDB, options: { now?: () => number
 } {
     const now = options.now ?? Date.now;
     const ended = (scope: EndedSessions) => options.sessionsEnded?.(scope).catch(error => console.error('[cms] could not end child sessions', error));
-    const insert = async (record: AuthSessionRecord, child: ChildSession | null, context: unknown) => {
+    const insert = async (record: AuthSessionRecord, child: ChildSession | null, context: unknown, secondFactor: boolean) => {
         assertRecord(record);
         const expires = child ? Math.min(record.expiresAt, child.expiresAt) : record.expiresAt;
         if (expires <= record.createdAt) throw new Error('The network session has expired.');
         const meta = options.request?.(context) ?? {};
         await db.write([{
-            rql: 'INSERT INTO cms_auth_sessions (id, public_id, user_id, created_at, expires_at, ip, user_agent, parent_id, network_role) VALUES ($id, $public, $user, $created, $expires, $ip, $agent, $parent, $role)',
+            rql: 'INSERT INTO cms_auth_sessions (id, public_id, user_id, created_at, expires_at, ip, user_agent, parent_id, network_role, second_factor) VALUES ($id, $public, $user, $created, $expires, $ip, $agent, $parent, $role, $factor)',
             params: { $id: record.id, $public: crypto.randomUUID(), $user: record.userId, $created: record.createdAt, $expires: expires, $ip: meta.ip?.slice(0, 64) ?? null, $agent: meta.userAgent?.slice(0, 512) ?? null,
-                $parent: child?.parentId ?? null, $role: child?.networkRole ?? null },
+                $parent: child?.parentId ?? null, $role: child?.networkRole ?? null, $factor: secondFactor ? 1 : 0 },
         }, {
                 // The account keeps the sign-in time after the session ends, and so does its member row on the main site.
                 rql: 'UPDATE cms_accounts SET last_sign_in_at = $created WHERE id = $user',
@@ -102,13 +110,19 @@ export function createAuthSessionStore(db: RomeDB, options: { now?: () => number
         }], { kind: 'cms.auth.session', retryConflicts: 5 });
     };
     return {
-        create: (record, context) => insert(record, null, context),
-        createChild: (record, child, context) => insert(record, child, context),
+        create: (record, context, extra) => insert(record, null, context, extra?.secondFactor === true),
+        createChild: (record, child, context) => insert(record, child, context, child.secondFactor === true),
+        async markSecondFactor(id) {
+            if (!TOKEN.test(id)) return false;
+            const result = await db.write([{ rql: 'UPDATE cms_auth_sessions SET second_factor = 1 WHERE id = $id', params: { $id: id } }], { kind: 'cms.auth.session', retryConflicts: 5 });
+            return result.results[0]!.affected === 1n;
+        },
         async read(id) {
             if (!TOKEN.test(id)) return null;
-            const result = await db.read([{ rql: 'SELECT id, user_id, created_at, expires_at, parent_id, network_role FROM cms_auth_sessions WHERE id = $id', params: { $id: id } }]);
+            const result = await db.read([{ rql: 'SELECT id, user_id, created_at, expires_at, parent_id, network_role, second_factor FROM cms_auth_sessions WHERE id = $id', params: { $id: id } }]);
             const row = result.results[0]!.rows[0];
-            return row ? Object.freeze({ id: row[0] as string, userId: row[1] as string, kind: 'auth' as const, createdAt: n(row[2]), expiresAt: n(row[3]), parentId: row[4] as string | null, networkRole: row[5] as string | null }) : null;
+            return row ? Object.freeze({ id: row[0] as string, userId: row[1] as string, kind: 'auth' as const, createdAt: n(row[2]), expiresAt: n(row[3]), parentId: row[4] as string | null, networkRole: row[5] as string | null,
+                secondFactor: row[6] !== null && n(row[6]) === 1 }) : null;
         },
         async replace(expected, replacement, at) {
             assertRecord(expected);
@@ -138,9 +152,9 @@ export function createAuthSessionStore(db: RomeDB, options: { now?: () => number
         },
         async findByReference(reference) {
             if (!/^[0-9a-f-]{36}$/.test(reference)) return null;
-            const result = await db.read([{ rql: 'SELECT id, user_id, expires_at FROM cms_auth_sessions WHERE public_id = $ref', params: { $ref: reference } }]);
+            const result = await db.read([{ rql: 'SELECT id, user_id, expires_at, second_factor FROM cms_auth_sessions WHERE public_id = $ref', params: { $ref: reference } }]);
             const row = result.results[0]!.rows[0];
-            return row ? { id: row[0] as string, userId: row[1] as string, expiresAt: n(row[2]) } : null;
+            return row ? { id: row[0] as string, userId: row[1] as string, expiresAt: n(row[2]), secondFactor: row[3] !== null && n(row[3]) === 1 } : null;
         },
         async listForUser(userId, at) {
             const result = await db.read([{

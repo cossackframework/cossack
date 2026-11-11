@@ -14,7 +14,7 @@ import { cmsDiagnostics } from '../src/cms/catalog.js';
 import { mimeType } from '../src/cms/mime.js';
 import { assertCredentialTarget, isLocalAddress, resolveTarget } from '../src/cms/client.js';
 import { loginCommand, logoutCommand } from '../src/cms/login.js';
-import { readLogins, rememberLogin } from '../src/cms/logins.js';
+import { loginKey, readLogins, rememberLogin } from '../src/cms/logins.js';
 
 const TOKEN = `cms_0123456789abcdef.${'s'.repeat(43)}`;
 const ME = { user: { id: 'u1', email: 'ada@example.com', name: 'Ada', roles: [{ id: 'admin', name: 'Administrator' }], permissions: ['*'], networkAdmin: true, account: 'network' }, token: { scope: 'write' }, network: { enabled: true, canAddSites: true, main: true } };
@@ -415,6 +415,17 @@ describe('cms helpers', () => {
       // The stored login's password is revoked, not the shell's.
       expect(init.headers.get('authorization')).toBe('Bearer cms_nnnnnnnnnnnnnnnn.secret');
       expect((await readLogins(config)).logins).toEqual({});
+
+      // With a site login of its own, --network still ends the network login, and keeps the site's.
+      await rememberLogin({ url: 'https://cms.example', token: 'cms_nnnnnnnnnnnnnnnn.secret', tokenId: 'nnnnnnnnnnnnnnnn', name: 'network', scope: 'write', email: 'ada@example.com', user: 'u1' }, config);
+      await rememberLogin({ url: 'https://cms.example', site: 'blog', token: 'cms_bbbbbbbbbbbbbbbb.secret', tokenId: 'bbbbbbbbbbbbbbbb', name: 'blog', scope: 'write', email: 'ada@example.com', user: 'u1' }, config);
+      fetch.mockClear();
+      expect(await logoutCommand({ flags: { url: 'https://cms.example', site: 'blog', network: true }, env, cwd: home, fetch })).toMatchObject({ site: null, revoked: true, forgotten: true });
+      expect(String(fetch.mock.calls[0][0])).toBe('https://cms.example/api/cms/me/tokens/nnnnnnnnnnnnnnnn');
+      expect(Object.keys((await readLogins(config)).logins)).toEqual([loginKey('https://cms.example', 'blog')]);
+      // No network login stored: --network says so instead of ending the site's.
+      await expect(logoutCommand({ flags: { url: 'https://cms.example', site: 'blog', network: true }, env, cwd: home, fetch })).rejects.toMatchObject({ code: 'COSSACK_CMS_LOGIN_REQUIRED' });
+      expect(Object.keys((await readLogins(config)).logins)).toHaveLength(1);
     } finally { await fs.rm(home, { recursive: true, force: true }); }
   });
 

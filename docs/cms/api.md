@@ -216,7 +216,7 @@ application password. A CMS refusal answers `{ error, code, fields? }` with its 
 | `POST …/<id>/publish` `{ at?, rev? }`, `POST …/<id>/unpublish` `{ rev? }` | Publish or schedule (`at` in the future); back to a draft. `rev` left out means the current revision. |
 | `GET …/<id>/revisions`, `GET …/<id>/revisions/<n>`, `POST …/<id>/revisions/<n>/restore` | Revisions. |
 | `GET …/<id>/notes`, `POST …/<id>/notes`, `PATCH /notes/<noteId>`, `DELETE /notes/<noteId>`, `GET /notes?status=open` | Notes (see [Notes](/docs/cms/notes.md)); the last lists entries with notes across the site. |
-| `GET /users`, `POST /users`, `GET\|PATCH\|DELETE /users/<id>`, `GET /roles` | Users (`cms:users`; roles for role managers). |
+| `GET /users`, `POST /users`, `GET\|PATCH\|DELETE /users/<id>`, `GET /roles` | Users (`cms:users`; roles for role managers). Your own password and email change in the dashboard with your current password, not here. |
 | `GET /settings`, `PUT /settings`, `GET\|PATCH /settings/<group>` | The settings document and its groups. |
 | `POST /cache/purge` `{ tags?, urls? }` | Purge the caches in front of the site (the settings permission): every page, or the tags and URLs given; answers each purger's result. |
 | `GET\|POST /terms/<taxonomy>`, `GET\|PATCH\|DELETE /terms/<taxonomy>/<id>` | Terms. |
@@ -226,7 +226,7 @@ application password. A CMS refusal answers `{ error, code, fields? }` with its 
 | `GET /appearance/areas`, `GET\|PUT\|DELETE /appearance/areas/<name>` | Widget areas: `PUT` `{ blocks, rev }` replaces the blocks (`rev` 0 while the theme's defaults show), `DELETE` forgets them. |
 | `GET\|POST /network/sites`, `GET\|PATCH /network/sites/<id>` `{ status }` | Sites, for network admins on the network host. |
 | `POST /mcp` | The MCP server. |
-| `POST /api/auth/session` `{ email, password, code?, turnstile? }` | Signs in with a session cookie, for tools that make a password. While the Turnstile bot check is on it needs a `turnstile` token (403 `CMS_BOT_CHECK`); use an application password instead. When General settings require two-step sign-in, a session without a second factor gets 403 `CMS_SECOND_FACTOR_REQUIRED` from the API and no application passwords. |
+| `POST /api/auth/session` `{ email, password, code?, turnstile? }` | Signs in with a session cookie, for tools that make a password. While the Turnstile bot check is on it needs a `turnstile` token (403 `CMS_BOT_CHECK`); use an application password instead. When General settings require two-step sign-in, a session whose sign-in used no second factor (a code with `code`, or a passkey in the browser) gets 403 `CMS_SECOND_FACTOR_REQUIRED` from the API and no application passwords. |
 | `DELETE /api/auth/session` | Ends the session (same-origin), for tools that signed in to make a password. |
 
 In the application, every route calls `src/cms/manage.ts`, and so do the MCP tools in

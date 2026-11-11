@@ -1,13 +1,15 @@
 import type { Context } from 'hono';
-import { hasPermission, isNetworkAdmin, MAIN_SITE, PERMISSIONS } from '@cossackframework/cms';
+import { hasPermission, holdsAll, isNetworkAdmin, MAIN_SITE, PERMISSIONS } from '@cossackframework/cms';
 import { exportResponse, fileExportResponse } from '../../../cms/site-export';
 
 /**
  * This site's database as a JSON file, `GET /api/cms/site-export`, for its admins signed in
  * with a session: at once on the main site or when the network lets sites export themselves,
  * otherwise for 7 days after a network admin approves the site's request (Tools → Export).
- * `?format=romedb` downloads the database as a `.romedb` file. The main site's holds every
- * network account with its password hash, so that one is for network admins.
+ * `?format=romedb` downloads the database as a `.romedb` file. It holds the accounts' password
+ * hashes, so it is for those who may manage every account in it: network admins for the main
+ * site's (every network account), and on an added site user managers who hold every permission
+ * any of its roles gives, as changing any one of those accounts asks.
  */
 export const GET = async (c: Context) => {
     const principal = c.get('principal');
@@ -18,6 +20,10 @@ export const GET = async (c: Context) => {
     const cms = c.get('cms');
     if (c.req.query('format') === 'romedb') {
         if (site.id === MAIN_SITE && !isNetworkAdmin(principal)) return c.json({ error: 'Only network admins download the main site\'s database file.', code: 'CMS_FORBIDDEN' }, 403);
+        const roles = await cms.users.roles();
+        if (!isNetworkAdmin(principal) && (!hasPermission(principal, PERMISSIONS.manageUsers) || !holdsAll(principal, roles.flatMap(role => role.permissions)))) {
+            return c.json({ error: 'The database file holds every account\'s password: only an administrator who may manage all of them downloads it.', code: 'CMS_FORBIDDEN' }, 403);
+        }
         return fileExportResponse(cms, site, c.req.raw.signal);
     }
     const title = await cms.settings.get('general.siteTitle').catch(() => '');

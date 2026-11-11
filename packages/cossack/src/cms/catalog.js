@@ -58,7 +58,7 @@ export const CMS_FLAGS = {
   tag: str('A cache tag to purge, such as cms:main:c:posts; repeat for several (cache purge).', { repeated: true }),
   path: str('A page to purge, by URL; repeat for several (cache purge).', { repeated: true }),
   yes: bool('Confirm a delete.', { aliases: ['y'] }),
-  network: bool('Log out of the address\'s network login, which every site of the network uses.'),
+  network: bool('Log out of the address\'s network login, which every site of the network uses, even when the site has a login of its own.'),
 };
 
 const WRITE = Object.freeze({ write: true });

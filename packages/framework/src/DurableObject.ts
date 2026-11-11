@@ -117,7 +117,8 @@ export class AppDurableObject extends CossackDurableObject {
             params: request.params,
             locale: request.locale ?? 'en',
             guardPath: authorization.guardPath,
-            targetPath: authorization.owner.id,
+            // As protectTransport records it: a realtime component's code runs under its page.
+            targetPath: authorization.owner.kind === 'component' ? authorization.guardPath : authorization.owner.id,
         };
         const originalUserId = (peer.user as { id?: unknown } | undefined)?.id;
         // The same user, and a scope that still resolves to this connection's

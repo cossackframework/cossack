@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { checkCheckout } from '../src/server/payments';
 import { stripePayments } from '../src/server/stripe';
 import { paymentCompleted } from '../src/server/host';
@@ -100,10 +100,12 @@ describe('payments', () => {
         const asked: string[] = [];
         let signals = 0;
         let hang = false;
+        let status = 200;
         const stripe = stripePayments({ secretKey: 'sk', webhookSecret: 'whsec_test', api: 'https://stripe.test', now: () => now, lookupMs: 50, fetch: (async (url: string | URL | Request, init?: RequestInit) => {
             asked.push(String(url));
             if (init?.signal) signals++;
             if (hang) return new Promise((_resolve, reject) => init!.signal!.addEventListener('abort', () => reject(init!.signal!.reason)));
+            if (status !== 200) return Response.json({ error: { message: 'no' } }, { status });
             if (String(url).includes('/v1/invoice_payments')) return Response.json({ data: [{ id: 'inpay_1', invoice: 'in_7' }] });
             return Response.json({ id: 'in_7', parent: { subscription_details: { metadata: { reference: 'basil-order', cms_checkout: '1' } } } });
         }) as typeof fetch });
@@ -116,5 +118,16 @@ describe('payments', () => {
         expect(signals).toBe(2);
         hang = true;
         await expect(refund()).rejects.toMatchObject({ code: 'CMS_UNAVAILABLE' });
+        hang = false;
+        // Rate limits and Stripe's own failures retry; a key without read access would refuse
+        // every retry, so the refund goes out without its order.
+        for (const code of [429, 500, 503]) { status = code; await expect(refund()).rejects.toMatchObject({ code: 'CMS_UNAVAILABLE' }); }
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        for (const code of [400, 401, 403]) {
+            status = code;
+            expect(await refund()).toMatchObject({ type: 'refund', reference: null, fromCheckout: false, amount: 500 });
+        }
+        expect(warn).toHaveBeenCalledTimes(3);
+        warn.mockRestore();
     });
 });
