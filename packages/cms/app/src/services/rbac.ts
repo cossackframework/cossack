@@ -32,12 +32,14 @@ export function canAssignRoles(user: PublicUser | null | undefined): boolean {
     return !!user && hasPermission(user.principal, PERMISSIONS.manageRoles);
 }
 
-/** Who may see and end a user's sessions and application passwords: the user and administrators, network admins for a network admin. */
-export function canManageAccess(user: PublicUser | null | undefined, target: { id: string; networkAdmin?: boolean }): boolean {
+/**
+ * Who may see and end a user's sessions and application passwords: the user, and role managers
+ * who may change the account (`canManageUser`), so nobody mints a token for a stronger account.
+ */
+export function canManageAccess(user: PublicUser | null | undefined, target: { id: string; roles: readonly { permissions: readonly string[] }[]; networkAdmin?: boolean }): boolean {
     if (!user) return false;
     if (user.id === target.id) return true;
-    if (target.networkAdmin && !isNetworkAdmin(user.principal)) return false;
-    return canAssignRoles(user);
+    return canAssignRoles(user) && canManageUser(user, target);
 }
 
 /** Guard of the role screens. */

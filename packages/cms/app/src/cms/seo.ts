@@ -9,13 +9,19 @@ import {
     ARTICLE_TYPES, authorUrl, entryAuthors, mediaUrl, renderSeoTemplate, robotsDirectives, schemaGraph, schemaProperties, SCHEMA_PROPERTIES, TITLE_SEPARATORS, urlList,
     type Block, type CollectionDefinition, type EntryView, type LanguageLink, type RecordShape, type SchemaAuthor, type SchemaBreadcrumb, type SchemaImage, type SchemaPage, type SchemaSite, type SiteSettings, type TermShape,
 } from '@cossackframework/cms';
-import type { CmsFile, CmsHost, CmsUser } from '@cossackframework/cms/server';
+import { MAIN_SITE, type CmsFile, type CmsHost, type CmsUser, type NetworkSite } from '@cossackframework/cms/server';
+import { siteUrl, type CmsBindings } from './index';
 import type { SeoView } from './seo-head';
 import { entryAncestors as ancestors, isMembersOnly, isProtected, localePrefix } from './site';
 
-/** The site's address: `APP_URL` when set, otherwise the request's origin. */
+/**
+ * The request's site address: APP_URL for the main site, an added site's own domain (see
+ * `siteUrl`), otherwise the request's origin.
+ */
 export function siteOrigin(c: Context): string {
-    const configured = env('APP_URL', '');
+    const bindings = c.env as CmsBindings | undefined;
+    const site = c.get?.('site' as never) as Pick<NetworkSite, 'id' | 'host'> | undefined;
+    const configured = site && site.id !== MAIN_SITE && bindings ? siteUrl(bindings, site) : (bindings?.APP_URL || env('APP_URL', ''));
     return (configured || new URL(c.req.url).origin).replace(/\/+$/, '');
 }
 

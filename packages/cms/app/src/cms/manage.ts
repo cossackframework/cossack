@@ -14,7 +14,7 @@ import { networkSite, type ApiToken, type CmsHost, type NetworkSite, type SiteRe
 import { createApiToken, listApiTokens, manageableHere, NETWORK_ACCOUNT_LOCKED, revokeApiToken, type PublicUser } from '../auth';
 import { canAssignRoles, canGrantRoles, canManageUser } from '../services/rbac';
 import { changeUserPassword, createUser, deleteUser, getUser, listUsers, syncUserRoles, updateUser, type UserDetail, type UserSummary } from '../services/users';
-import { apiEntries, apiPatterns, type ApiEntry } from './content-api';
+import { apiEntries, apiPatterns, withheldFields, type ApiEntry } from './content-api';
 import { entryLock } from './site';
 import { findMedia, routeResource } from './content';
 import { siteUrl, type CmsBindings } from './index';
@@ -249,15 +249,32 @@ export async function entriesList(c: Context, name: string, query: Query): Promi
         return { items: await apiEntries(cms, collection, records, html, principal), page: 1, pages: 1, total: records.length };
     }
     // `sort=publishedAt:asc`, `sort=title`: a scalar field of the collection; the default follows what is listed.
-    const order = sortOf(query.sort, fields) ?? (!publishable ? { field: 'title', direction: 'asc' as const }
+    const sorted = sortOf(query.sort, fields);
+    const order = sorted ?? (!publishable ? { field: 'title', direction: 'asc' as const }
         : where.status === 'published' ? { field: 'publishedAt', direction: 'desc' as const } : { field: 'updatedAt', direction: 'desc' as const });
+    // Filtering or sorting on a field locked entries withhold would tell its value by what is
+    // listed: such a request lists only entries the reader may open.
+    const withheld = withheldFields(cms, collection);
+    const probed = [...Object.keys(where).filter(name => !BASE_FILTERS.has(name)), ...(sorted ? [sorted.field] : [])].some(name => withheld.has(name.split('.')[0]!));
+    const lockedOut = probed && !hasPermission(principal, `cms/${collection.name}:update`);
+    if (lockedOut) {
+        if (fields.password) where.password = { in: [null, ''] };
+        if (fields.membersOnly && principal.kind !== 'user') where.membersOnly = { ne: true };
+    }
     const [list, total] = await Promise.all([
         repository.list({ where, order, limit: perPage, offset: Math.min((page - 1) * perPage, 10_000) }, { principal }),
         repository.count({ where }, { principal }),
     ]);
-    const items = await apiEntries(cms, collection, list.records, html, principal);
+    // A signed-in reader still misses members-only entries for other roles.
+    const records = lockedOut && principal.kind === 'user'
+        ? list.records.filter(record => !entryLock(record, { editor: repository.canUpdate(record, principal), signedIn: true, roles: principal.roles }))
+        : list.records;
+    const items = await apiEntries(cms, collection, records, html, principal);
     return { items: pickFields(items, query.fields), page, pages: Math.max(1, Math.ceil(total / perPage)), total };
 }
+
+/** Conditions the API sets itself rather than from `filter[...]`. */
+const BASE_FILTERS = new Set(['status', 'locale']);
 
 /** One result of the site's search. */
 export interface SearchItem { collection: string; id: string; title: string; url: string | null; snippet: readonly SnippetPart[] }

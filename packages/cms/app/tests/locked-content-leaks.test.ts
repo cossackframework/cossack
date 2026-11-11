@@ -9,7 +9,7 @@ vi.stubGlobal('__', (text: string) => text);
 
 const { buildFeed } = await import('../src/cms/feeds');
 const { entrySeo } = await import('../src/cms/seo');
-const { entryRead } = await import('../src/cms/manage');
+const { entriesList, entryRead } = await import('../src/cms/manage');
 
 const record = (id: string, fields: Record<string, unknown>): RecordShape => ({ id, rev: 1, createdAt: 1, updatedAt: 1, publishedAt: 1, owner: 'author-1', title: `Entry ${id}`, slug: `entry-${id}`, status: 'published', ...fields }) as RecordShape;
 const settings = new Proxy({ 'general.siteTitle': 'Site', 'reading.feedItems': 10, 'reading.feedContent': 'full' } as Record<string, unknown>, { get: (target, key: string) => key in target ? target[key] : '' });
@@ -59,5 +59,29 @@ describe('locked entries stay locked outside their page', () => {
         expect(JSON.stringify(locked)).not.toContain('secret');
         const open = await read(record('p2', { content }), { kind: 'anonymous' });
         expect(Object.keys(open!.patterns)).toEqual([pattern.id]);
+    });
+
+    it('lists only entries the reader may open when a filter or sort reads a field locked entries withhold', async () => {
+        const calls: Record<string, unknown>[] = [];
+        const listed = [record('a', { price: 49 }), record('m', { price: 49, membersOnly: true, memberRoles: ['vip'] })];
+        const fields = { ...resource.fields, price: { kind: 'number', index: true } };
+        const shop = { ...host(listed), resourceById: () => ({ ...resource, fields }),
+            resource: () => ({ list: async (options: { where: Record<string, unknown> }) => { calls.push(options.where); return { records: listed }; }, count: async () => 2, canUpdate: () => false }) } as unknown as CmsHost;
+        const list = (principal: unknown, query: Record<string, string>) => entriesList({ get: (key: string) => key === 'cms' ? shop : principal } as unknown as Context, 'posts', query);
+        await list({ kind: 'anonymous' }, { 'filter[price]': '49' });
+        expect(calls.at(-1)).toMatchObject({ price: 49, password: { in: [null, ''] }, membersOnly: { ne: true } });
+        await list({ kind: 'anonymous' }, { sort: 'price' });
+        expect(calls.at(-1)).toMatchObject({ password: { in: [null, ''] } });
+        // A core field tells nothing a locked entry hides.
+        await list({ kind: 'anonymous' }, { 'filter[title]': 'Entry a' });
+        expect(calls.at(-1)).not.toHaveProperty('password');
+        // Signed in, members-only entries stay in the query, and those for other roles leave the page.
+        const member = { kind: 'user', id: 'u1', roles: ['subscriber'], permissions: [] };
+        const page = await list(member, { 'filter[price]': '49' });
+        expect(calls.at(-1)).not.toHaveProperty('membersOnly');
+        expect(page.items.map(item => item.id)).toEqual(['a']);
+        // Those who edit the collection see everything.
+        await list({ kind: 'user', id: 'e1', roles: ['editor'], permissions: ['cms/*'] }, { 'filter[price]': '49' });
+        expect(calls.at(-1)).not.toHaveProperty('password');
     });
 });

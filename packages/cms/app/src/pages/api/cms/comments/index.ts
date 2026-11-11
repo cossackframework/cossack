@@ -5,6 +5,7 @@ import type { CmsHost } from '@cossackframework/cms/server';
 import { getCookie } from 'hono/cookie';
 import { getClientIp } from '@cossackframework/core';
 import { apiError } from '../../../../cms/content-api';
+import { siteOrigin } from '../../../../cms/seo';
 import { isMembersOnly, isProtected, requestLock, unlockCookie } from '../../../../cms/site';
 
 /**
@@ -108,7 +109,7 @@ function notify(c: Context, cms: CmsHost, comment: CommentShape, title: string, 
             const author = await cms.users.get(owner);
             if (author) recipients.add(author.email);
         }
-        const origin = env('APP_URL', '') || new URL(c.req.url).origin;
+        const origin = siteOrigin(c);
         const subject = `${held ? 'Please moderate' : 'New comment'}: “${title}”`;
         const text = `${comment.authorName} <${comment.authorEmail}> wrote on “${title}”:\n\n${comment.content}\n\n${url ? `${origin}${url}\n` : ''}Moderate: ${origin}/dashboard/comments?status=${comment.status}`;
         for (const to of recipients) await mail.send({ kind: 'comment', to, from: cms.mailFrom, subject, text });

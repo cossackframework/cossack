@@ -13,6 +13,7 @@ import { UNRESTRICTED_GRANT } from '../manifest';
 import { HOST_TABLES } from './host-schema';
 import { EXPORT_SKIPPED_TABLES, newSecret, quote } from './site-export';
 import type { CmsHost } from './host';
+import type { CmsUser } from './users';
 
 export interface SiteImportReport {
     /** What the export says it is. */
@@ -462,12 +463,13 @@ async function* readStream(stream: ReadableStream<Uint8Array>): AsyncGenerator<U
 
 const truncated = (wanted: string) => new CmsError('CMS_VALIDATION', `The export ends early: expected ${wanted}. Download it again.`);
 
-/** Every member of the site, a page at a time (lists stop at 100). */
-async function allUsers(host: CmsHost): Promise<Awaited<ReturnType<CmsHost['users']['list']>>['items'][number][]> {
-    const users: Awaited<ReturnType<CmsHost['users']['list']>>['items'][number][] = [];
-    for (let offset = 0; ; offset += 100) {
-        const page = await host.users.list({ limit: 100, offset });
-        users.push(...page.items);
-        if (page.items.length < 100) return users;
+/** Every member of the site, a page at a time by ID, so no page limit or offset cap stops it. */
+async function allUsers(host: CmsHost): Promise<CmsUser[]> {
+    const users: CmsUser[] = [];
+    for (let after: string | null = null; ;) {
+        const page = await host.users.after(after, 500);
+        users.push(...page);
+        if (page.length < 500) return users;
+        after = page[page.length - 1]!.id;
     }
 }

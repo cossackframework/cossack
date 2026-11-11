@@ -30,3 +30,16 @@ export function gatePluginMiddlewares(list: readonly MiddlewareHandler[], predic
     };
   });
 }
+
+/**
+ * Middleware that stops the request, without calling `next`, while the plugin
+ * is inactive: for realtime replays of a plugin page's guards, matching the
+ * router's gate on the plugin's routes.
+ */
+export function pluginActivityGate(plugin: string, predicate: () => PluginActivity | undefined = () => activity): MiddlewareHandler {
+  return async (c, next) => {
+    const isActive = predicate();
+    if (isActive && !await isActive(plugin, c)) return c.notFound();
+    return next();
+  };
+}

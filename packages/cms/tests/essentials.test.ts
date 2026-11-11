@@ -388,9 +388,27 @@ describe.skipIf(!live)('scheduling, previews, revisions, redirects, tokens, webh
         expect((await cms.security.status(authorId)).passkeys).toEqual([expect.objectContaining({ id: 'cred-1', name: 'Laptop', backedUp: true })]);
 
         const pending = await cms.security.createChallenge('signin', authorId, 'password-ok');
-        for (let left = 4; left > 0; left--) expect(await cms.security.failChallenge(pending)).toBe(left);
-        expect(await cms.security.failChallenge(pending)).toBe(0);
+        for (let left = 4; left >= 0; left--) {
+            expect(await cms.security.secondFactorAttempt(pending, authorId)).toEqual({ left });
+            await cms.security.failChallenge(pending);
+        }
         expect(await cms.security.challenge(pending, 'signin')).toBeNull();
+        expect(await cms.security.secondFactorAttempt(pending, authorId)).toBe('expired');
+        // Codes sent at once each take a try: no more than five are let through.
+        const burst = await cms.security.createChallenge('signin', authorId, 'password-ok');
+        const tries = await Promise.all(Array.from({ length: 12 }, () => cms.security.secondFactorAttempt(burst, authorId)));
+        expect(tries.filter(t => typeof t === 'object')).toHaveLength(5);
+        // The account has used its ten codes: a new pending sign-in after a right password gets none.
+        const again = await cms.security.createChallenge('signin', authorId, 'password-ok');
+        expect(await cms.security.secondFactorAttempt(again, authorId)).toBe('locked');
+        await cms.security.secondFactorSucceeded(authorId);
+        const fresh = await cms.security.createChallenge('signin', authorId, 'password-ok');
+        const freshTries = await Promise.all(Array.from({ length: 12 }, () => cms.security.secondFactorAttempt(fresh, authorId)));
+        expect(freshTries.filter(t => typeof t === 'object')).toHaveLength(5);
+        clock += 16 * 60_000;
+        await cms.security.purgeAttempts();
+        const kept = await cms.db.read([{ rql: 'SELECT count(*) FROM cms_attempts WHERE until <= $now', params: { $now: clock } }]);
+        expect(Number(kept.results[0]!.rows[0]![0] as bigint)).toBe(0);
         const once = await cms.security.createChallenge('passkey-signin', null, 'abc');
         expect(await cms.security.takeChallenge(once, 'passkey-signin')).toBe(true);
         expect(await cms.security.takeChallenge(once, 'passkey-signin')).toBe(false);

@@ -86,9 +86,12 @@ export async function assertPortableChunks(directory) {
 export async function productionServer(root, environment = {}) {
   const child = spawn(process.execPath, ['--input-type=module', '-e', `
     import { serve } from '@hono/node-server';
+    import { setClientAddress } from '@cossackframework/core';
     const { app, env, runtime } = await import('./dist/server/index.js');
+    // Like the generated entry: rate limits see the socket peer, never a client-sent header.
+    const fetch = (request, node) => { setClientAddress(request, node?.incoming?.socket?.remoteAddress); return app.fetch(request, env); };
     const server = await new Promise(resolve => {
-      const listener = serve({ fetch: request => app.fetch(request, env), port: 0, hostname: '127.0.0.1' }, () => resolve(listener));
+      const listener = serve({ fetch, port: 0, hostname: '127.0.0.1' }, () => resolve(listener));
       listener.once('error', error => { console.error(error); process.exit(1); });
     });
     env.APP_URL = 'http://127.0.0.1:' + server.address().port;

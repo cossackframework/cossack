@@ -5,6 +5,7 @@ import { renderMarkdown, type LoadedForm } from '@cossackframework/cms/server';
 import { getClientIp } from '@cossackframework/core';
 import { apiError, cappedRequest } from '../../../../../cms/content-api';
 import { messageHtml, type FormResult } from '../../../../../cms/site-forms';
+import { siteOrigin } from '../../../../../cms/seo';
 
 /**
  * A form for headless sites: `GET /api/cms/forms/contact` answers its inputs (name, label,
@@ -131,7 +132,7 @@ export const POST = async (c: Context) => {
     const started = Number(meta.started);
     try {
         const { confirmation, submission } = await cms.forms.submit(form.ref.id, values, {
-            principal: c.get('principal'), page, origin: env('APP_URL', '') || new URL(c.req.url).origin,
+            principal: c.get('principal'), page, origin: siteOrigin(c),
             ...(ip ? { ip } : {}), ...(c.req.header('user-agent') ? { userAgent: c.req.header('user-agent') } : {}), ...(c.req.header('referer') ? { referrer: c.req.header('referer') } : {}),
             ...(meta.trap ? { trap: meta.trap } : {}), ...(Number.isFinite(started) && started > 0 ? { startedAt: started } : {}), ...(botCheck ? { botCheck } : {}),
         });

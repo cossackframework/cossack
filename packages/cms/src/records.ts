@@ -32,7 +32,8 @@ type Scalar = string | number | boolean;
  */
 export type FieldFilter = Scalar | null
     | { readonly ne: Scalar | null }
-    | { readonly in: readonly Scalar[] }
+    /** One of the values; a `null` among them also matches an unset field. */
+    | { readonly in: readonly (Scalar | null)[] }
     | { readonly gt?: number; readonly gte?: number; readonly lt?: number; readonly lte?: number }
     | { readonly contains: Scalar }
     | { readonly containsAny: readonly Scalar[] };

@@ -5,6 +5,15 @@ import { groupsView, metaInput, metaValues } from '../../../../../cms/content';
 import { canManageUser } from '../../../../../services/rbac';
 import { getUser } from '../../../../../services/users';
 import type { PublicUser } from '../../../../../auth';
+import type { Principal } from '@cossackframework/cms';
+
+/** The caller as `canManageUser` takes it: the session's user, or an application password's principal. */
+function actorOf(c: Context): PublicUser | undefined {
+    const user = c.get('user') as PublicUser | undefined;
+    if (user) return user;
+    const principal = c.get('principal') as Principal | undefined;
+    return principal?.kind === 'user' ? { id: principal.id, email: '', name: '', avatar: null, meta: null, roles: [], principal } : undefined;
+}
 
 /**
  * Save a user's values of the field groups attached to users, as the user screen's meta boxes
@@ -17,7 +26,7 @@ export const POST = async (c: Context) => {
     if (!hasPermission(c.get('principal'), PERMISSIONS.manageUsers)) return c.json({ error: 'Not allowed to change users.', code: 'CMS_FORBIDDEN' }, 403);
     const id = c.req.param('id') ?? '';
     const target = await getUser(id);
-    if (!target || !canManageUser(c.get('user') as PublicUser | undefined, target)) return c.json({ error: 'This user does not exist.', code: 'CMS_NOT_FOUND' }, 404);
+    if (!target || !canManageUser(actorOf(c), target)) return c.json({ error: 'This user does not exist.', code: 'CMS_NOT_FOUND' }, 404);
     const body = await writeBody(c);
     if (body instanceof Response) return body;
     const cms = c.get('cms');

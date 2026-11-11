@@ -539,7 +539,10 @@ export class ResourceRepository {
                 conditions.push(`(${column} IS NULL OR ${column} != ${parameter(this.#store(name, declaration, condition.ne))})`);
             } else if ('in' in condition) {
                 if (!Array.isArray(condition.in) || !condition.in.length || condition.in.length > 100) throw new CmsError('CMS_VALIDATION', `Filter ${name} with 1-100 values.`);
-                conditions.push(`${column} IN (${condition.in.map(value => { check(value); return parameter(this.#store(name, declaration, value)); }).join(', ')})`);
+                const values = condition.in.filter(value => value !== null);
+                const listed = values.length ? `${column} IN (${values.map(value => { check(value); return parameter(this.#store(name, declaration, value)); }).join(', ')})` : '';
+                const unset = values.length < condition.in.length ? `${column} IS NULL` : '';
+                conditions.push(listed && unset ? `(${unset} OR ${listed})` : listed || unset);
             } else {
                 const bounds = Object.entries(condition) as [string, unknown][];
                 if (!RANGED.has(declaration.kind) || !bounds.length || bounds.some(([operator]) => !['gt', 'gte', 'lt', 'lte'].includes(operator))) throw new CmsError('CMS_VALIDATION', `Cannot filter ${name} that way.`);

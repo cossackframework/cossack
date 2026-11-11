@@ -267,7 +267,12 @@ export async function registerUser(email: string, password: string, name?: strin
     throw error;
   }
   // With a sender (the one that sends the link: this request's host) and the site asking for it, the account waits for the email's link.
-  const verify = Boolean(cms().mail) && Boolean(origin) && await host.settings.get('general.verifyEmail').catch(() => true);
+  const verify = Boolean(cms().mail) && await host.settings.get('general.verifyEmail').catch(() => true);
+  // Without the site's address no link can be sent: the account is not created active instead.
+  if (verify && !origin) {
+    console.warn('[cms] registration refused: email confirmation is on, but APP_URL is not set, so no confirmation link can be sent');
+    throw new ClientVisibleError('Registration is not available right now. Ask the site\'s administrator.');
+  }
   await replaceUnconfirmed(host, email, site !== null);
   try {
     const user = await host.users.create({ email, password, name: draft.name, roles: draft.roles, ...(site ? { network: true } : {}), ...(verify && !draft.approval ? { status: 'disabled' as const } : {}) });
@@ -372,17 +377,26 @@ export async function beginTwoFactor(userId: string): Promise<string | null> {
   return null;
 }
 
-/** Finish a pending sign-in with an authenticator or recovery code. */
+/**
+ * Finish a pending sign-in with an authenticator or recovery code. A try is spent before the
+ * code is checked, on the pending sign-in and on the account, so codes sent at once count too.
+ */
 export async function completeTwoFactor(challengeId: string, code: string): Promise<{ user: PublicUser; recovery: boolean } | { error: string; expired: boolean }> {
   const { security } = cms().signIn;
+  const expired = { error: 'The sign-in expired. Enter your password again.', expired: true };
   const pending = await security.challenge(challengeId, 'signin');
-  if (!pending?.userId) return { error: 'The sign-in expired. Enter your password again.', expired: true };
+  if (!pending?.userId) return expired;
+  const attempt = await security.secondFactorAttempt(challengeId, pending.userId);
+  if (attempt === 'expired') return expired;
+  if (attempt === 'locked') return { error: 'Too many wrong codes for this account. Try again in 15 minutes.', expired: true };
   const used = await security.verifyCode(pending.userId, code);
   if (!used) {
-    const left = await security.failChallenge(challengeId);
+    await security.failChallenge(challengeId);
+    const { left } = attempt;
     return left > 0 ? { error: `That code is not right. ${left} ${left === 1 ? 'try' : 'tries'} left.`, expired: false } : { error: 'Too many wrong codes. Enter your password again.', expired: true };
   }
-  if (!(await security.takeChallenge(challengeId, 'signin'))) return { error: 'The sign-in expired. Enter your password again.', expired: true };
+  if (!(await security.takeChallenge(challengeId, 'signin'))) return expired;
+  await security.secondFactorSucceeded(pending.userId);
   const user = await member(pending.userId);
   if (!user) return { error: 'This account cannot sign in.', expired: true };
   return { user, recovery: used === 'recovery' };

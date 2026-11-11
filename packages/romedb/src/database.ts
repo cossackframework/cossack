@@ -106,6 +106,8 @@ export interface RecoveryReport {
     rolledBack: string[];
     reconciled: string[];
     pending: string[];
+    /** Saved writes the store could not read (torn, or wrong permissions, owner or mode): kept for an operator. */
+    unreadable: string[];
 }
 
 /** The engine is older than this package requires, or did not report its release. */
@@ -295,7 +297,7 @@ export class RomeDB {
      * back newer writes, and stay saved for an operator. At most `limit * 20` writes are read.
      */
     async recoverPending(options: RequestOptions & { limit?: number } = {}): Promise<RecoveryReport> {
-        const report: RecoveryReport = { confirmed: [], rolledBack: [], reconciled: [], pending: [] };
+        const report: RecoveryReport = { confirmed: [], rolledBack: [], reconciled: [], pending: [], unreadable: [] };
         const limit = Math.max(1, options.limit ?? 100);
         let attempts = 0;
         let scanned = 0;
@@ -321,6 +323,7 @@ export class RomeDB {
             }
             if (page.length < limit) break;
         }
+        report.unreadable.push(...(this.pending.unreadable?.() ?? []));
         return report;
     }
 

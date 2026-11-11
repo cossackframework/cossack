@@ -4,7 +4,7 @@
  * clients. The password itself is printed only by `mcp`, which exists to configure a client.
  */
 import os from 'node:os';
-import { CmsApiError, createClient, resolveTarget, tokenId } from './client.js';
+import { assertCredentialTarget, CmsApiError, createClient, resolveTarget, tokenId } from './client.js';
 import { forgetLogin, rememberLogin } from './logins.js';
 
 const coded = (code, message) => Object.assign(new Error(message), { code });
@@ -27,6 +27,7 @@ export async function loginCommand({ flags, env = process.env, cwd = process.cwd
     const email = flags.email || env.CMS_EMAIL || await ask({ type: 'text', message: 'Email' });
     const password = env.CMS_PASSWORD || await ask({ type: 'password', message: 'Password' });
     if (!email || !password) throw coded('COSSACK_CMS_CREDENTIALS_REQUIRED', 'Pass --email and set CMS_PASSWORD (or run in a terminal to be asked).');
+    assertCredentialTarget(url, { source: target.source, credential: 'CMS_PASSWORD', fromEnvironment: Boolean(env.CMS_PASSWORD) });
     const session = createClient({ url, site, fetch });
     const sameOrigin = { origin: session.origin, 'sec-fetch-site': 'same-origin' };
     let code = flags.code;

@@ -1,7 +1,7 @@
-import { mkdtemp, readdir, rm, stat, utimes, writeFile } from 'node:fs/promises';
+import fsPromises, { link, mkdtemp, readdir, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ClientError, connect, createRomeDB, EngineVersionError, MemoryPendingWriteStore, PendingWriteConflictError, pendingCursor, REQUIRED_ENGINE_VERSION, UncertainWriteError, type PendingWriteStore } from '../src/index';
 import { FilePendingWriteStore } from '../src/node';
 import { DurableObjectPendingWriteStore, RomeDBPendingWrites } from '../src/cloudflare';
@@ -123,7 +123,7 @@ describe('RomeDB binding', () => {
         expect((error as UncertainWriteError).requestId).toBe('op-3');
         expect(await pending.get('op-3')).toMatchObject({ kind: 'test' });
         up = true;
-        expect(await db.recoverPending()).toEqual({ confirmed: ['op-3'], rolledBack: [], reconciled: [], pending: [] });
+        expect(await db.recoverPending()).toEqual({ confirmed: ['op-3'], rolledBack: [], reconciled: [], pending: [], unreadable: [] });
         expect(new Set(fake.bodies).size).toBe(1);
         expect(await pending.list()).toHaveLength(0);
     });
@@ -265,14 +265,61 @@ describe('pending write stores', () => {
         expect((await readdir(folder)).sort()).toEqual(['good.json', 'torn.json.corrupt']);
     });
 
+    it('file store reports the files it cannot read', async () => {
+        const directory = await mkdtemp(path.join(os.tmpdir(), 'romedb-pending-'));
+        directories.push(directory);
+        const folder = path.join(directory, 'pending');
+        const store = new FilePendingWriteStore(folder);
+        const remote = await connect({ url: LOCAL, token: 't', fetch: service().fetch });
+        await store.put('good', { request: remote.prepareWrite([{ sql: 'SELECT 1' }], { requestId: 'good' }), savedAt: 1 });
+        await writeFile(path.join(folder, 'open.json'), '{}', { mode: 0o644 });
+        await writeFile(path.join(folder, 'torn.json'), '{"ver', { mode: 0o600 });
+        expect((await store.list()).map(write => write.savedAt)).toEqual([1]);
+        expect([...store.unreadable()].sort()).toEqual(['open', 'torn']);
+        expect((await readdir(folder)).sort()).toEqual(['good.json', 'open.json', 'torn.json.corrupt']);
+    });
+
+    it('file store reads a write whose temporary body is still linked', async () => {
+        const directory = await mkdtemp(path.join(os.tmpdir(), 'romedb-pending-'));
+        directories.push(directory);
+        const folder = path.join(directory, 'pending');
+        const store = new FilePendingWriteStore(folder);
+        const remote = await connect({ url: LOCAL, token: 't', fetch: service().fetch });
+        const write = { request: remote.prepareWrite([{ sql: 'SELECT 1' }], { requestId: 'a' }), savedAt: 1 };
+        await store.put('a', write);
+        // A crash between the link and the unlink leaves the temporary body as a second link.
+        await link(path.join(folder, 'a.json'), path.join(folder, '.a.crashed.tmp'));
+        expect((await store.get('a'))!.savedAt).toBe(1);
+        await store.put('a', write);
+        const other = remote.prepareWrite([{ sql: 'SELECT 2' }], { requestId: 'a' });
+        await expect(store.put('a', { request: other, savedAt: 2 })).rejects.toBeInstanceOf(PendingWriteConflictError);
+        // A second link under any other name is not one of ours.
+        await link(path.join(folder, 'a.json'), path.join(folder, 'elsewhere'));
+        await expect(store.get('a')).rejects.toThrow(/private bounded regular file/);
+    });
+
+    it('file store writes in place where hard links are not supported', async () => {
+        const directory = await mkdtemp(path.join(os.tmpdir(), 'romedb-pending-'));
+        directories.push(directory);
+        const store = new FilePendingWriteStore(path.join(directory, 'pending'));
+        const unsupported = vi.spyOn(fsPromises, 'link').mockRejectedValue(Object.assign(new Error('not supported'), { code: 'ENOTSUP' }));
+        try {
+            await contract(store);
+            expect(unsupported).toHaveBeenCalled();
+            expect((await readdir(path.join(directory, 'pending'))).filter(name => name.endsWith('.tmp'))).toEqual([]);
+        } finally { unsupported.mockRestore(); }
+    });
+
     it('Durable Object store', async () => {
         const objects = new Map<string, RomeDBPendingWrites>();
+        const datas = new Map<string, Map<string, unknown>>();
         const namespace = {
             idFromName: (name: string) => name,
             get: (id: never) => {
                 const name = id as unknown as string;
                 if (!objects.has(name)) {
                     const data = new Map<string, unknown>();
+                    datas.set(name, data);
                     const storage = {
                         get: async (key: string) => data.get(key),
                         put: async (key: string, value: unknown) => { data.set(key, value); },
@@ -287,5 +334,18 @@ describe('pending write stores', () => {
             },
         };
         await contract(new DurableObjectPendingWriteStore(namespace));
+        // One entry that no longer decodes is set aside and reported; the rest still list.
+        const store = new DurableObjectPendingWriteStore(namespace, { name: 'other' });
+        const remote = await connect({ url: LOCAL, token: 't', fetch: service().fetch });
+        await store.put('ok', { request: remote.prepareWrite([{ sql: 'SELECT 1' }], { requestId: 'ok' }), savedAt: 1 });
+        // Any shard's object will do: list reads them all.
+        namespace.get('other:0' as never);
+        datas.get('other:0')!.set('pending:bad', '{"version":1');
+        expect((await store.list()).map(write => write.savedAt)).toEqual([1]);
+        expect(store.unreadable()).toEqual(['bad']);
+        expect(datas.get('other:0')!.get('corrupt:bad')).toBe('{"version":1');
+        expect(datas.get('other:0')!.has('pending:bad')).toBe(false);
+        expect(await store.list()).toHaveLength(1);
+        expect(store.unreadable()).toEqual([]);
     });
 });

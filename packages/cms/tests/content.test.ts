@@ -87,6 +87,11 @@ describe.skipIf(!live)('content, taxonomies, settings, users and media', () => {
         expect(next.more).toBeUndefined();
         await expect(pages.list({ order: { field: 'content' } }, context)).rejects.toMatchObject({ code: 'CMS_VALIDATION' });
         expect(await pages.count({ owner: editor.kind === 'user' ? editor.id : '' }, context)).toBeGreaterThanOrEqual(4);
+        // A null among the values matches an unset field too.
+        await pages.create({ title: 'Locked', password: 'x' }, { principal: editor });
+        await pages.create({ title: 'Open', password: '' }, { principal: editor });
+        const named = { in: ['Locked', 'Open', 'Filter 0'] } as const;
+        expect(await pages.countMany([{ where: { title: named, password: { in: [null, ''] } } }, { where: { title: named, password: { in: [''] } } }, { where: { title: named, password: { in: [null] } } }], context)).toEqual([2, 1, 1]);
     });
 
     it('nests pages without cycles', async () => {
@@ -173,6 +178,11 @@ describe.skipIf(!live)('content, taxonomies, settings, users and media', () => {
         expect(page).toMatchObject({ total: 1, items: [{ email: 'grace@example.com', roles: ['subscriber'] }] });
         expect((await users.list({ role: 'author' })).total).toBe(2);
         expect((await users.list({ search: '%' })).total).toBe(0);
+        // Going through every user pages by ID, with no offset cap.
+        const all = (await users.list({ limit: 100 })).items.map(user => user.id).sort();
+        const first = await users.after(null, 2);
+        const rest = await users.after(first[first.length - 1]!.id, 100);
+        expect([...first, ...rest].map(user => user.id)).toEqual(all);
         await expect(users.update(created.id, { email: 'editor@example.com' })).rejects.toMatchObject({ code: 'CMS_CONFLICT' });
         await users.update(created.id, { name: 'Grace B. Hopper', avatar: 'https://example.com/a.png' });
         expect(await users.get(created.id)).toMatchObject({ name: 'Grace B. Hopper', avatar: 'https://example.com/a.png' });

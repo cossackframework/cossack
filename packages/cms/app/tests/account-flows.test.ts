@@ -72,6 +72,18 @@ describe.skipIf(!live)('account flows', () => {
         await expect(registerUser('spam@example.com', 'long password', 'Spam')).rejects.toThrow(/already exists/);
     });
 
+    it('refuses a registration it cannot send the confirmation link for, instead of activating it', async () => {
+        const cms = state.cms!;
+        await cms.settings.update('general', { usersCanRegister: true, verifyEmail: true }, { principal: systemPrincipal('test') });
+        // Production without APP_URL: no address for the link.
+        request('https://site.example/auth/register');
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        await expect(registerUser('nolink@example.com', 'long password', 'No link')).rejects.toThrow(/not available/);
+        expect(warn).toHaveBeenCalled();
+        warn.mockRestore();
+        expect(await cms.accounts.findByEmail('nolink@example.com')).toBeNull();
+    });
+
     it('tells an account waiting for approval so, once its password is right', async () => {
         const cms = state.cms!;
         const user = await cms.users.create({ email: 'waiting@example.com', name: 'Waiting', password: 'long password', roles: ['subscriber'] });

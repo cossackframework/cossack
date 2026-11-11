@@ -38,6 +38,11 @@ const PASSKEY_COLUMNS = 'id, user_id, name, public_key, counter, transports, dev
 /** Wrong codes a pending sign-in allows. */
 export const SIGN_IN_ATTEMPTS = 5;
 /**
+ * Second-factor codes counted per account for a window, across every pending sign-in: a right
+ * password does not give them back, so knowing the password does not buy more guesses.
+ */
+export const SECOND_FACTOR_LOCK = Object.freeze({ windowMs: 15 * 60_000, perAccount: 10 });
+/**
  * Password sign-ins are counted per email and per client address for a window, a right password
  * giving its attempt back; past the limit the sign-in is refused until the window ends, whether
  * or not the account exists.
@@ -88,7 +93,12 @@ export class CmsSecurity {
      * A refused attempt keeps the gate shut until the window ends.
      */
     async attempt(kind: string, key: string, max: number, windowMs: number): Promise<boolean> {
-        return this.#count(`attempt:${kind}:${key.replace(/[^\x21-\x7e]/g, '-').slice(0, 120)}`, windowMs, max);
+        return this.#count(attemptKey(kind, key), windowMs, max);
+    }
+
+    /** Give back an attempt `attempt()` counted, for one that did not go ahead after all. */
+    async release(kind: string, key: string): Promise<void> {
+        await this.#giveBack(attemptKey(kind, key));
     }
 
     /**
@@ -278,21 +288,48 @@ export class CmsSecurity {
         return result.results[0]!.affected === 1n;
     }
 
-    /** Count a wrong code; the challenge ends after too many. Returns the attempts left. */
-    async failChallenge(id: string): Promise<number> {
-        await this.#db.write([
-            { rql: 'UPDATE cms_auth_challenges SET attempts = attempts + 1 WHERE id = $id', params: { $id: id } },
-            { rql: 'DELETE FROM cms_auth_challenges WHERE id = $id AND attempts >= $max', params: { $id: id, $max: SIGN_IN_ATTEMPTS } },
-        ], WRITE);
+    /**
+     * Spend one try of a pending sign-in before its code is checked: counted on the challenge
+     * (in a conditional write, so codes sent at once each take a try and no more than
+     * `SIGN_IN_ATTEMPTS` are checked) and on the account (`SECOND_FACTOR_LOCK`). `expired` when
+     * the challenge has no tries left or ended, `locked` when the account has used its codes.
+     */
+    async secondFactorAttempt(id: string, userId: string): Promise<{ left: number } | 'expired' | 'locked'> {
+        const now = this.#now();
+        const counted = await this.#db.write([{ rql: 'UPDATE cms_auth_challenges SET attempts = attempts + 1 WHERE id = $id AND kind = $kind AND user_id = $user AND attempts < $max AND expires_at > $now',
+            params: { $id: id, $kind: 'signin', $user: userId, $max: SIGN_IN_ATTEMPTS, $now: now } }], WRITE);
+        if (counted.results[0]!.affected !== 1n) return 'expired';
+        if (!(await this.#count(secondFactorKey(userId), SECOND_FACTOR_LOCK.windowMs, SECOND_FACTOR_LOCK.perAccount))) {
+            await this.#db.write([{ rql: 'DELETE FROM cms_auth_challenges WHERE id = $id', params: { $id: id } }], WRITE);
+            return 'locked';
+        }
         const live = await this.#db.read([{ rql: 'SELECT attempts FROM cms_auth_challenges WHERE id = $id', params: { $id: id } }]);
         const row = live.results[0]!.rows[0];
-        return row ? SIGN_IN_ATTEMPTS - Number(row[0] as bigint) : 0;
+        return { left: row ? SIGN_IN_ATTEMPTS - Number(row[0] as bigint) : 0 };
+    }
+
+    /** A wrong code: the challenge ends once it has no tries left. */
+    async failChallenge(id: string): Promise<void> {
+        await this.#db.write([{ rql: 'DELETE FROM cms_auth_challenges WHERE id = $id AND attempts >= $max', params: { $id: id, $max: SIGN_IN_ATTEMPTS } }], WRITE);
+    }
+
+    /** A right code: the account's second-factor count starts again. */
+    async secondFactorSucceeded(userId: string): Promise<void> {
+        await this.#db.write([{ rql: 'DELETE FROM cms_attempts WHERE key = $key', params: { $key: secondFactorKey(userId) } }], WRITE);
     }
 
     async purgeExpired(): Promise<void> {
         const expired = await this.#db.read([{ rql: 'SELECT 1 FROM cms_auth_challenges WHERE expires_at <= $now LIMIT 1', params: { $now: this.#now() } }]);
         if (!expired.results[0]!.rows.length) return;
         await this.#db.write([{ rql: 'DELETE FROM cms_auth_challenges WHERE id IN (SELECT id FROM cms_auth_challenges WHERE expires_at <= $now LIMIT 500)', params: { $now: this.#now() } }], WRITE);
+    }
+
+    /** Remove attempt counts whose window ended (500 at a time), which nothing else would. */
+    async purgeAttempts(): Promise<void> {
+        const now = this.#now();
+        const expired = await this.#db.read([{ rql: 'SELECT 1 FROM cms_attempts WHERE until <= $now LIMIT 1', params: { $now: now } }]);
+        if (!expired.results[0]!.rows.length) return;
+        await this.#db.write([{ rql: 'DELETE FROM cms_attempts WHERE key IN (SELECT key FROM cms_attempts WHERE until <= $now LIMIT 500)', params: { $now: now } }], WRITE);
     }
 }
 
@@ -309,7 +346,16 @@ async function emailKey(email: string): Promise<string> {
     return `signin:e:${await sha256Hex(email.trim().toLowerCase())}`;
 }
 
+/** The second-factor counter of an account. */
+function secondFactorKey(userId: string): string {
+    return `signin:2fa:${userId.replace(/[^\x21-\x7e]/g, '-').slice(0, 100)}`;
+}
+
 /** The sign-in counter of a client address. */
 function addressKey(address: string): string {
     return `signin:a:${(address || 'unknown').replace(/[^\x21-\x7e]/g, '-').slice(0, 100)}`;
+}
+
+function attemptKey(kind: string, key: string): string {
+    return `attempt:${kind}:${key.replace(/[^\x21-\x7e]/g, '-').slice(0, 120)}`;
 }

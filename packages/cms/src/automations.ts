@@ -42,6 +42,8 @@ export interface Automation extends AutomationInput {
     readonly lastError: string;
     readonly createdAt: number;
     readonly updatedAt: number;
+    /** Who saved or last switched it on: it runs with their current permissions, and sends only what they may read. */
+    readonly author: string | null;
 }
 
 const EMAIL = /^(?:[^\s@]+@[^\s@]+\.[^\s@]+|\{\{\s*\$[a-z]*\.[A-Za-z_][\w.#-]*\s*\}\})$/;

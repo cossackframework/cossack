@@ -7,6 +7,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { findProjectRoot } from './fs-utils.js';
 import { commandFailure, writeResult } from './output.js';
+import { assertCredentialTarget } from './cms/client.js';
 
 const NAME = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 
@@ -53,7 +54,14 @@ export async function runPluginCommand(raw, rest, found) {
   const email = parsed.email ?? process.env.CMS_EMAIL;
   const password = process.env.CMS_PASSWORD;
   if (!url || !email || !password) return commandFailure(ctx, label, 'COSSACK_PLUGIN_COMMAND_CREDENTIALS', 'Set --url (or APP_URL), --email (or CMS_EMAIL) and CMS_PASSWORD.');
-  const origin = new URL(url).origin;
+  let origin;
+  try {
+    origin = new URL(url).origin;
+    const source = parsed.url !== undefined || process.env.APP_URL ? 'flag' : 'project';
+    assertCredentialTarget(origin, { source, credential: 'CMS_PASSWORD' });
+  } catch (error) {
+    return commandFailure(ctx, label, error?.code ?? 'COSSACK_CMS_URL_INVALID', error?.code ? error.message : `${url} is not a URL.`);
+  }
   const signIn = await fetch(`${origin}/api/auth/session`, {
     method: 'POST', redirect: 'manual', headers: { origin, 'content-type': 'application/json' },
     body: JSON.stringify({ email, password }),
@@ -62,11 +70,18 @@ export async function runPluginCommand(raw, rest, found) {
   if (signIn.status !== 200 || !cookies.length) {
     return commandFailure(ctx, label, 'COSSACK_PLUGIN_COMMAND_UNAUTHENTICATED', 'Sign-in failed. Check the email, CMS_PASSWORD and URL.');
   }
-  const response = await fetch(`${origin}/api/cms/commands/${plugin}/${command.name}`, {
-    method: 'POST', headers: { origin, cookie: cookies.join('; '), 'content-type': 'application/json' },
-    body: JSON.stringify({ input: parsed.values }),
-  });
-  const body = await response.json().catch(() => ({}));
+  let response;
+  let body;
+  try {
+    response = await fetch(`${origin}/api/cms/commands/${plugin}/${command.name}`, {
+      method: 'POST', headers: { origin, cookie: cookies.join('; '), 'content-type': 'application/json' },
+      body: JSON.stringify({ input: parsed.values }),
+    });
+    body = await response.json().catch(() => ({}));
+  } finally {
+    // The session exists for this one command: end it rather than leave it signed in.
+    await fetch(`${origin}/api/auth/session`, { method: 'DELETE', redirect: 'manual', headers: { origin, 'sec-fetch-site': 'same-origin', cookie: cookies.join('; ') } }).catch(() => {});
+  }
   if (!response.ok) return commandFailure(ctx, label, `COSSACK_PLUGIN_COMMAND_${response.status}`, body.error ?? `The command failed with HTTP ${response.status}.`);
   if (json) writeResult(label, { data: { result: body.result } });
   else console.log(typeof body.result === 'string' ? body.result : JSON.stringify(body.result, null, 2));

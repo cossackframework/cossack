@@ -284,7 +284,10 @@ export function createRouteMatcher(pageKeys: readonly string[]): (pathname: stri
     .sort((a, b) => compareHttpRoutes(a.pattern, b.pattern))
     .map(route => ({ path: route.path, regex: new RegExp(`${prefixMatcher(route.pattern).expression}$`) }));
   return pathname => {
-    const path = pathname.length > 1 ? pathname.replace(/\/+$/, '') || '/' : pathname;
+    // Like Hono: the path is matched decoded (reserved characters kept), and one trailing slash is dropped.
+    let path = pathname;
+    try { path = decodeURI(pathname); } catch { /* Malformed escapes are matched as written. */ }
+    if (path.length > 1 && path.endsWith('/')) path = path.slice(0, -1);
     return routes.find(route => route.regex.test(path))?.path ?? null;
   };
 }
@@ -517,6 +520,8 @@ export interface RoutesManifestOptions {
    * than a component (see `route-codegen`). They are endpoints at any path.
    */
   handlers?: Iterable<string>;
+  /** Plugin that owns each route or layout key, so plugin layouts and boundaries cover only its own pages, as in the router. */
+  owners?: Readonly<Record<string, string>>;
 }
 
 /**
@@ -543,9 +548,9 @@ export function buildRoutesManifest(pageKeys: string[], layoutKeys: string[], ma
         routeId: filePathToId[filePath]!, kind,
         addressable: kind !== '404' && kind !== 'error',
         parameters: routeParameters(pattern),
-        layoutPaths: resolveLayoutPaths(filePath, layoutKeys),
-        errorBoundary: resolveNearestSpecialPage(filePath, pageKeys, 'error'),
-        notFoundBoundary: resolveNearestSpecialPage(filePath, pageKeys, '404'),
+        layoutPaths: resolveLayoutPaths(filePath, layoutKeys, options.owners),
+        errorBoundary: resolveNearestSpecialPage(filePath, pageKeys, 'error', options.owners),
+        notFoundBoundary: resolveNearestSpecialPage(filePath, pageKeys, '404', options.owners),
       };
     }),
   };

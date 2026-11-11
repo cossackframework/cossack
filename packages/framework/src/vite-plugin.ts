@@ -15,7 +15,7 @@ import { checkTemplatesForBuild, formatTemplateDiagnostic, startDevelopmentTempl
 import { clientOptimizedDependencies, linkedDependenciesConfig, linkedDependencyFolders, restartOnLinkedRebuilds, ssrOptimizedDependencies, type LinkedDependency } from './vite-dependency-optimization.js';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { resolve, dirname, relative } from 'path';
-import { discoverRoutes, generateRoutes, ROUTES_MODULE_ID, ROUTES_SOURCE_PATH, ROUTE_GLOB_EXCLUDES } from './route-codegen.js';
+import { discoverGetHandlers, generateRoutes, ROUTES_MODULE_ID, ROUTES_SOURCE_PATH, ROUTE_GLOB_EXCLUDES } from './route-codegen.js';
 import { PLUGINS_MODULE_ID, pluginPageKey, pluginRegistryModule, readRenderedPlugins, scanPageSources } from './plugin-sources.js';
 import { isolationReport, PLUGIN_LOADER_BINDING, pluginIsolation, PluginIsolationError, type PluginIsolationOptions } from './plugin-isolation.js';
 export { scanPagesDir } from './route-codegen.js';
@@ -468,7 +468,7 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
           const components = {};
 
           // Functional HTTP handler routes: client navigation loads them as documents, without fetching first.
-          const handlers = ${isSsrEnvironment ? '[]' : JSON.stringify(discoverRoutes(projectRoot, markdownEnabled).handlers ?? [])};
+          const handlers = ${isSsrEnvironment ? '[]' : JSON.stringify(discoverGetHandlers(projectRoot, markdownEnabled))};
 
           export default { pages, layouts, loadings, components, owners, handlers };
         `;
@@ -529,12 +529,26 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
         server.httpServer?.once('close', () => {
           server.watcher.off('add', updateRealtime).off('unlink', updateRealtime).off('change', updateRealtime);
         });
+        // The browser's handler list is fixed when virtual:cossack-pages loads, and Vite
+        // reloads that module only when page files are added or removed: a page turning
+        // into a handler (or back) invalidates it here.
+        let knownHandlers: string | undefined;
+        try { knownHandlers = JSON.stringify(discoverGetHandlers(projectRoot, markdownEnabled)); } catch { /* Reported by the first update. */ }
         const update = (file: string) => {
           const path = relative(projectRoot, file).replaceAll('\\', '/');
           if (!/^src\/(?:pages|plugins\/[^/]+\/pages)\/.+\.(?:ts|mdx?)$/.test(path)) return;
           try {
             if (options.capabilities) refreshCapabilityPages();
             const generated = generateRoutes(projectRoot, { includeMarkdown: markdownEnabled });
+            const handlers = JSON.stringify(discoverGetHandlers(projectRoot, markdownEnabled));
+            if (knownHandlers !== undefined && handlers !== knownHandlers) {
+              for (const environment of Object.values(server.environments ?? {})) {
+                const module = environment.moduleGraph.getModuleById(resolvedVirtualModuleId);
+                if (module) environment.moduleGraph.invalidateModule(module);
+              }
+              server.ws.send({ type: 'full-reload' });
+            }
+            knownHandlers = handlers;
             if (!generated.changed) return;
             const reserved = unreportedReservedPaths(reservedPaths(generated.manifest.routes));
             if (reserved) server.config.logger.warn(reserved, { timestamp: true });

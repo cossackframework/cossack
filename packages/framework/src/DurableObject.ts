@@ -10,6 +10,7 @@ import { realtimeConnectionScopeKey, type RealtimeOwner } from './realtime-scope
 import { realtimeOwnerMiddlewares } from './transports/realtime-target.js';
 import { withRealtimeAuthorization, type RealtimeIdentity, type RealtimeRequestSnapshot } from './realtime-context.js';
 import { ensureRequestContextAlsWired } from './request-context-als.js';
+import { pluginActivityGate } from './plugin-activity.js';
 import type { SocketPeerAttachment } from '@cossackframework/core';
 
 let routeIds: RouteIdMaps | undefined;
@@ -92,7 +93,11 @@ export class AppDurableObject extends CossackDurableObject {
             const declared = GuardComponent ? Reflect.getMetadata('page:options', GuardComponent)?.middlewares ?? [] : [];
             return Array.isArray(declared) ? declared : [];
         });
-        return { owner, middlewares: [...middlewares, ...realtimeOwnerMiddlewares(owner)] };
+        // A plugin's pages and layouts stop answering once the plugin is off, as the router's gate does.
+        const owners = applicationRegistry.owners ?? {};
+        const plugins = new Set([...paths, componentPath].map(path => owners[path]).filter((owner): owner is string => typeof owner === 'string'));
+        const gates = [...plugins].map(plugin => pluginActivityGate(plugin));
+        return { owner, middlewares: [...gates, ...middlewares, ...realtimeOwnerMiddlewares(owner)] };
     }
 
     protected override async authorizeWebSocketPeer(

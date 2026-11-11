@@ -17,6 +17,8 @@ export interface DurableObjectNamespaceLike {
 
 const ID = /^[A-Za-z0-9_-]{1,80}$/;
 const PREFIX = 'pending:';
+/** Where `/list` sets aside entries that do not decode, for an operator to inspect. */
+const CORRUPT_PREFIX = 'corrupt:';
 
 /**
  * Durable Object that holds pending RomeDB writes. Export it from the Worker entry and bind it,
@@ -38,8 +40,22 @@ export class RomeDBPendingWrites {
                 const entries = await this.#storage.list<string>({ prefix: PREFIX });
                 const after = url.searchParams.get('afterId');
                 const cursor: PendingCursor | undefined = after === null ? undefined : { savedAt: Number(url.searchParams.get('afterSavedAt')), id: after };
-                const writes = pagePendingWrites([...entries.values()].map(decodePendingWrite), { limit, ...(cursor ? { after: cursor } : {}) });
-                return Response.json(writes.map(encodePendingWrite));
+                const decoded: PendingWrite[] = [];
+                const unreadable: string[] = [];
+                for (const [key, stored] of entries) {
+                    try { decoded.push(decodePendingWrite(stored)); }
+                    catch {
+                        // One bad entry must not fail the whole list: move it out of the way.
+                        const id = key.slice(PREFIX.length);
+                        await this.#storage.transaction(async txn => {
+                            await txn.put(CORRUPT_PREFIX + id, stored);
+                            await txn.delete(key);
+                        });
+                        unreadable.push(id);
+                    }
+                }
+                const writes = pagePendingWrites(decoded, { limit, ...(cursor ? { after: cursor } : {}) });
+                return Response.json({ writes: writes.map(encodePendingWrite), unreadable });
             }
             if (!ID.test(id)) return Response.json({ error: 'invalid id' }, { status: 400 });
             const key = PREFIX + id;
@@ -84,6 +100,7 @@ export class DurableObjectPendingWriteStore implements PendingWriteStore {
     readonly durability = 'durable' as const;
     readonly #namespace: DurableObjectNamespaceLike;
     readonly #name: string;
+    #unreadable: string[] = [];
 
     constructor(namespace: DurableObjectNamespaceLike, options: { name?: string } = {}) {
         this.#namespace = namespace;
@@ -112,12 +129,21 @@ export class DurableObjectPendingWriteStore implements PendingWriteStore {
         const limit = options.limit ?? 100;
         const after = options.after ? `&afterSavedAt=${options.after.savedAt}&afterId=${encodeURIComponent(options.after.id)}` : '';
         const writes: PendingWrite[] = [];
+        const unreadable: string[] = [];
         for (let shard = 0; shard < SHARDS; shard++) {
             const response = await this.#namespace.get(this.#namespace.idFromName(`${this.#name}:${shard}`) as never).fetch(`https://pending/list?limit=${limit}${after}`);
             if (!response.ok) throw new Error(`Pending write store list failed (${response.status}).`);
-            writes.push(...(await response.json() as string[]).map(decodePendingWrite));
+            const page = await response.json() as { writes: string[]; unreadable: string[] };
+            writes.push(...page.writes.map(decodePendingWrite));
+            unreadable.push(...page.unreadable);
         }
+        this.#unreadable = unreadable;
         return pagePendingWrites(writes, { limit });
+    }
+
+    /** IDs the latest `list` found undecodable and set aside under `corrupt:` in their object. */
+    unreadable(): readonly string[] {
+        return this.#unreadable;
     }
 
     #stub(id: string): DurableObjectStubLike {

@@ -274,22 +274,38 @@ export class CmsForms {
                 // Files are the posted ones: a plugin can check them but not replace them.
                 values = withFiles(again.values);
             }
-            // Once per user or address: sends at the same moment are held to one by a claim on the key
-            // (a minute, by which time the first is stored), and stored ones by looking them up.
-            const once = (key: string) => this.#host.security.attempt('form-once', `${form.ref.id}:${key}`, 1, ONCE_CLAIM_MS);
-            if (settings.store && settings.oncePerUser && user && (!(await once(`u:${user}`)) || await this.#exists(form, '"_owner" = $value', user))) throw new CmsError('CMS_CONFLICT', 'You already sent this form.');
-            const email = settings.oncePerEmail ? values[settings.oncePerEmail] : undefined;
-            if (settings.store && typeof email === 'string' && (!(await once(`e:${await sha256Hex(email.toLowerCase())}`)) || await this.#exists(form, `lower("${settings.oncePerEmail}") = $value`, email.toLowerCase()))) {
-                throw new CmsError('CMS_CONFLICT', 'This address already sent this form.', { fields: { [settings.oncePerEmail]: 'This address already sent this form.' } });
-            }
         }
         // One send per address in the window, counted in one conditional write once the send is checked, so a burst gets one through.
         if (ipHash && !(await this.#host.security.attempt('form', ipHash, 1, THROTTLE_MS))) throw new CmsError('CMS_LIMIT', 'You sent this form a moment ago. Wait a few seconds and try again.');
+        // Once per user or address: sends at the same moment are held to one by a claim on the key
+        // (a minute, by which time the first is stored), and stored ones by looking them up. A send
+        // that goes no further gives its claims back, so a retry is not refused for nothing.
+        const claims: string[] = [];
+        const release = () => Promise.all(claims.map(key => this.#host.security.release('form-once', key).catch(() => undefined)));
+        const claim = async (key: string) => {
+            const scoped = `${form.ref.id}:${key}`;
+            if (!(await this.#host.security.attempt('form-once', scoped, 1, ONCE_CLAIM_MS))) return false;
+            claims.push(scoped);
+            return true;
+        };
+        try {
+            if (!spam && settings.store && settings.oncePerUser && user && (!(await claim(`u:${user}`)) || await this.#exists(form, '"_owner" = $value', user))) throw new CmsError('CMS_CONFLICT', 'You already sent this form.');
+            const email = !spam && settings.oncePerEmail ? values[settings.oncePerEmail] : undefined;
+            if (settings.store && typeof email === 'string' && (!(await claim(`e:${await sha256Hex(email.toLowerCase())}`)) || await this.#exists(form, `lower("${settings.oncePerEmail}") = $value`, email.toLowerCase()))) {
+                throw new CmsError('CMS_CONFLICT', 'This address already sent this form.', { fields: { [settings.oncePerEmail]: 'This address already sent this form.' } });
+            }
+        } catch (error) {
+            await release();
+            throw error;
+        }
+        const releasing = async <T>(work: () => Promise<T>): Promise<T> => {
+            try { return await work(); } catch (error) { await release(); throw error; }
+        };
         const id = uuidv7();
         const op = uuidv7();
         // Files are stored before the record, pending; the record's batch makes them ready, and a refused write removes them.
         let stashed: readonly string[] = [];
-        if (settings.store && uploads.size) ({ values, ids: stashed } = await this.#stash(form, id, uploads, values, user, context.signal));
+        if (settings.store && uploads.size) ({ values, ids: stashed } = await releasing(() => this.#stash(form, id, uploads, values, user, context.signal)));
         const meta: { -readonly [K in keyof SubmissionMeta]: string } = {};
         if (settings.recordIp && context.ip) meta.ip = context.ip.slice(0, 64);
         if (context.userAgent) meta.userAgent = context.userAgent.slice(0, 300);
@@ -303,7 +319,7 @@ export class CmsForms {
         const eventParams = { $op: op, $payload: JSON.stringify(event), $at: now };
         if (settings.store) {
             try {
-                await this.#host.resource(form.resource.id).insert({ ...values, status, ...(Object.keys(meta).length ? { meta } : {}) }, {
+                await releasing(() => this.#host.resource(form.resource.id).insert({ ...values, status, ...(Object.keys(meta).length ? { meta } : {}) }, {
                     principal: SYSTEM, id, op, owner: user, kind: 'cms.forms.submit', ...(context.signal ? { signal: context.signal } : {}),
                     attach: guard => [
                         bound(`INSERT INTO cms_form_sends (id, form_id, ip_hash, at) SELECT $op, $form, $ip, $at WHERE ${guard.rql}`, { ...guard.params, ...sendParams }),
@@ -311,7 +327,7 @@ export class CmsForms {
                         // The receipt is the guard: RomeQL's UPDATE takes a relational row, not the record's.
                         ...(stashed.length ? [this.#host.files!.privateReady(stashed, { rql: 'EXISTS (SELECT 1 FROM cms_form_sends WHERE id = $op)', params: { $op: op } })] : []),
                     ],
-                });
+                }));
             } catch (error) {
                 if (stashed.length) await this.#host.files?.discardPrivate(stashed).catch(() => undefined);
                 throw error;
@@ -319,7 +335,7 @@ export class CmsForms {
         } else {
             const statements: Statement[] = [{ rql: 'INSERT INTO cms_form_sends (id, form_id, ip_hash, at) VALUES ($op, $form, $ip, $at)', params: sendParams }];
             if (!spam) statements.push({ rql: "INSERT INTO cms_outbox (id, topic, payload, created_at, available_at, attempts, lease_until) VALUES ($op, 'form.submitted', $payload, $at, $at, 0, 0)", params: eventParams });
-            await this.#host.db.write(statements, { requestId: op, kind: 'cms.forms.submit', ...(context.signal ? { signal: context.signal } : {}) });
+            await releasing(() => this.#host.db.write(statements, { requestId: op, kind: 'cms.forms.submit', ...(context.signal ? { signal: context.signal } : {}) }));
             this.#host.outboxWritten();
         }
         const merge = await this.#mergeContext(form.ref, submission, context.origin ?? '');

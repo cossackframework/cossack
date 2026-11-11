@@ -4,7 +4,7 @@ import { dirname, join, relative, resolve, sep } from 'node:path';
 import { parseSync } from 'vite';
 import { buildRoutesManifest, classifyRoute, computeRouteIds, filePathToHttpRoute, type RoutesManifest } from './route-ids.js';
 import { scanPageSources } from './plugin-sources.js';
-import { isHttpHandlerProgram } from './page-inspection.js';
+import { httpHandlerAnswersGet, isHttpHandlerProgram } from './page-inspection.js';
 
 export const ROUTES_MODULE_ID = 'virtual:cossack-routes';
 export const ROUTES_SOURCE_PATH = '.cossack/routes.ts';
@@ -56,7 +56,7 @@ export function scanPagesDir(
 }
 
 /** Parse results by source file; a page is parsed again only when its size or mtime changes. */
-const handlerSyntax = new Map<string, { size: number; mtimeMs: number; handler: boolean }>();
+const handlerSyntax = new Map<string, { size: number; mtimeMs: number; handler: boolean; get: boolean }>();
 
 /**
  * Route keys of the functional HTTP handler modules outside `/api`: TypeScript page
@@ -66,25 +66,36 @@ const handlerSyntax = new Map<string, { size: number; mtimeMs: number; handler: 
  * nothing executes. Modules under `/api` are endpoints by path and are not parsed;
  * Markdown pages are never handlers.
  */
-export function discoverHttpHandlers(projectRoot: string, pageKeys: readonly string[], sources: Record<string, string> = {}): string[] {
+export function discoverHttpHandlers(projectRoot: string, pageKeys: readonly string[], sources: Record<string, string> = {}, options: { get?: boolean } = {}): string[] {
   const handlers: string[] = [];
   for (const key of pageKeys) {
     if (!key.endsWith('.ts') || classifyRoute(filePathToHttpRoute(key)) !== 'page') continue;
     const file = resolve(projectRoot, '.' + (sources[key] ?? key));
     const { size, mtimeMs } = statSync(file);
     const cached = handlerSyntax.get(file);
-    const handler = cached && cached.size === size && cached.mtimeMs === mtimeMs ? cached.handler : isHttpHandlerSource(readFileSync(file, 'utf8'));
-    handlerSyntax.set(file, { size, mtimeMs, handler });
-    if (handler) handlers.push(key);
+    const syntax = cached && cached.size === size && cached.mtimeMs === mtimeMs ? cached : { size, mtimeMs, ...handlerSource(readFileSync(file, 'utf8')) };
+    handlerSyntax.set(file, syntax);
+    if (options.get ? syntax.get : syntax.handler) handlers.push(key);
   }
   return handlers;
 }
 
-function isHttpHandlerSource(code: string): boolean {
+/**
+ * Handler routes that answer GET, which client navigation loads as documents
+ * instead of fetching. A handler exporting only `POST` leaves GET to the page
+ * that would otherwise match, such as a catch-all.
+ */
+export function discoverGetHandlers(projectRoot: string, includeMarkdown = false): string[] {
+  const { pageKeys, sources } = scanPageSources(projectRoot, includeMarkdown);
+  return discoverHttpHandlers(projectRoot, pageKeys, sources, { get: true });
+}
+
+function handlerSource(code: string): { handler: boolean; get: boolean } {
   try {
     const result = parseSync('page.ts', code);
-    return !result.errors?.length && isHttpHandlerProgram(result.program);
-  } catch { return false; }
+    if (result.errors?.length) return { handler: false, get: false };
+    return { handler: isHttpHandlerProgram(result.program), get: httpHandlerAnswersGet(result.program) };
+  } catch { return { handler: false, get: false }; }
 }
 
 /**
@@ -93,9 +104,9 @@ function isHttpHandlerSource(code: string): boolean {
  * outside `/api` are endpoints by their syntax ({@link discoverHttpHandlers}).
  */
 export function discoverRoutes(projectRoot: string, includeMarkdown = false): RoutesManifest {
-  const { pageKeys, layoutKeys, sources } = scanPageSources(projectRoot, includeMarkdown);
+  const { pageKeys, layoutKeys, sources, plugins } = scanPageSources(projectRoot, includeMarkdown);
   const handlers = discoverHttpHandlers(projectRoot, pageKeys, sources);
-  const manifest = buildRoutesManifest(pageKeys, layoutKeys, computeRouteIds(pageKeys, layoutKeys), { handlers });
+  const manifest = buildRoutesManifest(pageKeys, layoutKeys, computeRouteIds(pageKeys, layoutKeys), { handlers, owners: plugins });
   const pluginSources = Object.fromEntries(Object.entries(sources).filter(([key, source]) => key !== source));
   return Object.keys(pluginSources).length ? { ...manifest, sources: pluginSources } : manifest;
 }

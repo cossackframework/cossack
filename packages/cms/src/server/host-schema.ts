@@ -267,6 +267,13 @@ export const HOST_STEPS: readonly HostStep[] = [{
         { rql: 'CREATE TABLE cms_attempts (key TEXT PRIMARY KEY, count INTEGER NOT NULL, until INTEGER NOT NULL)' },
         { rql: 'CREATE INDEX cms_attempts_until ON cms_attempts (until)' },
     ],
+}, {
+    version: 10,
+    description: 'Automations run as their author',
+    statements: [
+        // The user who saved or switched on an automation: it runs with their permissions, so it sends only what they may read.
+        { rql: 'ALTER TABLE cms_automations ADD COLUMN author TEXT' },
+    ],
 }];
 
 /**

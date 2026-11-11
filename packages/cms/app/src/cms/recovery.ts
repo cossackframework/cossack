@@ -7,8 +7,8 @@
  */
 import type { Context } from 'hono';
 import { getClientIp } from '@cossackframework/core';
-import { MAIN_SITE, sha256Hex, timingSafeEqual, type CmsHost, type NetworkSite } from '@cossackframework/cms/server';
-import { siteUrl, type CmsBindings } from './index';
+import { sha256Hex, timingSafeEqual, type CmsHost } from '@cossackframework/cms/server';
+import type { CmsBindings } from './index';
 import { siteOrigin } from './seo';
 
 /** Five tries per address in fifteen minutes. */
@@ -47,7 +47,6 @@ export async function recoverAccount(c: Context, input: { code: unknown; email: 
     if (!expected) throw new RecoveryError('CMS_RECOVERY_OFF', 'Recovery mode is off: set CMS_RECOVERY_CODE in the environment to turn it on.', 403);
     if (expected.length < RECOVERY_CODE_MIN_LENGTH) throw new RecoveryError('CMS_RECOVERY_WEAK', `CMS_RECOVERY_CODE must be at least ${RECOVERY_CODE_MIN_LENGTH} characters.`, 403);
     const host: CmsHost = c.get('cms');
-    const site: NetworkSite = c.get('site');
     const address = getClientIp(c) || 'unknown';
     if (!(await host.security.attempt('recovery', `a:${address}`, RECOVERY_ATTEMPTS.max, RECOVERY_ATTEMPTS.windowMs)))
         throw new RecoveryError('CMS_RATE_LIMITED', 'Too many recovery attempts. Wait fifteen minutes.', 429);
@@ -58,10 +57,10 @@ export async function recoverAccount(c: Context, input: { code: unknown; email: 
 
     // A site account resets on its site; a network account on the network host, as Forgot password does.
     let reset = await host.signIn.accounts.createPasswordReset(email);
-    let origin = site.id === MAIN_SITE ? siteOrigin(c) : (siteUrl(c.env as CmsBindings, site) ?? siteOrigin(c));
+    let origin = siteOrigin(c);
     if (!reset && host.siteAccounts && (await host.users.findByEmail(email).catch(() => null))?.account === 'network') {
         reset = await host.accounts.createPasswordReset(email);
-        origin = siteOrigin(c);
+        origin = (c.env as CmsBindings).APP_URL?.replace(/\/+$/, '') || siteOrigin(c);
     }
     if (!reset) throw new RecoveryError('CMS_NOT_FOUND', `No active account with the email ${email} on this site.`, 404);
     const userId = reset.account.id;

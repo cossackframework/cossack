@@ -254,4 +254,16 @@ describe.skipIf(!live)('forms', () => {
         tick();
         expect((await sends(i => ({ email: i % 2 ? 'Same@Example.com' : 'same@example.com', ip: `203.0.113.${60 + i}` }))).filter(result => result.status === 'fulfilled')).toHaveLength(1);
     });
+
+    it('keeps the once-per-address claim of a send that was refused for another reason', async () => {
+        const forms = cms.resource('cms/forms');
+        await forms.create({ title: 'Retry', status: 'published', body: [input('e', 'email', { name: 'email', required: true })], settings: { oncePerEmail: 'email' } }, { principal: editor });
+        tick();
+        await cms.forms.submit('retry', { email: 'first@example.com' }, { principal: ANONYMOUS, ip: '203.0.113.90' });
+        // The address throttle refuses the next send at once: its email is not used up by it.
+        await expect(cms.forms.submit('retry', { email: 'later@example.com' }, { principal: ANONYMOUS, ip: '203.0.113.90' })).rejects.toMatchObject({ code: 'CMS_LIMIT' });
+        tick(5_000);
+        await expect(cms.forms.submit('retry', { email: 'later@example.com' }, { principal: ANONYMOUS, ip: '203.0.113.91' })).resolves.toBeDefined();
+        await expect(cms.forms.submit('retry', { email: 'later@example.com' }, { principal: ANONYMOUS, ip: '203.0.113.92' })).rejects.toMatchObject({ code: 'CMS_CONFLICT' });
+    });
 });

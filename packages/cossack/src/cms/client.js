@@ -71,17 +71,44 @@ export async function projectUrl(cwd) {
   return value && /^https?:\/\//.test(value) ? value : undefined;
 }
 
+/** Whether an address is this machine, where plain HTTP and a project's own `.env` address are fine. */
+export function isLocalAddress(url) {
+  let host;
+  try { host = new URL(url).hostname.toLowerCase().replace(/^\[|\]$/g, ''); } catch { return false; }
+  return host === 'localhost' || host.endsWith('.localhost') || host === '::1' || /^127(?:\.\d{1,3}){3}$/.test(host);
+}
+
+/**
+ * Refuse sending credentials where they could leak: over plain HTTP to another machine, or
+ * from the shell environment to an address that only the current folder's `.env` named. A
+ * cloned project could set `APP_URL` to any host; `--url` or `COSSACK_CMS_URL` confirms it.
+ */
+export function assertCredentialTarget(url, { source, credential, fromEnvironment = true }) {
+  if (new URL(url).protocol !== 'https:' && !isLocalAddress(url)) {
+    throw Object.assign(new Error(`${new URL(url).origin} is plain HTTP. Use an https:// address; credentials are not sent unencrypted.`), { code: 'COSSACK_CMS_URL_INSECURE' });
+  }
+  if (source === 'project' && fromEnvironment && !isLocalAddress(url)) {
+    throw Object.assign(new Error(`${credential} is not sent to ${new URL(url).origin}, which only this folder's .env names. Pass --url ${new URL(url).origin} (or set COSSACK_CMS_URL) to confirm.`), { code: 'COSSACK_CMS_URL_UNCONFIRMED' });
+  }
+}
+
 /**
  * Where a command acts and as whom. The address: `--url`, `COSSACK_CMS_URL`, the project's
  * `APP_URL`, then the current login. The site: `--site`, `COSSACK_CMS_SITE`, then the login's.
  * The password: `COSSACK_CMS_TOKEN`, then the login for the address and site, or the address's
- * network login, which works on every site its account belongs to.
+ * network login, which works on every site its account belongs to. `COSSACK_CMS_TOKEN` goes to
+ * a project's `APP_URL` only when it is local or confirmed ({@link assertCredentialTarget}).
  */
 export async function resolveTarget({ flags = {}, env = process.env, cwd = process.cwd(), needToken = true } = {}) {
   const store = await readLogins(env);
   const current = store.current ? store.logins[store.current] : undefined;
   const only = Object.keys(store.logins).length === 1 ? Object.values(store.logins)[0] : undefined;
-  let url = flags.url || env.COSSACK_CMS_URL || await projectUrl(cwd) || current?.url || only?.url;
+  let url;
+  let source;
+  if (flags.url) { url = flags.url; source = 'flag'; }
+  else if (env.COSSACK_CMS_URL) { url = env.COSSACK_CMS_URL; source = 'env'; }
+  else if ((url = await projectUrl(cwd))) source = 'project';
+  else { url = current?.url || only?.url; source = 'login'; }
   if (!url) throw Object.assign(new Error('Which CMS? Pass --url, set COSSACK_CMS_URL, or run cossack cms login from the project.'), { code: 'COSSACK_CMS_URL_REQUIRED' });
   try { url = new URL(url).origin; } catch { throw Object.assign(new Error(`${url} is not a URL.`), { code: 'COSSACK_CMS_URL_INVALID' }); }
   const stored = (site) => store.logins[loginKey(url, site)];
@@ -90,7 +117,8 @@ export async function resolveTarget({ flags = {}, env = process.env, cwd = proce
   const login = stored(site === 'main' ? undefined : site) ?? stored(undefined);
   const token = env.COSSACK_CMS_TOKEN || login?.token;
   if (needToken && !token) throw Object.assign(new Error(`Not signed in to ${url}${site ? ` (site ${site})` : ''}. Run cossack cms login --url ${url}${site ? ` --site ${site}` : ''}, or set COSSACK_CMS_TOKEN.`), { code: 'COSSACK_CMS_LOGIN_REQUIRED' });
-  return { url, site: site === 'main' ? undefined : site, token, login: login ?? null, key: loginKey(url, site === 'main' ? undefined : site) };
+  if (needToken) assertCredentialTarget(url, { source, credential: 'COSSACK_CMS_TOKEN', fromEnvironment: Boolean(env.COSSACK_CMS_TOKEN) });
+  return { url, source, site: site === 'main' ? undefined : site, token, login: login ?? null, key: loginKey(url, site === 'main' ? undefined : site) };
 }
 
 /** The ID an application password carries in front of its secret, for revoking it. */

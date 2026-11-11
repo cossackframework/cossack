@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { checkCheckout } from '../src/server/payments';
 import { stripePayments } from '../src/server/stripe';
+import { paymentCompleted } from '../src/server/host';
 
 const sign = async (secret: string, timestamp: number, body: string) => {
     const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
@@ -28,7 +29,7 @@ describe('payments', () => {
         expect(Object.fromEntries(form)).toMatchObject({ mode: 'payment', success_url: 'https://shop.test/thanks', customer_email: 'ada@example.com', client_reference_id: 'order-9',
             'line_items[0][price_data][currency]': 'eur', 'line_items[0][price_data][unit_amount]': '1250', 'line_items[0][price_data][product_data][name]': 'A hat', 'line_items[0][quantity]': '1', 'metadata[plugin]': 'shop',
             // The payment it makes carries the reference and metadata, so its later events name the order.
-            'payment_intent_data[metadata][plugin]': 'shop', 'payment_intent_data[metadata][reference]': 'order-9' });
+            'payment_intent_data[metadata][plugin]': 'shop', 'payment_intent_data[metadata][reference]': 'order-9', 'payment_intent_data[metadata][cms_checkout]': '1' });
         const refused = stripePayments({ secretKey: 'sk', fetch: (async () => Response.json({ error: { message: 'No such price' } }, { status: 400 })) as typeof fetch });
         await expect(refused.checkout({ priceId: 'price_x', successUrl: 'https://s.test/a', cancelUrl: 'https://s.test/b' })).rejects.toMatchObject({ code: 'CMS_UNAVAILABLE' });
     });
@@ -58,6 +59,13 @@ describe('payments', () => {
         expect(await relay('checkout.session.completed', { id: 'cs_2', payment_status: 'unpaid', client_reference_id: 'order-10' })).toMatchObject({ type: 'checkout.pending', reference: 'order-10' });
         expect(await relay('checkout.session.async_payment_succeeded', { id: 'cs_2', payment_status: 'paid', client_reference_id: 'order-10' })).toMatchObject({ type: 'checkout.completed', checkoutId: 'cs_2' });
         expect(await relay('checkout.session.async_payment_failed', { id: 'cs_2', payment_status: 'unpaid', client_reference_id: 'order-10' })).toMatchObject({ type: 'payment.failed' });
+        // The checkout's own payment repeats it: payment.completed comes from the checkout alone, a payment without one counts.
+        const paid = await relay('payment_intent.succeeded', { id: 'pi_1', amount_received: 1250, currency: 'eur', metadata: { reference: 'order-10', cms_checkout: '1' } });
+        expect(paid).toMatchObject({ type: 'payment.succeeded', fromCheckout: true, reference: 'order-10', metadata: { reference: 'order-10' } });
+        expect(paid!.metadata).not.toHaveProperty('cms_checkout');
+        const renewal = await relay('payment_intent.succeeded', { id: 'pi_2', amount_received: 900, currency: 'eur', metadata: {} });
+        const completed = await relay('checkout.session.completed', { id: 'cs_3', payment_status: 'paid' });
+        expect([completed, paid, renewal].map(event => paymentCompleted(event!))).toEqual([true, false, true]);
         expect(await relay('charge.refunded', { id: 'ch_1', amount: 10000, amount_refunded: 1000, currency: 'usd', metadata: { reference: 'order-9' } })).toMatchObject({ type: 'refund', amount: 1000, reference: 'order-9' });
     });
 });

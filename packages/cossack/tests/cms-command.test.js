@@ -12,6 +12,7 @@ import { parseValue } from '../src/cms/input.js';
 import { formatTable } from '../src/cms/output.js';
 import { cmsDiagnostics } from '../src/cms/catalog.js';
 import { mimeType } from '../src/cms/mime.js';
+import { assertCredentialTarget, isLocalAddress, resolveTarget } from '../src/cms/client.js';
 
 const TOKEN = `cms_0123456789abcdef.${'s'.repeat(43)}`;
 const ME = { user: { id: 'u1', email: 'ada@example.com', name: 'Ada', roles: [{ id: 'admin', name: 'Administrator' }], permissions: ['*'], networkAdmin: true, account: 'network' }, token: { scope: 'write' }, network: { enabled: true, canAddSites: true, main: true } };
@@ -368,5 +369,22 @@ describe('cms helpers', () => {
     expect(cmsDiagnostics(['notes', 'list', 'posts', 'p1'], { status: 'open' })).toEqual([]);
     expect(cmsDiagnostics(['login', 'extra'], {})).toEqual([{ code: 'COSSACK_ARGUMENT_UNEXPECTED', severity: 'error', message: 'cms login takes no arguments.' }]);
     expect(cmsDiagnostics(['media', 'upload', 'a.png', 'b.png', 'c.png'], {})).toEqual([]);
+  });
+  it('keeps credentials from addresses only a project .env names, and from plain HTTP', async () => {
+    expect(['http://localhost:5173', 'http://127.0.0.1', 'http://app.localhost', 'http://[::1]:3000'].every(isLocalAddress)).toBe(true);
+    expect(isLocalAddress('http://127.0.0.1.nip.io')).toBe(false);
+    expect(() => assertCredentialTarget('http://cms.example', { source: 'flag', credential: 'X' })).toThrow(expect.objectContaining({ code: 'COSSACK_CMS_URL_INSECURE' }));
+    expect(() => assertCredentialTarget('https://evil.example', { source: 'project', credential: 'X' })).toThrow(expect.objectContaining({ code: 'COSSACK_CMS_URL_UNCONFIRMED' }));
+    expect(() => assertCredentialTarget('https://evil.example', { source: 'project', credential: 'X', fromEnvironment: false })).not.toThrow();
+    expect(() => assertCredentialTarget('http://localhost:5173', { source: 'project', credential: 'X' })).not.toThrow();
+    const project = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-cms-target-'));
+    try {
+      await fs.writeFile(path.join(project, 'package.json'), '{"name":"cloned"}');
+      await fs.writeFile(path.join(project, '.env'), 'APP_URL=https://evil.example\n');
+      const env = { COSSACK_CMS_TOKEN: 'cms_aaaaaaaaaaaaaaaa.secret', COSSACK_HOME: project, XDG_CONFIG_HOME: project, HOME: project };
+      await expect(resolveTarget({ env, cwd: project })).rejects.toMatchObject({ code: 'COSSACK_CMS_URL_UNCONFIRMED' });
+      await expect(resolveTarget({ env, cwd: project, flags: { url: 'https://evil.example' } })).resolves.toMatchObject({ url: 'https://evil.example', source: 'flag' });
+      await expect(resolveTarget({ env: { ...env, COSSACK_CMS_URL: 'https://cms.example' }, cwd: project })).resolves.toMatchObject({ url: 'https://cms.example', source: 'env' });
+    } finally { await fs.rm(project, { recursive: true, force: true }); }
   });
 });

@@ -84,7 +84,7 @@ export function networkFor(env: CmsBindings): CmsNetwork {
             hostUrl: host => siteUrl(env, { host })!,
             host: (site, siteDb) => createCMS({
                 db: siteDb, network: db, site: site.id, modules, resources, plugins,
-                // A site whose address is this machine (or that has none yet) is in development: its webhooks may stay local.
+                // A site whose APP_URL is this machine is in development: its webhooks may stay local. No APP_URL is no exception.
                 localWebhooks: localAddress(env.APP_URL),
                 ...(webhookFetch && !localAddress(env.APP_URL) ? { webhookFetch } : {}),
                 // A site's media keys start with sites/<id>/; the main site keeps its own.
@@ -146,8 +146,8 @@ export function currentCms(): CmsHost {
     return cms;
 }
 
-/** Whether the site's address is unset or this machine. */
-function localAddress(appUrl: string | undefined): boolean {
+/** Whether APP_URL names this machine. An unset or unreadable APP_URL is not local. */
+export function localAddress(appUrl: string | undefined): boolean {
     const host = urlOf(appUrl)?.hostname;
-    return !appUrl || host === 'localhost' || host === '127.0.0.1' || host === '[::1]' || host?.endsWith('.localhost') === true;
+    return host === 'localhost' || host === '127.0.0.1' || host === '[::1]' || host?.endsWith('.localhost') === true;
 }

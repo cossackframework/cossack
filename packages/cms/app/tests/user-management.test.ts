@@ -33,6 +33,17 @@ describe('who manages an account', () => {
         expect(canManageUser(networkAdmin, { roles: [{ permissions: ['*'] }] })).toBe(true);
     });
 
+    it('keeps the sessions and application passwords of a stronger account from role managers', () => {
+        const admin = { id: 'admin-2', roles: [{ permissions: ['*'] }] };
+        // A role manager without plugins or settings must not mint a token acting as the administrator.
+        expect(canManageAccess(siteAdmin, admin)).toBe(false);
+        expect(canManageAccess(networkAdmin, admin)).toBe(true);
+        expect(canManageAccess(siteAdmin, { id: 'member', roles: [{ permissions: ['cms:users'] }] })).toBe(true);
+        // User managers who are not role managers never do; everyone manages their own.
+        expect(canManageAccess(userManager, { id: 'author', roles: [{ permissions: ['cms/posts:create'] }] })).toBe(false);
+        expect(canManageAccess(userManager, { id: 'manager', roles: [{ permissions: ['*'] }] })).toBe(true);
+    });
+
     it('lets role managers give only roles they could hold', () => {
         expect(canGrantRoles(siteAdmin, [{ permissions: ['cms:users'] }])).toBe(true);
         expect(canGrantRoles(siteAdmin, [{ permissions: ['*'] }])).toBe(false);

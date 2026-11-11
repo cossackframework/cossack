@@ -20,6 +20,8 @@ export interface PendingWriteStore {
     delete(id: string): Promise<void>;
     /** Oldest first (by `savedAt`, then request ID), after `after` when it is given. */
     list(options?: PendingListOptions): Promise<readonly PendingWrite[]>;
+    /** IDs of saved writes the latest `list` could not read and left out, for the recovery report. */
+    unreadable?(): readonly string[];
 }
 
 export interface PendingListOptions {

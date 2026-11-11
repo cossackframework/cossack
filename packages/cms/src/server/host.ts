@@ -580,10 +580,10 @@ export class CmsHost {
         // Automations run from the same events, under their own name, so their retries are theirs alone.
         this.hooks.addAction(afterCommit, event => this.#automate(event), { plugin: 'cms-automations' });
         this.hooks.addAction(formSubmitted, async event => { await this.automations.run('form.submitted', { form: event.form.slug, formTitle: event.form.title, submission: event.submission.id, values: event.submission.values, origin: event.origin ?? '' }, await this.#automationScopes(), event.eventId); }, { plugin: 'cms-automations' });
-        this.hooks.addAction(paymentEvent, async event => { if (event.type === 'checkout.completed' || event.type === 'payment.succeeded') await this.automations.run('payment.completed', { ...event, customerEmail: event.customerEmail ?? '', reference: event.reference ?? '', amount: event.amount ?? '', currency: event.currency ?? '' }, await this.#automationScopes(), event.eventId); }, { plugin: 'cms-automations' });
+        this.hooks.addAction(paymentEvent, async event => { if (paymentCompleted(event)) await this.automations.run('payment.completed', { ...event, customerEmail: event.customerEmail ?? '', reference: event.reference ?? '', amount: event.amount ?? '', currency: event.currency ?? '' }, await this.#automationScopes(), event.eventId); }, { plugin: 'cms-automations' });
         // A completed payment goes to the webhooks that take every collection's events.
         this.hooks.addAction(paymentEvent, async event => {
-            if (event.type !== 'checkout.completed' && event.type !== 'payment.succeeded') return;
+            if (!paymentCompleted(event)) return;
             if (!(await this.webhooks.wants(['payment.completed'], ''))) return;
             const { object: _object, ...payment } = event;
             await this.webhooks.enqueue({ event: 'payment.completed', eventId: `${event.eventId}:payment.completed`, at: this.#now(), collection: '', payment });
@@ -650,7 +650,16 @@ export class CmsHost {
         this.audit = new CmsAudit(this.db, { now: this.#now });
         this.ai = options.ai ?? null;
         this.payments = options.payments ?? null;
-        this.automations = new CmsAutomations(this.db, { mail: this.mail, mailFrom: this.mailFrom, now: this.#now });
+        this.automations = new CmsAutomations(this.db, {
+            mail: this.mail, mailFrom: this.mailFrom, now: this.#now,
+            principal: id => this.users.principal(id),
+            // As the repository answers the author: without the fields their permissions do not read.
+            redact: (collection, record, principal) => {
+                const fields = this.#collections.has(collection) ? this.resourceById(`cms/${collection}`).fields : {};
+                const hidden = Object.entries(fields).filter(([, field]) => field.access?.read && !hasPermission(principal, field.access.read)).map(([name]) => name);
+                return hidden.length ? Object.fromEntries(Object.entries(record).filter(([name]) => !hidden.includes(name))) : record;
+            },
+        });
         this.schedules = new CmsSchedules(this.db, { outbox: this.outbox, now: this.#now, schedules: () => this.#dueSchedules(), queued: () => this.outboxWritten() });
         this.purge = new CmsPurge({ outbox: this.outbox, hooks: this.hooks, cache: this.cache, site: this.site, purgers: options.purgers ?? [], now: this.#now, queued: () => this.outboxWritten() });
         for (const module of modules) module.register?.({ hooks: this.hooks, settings: this.settings, taxonomies: this.taxonomies, collection: name => this.#collections.get(name), blocks: () => this.#blocks, now: this.#now });
@@ -2645,4 +2654,12 @@ function requestMetadata(context: unknown): { ip?: string; userAgent?: string } 
     const ip = address && address !== 'anonymous' ? address : undefined;
     const userAgent = request.header('user-agent');
     return { ...(ip ? { ip } : {}), ...(userAgent ? { userAgent } : {}) };
+}
+
+/**
+ * Whether a payment event completes a payment, once per payment: a paid checkout, or a payment
+ * no checkout made (a renewal, a direct charge). A checkout's own payment repeats its checkout.
+ */
+export function paymentCompleted(event: PaymentEvent): boolean {
+    return event.type === 'checkout.completed' || (event.type === 'payment.succeeded' && !event.fromCheckout);
 }

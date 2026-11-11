@@ -79,4 +79,36 @@ describe('route matcher', () => {
     expect(match('/404')).toBeNull();
     expect(match('/nothing')).toBeNull();
   });
+
+  it('matches decoded literal segments and drops one trailing slash, like Hono', () => {
+    const match = createRouteMatcher(['/src/pages/café/index.ts', '/src/pages/about/index.ts']);
+    expect(match('/caf%C3%A9')).toBe('/src/pages/café/index.ts');
+    expect(match('/about/')).toBe('/src/pages/about/index.ts');
+    expect(match('/about//')).toBeNull();
+  });
+});
+
+describe('handlers that answer GET', () => {
+  it('counts default and GET exports, not POST-only modules', async () => {
+    const { parseSync } = await import('vite');
+    const { httpHandlerAnswersGet } = await import('../src/page-inspection');
+    const answers = (code: string) => httpHandlerAnswersGet(parseSync('page.ts', code).program);
+    expect(answers('export function GET() { return new Response(); }')).toBe(true);
+    expect(answers('export default function (c) { return c.text(\'x\'); }')).toBe(true);
+    expect(answers('export function POST() { return new Response(); }')).toBe(false);
+  });
+});
+
+describe('routes manifest', () => {
+  it('keeps plugin layouts and boundaries to the plugin\'s own pages', async () => {
+    const { buildRoutesManifest, computeRouteIds } = await import('../src/route-ids');
+    const pages = ['/src/pages/blog/index.ts', '/src/pages/blog/shop/index.ts', '/src/pages/blog/error/index.ts'];
+    const layouts = ['/src/pages/blog/layout.ts'];
+    const owners = { '/src/pages/blog/shop/index.ts': 'shop', '/src/pages/blog/layout.ts': 'shop', '/src/pages/blog/error/index.ts': 'shop' };
+    const manifest = buildRoutesManifest(pages, layouts, computeRouteIds(pages, layouts), { owners });
+    const route = (path: string) => manifest.routes.find(entry => entry.filePath === path)!;
+    expect(route('/src/pages/blog/index.ts').layoutPaths).toEqual([]);
+    expect(route('/src/pages/blog/index.ts').errorBoundary).toBeNull();
+    expect(route('/src/pages/blog/shop/index.ts').layoutPaths).toEqual(['/src/pages/blog/layout.ts']);
+  });
 });

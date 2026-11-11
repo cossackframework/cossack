@@ -242,7 +242,7 @@ async function nodeApp() {
   const database = await startRomeDBService();
   const routeIds = JSON.parse(await fs.readFile(path.join(root, 'dist/client/cossack-routes.json'), 'utf8')).filePathToId;
   const server = await productionServer(root, { APP_SECRET: 'generated-cms-test-secret-0123456789abcdef', ROMEDB_URL: database.url, ROMEDB_TOKEN: database.token,
-    CMS_SETUP_CODE: 'setup-code-for-tests', ROMEDB_PENDING_DIR: path.join(root, '.cossack/romedb-pending'), MEDIA_DIR: path.join(root, 'storage/media') });
+    CMS_SETUP_CODE: 'setup-code-for-tests', RATE_LIMIT_TRUST_PROXY: 'x-forwarded-for', ROMEDB_PENDING_DIR: path.join(root, '.cossack/romedb-pending'), MEDIA_DIR: path.join(root, 'storage/media') });
   return { root, server, routeIds, close: async () => { await server.close(); await database.stop(); } };
 }
 

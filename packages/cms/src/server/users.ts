@@ -199,6 +199,17 @@ export class CmsUsers {
         return id ? this.get(id) : null;
     }
 
+    /** Every user, by ID, a page after the last ID of the one before: for work that goes through them all. */
+    async after(after: string | null, limit = 100): Promise<CmsUser[]> {
+        const result = await this.#db.read([{
+            rql: `SELECT id FROM cms_users${after === null ? '' : ' WHERE id > $after'} ORDER BY id LIMIT $limit`,
+            params: { ...(after === null ? {} : { $after: after }), $limit: Math.min(Math.max(limit, 1), 500) },
+        }]);
+        const ids = result.results[0]!.rows.map(row => row[0] as string);
+        const users = await this.getMany(ids);
+        return ids.map(id => users.get(id)).filter((user): user is CmsUser => user !== undefined);
+    }
+
     /** Newest first. `search` matches name or email; `role` limits to one role ID. */
     async list(options: { search?: string; role?: string; limit?: number; offset?: number } = {}): Promise<UserPage> {
         const limit = Math.min(Math.max(options.limit ?? 20, 1), 100);

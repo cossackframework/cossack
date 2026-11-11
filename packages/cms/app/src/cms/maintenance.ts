@@ -33,7 +33,7 @@ export async function runNetworkMaintenance(network: CmsNetwork, options: { warm
 /**
  * Background upkeep: recover unconfirmed writes by exact replay, publish scheduled entries,
  * deliver outbox events and webhooks, prune delivered events, expired sessions, reset tokens,
- * preview links, sign-in challenges, old autosaves and form records, empty forms' old trash, and
+ * preview links, sign-in challenges and ended attempt counts, old autosaves and form records, empty forms' old trash, and
  * finish interrupted uploads.
  * `warm` asks RomeDB Cloud to start the database; request paths never warm, so run it from a schedule.
  */
@@ -42,7 +42,11 @@ export async function runMaintenance(cms: CmsHost, options: { warm?: boolean } =
     // A fresh database has no host tables until setup applies the schema.
     if (!(await cms.installed())) return;
     // Recovery failing (an unreadable store, an unreachable database) must not stop the rest of upkeep.
-    await cms.db.recoverPending({ limit: 50 }).catch(error => console.error('[cms] recovering unconfirmed writes failed', error));
+    const recovery = await cms.db.recoverPending({ limit: 50 }).catch(error => {
+        console.error('[cms] recovering unconfirmed writes failed', error);
+        return null;
+    });
+    if (recovery?.unreadable.length) console.warn(`[cms] ${recovery.unreadable.length} unconfirmed write(s) could not be read: ${recovery.unreadable.join(', ')}`);
     await cms.runSchedule();
     await cms.schedules.tick();
     await cms.outbox.dispatch({ limit: 50 });
@@ -54,6 +58,7 @@ export async function runMaintenance(cms: CmsHost, options: { warm?: boolean } =
     await cms.accounts.purgeExpiredResets();
     await cms.previews.purgeExpired();
     await cms.security.purgeExpired();
+    await cms.security.purgeAttempts();
     await cms.autosaves.purge();
     await cms.drafts.purge();
     await purgeOrphanNotes(cms);

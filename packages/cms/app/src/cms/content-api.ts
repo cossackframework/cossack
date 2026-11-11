@@ -14,12 +14,18 @@ import { entryLock } from './site';
 export interface ApiEntry { [field: string]: unknown; id: string; url: string | null }
 
 /** Entries with their public URLs and, with `?format=html`, their rich text and blocks rendered. */
+/** Fields a locked entry's readers do not get: all but the core fields and taxonomies (and its summary). */
+export function withheldFields(cms: CmsHost, collection: CollectionDefinition): Set<string> {
+    const names = Object.keys(cms.resourceById(`cms/${collection.name}`).fields);
+    return new Set(names.filter(name => name === 'summary' || (!(CORE_FIELDS as readonly string[]).includes(name) && !(collection.taxonomies ?? []).includes(name))));
+}
+
 export async function apiEntries(cms: CmsHost, collection: CollectionDefinition, records: readonly RecordShape[], html: boolean, principal?: Principal): Promise<ApiEntry[]> {
     const repository = cms.resource(`cms/${collection.name}`);
     const fields = Object.entries(cms.resourceById(`cms/${collection.name}`).fields);
     // The password itself never leaves. A protected entry's fields stay with those who may edit
     // it, and a members-only entry's with signed-in users: others get its core fields alone.
-    const withheld = new Set(fields.map(([name]) => name).filter(name => name === 'summary' || (!(CORE_FIELDS as readonly string[]).includes(name) && !(collection.taxonomies ?? []).includes(name))));
+    const withheld = withheldFields(cms, collection);
     records = records.map(record => {
         const { password, ...rest } = record;
         const editor = principal !== undefined && repository.canUpdate(record, principal);
